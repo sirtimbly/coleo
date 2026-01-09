@@ -1,0 +1,28 @@
+{
+  "name": "octopai",
+  "version": "0.1.0",
+  "description": "AI agent orchestrator using the Octopus Model",
+  "module": "src/cli/index.ts",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "octopai": "./bin/octopai.ts"
+  },
+  "scripts": {
+    "dev": "bun run src/cli/index.ts",
+    "brain": "bun run src/cli/index.ts brain run",
+    "build": "bun build src/cli/index.ts --outdir dist --target node",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "commander": "^14.0.2",
+    "zod": "^4.3.5"
+  }
+}
