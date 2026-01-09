@@ -1,10 +1,52 @@
-# Gitea Docker Compose for Octopai
-# 
-# Local Git forge for agent collaboration
-# Start: docker compose up -d
-# Access: http://localhost:3000
+# Octopai Docker Stack
+#
+# Run the full Octopai environment in Docker:
+# - Octopai brain + tentacles
+# - Gitea for git collaboration
+# - SSH access for interactive sessions
+#
+# Usage:
+#   docker compose up -d
+#   ssh -p 2222 octopai@localhost  # password: octopai
+#   octopai brain run
 
 services:
+  # ============================================
+  # Octopai - The brain and tentacle environment
+  # ============================================
+  octopai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: octopai
+    hostname: octopai
+    environment:
+      - OCTOPAI_DIR=/home/octopai/.octopai
+      - GITEA_URL=http://gitea:3000
+      # Pass through API keys from host
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    volumes:
+      # Persistent state
+      - octopai-data:/home/octopai/.octopai
+      # Mount your projects (read-write)
+      - ${PROJECTS_DIR:-./projects}:/home/octopai/projects
+      # SSH keys for git operations
+      - ${SSH_KEYS_DIR:-~/.ssh}:/home/octopai/.ssh:ro
+    ports:
+      # SSH access
+      - "2222:22"
+    depends_on:
+      gitea:
+        condition: service_healthy
+    restart: unless-stopped
+    # Keep container running for SSH access
+    tty: true
+    stdin_open: true
+
+  # ============================================
+  # Gitea - Local Git forge
+  # ============================================
   gitea:
     image: gitea/gitea:latest
     container_name: octopai-gitea
@@ -13,24 +55,37 @@ services:
       - USER_GID=1000
       - GITEA__server__ROOT_URL=http://localhost:3000
       - GITEA__server__HTTP_PORT=3000
-      - GITEA__server__SSH_PORT=2222
+      - GITEA__server__SSH_PORT=22
+      - GITEA__server__SSH_DOMAIN=localhost
+      - GITEA__server__SSH_LISTEN_PORT=22
       - GITEA__database__DB_TYPE=sqlite3
       - GITEA__service__DISABLE_REGISTRATION=false
       - GITEA__service__REQUIRE_SIGNIN_VIEW=false
-    restart: unless-stopped
+      # Allow Octopai container to push
+      - GITEA__security__INSTALL_LOCK=true
     volumes:
-      - ./gitea-data:/data
+      - gitea-data:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
     ports:
+      # Web UI
       - "3000:3000"
-      - "2222:22"
+      # Git SSH (on different port to avoid conflict with octopai SSH)
+      - "2223:22"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 5
       start_period: 30s
+    restart: unless-stopped
 
 volumes:
+  octopai-data:
+    name: octopai-data
   gitea-data:
+    name: octopai-gitea-data
+
+networks:
+  default:
+    name: octopai-network

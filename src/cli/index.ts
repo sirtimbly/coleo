@@ -176,8 +176,9 @@ tentacleCmd
   .requiredOption("-n, --name <name>", "Tentacle name/ID")
   .option("-a, --agent <agent>", "Agent type (opencode, claude-code, aider)", "opencode")
   .option("-w, --workdir <path>", "Working directory", process.cwd())
-  .option("-t, --terminal <terminal>", "Terminal emulator (auto, ghostty, iterm2, terminal)", "auto")
+  .option("-t, --terminal <terminal>", "Terminal emulator (auto, ghostty, iterm2, terminal, tmux, headless)", "auto")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
+  .option("--headless", "Run in headless mode (no terminal window, for containers/SSH)")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
 
@@ -188,6 +189,7 @@ tentacleCmd
       workdir: expandPath(options.workdir),
       terminal: options.terminal,
       initialPrompt: options.prompt,
+      headless: options.headless,
     });
 
     console.log(`Tentacle spawned: ${tentacle.id}`);

@@ -14,7 +14,7 @@ import type { Tentacle, OctopaiConfig } from "../types";
 const execAsync = promisify(exec);
 
 export type AgentType = "opencode" | "claude-code" | "aider" | "custom";
-export type TerminalEmulator = "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty";
+export type TerminalEmulator = "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "headless" | "tmux";
 
 export interface SpawnOptions {
   octopaiDir: string;
@@ -24,12 +24,39 @@ export interface SpawnOptions {
   terminal?: TerminalEmulator;
   customCommand?: string;
   initialPrompt?: string;
+  /** Run in headless mode (no terminal window) */
+  headless?: boolean;
+}
+
+/**
+ * Detect if we're running in a headless environment (no display)
+ */
+function isHeadlessEnvironment(): boolean {
+  // Docker containers typically don't have DISPLAY
+  // Also check for common container indicators
+  return (
+    !process.env.DISPLAY &&
+    (process.env.container !== undefined ||
+      process.env.DOCKER === "true" ||
+      Bun.file("/.dockerenv").size > 0 ||
+      process.env.SSH_CONNECTION !== undefined)
+  );
 }
 
 /**
  * Detect which terminal emulator is available
  */
 async function detectTerminal(): Promise<TerminalEmulator> {
+  // In headless environments, prefer tmux if available, otherwise headless
+  if (isHeadlessEnvironment()) {
+    try {
+      await execAsync("which tmux");
+      return "tmux";
+    } catch {
+      return "headless";
+    }
+  }
+
   const terminals: Array<{ name: TerminalEmulator; check: string }> = [
     { name: "ghostty", check: "which ghostty" },
     { name: "wezterm", check: "which wezterm" },
@@ -117,6 +144,30 @@ function getTerminalCommand(
       return {
         cmd: "osascript",
         args: ["-e", termScript],
+      };
+
+    case "tmux":
+      // Create a new tmux session for the tentacle
+      return {
+        cmd: "tmux",
+        args: [
+          "new-session",
+          "-d",  // Detached
+          "-s", title.replace(/[^a-zA-Z0-9_-]/g, "_"),  // Session name (sanitized)
+          "-c", workdir,
+          command,
+        ],
+      };
+
+    case "headless":
+      // Run directly as a background process, logging to file
+      const logFile = join(process.env.OCTOPAI_DIR || process.env.HOME + "/.octopai", "logs", `${title}.log`);
+      return {
+        cmd: "bash",
+        args: [
+          "-c",
+          `mkdir -p "$(dirname "${logFile}")" && cd "${workdir}" && ${command} >> "${logFile}" 2>&1`,
+        ],
       };
   }
 }
@@ -212,13 +263,24 @@ export async function spawnTentacle(options: SpawnOptions): Promise<Tentacle> {
   // Detect terminal if auto
   let terminal = options.terminal || "auto";
   if (terminal === "auto") {
-    terminal = await detectTerminal();
+    // Force headless if explicitly requested
+    if (options.headless) {
+      terminal = "headless";
+    } else {
+      terminal = await detectTerminal();
+    }
   }
 
-  console.log(`Spawning tentacle "${options.name}" using ${options.agent} in ${terminal}`);
+  console.log(`Spawning tentacle "${options.name}" using ${options.agent} in ${terminal}${terminal === "headless" || terminal === "tmux" ? " (headless mode)" : ""}`);
 
   // Create MCP configuration
   await createMcpConfig(options);
+
+  // Create logs directory for headless mode
+  if (terminal === "headless" || terminal === "tmux") {
+    const logsDir = join(options.octopaiDir, "logs");
+    await mkdir(logsDir, { recursive: true });
+  }
 
   // Get the agent command
   const agentCommand = getAgentCommand(options.agent, options);
