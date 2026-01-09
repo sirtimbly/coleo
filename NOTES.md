@@ -14,10 +14,13 @@ An AI coding agent orchestrator using the **Octopus Model** - distributed autono
 | Language | Bun/TypeScript | Fast iteration, familiar tooling |
 | Human-Agent comms | Email/Mailbox (.eml files) | Async, threaded, familiar, works with existing luk/himalaya |
 | Agent-Agent comms | File-based message queue | No DB needed, git-friendly |
-| Git backend | Local Gitea instance | Self-hosted, familiar, good API |
+| Git backend | Local Gitea (Docker) | Self-hosted, familiar, good API |
 | Initial interface | CLI → TUI → Web | Progressive enhancement |
 | Brain process | Polling (cron/interval) | User can watch changes, see logs, predictable |
 | Tentacle lifecycle | Long-running | Learn over time, accumulate notes, share discoveries |
+| Agent integration | MCP + Terminal | Agents run in own terminal, communicate via MCP |
+| Mail implementation | Pure Maildir | No deps, archived when done, compressible |
+| Initial agents | OpenCode, Claude Code | Both support MCP |
 
 ---
 
@@ -224,16 +227,159 @@ Brain picks up messages, processes them, and either:
 
 ---
 
+## Tentacle Architecture: MCP + Terminal
+
+Each tentacle is an AI agent running in its own terminal window, communicating via **MCP (Model Context Protocol)**.
+
+### Why MCP?
+
+MCP is Anthropic's open protocol for connecting AI agents to external tools/resources:
+- **Standardized** - Same protocol works for Claude Code, OpenCode, and others
+- **Bidirectional** - Brain can send tasks, tentacles can request resources
+- **Tool exposure** - Brain exposes tools that tentacles can call
+- **Future-proof** - New agents just need MCP support
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Your Desktop                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
+│  │  Terminal 1 │  │  Terminal 2 │  │  Terminal 3 │         │
+│  │             │  │             │  │             │         │
+│  │  opencode   │  │ claude-code │  │  opencode   │         │
+│  │  (t1)       │  │  (t2)       │  │  (t3)       │         │
+│  │             │  │             │  │             │         │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘         │
+│         │                │                │                 │
+│         └────────────────┼────────────────┘                 │
+│                          │                                  │
+│                    MCP Protocol                             │
+│                    (stdio/SSE)                              │
+│                          │                                  │
+│                   ┌──────▼──────┐                           │
+│                   │             │                           │
+│                   │   Octopai   │                           │
+│                   │   Brain     │                           │
+│                   │   (MCP      │                           │
+│                   │   Server)   │                           │
+│                   │             │                           │
+│                   └──────┬──────┘                           │
+│                          │                                  │
+│                   ┌──────▼──────┐                           │
+│                   │  ~/.octopai │                           │
+│                   │  /mail/     │◄──── himalaya/luk         │
+│                   └─────────────┘                           │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### MCP Tools Exposed by Brain
+
+The brain runs as an MCP server, exposing these tools to tentacles:
+
+```typescript
+// Tools tentacles can call
+{
+  "claim_task": {
+    "description": "Claim a task from the queue",
+    "parameters": { "task_id": "string" }
+  },
+  "complete_task": {
+    "description": "Mark a task as complete",
+    "parameters": { "task_id": "string", "summary": "string", "artifacts": "array" }
+  },
+  "report_discovery": {
+    "description": "Report something interesting found",
+    "parameters": { "kind": "string", "details": "object" }
+  },
+  "request_approval": {
+    "description": "Ask human for approval before proceeding",
+    "parameters": { "action": "string", "context": "string" }
+  },
+  "share_note": {
+    "description": "Share a learning with other tentacles",
+    "parameters": { "title": "string", "content": "string", "tags": "array" }
+  },
+  "get_notes": {
+    "description": "Get shared notes on a topic",
+    "parameters": { "tags": "array" }
+  }
+}
+```
+
+### MCP Resources Exposed by Brain
+
+```typescript
+{
+  "octopai://tasks/pending": "List of tasks available to claim",
+  "octopai://tasks/mine": "Tasks assigned to this tentacle",
+  "octopai://notes/shared": "Shared knowledge base",
+  "octopai://status": "Current system status"
+}
+```
+
+### Tentacle Startup
+
+When you spawn a tentacle:
+
+```bash
+octopai tentacle spawn --agent opencode --name explorer
+```
+
+Octopai:
+1. Opens a new terminal window (Ghostty, iTerm2, etc.)
+2. Configures the agent's MCP settings to connect to brain
+3. Starts the agent with an initial prompt/context
+4. Registers tentacle in state
+
+The agent config (e.g., `~/.opencode/config.json`) includes:
+```json
+{
+  "mcpServers": {
+    "octopai": {
+      "command": "octopai",
+      "args": ["mcp", "serve"],
+      "env": {
+        "OCTOPAI_TENTACLE_ID": "t1"
+      }
+    }
+  }
+}
+```
+
+### Terminal Management
+
+Options for opening terminals:
+
+**macOS:**
+```bash
+# Ghostty
+ghostty -e "opencode --mcp-config ..."
+
+# iTerm2
+osascript -e 'tell application "iTerm2" to create window with default profile command "opencode ..."'
+
+# Terminal.app
+open -a Terminal "opencode ..."
+```
+
+Tentacles run visibly - you can watch them work, or minimize/hide the windows.
+
+---
+
 ## Tentacle Specializations
 
 Each tentacle wraps an AI coding agent with specific tool access:
 
-| Tentacle | Agent | Tools | Specialty |
-|----------|-------|-------|-----------|
-| t1 | claude | test runner, linter | Quality assurance |
-| t2 | opencode | type checker, docs | Documentation & types |
-| t3 | codex | git, build system | Integration & deployment |
-| t4 | (future) | browser, API client | E2E testing |
+| Tentacle | Agent | MCP Tools | Specialty |
+|----------|-------|-----------|-----------|
+| explorer | opencode | glob, grep, read | Codebase exploration, answering questions |
+| coder | claude-code | edit, write, bash | Making changes, fixing bugs |
+| reviewer | opencode | git, test, lint | Code review, quality checks |
+| researcher | claude-code | webfetch, read | Documentation, API research |
 
 Tentacles can be added/removed dynamically. The brain adapts.
 
@@ -337,20 +483,69 @@ Then you manage agent communication through the same luk TUI you use for regular
 
 ---
 
-## Gitea Integration
+## Gitea Integration (Docker)
 
-Local Gitea instance for:
-1. **Issue tracking** - Agents create/update issues
-2. **Pull requests** - Tentacles open PRs for review
-3. **Code review** - Brain aggregates PR feedback
-4. **Worktrees** - Each tentacle works in isolated worktree
+Local Gitea instance for agent collaboration:
+
+### Docker Compose Setup
+
+```yaml
+# docker-compose.yml
+services:
+  gitea:
+    image: gitea/gitea:latest
+    container_name: octopai-gitea
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__server__ROOT_URL=http://localhost:3000
+      - GITEA__server__HTTP_PORT=3000
+    restart: unless-stopped
+    volumes:
+      - ./gitea-data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3000:3000"
+      - "2222:22"
+```
+
+### Usage
+
+```bash
+# Start Gitea
+octopai gitea up
+
+# Stop Gitea  
+octopai gitea down
+
+# Open Gitea UI
+octopai gitea open  # Opens http://localhost:3000
+```
+
+### Agent Workflow with Gitea
+
+1. **Brain creates issue** in Gitea when task arrives
+2. **Tentacle claims issue** (assigns to self)
+3. **Tentacle creates branch** and worktree for isolation
+4. **Tentacle works** in isolated worktree
+5. **Tentacle opens PR** when done
+6. **Brain reviews** or requests human review
+7. **PR merged** → Issue closed → Archive mail thread
+
+### Configuration
 
 ```toml
 # ~/.octopai/config.toml
 [gitea]
 url = "http://localhost:3000"
-token = "..."
-org = "octopai"
+token = "..."  # Generated on first setup
+default_org = "octopai"
+default_repo = "workspace"
+
+[gitea.labels]
+tentacle = ["t1", "t2", "t3"]  # Auto-created labels
+priority = ["critical", "high", "normal", "low"]
 ```
 
 ---
@@ -422,17 +617,61 @@ Periodically (or on shutdown), tentacles consolidate learnings:
 
 ---
 
+## Mail Lifecycle & Archiving
+
+Messages flow through Maildir folders with eventual compression:
+
+```
+~/.octopai/mail/
+├── inbox/
+│   ├── new/        # Unread messages from agents
+│   ├── cur/        # Read messages (moved by mail client)
+│   └── tmp/        # Temp files during write
+├── sent/           # Your replies (brain reads these)
+├── drafts/         # WIP replies
+└── archive/
+    ├── 2026-01/    # Archived by month
+    ├── 2026-02/
+    └── summaries/  # Compressed context summaries
+```
+
+### Archive Flow
+
+1. **Active**: Messages in inbox/cur and sent/
+2. **Completed**: When task finishes, brain moves thread to archive/YYYY-MM/
+3. **Compressed**: Weekly job summarizes old threads into context summaries
+
+### Context Summaries
+
+Old mail threads are compressed into structured summaries:
+
+```json
+// ~/.octopai/mail/archive/summaries/2026-W02.json
+{
+  "week": "2026-W02",
+  "threads": [
+    {
+      "id": "task-add-dark-mode",
+      "subject": "Add dark mode support",
+      "tentacle": "t2",
+      "outcome": "completed",
+      "summary": "Added dark mode toggle using CSS variables. Created 3 new files, modified 5. All tests passing.",
+      "learnings": ["CSS variables work better than Tailwind dark: prefix for this codebase"],
+      "artifacts": ["commit:abc123", "pr:42"]
+    }
+  ]
+}
+```
+
+These summaries can be fed back to tentacles as context without the full mail history.
+
+---
+
 ## Open Questions
 
-1. **Himalaya vs custom mail handler**: Use himalaya CLI or implement Maildir directly in TypeScript?
-   - himalaya: Battle-tested, but another dependency
-   - Native: More control, fewer moving parts
-
-2. **Initial agents**: Start with claude (via opencode?) or support multiple from day one?
-
-3. **Note format**: Markdown files vs structured JSON vs hybrid?
-
-4. **Context persistence**: How much conversation history to keep per tentacle?
+1. **Note format**: Markdown files vs structured JSON vs hybrid?
+2. **Context persistence**: How much conversation history to keep per tentacle?
+3. **Archive retention**: How long to keep raw mail before compression?
 
 ---
 
@@ -440,13 +679,17 @@ Periodically (or on shutdown), tentacles consolidate learnings:
 
 1. [x] Decide architecture (octopus model)
 2. [x] Decide language (Bun/TypeScript)
-3. [x] Decide comms model (mailbox + file queue)
-4. [ ] Set up project structure (`bun init`)
-5. [ ] Implement Maildir writer (brain → human mail)
-6. [ ] Implement queue reader/writer (tentacle ↔ brain)
-7. [ ] Implement basic brain loop (read mail, read queue, respond)
-8. [ ] Implement first tentacle wrapper (spawn claude, capture output)
-9. [ ] CLI commands for status/control
+3. [x] Decide comms model (mailbox + MCP + file queue)
+4. [x] Decide agent integration (MCP protocol)
+5. [x] Decide mail implementation (pure Maildir)
+6. [x] Decide git backend (Gitea in Docker)
+7. [ ] Set up project structure (`bun init`)
+8. [ ] Create docker-compose.yml for Gitea
+9. [ ] Implement Maildir reader/writer
+10. [ ] Implement MCP server (brain exposes tools to tentacles)
+11. [ ] Implement brain polling loop
+12. [ ] Implement tentacle spawner (open terminal, configure agent)
+13. [ ] CLI commands for control
 
 ---
 
@@ -458,3 +701,5 @@ Periodically (or on shutdown), tentacles consolidate learnings:
 - [luk](../luk/) - Your existing mail/task TUI
 - [himalaya](https://github.com/pimalaya/himalaya) - CLI email client
 - [Maildir format](https://en.wikipedia.org/wiki/Maildir) - Email storage format
+- [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) - Anthropic's agent protocol
+- [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Official TS implementation
