@@ -16,6 +16,8 @@ An AI coding agent orchestrator using the **Octopus Model** - distributed autono
 | Agent-Agent comms | File-based message queue | No DB needed, git-friendly |
 | Git backend | Local Gitea instance | Self-hosted, familiar, good API |
 | Initial interface | CLI → TUI → Web | Progressive enhancement |
+| Brain process | Polling (cron/interval) | User can watch changes, see logs, predictable |
+| Tentacle lifecycle | Long-running | Learn over time, accumulate notes, share discoveries |
 
 ---
 
@@ -237,14 +239,59 @@ Tentacles can be added/removed dynamically. The brain adapts.
 
 ---
 
+## Brain Polling Loop
+
+The brain runs on an interval (configurable, default 30s):
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Brain Poll Cycle                      │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  1. Check ~/.octopai/mail/sent/ for new human messages  │
+│     └─> Parse intent, create tasks                      │
+│                                                         │
+│  2. Check ~/.octopai/queue/brain/pending/ for tentacle  │
+│     messages                                            │
+│     └─> Process discoveries, requests, completions      │
+│                                                         │
+│  3. Check tentacle status (are they alive? stuck?)      │
+│     └─> Restart if needed, reassign work               │
+│                                                         │
+│  4. Assign pending tasks to available tentacles         │
+│     └─> Write to ~/.octopai/queue/tentacles/<id>/      │
+│                                                         │
+│  5. Generate status digest if significant changes       │
+│     └─> Write to ~/.octopai/mail/inbox/new/            │
+│                                                         │
+│  6. Log cycle summary                                   │
+│     └─> ~/.octopai/logs/brain.log                      │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+User can watch with:
+```bash
+octopai brain run              # Foreground, see each cycle
+octopai brain run --interval 10  # Faster polling
+tail -f ~/.octopai/logs/brain.log  # Watch logs
+```
+
+---
+
 ## CLI Commands (v0.1)
 
 ```bash
 # Initialize octopai in current directory
 octopai init
 
-# Start the brain (background daemon)
-octopai brain start
+# Run brain (foreground for visibility)
+octopai brain run              # Run polling loop, ctrl+c to stop
+octopai brain run --interval 10  # Poll every 10 seconds
+octopai brain run --once       # Single poll cycle, then exit
+
+# Background mode (later)
+octopai brain start            # Daemon mode
 octopai brain stop
 octopai brain status
 
@@ -308,21 +355,84 @@ org = "octopai"
 
 ---
 
+## Learning Tentacles
+
+Since tentacles are **long-running**, they accumulate knowledge over time:
+
+### Personal Notes
+Each tentacle maintains its own notes in `~/.octopai/state/tentacles/<id>/notes/`:
+
+```
+~/.octopai/state/tentacles/t1/
+├── notes/
+│   ├── codebase.md          # What I've learned about this codebase
+│   ├── patterns.md          # Patterns I've noticed
+│   ├── gotchas.md           # Things that tripped me up
+│   └── tools.md             # Useful commands/scripts I've discovered
+├── context.json             # Current conversation context
+└── history.jsonl            # Task history for reflection
+```
+
+### Note Sharing
+Tentacles can share discoveries with each other via the brain:
+
+```json
+{
+  "from": "t1",
+  "to": "brain",
+  "type": "share_note",
+  "payload": {
+    "title": "Auth module requires specific test order",
+    "content": "Tests in auth.spec.ts must run sequentially...",
+    "tags": ["testing", "auth", "gotcha"],
+    "share_with": ["all"]  // or specific tentacle IDs
+  }
+}
+```
+
+Brain distributes shared notes to relevant tentacles.
+
+### Tool Discovery
+When a tentacle discovers a useful command or script:
+
+```json
+{
+  "from": "t2", 
+  "to": "brain",
+  "type": "tool_discovery",
+  "payload": {
+    "name": "quick-typecheck",
+    "command": "bun run tsc --noEmit --incremental",
+    "description": "Fast typecheck using incremental compilation",
+    "context": "Use this instead of full build for type errors"
+  }
+}
+```
+
+Brain can:
+1. Add to shared toolbox
+2. Notify human of discovery
+3. Suggest to other tentacles
+
+### Memory Consolidation
+Periodically (or on shutdown), tentacles consolidate learnings:
+- Summarize task history into patterns
+- Prune outdated notes
+- Identify recurring issues → suggest automation
+
+---
+
 ## Open Questions
 
-1. **Brain implementation**: Should the brain be a persistent process or triggered on mail/queue changes?
-   - Daemon: Always running, immediate response
-   - Triggered: Start on new mail/queue item, stop when idle (saves resources)
-
-2. **Tentacle lifecycle**: Long-running or spawn-per-task?
-   - Long-running: Maintains context, faster response
-   - Spawn-per-task: Cleaner state, better isolation
-
-3. **Himalaya vs custom mail handler**: Use himalaya CLI or implement Maildir directly in TypeScript?
+1. **Himalaya vs custom mail handler**: Use himalaya CLI or implement Maildir directly in TypeScript?
    - himalaya: Battle-tested, but another dependency
    - Native: More control, fewer moving parts
 
-4. **Initial agents**: Start with claude (via opencode?) or support multiple from day one?
+2. **Initial agents**: Start with claude (via opencode?) or support multiple from day one?
+
+3. **Note format**: Markdown files vs structured JSON vs hybrid?
+
+4. **Context persistence**: How much conversation history to keep per tentacle?
 
 ---
 
