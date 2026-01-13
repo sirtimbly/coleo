@@ -1,0 +1,602 @@
+# API Design
+
+The Observatory exposes a REST API and WebSocket for real-time updates. All endpoints require authentication via a shared API key.
+
+## Authentication
+
+All requests must include the API key in the header:
+
+```
+X-API-Key: your-shared-secret
+```
+
+## Arm API Isolation
+
+**Critical**: Arms must NOT have direct access to the Observatory API. If arms could call these endpoints with curl, they could:
+- Kill other arms (`DELETE /api/arms/:id`)
+- Override the brain (`POST /api/brain/stop`)
+- Approve their own proposals (`POST /api/approvals/:id/approve`)
+- Manipulate reputation scores
+
+### Isolation Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    API ACCESS MODEL                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  Human (Browser/CLI)                                         │
+│     │                                                        │
+│     │ X-API-Key: human-secret                                │
+│     ▼                                                        │
+│  Observatory API (Full Access)                               │
+│     │                                                        │
+│     │                                                        │
+│  Brain                                                       │
+│     │                                                        │
+│     │ MCP Protocol (not HTTP)                                │
+│     ▼                                                        │
+│  Arms (MCP Access Only)                                      │
+│     │                                                        │
+│     ✗ No HTTP access to Observatory                          │
+│     ✗ No API key                                             │
+│     ✗ Network blocked to localhost:observatory-port          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### How Arms Communicate
+
+Arms communicate ONLY through MCP, not HTTP:
+
+```typescript
+// Arms use MCP tools, NOT curl
+// WRONG - arm should never do this:
+// curl -X DELETE http://localhost:8080/api/arms/other-arm
+
+// RIGHT - arm uses MCP to request action:
+await mcp.call("brain.request", {
+  action: "pause_arm",
+  target: "other-arm",
+  reason: "Detected conflict in shared file",
+});
+// Brain validates, logs, and may reject the request
+```
+
+### Network Isolation
+
+Arms are blocked from accessing the Observatory:
+
+```typescript
+const ARM_BLOCKED_HOSTS = [
+  "localhost:8080",           // Observatory API
+  "127.0.0.1:8080",
+  "observatory",              // Docker network name
+  "host.docker.internal:8080",
+];
+
+// In Docker, use network policies
+// In local dev, use firewall rules or process sandboxing
+```
+
+### Scoped API Keys (Future)
+
+For production, implement scoped keys:
+
+```typescript
+interface APIKeyScope {
+  key: string;
+  type: "human" | "service" | "readonly";
+  permissions: Permission[];
+  armId?: string;              // If service key, which arm
+}
+
+type Permission = 
+  | "arms:read" | "arms:write" | "arms:kill"
+  | "proposals:read" | "proposals:write" | "proposals:resolve"
+  | "deploy:read" | "deploy:request" | "deploy:approve"
+  | "brain:control"
+  | "*";                       // Human admin only
+
+const HUMAN_KEY: APIKeyScope = {
+  key: "human-admin-key",
+  type: "human",
+  permissions: ["*"],
+};
+
+const READONLY_KEY: APIKeyScope = {
+  key: "dashboard-readonly",
+  type: "readonly",
+  permissions: ["arms:read", "proposals:read", "deploy:read"],
+};
+```
+
+### Request Validation
+
+All arm-affecting requests are validated:
+
+```typescript
+async function validateArmAction(
+  request: Request,
+  action: string,
+  targetArmId?: string
+): Promise<ValidationResult> {
+  const key = request.headers.get("X-API-Key");
+  const scope = await getKeyScope(key);
+  
+  // Check if this is an arm trying to act on itself or others
+  if (scope.type === "service" && scope.armId) {
+    // Arms cannot kill other arms directly
+    if (action === "arms:kill" && targetArmId !== scope.armId) {
+      return { allowed: false, reason: "Arms cannot kill other arms" };
+    }
+    // Arms cannot approve proposals
+    if (action === "proposals:resolve") {
+      return { allowed: false, reason: "Arms cannot resolve proposals" };
+    }
+  }
+  
+  return { allowed: scope.permissions.includes(action) || scope.permissions.includes("*") };
+}
+```
+
+## REST Endpoints
+
+### System
+
+```http
+GET /api/status
+```
+Returns overall system status.
+
+```json
+{
+  "brain": { "status": "running", "uptime": 3600 },
+  "arms": { "total": 5, "active": 3, "paused": 1 },
+  "proposals": { "open": 2, "pending_human": 1 },
+  "garden": { "files": 1234, "conflicts": 0 }
+}
+```
+
+```http
+GET /api/health
+```
+Health check endpoint (no auth required).
+
+---
+
+### Brain
+
+```http
+GET /api/brain
+```
+Get brain state.
+
+```http
+POST /api/brain/start
+```
+Start the brain if stopped.
+
+```http
+POST /api/brain/stop
+```
+Stop the brain gracefully.
+
+---
+
+### Arms
+
+```http
+GET /api/arms
+```
+List all arms.
+
+```json
+{
+  "arms": [
+    {
+      "id": "ui-arm",
+      "name": "UI Specialist",
+      "domain": "ui",
+      "status": "working",
+      "reputation": 75,
+      "contextUtilization": 0.65
+    }
+  ]
+}
+```
+
+```http
+POST /api/arms
+```
+Spawn a new arm.
+
+```json
+{
+  "name": "Test Runner",
+  "agent": "opencode",
+  "domain": "testing",
+  "workdir": "/path/to/project"
+}
+```
+
+```http
+GET /api/arms/:id
+```
+Get arm details.
+
+```http
+DELETE /api/arms/:id
+```
+Kill an arm.
+
+```http
+PATCH /api/arms/:id
+```
+Update arm configuration.
+
+```http
+GET /api/arms/:id/context
+```
+Get arm's current context (files, tokens).
+
+```http
+GET /api/arms/:id/activity
+```
+Get arm's activity log.
+
+```http
+POST /api/arms/:id/pause
+```
+Pause an arm.
+
+```http
+POST /api/arms/:id/resume
+```
+Resume a paused arm.
+
+---
+
+### Garden
+
+```http
+GET /api/garden
+```
+Get full garden topology (3D coordinates for all files).
+
+```json
+{
+  "nodes": [
+    {
+      "path": "src/components/Button.tsx",
+      "type": "file",
+      "coords": { "x": 15, "y": 45, "z": 30 },
+      "owner": "ui-arm",
+      "lastTouchedBy": "ui-arm",
+      "lastTouchedAt": "2024-01-15T10:30:00Z",
+      "conflictZone": false
+    }
+  ]
+}
+```
+
+```http
+GET /api/garden/tree
+```
+Get file tree with ownership markers.
+
+```http
+GET /api/garden/claims
+```
+Get all active file claims.
+
+```http
+GET /api/garden/conflicts
+```
+Get current conflict zones.
+
+```http
+GET /api/garden/activity
+```
+Get recent file touch activity.
+
+```json
+{
+  "activity": [
+    {
+      "path": "src/api/users.ts",
+      "armId": "api-arm",
+      "action": "write",
+      "timestamp": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Proposals
+
+```http
+GET /api/proposals
+```
+List proposals with optional filters.
+
+Query params:
+- `status`: "open" | "accepted" | "rejected" | "all"
+- `type`: Proposal type
+- `author`: Arm ID
+
+```http
+POST /api/proposals
+```
+Create a new proposal (usually done by arms, but can be human-initiated).
+
+```http
+GET /api/proposals/:id
+```
+Get proposal details including arguments and signals.
+
+```http
+POST /api/proposals/:id/argue
+```
+Add an argument to a proposal.
+
+```json
+{
+  "position": "for",
+  "content": "This change improves performance by 40%",
+  "evidence": ["benchmark-results.json"]
+}
+```
+
+```http
+POST /api/proposals/:id/signal
+```
+Add a signal (support/opposition).
+
+```json
+{
+  "weight": 75,
+  "reason": "Looks good, tests pass"
+}
+```
+
+```http
+POST /api/proposals/:id/resolve
+```
+Human resolves an undecided proposal.
+
+```json
+{
+  "decision": "accept",
+  "reason": "Approving despite mixed signals"
+}
+```
+
+---
+
+### Approvals
+
+```http
+GET /api/approvals
+```
+List pending human approvals.
+
+```http
+POST /api/approvals/:id/approve
+```
+Approve a pending request.
+
+```http
+POST /api/approvals/:id/reject
+```
+Reject a pending request.
+
+```json
+{
+  "reason": "Not ready for production yet"
+}
+```
+
+---
+
+### Deployments
+
+```http
+GET /api/deployments
+```
+Get deployment history.
+
+```http
+POST /api/deployments
+```
+Request a deployment.
+
+```json
+{
+  "environment": "staging",
+  "ref": "main",
+  "reason": "Weekly release"
+}
+```
+
+```http
+GET /api/deployments/:id
+```
+Get deployment status.
+
+---
+
+### Notifications
+
+```http
+POST /api/notifications/subscribe
+```
+Subscribe to push notifications.
+
+```json
+{
+  "endpoint": "https://fcm.googleapis.com/...",
+  "keys": {
+    "p256dh": "...",
+    "auth": "..."
+  }
+}
+```
+
+```http
+DELETE /api/notifications/subscribe
+```
+Unsubscribe from push notifications.
+
+```http
+GET /api/notifications/vapid
+```
+Get VAPID public key for push subscription.
+
+---
+
+### Config
+
+```http
+GET /api/config
+```
+Get system configuration.
+
+```http
+PATCH /api/config
+```
+Update system configuration.
+
+---
+
+## WebSocket
+
+Connect to `/ws` for real-time updates.
+
+### Client → Server Messages
+
+```typescript
+// Subscribe to channels
+{
+  "type": "subscribe",
+  "channels": ["arms", "garden", "proposals"]
+}
+
+// Unsubscribe
+{
+  "type": "unsubscribe", 
+  "channels": ["garden"]
+}
+```
+
+### Server → Client Messages
+
+```typescript
+{
+  "channel": "arms",
+  "event": "arm.status",
+  "data": {
+    "armId": "ui-arm",
+    "status": "working",
+    "task": "Implementing dark mode toggle"
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+### Channels
+
+| Channel | Events |
+|---------|--------|
+| `arms` | `arm.spawned`, `arm.status`, `arm.activity`, `arm.killed`, `arm.paused` |
+| `garden` | `garden.claim`, `garden.touch`, `garden.conflict`, `garden.release` |
+| `proposals` | `proposal.new`, `proposal.argue`, `proposal.signal`, `proposal.resolved` |
+| `activity` | All events (firehose) |
+| `approvals` | `approval.new`, `approval.resolved` |
+| `deploy` | `deploy.requested`, `deploy.consensus`, `deploy.started`, `deploy.completed`, `deploy.failed` |
+
+---
+
+## Push Notifications
+
+Using the Web Push API with VAPID for browser push notifications.
+
+### Payload Structure
+
+```typescript
+interface PushPayload {
+  title: string;
+  body: string;
+  icon?: string;
+  tag?: string;           // For replacing/grouping
+  data?: {
+    url?: string;         // URL to open on click
+    proposalId?: string;
+    approvalId?: string;
+  };
+}
+```
+
+### Push Triggers
+
+| Event | Priority | Payload |
+|-------|----------|---------|
+| Human approval needed | High | Link to approval page |
+| Deployment to prod ready | High | Link to deployment |
+| Arm misbehavior detected | High | Link to arm details |
+| Proposal stalled | Medium | Link to proposal |
+| Deployment completed | Low | Status summary |
+
+### Example Push
+
+```json
+{
+  "title": "Approval Needed",
+  "body": "Deploy to production requires your approval",
+  "icon": "/icons/octopai.png",
+  "tag": "approval-123",
+  "data": {
+    "url": "/approvals/123",
+    "approvalId": "123"
+  }
+}
+```
+
+---
+
+## Error Responses
+
+All errors follow this format:
+
+```json
+{
+  "error": {
+    "code": "ARM_NOT_FOUND",
+    "message": "Arm with ID 'xyz' not found",
+    "details": {}
+  }
+}
+```
+
+### Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `UNAUTHORIZED` | 401 | Invalid or missing API key |
+| `FORBIDDEN` | 403 | Action not permitted |
+| `NOT_FOUND` | 404 | Resource not found |
+| `CONFLICT` | 409 | Resource state conflict |
+| `VALIDATION_ERROR` | 422 | Invalid request body |
+| `INTERNAL_ERROR` | 500 | Server error |
+
+---
+
+## Rate Limiting
+
+| Endpoint | Limit |
+|----------|-------|
+| `/api/*` | 100 requests/minute |
+| `/ws` | 1 connection per client |
+| Push notifications | 10/minute per subscription |

@@ -12,10 +12,14 @@
     "dev": "bun run src/cli/index.ts",
     "brain": "bun run src/cli/index.ts brain run",
     "build": "bun build src/cli/index.ts --outdir dist --target node",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "vitepress": "^1.6.4"
   },
   "peerDependencies": {
     "typescript": "^5"

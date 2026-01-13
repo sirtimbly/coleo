@@ -39,3 +39,4 @@ gitea-data/
 # Octopai runtime state (user-specific)
 # Uncomment if you want to ignore local state
 # ~/.octopai/
+docs/.vitepress
