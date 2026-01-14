@@ -48,11 +48,12 @@ async function runMigrations(db: Database): Promise<void> {
     ["003_add_claims", MIGRATION_003],
     ["004_arm_personality", MIGRATION_004],
     ["005_tick_based_timeouts", MIGRATION_005],
-    ["006_arm_spawn_fields", MIGRATION_006],
-    ["007_fix_status_constraint", MIGRATION_007],
-    ["008_arm_heartbeat", MIGRATION_008],
-    ["009_file_subscriptions", MIGRATION_009],
-  ];
+  ["006_arm_spawn_fields", MIGRATION_006],
+  ["007_fix_status_constraint", MIGRATION_007],
+  ["008_arm_heartbeat", MIGRATION_008],
+  ["009_file_subscriptions", MIGRATION_009],
+  ["010_tasks_table", MIGRATION_010],
+];
 
   // Apply pending migrations
   for (const [name, sql] of migrations) {
@@ -317,6 +318,83 @@ CREATE TABLE IF NOT EXISTS file_changes (
 
 CREATE INDEX IF NOT EXISTS idx_file_changes_path ON file_changes(file_path);
 CREATE INDEX IF NOT EXISTS idx_file_changes_time ON file_changes(changed_at DESC);
+`;
+
+// Migration 010: Tasks table for structured task management
+const MIGRATION_010 = `
+-- Tasks table: structured task management with source tracking
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  subject TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'in_progress', 'completed', 'failed', 'blocked', 'cancelled')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('critical', 'high', 'normal', 'low')),
+  source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'plan', 'email', 'discovery', 'proposal')),
+  source_ref TEXT, -- Reference to source (e.g., plan.md section, email thread ID)
+  phase TEXT, -- Project phase (Phase 1, Phase 2, etc.)
+  domain TEXT, -- Preferred arm domain (frontend, backend, docs, etc.)
+  assigned_to TEXT, -- arm_id
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  claimed_at TEXT,
+  started_at TEXT,
+  due_date TEXT,
+  artifacts TEXT DEFAULT '[]', -- JSON array of related artifacts
+  metadata TEXT DEFAULT '{}', -- Additional metadata (e.g., from plan parsing)
+  FOREIGN KEY (assigned_to) REFERENCES arms(id) ON DELETE SET NULL
+);
+
+-- Task dependencies (for tracking task relationships)
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  depends_on_task_id TEXT NOT NULL,
+  dependency_type TEXT DEFAULT 'finish_to_start' CHECK (dependency_type IN ('finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, depends_on_task_id)
+);
+
+-- Project plan tracking
+CREATE TABLE IF NOT EXISTS project_phases (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned', 'in_progress', 'completed', 'blocked', 'cancelled')),
+  start_date TEXT,
+  target_date TEXT,
+  completed_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Plan file tracking (for auto-updating tasks from plan.md)
+CREATE TABLE IF NOT EXISTS plan_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL UNIQUE,
+  last_parsed_at TEXT,
+  last_hash TEXT, -- Hash of file content at last parse
+  parse_errors TEXT DEFAULT '[]',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id);
+
+-- Config for task discovery
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('task_auto_discover', 'true'),
+  ('task_plan_glob_pattern', '.project/plan.md'),
+  ('task_todo_glob_pattern', '**/*.todo.md');
 `;
 
 /**

@@ -7,7 +7,7 @@
 
 import { Command } from "commander";
 import { join, dirname } from "path";
-import { mkdir, writeFile, readFile, copyFile, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, copyFile, readdir, symlink, unlink } from "fs/promises";
 import { homedir } from "os";
 import { Brain } from "../brain";
 import { initMaildir, Maildir } from "../mail";
@@ -122,27 +122,70 @@ program
     // Copy arm templates
     await copyArmTemplates(octopaiDir, preset);
 
-    console.log(`
-Octopai initialized!
+    // Create octopai symlink in /usr/local/bin for easy access
+    const octopaiScriptPath = join(octopaiDir, "bin", "octopai");
+    await mkdir(join(octopaiDir, "bin"), { recursive: true });
+    await writeFile(
+      octopaiScriptPath,
+      `#!/bin/bash
+# Octopai CLI wrapper - runs from source directory
+cd "${process.cwd()}"
+exec bun run src/cli/index.ts "$@"
+`,
+      "utf-8"
+    );
 
-Directory structure created:
-  ${octopaiDir}/
-  ├── mail/          # Human-agent communication (Maildir)
-  ├── queue/         # Inter-agent message queue
-  ├── state/         # Persistent state
-  ├── arms/          # Arm configurations
-  ├── mcp/           # MCP configurations
-  └── logs/          # Log files
+    // Make script executable (using spawn with chmod since fs.chmod might not be available)
+    const { spawn } = await import("node:child_process");
+    await new Promise<void>((resolve, reject) => {
+      spawn("chmod", ["+x", octopaiScriptPath]).on("close", (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`chmod failed with code ${code}`));
+      });
+    });
+
+    // Try to create symlink in /usr/local/bin (may fail if not writable)
+    let symlinkPath = "";
+    try {
+      symlinkPath = "/usr/local/bin/octopai";
+      await symlink(octopaiScriptPath, symlinkPath);
+    } catch {
+      // Not writable, try ~/bin
+      try {
+        const userBin = join(homedir(), "bin");
+        await mkdir(userBin, { recursive: true });
+        symlinkPath = join(userBin, "octopai");
+        await symlink(octopaiScriptPath, symlinkPath);
+      } catch {
+        symlinkPath = ""; // Could not create symlink
+      }
+    }
+
+    const symlinkInfo = symlinkPath ? `\n  ✓ Symlink created: ${symlinkPath}` : "";
+    const scriptInfo = `\n  ✓ CLI wrapper: ${octopaiScriptPath}`;
+
+    console.log(`
+ Octopai initialized!
+
+ Directory structure created:
+   ${octopaiDir}/
+   ├── mail/          # Human-agent communication (Maildir)
+   ├── queue/         # Inter-agent message queue
+   ├── state/         # Persistent state
+   ├── arms/          # Arm configurations
+   ├── mcp/           # MCP configurations
+   └── logs/          # Log files
 
 ${preset ? `Preset "${preset}" arms have been configured in ~/.octopai/arms/` : ""}
-Edit or delete arm configs in ~/.octopai/arms/ before spawning.
+${scriptInfo}${symlinkInfo}
+ Edit or delete arm configs in ~/.octopai/arms/ before spawning.
 
-Next steps:
-  1. Configure your mail client to read from ${octopaiDir}/mail/inbox
-  2. Configure arms: edit ~/.octopai/arms/*.toml
-  3. Start the API server: octopai serve
-  4. Spawn an arm: octopai arm spawn --name <name> --agent opencode
-`);
+ Next steps:
+   1. Configure your mail client to read from ${octopaiDir}/mail/inbox
+   2. Configure arms: edit ~/.octopai/arms/*.toml
+   3. Start the API server: octopai serve
+   4. Spawn an arm: octopai arm spawn --name <name> --agent opencode
+ `);
   });
 
 // ============================================
@@ -997,6 +1040,188 @@ mcpCmd
   .description("Run the MCP server (used by arms)")
   .action(async () => {
     await runMcpServer();
+  });
+
+// ============================================
+// TASKS COMMAND
+// ============================================
+
+const tasksCmd = program.command("tasks").description("Manage tasks");
+
+tasksCmd
+  .command("sync")
+  .description("Sync tasks from project plan files (.project/plan.md)")
+  .option("-v, --verbose", "Show detailed output", false)
+  .action(async (options) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+
+    try {
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(dbPath, { readwrite: true });
+
+      // Enable task auto-discover if not already set
+      const autoDiscover = db.query("SELECT value FROM config WHERE key = ?").get("task_auto_discover") as { value: string } | null;
+      if (!autoDiscover) {
+        db.run("INSERT INTO config (key, value) VALUES (?, ?)", ["task_auto_discover", "true"]);
+      }
+
+      // Import plan parser
+      const { findPlanFiles, parsePlanFile, tasksToDatabaseFormat } = await import("../brain/plan-parser");
+
+      // Find plan files
+      const projectRoot = process.cwd();
+      const planFiles = await findPlanFiles(projectRoot);
+
+      if (planFiles.length === 0) {
+        console.log("No plan files found.");
+        console.log("Expected: .project/plan.md or **/*.plan.md");
+        db.close();
+        return;
+      }
+
+      console.log(`Found ${planFiles.length} plan file(s):`);
+      for (const f of planFiles) {
+        console.log(`  - ${f}`);
+      }
+      console.log("");
+
+      let newTasksCount = 0;
+      let updatedTasksCount = 0;
+      let skippedCount = 0;
+
+      for (const filePath of planFiles) {
+        const result = await parsePlanFile(filePath);
+
+        if (result.errors.length > 0) {
+          console.log(`Parse errors in ${filePath}:`);
+          for (const err of result.errors) {
+            console.log(`  - ${err}`);
+          }
+          continue;
+        }
+
+        // Check if file changed
+        const existingFile = db.query("SELECT id, last_hash FROM plan_files WHERE file_path = ?")
+          .get(filePath) as { id: number; last_hash: string } | undefined;
+
+        if (existingFile?.last_hash === result.fileHash) {
+          skippedCount++;
+          if (options.verbose) {
+            console.log(`  Skipped (unchanged): ${filePath}`);
+          }
+          continue;
+        }
+
+        console.log(`Processing: ${filePath}`);
+        console.log(`  Found ${result.tasks.length} task(s), ${result.phases.length} phase(s)`);
+
+        const dbTasks = tasksToDatabaseFormat(result.tasks);
+
+        for (const task of dbTasks) {
+          const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(task.id) as { id: string; status: string } | undefined;
+
+          if (!existing) {
+            db.run(`
+              INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, metadata)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [task.id, task.subject, task.description, task.status, task.priority, task.source_type, task.source_ref, task.phase, task.metadata]);
+            newTasksCount++;
+            if (options.verbose) {
+              console.log(`    + Added: ${task.subject}`);
+            }
+          } else if (existing.status === "pending" && task.status === "completed") {
+            db.run("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", [task.status, new Date().toISOString(), task.id]);
+            updatedTasksCount++;
+            if (options.verbose) {
+              console.log(`    ~ Updated: ${task.subject} (marked complete)`);
+            }
+          }
+        }
+
+        // Update plan file tracking
+        const now = new Date().toISOString();
+        if (existingFile) {
+          db.run("UPDATE plan_files SET last_parsed_at = ?, last_hash = ?, updated_at = ? WHERE id = ?",
+            [now, result.fileHash, now, existingFile.id]);
+        } else {
+          db.run("INSERT INTO plan_files (file_path, last_parsed_at, last_hash, updated_at) VALUES (?, ?, ?, ?)",
+            [filePath, now, result.fileHash, now]);
+        }
+      }
+
+      console.log("\nTask Sync Summary:");
+      console.log(`  New tasks: ${newTasksCount}`);
+      console.log(`  Updated: ${updatedTasksCount}`);
+      console.log(`  Unchanged: ${skippedCount}`);
+      console.log(`  Total plan files: ${planFiles.length}`);
+
+      db.close();
+    } catch (err) {
+      console.error(`Failed to sync tasks: ${err}`);
+      process.exit(1);
+    }
+  });
+
+tasksCmd
+  .command("list")
+  .description("List tasks in database")
+  .option("-s, --status <status>", "Filter by status (pending, claimed, completed)")
+  .option("-n, --limit <n>", "Limit results", "20")
+  .action(async (options) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+
+    try {
+      const { Database } = await import("bun:sqlite");
+      const db = new Database(dbPath, { readonly: true });
+
+      let query = "SELECT id, subject, status, priority, phase FROM tasks";
+      const params: string[] = [];
+
+      if (options.status) {
+        query += " WHERE status = ?";
+        params.push(options.status);
+      }
+
+      query += " ORDER BY created_at DESC LIMIT ?";
+      params.push(options.limit);
+
+      const rows = db.query(query).all(...params) as Array<{
+        id: string;
+        subject: string;
+        status: string;
+        priority: string;
+        phase: string | null;
+      }>;
+
+      if (rows.length === 0) {
+        console.log("No tasks found.");
+        console.log("Run 'octopai tasks sync' to import from plan files.");
+        db.close();
+        return;
+      }
+
+      console.log("Tasks:");
+      console.log("=".repeat(70));
+
+      for (const row of rows) {
+        const statusIcon = row.status === "pending" ? "○" :
+                          row.status === "claimed" ? "◐" :
+                          row.status === "in_progress" ? "◑" : "●";
+        const priorityIcon = row.priority === "critical" ? "🔴" :
+                            row.priority === "high" ? "🟠" :
+                            row.priority === "low" ? "🔵" : "⚪";
+        const phase = row.phase ? ` [${row.phase}]` : "";
+        console.log(`${statusIcon} ${priorityIcon} ${row.subject}${phase}`);
+        console.log(`    id: ${row.id} | status: ${row.status} | priority: ${row.priority}`);
+      }
+
+      db.close();
+    } catch (err) {
+      console.log("No task database found.");
+      console.log("Start the API server or run 'octopai tasks sync'.");
+    }
   });
 
 // ============================================

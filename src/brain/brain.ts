@@ -14,6 +14,7 @@ import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { DocWatcher, getDocWatcher } from "../docs/watcher";
+import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery } from "../types";
 
 export interface BrainOptions {
@@ -278,10 +279,13 @@ export class Brain {
     // Step 5: Assign pending tasks to idle arms
     await this.assignTasks();
     
-    // Step 6: Save state
+    // Step 6: Sync tasks from plan files
+    await this.syncPlanTasks();
+    
+    // Step 7: Save state
     await this.saveState();
     
-    // Step 7: Notify Observatory of poll completion
+    // Step 8: Notify Observatory of poll completion
     await this.notifyObservatory("poll");
     
     this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.arms.size} arms`);
@@ -1253,6 +1257,100 @@ export class Brain {
       "utf-8"
     );
     this.state.pendingTasks = this.tasks.filter(t => t.status === "pending").length;
+  }
+
+  /**
+   * Sync tasks from project plan files into the database
+   */
+  private async syncPlanTasks(): Promise<void> {
+    if (!this.db) {
+      this.log("Cannot sync tasks: database not initialized");
+      return;
+    }
+
+    try {
+      // Get project root (current working directory or configured)
+      const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+      
+      // Check if task auto-discover is enabled
+      const autoDiscover = this.db.query("SELECT value FROM config WHERE key = ?")
+        .get("task_auto_discover") as { value: string } | undefined;
+      
+      if (autoDiscover?.value !== "true") {
+        return; // Task sync disabled
+      }
+
+      // Find and parse all plan files
+      const planFiles = await findPlanFiles(projectRoot);
+      
+      if (planFiles.length === 0) {
+        return; // No plan files found
+      }
+
+      let newTasksCount = 0;
+      let updatedTasksCount = 0;
+
+      for (const filePath of planFiles) {
+        const result = await parsePlanFile(filePath);
+        
+        if (result.errors.length > 0) {
+          this.log(`Plan parse errors in ${filePath}: ${result.errors.join(", ")}`);
+          continue;
+        }
+
+        // Check if we should update this file
+        const existingFile = this.db.query("SELECT id, last_hash FROM plan_files WHERE file_path = ?")
+          .get(filePath) as { id: number; last_hash: string } | undefined;
+
+        if (existingFile?.last_hash === result.fileHash) {
+          // File hasn't changed, skip
+          continue;
+        }
+
+        // Import tasks from plan
+        const dbTasks = tasksToDatabaseFormat(result.tasks);
+        
+        for (const task of dbTasks) {
+          // Check if task exists
+          const existing = this.db.query("SELECT id, status FROM tasks WHERE id = ?").get(task.id) as { id: string; status: string } | undefined;
+          
+          if (!existing) {
+            // Insert new task
+            this.db.run(`
+              INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, metadata)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `, [task.id, task.subject, task.description, task.status, task.priority, task.source_type, task.source_ref, task.phase, task.metadata]);
+            newTasksCount++;
+          } else if (existing.status === "pending" && task.status === "completed") {
+            // Only update if not already worked on
+            this.db.run(`
+              UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?
+            `, [task.status, new Date().toISOString(), task.id]);
+            updatedTasksCount++;
+          }
+        }
+
+        // Update plan file tracking
+        const now = new Date().toISOString();
+        if (existingFile) {
+          this.db.run(`
+            UPDATE plan_files SET last_parsed_at = ?, last_hash = ?, updated_at = ? WHERE id = ?
+          `, [now, result.fileHash, now, existingFile.id]);
+        } else {
+          this.db.run(`
+            INSERT INTO plan_files (file_path, last_parsed_at, last_hash, updated_at)
+            VALUES (?, ?, ?, ?)
+          `, [filePath, now, result.fileHash, now]);
+        }
+      }
+
+      if (newTasksCount > 0 || updatedTasksCount > 0) {
+        this.log(`Synced tasks from plans: ${newTasksCount} new, ${updatedTasksCount} updated`);
+        this.logActivity("brain", "tasks_synced", undefined, { newTasks: newTasksCount, updated: updatedTasksCount });
+      }
+    } catch (err) {
+      this.log(`Failed to sync plan tasks: ${err}`);
+    }
   }
 
   private async loadArms(): Promise<void> {

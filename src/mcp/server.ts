@@ -15,11 +15,48 @@ import type { Task, Discovery, Note, QueueMessage } from "../types";
 import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
+import { Database } from "bun:sqlite";
 
 // Get octopai directory from env or default
 const OCTOPAI_DIR = process.env.OCTOPAI_DIR || join(process.env.HOME || "~", ".octopai");
 const ARM_ID = process.env.OCTOPAI_ARM_ID || process.env.OCTOPAI_TENTACLE_ID || "unknown";
 const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+
+// Database connection (lazy initialization)
+let db: Database | null = null;
+let dbWritable: Database | null = null;
+
+function getDatabase(readonly = true): Database {
+  if (readonly) {
+    if (!db) {
+      const dbPath = join(OCTOPAI_DIR, "octopai.db");
+      db = new Database(dbPath, { readonly: true });
+    }
+    return db;
+  } else {
+    if (!dbWritable) {
+      const dbPath = join(OCTOPAI_DIR, "octopai.db");
+      dbWritable = new Database(dbPath);
+    }
+    return dbWritable;
+  }
+}
+
+/**
+ * Log an activity to the database
+ */
+function logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+  try {
+    const database = getDatabase(false);
+    const now = new Date().toISOString();
+    database.run(
+      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
+      [now, actor, action, target || null, JSON.stringify(details || {})]
+    );
+  } catch {
+    // Activity logging is best-effort
+  }
+}
 
 /**
  * Write a message to the brain's queue
@@ -48,43 +85,56 @@ async function sendToBrain(message: Omit<QueueMessage, "id" | "timestamp">): Pro
 // TODO : The arms need a way of recognizing when they're in conflict with each other, when one is attempting to make changes to the same file that the other one is. So when it notices that a file is changed since the agent last worked on it unexpectedly, then it should be able to send that information up to the brain and the brain can distribute that information to the rest of the arms so that they know that whoever's working on this file, this other arm is reporting that things are changing out from underneath it. And then the brain should help resolve conflict. So if two arms claim a certain file that they're working on currently, then the brain needs to either allow them to work together because they're not going to conflict because they're working on different parts of the code and the brain should say okay arm one split the code into these files arm two you can do this in this file and this in the other file. So it should resolve conflicts and it should grant priority to whichever one is most important or looks like it's most likely to succeed or is doing the most important work on that file and then it should notify when those locks are released
 
 /**
- * Read pending tasks for this arm (both from tasks.json and arm's queue)
+ * Read pending tasks for this arm (from SQLite database)
  */
 async function getPendingTasks(): Promise<Task[]> {
   const tasks: Task[] = [];
   
-  // Read from main tasks file
-  const tasksFile = join(OCTOPAI_DIR, "state", "tasks.json");
+  // Try to read from SQLite database
   try {
-    const content = await readFile(tasksFile, "utf-8");
-    const allTasks: Task[] = JSON.parse(content);
-    tasks.push(...allTasks.filter(t => t.status === "pending" || (t.status === "claimed" && t.assignedTo === ARM_ID)));
-  } catch {
-    // No tasks file yet
-  }
-  
-  // Also read from arm's queue for task assignments
-  const queueDir = join(OCTOPAI_DIR, "queue", "arms", ARM_ID);
-  try {
-    const files = await readdir(queueDir);
-    for (const file of files) {
-      if (!file.endsWith(".json")) continue;
-      try {
-        const content = await readFile(join(queueDir, file), "utf-8");
-        const message: QueueMessage = JSON.parse(content);
-        if (message.type === "task_assignment" && message.payload) {
-          const task = message.payload as Task;
-          // Avoid duplicates
-          if (!tasks.find(t => t.id === task.id)) {
-            tasks.push(task);
-          }
-        }
-      } catch {
-        continue;
-      }
+    const database = getDatabase();
+    
+    const dbTasks = database.query(`
+      SELECT id, subject, description, status, priority, phase, metadata, created_at, updated_at
+      FROM tasks
+      WHERE status IN ('pending', 'claimed')
+      AND (assigned_to = ? OR assigned_to IS NULL)
+      ORDER BY 
+        CASE priority 
+          WHEN 'critical' THEN 1 
+          WHEN 'high' THEN 2 
+          WHEN 'normal' THEN 3 
+          WHEN 'low' THEN 4 
+        END,
+        created_at ASC
+    `).all(ARM_ID) as Array<{
+      id: string;
+      subject: string;
+      description: string;
+      status: string;
+      priority: string;
+      phase: string | null;
+      metadata: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    
+    for (const row of dbTasks) {
+      tasks.push({
+        id: row.id,
+        subject: row.subject,
+        description: row.description,
+        status: row.status as Task["status"],
+        priority: row.priority as Task["priority"],
+        assignedTo: ARM_ID,
+        domain: undefined,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+        artifacts: [],
+      });
     }
   } catch {
-    // Queue doesn't exist yet
+    // Database not available
   }
   
   return tasks;
@@ -97,10 +147,59 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
   const tasks: Task[] = [];
   const messages: QueueMessage[] = [];
   
+  // Try to read from SQLite database first
+  try {
+    const database = getDatabase();
+    
+    // Get tasks: pending tasks or tasks assigned to this arm
+    const dbTasks = database.query(`
+      SELECT id, subject, description, status, priority, phase, metadata, created_at, updated_at
+      FROM tasks
+      WHERE status IN ('pending', 'claimed', 'in_progress')
+      AND (assigned_to = ? OR assigned_to IS NULL)
+      ORDER BY 
+        CASE priority 
+          WHEN 'critical' THEN 1 
+          WHEN 'high' THEN 2 
+          WHEN 'normal' THEN 3 
+          WHEN 'low' THEN 4 
+        END,
+        created_at ASC
+    `).all(ARM_ID) as Array<{
+      id: string;
+      subject: string;
+      description: string;
+      status: string;
+      priority: string;
+      phase: string | null;
+      metadata: string;
+      created_at: string;
+      updated_at: string;
+    }>;
+    
+    for (const row of dbTasks) {
+      tasks.push({
+        id: row.id,
+        subject: row.subject,
+        description: row.description,
+        status: row.status as Task["status"],
+        priority: row.priority as Task["priority"],
+        assignedTo: ARM_ID,
+        domain: undefined,
+        createdAt: new Date(row.created_at),
+        updatedAt: new Date(row.updated_at),
+        artifacts: [],
+      });
+    }
+  } catch {
+    // Database not available, fall back to queue directory
+  }
+  
+  // Also check the queue directory for task assignment messages
   const queueDir = join(OCTOPAI_DIR, "queue", "arms", ARM_ID);
   try {
     const files = await readdir(queueDir);
-    for (const file of files.sort()) { // Sort to get chronological order
+    for (const file of files.sort()) {
       if (!file.endsWith(".json")) continue;
       try {
         const content = await readFile(join(queueDir, file), "utf-8");
@@ -108,7 +207,11 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
         messages.push(message);
         
         if (message.type === "task_assignment" && message.payload) {
-          tasks.push(message.payload as Task);
+          const task = message.payload as Task;
+          // Avoid duplicates
+          if (!tasks.find(t => t.id === task.id)) {
+            tasks.push(task);
+          }
         }
       } catch {
         continue;
@@ -170,14 +273,6 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         task_id: z.string().describe("The ID of the task to claim"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
-      },
     },
     async ({ task_id }) => {
       const messageId = await sendToBrain({
@@ -189,6 +284,8 @@ export function createMcpServer(): McpServer {
           taskId: task_id,
         },
       });
+
+      logActivity(ARM_ID, "claim_task", task_id, { messageId });
 
       return {
         content: [
@@ -211,15 +308,7 @@ export function createMcpServer(): McpServer {
         summary: z.string().describe("Summary of what was done"),
         artifacts: z.array(z.string()).optional().describe("Related artifacts (commit hashes, file paths, etc.)"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ task_id, summary, artifacts }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -231,6 +320,8 @@ export function createMcpServer(): McpServer {
           artifacts: artifacts || [],
         },
       });
+
+      logActivity(ARM_ID, "complete_task", task_id, { messageId, artifactCount: (artifacts || []).length });
 
       return {
         content: [
@@ -257,15 +348,7 @@ export function createMcpServer(): McpServer {
         line: z.number().optional().describe("Line number if applicable"),
         severity: z.enum(["info", "warning", "error"]).optional().describe("Severity level"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ kind, title, details, file, line, severity }) => {
       const discovery: Discovery = {
         kind,
@@ -282,6 +365,8 @@ export function createMcpServer(): McpServer {
         type: "discovery",
         payload: discovery,
       });
+
+      logActivity(ARM_ID, "report_discovery", undefined, { messageId, kind, title, severity, file });
 
       return {
         content: [
@@ -304,15 +389,7 @@ export function createMcpServer(): McpServer {
         context: z.string().describe("Why this needs approval and any relevant details"),
         options: z.array(z.string()).optional().describe("Options for the human to choose from"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ action, context, options }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -346,15 +423,7 @@ export function createMcpServer(): McpServer {
         content: z.string().describe("Content (markdown supported)"),
         tags: z.array(z.string()).describe("Tags for categorization"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ title, content, tags }) => {
       const note: Omit<Note, "id" | "createdAt" | "updatedAt"> = {
         author: ARM_ID,
@@ -369,6 +438,8 @@ export function createMcpServer(): McpServer {
         type: "share_note",
         payload: note,
       });
+
+      logActivity(ARM_ID, "share_note", undefined, { messageId, title, tagCount: tags.length });
 
       return {
         content: [
@@ -392,15 +463,7 @@ export function createMcpServer(): McpServer {
         description: z.string().describe("What it does"),
         context: z.string().optional().describe("When to use it"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ name, command, description, context }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -431,17 +494,16 @@ export function createMcpServer(): McpServer {
     {
       description: "Get tasks and instructions assigned to this arm by the brain. Call this when you first start to see what you should work on.",
       inputSchema: {},
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async () => {
       const { tasks, messages } = await getMyInstructions();
+      
+      // Log the activity
+      logActivity(ARM_ID, "get_my_instructions", undefined, { 
+        taskCount: tasks.length, 
+        messageCount: messages.length,
+        hasPendingTasks: tasks.length > 0 
+      });
       
       if (tasks.length === 0) {
         return {
@@ -477,15 +539,7 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         task_id: z.string().describe("The ID of the task"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ task_id }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -497,6 +551,8 @@ export function createMcpServer(): McpServer {
           message: "Task acknowledged and work started",
         },
       });
+
+      logActivity(ARM_ID, "acknowledge_task", task_id, { messageId, status: "in_progress" });
 
       return {
         content: [
@@ -518,15 +574,7 @@ export function createMcpServer(): McpServer {
         status: z.enum(["idle", "busy", "thinking"]).optional().describe("Current status"),
         current_task: z.string().optional().describe("What you're currently working on"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ status, current_task }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -538,6 +586,8 @@ export function createMcpServer(): McpServer {
           timestamp: new Date().toISOString(),
         },
       });
+
+      logActivity(ARM_ID, "heartbeat", undefined, { messageId, status: status || "idle", current_task });
 
       return {
         content: [
@@ -562,15 +612,7 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         path: z.string().optional().describe("Relative path from docs/ (e.g., 'architecture/overview.md' or 'plans/phase1.md'). Leave empty to list available docs."),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ path }) => {
       if (!path) {
         // List available documentation
@@ -658,15 +700,7 @@ export function createMcpServer(): McpServer {
         since: z.string().optional().describe("ISO timestamp to check changes since (default: your session start)"),
         category: z.enum(["architecture", "guides", "plans", "requirements", "decisions", "all"]).optional().describe("Only check changes in this category"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ since, category }) => {
       const docsDir = join(PROJECT_ROOT, "docs");
       const changes: Array<{ path: string; modified: Date; hash: string }> = [];
@@ -711,6 +745,9 @@ export function createMcpServer(): McpServer {
       }
 
       const changeList = changes.map(c => `- docs/${c.path} (modified: ${c.modified.toISOString()})`).join("\n");
+      
+      logActivity(ARM_ID, "check_documentation_changes", undefined, { changeCount: changes.length, category });
+
       return {
         content: [
           {
@@ -731,15 +768,7 @@ export function createMcpServer(): McpServer {
         task_description: z.string().describe("Description of your current task or what you're working on"),
         max_results: z.number().optional().describe("Maximum number of docs to return (default: 5)"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ task_description, max_results = 5 }) => {
       const keywords = task_description.toLowerCase().split(/\s+/).filter(w => w.length > 2);
       const docsDir = join(PROJECT_ROOT, "docs");
@@ -811,15 +840,7 @@ export function createMcpServer(): McpServer {
         content: z.string().describe("The new content for the document"),
         reason: z.string().describe("Brief explanation of why this update is needed (e.g., 'User clarified requirements via email')"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ path, content, reason }) => {
       const docPath = join(PROJECT_ROOT, "docs", path);
       
@@ -874,15 +895,7 @@ export function createMcpServer(): McpServer {
         pattern: z.string().describe("File path or glob pattern to watch (e.g., 'docs/requirements/*.md' or 'src/api/*.ts')"),
         category: z.enum(["architecture", "guides", "plans", "requirements", "decisions", "other", "source"]).optional().describe("Category for filtering change notifications"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ pattern, category }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -914,15 +927,7 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         pattern: z.string().describe("File path or pattern to stop watching"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ pattern }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,
@@ -956,15 +961,7 @@ export function createMcpServer(): McpServer {
         summary: z.string().describe("Brief summary of what changed"),
         impact: z.string().optional().describe("Assessment of impact on current work"),
       },
-      outputSchema: {
-        content: z.array(
-          z.object({
-            type: z.literal("text"),
-            text: z.string(),
-          })
-        ).describe("Response content"),
       },
-    },
     async ({ file_path, change_type, summary, impact }) => {
       const messageId = await sendToBrain({
         from: ARM_ID,

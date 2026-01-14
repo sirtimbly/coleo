@@ -19,7 +19,6 @@ Endpoints for file topology and ownership.
 
 ## Phase 2
 
-Cleanup the outputs from the API server so the console logs aren't filled up with debug and info messages.
 
 ### Domain Configuration UI
 UI for configuring arm domains and patterns.
@@ -72,6 +71,9 @@ One-click rollback with confirmation.
 ---
 
 ## Phase 6
+
+- harnesses should have a shared interface
+- add an API based Harness for opencode based on https://opencode.ai/docs/server/ - then we don't need to interact with the PTY.
 
 ### Harness Test Runner
 Run test suite against harnesses.

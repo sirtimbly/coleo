@@ -5,6 +5,7 @@
  */
 
 import { randomBytes } from "crypto";
+import { join } from "node:path";
 import type {
   AgentHarness,
   HarnessSession,
@@ -53,11 +54,12 @@ export class OpenCodeHarness implements AgentHarness {
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `opencode-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
+    const armId = config.env.OCTOPAI_ARM_ID || config.env.OCTOPAI_TENTACLE_ID || "unknown";
 
     // Build environment
     const env: Record<string, string> = {
       ...config.env,
-      OCTOPAI_ARM_ID: sessionId,
+      OCTOPAI_ARM_ID: armId,
       NODE_TLS_REJECT_UNAUTHORIZED: "0", // Allow self-signed certs for development
     };
 
@@ -66,6 +68,43 @@ export class OpenCodeHarness implements AgentHarness {
       env.OPENCODE_MODEL = `${config.provider}/${config.model}`;
     } else if (config.model) {
       env.OPENCODE_MODEL = config.model;
+    }
+
+    // Create OpenCode config with MCP server if MCP servers are specified
+    if (config.mcpServers && config.mcpServers.length > 0) {
+      const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || join(process.env.HOME || "", ".octopai");
+      const mcpDir = join(octopaiDir, "mcp");
+      
+      // Ensure MCP directory exists
+      const { mkdir, writeFile } = await import("node:fs/promises");
+      await mkdir(mcpDir, { recursive: true });
+      
+      // Use bun from the system PATH or fall back to ~/.bun/bin/bun
+      const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+      
+      // Create OpenCode config with MCP server (correct format)
+      const opencodeConfig = {
+        $schema: "https://opencode.ai/config.json",
+        mcp: {
+          octopai: {
+            type: "local",
+            command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
+            environment: {
+              OCTOPAI_ARM_ID: armId,
+              OCTOPAI_DIR: octopaiDir,
+            },
+            enabled: true,
+          },
+        },
+      };
+
+      // Write OpenCode config to the MCP directory
+      const opencodeConfigPath = join(mcpDir, `${armId}.json`);
+      await writeFile(opencodeConfigPath, JSON.stringify(opencodeConfig, null, 2), "utf-8");
+      
+      // Tell OpenCode where to find the config
+      env.OPENCODE_CONFIG = opencodeConfigPath;
+      console.log(`[harness] Created OpenCode config at ${opencodeConfigPath}`);
     }
 
     // Spawn OpenCode in PTY

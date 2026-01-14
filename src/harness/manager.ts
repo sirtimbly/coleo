@@ -96,6 +96,7 @@ export class HarnessManager {
         OCTOPAI_ARM_ID: armId,
       },
       headless: true,
+      mcpServers: ["octopai"],
       provider: options.provider,
       model: options.model,
     };

@@ -6,7 +6,7 @@
   "type": "module",
   "private": true,
   "bin": {
-    "octopai": "./bin/octopai.ts"
+    "octopai": "./src/cli/index.ts"
   },
   "scripts": {
     "dev": "bun run src/cli/index.ts",
@@ -33,6 +33,7 @@
     "@modelcontextprotocol/sdk": "^1.25.2",
     "bun-pty": "^0.4.7",
     "commander": "^14.0.2",
+    "fast-glob": "^3.3.3",
     "hono": "^4.11.4",
     "smol-toml": "^1.6.0",
     "zod": "^4.3.5"
