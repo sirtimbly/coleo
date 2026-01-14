@@ -34,10 +34,13 @@ interface WSData {
 // Track all connected clients
 const clients = new Set<ServerWebSocket<WSData>>();
 
+let _apiKey: string = "";
+
 /**
  * Create WebSocket handlers for Bun.serve
  */
 export function createWebSocketHandlers(apiKey: string) {
+  _apiKey = apiKey;
   return {
     open(ws: ServerWebSocket<WSData>) {
       ws.data = {
@@ -127,6 +130,20 @@ export function broadcast(channel: Channel, event: string, data: unknown) {
   if (sent > 0) {
     console.log(`[WS] Broadcast ${event} to ${sent} clients on ${channel}`);
   }
+}
+
+/**
+ * Broadcast brain status change events
+ */
+export function broadcastBrainEvent(event: "started" | "stopped" | "paused" | "resumed" | "poll" | "config_updated", data: {
+  status: string;
+  pollIntervalMs?: number;
+  activeArmsCount?: number;
+  pendingTasksCount?: number;
+  completedToday?: number;
+  uptime?: number;
+}) {
+  broadcast("brain", `brain.${event}`, data);
 }
 
 /**

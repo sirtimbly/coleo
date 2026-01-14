@@ -125,6 +125,26 @@ A working web UI at `http://localhost:3001` showing:
   - Create Architect arm domain profile
   - Add proposal review hook for Architect
 
+- [ ] **2.8** Documentation Watcher
+  - Create file watcher service for `docs/` directory
+  - Track document versions and changes via hash
+  - Notify brain when documentation changes
+  - Implement MCP tools:
+    - `get_documentation` - Fetch current doc content
+    - `check_documentation_changes` - Detect updates since last read
+    - `find_relevant_docs` - Find docs relevant to current task
+    - `update_documentation` - Write updated doc content
+  - Arms auto-reload relevant docs on change
+  - Brain re-prioritizes tasks when plans/requirements change
+
+- [ ] **2.9** Email-to-Documentation Workflow
+  - Parse user emails for doc update intent
+  - Create `doc_update` tasks with domain="docs"
+  - Add "docs" domain arm profile with initial tasks
+  - Update tasks with domain preference for targeted assignment
+  - Notify human when docs are updated
+  - Broadcast updates to other arms
+
 ### Deliverable
 
 Arms with defined domains that claim files and respect context limits.

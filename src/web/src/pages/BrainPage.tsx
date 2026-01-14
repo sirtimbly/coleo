@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Play, Square, Settings, RefreshCw, Terminal, Save, X, Edit2, FileCode, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '@/lib';
-import type { OctopaiConfig, ArmConfigSummary } from '@/lib';
+import type { OctopaiConfig, ArmConfigSummary, OpenCodeProvider } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -15,9 +15,211 @@ interface BrainStatus {
   uptime: number | null;
 }
 
-// Known providers and models for dropdowns
+// Known harnesses
 const KNOWN_HARNESSES = ['opencode', 'claude-code', 'aider'];
 const TERMINAL_EMULATORS = ['auto', 'ghostty', 'iterm2', 'terminal', 'wezterm'] as const;
+
+// Defaults Display Component (read-only view)
+function DefaultsDisplay({ 
+  config, 
+  openCodeProviders,
+  onEdit 
+}: { 
+  config: OctopaiConfig | null;
+  openCodeProviders: OpenCodeProvider[];
+  onEdit: () => void;
+}) {
+  const harness = config?.defaults?.harness || 'opencode';
+  const provider = config?.defaults?.provider || '';
+  const model = config?.defaults?.model || '';
+  const contextBudget = config?.defaults?.contextBudget || 100000;
+
+  // Find the provider name for display
+  const getProviderDisplayName = (providerId: string) => {
+    const providerInfo = openCodeProviders.find(p => p.id === providerId);
+    return providerInfo?.name || providerId || 'Not set';
+  };
+
+  const isOpenCode = harness === 'opencode';
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <p className="text-sm text-muted-foreground">Harness</p>
+          <p className="text-lg font-medium">{harness}</p>
+        </div>
+        {isOpenCode && (
+          <div>
+            <p className="text-sm text-muted-foreground">Provider</p>
+            <p className="text-lg font-medium">{getProviderDisplayName(provider)}</p>
+          </div>
+        )}
+        <div>
+          <p className="text-sm text-muted-foreground">Model</p>
+          <p className="text-lg font-medium font-mono text-sm">{model || 'Not set'}</p>
+        </div>
+        <div>
+          <p className="text-sm text-muted-foreground">Context Budget</p>
+          <p className="text-lg font-medium">{contextBudget.toLocaleString()}</p>
+        </div>
+      </div>
+      <button
+        onClick={onEdit}
+        className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <Edit2 className="h-4 w-4" /> Edit
+      </button>
+    </div>
+  );
+}
+
+// Defaults Edit Form Component
+function DefaultsEditForm({
+  initialConfig,
+  openCodeProviders,
+  connectedProviders,
+  onSave,
+  onCancel,
+}: {
+  initialConfig: OctopaiConfig['defaults'];
+  openCodeProviders: OpenCodeProvider[];
+  connectedProviders: string[];
+  onSave: (defaults: OctopaiConfig['defaults']) => void;
+  onCancel: () => void;
+}) {
+  // Use local state for form values - this ensures re-renders work properly
+  const [harness, setHarness] = useState(initialConfig.harness || 'opencode');
+  const [provider, setProvider] = useState(initialConfig.provider || 'github-copilot');
+  const [model, setModel] = useState(initialConfig.model || '');
+  const [contextBudget, setContextBudget] = useState(initialConfig.contextBudget || 100000);
+
+  const isOpenCodeHarness = harness === 'opencode';
+  const selectedProvider = openCodeProviders.find(p => p.id === provider);
+  const availableModels = selectedProvider?.models || [];
+
+  // When harness changes, reset provider/model if switching to/from opencode
+  const handleHarnessChange = (newHarness: string) => {
+    setHarness(newHarness);
+    if (newHarness === 'opencode') {
+      setProvider('github-copilot');
+      setModel('claude-sonnet-4');
+    }
+  };
+
+  // When provider changes, reset model to first available
+  const handleProviderChange = (providerId: string) => {
+    setProvider(providerId);
+    const providerInfo = openCodeProviders.find(p => p.id === providerId);
+    const firstModel = providerInfo?.models[0]?.id || '';
+    setModel(firstModel);
+  };
+
+  // Handle save - pass current form values to parent
+  const handleSave = () => {
+    onSave({
+      harness,
+      provider,
+      model,
+      contextBudget,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-4">
+        {/* Harness Selection */}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Harness</label>
+          <select
+            value={harness}
+            onChange={(e) => handleHarnessChange(e.target.value)}
+            className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
+          >
+            {KNOWN_HARNESSES.map(h => <option key={h} value={h}>{h}</option>)}
+          </select>
+        </div>
+
+        {/* Provider Selection - Only shown for OpenCode harness */}
+        {isOpenCodeHarness && (
+          <div>
+            <label className="text-sm text-muted-foreground block mb-1">Provider</label>
+            <select
+              value={provider}
+              onChange={(e) => handleProviderChange(e.target.value)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
+            >
+              {openCodeProviders.length > 0 ? (
+                openCodeProviders.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {connectedProviders.includes(p.id) ? ' (connected)' : ''}
+                  </option>
+                ))
+              ) : (
+                <>
+                  <option value="github-copilot">GitHub Copilot</option>
+                  <option value="opencode">OpenCode Zen</option>
+                </>
+              )}
+            </select>
+          </div>
+        )}
+
+        {/* Model Selection */}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Model</label>
+          {isOpenCodeHarness && availableModels.length > 0 ? (
+            <select
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
+            >
+              {availableModels.map(m => (
+                <option key={m.id} value={m.id}>{m.name}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
+              placeholder="model name"
+            />
+          )}
+        </div>
+
+        {/* Context Budget */}
+        <div>
+          <label className="text-sm text-muted-foreground block mb-1">Context Budget</label>
+          <input
+            type="number"
+            value={contextBudget}
+            onChange={(e) => setContextBudget(parseInt(e.target.value) || 100000)}
+            className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
+          />
+        </div>
+      </div>
+
+      {/* Save/Cancel buttons */}
+      <div className="flex gap-2">
+        <button
+          onClick={handleSave}
+          className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+        >
+          <Save className="h-4 w-4" /> Save
+        </button>
+        <button
+          onClick={onCancel}
+          className="flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md hover:bg-secondary/80"
+        >
+          <X className="h-4 w-4" /> Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 export function BrainPage() {
   const [status, setStatus] = useState<BrainStatus | null>(null);
@@ -26,6 +228,10 @@ export function BrainPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // OpenCode providers and models
+  const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
+  const [connectedProviders, setConnectedProviders] = useState<string[]>([]);
 
   // Edit mode state
   const [editingSection, setEditingSection] = useState<string | null>(null);
@@ -52,15 +258,18 @@ export function BrainPage() {
 
   const loadData = useCallback(async () => {
     try {
-      const [statusRes, configRes, armConfigsRes] = await Promise.all([
+      const [statusRes, configRes, armConfigsRes, providersRes] = await Promise.all([
         api.getBrainStatus(),
         api.getFullConfig(),
         api.listArmConfigs(),
+        api.getOpenCodeProviders(),
       ]);
       setStatus(statusRes.brain as BrainStatus);
       setConfig(configRes.config);
       setEditedConfig(configRes.config);
       setArmConfigs(armConfigsRes.arms);
+      setOpenCodeProviders(providersRes.providers);
+      setConnectedProviders(providersRes.connected);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load brain status');
@@ -117,6 +326,21 @@ export function BrainPage() {
       setConfig(editedConfig);
       setEditingSection(null);
       setSaveStatus({ type: 'success', message: `${section} configuration saved` });
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      setSaveStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save' });
+    }
+  };
+
+  const handleSaveDefaults = async (defaults: OctopaiConfig['defaults']) => {
+    setSaveStatus(null);
+    try {
+      await api.updateConfig({ defaults });
+      // Update both config and editedConfig with new defaults
+      setConfig(prev => prev ? { ...prev, defaults } : null);
+      setEditedConfig(prev => prev ? { ...prev, defaults } : null);
+      setEditingSection(null);
+      setSaveStatus({ type: 'success', message: 'defaults configuration saved' });
       setTimeout(() => setSaveStatus(null), 3000);
     } catch (err) {
       setSaveStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save' });
@@ -384,103 +608,20 @@ export function BrainPage() {
         </CardHeader>
         {expandedSections.defaults && (
           <CardContent>
-            {editingSection === 'defaults' ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm text-muted-foreground">Harness</label>
-                    <select
-                      value={editedConfig?.defaults.harness || 'opencode'}
-                      onChange={(e) => setEditedConfig(prev => prev ? {
-                        ...prev,
-                        defaults: { ...prev.defaults, harness: e.target.value }
-                      } : null)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
-                    >
-                      {KNOWN_HARNESSES.map(h => <option key={h} value={h}>{h}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-sm text-muted-foreground">Provider</label>
-                    <input
-                      type="text"
-                      value={editedConfig?.defaults.provider || ''}
-                      onChange={(e) => setEditedConfig(prev => prev ? {
-                        ...prev,
-                        defaults: { ...prev.defaults, provider: e.target.value }
-                      } : null)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
-                      placeholder="anthropic, openai, etc."
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-muted-foreground">Model</label>
-                    <input
-                      type="text"
-                      value={editedConfig?.defaults.model || ''}
-                      onChange={(e) => setEditedConfig(prev => prev ? {
-                        ...prev,
-                        defaults: { ...prev.defaults, model: e.target.value }
-                      } : null)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
-                      placeholder="claude-sonnet-4-20250514"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm text-muted-foreground">Context Budget</label>
-                    <input
-                      type="number"
-                      value={editedConfig?.defaults.contextBudget || 100000}
-                      onChange={(e) => setEditedConfig(prev => prev ? {
-                        ...prev,
-                        defaults: { ...prev.defaults, contextBudget: parseInt(e.target.value) || 100000 }
-                      } : null)}
-                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleSaveConfig('defaults')}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
-                  >
-                    <Save className="h-4 w-4" /> Save
-                  </button>
-                  <button
-                    onClick={handleCancelEdit}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md hover:bg-secondary/80"
-                  >
-                    <X className="h-4 w-4" /> Cancel
-                  </button>
-                </div>
-              </div>
+            {editingSection === 'defaults' && config ? (
+              <DefaultsEditForm
+                initialConfig={config.defaults}
+                openCodeProviders={openCodeProviders}
+                connectedProviders={connectedProviders}
+                onSave={handleSaveDefaults}
+                onCancel={handleCancelEdit}
+              />
             ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-6">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Harness</p>
-                    <p className="text-lg font-medium">{config?.defaults.harness || 'opencode'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Provider</p>
-                    <p className="text-lg font-medium">{config?.defaults.provider || 'anthropic'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Model</p>
-                    <p className="text-lg font-medium font-mono text-sm">{config?.defaults.model || 'claude-sonnet-4-20250514'}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Context Budget</p>
-                    <p className="text-lg font-medium">{(config?.defaults.contextBudget || 100000).toLocaleString()}</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setEditingSection('defaults')}
-                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
-                >
-                  <Edit2 className="h-4 w-4" /> Edit
-                </button>
-              </div>
+              <DefaultsDisplay
+                config={config}
+                openCodeProviders={openCodeProviders}
+                onEdit={() => setEditingSection('defaults')}
+              />
             )}
           </CardContent>
         )}

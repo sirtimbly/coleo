@@ -12,13 +12,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { Task, Discovery, Note, QueueMessage } from "../types";
-import { writeFile, readFile, mkdir, readdir } from "fs/promises";
+import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 
 // Get octopai directory from env or default
 const OCTOPAI_DIR = process.env.OCTOPAI_DIR || join(process.env.HOME || "~", ".octopai");
 const ARM_ID = process.env.OCTOPAI_ARM_ID || process.env.OCTOPAI_TENTACLE_ID || "unknown";
+const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
 
 /**
  * Write a message to the brain's queue
@@ -546,6 +547,321 @@ export function createMcpServer(): McpServer {
           },
         ],
       };
+    }
+  );
+
+  // ============================================
+  // DOCUMENTATION AWARENESS TOOLS - Stay in sync with project docs
+  // ============================================
+
+  // Get documentation content
+  server.registerTool(
+    "get_documentation",
+    {
+      description: "Read documentation content from the docs/ directory. Use this to understand project requirements, plans, and architectural decisions. Always check relevant docs before starting work on a task.",
+      inputSchema: {
+        path: z.string().optional().describe("Relative path from docs/ (e.g., 'architecture/overview.md' or 'plans/phase1.md'). Leave empty to list available docs."),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ path }) => {
+      if (!path) {
+        // List available documentation
+        const docsDir = join(PROJECT_ROOT, "docs");
+        const categories: Record<string, string[]> = {
+          architecture: [],
+          guides: [],
+          plans: [],
+          requirements: [],
+          decisions: [],
+          other: [],
+        };
+
+        try {
+          const listDocs = async (dir: string, baseRel: string = "") => {
+            const entries = await readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = join(dir, entry.name);
+              const relPath = baseRel ? `${baseRel}/${entry.name}` : entry.name;
+              if (entry.isDirectory()) {
+                await listDocs(fullPath, relPath);
+              } else if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".txt"))) {
+                let category: string = "other";
+                const parts = relPath.split("/");
+                if (parts[0] === "architecture") category = "architecture";
+                else if (parts[0] === "guides") category = "guides";
+                else if (parts[0] === "plans") category = "plans";
+                else if (parts[0] === "requirements") category = "requirements";
+                else if (parts[0] === "decisions") category = "decisions";
+                (categories as Record<string, string[]>)[category]!.push(relPath);
+              }
+            }
+          };
+          await listDocs(docsDir);
+
+          let listText = "# Available Documentation\n\n";
+          for (const [cat, files] of Object.entries(categories)) {
+            if (files.length > 0) {
+              listText += `## ${cat.charAt(0).toUpperCase() + cat.slice(1)}\n`;
+              for (const f of files) {
+                listText += `- docs/${f}\n`;
+              }
+              listText += "\n";
+            }
+          }
+
+          return {
+            content: [{ type: "text" as const, text: listText }],
+          };
+        } catch {
+          return {
+            content: [{ type: "text" as const, text: "No docs/ directory found. Create docs/ to store project documentation." }],
+          };
+        }
+      }
+
+      // Read specific document
+      const docPath = join(PROJECT_ROOT, "docs", path);
+      try {
+        const content = await readFile(docPath, "utf-8");
+        const stats = await stat(docPath);
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `# ${path}\n\n---\n\n${content}\n\n---\n\n*Last modified: ${stats.mtime.toISOString()}*`,
+            },
+          ],
+        };
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: `Document not found: docs/${path}` }],
+        };
+      }
+    }
+  );
+
+  // Check for documentation changes
+  server.registerTool(
+    "check_documentation_changes",
+    {
+      description: "Check if any documentation has changed since you last read it. Call this periodically or when starting a new task to ensure you're working with current information.",
+      inputSchema: {
+        since: z.string().optional().describe("ISO timestamp to check changes since (default: your session start)"),
+        category: z.enum(["architecture", "guides", "plans", "requirements", "decisions", "all"]).optional().describe("Only check changes in this category"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ since, category }) => {
+      const docsDir = join(PROJECT_ROOT, "docs");
+      const changes: Array<{ path: string; modified: Date; hash: string }> = [];
+      const checkSince = since ? new Date(since) : new Date();
+
+      try {
+        const scanAndCheck = async (dir: string, baseRel: string = "") => {
+          const entries = await readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = join(dir, entry.name);
+            const relPath = baseRel ? `${baseRel}/${entry.name}` : entry.name;
+
+            if (entry.isDirectory()) {
+              await scanAndCheck(fullPath, relPath);
+            } else if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".txt"))) {
+              // Check if in requested category
+              if (category && category !== "all") {
+                const docCategory = relPath.split("/")[0];
+                if (docCategory !== category) continue;
+              }
+
+              const stats = await stat(fullPath);
+              if (stats.mtime > checkSince) {
+                const content = await readFile(fullPath, "utf-8");
+                const hash = createHash("sha256").update(content).digest("hex").slice(0, 16);
+                changes.push({ path: relPath, modified: stats.mtime, hash });
+              }
+            }
+          }
+        };
+        await scanAndCheck(docsDir);
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: "Could not scan docs/ directory." }],
+        };
+      }
+
+      if (changes.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "No documentation changes detected since your check time." }],
+        };
+      }
+
+      const changeList = changes.map(c => `- docs/${c.path} (modified: ${c.modified.toISOString()})`).join("\n");
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `# Documentation Changes\n\n${changeList}\n\n**Recommendation:** Use 'get_documentation' to re-read these files before continuing.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Find relevant documentation for a task
+  server.registerTool(
+    "find_relevant_docs",
+    {
+      description: "Find documentation relevant to your current task or work. Provide a description of what you're working on and get recommendations for docs to read.",
+      inputSchema: {
+        task_description: z.string().describe("Description of your current task or what you're working on"),
+        max_results: z.number().optional().describe("Maximum number of docs to return (default: 5)"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ task_description, max_results = 5 }) => {
+      const keywords = task_description.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      const docsDir = join(PROJECT_ROOT, "docs");
+      const scored: Array<{ path: string; score: number; preview: string }> = [];
+
+      try {
+        const scanForRelevance = async (dir: string, baseRel: string = "") => {
+          const entries = await readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = join(dir, entry.name);
+            const relPath = baseRel ? `${baseRel}/${entry.name}` : entry.name;
+
+            if (entry.isDirectory()) {
+              await scanForRelevance(fullPath, relPath);
+            } else if (entry.isFile() && (entry.name.endsWith(".md") || entry.name.endsWith(".txt"))) {
+              const content = await readFile(fullPath, "utf-8");
+              const contentLower = content.toLowerCase();
+              const pathLower = relPath.toLowerCase();
+
+              let score = 0;
+              for (const keyword of keywords) {
+                if (pathLower.includes(keyword)) score += 3;
+                if (contentLower.includes(keyword)) score += 1;
+              }
+
+              if (score > 0) {
+                // Get first 200 chars as preview
+                const preview = content.slice(0, 200).replace(/[#*`\n]/g, " ").trim() + "...";
+                scored.push({ path: relPath, score, preview });
+              }
+            }
+          }
+        };
+        await scanForRelevance(docsDir);
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: "Could not scan docs/ directory." }],
+        };
+      }
+
+      scored.sort((a, b) => b.score - a.score);
+      const topDocs = scored.slice(0, max_results);
+
+      if (topDocs.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: "No particularly relevant documentation found. Try using 'get_documentation' to explore the docs/ directory." }],
+        };
+      }
+
+      const docList = topDocs.map(d => `## docs/${d.path}\n**Relevance:** ${d.score}\n\n${d.preview}`).join("\n\n---\n\n");
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `# Relevant Documentation for Your Work\n\n${docList}\n\n---\n\nUse 'get_documentation' to read any of these in full.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Update documentation
+  server.registerTool(
+    "update_documentation",
+    {
+      description: "Update a documentation file with new content. Use this when the human has provided feedback that requires updating docs, requirements, or plans. The brain will be notified of the update.",
+      inputSchema: {
+        path: z.string().describe("Relative path from docs/ (e.g., 'requirements/auth.md')"),
+        content: z.string().describe("The new content for the document"),
+        reason: z.string().describe("Brief explanation of why this update is needed (e.g., 'User clarified requirements via email')"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ path, content, reason }) => {
+      const docPath = join(PROJECT_ROOT, "docs", path);
+      
+      try {
+        // Read existing file to preserve it
+        let existingContent = "";
+        try {
+          existingContent = await readFile(docPath, "utf-8");
+        } catch {
+          // File doesn't exist, will create new
+        }
+
+        // Write the updated content
+        await writeFile(docPath, content, "utf-8");
+
+        // Notify brain of the update
+        const messageId = await sendToBrain({
+          from: ARM_ID,
+          to: "brain",
+          type: "doc_update",
+          payload: {
+            path: `docs/${path}`,
+            reason,
+            previousContent: existingContent,
+            newContent: content,
+          },
+        });
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Documentation updated: docs/${path}\n\nReason: ${reason}\n\nBrain notified (message: ${messageId}). Other arms will be notified of this change on their next poll.`,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{ type: "text" as const, text: `Failed to update docs/${path}: ${errorMsg}` }],
+        };
+      }
     }
   );
 

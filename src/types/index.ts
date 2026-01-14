@@ -29,6 +29,7 @@ export interface Task {
   status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked";
   priority: "critical" | "high" | "normal" | "low";
   assignedTo?: string; // arm id
+  domain?: string; // preferred arm domain (frontend, backend, docs, etc.)
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -58,7 +59,8 @@ export type MessageType =
   | "tool_discovery"
   | "status_update"
   | "heartbeat"
-  | "human_message";
+  | "human_message"
+  | "doc_update";
 
 // Discovery report from an arm
 export interface Discovery {
@@ -94,11 +96,12 @@ export interface DiscoveredTool {
 // Brain state
 export interface BrainState {
   status: "stopped" | "running" | "paused";
-  lastPollAt?: Date;
+  lastPollAt?: string;
   pollIntervalMs: number;
   activeArms: string[];
   pendingTasks: number;
   completedToday: number;
+  startedAt?: string;
 }
 
 // Config file structure
@@ -147,8 +150,8 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   },
   defaults: {
     harness: "opencode",
-    provider: "anthropic",
-    model: "claude-sonnet-4-20250514",
+    provider: "github-copilot",
+    model: "claude-sonnet-4",
     contextBudget: 100000,
   },
 };

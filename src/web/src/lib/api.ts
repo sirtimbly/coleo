@@ -135,6 +135,15 @@ class ApiClient {
     });
   }
 
+  // OpenCode Providers (fetched from OpenCode server)
+  async getOpenCodeProviders() {
+    return this.request<{ 
+      providers: OpenCodeProvider[];
+      connected: string[];
+      error?: string;
+    }>('/opencode/providers');
+  }
+
   // Arms
   async listArms() {
     return this.request<{ arms: Arm[] }>('/arms');
@@ -304,6 +313,22 @@ export interface ArmConfigSummary {
   domain: string;
   harness: string;
   budget?: number;
+}
+
+// OpenCode provider/model info (from OpenCode server API)
+export interface OpenCodeModel {
+  id: string;
+  name: string;
+  limit?: {
+    context?: number;
+    output?: number;
+  };
+}
+
+export interface OpenCodeProvider {
+  id: string;
+  name: string;
+  models: OpenCodeModel[];
 }
 
 export interface Arm {

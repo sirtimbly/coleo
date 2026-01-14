@@ -281,3 +281,114 @@ See the [Docker Setup Guide](./docker) for more details.
 - [CLI Reference](./cli) - All available commands
 - [Docker Setup](./docker) - Containerized deployment
 - [Architecture Overview](/architecture/overview) - System design
+
+---
+
+## Documentation Sync
+
+Octopai automatically watches your `docs/` directory and keeps arms informed of changes. This ensures that when you update requirements, plans, or architectural decisions, all arms stay synchronized.
+
+### How It Works
+
+1. **File Watching**: The brain watches `docs/` for changes (created, modified, deleted)
+2. **Change Detection**: Docs are hashed to detect content changes
+3. **Arm Notification**: Arms are notified via MCP tools when relevant docs change
+4. **Task Re-evaluation**: When requirements or plans change, pending tasks are re-prioritized
+
+### Documentation Categories
+
+Organize docs in subdirectories for automatic categorization:
+
+```
+docs/
+├── architecture/    # System design, component details
+├── guides/          # How-to guides, tutorials
+├── plans/           # Phase plans, sprint goals
+├── requirements/    # Feature requirements, specifications
+├── decisions/       # ADR (Architectural Decision Records)
+└── other/           # Miscellaneous documentation
+```
+
+### MCP Tools for Documentation
+
+Arms can use these MCP tools to stay informed:
+
+```bash
+# List available documentation
+get_documentation()
+
+# Check for changes since last read
+check_documentation_changes(since="2024-01-15T10:00:00Z")
+
+# Find docs relevant to current task
+find_relevant_docs(task_description="implementing auth flow")
+```
+
+### Example Workflow
+
+1. User updates `docs/requirements/auth.md` with new requirements
+2. Brain detects change, logs it
+3. Next poll cycle re-evaluates pending tasks
+4. Arms use `check_documentation_changes` to detect updates
+5. Arms use `get_documentation` to re-read updated requirements
+
+### Watching Status
+
+View documentation watcher status:
+
+```bash
+# Check if docs are being watched
+octopai brain status
+
+# Output includes:
+# Documentation: 12 files tracked, last scan: 10:30:00
+```
+
+---
+
+## Documentation Updates from Email
+
+When you reply to emails from Octopai with documentation changes, the brain creates documentation update tasks assigned to "docs" domain arms.
+
+### How It Works
+
+1. **You send an email** with instructions like:
+   - "Update the requirements for auth flow"
+   - "Update docs to clarify the deployment process"
+   - "Revise the API documentation"
+
+2. **Brain detects the intent** and creates a `doc_update` task with high priority
+
+3. **Docs arm picks up the task** and uses MCP tools to update the relevant files:
+   - `get_documentation` - Read current docs
+   - `update_documentation` - Write updated content
+   - `check_documentation_changes` - Track what changed
+
+4. **Other arms are notified** when documentation changes (via documentation watcher)
+
+### Example Email Flow
+
+```
+You: "Please update docs/requirements/auth.md to reflect the new OAuth flow"
+      (subject: Update auth requirements)
+
+Brain: Creates task "Docs: Update auth requirements" with domain=docs
+
+Docs Arm: Receives task, reads current docs, updates with new OAuth requirements
+
+Brain: Notifies you when complete, other arms detect the change
+```
+
+### For Docs Arms
+
+Arms with `domain = "docs"` receive initial tasks to:
+
+1. Review and update project documentation
+2. Update requirements based on user feedback
+3. Keep docs/architecture/ in sync with implementation
+
+Spawn a docs arm:
+
+```bash
+octopai arm spawn --name docs-arm --domain docs
+```

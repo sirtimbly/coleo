@@ -12,6 +12,7 @@ import { readdir, readFile, writeFile, mkdir, rename, unlink } from "fs/promises
 import { join } from "path";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
+import { DocWatcher, getDocWatcher } from "../docs/watcher";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery } from "../types";
 
 export interface BrainOptions {
@@ -79,6 +80,32 @@ Check:
 4. No code duplication
 
 When done, update AGENTS.md if needed and report findings.`,
+    },
+  ],
+  docs: [
+    {
+      subject: "Review and update project documentation",
+      description: `Review the docs/ directory to ensure documentation is up to date.
+
+Tasks:
+1. Check docs/architecture/ for accuracy
+2. Review docs/guides/ for completeness
+3. Check docs/plans/ matches implemented features
+4. Identify gaps in documentation
+
+When done, report findings and update any outdated docs.`,
+    },
+    {
+      subject: "Update requirements based on user feedback",
+      description: `Review recent email responses from the human and update documentation accordingly.
+
+Tasks:
+1. Check inbox for user feedback on requirements
+2. Update docs/requirements/ with any clarified specifications
+3. Update docs/plans/ with any priority changes
+4. Sync docs/architecture/ if system design was discussed
+
+When done, report what documentation was updated.`,
     },
   ],
   general: [
@@ -193,6 +220,25 @@ export class Brain {
     await this.loadArms();
     await this.loadSeenArmIds();
     
+    // Start documentation watcher for project docs
+    try {
+      const projectRoot = process.cwd();
+      const docWatcher = getDocWatcher(projectRoot);
+      docWatcher.onChange(async (event) => {
+        // Log doc changes
+        this.log(`Documentation changed: ${event.relativePath} (${event.type})`);
+        
+        // If requirements or plans changed, re-evaluate pending tasks
+        if (event.relativePath.includes("requirements") || event.relativePath.includes("plans")) {
+          this.log(`Re-evaluating tasks due to doc change: ${event.relativePath}`);
+          // Tasks will be re-prioritized in next poll cycle
+        }
+      });
+      await docWatcher.start();
+    } catch (err) {
+      this.log(`Could not start doc watcher: ${err}`);
+    }
+    
     this.log("Brain initialized");
   }
 
@@ -200,7 +246,7 @@ export class Brain {
    * Run a single poll cycle
    */
   async poll(): Promise<void> {
-    this.state.lastPollAt = new Date();
+    this.state.lastPollAt = new Date().toISOString();
     
     // Step 1: Check for new human messages
     await this.processHumanMail();
@@ -220,17 +266,56 @@ export class Brain {
     // Step 6: Save state
     await this.saveState();
     
+    // Step 7: Notify Observatory of poll completion
+    await this.notifyObservatory("poll");
+    
     this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.arms.size} arms`);
   }
 
   /**
-   * Run the polling loop
-   */
+    * Notify Observatory of brain event
+    */
+  private async notifyObservatory(event: "started" | "stopped" | "paused" | "resumed" | "poll"): Promise<void> {
+    if (!this.apiBaseUrl || !this.apiKey) return;
+
+    try {
+      const now = Date.now();
+      const startedAt = this.state.startedAt ? new Date(this.state.startedAt).getTime() : null;
+      const uptime = startedAt ? Math.floor((now - startedAt) / 1000) : undefined;
+
+      await fetch(`${this.apiBaseUrl}/api/brain/notify`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": this.apiKey,
+        },
+        body: JSON.stringify({
+          event,
+          status: this.state.status,
+          pollIntervalMs: this.state.pollIntervalMs,
+          activeArmsCount: this.state.activeArms.length,
+          pendingTasksCount: this.state.pendingTasks,
+          completedToday: this.state.completedToday,
+          uptime,
+        }),
+      });
+    } catch (err) {
+      // Silently fail - Observatory might not be running
+    }
+  }
+
+  /**
+    * Run the polling loop
+    */
   async run(): Promise<void> {
     this.running = true;
     this.state.status = "running";
+    this.state.startedAt = this.state.startedAt || new Date().toISOString();
     
     this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
+    
+    // Notify Observatory that brain is starting
+    await this.notifyObservatory("started");
     
     // Initial poll
     await this.poll();
@@ -245,6 +330,7 @@ export class Brain {
     
     this.state.status = "stopped";
     await this.saveState();
+    await this.notifyObservatory("stopped");
     this.log("Brain stopped");
   }
 
@@ -253,9 +339,12 @@ export class Brain {
    */
   async runOnce(): Promise<void> {
     this.state.status = "running";
+    this.state.startedAt = this.state.startedAt || new Date().toISOString();
+    await this.notifyObservatory("started");
     await this.poll();
     this.state.status = "stopped";
     await this.saveState();
+    await this.notifyObservatory("stopped");
   }
 
   /**
@@ -283,6 +372,10 @@ export class Brain {
           await this.createTask(intent.subject, intent.body, message.id);
           break;
           
+        case "doc_update":
+          await this.createDocUpdateTask(intent.subject, intent.body, intent.targetDoc, message.id);
+          break;
+          
         case "approval_response":
           await this.handleApprovalResponse(intent.originalId, intent.approved, intent.comment);
           break;
@@ -301,8 +394,8 @@ export class Brain {
   }
 
   /**
-   * Parse human message to understand intent
-   */
+    * Parse human message to understand intent
+    */
   private parseHumanIntent(subject: string, body: string): HumanIntent {
     const lowerSubject = subject.toLowerCase();
     const lowerBody = body.toLowerCase();
@@ -317,6 +410,33 @@ export class Brain {
         approved,
         comment: body,
       };
+    }
+    
+    // Check for documentation update request
+    const docUpdatePatterns = [
+      /update (?:the )?docs?/i,
+      /update (?:the )?requirements/i,
+      /update (?:the )?plans?/i,
+      /update (?:the )?documentation/i,
+      /revise (?:the )?docs?/i,
+      /revise (?:the )?requirements/i,
+      /change (?:the )?specs?/i,
+      /clarify (?:the )?requirements/i,
+    ];
+    
+    for (const pattern of docUpdatePatterns) {
+      if (pattern.test(subject) || pattern.test(body)) {
+        // Try to extract target document
+        const docMatch = body.match(/docs\/([^\s\n]+)|requirements\/([^\s\n]+)|plans\/([^\s\n]+)/i);
+        const targetDoc = docMatch?.[1] || docMatch?.[2] || docMatch?.[3] || undefined;
+        
+        return {
+          type: "doc_update",
+          subject: subject.replace(/^(update|revise|change|clarify)\s*(?:the\s*)?/i, "").trim(),
+          body,
+          targetDoc,
+        };
+      }
     }
     
     // Check for status query
@@ -408,6 +528,12 @@ export class Brain {
         await this.handleHeartbeat(message.from, payload);
         break;
       }
+
+      case "doc_update": {
+        const payload = message.payload as { path: string; reason: string; previousContent?: string; newContent?: string };
+        await this.handleDocUpdate(message.from, payload);
+        break;
+      }
     }
   }
 
@@ -430,6 +556,45 @@ export class Brain {
     await this.saveTasks();
     
     this.log(`Created task: ${task.subject} (${task.id})`);
+    
+    return task;
+  }
+
+  /**
+   * Create a documentation update task
+   * These tasks are assigned to arms with "docs" domain
+   */
+  private async createDocUpdateTask(
+    subject: string,
+    description: string,
+    targetDoc?: string,
+    mailThreadId?: string
+  ): Promise<Task> {
+    const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    
+    let fullDescription = description;
+    if (targetDoc) {
+      fullDescription = `Update documentation: docs/${targetDoc}\n\n${description}`;
+    } else {
+      fullDescription = `Update project documentation based on human feedback:\n\n${description}`;
+    }
+    
+    const task: Task = {
+      id: taskId,
+      subject: `Docs: ${subject}`,
+      description: fullDescription,
+      status: "pending",
+      priority: "high", // Documentation updates from humans are high priority
+      domain: "docs", // Assign to docs specialist arm
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      mailThreadId,
+    };
+    
+    this.tasks.push(task);
+    await this.saveTasks();
+    
+    this.log(`Created doc update task: ${subject} (${taskId})`);
     
     return task;
   }
@@ -624,6 +789,28 @@ export class Brain {
   }
 
   /**
+   * Handle documentation update from an arm
+   */
+  private async handleDocUpdate(
+    armId: string,
+    payload: { path: string; reason: string; previousContent?: string; newContent?: string }
+  ): Promise<void> {
+    this.log(`Documentation updated by ${armId}: ${payload.path}`);
+
+    // Notify human of the update
+    await this.sendToHuman({
+      subject: `[octopai] Documentation updated: ${payload.path}`,
+      body: `Arm ${armId} has updated documentation.\n\n**File:** ${payload.path}\n**Reason:** ${payload.reason}`,
+      headers: {
+        "X-Octopai-Type": "doc-update",
+        "X-Octopai-Path": payload.path,
+      },
+    });
+
+    // TODO: Broadcast to other arms via queue if needed
+  }
+
+  /**
    * Check arm health and mark stale arms as stopped
    */
   private async checkArms(): Promise<void> {
@@ -798,30 +985,50 @@ export class Brain {
 
   /**
    * Assign pending tasks to available arms
+   * Considers task domain preferences when assigning
    */
   private async assignTasks(): Promise<void> {
     const pendingTasks = this.tasks.filter(t => t.status === "pending");
     const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
     
-    // Simple assignment: first pending to first idle
     for (const task of pendingTasks) {
-      const arm = idleArms.shift();
-      if (!arm) break;
+      // Find best matching arm based on task domain preference
+      let bestArm = idleArms.shift();
+      
+      if (task.domain) {
+        // Look for an arm with matching domain
+        const matchingArm = idleArms.find(arm => {
+          const armDomain = (arm as Arm & { domain?: string }).domain || "general";
+          return armDomain === task.domain || armDomain === "general";
+        });
+        
+        if (matchingArm) {
+          // Remove matching arm from idleArms and use it
+          const index = idleArms.indexOf(matchingArm);
+          if (index > -1) {
+            idleArms.splice(index, 1);
+          }
+          bestArm = matchingArm;
+        }
+      }
+      
+      if (!bestArm) break;
       
       task.status = "claimed";
-      task.assignedTo = arm.id;
+      task.assignedTo = bestArm.id;
       task.updatedAt = new Date();
       
-      arm.status = "busy";
-      arm.currentTask = task.id;
+      bestArm.status = "busy";
+      bestArm.currentTask = task.id;
       
       // Write task assignment to arm's queue
-      await this.sendToArm(arm.id, {
+      await this.sendToArm(bestArm.id, {
         type: "task_assignment",
         payload: task,
       });
       
-      this.log(`Assigned task "${task.subject}" to ${arm.id}`);
+      const domainMatch = task.domain ? ` (domain: ${task.domain})` : "";
+      this.log(`Assigned task "${task.subject}" to ${bestArm.id}${domainMatch}`);
     }
     
     await this.saveTasks();
@@ -1108,5 +1315,6 @@ export class Brain {
 // Types for parsing human intent
 type HumanIntent = 
   | { type: "new_task"; subject: string; body: string }
+  | { type: "doc_update"; subject: string; body: string; targetDoc?: string }
   | { type: "approval_response"; originalId: string; approved: boolean; comment: string }
   | { type: "query"; query: string };

@@ -6,7 +6,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
-import { broadcast } from "../websocket";
+import { broadcastBrainEvent } from "../websocket";
 import { join } from "path";
 import { homedir } from "os";
 import { readFile, writeFile } from "fs/promises";
@@ -126,7 +126,7 @@ export function createBrainRoutes() {
       await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(newState, null, 2), "utf-8");
     }
 
-    broadcast("brain", "brain.started", { status: "running" });
+    broadcastBrainEvent("started", { status: "running" });
 
     return c.json({ started: true, status: "running" });
   });
@@ -147,7 +147,7 @@ export function createBrainRoutes() {
       if (err instanceof HttpError) throw err;
     }
 
-    broadcast("brain", "brain.stopped", { status: "stopped" });
+    broadcastBrainEvent("stopped", { status: "stopped" });
 
     return c.json({ stopped: true, status: "stopped" });
   });
@@ -169,7 +169,7 @@ export function createBrainRoutes() {
       throw HttpError.badRequest("Brain is not running");
     }
 
-    broadcast("brain", "brain.paused", { status: "paused" });
+    broadcastBrainEvent("paused", { status: "paused" });
 
     return c.json({ paused: true, status: "paused" });
   });
@@ -191,7 +191,7 @@ export function createBrainRoutes() {
       throw HttpError.badRequest("Brain is not paused");
     }
 
-    broadcast("brain", "brain.resumed", { status: "running" });
+    broadcastBrainEvent("resumed", { status: "running" });
 
     return c.json({ resumed: true, status: "running" });
   });
@@ -242,9 +242,29 @@ export function createBrainRoutes() {
       ]);
     }
 
-    broadcast("brain", "brain.config_updated", { changes: body });
+    broadcastBrainEvent("config_updated", { status: "running", ...body });
 
     return c.json({ updated: true, changes: body });
+  });
+
+  /**
+   * Brain callback - called by brain process to notify Observatory of events
+   * POST /api/brain/notify
+   */
+  app.post("/notify", async (c) => {
+    const body = await c.req.json<{
+      event: "started" | "stopped" | "paused" | "resumed" | "poll";
+      status: string;
+      pollIntervalMs?: number;
+      activeArmsCount?: number;
+      pendingTasksCount?: number;
+      completedToday?: number;
+      uptime?: number;
+    }>();
+
+    broadcastBrainEvent(body.event, body);
+
+    return c.json({ notified: true });
   });
 
   return app;
