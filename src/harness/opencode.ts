@@ -58,6 +58,7 @@ export class OpenCodeHarness implements AgentHarness {
     const env: Record<string, string> = {
       ...config.env,
       OCTOPAI_ARM_ID: sessionId,
+      NODE_TLS_REJECT_UNAUTHORIZED: "0", // Allow self-signed certs for development
     };
 
     // Set model if specified
@@ -123,6 +124,13 @@ export class OpenCodeHarness implements AgentHarness {
     // Clear buffer before sending so we can track new output
     const startIndex = session.pty.buffer.length;
 
+    // Wait for OpenCode to be ready for input (show prompt pattern)
+    try {
+      await this.ptyManager.waitForPattern(session.pty, OPENCODE_PATTERNS.prompt, 5000);
+    } catch {
+      console.log(`[harness] Warning: OpenCode prompt not detected, sending anyway`);
+    }
+
     // OpenCode accepts text input followed by Enter
     // For multi-line prompts, we need to handle them carefully
     const lines = prompt.split("\n");
@@ -139,10 +147,13 @@ export class OpenCodeHarness implements AgentHarness {
       }
     }
 
+    // Small delay to ensure text is processed before Enter
+    await new Promise(resolve => setTimeout(resolve, 50));
+
     // Send Enter to submit
     this.ptyManager.sendKey(session.pty, "ENTER");
     
-    console.log(`[harness] Sent prompt to ${session.id}: ${prompt.slice(0, 100)}...`);
+    console.log(`[harness] Sent prompt to ${session.id}: "${prompt.slice(0, 50)}..." [ENTER sent]`);
   }
 
   /**

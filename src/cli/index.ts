@@ -606,6 +606,48 @@ armCmd
   });
 
 armCmd
+  .command("prompt <name> <message>")
+  .description("Send a prompt to a running arm")
+  .action(async (name, message, options) => {
+    const { apiUrl, headers } = getApiConfig();
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    // Check if arm exists
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+
+    const armData = await armRes.json() as { arm: { status: string } };
+    if (armData.arm.status !== "idle" && armData.arm.status !== "busy") {
+      console.error(`Arm ${name} is not running (status: ${armData.arm.status})`);
+      console.error("Start the arm first with: octopai arm spawn --name " + name);
+      process.exit(1);
+    }
+
+    // Send prompt
+    const promptRes = await fetch(`${apiUrl}/api/arms/${name}/prompt`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt: message }),
+    });
+
+    if (!promptRes.ok) {
+      const err = await promptRes.json().catch(() => ({}));
+      console.error(`Failed to send prompt: ${(err as { error?: string }).error || promptRes.statusText}`);
+      process.exit(1);
+    }
+
+    console.log(`Prompt sent to arm ${name}`);
+    console.log(`(Arm is now ${armData.arm.status === "idle" ? "busy" : "processing"})`);
+  });
+
+armCmd
   .command("remove <name>")
   .description("Remove a stopped arm from the database")
   .action(async (name) => {

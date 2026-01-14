@@ -115,7 +115,7 @@ export interface UIPatterns {
  * Terminal key sequences
  */
 export const KEY_SEQUENCES = {
-  ENTER: "\r",
+  ENTER: "\r",  // Carriage return
   TAB: "\t",
   ESCAPE: "\x1b",
   CTRL_C: "\x03",
