@@ -865,6 +865,131 @@ export function createMcpServer(): McpServer {
     }
   );
 
+  // Subscribe to watch a file or pattern
+  server.registerTool(
+    "subscribe_file",
+    {
+      description: "Subscribe to changes for a file or glob pattern. You will be notified when the file changes. Use this for documentation and requirements files relevant to your current task.",
+      inputSchema: {
+        pattern: z.string().describe("File path or glob pattern to watch (e.g., 'docs/requirements/*.md' or 'src/api/*.ts')"),
+        category: z.enum(["architecture", "guides", "plans", "requirements", "decisions", "other", "source"]).optional().describe("Category for filtering change notifications"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ pattern, category }) => {
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "file_subscription",
+        payload: {
+          action: "subscribe",
+          pattern,
+          category,
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Subscribed to: ${pattern}${category ? ` (category: ${category})` : ""}\n\nYou will be notified of changes on your next poll cycle.\nBrain notified (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Unsubscribe from a file pattern
+  server.registerTool(
+    "unsubscribe_file",
+    {
+      description: "Stop watching a file or pattern you previously subscribed to.",
+      inputSchema: {
+        pattern: z.string().describe("File path or pattern to stop watching"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ pattern }) => {
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "file_subscription",
+        payload: {
+          action: "unsubscribe",
+          pattern,
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Unsubscribed from: ${pattern}\n\nBrain notified (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Report a file change that was detected
+  server.registerTool(
+    "report_file_change",
+    {
+      description: "Report that you detected a file change. The brain will notify other subscribed arms.",
+      inputSchema: {
+        file_path: z.string().describe("Path to the file that changed (relative to project root)"),
+        change_type: z.enum(["created", "modified", "deleted"]).describe("Type of change"),
+        summary: z.string().describe("Brief summary of what changed"),
+        impact: z.string().optional().describe("Assessment of impact on current work"),
+      },
+      outputSchema: {
+        content: z.array(
+          z.object({
+            type: z.literal("text"),
+            text: z.string(),
+          })
+        ).describe("Response content"),
+      },
+    },
+    async ({ file_path, change_type, summary, impact }) => {
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "file_change",
+        payload: {
+          filePath: file_path,
+          changeType: change_type,
+          summary,
+          impact,
+          detectedAt: new Date().toISOString(),
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `File change reported: ${file_path} (${change_type})\n\nSummary: ${summary}${impact ? `\nImpact: ${impact}` : ""}\n\nBrain will notify subscribed arms (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
   // ============================================
   // RESOURCES - Data arms can read
   // ============================================

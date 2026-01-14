@@ -51,6 +51,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["006_arm_spawn_fields", MIGRATION_006],
     ["007_fix_status_constraint", MIGRATION_007],
     ["008_arm_heartbeat", MIGRATION_008],
+    ["009_file_subscriptions", MIGRATION_009],
   ];
 
   // Apply pending migrations
@@ -285,6 +286,37 @@ ALTER TABLE arms ADD COLUMN last_heartbeat TEXT;
 -- Add config for heartbeat timeout (seconds)
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('arm_heartbeat_timeout_seconds', '120');
+`;
+
+// Migration 009: File subscriptions for file watching
+const MIGRATION_009 = `
+-- File subscriptions: arms can subscribe to files they want to watch
+CREATE TABLE IF NOT EXISTS file_subscriptions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  file_pattern TEXT NOT NULL,
+  category TEXT,
+  subscribed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_checked TEXT,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_subs_arm ON file_subscriptions(arm_id);
+CREATE INDEX IF NOT EXISTS idx_file_subs_pattern ON file_subscriptions(file_pattern);
+
+-- File change history: track changes to watched files
+CREATE TABLE IF NOT EXISTS file_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL,
+  change_type TEXT NOT NULL CHECK (change_type IN ('created', 'modified', 'deleted')),
+  content_hash TEXT,
+  changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  detected_by_arm_id TEXT,
+  notified_arms TEXT DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_changes_path ON file_changes(file_path);
+CREATE INDEX IF NOT EXISTS idx_file_changes_time ON file_changes(changed_at DESC);
 `;
 
 /**

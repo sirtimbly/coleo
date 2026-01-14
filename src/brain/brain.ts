@@ -10,6 +10,7 @@
 
 import { readdir, readFile, writeFile, mkdir, rename, unlink } from "fs/promises";
 import { join } from "path";
+import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { DocWatcher, getDocWatcher } from "../docs/watcher";
@@ -534,6 +535,18 @@ export class Brain {
         await this.handleDocUpdate(message.from, payload);
         break;
       }
+
+      case "file_subscription": {
+        const payload = message.payload as { action: "subscribe" | "unsubscribe"; pattern: string; category?: string };
+        await this.handleFileSubscription(message.from, payload);
+        break;
+      }
+
+      case "file_change": {
+        const payload = message.payload as { filePath: string; changeType: string; summary: string; impact?: string; detectedAt: string };
+        await this.handleFileChange(message.from, payload);
+        break;
+      }
     }
   }
 
@@ -807,7 +820,105 @@ export class Brain {
       },
     });
 
-    // TODO: Broadcast to other arms via queue if needed
+    // Log file change for subscribed arms
+    if (this.db) {
+      this.db.run(`
+        INSERT INTO file_changes (file_path, change_type, content_hash, detected_by_arm_id)
+        VALUES (?, 'modified', ?, ?)
+      `, [payload.path, payload.newContent ? createHash("sha256").update(payload.newContent).digest("hex").slice(0, 16) : null, armId]);
+    }
+  }
+
+  /**
+   * Handle file subscription request from an arm
+   */
+  private async handleFileSubscription(
+    armId: string,
+    payload: { action: "subscribe" | "unsubscribe"; pattern: string; category?: string }
+  ): Promise<void> {
+    if (!this.db) return;
+
+    if (payload.action === "subscribe") {
+      // Check if subscription already exists
+      const existing = this.db.query(`
+        SELECT id FROM file_subscriptions WHERE arm_id = ? AND file_pattern = ?
+      `).get(armId, payload.pattern);
+
+      if (!existing) {
+        this.db.run(`
+          INSERT INTO file_subscriptions (arm_id, file_pattern, category, subscribed_at)
+          VALUES (?, ?, ?, ?)
+        `, [armId, payload.pattern, payload.category || null, new Date().toISOString()]);
+        this.log(`Arm ${armId} subscribed to: ${payload.pattern}`);
+      }
+    } else {
+      // Unsubscribe
+      this.db.run(`
+        DELETE FROM file_subscriptions WHERE arm_id = ? AND file_pattern = ?
+      `, [armId, payload.pattern]);
+      this.log(`Arm ${armId} unsubscribed from: ${payload.pattern}`);
+    }
+  }
+
+  /**
+   * Handle file change report from an arm
+   */
+  private async handleFileChange(
+    armId: string,
+    payload: { filePath: string; changeType: string; summary: string; impact?: string; detectedAt: string }
+  ): Promise<void> {
+    this.log(`File change detected by ${armId}: ${payload.filePath} (${payload.changeType})`);
+
+    // Record the change
+    if (this.db) {
+      this.db.run(`
+        INSERT INTO file_changes (file_path, change_type, content_hash, detected_by_arm_id)
+        VALUES (?, ?, ?, ?)
+      `, [payload.filePath, payload.changeType, null, armId]);
+
+      // Get all arms subscribed to this file pattern
+      const subscriptions = this.db.query(`
+        SELECT DISTINCT arm_id, file_pattern FROM file_subscriptions
+        WHERE ? LIKE file_pattern
+      `).all(payload.filePath) as Array<{ arm_id: string; file_pattern: string }>;
+
+      // Notify subscribed arms
+      for (const sub of subscriptions) {
+        if (sub.arm_id !== armId) {
+          // Queue notification to subscribed arm
+          await this.sendToArm(sub.arm_id, {
+            type: "file_change_notification",
+            payload: {
+              filePath: payload.filePath,
+              changeType: payload.changeType,
+              summary: payload.summary,
+              impact: payload.impact,
+              detectedBy: armId,
+              detectedAt: payload.detectedAt,
+            },
+          });
+          this.log(`Notified arm ${sub.arm_id} of file change: ${payload.filePath}`);
+        }
+      }
+
+      // If requirements or plans changed, re-evaluate pending tasks
+      if (payload.filePath.includes("requirements") || payload.filePath.includes("plans")) {
+        this.log(`Requirements/plans changed: ${payload.filePath}. Re-evaluating tasks.`);
+        // Tasks will be re-prioritized in next poll cycle
+      }
+    }
+
+    // Notify human of significant changes
+    if (payload.impact === "high" || payload.filePath.includes("requirements")) {
+      await this.sendToHuman({
+        subject: `[octopai] File change detected: ${payload.filePath}`,
+        body: `Arm ${armId} detected a change:\n\n**File:** ${payload.filePath}\n**Type:** ${payload.changeType}\n**Summary:** ${payload.summary}${payload.impact ? `\n**Impact:** ${payload.impact}` : ""}`,
+        headers: {
+          "X-Octopai-Type": "file-change",
+          "X-Octopai-Path": payload.filePath,
+        },
+      });
+    }
   }
 
   /**

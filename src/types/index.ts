@@ -60,7 +60,9 @@ export type MessageType =
   | "status_update"
   | "heartbeat"
   | "human_message"
-  | "doc_update";
+  | "doc_update"
+  | "file_subscription"
+  | "file_change";
 
 // Discovery report from an arm
 export interface Discovery {

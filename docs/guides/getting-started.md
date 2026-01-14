@@ -391,6 +391,80 @@ octopai brain status
 
 ---
 
+## File Watching Workflow
+
+Arms automatically monitor files relevant to their work. When files change, the brain coordinates notifications to keep all arms in sync.
+
+### How It Works
+
+1. **Arms Subscribe**: When an arm starts work, it subscribes to relevant file patterns
+2. **Change Detection**: Arms periodically check their subscribed files for changes
+3. **Change Reporting**: When a change is detected, the arm reports to the brain
+4. **Brain Notification**: The brain notifies all subscribed arms
+5. **Impact Assessment**: Each arm assesses if the change affects their work
+
+### MCP Tools for File Watching
+
+Arms use these tools to manage file subscriptions:
+
+```bash
+# Subscribe to watch a file or pattern
+subscribe_file({
+  pattern: "docs/requirements/*.md",
+  category: "requirements"
+})
+
+# Stop watching a pattern
+unsubscribe_file({ pattern: "docs/requirements/*.md" })
+
+# Report a detected change
+report_file_change({
+  file_path: "docs/requirements/auth.md",
+  change_type: "modified",
+  summary: "Added OAuth 2.0 requirements",
+  impact: "high"
+})
+```
+
+### Example: Requirements Change Flow
+
+1. User updates `docs/requirements/auth.md` with new OAuth requirements
+2. Docs arm detects change via `check_documentation_changes`
+3. Docs arm reports to brain: `report_file_change`
+4. Brain notifies subscribed arms (frontend-dev, backend-dev)
+5. Frontend arm assesses impact on UI components
+6. Backend arm assesses impact on API endpoints
+7. Affected arms report back if their work needs adjustment
+
+### Notification Types
+
+| Change | Notified Arms | Action |
+|--------|---------------|--------|
+| docs/requirements/* | All arms | Re-evaluate task alignment |
+| docs/plans/* | All arms | Update sprint priorities |
+| docs/architecture/* | Architect, backend | Review consistency |
+| Source code changes | Related domain arms | Check for regressions |
+
+### For Source Code Arms
+
+When requirements change:
+
+1. You will receive a `file_change_notification` via your arm queue
+2. Read the requirements change
+3. Assess if your current work is affected
+4. Report back to brain if you need to adjust your approach
+
+### For Docs Arms
+
+When monitoring documentation:
+
+1. Periodically check for changes: `check_documentation_changes`
+2. Summarize significant changes
+3. Report high-impact changes to brain
+4. Notify relevant arms if source code needs updates
+
+---
+
 ## Documentation Updates from Email
 
 When you reply to emails from Octopai with documentation changes, the brain creates documentation update tasks assigned to "docs" domain arms.
