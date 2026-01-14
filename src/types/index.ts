@@ -152,3 +152,35 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
     contextBudget: 100000,
   },
 };
+
+// Arm configuration file structure (from .octopai/arms/*.toml)
+export interface ArmConfig {
+  arm: {
+    name: string;
+    domain: string;
+    harness: string;
+  };
+  context?: {
+    budget?: number;
+    priority_files?: string[];
+  };
+  personality?: {
+    traits?: string;
+  };
+  convictions?: {
+    core?: string[];
+  };
+  specializations?: string[];
+  tools?: {
+    requires_browser?: boolean;
+  };
+}
+
+// Summary of arm config for listing
+export interface ArmConfigSummary {
+  filename: string;
+  name: string;
+  domain: string;
+  harness: string;
+  budget?: number;
+}

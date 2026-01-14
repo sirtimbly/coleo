@@ -83,6 +83,58 @@ class ApiClient {
     }>('/config');
   }
 
+  // Full Config API
+  async getFullConfig() {
+    return this.request<{ config: OctopaiConfig }>('/config');
+  }
+
+  async updateConfig(data: Partial<OctopaiConfig>) {
+    return this.request<{ config: OctopaiConfig }>('/config', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getDefaults() {
+    return this.request<{ defaults: OctopaiConfig['defaults'] }>('/config/defaults');
+  }
+
+  async updateDefaults(data: Partial<OctopaiConfig['defaults']>) {
+    return this.request<{ defaults: OctopaiConfig['defaults'] }>('/config/defaults', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBrainConfig(data: Partial<OctopaiConfig['brain']>) {
+    return this.request<{ brain: OctopaiConfig['brain'] }>('/config/brain', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Arm Config Files
+  async listArmConfigs() {
+    return this.request<{ arms: ArmConfigSummary[] }>('/config/arms');
+  }
+
+  async getArmConfig(name: string) {
+    return this.request<{ filename: string; config: ArmConfig; raw: string }>(`/config/arms/${name}`);
+  }
+
+  async updateArmConfig(name: string, data: { config?: ArmConfig; raw?: string }) {
+    return this.request<{ filename: string; config: ArmConfig; raw: string }>(`/config/arms/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteArmConfig(name: string) {
+    return this.request<{ deleted: boolean; filename: string }>(`/config/arms/${name}`, {
+      method: 'DELETE',
+    });
+  }
+
   // Arms
   async listArms() {
     return this.request<{ arms: Arm[] }>('/arms');
@@ -201,6 +253,59 @@ class ApiClient {
 }
 
 // Types
+export interface OctopaiConfig {
+  version: number;
+  brain: {
+    pollIntervalMs: number;
+    maxArms: number;
+  };
+  mail: {
+    fromAddress: string;
+    digestSchedule: 'immediate' | 'hourly' | 'daily';
+  };
+  terminal: {
+    emulator: 'auto' | 'ghostty' | 'iterm2' | 'terminal' | 'wezterm';
+  };
+  defaults: {
+    harness: string;
+    provider: string;
+    model: string;
+    contextBudget: number;
+  };
+}
+
+// Arm configuration file structure (from .octopai/arms/*.toml)
+export interface ArmConfig {
+  arm: {
+    name: string;
+    domain: string;
+    harness: string;
+  };
+  context?: {
+    budget?: number;
+    priority_files?: string[];
+  };
+  personality?: {
+    traits?: string;
+  };
+  convictions?: {
+    core?: string[];
+  };
+  specializations?: string[];
+  tools?: {
+    requires_browser?: boolean;
+  };
+}
+
+// Summary of arm config for listing
+export interface ArmConfigSummary {
+  filename: string;
+  name: string;
+  domain: string;
+  harness: string;
+  budget?: number;
+}
+
 export interface Arm {
   id: string;
   name: string;

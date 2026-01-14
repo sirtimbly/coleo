@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Play, Square, Settings, RefreshCw, Terminal } from 'lucide-react';
+import { Play, Square, Settings, RefreshCw, Terminal, Save, X, Edit2, FileCode, ChevronDown, ChevronRight } from 'lucide-react';
 import { api } from '@/lib';
+import type { OctopaiConfig, ArmConfigSummary } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
@@ -14,23 +15,52 @@ interface BrainStatus {
   uptime: number | null;
 }
 
+// Known providers and models for dropdowns
+const KNOWN_HARNESSES = ['opencode', 'claude-code', 'aider'];
+const TERMINAL_EMULATORS = ['auto', 'ghostty', 'iterm2', 'terminal', 'wezterm'] as const;
+
 export function BrainPage() {
   const [status, setStatus] = useState<BrainStatus | null>(null);
-  const [config, setConfig] = useState<{
-    brain: { pollIntervalMs: number; maxArms: number; heartbeatTimeoutSeconds: number };
-  } | null>(null);
+  const [config, setConfig] = useState<OctopaiConfig | null>(null);
+  const [armConfigs, setArmConfigs] = useState<ArmConfigSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Edit mode state
+  const [editingSection, setEditingSection] = useState<string | null>(null);
+  const [editedConfig, setEditedConfig] = useState<OctopaiConfig | null>(null);
+  const [saveStatus, setSaveStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  // Arm config detail view
+  const [selectedArmConfig, setSelectedArmConfig] = useState<string | null>(null);
+  const [armConfigRaw, setArmConfigRaw] = useState<string>('');
+  const [armConfigEditing, setArmConfigEditing] = useState(false);
+
+  // Collapsible sections
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    brain: true,
+    defaults: true,
+    mail: false,
+    terminal: false,
+    armConfigs: true,
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
   const loadData = useCallback(async () => {
     try {
-      const [statusRes, configRes] = await Promise.all([
+      const [statusRes, configRes, armConfigsRes] = await Promise.all([
         api.getBrainStatus(),
-        api.getBrainConfig(),
+        api.getFullConfig(),
+        api.listArmConfigs(),
       ]);
       setStatus(statusRes.brain as BrainStatus);
-      setConfig(configRes);
+      setConfig(configRes.config);
+      setEditedConfig(configRes.config);
+      setArmConfigs(armConfigsRes.arms);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load brain status');
@@ -76,6 +106,49 @@ export function BrainPage() {
       alert(err instanceof Error ? err.message : 'Failed to stop brain');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleSaveConfig = async (section: keyof OctopaiConfig) => {
+    if (!editedConfig) return;
+    setSaveStatus(null);
+    try {
+      await api.updateConfig({ [section]: editedConfig[section] });
+      setConfig(editedConfig);
+      setEditingSection(null);
+      setSaveStatus({ type: 'success', message: `${section} configuration saved` });
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      setSaveStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditedConfig(config);
+    setEditingSection(null);
+  };
+
+  const loadArmConfig = async (filename: string) => {
+    try {
+      const res = await api.getArmConfig(filename);
+      setSelectedArmConfig(filename);
+      setArmConfigRaw(res.raw);
+      setArmConfigEditing(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to load arm config');
+    }
+  };
+
+  const saveArmConfig = async () => {
+    if (!selectedArmConfig) return;
+    try {
+      await api.updateArmConfig(selectedArmConfig, { raw: armConfigRaw });
+      setArmConfigEditing(false);
+      setSaveStatus({ type: 'success', message: 'Arm config saved' });
+      loadData(); // Refresh the list
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (err) {
+      setSaveStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to save arm config' });
     }
   };
 
@@ -129,15 +202,31 @@ export function BrainPage() {
     return 'stopped' as const;
   };
 
+  const SectionHeader = ({ id, title, icon: Icon }: { id: string; title: string; icon: React.ComponentType<{ className?: string }> }) => (
+    <button
+      onClick={() => toggleSection(id)}
+      className="flex items-center gap-2 w-full text-left"
+    >
+      {expandedSections[id] ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+      <Icon className="h-5 w-5" />
+      <span>{title}</span>
+    </button>
+  );
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Brain</h1>
-          <p className="text-muted-foreground">Central coordinator status and control</p>
+          <p className="text-muted-foreground">Central coordinator status and configuration</p>
         </div>
         <div className="flex items-center gap-2">
+          {saveStatus && (
+            <span className={`text-sm ${saveStatus.type === 'success' ? 'text-green-500' : 'text-destructive'}`}>
+              {saveStatus.message}
+            </span>
+          )}
           <button
             onClick={loadData}
             className="p-2 text-muted-foreground hover:text-foreground transition-colors"
@@ -210,30 +299,344 @@ export function BrainPage() {
         </CardContent>
       </Card>
 
-      {/* Configuration */}
+      {/* Brain Configuration */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Configuration
+          <CardTitle>
+            <SectionHeader id="brain" title="Brain Configuration" icon={Settings} />
           </CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <p className="text-sm text-muted-foreground">Poll Interval</p>
-              <p className="text-lg font-medium">{formatPollInterval(config?.brain.pollIntervalMs || 30000)}</p>
+        {expandedSections.brain && (
+          <CardContent>
+            {editingSection === 'brain' ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="text-sm text-muted-foreground">Poll Interval (ms)</label>
+                    <input
+                      type="number"
+                      value={editedConfig?.brain.pollIntervalMs || 30000}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        brain: { ...prev.brain, pollIntervalMs: parseInt(e.target.value) || 30000 }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground">Max Arms</label>
+                    <input
+                      type="number"
+                      value={editedConfig?.brain.maxArms || 8}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        brain: { ...prev.brain, maxArms: parseInt(e.target.value) || 8 }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSaveConfig('brain')}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <Save className="h-4 w-4" /> Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md hover:bg-secondary/80"
+                  >
+                    <X className="h-4 w-4" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-6">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Poll Interval</p>
+                    <p className="text-lg font-medium">{formatPollInterval(config?.brain.pollIntervalMs || 30000)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Max Arms</p>
+                    <p className="text-lg font-medium">{config?.brain.maxArms || 8}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditingSection('brain')}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <Edit2 className="h-4 w-4" /> Edit
+                </button>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Defaults Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <SectionHeader id="defaults" title="Default Settings" icon={Settings} />
+          </CardTitle>
+        </CardHeader>
+        {expandedSections.defaults && (
+          <CardContent>
+            {editingSection === 'defaults' ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-muted-foreground">Harness</label>
+                    <select
+                      value={editedConfig?.defaults.harness || 'opencode'}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        defaults: { ...prev.defaults, harness: e.target.value }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                    >
+                      {KNOWN_HARNESSES.map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground">Provider</label>
+                    <input
+                      type="text"
+                      value={editedConfig?.defaults.provider || ''}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        defaults: { ...prev.defaults, provider: e.target.value }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                      placeholder="anthropic, openai, etc."
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground">Model</label>
+                    <input
+                      type="text"
+                      value={editedConfig?.defaults.model || ''}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        defaults: { ...prev.defaults, model: e.target.value }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                      placeholder="claude-sonnet-4-20250514"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground">Context Budget</label>
+                    <input
+                      type="number"
+                      value={editedConfig?.defaults.contextBudget || 100000}
+                      onChange={(e) => setEditedConfig(prev => prev ? {
+                        ...prev,
+                        defaults: { ...prev.defaults, contextBudget: parseInt(e.target.value) || 100000 }
+                      } : null)}
+                      className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSaveConfig('defaults')}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <Save className="h-4 w-4" /> Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md hover:bg-secondary/80"
+                  >
+                    <X className="h-4 w-4" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Harness</p>
+                    <p className="text-lg font-medium">{config?.defaults.harness || 'opencode'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Provider</p>
+                    <p className="text-lg font-medium">{config?.defaults.provider || 'anthropic'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Model</p>
+                    <p className="text-lg font-medium font-mono text-sm">{config?.defaults.model || 'claude-sonnet-4-20250514'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Context Budget</p>
+                    <p className="text-lg font-medium">{(config?.defaults.contextBudget || 100000).toLocaleString()}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setEditingSection('defaults')}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <Edit2 className="h-4 w-4" /> Edit
+                </button>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Terminal Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <SectionHeader id="terminal" title="Terminal Settings" icon={Terminal} />
+          </CardTitle>
+        </CardHeader>
+        {expandedSections.terminal && (
+          <CardContent>
+            {editingSection === 'terminal' ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">Terminal Emulator</label>
+                  <select
+                    value={editedConfig?.terminal.emulator || 'auto'}
+                    onChange={(e) => setEditedConfig(prev => prev ? {
+                      ...prev,
+                      terminal: { ...prev.terminal, emulator: e.target.value as typeof TERMINAL_EMULATORS[number] }
+                    } : null)}
+                    className="w-full mt-1 px-3 py-2 bg-secondary border border-border rounded-md max-w-xs"
+                  >
+                    {TERMINAL_EMULATORS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleSaveConfig('terminal')}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
+                  >
+                    <Save className="h-4 w-4" /> Save
+                  </button>
+                  <button
+                    onClick={handleCancelEdit}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md hover:bg-secondary/80"
+                  >
+                    <X className="h-4 w-4" /> Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Terminal Emulator</p>
+                  <p className="text-lg font-medium">{config?.terminal.emulator || 'auto'}</p>
+                </div>
+                <button
+                  onClick={() => setEditingSection('terminal')}
+                  className="flex items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <Edit2 className="h-4 w-4" /> Edit
+                </button>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Arm Configuration Files */}
+      <Card>
+        <CardHeader>
+          <CardTitle>
+            <SectionHeader id="armConfigs" title="Arm Configuration Files" icon={FileCode} />
+          </CardTitle>
+        </CardHeader>
+        {expandedSections.armConfigs && (
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              Configuration templates for arms in <code className="bg-secondary px-1 rounded">~/.octopai/arms/</code>
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {/* List of arm configs */}
+              <div className="space-y-2">
+                {armConfigs.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">No arm configs found</p>
+                ) : (
+                  armConfigs.map((arm) => (
+                    <button
+                      key={arm.filename}
+                      onClick={() => loadArmConfig(arm.filename)}
+                      className={`w-full text-left p-3 rounded-md border transition-colors ${
+                        selectedArmConfig === arm.filename
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border hover:border-primary/50'
+                      }`}
+                    >
+                      <div className="font-medium">{arm.name}</div>
+                      <div className="text-sm text-muted-foreground flex gap-3">
+                        <span>{arm.domain}</span>
+                        <span>{arm.harness}</span>
+                        {arm.budget && <span>{arm.budget.toLocaleString()} tokens</span>}
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+
+              {/* Arm config editor */}
+              <div className="border border-border rounded-md">
+                {selectedArmConfig ? (
+                  <div className="h-full flex flex-col">
+                    <div className="flex items-center justify-between p-2 border-b border-border bg-secondary/50">
+                      <span className="font-mono text-sm">{selectedArmConfig}</span>
+                      <div className="flex gap-2">
+                        {armConfigEditing ? (
+                          <>
+                            <button
+                              onClick={saveArmConfig}
+                              className="flex items-center gap-1 px-2 py-1 text-sm bg-primary text-primary-foreground rounded hover:bg-primary/90"
+                            >
+                              <Save className="h-3 w-3" /> Save
+                            </button>
+                            <button
+                              onClick={() => {
+                                setArmConfigEditing(false);
+                                loadArmConfig(selectedArmConfig);
+                              }}
+                              className="flex items-center gap-1 px-2 py-1 text-sm bg-secondary rounded hover:bg-secondary/80"
+                            >
+                              <X className="h-3 w-3" /> Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setArmConfigEditing(true)}
+                            className="flex items-center gap-1 px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+                          >
+                            <Edit2 className="h-3 w-3" /> Edit
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <textarea
+                      value={armConfigRaw}
+                      onChange={(e) => setArmConfigRaw(e.target.value)}
+                      readOnly={!armConfigEditing}
+                      className={`flex-1 p-3 font-mono text-sm bg-background resize-none min-h-[300px] ${
+                        armConfigEditing ? '' : 'cursor-default'
+                      }`}
+                      spellCheck={false}
+                    />
+                  </div>
+                ) : (
+                  <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+                    Select an arm config to view
+                  </div>
+                )}
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Max Arms</p>
-              <p className="text-lg font-medium">{config?.brain.maxArms || 8}</p>
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Heartbeat Timeout</p>
-              <p className="text-lg font-medium">{config?.brain.heartbeatTimeoutSeconds || 120}s</p>
-            </div>
-          </div>
-        </CardContent>
+          </CardContent>
+        )}
       </Card>
 
       {/* Last Activity */}
