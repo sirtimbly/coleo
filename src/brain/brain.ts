@@ -133,11 +133,12 @@ export class Brain {
   private sent: Maildir;
   private tasks: Task[] = [];
   private arms: Map<string, Arm> = new Map();
-  private seenArmIds: Set<string> = new Set(); // Track arms we've already assigned initial tasks
+  private seenArmIds: Set<string> = new Set();
   private running = false;
   private db: Database | null = null;
   private apiBaseUrl: string;
   private apiKey: string;
+  private mailProcessor: MailProcessor;
 
   /**
    * Log an activity entry
@@ -162,10 +163,13 @@ export class Brain {
       pendingTasks: 0,
       completedToday: 0,
     };
-    
+
     // Set up mail directories
     this.inbox = new Maildir(join(options.octopaiDir, "mail", "inbox"));
     this.sent = new Maildir(join(options.octopaiDir, "mail", "sent"));
+
+    // Initialize mail processor
+    this.mailProcessor = new MailProcessor((msg) => this.log(msg));
   }
 
   /**
@@ -394,96 +398,129 @@ export class Brain {
    */
   private async processHumanMail(): Promise<void> {
     const messages = await this.sent.list("new");
-    
+
+    if (messages.length === 0) return;
+
+    this.log(`Processing ${messages.length} human message(s)...`);
+
+    // Build context for LLM
+    const armContexts = Array.from(this.arms.values()).map(arm => ({
+      name: arm.name,
+      domain: (arm as Arm & { domain?: string }).domain || "general",
+      status: arm.status,
+    }));
+
+    const recentActivity = this.db
+      ? (this.db.query("SELECT actor, action FROM activity ORDER BY timestamp DESC LIMIT 5").all() as Array<{ actor: string; action: string }>)
+        .map(a => `${a.actor} ${a.action}`)
+      : [];
+
     for (const message of messages) {
-      this.log(`Processing human message: ${message.subject}`);
-      
-      // Parse the message to understand intent
-      const intent = this.parseHumanIntent(message.subject, message.body);
-      
+      this.log(`Processing: ${message.subject}`);
+
+      // Use LLM to determine intent
+      const intent = await this.mailProcessor.processMessage(
+        message.subject,
+        message.body,
+        {
+          availableArms: armContexts,
+          pendingTasks: this.tasks.filter(t => t.status === "pending").length,
+          recentActivity,
+        }
+      );
+
+      this.log(`Intent: ${intent.type} (${intent.reasoning})`);
+
+      // Handle the intent
       switch (intent.type) {
         case "new_task":
-          await this.createTask(intent.subject, intent.body, message.id);
+          await this.createTask(
+            intent.subject || message.subject,
+            intent.body || message.body,
+            message.id,
+            intent.priority,
+            intent.domain
+          );
           break;
-          
+
         case "doc_update":
-          await this.createDocUpdateTask(intent.subject, intent.body, intent.targetDoc, message.id);
+          await this.createDocUpdateTask(
+            intent.subject || message.subject,
+            intent.body || message.body,
+            intent.targetDoc,
+            message.id
+          );
           break;
-          
+
         case "approval_response":
-          await this.handleApprovalResponse(intent.originalId, intent.approved, intent.comment);
+          await this.handleApprovalResponse(
+            intent.originalId || "",
+            intent.approved || false,
+            intent.comment || message.body
+          );
           break;
-          
+
         case "query":
-          await this.handleQuery(intent.query, message.id);
+          await this.handleQuery(intent.query || "status", message.id);
           break;
-          
+
+        case "prompt_arm":
+          if (intent.armName && intent.instruction) {
+            await this.sendPromptToArm(intent.armName, intent.instruction);
+            this.log(`Prompted arm ${intent.armName} directly`);
+            this.logActivity("brain", "arm_prompted", intent.armName, {
+              reason: "human_mail",
+              instruction: intent.instruction.slice(0, 100),
+            });
+          }
+          break;
+
+        case "escalate":
+          this.log(`Escalating message to human: ${message.subject}`);
+          await this.sendToHuman({
+            subject: `[octopai] Cannot process: ${message.subject}`,
+            body: `I received this message but couldn't determine the appropriate action:\n\n${message.body}`,
+          });
+          break;
+
         default:
-          this.log(`Unknown intent: ${message.subject}`);
+          this.log(`Unknown intent type: ${(intent as { type: string }).type}`);
       }
-      
+
       // Mark as processed
       await this.sent.markSeen(message.id);
     }
   }
 
   /**
-    * Parse human message to understand intent
-    */
-  private parseHumanIntent(subject: string, body: string): HumanIntent {
-    const lowerSubject = subject.toLowerCase();
-    const lowerBody = body.toLowerCase();
-    
-    // Check for approval response
-    if (lowerSubject.includes("re:") && lowerSubject.includes("approval")) {
-      const approved = lowerBody.includes("approve") || lowerBody.includes("yes") || lowerBody.includes("ok");
-      const originalIdMatch = subject.match(/\[([^\]]+)\]/);
-      return {
-        type: "approval_response",
-        originalId: originalIdMatch?.[1] || "",
-        approved,
-        comment: body,
-      };
-    }
-    
-    // Check for documentation update request
-    const docUpdatePatterns = [
-      /update (?:the )?docs?/i,
-      /update (?:the )?requirements/i,
-      /update (?:the )?plans?/i,
-      /update (?:the )?documentation/i,
-      /revise (?:the )?docs?/i,
-      /revise (?:the )?requirements/i,
-      /change (?:the )?specs?/i,
-      /clarify (?:the )?requirements/i,
-    ];
-    
-    for (const pattern of docUpdatePatterns) {
-      if (pattern.test(subject) || pattern.test(body)) {
-        // Try to extract target document
-        const docMatch = body.match(/docs\/([^\s\n]+)|requirements\/([^\s\n]+)|plans\/([^\s\n]+)/i);
-        const targetDoc = docMatch?.[1] || docMatch?.[2] || docMatch?.[3] || undefined;
-        
-        return {
-          type: "doc_update",
-          subject: subject.replace(/^(update|revise|change|clarify)\s*(?:the\s*)?/i, "").trim(),
-          body,
-          targetDoc,
-        };
-      }
-    }
-    
-    // Check for status query
-    if (lowerSubject.includes("status") || lowerBody.includes("what's happening")) {
-      return { type: "query", query: "status" };
-    }
-    
-    // Default: treat as new task
-    return {
-      type: "new_task",
-      subject: subject.replace(/^(new task:|task:)\s*/i, ""),
-      body,
+   * Create a new task (updated to support priority and domain)
+   */
+  private async createTask(
+    subject: string,
+    description: string,
+    mailThreadId?: string,
+    priority?: "critical" | "high" | "normal" | "low",
+    domain?: string
+  ): Promise<Task> {
+    const task: Task = {
+      id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      subject,
+      description,
+      status: "pending",
+      priority: priority || "normal",
+      domain,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      mailThreadId,
     };
+
+    this.tasks.push(task);
+    await this.saveTasks();
+
+    this.log(`Created task: ${task.subject} (${task.id}) domain=${domain || "any"} priority=${task.priority}`);
+    this.logActivity("brain", "task_created", task.id, { subject, priority: task.priority, domain, mailThreadId });
+
+    return task;
   }
 
   /**
@@ -581,30 +618,6 @@ export class Brain {
         break;
       }
     }
-  }
-
-  /**
-   * Create a new task
-   */
-  private async createTask(subject: string, description: string, mailThreadId?: string): Promise<Task> {
-    const task: Task = {
-      id: `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      subject,
-      description,
-      status: "pending",
-      priority: "normal",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      mailThreadId,
-    };
-    
-    this.tasks.push(task);
-    await this.saveTasks();
-    
-    this.log(`Created task: ${task.subject} (${task.id})`);
-    this.logActivity("brain", "task_created", task.id, { subject, priority: task.priority, mailThreadId });
-    
-    return task;
   }
 
   /**
@@ -1783,8 +1796,171 @@ export class Brain {
   }
 }
 
+/**
+ * LLM-based Mail Processor
+ * Uses OpenAI to understand human messages and determine actions
+ */
+
+interface ProcessedIntent {
+  type: "new_task" | "doc_update" | "approval_response" | "query" | "prompt_arm" | "arm_instruction" | "escalate";
+  subject?: string;
+  body?: string;
+  targetDoc?: string;
+  originalId?: string;
+  approved?: boolean;
+  comment?: string;
+  query?: string;
+  armName?: string;
+  instruction?: string;
+  priority?: "critical" | "high" | "normal" | "low";
+  domain?: string;
+  reasoning?: string;
+}
+
+export class MailProcessor {
+  private apiKey: string;
+  private model: string;
+  private baseUrl: string;
+  private logger: (message: string) => void;
+
+  constructor(logger: (message: string) => void) {
+    this.logger = logger;
+    this.apiKey = process.env.OPENAI_API_KEY || "";
+    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  }
+
+  async processMessage(
+    subject: string,
+    body: string,
+    context: {
+      availableArms: Array<{ name: string; domain: string; status: string }>;
+      pendingTasks: number;
+      recentActivity: string[];
+    }
+  ): Promise<ProcessedIntent> {
+    if (!this.apiKey) {
+      return this.fallbackParse(subject, body);
+    }
+
+    const systemPrompt = `You are the Octopai Brain, an AI agent orchestrator. Your job is to process messages from a human and determine the appropriate action.
+
+## Available Actions
+1. **new_task** - Create a new task for arms to work on
+2. **doc_update** - Update documentation based on human feedback
+3. **approval_response** - Human responded to an approval request
+4. **query** - Human is asking a question about system status
+5. **prompt_arm** - Directly prompt a specific arm with instructions
+6. **escalate** - Requires human attention or cannot be automated
+
+## Context
+Available arms: ${context.availableArms.map(a => `${a.name}[${a.domain}]`).join(", ") || "none"}
+Pending tasks: ${context.pendingTasks}
+Recent activity: ${context.recentActivity.slice(0, 5).join("; ") || "none"}
+
+## Response Format
+Respond with a JSON object (no markdown):
+{"type": "...", "reasoning": "...", ...other fields based on type}
+
+For new_task: include subject, body, priority (default: normal), domain (optional)
+For prompt_arm: include armName and instruction
+For query: include the query type
+For approval_response: include originalId, approved (boolean), comment`;
+
+    const userMessage = `Subject: ${subject}
+
+Body:
+${body}`;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.3,
+          max_tokens: 500,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        this.logger(`[mail-processor] OpenAI API error: ${err.substring(0, 200)}`);
+        return this.fallbackParse(subject, body);
+      }
+
+      const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+      const content = data.choices[0]?.message?.content || "";
+
+      // Parse JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]) as ProcessedIntent;
+        result.reasoning = result.reasoning || "LLM parsed intent";
+        this.logger(`[mail-processor] LLM intent: ${result.type} - ${result.reasoning}`);
+        return result;
+      }
+
+      return this.fallbackParse(subject, body);
+    } catch (err) {
+      this.logger(`[mail-processor] LLM processing error: ${err}`);
+      return this.fallbackParse(subject, body);
+    }
+  }
+
+  private fallbackParse(subject: string, body: string): ProcessedIntent {
+    const lowerSubject = subject.toLowerCase();
+    const lowerBody = body.toLowerCase();
+
+    if (lowerSubject.includes("re:") && lowerSubject.includes("approval")) {
+      const approved = lowerBody.includes("approve") || lowerBody.includes("yes") || lowerBody.includes("ok");
+      const originalIdMatch = subject.match(/\[([^\]]+)\]/);
+      return {
+        type: "approval_response",
+        originalId: originalIdMatch?.[1] || "",
+        approved,
+        comment: body,
+        reasoning: "Fallback: detected approval response",
+      };
+    }
+
+    const docPatterns = [/update (?:the )?docs?/i, /update (?:the )?requirements/i, /update (?:the )?plans?/i];
+    for (const pattern of docPatterns) {
+      if (pattern.test(subject) || pattern.test(body)) {
+        const docMatch = body.match(/docs\/([^\s\n]+)/i);
+        return {
+          type: "doc_update",
+          subject: subject.replace(/^(update|revise|change|clarify)\s*(?:the\s*)?/i, "").trim(),
+          body,
+          targetDoc: docMatch?.[1],
+          reasoning: "Fallback: detected doc update request",
+        };
+      }
+    }
+
+    if (lowerSubject.includes("status") || lowerBody.includes("what's happening")) {
+      return { type: "query", query: "status", reasoning: "Fallback: detected status query" };
+    }
+
+    return {
+      type: "new_task",
+      subject: subject.replace(/^(new task:|task:)\s*/i, "").trim() || subject,
+      body,
+      priority: "normal",
+      reasoning: "Fallback: treated as new task",
+    };
+  }
+}
+
 // Types for parsing human intent
-type HumanIntent = 
+type HumanIntent =
   | { type: "new_task"; subject: string; body: string }
   | { type: "doc_update"; subject: string; body: string; targetDoc?: string }
   | { type: "approval_response"; originalId: string; approved: boolean; comment: string }
