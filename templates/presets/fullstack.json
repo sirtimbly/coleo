@@ -1,0 +1,10 @@
+{
+  "name": "fullstack",
+  "description": "Single generalist arm for small projects or quick prototyping",
+  "arms": [
+    {
+      "template": "fullstack.toml",
+      "name": "fullstack-dev"
+    }
+  ]
+}

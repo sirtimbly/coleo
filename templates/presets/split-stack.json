@@ -1,0 +1,14 @@
+{
+  "name": "split-stack",
+  "description": "Separate frontend and backend arms for layered development",
+  "arms": [
+    {
+      "template": "frontend.toml",
+      "name": "frontend-dev"
+    },
+    {
+      "template": "backend.toml",
+      "name": "backend-dev"
+    }
+  ]
+}

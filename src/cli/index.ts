@@ -6,8 +6,8 @@
  */
 
 import { Command } from "commander";
-import { join } from "path";
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { join, dirname } from "path";
+import { mkdir, writeFile, readFile, copyFile, readdir } from "fs/promises";
 import { homedir } from "os";
 import { Brain } from "../brain";
 import { initMaildir, Maildir } from "../mail";
@@ -16,6 +16,8 @@ import { spawnArm, listArms, killArm } from "../arm";
 import { startServer } from "../api";
 import type { OctopaiConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
+
+const TEMPLATES_DIR = join(dirname(import.meta.filename), "..", "..", "templates");
 
 const program = new Command();
 
@@ -73,8 +75,10 @@ program
   .command("init")
   .description("Initialize Octopai in ~/.octopai")
   .option("-d, --dir <path>", "Custom directory", "~/.octopai")
+  .option("--preset <name>", "Preset configuration (fullstack, split-stack, full-team)", "")
   .action(async (options) => {
     const octopaiDir = expandPath(options.dir);
+    const preset = options.preset;
     console.log(`Initializing Octopai in ${octopaiDir}...`);
 
     // Create directory structure
@@ -90,6 +94,7 @@ program
       "state/notes/shared",
       "mcp",
       "logs",
+      "arms",
     ];
 
     for (const dir of dirs) {
@@ -111,6 +116,9 @@ program
       "utf-8"
     );
 
+    // Copy arm templates
+    await copyArmTemplates(octopaiDir, preset);
+
     console.log(`
 Octopai initialized!
 
@@ -119,13 +127,18 @@ Directory structure created:
   ├── mail/          # Human-agent communication (Maildir)
   ├── queue/         # Inter-agent message queue
   ├── state/         # Persistent state
+  ├── arms/          # Arm configurations
   ├── mcp/           # MCP configurations
   └── logs/          # Log files
 
+${preset ? `Preset "${preset}" arms have been configured in ~/.octopai/arms/` : ""}
+Edit or delete arm configs in ~/.octopai/arms/ before spawning.
+
 Next steps:
   1. Configure your mail client to read from ${octopaiDir}/mail/inbox
-  2. Start the API server: octopai serve
-  3. Spawn an arm: octopai arm spawn --name explorer --agent opencode
+  2. Configure arms: edit ~/.octopai/arms/*.toml
+  3. Start the API server: octopai serve
+  4. Spawn an arm: octopai arm spawn --name <name> --agent opencode
 `);
   });
 
@@ -643,6 +656,107 @@ program
   });
 
 // ============================================
+// CONFIG COMMAND
+// ============================================
+
+const configCmd = program.command("config").description("Manage Octopai configuration");
+
+configCmd
+  .command("presets")
+  .description("List available arm configuration presets")
+  .action(async () => {
+    const presetsDir = join(TEMPLATES_DIR, "presets");
+    try {
+      const files = await readdir(presetsDir);
+      const presets = files.filter(f => f.endsWith(".json")).map(f => f.replace(".json", ""));
+
+      console.log("Available Presets:\n");
+
+      const presetInfo: Record<string, string> = {
+        fullstack: "Single generalist arm for small projects",
+        "split-stack": "Frontend + backend specialist arms",
+        "full-team": "Full team: frontend, backend, testing, docs, architect",
+      };
+
+      for (const preset of presets) {
+        console.log(`  ${preset}`);
+        console.log(`    ${presetInfo[preset] || "No description"}\n`);
+      }
+
+      console.log("Usage: octopai init --preset <name>");
+      console.log("       octopai config load <name>");
+    } catch {
+      console.log("No presets found.");
+    }
+  });
+
+configCmd
+  .command("load <preset>")
+  .description("Load an arm configuration preset")
+  .action(async (preset) => {
+    const octopaiDir = getOctopaiDir();
+    const armsDir = join(octopaiDir, "arms");
+    await mkdir(armsDir, { recursive: true });
+
+    const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
+    try {
+      const presetContent = await readFile(presetPath, "utf-8");
+      const presetData = JSON.parse(presetContent);
+
+      console.log(`Loading preset: ${presetData.name}`);
+      console.log(`Description: ${presetData.description}\n`);
+
+      for (const armConfig of presetData.arms) {
+        const templatePath = join(TEMPLATES_DIR, "arms", armConfig.template);
+        let content = await readFile(templatePath, "utf-8");
+
+        // Replace the name in the template
+        content = content.replace(/name = "[^"]*"/, `name = "${armConfig.name}"`);
+
+        const destPath = join(armsDir, `${armConfig.name}.toml`);
+        await writeFile(destPath, content, "utf-8");
+        console.log(`  ✓ ${armConfig.name}.toml`);
+      }
+
+      console.log(`\n${presetData.arms.length} arm configuration(s) written to ${armsDir}/`);
+    } catch (err) {
+      console.error(`Failed to load preset "${preset}": ${err}`);
+      process.exit(1);
+    }
+  });
+
+configCmd
+  .command("arms")
+  .description("List configured arms")
+  .action(async () => {
+    const octopaiDir = getOctopaiDir();
+    const armsDir = join(octopaiDir, "arms");
+
+    try {
+      const files = await readdir(armsDir);
+      const configs = files.filter(f => f.endsWith(".toml"));
+
+      if (configs.length === 0) {
+        console.log("No arm configurations found.");
+        console.log("Run: octopai init");
+        return;
+      }
+
+      console.log("Arm Configurations:\n");
+      for (const config of configs) {
+        const content = await readFile(join(armsDir, config), "utf-8");
+        const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
+        const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
+        const name = nameMatch?.[1] || config.replace(".toml", "");
+        const domain = domainMatch?.[1] || "general";
+        console.log(`  ${name} [${domain}]`);
+      }
+    } catch {
+      console.log("Arms directory not found. Run: octopai init");
+    }
+  });
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 
@@ -670,6 +784,73 @@ emulator = "${config.terminal.emulator}"
 # default_org = "octopai"
 # default_repo = "workspace"
 `;
+}
+
+/**
+ * Copy arm templates to the octopai directory
+ */
+async function copyArmTemplates(octopaiDir: string, preset: string): Promise<void> {
+  const armsDir = join(octopaiDir, "arms");
+
+  if (preset) {
+    // Load preset configuration
+    const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
+    try {
+      const presetContent = await readFile(presetPath, "utf-8");
+      const presetData = JSON.parse(presetContent);
+
+      console.log(`\nLoading preset: ${presetData.name}`);
+      console.log(`Description: ${presetData.description}`);
+
+      for (const armConfig of presetData.arms) {
+        const templatePath = join(TEMPLATES_DIR, "arms", armConfig.template);
+        let content = await readFile(templatePath, "utf-8");
+
+        // Replace the name in the template
+        content = content.replace(/name = "[^"]*"/, `name = "${armConfig.name}"`);
+
+        const destPath = join(armsDir, `${armConfig.name}.toml`);
+        await writeFile(destPath, content, "utf-8");
+        console.log(`  ✓ ${armConfig.name} (${armConfig.template})`);
+      }
+
+      console.log(`\n${presetData.arms.length} arm configuration(s) copied to ${armsDir}/`);
+    } catch (err) {
+      console.log(`\nWarning: Could not load preset "${preset}"`);
+      console.log("Falling back to default templates...\n");
+      await copyDefaultTemplates(armsDir);
+    }
+  } else {
+    // Copy default templates (fullstack)
+    await copyDefaultTemplates(armsDir);
+  }
+}
+
+async function copyDefaultTemplates(armsDir: string): Promise<void> {
+  console.log("\nCopying default arm templates...");
+
+  // Copy the fullstack template as default
+  const fullstackPath = join(TEMPLATES_DIR, "arms", "fullstack.toml");
+  const content = await readFile(fullstackPath, "utf-8");
+  await writeFile(join(armsDir, "fullstack-dev.toml"), content, "utf-8");
+  console.log("  ✓ fullstack-dev.toml (general purpose)");
+
+  // Also copy other templates for reference
+  const templates = ["frontend.toml", "backend.toml", "testing.toml", "docs.toml", "architect.toml"];
+  for (const template of templates) {
+    try {
+      const srcPath = join(TEMPLATES_DIR, "arms", template);
+      const destPath = join(armsDir, `example-${template}`);
+      await copyFile(srcPath, destPath);
+      console.log(`  ✓ example-${template}`);
+    } catch {
+      // Template might not exist, skip
+    }
+  }
+
+  console.log(`\nArm templates copied to ${armsDir}/`);
+  console.log("Edit or delete these files before spawning arms.");
+  console.log("The fullstack-dev.toml is ready to use as-is.");
 }
 
 // Run the CLI

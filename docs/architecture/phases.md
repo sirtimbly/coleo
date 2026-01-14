@@ -86,9 +86,12 @@ A working web UI at `http://localhost:3001` showing:
 
 - [ ] **2.1** Arm profile system
   - Define domain types and default patterns
-  - Create arm profile configuration files (`~/.octopai/arms/*.toml`)
+  - Create arm profile configuration templates (`templates/arms/*.toml`)
   - Update arm spawning to use profiles
-  - Add preset configurations (fullstack, split-stack, full-team)
+  - Add preset configurations (`templates/presets/*.json`):
+    - `fullstack.json` - Single generalist arm
+    - `split-stack.json` - Frontend + backend specialists
+    - `full-team.json` - All specialists
 
 - [ ] **2.2** Context budget tracking
   - Implement `ContextBudget` type

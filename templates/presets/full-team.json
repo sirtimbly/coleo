@@ -1,0 +1,30 @@
+{
+  "name": "full-team",
+  "description": "Full team of specialists for comprehensive coverage",
+  "arms": [
+    {
+      "template": "fullstack.toml",
+      "name": "general-dev"
+    },
+    {
+      "template": "frontend.toml",
+      "name": "frontend-dev"
+    },
+    {
+      "template": "backend.toml",
+      "name": "backend-dev"
+    },
+    {
+      "template": "testing.toml",
+      "name": "qa-engineer"
+    },
+    {
+      "template": "docs.toml",
+      "name": "docs-keeper"
+    },
+    {
+      "template": "architect.toml",
+      "name": "architect"
+    }
+  ]
+}

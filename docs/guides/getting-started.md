@@ -20,9 +20,42 @@ cd octopai
 # Install dependencies
 bun install
 
-# Initialize Octopai
+# Initialize Octopai (copies arm templates)
 bun run src/cli/index.ts init
+
+# Or initialize with a preset configuration
+bun run src/cli/index.ts init --preset split-stack
 ```
+
+### Preset Configurations
+
+When initializing, you can specify a preset to pre-configure arms:
+
+```bash
+# Single full-stack arm (minimal setup)
+octopai init --preset fullstack
+
+# Frontend + backend split
+octopai init --preset split-stack
+
+# Full team with specialists
+octopai init --preset full-team
+```
+
+### Arm Templates
+
+Octopai includes arm configuration templates in `templates/arms/`:
+
+| Template | Domain | Description |
+|----------|--------|-------------|
+| `fullstack.toml` | general | Versatile generalist for any task |
+| `frontend.toml` | frontend | UI/UX, React, accessibility |
+| `backend.toml` | backend | APIs, databases, infrastructure |
+| `testing.toml` | testing | QA, test infrastructure |
+| `docs.toml` | docs | Documentation specialist |
+| `architect.toml` | architect | Code review, patterns |
+
+These templates are copied to `~/.octopai/arms/` during initialization and can be edited before spawning arms.
 
 ### Verify Installation
 
@@ -111,6 +144,18 @@ This will:
 ## Arm Configurations
 
 Arms can be configured for different patterns of work distribution. The brain assigns tasks based on arm domains and availability.
+
+### From Templates
+
+Arm configuration templates are included in the project at `templates/arms/`:
+
+```bash
+# List available templates
+ls templates/arms/
+# fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
+```
+
+These templates are copied to `~/.octopai/arms/` when you run `octopai init`.
 
 ### Full-Stack Arms (Default)
 

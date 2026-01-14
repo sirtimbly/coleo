@@ -23,15 +23,37 @@ octopai init [options]
 
 Options:
   -d, --dir <path>  Custom directory (default: ~/.octopai)
+  --preset <name>   Load a preset configuration (fullstack, split-stack, full-team)
 ```
 
-**Example:**
+**Examples:**
 ```bash
-# Default location
+# Default initialization
 octopai init
 
-# Custom location
+# With split-stack preset
+octopai init --preset split-stack
+
+# Custom directory
 octopai init --dir ~/my-octopai
+```
+
+**What happens:**
+1. Creates directory structure (`~/.octopai/`)
+2. Copies arm templates to `~/.octopai/arms/`
+3. Creates `config.toml`
+4. Initializes maildir directories
+
+**After initialization:**
+```bash
+# List configured arms
+octopai config arms
+
+# Load a different preset
+octopai config load full-team
+
+# Edit an arm configuration
+vim ~/.octopai/arms/my-arm.toml
 ```
 
 ---
@@ -271,6 +293,72 @@ Arms: 3
   - fixer: busy
 Inbox: 2 unread
 Tasks: 3 pending, 1 in progress
+```
+
+---
+
+## config
+
+Manage Octopai configuration, including arm templates and presets.
+
+#### config presets
+
+List available arm configuration presets.
+
+```bash
+octopai config presets
+```
+
+**Output:**
+```
+Available Presets:
+
+  fullstack
+    Single generalist arm for small projects
+
+  split-stack
+    Frontend + backend specialist arms
+
+  full-team
+    Full team: frontend, backend, testing, docs, architect
+
+Usage: octopai init --preset <name>
+       octopai config load <name>
+```
+
+#### config load <preset>
+
+Load an arm configuration preset into `~/.octopai/arms/`.
+
+```bash
+octopai config load <preset>
+```
+
+**Presets:**
+- `fullstack` - Single generalist arm
+- `split-stack` - Frontend + backend
+- `full-team` - All specialists
+
+**Example:**
+```bash
+octopai config load split-stack
+```
+
+#### config arms
+
+List configured arms in `~/.octopai/arms/`.
+
+```bash
+octopai config arms
+```
+
+**Output:**
+```
+Arm Configurations:
+
+  fullstack-dev [general]
+  frontend-dev [frontend]
+  backend-dev [backend]
 ```
 
 ---
