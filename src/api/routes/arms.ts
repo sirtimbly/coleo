@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
+import { loadConfig } from "../../config";
 
 interface ArmsContext {
   Variables: {

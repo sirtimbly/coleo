@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initDatabase, Database } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes } from "./routes";
 import { loadApiConfig, type ApiConfig } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -95,8 +95,11 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
 
   // Mount routes
   app.route("/api", createSystemRoutes());
+  app.route("/api/brain", createBrainRoutes());
   app.route("/api/arms", createArmsRoutes());
   app.route("/api/activity", createActivityRoutes());
+  app.route("/api/mail", createMailRoutes());
+  app.route("/api/config", createConfigRoutes());
 
   // Root redirect to health
   app.get("/", (c) => c.redirect("/api/health"));

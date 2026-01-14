@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   Bot, 
+  Terminal, 
   Flower2, 
   Vote, 
   Activity,
@@ -12,6 +13,7 @@ import { cn } from '@/lib';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/brain', icon: Terminal, label: 'Brain' },
   { to: '/arms', icon: Bot, label: 'Arms' },
   { to: '/garden', icon: Flower2, label: 'Garden' },
   { to: '/proposals', icon: Vote, label: 'Proposals' },

@@ -122,6 +122,12 @@ export interface OctopaiConfig {
   terminal: {
     emulator: "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm";
   };
+  defaults: {
+    harness: string;
+    provider: string;
+    model: string;
+    contextBudget: number;
+  };
 }
 
 // Default config
@@ -138,5 +144,11 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   },
   terminal: {
     emulator: "auto",
+  },
+  defaults: {
+    harness: "opencode",
+    provider: "anthropic",
+    model: "claude-sonnet-4-20250514",
+    contextBudget: 100000,
   },
 };

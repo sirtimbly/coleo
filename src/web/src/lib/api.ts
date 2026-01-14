@@ -125,6 +125,79 @@ class ApiClient {
       pagination: { limit: number; offset: number; total: number };
     }>(`/activity${queryStr ? `?${queryStr}` : ''}`);
   }
+
+  // Brain
+  async getBrainStatus() {
+    return this.request<{
+      brain: {
+        status: string;
+        lastPollAt: string | null;
+        pollIntervalMs: number;
+        activeArmsCount: number;
+        pendingTasksCount: number;
+        completedToday: number;
+        uptime: number | null;
+      };
+    }>('/brain/status');
+  }
+
+  async startBrain() {
+    return this.request<{ started: boolean; status: string }>('/brain/start', {
+      method: 'POST',
+    });
+  }
+
+  async stopBrain() {
+    return this.request<{ stopped: boolean; status: string }>('/brain/stop', {
+      method: 'POST',
+    });
+  }
+
+  async getBrainConfig() {
+    return this.request<{
+      brain: {
+        pollIntervalMs: number;
+        maxArms: number;
+        heartbeatTimeoutSeconds: number;
+      };
+    }>('/brain/config');
+  }
+
+  // Mail
+  async listInbox(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number; unread: number };
+    }>(`/mail/inbox${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async listSent(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/mail/sent${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async sendMail(data: { from: string; to: string; subject: string; body: string; headers?: Record<string, string> }) {
+    return this.request<{ message: MailMessage }>('/mail/send', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markMailRead(id: string) {
+    return this.request<{ success: boolean }>(`/mail/inbox/${id}/read`, {
+      method: 'POST',
+    });
+  }
 }
 
 // Types
@@ -152,6 +225,24 @@ export interface ActivityEntry {
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+export interface MailMessage {
+  id: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  body: string;
+  headers: Record<string, string>;
+  flags: {
+    seen: boolean;
+    replied: boolean;
+    flagged: boolean;
+    draft: boolean;
+    trashed: boolean;
+  };
+  filePath?: string;
 }
 
 // Singleton instance

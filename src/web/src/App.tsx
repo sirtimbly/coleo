@@ -3,6 +3,7 @@ import { Layout } from '@/components';
 import {
   DashboardPage,
   ArmsPage,
+  BrainPage,
   GardenPage,
   ProposalsPage,
   ActivityPage,
@@ -16,6 +17,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<DashboardPage />} />
           <Route path="arms" element={<ArmsPage />} />
+          <Route path="brain" element={<BrainPage />} />
           <Route path="garden" element={<GardenPage />} />
           <Route path="proposals" element={<ProposalsPage />} />
           <Route path="activity" element={<ActivityPage />} />
