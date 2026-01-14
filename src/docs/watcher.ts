@@ -188,7 +188,15 @@ export class DocWatcher {
   private async scanDocs(): Promise<void> {
     try {
       await this.scanDirectory(this.docsPath, "");
-    } catch (err) {
+      // Log summary after scan
+      const categories = this.getCategories();
+      const docCount = this.docStates.size;
+      if (docCount > 0) {
+        console.log(`[DocWatcher] Tracking ${docCount} document(s) in ${categories.join(", ")}`);
+      } else {
+        console.log("[DocWatcher] No documents found, will watch for creation");
+      }
+    } catch {
       console.log("[DocWatcher] No docs/ directory found, will watch for creation");
     }
   }
@@ -231,9 +239,8 @@ export class DocWatcher {
       };
 
       this.docStates.set(relativePath, state);
-      console.log(`[DocWatcher] Tracking: ${relativePath} (${category})`);
-    } catch (err) {
-      console.log(`[DocWatcher] Error tracking ${relativePath}: ${err}`);
+    } catch {
+      // Silently skip files we can't read
     }
   }
 
