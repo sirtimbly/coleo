@@ -279,7 +279,10 @@ export class Brain {
     // Step 5: Assign pending tasks to idle arms
     await this.assignTasks();
     
-    // Step 6: Sync tasks from plan files
+    // Step 6: Prompt idle arms to check for work or file changes
+    await this.promptIdleArms();
+    
+    // Step 7: Sync tasks from plan files
     await this.syncPlanTasks();
     
     // Step 7: Save state
@@ -1118,6 +1121,114 @@ export class Brain {
       JSON.stringify(Array.from(this.seenArmIds)),
       "utf-8"
     );
+  }
+
+  /**
+   * Prompt idle arms to check for tasks or wait for relevant file changes
+   * This is called in the poll cycle to keep arms busy
+   */
+  private async promptIdleArms(): Promise<void> {
+    const idleArms = Array.from(this.arms.values()).filter(arm => arm.status === "idle");
+
+    if (idleArms.length === 0) {
+      return;
+    }
+
+    this.log(`Checking ${idleArms.length} idle arm(s) for work...`);
+
+    for (const arm of idleArms) {
+      const armDomain = (arm as Arm & { domain?: string }).domain || "general";
+
+      // Check for pending tasks that match this arm's domain
+      const domainTasks = this.tasks.filter(task => {
+        if (task.status !== "pending") return false;
+        if (!task.domain) return true; // Unassigned tasks match any arm
+        return task.domain === armDomain || task.domain === "general";
+      });
+
+      const unassignedTasks = this.tasks.filter(task =>
+        task.status === "pending" && !task.assignedTo
+      );
+
+      // Combine: domain-specific tasks + any unassigned tasks
+      const matchingTasks = [...domainTasks, ...unassignedTasks];
+      const uniqueTasks = matchingTasks.filter((task, index, self) =>
+        index === self.findIndex(t => t.id === task.id)
+      );
+
+      if (uniqueTasks.length > 0) {
+        // There are tasks available - prompt the arm to fetch its assignment
+        const taskCount = uniqueTasks.length;
+        this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available, prompting to check instructions...`);
+
+        const promptSuccess = await this.sendPromptToArm(
+          arm.name,
+          `You have ${taskCount} task(s) available. Use the MCP tools to:\n` +
+          `1. Call octopai_get_my_instructions to see your current assignment\n` +
+          `2. If you have an active task, continue working on it\n` +
+          `3. If no active task, call octopai_get_pending_tasks to see available tasks and claim one`
+        );
+
+        if (promptSuccess) {
+          this.logActivity("brain", "arm_prompted", arm.id, {
+            reason: "tasks_available",
+            taskCount,
+            domain: armDomain,
+          });
+        } else {
+          this.log(`Failed to prompt arm ${arm.id} - API may not be running`);
+        }
+      } else {
+        // No tasks available - arm should wait for file watcher notifications
+        this.log(`Arm ${arm.id} [${armDomain}]: No matching tasks, waiting for file changes...`);
+
+        // Log that arm is idle but monitoring
+        this.logActivity("brain", "arm_waiting", arm.id, {
+          reason: "no_matching_tasks",
+          domain: armDomain,
+          watchingPatterns: this.getDomainPatterns(armDomain),
+        });
+      }
+    }
+  }
+
+  /**
+   * Get file patterns an arm with a given domain would be interested in
+   */
+  private getDomainPatterns(domain: string): string[] {
+    const patterns: Record<string, string[]> = {
+      frontend: ["src/components/**", "src/web/**", "*.css", "*.scss", "*.tsx", "*.ts"],
+      backend: ["src/api/**", "src/services/**", "src/db/**", "*.ts"],
+      testing: ["**/*.test.*", "**/*.spec.*", "e2e/**", "__tests__/**"],
+      docs: ["*.md", "docs/**", "README*"],
+      architect: ["src/**", "*.toml", "*.json", "AGENTS.md", "docs/architecture/**"],
+      devops: ["Dockerfile", ".github/**", "*.yml", "*.yaml", "infra/**"],
+      general: ["src/**", "*.ts", "*.md"],
+    };
+
+    return patterns[domain] ?? patterns["general"] ?? [];
+  }
+
+  /**
+   * Send a prompt to an arm via the API server
+   */
+  private async sendPromptToArm(armName: string, message: string): Promise<boolean> {
+    try {
+      const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": this.apiKey,
+        },
+        body: JSON.stringify({ prompt: message }),
+      });
+
+      return response.ok;
+    } catch (err) {
+      this.log(`Failed to send prompt to arm ${armName}: ${err}`);
+      return false;
+    }
   }
 
   /**
