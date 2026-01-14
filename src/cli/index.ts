@@ -373,7 +373,7 @@ armCmd
   .option("-w, --workdir <path>", "Working directory", process.cwd())
   .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses API server.")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
-  .option("--provider <provider>", "AI provider (e.g., anthropic, openai)")
+  .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
   .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
   .option("--template <name>", "Use a template from ~/.octopai/arms/")
   .action(async (options) => {
@@ -444,7 +444,7 @@ armCmd
       // Provider and model
       const hasProvider = await promptYN("Configure provider/model?", false);
       if (hasProvider) {
-        const provider = await prompt("Provider (anthropic, openai, github-copilot): ");
+        const provider = await prompt("Provider (anthropic, openai, github-copilot, opencode-zen): ");
         if (provider.trim()) {
           armProvider = provider;
           const model = await prompt("Model [optional]: ");
@@ -1203,18 +1203,41 @@ tasksCmd
       }
 
       console.log("Tasks:");
-      console.log("=".repeat(70));
 
-      for (const row of rows) {
+      const headers = ["Status", "Priority", "Subject", "Phase", "ID"];
+      const tableRows = rows.map((row) => {
         const statusIcon = row.status === "pending" ? "○" :
                           row.status === "claimed" ? "◐" :
                           row.status === "in_progress" ? "◑" : "●";
         const priorityIcon = row.priority === "critical" ? "🔴" :
                             row.priority === "high" ? "🟠" :
                             row.priority === "low" ? "🔵" : "⚪";
-        const phase = row.phase ? ` [${row.phase}]` : "";
-        console.log(`${statusIcon} ${priorityIcon} ${row.subject}${phase}`);
-        console.log(`    id: ${row.id} | status: ${row.status} | priority: ${row.priority}`);
+        return [
+          `${statusIcon} ${row.status}`,
+          `${priorityIcon} ${row.priority}`,
+          row.subject,
+          row.phase || "-",
+          row.id,
+        ];
+      });
+
+      const colWidths: number[] = headers.map((header, idx) => {
+        const cells = tableRows.map((row) => row[idx] ?? "");
+        const maxCellLength = cells.length > 0 ? Math.max(...cells.map((cell) => cell.length)) : 0;
+        return Math.max(header.length, maxCellLength);
+      });
+
+      const formatRow = (row: string[]) => row
+        .map((cell, idx) => {
+          const width = colWidths[idx] ?? (headers[idx] ? headers[idx].length : 0);
+          return (cell ?? "").padEnd(width);
+        })
+        .join("  ");
+
+      console.log(formatRow(headers));
+      console.log(colWidths.map((w) => "-".repeat(w)).join("  "));
+      for (const row of tableRows) {
+        console.log(formatRow(row));
       }
 
       db.close();
