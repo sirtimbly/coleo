@@ -19,6 +19,8 @@ Endpoints for file topology and ownership.
 
 ## Phase 2
 
+Cleanup the outputs from the API server so the console logs aren't filled up with debug and info messages.
+
 ### Domain Configuration UI
 UI for configuring arm domains and patterns.
 

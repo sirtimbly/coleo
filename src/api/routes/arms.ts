@@ -106,8 +106,18 @@ export function createArmsRoutes() {
       throw HttpError.badRequest("name is required");
     }
 
+    // Load config for defaults
+    const config = await loadConfig();
+    const defaults = config.defaults;
+
     const id = body.id || body.name;
     const now = new Date().toISOString();
+
+    // Use config defaults when not specified
+    const harness = body.harness || defaults.harness;
+    const provider = body.provider || defaults.provider;
+    const model = body.model || defaults.model;
+    const contextBudget = body.contextBudget || defaults.contextBudget;
 
     db.run(`
       INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
@@ -116,15 +126,15 @@ export function createArmsRoutes() {
       id,
       body.name,
       body.domain || "general",
-      body.harness || "opencode",
+      harness,
       body.status || "starting",
-      body.contextBudget || 100000,
+      contextBudget,
       0,
       now,
       now,
       body.pid || null,
-      body.provider || null,
-      body.model || null,
+      provider,
+      model,
       JSON.stringify(body.config || {}),
     ]);
 
@@ -132,16 +142,16 @@ export function createArmsRoutes() {
       id,
       name: body.name,
       domain: body.domain || "general",
-      harness: body.harness || "opencode",
+      harness,
       status: body.status || "starting",
-      contextBudget: body.contextBudget || 100000,
+      contextBudget,
       currentContextUsed: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: null,
       pid: body.pid,
-      provider: body.provider,
-      model: body.model,
+      provider,
+      model,
       config: body.config || {},
     };
 
@@ -283,12 +293,14 @@ export function createArmsRoutes() {
     }
 
     // Check if arm exists
-    const row = db.query("SELECT id, name, domain, harness, status FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, name, domain, harness, status, provider, model FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
       harness: string;
       status: string;
+      provider: string | null;
+      model: string | null;
     } | null;
 
     if (!row) {
@@ -300,12 +312,20 @@ export function createArmsRoutes() {
       throw HttpError.badRequest(`Arm ${id} is already running`);
     }
 
+    // Load config for defaults
+    const config = await loadConfig();
+    const defaults = config.defaults;
+
+    // Use body > arm record > config defaults
+    const provider = body.provider || row.provider || defaults.provider;
+    const model = body.model || row.model || defaults.model;
+
     try {
       // Spawn via harness
       const session = await manager.spawn(id, row.harness, {
         workdir: body.workdir || process.cwd(),
-        provider: body.provider,
-        model: body.model,
+        provider,
+        model,
         initialPrompt: body.initialPrompt,
       });
 
