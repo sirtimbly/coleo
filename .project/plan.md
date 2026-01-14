@@ -14,6 +14,16 @@ Build an AI agent orchestrator that coordinates multiple specialized AI agents (
 
 ---
 
+## Communication Modes (New Requirement)
+
+To keep humans, the brain, and arms aligned we now standardize three primary communication paths:
+
+1. **CLI ↔ API Server** – The `octopai` CLI becomes a thin client that authenticates against the Hono REST API for every management action (spawn, list, kill, status). Local-only code paths are considered legacy fallbacks.
+2. **Web UI ↔ API Server** – The React/Vite Observatory consumes the same authenticated REST and WebSocket endpoints, mirroring CLI capabilities with dashboards and controls.
+3. **Mail Client ↔ Email Server** – A dedicated IMAP/SMTP gateway exposes the Maildir inbox/outbox so humans can use any email client. The gateway synchronizes threads with a coordination arm that mirrors conversations between the brain and worker arms.
+
+---
+
 ## Phase 0: Core Infrastructure ✅ Complete
 
 **Goal**: Basic brain/arm lifecycle and communication
@@ -43,6 +53,8 @@ See [acceptance/phase-0.md](./acceptance/phase-0.md)
 - [ ] React shell with routing
 - [ ] Basic dashboard view
 - [ ] Arm list and status view
+- [ ] CLI proxy layer (spawn/list/kill/status) routed through the API
+- [ ] Mail API surface (list/read/send) exposing Maildir metadata for downstream gateways
 
 ### Key Decisions Needed
 - API authentication approach (see decisions/)
@@ -54,6 +66,24 @@ See [acceptance/phase-0.md](./acceptance/phase-0.md)
 
 ### Acceptance Criteria
 See [acceptance/phase-1.md](./acceptance/phase-1.md)
+
+---
+
+## Phase 1.5: Email Gateway (New)
+
+**Goal**: Operate an IMAP/SMTP bridge that keeps human email threads synchronized with the brain and working arms.
+
+### Deliverables
+- [ ] IMAP server backed by Maildir with authentication
+- [ ] SMTP submission endpoint that routes inbound mail into the brain queue
+- [ ] Coordinator arm (mail dispatcher) that mirrors relevant replies to working arms
+- [ ] Health checks and observability for email transport
+
+### Dependencies
+- Phase 1
+
+### Estimated Duration
+1 week
 
 ---
 

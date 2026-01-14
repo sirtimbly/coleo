@@ -46,17 +46,17 @@ Web and SSH are equal citizens accessing the same API.
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         CLIENT LAYER                                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│   Web Browser                    │           SSH Terminal            │
-│   ┌─────────────────────┐       │       ┌─────────────────────┐     │
-│   │  React UI           │       │       │  octopai CLI        │     │
-│   │  - Garden view      │       │       │  - Same commands    │     │
-│   │  - Arm activity     │       │       │  - Direct REPL      │     │
-│   │  - Notifications    │       │       │                     │     │
-│   │  - Config editor    │       │       │                     │     │
-│   └─────────┬───────────┘       │       └──────────┬──────────┘     │
-│             │                    │                  │                │
-│             └────────────┬───────┼──────────────────┘                │
-│                          ▼       │                                   │
+│   Web Browser                    │  SSH Terminal        │  Mail Client        │
+│   ┌─────────────────────┐       │  ┌──────────────────┐│  ┌────────────────┐ │
+│   │  React UI           │       │  │  octopai CLI     ││  │  IMAP/SMTP     │ │
+│   │  - Garden view      │       │  │  - Same commands ││  │  bridge to     │ │
+│   │  - Arm activity     │       │  │  - Direct REPL   ││  │  Maildir +     │ │
+│   │  - Notifications    │       │  │  - API proxy     ││  │  coordinator   │ │
+│   │  - Config editor    │       │  └────────┬─────────┘│  └────────┬───────┘ │
+│   └─────────┬───────────┘       │           │          │           │         │
+│             │                   │           │          │           │         │
+│             └───────┬───────────┼───────────┴──────────┴───────────┘         │
+│                     ▼           │                                           │
 ├─────────────────────────────────────────────────────────────────────┤
 │                      OCTOPAI SERVER API                              │
 │  ┌────────────────────────────────────────────────────────────────┐ │
@@ -65,6 +65,7 @@ Web and SSH are equal citizens accessing the same API.
 │  │  - /api/arms/*      - Arm status, claims, activity             │ │
 │  │  - /api/garden/*    - File ownership, touch history            │ │
 │  │  - /api/proposals/* - Governance proposals                     │ │
+│  │  - /api/mail/*      - Maildir access, digests, metadata        │ │
 │  │  - /ws              - Real-time updates                        │ │
 │  └────────────────────────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────────────────────┤
@@ -75,6 +76,7 @@ Web and SSH are equal citizens accessing the same API.
 │  │  - Manages context budgets                                    │   │
 │  │  - Resolves ownership conflicts                               │   │
 │  │  - Routes tasks to specialists                                │   │
+│  │  - Mirrors human ↔ arm email threads                          │   │
 │  └──────────────────────────────────────────────────────────────┘   │
 │       │          │           │            │           │              │
 │       ▼          ▼           ▼            ▼           ▼              │
@@ -101,6 +103,12 @@ Web and SSH are equal citizens accessing the same API.
 │  └────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+### Client Interfaces
+
+- **CLI ↔ API**: The `octopai` CLI now treats the API server as its single source of truth for spawning, listing, and managing arms. All mutating commands are proxied through authenticated REST calls.
+- **Web UI ↔ API**: The Observatory React app consumes the same REST and WebSocket endpoints for status dashboards, configuration, and real-time updates.
+- **Mail Client ↔ Email Server**: Humans connect via standard IMAP/SMTP clients to converse with the brain. Messages are persisted in Maildir, surfaced through `/api/mail/*`, and synchronized with the coordinator arm routing context between the brain and worker arms.
 
 ## Next Steps
 
