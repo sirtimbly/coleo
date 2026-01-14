@@ -75,6 +75,26 @@ Tentacle  Tentacle  Tentacle
 (opencode)(claude)  (aider)
 ```
 
+## Phases & Roadmap
+
+- **Phase 0 – Core Infrastructure (Complete)**: Brain polling loop, maildir IO, MCP server, arm spawner, CLI tooling, Docker/Gitea setup, and shared type definitions delivered.
+- **Phase 1 – Observatory Foundation (Next)**: Hono REST API, SQLite schema, WebSocket updates, React shell with dashboards, arm list/status views, CLI proxy routing, and mail metadata API; pending decisions on authentication, component library, and state management (est. 2–3 weeks).
+- **Phase 1.5 – Email Gateway (Planned)**: IMAP server over Maildir, SMTP submission into the brain queue, coordinator arm for mirroring replies, and transport observability once Phase 1 ships (~1 week).
+- **Phase 2 – Arm Specialization (Planned)**: Domain configuration, context budget tracking, file claim system, thrash detection, and handoff protocol (est. 2 weeks).
+- **Phase 3 – Governance (Planned)**: Proposal workflow, argument/signaling system, consensus scoring, reputation tracking, creative override, and emergency stop features (est. 2–3 weeks).
+- **Phase 4 – Garden Visualization (Planned)**: React Three Fiber scene, radial layout, real-time file activity and ownership coloring, conflict highlighting, and interactive navigation (est. 2 weeks).
+- **Phase 5 – Notifications & Deployment (Planned)**: Browser push notifications, deployment proposal flow, blue/green rollout with rollback + pause, and monitoring hooks (est. 2 weeks).
+- **Phase 6 – Agent Harnesses (Planned)**: Harness interface/registry, PTY session management, and harness implementations for OpenCode, Claude Code, and Aider plus a test suite (est. 3 weeks).
+- **Phase 7 – Polish & Production (Planned)**: PostgreSQL option, comprehensive tests, performance tuning, security hardening, Docker Swarm support, and user documentation (est. 2–3 weeks).
+
+### Milestones
+
+- **M1 – Observable**: End of Phase 1, arm activity visible through the web UI.
+- **M2 – Coordinated**: End of Phase 3, arms negotiate and reach consensus.
+- **M3 – Visual**: End of Phase 4, 3D Garden reflects workspace state.
+- **M4 – Multi-Agent**: End of Phase 6, multiple harnesses supported.
+- **M5 – Production**: End of Phase 7, system ready for real-world use.
+
 ## Commands
 
 ```bash
