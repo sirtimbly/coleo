@@ -10,8 +10,54 @@ import { initDatabase, Database } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes } from "./routes";
 import { loadApiConfig, type ApiConfig } from "./config";
-import { createWebSocketHandlers, getClientCount, getAuthenticatedCount } from "./websocket";
+import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
+
+/**
+ * Clean up orphaned arms on server startup
+ * 
+ * When the server restarts, any arms that were running via harness manager
+ * are lost (the PTY sessions were tied to the old server process).
+ * This function detects such orphaned arms and marks them as stopped.
+ */
+async function cleanupOrphanedArms(db: Database): Promise<void> {
+  const now = new Date().toISOString();
+  
+  // Find arms that were marked as running but whose processes are dead
+  const runningArms = db.query(`
+    SELECT id, name, pid, status
+    FROM arms
+    WHERE status IN ('idle', 'busy', 'running', 'starting')
+  `).all() as Array<{ id: string; name: string; pid: number | null; status: string }>;
+  
+  let orphanedCount = 0;
+  
+  for (const arm of runningArms) {
+    let isAlive = false;
+    
+    if (arm.pid) {
+      try {
+        process.kill(arm.pid, 0);
+        isAlive = true;
+      } catch {
+        isAlive = false;
+      }
+    }
+    
+    if (!isAlive) {
+      console.log(`[cleanup] Marking orphaned arm as stopped: ${arm.name} (${arm.id})`);
+      db.run(
+        "UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?",
+        [now, arm.id]
+      );
+      orphanedCount++;
+    }
+  }
+  
+  if (orphanedCount > 0) {
+    console.log(`[cleanup] Cleaned up ${orphanedCount} orphaned arm(s)`);
+  }
+}
 
 export interface ServerContext {
   Variables: {
@@ -77,12 +123,21 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   console.log("Initializing database...");
   const db = await initDatabase(config.dbPath);
   
+  // Clean up orphaned arms from previous server sessions
+  console.log("Checking for orphaned arms...");
+  await cleanupOrphanedArms(db);
+  
   // Initialize harness manager
   console.log("Initializing harness manager...");
   const octopaiDir = config.dbPath.replace(/\/octopai\.db$/, "");
   const harnessManager = new HarnessManager(octopaiDir);
   await harnessManager.init();
   setGlobalHarnessManager(harnessManager);
+  
+  // Subscribe to log events and broadcast via WebSocket
+  harnessManager.onLog((armId, data) => {
+    broadcast("arms", "arm.log", { armId, data });
+  });
   
   console.log("Creating app...");
   const app = createApp(db, config);

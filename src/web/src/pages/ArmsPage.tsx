@@ -1,7 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api, type Arm } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
+import { useWebSocket } from '@/hooks/useWebSocket';
+
+interface ArmEventData {
+  arm?: Arm;
+  id?: string;
+  status?: string;
+  changes?: Partial<Arm>;
+}
 
 export function ArmsPage() {
   const [arms, setArms] = useState<Arm[]>([]);
@@ -19,6 +27,54 @@ export function ArmsPage() {
       setLoading(false);
     }
   };
+
+  // Handle WebSocket messages for real-time updates
+  const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
+    if (msg.channel !== 'arms' || !msg.event || !msg.data) return;
+
+    const data = msg.data as ArmEventData;
+
+    switch (msg.event) {
+      case 'arm.created':
+        if (data.arm) {
+          setArms((prev) => [...prev, data.arm as Arm]);
+        }
+        break;
+
+      case 'arm.updated':
+        if (data.arm) {
+          setArms((prev) =>
+            prev.map((arm) => (arm.id === data.arm?.id ? data.arm : arm))
+          );
+        }
+        break;
+
+      case 'arm.deleted':
+        if (data.id) {
+          setArms((prev) => prev.filter((arm) => arm.id !== data.id));
+        }
+        break;
+
+      case 'arm.spawned':
+      case 'arm.killed':
+      case 'arm.prompt_sent':
+        // Update arm status in place
+        if (data.id && data.status) {
+          setArms((prev) =>
+            prev.map((arm) =>
+              arm.id === data.id ? { ...arm, status: data.status as Arm['status'] } : arm
+            )
+          );
+        }
+        break;
+    }
+  }, []);
+
+  // Subscribe to arms channel
+  useWebSocket({
+    channels: ['arms'],
+    onMessage: handleWSMessage,
+  });
 
   useEffect(() => {
     loadArms();

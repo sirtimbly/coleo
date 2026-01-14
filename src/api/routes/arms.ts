@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
+import { broadcast } from "../websocket";
 
 interface ArmsContext {
   Variables: {
@@ -126,24 +127,27 @@ export function createArmsRoutes() {
       JSON.stringify(body.config || {}),
     ]);
 
-    return c.json({
-      arm: {
-        id,
-        name: body.name,
-        domain: body.domain || "general",
-        harness: body.harness || "opencode",
-        status: body.status || "starting",
-        contextBudget: body.contextBudget || 100000,
-        currentContextUsed: 0,
-        createdAt: now,
-        updatedAt: now,
-        lastActivityAt: null,
-        pid: body.pid,
-        provider: body.provider,
-        model: body.model,
-        config: body.config || {},
-      },
-    }, 201);
+    const arm = {
+      id,
+      name: body.name,
+      domain: body.domain || "general",
+      harness: body.harness || "opencode",
+      status: body.status || "starting",
+      contextBudget: body.contextBudget || 100000,
+      currentContextUsed: 0,
+      createdAt: now,
+      updatedAt: now,
+      lastActivityAt: null,
+      pid: body.pid,
+      provider: body.provider,
+      model: body.model,
+      config: body.config || {},
+    };
+
+    // Broadcast arm creation
+    broadcast("arms", "arm.created", { arm });
+
+    return c.json({ arm }, 201);
   });
 
   /**
@@ -230,7 +234,12 @@ export function createArmsRoutes() {
       WHERE id = ?
     `).get(id) as ArmRow;
 
-    return c.json({ arm: parseArmRow(row) });
+    const arm = parseArmRow(row);
+
+    // Broadcast arm update
+    broadcast("arms", "arm.updated", { arm, changes: body });
+
+    return c.json({ arm });
   });
 
   /**
@@ -245,6 +254,9 @@ export function createArmsRoutes() {
     if (result.changes === 0) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
+
+    // Broadcast arm deletion
+    broadcast("arms", "arm.deleted", { id });
 
     return c.json({ deleted: true });
   });
@@ -304,6 +316,9 @@ export function createArmsRoutes() {
         [pid ?? null, now, now, id]
       );
 
+      // Broadcast arm spawned
+      broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, status: "idle" });
+
       return c.json({
         spawned: true,
         sessionId: session.session.id,
@@ -341,6 +356,9 @@ export function createArmsRoutes() {
     // Update database
     const now = new Date().toISOString();
     db.run("UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?", [now, id]);
+
+    // Broadcast arm killed
+    broadcast("arms", "arm.killed", { id, status: "stopped" });
 
     return c.json({ killed: true });
   });
@@ -382,6 +400,9 @@ export function createArmsRoutes() {
       const now = new Date().toISOString();
       db.run("UPDATE arms SET status = 'busy', last_activity_at = ?, updated_at = ? WHERE id = ?", [now, now, id]);
 
+      // Broadcast prompt sent
+      broadcast("arms", "arm.prompt_sent", { id, status: "busy", promptLength: body.prompt.length });
+
       return c.json({ sent: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -418,6 +439,37 @@ export function createArmsRoutes() {
       sessionId: session?.session.id,
       pid: session ? manager.getPid(id) : undefined,
       spawnedAt: session?.spawnedAt.toISOString(),
+    });
+  });
+
+  /**
+   * Get arm logs
+   * GET /api/arms/:id/logs
+   */
+  app.get("/:id/logs", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const tail = c.req.query("tail");
+
+    // Get harness manager
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    // Check if arm exists
+    const exists = db.query("SELECT id FROM arms WHERE id = ?").get(id);
+    if (!exists) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    const logs = await manager.readLogs(id, tail ? { tail: parseInt(tail, 10) } : undefined);
+    const size = await manager.getLogSize(id);
+
+    return c.json({
+      logs,
+      size,
+      hasSession: manager.hasSession(id),
     });
   });
 

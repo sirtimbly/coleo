@@ -5,11 +5,13 @@
  * Sessions are stored in memory and tied to the server's lifecycle.
  */
 
-import { mkdir, appendFile } from "node:fs/promises";
+import { mkdir, appendFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { HarnessSession, SpawnConfig } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
+
+export type LogCallback = (armId: string, data: string) => void;
 
 export interface ActiveSession {
   session: HarnessSession;
@@ -26,6 +28,7 @@ export class HarnessManager {
   private sessions = new Map<string, ActiveSession>();
   private octopaiDir: string;
   private logsDir: string;
+  private logCallbacks: Set<LogCallback> = new Set();
 
   constructor(octopaiDir: string) {
     this.octopaiDir = octopaiDir;
@@ -38,6 +41,27 @@ export class HarnessManager {
   async init(): Promise<void> {
     await mkdir(this.logsDir, { recursive: true });
     console.log("[harness-manager] Initialized");
+  }
+
+  /**
+   * Subscribe to log output from all arms
+   */
+  onLog(callback: LogCallback): () => void {
+    this.logCallbacks.add(callback);
+    return () => this.logCallbacks.delete(callback);
+  }
+
+  /**
+   * Emit log data to all subscribers
+   */
+  private emitLog(armId: string, data: string): void {
+    for (const callback of this.logCallbacks) {
+      try {
+        callback(armId, data);
+      } catch {
+        // Ignore callback errors
+      }
+    }
   }
 
   /**
@@ -83,11 +107,14 @@ export class HarnessManager {
     // Set up logging
     const logFile = join(this.logsDir, `${armId}.log`);
     session.pty.onData = async (data: string) => {
+      // Write to file
       try {
         await appendFile(logFile, data);
       } catch {
         // Ignore logging errors
       }
+      // Emit to subscribers (for real-time streaming)
+      this.emitLog(armId, data);
     };
 
     // Store active session
@@ -192,6 +219,43 @@ export class HarnessManager {
       await this.kill(armId);
     }
     console.log("[harness-manager] All sessions shut down");
+  }
+
+  /**
+   * Get log file path for an arm
+   */
+  getLogFile(armId: string): string {
+    return join(this.logsDir, `${armId}.log`);
+  }
+
+  /**
+   * Read logs for an arm
+   */
+  async readLogs(armId: string, options?: { tail?: number }): Promise<string> {
+    const logFile = this.getLogFile(armId);
+    try {
+      const content = await readFile(logFile, "utf-8");
+      if (options?.tail) {
+        const lines = content.split("\n");
+        return lines.slice(-options.tail).join("\n");
+      }
+      return content;
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Get log file size
+   */
+  async getLogSize(armId: string): Promise<number> {
+    const logFile = this.getLogFile(armId);
+    try {
+      const stats = await stat(logFile);
+      return stats.size;
+    } catch {
+      return 0;
+    }
   }
 }
 

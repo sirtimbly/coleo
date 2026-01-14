@@ -18,6 +18,8 @@ export interface BrainOptions {
   octopaiDir: string;
   pollIntervalMs: number;
   verbose: boolean;
+  apiBaseUrl?: string;
+  apiKey?: string;
 }
 
 /**
@@ -95,12 +97,6 @@ Focus on understanding how the system works before making changes.`,
   ],
 };
 
-export interface BrainOptions {
-  octopaiDir: string;
-  pollIntervalMs: number;
-  verbose: boolean;
-}
-
 export class Brain {
   private options: BrainOptions;
   private state: BrainState;
@@ -111,9 +107,13 @@ export class Brain {
   private seenArmIds: Set<string> = new Set(); // Track arms we've already assigned initial tasks
   private running = false;
   private db: Database | null = null;
+  private apiBaseUrl: string;
+  private apiKey: string;
 
   constructor(options: BrainOptions) {
     this.options = options;
+    this.apiBaseUrl = options.apiBaseUrl || "http://localhost:7777";
+    this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
     this.state = {
       status: "stopped",
       pollIntervalMs: options.pollIntervalMs,
@@ -125,6 +125,36 @@ export class Brain {
     // Set up mail directories
     this.inbox = new Maildir(join(options.octopaiDir, "mail", "inbox"));
     this.sent = new Maildir(join(options.octopaiDir, "mail", "sent"));
+  }
+
+  /**
+   * Make an API request with authentication
+   */
+  private async apiRequest<T>(
+    path: string,
+    options: RequestInit = {}
+  ): Promise<T | null> {
+    try {
+      const url = `${this.apiBaseUrl}${path}`;
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": this.apiKey,
+          ...options.headers,
+        },
+      });
+
+      if (!response.ok) {
+        this.log(`API error: ${response.status} ${response.statusText}`);
+        return null;
+      }
+
+      return (await response.json()) as T;
+    } catch (err) {
+      // API not available, will fall back to direct DB access
+      return null;
+    }
   }
 
   /**
@@ -610,6 +640,51 @@ export class Brain {
    * Mark arms as stopped if they haven't sent a heartbeat recently
    */
   private async checkStaleArms(): Promise<void> {
+    // Check each arm's state via API (harness-aware)
+    for (const [armId, arm] of this.arms) {
+      interface StateResponse {
+        state: string;
+        hasSession: boolean;
+      }
+      
+      const stateResult = await this.apiRequest<StateResponse>(`/api/arms/${armId}/state`);
+      
+      if (stateResult) {
+        // API available - check harness session state
+        if (!stateResult.hasSession || stateResult.state === "stopped" || stateResult.state === "dead") {
+          this.log(`Arm ${armId} has no active session (state: ${stateResult.state}), marking as stopped`);
+          
+          // Update via API
+          await this.apiRequest(`/api/arms/${armId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "stopped" }),
+          });
+          
+          this.arms.delete(armId);
+        }
+        continue;
+      }
+      
+      // Fallback: Check via PID if API not available
+      if (arm.pid) {
+        try {
+          process.kill(arm.pid, 0);
+          // Process alive
+        } catch {
+          // Process dead
+          this.log(`Arm ${armId} process dead, marking as stopped`);
+          if (this.db) {
+            this.db.run(
+              "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+              [new Date().toISOString(), armId]
+            );
+          }
+          this.arms.delete(armId);
+        }
+      }
+    }
+    
+    // Also check DB for stale arms (heartbeat timeout) when API not available
     if (!this.db) return;
     
     // Get timeout from config (default 120 seconds)
@@ -635,6 +710,9 @@ export class Brain {
     `).all(cutoffTime, cutoffTime) as Array<{ id: string; name: string; last_heartbeat: string | null; status: string }>;
     
     for (const arm of staleArms) {
+      // Skip if we already removed it via API check
+      if (!this.arms.has(arm.id)) continue;
+      
       this.log(`Arm ${arm.id} is stale (last heartbeat: ${arm.last_heartbeat || "never"}), marking as stopped`);
       
       this.db.run(
@@ -837,6 +915,47 @@ export class Brain {
   }
 
   private async loadArms(): Promise<void> {
+    // Try API first (preferred - harness-aware)
+    interface ApiArm {
+      id: string;
+      name: string;
+      domain: string;
+      harness: string;
+      status: string;
+      pid?: number;
+      provider?: string;
+      model?: string;
+      createdAt: string;
+      lastActivityAt?: string;
+    }
+    
+    const apiResult = await this.apiRequest<{ arms: ApiArm[] }>("/api/arms");
+    
+    if (apiResult) {
+      // API is available - use it
+      this.arms.clear();
+      for (const row of apiResult.arms) {
+        if (row.status === "stopped") continue;
+        
+        const arm: Arm = {
+          id: row.id,
+          name: row.name,
+          agent: row.harness,
+          status: row.status as Arm["status"],
+          pid: row.pid,
+          provider: row.provider,
+          model: row.model,
+          startedAt: new Date(row.createdAt),
+          lastActivity: row.lastActivityAt ? new Date(row.lastActivityAt) : undefined,
+        };
+        (arm as Arm & { domain?: string }).domain = row.domain;
+        this.arms.set(arm.id, arm);
+      }
+      this.log(`Loaded ${this.arms.size} active arms from API`);
+      return;
+    }
+    
+    // Fallback to direct database access
     if (!this.db) return;
     
     try {
@@ -907,14 +1026,27 @@ export class Brain {
   }
 
   private async saveArms(): Promise<void> {
-    if (!this.db) return;
-    
     for (const arm of this.arms.values()) {
       const now = new Date().toISOString();
-      this.db.run(
-        `UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`,
-        [arm.status, arm.lastActivity?.toISOString() || now, now, arm.id]
-      );
+      
+      // Try API first
+      const apiResult = await this.apiRequest<{ arm: unknown }>(`/api/arms/${arm.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: arm.status,
+          lastActivityAt: arm.lastActivity?.toISOString() || now,
+        }),
+      });
+      
+      if (apiResult) continue; // Success via API
+      
+      // Fallback to direct database access
+      if (this.db) {
+        this.db.run(
+          `UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`,
+          [arm.status, arm.lastActivity?.toISOString() || now, now, arm.id]
+        );
+      }
     }
   }
 
