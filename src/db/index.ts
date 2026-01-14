@@ -48,12 +48,13 @@ async function runMigrations(db: Database): Promise<void> {
     ["003_add_claims", MIGRATION_003],
     ["004_arm_personality", MIGRATION_004],
     ["005_tick_based_timeouts", MIGRATION_005],
-  ["006_arm_spawn_fields", MIGRATION_006],
-  ["007_fix_status_constraint", MIGRATION_007],
-  ["008_arm_heartbeat", MIGRATION_008],
-  ["009_file_subscriptions", MIGRATION_009],
-  ["010_tasks_table", MIGRATION_010],
-];
+    ["006_arm_spawn_fields", MIGRATION_006],
+    ["007_fix_status_constraint", MIGRATION_007],
+    ["008_arm_heartbeat", MIGRATION_008],
+    ["009_file_subscriptions", MIGRATION_009],
+    ["010_tasks_table", MIGRATION_010],
+  ];
+
 
   // Apply pending migrations
   for (const [name, sql] of migrations) {

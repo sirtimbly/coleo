@@ -774,6 +774,52 @@ armCmd
     console.log("Cleanup complete.");
   });
 
+armCmd
+  .command("logs <name>")
+  .description("Tail the log file for an arm (Ctrl+C to exit)")
+  .option("-n, --lines <n>", "Number of initial lines to show", "100")
+  .action(async (name, options) => {
+    const octopaiDir = getOctopaiDir();
+    const logPath = join(octopaiDir, "logs", `${name}.log`);
+
+    const { existsSync, createReadStream, statSync } = await import("fs");
+
+    if (!existsSync(logPath)) {
+      console.error(`Log file not found: ${logPath}`);
+      console.error("Arm may not have been spawned yet, or logs are stored elsewhere.");
+      process.exit(1);
+    }
+
+    console.log(`Tailing logs for arm: ${name}`);
+    console.log(`Log file: ${logPath}`);
+    console.log("=".repeat(60));
+    console.log("(Ctrl+C to exit)");
+    console.log("=".repeat(60));
+
+    // Show initial lines using tail command
+    const { spawn } = await import("child_process");
+    const tail = spawn("tail", ["-n", options.lines, "-f", logPath], {
+      stdio: "inherit",
+      cwd: process.cwd(),
+    });
+
+    tail.on("error", (err) => {
+      console.error(`Failed to tail log: ${err}`);
+      process.exit(1);
+    });
+
+    // Handle Ctrl+C
+    process.on("SIGINT", () => {
+      tail.kill("SIGINT");
+      process.exit(0);
+    });
+
+    process.on("SIGTERM", () => {
+      tail.kill("SIGTERM");
+      process.exit(0);
+    });
+  });
+
 // ============================================
 // ACTIVITY COMMAND
 // ============================================
