@@ -10,7 +10,7 @@ import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes } from "./routes";
 import { loadApiConfig, type ApiConfig } from "./config";
-import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast } from "./websocket";
+import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 
 /**
@@ -170,6 +170,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
 
   // Create WebSocket handlers
   const wsHandlers = createWebSocketHandlers(config.apiKey);
+  enableHeartbeat(); // Start WebSocket cleanup heartbeat
 
   const server = Bun.serve({
     port: config.port,

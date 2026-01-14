@@ -13,9 +13,12 @@ import { Brain } from "../brain";
 import { initMaildir, Maildir } from "../mail";
 import { runMcpServer } from "../mcp";
 import { spawnArm, listArms, killArm } from "../arm";
-import { startServer } from "../api";
+import { startServer, disableHeartbeat } from "../api";
 import type { OctopaiConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
+
+// Disable WebSocket heartbeat for CLI commands (prevents process from hanging)
+disableHeartbeat();
 
 const TEMPLATES_DIR = join(dirname(import.meta.filename), "..", "..", "templates");
 

@@ -35,6 +35,36 @@ interface WSData {
 const clients = new Set<ServerWebSocket<WSData>>();
 
 let _apiKey: string = "";
+let _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+let _heartbeatEnabled = false;
+
+/**
+ * Enable heartbeat cleanup (only when WebSocket server is running)
+ */
+export function enableHeartbeat() {
+  _heartbeatEnabled = true;
+  if (!_heartbeatInterval) {
+    _heartbeatInterval = setInterval(() => {
+      if (!_heartbeatEnabled) return;
+      const now = Date.now();
+      const staleThreshold = 60000;
+      
+      for (const client of clients) {
+        if (now - client.data.lastPing > staleThreshold) {
+          console.log("[WS] Closing stale connection");
+          client.close();
+        }
+      }
+    }, 30000);
+  }
+}
+
+/**
+ * Disable heartbeat cleanup (for CLI usage)
+ */
+export function disableHeartbeat() {
+  _heartbeatEnabled = false;
+}
 
 /**
  * Create WebSocket handlers for Bun.serve
@@ -163,16 +193,3 @@ export function getAuthenticatedCount(): number {
   }
   return count;
 }
-
-// Heartbeat - disconnect stale clients
-setInterval(() => {
-  const now = Date.now();
-  const staleThreshold = 60000; // 1 minute
-  
-  for (const client of clients) {
-    if (now - client.data.lastPing > staleThreshold) {
-      console.log("[WS] Closing stale connection");
-      client.close();
-    }
-  }
-}, 30000);
