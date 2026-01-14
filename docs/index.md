@@ -49,7 +49,7 @@ bun run src/cli/index.ts init
 bun run src/cli/index.ts brain run
 
 # Spawn an arm
-bun run src/cli/index.ts tentacle spawn --name explorer --agent opencode
+bun run src/cli/index.ts arm spawn --name explorer --agent opencode
 ```
 
 ## Current Status

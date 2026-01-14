@@ -45,7 +45,7 @@ octopai status
 octopai brain run
 
 # In another SSH session, spawn an arm
-octopai tentacle spawn -n explorer --agent opencode
+octopai arm spawn -n explorer --agent opencode
 ```
 
 ### Direct Execution
@@ -242,7 +242,7 @@ docker compose logs gitea
 docker exec octopai which tmux
 
 # Try explicit headless mode
-docker exec octopai octopai tentacle spawn -n test --headless
+docker exec -it octopai octopai arm spawn -n test --headless
 ```
 
 ## Updating

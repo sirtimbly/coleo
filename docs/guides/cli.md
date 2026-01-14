@@ -79,26 +79,26 @@ Brain Status:
   Status: running
   Last poll: 2024-01-15 10:30:00
   Poll interval: 30000ms
-  Active tentacles: 3
+  Active arms: 3
   Pending tasks: 2
   Completed today: 5
 ```
 
 ---
 
-### tentacle
+### arm
 
-Manage tentacles (arms).
+Manage arms (AI agents).
 
-#### tentacle spawn
+#### arm spawn
 
-Spawn a new tentacle.
+Spawn a new arm.
 
 ```bash
-octopai tentacle spawn [options]
+octopai arm spawn [options]
 
 Options:
-  -n, --name <name>       Tentacle name/ID (required)
+  -n, --name <name>       Arm name/ID (required)
   -a, --agent <agent>     Agent type: opencode, claude-code, aider (default: opencode)
   -w, --workdir <path>    Working directory (default: current directory)
   -t, --terminal <type>   Terminal: auto, ghostty, iterm2, terminal, wezterm, kitty, tmux, headless
@@ -109,29 +109,29 @@ Options:
 **Examples:**
 ```bash
 # Basic spawn
-octopai tentacle spawn --name explorer --agent opencode
+octopai arm spawn --name explorer --agent opencode
 
 # With specific terminal
-octopai tentacle spawn -n ui-worker -a opencode -t ghostty
+octopai arm spawn -n ui-worker -a opencode -t ghostty
 
 # Headless (for containers/SSH)
-octopai tentacle spawn -n worker --headless
+octopai arm spawn -n worker --headless
 
 # With initial task
-octopai tentacle spawn -n fixer -p "Find and fix all TypeScript errors"
+octopai arm spawn -n fixer -p "Find and fix all TypeScript errors"
 ```
 
-#### tentacle list
+#### arm list
 
-List all registered tentacles.
+List all registered arms.
 
 ```bash
-octopai tentacle list
+octopai arm list
 ```
 
 **Output:**
 ```
-Tentacles:
+Arms:
   ● explorer (opencode) - working [Current task description]
   ◐ ui-worker (opencode) - busy
   ○ fixer (opencode) - idle
@@ -142,17 +142,17 @@ Status indicators:
 - `◐` - Busy
 - `○` - Stopped/starting
 
-#### tentacle kill
+#### arm kill
 
-Kill a tentacle.
+Kill an arm.
 
 ```bash
-octopai tentacle kill <name>
+octopai arm kill <name>
 ```
 
 **Example:**
 ```bash
-octopai tentacle kill explorer
+octopai arm kill explorer
 ```
 
 ---
@@ -241,7 +241,7 @@ MCP server commands.
 
 #### mcp serve
 
-Run the MCP server (used internally by tentacles).
+Run the MCP server (used internally by arms).
 
 ```bash
 octopai mcp serve
@@ -265,7 +265,7 @@ Octopai Status
 Directory: ~/.octopai
 
 Brain: running (last poll: 10:30:00)
-Tentacles: 3
+Arms: 3
   - explorer: working
   - ui-worker: idle
   - fixer: busy
@@ -293,7 +293,7 @@ version = 1
 
 [brain]
 poll_interval_ms = 30000
-max_tentacles = 10
+max_arms = 10
 
 [mail]
 from_address = "brain@octopai.local"

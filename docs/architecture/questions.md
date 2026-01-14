@@ -20,7 +20,7 @@ This document tracks open questions and decisions that need to be made before or
 
 **Decision:** Yes, rename to "arm" everywhere. CLI already has `arm` command as alias.
 
-**Status:** Resolved - Implementation pending
+**Status:** Completed - All references updated to "arm"
 
 ---
 

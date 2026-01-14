@@ -40,11 +40,11 @@ octopai/
 │   ├── mcp/
 │   │   ├── server.ts           # MCP server (existing)
 │   │   └── index.ts
-│   ├── tentacle/
+│   ├── arm/
 │   │   ├── spawner.ts          # Arm spawner (existing)
 │   │   └── index.ts
-│   └── types/
-│       └── index.ts            # Type definitions (existing)
+│   ├── types/
+│   │   └── index.ts            # Type definitions (existing)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── package.json

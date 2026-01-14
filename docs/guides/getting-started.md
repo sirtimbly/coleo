@@ -36,7 +36,7 @@ Octopai Status
 Directory: ~/.octopai
 
 Brain: not started
-Tentacles: 0
+Arms: 0
 Inbox: 0 unread
 Tasks: 0
 ```
@@ -59,7 +59,7 @@ After initialization, Octopai creates this structure:
 ├── state/             # Persistent state
 │   ├── brain.json
 │   ├── tasks.json
-│   ├── tentacles/
+│   ├── arms/
 │   └── notes/
 ├── mcp/               # MCP configurations
 ├── logs/              # Log files
@@ -97,7 +97,7 @@ bun run src/cli/index.ts brain run --once
 With the brain running (in another terminal), spawn an arm:
 
 ```bash
-bun run src/cli/index.ts tentacle spawn \
+bun run src/cli/index.ts arm spawn \
   --name explorer \
   --agent opencode \
   --workdir ~/projects/my-project
@@ -135,7 +135,7 @@ Octopai Status
 Directory: ~/.octopai
 
 Brain: running (last poll: 10:30:30)
-Tentacles: 1
+Arms: 1
   - explorer: working [Add dark mode toggle]
 Inbox: 0 unread
 Tasks: 1 pending

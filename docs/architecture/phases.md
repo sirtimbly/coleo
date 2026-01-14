@@ -23,7 +23,7 @@ This document outlines the phased approach to building Octopai's full architectu
 - [x] Brain polling loop (`src/brain/brain.ts`)
 - [x] Maildir communication (`src/mail/maildir.ts`)
 - [x] MCP server with basic tools (`src/mcp/server.ts`)
-- [x] Tentacle/Arm spawner (`src/tentacle/spawner.ts`)
+- [x] Arm spawner (`src/arm/spawner.ts`)
 - [x] CLI commands (`src/cli/index.ts`)
 - [x] Docker + Gitea setup
 - [x] Type definitions (`src/types/index.ts`)
