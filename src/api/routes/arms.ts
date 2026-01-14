@@ -584,9 +584,60 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Get arm logs
-   * GET /api/arms/:id/logs
-   */
+    * Register an arm session (arms call this on startup)
+    * POST /api/arms/:id/register
+    */
+  app.post("/:id/register", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      pid?: number;
+      sessionId?: string;
+    }>();
+
+    const now = new Date().toISOString();
+
+    // Update the arm record with session info
+    db.run(
+      "UPDATE arms SET status = 'idle', pid = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+      [body.pid ?? null, now, now, id]
+    );
+
+    // Log activity
+    logActivity(db, id, "registered", undefined, { pid: body.pid, sessionId: body.sessionId });
+
+    // Broadcast registration
+    broadcast("arms", "arm.registered", { id, pid: body.pid, status: "idle" });
+
+    return c.json({ registered: true });
+  });
+
+  /**
+    * Heartbeat from an arm
+    * POST /api/arms/:id/heartbeat
+    */
+  app.post("/:id/heartbeat", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      status?: "idle" | "busy";
+      currentTask?: string;
+    }>();
+
+    const now = new Date().toISOString();
+
+    db.run(
+      "UPDATE arms SET status = ?, last_heartbeat = ?, last_activity_at = ?, current_task = ?, updated_at = ? WHERE id = ?",
+      [body.status || "idle", now, now, body.currentTask || null, now, id]
+    );
+
+    return c.json({ heartbeat: true });
+  });
+
+  /**
+    * Get arm logs
+    * GET /api/arms/:id/logs
+    */
   app.get("/:id/logs", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");

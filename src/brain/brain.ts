@@ -169,14 +169,18 @@ export class Brain {
   }
 
   /**
-   * Make an API request with authentication
-   */
+    * Make an API request with authentication
+    */
   private async apiRequest<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    timeoutMs: number = 2000
   ): Promise<T | null> {
     try {
       const url = `${this.apiBaseUrl}${path}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
       const response = await fetch(url, {
         ...options,
         headers: {
@@ -184,7 +188,10 @@ export class Brain {
           "X-API-Key": this.apiKey,
           ...options.headers,
         },
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         this.log(`API error: ${response.status} ${response.statusText}`);
@@ -193,6 +200,9 @@ export class Brain {
 
       return (await response.json()) as T;
     } catch (err) {
+      if ((err as Error).name === "AbortError") {
+        // Request timed out - API not available
+      }
       // API not available, will fall back to direct DB access
       return null;
     }
@@ -950,55 +960,140 @@ export class Brain {
   }
 
   /**
-   * Check arm health and mark stale arms as stopped
-   */
+    * Check arm health and mark stale arms as stopped
+    */
   private async checkArms(): Promise<void> {
     // Reload arms from database to get any newly spawned arms
     await this.loadArms();
-    
+
+    // Scan for running arm processes that aren't tracked
+    await this.scanForRunningArms();
+
     // Check for stale arms (no heartbeat in timeout period)
     await this.checkStaleArms();
-    
+
     this.state.activeArms = Array.from(this.arms.keys());
   }
 
   /**
-   * Mark arms as stopped if they haven't sent a heartbeat recently
-   */
-  private async checkStaleArms(): Promise<void> {
-    // Check each arm's state via API (harness-aware)
-    for (const [armId, arm] of this.arms) {
-      interface StateResponse {
-        state: string;
-        hasSession: boolean;
-      }
-      
-      const stateResult = await this.apiRequest<StateResponse>(`/api/arms/${armId}/state`);
-      
-      if (stateResult) {
-        // API available - check harness session state
-        if (!stateResult.hasSession || stateResult.state === "stopped" || stateResult.state === "dead") {
-          this.log(`Arm ${armId} has no active session (state: ${stateResult.state}), marking as stopped`);
-          
-          // Update via API
-          await this.apiRequest(`/api/arms/${armId}`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: "stopped" }),
-          });
-          
-          this.arms.delete(armId);
-        }
+    * Scan for running arm processes that aren't in our tracked list
+    * This catches arms that were spawned before the brain started or whose
+    * sessions were lost due to API server restart
+    */
+  private async scanForRunningArms(): Promise<void> {
+    if (!this.db) {
+      this.log("scanForRunningArms: no database");
+      return;
+    }
+
+    // Get all known arms from database (including stopped ones)
+    const knownArms = this.db.query(`
+      SELECT id, name, pid, status, domain
+      FROM arms
+    `).all() as Array<{ id: string; name: string; pid: number | null; status: string; domain: string }>;
+
+    this.log(`scanForRunningArms: found ${knownArms.length} known arms in database`);
+
+    for (const arm of knownArms) {
+      // Skip if already tracking this arm
+      if (this.arms.has(arm.id)) {
+        this.log(`  ${arm.name}: already tracked`);
         continue;
       }
-      
-      // Fallback: Check via PID if API not available
+
+      // Skip if no PID or already marked as stopped
+      if (!arm.pid) {
+        this.log(`  ${arm.name}: no PID`);
+        continue;
+      }
+
+      if (arm.status === "stopped") {
+        this.log(`  ${arm.name}: marked as stopped (PID ${arm.pid}), checking if alive...`);
+      } else {
+        this.log(`  ${arm.name}: status=${arm.status} (PID ${arm.pid}), checking...`);
+      }
+
+      // Check if process is running
+      try {
+        process.kill(arm.pid, 0);
+        // Process is alive! Add to tracked arms
+        this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
+
+        // Update database
+        const now = new Date().toISOString();
+        this.db.run(
+          "UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [now, now, arm.id]
+        );
+
+        // Add to in-memory tracking
+        const trackedArm: Arm = {
+          id: arm.id,
+          name: arm.name,
+          agent: "opencode",
+          status: "idle",
+          pid: arm.pid,
+          startedAt: new Date(),
+        };
+        (trackedArm as Arm & { domain?: string }).domain = arm.domain;
+        this.arms.set(trackedArm.id, trackedArm);
+
+        this.logActivity("brain", "arm_detected", arm.id, { pid: arm.pid, reason: "process_scan" });
+      } catch {
+        // Process dead
+        if (arm.status !== "stopped") {
+          this.log(`  ${arm.name}: process dead, marking as stopped`);
+          this.db.run(
+            "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+            [new Date().toISOString(), arm.id]
+          );
+        } else {
+          this.log(`  ${arm.name}: already marked stopped, process confirmed dead`);
+        }
+      }
+    }
+
+    this.log(`scanForRunningArms: complete, now tracking ${this.arms.size} arms`);
+  }
+
+  /**
+    * Mark arms as stopped if they haven't sent a heartbeat recently
+    * NOTE: We check PID first because the API server may have restarted and lost
+    * its in-memory sessions, but the arm processes might still be running.
+    */
+  private async checkStaleArms(): Promise<void> {
+    for (const [armId, arm] of this.arms) {
+      // First, check if the process is still running via PID
+      // This works even if the API server restarted and lost its session tracking
       if (arm.pid) {
         try {
           process.kill(arm.pid, 0);
-          // Process alive
+          // Process is alive - update status based on session if available
+          const stateResult = await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+
+          if (stateResult) {
+            if (stateResult.hasSession && stateResult.state !== "stopped" && stateResult.state !== "dead") {
+              // Arm is properly connected, keep it
+              this.log(`Arm ${armId} is running (PID: ${arm.pid}, session active)`);
+              continue;
+            } else if (!stateResult.hasSession) {
+              // Process is running but API session was lost (server restart)
+              // Keep the arm but prompt it to re-register
+              this.log(`Arm ${armId} process alive but session lost (server restart), prompting to re-register...`);
+              await this.sendPromptToArm(
+                arm.name,
+                "The API server restarted. Please re-register by calling the MCP tool octopai_register_session if available, or confirm you can still receive tasks."
+              );
+              continue;
+            }
+          } else {
+            // API not available but process is running - keep the arm
+            this.log(`Arm ${armId} is running (PID: ${arm.pid}, API unavailable)`);
+            continue;
+          }
         } catch {
-          // Process dead
-          this.log(`Arm ${armId} process dead, marking as stopped`);
+          // Process is dead - mark as stopped
+          this.log(`Arm ${armId} process dead (PID: ${arm.pid}), marking as stopped`);
           if (this.db) {
             this.db.run(
               "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
@@ -1007,47 +1102,80 @@ export class Brain {
           }
           this.arms.delete(armId);
         }
+      } else {
+        // No PID - check via API session
+        const stateResult = await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+
+        if (stateResult && !stateResult.hasSession) {
+          this.log(`Arm ${armId} has no session, marking as stopped`);
+          await this.apiRequest(`/api/arms/${armId}`, {
+            method: "PATCH",
+            body: JSON.stringify({ status: "stopped" }),
+          });
+          this.arms.delete(armId);
+        }
       }
     }
-    
-    // Also check DB for stale arms (heartbeat timeout) when API not available
+
+    // Also check DB for stale arms (heartbeat timeout)
     if (!this.db) return;
-    
-    // Get timeout from config (default 120 seconds)
-    let timeoutSeconds = 120;
+
+    // Get timeout from config (default 300 seconds = 5 minutes)
+    let timeoutSeconds = 300;
     try {
-      const row = this.db.query("SELECT value FROM config WHERE key = 'arm_heartbeat_timeout_seconds'").get() as { value: string } | null;
+      const row = this.db.query("SELECT value FROM config WHERE key = ?").get("arm_heartbeat_timeout_seconds") as { value: string } | null;
       if (row) {
         timeoutSeconds = parseInt(row.value, 10);
       }
     } catch {
       // Use default
     }
-    
+
     const cutoffTime = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
-    
-    // Find arms that haven't heartbeated recently and are not already stopped
-    const staleArms = this.db.query(`
-      SELECT id, name, last_heartbeat, status
+
+    // Find arms that haven't heartbeated recently and are not already in our in-memory list
+    const armIds = Array.from(this.arms.keys());
+    let staleQuery = `
+      SELECT id, name, pid, last_heartbeat, status
       FROM arms
       WHERE status NOT IN ('stopped', 'starting')
-        AND (last_heartbeat IS NULL OR last_heartbeat < ?)
-        AND created_at < ?
-    `).all(cutoffTime, cutoffTime) as Array<{ id: string; name: string; last_heartbeat: string | null; status: string }>;
-    
+    `;
+
+    if (armIds.length > 0) {
+      staleQuery += ` AND id NOT IN (${armIds.map(() => "?").join(",")})`;
+    }
+
+    const staleArms = this.db.query(staleQuery).all(...armIds) as Array<{ id: string; name: string; pid: number | null; last_heartbeat: string | null; status: string }>;
+
     for (const arm of staleArms) {
-      // Skip if we already removed it via API check
-      if (!this.arms.has(arm.id)) continue;
-      
+      // Check if process is still running
+      if (arm.pid) {
+        try {
+          process.kill(arm.pid, 0);
+          // Process is alive but not in our arms map - may have been spawned externally
+          // Keep it but don't add to active arms
+          this.log(`Arm ${arm.id} has running process (PID: ${arm.pid}) but not tracked, marking as idle`);
+          this.db.run(
+            "UPDATE arms SET status = 'idle', updated_at = ? WHERE id = ?",
+            [new Date().toISOString(), arm.id]
+          );
+          continue;
+        } catch {
+          // Process dead - mark as stopped
+        }
+      }
+
+      // Process is dead or no PID - check heartbeat
+      if (arm.last_heartbeat && new Date(arm.last_heartbeat) > new Date(cutoffTime)) {
+        // Recently heartbeated, might be a race condition
+        continue;
+      }
+
       this.log(`Arm ${arm.id} is stale (last heartbeat: ${arm.last_heartbeat || "never"}), marking as stopped`);
-      
       this.db.run(
         "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
         [new Date().toISOString(), arm.id]
       );
-      
-      // Remove from in-memory map
-      this.arms.delete(arm.id);
     }
   }
 
