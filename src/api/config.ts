@@ -2,12 +2,15 @@
  * API Configuration
  */
 
+export type LogLevel = "quiet" | "normal" | "verbose";
+
 export interface ApiConfig {
   port: number;
   host: string;
   apiKey: string;
   corsOrigins: string[];
   dbPath: string;
+  logLevel: LogLevel;
 }
 
 /**
@@ -20,7 +23,16 @@ export function loadApiConfig(): ApiConfig {
     apiKey: process.env.OCTOPAI_API_KEY || generateDevApiKey(),
     corsOrigins: (process.env.OCTOPAI_CORS_ORIGINS || "http://localhost:5173,http://localhost:3000").split(","),
     dbPath: process.env.OCTOPAI_DB_PATH || getDefaultDbPath(),
+    logLevel: (process.env.OCTOPAI_LOG_LEVEL || "quiet") as LogLevel,
   };
+}
+
+/**
+ * Check if we should log at a given level
+ */
+export function shouldLog(level: LogLevel, messageLevel: LogLevel): boolean {
+  const levels: Record<LogLevel, number> = { quiet: 0, normal: 1, verbose: 2 };
+  return levels[messageLevel] <= levels[level];
 }
 
 /**

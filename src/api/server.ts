@@ -9,7 +9,7 @@ import { cors } from "hono/cors";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes } from "./routes";
-import { loadApiConfig, type ApiConfig } from "./config";
+import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 
@@ -124,7 +124,13 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     {};
   const config = { ...baseConfig, ...overrides } as ApiConfig;
   
-  console.log("Initializing database...");
+  const log = (msg: string, level: LogLevel = "normal") => {
+    if (shouldLog(config.logLevel, level)) {
+      console.log(msg);
+    }
+  };
+
+  log("Initializing database...", "verbose");
   const db = await initDatabase(config.dbPath);
   
   // Seed development data if database is new (no migrations applied)
@@ -138,11 +144,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   }
   
   // Clean up orphaned arms from previous server sessions
-  console.log("Checking for orphaned arms...");
+  log("Checking for orphaned arms...", "verbose");
   await cleanupOrphanedArms(db);
   
   // Initialize harness manager
-  console.log("Initializing harness manager...");
+  log("Initializing harness manager...", "verbose");
   const octopaiDir = config.dbPath.replace(/\/octopai\.db$/, "");
   const harnessManager = new HarnessManager(octopaiDir);
   await harnessManager.init();
@@ -153,23 +159,21 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     broadcast("arms", "arm.log", { armId, data });
   });
   
-  console.log("Creating app...");
+  log("Creating app...", "verbose");
   const app = createApp(db, config);
 
-  console.log(`Starting server on ${config.host}:${config.port}...`);
+  log(`Starting server on ${config.host}:${config.port}...`, "normal");
   
-  // Check if API key was auto-generated
+  // Check if API key was auto-generated - only show in verbose mode
   if (config.apiKey.startsWith("dev-")) {
-    console.log("");
-    console.log("=".repeat(60));
-    console.log("  DEV API KEY (set OCTOPAI_API_KEY for production):");
-    console.log(`  ${config.apiKey}`);
-    console.log("=".repeat(60));
-    console.log("");
+    log("=".repeat(60), "verbose");
+    log("  DEV API KEY (set OCTOPAI_API_KEY for production):", "verbose");
+    log(`  ${config.apiKey}`, "verbose");
+    log("=".repeat(60), "verbose");
   }
 
   // Create WebSocket handlers
-  const wsHandlers = createWebSocketHandlers(config.apiKey);
+  const wsHandlers = createWebSocketHandlers(config.apiKey, config.logLevel);
   enableHeartbeat(); // Start WebSocket cleanup heartbeat
 
   const server = Bun.serve({
@@ -196,9 +200,9 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     websocket: wsHandlers,
   });
 
-  console.log(`Server running at http://${config.host}:${config.port}`);
-  console.log(`WebSocket available at ws://${config.host}:${config.port}/ws`);
-  console.log(`Database: ${config.dbPath}`);
+  log(`Server running at http://${config.host}:${config.port}`, "normal");
+  log(`WebSocket: ws://${config.host}:${config.port}/ws`, "verbose");
+  log(`Database: ${config.dbPath}`, "verbose");
 
   return { server, db, config, harnessManager };
 }

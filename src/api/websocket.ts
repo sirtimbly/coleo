@@ -11,6 +11,7 @@
 import type { ServerWebSocket } from "bun";
 
 export type Channel = "arms" | "activity" | "proposals" | "brain" | "all";
+export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {
   type: "subscribe" | "unsubscribe" | "ping" | "auth";
@@ -37,6 +38,13 @@ const clients = new Set<ServerWebSocket<WSData>>();
 let _apiKey: string = "";
 let _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 let _heartbeatEnabled = false;
+let _logLevel: LogLevel = "quiet";
+
+function wsLog(msg: string, verboseOnly = false): void {
+  if (verboseOnly && _logLevel !== "verbose") return;
+  if (!verboseOnly && _logLevel === "quiet") return;
+  console.log(msg);
+}
 
 /**
  * Enable heartbeat cleanup (only when WebSocket server is running)
@@ -51,7 +59,7 @@ export function enableHeartbeat() {
       
       for (const client of clients) {
         if (now - client.data.lastPing > staleThreshold) {
-          console.log("[WS] Closing stale connection");
+          wsLog("[WS] Closing stale connection", true);
           client.close();
         }
       }
@@ -69,8 +77,9 @@ export function disableHeartbeat() {
 /**
  * Create WebSocket handlers for Bun.serve
  */
-export function createWebSocketHandlers(apiKey: string) {
+export function createWebSocketHandlers(apiKey: string, logLevel: LogLevel = "quiet") {
   _apiKey = apiKey;
+  _logLevel = logLevel;
   return {
     open(ws: ServerWebSocket<WSData>) {
       ws.data = {
@@ -79,7 +88,7 @@ export function createWebSocketHandlers(apiKey: string) {
         lastPing: Date.now(),
       };
       clients.add(ws);
-      console.log(`[WS] Client connected (${clients.size} total)`);
+      wsLog(`[WS] Client connected (${clients.size} total)`, true);
     },
 
     message(ws: ServerWebSocket<WSData>, message: string | Buffer) {
@@ -104,7 +113,7 @@ export function createWebSocketHandlers(apiKey: string) {
             if (msg.channel) {
               ws.data.subscriptions.add(msg.channel);
               ws.send(JSON.stringify({ type: "subscribed", channel: msg.channel }));
-              console.log(`[WS] Client subscribed to ${msg.channel}`);
+              wsLog(`[WS] Client subscribed to ${msg.channel}`, true);
             }
             break;
 
@@ -130,7 +139,7 @@ export function createWebSocketHandlers(apiKey: string) {
 
     close(ws: ServerWebSocket<WSData>) {
       clients.delete(ws);
-      console.log(`[WS] Client disconnected (${clients.size} remaining)`);
+      wsLog(`[WS] Client disconnected (${clients.size} remaining)`, true);
     },
   };
 }
@@ -158,7 +167,7 @@ export function broadcast(channel: Channel, event: string, data: unknown) {
   }
   
   if (sent > 0) {
-    console.log(`[WS] Broadcast ${event} to ${sent} clients on ${channel}`);
+    wsLog(`[WS] Broadcast ${event} to ${sent} clients on ${channel}`, true);
   }
 }
 
