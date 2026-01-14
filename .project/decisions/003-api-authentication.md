@@ -1,8 +1,8 @@
 # ADR-003: API Authentication Approach
 
-**Status**: Proposed  
+**Status**: Accepted  
 **Date**: 2024-01-15  
-**Deciders**: Pending human decision
+**Deciders**: Human (via implementation review)
 
 ## Context
 
@@ -10,7 +10,7 @@ The Observatory API needs authentication to prevent unauthorized access. Need to
 
 ## Options
 
-### Option 1: Simple API Key (Recommended for Phase 1)
+### Option 1: Simple API Key (Implemented)
 
 Single shared secret in `X-API-Key` header.
 
@@ -28,41 +28,43 @@ app.use(async (c, next) => {
 **Pros**: Simple, fast to implement, good for local/dev use  
 **Cons**: Single key for everyone, no user identity, no expiration
 
-### Option 2: JWT Tokens
+### Option 2: JWT Tokens (Future)
 
 Issue tokens with claims and expiration.
 
 **Pros**: User identity, expiration, refresh flow  
 **Cons**: More complex, needs token management, key rotation
 
-### Option 3: OAuth/OIDC
+### Option 3: OAuth/OIDC (Future)
 
 Full OAuth flow with identity provider.
 
 **Pros**: Industry standard, SSO support, full user management  
 **Cons**: Complex, requires IdP, overkill for single-user
 
-## Recommendation
+## Decision
 
-**Phase 1**: Option 1 (API Key) - Get things working fast  
-**Phase 5+**: Upgrade to Option 2 (JWT) for multi-user support
+**Option 1 (API Key) for Phase 1** - Get things working fast
 
 The API key approach is sufficient for:
 - Local development
 - Single-user deployment
 - Homelab use
 
-JWT can be added later when needed without breaking existing clients (just add new auth method).
+JWT (Option 2) can be added later when needed without breaking existing clients.
 
-## Decision
+## Implementation
 
-**Awaiting human input.**
+- API key configured via `OCTOPAI_API_KEY` env var or auto-generated on first run
+- CLI passes key via `X-API-Key` header
+- Web UI stores key in localStorage
+- WebSocket authentication via first message with API key
+- Health endpoint (`/api/health`) is public (no auth required)
 
-Questions for human:
-1. Is API key sufficient for Phase 1?
-2. Expected user count for initial deployments?
-3. Any SSO requirements to plan for?
+## Future Considerations
 
-## References
-
-- [Hono authentication patterns](https://hono.dev/guides/auth)
+When multi-user support is needed:
+- Upgrade to JWT tokens (Option 2)
+- Add user identity to requests
+- Implement key rotation
+- Add token refresh flow

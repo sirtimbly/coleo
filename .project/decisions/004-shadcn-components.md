@@ -1,8 +1,8 @@
-# ADR-004: Shadcn UI Components
+# ADR-004: UI Component Approach
 
-**Status**: Accepted  
+**Status**: Accepted (Updated)  
 **Date**: 2025-01-13  
-**Deciders**: Human
+**Updated**: 2025-01-14
 
 ## Context
 
@@ -13,29 +13,44 @@ The Observatory web UI needs a component library. Options considered:
 
 ## Decision
 
-Use **Shadcn/ui** components as documented in their latest documentation.
+Use **shadcn/ui-inspired** components - simple, custom Tailwind components that follow shadcn patterns without the full CLI tooling overhead.
 
 ## Rationale
 
-1. **Dark mode support** - Built-in, matches our requirement
-2. **Accessibility** - Built on Radix primitives (WCAG compliant)
-3. **Customizable** - Components are copied into project, fully editable
+1. **Dark mode support** - Built via CSS variables (matches requirement)
+2. **Accessibility** - Uses semantic HTML, follows WCAG patterns
+3. **Customizable** - Components are simple, fully editable in the project
 4. **TypeScript** - First-class TypeScript support
 5. **Tailwind integration** - Works with our existing Tailwind setup
+6. **Simplicity** - No extra dependencies, no CLI tooling to maintain
 
 ## Consequences
 
-- Components live in `src/web/components/ui/`
-- Use `bunx shadcn-ui@latest add <component>` to add components
-- Theming via CSS variables in `globals.css`
+- Components live in `src/web/src/components/`
+- Components use `cn()` utility (tailwind-merge + clsx)
+- Theming via CSS variables in `index.css`
 - Dark mode is the default theme
+- Can upgrade to full shadcn/ui CLI later if needed
 
 ## Implementation
 
-```bash
-# Initialize shadcn
-bunx shadcn-ui@latest init
+```typescript
+// Example component pattern used
+import { cn } from '@/lib';
 
-# Add components as needed
-bunx shadcn-ui@latest add button card table
+export function Card({ className }: CardProps) {
+  return (
+    <div className={cn('rounded-lg border border-border bg-card p-4', className)}>
+      {children}
+    </div>
+  );
+}
+```
+
+## To Upgrade to Full Shadcn Later
+
+```bash
+# When ready for full shadcn
+bunx shadcn-ui@latest init
+# Components can be copied from existing implementations
 ```

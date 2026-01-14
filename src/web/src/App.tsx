@@ -5,6 +5,7 @@ import {
   ArmsPage,
   BrainPage,
   GardenPage,
+  MailPage,
   ProposalsPage,
   ActivityPage,
   SettingsPage,
@@ -19,6 +20,7 @@ function App() {
           <Route path="arms" element={<ArmsPage />} />
           <Route path="brain" element={<BrainPage />} />
           <Route path="garden" element={<GardenPage />} />
+          <Route path="mail" element={<MailPage />} />
           <Route path="proposals" element={<ProposalsPage />} />
           <Route path="activity" element={<ActivityPage />} />
           <Route path="settings" element={<SettingsPage />} />
