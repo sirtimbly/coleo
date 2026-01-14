@@ -231,10 +231,81 @@ brainCmd
 
 const armCmd = program.command("arm").description("Manage arms (agents)");
 
+// Simple interactive prompt helper
+async function prompt(text: string): Promise<string> {
+  const readline = await import("readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(text, (answer) => {
+      rl.close();
+      resolve(answer);
+    });
+  });
+}
+
+async function promptSelect(text: string, options: string[]): Promise<string> {
+  if (options.length === 0) {
+    return "";
+  }
+  console.log(text);
+  for (let i = 0; i < options.length; i++) {
+    console.log(`  ${i + 1}. ${options[i]}`);
+  }
+  const answer = await prompt("Select: ");
+  const idx = parseInt(answer, 10) - 1;
+  if (idx >= 0 && idx < options.length) {
+    const result = options[idx];
+    return result !== undefined ? result : "";
+  }
+  const fallback = options[0];
+  return fallback !== undefined ? fallback : "";
+}
+
+async function promptYN(text: string, defaultYes = true): Promise<boolean> {
+  const suffix = defaultYes ? " [Y/n] " : " [y/N] ";
+  const answer = await prompt(text + suffix);
+  if (!answer) return defaultYes;
+  return answer.toLowerCase().startsWith("y");
+}
+
+// Load arm templates from ~/.octopai/arms/
+async function loadArmTemplates(): Promise<Array<{ name: string; file: string; domain: string; description: string }>> {
+  const octopaiDir = getOctopaiDir();
+  const armsDir = join(octopaiDir, "arms");
+  const templates: Array<{ name: string; file: string; domain: string; description: string }> = [];
+
+  try {
+    const files = await readdir(armsDir);
+    for (const file of files) {
+      if (!file.endsWith(".toml")) continue;
+      const filePath = join(armsDir, file);
+      try {
+        const content = await readFile(filePath, "utf-8");
+        const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
+        const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
+        const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
+        const name = nameMatch?.[1] || file.replace(".toml", "");
+        const domain = domainMatch?.[1] || "general";
+        const description = traitsMatch?.[1] || `${domain} specialist`;
+        templates.push({ name, file, domain, description });
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  } catch {
+    // No templates directory
+  }
+
+  return templates;
+}
+
 armCmd
   .command("spawn")
-  .description("Spawn a new arm")
-  .requiredOption("-n, --name <name>", "Arm name/ID")
+  .description("Spawn a new arm (interactive if no arguments provided)")
+  .option("-n, --name <name>", "Arm name/ID")
   .option("-a, --agent <agent>", "Agent type (opencode, claude-code, aider)", "opencode")
   .option("-d, --domain <domain>", "Arm domain (backend, frontend, testing, docs, etc.)", "general")
   .option("-w, --workdir <path>", "Working directory", process.cwd())
@@ -242,22 +313,110 @@ armCmd
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
   .option("--provider <provider>", "AI provider (e.g., anthropic, openai)")
   .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
+  .option("--template <name>", "Use a template from ~/.octopai/arms/")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
-    
+    let armName = options.name || "";
+    let armAgent = options.agent || "opencode";
+    let armDomain = options.domain || "general";
+    let armWorkdir = options.workdir || process.cwd();
+    let armProvider = options.provider;
+    let armModel = options.model;
+
+    // Interactive mode if no name provided
+    if (!armName) {
+      console.log("\n=== Arm Configuration ===\n");
+
+      // Load templates
+      const templates = await loadArmTemplates();
+
+      // Select template or custom
+      let useTemplate = false;
+      let templateConfig: { name: string; file: string; domain: string; description: string } | undefined;
+
+      if (templates.length > 0) {
+        useTemplate = await promptYN("Would you like to use an arm template?", true);
+        if (useTemplate) {
+          const templateNames = templates.map((t) => `${t.name} [${t.domain}] - ${t.description}`);
+          templateNames.push("Custom arm (no template)");
+          const selected = await promptSelect("Select a template:", templateNames);
+          const selectedIdx = templateNames.indexOf(selected);
+          if (selectedIdx >= 0 && selectedIdx < templates.length) {
+            const selectedTemplate = templates[selectedIdx];
+            if (selectedTemplate) {
+              templateConfig = selectedTemplate;
+              armName = templateConfig.name;
+              armDomain = templateConfig.domain;
+            }
+          } else {
+            armName = await prompt("Arm name: ");
+          }
+        } else {
+          armName = await prompt("Arm name: ");
+        }
+      } else {
+        console.log("No templates found in ~/.octopai/arms/");
+        armName = await prompt("Arm name: ");
+      }
+
+      if (!armName.trim()) {
+        console.error("Arm name is required.");
+        process.exit(1);
+      }
+
+      // Select agent
+      armAgent = await promptSelect("Select agent type:", ["opencode", "claude-code", "aider"]);
+
+      // Select domain (unless using template)
+      if (!templateConfig) {
+        const domains = ["general", "frontend", "backend", "testing", "docs", "architect"];
+        armDomain = await promptSelect("Select domain:", domains);
+      }
+
+      // Working directory
+      const workdir = await prompt(`Working directory [${process.cwd()}]: `);
+      if (workdir.trim()) {
+        armWorkdir = workdir;
+      }
+
+      // Provider and model
+      const hasProvider = await promptYN("Configure provider/model?", false);
+      if (hasProvider) {
+        const provider = await prompt("Provider (anthropic, openai, github-copilot): ");
+        if (provider.trim()) {
+          armProvider = provider;
+          const model = await prompt("Model [optional]: ");
+          if (model.trim()) {
+            armModel = model;
+          }
+        }
+      }
+
+      console.log("\n=== Spawning Arm ===");
+      console.log(`  Name: ${armName}`);
+      console.log(`  Agent: ${armAgent}`);
+      console.log(`  Domain: ${armDomain}`);
+      console.log(`  Workdir: ${armWorkdir}`);
+      if (armProvider) {
+        console.log(`  Provider: ${armProvider}`);
+        if (armModel) console.log(`  Model: ${armModel}`);
+      }
+      console.log("");
+    }
+
     // If terminal is specified, use the direct spawner (opens a terminal window)
     if (options.terminal) {
       const arm = await spawnArm({
         octopaiDir,
-        name: options.name,
-        agent: options.agent,
-        workdir: expandPath(options.workdir),
+        name: armName,
+        agent: armAgent,
+        workdir: expandPath(armWorkdir),
         terminal: options.terminal,
         initialPrompt: options.prompt,
         headless: false,
-        provider: options.provider,
-        model: options.model,
-        domain: options.domain,
+        provider: armProvider,
+        model: armModel,
+        domain: armDomain,
       });
 
       console.log(`Arm spawned in terminal: ${arm.id}`);
@@ -265,15 +424,15 @@ armCmd
       if (arm.provider || arm.model) {
         console.log(`  Model: ${arm.provider ? arm.provider + "/" : ""}${arm.model || "default"}`);
       }
-      console.log(`  Domain: ${options.domain}`);
+      console.log(`  Domain: ${armDomain}`);
       console.log(`  Status: ${arm.status}`);
       console.log(`  PID: ${arm.pid || "unknown"}`);
       return;
     }
-    
+
     // Otherwise, try to use the API server for harness-based spawning
     const { apiUrl, headers } = getApiConfig();
-    
+
     // Check if API server is running
     if (!await isApiRunning()) {
       console.error("API server is not running.");
@@ -284,50 +443,50 @@ armCmd
       console.error("  2. Use terminal mode: octopai arm spawn --name <name> --terminal ghostty");
       process.exit(1);
     }
-    
+
     // Check if arm already exists
-    const existsRes = await fetch(`${apiUrl}/api/arms/${options.name}`, { headers });
+    const existsRes = await fetch(`${apiUrl}/api/arms/${armName}`, { headers });
     const armExists = existsRes.ok;
-    
+
     if (armExists) {
       // Check if it's stopped - if so, we can restart it
       const existingArm = await existsRes.json() as { arm: { status: string } };
       if (existingArm.arm.status !== "stopped") {
-        console.error(`Arm ${options.name} already exists with status: ${existingArm.arm.status}`);
+        console.error(`Arm ${armName} already exists with status: ${existingArm.arm.status}`);
         console.error("Use 'octopai arm kill <name>' first, or choose a different name.");
         process.exit(1);
       }
-      console.log(`Restarting stopped arm: ${options.name}`);
+      console.log(`Restarting stopped arm: ${armName}`);
     } else {
       // Create new arm
       const createRes = await fetch(`${apiUrl}/api/arms`, {
         method: "POST",
         headers,
         body: JSON.stringify({
-          name: options.name,
-          domain: options.domain,
-          harness: options.agent,
+          name: armName,
+          domain: armDomain,
+          harness: armAgent,
           status: "starting",
-          provider: options.provider,
-          model: options.model,
+          provider: armProvider,
+          model: armModel,
         }),
       });
-      
+
       if (!createRes.ok) {
         const err = await createRes.json().catch(() => ({}));
         console.error(`Failed to create arm: ${(err as { error?: string }).error || createRes.statusText}`);
         process.exit(1);
       }
     }
-    
+
     // Spawn via harness
-    const spawnRes = await fetch(`${apiUrl}/api/arms/${options.name}/spawn`, {
+    const spawnRes = await fetch(`${apiUrl}/api/arms/${armName}/spawn`, {
       method: "POST",
       headers,
       body: JSON.stringify({
-        workdir: expandPath(options.workdir),
-        provider: options.provider,
-        model: options.model,
+        workdir: expandPath(armWorkdir),
+        provider: armProvider,
+        model: armModel,
         initialPrompt: options.prompt,
       }),
     });
@@ -340,17 +499,17 @@ armCmd
     
     const result = await spawnRes.json() as { sessionId?: string; pid?: number };
     
-    console.log(`Arm spawned via API: ${options.name}`);
-    console.log(`  Agent: ${options.agent}`);
-    if (options.provider || options.model) {
-      console.log(`  Model: ${options.provider ? options.provider + "/" : ""}${options.model || "default"}`);
+    console.log(`Arm spawned via API: ${armName}`);
+    console.log(`  Agent: ${armAgent}`);
+    if (armProvider || armModel) {
+      console.log(`  Model: ${armProvider ? armProvider + "/" : ""}${armModel || "default"}`);
     }
-    console.log(`  Domain: ${options.domain}`);
+    console.log(`  Domain: ${armDomain}`);
     console.log(`  Session: ${result.sessionId}`);
     console.log(`  PID: ${result.pid || "unknown"}`);
     console.log("");
     console.log("The arm is running in the API server process.");
-    console.log(`View logs: tail -f ~/.octopai/logs/${options.name}.log`);
+    console.log(`View logs: tail -f ~/.octopai/logs/${armName}.log`);
   });
 
 armCmd

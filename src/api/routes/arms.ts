@@ -9,6 +9,9 @@ import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
 import { loadConfig } from "../../config";
+import { join } from "path";
+import { readFile } from "fs/promises";
+import { homedir } from "os";
 
 interface ArmsContext {
   Variables: {
@@ -31,6 +34,76 @@ export interface ArmProfile {
   pid?: number;
   provider?: string;
   model?: string;
+}
+
+export interface ArmTemplate {
+  name: string;
+  domain: string;
+  harness: string;
+  contextBudget: number;
+  provider?: string;
+  model?: string;
+  personality?: string;
+  convictions?: string[];
+  config: Record<string, unknown>;
+}
+
+/**
+ * Load an arm template from ~/.octopai/arms/
+ */
+export async function loadArmTemplate(name: string): Promise<ArmTemplate | null> {
+  const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+  const templatePath = join(octopaiDir, "arms", `${name}.toml`);
+
+  try {
+    const content = await readFile(templatePath, "utf-8");
+
+    // Parse TOML-like content (simple parser for now)
+    const result: ArmTemplate = {
+      name: "",
+      domain: "general",
+      harness: "opencode",
+      contextBudget: 100000,
+      config: {},
+    };
+
+    // Extract values using regex
+    const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
+    const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
+    const harnessMatch = content.match(/harness\s*=\s*"([^"]*)"/);
+    const budgetMatch = content.match(/budget\s*=\s*(\d+)/);
+    const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
+    const convictionsMatch = content.match(/core\s*=\s*\[([^\]]*)\]/);
+
+    if (nameMatch && nameMatch[1]) result.name = nameMatch[1];
+    if (domainMatch && domainMatch[1]) result.domain = domainMatch[1];
+    if (harnessMatch && harnessMatch[1]) result.harness = harnessMatch[1];
+    if (budgetMatch && budgetMatch[1]) result.contextBudget = parseInt(budgetMatch[1], 10);
+    if (traitsMatch && traitsMatch[1]) result.personality = traitsMatch[1];
+    if (convictionsMatch && convictionsMatch[1]) {
+      result.convictions = convictionsMatch[1].split(",").map((s) => s.trim().replace(/"/g, ""));
+    }
+
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * List available arm templates
+ */
+export async function listArmTemplates(): Promise<string[]> {
+  const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+  const armsDir = join(octopaiDir, "arms");
+
+  try {
+    const { readdir } = await import("fs/promises");
+    const files = await readdir(armsDir);
+    return files.filter((f) => f.endsWith(".toml")).map((f) => f.replace(".toml", ""));
+  } catch {
+    return [];
+  }
 }
 
 export function createArmsRoutes() {
@@ -100,24 +173,43 @@ export function createArmsRoutes() {
    */
   app.post("/", async (c) => {
     const db = c.get("db");
-    const body = await c.req.json<Partial<ArmProfile>>();
+    const body = await c.req.json<{
+      name: string;
+      template?: string;
+      domain?: string;
+      harness?: string;
+      provider?: string;
+      model?: string;
+      contextBudget?: number;
+      config?: Record<string, unknown>;
+    }>();
 
     if (!body.name) {
       throw HttpError.badRequest("name is required");
+    }
+
+    // Load template if specified
+    let template: ArmTemplate | null = null;
+    if (body.template) {
+      template = await loadArmTemplate(body.template);
+      if (!template) {
+        throw HttpError.badRequest(`Template not found: ${body.template}`);
+      }
     }
 
     // Load config for defaults
     const config = await loadConfig();
     const defaults = config.defaults;
 
-    const id = body.id || body.name;
+    const id = body.name;
     const now = new Date().toISOString();
 
-    // Use config defaults when not specified
-    const harness = body.harness || defaults.harness;
-    const provider = body.provider || defaults.provider;
-    const model = body.model || defaults.model;
-    const contextBudget = body.contextBudget || defaults.contextBudget;
+    // Use template values, then body values, then config defaults
+    const harness = body.harness || template?.harness || defaults.harness;
+    const provider = body.provider || template?.provider || defaults.provider;
+    const model = body.model || template?.model || defaults.model;
+    const contextBudget = body.contextBudget || template?.contextBudget || defaults.contextBudget;
+    const domain = body.domain || template?.domain || "general";
 
     db.run(`
       INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
@@ -125,34 +217,34 @@ export function createArmsRoutes() {
     `, [
       id,
       body.name,
-      body.domain || "general",
+      domain,
       harness,
-      body.status || "starting",
+      "starting",
       contextBudget,
       0,
       now,
       now,
-      body.pid || null,
+      null,
       provider,
       model,
-      JSON.stringify(body.config || {}),
+      JSON.stringify(body.config || template?.config || {}),
     ]);
 
     const arm = {
       id,
       name: body.name,
-      domain: body.domain || "general",
+      domain,
       harness,
-      status: body.status || "starting",
+      status: "starting" as const,
       contextBudget,
       currentContextUsed: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: null,
-      pid: body.pid,
+      pid: undefined,
       provider,
       model,
-      config: body.config || {},
+      config: body.config || template?.config || {},
     };
 
     // Broadcast arm creation
