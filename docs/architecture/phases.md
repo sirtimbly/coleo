@@ -36,37 +36,38 @@ This document outlines the phased approach to building Octopai's full architectu
 
 ### Tasks
 
-- [ ] **1.1** Set up Hono API server
-  - Create `src/observatory/server.ts`
+- [x] **1.1** Set up Hono API server
+  - Create `src/api/server.ts`
   - Basic middleware (auth, logging, error handling)
   - Health check endpoint
 
-- [ ] **1.2** Database implementation
-  - Create `src/db/interface.ts`
-  - SQLite implementation (`src/db/sqlite.ts`)
+- [x] **1.2** Database implementation
+  - Create `src/db/index.ts`
+  - SQLite implementation with WAL mode
   - Initial migrations
   - Seed data for development
 
-- [ ] **1.3** Core API endpoints
+- [x] **1.3** Core API endpoints
   - `/api/status` - System overview
   - `/api/brain` - Brain state and control
   - `/api/arms` - CRUD for arms
   - `/api/config` - Configuration
 
-- [ ] **1.4** WebSocket handler
-  - Create `src/observatory/ws/handler.ts`
+- [x] **1.4** WebSocket handler
+  - Create `src/api/websocket.ts`
   - Channel subscription system
-  - Event broadcasting
+  - Event broadcasting (arms, activity, brain)
 
-- [ ] **1.5** React UI shell
-  - Initialize React project in `web/`
+- [x] **1.5** React UI shell
+  - React project in `src/web/`
   - Basic layout (sidebar, header, content)
   - Dashboard view with system status
   - Arm list view
 
-- [ ] **1.6** Integration
-  - Connect Brain to Observatory
+- [x] **1.6** Integration
+  - Brain connects to Observatory via `/api/brain/notify`
   - Real-time status updates via WebSocket
+  - Brain broadcasts: started, stopped, poll events
 
 ### Deliverable
 
@@ -85,8 +86,9 @@ A working web UI at `http://localhost:3001` showing:
 
 - [ ] **2.1** Arm profile system
   - Define domain types and default patterns
-  - Create arm profile configuration
+  - Create arm profile configuration files (`~/.octopai/arms/*.toml`)
   - Update arm spawning to use profiles
+  - Add preset configurations (fullstack, split-stack, full-team)
 
 - [ ] **2.2** Context budget tracking
   - Implement `ContextBudget` type

@@ -315,7 +315,93 @@ Add these to your `.bashrc` or `.zshrc` for convenience:
 ```bash
 alias oc="bun run ~/octopai/src/cli/index.ts"
 alias brain="oc brain run"
-alias spawn="oc tentacle spawn"
+alias spawn="oc arm spawn"
+alias arms="oc arm list"
 alias status="oc status"
 alias inbox="oc mail inbox"
+```
+
+---
+
+## Arm Configuration
+
+Arms can be configured via TOML files in `~/.octopai/arms/`. Each file defines an arm's domain, personality, and context preferences.
+
+### Arm Config File Structure
+
+```toml
+# ~/.octopai/arms/<name>.toml
+
+[arm]
+name = "my-arm"
+domain = "frontend"  # general, frontend, backend, infrastructure, etc.
+harness = "opencode"  # Agent harness type
+
+[context]
+budget = 100000       # Max context tokens
+priority_files = [    # Files this arm should focus on
+  "src/web/**",
+  "*.tsx",
+  "*.css"
+]
+
+[personality]
+traits = "Detail-oriented, UX-focused developer"
+
+[convictions]
+core = [
+  "Clean code is maintainable code",
+  "Tests prevent regressions"
+]
+```
+
+### Domain Types
+
+| Domain | Description |
+|--------|-------------|
+| `general` | Full-stack, handles any task |
+| `frontend` | UI/UX, React, CSS, accessibility |
+| `backend` | APIs, databases, services |
+| `infrastructure` | DevOps, CI/CD, deployment |
+| `testing` | Test infrastructure, QA |
+| `architect` | Code review, patterns, decisions |
+
+### Preset Configurations
+
+Load preset arm configurations:
+
+```bash
+# List available presets
+octopai config presets
+
+# Load a preset (creates arm config files)
+octopai config load preset fullstack
+octopai config load preset split-stack
+octopai config load preset full-team
+```
+
+### Managing Arm Configs
+
+```bash
+# List configured arms
+octopai config arms
+
+# Show arm configuration
+octopai config arms show my-arm
+
+# Edit arm configuration (opens in editor)
+octopai config arms edit my-arm
+
+# Delete an arm configuration
+octopai config arms remove my-arm
+```
+
+### Spawning with Config
+
+```bash
+# Spawn using a saved configuration
+octopai arm spawn --name my-arm --config my-arm
+
+# Override config values at spawn time
+octopai arm spawn -n specialist --domain backend --workdir ~/api
 ```
