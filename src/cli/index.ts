@@ -207,17 +207,36 @@ brainCmd
   .description("Show brain status")
   .action(async () => {
     const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
 
     try {
+      // Read from brain.json for basic status
       const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
       const state = JSON.parse(content);
 
+      // Get actual arm count from database
+      let activeArmsCount = 0;
+      let pendingTasksCount = 0;
+      try {
+        const { Database } = await import("bun:sqlite");
+        const db = new Database(dbPath, { readonly: true });
+        const armsResult = db.query("SELECT COUNT(*) as count FROM arms WHERE status NOT IN ('stopped')").get();
+        activeArmsCount = (armsResult as { count: number })?.count || 0;
+        
+        // Count pending tasks
+        const tasksResult = db.query("SELECT COUNT(*) as count FROM tasks WHERE status = 'pending'").get();
+        pendingTasksCount = (tasksResult as { count: number })?.count || 0;
+        db.close();
+      } catch {
+        // Database might not exist yet
+      }
+
       console.log("Brain Status:");
-      console.log(`  Status: ${state.status}`);
+      console.log(`  Status: ${state.status || "unknown"}`);
       console.log(`  Last poll: ${state.lastPollAt || "never"}`);
-      console.log(`  Poll interval: ${state.pollIntervalMs}ms`);
-      console.log(`  Active arms: ${state.activeArms?.length || 0}`);
-      console.log(`  Pending tasks: ${state.pendingTasks || 0}`);
+      console.log(`  Poll interval: ${state.pollIntervalMs || 30000}ms`);
+      console.log(`  Active arms: ${activeArmsCount}`);
+      console.log(`  Pending tasks: ${pendingTasksCount}`);
       console.log(`  Completed today: ${state.completedToday || 0}`);
     } catch {
       console.log("Brain has not been started yet.");

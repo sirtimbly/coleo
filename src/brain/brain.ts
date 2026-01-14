@@ -215,8 +215,10 @@ export class Brain {
     await this.inbox.init();
     await this.sent.init();
     
-    // Load existing state
+    // Load existing state (but reset activeArms - they'll be populated from DB)
     await this.loadState();
+    this.state.activeArms = []; // Reset - get from database on first poll
+    
     await this.loadTasks();
     await this.loadArms();
     await this.loadSeenArmIds();
