@@ -138,6 +138,18 @@ export class Brain {
   private apiBaseUrl: string;
   private apiKey: string;
 
+  /**
+   * Log an activity entry
+   */
+  private logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+    if (!this.db) return;
+    const now = new Date().toISOString();
+    this.db.run(
+      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
+      [now, actor, action, target || null, JSON.stringify(details || {})]
+    );
+  }
+
   constructor(options: BrainOptions) {
     this.options = options;
     this.apiBaseUrl = options.apiBaseUrl || "http://localhost:7777";
@@ -316,6 +328,7 @@ export class Brain {
     this.state.startedAt = this.state.startedAt || new Date().toISOString();
     
     this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
+    this.logActivity("brain", "started", undefined, { pollIntervalMs: this.options.pollIntervalMs });
     
     // Notify Observatory that brain is starting
     await this.notifyObservatory("started");
@@ -334,6 +347,7 @@ export class Brain {
     this.state.status = "stopped";
     await this.saveState();
     await this.notifyObservatory("stopped");
+    this.logActivity("brain", "stopped");
     this.log("Brain stopped");
   }
 
@@ -571,6 +585,7 @@ export class Brain {
     await this.saveTasks();
     
     this.log(`Created task: ${task.subject} (${task.id})`);
+    this.logActivity("brain", "task_created", task.id, { subject, priority: task.priority, mailThreadId });
     
     return task;
   }
@@ -610,6 +625,7 @@ export class Brain {
     await this.saveTasks();
     
     this.log(`Created doc update task: ${subject} (${taskId})`);
+    this.logActivity("brain", "task_created", taskId, { subject, priority: task.priority, domain: "docs", targetDoc });
     
     return task;
   }
@@ -631,6 +647,9 @@ export class Brain {
     
     this.state.completedToday++;
     await this.saveTasks();
+    
+    // Log activity
+    this.logActivity("brain", "task_completed", taskId, { subject: task.subject, artifacts });
     
     // Notify human
     await this.sendToHuman({
@@ -1061,6 +1080,7 @@ export class Brain {
         });
         
         this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain})`);
+        this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject });
       }
       
       // Mark arm as having received initial tasks
@@ -1142,6 +1162,7 @@ export class Brain {
       
       const domainMatch = task.domain ? ` (domain: ${task.domain})` : "";
       this.log(`Assigned task "${task.subject}" to ${bestArm.id}${domainMatch}`);
+      this.logActivity("brain", "task_assigned", task.id, { armId: bestArm.id, domain: task.domain, taskSubject: task.subject });
     }
     
     await this.saveTasks();

@@ -19,6 +19,17 @@ interface ArmsContext {
   };
 }
 
+/**
+ * Log an activity entry
+ */
+function logActivity(db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
+    [now, actor, action, target || null, JSON.stringify(details || {})]
+  );
+}
+
 export interface ArmProfile {
   id: string;
   name: string;
@@ -230,6 +241,9 @@ export function createArmsRoutes() {
       JSON.stringify(body.config || template?.config || {}),
     ]);
 
+    // Log activity
+    logActivity(db, body.name, "registered", undefined, { domain, harness, provider, model });
+
     const arm = {
       id,
       name: body.name,
@@ -286,6 +300,8 @@ export function createArmsRoutes() {
     if (body.status !== undefined) {
       updates.push("status = ?");
       values.push(body.status);
+      // Log status change
+      logActivity(db, id, "status_changed", undefined, { newStatus: body.status });
     }
     if (body.contextBudget !== undefined) {
       updates.push("context_budget = ?");
@@ -358,6 +374,9 @@ export function createArmsRoutes() {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
+    // Log activity
+    logActivity(db, id, "removed");
+
     // Broadcast arm deletion
     broadcast("arms", "arm.deleted", { id });
 
@@ -429,6 +448,9 @@ export function createArmsRoutes() {
         [pid ?? null, now, now, id]
       );
 
+      // Log activity
+      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, workdir: body.workdir, provider, model });
+
       // Broadcast arm spawned
       broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, status: "idle" });
 
@@ -466,11 +488,14 @@ export function createArmsRoutes() {
     // Kill the session
     await manager.kill(id);
 
-    // Update database
-    const now = new Date().toISOString();
-    db.run("UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?", [now, id]);
+      // Update database
+      const now = new Date().toISOString();
+      db.run("UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?", [now, id]);
 
-    // Broadcast arm killed
+      // Log activity
+      logActivity(db, id, "killed");
+
+      // Broadcast arm killed
     broadcast("arms", "arm.killed", { id, status: "stopped" });
 
     return c.json({ killed: true });
@@ -512,6 +537,9 @@ export function createArmsRoutes() {
       // Update activity timestamp
       const now = new Date().toISOString();
       db.run("UPDATE arms SET status = 'busy', last_activity_at = ?, updated_at = ? WHERE id = ?", [now, now, id]);
+
+      // Log activity
+      logActivity(db, id, "prompt_received", undefined, { promptLength: body.prompt.length });
 
       // Broadcast prompt sent
       broadcast("arms", "arm.prompt_sent", { id, status: "busy", promptLength: body.prompt.length });
