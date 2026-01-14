@@ -114,18 +114,58 @@ Manage arms (AI agents).
 
 #### arm spawn
 
-Spawn a new arm.
+Spawn a new arm. Runs interactively if no arguments provided.
 
 ```bash
 octopai arm spawn [options]
 
 Options:
-  -n, --name <name>       Arm name/ID (required)
+  -n, --name <name>       Arm name/ID
   -a, --agent <agent>     Agent type: opencode, claude-code, aider (default: opencode)
-  -w, --workdir <path>    Working directory (default: current directory)
-  -t, --terminal <type>   Terminal: auto, ghostty, iterm2, terminal, wezterm, kitty, tmux, headless
-  -p, --prompt <prompt>   Initial prompt/task for the agent
-  --headless              Run in headless mode (no terminal window)
+  -d, --domain <domain>   Arm domain: general, frontend, backend, testing, docs, architect
+  -w, --workdir <path>    Working directory
+  -t, --terminal <type>   Terminal: ghostty, iterm2, terminal, tmux, headless
+  -p, --prompt <prompt>   Initial task/prompt for the arm
+  --provider <provider>   AI provider (e.g., anthropic, openai)
+  --model <model>         Model name (e.g., claude-sonnet-4-20250514)
+  --template <name>       Use template from ~/.octopai/arms/
+```
+
+**Interactive Mode (no arguments):**
+
+When run without `--name`, you'll be prompted interactively:
+
+```bash
+octopai arm spawn
+
+=== Arm Configuration ===
+
+Would you like to use an arm template? [Y/n] y
+Select a template:
+  1. fullstack-dev [general] - Versatile generalist for any task
+  2. frontend-dev [frontend] - UI/UX specialist
+  3. backend-dev [backend] - API/database specialist
+  4. Custom arm (no template)
+Select: 1
+
+Select agent type:
+  1. opencode
+  2. claude-code
+  3. aider
+Select: 1
+
+Working directory [/Users/user/project]:
+Configure provider/model? [y/N] y
+Provider (anthropic, openai, github-copilot): anthropic
+Model [optional]: claude-sonnet-4-20250514
+
+=== Spawning Arm ===
+  Name: fullstack-dev
+  Agent: opencode
+  Domain: general
+  Workdir: /Users/user/project
+  Provider: anthropic
+  Model: claude-sonnet-4-20250514
 ```
 
 **Examples:**
@@ -133,15 +173,19 @@ Options:
 # Basic spawn
 octopai arm spawn --name explorer --agent opencode
 
-# With specific terminal
-octopai arm spawn -n ui-worker -a opencode -t ghostty
+# Using a template
+octopai arm spawn --template frontend-dev --name ui-specialist
 
-# Headless (for containers/SSH)
-octopai arm spawn -n worker --headless
+# With provider and model
+octopai arm spawn -n my-arm -a opencode --provider anthropic --model claude-opus-4
 
-# With initial task
-octopai arm spawn -n fixer -p "Find and fix all TypeScript errors"
+# In terminal window
+octopai arm spawn -n worker --terminal ghostty
 ```
+
+**Templates:**
+
+Templates from `~/.octopai/arms/*.toml` are shown in interactive mode. When using `--template`, the arm will use template values for domain, harness, context budget, and other settings, which can be overridden by explicit arguments.
 
 #### arm list
 
