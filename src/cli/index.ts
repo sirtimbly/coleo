@@ -12,7 +12,8 @@ import { homedir } from "os";
 import { Brain } from "../brain";
 import { initMaildir, Maildir } from "../mail";
 import { runMcpServer } from "../mcp";
-import { spawnTentacle, listTentacles, killTentacle } from "../tentacle";
+import { spawnArm, listArms, killArm } from "../arm";
+import { startServer } from "../api";
 import type { OctopaiConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
 
@@ -29,6 +30,34 @@ function expandPath(path: string): string {
     return join(homedir(), path.slice(1));
   }
   return path;
+}
+
+// Get API URL and headers
+function getApiConfig() {
+  const apiPort = process.env.OCTOPAI_API_PORT || "8080";
+  const apiHost = process.env.OCTOPAI_API_HOST || "localhost";
+  const apiKey = process.env.OCTOPAI_API_KEY;
+  const apiUrl = `http://${apiHost}:${apiPort}`;
+  
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (apiKey) {
+    headers["X-API-Key"] = apiKey;
+  }
+  
+  return { apiUrl, headers };
+}
+
+// Check if API server is running
+async function isApiRunning(): Promise<boolean> {
+  const { apiUrl } = getApiConfig();
+  try {
+    const res = await fetch(`${apiUrl}/api/health`);
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 program
@@ -57,7 +86,7 @@ program
       "queue/brain/pending",
       "queue/brain/processed",
       "state",
-      "state/tentacles",
+      "state/arms",
       "state/notes/shared",
       "mcp",
       "logs",
@@ -95,9 +124,25 @@ Directory structure created:
 
 Next steps:
   1. Configure your mail client to read from ${octopaiDir}/mail/inbox
-  2. Start the brain: octopai brain run
-  3. Spawn a tentacle: octopai tentacle spawn --name explorer --agent opencode
+  2. Start the API server: octopai serve
+  3. Spawn an arm: octopai arm spawn --name explorer --agent opencode
 `);
+  });
+
+// ============================================
+// SERVE COMMAND (API Server)
+// ============================================
+
+program
+  .command("serve")
+  .description("Start the API server (required for harness-based arms)")
+  .option("-p, --port <port>", "Port to listen on", "8080")
+  .option("-h, --host <host>", "Host to bind to", "0.0.0.0")
+  .action(async (options) => {
+    await startServer({
+      port: parseInt(options.port, 10),
+      host: options.host,
+    });
   });
 
 // ============================================
@@ -155,7 +200,7 @@ brainCmd
       console.log(`  Status: ${state.status}`);
       console.log(`  Last poll: ${state.lastPollAt || "never"}`);
       console.log(`  Poll interval: ${state.pollIntervalMs}ms`);
-      console.log(`  Active tentacles: ${state.activeTentacles?.length || 0}`);
+      console.log(`  Active arms: ${state.activeArms?.length || 0}`);
       console.log(`  Pending tasks: ${state.pendingTasks || 0}`);
       console.log(`  Completed today: ${state.completedToday || 0}`);
     } catch {
@@ -165,72 +210,289 @@ brainCmd
   });
 
 // ============================================
-// TENTACLE COMMANDS
+// ARM COMMANDS
 // ============================================
 
-const tentacleCmd = program.command("tentacle").description("Manage tentacles");
+const armCmd = program.command("arm").description("Manage arms (agents)");
 
-tentacleCmd
+armCmd
   .command("spawn")
-  .description("Spawn a new tentacle")
-  .requiredOption("-n, --name <name>", "Tentacle name/ID")
+  .description("Spawn a new arm")
+  .requiredOption("-n, --name <name>", "Arm name/ID")
   .option("-a, --agent <agent>", "Agent type (opencode, claude-code, aider)", "opencode")
+  .option("-d, --domain <domain>", "Arm domain (backend, frontend, testing, docs, etc.)", "general")
   .option("-w, --workdir <path>", "Working directory", process.cwd())
-  .option("-t, --terminal <terminal>", "Terminal emulator (auto, ghostty, iterm2, terminal, tmux, headless)", "auto")
+  .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses API server.")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
-  .option("--headless", "Run in headless mode (no terminal window, for containers/SSH)")
+  .option("--provider <provider>", "AI provider (e.g., anthropic, openai)")
+  .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
+    
+    // If terminal is specified, use the direct spawner (opens a terminal window)
+    if (options.terminal) {
+      const arm = await spawnArm({
+        octopaiDir,
+        name: options.name,
+        agent: options.agent,
+        workdir: expandPath(options.workdir),
+        terminal: options.terminal,
+        initialPrompt: options.prompt,
+        headless: false,
+        provider: options.provider,
+        model: options.model,
+        domain: options.domain,
+      });
 
-    const tentacle = await spawnTentacle({
-      octopaiDir,
-      name: options.name,
-      agent: options.agent,
-      workdir: expandPath(options.workdir),
-      terminal: options.terminal,
-      initialPrompt: options.prompt,
-      headless: options.headless,
+      console.log(`Arm spawned in terminal: ${arm.id}`);
+      console.log(`  Agent: ${arm.agent}`);
+      if (arm.provider || arm.model) {
+        console.log(`  Model: ${arm.provider ? arm.provider + "/" : ""}${arm.model || "default"}`);
+      }
+      console.log(`  Domain: ${options.domain}`);
+      console.log(`  Status: ${arm.status}`);
+      console.log(`  PID: ${arm.pid || "unknown"}`);
+      return;
+    }
+    
+    // Otherwise, try to use the API server for harness-based spawning
+    const { apiUrl, headers } = getApiConfig();
+    
+    // Check if API server is running
+    if (!await isApiRunning()) {
+      console.error("API server is not running.");
+      console.error(`Expected at: ${apiUrl}`);
+      console.error("");
+      console.error("Options:");
+      console.error("  1. Start the API server: octopai serve");
+      console.error("  2. Use terminal mode: octopai arm spawn --name <name> --terminal ghostty");
+      process.exit(1);
+    }
+    
+    // Check if arm already exists
+    const existsRes = await fetch(`${apiUrl}/api/arms/${options.name}`, { headers });
+    const armExists = existsRes.ok;
+    
+    if (armExists) {
+      // Check if it's stopped - if so, we can restart it
+      const existingArm = await existsRes.json() as { arm: { status: string } };
+      if (existingArm.arm.status !== "stopped") {
+        console.error(`Arm ${options.name} already exists with status: ${existingArm.arm.status}`);
+        console.error("Use 'octopai arm kill <name>' first, or choose a different name.");
+        process.exit(1);
+      }
+      console.log(`Restarting stopped arm: ${options.name}`);
+    } else {
+      // Create new arm
+      const createRes = await fetch(`${apiUrl}/api/arms`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          name: options.name,
+          domain: options.domain,
+          harness: options.agent,
+          status: "starting",
+          provider: options.provider,
+          model: options.model,
+        }),
+      });
+      
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        console.error(`Failed to create arm: ${(err as { error?: string }).error || createRes.statusText}`);
+        process.exit(1);
+      }
+    }
+    
+    // Spawn via harness
+    const spawnRes = await fetch(`${apiUrl}/api/arms/${options.name}/spawn`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        workdir: expandPath(options.workdir),
+        provider: options.provider,
+        model: options.model,
+        initialPrompt: options.prompt,
+      }),
     });
-
-    console.log(`Tentacle spawned: ${tentacle.id}`);
-    console.log(`  Agent: ${tentacle.agent}`);
-    console.log(`  Status: ${tentacle.status}`);
-    console.log(`  PID: ${tentacle.pid || "unknown"}`);
+    
+    if (!spawnRes.ok) {
+      const err = await spawnRes.json().catch(() => ({}));
+      console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
+      process.exit(1);
+    }
+    
+    const result = await spawnRes.json() as { sessionId?: string; pid?: number };
+    
+    console.log(`Arm spawned via API: ${options.name}`);
+    console.log(`  Agent: ${options.agent}`);
+    if (options.provider || options.model) {
+      console.log(`  Model: ${options.provider ? options.provider + "/" : ""}${options.model || "default"}`);
+    }
+    console.log(`  Domain: ${options.domain}`);
+    console.log(`  Session: ${result.sessionId}`);
+    console.log(`  PID: ${result.pid || "unknown"}`);
+    console.log("");
+    console.log("The arm is running in the API server process.");
+    console.log(`View logs: tail -f ~/.octopai/logs/${options.name}.log`);
   });
 
-tentacleCmd
+armCmd
   .command("list")
-  .description("List all tentacles")
-  .action(async () => {
+  .description("List all arms")
+  .option("--all", "Include stopped arms (hidden by default)")
+  .action(async (options) => {
     const octopaiDir = getOctopaiDir();
-    const tentacles = await listTentacles(octopaiDir);
+    let arms = await listArms(octopaiDir);
+    
+    // Filter out stopped arms unless --all is specified
+    if (!options.all) {
+      const activeArms = arms.filter(a => a.status !== "stopped");
+      if (activeArms.length === 0 && arms.length > 0) {
+        console.log("No active arms. Use --all to see stopped arms.");
+        console.log(`(${arms.length} stopped arm(s) hidden)`);
+        return;
+      }
+      arms = activeArms;
+    }
 
-    if (tentacles.length === 0) {
-      console.log("No tentacles registered.");
-      console.log("Spawn one with: octopai tentacle spawn --name <name> --agent opencode");
+    if (arms.length === 0) {
+      console.log("No arms registered.");
+      console.log("Spawn one with: octopai arm spawn --name <name> --agent opencode");
       return;
     }
 
-    console.log("Tentacles:");
-    for (const t of tentacles) {
-      const status = t.status === "running" || t.status === "idle" ? "●" : 
-                     t.status === "busy" ? "◐" : "○";
-      console.log(`  ${status} ${t.id} (${t.agent}) - ${t.status}${t.currentTask ? ` [${t.currentTask}]` : ""}`);
+    console.log("Arms:");
+    for (const a of arms) {
+      const status = a.status === "running" || a.status === "idle" ? "●" : 
+                     a.status === "busy" ? "◐" : 
+                     a.status === "stopped" ? "○" : "◌";
+      const domain = (a as { domain?: string }).domain ? ` [${(a as { domain?: string }).domain}]` : "";
+      console.log(`  ${status} ${a.id} (${a.agent})${domain} - ${a.status}${a.currentTask ? ` → ${a.currentTask}` : ""}`);
+    }
+    
+    if (options.all) {
+      const stoppedCount = arms.filter(a => a.status === "stopped").length;
+      if (stoppedCount > 0) {
+        console.log("");
+        console.log(`Tip: Run 'octopai arm cleanup' to remove ${stoppedCount} stopped arm(s).`);
+      }
     }
   });
 
-tentacleCmd
+armCmd
   .command("kill <name>")
-  .description("Kill a tentacle")
+  .description("Kill an arm")
   .action(async (name) => {
     const octopaiDir = getOctopaiDir();
-    const success = await killTentacle(octopaiDir, name);
+    const { apiUrl, headers } = getApiConfig();
+    
+    // Try to use API first
+    if (await isApiRunning()) {
+      const killRes = await fetch(`${apiUrl}/api/arms/${name}/kill`, {
+        method: "POST",
+        headers,
+      });
+      
+      if (killRes.ok) {
+        console.log(`Arm ${name} killed via API.`);
+        return;
+      }
+      // If API kill failed, fall through to direct kill
+    }
+    
+    // Direct kill (for terminal-based arms or when API is down)
+    const success = await killArm(octopaiDir, name);
 
     if (success) {
-      console.log(`Tentacle ${name} killed.`);
+      console.log(`Arm ${name} killed.`);
     } else {
-      console.log(`Failed to kill tentacle ${name}.`);
+      console.log(`Failed to kill arm ${name}.`);
     }
+  });
+
+armCmd
+  .command("remove <name>")
+  .description("Remove a stopped arm from the database")
+  .action(async (name) => {
+    const { apiUrl, headers } = getApiConfig();
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+    
+    // Check arm status first
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+    
+    const armData = await armRes.json() as { arm: { status: string } };
+    if (armData.arm.status !== "stopped") {
+      console.error(`Cannot remove arm with status: ${armData.arm.status}`);
+      console.error("Kill the arm first with: octopai arm kill " + name);
+      process.exit(1);
+    }
+    
+    // Delete the arm
+    const deleteRes = await fetch(`${apiUrl}/api/arms/${name}`, {
+      method: "DELETE",
+      headers,
+    });
+    
+    if (deleteRes.ok) {
+      console.log(`Arm ${name} removed from database.`);
+    } else {
+      const err = await deleteRes.json().catch(() => ({}));
+      console.error(`Failed to remove arm: ${(err as { error?: string }).error || deleteRes.statusText}`);
+      process.exit(1);
+    }
+  });
+
+armCmd
+  .command("cleanup")
+  .description("Remove all stopped arms from the database")
+  .action(async () => {
+    const { apiUrl, headers } = getApiConfig();
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+    
+    // Get all arms
+    const armsRes = await fetch(`${apiUrl}/api/arms`, { headers });
+    if (!armsRes.ok) {
+      console.error("Failed to fetch arms");
+      process.exit(1);
+    }
+    
+    const armsData = await armsRes.json() as { arms: Array<{ id: string; status: string }> };
+    const stoppedArms = armsData.arms.filter(a => a.status === "stopped");
+    
+    if (stoppedArms.length === 0) {
+      console.log("No stopped arms to clean up.");
+      return;
+    }
+    
+    console.log(`Removing ${stoppedArms.length} stopped arm(s)...`);
+    
+    for (const arm of stoppedArms) {
+      const deleteRes = await fetch(`${apiUrl}/api/arms/${arm.id}`, {
+        method: "DELETE",
+        headers,
+      });
+      
+      if (deleteRes.ok) {
+        console.log(`  Removed: ${arm.id}`);
+      } else {
+        console.log(`  Failed to remove: ${arm.id}`);
+      }
+    }
+    
+    console.log("Cleanup complete.");
   });
 
 // ============================================
@@ -319,7 +581,7 @@ const mcpCmd = program.command("mcp").description("MCP server commands");
 
 mcpCmd
   .command("serve")
-  .description("Run the MCP server (used by tentacles)")
+  .description("Run the MCP server (used by arms)")
   .action(async () => {
     await runMcpServer();
   });
@@ -338,6 +600,13 @@ program
     console.log(`Directory: ${octopaiDir}`);
     console.log(``);
 
+    // API server status
+    if (await isApiRunning()) {
+      console.log(`API Server: running`);
+    } else {
+      console.log(`API Server: not running`);
+    }
+
     // Brain status
     try {
       const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
@@ -347,11 +616,13 @@ program
       console.log(`Brain: not started`);
     }
 
-    // Tentacles
-    const tentacles = await listTentacles(octopaiDir);
-    console.log(`Tentacles: ${tentacles.length}`);
-    for (const t of tentacles) {
-      console.log(`  - ${t.id}: ${t.status}`);
+    // Arms
+    const arms = await listArms(octopaiDir);
+    const activeArms = arms.filter(a => a.status !== "stopped");
+    const stoppedArms = arms.filter(a => a.status === "stopped");
+    console.log(`Arms: ${activeArms.length} active, ${stoppedArms.length} stopped`);
+    for (const a of activeArms) {
+      console.log(`  - ${a.id}: ${a.status}`);
     }
 
     // Mail
@@ -383,7 +654,7 @@ version = ${config.version}
 
 [brain]
 poll_interval_ms = ${config.brain.pollIntervalMs}
-max_tentacles = ${config.brain.maxTentacles}
+max_arms = ${config.brain.maxArms}
 
 [mail]
 from_address = "${config.mail.fromAddress}"

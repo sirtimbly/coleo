@@ -2,8 +2,8 @@
  * Core types for Octopai
  */
 
-// Tentacle identity and state
-export interface Tentacle {
+// Arm identity and state
+export interface Arm {
   id: string;
   name: string;
   agent: "opencode" | "claude-code" | string;
@@ -12,7 +12,14 @@ export interface Tentacle {
   startedAt: Date;
   lastActivity?: Date;
   currentTask?: string;
+  /** AI provider (e.g., "opencode", "github-copilot", "anthropic") */
+  provider?: string;
+  /** Model name (e.g., "claude-sonnet-4", "gpt-5.1-codex") */
+  model?: string;
 }
+
+/** @deprecated Use Arm instead */
+export type Tentacle = Arm;
 
 // Task representation
 export interface Task {
@@ -21,7 +28,7 @@ export interface Task {
   description: string;
   status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked";
   priority: "critical" | "high" | "normal" | "low";
-  assignedTo?: string; // tentacle id
+  assignedTo?: string; // arm id
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -32,7 +39,7 @@ export interface Task {
 // Message between agents (in queue)
 export interface QueueMessage {
   id: string;
-  from: string; // tentacle id or "brain" or "human"
+  from: string; // arm id or "brain" or "human"
   to: string;
   timestamp: Date;
   type: MessageType;
@@ -50,9 +57,10 @@ export type MessageType =
   | "share_note"
   | "tool_discovery"
   | "status_update"
+  | "heartbeat"
   | "human_message";
 
-// Discovery report from a tentacle
+// Discovery report from an arm
 export interface Discovery {
   kind: "test_failure" | "unused_code" | "security_issue" | "performance" | "pattern" | "other";
   title: string;
@@ -62,10 +70,10 @@ export interface Discovery {
   severity?: "info" | "warning" | "error";
 }
 
-// Shared note between tentacles
+// Shared note between arms
 export interface Note {
   id: string;
-  author: string; // tentacle id
+  author: string; // arm id
   title: string;
   content: string;
   tags: string[];
@@ -73,13 +81,13 @@ export interface Note {
   updatedAt: Date;
 }
 
-// Tool discovered by a tentacle
+// Tool discovered by an arm
 export interface DiscoveredTool {
   name: string;
   command: string;
   description: string;
   context?: string;
-  discoveredBy: string; // tentacle id
+  discoveredBy: string; // arm id
   discoveredAt: Date;
 }
 
@@ -88,7 +96,7 @@ export interface BrainState {
   status: "stopped" | "running" | "paused";
   lastPollAt?: Date;
   pollIntervalMs: number;
-  activeTentacles: string[];
+  activeArms: string[];
   pendingTasks: number;
   completedToday: number;
 }
@@ -99,7 +107,7 @@ export interface OctopaiConfig {
   octopaiDir: string;
   brain: {
     pollIntervalMs: number;
-    maxTentacles: number;
+    maxArms: number;
   };
   mail: {
     fromAddress: string;
@@ -122,7 +130,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   octopaiDir: "~/.octopai",
   brain: {
     pollIntervalMs: 30000,
-    maxTentacles: 8,
+    maxArms: 8,
   },
   mail: {
     fromAddress: "brain@octopai.local",

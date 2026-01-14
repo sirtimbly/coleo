@@ -2,19 +2,15 @@
 
 This document tracks open questions and decisions that need to be made before or during implementation.
 
-## Architecture Questions
+## Resolved Questions
 
 ### Q1: Monorepo vs Multi-repo
 
 **Question:** Should the web frontend live in the same repo as the backend?
 
-**Options:**
-- **Monorepo** - Easier to keep in sync, single PR for full features
-- **Multi-repo** - Cleaner separation, independent versioning
+**Decision:** Monorepo with Bun workspaces
 
-**Current thinking:** Monorepo with Bun workspaces
-
-**Status:** Open for feedback
+**Status:** Resolved
 
 ---
 
@@ -22,17 +18,9 @@ This document tracks open questions and decisions that need to be made before or
 
 **Question:** Should we rename "tentacle" to "arm" throughout the codebase?
 
-**Reasoning:** 
-- "Arm" is shorter and clearer
-- Documentation uses "arm" consistently
-- "Tentacle" is still valid but longer
+**Decision:** Yes, rename to "arm" everywhere. CLI already has `arm` command as alias.
 
-**Impact:** 
-- Rename `src/tentacle/` to `src/arm/`
-- Update CLI commands
-- Update all documentation
-
-**Status:** Pending decision
+**Status:** Resolved - Implementation pending
 
 ---
 
@@ -40,80 +28,19 @@ This document tracks open questions and decisions that need to be made before or
 
 **Question:** WebSocket vs Server-Sent Events (SSE)?
 
-**Options:**
-- **WebSocket** - Bidirectional, more complex
-- **SSE** - Server-to-client only, simpler, HTTP-based
+**Decision:** WebSocket for bidirectional communication
 
-**Current thinking:** WebSocket, since we need client-to-server messages (subscribe/unsubscribe)
-
-**Status:** Decided - WebSocket
+**Status:** Resolved
 
 ---
-
-## Governance Questions
-
-### Q4: Proposal Timeouts
-
-**Question:** What should the default timeout be for different proposal types?
-
-**Current proposal:**
-
-| Type | Timeout |
-|------|---------|
-| deploy (local) | 1 minute |
-| deploy (other) | 5 minutes |
-| claim | 2 minutes |
-| refactor | 10 minutes |
-| dependency | 5 minutes |
-| breaking_change | 15 minutes |
-| creative_override | 1 minute |
-
-**Status:** Open for feedback
-
----
-
-### Q5: Reputation Starting Point
-
-**Question:** What reputation should new arms start with?
-
-**Options:**
-- **50** (neutral) - Must earn trust
-- **75** (trusted) - Assume good faith initially
-- **Configurable per domain** - UI arms start higher in UI work
-
-**Current thinking:** 50 (neutral) with quick reputation gains for early success
-
-**Status:** Open for feedback
-
----
-
-### Q6: Brain Intervention Thresholds
-
-**Question:** At what point should the brain automatically intervene?
-
-**Current proposal:**
-- **WARN** - First violation
-- **PAUSE** - 3 violations in 1 hour, or 2 of same type
-- **KILL** - Any critical pattern (rm -rf, etc.)
-
-**Status:** Open for feedback
-
----
-
-## UI/UX Questions
 
 ### Q7: 3D Garden Technology
 
 **Question:** Which 3D library for the garden visualization?
 
-**Options:**
-- **React Three Fiber** - React bindings for Three.js, most popular
-- **Three.js direct** - More control, less abstraction
-- **Babylon.js** - Alternative engine, good performance
+**Decision:** React Three Fiber
 
-**Current thinking:** React Three Fiber for React integration
-
-**Status:** Decided - React Three Fiber
+**Status:** Resolved
 
 ---
 
@@ -121,14 +48,9 @@ This document tracks open questions and decisions that need to be made before or
 
 **Question:** Should users be able to customize the X/Y/Z axes?
 
-**Options:**
-- **Fixed heuristics** - Simpler, consistent
-- **Fully configurable** - More flexible, more complex
-- **Presets + custom** - Best of both?
+**Decision:** No - fixed heuristics, simpler and consistent
 
-**Current thinking:** Sensible defaults with the ability to override per-project
-
-**Status:** Open for feedback
+**Status:** Resolved
 
 ---
 
@@ -136,65 +58,143 @@ This document tracks open questions and decisions that need to be made before or
 
 **Question:** Should the web UI support dark mode?
 
-**Options:**
-- **Dark only** - Many developers prefer dark
-- **Light only** - Simpler to build
-- **System preference** - Best UX, more work
+**Decision:** Yes, dark mode default using Shadcn components
 
-**Current thinking:** Dark mode default, system preference toggle later
-
-**Status:** Open for feedback
-
----
-
-## Deployment Questions
-
-### Q10: Docker Image Strategy
-
-**Question:** How should Docker images be organized?
-
-**Options:**
-- **Single image** - Brain + Observatory + everything
-- **Separate images** - Brain, Observatory, Arm (per agent type)
-- **Hybrid** - One core image, agent images extend it
-
-**Current thinking:** Hybrid - octopai-core image, octopai-arm-opencode, etc.
-
-**Status:** Open for feedback
+**Status:** Resolved
 
 ---
 
 ### Q11: Arm Agent Installation
 
-**Question:** How should AI agents (OpenCode, Claude Code) be installed in arm containers?
+**Question:** How should AI agents be installed in arm containers?
 
-**Options:**
-- **Pre-installed** - Part of the arm image
-- **Volume mount** - Mount from host
-- **Runtime install** - Download on first run
+**Decision:** Pre-installed in container images
 
-**Current thinking:** Pre-installed in specific arm images (simpler, more reliable)
-
-**Status:** Open for feedback
+**Status:** Resolved
 
 ---
-
-## Integration Questions
 
 ### Q12: MCP Server Discovery
 
 **Question:** How should arms discover available MCP servers?
 
-**Options:**
-- **Static config** - Define in arm profile
-- **Dynamic discovery** - Brain advertises available servers
-- **Both** - Static defaults, dynamic overrides
+**Decision:** Static config in arm profile
 
-**Current thinking:** Static config in arm profile, expandable later
-
-**Status:** Decided - Static config
+**Status:** Resolved
 
 ---
+
+## Updated Decisions
+
+### Q4: Proposal Timeouts
+
+**Question:** What should the default timeout be for different proposal types?
+
+**Original proposal:** Wall-clock timeouts (1-15 minutes based on type)
+
+**Feedback:** Should be tick-based (brain poll cycles) rather than wall-clock time, to scale with system speed. User-configurable.
+
+**Updated approach:**
+- Use `timeout_ticks` instead of milliseconds
+- Default ticks per proposal type:
+
+| Type | Default Ticks | Notes |
+|------|---------------|-------|
+| deploy (local) | 2 | Fast, low risk |
+| deploy (other) | 10 | Needs review time |
+| claim | 4 | Quick arbitration |
+| refactor | 20 | Needs discussion |
+| dependency | 10 | Security review |
+| breaking_change | 30 | Major impact |
+| creative_override | 2 | Trust the arm |
+
+- All values configurable in `.octopai/config.toml`
+
+**Status:** Resolved - Implemented in migration 005
+
+---
+
+### Q5: Reputation Starting Point
+
+**Question:** What reputation should new arms start with?
+
+**Decision:** 50 (neutral) - arms must earn trust
+
+**Status:** Resolved - Added to schema
+
+---
+
+### Q6: Brain Intervention Thresholds
+
+**Question:** At what point should the brain automatically intervene?
+
+**Decision:**
+- **KILL** on first critical pattern (rm -rf, force push, etc.) - configurable
+- **PAUSE** after 3 violations in warning window
+- **WARN** on first non-critical violation
+
+Configurable via:
+- `intervention_kill_on_critical` (default: true)
+- `intervention_pause_after_violations` (default: 3)
+- `intervention_warn_window_minutes` (default: 60)
+
+**Status:** Resolved - Implemented in migration 005
+
+---
+
+### Q10: Docker Image Strategy
+
+**Question:** How should Docker images be organized?
+
+**Feedback:**
+- One main server image for brain + observatory
+- Arm images share same environment (NFS mount for source)
+- Desktop-requiring arms (browser access) need special handling
+- Some arms must run on machines with desktop env, others can be headless
+
+**Decision:**
+- `octopai-server` - Brain + Observatory + API
+- `octopai-arm-base` - Base image with common tools
+- `octopai-arm-opencode` - OpenCode harness
+- `octopai-arm-desktop` - For arms needing browser (VNC/noVNC)
+
+Arms share source code via:
+- NFS mount (production)
+- Bind mount (development)
+
+**Status:** Resolved - needs documentation
+
+---
+
+## New Design Items
+
+### Arm Personality System
+
+Based on feedback, arms now have:
+
+1. **Personality** (~200 tokens)
+   - Self-updating context describing how the arm works
+   - Updated by the arm as it learns preferences
+
+2. **Convictions** (list of core beliefs)
+   - Color the arm's thinking and decisions
+   - Influence how they approach problems
+
+3. **Reputation** (0-100)
+   - Starts at 50
+   - Increases with successful work
+   - Decreases with rollbacks/issues
+
+4. **Generation** 
+   - Arms can be "reborn" with inherited traits
+   - High-reputation arms get recreated when slots available
+   - Low-reputation arms die off
+
+**Status:** Implemented in schema
+
+---
+
+## Remaining Open Questions
 
 ### Q13: External Tool Integration
 
@@ -207,23 +207,14 @@ This document tracks open questions and decisions that need to be made before or
 - [ ] Package managers (npm, pnpm)
 - [ ] Cloud providers (AWS, GCP, Vercel)
 - [ ] Figma (for UI specs)
-- [ ] Linear/Jira (for issue tracking)
 
 **Status:** Gather requirements
 
 ---
 
-## Data Questions
-
 ### Q14: Activity Log Retention
 
 **Question:** How long should activity logs be kept?
-
-**Options:**
-- **7 days** - Short, low storage
-- **30 days** - Medium, reasonable history
-- **90 days** - Long, full audit trail
-- **Configurable** - Let user decide
 
 **Current thinking:** 30 days default, configurable
 
@@ -238,13 +229,9 @@ This document tracks open questions and decisions that need to be made before or
 **Current proposal:**
 1. Load arm states from database
 2. Check if arm processes are still running (by PID)
-3. Mark dead arms as "dead"
+3. Mark dead arms as "dead" 
 4. Resume pending proposals
 5. Continue normal operation
-
-**Concerns:**
-- What about in-progress deployments?
-- Should arms auto-reconnect?
 
 **Status:** Needs more design
 
@@ -255,15 +242,3 @@ This document tracks open questions and decisions that need to be made before or
 1. Edit this document directly with your thoughts
 2. Add comments inline using `> Comment: your feedback here`
 3. Create a new section if the question needs discussion
-
-### Feedback Format
-
-```markdown
-### Q#: Question Title
-
-> **[Your Name] Feedback:**
-> Your thoughts here...
-
-**Resolution:** What was decided
-**Status:** Resolved / Open / Needs Discussion
-```

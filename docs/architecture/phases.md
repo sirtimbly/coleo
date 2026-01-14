@@ -114,6 +114,15 @@ A working web UI at `http://localhost:3001` showing:
   - `release_claim` tool
   - `handoff_request` tool
 
+- [ ] **2.7** Architectural Guidance System
+  - Create `architectural_decisions` table (migration)
+  - Implement MCP tools:
+    - `get_storage_guidance` - Where to store data
+    - `get_architectural_decision` - Query decisions
+    - `check_architectural_alignment` - Validate changes
+  - Create Architect arm domain profile
+  - Add proposal review hook for Architect
+
 ### Deliverable
 
 Arms with defined domains that claim files and respect context limits.

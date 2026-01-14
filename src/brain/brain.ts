@@ -3,15 +3,97 @@
  * 
  * Runs a polling loop that:
  * 1. Reads human mail from sent/
- * 2. Processes tentacle messages from queue/
- * 3. Assigns tasks to tentacles
+ * 2. Processes arm messages from queue/
+ * 3. Assigns tasks to arms
  * 4. Sends status updates to human inbox
  */
 
 import { readdir, readFile, writeFile, mkdir, rename, unlink } from "fs/promises";
 import { join } from "path";
 import { Maildir } from "../mail";
-import type { BrainState, Task, QueueMessage, OctopaiConfig, Tentacle, Discovery } from "../types";
+import { initDatabase, Database } from "../db";
+import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery } from "../types";
+
+export interface BrainOptions {
+  octopaiDir: string;
+  pollIntervalMs: number;
+  verbose: boolean;
+}
+
+/**
+ * Domain-specific initial tasks for newly spawned arms
+ */
+const DOMAIN_INITIAL_TASKS: Record<string, { subject: string; description: string }[]> = {
+  frontend: [
+    {
+      subject: "Review and improve the Dashboard UI",
+      description: `Review the current dashboard implementation in src/web/src/pages/DashboardPage.tsx.
+
+Look for opportunities to:
+1. Improve the layout and visual hierarchy
+2. Add missing status indicators
+3. Ensure real-time updates are working
+4. Fix any TypeScript errors
+
+When done, report your findings and any changes made.`,
+    },
+  ],
+  backend: [
+    {
+      subject: "Review API endpoints and add missing functionality",
+      description: `Review the API implementation in src/api/.
+
+Look for:
+1. Missing CRUD operations
+2. Proper error handling
+3. Input validation
+4. Consistent response formats
+
+When done, report your findings and any changes made.`,
+    },
+  ],
+  testing: [
+    {
+      subject: "Set up test infrastructure and write initial tests",
+      description: `Set up a testing framework for the project.
+
+Tasks:
+1. Add vitest or bun test configuration
+2. Write unit tests for core functions
+3. Add integration tests for API endpoints
+
+When done, report the test coverage and any issues found.`,
+    },
+  ],
+  architect: [
+    {
+      subject: "Review codebase for architectural consistency",
+      description: `Review the codebase to ensure architectural consistency.
+
+Check:
+1. All state goes to SQLite (not JSON files)
+2. API follows conventions in AGENTS.md
+3. Types are properly defined
+4. No code duplication
+
+When done, update AGENTS.md if needed and report findings.`,
+    },
+  ],
+  general: [
+    {
+      subject: "Explore the codebase and identify improvements",
+      description: `Familiarize yourself with the Octopai codebase.
+
+Tasks:
+1. Read AGENTS.md for project guidelines
+2. Explore the directory structure
+3. Identify any issues or improvements
+4. Report your findings
+
+Focus on understanding how the system works before making changes.`,
+    },
+  ],
+};
 
 export interface BrainOptions {
   octopaiDir: string;
@@ -25,15 +107,17 @@ export class Brain {
   private inbox: Maildir;
   private sent: Maildir;
   private tasks: Task[] = [];
-  private tentacles: Map<string, Tentacle> = new Map();
+  private arms: Map<string, Arm> = new Map();
+  private seenArmIds: Set<string> = new Set(); // Track arms we've already assigned initial tasks
   private running = false;
+  private db: Database | null = null;
 
   constructor(options: BrainOptions) {
     this.options = options;
     this.state = {
       status: "stopped",
       pollIntervalMs: options.pollIntervalMs,
-      activeTentacles: [],
+      activeArms: [],
       pendingTasks: 0,
       completedToday: 0,
     };
@@ -47,6 +131,10 @@ export class Brain {
    * Initialize brain state and directories
    */
   async init(): Promise<void> {
+    // Initialize database
+    const dbPath = join(this.options.octopaiDir, "octopai.db");
+    this.db = await initDatabase(dbPath);
+    
     // Create necessary directories
     const dirs = [
       "mail/inbox",
@@ -56,7 +144,7 @@ export class Brain {
       "queue/brain/pending",
       "queue/brain/processed",
       "state",
-      "state/tentacles",
+      "state/arms",
       "state/notes/shared",
       "logs",
     ];
@@ -72,7 +160,8 @@ export class Brain {
     // Load existing state
     await this.loadState();
     await this.loadTasks();
-    await this.loadTentacles();
+    await this.loadArms();
+    await this.loadSeenArmIds();
     
     this.log("Brain initialized");
   }
@@ -86,19 +175,22 @@ export class Brain {
     // Step 1: Check for new human messages
     await this.processHumanMail();
     
-    // Step 2: Process tentacle messages
-    await this.processTentacleQueue();
+    // Step 2: Process arm messages
+    await this.processArmQueue();
     
-    // Step 3: Check tentacle health
-    await this.checkTentacles();
+    // Step 3: Check arm health and detect new arms
+    await this.checkArms();
     
-    // Step 4: Assign pending tasks
+    // Step 4: Assign initial tasks to new arms
+    await this.assignInitialTasks();
+    
+    // Step 5: Assign pending tasks to idle arms
     await this.assignTasks();
     
-    // Step 5: Save state
+    // Step 6: Save state
     await this.saveState();
     
-    this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.tentacles.size} tentacles`);
+    this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.arms.size} arms`);
   }
 
   /**
@@ -211,9 +303,9 @@ export class Brain {
   }
 
   /**
-   * Process messages from tentacles
+   * Process messages from arms
    */
-  private async processTentacleQueue(): Promise<void> {
+  private async processArmQueue(): Promise<void> {
     const queueDir = join(this.options.octopaiDir, "queue", "brain", "pending");
     const processedDir = join(this.options.octopaiDir, "queue", "brain", "processed");
     
@@ -231,7 +323,7 @@ export class Brain {
         const content = await readFile(join(queueDir, file), "utf-8");
         const message: QueueMessage = JSON.parse(content);
         
-        await this.handleTentacleMessage(message);
+        await this.handleArmMessage(message);
         
         // Move to processed
         await rename(
@@ -245,10 +337,10 @@ export class Brain {
   }
 
   /**
-   * Handle a message from a tentacle
+   * Handle a message from an arm
    */
-  private async handleTentacleMessage(message: QueueMessage): Promise<void> {
-    this.log(`Tentacle message: ${message.type} from ${message.from}`);
+  private async handleArmMessage(message: QueueMessage): Promise<void> {
+    this.log(`Arm message: ${message.type} from ${message.from}`);
     
     switch (message.type) {
       case "task_complete": {
@@ -278,6 +370,12 @@ export class Brain {
       case "tool_discovery": {
         const tool = message.payload as { name: string; command: string; description: string };
         await this.handleToolDiscovery(message.from, tool);
+        break;
+      }
+      
+      case "heartbeat": {
+        const payload = message.payload as { status?: string; currentTask?: string; timestamp: string };
+        await this.handleHeartbeat(message.from, payload);
         break;
       }
     }
@@ -338,16 +436,16 @@ export class Brain {
   }
 
   /**
-   * Handle a discovery from a tentacle
+   * Handle a discovery from an arm
    */
-  private async handleDiscovery(tentacleId: string, discovery: Discovery): Promise<void> {
+  private async handleDiscovery(armId: string, discovery: Discovery): Promise<void> {
     // For now, always escalate to human
     await this.sendToHuman({
       subject: `[octopai] Discovery: ${discovery.title}`,
-      body: `Tentacle ${tentacleId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
+      body: `Arm ${armId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
       headers: {
         "X-Octopai-Type": "discovery",
-        "X-Octopai-From": tentacleId,
+        "X-Octopai-From": armId,
         "X-Octopai-Severity": discovery.severity || "info",
       },
     });
@@ -357,17 +455,17 @@ export class Brain {
    * Send an approval request to the human
    */
   private async sendApprovalRequest(
-    tentacleId: string, 
+    armId: string, 
     request: { action: string; context: string; options: string[] }
   ): Promise<void> {
     const requestId = `approval-${Date.now()}`;
     
     await this.sendToHuman({
       subject: `[octopai] [${requestId}] Approval needed: ${request.action}`,
-      body: `Tentacle ${tentacleId} needs your approval.\n\n**Action:** ${request.action}\n\n**Context:**\n${request.context}\n\n**Options:** ${request.options.join(" | ")}\n\nReply to this email with your decision.`,
+      body: `Arm ${armId} needs your approval.\n\n**Action:** ${request.action}\n\n**Context:**\n${request.context}\n\n**Options:** ${request.options.join(" | ")}\n\nReply to this email with your decision.`,
       headers: {
         "X-Octopai-Type": "approval-request",
-        "X-Octopai-From": tentacleId,
+        "X-Octopai-From": armId,
         "X-Octopai-Request-Id": requestId,
         "Priority": "high",
       },
@@ -378,7 +476,7 @@ export class Brain {
    * Handle approval response from human
    */
   private async handleApprovalResponse(originalId: string, approved: boolean, comment: string): Promise<void> {
-    // TODO: Find pending approval and notify the tentacle
+    // TODO: Find pending approval and notify the arm
     this.log(`Approval response for ${originalId}: ${approved ? "approved" : "rejected"}`);
   }
 
@@ -393,7 +491,7 @@ export class Brain {
       
       await this.sendToHuman({
         subject: "[octopai] Status Report",
-        body: `## Current Status\n\n- **Tentacles active:** ${this.tentacles.size}\n- **Pending tasks:** ${pendingTasks.length}\n- **In progress:** ${inProgress.length}\n- **Completed today:** ${completedToday}\n\n## Pending Tasks\n${pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None"}\n\n## In Progress\n${inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None"}`,
+        body: `## Current Status\n\n- **Arms active:** ${this.arms.size}\n- **Pending tasks:** ${pendingTasks.length}\n- **In progress:** ${inProgress.length}\n- **Completed today:** ${completedToday}\n\n## Pending Tasks\n${pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None"}\n\n## In Progress\n${inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None"}`,
         headers: {
           "X-Octopai-Type": "status",
           "In-Reply-To": replyToId,
@@ -433,7 +531,7 @@ export class Brain {
    * Handle a tool discovery
    */
   private async handleToolDiscovery(
-    tentacleId: string,
+    armId: string,
     tool: { name: string; command: string; description: string }
   ): Promise<void> {
     // Save to toolbox
@@ -449,7 +547,7 @@ export class Brain {
     
     toolbox[tool.name] = {
       ...tool,
-      discoveredBy: tentacleId,
+      discoveredBy: armId,
       discoveredAt: new Date(),
     };
     
@@ -458,7 +556,7 @@ export class Brain {
     // Notify human
     await this.sendToHuman({
       subject: `[octopai] Tool discovered: ${tool.name}`,
-      body: `Tentacle ${tentacleId} discovered a useful tool:\n\n**Name:** ${tool.name}\n**Command:** \`${tool.command}\`\n**Description:** ${tool.description}`,
+      body: `Arm ${armId} discovered a useful tool:\n\n**Name:** ${tool.name}\n**Command:** \`${tool.command}\`\n**Description:** ${tool.description}`,
       headers: {
         "X-Octopai-Type": "tool-discovery",
       },
@@ -466,54 +564,200 @@ export class Brain {
   }
 
   /**
-   * Check tentacle health
+   * Handle a heartbeat from an arm - update last_heartbeat in database
    */
-  private async checkTentacles(): Promise<void> {
-    // TODO: Check if tentacle processes are still running
-    // For now, just update state
-    this.state.activeTentacles = Array.from(this.tentacles.keys());
+  private async handleHeartbeat(
+    armId: string,
+    payload: { status?: string; currentTask?: string; timestamp: string }
+  ): Promise<void> {
+    if (!this.db) return;
+    
+    const now = new Date().toISOString();
+    this.db.run(
+      "UPDATE arms SET last_heartbeat = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
+      [now, now, now, armId]
+    );
+    
+    // Update in-memory state too
+    const arm = this.arms.get(armId);
+    if (arm) {
+      arm.lastActivity = new Date();
+      if (payload.status === "busy" || payload.currentTask) {
+        arm.status = "busy";
+        arm.currentTask = payload.currentTask;
+      } else {
+        arm.status = "idle";
+      }
+    }
+    
+    this.log(`Heartbeat from ${armId}: ${payload.status || "alive"}`);
   }
 
   /**
-   * Assign pending tasks to available tentacles
+   * Check arm health and mark stale arms as stopped
+   */
+  private async checkArms(): Promise<void> {
+    // Reload arms from database to get any newly spawned arms
+    await this.loadArms();
+    
+    // Check for stale arms (no heartbeat in timeout period)
+    await this.checkStaleArms();
+    
+    this.state.activeArms = Array.from(this.arms.keys());
+  }
+
+  /**
+   * Mark arms as stopped if they haven't sent a heartbeat recently
+   */
+  private async checkStaleArms(): Promise<void> {
+    if (!this.db) return;
+    
+    // Get timeout from config (default 120 seconds)
+    let timeoutSeconds = 120;
+    try {
+      const row = this.db.query("SELECT value FROM config WHERE key = 'arm_heartbeat_timeout_seconds'").get() as { value: string } | null;
+      if (row) {
+        timeoutSeconds = parseInt(row.value, 10);
+      }
+    } catch {
+      // Use default
+    }
+    
+    const cutoffTime = new Date(Date.now() - timeoutSeconds * 1000).toISOString();
+    
+    // Find arms that haven't heartbeated recently and are not already stopped
+    const staleArms = this.db.query(`
+      SELECT id, name, last_heartbeat, status
+      FROM arms
+      WHERE status NOT IN ('stopped', 'starting')
+        AND (last_heartbeat IS NULL OR last_heartbeat < ?)
+        AND created_at < ?
+    `).all(cutoffTime, cutoffTime) as Array<{ id: string; name: string; last_heartbeat: string | null; status: string }>;
+    
+    for (const arm of staleArms) {
+      this.log(`Arm ${arm.id} is stale (last heartbeat: ${arm.last_heartbeat || "never"}), marking as stopped`);
+      
+      this.db.run(
+        "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+        [new Date().toISOString(), arm.id]
+      );
+      
+      // Remove from in-memory map
+      this.arms.delete(arm.id);
+    }
+  }
+
+  /**
+   * Assign initial tasks to newly spawned arms based on their domain
+   */
+  private async assignInitialTasks(): Promise<void> {
+    for (const [armId, arm] of this.arms) {
+      // Skip if we've already assigned initial tasks to this arm
+      if (this.seenArmIds.has(armId)) continue;
+      
+      // Skip if arm is not idle
+      if (arm.status !== "idle") continue;
+      
+      // Get the domain (stored as extra property)
+      const domain = (arm as Arm & { domain?: string }).domain || "general";
+      
+      // Get initial tasks for this domain
+      const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
+      
+      // Create tasks for this arm
+      for (const taskTemplate of initialTasks) {
+        const task = await this.createTask(
+          taskTemplate.subject,
+          taskTemplate.description
+        );
+        
+        // Immediately assign to this arm
+        task.status = "claimed";
+        task.assignedTo = armId;
+        task.updatedAt = new Date();
+        
+        // Send to arm
+        await this.sendToArm(armId, {
+          type: "task_assignment",
+          payload: task,
+        });
+        
+        this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain})`);
+      }
+      
+      // Mark arm as having received initial tasks
+      this.seenArmIds.add(armId);
+      await this.saveSeenArmIds();
+    }
+  }
+
+  /**
+   * Load seen arm IDs from state
+   */
+  private async loadSeenArmIds(): Promise<void> {
+    try {
+      const content = await readFile(
+        join(this.options.octopaiDir, "state", "seen_arms.json"),
+        "utf-8"
+      );
+      const ids = JSON.parse(content);
+      this.seenArmIds = new Set(ids);
+    } catch {
+      this.seenArmIds = new Set();
+    }
+  }
+
+  /**
+   * Save seen arm IDs to state
+   */
+  private async saveSeenArmIds(): Promise<void> {
+    await writeFile(
+      join(this.options.octopaiDir, "state", "seen_arms.json"),
+      JSON.stringify(Array.from(this.seenArmIds)),
+      "utf-8"
+    );
+  }
+
+  /**
+   * Assign pending tasks to available arms
    */
   private async assignTasks(): Promise<void> {
     const pendingTasks = this.tasks.filter(t => t.status === "pending");
-    const idleTentacles = Array.from(this.tentacles.values()).filter(t => t.status === "idle");
+    const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
     
     // Simple assignment: first pending to first idle
     for (const task of pendingTasks) {
-      const tentacle = idleTentacles.shift();
-      if (!tentacle) break;
+      const arm = idleArms.shift();
+      if (!arm) break;
       
       task.status = "claimed";
-      task.assignedTo = tentacle.id;
+      task.assignedTo = arm.id;
       task.updatedAt = new Date();
       
-      tentacle.status = "busy";
-      tentacle.currentTask = task.id;
+      arm.status = "busy";
+      arm.currentTask = task.id;
       
-      // Write task assignment to tentacle's queue
-      await this.sendToTentacle(tentacle.id, {
+      // Write task assignment to arm's queue
+      await this.sendToArm(arm.id, {
         type: "task_assignment",
         payload: task,
       });
       
-      this.log(`Assigned task "${task.subject}" to ${tentacle.id}`);
+      this.log(`Assigned task "${task.subject}" to ${arm.id}`);
     }
     
     await this.saveTasks();
-    await this.saveTentacles();
+    await this.saveArms();
   }
 
   /**
-   * Send a message to a tentacle's queue
+   * Send a message to an arm's queue
    */
-  private async sendToTentacle(
-    tentacleId: string, 
+  private async sendToArm(
+    armId: string, 
     message: { type: string; payload: unknown }
   ): Promise<void> {
-    const queueDir = join(this.options.octopaiDir, "queue", "tentacles", tentacleId);
+    const queueDir = join(this.options.octopaiDir, "queue", "arms", armId);
     await mkdir(queueDir, { recursive: true });
     
     const filename = `${Date.now()}-${message.type}.json`;
@@ -522,7 +766,7 @@ export class Brain {
       JSON.stringify({
         ...message,
         from: "brain",
-        to: tentacleId,
+        to: armId,
         timestamp: new Date(),
       }, null, 2),
       "utf-8"
@@ -592,39 +836,95 @@ export class Brain {
     this.state.pendingTasks = this.tasks.filter(t => t.status === "pending").length;
   }
 
-  private async loadTentacles(): Promise<void> {
-    const tentaclesDir = join(this.options.octopaiDir, "state", "tentacles");
+  private async loadArms(): Promise<void> {
+    if (!this.db) return;
+    
     try {
-      const files = await readdir(tentaclesDir);
-      for (const file of files) {
-        if (!file.endsWith(".json")) continue;
-        const content = await readFile(join(tentaclesDir, file), "utf-8");
-        const tentacle: Tentacle = JSON.parse(content);
-        this.tentacles.set(tentacle.id, tentacle);
+      const rows = this.db.query(`
+        SELECT id, name, domain, harness, status, pid, provider, model, 
+               created_at, last_activity_at
+        FROM arms
+        WHERE status != 'stopped'
+      `).all() as Array<{
+        id: string;
+        name: string;
+        domain: string;
+        harness: string;
+        status: string;
+        pid: number | null;
+        provider: string | null;
+        model: string | null;
+        created_at: string;
+        last_activity_at: string | null;
+      }>;
+      
+      for (const row of rows) {
+        // Check if process is still running
+        let status = row.status as Arm["status"];
+        if (row.pid && status !== "stopped") {
+          try {
+            process.kill(row.pid, 0);
+            // Process is alive
+            if (status === "starting") {
+              status = "idle";
+            }
+          } catch {
+            // Process is dead
+            status = "stopped";
+          }
+          
+          // Update status in database if changed
+          if (status !== row.status) {
+            this.db.run(
+              "UPDATE arms SET status = ?, updated_at = ? WHERE id = ?",
+              [status, new Date().toISOString(), row.id]
+            );
+          }
+        }
+        
+        if (status !== "stopped") {
+          const arm: Arm = {
+            id: row.id,
+            name: row.name,
+            agent: row.harness,
+            status,
+            pid: row.pid ?? undefined,
+            provider: row.provider ?? undefined,
+            model: row.model ?? undefined,
+            startedAt: new Date(row.created_at),
+            lastActivity: row.last_activity_at ? new Date(row.last_activity_at) : undefined,
+          };
+          // Store domain in a way we can access it
+          (arm as Arm & { domain?: string }).domain = row.domain;
+          this.arms.set(arm.id, arm);
+        }
       }
-    } catch {
-      // No tentacles yet
+      
+      this.log(`Loaded ${this.arms.size} active arms from database`);
+    } catch (err) {
+      this.log(`Error loading arms: ${err}`);
     }
   }
 
-  private async saveTentacles(): Promise<void> {
-    const tentaclesDir = join(this.options.octopaiDir, "state", "tentacles");
-    for (const tentacle of this.tentacles.values()) {
-      await writeFile(
-        join(tentaclesDir, `${tentacle.id}.json`),
-        JSON.stringify(tentacle, null, 2),
-        "utf-8"
+  private async saveArms(): Promise<void> {
+    if (!this.db) return;
+    
+    for (const arm of this.arms.values()) {
+      const now = new Date().toISOString();
+      this.db.run(
+        `UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`,
+        [arm.status, arm.lastActivity?.toISOString() || now, now, arm.id]
       );
     }
   }
 
   /**
-   * Register a new tentacle
+   * Register a new arm
    */
-  async registerTentacle(tentacle: Tentacle): Promise<void> {
-    this.tentacles.set(tentacle.id, tentacle);
-    await this.saveTentacles();
-    this.log(`Registered tentacle: ${tentacle.id} (${tentacle.agent})`);
+  async registerArm(arm: Arm): Promise<void> {
+    this.arms.set(arm.id, arm);
+    await this.saveArms();
+    this.log(`Registered arm: ${arm.id} (${arm.agent})`);
   }
 
   /**
@@ -642,10 +942,10 @@ export class Brain {
   }
 
   /**
-   * Get all tentacles
+   * Get all arms
    */
-  getTentacles(): Tentacle[] {
-    return Array.from(this.tentacles.values());
+  getArms(): Arm[] {
+    return Array.from(this.arms.values());
   }
 
   // Utility methods
