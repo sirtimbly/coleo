@@ -13,7 +13,8 @@ export function createAuthMiddleware(apiKey: string) {
       return next();
     }
 
-    const providedKey = c.req.header("X-API-Key");
+    // Check header first, then query param (for SSE endpoints that can't send headers)
+    const providedKey = c.req.header("X-API-Key") || c.req.query("api_key");
 
     if (!providedKey) {
       return c.json(

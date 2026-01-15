@@ -1070,6 +1070,131 @@ export function createArmsRoutes() {
     }
   });
 
+  /**
+   * Get arm's conversation messages from OpenCode
+   * GET /api/arms/:id/messages
+   */
+  app.get("/:id/messages", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const limit = parseInt(c.req.query("limit") || "50", 10);
+
+    // Check if arm exists and get port
+    const arm = db.query("SELECT id, port FROM arms WHERE id = ?").get(id) as { id: string; port: number | null } | null;
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!arm.port) {
+      return c.json({ messages: [], error: "Arm has no active server" });
+    }
+
+    // Get the harness manager to find the session
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    const session = manager.getSession(id);
+    if (!session) {
+      return c.json({ messages: [], error: "No active session" });
+    }
+
+    // Get the OpenCode session ID from the harness session
+    const apiSession = session.session as { sessionId?: string };
+    const opencodeSessionId = apiSession.sessionId;
+
+    if (!opencodeSessionId) {
+      return c.json({ messages: [], error: "No OpenCode session found" });
+    }
+
+    // Fetch messages from OpenCode
+    try {
+      const response = await fetch(`http://127.0.0.1:${arm.port}/session/${opencodeSessionId}/message?limit=${limit}`);
+      if (!response.ok) {
+        return c.json({ messages: [], error: `Failed to fetch messages: ${response.statusText}` });
+      }
+
+      const messages = await response.json();
+      return c.json({ messages, sessionId: opencodeSessionId });
+    } catch (err) {
+      return c.json({ messages: [], error: `Failed to connect to OpenCode: ${err}` });
+    }
+  });
+
+  /**
+   * Stream arm events via SSE (proxy to OpenCode's /event endpoint)
+   * GET /api/arms/:id/events
+   */
+  app.get("/:id/events", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists and get port
+    const arm = db.query("SELECT id, port FROM arms WHERE id = ?").get(id) as { id: string; port: number | null } | null;
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!arm.port) {
+      throw HttpError.badRequest("Arm has no active server");
+    }
+
+    // Set up SSE headers
+    c.header("Content-Type", "text/event-stream");
+    c.header("Cache-Control", "no-cache");
+    c.header("Connection", "keep-alive");
+
+    // Create a readable stream that proxies OpenCode events
+    const opencodeUrl = `http://127.0.0.1:${arm.port}/event`;
+    
+    return c.body(
+      new ReadableStream({
+        async start(controller) {
+          const encoder = new TextEncoder();
+          let aborted = false;
+          
+          try {
+            const response = await fetch(opencodeUrl);
+            if (!response.ok || !response.body) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Failed to connect to OpenCode" })}\n\n`));
+              controller.close();
+              return;
+            }
+
+            const reader = response.body.getReader();
+            
+            // Send initial connection event
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "connected", armId: id })}\n\n`));
+            
+            while (!aborted) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              
+              // Forward the SSE data as-is
+              controller.enqueue(value);
+            }
+            
+            reader.releaseLock();
+          } catch (err) {
+            if (!aborted) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: errorMsg })}\n\n`));
+            }
+          } finally {
+            if (!aborted) {
+              controller.close();
+            }
+          }
+        },
+        cancel() {
+          // Client disconnected
+        }
+      }),
+      { headers: { "Content-Type": "text/event-stream" } }
+    );
+  });
+
   return app;
 }
 

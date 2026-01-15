@@ -173,6 +173,40 @@ class ApiClient {
     });
   }
 
+  async getArmMessages(id: string, limit = 50) {
+    return this.request<{ 
+      messages: ArmMessage[];
+      sessionId?: string;
+      error?: string;
+    }>(`/arms/${id}/messages?limit=${limit}`);
+  }
+
+  async getArmTodos(id: string) {
+    return this.request<{
+      todos: ArmTodo[];
+      error?: string;
+    }>(`/arms/${id}/todos`);
+  }
+
+  async getArmStatus(id: string) {
+    return this.request<{
+      status: string;
+      opencodeStatus: { status: string; error?: string } | null;
+      sessionId?: string;
+      error?: string;
+    }>(`/arms/${id}/status`);
+  }
+
+  // SSE Event stream URL for arm events (includes API key as query param since EventSource can't send headers)
+  getArmEventsUrl(id: string): string {
+    const apiKey = this.getApiKey();
+    const params = new URLSearchParams();
+    if (apiKey) {
+      params.set('api_key', apiKey);
+    }
+    return `${API_BASE}/arms/${id}/events?${params.toString()}`;
+  }
+
   // Activity
   async listActivity(params?: { limit?: number; offset?: number; actor?: string }) {
     const query = new URLSearchParams();
@@ -224,6 +258,13 @@ class ApiClient {
     }>('/brain/config');
   }
 
+  async sendBrainMessage(data: { message: string; priority?: 'critical' | 'high' | 'normal' | 'low'; domain?: string }) {
+    return this.request<{ sent: boolean; messageId: string; subject: string }>('/brain/message', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Mail
   async listInbox(params?: { limit?: number; offset?: number }) {
     const query = new URLSearchParams();
@@ -263,6 +304,77 @@ class ApiClient {
   async archiveMail(id: string) {
     return this.request<{ success: boolean }>(`/mail/inbox/${id}/archive`, {
       method: 'POST',
+    });
+  }
+
+  // Tasks
+  async listTasks(params?: { 
+    status?: string; 
+    priority?: string; 
+    domain?: string;
+    assignedTo?: string;
+    phase?: string;
+    limit?: number; 
+    offset?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.domain) query.set('domain', params.domain);
+    if (params?.assignedTo) query.set('assignedTo', params.assignedTo);
+    if (params?.phase) query.set('phase', params.phase);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      tasks: Task[];
+      pagination: { limit: number; offset: number; total: number };
+      counts: { total: number; byStatus: Record<string, number> };
+    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getTask(id: string) {
+    return this.request<{ task: Task; dependencies: string[] }>(`/tasks/${id}`);
+  }
+
+  async createTask(data: {
+    subject: string;
+    description: string;
+    priority?: Task['priority'];
+    domain?: string;
+    phase?: string;
+    sourceType?: Task['sourceType'];
+    sourceRef?: string;
+    dueDate?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    return this.request<{ task: Task }>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTask(id: string, data: Partial<{
+    subject: string;
+    description: string;
+    status: Task['status'];
+    priority: Task['priority'];
+    domain: string;
+    phase: string;
+    assignedTo: string | null;
+    dueDate: string | null;
+    artifacts: string[];
+    metadata: Record<string, unknown>;
+  }>) {
+    return this.request<{ task: Task }>(`/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTask(id: string) {
+    return this.request<{ deleted: boolean }>(`/tasks/${id}`, {
+      method: 'DELETE',
     });
   }
 }
@@ -379,6 +491,64 @@ export interface MailMessage {
     trashed: boolean;
   };
   filePath?: string;
+}
+
+// Arm message from OpenCode session
+export interface ArmMessagePart {
+  type: string;
+  text?: string;
+  toolName?: string;
+  name?: string;
+  state?: string;
+  result?: unknown;
+  error?: string;
+}
+
+export interface ArmMessage {
+  info: {
+    id: string;
+    role: 'user' | 'assistant' | 'system';
+    time?: number;
+    error?: { name: string; data?: { message: string } };
+  };
+  parts: ArmMessagePart[];
+}
+
+// Arm todo from OpenCode session
+export interface ArmTodo {
+  id: string;
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  priority: 'high' | 'medium' | 'low';
+}
+
+// Brain-managed task
+export interface Task {
+  id: string;
+  subject: string;
+  description: string;
+  status: 'pending' | 'claimed' | 'in_progress' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  priority: 'critical' | 'high' | 'normal' | 'low';
+  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal';
+  sourceRef: string | null;
+  phase: string | null;
+  domain: string | null;
+  assignedTo: string | null;
+  assignedArmName?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  claimedAt: string | null;
+  startedAt: string | null;
+  dueDate: string | null;
+  artifacts: string[];
+  metadata: Record<string, unknown>;
+}
+
+// OpenCode SSE event types
+export interface OpenCodeEvent {
+  type: string;
+  properties: Record<string, unknown>;
 }
 
 // Singleton instance

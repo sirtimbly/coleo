@@ -7,3 +7,4 @@ export { createConfigRoutes } from "./config";
 export { createOpenCodeRoutes } from "./opencode";
 export { createGardenRoutes } from "./garden";
 export { createProposalsRoutes } from "./proposals";
+export { createTasksRoutes } from "./tasks";

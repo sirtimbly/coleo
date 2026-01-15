@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '@/lib';
 
-type Channel = 'arms' | 'activity' | 'proposals' | 'brain' | 'mail' | 'all';
+type Channel = 'arms' | 'activity' | 'proposals' | 'brain' | 'mail' | 'tasks' | 'all';
 
 interface WSMessage {
   type: string;

@@ -1079,17 +1079,20 @@ armCmd
           }
         }
 
-        // Handle text parts - OpenCode uses message.part.updated with nested part object
+        // Handle text parts - OpenCode uses message.part.updated with delta for incremental text
         if (type === "message.part.updated" || type === "message.part.created") {
           const part = props.part as Record<string, unknown> | undefined;
+          const delta = props.delta as string | undefined;
+          
           if (part) {
             const partType = part.type as string;
             
             if (partType === "text") {
-              const text = part.text as string;
-              if (text) {
-                process.stdout.write(text);
-                lastWasNewline = text.endsWith("\n");
+              // Use delta (incremental) if available, otherwise use full text for part.created
+              const textToWrite = delta ?? (type === "message.part.created" ? part.text as string : null);
+              if (textToWrite) {
+                process.stdout.write(textToWrite);
+                lastWasNewline = textToWrite.endsWith("\n");
               }
             }
             

@@ -40,3 +40,11 @@ gitea-data/
 # Uncomment if you want to ignore local state
 # ~/.octopai/
 docs/.vitepress
+.octopai/mail
+.octopai/bin
+.octopai/queue
+.octopai/state
+.octopai/octopai.db
+.octopai/octopai.db-shm
+.octopai/octopai.db-wal
+.vitepress/cache/deps

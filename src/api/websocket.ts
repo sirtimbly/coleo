@@ -11,7 +11,7 @@
 
 import type { ServerWebSocket } from "bun";
 
-export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "all";
+export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "tasks" | "all";
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {
@@ -175,13 +175,17 @@ export function broadcast(channel: Channel, event: string, data: unknown) {
 /**
  * Broadcast brain status change events
  */
-export function broadcastBrainEvent(event: "started" | "stopped" | "paused" | "resumed" | "poll" | "config_updated", data: {
-  status: string;
+export function broadcastBrainEvent(event: "started" | "stopped" | "paused" | "resumed" | "poll" | "config_updated" | "message_received", data: {
+  status?: string;
   pollIntervalMs?: number;
   activeArmsCount?: number;
   pendingTasksCount?: number;
   completedToday?: number;
   uptime?: number;
+  messageId?: string;
+  subject?: string;
+  priority?: string;
+  domain?: string;
 }) {
   broadcast("brain", `brain.${event}`, data);
 }

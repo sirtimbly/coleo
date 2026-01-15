@@ -1027,9 +1027,9 @@ export class Brain {
 
     // Get all known arms from database (including stopped ones)
     const knownArms = this.db.query(`
-      SELECT id, name, pid, status, domain
+      SELECT id, name, pid, status, domain, harness
       FROM arms
-    `).all() as Array<{ id: string; name: string; pid: number | null; status: string; domain: string }>;
+    `).all() as Array<{ id: string; name: string; pid: number | null; status: string; domain: string; harness: string }>;
 
     this.log(`scanForRunningArms: found ${knownArms.length} known arms in database`);
 
@@ -1055,7 +1055,19 @@ export class Brain {
       // Check if process is running
       try {
         process.kill(arm.pid, 0);
-        // Process is alive! Add to tracked arms
+        // Process is alive! Check if we can actually use it
+
+        // For API harness arms, we need the API server to be available
+        // Otherwise we can't communicate with the arm
+        if (arm.harness === "opencode-api") {
+          const apiAvailable = await this.isApiServerAvailable();
+          if (!apiAvailable) {
+            this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), but API server unavailable - skipping`);
+            continue;
+          }
+        }
+
+        // Process is alive and usable! Add to tracked arms
         this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
 
         // Update database
@@ -1181,7 +1193,7 @@ export class Brain {
     // Find arms that haven't heartbeated recently and are not already in our in-memory list
     const armIds = Array.from(this.arms.keys());
     let staleQuery = `
-      SELECT id, name, pid, last_heartbeat, status
+      SELECT id, name, pid, last_heartbeat, status, harness
       FROM arms
       WHERE status NOT IN ('stopped', 'starting')
     `;
@@ -1190,9 +1202,19 @@ export class Brain {
       staleQuery += ` AND id NOT IN (${armIds.map(() => "?").join(",")})`;
     }
 
-    const staleArms = this.db.query(staleQuery).all(...armIds) as Array<{ id: string; name: string; pid: number | null; last_heartbeat: string | null; status: string }>;
+    const staleArms = this.db.query(staleQuery).all(...armIds) as Array<{ id: string; name: string; pid: number | null; last_heartbeat: string | null; status: string; harness: string }>;
 
     for (const arm of staleArms) {
+      // For API harness arms, skip if API server is unavailable
+      // They can't communicate without the API server
+      if (arm.harness === "opencode-api") {
+        const apiAvailable = await this.isApiServerAvailable();
+        if (!apiAvailable) {
+          this.log(`Arm ${arm.id}: API harness, API server unavailable - skipping stale check`);
+          continue;
+        }
+      }
+
       // Check if process is still running
       if (arm.pid) {
         try {
@@ -1300,17 +1322,27 @@ export class Brain {
    * Prompt idle arms to check for tasks or wait for relevant file changes
    * This is called in the poll cycle to keep arms busy
    */
-  private async promptIdleArms(): Promise<void> {
+   private async promptIdleArms(): Promise<void> {
     const idleArms = Array.from(this.arms.values()).filter(arm => arm.status === "idle");
 
     if (idleArms.length === 0) {
       return;
     }
 
+    // Check if API server is available for HTTP-based arm communication
+    const apiAvailable = await this.isApiServerAvailable();
+
     this.log(`Checking ${idleArms.length} idle arm(s) for work...`);
 
     for (const arm of idleArms) {
       const armDomain = (arm as Arm & { domain?: string }).domain || "general";
+      const isApi = await this.isApiHarness(arm.id);
+
+      // Skip API harnesses if API server is unavailable
+      if (isApi && !apiAvailable) {
+        this.log(`Arm ${arm.id} [${armDomain}]: API harness, API server unavailable, skipping prompt`);
+        continue;
+      }
 
       // Get all unassigned pending tasks - any idle arm should be able to work on them
       // Domain is a preference, not a hard filter
@@ -1505,6 +1537,54 @@ export class Brain {
   }
 
   /**
+   * Check if an arm is using an API-based harness (opencode-api)
+   * API harnesses don't have PTY output, so log analysis is unreliable
+   */
+  private async isApiHarness(armId: string): Promise<boolean> {
+    if (!this.db) return false;
+    try {
+      const row = this.db.query("SELECT harness FROM arms WHERE id = ?").get(armId) as { harness: string } | null;
+      return row?.harness === "opencode-api";
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if an arm has sent a recent heartbeat
+   * Recent heartbeat indicates the arm is still active
+   */
+  private async hasRecentHeartbeat(armId: string, maxAgeSeconds = 60): Promise<boolean> {
+    if (!this.db) return false;
+    try {
+      const row = this.db.query("SELECT last_heartbeat FROM arms WHERE id = ?").get(armId) as { last_heartbeat: string } | null;
+      if (!row?.last_heartbeat) return false;
+      const lastHeartbeat = new Date(row.last_heartbeat);
+      const now = new Date();
+      const secondsSinceHeartbeat = (now.getTime() - lastHeartbeat.getTime()) / 1000;
+      return secondsSinceHeartbeat < maxAgeSeconds;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Check if the API server is available
+   * Used to determine if we can communicate with arms via HTTP
+   */
+  private async isApiServerAvailable(): Promise<boolean> {
+    if (!this.apiBaseUrl) return false;
+    try {
+      const response = await fetch(`${this.apiBaseUrl}/api/health`, {
+        method: "GET",
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Read recent logs for an arm from the log file
    * Returns cleaned output with TUI artifacts stripped
    */
@@ -1570,8 +1650,23 @@ export class Brain {
           this.log(`Arm ${arm.name}: harness confirms "processing" state`);
           // Fall through to log analysis to check if it's stuck
         }
-      } else {
-        this.log(`Arm ${arm.name}: could not get harness state, falling back to log analysis`);
+        // Could not get harness state - decide how to proceed based on harness type
+        const isApi = await this.isApiHarness(arm.id);
+        if (isApi) {
+          // For API harnesses, we can't reliably analyze logs
+          // Instead, check if the arm is sending heartbeats (indicating it's active)
+          const hasRecentHb = await this.hasRecentHeartbeat(arm.id, 60);
+          if (hasRecentHb) {
+            this.log(`Arm ${arm.name}: API harness with recent heartbeat, assuming active`);
+            continue;
+          } else {
+            // No recent heartbeat - might be truly stuck or the API server is down
+            this.log(`Arm ${arm.name}: API harness with no recent heartbeat, will analyze logs`);
+            // Fall through to log analysis as a last resort
+          }
+        } else {
+          this.log(`Arm ${arm.name}: could not get harness state, falling back to log analysis`);
+        }
       }
       
       // Read recent logs for this arm
@@ -2090,6 +2185,16 @@ octopai arm prompt ${arm.name} "your message here"
         }
         
         if (status !== "stopped") {
+          // For API harness arms, skip if API server is unavailable
+          // We can't communicate with them without the API server
+          if (row.harness === "opencode-api") {
+            const apiAvailable = await this.isApiServerAvailable();
+            if (!apiAvailable) {
+              this.log(`  ${row.name}: API harness, API server unavailable - skipping`);
+              continue;
+            }
+          }
+
           const arm: Arm = {
             id: row.id,
             name: row.name,
@@ -2499,16 +2604,17 @@ Is this arm stuck? If so, what should we do?`;
     const lastLines = lines.slice(-20).join("\n").toLowerCase();
 
     // Check for obvious question patterns
+    // Only match patterns that indicate the arm is truly waiting for input, not just
+    // generating text that happens to contain question-like phrases
     const questionPatterns = [
-      /\?\s*$/m,
-      /would you like/i,
-      /do you want/i,
-      /please (choose|select|confirm|specify)/i,
-      /\(y\/n\)/i,
-      /\[y\/n\]/i,
-      /yes or no/i,
-      /enter.*:/i,
-      /waiting for.*input/i,
+      /\?\s*$/m,  // Line ends with ?
+      /\(y\/n\)\s*$/mi,  // (y/n) at end of line
+      /\[y\/n\]\s*$/mi,  // [y/n] at end of line
+      /yes or no\?/i,
+      /please (choose|select|confirm|specify)\b/i,
+      // Only match "enter:" at the very end of output, preceded by a prompt-like pattern
+      /[>$\#]\s*enter\s*:/i,
+      /^\s*enter\s*:/im,  // "Enter:" at start of a line (after whitespace)
     ];
 
     for (const pattern of questionPatterns) {

@@ -9,7 +9,8 @@ import { HttpError } from "../middleware";
 import { broadcastBrainEvent } from "../websocket";
 import { getOctopaiDir } from "../../config";
 import { join } from "path";
-import { readFile, writeFile } from "fs/promises";
+import { readFile, writeFile, mkdir } from "fs/promises";
+import { Maildir } from "../../mail/maildir";
 
 interface BrainContext {
   Variables: {
@@ -265,6 +266,67 @@ export function createBrainRoutes() {
     broadcastBrainEvent(body.event, body);
 
     return c.json({ notified: true });
+  });
+
+  /**
+   * Send a message to the brain
+   * POST /api/brain/message
+   * 
+   * This writes to the sent/ maildir which the brain polls for new human messages.
+   * The brain will parse the message intent and route to appropriate arms.
+   */
+  app.post("/message", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const body = await c.req.json<{
+      message: string;
+      priority?: "critical" | "high" | "normal" | "low";
+      domain?: string;
+    }>();
+
+    if (!body.message?.trim()) {
+      throw HttpError.badRequest("message is required");
+    }
+
+    // Ensure mail directories exist
+    const sentDir = join(octopaiDir, "mail", "sent");
+    await mkdir(sentDir, { recursive: true });
+    await mkdir(join(sentDir, "new"), { recursive: true });
+    await mkdir(join(sentDir, "cur"), { recursive: true });
+    await mkdir(join(sentDir, "tmp"), { recursive: true });
+
+    // Write to sent maildir (brain reads from here)
+    const sent = new Maildir(sentDir);
+    
+    // Extract subject from first line or first 100 chars
+    const firstLine = body.message.split("\n")[0]?.trim() || body.message.slice(0, 100).trim();
+    const subject = firstLine.length > 100 ? firstLine.slice(0, 97) + "..." : firstLine;
+    
+    const mailMessage = await sent.write({
+      from: "human@octopai.local",
+      to: "brain@octopai.local",
+      subject,
+      date: new Date(),
+      body: body.message,
+      headers: {
+        "X-Octopai-Type": "human-message",
+        "X-Octopai-Priority": body.priority || "normal",
+        ...(body.domain ? { "X-Octopai-Domain": body.domain } : {}),
+      },
+    });
+
+    // Broadcast that a new message was sent to brain
+    broadcastBrainEvent("message_received", {
+      messageId: mailMessage.id,
+      subject,
+      priority: body.priority || "normal",
+      domain: body.domain,
+    });
+
+    return c.json({ 
+      sent: true, 
+      messageId: mailMessage.id,
+      subject,
+    }, 201);
   });
 
   return app;
