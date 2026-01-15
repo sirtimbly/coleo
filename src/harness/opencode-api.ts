@@ -156,6 +156,9 @@ export class OpenCodeApiHarness implements AgentHarness {
       ...process.env as Record<string, string>,
       ...config.env,
       OCTOPAI_ARM_ID: armId,
+      // Disable SSL certificate verification to work around corporate proxies/VPNs
+      // TODO: Make this configurable or find a better solution
+      NODE_TLS_REJECT_UNAUTHORIZED: "0",
     };
 
     // Always create OpenCode config file for this arm
