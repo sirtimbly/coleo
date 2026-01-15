@@ -151,7 +151,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
     emulator: "auto",
   },
   defaults: {
-    harness: "opencode",
+    harness: "opencode-api",
     provider: "github-copilot",
     model: "claude-sonnet-4",
     contextBudget: 100000,

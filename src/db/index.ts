@@ -53,6 +53,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["008_arm_heartbeat", MIGRATION_008],
     ["009_file_subscriptions", MIGRATION_009],
     ["010_tasks_table", MIGRATION_010],
+    ["011_arm_port", MIGRATION_011],
   ];
 
 
@@ -398,6 +399,12 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('task_todo_glob_pattern', '**/*.todo.md');
 `;
 
+// Migration 011: Add port column for session recovery
+const MIGRATION_011 = `
+-- Add port column to arms for session recovery after server restart
+ALTER TABLE arms ADD COLUMN port INTEGER;
+`;
+
 /**
  * Seed development data for testing
  */
@@ -412,7 +419,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       id: "arm-explorer",
       name: "explorer",
       domain: "general",
-      harness: "opencode",
+      harness: "opencode-api",
       status: "idle",
       context_budget: 100000,
       current_context_used: 45000,
@@ -433,7 +440,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       id: "arm-frontend-expert",
       name: "frontend-expert",
       domain: "frontend",
-      harness: "opencode",
+      harness: "opencode-api",
       status: "idle",
       context_budget: 150000,
       current_context_used: 62000,
@@ -454,7 +461,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       id: "arm-backend-architect",
       name: "backend-architect",
       domain: "backend",
-      harness: "opencode",
+      harness: "opencode-api",
       status: "busy",
       context_budget: 200000,
       current_context_used: 125000,

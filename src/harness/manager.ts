@@ -156,6 +156,77 @@ export class HarnessManager {
   }
 
   /**
+   * Try to recover/reconnect to an existing arm process
+   * Used when the API server restarts but arm processes are still running
+   */
+  async recover(
+    armId: string,
+    harnessType: string,
+    port: number,
+    pid: number
+  ): Promise<boolean> {
+    // Check if already has a session
+    if (this.sessions.has(armId)) {
+      console.log(`[harness-manager] ${armId} already has active session`);
+      return true;
+    }
+
+    // Only opencode-api harness supports recovery
+    if (harnessType !== "opencode-api") {
+      console.log(`[harness-manager] Recovery not supported for harness type: ${harnessType}`);
+      return false;
+    }
+
+    // Get the harness
+    const harness = harnessRegistry.get(harnessType);
+    if (!harness) {
+      console.log(`[harness-manager] Harness not found: ${harnessType}`);
+      return false;
+    }
+
+    // Check if harness has recover method
+    if (!('recover' in harness) || typeof (harness as any).recover !== 'function') {
+      console.log(`[harness-manager] Harness ${harnessType} does not support recovery`);
+      return false;
+    }
+
+    // Try to recover the session
+    console.log(`[harness-manager] Attempting to recover ${armId} on port ${port}...`);
+    const session = await (harness as any).recover(armId, port, pid);
+    
+    if (!session) {
+      console.log(`[harness-manager] Failed to recover ${armId}`);
+      return false;
+    }
+
+    // Set up logging
+    const logFile = join(this.logsDir, `${armId}.log`);
+    if (session.pty?.onData) {
+      session.pty.onData = async (data: string) => {
+        try {
+          await appendFile(logFile, data);
+        } catch {
+          // Ignore logging errors
+        }
+        this.emitLog(armId, data);
+      };
+    }
+
+    // Store active session
+    const activeSession: ActiveSession = {
+      session,
+      harness,
+      armId,
+      logFile,
+      spawnedAt: session.spawnedAt || new Date(),
+    };
+
+    this.sessions.set(armId, activeSession);
+    console.log(`[harness-manager] Successfully recovered ${armId}`);
+    return true;
+  }
+
+  /**
    * Send a prompt to an arm
    * @param options.interrupt - If true, send escape key twice before prompt to cancel current work
    */
@@ -203,6 +274,19 @@ export class HarnessManager {
       return undefined;
     }
     return active.harness.getPid(active.session);
+  }
+
+  /**
+   * Get port for an arm's session (for API harnesses)
+   */
+  getPort(armId: string): number | undefined {
+    const active = this.sessions.get(armId);
+    if (!active) {
+      return undefined;
+    }
+    // Check if session has a port property (API harness sessions do)
+    const session = active.session as { port?: number };
+    return session.port;
   }
 
   /**

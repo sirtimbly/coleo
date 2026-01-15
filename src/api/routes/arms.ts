@@ -73,7 +73,7 @@ export async function loadArmTemplate(name: string): Promise<ArmTemplate | null>
     const result: ArmTemplate = {
       name: "",
       domain: "general",
-      harness: "opencode",
+      harness: "opencode-api",
       contextBudget: 100000,
       config: {},
     };
@@ -443,16 +443,17 @@ export function createArmsRoutes() {
       // Update database
       const now = new Date().toISOString();
       const pid = manager.getPid(id);
+      const port = manager.getPort(id);
       db.run(
-        "UPDATE arms SET status = 'idle', pid = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-        [pid ?? null, now, now, id]
+        "UPDATE arms SET status = 'idle', pid = ?, port = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [pid ?? null, port ?? null, now, now, id]
       );
 
       // Log activity
-      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, workdir: body.workdir, provider, model });
+      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, port: port ?? undefined, workdir: body.workdir, provider, model });
 
       // Broadcast arm spawned
-      broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, status: "idle" });
+      broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, port, status: "idle" });
 
       return c.json({
         spawned: true,
@@ -801,6 +802,57 @@ export function createArmsRoutes() {
     );
 
     return c.json({ heartbeat: true });
+  });
+
+  /**
+   * Recover/reconnect to an arm's running process
+   * POST /api/arms/:id/recover
+   * Body: { port: number }
+   */
+  app.post("/:id/recover", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{ port: number }>();
+
+    if (!body.port) {
+      throw HttpError.badRequest("port is required");
+    }
+
+    // Get harness manager
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    // Check if arm exists and get its config
+    const arm = db.query("SELECT id, harness, pid FROM arms WHERE id = ?").get(id) as { id: string; harness: string; pid: number | null } | null;
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!arm.pid) {
+      throw HttpError.badRequest(`Arm ${id} has no known PID`);
+    }
+
+    // Try to recover
+    const success = await manager.recover(id, arm.harness, body.port, arm.pid);
+
+    if (success) {
+      // Update status
+      const now = new Date().toISOString();
+      db.run(
+        "UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [now, now, id]
+      );
+
+      // Broadcast recovery
+      broadcast("arms", "arm.recovered", { id, status: "idle" });
+
+      // Log activity
+      logActivity(db, id, "recovered", undefined, { port: body.port, pid: arm.pid });
+    }
+
+    return c.json({ recovered: success });
   });
 
   /**

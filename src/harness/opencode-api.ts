@@ -205,6 +205,92 @@ export class OpenCodeApiHarness implements AgentHarness {
   }
 
   /**
+   * Recover/reconnect to an existing OpenCode server
+   * Used when the Octopai API server restarts but OpenCode servers are still running
+   */
+  async recover(armId: string, port: number, pid: number): Promise<HarnessSession | null> {
+    const serverUrl = `http://127.0.0.1:${port}`;
+    
+    // Check if server is healthy
+    try {
+      const response = await fetch(`${serverUrl}/global/health`);
+      if (!response.ok) {
+        console.log(`[harness-api] Server on port ${port} not healthy`);
+        return null;
+      }
+      const health = await response.json() as { healthy: boolean };
+      if (!health.healthy) {
+        console.log(`[harness-api] Server on port ${port} reports unhealthy`);
+        return null;
+      }
+    } catch (err) {
+      console.log(`[harness-api] Cannot connect to server on port ${port}: ${err}`);
+      return null;
+    }
+
+    // Get existing sessions from the server
+    try {
+      const response = await fetch(`${serverUrl}/session`);
+      if (!response.ok) {
+        console.log(`[harness-api] Failed to list sessions: ${response.statusText}`);
+        return null;
+      }
+      
+      const sessions = await response.json() as Session[];
+      let existingSession: Session;
+      
+      if (sessions.length === 0) {
+        // No sessions, create one
+        console.log(`[harness-api] No existing sessions, creating new one`);
+        existingSession = await this.createSession(serverUrl);
+      } else {
+        // Use the first (or only) session
+        const first = sessions[0];
+        if (!first) {
+          console.log(`[harness-api] Sessions array empty after check`);
+          return null;
+        }
+        existingSession = first;
+      }
+      
+      const sessionId = `opencode-api-recovered-${armId}-${Date.now().toString(36)}`;
+      
+      // Create a dummy PTY session for compatibility
+      const ptySession: PTYSession = {
+        pty: null as any,
+        buffer: "",
+        lineBuffer: [],
+        lastActivity: new Date(),
+      };
+
+      const apiSession: ApiHarnessSession = {
+        id: sessionId,
+        pty: ptySession,
+        harnessName: this.name,
+        spawnedAt: new Date(),
+        lastHeartbeat: new Date(),
+        serverUrl,
+        serverProcess: undefined, // We don't have a reference to the process
+        sessionId: existingSession.id,
+        port,
+      };
+
+      this.sessions.set(sessionId, apiSession);
+      
+      // Update nextPort to avoid conflicts
+      if (port >= this.nextPort) {
+        this.nextPort = port + 1;
+      }
+
+      console.log(`[harness-api] Recovered session for ${armId} on port ${port} (session: ${existingSession.id})`);
+      return apiSession;
+    } catch (err) {
+      console.log(`[harness-api] Failed to recover session: ${err}`);
+      return null;
+    }
+  }
+
+  /**
    * Kill an OpenCode session
    */
   async kill(session: HarnessSession): Promise<void> {

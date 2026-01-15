@@ -17,20 +17,23 @@ import { HarnessManager, setGlobalHarnessManager } from "../harness";
  * Clean up orphaned arms on server startup
  * 
  * When the server restarts, any arms that were running via harness manager
- * are lost (the PTY sessions were tied to the old server process).
- * This function detects such orphaned arms and marks them as stopped.
+ * are lost (the sessions were tied to the old server process).
+ * This function detects such orphaned arms and either:
+ * - Recovers them if the process is still running and has a known port
+ * - Marks them as stopped if the process is dead
  */
-async function cleanupOrphanedArms(db: Database): Promise<void> {
+async function cleanupOrphanedArms(db: Database, harnessManager?: HarnessManager): Promise<void> {
   const now = new Date().toISOString();
   
-  // Find arms that were marked as running but whose processes are dead
+  // Find arms that were marked as running
   const runningArms = db.query(`
-    SELECT id, name, pid, status
+    SELECT id, name, pid, port, harness, status
     FROM arms
     WHERE status IN ('idle', 'busy', 'running', 'starting')
-  `).all() as Array<{ id: string; name: string; pid: number | null; status: string }>;
+  `).all() as Array<{ id: string; name: string; pid: number | null; port: number | null; harness: string; status: string }>;
   
   let orphanedCount = 0;
+  let recoveredCount = 0;
   
   for (const arm of runningArms) {
     let isAlive = false;
@@ -47,15 +50,36 @@ async function cleanupOrphanedArms(db: Database): Promise<void> {
     if (!isAlive) {
       console.log(`[cleanup] Marking orphaned arm as stopped: ${arm.name} (${arm.id})`);
       db.run(
-        "UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?",
+        "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
         [now, arm.id]
       );
       orphanedCount++;
+    } else if (harnessManager && arm.port && arm.harness === "opencode-api") {
+      // Try to recover the session
+      console.log(`[cleanup] Attempting to recover arm: ${arm.name} (port ${arm.port})`);
+      const recovered = await harnessManager.recover(arm.id, arm.harness, arm.port, arm.pid!);
+      if (recovered) {
+        recoveredCount++;
+        console.log(`[cleanup] Successfully recovered arm: ${arm.name}`);
+      } else {
+        console.log(`[cleanup] Failed to recover arm: ${arm.name}, marking as stopped`);
+        db.run(
+          "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+          [now, arm.id]
+        );
+        orphanedCount++;
+      }
+    } else if (isAlive) {
+      // Process is alive but can't recover - just log it
+      console.log(`[cleanup] Arm ${arm.name} has running process (PID ${arm.pid}) but cannot recover session`);
     }
   }
   
   if (orphanedCount > 0) {
     console.log(`[cleanup] Cleaned up ${orphanedCount} orphaned arm(s)`);
+  }
+  if (recoveredCount > 0) {
+    console.log(`[cleanup] Recovered ${recoveredCount} arm session(s)`);
   }
 }
 
@@ -145,16 +169,16 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     // Tables don't exist yet, seed will run after migrations
   }
   
-  // Clean up orphaned arms from previous server sessions
-  log("Checking for orphaned arms...", "verbose");
-  await cleanupOrphanedArms(db);
-  
-  // Initialize harness manager
+  // Initialize harness manager first (needed for session recovery)
   log("Initializing harness manager...", "verbose");
   const octopaiDir = config.dbPath.replace(/\/octopai\.db$/, "");
   const harnessManager = new HarnessManager(octopaiDir);
   await harnessManager.init();
   setGlobalHarnessManager(harnessManager);
+  
+  // Now clean up/recover orphaned arms (after harness manager is ready)
+  log("Checking for orphaned arms...", "verbose");
+  await cleanupOrphanedArms(db, harnessManager);
   
   // Subscribe to log events and broadcast via WebSocket
   harnessManager.onLog((armId, data) => {

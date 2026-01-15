@@ -196,7 +196,7 @@ export function createConfigRoutes() {
             filename,
             name: parsed.arm?.name || filename.replace('.toml', ''),
             domain: parsed.arm?.domain || 'unknown',
-            harness: parsed.arm?.harness || 'opencode',
+            harness: parsed.arm?.harness || 'opencode-api',
             budget: parsed.context?.budget,
           });
         } catch {
