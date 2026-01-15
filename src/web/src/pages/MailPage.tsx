@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Mail, Send, Inbox, RefreshCw, Eye } from 'lucide-react';
+import { Mail, Send, Inbox, RefreshCw, Eye, Archive } from 'lucide-react';
 import { api, type MailMessage } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -49,6 +49,16 @@ export function MailPage() {
       loadMail();
     } catch (err) {
       console.error('Failed to mark as read:', err);
+    }
+  };
+
+  const handleArchive = async (id: string) => {
+    try {
+      await api.archiveMail(id);
+      setSelectedMessage(null);
+      loadMail();
+    } catch (err) {
+      console.error('Failed to archive:', err);
     }
   };
 
@@ -201,14 +211,23 @@ export function MailPage() {
                     {selectedMessage.body}
                   </pre>
 
-                  {activeTab === 'inbox' && !selectedMessage.flags.seen && (
-                    <div className="mt-4">
+                  {activeTab === 'inbox' && (
+                    <div className="mt-4 flex gap-2">
+                      {selectedMessage.flags.seen ? null : (
+                        <button
+                          onClick={() => handleMarkRead(selectedMessage.id)}
+                          className="flex-1 flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Mark as Read
+                        </button>
+                      )}
                       <button
-                        onClick={() => handleMarkRead(selectedMessage.id)}
-                        className="flex items-center justify-center w-full px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                        onClick={() => handleArchive(selectedMessage.id)}
+                        className="flex-1 flex items-center justify-center px-4 py-2 border border-input bg-background rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
                       >
-                        <Eye className="h-4 w-4 mr-2" />
-                        Mark as Read
+                        <Archive className="h-4 w-4 mr-2" />
+                        Archive
                       </button>
                     </div>
                   )}

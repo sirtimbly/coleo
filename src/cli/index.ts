@@ -627,7 +627,9 @@ armCmd
     console.log(`  PID: ${result.pid || "unknown"}`);
     console.log("");
     console.log("The arm is running in the API server process.");
-    console.log(`View logs: tail -f ~/.octopai/logs/${armName}.log`);
+    console.log(`Watch events: octopai arm tail ${armName}`);
+    console.log(`View status:  octopai arm status ${armName}`);
+    console.log(`View todos:   octopai arm todos ${armName}`);
   });
 
 armCmd
@@ -836,23 +838,51 @@ armCmd
           else if (eventType.includes("todo")) prefix = "✅";
           else prefix = "📡";
 
+          // Helper to format a value for display
+          const formatValue = (val: unknown): string => {
+            if (val === null || val === undefined) return "unknown";
+            if (typeof val === "string") return val;
+            if (typeof val === "number" || typeof val === "boolean") return String(val);
+            if (typeof val === "object") {
+              // For objects, try to extract meaningful fields
+              const obj = val as Record<string, unknown>;
+              if (obj.status) return String(obj.status);
+              if (obj.name) return String(obj.name);
+              if (obj.id) return String(obj.id);
+              // Fallback to compact JSON
+              return JSON.stringify(val);
+            }
+            return String(val);
+          };
+
           // Format the data for display
           let details = "";
           const data = msg.data || {};
           
           if (eventType === "status") {
-            details = `status=${data.status || "unknown"}`;
+            // Extract status from nested object if needed
+            const statusVal = typeof data.status === "object" && data.status !== null
+              ? (data.status as Record<string, unknown>).status || data.status
+              : data.status;
+            details = `status=${formatValue(statusVal)}`;
+            // Add session title if available
+            if (data.title) details += ` title="${data.title}"`;
           } else if (eventType.includes("part-tool")) {
-            details = `tool=${data.toolName || data.name || "unknown"}`;
-            if (data.status) details += ` status=${data.status}`;
+            details = `tool=${formatValue(data.toolName || data.name)}`;
+            if (data.state) details += ` state=${formatValue(data.state)}`;
+            else if (data.status) details += ` status=${formatValue(data.status)}`;
           } else if (eventType.includes("message")) {
-            details = `role=${data.role || "unknown"}`;
+            details = `role=${formatValue(data.role)}`;
+            if (data.id) details += ` id=${formatValue(data.id)}`;
           } else if (eventType.includes("file")) {
-            details = `path=${data.path || "unknown"}`;
+            details = `path=${formatValue(data.path)}`;
+          } else if (eventType.includes("todo")) {
+            if (data.content) details = `"${data.content}"`;
+            if (data.status) details += ` [${formatValue(data.status)}]`;
           } else {
-            // Generic: show first few keys
+            // Generic: show first few keys with proper formatting
             const keys = Object.keys(data).filter(k => k !== "armId" && k !== "sessionId").slice(0, 3);
-            details = keys.map(k => `${k}=${JSON.stringify(data[k])}`).join(" ");
+            details = keys.map(k => `${k}=${formatValue(data[k])}`).join(" ");
           }
 
           console.log(`${timestamp} ${prefix} ${armLabel} ${eventType}: ${details}`);
@@ -1360,17 +1390,33 @@ mailCmd
   });
 
 mailCmd
-  .command("read <id>")
-  .description("Read a specific message")
+  .command("read [id]")
+  .description("Read a message (latest if no ID provided)")
   .action(async (id) => {
     const octopaiDir = getOctopaiDir();
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
 
     const messages = [...await inbox.list("new"), ...await inbox.list("cur")];
-    const msg = messages.find((m) => m.id.startsWith(id));
+
+    if (messages.length === 0) {
+      console.log("Inbox is empty.");
+      return;
+    }
+
+    // Sort by date, newest first
+    messages.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+    let msg = null;
+    if (id) {
+      msg = messages.find((m) => m.id.startsWith(id));
+    } else {
+      msg = messages[0];
+    }
 
     if (!msg) {
-      console.log(`Message not found: ${id}`);
+      if (id) {
+        console.log(`Message not found: ${id}`);
+      }
       console.log("");
       console.log("Available messages:");
       for (const m of messages.slice(0, 5)) {

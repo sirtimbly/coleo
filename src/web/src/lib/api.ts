@@ -259,6 +259,12 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  async archiveMail(id: string) {
+    return this.request<{ success: boolean }>(`/mail/inbox/${id}/archive`, {
+      method: 'POST',
+    });
+  }
 }
 
 // Types
