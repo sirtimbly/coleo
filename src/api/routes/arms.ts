@@ -8,10 +8,9 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
-import { loadConfig } from "../../config";
+import { loadConfig, getOctopaiDir } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
-import { homedir } from "os";
 
 interface ArmsContext {
   Variables: {
@@ -60,52 +59,86 @@ export interface ArmTemplate {
 }
 
 /**
- * Load an arm template from ~/.octopai/arms/
+ * Load an arm template from .octopai/arms/
+ * Searches by filename first, then by name field inside template files
  */
 export async function loadArmTemplate(name: string): Promise<ArmTemplate | null> {
-  const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
-  const templatePath = join(octopaiDir, "arms", `${name}.toml`);
+  const octopaiDir = getOctopaiDir();
+  const armsDir = join(octopaiDir, "arms");
 
+  // First, try direct filename match
+  const directPath = join(armsDir, `${name}.toml`);
   try {
-    const content = await readFile(templatePath, "utf-8");
-
-    // Parse TOML-like content (simple parser for now)
-    const result: ArmTemplate = {
-      name: "",
-      domain: "general",
-      harness: "opencode-api",
-      contextBudget: 100000,
-      config: {},
-    };
-
-    // Extract values using regex
-    const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
-    const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
-    const harnessMatch = content.match(/harness\s*=\s*"([^"]*)"/);
-    const budgetMatch = content.match(/budget\s*=\s*(\d+)/);
-    const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
-    const convictionsMatch = content.match(/core\s*=\s*\[([^\]]*)\]/);
-
-    if (nameMatch && nameMatch[1]) result.name = nameMatch[1];
-    if (domainMatch && domainMatch[1]) result.domain = domainMatch[1];
-    if (harnessMatch && harnessMatch[1]) result.harness = harnessMatch[1];
-    if (budgetMatch && budgetMatch[1]) result.contextBudget = parseInt(budgetMatch[1], 10);
-    if (traitsMatch && traitsMatch[1]) result.personality = traitsMatch[1];
-    if (convictionsMatch && convictionsMatch[1]) {
-      result.convictions = convictionsMatch[1].split(",").map((s) => s.trim().replace(/"/g, ""));
-    }
-
-    return result;
+    const content = await readFile(directPath, "utf-8");
+    return parseArmTemplate(content);
   } catch {
-    return null;
+    // File doesn't exist, try searching by name field
   }
+
+  // Search all .toml files for matching name field
+  try {
+    const { readdir } = await import("fs/promises");
+    const files = await readdir(armsDir);
+    for (const file of files) {
+      if (!file.endsWith(".toml")) continue;
+      try {
+        const content = await readFile(join(armsDir, file), "utf-8");
+        const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
+        if (nameMatch && nameMatch[1] === name) {
+          return parseArmTemplate(content);
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  } catch {
+    // Can't read directory
+  }
+
+  return null;
+}
+
+/**
+ * Parse arm template TOML content
+ */
+function parseArmTemplate(content: string): ArmTemplate {
+  const result: ArmTemplate = {
+    name: "",
+    domain: "general",
+    harness: "opencode-api",
+    contextBudget: 100000,
+    config: {},
+  };
+
+  // Extract values using regex
+  const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
+  const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
+  const harnessMatch = content.match(/harness\s*=\s*"([^"]*)"/);
+  const budgetMatch = content.match(/budget\s*=\s*(\d+)/);
+  const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
+  const convictionsMatch = content.match(/core\s*=\s*\[([^\]]*)\]/);
+  const providerMatch = content.match(/provider\s*=\s*"([^"]*)"/);
+  const modelMatch = content.match(/model\s*=\s*"([^"]*)"/);
+
+  if (nameMatch && nameMatch[1]) result.name = nameMatch[1];
+  if (domainMatch && domainMatch[1]) result.domain = domainMatch[1];
+  if (harnessMatch && harnessMatch[1]) result.harness = harnessMatch[1];
+  if (budgetMatch && budgetMatch[1]) result.contextBudget = parseInt(budgetMatch[1], 10);
+  if (traitsMatch && traitsMatch[1]) result.personality = traitsMatch[1];
+  if (convictionsMatch && convictionsMatch[1]) {
+    result.convictions = convictionsMatch[1].split(",").map((s) => s.trim().replace(/"/g, ""));
+  }
+  if (providerMatch && providerMatch[1]) result.provider = providerMatch[1];
+  if (modelMatch && modelMatch[1]) result.model = modelMatch[1];
+
+  return result;
 }
 
 /**
  * List available arm templates
  */
 export async function listArmTemplates(): Promise<string[]> {
-  const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+  const octopaiDir = getOctopaiDir();
   const armsDir = join(octopaiDir, "arms");
 
   try {
@@ -403,8 +436,8 @@ export function createArmsRoutes() {
       throw HttpError.internal("Harness manager not initialized");
     }
 
-    // Check if arm exists
-    const row = db.query("SELECT id, name, domain, harness, status, provider, model FROM arms WHERE id = ?").get(id) as {
+    // Check if arm exists (include port and pid for potential recovery)
+    const row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
@@ -412,15 +445,45 @@ export function createArmsRoutes() {
       status: string;
       provider: string | null;
       model: string | null;
+      port: number | null;
+      pid: number | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    // Check if already running
+    // Check if already running in the harness manager
     if (manager.hasSession(id)) {
       throw HttpError.badRequest(`Arm ${id} is already running`);
+    }
+
+    // If arm was stopped but has port/pid, try to recover existing OpenCode server
+    if (row.status === "stopped" && row.port && row.pid && row.harness === "opencode-api") {
+      const recovered = await manager.recover(id, row.harness, row.port, row.pid);
+      if (recovered) {
+        // Update database to reflect recovered state
+        const now = new Date().toISOString();
+        db.run(
+          "UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [now, now, id]
+        );
+        
+        // Log activity
+        logActivity(db, id, "recovered", undefined, { port: row.port, pid: row.pid });
+        
+        // Broadcast arm recovered
+        broadcast("arms", "arm.spawned", { id, recovered: true, pid: row.pid, port: row.port, status: "idle" });
+        
+        return c.json({
+          spawned: true,
+          recovered: true,
+          sessionId: manager.getSession(id)?.session.id,
+          pid: row.pid,
+          port: row.port,
+        });
+      }
+      // Recovery failed, continue with fresh spawn
     }
 
     // Load config for defaults

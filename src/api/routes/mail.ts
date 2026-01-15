@@ -5,7 +5,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { Maildir } from "../../mail/maildir";
 import { broadcastMailEvent } from "../websocket";
-import { homedir } from "os";
+import { getOctopaiDir } from "../../config";
 import { join } from "path";
 
 interface MailContext {
@@ -19,7 +19,7 @@ export function createMailRoutes() {
   const app = new Hono<MailContext>();
 
   app.use("*", async (c, next) => {
-    const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+    const octopaiDir = getOctopaiDir();
     c.set("octopaiDir", octopaiDir);
     await next();
   });

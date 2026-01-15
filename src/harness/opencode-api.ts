@@ -9,6 +9,8 @@
 
 import { spawn, type Subprocess } from "bun";
 import { randomBytes } from "crypto";
+import { join } from "node:path";
+import { getOctopaiDir } from "../config";
 import type {
   AgentHarness,
   HarnessSession,
@@ -96,12 +98,45 @@ export class OpenCodeApiHarness implements AgentHarness {
   private nextPort = 19300; // Start port for OpenCode servers
 
   /**
+   * Check if a port is available
+   */
+  private async isPortAvailable(port: number): Promise<boolean> {
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/global/health`, {
+        signal: AbortSignal.timeout(500),
+      });
+      // If we get a response, port is in use
+      return false;
+    } catch {
+      // Connection refused or timeout means port is likely available
+      return true;
+    }
+  }
+
+  /**
+   * Find an available port starting from nextPort
+   */
+  private async findAvailablePort(): Promise<number> {
+    const maxAttempts = 100;
+    for (let i = 0; i < maxAttempts; i++) {
+      const port = this.nextPort++;
+      if (await this.isPortAvailable(port)) {
+        return port;
+      }
+      console.log(`[harness-api] Port ${port} in use, trying next...`);
+    }
+    throw new Error(`Could not find available port after ${maxAttempts} attempts`);
+  }
+
+  /**
    * Spawn a new OpenCode instance via API server
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `opencode-api-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
     const armId = config.env.OCTOPAI_ARM_ID || "unknown";
-    const port = this.nextPort++;
+    
+    // Find an available port (handles case where old processes are still running)
+    const port = await this.findAvailablePort();
 
     // Build environment for the OpenCode server
     const env: Record<string, string> = {
@@ -110,12 +145,52 @@ export class OpenCodeApiHarness implements AgentHarness {
       OCTOPAI_ARM_ID: armId,
     };
 
-    // Set model if specified
+    // Always create OpenCode config file for this arm
+    // This is the proper way to configure OpenCode (not via env vars)
+    // See: https://opencode.ai/docs/models/#set-a-default
+    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
+    const mcpDir = join(octopaiDir, "mcp");
+    
+    // Ensure MCP directory exists
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(mcpDir, { recursive: true });
+    
+    // Use bun from the system PATH or fall back to ~/.bun/bin/bun
+    const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+    
+    // Build the OpenCode config
+    const opencodeConfig: Record<string, unknown> = {
+      $schema: "https://opencode.ai/config.json",
+      // Configure the Octopai MCP server for brain communication
+      mcp: {
+        octopai: {
+          type: "local",
+          command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
+          environment: {
+            OCTOPAI_ARM_ID: armId,
+            OCTOPAI_DIR: octopaiDir,
+          },
+          enabled: true,
+        },
+      },
+    };
+
+    // Set default model if provider/model specified
+    // Format: "provider_id/model_id" (e.g., "anthropic/claude-sonnet-4-20250514")
     if (config.provider && config.model) {
-      env.OPENCODE_MODEL = `${config.provider}/${config.model}`;
+      opencodeConfig.model = `${config.provider}/${config.model}`;
     } else if (config.model) {
-      env.OPENCODE_MODEL = config.model;
+      // If only model specified, use it directly (might include provider already)
+      opencodeConfig.model = config.model;
     }
+
+    // Write OpenCode config to the MCP directory
+    const opencodeConfigPath = join(mcpDir, `${armId}.json`);
+    await writeFile(opencodeConfigPath, JSON.stringify(opencodeConfig, null, 2), "utf-8");
+    
+    // Tell OpenCode where to find the config
+    env.OPENCODE_CONFIG = opencodeConfigPath;
+    console.log(`[harness-api] Created OpenCode config at ${opencodeConfigPath}${opencodeConfig.model ? ` (model: ${opencodeConfig.model})` : ""}`);
 
     console.log(`[harness-api] Starting OpenCode server on port ${port} for arm ${armId}...`);
 

@@ -6,6 +6,7 @@
 
 import { randomBytes } from "crypto";
 import { join } from "node:path";
+import { getOctopaiDir } from "../config";
 import type {
   AgentHarness,
   HarnessSession,
@@ -65,49 +66,52 @@ export class OpenCodeHarness implements AgentHarness {
       NODE_TLS_REJECT_UNAUTHORIZED: "0", // Allow self-signed certs for development
     };
 
-    // Set model if specified
-    if (config.provider && config.model) {
-      env.OPENCODE_MODEL = `${config.provider}/${config.model}`;
-    } else if (config.model) {
-      env.OPENCODE_MODEL = config.model;
-    }
-
-    // Create OpenCode config with MCP server if MCP servers are specified
-    if (config.mcpServers && config.mcpServers.length > 0) {
-      const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || join(process.env.HOME || "", ".octopai");
-      const mcpDir = join(octopaiDir, "mcp");
-      
-      // Ensure MCP directory exists
-      const { mkdir, writeFile } = await import("node:fs/promises");
-      await mkdir(mcpDir, { recursive: true });
-      
-      // Use bun from the system PATH or fall back to ~/.bun/bin/bun
-      const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
-      
-      // Create OpenCode config with MCP server (correct format)
-      const opencodeConfig = {
-        $schema: "https://opencode.ai/config.json",
-        mcp: {
-          octopai: {
-            type: "local",
-            command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
-            environment: {
-              OCTOPAI_ARM_ID: armId,
-              OCTOPAI_DIR: octopaiDir,
-            },
-            enabled: true,
+    // Always create OpenCode config file for this arm
+    // This is the proper way to configure OpenCode (not via env vars)
+    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
+    const mcpDir = join(octopaiDir, "mcp");
+    
+    // Ensure MCP directory exists
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(mcpDir, { recursive: true });
+    
+    // Use bun from the system PATH or fall back to ~/.bun/bin/bun
+    const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+    
+    // Build the OpenCode config
+    // See: https://opencode.ai/docs/models/#set-a-default
+    const opencodeConfig: Record<string, unknown> = {
+      $schema: "https://opencode.ai/config.json",
+      // Configure the Octopai MCP server for brain communication
+      mcp: {
+        octopai: {
+          type: "local",
+          command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
+          environment: {
+            OCTOPAI_ARM_ID: armId,
+            OCTOPAI_DIR: octopaiDir,
           },
+          enabled: true,
         },
-      };
+      },
+    };
 
-      // Write OpenCode config to the MCP directory
-      const opencodeConfigPath = join(mcpDir, `${armId}.json`);
-      await writeFile(opencodeConfigPath, JSON.stringify(opencodeConfig, null, 2), "utf-8");
-      
-      // Tell OpenCode where to find the config
-      env.OPENCODE_CONFIG = opencodeConfigPath;
-      console.log(`[harness] Created OpenCode config at ${opencodeConfigPath}`);
+    // Set default model if provider/model specified
+    // Format: "provider_id/model_id" (e.g., "anthropic/claude-sonnet-4-20250514")
+    if (config.provider && config.model) {
+      opencodeConfig.model = `${config.provider}/${config.model}`;
+    } else if (config.model) {
+      // If only model specified, use it directly (might include provider already)
+      opencodeConfig.model = config.model;
     }
+
+    // Write OpenCode config to the MCP directory
+    const opencodeConfigPath = join(mcpDir, `${armId}.json`);
+    await writeFile(opencodeConfigPath, JSON.stringify(opencodeConfig, null, 2), "utf-8");
+    
+    // Tell OpenCode where to find the config
+    env.OPENCODE_CONFIG = opencodeConfigPath;
+    console.log(`[harness] Created OpenCode config at ${opencodeConfigPath}${opencodeConfig.model ? ` (model: ${opencodeConfig.model})` : ""}`);
 
     // Spawn OpenCode in PTY
     const ptySession = this.ptyManager.spawn("opencode", [], {

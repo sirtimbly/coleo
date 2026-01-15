@@ -7,8 +7,8 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcastBrainEvent } from "../websocket";
+import { getOctopaiDir } from "../../config";
 import { join } from "path";
-import { homedir } from "os";
 import { readFile, writeFile } from "fs/promises";
 
 interface BrainContext {
@@ -42,7 +42,7 @@ export function createBrainRoutes() {
   const app = new Hono<BrainContext>();
 
   app.use("*", async (c, next) => {
-    const octopaiDir = process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+    const octopaiDir = getOctopaiDir();
     c.set("octopaiDir", octopaiDir);
     await next();
   });

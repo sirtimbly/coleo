@@ -11,6 +11,7 @@ import { writeFile, mkdir, readFile, readdir, appendFile } from "fs/promises";
 import { join } from "path";
 import { initDatabase, Database } from "../db";
 import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
+import { getOctopaiDir } from "../config";
 import type { Arm, OctopaiConfig } from "../types";
 
 const execAsync = promisify(exec);
@@ -183,7 +184,7 @@ function getTerminalCommand(
 
     case "headless":
       // Run directly as a background process, logging to file
-      const logFile = join(process.env.OCTOPAI_DIR || process.env.HOME + "/.octopai", "logs", `${title}.log`);
+      const logFile = join(process.env.OCTOPAI_DIR || getOctopaiDir(), "logs", `${title}.log`);
       return {
         cmd: "bash",
         args: [

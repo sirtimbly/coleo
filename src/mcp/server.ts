@@ -16,9 +16,10 @@ import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
+import { getOctopaiDir } from "../config";
 
-// Get octopai directory from env or default
-const OCTOPAI_DIR = process.env.OCTOPAI_DIR || join(process.env.HOME || "~", ".octopai");
+// Get octopai directory from env or default (project-local)
+const OCTOPAI_DIR = getOctopaiDir();
 const ARM_ID = process.env.OCTOPAI_ARM_ID || process.env.OCTOPAI_TENTACLE_ID || "unknown";
 const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
 

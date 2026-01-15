@@ -1,44 +1,22 @@
-# Octopai Self-Development Configuration
-# 
-# This directory configures Octopai to orchestrate its own development.
-# Meta, right?
+# Octopai Configuration
+# Generated on 2026-01-15T15:45:36.520Z
 
 version = 1
 
-[project]
-name = "octopai"
-description = "AI agent orchestrator using the Octopus Model"
-repository = "https://github.com/anomalyco/octopai"
-
 [brain]
 poll_interval_ms = 30000
-max_arms = 4
+max_arms = 8
 
-# Intervention thresholds
-[brain.intervention]
-kill_on_critical = true
-pause_after_violations = 3
-warn_window_minutes = 60
+[mail]
+from_address = "brain@octopai.local"
+digest_schedule = "immediate"
 
-# File patterns that should never be modified without human approval
-[safety]
-protected_patterns = [
-  ".octopai/**",
-  ".env*",
-  "package.json",  # dependency changes need review
-  "tsconfig.json",
-]
+[terminal]
+emulator = "auto"
 
-# Patterns that trigger immediate halt
-critical_patterns = [
-  "rm -rf",
-  "git push --force",
-  "DROP TABLE",
-  "DELETE FROM .* WHERE 1",
-]
-
-# Default arm settings
-[defaults]
-harness = "opencode"
-context_budget = 100000
-reputation_start = 50
+# Gitea configuration (optional)
+# [gitea]
+# url = "http://localhost:3000"
+# token = "your-token-here"
+# default_org = "octopai"
+# default_repo = "workspace"

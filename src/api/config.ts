@@ -2,6 +2,9 @@
  * API Configuration
  */
 
+import { getOctopaiDir } from "../config";
+import { join } from "path";
+
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface ApiConfig {
@@ -46,6 +49,5 @@ function generateDevApiKey(): string {
  * Get default database path
  */
 function getDefaultDbPath(): string {
-  const home = process.env.HOME || process.env.USERPROFILE || ".";
-  return `${home}/.octopai/octopai.db`;
+  return join(getOctopaiDir(), "octopai.db");
 }

@@ -48,9 +48,11 @@ interface TomlConfig {
 
 /**
  * Get the default octopai directory
+ * Uses .octopai/ in the current working directory (project-local config)
+ * Can be overridden with OCTOPAI_DIR environment variable
  */
 export function getOctopaiDir(): string {
-  return process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+  return process.env.OCTOPAI_DIR || join(process.cwd(), ".octopai");
 }
 
 /**

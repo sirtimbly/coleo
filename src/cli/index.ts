@@ -5,6 +5,7 @@
  * AI agent orchestrator using the Octopus Model
  */
 
+import { file } from "bun";
 import { Command } from "commander";
 import { join, dirname } from "path";
 import { mkdir, writeFile, readFile, copyFile, readdir, symlink, unlink } from "fs/promises";
@@ -17,16 +18,57 @@ import { startServer, disableHeartbeat } from "../api";
 import type { OctopaiConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
 
+// Load .env file if it exists (check cwd/.octopai and cwd)
+async function loadEnvFile(): Promise<void> {
+  const envPaths = [
+    join(process.cwd(), ".octopai", ".env"),
+    join(process.cwd(), ".env"),
+  ];
+  
+  for (const envPath of envPaths) {
+    try {
+      const envFile = file(envPath);
+      if (await envFile.exists()) {
+        const content = await envFile.text();
+        for (const line of content.split("\n")) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith("#")) continue;
+          const eqIndex = trimmed.indexOf("=");
+          if (eqIndex === -1) continue;
+          const key = trimmed.slice(0, eqIndex).trim();
+          let value = trimmed.slice(eqIndex + 1).trim();
+          // Remove quotes if present
+          if ((value.startsWith('"') && value.endsWith('"')) || 
+              (value.startsWith("'") && value.endsWith("'"))) {
+            value = value.slice(1, -1);
+          }
+          // Only set if not already set in environment
+          if (!process.env[key]) {
+            process.env[key] = value;
+          }
+        }
+        break; // Stop after first .env file found
+      }
+    } catch {
+      // Ignore errors reading .env
+    }
+  }
+}
+
+// Load env before anything else
+await loadEnvFile();
+
 // Disable WebSocket heartbeat for CLI commands (prevents process from hanging)
+disableHeartbeat();
 disableHeartbeat();
 
 const TEMPLATES_DIR = join(dirname(import.meta.filename), "..", "..", "templates");
 
 const program = new Command();
 
-// Resolve octopai directory
+// Resolve octopai directory (project-local by default)
 function getOctopaiDir(): string {
-  return process.env.OCTOPAI_DIR || join(homedir(), ".octopai");
+  return process.env.OCTOPAI_DIR || join(process.cwd(), ".octopai");
 }
 
 // Expand ~ in paths
@@ -76,11 +118,11 @@ program
 
 program
   .command("init")
-  .description("Initialize Octopai in ~/.octopai")
-  .option("-d, --dir <path>", "Custom directory", "~/.octopai")
+  .description("Initialize Octopai in the current project (.octopai/)")
+  .option("-d, --dir <path>", "Custom directory", ".octopai")
   .option("--preset <name>", "Preset configuration (fullstack, split-stack, full-team)", "")
   .action(async (options) => {
-    const octopaiDir = expandPath(options.dir);
+    const octopaiDir = options.dir.startsWith("/") ? options.dir : join(process.cwd(), options.dir);
     const preset = options.preset;
     console.log(`Initializing Octopai in ${octopaiDir}...`);
 
@@ -176,15 +218,14 @@ exec bun run src/cli/index.ts "$@"
    ├── mcp/           # MCP configurations
    └── logs/          # Log files
 
-${preset ? `Preset "${preset}" arms have been configured in ~/.octopai/arms/` : ""}
+${preset ? `Preset "${preset}" arms have been configured in .octopai/arms/` : ""}
 ${scriptInfo}${symlinkInfo}
- Edit or delete arm configs in ~/.octopai/arms/ before spawning.
+ Edit or delete arm configs in .octopai/arms/ before spawning.
 
  Next steps:
-   1. Configure your mail client to read from ${octopaiDir}/mail/inbox
-   2. Configure arms: edit ~/.octopai/arms/*.toml
-   3. Start the API server: octopai serve
-   4. Spawn an arm: octopai arm spawn --name <name> --agent opencode
+   1. Start the API server: octopai serve
+   2. Configure arms: edit .octopai/arms/*.toml
+   3. Spawn an arm: octopai arm spawn
  `);
   });
 
@@ -1695,20 +1736,14 @@ async function copyArmTemplates(octopaiDir: string, preset: string): Promise<voi
 async function copyDefaultTemplates(armsDir: string): Promise<void> {
   console.log("\nCopying default arm templates...");
 
-  // Copy the fullstack template as default
-  const fullstackPath = join(TEMPLATES_DIR, "arms", "fullstack.toml");
-  const content = await readFile(fullstackPath, "utf-8");
-  await writeFile(join(armsDir, "fullstack-dev.toml"), content, "utf-8");
-  console.log("  ✓ fullstack-dev.toml (general purpose)");
-
-  // Also copy other templates for reference
-  const templates = ["frontend.toml", "backend.toml", "testing.toml", "docs.toml", "architect.toml"];
+  // Copy all arm templates
+  const templates = ["fullstack.toml", "frontend.toml", "backend.toml", "testing.toml", "docs.toml", "architect.toml"];
   for (const template of templates) {
     try {
       const srcPath = join(TEMPLATES_DIR, "arms", template);
-      const destPath = join(armsDir, `example-${template}`);
+      const destPath = join(armsDir, template);
       await copyFile(srcPath, destPath);
-      console.log(`  ✓ example-${template}`);
+      console.log(`  ✓ ${template}`);
     } catch {
       // Template might not exist, skip
     }
@@ -1716,7 +1751,7 @@ async function copyDefaultTemplates(armsDir: string): Promise<void> {
 
   console.log(`\nArm templates copied to ${armsDir}/`);
   console.log("Edit or delete these files before spawning arms.");
-  console.log("The fullstack-dev.toml is ready to use as-is.");
+  console.log("Run 'octopai arm spawn' to interactively spawn an arm.");
 }
 
 // Run the CLI
