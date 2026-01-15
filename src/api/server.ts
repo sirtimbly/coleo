@@ -8,10 +8,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createAgentsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
+import { NatsManager, setNatsManager, ArmClient } from "../nats";
 
 /**
  * Clean up orphaned arms on server startup
@@ -90,6 +91,17 @@ export interface ServerContext {
   };
 }
 
+// Global ArmClient for distributed arm management
+let globalArmClient: ArmClient | null = null;
+
+export function getArmClient(): ArmClient | null {
+  return globalArmClient;
+}
+
+export function setArmClient(client: ArmClient): void {
+  globalArmClient = client;
+}
+
 /**
  * Create and configure the Hono app
  */
@@ -128,6 +140,7 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/garden", createGardenRoutes());
   app.route("/api/proposals", createProposalsRoutes());
   app.route("/api/tasks", createTasksRoutes());
+  app.route("/api/agents", createAgentsRoutes());
 
   // Root redirect to health
   app.get("/", (c) => c.redirect("/api/health"));
@@ -143,6 +156,8 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   db: Database;
   config: ApiConfig;
   harnessManager: HarnessManager;
+  nats?: NatsManager;
+  armClient?: ArmClient;
 }> {
   const baseConfig = loadApiConfig();
   // Filter out undefined values from overrides
@@ -170,6 +185,60 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     // Tables don't exist yet, seed will run after migrations
   }
   
+  // Connect to NATS server (if available)
+  let nats: NatsManager | undefined;
+  let armClient: ArmClient | undefined;
+  
+  try {
+    const natsUrl = process.env.OCTOPAI_NATS_URL || 'nats://localhost:4222';
+    log(`Connecting to NATS at ${natsUrl}...`, "verbose");
+    
+    nats = new NatsManager({ 
+      url: natsUrl,
+      debug: config.logLevel === "verbose",
+      retryAttempts: 2,
+      retryDelayMs: 500,
+    });
+    
+    const connected = await nats.connect();
+    
+    if (connected) {
+      setNatsManager(nats);
+      log(`NATS connected at ${natsUrl}`, "normal");
+      
+      // Initialize ArmClient
+      armClient = new ArmClient({
+        natsUrl,
+        debug: config.logLevel === "verbose",
+        onAgentConnected: (agent) => {
+          log(`[NATS] Agent connected: ${agent.agentId} (${agent.hostname})`, "normal");
+          broadcast("agents", "agent.connected", agent);
+        },
+        onAgentDisconnected: (agentId) => {
+          log(`[NATS] Agent disconnected: ${agentId}`, "normal");
+          broadcast("agents", "agent.disconnected", { agentId });
+        },
+        onArmEvent: (event) => {
+          // Forward NATS arm events to WebSocket
+          if ('armId' in event) {
+            broadcastArmEvent(event.armId, event.type, event);
+          }
+        },
+      });
+      
+      await armClient.connect();
+      setArmClient(armClient);
+      log("ArmClient connected to NATS", "verbose");
+    } else {
+      log("NATS not available - distributed arm management disabled", "normal");
+      nats = undefined;
+    }
+  } catch (err) {
+    log(`Warning: Failed to connect to NATS: ${err}`, "normal");
+    log("Distributed arm management will not be available", "normal");
+    nats = undefined;
+  }
+  
   // Initialize harness manager first (needed for session recovery)
   log("Initializing harness manager...", "verbose");
   const octopaiDir = config.dbPath.replace(/\/octopai\.db$/, "");
@@ -195,6 +264,21 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   const app = createApp(db, config);
 
   log(`Starting server on ${config.host}:${config.port}...`, "normal");
+
+  // Prominently display the server URL
+  const serverUrl = `http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}`;
+  console.log("");
+  console.log("=".repeat(60));
+  console.log("  Octopai API Server");
+  console.log("=".repeat(60));
+  console.log(`  URL:      ${serverUrl}`);
+  console.log(`  Web UI:   ${serverUrl.replace(":8080", ":5173")}`);
+  if (nats) {
+    console.log(`  NATS:     ${nats.getServerUrl()}`);
+  }
+  console.log(`  API Key:  ${config.apiKey.startsWith("dev-") ? "(dev mode)" : config.apiKey.slice(0, 8) + "..."}`);
+  console.log("=".repeat(60));
+  console.log("");
   
   // Check if API key was auto-generated - only show in verbose mode
   if (config.apiKey.startsWith("dev-")) {
@@ -235,8 +319,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   log(`Server running at http://${config.host}:${config.port}`, "normal");
   log(`WebSocket: ws://${config.host}:${config.port}/ws`, "verbose");
   log(`Database: ${config.dbPath}`, "verbose");
+  if (nats) {
+    log(`NATS: ${nats.getServerUrl()}`, "verbose");
+  }
 
-  return { server, db, config, harnessManager };
+  return { server, db, config, harnessManager, nats, armClient };
 }
 
 // Allow running directly

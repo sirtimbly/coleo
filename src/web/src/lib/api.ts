@@ -197,6 +197,17 @@ class ApiClient {
     }>(`/arms/${id}/status`);
   }
 
+  async updateArmMetrics(id: string, data: {
+    tokens?: { input?: number; output?: number };
+    cost?: number;
+    currentTask?: { id: string; subject: string } | null;
+  }) {
+    return this.request<{ success: boolean }>(`/arms/${id}/metrics`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // SSE Event stream URL for arm events (includes API key as query param since EventSource can't send headers)
   getArmEventsUrl(id: string): string {
     const apiKey = this.getApiKey();
@@ -464,6 +475,11 @@ export interface Arm {
   personality?: string;
   convictions?: string[];
   reputation?: number;
+  totalTokens?: number;
+  totalCost?: number;
+  currentTaskSubject?: string;
+  provider?: string;
+  model?: string;
 }
 
 export interface ActivityEntry {

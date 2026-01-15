@@ -11,7 +11,7 @@
 
 import type { ServerWebSocket } from "bun";
 
-export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "tasks" | "all";
+export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "tasks" | "agents" | "all";
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {

@@ -11,6 +11,7 @@ import { broadcast } from "../websocket";
 import { loadConfig, getOctopaiDir } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
+import { getArmClient } from "../server";
 
 interface ArmsContext {
   Variables: {
@@ -45,6 +46,11 @@ export interface ArmProfile {
   port?: number;
   provider?: string;
   model?: string;
+  totalTokens?: number;
+  totalCost?: number;
+  currentTaskSubject?: string;
+  agentId?: string;
+  host?: string;
 }
 
 export interface ArmTemplate {
@@ -171,6 +177,11 @@ export function createArmsRoutes() {
           updated_at as updatedAt,
           last_activity_at as lastActivityAt,
           pid, port, provider, model,
+          total_tokens as totalTokens,
+          total_cost as totalCost,
+          current_task_subject as currentTaskSubject,
+          agent_id as agentId,
+          host,
           config
         FROM arms
         ORDER BY name
@@ -200,6 +211,11 @@ export function createArmsRoutes() {
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
         pid, port, provider, model,
+        total_tokens as totalTokens,
+        total_cost as totalCost,
+        current_task_subject as currentTaskSubject,
+        agent_id as agentId,
+        host,
         config
       FROM arms
       WHERE id = ?
@@ -418,8 +434,11 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Spawn an arm via harness
+   * Spawn an arm via harness (local) or agent (distributed)
    * POST /api/arms/:id/spawn
+   * 
+   * When an agent is available with the required capabilities, the arm is spawned
+   * on that agent via NATS. Otherwise, falls back to local harness spawning.
    */
   app.post("/:id/spawn", async (c) => {
     const db = c.get("db");
@@ -429,16 +448,12 @@ export function createArmsRoutes() {
       provider?: string;
       model?: string;
       initialPrompt?: string;
+      preferAgent?: boolean; // Explicitly request agent spawning
+      agentId?: string; // Spawn on a specific agent
     }>();
 
-    // Get harness manager
-    const manager = getGlobalHarnessManager();
-    if (!manager) {
-      throw HttpError.internal("Harness manager not initialized");
-    }
-
     // Check if arm exists (include port and pid for potential recovery)
-    const row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
@@ -448,10 +463,117 @@ export function createArmsRoutes() {
       model: string | null;
       port: number | null;
       pid: number | null;
+      agent_id: string | null;
+      host: string | null;
+      context_budget: number;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Load config for defaults
+    const config = await loadConfig();
+    const defaults = config.defaults;
+
+    // Use body > arm record > config defaults
+    const provider = body.provider || row.provider || defaults.provider;
+    const model = body.model || row.model || defaults.model;
+
+    // Try distributed spawning via ArmClient if available
+    const armClient = getArmClient();
+    if (armClient) {
+      // Find an agent to spawn on
+      let agentId = body.agentId;
+      
+      if (!agentId) {
+        // Find the best available agent for this harness
+        const bestAgent = armClient.findBestAgent(row.harness);
+        if (bestAgent) {
+          agentId = bestAgent.agentId;
+        }
+      }
+      
+      if (agentId || body.preferAgent) {
+        if (!agentId) {
+          throw HttpError.badRequest(`No agent available for harness: ${row.harness}`);
+        }
+        
+        // Verify agent exists
+        const agent = armClient.getAgent(agentId);
+        if (!agent) {
+          throw HttpError.badRequest(`Agent not found: ${agentId}`);
+        }
+        
+        // Spawn via agent
+        try {
+          const response = await armClient.spawnArm(agentId, id, {
+            name: row.name,
+            domain: row.domain,
+            harness: row.harness,
+            provider,
+            model,
+            contextBudget: row.context_budget,
+            workDir: body.workdir || process.cwd(),
+          });
+          
+          if (!response.success) {
+            throw new Error(response.error || "Agent spawn failed");
+          }
+          
+          // Update database with agent info
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+            [agentId, agent.hostname, response.data?.pid ?? null, response.data?.port ?? null, now, now, id]
+          );
+          
+          // Log activity
+          logActivity(db, id, "spawned", undefined, { 
+            agentId, 
+            host: agent.hostname,
+            pid: response.data?.pid,
+            port: response.data?.port,
+            provider, 
+            model,
+            distributed: true,
+          });
+          
+          // Broadcast arm spawned
+          broadcast("arms", "arm.spawned", { 
+            id, 
+            agentId,
+            host: agent.hostname,
+            pid: response.data?.pid,
+            port: response.data?.port,
+            status: "idle",
+            distributed: true,
+          });
+          
+          return c.json({
+            spawned: true,
+            distributed: true,
+            agentId,
+            host: agent.hostname,
+            pid: response.data?.pid,
+            port: response.data?.port,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // If explicitly requested agent spawn, fail
+          if (body.preferAgent || body.agentId) {
+            throw HttpError.internal(`Failed to spawn arm on agent: ${message}`);
+          }
+          // Otherwise fall back to local spawn
+          console.log(`[spawn] Agent spawn failed, falling back to local: ${message}`);
+        }
+      }
+    }
+
+    // Fall back to local harness spawning
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
     }
 
     // Check if already running in the harness manager
@@ -487,14 +609,6 @@ export function createArmsRoutes() {
       // Recovery failed, continue with fresh spawn
     }
 
-    // Load config for defaults
-    const config = await loadConfig();
-    const defaults = config.defaults;
-
-    // Use body > arm record > config defaults
-    const provider = body.provider || row.provider || defaults.provider;
-    const model = body.model || row.model || defaults.model;
-
     try {
       // Spawn via harness
       const session = await manager.spawn(id, row.harness, {
@@ -509,20 +623,22 @@ export function createArmsRoutes() {
       const pid = manager.getPid(id);
       const port = manager.getPort(id);
       db.run(
-        "UPDATE arms SET status = 'idle', pid = ?, port = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        "UPDATE arms SET status = 'idle', pid = ?, port = ?, agent_id = NULL, host = NULL, last_heartbeat = ?, updated_at = ? WHERE id = ?",
         [pid ?? null, port ?? null, now, now, id]
       );
 
       // Log activity
-      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, port: port ?? undefined, workdir: body.workdir, provider, model });
+      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, port: port ?? undefined, workdir: body.workdir, provider, model, distributed: false });
 
       // Broadcast arm spawned
-      broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, port, status: "idle" });
+      broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, port, status: "idle", distributed: false });
 
       return c.json({
         spawned: true,
+        distributed: false,
         sessionId: session.session.id,
         pid,
+        port,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -531,36 +647,67 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Kill an arm's harness session
+   * Kill an arm's harness session (local or distributed)
    * POST /api/arms/:id/kill
    */
   app.post("/:id/kill", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
 
-    // Get harness manager
+    // Check if arm exists and get agent info
+    const row = db.query("SELECT id, agent_id FROM arms WHERE id = ?").get(id) as { id: string; agent_id: string | null } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // If arm is on an agent, kill via ArmClient
+    if (row.agent_id) {
+      const armClient = getArmClient();
+      if (armClient) {
+        try {
+          const response = await armClient.killArm(id);
+          if (!response.success) {
+            throw new Error(response.error || "Agent kill failed");
+          }
+          
+          // Update database
+          const now = new Date().toISOString();
+          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+
+          // Log activity
+          logActivity(db, id, "killed", undefined, { distributed: true, agentId: row.agent_id });
+
+          // Broadcast arm killed
+          broadcast("arms", "arm.killed", { id, status: "stopped", distributed: true });
+
+          return c.json({ killed: true, distributed: true });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          // Still try to clean up DB state even if agent kill fails
+          const now = new Date().toISOString();
+          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          console.log(`[kill] Agent kill failed, cleaned up DB state: ${message}`);
+        }
+      }
+    }
+
+    // Kill via local harness manager
     const manager = getGlobalHarnessManager();
     if (!manager) {
       throw HttpError.internal("Harness manager not initialized");
     }
 
-    // Check if arm exists
-    const exists = db.query("SELECT id FROM arms WHERE id = ?").get(id);
-    if (!exists) {
-      throw HttpError.notFound(`Arm not found: ${id}`);
-    }
-
     // Kill the session
     await manager.kill(id);
 
-      // Update database
-      const now = new Date().toISOString();
-      db.run("UPDATE arms SET status = 'stopped', pid = NULL, updated_at = ? WHERE id = ?", [now, id]);
+    // Update database
+    const now = new Date().toISOString();
+    db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?", [now, id]);
 
-      // Log activity
-      logActivity(db, id, "killed");
+    // Log activity
+    logActivity(db, id, "killed");
 
-      // Broadcast arm killed
+    // Broadcast arm killed
     broadcast("arms", "arm.killed", { id, status: "stopped" });
 
     return c.json({ killed: true });
@@ -630,6 +777,59 @@ export function createArmsRoutes() {
     broadcast("arms", "arm.resumed", { id, status: "idle" });
 
     return c.json({ resumed: true, status: "idle" });
+  });
+
+  /**
+   * Update arm metrics (tokens, cost, current task)
+   * POST /api/arms/:id/metrics
+   */
+  app.post("/:id/metrics", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    const body = await c.req.json<{
+      tokens?: { input?: number; output?: number };
+      cost?: number;
+      currentTask?: { id: string; subject: string } | null;
+    }>();
+
+    // Check if arm exists
+    const row = db.query("SELECT id FROM arms WHERE id = ?").get(id) as { id: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    const now = new Date().toISOString();
+    const updates: string[] = ["updated_at = ?"];
+    const params: (string | number | null)[] = [now];
+
+    if (body.tokens) {
+      const currentTokens = db.query("SELECT total_tokens FROM arms WHERE id = ?").get(id) as { total_tokens: number } | null;
+      const inputDelta = body.tokens.input || 0;
+      const outputDelta = body.tokens.output || 0;
+      const newTotal = (currentTokens?.total_tokens || 0) + inputDelta + outputDelta;
+      updates.push("total_tokens = ?");
+      params.push(newTotal);
+    }
+
+    if (body.cost !== undefined) {
+      const currentCost = db.query("SELECT total_cost FROM arms WHERE id = ?").get(id) as { total_cost: number } | null;
+      const newCost = (currentCost?.total_cost || 0) + body.cost;
+      updates.push("total_cost = ?");
+      params.push(newCost);
+    }
+
+    if (body.currentTask !== undefined) {
+      updates.push("current_task_id = ?");
+      params.push(body.currentTask?.id || null);
+      updates.push("current_task_subject = ?");
+      params.push(body.currentTask?.subject || null);
+    }
+
+    params.push(id);
+    db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, params);
+
+    return c.json({ success: true });
   });
 
   /**
@@ -1214,6 +1414,11 @@ interface ArmRow {
   port: number | null;
   provider: string | null;
   model: string | null;
+  totalTokens: number | null;
+  totalCost: number | null;
+  currentTaskSubject: string | null;
+  agentId: string | null;
+  host: string | null;
   config: string;
 }
 
@@ -1225,6 +1430,11 @@ function parseArmRow(row: ArmRow): ArmProfile {
     port: row.port ?? undefined,
     provider: row.provider ?? undefined,
     model: row.model ?? undefined,
+    totalTokens: row.totalTokens ?? 0,
+    totalCost: row.totalCost ?? 0,
+    currentTaskSubject: row.currentTaskSubject ?? undefined,
+    agentId: row.agentId ?? undefined,
+    host: row.host ?? undefined,
     config: JSON.parse(row.config || "{}"),
   };
 }

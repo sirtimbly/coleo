@@ -3,6 +3,7 @@
 # Run the full Octopai environment in Docker:
 # - Octopai brain + tentacles
 # - Gitea for git collaboration
+# - NATS for distributed arm management
 # - SSH access for interactive sessions
 #
 # Usage:
@@ -11,6 +12,26 @@
 #   octopai brain run
 
 services:
+  # ============================================
+  # NATS - Message queue for distributed arms
+  # ============================================
+  nats:
+    image: nats:2.10-alpine
+    container_name: octopai-nats
+    command: ["--jetstream", "--http_port", "8222"]
+    ports:
+      # Client connections
+      - "4222:4222"
+      # Monitoring
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
   # ============================================
   # Octopai - The brain and tentacle environment
   # ============================================
@@ -23,6 +44,7 @@ services:
     environment:
       - OCTOPAI_DIR=/home/octopai/.octopai
       - GITEA_URL=http://gitea:3000
+      - OCTOPAI_NATS_URL=nats://nats:4222
       # Pass through API keys from host
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -37,6 +59,8 @@ services:
       # SSH access
       - "2222:22"
     depends_on:
+      nats:
+        condition: service_healthy
       gitea:
         condition: service_healthy
     restart: unless-stopped

@@ -1,18 +1,61 @@
 /**
  * Mail routes for managing messages
+ * Enhanced to expose Maildir metadata for downstream gateways (IMAP/SMTP)
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { Maildir } from "../../mail/maildir";
 import { broadcastMailEvent } from "../websocket";
 import { getOctopaiDir } from "../../config";
-import { join } from "path";
+import { join, basename } from "path";
+import { readdir, stat } from "fs/promises";
+import { HttpError } from "../middleware/error";
 
 interface MailContext {
   Variables: {
     db: Database;
     octopaiDir: string;
   };
+}
+
+/**
+ * Enhanced message metadata for downstream gateways
+ */
+interface MessageMetadata {
+  id: string;
+  filename: string;
+  folder: string;
+  filePath: string;
+  size: number;
+  flags: {
+    seen: boolean;
+    replied: boolean;
+    flagged: boolean;
+    draft: boolean;
+    trashed: boolean;
+  };
+  headers: {
+    from: string;
+    to: string;
+    subject: string;
+    date: string;
+    messageId?: string;
+  };
+  uidl?: string; // Unique ID for POP3/IMAP
+  modifiedAt: Date;
+}
+
+/**
+ * Maildir folder information for gateways
+ */
+interface FolderInfo {
+  name: string;
+  path: string;
+  type: 'mailbox' | 'folder';
+  messageCount: number;
+  unreadCount: number;
+  size: number;
+  lastModified: Date;
 }
 
 export function createMailRoutes() {
@@ -24,6 +67,211 @@ export function createMailRoutes() {
     await next();
   });
 
+  // Enhanced API for downstream gateways
+  
+  /**
+   * Get all maildir folders with metadata - for IMAP/SMTP gateways
+   */
+  app.get("/folders", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const mailPath = join(octopaiDir, "mail");
+    
+    try {
+      const entries = await readdir(mailPath, { withFileTypes: true });
+      const folders: FolderInfo[] = [];
+      
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          const folderPath = join(mailPath, entry.name);
+          const maildir = new Maildir(folderPath);
+          
+          try {
+            const newMessages = await maildir.list("new");
+            const curMessages = await maildir.list("cur");
+            const totalMessages = newMessages.length + curMessages.length;
+            const folderStat = await stat(folderPath);
+            
+            folders.push({
+              name: entry.name,
+              path: folderPath,
+              type: 'mailbox',
+              messageCount: totalMessages,
+              unreadCount: newMessages.length,
+              size: folderStat.size,
+              lastModified: folderStat.mtime,
+            });
+          } catch (err) {
+            console.warn(`Failed to read folder ${entry.name}:`, err);
+          }
+        }
+      }
+      
+      return c.json({ folders });
+    } catch (err) {
+      throw HttpError.internal(`Failed to list mail folders: ${err}`);
+    }
+  });
+
+  /**
+   * Get detailed message list with metadata for a specific folder
+   * Optimized for IMAP/POP3 gateways
+   */
+  app.get("/folders/:folder/messages", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const folder = c.req.param("folder");
+    const subfolder = c.req.query("subfolder") || "all"; // "new", "cur", or "all"
+    const limit = Math.min(parseInt(c.req.query("limit") || "1000", 10), 1000);
+    const offset = parseInt(c.req.query("offset") || "0", 10);
+    
+    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    
+    try {
+      let allMessages: MessageMetadata[] = [];
+      
+      if (subfolder === "all" || subfolder === "new") {
+        const newMessages = await getDetailedMessages(maildir, "new");
+        allMessages.push(...newMessages);
+      }
+      
+      if (subfolder === "all" || subfolder === "cur") {
+        const curMessages = await getDetailedMessages(maildir, "cur");
+        allMessages.push(...curMessages);
+      }
+      
+      // Sort by filename (which includes timestamp)
+      allMessages.sort((a, b) => b.filename.localeCompare(a.filename));
+      
+      const messages = allMessages.slice(offset, offset + limit);
+      
+      return c.json({
+        folder,
+        subfolder,
+        messages,
+        pagination: {
+          limit,
+          offset,
+          total: allMessages.length,
+          unreadCount: allMessages.filter(m => !m.flags.seen).length,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to list messages in folder ${folder}: ${err}`);
+    }
+  });
+
+  /**
+   * Get raw message content by ID - for efficient gateway access
+   */
+  app.get("/folders/:folder/messages/:id/raw", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const folder = c.req.param("folder");
+    const id = c.req.param("id");
+    
+    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    
+    try {
+      const newMessages = await maildir.list("new");
+      const curMessages = await maildir.list("cur");
+      const allMessages = [...newMessages, ...curMessages];
+      const message = allMessages.find((m) => m.id.startsWith(id));
+
+      if (!message || !message.filePath) {
+        throw HttpError.notFound(`Message not found: ${id}`);
+      }
+
+      // Return raw RFC 5322 content
+      const rawContent = await Bun.file(message.filePath).text();
+      
+      return new Response(rawContent, {
+        headers: {
+          "Content-Type": "message/rfc822",
+          "Content-Length": rawContent.length.toString(),
+        },
+      });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw HttpError.internal(`Failed to read raw message ${id}: ${err}`);
+    }
+  });
+
+  /**
+   * Update message flags - for IMAP flag synchronization
+   */
+  app.patch("/folders/:folder/messages/:id/flags", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const folder = c.req.param("folder");
+    const id = c.req.param("id");
+    
+    const body = await c.req.json<{
+      flags: Partial<{
+        seen: boolean;
+        replied: boolean;
+        flagged: boolean;
+        draft: boolean;
+        trashed: boolean;
+      }>;
+    }>();
+    
+    if (!body.flags) {
+      throw HttpError.badRequest("flags object is required");
+    }
+    
+    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    
+    try {
+      // For now, we only support the 'seen' flag (others would require extending Maildir class)
+      if (body.flags.seen !== undefined) {
+        if (body.flags.seen) {
+          await maildir.markSeen(id);
+        }
+        // Note: unmarking as seen would require additional Maildir method
+      }
+      
+      return c.json({ success: true, updated: Object.keys(body.flags) });
+    } catch (err) {
+      throw HttpError.internal(`Failed to update flags for message ${id}: ${err}`);
+    }
+  });
+
+  // Helper function to get detailed message metadata
+  async function getDetailedMessages(maildir: Maildir, subfolder: "new" | "cur"): Promise<MessageMetadata[]> {
+    const messages = await maildir.list(subfolder);
+    const detailed: MessageMetadata[] = [];
+    
+    for (const message of messages) {
+      if (!message.filePath) continue;
+      
+      try {
+        const fileStat = await stat(message.filePath);
+        const filename = basename(message.filePath);
+        
+        detailed.push({
+          id: message.id,
+          filename,
+          folder: subfolder,
+          filePath: message.filePath,
+          size: fileStat.size,
+          flags: message.flags,
+          headers: {
+            from: message.from,
+            to: message.to,
+            subject: message.subject,
+            date: message.date.toISOString(),
+            messageId: message.headers['message-id'],
+          },
+          uidl: `${message.id}.${fileStat.mtime.getTime()}`, // Unique ID for POP3
+          modifiedAt: fileStat.mtime,
+        });
+      } catch (err) {
+        console.warn(`Failed to get metadata for message ${message.id}:`, err);
+      }
+    }
+    
+    return detailed;
+  }
+
+  // Existing API endpoints (enhanced with proper error handling)
+  
   app.get("/inbox", async (c) => {
     const octopaiDir = c.get("octopaiDir");
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
@@ -31,21 +279,25 @@ export function createMailRoutes() {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
 
-    const newMessages = await inbox.list("new");
-    const curMessages = await inbox.list("cur");
-    const allMessages = [...newMessages, ...curMessages];
+    try {
+      const newMessages = await inbox.list("new");
+      const curMessages = await inbox.list("cur");
+      const allMessages = [...newMessages, ...curMessages];
 
-    const messages = allMessages.slice(offset, offset + limit);
+      const messages = allMessages.slice(offset, offset + limit);
 
-    return c.json({
-      messages,
-      pagination: {
-        limit,
-        offset,
-        total: allMessages.length,
-        unread: newMessages.length,
-      },
-    });
+      return c.json({
+        messages,
+        pagination: {
+          limit,
+          offset,
+          total: allMessages.length,
+          unread: newMessages.length,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to list inbox messages: ${err}`);
+    }
   });
 
   app.get("/inbox/:id", async (c) => {
@@ -53,16 +305,21 @@ export function createMailRoutes() {
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
     const id = c.req.param("id");
 
-    const newMessages = await inbox.list("new");
-    const curMessages = await inbox.list("cur");
-    const allMessages = [...newMessages, ...curMessages];
-    const message = allMessages.find((m) => m.id.startsWith(id));
+    try {
+      const newMessages = await inbox.list("new");
+      const curMessages = await inbox.list("cur");
+      const allMessages = [...newMessages, ...curMessages];
+      const message = allMessages.find((m) => m.id.startsWith(id));
 
-    if (!message) {
-      return c.json({ error: "Message not found" }, 404);
+      if (!message) {
+        throw HttpError.notFound(`Message not found: ${id}`);
+      }
+
+      return c.json({ message });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw HttpError.internal(`Failed to read message ${id}: ${err}`);
     }
-
-    return c.json({ message });
   });
 
   app.post("/inbox/:id/read", async (c) => {
@@ -70,18 +327,22 @@ export function createMailRoutes() {
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
     const id = c.req.param("id");
 
-    await inbox.markSeen(id);
+    try {
+      await inbox.markSeen(id);
 
-    // Get updated unread count
-    const newMessages = await inbox.list("new");
-    
-    // Broadcast mail read event
-    broadcastMailEvent("read", {
-      messageId: id,
-      unreadCount: newMessages.length,
-    });
+      // Get updated unread count
+      const newMessages = await inbox.list("new");
+      
+      // Broadcast mail read event
+      broadcastMailEvent("read", {
+        messageId: id,
+        unreadCount: newMessages.length,
+      });
 
-    return c.json({ success: true });
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to mark message ${id} as read: ${err}`);
+    }
   });
 
   app.get("/sent", async (c) => {
@@ -91,17 +352,21 @@ export function createMailRoutes() {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
 
-    const allMessages = await sent.list("new");
-    const messages = allMessages.slice(offset, offset + limit);
+    try {
+      const allMessages = await sent.list("new");
+      const messages = allMessages.slice(offset, offset + limit);
 
-    return c.json({
-      messages,
-      pagination: {
-        limit,
-        offset,
-        total: allMessages.length,
-      },
-    });
+      return c.json({
+        messages,
+        pagination: {
+          limit,
+          offset,
+          total: allMessages.length,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to list sent messages: ${err}`);
+    }
   });
 
   app.post("/send", async (c) => {
@@ -117,27 +382,31 @@ export function createMailRoutes() {
     }>();
 
     if (!body.from || !body.to || !body.subject || !body.body) {
-      return c.json({ error: "from, to, subject, and body are required" }, 400);
+      throw HttpError.badRequest("from, to, subject, and body are required");
     }
 
-    const message = await sent.write({
-      from: body.from,
-      to: body.to,
-      subject: body.subject,
-      date: new Date(),
-      body: body.body,
-      headers: body.headers || {},
-    });
+    try {
+      const message = await sent.write({
+        from: body.from,
+        to: body.to,
+        subject: body.subject,
+        date: new Date(),
+        body: body.body,
+        headers: body.headers || {},
+      });
 
-    // Broadcast mail sent event
-    broadcastMailEvent("sent", {
-      messageId: message.id,
-      from: body.from,
-      to: body.to,
-      subject: body.subject,
-    });
+      // Broadcast mail sent event
+      broadcastMailEvent("sent", {
+        messageId: message.id,
+        from: body.from,
+        to: body.to,
+        subject: body.subject,
+      });
 
-    return c.json({ message }, 201);
+      return c.json({ message }, 201);
+    } catch (err) {
+      throw HttpError.internal(`Failed to send message: ${err}`);
+    }
   });
 
   app.delete("/inbox/:id", async (c) => {
@@ -145,18 +414,22 @@ export function createMailRoutes() {
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
     const id = c.req.param("id");
 
-    await inbox.delete(id);
+    try {
+      await inbox.delete(id);
 
-    // Get updated unread count
-    const newMessages = await inbox.list("new");
-    
-    // Broadcast mail deleted event
-    broadcastMailEvent("deleted", {
-      messageId: id,
-      unreadCount: newMessages.length,
-    });
+      // Get updated unread count
+      const newMessages = await inbox.list("new");
+      
+      // Broadcast mail deleted event
+      broadcastMailEvent("deleted", {
+        messageId: id,
+        unreadCount: newMessages.length,
+      });
 
-    return c.json({ success: true });
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to delete message ${id}: ${err}`);
+    }
   });
 
   app.post("/inbox/:id/archive", async (c) => {
@@ -164,18 +437,22 @@ export function createMailRoutes() {
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
     const id = c.req.param("id");
 
-    await inbox.archive(id);
+    try {
+      await inbox.archive(id);
 
-    // Get updated unread count
-    const newMessages = await inbox.list("new");
-    
-    // Broadcast mail archived event
-    broadcastMailEvent("archived", {
-      messageId: id,
-      unreadCount: newMessages.length,
-    });
+      // Get updated unread count
+      const newMessages = await inbox.list("new");
+      
+      // Broadcast mail archived event
+      broadcastMailEvent("archived", {
+        messageId: id,
+        unreadCount: newMessages.length,
+      });
 
-    return c.json({ success: true });
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to archive message ${id}: ${err}`);
+    }
   });
 
   return app;

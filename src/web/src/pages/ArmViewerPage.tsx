@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { 
   Eye, Radio, Wrench, CheckCircle2, XCircle, Clock, Loader2,
   ChevronDown, ChevronRight, FileEdit, Terminal, AlertTriangle,
-  MessageSquare, GitBranch, ListTodo, Zap, Bot, Coins
+  MessageSquare, GitBranch, ListTodo, Zap, Bot, Coins, Trash2
 } from 'lucide-react';
 import { api, type Arm, type ArmTodo, type OpenCodeEvent } from '@/lib';
 import { StatusBadge } from '@/components';
@@ -30,6 +30,84 @@ interface ActivityItem {
   timestamp: number;
   details?: Record<string, unknown>;
   expanded?: boolean;
+}
+
+interface ArmHistoryState {
+  activities: ActivityItem[];
+  todos: ArmTodo[];
+  currentText: string;
+  totalCost: number;
+  totalTokens: { input: number; output: number };
+  sessionStatus: string;
+  lastUpdated: number;
+}
+
+const MAX_HISTORY_ITEMS = 200;
+const STORAGE_PREFIX = 'octopai-arm-history-';
+
+function getStorageKey(armId: string): string {
+  return `${STORAGE_PREFIX}${armId}`;
+}
+
+function loadArmHistory(armId: string): ArmHistoryState | null {
+  try {
+    const key = getStorageKey(armId);
+    const stored = localStorage.getItem(key);
+    if (!stored) return null;
+    
+    const parsed = JSON.parse(stored) as ArmHistoryState;
+    
+    // Check if history is stale (older than 24 hours)
+    if (Date.now() - parsed.lastUpdated > 24 * 60 * 60 * 1000) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveArmHistory(armId: string, state: Omit<ArmHistoryState, 'lastUpdated'>): void {
+  try {
+    const key = getStorageKey(armId);
+    const toSave: ArmHistoryState = {
+      ...state,
+      lastUpdated: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(toSave));
+  } catch (err) {
+    console.warn('Failed to save arm history:', err);
+  }
+}
+
+function pruneOldHistories(): void {
+  try {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const keysToRemove: string[] = [];
+    
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(STORAGE_PREFIX)) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored) as { lastUpdated: number };
+            if (parsed.lastUpdated < cutoff) {
+              keysToRemove.push(key);
+            }
+          } catch {
+            keysToRemove.push(key);
+          }
+        }
+      }
+    }
+    
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  } catch {
+    // Ignore
+  }
 }
 
 // Color schemes for different activity types
@@ -302,10 +380,12 @@ export function ArmViewerPage() {
       });
     }
 
-    // Todo updates
+    // Todo updates - only update if this is for the currently selected arm
     if (type === 'todo.updated') {
       const todos = props.todos as ArmTodo[] | undefined;
-      if (todos) {
+      if (todos && selectedArmId) {
+        // Only update todos if the event is from the currently selected arm
+        // The SSE connection should already be filtered by arm, but this adds extra safety
         setTodos(todos);
         upsertActivity('todos-updated', {
           type: 'todo',
@@ -386,21 +466,55 @@ export function ArmViewerPage() {
   // Load arms on mount
   useEffect(() => {
     loadArms();
+    pruneOldHistories();
   }, []);
 
-  // Reset state when arm changes
+  // Reset or restore state when arm changes
   useEffect(() => {
     if (selectedArmId) {
-      setActivities([]);
-      setTodos([]);
-      setSessionStatus('unknown');
-      setCurrentText('');
-      setTotalCost(0);
-      setTotalTokens({ input: 0, output: 0 });
-      activityIdCounter.current = 0;
+      // Try to restore from localStorage first
+      const saved = loadArmHistory(selectedArmId);
+      if (saved) {
+        setActivities(saved.activities.slice(-MAX_HISTORY_ITEMS));
+        // Don't restore todos from cache - always fetch fresh to prevent cross-arm contamination
+        setTodos([]);
+        setCurrentText(saved.currentText);
+        setTotalCost(saved.totalCost);
+        setTotalTokens(saved.totalTokens);
+        setSessionStatus(saved.sessionStatus);
+        // Note: We don't restore activityIdCounter as it's just for generating IDs
+      } else {
+        // No saved history - start fresh
+        setActivities([]);
+        setTodos([]);
+        setSessionStatus('unknown');
+        setCurrentText('');
+        setTotalCost(0);
+        setTotalTokens({ input: 0, output: 0 });
+        activityIdCounter.current = 0;
+      }
+      // Always fetch fresh todos to ensure they match the selected arm
       loadTodos(selectedArmId);
     }
   }, [selectedArmId]);
+
+  // Save to localStorage whenever state changes (debounced)
+  useEffect(() => {
+    if (!selectedArmId) return;
+    
+    const timeoutId = setTimeout(() => {
+      saveArmHistory(selectedArmId, {
+        activities,
+        todos,
+        currentText,
+        totalCost,
+        totalTokens,
+        sessionStatus,
+      });
+    }, 1000); // Debounce saves by 1 second
+    
+    return () => clearTimeout(timeoutId);
+  }, [selectedArmId, activities, todos, currentText, totalCost, totalTokens, sessionStatus]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -410,6 +524,19 @@ export function ArmViewerPage() {
   const selectArm = (armId: string) => {
     setSearchParams({ arm: armId });
   };
+
+  const handleClearHistory = useCallback(() => {
+    if (selectedArmId) {
+      localStorage.removeItem(getStorageKey(selectedArmId));
+      setActivities([]);
+      setTodos([]);
+      setCurrentText('');
+      setTotalCost(0);
+      setTotalTokens({ input: 0, output: 0 });
+      setSessionStatus('unknown');
+      activityIdCounter.current = 0;
+    }
+  }, [selectedArmId]);
 
   const toggleActivity = (id: string) => {
     setActivities(prev => prev.map(a => 
@@ -478,13 +605,32 @@ export function ArmViewerPage() {
               <h1 className="text-lg font-semibold">
                 {selectedArm ? selectedArm.name : 'Arm Viewer'}
               </h1>
-              <p className="text-sm text-muted-foreground">
-                {selectedArm ? `${selectedArm.domain} - ${selectedArm.harness}` : 'Select an arm to view activity'}
-              </p>
+               <p className="text-sm text-muted-foreground">
+                 {selectedArm ? `${selectedArm.domain} - ${selectedArm.harness}` : 'Select an arm to view activity'}
+                 {selectedArm && (selectedArm.provider || selectedArm.model) && (
+                   <span className="block">
+                     {selectedArm.provider && <span className="text-blue-600">{selectedArm.provider}</span>}
+                     {selectedArm.provider && selectedArm.model && <span> · </span>}
+                     {selectedArm.model && <span className="text-green-600">{selectedArm.model}</span>}
+                   </span>
+                 )}
+               </p>
             </div>
           </div>
           {selectedArmId && (
             <div className="flex items-center gap-4">
+              {/* Clear history button */}
+              {activities.length > 0 && (
+                <button
+                  onClick={handleClearHistory}
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                  title="Clear message history"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  <span>Clear</span>
+                </button>
+              )}
+              
               {/* Stats */}
               {(totalCost > 0 || totalTokens.input > 0) && (
                 <div className="flex items-center gap-3 text-xs text-muted-foreground">

@@ -54,6 +54,9 @@ async function runMigrations(db: Database): Promise<void> {
     ["009_file_subscriptions", MIGRATION_009],
     ["010_tasks_table", MIGRATION_010],
     ["011_arm_port", MIGRATION_011],
+    ["012_arm_tokens_cost", MIGRATION_012],
+    ["013_arm_current_task", MIGRATION_013],
+    ["014_arm_agent_host", MIGRATION_014],
   ];
 
 
@@ -403,6 +406,31 @@ INSERT OR IGNORE INTO config (key, value) VALUES
 const MIGRATION_011 = `
 -- Add port column to arms for session recovery after server restart
 ALTER TABLE arms ADD COLUMN port INTEGER;
+`;
+
+// Migration 012: Add tokens and cost tracking for arms
+const MIGRATION_012 = `
+-- Add token usage and cost tracking columns
+ALTER TABLE arms ADD COLUMN total_tokens INTEGER DEFAULT 0;
+ALTER TABLE arms ADD COLUMN total_cost REAL DEFAULT 0;
+ALTER TABLE arms ADD COLUMN current_task_id TEXT;
+`;
+
+const MIGRATION_013 = `
+-- Add current_task_subject for easy display without joining
+ALTER TABLE arms ADD COLUMN current_task_subject TEXT;
+`;
+
+// Migration 014: Add agent_id and host for distributed arm management
+const MIGRATION_014 = `
+-- Add agent_id and host columns for distributed arm management
+-- agent_id: the ArmAgent that spawned/manages this arm
+-- host: the hostname where the arm is running (for display/debugging)
+ALTER TABLE arms ADD COLUMN agent_id TEXT;
+ALTER TABLE arms ADD COLUMN host TEXT;
+
+-- Index for looking up arms by agent
+CREATE INDEX IF NOT EXISTS idx_arms_agent ON arms(agent_id);
 `;
 
 /**

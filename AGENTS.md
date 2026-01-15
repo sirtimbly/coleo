@@ -110,6 +110,67 @@ When working on the API or core:
 - Test with `bun run typecheck`
 - CLI should exit cleanly after async commands
 
+## Known Architectural Issues
+
+**IMPORTANT:** The following issues were identified during comprehensive architectural review (January 2026) and should be addressed:
+
+### Critical Issues
+
+1. **SQLite Principle Violations**: 50+ JSON files found storing state that violates the core principle
+   - Brain state (`.octopai/state/brain.json`) - coordinator status, poll intervals, active arms
+   - Task management (`.octopai/state/tasks.json`) - task queue and status tracking
+   - Tool discovery (`.octopai/state/toolbox.json`) - discovered tools from arms
+   - Arm tracking (`.octopai/state/seen_arms.json`) - arm ID tracking
+   - Message queuing (31+ files in `.octopai/queue/`) - persistent message system
+   - Individual arm states (`.octopai/state/arms/`) - per-arm state persistence
+   - Shared notes (`.octopai/state/notes/`) - inter-arm communication
+
+2. **Data Consistency Risk**: Dual storage systems (SQLite + JSON files) create data inconsistency potential
+
+### Code Quality Issues
+
+3. **API Convention Violations**: 7 instances of direct error returns instead of `HttpError` middleware
+   - `src/api/routes/agents.ts`: 6 violations (lines 45, 50, 64, 69, 75, 79)
+   - `src/api/routes/activity.ts`: 1 violation (line 90)
+
+4. **Type Safety Issues**: Extensive unsafe patterns found
+   - 39+ instances of unsafe `JSON.parse()` without validation
+   - 20+ instances of overused `unknown` types where specific interfaces needed
+   - 38+ instances of `Record<string, unknown>` instead of proper interfaces
+   - Unsafe type casting with `as unknown as` chains
+
+5. **Code Duplication**: Massive duplication across codebase
+   - 50+ instances of database connection duplication
+   - 100+ instances of similar error handling patterns
+   - 100+ instances of JSON operations duplication
+   - Duplicate type definitions across multiple files (OctopaiConfig, ArmConfig, Arm interfaces)
+   - Activity logging patterns repeated across files
+
+### Immediate Actions Required
+
+**Priority 1: SQLite Migration**
+- Migrate brain state from JSON to `brain_state` table
+- Migrate task queue from JSON to `tasks` table  
+- Migrate message queue from JSON files to `messages` table
+- Migrate toolbox from JSON to `tools` table
+
+**Priority 2: Code Consolidation**
+- Create `src/db/utils.ts` for database connection patterns
+- Create `src/utils/json.ts` for safe JSON operations
+- Create `src/utils/errors.ts` for error handling utilities
+- Consolidate duplicate type definitions in `src/types/index.ts`
+
+**Priority 3: API Fixes**
+- Fix `agents.ts` and `activity.ts` to use `HttpError` middleware
+- Add proper type validation for JSON parsing operations
+
+### Recommended Fixes
+
+- **Database Utilities**: Create shared helpers for connection management
+- **JSON Safety**: Implement schema validation with Zod or similar
+- **Type Safety**: Define specific interfaces, remove `Record<string, unknown>` patterns
+- **Error Handling**: Standardize error patterns across all routes
+
 ## Questions?
 
 If you're unsure about an architectural decision:

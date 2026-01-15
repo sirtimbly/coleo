@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Coins, Zap } from 'lucide-react';
 import { api, type Arm } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -139,6 +139,13 @@ export function ArmsPage() {
                   </CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
                     {arm.domain} · {arm.harness}
+                    {(arm.provider || arm.model) && (
+                      <span className="block mt-1">
+                        {arm.provider && <span className="text-blue-600">{arm.provider}</span>}
+                        {arm.provider && arm.model && <span> · </span>}
+                        {arm.model && <span className="text-green-600">{arm.model}</span>}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <button
@@ -167,6 +174,32 @@ export function ArmsPage() {
                       />
                     </div>
                   </div>
+
+                  {/* Tokens and Cost */}
+                  {(arm.totalTokens !== undefined || arm.totalCost !== undefined) && (
+                    <div className="flex items-center gap-4 text-muted-foreground">
+                      {arm.totalTokens !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Zap className="h-3 w-3" />
+                          <span>{arm.totalTokens.toLocaleString()} tokens</span>
+                        </div>
+                      )}
+                      {arm.totalCost !== undefined && arm.totalCost > 0 && (
+                        <div className="flex items-center gap-1">
+                          <Coins className="h-3 w-3" />
+                          <span>${arm.totalCost.toFixed(4)}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Current Task */}
+                  {arm.currentTaskSubject && (
+                    <div className="p-2 bg-secondary/50 rounded">
+                      <div className="text-xs text-muted-foreground mb-1">Current task</div>
+                      <div className="text-sm truncate">{arm.currentTaskSubject}</div>
+                    </div>
+                  )}
 
                   {/* Reputation */}
                   {arm.reputation !== undefined && (

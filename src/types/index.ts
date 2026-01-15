@@ -62,7 +62,8 @@ export type MessageType =
   | "human_message"
   | "doc_update"
   | "file_subscription"
-  | "file_change";
+  | "file_change"
+  | "claim_transfer";
 
 // Discovery report from an arm
 export interface Discovery {

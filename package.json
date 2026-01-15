@@ -36,7 +36,11 @@
     "commander": "^14.0.2",
     "fast-glob": "^3.3.3",
     "hono": "^4.11.4",
+    "nats": "^2.29.3",
     "smol-toml": "^1.6.0",
     "zod": "^4.3.5"
-  }
+  },
+  "trustedDependencies": [
+    "nats-server"
+  ]
 }

@@ -11,11 +11,11 @@
         "serve"
       ],
       "environment": {
-        "OCTOPAI_ARM_ID": "fullstack-dev",
+        "OCTOPAI_ARM_ID": "backend",
         "OCTOPAI_DIR": "/Users/timothy.bendt/developer/octopai/.octopai"
       },
       "enabled": true
     }
   },
-  "model": "opencode-zen/claude-sonnet-4"
+  "model": "github-copilot/claude-sonnet-4"
 }
