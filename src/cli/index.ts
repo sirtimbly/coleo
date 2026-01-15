@@ -917,11 +917,13 @@ armCmd
   .description("Watch an arm's conversation in real-time (shows message text as it streams)")
   .option("--no-tools", "Hide tool invocations")
   .option("--no-system", "Hide system messages")
-  .action(async (name, options?: { tools?: boolean; system?: boolean }) => {
+  .option("-n, --history <count>", "Show last N messages on connect", "2")
+  .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string }) => {
     const { apiUrl, headers } = getApiConfig();
     const apiKey = process.env.OCTOPAI_API_KEY;
     const showTools = options?.tools !== false;
     const showSystem = options?.system !== false;
+    const historyCount = parseInt(options?.history || "2", 10);
     
     if (!await isApiRunning()) {
       console.error("API server is not running. Start it with: octopai serve");
@@ -940,18 +942,84 @@ armCmd
       process.exit(1);
     }
 
-    const armData = await armRes.json() as { arm: { port: number | null } };
+    const armData = await armRes.json() as { arm: { port: number | null; status: string } };
     if (!armData.arm.port) {
       console.error(`Arm ${name} is not running (no port assigned)`);
       process.exit(1);
     }
 
-    console.log(`Watching arm: ${name}`);
+    const port = armData.arm.port;
+    const opencodeBaseUrl = `http://127.0.0.1:${port}`;
+
+    console.log(`Watching arm: ${name} (${armData.arm.status})`);
     console.log("Press Ctrl+C to stop\n");
-    console.log("─".repeat(60));
+
+    // Fetch and display recent conversation history
+    if (historyCount > 0) {
+      try {
+        // Get the most recent session
+        const sessionsRes = await fetch(`${opencodeBaseUrl}/session`);
+        if (sessionsRes.ok) {
+          const sessions = await sessionsRes.json() as Array<{ id: string; title: string }>;
+          if (sessions.length > 0) {
+            // Sort by most recent (last in array is usually newest)
+            const currentSession = sessions[sessions.length - 1];
+            if (currentSession) {
+              console.log(`Session: ${currentSession.title || currentSession.id}`);
+              console.log("─".repeat(60));
+
+              // Fetch messages
+              const msgsRes = await fetch(`${opencodeBaseUrl}/session/${currentSession.id}/message?limit=${historyCount * 2}`);
+              if (msgsRes.ok) {
+                const messages = await msgsRes.json() as Array<{
+                  info: { role: string; id: string };
+                  parts: Array<{ type: string; text?: string; toolName?: string; name?: string; state?: string }>;
+                }>;
+
+                // Show last N messages
+                const recentMessages = messages.slice(-historyCount);
+                for (const msg of recentMessages) {
+                  const role = msg.info.role;
+                  const roleLabel = role === "assistant" ? "🤖 Assistant" :
+                                   role === "user" ? "👤 User" :
+                                   role === "system" ? "⚙️ System" : role;
+                  
+                  if (role === "system" && !showSystem) continue;
+                  
+                  console.log(roleLabel);
+                  console.log("");
+
+                  for (const part of msg.parts) {
+                    if (part.type === "text" && part.text) {
+                      // Truncate long messages in history
+                      const text = part.text.length > 500 
+                        ? part.text.slice(0, 500) + "\n... (truncated, showing last 500 chars)"
+                        : part.text;
+                      console.log(text);
+                    } else if (part.type === "tool-invocation" && showTools) {
+                      const toolName = part.toolName || part.name || "unknown";
+                      const state = part.state || "completed";
+                      console.log(`🔧 Tool: ${toolName} [${state}]`);
+                    }
+                  }
+                  console.log("");
+                  console.log("─".repeat(60));
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore history fetch errors, just continue to live stream
+        console.log("(Could not fetch message history)");
+        console.log("─".repeat(60));
+      }
+    }
+
+    console.log("Waiting for new messages...\n");
 
     // Connect directly to OpenCode's SSE endpoint for this arm
-    const opencodeUrl = `http://127.0.0.1:${armData.arm.port}/event`;
+    const opencodeUrl = `${opencodeBaseUrl}/event`;
     
     // Track state for formatting
     let currentRole = "";
