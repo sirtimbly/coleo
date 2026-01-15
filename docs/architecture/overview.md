@@ -114,4 +114,5 @@ Web and SSH are equal citizens accessing the same API.
 
 - [Components](./components) - Deep dive into Brain, Arms, Garden, Observatory
 - [Governance](./governance) - How arms make decisions together
+- [Distributed Architecture](./distributed) - Running gardens across multiple machines
 - [Implementation Phases](./phases) - Roadmap for building this system
