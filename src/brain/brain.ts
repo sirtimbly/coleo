@@ -142,6 +142,13 @@ export class Brain {
   private stuckArmAnalyzer: StuckArmAnalyzer;
   // Track last stuck state per arm to avoid duplicate escalations
   private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
+  // Track idle arm prompt-response patterns to detect stuck loops
+  private idleArmPromptTracker: Map<string, {
+    promptCount: number;           // How many prompts sent without productive response
+    lastPromptAt: Date;            // When we last prompted this arm
+    lastProductiveAt: Date | null; // When arm last did real work
+    escalationLevel: number;       // 0 = none, 1 = interrupt, 2 = compact, 3 = kill
+  }> = new Map();
 
   /**
    * Log an activity entry
@@ -293,10 +300,13 @@ export class Brain {
     // Step 3: Check arm health and detect new arms
     await this.checkArms();
     
-    // Step 4: Check for stuck arms and help them
-    await this.checkStuckArms();
-    
-    // Step 5: Assign initial tasks to new arms
+     // Step 4: Check for stuck arms and help them
+     await this.checkStuckArms();
+     
+     // Step 4b: Check for idle arms stuck in prompt loops
+     await this.checkIdleArmStuckLoops();
+     
+     // Step 5: Assign initial tasks to new arms
     await this.assignInitialTasks();
     
     // Step 6: Assign pending tasks to idle arms
@@ -1158,6 +1168,7 @@ export class Brain {
             );
           }
           this.arms.delete(armId);
+          this.idleArmPromptTracker.delete(armId);
         }
       } else {
         // No PID - check via API session
@@ -1170,6 +1181,7 @@ export class Brain {
             body: JSON.stringify({ status: "stopped" }),
           });
           this.arms.delete(armId);
+          this.idleArmPromptTracker.delete(armId);
         }
       }
     }
@@ -1466,15 +1478,16 @@ export class Brain {
    * Sync an arm's status in the database and in-memory tracking
    * Used when harness state differs from database state
    */
-  private async syncArmStatus(armId: string, status: "idle" | "busy" | "stopped"): Promise<void> {
-    // Update in-memory
-    const arm = this.arms.get(armId);
-    if (arm) {
-      arm.status = status;
-      if (status === "stopped") {
-        this.arms.delete(armId);
-      }
-    }
+   private async syncArmStatus(armId: string, status: "idle" | "busy" | "stopped"): Promise<void> {
+     // Update in-memory
+     const arm = this.arms.get(armId);
+     if (arm) {
+       arm.status = status;
+       if (status === "stopped") {
+         this.arms.delete(armId);
+         this.idleArmPromptTracker.delete(armId);
+       }
+     }
 
     // Update database
     if (this.db) {
@@ -1634,12 +1647,11 @@ export class Brain {
           await this.syncArmStatus(arm.id, "idle");
           arm.status = "idle";
           continue;
-        } else if (harnessState.state === "dead" || harnessState.state === "stopped") {
-          // Arm is dead/stopped - update DB
-          this.log(`Arm ${arm.name}: harness state is "${harnessState.state}", marking as stopped`);
-          await this.syncArmStatus(arm.id, "stopped");
-          this.arms.delete(arm.id);
-          continue;
+         } else if (harnessState.state === "dead" || harnessState.state === "stopped") {
+           // Arm is dead/stopped - update DB
+           this.log(`Arm ${arm.name}: harness state is "${harnessState.state}", marking as stopped`);
+           await this.syncArmStatus(arm.id, "stopped");
+           continue;
         } else if (harnessState.state === "error") {
           // Arm is in error state - this might need intervention
           this.log(`Arm ${arm.name}: harness state is "error", will analyze logs`);
@@ -1862,6 +1874,241 @@ octopai arm prompt ${arm.name} "your message here"
       stuckType: analysis.stuckType,
       confidence: analysis.confidence,
     });
+  }
+
+  /**
+   * Check for idle arms that are stuck in a prompt-response loop
+   * 
+   * This detects a specific pattern where:
+   * 1. Brain sends prompts to idle arms (prompt_received events)
+   * 2. Arm responds with status_changed to "idle" 
+   * 3. No productive activity (no heartbeat, task claims, etc.)
+   * 4. Repeats indefinitely
+   */
+  private async checkIdleArmStuckLoops(): Promise<void> {
+    if (!this.db) return;
+    
+    const idleArms = Array.from(this.arms.values()).filter(arm => arm.status === "idle");
+    if (idleArms.length === 0) return;
+    
+    this.log(`Checking ${idleArms.length} idle arm(s) for stuck loops...`);
+    
+    for (const arm of idleArms) {
+      // Get recent activity for this arm
+      const recentActivity = await this.getRecentArmActivity(arm.id, 15);
+      if (!recentActivity || recentActivity.length < 5) continue;
+      
+      // Analyze the pattern
+      const pattern = this.analyzePromptResponsePattern(arm.id, recentActivity);
+      
+      if (!pattern.hasPrompt) continue;
+      
+      // Update or create tracker for this arm
+      let tracker = this.idleArmPromptTracker.get(arm.id);
+      if (!tracker) {
+        tracker = {
+          promptCount: 0,
+          lastPromptAt: new Date(),
+          lastProductiveAt: null,
+          escalationLevel: 0,
+        };
+        this.idleArmPromptTracker.set(arm.id, tracker);
+      }
+      
+      // Check for productive activity since last prompt
+      const hasProductiveActivity = recentActivity.some(a => 
+        this.isProductiveAction(a.action) && 
+        new Date(a.timestamp) > tracker!.lastPromptAt
+      );
+      
+      if (hasProductiveActivity) {
+        // Arm is doing real work - reset tracking
+        tracker.promptCount = 0;
+        tracker.lastProductiveAt = new Date();
+        continue;
+      }
+      
+       // No productive activity - increment prompt count
+      if (pattern.justReceivedPrompt) {
+        tracker.promptCount++;
+        tracker.lastPromptAt = new Date();
+      }
+      
+       // Determine if arm is stuck based on prompt count and time
+      // If lastProductiveAt is null, use the oldest activity timestamp as reference
+      let stuckMinutes = 0;
+      if (tracker.lastProductiveAt) {
+        stuckMinutes = (Date.now() - tracker.lastProductiveAt.getTime()) / 1000 / 60;
+      } else if (recentActivity.length > 0) {
+        // No known productive activity - use oldest activity in window as reference
+        const oldestTimestamp = recentActivity[recentActivity.length - 1]?.timestamp;
+        if (oldestTimestamp) {
+          stuckMinutes = (Date.now() - new Date(oldestTimestamp).getTime()) / 1000 / 60;
+        } else {
+          stuckMinutes = 15; // Default to triggering detection
+        }
+      } else {
+        stuckMinutes = 15; // Default to triggering detection
+      }
+      
+      const promptInterval = (Date.now() - tracker.lastPromptAt.getTime()) / 1000;
+      
+      this.log(`Arm ${arm.id}: promptCount=${tracker.promptCount}, stuckMinutes=${stuckMinutes.toFixed(1)}, interval=${promptInterval.toFixed(0)}s`);
+      
+      // Check if stuck based on pattern
+      // Pattern: 3+ prompts without productive response, or 5+ minutes with no real work
+      if (tracker.promptCount >= 3 || stuckMinutes >= 5) {
+        await this.handleIdleArmStuck(arm, tracker, stuckMinutes);
+      }
+    }
+  }
+  
+  /**
+   * Analyze recent activity to detect prompt-response patterns
+   */
+  private async getRecentArmActivity(armId: string, minutes: number): Promise<Array<{timestamp: string; action: string; details: string}> | null> {
+    if (!this.db) return null;
+    
+    const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+    try {
+      return this.db.query(`
+        SELECT timestamp, action, details FROM activity
+        WHERE actor = ? AND timestamp > ?
+        ORDER BY timestamp DESC
+      `).all(armId, cutoff) as Array<{timestamp: string; action: string; details: string}>;
+    } catch {
+      return null;
+    }
+  }
+  
+  /**
+   * Detect prompt-response patterns in activity stream
+   */
+  private analyzePromptResponsePattern(
+    armId: string,
+    activity: Array<{timestamp: string; action: string; details: string}>
+  ): { hasPrompt: boolean; justReceivedPrompt: boolean; promptCount: number } {
+    let promptCount = 0;
+    let justReceivedPrompt = false;
+    let hasPrompt = false;
+    
+    // Count prompt_received events and check for prompt -> idle patterns
+    for (const entry of activity) {
+      if (entry.action === "prompt_received") {
+        hasPrompt = true;
+        promptCount++;
+        
+        // Check if this is very recent (within last 60 seconds)
+        const entryTime = new Date(entry.timestamp).getTime();
+        if (Date.now() - entryTime < 60 * 1000) {
+          justReceivedPrompt = true;
+        }
+      }
+    }
+    
+    return { hasPrompt, justReceivedPrompt, promptCount };
+  }
+  
+  /**
+   * Check if an action represents productive work
+   */
+  private isProductiveAction(action: string): boolean {
+    const productiveActions = [
+      "heartbeat",
+      "claim_task",
+      "acknowledge_task", 
+      "complete_task",
+      "get_my_instructions",
+      "task_progress",
+      "file_changed",
+      "file_created",
+      "file_deleted",
+      "tool_call",
+    ];
+    return productiveActions.includes(action);
+  }
+  
+  /**
+   * Handle a detected stuck idle arm with escalating interventions
+   */
+  private async handleIdleArmStuck(
+    arm: Arm,
+    tracker: { promptCount: number; lastPromptAt: Date; lastProductiveAt: Date | null; escalationLevel: number },
+    stuckMinutes: number
+  ): Promise<void> {
+    // Determine intervention level based on escalation level
+    switch (tracker.escalationLevel) {
+      case 0: // First detection - send interrupt + different prompt
+        this.log(`Arm ${arm.id} appears stuck (${stuckMinutes.toFixed(1)}m, ${tracker.promptCount} prompts). Sending interrupt...`);
+        this.logActivity("brain", "idle_arm_stuck", arm.id, {
+          stuckMinutes: stuckMinutes.toFixed(1),
+          promptCount: tracker.promptCount,
+          intervention: "interrupt",
+        });
+        await this.sendPromptToArm(arm.name, "/interrupt", { interrupt: true });
+        tracker.escalationLevel = 1;
+        tracker.promptCount = 0; // Reset after intervention
+        break;
+        
+      case 1: // Second detection - send /compact
+        this.log(`Arm ${arm.id} still stuck after interrupt. Sending /compact...`);
+        this.logActivity("brain", "idle_arm_stuck", arm.id, {
+          stuckMinutes: stuckMinutes.toFixed(1),
+          promptCount: tracker.promptCount,
+          intervention: "compact",
+        });
+        await this.sendPromptToArm(arm.name, "/compact");
+        tracker.escalationLevel = 2;
+        tracker.promptCount = 0;
+        break;
+        
+      case 2: // Third detection - escalate to human
+        this.log(`Arm ${arm.id} still stuck after compact. Escalating to human...`);
+        this.logActivity("brain", "idle_arm_stuck", arm.id, {
+          stuckMinutes: stuckMinutes.toFixed(1),
+          promptCount: tracker.promptCount,
+          intervention: "escalate",
+        });
+        await this.sendToHuman({
+          subject: `[octopai] Arm ${arm.name} stuck in idle loop`,
+          body: `The arm "${arm.name}" has been stuck in an idle prompt loop for ${stuckMinutes.toFixed(1)} minutes.
+
+**Pattern Detected:**
+- Brain sends prompts to check for tasks
+- Arm responds with "idle" but doesn't do productive work
+- ${tracker.promptCount} prompts sent without response
+- No heartbeat, task claims, or real work detected
+
+**Interventions Tried:**
+1. Sent interrupt command
+2. Sent /compact command
+
+**Recommended Action:**
+Please check the arm and either:
+- Kill it: octopai arm kill ${arm.name}
+- Or send a direct response to get it unstuck
+
+Current arm status: ${arm.status}
+Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
+`,
+        });
+        tracker.escalationLevel = 3;
+        break;
+        
+      case 3: // Already escalated - may need kill
+        if (stuckMinutes >= 15) {
+          this.log(`Arm ${arm.id} stuck for 15+ minutes after escalation. Consider killing.`);
+          this.logActivity("brain", "arm_stuck_long", arm.id, {
+            stuckMinutes,
+            promptCount: tracker.promptCount,
+            action: "may_need_kill",
+          });
+        }
+        break;
+    }
+    
+    // Reset prompt count after any intervention (we'll re-detect if still stuck)
+    tracker.promptCount = 0;
   }
 
   /**
