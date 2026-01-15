@@ -11,6 +11,7 @@ import { spawn, type Subprocess } from "bun";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getOctopaiDir } from "../config";
+import { OpenCodeEventStream, filterEvent, type OpenCodeEvent } from "./event-stream";
 import type {
   AgentHarness,
   HarnessSession,
@@ -79,7 +80,11 @@ interface ApiHarnessSession extends HarnessSession {
   serverProcess?: Subprocess;
   sessionId: string;
   port: number;
+  eventStream?: OpenCodeEventStream;
 }
+
+// Callback type for event forwarding
+export type ArmEventCallback = (armId: string, event: string, data: unknown) => void;
 
 export class OpenCodeApiHarness implements AgentHarness {
   name = "opencode-api";
@@ -96,6 +101,14 @@ export class OpenCodeApiHarness implements AgentHarness {
 
   private sessions = new Map<string, ApiHarnessSession>();
   private nextPort = 19300; // Start port for OpenCode servers
+  private eventCallback: ArmEventCallback | null = null;
+
+  /**
+   * Set a callback to receive arm events for broadcasting
+   */
+  setEventCallback(callback: ArmEventCallback): void {
+    this.eventCallback = callback;
+  }
 
   /**
    * Check if a port is available
@@ -230,6 +243,27 @@ export class OpenCodeApiHarness implements AgentHarness {
       port,
     };
 
+    // Start event stream subscription
+    if (this.eventCallback) {
+      const eventStream = new OpenCodeEventStream({
+        serverUrl,
+        armId,
+        sessionId: session.id,
+        onEvent: (event: OpenCodeEvent) => {
+          const { shouldBroadcast, eventName, data } = filterEvent(event);
+          if (shouldBroadcast && this.eventCallback) {
+            this.eventCallback(armId, eventName, data);
+          }
+        },
+        onError: (error) => {
+          console.error(`[harness-api] ${armId} event stream error:`, error.message);
+        },
+      });
+      eventStream.start();
+      apiSession.eventStream = eventStream;
+      console.log(`[harness-api] Started event stream for ${armId}`);
+    }
+
     this.sessions.set(sessionId, apiSession);
 
     console.log(`[harness-api] OpenCode API session ${sessionId} started (server session: ${session.id})`);
@@ -350,6 +384,27 @@ export class OpenCodeApiHarness implements AgentHarness {
         port,
       };
 
+      // Start event stream subscription for recovered session
+      if (this.eventCallback) {
+        const eventStream = new OpenCodeEventStream({
+          serverUrl,
+          armId,
+          sessionId: existingSession.id,
+          onEvent: (event: OpenCodeEvent) => {
+            const { shouldBroadcast, eventName, data } = filterEvent(event);
+            if (shouldBroadcast && this.eventCallback) {
+              this.eventCallback(armId, eventName, data);
+            }
+          },
+          onError: (error) => {
+            console.error(`[harness-api] ${armId} event stream error:`, error.message);
+          },
+        });
+        eventStream.start();
+        apiSession.eventStream = eventStream;
+        console.log(`[harness-api] Started event stream for recovered ${armId}`);
+      }
+
       this.sessions.set(sessionId, apiSession);
       
       // Update nextPort to avoid conflicts
@@ -375,9 +430,32 @@ export class OpenCodeApiHarness implements AgentHarness {
       return;
     }
 
-    // Kill the server process
+    // Stop the event stream
+    if (apiSession.eventStream) {
+      apiSession.eventStream.stop();
+    }
+
+    // Try to gracefully dispose via API first
+    try {
+      const response = await fetch(`${apiSession.serverUrl}/instance/dispose`, {
+        method: "POST",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (response.ok) {
+        console.log(`[harness-api] Disposed OpenCode instance via API`);
+      }
+    } catch (err) {
+      // API might not be available, continue with process kill
+      console.log(`[harness-api] Could not dispose via API, killing process directly`);
+    }
+
+    // Kill the server process if we have a reference
     if (apiSession.serverProcess) {
-      apiSession.serverProcess.kill();
+      try {
+        apiSession.serverProcess.kill();
+      } catch {
+        // Process might already be dead
+      }
     }
 
     this.sessions.delete(session.id);

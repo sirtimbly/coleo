@@ -748,6 +748,243 @@ armCmd
   });
 
 armCmd
+  .command("tail [name]")
+  .description("Watch real-time events from arm(s)")
+  .option("-a, --all", "Show events from all arms (default if no name given)")
+  .option("-f, --filter <types>", "Filter event types (comma-separated, e.g. 'status,tool')")
+  .action(async (name?: string, options?: { all?: boolean; filter?: string }) => {
+    const { apiUrl, headers } = getApiConfig();
+    const apiKey = process.env.OCTOPAI_API_KEY;
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    if (!apiKey) {
+      console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
+      process.exit(1);
+    }
+
+    // If a specific arm name is given, verify it exists
+    if (name && !options?.all) {
+      const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+      if (!armRes.ok) {
+        console.error(`Arm not found: ${name}`);
+        process.exit(1);
+      }
+    }
+
+    const filterTypes = options?.filter?.split(",").map(t => t.trim()) || [];
+    const showAll = !name || options?.all;
+
+    console.log(`Tailing events${showAll ? " from all arms" : ` from ${name}`}...`);
+    console.log("Press Ctrl+C to stop\n");
+
+    // Connect to WebSocket
+    const wsUrl = apiUrl.replace(/^http/, "ws") + "/ws";
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      // Authenticate
+      ws.send(JSON.stringify({ type: "auth", apiKey }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data as string);
+        
+        // Handle auth response
+        if (msg.type === "auth") {
+          if (msg.success) {
+            // Subscribe to arm-events channel
+            ws.send(JSON.stringify({ type: "subscribe", channel: "arm-events" }));
+          } else {
+            console.error("Authentication failed:", msg.error);
+            process.exit(1);
+          }
+          return;
+        }
+
+        // Handle subscription confirmation
+        if (msg.type === "subscribed") {
+          console.log(`Connected and subscribed to ${msg.channel}`);
+          return;
+        }
+
+        // Handle arm events
+        if (msg.channel === "arm-events") {
+          const armId = msg.data?.armId;
+          const eventType = msg.event?.replace("arm.", "") || "unknown";
+
+          // Filter by arm name if specified
+          if (!showAll && armId !== name) return;
+
+          // Filter by event type if specified
+          if (filterTypes.length > 0 && !filterTypes.some(t => eventType.includes(t))) return;
+
+          // Format and print the event
+          const timestamp = new Date(msg.timestamp).toLocaleTimeString();
+          const armLabel = armId ? `[${armId}]` : "";
+          
+          // Color-code by event type
+          let prefix = "";
+          if (eventType.includes("status")) prefix = "📊";
+          else if (eventType.includes("tool") || eventType.includes("part-tool")) prefix = "🔧";
+          else if (eventType.includes("message")) prefix = "💬";
+          else if (eventType.includes("file")) prefix = "📄";
+          else if (eventType.includes("todo")) prefix = "✅";
+          else prefix = "📡";
+
+          // Format the data for display
+          let details = "";
+          const data = msg.data || {};
+          
+          if (eventType === "status") {
+            details = `status=${data.status || "unknown"}`;
+          } else if (eventType.includes("part-tool")) {
+            details = `tool=${data.toolName || data.name || "unknown"}`;
+            if (data.status) details += ` status=${data.status}`;
+          } else if (eventType.includes("message")) {
+            details = `role=${data.role || "unknown"}`;
+          } else if (eventType.includes("file")) {
+            details = `path=${data.path || "unknown"}`;
+          } else {
+            // Generic: show first few keys
+            const keys = Object.keys(data).filter(k => k !== "armId" && k !== "sessionId").slice(0, 3);
+            details = keys.map(k => `${k}=${JSON.stringify(data[k])}`).join(" ");
+          }
+
+          console.log(`${timestamp} ${prefix} ${armLabel} ${eventType}: ${details}`);
+        }
+      } catch (err) {
+        // Ignore parse errors
+      }
+    };
+
+    ws.onerror = (err) => {
+      console.error("WebSocket error:", err);
+    };
+
+    ws.onclose = () => {
+      console.log("\nConnection closed");
+      process.exit(0);
+    };
+
+    // Handle Ctrl+C
+    process.on("SIGINT", () => {
+      console.log("\nStopping...");
+      ws.close();
+      process.exit(0);
+    });
+
+    // Keep the process running
+    await new Promise(() => {});
+  });
+
+armCmd
+  .command("todos <name>")
+  .description("Show the todo list for an arm")
+  .action(async (name) => {
+    const { apiUrl, headers } = getApiConfig();
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    // Verify arm exists
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+
+    // Get todos
+    const todosRes = await fetch(`${apiUrl}/api/arms/${name}/todos`, { headers });
+    if (!todosRes.ok) {
+      const err = await todosRes.json().catch(() => ({}));
+      console.error(`Failed to get todos: ${(err as { error?: string }).error || todosRes.statusText}`);
+      process.exit(1);
+    }
+
+    const data = await todosRes.json() as { todos: Array<{ content: string; status: string; priority?: string }> };
+    const todos = data.todos || [];
+
+    if (todos.length === 0) {
+      console.log(`No todos for arm: ${name}`);
+      return;
+    }
+
+    console.log(`Todos for arm: ${name}`);
+    console.log("=".repeat(50));
+
+    for (const todo of todos) {
+      const statusIcon = todo.status === "completed" ? "✓" :
+                         todo.status === "in_progress" ? "→" :
+                         todo.status === "cancelled" ? "✗" : "○";
+      const priority = todo.priority ? ` [${todo.priority}]` : "";
+      console.log(`  ${statusIcon} ${todo.content}${priority}`);
+    }
+  });
+
+armCmd
+  .command("status <name>")
+  .description("Show detailed status for an arm")
+  .action(async (name) => {
+    const { apiUrl, headers } = getApiConfig();
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    // Verify arm exists
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+
+    const armData = await armRes.json() as { arm: { status: string; harness: string; domain?: string; provider?: string; model?: string } };
+
+    // Get detailed status from OpenCode
+    const statusRes = await fetch(`${apiUrl}/api/arms/${name}/status`, { headers });
+    
+    console.log(`Status for arm: ${name}`);
+    console.log("=".repeat(50));
+    console.log(`  Database status: ${armData.arm.status}`);
+    console.log(`  Harness: ${armData.arm.harness || "unknown"}`);
+    if (armData.arm.domain) console.log(`  Domain: ${armData.arm.domain}`);
+    if (armData.arm.provider || armData.arm.model) {
+      console.log(`  Model: ${armData.arm.provider ? armData.arm.provider + "/" : ""}${armData.arm.model || "default"}`);
+    }
+
+    if (statusRes.ok) {
+      const data = await statusRes.json() as { 
+        sessionId?: string;
+        status?: string;
+        session?: { 
+          id?: string;
+          status?: string;
+          updatedAt?: string;
+          title?: string;
+        };
+      };
+      
+      console.log("");
+      console.log("OpenCode Session:");
+      if (data.sessionId) console.log(`  Session ID: ${data.sessionId}`);
+      if (data.status) console.log(`  Session status: ${data.status}`);
+      if (data.session?.title) console.log(`  Title: ${data.session.title}`);
+      if (data.session?.updatedAt) console.log(`  Last updated: ${new Date(data.session.updatedAt).toLocaleString()}`);
+    } else {
+      console.log("");
+      console.log("OpenCode Session: Not available (arm may be stopped)");
+    }
+  });
+
+armCmd
   .command("remove <name>")
   .description("Remove a stopped arm from the database")
   .action(async (name) => {

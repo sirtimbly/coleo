@@ -10,8 +10,10 @@ import { join } from "node:path";
 import type { HarnessSession, SpawnConfig, SendPromptOptions } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
+import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
 
 export type LogCallback = (armId: string, data: string) => void;
+export type EventCallback = (armId: string, event: string, data: unknown) => void;
 
 export interface ActiveSession {
   session: HarnessSession;
@@ -29,6 +31,7 @@ export class HarnessManager {
   private octopaiDir: string;
   private logsDir: string;
   private logCallbacks: Set<LogCallback> = new Set();
+  private eventCallbacks: Set<EventCallback> = new Set();
 
   constructor(octopaiDir: string) {
     this.octopaiDir = octopaiDir;
@@ -52,12 +55,33 @@ export class HarnessManager {
   }
 
   /**
+   * Subscribe to events from all arms (OpenCode SSE events)
+   */
+  onEvent(callback: EventCallback): () => void {
+    this.eventCallbacks.add(callback);
+    return () => this.eventCallbacks.delete(callback);
+  }
+
+  /**
    * Emit log data to all subscribers
    */
   private emitLog(armId: string, data: string): void {
     for (const callback of this.logCallbacks) {
       try {
         callback(armId, data);
+      } catch {
+        // Ignore callback errors
+      }
+    }
+  }
+
+  /**
+   * Emit event data to all subscribers
+   */
+  private emitEvent(armId: string, event: string, data: unknown): void {
+    for (const callback of this.eventCallbacks) {
+      try {
+        callback(armId, event, data);
       } catch {
         // Ignore callback errors
       }
@@ -87,6 +111,13 @@ export class HarnessManager {
       throw new Error(`No harness available for agent type: ${agent}`);
     }
     const harness = harnessRegistry.get(agent);
+
+    // Set up event callback for opencode-api harness
+    if (agent === "opencode-api" && this.eventCallbacks.size > 0) {
+      (harness as OpenCodeApiHarness).setEventCallback((armId, event, data) => {
+        this.emitEvent(armId, event, data);
+      });
+    }
 
     // Prepare spawn config
     const spawnConfig: SpawnConfig = {
@@ -182,6 +213,13 @@ export class HarnessManager {
     if (!harness) {
       console.log(`[harness-manager] Harness not found: ${harnessType}`);
       return false;
+    }
+
+    // Set up event callback for opencode-api harness
+    if (harnessType === "opencode-api" && this.eventCallbacks.size > 0) {
+      (harness as OpenCodeApiHarness).setEventCallback((armId, event, data) => {
+        this.emitEvent(armId, event, data);
+      });
     }
 
     // Check if harness has recover method

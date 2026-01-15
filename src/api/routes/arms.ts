@@ -949,6 +949,126 @@ export function createArmsRoutes() {
     });
   });
 
+  /**
+   * Get arm's current todo list from OpenCode
+   * GET /api/arms/:id/todos
+   */
+  app.get("/:id/todos", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists and get port
+    const arm = db.query("SELECT id, port FROM arms WHERE id = ?").get(id) as { id: string; port: number | null } | null;
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!arm.port) {
+      return c.json({ todos: [], error: "Arm has no active server" });
+    }
+
+    // Get the harness manager to find the session
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    const session = manager.getSession(id);
+    if (!session) {
+      return c.json({ todos: [], error: "No active session" });
+    }
+
+    // Get the OpenCode session ID from the harness session
+    const apiSession = session.session as { sessionId?: string };
+    const opencodeSessionId = apiSession.sessionId;
+
+    if (!opencodeSessionId) {
+      return c.json({ todos: [], error: "No OpenCode session found" });
+    }
+
+    // Fetch todos from OpenCode
+    try {
+      const response = await fetch(`http://127.0.0.1:${arm.port}/session/${opencodeSessionId}/todo`);
+      if (!response.ok) {
+        return c.json({ todos: [], error: `Failed to fetch todos: ${response.statusText}` });
+      }
+
+      const todos = await response.json();
+      return c.json({ todos });
+    } catch (err) {
+      return c.json({ todos: [], error: `Failed to connect to OpenCode: ${err}` });
+    }
+  });
+
+  /**
+   * Get arm's detailed status from OpenCode
+   * GET /api/arms/:id/status
+   */
+  app.get("/:id/status", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists and get port
+    const arm = db.query("SELECT id, port, status FROM arms WHERE id = ?").get(id) as { id: string; port: number | null; status: string } | null;
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!arm.port) {
+      return c.json({ 
+        status: arm.status,
+        opencodeStatus: null,
+        error: "Arm has no active server" 
+      });
+    }
+
+    // Get the harness manager to find the session
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    const session = manager.getSession(id);
+    if (!session) {
+      return c.json({ 
+        status: arm.status,
+        opencodeStatus: null,
+        error: "No active session" 
+      });
+    }
+
+    // Get the OpenCode session ID from the harness session
+    const apiSession = session.session as { sessionId?: string };
+    const opencodeSessionId = apiSession.sessionId;
+
+    // Fetch status from OpenCode
+    try {
+      const response = await fetch(`http://127.0.0.1:${arm.port}/session/status`);
+      if (!response.ok) {
+        return c.json({ 
+          status: arm.status,
+          opencodeStatus: null,
+          error: `Failed to fetch status: ${response.statusText}` 
+        });
+      }
+
+      const statuses = await response.json() as Record<string, { status: string; error?: string }>;
+      const opencodeStatus = opencodeSessionId ? statuses[opencodeSessionId] : null;
+
+      return c.json({ 
+        status: arm.status,
+        opencodeStatus,
+        sessionId: opencodeSessionId,
+      });
+    } catch (err) {
+      return c.json({ 
+        status: arm.status,
+        opencodeStatus: null,
+        error: `Failed to connect to OpenCode: ${err}` 
+      });
+    }
+  });
+
   return app;
 }
 

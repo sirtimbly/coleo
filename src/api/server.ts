@@ -10,7 +10,7 @@ import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
-import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, enableHeartbeat } from "./websocket";
+import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 
 /**
@@ -175,6 +175,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   const harnessManager = new HarnessManager(octopaiDir);
   await harnessManager.init();
   setGlobalHarnessManager(harnessManager);
+  
+  // Subscribe to arm events and broadcast via WebSocket
+  harnessManager.onEvent((armId, event, data) => {
+    broadcastArmEvent(armId, event, data);
+  });
   
   // Now clean up/recover orphaned arms (after harness manager is ready)
   log("Checking for orphaned arms...", "verbose");

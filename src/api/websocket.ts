@@ -11,7 +11,7 @@
 
 import type { ServerWebSocket } from "bun";
 
-export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "all";
+export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "all";
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {
@@ -197,6 +197,13 @@ export function broadcastMailEvent(event: "received" | "read" | "archived" | "de
   unreadCount?: number;
 }) {
   broadcast("mail", `mail.${event}`, data);
+}
+
+/**
+ * Broadcast arm events from OpenCode
+ */
+export function broadcastArmEvent(armId: string, event: string, data: unknown) {
+  broadcast("arm-events", `arm.${event}`, { armId, ...data as Record<string, unknown> });
 }
 
 /**
