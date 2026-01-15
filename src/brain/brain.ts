@@ -1688,6 +1688,19 @@ octopai arm prompt ${arm.name} "your message here"
   }
 
   /**
+   * Strip ANSI escape codes and other non-printable characters from text
+   * This ensures mail messages render properly
+   */
+  private stripAnsi(text: string): string {
+    // Remove ANSI escape sequences (colors, cursor movement, etc.)
+    // eslint-disable-next-line no-control-regex
+    return text
+      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "") // ANSI escape sequences
+      .replace(/\x1B\][^\x07]*\x07/g, "") // OSC sequences (like terminal titles)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // Other control chars (keep \t, \n, \r)
+  }
+
+  /**
    * Send a message to the human's inbox
    */
   private async sendToHuman(message: {
@@ -1698,9 +1711,9 @@ octopai arm prompt ${arm.name} "your message here"
     await this.inbox.write({
       from: "brain@octopai.local",
       to: "human@local",
-      subject: message.subject,
+      subject: this.stripAnsi(message.subject),
       date: new Date(),
-      body: message.body,
+      body: this.stripAnsi(message.body),
       headers: message.headers || {},
     });
   }

@@ -1009,13 +1009,21 @@ mailCmd
   .command("inbox")
   .description("List messages in inbox")
   .option("-n, --count <n>", "Number of messages to show", "10")
+  .option("-a, --all", "Show all messages including read")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
     const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
 
     const messages = await inbox.list("new");
     const curMessages = await inbox.list("cur");
-    const allMessages = [...messages, ...curMessages].slice(0, parseInt(options.count, 10));
+    
+    // By default show unread first, then read
+    let allMessages = [...messages, ...curMessages];
+    if (!options.all) {
+      // Prioritize unread messages
+      allMessages = [...messages, ...curMessages.slice(0, Math.max(0, parseInt(options.count, 10) - messages.length))];
+    }
+    allMessages = allMessages.slice(0, parseInt(options.count, 10));
 
     if (allMessages.length === 0) {
       console.log("Inbox is empty.");
@@ -1023,11 +1031,16 @@ mailCmd
     }
 
     console.log("Inbox:");
+    console.log("");
     for (const msg of allMessages) {
-      const flag = msg.flags.seen ? " " : "●";
+      const flag = msg.flags.seen ? " " : "*";
       const date = msg.date.toLocaleDateString();
-      console.log(`  ${flag} [${date}] ${msg.subject}`);
+      // Show a short ID (first 8 chars) for easy reference
+      const shortId = msg.id.slice(0, 8);
+      console.log(`  ${flag} ${shortId}  ${date}  ${msg.subject}`);
     }
+    console.log("");
+    console.log(`Use 'octopai mail read <id>' to read a message (id can be partial)`);
   });
 
 mailCmd
@@ -1066,15 +1079,32 @@ mailCmd
 
     if (!msg) {
       console.log(`Message not found: ${id}`);
+      console.log("");
+      console.log("Available messages:");
+      for (const m of messages.slice(0, 5)) {
+        console.log(`  ${m.id.slice(0, 8)}  ${m.subject.slice(0, 50)}`);
+      }
       return;
     }
 
+    // Strip ANSI codes for clean display
+    const stripAnsi = (text: string) => text
+      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+      .replace(/\x1B\][^\x07]*\x07/g, "")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+
+    console.log(`ID: ${msg.id}`);
     console.log(`From: ${msg.from}`);
     console.log(`To: ${msg.to}`);
-    console.log(`Subject: ${msg.subject}`);
+    console.log(`Subject: ${stripAnsi(msg.subject)}`);
     console.log(`Date: ${msg.date.toLocaleString()}`);
     console.log(`---`);
-    console.log(msg.body);
+    console.log(stripAnsi(msg.body));
+
+    // Mark as read
+    if (!msg.flags.seen) {
+      await inbox.markSeen(msg.id);
+    }
   });
 
 // ============================================
