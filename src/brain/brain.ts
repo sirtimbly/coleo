@@ -157,7 +157,7 @@ export class Brain {
 
   constructor(options: BrainOptions) {
     this.options = options;
-    this.apiBaseUrl = options.apiBaseUrl || "http://localhost:7777";
+    this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:7777";
     this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
     this.state = {
       status: "stopped",
@@ -1112,8 +1112,14 @@ export class Brain {
 
           if (stateResult) {
             if (stateResult.hasSession && stateResult.state !== "stopped" && stateResult.state !== "dead") {
-              // Arm is properly connected, keep it
-              this.log(`Arm ${armId} is running (PID: ${arm.pid}, session active)`);
+              // Arm is properly connected - sync status based on harness state
+              const harnessStatus = stateResult.state === "processing" ? "busy" : "idle";
+              if (arm.status !== harnessStatus) {
+                this.log(`Arm ${armId}: syncing status from "${arm.status}" to "${harnessStatus}" based on harness state`);
+                await this.syncArmStatus(armId, harnessStatus);
+              } else {
+                this.log(`Arm ${armId} is running (PID: ${arm.pid}, state: ${stateResult.state})`);
+              }
               continue;
             } else if (!stateResult.hasSession) {
               // Process is running but API session was lost (server restart)
@@ -1412,6 +1418,52 @@ export class Brain {
   }
 
   /**
+   * Get the harness state for an arm via the API server
+   * This is more reliable than PTY log parsing for API harness arms
+   */
+  private async getArmHarnessState(armId: string): Promise<{ state: string; hasSession: boolean } | null> {
+    try {
+      return await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+    } catch (err) {
+      this.log(`Failed to get harness state for arm ${armId}: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Sync an arm's status in the database and in-memory tracking
+   * Used when harness state differs from database state
+   */
+  private async syncArmStatus(armId: string, status: "idle" | "busy" | "stopped"): Promise<void> {
+    // Update in-memory
+    const arm = this.arms.get(armId);
+    if (arm) {
+      arm.status = status;
+      if (status === "stopped") {
+        this.arms.delete(armId);
+      }
+    }
+
+    // Update database
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(
+        "UPDATE arms SET status = ?, updated_at = ? WHERE id = ?",
+        [status, now, armId]
+      );
+    }
+
+    // Update via API (for broadcast)
+    await this.apiRequest(`/api/arms/${armId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+
+    this.log(`Synced arm ${armId} status to: ${status}`);
+    this.logActivity("brain", "arm_status_synced", armId, { status, source: "harness_state" });
+  }
+
+  /**
    * Strip ANSI escape codes, TUI characters, and other non-content characters
    * This cleans up terminal output for analysis and display
    */
@@ -1472,9 +1524,10 @@ export class Brain {
    * Check for stuck arms and help them
    * 
    * This method:
-   * 1. Gets recent PTY output for each "busy" arm
-   * 2. Uses LLM to analyze if the arm is stuck
-   * 3. Takes appropriate action (answer question, approve, escalate, etc.)
+   * 1. First checks harness state via API (most reliable for API harness arms)
+   * 2. Syncs harness state with database if they've drifted
+   * 3. For arms that appear busy, uses LLM to analyze PTY logs for stuck state
+   * 4. Takes appropriate action (answer question, approve, escalate, etc.)
    */
   private async checkStuckArms(): Promise<void> {
     // Get arms that are marked as busy (they should be working on something)
@@ -1488,6 +1541,38 @@ export class Brain {
 
     for (const arm of busyArms) {
       const armDomain = (arm as Arm & { domain?: string }).domain || "general";
+      
+      // First, check harness state via API - this is more reliable than PTY log parsing
+      // especially for API harness arms (opencode-api)
+      const harnessState = await this.getArmHarnessState(arm.id);
+      
+      if (harnessState) {
+        // Handle based on harness state
+        if (harnessState.state === "idle") {
+          // Harness says idle but DB says busy - sync them
+          this.log(`Arm ${arm.name}: harness state is "idle" but DB says "busy", syncing...`);
+          await this.syncArmStatus(arm.id, "idle");
+          arm.status = "idle";
+          continue;
+        } else if (harnessState.state === "dead" || harnessState.state === "stopped") {
+          // Arm is dead/stopped - update DB
+          this.log(`Arm ${arm.name}: harness state is "${harnessState.state}", marking as stopped`);
+          await this.syncArmStatus(arm.id, "stopped");
+          this.arms.delete(arm.id);
+          continue;
+        } else if (harnessState.state === "error") {
+          // Arm is in error state - this might need intervention
+          this.log(`Arm ${arm.name}: harness state is "error", will analyze logs`);
+          // Fall through to log analysis
+        } else if (harnessState.state === "processing") {
+          // Arm is actively processing - check how long
+          // If it's been processing for too long, it might be stuck
+          this.log(`Arm ${arm.name}: harness confirms "processing" state`);
+          // Fall through to log analysis to check if it's stuck
+        }
+      } else {
+        this.log(`Arm ${arm.name}: could not get harness state, falling back to log analysis`);
+      }
       
       // Read recent logs for this arm
       const recentOutput = await this.readArmLogs(arm.name, 100);
