@@ -140,6 +140,8 @@ export class Brain {
   private apiKey: string;
   private mailProcessor: MailProcessor;
   private stuckArmAnalyzer: StuckArmAnalyzer;
+  // Track last stuck state per arm to avoid duplicate escalations
+  private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
 
   /**
    * Log an activity entry
@@ -1377,7 +1379,7 @@ export class Brain {
   /**
    * Send a prompt to an arm via the API server
    */
-  private async sendPromptToArm(armName: string, message: string): Promise<boolean> {
+  private async sendPromptToArm(armName: string, message: string, options?: { interrupt?: boolean }): Promise<boolean> {
     try {
       const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
       const response = await fetch(url, {
@@ -1386,8 +1388,17 @@ export class Brain {
           "Content-Type": "application/json",
           "X-API-Key": this.apiKey,
         },
-        body: JSON.stringify({ prompt: message }),
+        body: JSON.stringify({ prompt: message, interrupt: options?.interrupt }),
       });
+
+      if (response.ok) {
+        // Clear stuck state when we successfully send a prompt
+        // (arm is now being actively interacted with)
+        const arm = this.arms.get(armName);
+        if (arm) {
+          this.lastStuckState.delete(arm.id);
+        }
+      }
 
       return response.ok;
     } catch (err) {
@@ -1612,8 +1623,20 @@ export class Brain {
 
   /**
    * Escalate a stuck arm to the human
+   * Skips if the arm was already escalated for the same stuck type recently
    */
   private async escalateStuckArm(arm: Arm, analysis: StuckAnalysis): Promise<void> {
+    const stuckType = analysis.stuckType || "unknown";
+    
+    // Check if we already escalated for this same stuck type
+    const lastStuck = this.lastStuckState.get(arm.id);
+    if (lastStuck && lastStuck.stuckType === stuckType) {
+      // Already escalated for this stuck type - don't spam the human
+      const minutesSinceEscalation = (Date.now() - lastStuck.escalatedAt.getTime()) / 1000 / 60;
+      this.log(`Arm ${arm.name} still stuck (${stuckType}) - already escalated ${Math.round(minutesSinceEscalation)}m ago, skipping duplicate notification`);
+      return;
+    }
+
     const recentOutput = await this.readArmLogs(arm.name, 30);
     const taskInfo = arm.currentTask
       ? this.tasks.find(t => t.id === arm.currentTask)?.subject || arm.currentTask
@@ -1647,6 +1670,9 @@ octopai arm prompt ${arm.name} "your message here"
         "Priority": "high",
       },
     });
+
+    // Track that we escalated this stuck state
+    this.lastStuckState.set(arm.id, { stuckType, escalatedAt: new Date() });
 
     this.logActivity("brain", "arm_stuck_escalated", arm.id, {
       stuckType: analysis.stuckType,

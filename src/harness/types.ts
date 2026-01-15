@@ -69,6 +69,14 @@ export interface HarnessSession {
 }
 
 /**
+ * Options for sending a prompt to an agent
+ */
+export interface SendPromptOptions {
+  /** Send escape key twice before the prompt to interrupt/cancel current work */
+  interrupt?: boolean;
+}
+
+/**
  * Interface that all harnesses must implement
  */
 export interface AgentHarness {
@@ -82,7 +90,7 @@ export interface AgentHarness {
   kill(session: HarnessSession): Promise<void>;
 
   // Communication
-  sendPrompt(session: HarnessSession, prompt: string): Promise<void>;
+  sendPrompt(session: HarnessSession, prompt: string, options?: SendPromptOptions): Promise<void>;
   waitForResponse(session: HarnessSession, timeout?: number): Promise<string>;
   waitForIdle(session: HarnessSession, timeout?: number): Promise<void>;
 

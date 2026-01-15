@@ -7,7 +7,7 @@
 
 import { mkdir, appendFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { HarnessSession, SpawnConfig } from "./types";
+import type { HarnessSession, SpawnConfig, SendPromptOptions } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
 
@@ -157,14 +157,15 @@ export class HarnessManager {
 
   /**
    * Send a prompt to an arm
+   * @param options.interrupt - If true, send escape key twice before prompt to cancel current work
    */
-  async sendPrompt(armId: string, prompt: string): Promise<void> {
+  async sendPrompt(armId: string, prompt: string, options?: SendPromptOptions): Promise<void> {
     const active = this.sessions.get(armId);
     if (!active) {
       throw new Error(`No active session for arm ${armId}`);
     }
 
-    await active.harness.sendPrompt(active.session, prompt);
+    await active.harness.sendPrompt(active.session, prompt, options);
   }
 
   /**

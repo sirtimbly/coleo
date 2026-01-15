@@ -504,11 +504,13 @@ export function createArmsRoutes() {
   /**
    * Send a prompt to an arm
    * POST /api/arms/:id/prompt
+   * Body: { prompt: string, interrupt?: boolean }
+   * If interrupt is true, sends escape key twice before the prompt to cancel current work
    */
   app.post("/:id/prompt", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
-    const body = await c.req.json<{ prompt: string }>();
+    const body = await c.req.json<{ prompt: string; interrupt?: boolean }>();
 
     if (!body.prompt) {
       throw HttpError.badRequest("prompt is required");
@@ -532,17 +534,17 @@ export function createArmsRoutes() {
     }
 
     try {
-      await manager.sendPrompt(id, body.prompt);
+      await manager.sendPrompt(id, body.prompt, { interrupt: body.interrupt });
       
       // Update activity timestamp
       const now = new Date().toISOString();
       db.run("UPDATE arms SET status = 'busy', last_activity_at = ?, updated_at = ? WHERE id = ?", [now, now, id]);
 
       // Log activity
-      logActivity(db, id, "prompt_received", undefined, { promptLength: body.prompt.length });
+      logActivity(db, id, "prompt_received", undefined, { promptLength: body.prompt.length, interrupt: body.interrupt });
 
       // Broadcast prompt sent
-      broadcast("arms", "arm.prompt_sent", { id, status: "busy", promptLength: body.prompt.length });
+      broadcast("arms", "arm.prompt_sent", { id, status: "busy", promptLength: body.prompt.length, interrupt: body.interrupt });
 
       return c.json({ sent: true });
     } catch (err) {

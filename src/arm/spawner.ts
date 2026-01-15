@@ -10,7 +10,7 @@ import { promisify } from "util";
 import { writeFile, mkdir, readFile, readdir, appendFile } from "fs/promises";
 import { join } from "path";
 import { initDatabase, Database } from "../db";
-import { harnessRegistry, type HarnessSession, type SpawnConfig } from "../harness";
+import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
 import type { Arm, OctopaiConfig } from "../types";
 
 const execAsync = promisify(exec);
@@ -406,15 +406,16 @@ export async function spawnArmWithHarness(options: SpawnOptions): Promise<Arm> {
 
 /**
  * Send a prompt to an arm via its harness session
+ * @param options.interrupt - If true, send escape key twice before prompt to cancel current work
  */
-export async function sendPromptToArm(armId: string, prompt: string): Promise<void> {
+export async function sendPromptToArm(armId: string, prompt: string, options?: SendPromptOptions): Promise<void> {
   const session = activeSessions.get(armId);
   if (!session) {
     throw new Error(`No active harness session for arm ${armId}`);
   }
 
   const harness = harnessRegistry.get(session.harnessName);
-  await harness.sendPrompt(session, prompt);
+  await harness.sendPrompt(session, prompt, options);
 }
 
 /**

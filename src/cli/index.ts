@@ -653,7 +653,8 @@ armCmd
 armCmd
   .command("prompt <name> <message>")
   .description("Send a prompt to a running arm")
-  .action(async (name, message, options) => {
+  .option("-i, --interrupt", "Send escape key twice before prompt to cancel/interrupt current work")
+  .action(async (name, message, options: { interrupt?: boolean }) => {
     const { apiUrl, headers } = getApiConfig();
     
     if (!await isApiRunning()) {
@@ -679,7 +680,7 @@ armCmd
     const promptRes = await fetch(`${apiUrl}/api/arms/${name}/prompt`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt: message }),
+      body: JSON.stringify({ prompt: message, interrupt: options.interrupt }),
     });
 
     if (!promptRes.ok) {
@@ -688,7 +689,7 @@ armCmd
       process.exit(1);
     }
 
-    console.log(`Prompt sent to arm ${name}`);
+    console.log(`Prompt sent to arm ${name}${options.interrupt ? " (interrupted first)" : ""}`);
     console.log(`(Arm is now ${armData.arm.status === "idle" ? "busy" : "processing"})`);
   });
 

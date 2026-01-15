@@ -221,6 +221,52 @@ octopai arm kill <name>
 octopai arm kill explorer
 ```
 
+#### arm prompt
+
+Send a prompt/message to a running arm.
+
+```bash
+octopai arm prompt <name> <message> [options]
+
+Options:
+  -i, --interrupt  Send escape key twice before prompt to cancel/interrupt current work
+```
+
+**Examples:**
+```bash
+# Send a task to an arm
+octopai arm prompt explorer "Please add error handling to the API routes"
+
+# Interrupt current work and send new instructions
+octopai arm prompt explorer "Stop what you're doing and fix the critical bug in auth.ts" --interrupt
+```
+
+**Notes:**
+- The arm must be running (status: idle or busy)
+- Without `--interrupt`, the message is queued after current work
+- With `--interrupt`, two ESC keys are sent first to cancel any in-progress operation, then the new prompt is sent
+
+#### arm logs
+
+View recent logs from an arm.
+
+```bash
+octopai arm logs <name> [options]
+
+Options:
+  -n, --lines <n>  Number of lines to show (default: 50)
+  -f, --follow     Follow log output (tail -f style)
+```
+
+**Example:**
+```bash
+# View last 50 lines
+octopai arm logs explorer
+
+# View last 100 lines
+octopai arm logs explorer -n 100
+```
+
 ---
 
 ### mail

@@ -13,7 +13,9 @@ import type {
   SpawnConfig,
   AgentState,
   UIPatterns,
+  SendPromptOptions,
 } from "./types";
+import { KEY_SEQUENCES } from "./types";
 import { PTYManager, stripAnsi } from "./pty-manager";
 
 /**
@@ -158,8 +160,30 @@ export class OpenCodeHarness implements AgentHarness {
 
   /**
    * Send a prompt to OpenCode
+   * @param options.interrupt - If true, send escape key twice before prompt to cancel current work
    */
-  async sendPrompt(session: HarnessSession, prompt: string): Promise<void> {
+  async sendPrompt(session: HarnessSession, prompt: string, options?: SendPromptOptions): Promise<void> {
+    // If interrupt is requested, send escape key twice to cancel current work
+    if (options?.interrupt) {
+      console.log(`[harness] Sending interrupt (2x ESC) to ${session.id} before prompt`);
+      
+      // Capture buffer state before sending ESC
+      const bufferBefore = session.pty.buffer.length;
+      
+      // First, focus the input window by sending a Tab or clicking
+      // OpenCode uses 'i' to focus input in some modes, but ESC should work from anywhere
+      // Send first ESC to potentially exit any menu/modal and focus input
+      this.ptyManager.write(session.pty, KEY_SEQUENCES.ESCAPE);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      // Send second ESC to cancel any in-progress operation
+      this.ptyManager.write(session.pty, KEY_SEQUENCES.ESCAPE);
+      await new Promise(resolve => setTimeout(resolve, 600));
+      
+      const bufferAfter = session.pty.buffer.length;
+      console.log(`[harness] Escape keys sent. Buffer: ${bufferBefore} -> ${bufferAfter} bytes (+${bufferAfter - bufferBefore})`);
+    }
+
     // Clear buffer before sending so we can track new output
     const startIndex = session.pty.buffer.length;
 
@@ -192,7 +216,7 @@ export class OpenCodeHarness implements AgentHarness {
     // Send Enter to submit
     this.ptyManager.sendKey(session.pty, "ENTER");
     
-    console.log(`[harness] Sent prompt to ${session.id}: "${prompt.slice(0, 50)}..." [ENTER sent]`);
+    console.log(`[harness] Sent prompt to ${session.id}: "${prompt.slice(0, 50)}..."${options?.interrupt ? " [interrupted]" : ""} [ENTER sent]`);
   }
 
   /**
