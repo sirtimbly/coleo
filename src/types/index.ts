@@ -63,7 +63,8 @@ export type MessageType =
   | "doc_update"
   | "file_subscription"
   | "file_change"
-  | "claim_transfer";
+  | "claim_transfer"
+  | "dev_server_restart_request";
 
 // Discovery report from an arm
 export interface Discovery {

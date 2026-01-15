@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "octopai": {
+      "type": "local",
+      "command": [
+        "/Users/timothy.bendt/.bun/bin/bun",
+        "run",
+        "/Users/timothy.bendt/developer/octopai/src/cli/index.ts",
+        "mcp",
+        "serve"
+      ],
+      "environment": {
+        "OCTOPAI_ARM_ID": "qa-engineer",
+        "OCTOPAI_DIR": "/Users/timothy.bendt/developer/octopai/.octopai"
+      },
+      "enabled": true
+    }
+  },
+  "model": "github-copilot/claude-sonnet-4"
+}

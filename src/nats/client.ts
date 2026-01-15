@@ -14,6 +14,7 @@ import {
   type AgentHeartbeat,
   type OctopaiEvent,
   type ArmState,
+  type BrainMessage,
 } from './types';
 
 const jc = JSONCodec<unknown>();
@@ -161,18 +162,25 @@ export class NatsClient {
     await this.publish(TOPICS.AGENT_HEARTBEAT, heartbeat);
   }
 
-  /**
-   * Publish an arm event
-   */
-  async publishArmEvent(armId: string, event: OctopaiEvent): Promise<void> {
-    await this.publish(TOPICS.armEvent(armId), event);
-    // Also publish to broadcast channel
-    await this.publish(TOPICS.BROADCAST_ARMS, event);
-  }
+   /**
+    * Publish an arm event
+    */
+   async publishArmEvent(armId: string, event: OctopaiEvent): Promise<void> {
+     await this.publish(TOPICS.armEvent(armId), event);
+     // Also publish to broadcast channel
+     await this.publish(TOPICS.BROADCAST_ARMS, event);
+   }
 
-  // ============================================
-  // Subscription Methods
-  // ============================================
+   /**
+    * Publish a message to the brain
+    */
+   async publishBrainMessage(message: BrainMessage): Promise<void> {
+     await this.publish(TOPICS.BRAIN_MESSAGES, message);
+   }
+
+   // ============================================
+   // Subscription Methods
+   // ============================================
 
   /**
    * Subscribe to a topic with a handler

@@ -3,7 +3,7 @@
  * 
  * Runs a polling loop that:
  * 1. Reads human mail from sent/
- * 2. Processes arm messages from queue/
+ * 2. Processes arm messages from queue/ and NATS
  * 3. Assigns tasks to arms
  * 4. Sends status updates to human inbox
  */
@@ -15,7 +15,8 @@ import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
-import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery } from "../types";
+import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
   octopaiDir: string;
@@ -138,6 +139,8 @@ export class Brain {
   private db: Database | null = null;
   private apiBaseUrl: string;
   private apiKey: string;
+  private natsUrl!: string;
+  private natsClient: NatsClient | null = null;
   private mailProcessor: MailProcessor;
   private stuckArmAnalyzer: StuckArmAnalyzer;
   // Track last stuck state per arm to avoid duplicate escalations
@@ -166,6 +169,7 @@ export class Brain {
     this.options = options;
     this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:7777";
     this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
+    this.natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
     this.state = {
       status: "stopped",
       pollIntervalMs: options.pollIntervalMs,
@@ -183,6 +187,62 @@ export class Brain {
 
     // Initialize stuck arm analyzer
     this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg));
+  }
+
+  /**
+   * Connect to NATS and subscribe to brain messages
+   */
+  async startNats(): Promise<void> {
+    try {
+      this.natsClient = new NatsClient({
+        serverUrl: this.natsUrl,
+        clientId: `brain-${process.pid}`,
+        debug: this.options.verbose,
+      });
+      
+      await this.natsClient.connect();
+      this.log(`Connected to NATS at ${this.natsUrl}`);
+      
+      // Subscribe to brain messages from arms
+      this.natsClient.subscribe<BrainMessage>(TOPICS.BRAIN_MESSAGES, async (message) => {
+        await this.handleBrainMessage(message);
+      });
+      
+      this.log("Subscribed to brain messages on NATS");
+    } catch (err) {
+      this.log(`NATS not available: ${err}`);
+      this.natsClient = null;
+    }
+  }
+
+  /**
+   * Disconnect from NATS
+   */
+  async stopNats(): Promise<void> {
+    if (this.natsClient) {
+      await this.natsClient.disconnect();
+      this.natsClient = null;
+      this.log("Disconnected from NATS");
+    }
+  }
+
+  /**
+   * Handle a message received via NATS
+   */
+  private async handleBrainMessage(message: BrainMessage): Promise<void> {
+    this.log(`NATS: Received ${message.type} from ${message.from}`);
+    
+    // Convert NATS message to QueueMessage format and handle
+    const queueMessage: QueueMessage = {
+      id: `nats-${Date.now()}`,
+      from: message.from,
+      to: message.to,
+      type: message.type as MessageType,
+      payload: message.payload,
+      timestamp: new Date(message.timestamp),
+    };
+    
+    await this.handleArmMessage(queueMessage);
   }
 
   /**
@@ -359,72 +419,89 @@ export class Brain {
     }
   }
 
-  /**
-    * Run the polling loop
+   /**
+     * Run the polling loop
+     */
+   async run(): Promise<void> {
+     this.running = true;
+     this.state.status = "running";
+     this.state.startedAt = this.state.startedAt || new Date().toISOString();
+     
+     this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
+     this.logActivity("brain", "started", undefined, { pollIntervalMs: this.options.pollIntervalMs });
+     
+     // Connect to NATS
+     await this.startNats();
+     
+     // Notify Observatory that brain is starting
+     await this.notifyObservatory("started");
+     
+     // Initial poll
+     await this.poll();
+     
+     // Polling loop
+     while (this.running) {
+       await this.sleep(this.options.pollIntervalMs);
+       if (this.running) {
+         await this.poll();
+       }
+     }
+     
+     // Disconnect from NATS
+     await this.stopNats();
+     
+     this.state.status = "stopped";
+     await this.saveState();
+     await this.notifyObservatory("stopped");
+     this.logActivity("brain", "stopped");
+     this.log("Brain stopped");
+   }
+
+   /**
+    * Run a single poll cycle and exit
     */
-  async run(): Promise<void> {
-    this.running = true;
-    this.state.status = "running";
-    this.state.startedAt = this.state.startedAt || new Date().toISOString();
-    
-    this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
-    this.logActivity("brain", "started", undefined, { pollIntervalMs: this.options.pollIntervalMs });
-    
-    // Notify Observatory that brain is starting
-    await this.notifyObservatory("started");
-    
-    // Initial poll
-    await this.poll();
-    
-    // Polling loop
-    while (this.running) {
-      await this.sleep(this.options.pollIntervalMs);
-      if (this.running) {
-        await this.poll();
-      }
-    }
-    
-    this.state.status = "stopped";
-    await this.saveState();
-    await this.notifyObservatory("stopped");
-    this.logActivity("brain", "stopped");
-    this.log("Brain stopped");
-  }
+   async runOnce(): Promise<void> {
+     this.state.status = "running";
+     this.state.startedAt = this.state.startedAt || new Date().toISOString();
+     
+     // Connect to NATS (optional)
+     await this.startNats();
+     
+     await this.notifyObservatory("started");
+     await this.poll();
+     
+     // Disconnect from NATS
+     await this.stopNats();
+     
+     this.state.status = "stopped";
+     await this.saveState();
+     await this.notifyObservatory("stopped");
+   }
 
-  /**
-   * Run a single poll cycle and exit
-   */
-  async runOnce(): Promise<void> {
-    this.state.status = "running";
-    this.state.startedAt = this.state.startedAt || new Date().toISOString();
-    await this.notifyObservatory("started");
-    await this.poll();
-    this.state.status = "stopped";
-    await this.saveState();
-    await this.notifyObservatory("stopped");
-  }
+   /**
+    * Stop the brain
+    */
+   stop(): void {
+     this.running = false;
+     this.log("Stop requested");
+   }
 
-  /**
-   * Stop the brain
-   */
-  stop(): void {
-    this.running = false;
-    this.log("Stop requested");
-  }
+   /**
+    * Shutdown the brain and clean up resources
+    * This should be called after run() or runOnce() completes
+    */
+   async shutdown(): Promise<void> {
+     // Stop the doc watcher
+     stopDocWatcher();
 
-  /**
-   * Shutdown the brain and clean up resources
-   * This should be called after run() or runOnce() completes
-   */
-  async shutdown(): Promise<void> {
-    // Stop the doc watcher
-    stopDocWatcher();
+     // Disconnect from NATS
+     await this.stopNats();
 
-    // Close the database
-    if (this.db) {
-      this.db.close();
-      this.db = null;
-    }
+     // Close the database
+     if (this.db) {
+       this.db.close();
+       this.db = null;
+     }
 
     this.log("Brain shutdown complete");
   }

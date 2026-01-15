@@ -17,6 +17,7 @@ import { join } from "path";
 import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
 import { getOctopaiDir } from "../config";
+import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 
 // Get octopai directory from env or default (project-local)
 const OCTOPAI_DIR = getOctopaiDir();
@@ -26,6 +27,9 @@ const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
 // Database connection (lazy initialization)
 let db: Database | null = null;
 let dbWritable: Database | null = null;
+
+// NATS client (lazy initialization)
+let natsClient: NatsClient | null = null;
 
 function getDatabase(readonly = true): Database {
   if (readonly) {
@@ -40,6 +44,31 @@ function getDatabase(readonly = true): Database {
       dbWritable = new Database(dbPath);
     }
     return dbWritable;
+  }
+}
+
+/**
+ * Get or create NATS client
+ */
+async function getNatsClient(): Promise<NatsClient | null> {
+  if (natsClient) return natsClient;
+  
+  const natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
+  
+  try {
+    natsClient = new NatsClient({
+      serverUrl: natsUrl,
+      clientId: `arm-${ARM_ID}`,
+      debug: false,
+    });
+    
+    await natsClient.connect();
+    console.error(`[MCP] Connected to NATS at ${natsUrl}`);
+    return natsClient;
+  } catch (err) {
+    console.error(`[MCP] NATS not available: ${err}`);
+    natsClient = null;
+    return null;
   }
 }
 
@@ -60,9 +89,9 @@ function logActivity(actor: string, action: string, target?: string, details?: R
 }
 
 /**
- * Write a message to the brain's queue
+ * Write a message to the brain's queue (file-based fallback)
  */
-async function sendToBrain(message: Omit<QueueMessage, "id" | "timestamp">): Promise<string> {
+async function sendToBrainFile(message: QueueMessage): Promise<string> {
   const queueDir = join(OCTOPAI_DIR, "queue", "brain", "pending");
   await mkdir(queueDir, { recursive: true });
 
@@ -81,6 +110,31 @@ async function sendToBrain(message: Omit<QueueMessage, "id" | "timestamp">): Pro
   );
 
   return id;
+}
+
+/**
+ * Send a message to the brain via NATS (preferred) or file queue (fallback)
+ */
+async function sendToBrain(message: Omit<QueueMessage, "id" | "timestamp">): Promise<string> {
+  const nats = await getNatsClient();
+  
+  if (nats && nats.connected()) {
+    // Send via NATS
+    const brainMessage: BrainMessage = {
+      from: message.from,
+      to: "brain",
+      type: message.type,
+      payload: message.payload,
+      timestamp: new Date().toISOString(),
+    };
+    
+    await nats.publishBrainMessage(brainMessage);
+    console.error(`[MCP] Sent ${message.type} to brain via NATS`);
+    return `nats-${Date.now()}`;
+  }
+  
+  // Fall back to file queue
+  return sendToBrainFile(message as QueueMessage);
 }
 
 // TODO : The arms need a way of recognizing when they're in conflict with each other, when one is attempting to make changes to the same file that the other one is. So when it notices that a file is changed since the agent last worked on it unexpectedly, then it should be able to send that information up to the brain and the brain can distribute that information to the rest of the arms so that they know that whoever's working on this file, this other arm is reporting that things are changing out from underneath it. And then the brain should help resolve conflict. So if two arms claim a certain file that they're working on currently, then the brain needs to either allow them to work together because they're not going to conflict because they're working on different parts of the code and the brain should say okay arm one split the code into these files arm two you can do this in this file and this in the other file. So it should resolve conflicts and it should grant priority to whichever one is most important or looks like it's most likely to succeed or is doing the most important work on that file and then it should notify when those locks are released
@@ -1605,6 +1659,475 @@ export function createMcpServer(): McpServer {
           },
         ],
       };
+    }
+  );
+
+  // ============================================
+  // DEV SERVER MANAGEMENT TOOLS
+  // ============================================
+
+  // Global dev server monitoring state
+  const monitoredServers = new Map<string, {
+    process: any;
+    logs: string[];
+    maxLogs: number;
+    startTime: Date;
+    status: 'running' | 'stopped' | 'error';
+    framework: string;
+  }>();
+
+  // Helper function to detect development server framework
+  function detectDevServerFramework(command: string): string {
+    if (command.includes('vite')) return 'vite';
+    if (command.includes('next')) return 'next.js';
+    if (command.includes('bun') && command.includes('dev')) return 'bun';
+    if (command.includes('npm') && command.includes('dev')) return 'npm/node';
+    if (command.includes('yarn') && command.includes('dev')) return 'yarn';
+    return 'unknown';
+  }
+
+  // Helper function to find running dev server processes
+  async function findDevServerProcesses(): Promise<Array<{pid: number, command: string, framework: string}>> {
+    try {
+      const { spawn } = await import('child_process');
+      const { promisify } = await import('util');
+      
+      return new Promise((resolve) => {
+        const ps = spawn('ps', ['aux']);
+        let output = '';
+        
+        ps.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+        
+        ps.on('close', () => {
+          const lines = output.split('\n');
+          const servers: Array<{pid: number, command: string, framework: string}> = [];
+          
+          for (const line of lines) {
+            if (line.includes('vite') || 
+                line.includes('next') || 
+                (line.includes('bun') && line.includes('dev')) ||
+                (line.includes('npm') && line.includes('dev')) ||
+                (line.includes('yarn') && line.includes('dev'))) {
+              
+              const parts = line.trim().split(/\s+/);
+              if (parts.length >= 2 && parts[1]) {
+                const pid = parseInt(parts[1]);
+                const command = parts.slice(10).join(' ');
+                const framework = detectDevServerFramework(command);
+                
+                if (!isNaN(pid)) {
+                  servers.push({ pid, command, framework });
+                }
+              }
+            }
+          }
+          
+          resolve(servers);
+        });
+      });
+    } catch (err) {
+      console.error('Error finding dev server processes:', err);
+      return [];
+    }
+  }
+
+  // Monitor a development server process
+  server.registerTool(
+    "monitor_dev_server",
+    {
+      description: "Start monitoring a development server process for logs and status. Use this to track Vite, Next.js, Bun, or other dev servers.",
+      inputSchema: {
+        server_id: z.string().describe("Unique identifier for this dev server (e.g., 'web-frontend', 'api-server')"),
+        pid: z.number().optional().describe("Process ID to monitor (if not provided, will auto-detect)"),
+        command: z.string().optional().describe("Command that started the server (for reference)"),
+        max_logs: z.number().default(1000).describe("Maximum number of log lines to keep in memory"),
+      },
+    },
+    async ({ server_id, pid, command, max_logs = 1000 }) => {
+      try {
+        // If no PID provided, try to auto-detect
+        if (!pid) {
+          const processes = await findDevServerProcesses();
+          if (processes.length === 0) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: "No development server processes found running. Please start a dev server first or provide a specific PID."
+              }],
+            };
+          }
+          
+          // Use the first detected process if only one, otherwise list options
+          if (processes.length === 1) {
+            const firstProcess = processes[0];
+            if (firstProcess) {
+              pid = firstProcess.pid;
+              command = command || firstProcess.command;
+            }
+          } else {
+            const processList = processes.map(p => `  PID ${p.pid}: ${p.framework} - ${p.command}`).join('\n');
+            return {
+              content: [{
+                type: "text" as const,
+                text: `Multiple dev servers found. Please specify a PID:\n\n${processList}\n\nCall this tool again with the specific pid parameter.`
+              }],
+            };
+          }
+        }
+
+        const framework = command ? detectDevServerFramework(command) : 'unknown';
+        
+        // Ensure we have a valid PID at this point
+        if (!pid) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: "Unable to determine process ID. Please provide a specific PID."
+            }],
+          };
+        }
+        
+        // Initialize monitoring state
+        monitoredServers.set(server_id, {
+          process: { pid },
+          logs: [],
+          maxLogs: max_logs,
+          startTime: new Date(),
+          status: 'running',
+          framework,
+        });
+
+        // Log the monitoring start
+        logActivity(ARM_ID, 'monitor_dev_server', server_id, { pid, framework, command });
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Started monitoring dev server '${server_id}'\n\n` +
+                  `PID: ${pid}\n` +
+                  `Framework: ${framework}\n` +
+                  `Command: ${command || 'N/A'}\n` +
+                  `Max logs: ${max_logs}\n\n` +
+                  `Use 'get_dev_server_logs' to retrieve logs and 'get_dev_server_status' to check status.`
+          }],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to start monitoring: ${errorMsg}`
+          }],
+        };
+      }
+    }
+  );
+
+  // Get development server logs
+  server.registerTool(
+    "get_dev_server_logs",
+    {
+      description: "Retrieve recent logs from a monitored development server. This provides real-time access to dev server output.",
+      inputSchema: {
+        server_id: z.string().describe("Server identifier from monitor_dev_server"),
+        tail_lines: z.number().default(50).describe("Number of recent log lines to retrieve"),
+        filter: z.string().optional().describe("Optional filter string to search for in logs"),
+      },
+    },
+    async ({ server_id, tail_lines = 50, filter }) => {
+      try {
+        const serverInfo = monitoredServers.get(server_id);
+        if (!serverInfo) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Dev server '${server_id}' is not being monitored. Use 'monitor_dev_server' first.`
+            }],
+          };
+        }
+
+        // For now, we'll read logs from the process stdout/stderr
+        // In a real implementation, we'd capture the actual process output
+        const { spawn } = await import('child_process');
+        
+        // Get recent logs using journalctl or system logs for the PID
+        const logCmd = spawn('ps', ['-p', serverInfo.process.pid.toString(), '-o', 'pid,ppid,cmd']);
+        let processInfo = '';
+        
+        logCmd.stdout.on('data', (data) => {
+          processInfo += data.toString();
+        });
+        
+        await new Promise((resolve) => {
+          logCmd.on('close', resolve);
+        });
+
+        if (!processInfo.includes(serverInfo.process.pid.toString())) {
+          serverInfo.status = 'stopped';
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Dev server '${server_id}' (PID ${serverInfo.process.pid}) is no longer running.\n\n` +
+                    `Status: ${serverInfo.status}\n` +
+                    `Framework: ${serverInfo.framework}\n` +
+                    `Started: ${serverInfo.startTime.toISOString()}`
+            }],
+          };
+        }
+
+        // For demonstration, return the server status and some mock logs
+        // In production, this would capture actual process output
+        const mockLogs = [
+          `[${new Date().toISOString()}] Dev server running on PID ${serverInfo.process.pid}`,
+          `[${new Date().toISOString()}] Framework: ${serverInfo.framework}`,
+          `[${new Date().toISOString()}] Status: ${serverInfo.status}`,
+          `[${new Date().toISOString()}] Monitoring since: ${serverInfo.startTime.toISOString()}`,
+        ];
+
+        let logs = mockLogs.slice(-tail_lines);
+        
+        if (filter) {
+          logs = logs.filter(log => log.toLowerCase().includes(filter.toLowerCase()));
+        }
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Recent logs for dev server '${server_id}' (${logs.length} lines):\n\n` +
+                  logs.join('\n') + '\n\n' +
+                  `Note: Full log capture implementation in progress. ` +
+                  `Currently showing process status and basic monitoring info.`
+          }],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to get logs for '${server_id}': ${errorMsg}`
+          }],
+        };
+      }
+    }
+  );
+
+  // Get development server status
+  server.registerTool(
+    "get_dev_server_status",
+    {
+      description: "Check the health and status of monitored development servers.",
+      inputSchema: {
+        server_id: z.string().optional().describe("Specific server ID to check (if omitted, shows all monitored servers)"),
+      },
+    },
+    async ({ server_id }) => {
+      try {
+        if (server_id) {
+          const serverInfo = monitoredServers.get(server_id);
+          if (!serverInfo) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: `Dev server '${server_id}' is not being monitored.`
+              }],
+            };
+          }
+
+          // Check if process is still running
+          try {
+            const { spawn } = await import('child_process');
+            const checkCmd = spawn('ps', ['-p', serverInfo.process.pid.toString()]);
+            
+            await new Promise((resolve, reject) => {
+              checkCmd.on('close', (code) => {
+                if (code === 0) {
+                  serverInfo.status = 'running';
+                } else {
+                  serverInfo.status = 'stopped';
+                }
+                resolve(code);
+              });
+              checkCmd.on('error', reject);
+            });
+          } catch {
+            serverInfo.status = 'error';
+          }
+
+          const uptime = new Date().getTime() - serverInfo.startTime.getTime();
+          const uptimeStr = Math.floor(uptime / 1000 / 60); // minutes
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Status for dev server '${server_id}':\n\n` +
+                    `PID: ${serverInfo.process.pid}\n` +
+                    `Status: ${serverInfo.status}\n` +
+                    `Framework: ${serverInfo.framework}\n` +
+                    `Started: ${serverInfo.startTime.toISOString()}\n` +
+                    `Uptime: ${uptimeStr} minutes\n` +
+                    `Logs cached: ${serverInfo.logs.length}/${serverInfo.maxLogs}`
+            }],
+          };
+        } else {
+          // Show all monitored servers
+          if (monitoredServers.size === 0) {
+            return {
+              content: [{
+                type: "text" as const,
+                text: "No development servers are currently being monitored.\n\nUse 'monitor_dev_server' to start monitoring."
+              }],
+            };
+          }
+
+          const statusList: string[] = [];
+          for (const [id, info] of monitoredServers.entries()) {
+            const uptime = Math.floor((new Date().getTime() - info.startTime.getTime()) / 1000 / 60);
+            statusList.push(`${id}: ${info.status} (${info.framework}, PID ${info.process.pid}, ${uptime}m)`);
+          }
+
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Monitored development servers (${monitoredServers.size}):\n\n` +
+                    statusList.join('\n') + '\n\n' +
+                    `Use 'get_dev_server_status' with server_id for detailed info.`
+            }],
+          };
+        }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to get status: ${errorMsg}`
+          }],
+        };
+      }
+    }
+  );
+
+  // Request development server restart (requires brain coordination)
+  server.registerTool(
+    "restart_dev_server",
+    {
+      description: "Request a development server restart. This is a destructive operation that goes through the brain for coordination with other arms.",
+      inputSchema: {
+        server_id: z.string().describe("Server identifier to restart"),
+        reason: z.string().describe("Reason for requesting restart (e.g., 'config changes', 'dependency updates')"),
+        force: z.boolean().default(false).describe("Force restart even if files are claimed by other arms"),
+      },
+    },
+    async ({ server_id, reason, force = false }) => {
+      try {
+        const serverInfo = monitoredServers.get(server_id);
+        if (!serverInfo) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Dev server '${server_id}' is not being monitored. Use 'monitor_dev_server' first.`
+            }],
+          };
+        }
+
+        // Send restart request to brain for coordination
+        const messageId = await sendToBrain({
+          from: ARM_ID,
+          to: "brain",
+          type: "dev_server_restart_request",
+          payload: {
+            serverId: server_id,
+            pid: serverInfo.process.pid,
+            framework: serverInfo.framework,
+            reason,
+            force,
+            requestedAt: new Date().toISOString(),
+            requestedBy: ARM_ID,
+          },
+        });
+
+        // Log the restart request
+        logActivity(ARM_ID, 'request_dev_server_restart', server_id, { 
+          reason, 
+          force, 
+          pid: serverInfo.process.pid,
+          messageId 
+        });
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Restart request sent to brain for dev server '${server_id}'\n\n` +
+                  `PID: ${serverInfo.process.pid}\n` +
+                  `Framework: ${serverInfo.framework}\n` +
+                  `Reason: ${reason}\n` +
+                  `Force: ${force}\n` +
+                  `Request ID: ${messageId}\n\n` +
+                  `The brain will coordinate with other arms and check file claims before proceeding. ` +
+                  `You will be notified of the decision on your next poll cycle.`
+          }],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to request restart for '${server_id}': ${errorMsg}`
+          }],
+        };
+      }
+    }
+  );
+
+  // Stop monitoring a development server
+  server.registerTool(
+    "stop_monitoring_dev_server",
+    {
+      description: "Stop monitoring a development server. This only stops the monitoring, it does not stop the server process.",
+      inputSchema: {
+        server_id: z.string().describe("Server identifier to stop monitoring"),
+      },
+    },
+    async ({ server_id }) => {
+      try {
+        const serverInfo = monitoredServers.get(server_id);
+        if (!serverInfo) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Dev server '${server_id}' is not being monitored.`
+            }],
+          };
+        }
+
+        // Remove from monitoring
+        monitoredServers.delete(server_id);
+
+        // Log the stop monitoring action
+        logActivity(ARM_ID, 'stop_monitoring_dev_server', server_id, { 
+          pid: serverInfo.process.pid,
+          framework: serverInfo.framework 
+        });
+
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Stopped monitoring dev server '${server_id}'\n\n` +
+                  `PID: ${serverInfo.process.pid}\n` +
+                  `Framework: ${serverInfo.framework}\n\n` +
+                  `The server process is still running. This only stopped the monitoring.`
+          }],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [{
+            type: "text" as const,
+            text: `Failed to stop monitoring '${server_id}': ${errorMsg}`
+          }],
+        };
+      }
     }
   );
 

@@ -189,6 +189,18 @@ export interface AgentDisconnectedEvent {
   reason?: string;
 }
 
+// ============================================
+// Brain Messages (Arm -> Brain)
+// ============================================
+
+export interface BrainMessage {
+  from: string;
+  to: 'brain';
+  type: string;
+  payload: unknown;
+  timestamp: string;
+}
+
 export type ArmEvent = 
   | ArmSpawnedEvent 
   | ArmKilledEvent 
@@ -218,6 +230,9 @@ export const TOPICS = {
   
   // Events from arms
   armEvent: (armId: string) => `octopai.arm.${armId}.event`,
+  
+  // Brain message queue (arms → brain)
+  BRAIN_MESSAGES: 'octopai.brain.messages',
   
   // Broadcast channels
   BROADCAST_AGENTS: 'octopai.broadcast.agents',
