@@ -42,6 +42,7 @@ export interface ArmProfile {
   lastActivityAt: string | null;
   config: Record<string, unknown>;
   pid?: number;
+  port?: number;
   provider?: string;
   model?: string;
 }
@@ -169,7 +170,7 @@ export function createArmsRoutes() {
           created_at as createdAt,
           updated_at as updatedAt,
           last_activity_at as lastActivityAt,
-          pid, provider, model,
+          pid, port, provider, model,
           config
         FROM arms
         ORDER BY name
@@ -198,7 +199,7 @@ export function createArmsRoutes() {
         created_at as createdAt,
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
-        pid, provider, model,
+        pid, port, provider, model,
         config
       FROM arms
       WHERE id = ?
@@ -1085,6 +1086,7 @@ interface ArmRow {
   updatedAt: string;
   lastActivityAt: string | null;
   pid: number | null;
+  port: number | null;
   provider: string | null;
   model: string | null;
   config: string;
@@ -1095,6 +1097,7 @@ function parseArmRow(row: ArmRow): ArmProfile {
     ...row,
     status: row.status as ArmProfile["status"],
     pid: row.pid ?? undefined,
+    port: row.port ?? undefined,
     provider: row.provider ?? undefined,
     model: row.model ?? undefined,
     config: JSON.parse(row.config || "{}"),
