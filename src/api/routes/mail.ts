@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { Maildir } from "../../mail/maildir";
+import { broadcastMailEvent } from "../websocket";
 import { homedir } from "os";
 import { join } from "path";
 
@@ -71,6 +72,15 @@ export function createMailRoutes() {
 
     await inbox.markSeen(id);
 
+    // Get updated unread count
+    const newMessages = await inbox.list("new");
+    
+    // Broadcast mail read event
+    broadcastMailEvent("read", {
+      messageId: id,
+      unreadCount: newMessages.length,
+    });
+
     return c.json({ success: true });
   });
 
@@ -119,6 +129,14 @@ export function createMailRoutes() {
       headers: body.headers || {},
     });
 
+    // Broadcast mail sent event
+    broadcastMailEvent("sent", {
+      messageId: message.id,
+      from: body.from,
+      to: body.to,
+      subject: body.subject,
+    });
+
     return c.json({ message }, 201);
   });
 
@@ -129,6 +147,15 @@ export function createMailRoutes() {
 
     await inbox.delete(id);
 
+    // Get updated unread count
+    const newMessages = await inbox.list("new");
+    
+    // Broadcast mail deleted event
+    broadcastMailEvent("deleted", {
+      messageId: id,
+      unreadCount: newMessages.length,
+    });
+
     return c.json({ success: true });
   });
 
@@ -138,6 +165,15 @@ export function createMailRoutes() {
     const id = c.req.param("id");
 
     await inbox.archive(id);
+
+    // Get updated unread count
+    const newMessages = await inbox.list("new");
+    
+    // Broadcast mail archived event
+    broadcastMailEvent("archived", {
+      messageId: id,
+      unreadCount: newMessages.length,
+    });
 
     return c.json({ success: true });
   });

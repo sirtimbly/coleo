@@ -6,11 +6,12 @@
  * - activity: New activity entries
  * - proposals: Proposal updates
  * - brain: Brain status changes
+ * - mail: New mail messages
  */
 
 import type { ServerWebSocket } from "bun";
 
-export type Channel = "arms" | "activity" | "proposals" | "brain" | "all";
+export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "all";
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {
@@ -183,6 +184,19 @@ export function broadcastBrainEvent(event: "started" | "stopped" | "paused" | "r
   uptime?: number;
 }) {
   broadcast("brain", `brain.${event}`, data);
+}
+
+/**
+ * Broadcast mail events
+ */
+export function broadcastMailEvent(event: "received" | "read" | "archived" | "deleted" | "sent", data: {
+  messageId: string;
+  from?: string;
+  to?: string;
+  subject?: string;
+  unreadCount?: number;
+}) {
+  broadcast("mail", `mail.${event}`, data);
 }
 
 /**
