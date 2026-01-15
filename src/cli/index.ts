@@ -240,8 +240,10 @@ brainCmd
 
     if (options.once) {
       await brain.runOnce();
+      await brain.shutdown();
     } else {
       await brain.run();
+      await brain.shutdown();
     }
   });
 

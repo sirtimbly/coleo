@@ -13,7 +13,7 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
-import { DocWatcher, getDocWatcher } from "../docs/watcher";
+import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery } from "../types";
 
@@ -139,6 +139,7 @@ export class Brain {
   private apiBaseUrl: string;
   private apiKey: string;
   private mailProcessor: MailProcessor;
+  private stuckArmAnalyzer: StuckArmAnalyzer;
 
   /**
    * Log an activity entry
@@ -170,6 +171,9 @@ export class Brain {
 
     // Initialize mail processor
     this.mailProcessor = new MailProcessor((msg) => this.log(msg));
+
+    // Initialize stuck arm analyzer
+    this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg));
   }
 
   /**
@@ -287,22 +291,25 @@ export class Brain {
     // Step 3: Check arm health and detect new arms
     await this.checkArms();
     
-    // Step 4: Assign initial tasks to new arms
+    // Step 4: Check for stuck arms and help them
+    await this.checkStuckArms();
+    
+    // Step 5: Assign initial tasks to new arms
     await this.assignInitialTasks();
     
-    // Step 5: Assign pending tasks to idle arms
+    // Step 6: Assign pending tasks to idle arms
     await this.assignTasks();
     
-    // Step 6: Prompt idle arms to check for work or file changes
+    // Step 7: Prompt idle arms to check for work or file changes
     await this.promptIdleArms();
     
-    // Step 7: Sync tasks from plan files
+    // Step 8: Sync tasks from plan files
     await this.syncPlanTasks();
     
-    // Step 7: Save state
+    // Step 9: Save state
     await this.saveState();
     
-    // Step 8: Notify Observatory of poll completion
+    // Step 10: Notify Observatory of poll completion
     await this.notifyObservatory("poll");
     
     this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.arms.size} arms`);
@@ -391,6 +398,23 @@ export class Brain {
   stop(): void {
     this.running = false;
     this.log("Stop requested");
+  }
+
+  /**
+   * Shutdown the brain and clean up resources
+   * This should be called after run() or runOnce() completes
+   */
+  async shutdown(): Promise<void> {
+    // Stop the doc watcher
+    stopDocWatcher();
+
+    // Close the database
+    if (this.db) {
+      this.db.close();
+      this.db = null;
+    }
+
+    this.log("Brain shutdown complete");
   }
 
   /**
@@ -1373,6 +1397,221 @@ export class Brain {
   }
 
   /**
+   * Read recent logs for an arm from the log file
+   */
+  private async readArmLogs(armId: string, tailLines = 100): Promise<string> {
+    const logPath = join(this.options.octopaiDir, "logs", `${armId}.log`);
+    try {
+      const content = await readFile(logPath, "utf-8");
+      const lines = content.split("\n");
+      return lines.slice(-tailLines).join("\n");
+    } catch {
+      return "";
+    }
+  }
+
+  /**
+   * Check for stuck arms and help them
+   * 
+   * This method:
+   * 1. Gets recent PTY output for each "busy" arm
+   * 2. Uses LLM to analyze if the arm is stuck
+   * 3. Takes appropriate action (answer question, approve, escalate, etc.)
+   */
+  private async checkStuckArms(): Promise<void> {
+    // Get arms that are marked as busy (they should be working on something)
+    const busyArms = Array.from(this.arms.values()).filter(arm => arm.status === "busy");
+
+    if (busyArms.length === 0) {
+      return;
+    }
+
+    this.log(`Checking ${busyArms.length} busy arm(s) for stuck state...`);
+
+    for (const arm of busyArms) {
+      const armDomain = (arm as Arm & { domain?: string }).domain || "general";
+      
+      // Read recent logs for this arm
+      const recentOutput = await this.readArmLogs(arm.name, 100);
+      
+      if (!recentOutput || recentOutput.trim().length < 50) {
+        // No significant output - might be starting up or truly idle
+        this.log(`Arm ${arm.name}: insufficient log output to analyze`);
+        continue;
+      }
+
+      // Get current task description for context
+      let currentTaskDescription: string | undefined;
+      if (arm.currentTask) {
+        const task = this.tasks.find(t => t.id === arm.currentTask);
+        currentTaskDescription = task ? `${task.subject}: ${task.description?.slice(0, 200)}` : undefined;
+      }
+
+      // Analyze if the arm is stuck
+      const analysis = await this.stuckArmAnalyzer.analyze(
+        arm.name,
+        armDomain,
+        recentOutput,
+        currentTaskDescription
+      );
+
+      if (!analysis.isStuck) {
+        this.log(`Arm ${arm.name}: not stuck (${analysis.reasoning})`);
+        continue;
+      }
+
+      // Arm is stuck - take action
+      this.log(`Arm ${arm.name} is STUCK: ${analysis.stuckType} (confidence: ${analysis.confidence}) - ${analysis.reasoning}`);
+      this.logActivity("brain", "arm_stuck_detected", arm.id, {
+        stuckType: analysis.stuckType,
+        confidence: analysis.confidence,
+        reasoning: analysis.reasoning,
+        suggestedAction: analysis.suggestedAction,
+      });
+
+      // Handle based on suggested action
+      await this.handleStuckArm(arm, analysis);
+    }
+  }
+
+  /**
+   * Handle a stuck arm based on the analysis
+   */
+  private async handleStuckArm(arm: Arm, analysis: StuckAnalysis): Promise<void> {
+    switch (analysis.suggestedAction) {
+      case "answer":
+        // Generate an answer to the arm's question
+        if (analysis.suggestedResponse) {
+          this.log(`Answering ${arm.name}'s question: "${analysis.suggestedResponse.slice(0, 50)}..."`);
+          const success = await this.sendPromptToArm(arm.name, analysis.suggestedResponse);
+          if (success) {
+            this.logActivity("brain", "arm_unstuck", arm.id, {
+              action: "answered",
+              response: analysis.suggestedResponse.slice(0, 100),
+            });
+          }
+        } else {
+          // Need to generate an answer - escalate for now
+          await this.escalateStuckArm(arm, analysis);
+        }
+        break;
+
+      case "approve":
+        // Auto-approve if confidence is high enough
+        if (analysis.confidence >= 0.7) {
+          const approvalResponse = analysis.suggestedResponse || "Yes, proceed.";
+          this.log(`Auto-approving for ${arm.name}: "${approvalResponse}"`);
+          const success = await this.sendPromptToArm(arm.name, approvalResponse);
+          if (success) {
+            this.logActivity("brain", "arm_unstuck", arm.id, {
+              action: "auto_approved",
+              response: approvalResponse,
+            });
+          }
+        } else {
+          // Not confident enough - escalate to human
+          await this.escalateStuckArm(arm, analysis);
+        }
+        break;
+
+      case "compact":
+        // Arm is looping - send /compact command and retry
+        this.log(`Sending /compact to ${arm.name} due to looping`);
+        await this.sendPromptToArm(arm.name, "/compact");
+        
+        // Wait a bit then send a nudge to continue
+        setTimeout(async () => {
+          await this.sendPromptToArm(
+            arm.name,
+            "You were stuck in a loop. I've compacted your context. Please review the current state and try a different approach to complete your task."
+          );
+        }, 2000);
+        
+        this.logActivity("brain", "arm_unstuck", arm.id, {
+          action: "compacted",
+          reason: analysis.reasoning,
+        });
+        break;
+
+      case "restart":
+        // Arm has unrecoverable error - mark task as blocked
+        this.log(`Arm ${arm.name} needs restart due to error`);
+        if (arm.currentTask) {
+          const task = this.tasks.find(t => t.id === arm.currentTask);
+          if (task) {
+            task.status = "blocked";
+            task.updatedAt = new Date();
+            await this.saveTasks();
+          }
+        }
+        await this.escalateStuckArm(arm, analysis);
+        break;
+
+      case "prompt":
+        // Send a generic nudge to continue
+        const nudgeMessage = analysis.suggestedResponse || 
+          "Please continue with your current task. If you're waiting for input, make a reasonable decision and proceed.";
+        this.log(`Prompting ${arm.name} to continue: "${nudgeMessage.slice(0, 50)}..."`);
+        await this.sendPromptToArm(arm.name, nudgeMessage);
+        this.logActivity("brain", "arm_unstuck", arm.id, {
+          action: "prompted",
+          response: nudgeMessage.slice(0, 100),
+        });
+        break;
+
+      case "escalate":
+      default:
+        // Can't handle automatically - escalate to human
+        await this.escalateStuckArm(arm, analysis);
+        break;
+    }
+  }
+
+  /**
+   * Escalate a stuck arm to the human
+   */
+  private async escalateStuckArm(arm: Arm, analysis: StuckAnalysis): Promise<void> {
+    const recentOutput = await this.readArmLogs(arm.name, 30);
+    const taskInfo = arm.currentTask
+      ? this.tasks.find(t => t.id === arm.currentTask)?.subject || arm.currentTask
+      : "unknown";
+
+    await this.sendToHuman({
+      subject: `[octopai] Arm ${arm.name} needs help (${analysis.stuckType})`,
+      body: `The arm "${arm.name}" appears to be stuck and needs human intervention.
+
+**Stuck Type:** ${analysis.stuckType}
+**Confidence:** ${Math.round(analysis.confidence * 100)}%
+**Reasoning:** ${analysis.reasoning}
+
+**Current Task:** ${taskInfo}
+
+**Recent Output:**
+\`\`\`
+${recentOutput.slice(-2000)}
+\`\`\`
+
+**Suggested Action:** ${analysis.suggestedAction || "manual intervention"}
+
+To help this arm, reply to this email with instructions, or use:
+\`\`\`
+octopai arm prompt ${arm.name} "your message here"
+\`\`\``,
+      headers: {
+        "X-Octopai-Type": "arm-stuck",
+        "X-Octopai-Arm": arm.name,
+        "X-Octopai-Stuck-Type": analysis.stuckType || "unknown",
+        "Priority": "high",
+      },
+    });
+
+    this.logActivity("brain", "arm_stuck_escalated", arm.id, {
+      stuckType: analysis.stuckType,
+      confidence: analysis.confidence,
+    });
+  }
+
+  /**
    * Assign pending tasks to available arms
    * Considers task domain preferences when assigning
    */
@@ -1965,3 +2204,243 @@ type HumanIntent =
   | { type: "doc_update"; subject: string; body: string; targetDoc?: string }
   | { type: "approval_response"; originalId: string; approved: boolean; comment: string }
   | { type: "query"; query: string };
+
+/**
+ * Stuck Arm Analysis Result
+ */
+interface StuckAnalysis {
+  isStuck: boolean;
+  stuckType?: "asking_question" | "waiting_approval" | "looping" | "error" | "idle_too_long" | "unknown";
+  reasoning: string;
+  suggestedAction?: "answer" | "approve" | "restart" | "compact" | "escalate" | "prompt";
+  suggestedResponse?: string;
+  confidence: number; // 0-1
+}
+
+/**
+ * LLM-based Stuck Arm Analyzer
+ * Analyzes PTY output to determine if an arm is stuck and suggests actions
+ */
+export class StuckArmAnalyzer {
+  private apiKey: string;
+  private model: string;
+  private baseUrl: string;
+  private logger: (message: string) => void;
+
+  constructor(logger: (message: string) => void) {
+    this.logger = logger;
+    this.apiKey = process.env.OPENAI_API_KEY || "";
+    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+  }
+
+  /**
+   * Analyze arm output to determine if it's stuck
+   */
+  async analyze(
+    armName: string,
+    armDomain: string,
+    recentOutput: string,
+    currentTask?: string
+  ): Promise<StuckAnalysis> {
+    // Quick heuristics first (avoid LLM calls when possible)
+    const quickResult = this.quickAnalysis(recentOutput);
+    if (quickResult) {
+      return quickResult;
+    }
+
+    // Use LLM for deeper analysis
+    if (!this.apiKey) {
+      return this.fallbackAnalysis(recentOutput);
+    }
+
+    const systemPrompt = `You are analyzing the terminal output of an AI coding agent (arm) to determine if it's stuck and needs help.
+
+## Arm Info
+- Name: ${armName}
+- Domain: ${armDomain}
+- Current Task: ${currentTask || "unknown"}
+
+## Signs the arm is STUCK:
+1. **asking_question** - Output ends with a question mark or "?" and is waiting for user input
+2. **waiting_approval** - Asking for confirmation/approval (y/n, yes/no, approve)
+3. **looping** - Same error or action repeated 3+ times
+4. **error** - Stuck on an error it can't resolve
+5. **idle_too_long** - No meaningful activity, just waiting
+
+## Signs the arm is NOT stuck:
+- Actively writing/editing code
+- Running tests or builds
+- Making progress on a task
+- Recently completed an action
+
+## Response Format (JSON only, no markdown):
+{
+  "isStuck": boolean,
+  "stuckType": "asking_question" | "waiting_approval" | "looping" | "error" | "idle_too_long" | "unknown" | null,
+  "reasoning": "brief explanation",
+  "suggestedAction": "answer" | "approve" | "restart" | "compact" | "escalate" | "prompt" | null,
+  "suggestedResponse": "what to tell the arm if action is 'answer' or 'prompt'",
+  "confidence": 0.0 to 1.0
+}`;
+
+    const userMessage = `Recent terminal output (last ~100 lines):
+\`\`\`
+${recentOutput.slice(-8000)}
+\`\`\`
+
+Is this arm stuck? If so, what should we do?`;
+
+    try {
+      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userMessage },
+          ],
+          temperature: 0.2,
+          max_tokens: 500,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        this.logger(`[stuck-analyzer] OpenAI API error: ${err.substring(0, 200)}`);
+        return this.fallbackAnalysis(recentOutput);
+      }
+
+      const data = await response.json() as { choices: Array<{ message: { content: string } }> };
+      const content = data.choices[0]?.message?.content || "";
+
+      // Parse JSON from response
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]) as StuckAnalysis;
+        this.logger(`[stuck-analyzer] LLM analysis for ${armName}: stuck=${result.isStuck}, type=${result.stuckType}, confidence=${result.confidence}`);
+        return result;
+      }
+
+      return this.fallbackAnalysis(recentOutput);
+    } catch (err) {
+      this.logger(`[stuck-analyzer] LLM analysis error: ${err}`);
+      return this.fallbackAnalysis(recentOutput);
+    }
+  }
+
+  /**
+   * Quick heuristic analysis (avoids LLM call)
+   */
+  private quickAnalysis(output: string): StuckAnalysis | null {
+    const lines = output.trim().split("\n");
+    const lastLines = lines.slice(-20).join("\n").toLowerCase();
+
+    // Check for obvious question patterns
+    const questionPatterns = [
+      /\?\s*$/m,
+      /would you like/i,
+      /do you want/i,
+      /please (choose|select|confirm|specify)/i,
+      /\(y\/n\)/i,
+      /\[y\/n\]/i,
+      /yes or no/i,
+      /enter.*:/i,
+      /waiting for.*input/i,
+    ];
+
+    for (const pattern of questionPatterns) {
+      if (pattern.test(lastLines)) {
+        return {
+          isStuck: true,
+          stuckType: "asking_question",
+          reasoning: `Output matches question pattern: ${pattern}`,
+          suggestedAction: "answer",
+          confidence: 0.8,
+        };
+      }
+    }
+
+    // Check for approval patterns
+    const approvalPatterns = [
+      /approve.*\?/i,
+      /proceed.*\?/i,
+      /continue.*\?/i,
+      /confirm.*\?/i,
+    ];
+
+    for (const pattern of approvalPatterns) {
+      if (pattern.test(lastLines)) {
+        return {
+          isStuck: true,
+          stuckType: "waiting_approval",
+          reasoning: `Output matches approval pattern: ${pattern}`,
+          suggestedAction: "approve",
+          suggestedResponse: "Yes, proceed.",
+          confidence: 0.85,
+        };
+      }
+    }
+
+    // Check for repeated errors (looping)
+    const errorCounts = new Map<string, number>();
+    for (const line of lines.slice(-50)) {
+      if (/error|failed|exception/i.test(line)) {
+        const normalized = line.toLowerCase().replace(/\d+/g, "N").trim();
+        errorCounts.set(normalized, (errorCounts.get(normalized) || 0) + 1);
+      }
+    }
+
+    for (const [error, count] of errorCounts) {
+      if (count >= 3) {
+        return {
+          isStuck: true,
+          stuckType: "looping",
+          reasoning: `Same error repeated ${count} times: ${error.slice(0, 50)}...`,
+          suggestedAction: "compact",
+          confidence: 0.75,
+        };
+      }
+    }
+
+    return null; // Need deeper analysis
+  }
+
+  /**
+   * Fallback analysis when LLM is unavailable
+   */
+  private fallbackAnalysis(output: string): StuckAnalysis {
+    const lines = output.trim().split("\n");
+    const lastLine = lines[lines.length - 1] || "";
+
+    // Very basic heuristics
+    if (lastLine.includes("?") || lastLine.toLowerCase().includes("input")) {
+      return {
+        isStuck: true,
+        stuckType: "asking_question",
+        reasoning: "Last line appears to be a question (fallback)",
+        suggestedAction: "escalate",
+        confidence: 0.5,
+      };
+    }
+
+    // If output is very short or empty, might be idle
+    if (output.trim().length < 100) {
+      return {
+        isStuck: false,
+        reasoning: "Output too short to determine (fallback)",
+        confidence: 0.3,
+      };
+    }
+
+    return {
+      isStuck: false,
+      reasoning: "No obvious stuck patterns detected (fallback)",
+      confidence: 0.4,
+    };
+  }
+}
