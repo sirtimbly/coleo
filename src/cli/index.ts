@@ -1050,9 +1050,10 @@ armCmd
           console.log(`[EVENT] ${type}: ${propsPreview}${propsPreview.length >= 200 ? '...' : ''}`);
         }
 
-        // Handle message start/end
+        // Handle message events - role is nested under props.info
         if (type === "message.created" || type === "message.updated") {
-          const role = props.role as string;
+          const info = props.info as Record<string, unknown> | undefined;
+          const role = info?.role as string;
           if (role && role !== currentRole) {
             if (!lastWasNewline) {
               process.stdout.write("\n");
@@ -1066,61 +1067,69 @@ armCmd
             currentRole = role;
             lastWasNewline = true;
           }
-        }
-
-        // Handle text parts - the main content!
-        if (type === "part.created" || type === "part.updated") {
-          const partType = props.type as string;
           
-          if (partType === "text") {
-            const text = props.text as string;
-            if (text) {
-              // For part.created, show the full text
-              // For part.updated, we'd need to track deltas - for now show full text on created
-              if (type === "part.created") {
-                process.stdout.write(text);
-                lastWasNewline = text.endsWith("\n");
-              }
-            }
-          }
-          
-          // Handle tool invocations
-          if (partType === "tool-invocation" && showTools) {
-            const toolName = props.toolName as string || props.name as string;
-            const state = props.state as string;
-            
-            if (state === "pending" || state === "running") {
-              if (!lastWasNewline) process.stdout.write("\n");
-              console.log(`\n🔧 Tool: ${toolName}`);
-              currentToolName = toolName;
-              lastWasNewline = true;
-            } else if (state === "completed") {
-              // Tool finished
-              if (!lastWasNewline) process.stdout.write("\n");
-              console.log(`   ✓ ${currentToolName || toolName} completed`);
-              lastWasNewline = true;
-            } else if (state === "error") {
-              if (!lastWasNewline) process.stdout.write("\n");
-              const error = props.error as string || "unknown error";
-              console.log(`   ✗ ${currentToolName || toolName} failed: ${error}`);
-              lastWasNewline = true;
-            }
-          }
-
-          // Handle tool results
-          if (partType === "tool-result" && showTools) {
-            // Tool results are usually large, just note that we got one
+          // Check for errors in the message
+          const error = info?.error as Record<string, unknown> | undefined;
+          if (error) {
+            const errorData = error.data as Record<string, unknown> | undefined;
+            const errorMessage = errorData?.message || error.name || "Unknown error";
             if (!lastWasNewline) process.stdout.write("\n");
+            console.log(`\n❌ Error: ${errorMessage}`);
             lastWasNewline = true;
           }
         }
 
-        // Handle session status changes
-        if (type === "session.updated") {
-          const status = props.status as string;
-          if (status === "running") {
-            // Agent started processing
-          } else if (status === "idle") {
+        // Handle text parts - OpenCode uses message.part.updated with nested part object
+        if (type === "message.part.updated" || type === "message.part.created") {
+          const part = props.part as Record<string, unknown> | undefined;
+          if (part) {
+            const partType = part.type as string;
+            
+            if (partType === "text") {
+              const text = part.text as string;
+              if (text) {
+                process.stdout.write(text);
+                lastWasNewline = text.endsWith("\n");
+              }
+            }
+            
+            // Handle tool invocations
+            if (partType === "tool-invocation" && showTools) {
+              const toolName = part.toolName as string || part.name as string;
+              const state = part.state as string;
+              
+              if (state === "pending" || state === "running") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                console.log(`\n🔧 Tool: ${toolName}`);
+                currentToolName = toolName;
+                lastWasNewline = true;
+              } else if (state === "completed") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                console.log(`   ✓ ${currentToolName || toolName} completed`);
+                lastWasNewline = true;
+              } else if (state === "error") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                const error = part.error as string || "unknown error";
+                console.log(`   ✗ ${currentToolName || toolName} failed: ${error}`);
+                lastWasNewline = true;
+              }
+            }
+
+            // Handle tool results
+            if (partType === "tool-result" && showTools) {
+              if (!lastWasNewline) process.stdout.write("\n");
+              lastWasNewline = true;
+            }
+          }
+        }
+
+        // Handle session status changes - status is nested
+        if (type === "session.status") {
+          const status = props.status as Record<string, unknown> | undefined;
+          const statusType = status?.type as string;
+          if (statusType === "busy") {
+            // Agent started processing - could show a spinner here
+          } else if (statusType === "idle") {
             // Agent finished
             if (!lastWasNewline) process.stdout.write("\n");
             console.log("\n" + "─".repeat(60));
@@ -1128,6 +1137,18 @@ armCmd
             console.log("─".repeat(60) + "\n");
             lastWasNewline = true;
             currentRole = "";
+          }
+        }
+
+        // Handle session errors
+        if (type === "session.error") {
+          const error = props.error as Record<string, unknown> | undefined;
+          if (error) {
+            const errorData = error.data as Record<string, unknown> | undefined;
+            const errorMessage = errorData?.message || error.name || "Unknown error";
+            if (!lastWasNewline) process.stdout.write("\n");
+            console.log(`\n❌ Session Error: ${errorMessage}`);
+            lastWasNewline = true;
           }
         }
 
