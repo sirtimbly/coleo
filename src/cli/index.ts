@@ -918,12 +918,14 @@ armCmd
   .option("--no-tools", "Hide tool invocations")
   .option("--no-system", "Hide system messages")
   .option("-n, --history <count>", "Show last N messages on connect", "2")
-  .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string }) => {
+  .option("-v, --verbose", "Show all SSE events for debugging")
+  .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }) => {
     const { apiUrl, headers } = getApiConfig();
     const apiKey = process.env.OCTOPAI_API_KEY;
     const showTools = options?.tools !== false;
     const showSystem = options?.system !== false;
     const historyCount = parseInt(options?.history || "2", 10);
+    const verbose = options?.verbose === true;
     
     if (!await isApiRunning()) {
       console.error("API server is not running. Start it with: octopai serve");
@@ -1042,6 +1044,12 @@ armCmd
         const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
         const { type, properties: props } = event;
 
+        // Verbose logging - show all events
+        if (verbose) {
+          const propsPreview = JSON.stringify(props).slice(0, 200);
+          console.log(`[EVENT] ${type}: ${propsPreview}${propsPreview.length >= 200 ? '...' : ''}`);
+        }
+
         // Handle message start/end
         if (type === "message.created" || type === "message.updated") {
           const role = props.role as string;
@@ -1130,6 +1138,10 @@ armCmd
 
     // Connect to SSE stream
     try {
+      if (verbose) {
+        console.log(`[DEBUG] Connecting to SSE: ${opencodeUrl}`);
+      }
+      
       const response = await fetch(opencodeUrl, {
         headers: {
           "Accept": "text/event-stream",
@@ -1147,6 +1159,11 @@ armCmd
         process.exit(1);
       }
 
+      if (verbose) {
+        console.log(`[DEBUG] Connected! Response status: ${response.status}`);
+        console.log(`[DEBUG] Content-Type: ${response.headers.get('content-type')}`);
+      }
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -1162,9 +1179,16 @@ armCmd
 
       while (running) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          if (verbose) console.log("[DEBUG] Stream ended (done=true)");
+          break;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
+        const chunk = decoder.decode(value, { stream: true });
+        if (verbose && chunk.trim()) {
+          console.log(`[DEBUG] Received chunk (${chunk.length} bytes): ${chunk.slice(0, 100).replace(/\n/g, '\\n')}...`);
+        }
+        buffer += chunk;
 
         // Process complete events
         const events = buffer.split("\n\n");
