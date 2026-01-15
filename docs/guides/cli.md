@@ -347,6 +347,95 @@ Files modified:
 
 ---
 
+### imap
+
+IMAP server commands for accessing Octopai mail with any email client.
+
+#### imap serve
+
+Start the IMAP server.
+
+```bash
+octopai imap serve [options]
+
+Options:
+  -p, --port <port>          IMAP server port (default: 1143)
+  -h, --host <host>          IMAP server host (default: 127.0.0.1)
+  -u, --username <username>  IMAP username (default: octopai)
+  --password <password>      IMAP password (auto-generated if not provided)
+```
+
+**Examples:**
+```bash
+# Start with defaults
+octopai imap serve
+
+# Custom port
+octopai imap serve --port 993
+
+# Allow external connections (use with caution)
+octopai imap serve --host 0.0.0.0
+```
+
+**Output:**
+```
+Starting IMAP server...
+  Host: 127.0.0.1
+  Port: 1143
+  Username: octopai
+  Password: abc123...
+
+Connect with your email client using:
+  Server: 127.0.0.1
+  Port: 1143
+  Security: None (local only)
+  Username: octopai
+  Password: abc123...
+```
+
+**Configuring Email Clients:**
+
+For Apple Mail:
+1. Add new account → Other Mail Account
+2. Server: 127.0.0.1, Port: 1143
+3. Connection Security: None
+4. Username: octopai
+5. Password: (from output above)
+
+For Thunderbird:
+1. Settings → Account Settings → Account Actions → Add Mail Account
+2. Manual config: IMAP, Server: 127.0.0.1:1143, SSL: None
+3. Username: octopai
+4. Password: (from output above)
+
+#### imap password
+
+Show or reset the IMAP password.
+
+```bash
+octopai imap password [options]
+
+Options:
+  -r, --reset  Generate a new password
+```
+
+**Examples:**
+```bash
+# Show current password
+octopai imap password
+
+# Reset password
+octopai imap password --reset
+```
+
+**Available Mailboxes:**
+- `INBOX` - Messages from arms and brain
+- `SENT` - Messages you've sent
+- `DRAFTS` - Draft messages
+- `ARCHIVE` - Archived messages
+
+---
+
 ### mcp
 
 MCP server commands.

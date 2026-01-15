@@ -86,6 +86,10 @@ async function sendToBrain(message: Omit<QueueMessage, "id" | "timestamp">): Pro
 
 /**
  * Read pending tasks for this arm (from SQLite database)
+ * Returns tasks that are:
+ * 1. Assigned to this arm, OR
+ * 2. Unassigned (any arm can claim them), OR
+ * 3. Assigned to no one and have a domain preference (arm can still claim if no better match)
  */
 async function getPendingTasks(): Promise<Task[]> {
   const tasks: Task[] = [];
@@ -94,12 +98,18 @@ async function getPendingTasks(): Promise<Task[]> {
   try {
     const database = getDatabase();
     
+    // Get all pending/claimed tasks that this arm could work on
+    // Be permissive - any idle arm should be able to pick up unassigned work
     const dbTasks = database.query(`
-      SELECT id, subject, description, status, priority, phase, metadata, created_at, updated_at
+      SELECT id, subject, description, status, priority, phase, domain, assigned_to, metadata, created_at, updated_at
       FROM tasks
       WHERE status IN ('pending', 'claimed')
-      AND (assigned_to = ? OR assigned_to IS NULL)
+      AND (
+        assigned_to = ?           -- Tasks assigned to this arm
+        OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+      )
       ORDER BY 
+        CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
         CASE priority 
           WHEN 'critical' THEN 1 
           WHEN 'high' THEN 2 
@@ -107,13 +117,15 @@ async function getPendingTasks(): Promise<Task[]> {
           WHEN 'low' THEN 4 
         END,
         created_at ASC
-    `).all(ARM_ID) as Array<{
+    `).all(ARM_ID, ARM_ID) as Array<{
       id: string;
       subject: string;
       description: string;
       status: string;
       priority: string;
       phase: string | null;
+      domain: string | null;
+      assigned_to: string | null;
       metadata: string;
       created_at: string;
       updated_at: string;
@@ -126,8 +138,8 @@ async function getPendingTasks(): Promise<Task[]> {
         description: row.description,
         status: row.status as Task["status"],
         priority: row.priority as Task["priority"],
-        assignedTo: ARM_ID,
-        domain: undefined,
+        assignedTo: row.assigned_to || undefined,
+        domain: row.domain || undefined,
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
         artifacts: [],
@@ -142,6 +154,9 @@ async function getPendingTasks(): Promise<Task[]> {
 
 /**
  * Get instructions/tasks assigned to this arm by the brain
+ * Returns tasks that are:
+ * 1. Assigned to this arm (highest priority)
+ * 2. Unassigned and pending (arm can claim them)
  */
 async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMessage[] }> {
   const tasks: Task[] = [];
@@ -151,13 +166,17 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
   try {
     const database = getDatabase();
     
-    // Get tasks: pending tasks or tasks assigned to this arm
+    // Get tasks: assigned to this arm, OR pending/unassigned (any arm can claim)
     const dbTasks = database.query(`
-      SELECT id, subject, description, status, priority, phase, metadata, created_at, updated_at
+      SELECT id, subject, description, status, priority, phase, domain, assigned_to, metadata, created_at, updated_at
       FROM tasks
       WHERE status IN ('pending', 'claimed', 'in_progress')
-      AND (assigned_to = ? OR assigned_to IS NULL)
+      AND (
+        assigned_to = ?           -- Tasks assigned to this arm
+        OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+      )
       ORDER BY 
+        CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
         CASE priority 
           WHEN 'critical' THEN 1 
           WHEN 'high' THEN 2 
@@ -165,13 +184,15 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
           WHEN 'low' THEN 4 
         END,
         created_at ASC
-    `).all(ARM_ID) as Array<{
+    `).all(ARM_ID, ARM_ID) as Array<{
       id: string;
       subject: string;
       description: string;
       status: string;
       priority: string;
       phase: string | null;
+      domain: string | null;
+      assigned_to: string | null;
       metadata: string;
       created_at: string;
       updated_at: string;
@@ -184,8 +205,8 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
         description: row.description,
         status: row.status as Task["status"],
         priority: row.priority as Task["priority"],
-        assignedTo: ARM_ID,
-        domain: undefined,
+        assignedTo: row.assigned_to || undefined,
+        domain: row.domain || undefined,
         createdAt: new Date(row.created_at),
         updatedAt: new Date(row.updated_at),
         artifacts: [],

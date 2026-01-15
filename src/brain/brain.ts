@@ -1306,27 +1306,30 @@ export class Brain {
     for (const arm of idleArms) {
       const armDomain = (arm as Arm & { domain?: string }).domain || "general";
 
-      // Check for pending tasks that match this arm's domain
-      const domainTasks = this.tasks.filter(task => {
+      // Get all unassigned pending tasks - any idle arm should be able to work on them
+      // Domain is a preference, not a hard filter
+      const availableTasks = this.tasks.filter(task => {
         if (task.status !== "pending") return false;
-        if (!task.domain) return true; // Unassigned tasks match any arm
-        return task.domain === armDomain || task.domain === "general";
+        if (task.assignedTo) return false; // Already assigned to someone
+        return true; // Any unassigned pending task is fair game
       });
 
-      const unassignedTasks = this.tasks.filter(task =>
-        task.status === "pending" && !task.assignedTo
+      // Also include tasks specifically assigned to this arm
+      const myAssignedTasks = this.tasks.filter(task =>
+        task.assignedTo === arm.id && task.status === "claimed"
       );
 
-      // Combine: domain-specific tasks + any unassigned tasks
-      const matchingTasks = [...domainTasks, ...unassignedTasks];
-      const uniqueTasks = matchingTasks.filter((task, index, self) =>
+      const allTasks = [...myAssignedTasks, ...availableTasks];
+      const uniqueTasks = allTasks.filter((task, index, self) =>
         index === self.findIndex(t => t.id === task.id)
       );
 
       if (uniqueTasks.length > 0) {
         // There are tasks available - prompt the arm to fetch its assignment
         const taskCount = uniqueTasks.length;
-        this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available, prompting to check instructions...`);
+        const domainMatchCount = uniqueTasks.filter(t => !t.domain || t.domain === armDomain).length;
+        
+        this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available (${domainMatchCount} domain match), prompting to check instructions...`);
 
         const promptSuccess = await this.sendPromptToArm(
           arm.name,
@@ -1340,6 +1343,7 @@ export class Brain {
           this.logActivity("brain", "arm_prompted", arm.id, {
             reason: "tasks_available",
             taskCount,
+            domainMatchCount,
             domain: armDomain,
           });
         } else {
@@ -1347,11 +1351,11 @@ export class Brain {
         }
       } else {
         // No tasks available - arm should wait for file watcher notifications
-        this.log(`Arm ${arm.id} [${armDomain}]: No matching tasks, waiting for file changes...`);
+        this.log(`Arm ${arm.id} [${armDomain}]: No pending tasks, waiting for file changes...`);
 
         // Log that arm is idle but monitoring
         this.logActivity("brain", "arm_waiting", arm.id, {
-          reason: "no_matching_tasks",
+          reason: "no_pending_tasks",
           domain: armDomain,
           watchingPatterns: this.getDomainPatterns(armDomain),
         });

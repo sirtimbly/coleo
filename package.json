@@ -31,6 +31,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.9",
     "@modelcontextprotocol/sdk": "^1.25.2",
+    "@tribe-x/imap-server": "^0.0.25",
     "bun-pty": "^0.4.7",
     "commander": "^14.0.2",
     "fast-glob": "^3.3.3",
