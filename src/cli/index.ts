@@ -913,6 +913,208 @@ armCmd
   });
 
 armCmd
+  .command("watch <name>")
+  .description("Watch an arm's conversation in real-time (shows message text as it streams)")
+  .option("--no-tools", "Hide tool invocations")
+  .option("--no-system", "Hide system messages")
+  .action(async (name, options?: { tools?: boolean; system?: boolean }) => {
+    const { apiUrl, headers } = getApiConfig();
+    const apiKey = process.env.OCTOPAI_API_KEY;
+    const showTools = options?.tools !== false;
+    const showSystem = options?.system !== false;
+    
+    if (!await isApiRunning()) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    if (!apiKey) {
+      console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
+      process.exit(1);
+    }
+
+    // Verify arm exists and get port
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+
+    const armData = await armRes.json() as { arm: { port: number | null } };
+    if (!armData.arm.port) {
+      console.error(`Arm ${name} is not running (no port assigned)`);
+      process.exit(1);
+    }
+
+    console.log(`Watching arm: ${name}`);
+    console.log("Press Ctrl+C to stop\n");
+    console.log("─".repeat(60));
+
+    // Connect directly to OpenCode's SSE endpoint for this arm
+    const opencodeUrl = `http://127.0.0.1:${armData.arm.port}/event`;
+    
+    // Track state for formatting
+    let currentRole = "";
+    let lastWasNewline = true;
+    let currentToolName = "";
+
+    const processEvent = (eventStr: string) => {
+      const lines = eventStr.split("\n");
+      let data = "";
+
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          data = line.slice(5).trim();
+        }
+      }
+
+      if (!data) return;
+
+      try {
+        const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
+        const { type, properties: props } = event;
+
+        // Handle message start/end
+        if (type === "message.created" || type === "message.updated") {
+          const role = props.role as string;
+          if (role && role !== currentRole) {
+            if (!lastWasNewline) {
+              process.stdout.write("\n");
+            }
+            console.log("─".repeat(60));
+            const roleLabel = role === "assistant" ? "🤖 Assistant" :
+                             role === "user" ? "👤 User" :
+                             role === "system" ? "⚙️ System" : role;
+            console.log(roleLabel);
+            console.log("");
+            currentRole = role;
+            lastWasNewline = true;
+          }
+        }
+
+        // Handle text parts - the main content!
+        if (type === "part.created" || type === "part.updated") {
+          const partType = props.type as string;
+          
+          if (partType === "text") {
+            const text = props.text as string;
+            if (text) {
+              // For part.created, show the full text
+              // For part.updated, we'd need to track deltas - for now show full text on created
+              if (type === "part.created") {
+                process.stdout.write(text);
+                lastWasNewline = text.endsWith("\n");
+              }
+            }
+          }
+          
+          // Handle tool invocations
+          if (partType === "tool-invocation" && showTools) {
+            const toolName = props.toolName as string || props.name as string;
+            const state = props.state as string;
+            
+            if (state === "pending" || state === "running") {
+              if (!lastWasNewline) process.stdout.write("\n");
+              console.log(`\n🔧 Tool: ${toolName}`);
+              currentToolName = toolName;
+              lastWasNewline = true;
+            } else if (state === "completed") {
+              // Tool finished
+              if (!lastWasNewline) process.stdout.write("\n");
+              console.log(`   ✓ ${currentToolName || toolName} completed`);
+              lastWasNewline = true;
+            } else if (state === "error") {
+              if (!lastWasNewline) process.stdout.write("\n");
+              const error = props.error as string || "unknown error";
+              console.log(`   ✗ ${currentToolName || toolName} failed: ${error}`);
+              lastWasNewline = true;
+            }
+          }
+
+          // Handle tool results
+          if (partType === "tool-result" && showTools) {
+            // Tool results are usually large, just note that we got one
+            if (!lastWasNewline) process.stdout.write("\n");
+            lastWasNewline = true;
+          }
+        }
+
+        // Handle session status changes
+        if (type === "session.updated") {
+          const status = props.status as string;
+          if (status === "running") {
+            // Agent started processing
+          } else if (status === "idle") {
+            // Agent finished
+            if (!lastWasNewline) process.stdout.write("\n");
+            console.log("\n" + "─".repeat(60));
+            console.log("✓ Response complete");
+            console.log("─".repeat(60) + "\n");
+            lastWasNewline = true;
+            currentRole = "";
+          }
+        }
+
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    // Connect to SSE stream
+    try {
+      const response = await fetch(opencodeUrl, {
+        headers: {
+          "Accept": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to connect to OpenCode: ${response.statusText}`);
+        process.exit(1);
+      }
+
+      if (!response.body) {
+        console.error("No response body from OpenCode");
+        process.exit(1);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // Handle Ctrl+C
+      let running = true;
+      process.on("SIGINT", () => {
+        console.log("\n\nStopping...");
+        running = false;
+        reader.cancel();
+        process.exit(0);
+      });
+
+      while (running) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete events
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const eventStr of events) {
+          if (eventStr.trim()) {
+            processEvent(eventStr);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Connection error: ${err}`);
+      process.exit(1);
+    }
+  });
+
+armCmd
   .command("todos <name>")
   .description("Show the todo list for an arm")
   .action(async (name) => {
