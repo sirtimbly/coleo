@@ -1397,14 +1397,48 @@ export class Brain {
   }
 
   /**
+   * Strip ANSI escape codes, TUI characters, and other non-content characters
+   * This cleans up terminal output for analysis and display
+   */
+  private stripTerminalArtifacts(text: string): string {
+    return text
+      // ANSI escape sequences (colors, cursor movement, etc.)
+      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+      // OSC sequences (terminal titles, hyperlinks, etc.)
+      .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
+      // CSI sequences that might be malformed
+      .replace(/\x1B\[[\d;]*[A-Za-z]/g, "")
+      // Other escape sequences
+      .replace(/\x1B[PX^_].*?\x1B\\/g, "")
+      // Control characters (keep \t \n \r)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+      // Box-drawing and block characters (TUI borders)
+      .replace(/[─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╌╍╎╏═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬]/g, "")
+      // Block elements (used for progress bars, etc.)
+      .replace(/[▀▁▂▃▄▅▆▇█▉▊▋▌▍▎▏▐░▒▓▔▕▖▗▘▙▚▛▜▝▞▟]/g, "")
+      // Braille patterns (sometimes used for graphics)
+      .replace(/[\u2800-\u28FF]/g, "")
+      // Other common TUI symbols
+      .replace(/[◆◇○●◐◑◒◓◔◕◖◗◘◙◚◛◜◝◞◟◠◡◢◣◤◥◦◧◨◩◪◫◬◭◮◯⊙⊚⊛⊜⊝]/g, "")
+      // Arrows and pointers
+      .replace(/[←↑→↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻↼↽↾↿⇀⇁⇂⇃⇄⇅⇆⇇⇈⇉⇊⇋⇌⇍⇎⇏⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪]/g, "")
+      // Collapse multiple spaces/newlines
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  /**
    * Read recent logs for an arm from the log file
+   * Returns cleaned output with TUI artifacts stripped
    */
   private async readArmLogs(armId: string, tailLines = 100): Promise<string> {
     const logPath = join(this.options.octopaiDir, "logs", `${armId}.log`);
     try {
       const content = await readFile(logPath, "utf-8");
       const lines = content.split("\n");
-      return lines.slice(-tailLines).join("\n");
+      const rawOutput = lines.slice(-tailLines).join("\n");
+      return this.stripTerminalArtifacts(rawOutput);
     } catch {
       return "";
     }
@@ -1688,19 +1722,6 @@ octopai arm prompt ${arm.name} "your message here"
   }
 
   /**
-   * Strip ANSI escape codes and other non-printable characters from text
-   * This ensures mail messages render properly
-   */
-  private stripAnsi(text: string): string {
-    // Remove ANSI escape sequences (colors, cursor movement, etc.)
-    // eslint-disable-next-line no-control-regex
-    return text
-      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "") // ANSI escape sequences
-      .replace(/\x1B\][^\x07]*\x07/g, "") // OSC sequences (like terminal titles)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ""); // Other control chars (keep \t, \n, \r)
-  }
-
-  /**
    * Send a message to the human's inbox
    */
   private async sendToHuman(message: {
@@ -1711,9 +1732,9 @@ octopai arm prompt ${arm.name} "your message here"
     await this.inbox.write({
       from: "brain@octopai.local",
       to: "human@local",
-      subject: this.stripAnsi(message.subject),
+      subject: this.stripTerminalArtifacts(message.subject),
       date: new Date(),
-      body: this.stripAnsi(message.body),
+      body: this.stripTerminalArtifacts(message.body),
       headers: message.headers || {},
     });
   }

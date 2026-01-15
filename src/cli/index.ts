@@ -1087,19 +1087,29 @@ mailCmd
       return;
     }
 
-    // Strip ANSI codes for clean display
-    const stripAnsi = (text: string) => text
+    // Strip ANSI codes and TUI artifacts for clean display
+    const stripTerminalArtifacts = (text: string) => text
       .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
-      .replace(/\x1B\][^\x07]*\x07/g, "")
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+      .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
+      .replace(/\x1B\[[\d;]*[A-Za-z]/g, "")
+      .replace(/\x1B[PX^_].*?\x1B\\/g, "")
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+      .replace(/[─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╌╍╎╏═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬]/g, "")
+      .replace(/[▀▁▂▃▄▅▆▇█▉▊▋▌▍▎▏▐░▒▓▔▕▖▗▘▙▚▛▜▝▞▟]/g, "")
+      .replace(/[\u2800-\u28FF]/g, "")
+      .replace(/[◆◇○●◐◑◒◓◔◕◖◗◘◙◚◛◜◝◞◟◠◡◢◣◤◥◦◧◨◩◪◫◬◭◮◯⊙⊚⊛⊜⊝]/g, "")
+      .replace(/[←↑→↓↔↕↖↗↘↙↚↛↜↝↞↟↠↡↢↣↤↥↦↧↨↩↪↫↬↭↮↯↰↱↲↳↴↵↶↷↸↹↺↻↼↽↾↿⇀⇁⇂⇃⇄⇅⇆⇇⇈⇉⇊⇋⇌⇍⇎⇏⇐⇑⇒⇓⇔⇕⇖⇗⇘⇙⇚⇛⇜⇝⇞⇟⇠⇡⇢⇣⇤⇥⇦⇧⇨⇩⇪]/g, "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
 
     console.log(`ID: ${msg.id}`);
     console.log(`From: ${msg.from}`);
     console.log(`To: ${msg.to}`);
-    console.log(`Subject: ${stripAnsi(msg.subject)}`);
+    console.log(`Subject: ${stripTerminalArtifacts(msg.subject)}`);
     console.log(`Date: ${msg.date.toLocaleString()}`);
     console.log(`---`);
-    console.log(stripAnsi(msg.body));
+    console.log(stripTerminalArtifacts(msg.body));
 
     // Mark as read
     if (!msg.flags.seen) {
