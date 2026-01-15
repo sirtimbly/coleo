@@ -502,6 +502,173 @@ export function createArmsRoutes() {
   });
 
   /**
+   * Pause an arm
+   * POST /api/arms/:id/pause
+   */
+  app.post("/:id/pause", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists
+    const row = db.query("SELECT id, status FROM arms WHERE id = ?").get(id) as { id: string; status: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (row.status === "paused") {
+      throw HttpError.badRequest(`Arm ${id} is already paused`);
+    }
+
+    if (row.status === "stopped") {
+      throw HttpError.badRequest(`Cannot pause a stopped arm`);
+    }
+
+    // Update database
+    const now = new Date().toISOString();
+    db.run("UPDATE arms SET status = 'paused', updated_at = ? WHERE id = ?", [now, id]);
+
+    // Log activity
+    logActivity(db, id, "paused");
+
+    // Broadcast arm paused
+    broadcast("arms", "arm.paused", { id, status: "paused" });
+
+    return c.json({ paused: true, status: "paused" });
+  });
+
+  /**
+   * Resume a paused arm
+   * POST /api/arms/:id/resume
+   */
+  app.post("/:id/resume", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists
+    const row = db.query("SELECT id, status FROM arms WHERE id = ?").get(id) as { id: string; status: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (row.status !== "paused") {
+      throw HttpError.badRequest(`Arm ${id} is not paused (current status: ${row.status})`);
+    }
+
+    // Update database
+    const now = new Date().toISOString();
+    db.run("UPDATE arms SET status = 'idle', updated_at = ? WHERE id = ?", [now, id]);
+
+    // Log activity
+    logActivity(db, id, "resumed");
+
+    // Broadcast arm resumed
+    broadcast("arms", "arm.resumed", { id, status: "idle" });
+
+    return c.json({ resumed: true, status: "idle" });
+  });
+
+  /**
+   * Get arm's current context (files, tokens)
+   * GET /api/arms/:id/context
+   */
+  app.get("/:id/context", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    const row = db.query(`
+      SELECT 
+        id, 
+        context_budget as contextBudget,
+        current_context_used as currentContextUsed
+      FROM arms
+      WHERE id = ?
+    `).get(id) as { id: string; contextBudget: number; currentContextUsed: number } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Get file claims for this arm
+    let files: Array<{ path: string; claimedAt: string }> = [];
+    try {
+      const claims = db.query(`
+        SELECT file_path as path, claimed_at as claimedAt
+        FROM claims
+        WHERE arm_id = ?
+        ORDER BY claimed_at DESC
+      `).all(id) as Array<{ path: string; claimedAt: string }>;
+      files = claims;
+    } catch {
+      // Claims table may not exist yet
+    }
+
+    return c.json({
+      context: {
+        budget: row.contextBudget,
+        used: row.currentContextUsed,
+        utilization: row.contextBudget > 0 ? row.currentContextUsed / row.contextBudget : 0,
+        files,
+      },
+    });
+  });
+
+  /**
+   * Get arm's activity log
+   * GET /api/arms/:id/activity
+   */
+  app.get("/:id/activity", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const offset = parseInt(c.req.query("offset") || "0", 10);
+
+    // Check if arm exists
+    const exists = db.query("SELECT id FROM arms WHERE id = ?").get(id);
+    if (!exists) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    try {
+      const rows = db.query(`
+        SELECT id, timestamp, actor, action, target, details
+        FROM activity
+        WHERE actor = ?
+        ORDER BY timestamp DESC
+        LIMIT ? OFFSET ?
+      `).all(id, limit, offset) as Array<{
+        id: number;
+        timestamp: string;
+        actor: string;
+        action: string;
+        target: string | null;
+        details: string;
+      }>;
+
+      const activity = rows.map((row) => ({
+        ...row,
+        details: JSON.parse(row.details || "{}"),
+      }));
+
+      // Get total count
+      const countRow = db.query("SELECT COUNT(*) as count FROM activity WHERE actor = ?").get(id) as { count: number };
+
+      return c.json({
+        activity,
+        pagination: {
+          limit,
+          offset,
+          total: countRow.count,
+        },
+      });
+    } catch {
+      return c.json({
+        activity: [],
+        pagination: { limit, offset, total: 0 },
+      });
+    }
+  });
+
+  /**
    * Send a prompt to an arm
    * POST /api/arms/:id/prompt
    * Body: { prompt: string, interrupt?: boolean }

@@ -378,6 +378,7 @@ armCmd
   .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
   .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
   .option("--template <name>", "Use a template from ~/.octopai/arms/")
+  .option("--harness <harness>", "Harness type (opencode, opencode-api). API harness is more reliable for headless operation.")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
     let armName = options.name || "";
@@ -522,6 +523,18 @@ armCmd
       }
       console.log(`Restarting stopped arm: ${armName}`);
     } else {
+      // Determine harness: explicit --harness > agent-based default
+      // Use opencode-api by default for API server spawning (more reliable)
+      let harnessType = options.harness;
+      if (!harnessType) {
+        // Default to opencode-api for headless/API spawning
+        if (armAgent === "opencode") {
+          harnessType = "opencode-api";
+        } else {
+          harnessType = armAgent;
+        }
+      }
+
       // Create new arm
       const createRes = await fetch(`${apiUrl}/api/arms`, {
         method: "POST",
@@ -529,7 +542,7 @@ armCmd
         body: JSON.stringify({
           name: armName,
           domain: armDomain,
-          harness: armAgent,
+          harness: harnessType,
           status: "starting",
           provider: armProvider,
           model: armModel,
