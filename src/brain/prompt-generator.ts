@@ -19,6 +19,7 @@ export interface PromptContext {
 
 export interface TaskDeterminationResult {
   task: {
+    id?: string;
     subject: string;
     description: string;
     classification: string;
@@ -328,6 +329,7 @@ async function getTaskBySubject(db: Database, subject: string): Promise<Task | n
 
 interface TaskDeterminationResultInternal {
   task: {
+    id?: string;
     subject: string;
     description: string;
     classification: string;
@@ -347,6 +349,7 @@ function determineNextTask(
     const task = pendingTasks[0]!;
     return {
       task: {
+        id: task.id,
         subject: task.subject,
         description: task.description,
         classification: task.domain || "development",
@@ -514,6 +517,7 @@ ${result.reasoning}
 
   if (result.task) {
     output += `## RECOMMENDED TASK
+ID: ${result.task.id || "(synthetic - not in database)"}
 Subject: ${result.task.subject}
 Classification: ${result.task.classification}
 Priority: ${result.task.priority}
