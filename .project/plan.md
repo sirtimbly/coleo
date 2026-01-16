@@ -312,8 +312,35 @@ Arm → Status Report → Brain → Aggregates → Human (email)
 ### Estimated Duration
 
 1 week
+---
+
+## New Tasks from Brain (Jan 2026)
+
+The following tasks were created by the Brain but were not in the plan. They represent work in progress that needs to be completed.
+
+### Priority Tasks
+
+- [ ] **HIGH PRIORITY**: arms can access dev server logs and control restarting dev servers
+  - Research existing solutions (MCP servers, etc.)
+  - Implement log access capability
+  - Implement server restart control
+  - Coordinate through Brain for destructive operations
+
+### Coordination Tasks
+
+- [ ] Thrashing detection (lazy claims)
+  - Detect when arms are fighting over files
+  - Implement lazy claim release protocol
+  - Add throttling to prevent rapid re-claims
+  
+- [ ] Handoff protocol between arms
+  - Define protocol for graceful task handoff
+  - Include context transfer mechanism
+  - Handle edge cases (abandoned tasks, conflicts)
 
 ---
+
+
 
 ## Phase 2.6: Agentic Brain (New)
 
