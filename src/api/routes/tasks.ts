@@ -26,6 +26,7 @@ export interface Task {
   domain: string | null;
   assignedTo: string | null;
   assignedArmName?: string;
+  consensusStatus?: "pending" | "in_progress" | "reached" | "failed";
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -48,6 +49,7 @@ interface TaskRow {
   domain: string | null;
   assigned_to: string | null;
   assigned_arm_name: string | null;
+  consensus_status: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -71,6 +73,7 @@ function parseTaskRow(row: TaskRow): Task {
     domain: row.domain,
     assignedTo: row.assigned_to,
     assignedArmName: row.assigned_arm_name || undefined,
+    consensusStatus: (row.consensus_status as Task["consensusStatus"]) || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -91,6 +94,74 @@ function logActivity(db: Database, actor: string, action: string, target?: strin
     `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
     [now, actor, action, target || null, JSON.stringify(details || {})]
   );
+}
+
+const CONSENSUS_ROLES = new Set(["primary", "watcher"]);
+const CONSENSUS_ENTRY_STATUSES = new Set(["pending", "working", "approved", "rejected", "watching"]);
+const CONSENSUS_APPROVALS = new Set(["approved", "rejected"]);
+
+type ConsensusState = "pending" | "in_progress" | "reached" | "failed";
+
+type ConsensusEntry = {
+  armId: string;
+  armName?: string;
+  role: string;
+  status: string;
+  approval: string | null;
+  approvalReason: string | null;
+  lastReport: string | null;
+  lastReportAt: string | null;
+  updatedAt: string;
+};
+
+function fetchConsensusEntries(db: Database, taskId: string): ConsensusEntry[] {
+  const rows = db.query(`
+    SELECT c.arm_id, a.name as arm_name, c.role, c.status, c.approval, c.approval_reason,
+           c.last_report, c.last_report_at, c.updated_at
+    FROM task_arm_consensus c
+    LEFT JOIN arms a ON c.arm_id = a.id
+    WHERE c.task_id = ?
+    ORDER BY c.updated_at DESC
+  `).all(taskId) as Array<{
+    arm_id: string;
+    arm_name: string | null;
+    role: string;
+    status: string;
+    approval: string | null;
+    approval_reason: string | null;
+    last_report: string | null;
+    last_report_at: string | null;
+    updated_at: string;
+  }>;
+
+  return rows.map((row) => ({
+    armId: row.arm_id,
+    armName: row.arm_name || undefined,
+    role: row.role,
+    status: row.status,
+    approval: row.approval,
+    approvalReason: row.approval_reason,
+    lastReport: row.last_report,
+    lastReportAt: row.last_report_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+function determineConsensusStatus(entries: ConsensusEntry[]): ConsensusState {
+  if (entries.length === 0) {
+    return "pending";
+  }
+
+  if (entries.some(entry => entry.approval === "rejected" || entry.status === "rejected")) {
+    return "failed";
+  }
+
+  const allApproved = entries.every(entry => entry.approval === "approved" || entry.status === "approved");
+  if (allApproved) {
+    return "reached";
+  }
+
+  return "in_progress";
 }
 
 export function createTasksRoutes() {
@@ -156,6 +227,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
+        t.consensus_status,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -223,6 +295,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
+        t.consensus_status,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -305,6 +378,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, NULL as assigned_arm_name,
+        t.consensus_status,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -428,6 +502,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
+        t.consensus_status,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -437,6 +512,128 @@ export function createTasksRoutes() {
     `).get(id) as TaskRow;
 
     return c.json({ task: parseTaskRow(row) });
+  });
+
+  app.get("/:id/consensus", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    const task = db.query("SELECT consensus_status FROM tasks WHERE id = ?").get(id) as { consensus_status: string | null } | null;
+    if (!task) {
+      throw HttpError.notFound(`Task not found: ${id}`);
+    }
+
+    const entries = fetchConsensusEntries(db, id);
+    const consensusStatus = determineConsensusStatus(entries);
+
+    return c.json({
+      taskId: id,
+      consensusStatus,
+      entries,
+    });
+  });
+
+  app.post("/:id/consensus", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      armId: string;
+      role?: "primary" | "watcher";
+      status: "pending" | "working" | "approved" | "rejected" | "watching";
+      approval?: "approved" | "rejected";
+      approvalReason?: string | null;
+      report?: string | null;
+    }>();
+
+    const task = db.query("SELECT consensus_status FROM tasks WHERE id = ?").get(id) as { consensus_status: string | null } | null;
+    if (!task) {
+      throw HttpError.notFound(`Task not found: ${id}`);
+    }
+
+    const armId = body.armId?.trim();
+    if (!armId) {
+      throw HttpError.badRequest("armId is required");
+    }
+
+    if (!body.status || !CONSENSUS_ENTRY_STATUSES.has(body.status)) {
+      throw HttpError.badRequest("status is required and must be a valid consensus status");
+    }
+
+    if (body.role && !CONSENSUS_ROLES.has(body.role)) {
+      throw HttpError.badRequest("role must be 'primary' or 'watcher'");
+    }
+
+    if (body.approval && !CONSENSUS_APPROVALS.has(body.approval)) {
+      throw HttpError.badRequest("approval must be 'approved' or 'rejected'");
+    }
+
+    const arm = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
+    if (!arm) {
+      throw HttpError.badRequest(`Arm not found: ${armId}`);
+    }
+
+    const now = new Date().toISOString();
+
+    const existing = db.query("SELECT id, role FROM task_arm_consensus WHERE task_id = ? AND arm_id = ?").get(id, armId) as { id: number; role: string } | null;
+    const role = body.role || existing?.role || "watcher";
+    const approval = body.approval || null;
+    const approvalReason = body.approvalReason?.trim() || null;
+    const hasReportField = Object.prototype.hasOwnProperty.call(body, "report");
+    const reportValue = body.report ?? null;
+    const reportTimestamp = reportValue ? now : null;
+
+    if (existing) {
+      const updates = ["role = ?", "status = ?", "approval = ?", "approval_reason = ?", "updated_at = ?"];
+      const params: (string | number | null)[] = [role, body.status, approval, approvalReason, now];
+
+      if (hasReportField) {
+        updates.push("last_report = ?");
+        updates.push("last_report_at = ?");
+        params.push(reportValue, reportTimestamp);
+      }
+
+      params.push(existing.id);
+      db.run(`UPDATE task_arm_consensus SET ${updates.join(", ")} WHERE id = ?`, params);
+    } else {
+      db.run(
+        `INSERT INTO task_arm_consensus (task_id, arm_id, role, status, approval, approval_reason, last_report, last_report_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          id,
+          armId,
+          role,
+          body.status,
+          approval,
+          approvalReason,
+          reportValue,
+          reportTimestamp,
+          now,
+          now,
+        ]
+      );
+    }
+
+    const entries = fetchConsensusEntries(db, id);
+    const consensusStatus = determineConsensusStatus(entries);
+    const currentStatus = task.consensus_status || "pending";
+
+    if (consensusStatus !== currentStatus) {
+      db.run(`UPDATE tasks SET consensus_status = ?, updated_at = ? WHERE id = ?`, [consensusStatus, now, id]);
+    }
+
+    logActivity(db, `arm:${armId}`, "task_consensus_update", id, {
+      role,
+      status: body.status,
+      approval,
+    });
+
+    broadcast("tasks", "task.consensus", { taskId: id, consensusStatus });
+
+    return c.json({
+      taskId: id,
+      consensusStatus,
+      entries,
+    });
   });
 
   /**

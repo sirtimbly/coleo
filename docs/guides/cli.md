@@ -22,8 +22,8 @@ Initialize Octopai in your home directory.
 octopai init [options]
 
 Options:
-  -d, --dir <path>  Custom directory (default: ~/.octopai)
-  --preset <name>   Load a preset configuration (fullstack, split-stack, full-team)
+  -d, --dir &lt;path&gt;  Custom directory (default: ~/.octopai)
+  --preset &lt;name&gt;   Load a preset configuration (fullstack, split-stack, full-team)
 ```
 
 **Examples:**
@@ -120,15 +120,15 @@ Spawn a new arm. Runs interactively if no arguments provided.
 octopai arm spawn [options]
 
 Options:
-  -n, --name <name>       Arm name/ID
-  -a, --agent <agent>     Agent type: opencode, claude-code, aider (default: opencode)
-  -d, --domain <domain>   (Legacy) Optional focus tag; newer flows rely on task classifications rather than fixed domains
-  -w, --workdir <path>    Working directory
-  -t, --terminal <type>   Terminal: ghostty, iterm2, terminal, tmux, headless
-  -p, --prompt <prompt>   Initial task/prompt for the arm
-  --provider <provider>   AI provider (e.g., anthropic, openai)
-  --model <model>         Model name (e.g., claude-sonnet-4-20250514)
-  --template <name>       Use template from ~/.octopai/arms/
+  -n, --name &lt;name&gt;       Arm name/ID
+  -a, --agent &lt;agent&gt;     Agent type: opencode, claude-code, aider (default: opencode)
+  -d, --domain &lt;domain&gt;   (Legacy) Optional focus tag; newer flows rely on task classifications rather than fixed domains
+  -w, --workdir &lt;path&gt;    Working directory
+  -t, --terminal &lt;type&gt;   Terminal: ghostty, iterm2, terminal, tmux, headless
+  -p, --prompt &lt;prompt&gt;   Initial task/prompt for the arm
+  --provider &lt;provider&gt;   AI provider (e.g., anthropic, openai)
+  --model &lt;model&gt;         Model name (e.g., claude-sonnet-4-20250514)
+  --template &lt;name&gt;       Use template from ~/.octopai/arms/
 ```
 
 **Interactive Mode (no arguments):**
@@ -226,11 +226,9 @@ octopai arm kill explorer
 Send a prompt/message to a running arm.
 
 ```bash
-octopai arm prompt <name> <message> [options]
-
-Options:
-  -i, --interrupt  Send escape key twice before prompt to cancel/interrupt current work
+octopai arm prompt &lt;name&gt; &lt;message&gt; [options]
 ```
+
 
 **Examples:**
 ```bash
@@ -251,12 +249,9 @@ octopai arm prompt explorer "Stop what you're doing and fix the critical bug in 
 View recent logs from an arm.
 
 ```bash
-octopai arm logs <name> [options]
-
-Options:
-  -n, --lines <n>  Number of lines to show (default: 50)
-  -f, --follow     Follow log output (tail -f style)
+octopai arm logs &lt;name&gt; [options]
 ```
+
 
 **Example:**
 ```bash
@@ -303,6 +298,7 @@ Options:
   -s, --subject <subject>  Message subject
 ```
 
+
 **Examples:**
 ```bash
 # Simple task
@@ -317,7 +313,7 @@ octopai mail send "We need OAuth support" -s "Feature: OAuth"
 Read a specific message.
 
 ```bash
-octopai mail read <id>
+octopai mail read &lt;id&gt;
 ```
 
 **Example:**
@@ -326,7 +322,7 @@ octopai mail read abc123
 ```
 
 **Output:**
-```
+```text
 From: explorer@octopai.local
 To: human@local
 Subject: Task completed: Add dark mode toggle
@@ -349,6 +345,7 @@ Files modified:
 
 ### imap
 
+
 IMAP server commands for accessing Octopai mail with any email client.
 
 #### imap serve
@@ -359,10 +356,10 @@ Start the IMAP server.
 octopai imap serve [options]
 
 Options:
-  -p, --port <port>          IMAP server port (default: 1143)
-  -h, --host <host>          IMAP server host (default: 127.0.0.1)
-  -u, --username <username>  IMAP username (default: octopai)
-  --password <password>      IMAP password (auto-generated if not provided)
+  -p, --port &lt;port&gt;          IMAP server port (default: 1143)
+  -h, --host &lt;host&gt;          IMAP server host (default: 127.0.0.1)
+  -u, --username &lt;username&gt;  IMAP username (default: octopai)
+  --password &lt;password&gt;      IMAP password (auto-generated if not provided)
 ```
 
 **Examples:**
@@ -505,7 +502,7 @@ Usage: octopai init --preset <name>
        octopai config load <name>
 ```
 
-#### config load <preset>
+#### config load &lt;preset&gt;
 
 Load an arm configuration preset into `~/.octopai/arms/`.
 
@@ -597,7 +594,7 @@ Arms can be configured via TOML files in `~/.octopai/arms/`. Each file defines a
 ### Arm Config File Structure
 
 ```toml
-# ~/.octopai/arms/<name>.toml
+# ~/.octopai/arms/&lt;name&gt;.toml
 
 [arm]
 name = "my-arm"

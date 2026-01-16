@@ -41,8 +41,32 @@ async function runMigrations(db: Database): Promise<void> {
     (db.query("SELECT name FROM _migrations").all() as { name: string }[]).map(r => r.name)
   );
 
+  // Helper to check if a column exists in a table
+  const columnExists = (table: string, column: string): boolean => {
+    try {
+      const cols = db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+      return cols.some(c => c.name === column);
+    } catch {
+      return false;
+    }
+  };
+
+  // Helper to safely add columns (SQLite doesn't support IF NOT EXISTS for ALTER TABLE)
+  const addColumnsIfNotExist = (table: string, columns: { name: string; sql: string }[]) => {
+    for (const col of columns) {
+      if (!columnExists(table, col.name)) {
+        try {
+          db.exec(col.sql);
+        } catch (err) {
+          // Column might already exist due to partial migration
+          console.log(`Note: Column ${col.name} may already exist: ${err}`);
+        }
+      }
+    }
+  };
+
   // Define migrations in order
-  const migrations: [string, string][] = [
+  const migrations: [string, string, { table: string; columns: { name: string; sql: string }[] }?][] = [
     ["001_initial_schema", MIGRATION_001],
     ["002_add_proposals", MIGRATION_002],
     ["003_add_claims", MIGRATION_003],
@@ -60,16 +84,23 @@ async function runMigrations(db: Database): Promise<void> {
     ["015_discoveries", MIGRATION_015],
     ["016_doc_updates", MIGRATION_016],
     ["017_context_compression", MIGRATION_017],
-    ["018_task_verification", MIGRATION_018],
+    ["018_task_verification", MIGRATION_018, { table: "tasks", columns: MIGRATION_018_COLUMNS }],
     ["019_task_dependencies", MIGRATION_019],
+    ["020_multi_arm_assignment", MIGRATION_020, { table: "tasks", columns: MIGRATION_020_COLUMNS }],
   ];
 
 
   // Apply pending migrations
-  for (const [name, sql] of migrations) {
+  for (const [name, sql, columnDefs] of migrations) {
     if (applied.has(name)) continue;
 
     console.log(`Applying migration: ${name}`);
+    
+    // First add any columns that need to be added (before running main SQL)
+    if (columnDefs) {
+      addColumnsIfNotExist(columnDefs.table, columnDefs.columns);
+    }
+    
     db.exec(sql);
     db.run("INSERT INTO _migrations (name) VALUES (?)", [name]);
   }
@@ -548,26 +579,8 @@ INSERT OR IGNORE INTO config (key, value) VALUES
 `;
 
 // Migration 018: Task verification workflow
+// Note: Uses a function-based approach since SQLite doesn't support ADD COLUMN IF NOT EXISTS
 const MIGRATION_018 = `
--- Add verification columns to tasks table
-ALTER TABLE tasks ADD COLUMN verification_status TEXT DEFAULT 'none' CHECK (verification_status IN ('none', 'pending', 'in_progress', 'approved', 'rejected'));
-ALTER TABLE tasks ADD COLUMN verifying_arm_id TEXT;
-ALTER TABLE tasks ADD COLUMN verified_at TEXT;
-ALTER TABLE tasks ADD COLUMN verification_notes TEXT;
-ALTER TABLE tasks ADD COLUMN verification_artifacts TEXT DEFAULT '[]';
-
--- Add verification request timestamp
-ALTER TABLE tasks ADD COLUMN verification_requested_at TEXT;
-
--- Update status values to include verification_pending
--- Note: SQLite doesn't support modifying CHECK constraints, so we document the intended behavior
--- The application layer should enforce: status IN ('pending', 'claimed', 'in_progress', 'verification_pending', 'completed', 'failed', 'blocked', 'cancelled')
-
--- Add indexes for verification workflow queries
-CREATE INDEX IF NOT EXISTS idx_tasks_verification_status ON tasks(verification_status);
-CREATE INDEX IF NOT EXISTS idx_tasks_verifying_arm ON tasks(verifying_arm_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_verification_pending ON tasks(status, verification_status) WHERE status = 'verification_pending';
-
 -- Task verification table for audit trail
 CREATE TABLE IF NOT EXISTS task_verifications (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -583,6 +596,10 @@ CREATE TABLE IF NOT EXISTS task_verifications (
 CREATE INDEX IF NOT EXISTS idx_task_ver_task ON task_verifications(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_ver_arm ON task_verifications(arm_id);
 
+-- Add indexes for verification workflow queries (columns added separately)
+CREATE INDEX IF NOT EXISTS idx_tasks_verification_status ON tasks(verification_status);
+CREATE INDEX IF NOT EXISTS idx_tasks_verifying_arm ON tasks(verifying_arm_id);
+
 -- Config for verification workflow
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('verification_required', 'true'),
@@ -590,18 +607,29 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('verification_timeout_hours', '24');
 `;
 
-// Migration 019: Task dependencies and multi-arm assignment
-const MIGRATION_019 = `
--- Add multi-arm assignment and dependency tracking
-ALTER TABLE tasks ADD COLUMN assigned_arms TEXT DEFAULT '[]'; -- JSON array of arm_ids
-ALTER TABLE tasks ADD COLUMN is_watch_mode INTEGER DEFAULT 0; -- 1 = being watched by other arms
-ALTER TABLE tasks ADD COLUMN consensus_status TEXT DEFAULT 'pending' CHECK (consensus_status IN ('pending', 'in_progress', 'reached', 'failed'));
-ALTER TABLE tasks ADD COLUMN dependency_blocked INTEGER DEFAULT 0; -- 1 = blocked by unmet dependencies
+// Columns to add for migration 018 (handled separately due to SQLite limitations)
+const MIGRATION_018_COLUMNS = [
+  { name: 'verification_status', sql: "ALTER TABLE tasks ADD COLUMN verification_status TEXT DEFAULT 'none'" },
+  { name: 'verifying_arm_id', sql: "ALTER TABLE tasks ADD COLUMN verifying_arm_id TEXT" },
+  { name: 'verified_at', sql: "ALTER TABLE tasks ADD COLUMN verified_at TEXT" },
+  { name: 'verification_notes', sql: "ALTER TABLE tasks ADD COLUMN verification_notes TEXT" },
+  { name: 'verification_artifacts', sql: "ALTER TABLE tasks ADD COLUMN verification_artifacts TEXT DEFAULT '[]'" },
+  { name: 'verification_requested_at', sql: "ALTER TABLE tasks ADD COLUMN verification_requested_at TEXT" },
+];
 
--- Update task_dependencies table for richer dependency tracking without losing history
+// Migration 019: Task dependencies
+
+const MIGRATION_019 = `
+-- Update task_dependencies table for richer dependency tracking
+-- Drop any leftover temp table from previous failed runs
+DROP TABLE IF EXISTS task_dependencies_old;
+DROP TABLE IF EXISTS task_dependencies_new;
+
+-- Rename existing table to old (if it exists)
 ALTER TABLE task_dependencies RENAME TO task_dependencies_old;
 
-CREATE TABLE IF NOT EXISTS task_dependencies (
+-- Create new dependencies table with enhanced schema
+CREATE TABLE task_dependencies (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL,
   depends_on_task_id TEXT NOT NULL,
@@ -614,12 +642,32 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
   UNIQUE(task_id, depends_on_task_id)
 );
 
-INSERT INTO task_dependencies (id, task_id, depends_on_task_id, dependency_type, auto_detected, reason, created_at)
-SELECT id, task_id, depends_on_task_id, dependency_type, 1, NULL, created_at
+-- Copy existing data from old table (only the columns that existed)
+INSERT INTO task_dependencies (task_id, depends_on_task_id, dependency_type, auto_detected, created_at)
+SELECT task_id, depends_on_task_id, dependency_type, 1, created_at
 FROM task_dependencies_old;
 
+-- Drop old table
 DROP TABLE IF EXISTS task_dependencies_old;
 
+-- Add indexes for dependency queries
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id);
+
+-- Config for dependency workflow
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('dependency_auto_detect', 'true');
+`;
+
+// Columns to add for migration 020 (handled separately due to SQLite limitations)
+const MIGRATION_020_COLUMNS = [
+  { name: 'assigned_arms', sql: "ALTER TABLE tasks ADD COLUMN assigned_arms TEXT DEFAULT '[]'" },
+  { name: 'is_watch_mode', sql: "ALTER TABLE tasks ADD COLUMN is_watch_mode INTEGER DEFAULT 0" },
+  { name: 'consensus_status', sql: "ALTER TABLE tasks ADD COLUMN consensus_status TEXT DEFAULT 'pending'" },
+  { name: 'dependency_blocked', sql: "ALTER TABLE tasks ADD COLUMN dependency_blocked INTEGER DEFAULT 0" },
+];
+
+const MIGRATION_020 = `
 -- Task arm consensus/approval tracking
 CREATE TABLE IF NOT EXISTS task_arm_consensus (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -627,9 +675,9 @@ CREATE TABLE IF NOT EXISTS task_arm_consensus (
   arm_id TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('primary', 'watcher')),
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'working', 'approved', 'rejected', 'watching')),
-  approval TEXT DEFAULT NULL, -- 'approved' | 'rejected' | NULL (pending)
+  approval TEXT DEFAULT NULL,
   approval_reason TEXT,
-  last_report TEXT, -- Last status report from this arm
+  last_report TEXT,
   last_report_at TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -641,20 +689,15 @@ CREATE INDEX IF NOT EXISTS idx_task_consensus_task ON task_arm_consensus(task_id
 CREATE INDEX IF NOT EXISTS idx_task_consensus_arm ON task_arm_consensus(arm_id);
 CREATE INDEX IF NOT EXISTS idx_task_consensus_status ON task_arm_consensus(status);
 
--- Add indexes for dependency queries
-CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
-CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id);
-
--- Config for dependency and consensus workflow
+-- Config for multi-arm and consensus workflow
 INSERT OR IGNORE INTO config (key, value) VALUES
-  ('dependency_auto_detect', 'true'),
   ('task_multi_arm_enabled', 'true'),
   ('watch_mode_enabled', 'true'),
   ('consensus_required', 'true'),
   ('max_arms_per_task', '3');
 `;
 
- /**
+  /**
  * Seed development data for testing
  */
 export async function seedDatabase(db: Database): Promise<void> {

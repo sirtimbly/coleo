@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "code-search": {
+      "type": "stdio",
+      "command": "/Users/timothy.bendt/granular/code-search/.venv/bin/python",
+      "args": ["/Users/timothy.bendt/granular/code-search/mcp_server.py", "--project", "${workspaceFolder}"]
+    }
+  }
+}

@@ -179,3 +179,169 @@ If you're unsure about an architectural decision:
 2. Use the `get_architectural_guidance` MCP tool (when available)
 3. Create a proposal for significant changes
 4. Ask the human via mail for critical decisions
+
+# Semantic Code Search
+
+This project has semantic code search enabled via the `search_code` tool.
+
+## IMPORTANT: Use `search_code` for Codebase Exploration
+
+When exploring or understanding this codebase, **use `search_code` directly** instead of delegating to the `explore` agent with `glob`/`grep`. The `search_code` tool is faster and more accurate for conceptual queries.
+
+## When to Use Semantic Search
+
+**ALWAYS use `search_code` when:**
+- Looking for how something is implemented ("how do we handle authentication?")
+- Finding where logic lives ("where are errors processed?")
+- Searching for code patterns ("find all API endpoint handlers")
+- Understanding related functionality ("code related to user sessions")
+- The search is conceptual rather than a literal string match
+- You would otherwise use the Task tool with the `explore` agent
+- Finding files that contain specific functions/identifiers together
+
+**Only use `grep`/`glob` when:**
+- You need regex pattern matching or counting occurrences
+- Looking for files by exact name pattern
+
+## Advanced Filtering
+
+The `search_code` tool supports powerful filtering options:
+
+```
+search_code(
+  query="description of what you're looking for",
+  include_extensions=".ts,.tsx",           # Only search these file types
+  exclude_patterns="node_modules,test",    # Exclude paths containing these
+  must_contain="functionA,functionB",      # Results MUST contain these terms
+  must_contain_all=true                    # true = ALL terms, false = ANY term
+)
+```
+
+## Examples
+
+### Basic semantic search
+```
+search_code(query="how are errors handled and displayed to users")
+```
+
+### Find TypeScript files only
+```
+search_code(query="React hooks", include_extensions=".ts,.tsx")
+```
+
+### Exclude test files
+```
+search_code(query="authentication logic", exclude_patterns="test,.spec,__tests__,mock")
+```
+
+### Find files using specific functions together
+Instead of:
+```
+grep -r "useBusinessOperations.*isMultiOp\|isMultiOp.*useBusinessOperations" --include="*.ts"
+```
+
+Use:
+```
+search_code(
+  query="business operations multi-op handling",
+  include_extensions=".ts,.tsx",
+  exclude_patterns="node_modules,.test.",
+  must_contain="useBusinessOperations,isMultiOp"
+)
+```
+
+## Tool Details
+
+The `search_code` tool uses vector embeddings to find semantically similar code.
+- Returns file paths, relevance scores, and code snippets
+- Supports file type filtering, path exclusions, and required term matching
+- Combines semantic understanding with exact term matching when needed
+- Works best with natural language queries describing what you're looking for
+
+---
+
+# Documentation Search
+
+This project has access to internal documentation via `search_docs` and `search_api` tools.
+
+## `search_docs` - Internal Documentation
+
+Use this when you need to find:
+- **GDS Design System**: Component usage, props, variants, design guidelines
+- **Engineering Portal**: ADRs, guides, RFCs, best practices
+- **API Documentation**: Service capabilities and integration patterns
+
+### Sources
+
+| Source | Content |
+|--------|---------|
+| `gds` | GDS Design System components and guidelines |
+| `eng_portal` | Engineering Portal (ADRs, guides, RFCs) |
+| `api` | API specifications |
+
+Leave `sources` empty to search all documentation.
+
+### Examples
+
+Find GDS Button component docs:
+```
+search_docs(query="Button component variants and props")
+```
+
+Search ADRs only:
+```
+search_docs(query="authentication architecture", sources="eng_portal")
+```
+
+Search all docs for testing guidance:
+```
+search_docs(query="unit testing best practices")
+```
+
+## `search_api` - API Specifications
+
+Use this when you need to:
+- Find API endpoints for specific capabilities
+- Understand request/response formats
+- Discover available services and operations
+- Find schema definitions
+
+### Parameters
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `query` | What you're looking for | "create field" |
+| `service` | Filter by service name | "fields-svc" |
+| `method` | Filter by HTTP method | "POST" |
+
+### Available Services
+
+Common services include: `fields-svc`, `auth-svc`, `user-svc`, `activities`, 
+`crops-svc`, `imagery-api`, `integrations-svc`, `planning-svc`, and 40+ more.
+
+### Examples
+
+Find endpoints for creating fields:
+```
+search_api(query="create field")
+```
+
+Find all POST endpoints in auth service:
+```
+search_api(query="authentication", service="auth-svc", method="POST")
+```
+
+Find user-related endpoints:
+```
+search_api(query="get user profile")
+```
+
+## When to Use Which Tool
+
+| Need | Tool |
+|------|------|
+| Find code in this project | `search_code` |
+| Find GDS component usage | `search_docs` (sources="gds") |
+| Find architecture decisions | `search_docs` (sources="eng_portal") |
+| Find API endpoints | `search_api` |
+| General documentation | `search_docs` (no sources filter) |

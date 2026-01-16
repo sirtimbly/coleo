@@ -273,7 +273,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   console.log("  Octopai API Server");
   console.log("=".repeat(60));
   console.log(`  URL:      ${serverUrl}`);
-  console.log(`  Web UI:   ${serverUrl.replace(":8080", ":5173")}`);
+  console.log(`  Web UI:   cd src/web && bun run dev`);
   if (nats) {
     console.log(`  NATS:     ${nats.getServerUrl()}`);
   }
