@@ -18,6 +18,13 @@ import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
 import { getOctopaiDir } from "../config";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import {
+  generateTaskDetermination,
+  generateContextBundle,
+  formatTaskDetermination,
+  formatContextBundle,
+  type PromptContext,
+} from "../brain/prompt-generator";
 
 // Get octopai directory from env or default (project-local)
 const OCTOPAI_DIR = getOctopaiDir();
@@ -2371,6 +2378,199 @@ export function createMcpServer(): McpServer {
             type: "text" as const,
             text: `Failed to stop monitoring '${server_id}': ${errorMsg}`
           }],
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // BRAIN INTELLIGENCE TOOLS - Rich context from the brain
+  // ============================================
+
+  // Get task determination (what should the brain decide to work on next?)
+  server.registerTool(
+    "get_task_determination",
+    {
+      description: "Get the brain's task determination - what task should be worked on next based on the plan, completed tasks, and open discoveries. This uses the same logic as 'octopai brain prompt:task' CLI command.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const database = getDatabase();
+        
+        const ctx: PromptContext = {
+          projectRoot: PROJECT_ROOT,
+          octopaiDir: OCTOPAI_DIR,
+          db: database,
+        };
+        
+        const result = await generateTaskDetermination(ctx);
+        const formatted = formatTaskDetermination(result);
+        
+        logActivity(ARM_ID, "get_task_determination", result.task?.id, {
+          hasTask: !!result.task,
+          taskSubject: result.task?.subject,
+          reasoning: result.reasoning,
+        });
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatted,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get task determination: ${errorMsg}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Get context bundle for a specific task
+  server.registerTool(
+    "get_context_bundle",
+    {
+      description: "Get the full context bundle for a specific task, including discoveries, plan excerpt, task history, and instructions. This uses the same logic as 'octopai brain prompt:context' CLI command.",
+      inputSchema: {
+        task_subject: z.string().describe("The task subject or ID to get context for"),
+      },
+    },
+    async ({ task_subject }) => {
+      try {
+        const database = getDatabase();
+        
+        const ctx: PromptContext = {
+          projectRoot: PROJECT_ROOT,
+          octopaiDir: OCTOPAI_DIR,
+          db: database,
+        };
+        
+        const result = await generateContextBundle(ctx, task_subject);
+        
+        if (!result) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No task found matching: ${task_subject}\n\nTry using 'get_my_instructions' to see available tasks, or 'get_task_determination' to get the brain's recommended next task.`,
+              },
+            ],
+          };
+        }
+        
+        const formatted = formatContextBundle(result);
+        
+        logActivity(ARM_ID, "get_context_bundle", result.task.subject, {
+          taskSubject: result.task.subject,
+          priority: result.task.priority,
+          classification: result.task.classification,
+        });
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: formatted,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get context bundle: ${errorMsg}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Get full briefing (task determination + context bundle in one call)
+  server.registerTool(
+    "get_full_briefing",
+    {
+      description: "Get a complete briefing: the brain's task determination AND the full context bundle for that task. This is the recommended way to start work - it combines 'get_task_determination' and 'get_context_bundle' into a single call for efficiency.",
+      inputSchema: {},
+    },
+    async () => {
+      try {
+        const database = getDatabase();
+        
+        const ctx: PromptContext = {
+          projectRoot: PROJECT_ROOT,
+          octopaiDir: OCTOPAI_DIR,
+          db: database,
+        };
+        
+        // Step 1: Get task determination
+        const determination = await generateTaskDetermination(ctx);
+        const determinationFormatted = formatTaskDetermination(determination);
+        
+        if (!determination.task) {
+          logActivity(ARM_ID, "get_full_briefing", undefined, {
+            hasTask: false,
+            reasoning: determination.reasoning,
+          });
+          
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: determinationFormatted + "\n\n---\n\nNo task was determined, so no context bundle is available.",
+              },
+            ],
+          };
+        }
+        
+        // Step 2: Get context bundle for the determined task
+        const contextBundle = await generateContextBundle(ctx, determination.task.subject);
+        
+        let fullBriefing = determinationFormatted;
+        
+        if (contextBundle) {
+          const contextFormatted = formatContextBundle(contextBundle);
+          fullBriefing += "\n\n" + "=".repeat(60) + "\n\n" + contextFormatted;
+        } else {
+          fullBriefing += "\n\n---\n\n*Context bundle could not be generated for this task.*";
+        }
+        
+        logActivity(ARM_ID, "get_full_briefing", determination.task.id, {
+          hasTask: true,
+          taskSubject: determination.task.subject,
+          taskId: determination.task.id,
+          priority: determination.task.priority,
+          hasContextBundle: !!contextBundle,
+        });
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: fullBriefing,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get full briefing: ${errorMsg}`,
+            },
+          ],
         };
       }
     }
