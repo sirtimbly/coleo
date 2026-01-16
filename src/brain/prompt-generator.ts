@@ -1,6 +1,6 @@
 /**
  * Prompt Generator for CLI Testing
- * 
+ *
  * Generates plain-text outputs for brain task determination and context bundles.
  * These can be copied and pasted into interactive agent text areas.
  */
@@ -53,45 +53,448 @@ export interface ContextBundleResult {
  */
 export async function generateTaskDetermination(ctx: PromptContext): Promise<TaskDeterminationResult> {
   const { db, projectRoot } = ctx;
+  const now = new Date().toISOString();
 
-  // 1. Read current plan
   const plan = await readCurrentPlan(projectRoot);
-  
-  // 2. Get completed tasks from database
-  const completedTasks = await getCompletedTasks(db);
-  
-  // 3. Get open discoveries
-  const discoveries = await getOpenDiscoveries(db);
-  
-  // 4. Get pending tasks from both database and file system
-  const dbPendingTasks = await getPendingTasks(db);
-  const filePendingTasks = await getTasksFromFiles(projectRoot);
-  
-  // 5. Merge tasks - prefer file tasks, then db tasks
-  const allTasks: Task[] = [
-    ...filePendingTasks.map(t => ({
-      id: t.id,
-      subject: t.subject,
-      description: t.description,
-      status: t.status,
-      priority: t.priority,
-      domain: t.domain || undefined,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })),
-    ...dbPendingTasks,
-  ];
-  
-  // 6. Determine next task based on progressive planning
-  const result = determineNextTask(plan, completedTasks, discoveries, allTasks);
+  const planExcerpt = plan.currentPhase || plan.content;
+  const phaseInfo = buildPhaseInfo(plan.currentPhase);
+  const snapshot = await buildStatusSnapshot(db);
+
+  const finalize = (step: DeterminationStepResult): TaskDeterminationResult => ({
+    task: step.task,
+    reasoning: step.reasoning,
+    planExcerpt,
+    completedTasks: snapshot.completed,
+    openDiscoveries: snapshot.discoveries,
+  });
+
+  const activeTask = pickExistingActiveTask(db, phaseInfo.label);
+  if (activeTask) {
+    return finalize(activeTask);
+  }
+
+  const unblockedTask = tryUnblockDependencies(db, phaseInfo.label);
+  if (unblockedTask) {
+    return finalize(unblockedTask);
+  }
+
+  const newPlanTask = createPlanTaskDeliverable(db, plan, phaseInfo.label, now);
+  if (newPlanTask) {
+    return finalize(newPlanTask);
+  }
+
+  return finalize(buildNoTaskResult(phaseInfo));
+}
+
+interface DeterminationStepResult {
+  task: TaskDeterminationResult["task"];
+  reasoning: string;
+}
+
+interface PhaseInfo {
+  label: string;
+  header: string;
+}
+
+interface StatusSnapshot {
+  completed: string[];
+  discoveries: string[];
+}
+
+function buildPhaseInfo(phaseSection: string): PhaseInfo {
+  const headerLine = phaseSection.split("\n")[0]?.trim() ?? "";
+  const match = headerLine.match(/^## (Phase \d+(?:\.\d+)?)/);
+
+  if (match) {
+    return { label: match[1]!, header: headerLine };
+  }
+
+  const cleanedHeader = headerLine.replace(/^##\s*/, "").trim();
+  const fallback = cleanedHeader || "Unknown Phase";
 
   return {
-    task: result.task,
-    reasoning: result.reasoning,
-    planExcerpt: plan.content,
-    completedTasks: completedTasks.map(t => `- ${t.subject} (${t.status})`),
-    openDiscoveries: discoveries.map(d => `- [${d.severity || "info"}] ${d.title}: ${d.details}`),
+    label: fallback,
+    header: headerLine || fallback,
   };
+}
+
+function pickExistingActiveTask(db: Database, phaseLabel: string): DeterminationStepResult | null {
+  const phaseValue = phaseLabel || "";
+  const activeTasks = db.query(`
+    SELECT id, subject, description, status, priority, domain, assigned_arms, consensus_status
+    FROM tasks
+    WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
+      AND (consensus_status IS NULL OR consensus_status != 'reached')
+      AND (phase = ? OR phase = '' OR phase IS NULL)
+    ORDER BY created_at ASC
+  `).all(phaseValue) as Array<{
+    id: string;
+    subject: string;
+    description: string;
+    status: string;
+    priority: string;
+    domain: string | null;
+    assigned_arms: string | null;
+    consensus_status: string | null;
+  }>;
+
+  if (activeTasks.length === 0) {
+    return null;
+  }
+
+  const task = activeTasks[0]!;
+  const assignedArms = parseArmsFromJson(task.assigned_arms || "[]");
+
+  return {
+    task: {
+      id: task.id,
+      subject: task.subject,
+      description: task.description,
+      classification: task.domain || "development",
+      priority: task.priority,
+      domain: task.domain || undefined,
+    },
+    reasoning: `Active task with ${assignedArms.length} arm(s) assigned${task.consensus_status ? `, consensus: ${task.consensus_status}` : ""}`,
+  };
+}
+
+function tryUnblockDependencies(db: Database, phaseLabel: string): DeterminationStepResult | null {
+  const phaseValue = phaseLabel || "";
+  const blockedTasks = db.query(`
+    SELECT id, subject, description, priority, domain
+    FROM tasks
+    WHERE status = 'pending'
+      AND dependency_blocked = 1
+      AND (phase = ? OR phase = '' OR phase IS NULL)
+    ORDER BY created_at ASC
+  `).all(phaseValue) as Array<{
+    id: string;
+    subject: string;
+    description: string;
+    priority: string;
+    domain: string | null;
+  }>;
+
+  for (const blockedTask of blockedTasks) {
+    const dependencies = db.query(`
+      SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?
+    `).all(blockedTask.id) as Array<{ depends_on_task_id: string }>;
+
+    const unmetDeps: string[] = [];
+    for (const dep of dependencies) {
+      const depTask = db.query(`
+        SELECT status, consensus_status FROM tasks WHERE id = ?
+      `).get(dep.depends_on_task_id) as { status: string; consensus_status: string | null } | undefined;
+
+      if (!depTask || (depTask.status !== 'completed' && depTask.consensus_status !== 'reached')) {
+        unmetDeps.push(dep.depends_on_task_id);
+      }
+    }
+
+    if (unmetDeps.length === 0) {
+      db.run(`UPDATE tasks SET dependency_blocked = 0 WHERE id = ?`, [blockedTask.id]);
+
+      return {
+        task: {
+          id: blockedTask.id,
+          subject: blockedTask.subject,
+          description: blockedTask.description,
+          classification: blockedTask.domain || "development",
+          priority: blockedTask.priority,
+          domain: blockedTask.domain || undefined,
+        },
+        reasoning: `Dependencies resolved. Unblocked: ${blockedTask.priority} - ${blockedTask.subject}`,
+      };
+    }
+  }
+
+  return null;
+}
+
+function createPlanTaskDeliverable(
+  db: Database,
+  plan: { currentPhase: string; bullets: string[] },
+  phaseLabel: string,
+  now: string
+): DeterminationStepResult | null {
+  const nextTask = createNextTaskFromPlan(db, plan, phaseLabel || "Unknown Phase", now);
+  if (!nextTask) {
+    return null;
+  }
+
+  const dependencies = detectDependencies(db, nextTask.id, nextTask.subject);
+  const sourceRef = plan.currentPhase.split('\n')[0]?.substring(0, 100) || phaseLabel || "plan";
+
+  db.run(`
+    INSERT INTO tasks (id, subject, description, status, priority, domain, phase, source_type, source_ref, created_at, updated_at)
+    VALUES (?, ?, ?, 'pending', ?, ?, ?, 'plan', ?, ?, ?)
+  `, [
+    nextTask.id,
+    nextTask.subject,
+    nextTask.description,
+    nextTask.priority,
+    nextTask.domain || null,
+    phaseLabel || "Unknown Phase",
+    sourceRef,
+    now,
+    now,
+  ]);
+
+  for (const dep of dependencies) {
+    db.run(`
+      INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_task_id, dependency_type, auto_detected, reason)
+      VALUES (?, ?, 'finish_to_start', 1, ?)
+    `, [nextTask.id, dep.taskId, dep.reason]);
+  }
+
+  const depTaskIds = dependencies.map(d => d.taskId);
+  if (depTaskIds.length > 0) {
+    const placeholders = depTaskIds.map(() => '?').join(',');
+    const incompleteDeps = db.query(`
+      SELECT id FROM tasks WHERE id IN (${placeholders})
+        AND status != 'completed'
+        AND (consensus_status IS NULL OR consensus_status != 'reached')
+    `).all(...depTaskIds) as Array<{ id: string }>;
+
+    if (incompleteDeps.length > 0) {
+      db.run(`UPDATE tasks SET dependency_blocked = 1 WHERE id = ?`, [nextTask.id]);
+    }
+  }
+
+  return {
+    task: {
+      id: nextTask.id,
+      subject: nextTask.subject,
+      description: nextTask.description,
+      classification: nextTask.domain || "development",
+      priority: nextTask.priority,
+      domain: nextTask.domain,
+    },
+    reasoning: `Created new task from ${phaseLabel || "plan"}${dependencies.length > 0 ? ` (${dependencies.length} dependency${dependencies.length > 1 ? "s" : ""} detected)` : ""}: ${nextTask.priority} - ${nextTask.subject}`,
+  };
+}
+
+function buildNoTaskResult(phaseInfo: PhaseInfo): DeterminationStepResult {
+  const label = phaseInfo.label || "current phase";
+  return {
+    task: {
+      subject: "Determine Next Work",
+      description: `The current phase (${label}) has no remaining deliverables marked as incomplete.
+
+Review the plan and decide what to work on next:
+1. Add new items to the current phase in plan.md
+2. Move to a new phase
+3. Request specific work via email`,
+      classification: "architect",
+      priority: "normal",
+    },
+    reasoning: `No deliverables found in ${label}. Plan may be complete or needs updating.`,
+  };
+}
+
+async function buildStatusSnapshot(db: Database): Promise<StatusSnapshot> {
+  const [completedTasks, discoveries] = await Promise.all([
+    getCompletedTasks(db),
+    getOpenDiscoveries(db),
+  ]);
+
+  return {
+    completed: completedTasks.map(t => `- ${t.subject}${t.completedAt ? ` (${t.completedAt.split("T")[0]})` : ""}`),
+    discoveries: discoveries.map(d => `- [${(d.severity || "info").toUpperCase()}] ${d.title}`),
+  };
+}
+
+interface DetectedDependency {
+  taskId: string;
+  reason: string;
+}
+
+function detectDependencies(
+  db: Database,
+  taskId: string,
+  taskSubject: string
+): DetectedDependency[] {
+  const dependencies: DetectedDependency[] = [];
+  const subjectLower = taskSubject.toLowerCase();
+
+  // Common dependency patterns
+  const dependencyRules: Array<{
+    keywords: string[];
+    dependsOnKeywords: string[];
+    reason: string;
+  }> = [
+    {
+      keywords: ['api', 'server', 'endpoint'],
+      dependsOnKeywords: ['database', 'schema'],
+      reason: 'API typically requires database schema',
+    },
+    {
+      keywords: ['websocket', 'realtime', 'real-time'],
+      dependsOnKeywords: ['api', 'server'],
+      reason: 'WebSocket builds on API server',
+    },
+    {
+      keywords: ['ui', 'dashboard', 'frontend', 'react'],
+      dependsOnKeywords: ['api', 'server', 'endpoint'],
+      reason: 'UI typically requires API endpoints',
+    },
+    {
+      keywords: ['test', 'qa', 'verify'],
+      dependsOnKeywords: ['implementation', 'code', 'feature'],
+      reason: 'Tests require existing implementation',
+    },
+    {
+      keywords: ['documentation', 'docs', 'readme'],
+      dependsOnKeywords: ['implementation', 'feature', 'api'],
+      reason: 'Documentation requires implementation',
+    },
+    {
+      keywords: ['migration', 'schema'],
+      dependsOnKeywords: ['database'],
+      reason: 'Migration requires database',
+    },
+  ];
+
+  // Find existing tasks that could be dependencies
+  const existingTasks = db.query(`
+    SELECT id, subject, status, consensus_status FROM tasks
+    WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
+    AND id != ?
+  `).all(taskId) as Array<{ id: string; subject: string; status: string; consensus_status: string | null }>;
+
+  for (const rule of dependencyRules) {
+    // Check if current task matches keywords
+    const taskMatches = rule.keywords.some(k => subjectLower.includes(k));
+    if (!taskMatches) continue;
+
+    // Find existing tasks that match dependsOnKeywords
+    for (const existingTask of existingTasks) {
+      const existingLower = existingTask.subject.toLowerCase();
+      const isBlocked = existingTask.status !== 'completed' && existingTask.consensus_status !== 'reached';
+      
+      if (isBlocked && rule.dependsOnKeywords.some(k => existingLower.includes(k))) {
+        // Check if we already have this dependency
+        const existing = dependencies.find(d => d.taskId === existingTask.id);
+        if (!existing) {
+          dependencies.push({
+            taskId: existingTask.id,
+            reason: rule.reason,
+          });
+        }
+      }
+    }
+  }
+
+  return dependencies;
+}
+
+function parseArmsFromJson(json: string): string[] {
+  try {
+    return JSON.parse(json || '[]');
+  } catch {
+    return [];
+  }
+}
+
+interface PlanTask {
+  id: string;
+  subject: string;
+  description: string;
+  priority: Task["priority"];
+  domain?: string;
+}
+
+function createNextTaskFromPlan(
+  db: Database,
+  plan: { currentPhase: string; bullets: string[] },
+  phaseName: string,
+  now: string
+): PlanTask | null {
+  // Get already-created tasks for this phase
+  const existingTasks = db.query(`
+    SELECT subject FROM tasks WHERE phase = ?
+  `).all(phaseName) as Array<{ subject: string }>;
+
+  const existingSubjects = new Set(existingTasks.map(t => t.subject.toLowerCase()));
+
+  // Find the first incomplete deliverable from the current phase
+  const phaseLines = plan.currentPhase.split('\n');
+  
+  for (let i = 0; i < phaseLines.length; i++) {
+    const line = phaseLines[i]!;
+    
+    // Look for unchecked deliverables: "- [ ]" or "- [x]" patterns
+    const deliverableMatch = line.match(/^- \[ \] (.+)/);
+    if (deliverableMatch) {
+      const subject = deliverableMatch[1]!.trim();
+      
+      // Skip if already created
+      if (existingSubjects.has(subject.toLowerCase())) {
+        continue;
+      }
+
+      // Generate a task ID based on phase and subject
+      const taskId = generateTaskId(phaseName, subject);
+      
+      // Look for associated acceptance criteria
+      let description = `Implement: ${subject}\n\n`;
+      
+      // Look for acceptance criteria below (lines starting with "- [ ]")
+      const acceptanceCriteria: string[] = [];
+      for (let j = i + 1; j < phaseLines.length; j++) {
+        const nextLine = phaseLines[j]!;
+        if (nextLine.startsWith('- [ ]')) {
+          acceptanceCriteria.push(nextLine.replace('- [ ]', '•').trim());
+        } else if (nextLine.startsWith('- [')) {
+          // Skip checked items
+          continue;
+        } else if (nextLine.startsWith('## ') || nextLine.startsWith('### ') || nextLine.trim() === '') {
+          // Stop at next section header or empty line
+          break;
+        }
+      }
+      
+      if (acceptanceCriteria.length > 0) {
+        description += `**Acceptance Criteria**:\n${acceptanceCriteria.join('\n')}`;
+      } else {
+        description += 'See plan.md for details.';
+      }
+
+      // Determine priority based on section context
+      let priority: Task["priority"] = "normal";
+      if (phaseName.includes("Phase 1")) {
+        priority = "high";
+      }
+
+      // Determine domain/classification based on keywords
+      let domain: string | undefined;
+      const subjectLower = subject.toLowerCase();
+      if (subjectLower.includes("test") || subjectLower.includes("qa")) {
+        domain = "testing";
+      } else if (subjectLower.includes("doc") || subjectLower.includes("readme")) {
+        domain = "documentation";
+      } else if (subjectLower.includes("plan") || subjectLower.includes("architect")) {
+        domain = "architect";
+      }
+
+      return {
+        id: taskId,
+        subject,
+        description,
+        priority,
+        domain,
+      };
+    }
+  }
+
+  return null;
+}
+
+function generateTaskId(phaseName: string, subject: string): string {
+  const phaseNum = phaseName.replace(/[^0-9.]/g, '');
+  const slug = subject.substring(0, 20).toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const hash = Buffer.from(subject).toString('base64').substring(0, 4);
+  return `${phaseNum}-${slug}-${hash}`;
 }
 
 /**
@@ -100,28 +503,68 @@ export async function generateTaskDetermination(ctx: PromptContext): Promise<Tas
 export async function generateContextBundle(ctx: PromptContext, taskSubject: string): Promise<ContextBundleResult | null> {
   const { db, projectRoot } = ctx;
 
-  // 1. Get the task
-  const task = await getTaskBySubject(db, taskSubject);
+  // 1. First try to get task from database
+  let task = await getTaskBySubject(db, taskSubject);
+
+  // 2. If not found, search in file-based tasks
+  if (!task) {
+    const fileTasks = await getTasksFromFiles(projectRoot);
+    const matchingTask = fileTasks.find(t => 
+      t.id === taskSubject || 
+      t.subject.toLowerCase().includes(taskSubject.toLowerCase())
+    );
+    
+    if (matchingTask) {
+      // Insert the task into the database for future lookups
+      const insertStmt = db.prepare(`
+        INSERT OR IGNORE INTO tasks (id, subject, description, status, priority, domain, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const now = new Date().toISOString();
+      insertStmt.run(
+        matchingTask.id,
+        matchingTask.subject,
+        matchingTask.description,
+        matchingTask.status,
+        matchingTask.priority,
+        matchingTask.domain || null,
+        now,
+        now
+      );
+
+      task = {
+        id: matchingTask.id,
+        subject: matchingTask.subject,
+        description: matchingTask.description,
+        status: matchingTask.status,
+        priority: matchingTask.priority,
+        domain: matchingTask.domain,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+  }
+
   if (!task) {
     return null;
   }
 
-  // 2. Get discoveries relevant to the task
+  // 3. Get discoveries relevant to the task
   const discoveries = await getOpenDiscoveries(db);
-  
-  // 3. Get completed tasks
+
+  // 4. Get completed tasks
   const completedTasks = await getCompletedTasks(db);
-  
-  // 4. Read plan
+
+  // 5. Read plan
   const plan = await readCurrentPlan(projectRoot);
 
-  // 5. Generate instructions based on task classification
+  // 6. Generate instructions based on task classification
   const instructions = generateInstructions(task);
 
   const fullOutput = buildContextBundle(task, {
     discoveries,
     completedTasks,
-    planExcerpt: plan.content,
+    planExcerpt: plan.currentPhase || plan.content,
     instructions,
   });
 
@@ -133,15 +576,15 @@ export async function generateContextBundle(ctx: PromptContext, taskSubject: str
       priority: task.priority,
     },
     context: {
-      discoveries: discoveries.map(d => 
+      discoveries: discoveries.map(d =>
         `## Discovery: ${d.title}
 Kind: ${d.kind}
 Severity: ${d.severity || "info"}
 Details: ${d.details}
 ${d.file ? `File: ${d.file}` : ""}`
       ).join("\n\n"),
-      planExcerpt: plan.content,
-      taskHistory: completedTasks.slice(0, 5).map(t => 
+      planExcerpt: plan.currentPhase || plan.content,
+      taskHistory: completedTasks.slice(0, 5).map(t =>
         `- ${t.subject} (completed: ${t.completedAt || "unknown"})`
       ).join("\n"),
       instructions,
@@ -154,7 +597,7 @@ ${d.file ? `File: ${d.file}` : ""}`
 // Helper Functions
 // ============================================
 
-async function readCurrentPlan(projectRoot: string): Promise<{ content: string; goals: string[]; bullets: string[] }> {
+async function readCurrentPlan(projectRoot: string): Promise<{ content: string; goals: string[]; bullets: string[]; currentPhase: string }> {
   const plansDir = join(projectRoot, ".project", "plans");
   let planFiles: string[] = [];
   try {
@@ -166,6 +609,7 @@ async function readCurrentPlan(projectRoot: string): Promise<{ content: string; 
   let content = "";
   const goals: string[] = [];
   const bullets: string[] = [];
+  let currentPhase = "";
 
   if (planFiles.length > 0) {
     planFiles.sort();
@@ -182,11 +626,43 @@ async function readCurrentPlan(projectRoot: string): Promise<{ content: string; 
     }
   }
 
+  // Extract current phase (the first incomplete phase)
   const lines = content.split("\n");
+  let inCurrentPhase = false;
+  let phaseContent: string[] = [];
+  let foundIncomplete = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    const phaseMatch = line.match(/^## (Phase \d+(?:\.\d+)?):/);
+    if (phaseMatch) {
+      const isComplete = line.includes("✅ Complete");
+
+      if (!isComplete && !foundIncomplete) {
+        inCurrentPhase = true;
+        phaseContent = [line];
+        foundIncomplete = true;
+      } else {
+        inCurrentPhase = false;
+      }
+      continue;
+    }
+
+    if (inCurrentPhase) {
+      if (line.startsWith("## ") && line.match(/^## (Phase \d+(?:\.\d+)?):/)) {
+        break;
+      }
+      phaseContent.push(line);
+    }
+  }
+
+  currentPhase = phaseContent.join("\n").trim();
+
   let inGoals = false;
   let inBullets = false;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     if (line.startsWith("## Goal")) {
       inGoals = true;
       inBullets = false;
@@ -210,7 +686,7 @@ async function readCurrentPlan(projectRoot: string): Promise<{ content: string; 
     }
   }
 
-  return { content, goals, bullets };
+  return { content, goals, bullets, currentPhase };
 }
 
 async function getCompletedTasks(db: Database): Promise<Array<{ subject: string; status: string; completedAt?: string }>> {
@@ -233,47 +709,8 @@ async function getCompletedTasks(db: Database): Promise<Array<{ subject: string;
   }
 }
 
-async function getPendingTasks(db: Database): Promise<Task[]> {
-  try {
-    const results = db.query(`
-      SELECT id, subject, description, status, priority, domain
-      FROM tasks
-      WHERE status = 'pending'
-      ORDER BY 
-        CASE priority 
-          WHEN 'critical' THEN 1 
-          WHEN 'high' THEN 2 
-          WHEN 'normal' THEN 3 
-          WHEN 'low' THEN 4 
-        END,
-        created_at ASC
-      LIMIT 5
-    `).all() as Array<{
-      id: string;
-      subject: string;
-      description: string;
-      status: string;
-      priority: string;
-      domain: string | null;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      subject: r.subject,
-      description: r.description,
-      status: r.status as Task["status"],
-      priority: r.priority as Task["priority"],
-      domain: r.domain || undefined,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    }));
-  } catch {
-    return [];
-  }
-}
-
-async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string }>> {
-  const tasks: Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string }> = [];
+async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string; phase: string }>> {
+  const tasks: Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string; phase: string }> = [];
   
   const currentPath = join(projectRoot, ".project", "tasks", "current.md");
   try {
@@ -282,6 +719,16 @@ async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: strin
     let currentTask: { id: string; subject: string; description: string; priority: Task["priority"] } | null = null;
     let inReady = false;
     let inProgress = false;
+    let taskPhase = "";
+
+    // Extract phase from notes at the bottom
+    for (const line of lines) {
+      const phaseMatch = line.match(/Estimated total for (Phase \d+(?:\.\d+)?)/);
+      if (phaseMatch) {
+        taskPhase = phaseMatch[1]!;
+        break;
+      }
+    }
 
     for (const line of lines) {
       if (line.startsWith("## Ready to Start")) {
@@ -309,6 +756,7 @@ async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: strin
             description: currentTask.description,
             status: "pending",
             priority: currentTask.priority,
+            phase: taskPhase,
           });
         }
         const taskId = taskMatch[1]!;
@@ -342,6 +790,7 @@ async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: strin
         description: currentTask.description,
         status: "pending",
         priority: currentTask.priority,
+        phase: taskPhase,
       });
     }
   } catch {
@@ -357,11 +806,11 @@ async function getOpenDiscoveries(db: Database): Promise<Discovery[]> {
       SELECT kind, title, details, file_path, line_number, severity
       FROM discoveries
       WHERE status = 'open'
-      ORDER BY 
-        CASE severity 
-          WHEN 'error' THEN 1 
-          WHEN 'warning' THEN 2 
-          WHEN 'info' THEN 3 
+      ORDER BY
+        CASE severity
+          WHEN 'error' THEN 1
+          WHEN 'warning' THEN 2
+          WHEN 'info' THEN 3
         END,
         created_at DESC
       LIMIT 20
@@ -422,134 +871,6 @@ async function getTaskBySubject(db: Database, subject: string): Promise<Task | n
   }
 }
 
-interface TaskDeterminationResultInternal {
-  task: {
-    id?: string;
-    subject: string;
-    description: string;
-    classification: string;
-    priority: string;
-    domain?: string;
-  } | null;
-  reasoning: string;
-}
-
-function determineNextTask(
-  plan: { goals: string[]; bullets: string[] },
-  completedTasks: Array<{ subject: string }>,
-  discoveries: Discovery[],
-  pendingTasks: Task[]
-): TaskDeterminationResultInternal {
-  if (pendingTasks.length > 0) {
-    const task = pendingTasks[0]!;
-    return {
-      task: {
-        id: task.id,
-        subject: task.subject,
-        description: task.description,
-        classification: task.domain || "development",
-        priority: task.priority,
-        domain: task.domain,
-      },
-      reasoning: `Found ${pendingTasks.length} pending task(s). Selecting highest priority: ${task.priority} - ${task.subject}`,
-    };
-  }
-
-  if (discoveries.length > 0) {
-    const hasError = discoveries.some(d => d.severity === "error");
-    return {
-      task: {
-        subject: "Verify & Address Open Discoveries",
-        description: `Review and address ${discoveries.length} open discovery(ies):
-
-${discoveries.map(d => `- ${d.title} (${d.severity || "info"})`).join("\n")}
-
-For each discovery:
-1. Investigate the issue
-2. Fix if code-related
-3. Document findings
-4. Update discovery status`,
-        classification: "verify",
-        priority: hasError ? "high" : "normal",
-      },
-      reasoning: `Found ${discoveries.length} open discovery(ies). Creating verify task to address them.`,
-    };
-  }
-
-  if (plan.bullets.length > 0 && completedTasks.length >= plan.bullets.length) {
-    return {
-      task: {
-        subject: "Review Phase Completion",
-        description: "All planned work appears complete. Review and decide on next steps:\n\n1. Review completed work against plan\n2. Identify any gaps\n3. Create plan for next phase",
-        classification: "architect",
-        priority: "normal",
-      },
-      reasoning: "Plan appears complete. Suggesting architect review.",
-    };
-  }
-
-  // Check if this is a fresh/empty project with no pending work
-  const hasPendingPlanWork = plan.bullets && plan.bullets.length > 0;
-  
-  if (!hasPendingPlanWork && pendingTasks.length === 0) {
-    // Fresh/empty project - offer specific options
-    return {
-      task: {
-        subject: "New Project Setup - What would you like help with?",
-        description: `This project has no pending tasks or planned work. What would you like me to help with?
-
-## Options
-
-### 1. Code Review & Refactoring
-I'll explore the codebase and identify:
-- Dead code or unused files
-- Code that could be simplified
-- Inconsistent patterns or style issues
-- Performance improvement opportunities
-- Test coverage gaps
-
-### 2. Documentation & README Updates
-I'll analyze the codebase and update:
-- README.md with accurate project description
-- Documentation for existing features
-- API documentation if applicable
-- Architecture decision records
-- "Future work" notes for unimplemented features
-
-### 3. Create a Project Plan
-I'll work with you to define:
-- Goals for the project
-- Phased implementation approach
-- Task breakdown for future work
-
-## How to Proceed
-
-Reply with one of:
-- "do code review" or "refactor" → I'll start exploring the codebase
-- "update documentation" or "write docs" → I'll document what exists
-- "help me plan" or "create plan" → We'll define work together
-- Your own description of what you'd like help with
-
-## Note
-
-I won't start any actual implementation work without your explicit direction. I can explore, document, and plan - but I need your approval before making code changes.`,
-        classification: "architect",
-        priority: "normal",
-      },
-      reasoning: "Fresh/empty project detected. Offering options: code review, documentation, or planning.",
-    };
-  }
-
-  return {
-    task: {
-      subject: "Determine Next Work",
-      description: "The system has completed all known tasks. Please provide new work:\n\n1. What's the next feature to implement?\n2. What should be tested or documented?\n3. Any refactoring needed?",
-      classification: "architect",
-      priority: "normal",
-    },
-    reasoning: "No pending tasks, no open discoveries, plan status unclear. Asking for human input.",
-  };
-}
 
 function generateInstructions(task: Task): string {
   let baseInstructions = `## Your Task: ${task.subject}
@@ -558,7 +879,7 @@ ${task.description}
 
 ## Important Context
 
-- You are an AI agent executing a specific task
+- You are an AI agent executing a specific task, but this task may already be started by previous iterations or other agents so verify existing code against your acceptance criteria before making changes.
 - Report discoveries as you find them using report_discovery
 - Complete the task when done using complete_task
 - If you need clarification, ask for it
@@ -625,7 +946,7 @@ ${task.description}
 ${context.instructions}
 
 ## OPEN DISCOVERIES
-${context.discoveries.length > 0 ? context.discoveries.map(d => 
+${context.discoveries.length > 0 ? context.discoveries.map(d =>
 `- [${(d.severity || "info").toUpperCase()}] ${d.title}
   Kind: ${d.kind}
   Details: ${d.details}
@@ -633,12 +954,13 @@ ${context.discoveries.length > 0 ? context.discoveries.map(d =>
 ).join("\n") : "No open discoveries."}
 
 ## COMPLETED TASKS (Recent)
-${context.completedTasks.length > 0 ? context.completedTasks.slice(0, 5).map(t => 
+${context.completedTasks.length > 0 ? context.completedTasks.slice(0, 5).map(t =>
 `- ${t.subject}${t.completedAt ? ` (${t.completedAt.split("T")[0]})` : ""}`
 ).join("\n") : "No completed tasks recorded."}
 
 ## PLAN EXCERPT
-${context.planExcerpt.slice(0, 2000)}
+${context.planExcerpt.slice(0, 600)}
+${context.planExcerpt.length > 600 ? "\n[... more in .project/plan.md ...]" : ""}
 
 === END CONTEXT BUNDLE ===
 

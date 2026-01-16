@@ -60,6 +60,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["015_discoveries", MIGRATION_015],
     ["016_doc_updates", MIGRATION_016],
     ["017_context_compression", MIGRATION_017],
+    ["018_task_verification", MIGRATION_018],
+    ["019_task_dependencies", MIGRATION_019],
   ];
 
 
@@ -543,6 +545,113 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('context_soft_threshold', '0.80'),
   ('context_hard_threshold', '0.95'),
   ('context_compression_enabled', 'true');
+`;
+
+// Migration 018: Task verification workflow
+const MIGRATION_018 = `
+-- Add verification columns to tasks table
+ALTER TABLE tasks ADD COLUMN verification_status TEXT DEFAULT 'none' CHECK (verification_status IN ('none', 'pending', 'in_progress', 'approved', 'rejected'));
+ALTER TABLE tasks ADD COLUMN verifying_arm_id TEXT;
+ALTER TABLE tasks ADD COLUMN verified_at TEXT;
+ALTER TABLE tasks ADD COLUMN verification_notes TEXT;
+ALTER TABLE tasks ADD COLUMN verification_artifacts TEXT DEFAULT '[]';
+
+-- Add verification request timestamp
+ALTER TABLE tasks ADD COLUMN verification_requested_at TEXT;
+
+-- Update status values to include verification_pending
+-- Note: SQLite doesn't support modifying CHECK constraints, so we document the intended behavior
+-- The application layer should enforce: status IN ('pending', 'claimed', 'in_progress', 'verification_pending', 'completed', 'failed', 'blocked', 'cancelled')
+
+-- Add indexes for verification workflow queries
+CREATE INDEX IF NOT EXISTS idx_tasks_verification_status ON tasks(verification_status);
+CREATE INDEX IF NOT EXISTS idx_tasks_verifying_arm ON tasks(verifying_arm_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_verification_pending ON tasks(status, verification_status) WHERE status = 'verification_pending';
+
+-- Task verification table for audit trail
+CREATE TABLE IF NOT EXISTS task_verifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  arm_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('approved', 'rejected')),
+  notes TEXT,
+  artifacts TEXT DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_ver_task ON task_verifications(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_ver_arm ON task_verifications(arm_id);
+
+-- Config for verification workflow
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('verification_required', 'true'),
+  ('verification_auto_assign', 'true'),
+  ('verification_timeout_hours', '24');
+`;
+
+// Migration 019: Task dependencies and multi-arm assignment
+const MIGRATION_019 = `
+-- Add multi-arm assignment and dependency tracking
+ALTER TABLE tasks ADD COLUMN assigned_arms TEXT DEFAULT '[]'; -- JSON array of arm_ids
+ALTER TABLE tasks ADD COLUMN is_watch_mode INTEGER DEFAULT 0; -- 1 = being watched by other arms
+ALTER TABLE tasks ADD COLUMN consensus_status TEXT DEFAULT 'pending' CHECK (consensus_status IN ('pending', 'in_progress', 'reached', 'failed'));
+ALTER TABLE tasks ADD COLUMN dependency_blocked INTEGER DEFAULT 0; -- 1 = blocked by unmet dependencies
+
+-- Update task_dependencies table for richer dependency tracking without losing history
+ALTER TABLE task_dependencies RENAME TO task_dependencies_old;
+
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  depends_on_task_id TEXT NOT NULL,
+  dependency_type TEXT DEFAULT 'finish_to_start' CHECK (dependency_type IN ('finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+  auto_detected INTEGER DEFAULT 1, -- 1 = detected by brain, 0 = explicitly specified
+  reason TEXT, -- Why this dependency exists
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, depends_on_task_id)
+);
+
+INSERT INTO task_dependencies (id, task_id, depends_on_task_id, dependency_type, auto_detected, reason, created_at)
+SELECT id, task_id, depends_on_task_id, dependency_type, 1, NULL, created_at
+FROM task_dependencies_old;
+
+DROP TABLE IF EXISTS task_dependencies_old;
+
+-- Task arm consensus/approval tracking
+CREATE TABLE IF NOT EXISTS task_arm_consensus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  arm_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('primary', 'watcher')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'working', 'approved', 'rejected', 'watching')),
+  approval TEXT DEFAULT NULL, -- 'approved' | 'rejected' | NULL (pending)
+  approval_reason TEXT,
+  last_report TEXT, -- Last status report from this arm
+  last_report_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, arm_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_consensus_task ON task_arm_consensus(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_consensus_arm ON task_arm_consensus(arm_id);
+CREATE INDEX IF NOT EXISTS idx_task_consensus_status ON task_arm_consensus(status);
+
+-- Add indexes for dependency queries
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(depends_on_task_id);
+
+-- Config for dependency and consensus workflow
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('dependency_auto_detect', 'true'),
+  ('task_multi_arm_enabled', 'true'),
+  ('watch_mode_enabled', 'true'),
+  ('consensus_required', 'true'),
+  ('max_arms_per_task', '3');
 `;
 
  /**

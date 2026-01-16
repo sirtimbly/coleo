@@ -1,130 +1,39 @@
 # Current Tasks
 
-## Ready to Start
+The brain creates tasks one at a time from the project plan. Current task status is tracked in the database.
 
-### [TASK-001] Hono API Server Setup
-- **Priority**: High
-- **Estimate**: 4 hours
-- **Assigned**: Unassigned
+## Current Status
 
-**Description**: Set up Hono server with basic middleware, health endpoint, and CORS configuration.
+**Phase 2.1: Progressive Planning** (In Progress)
 
-**Acceptance Criteria**:
-- [ ] Hono installed and configured
-- [ ] Server starts on configurable port (default 8080)
-- [ ] `GET /api/health` returns `{ status: "ok" }`
-- [ ] `GET /api/status` returns basic system status
-- [ ] CORS configured for local development
-- [ ] Request logging middleware
-- [ ] Error handling middleware
-- [ ] API key authentication middleware (X-API-Key header)
+The brain is actively determining and assigning tasks based on the project plan.
 
-**Dependencies**: None
+## Active Task
 
-**Notes**: This is the foundation for all Observatory API endpoints.
+See `octopai brain prompt:task` or the database for the current task being worked on.
 
 ---
 
-### [TASK-002] SQLite Database Schema
-- **Priority**: High
-- **Estimate**: 3 hours
-- **Assigned**: Unassigned
+## How Tasks Flow
 
-**Description**: Create SQLite database with initial schema for arms, proposals, and activity.
-
-**Acceptance Criteria**:
-- [ ] Database file created at configurable path
-- [ ] `arms` table with all fields from ArmProfile type
-- [ ] `proposals` table with arguments and signals
-- [ ] `claims` table for file ownership
-- [ ] `activity` table for audit log
-- [ ] `config` table for system settings
-- [ ] Migration system (numbered SQL files)
-- [ ] WAL mode enabled for better concurrency
-
-**Dependencies**: None
-
-**Notes**: Use `bun:sqlite` directly for now. Consider Drizzle later if complexity grows.
+1. **Brain reads plan.md** → finds current incomplete phase
+2. **Brain creates ONE task** in the database for the next item
+3. **Arm requests work** → Brain returns the pending task
+4. **Arm claims task** → status changes to `in_progress`
+5. **Arm completes work** → status changes to `verification_pending`
+6. **Another arm verifies** → status changes to `completed`
+7. **Brain creates next task** → repeat
 
 ---
 
-### [TASK-003] React App Shell
-- **Priority**: High
-- **Estimate**: 3 hours
-- **Assigned**: Unassigned
+## Recent Activity
 
-**Description**: Create React application shell with Vite, routing, and basic layout.
-
-**Acceptance Criteria**:
-- [ ] Vite + React + TypeScript setup
-- [ ] React Router with routes for: Dashboard, Arms, Garden, Proposals, Settings
-- [ ] Basic layout component with header and sidebar
-- [ ] Tailwind CSS configured
-- [ ] Placeholder pages for each route
-- [ ] API client utility (fetch wrapper with auth)
-
-**Dependencies**: TASK-001 (for API client to connect to)
-
-**Notes**: Keep it simple. No component library yet - just basic HTML/Tailwind.
-
----
-
-### [TASK-004] WebSocket Server
-- **Priority**: Medium
-- **Estimate**: 3 hours
-- **Assigned**: Unassigned
-
-**Description**: Add WebSocket support for real-time updates.
-
-**Acceptance Criteria**:
-- [ ] WebSocket endpoint at `/ws`
-- [ ] Authentication via query param or first message
-- [ ] Channel subscription system (arms, garden, proposals, activity)
-- [ ] Broadcast utility for sending to all subscribers
-- [ ] Heartbeat/ping-pong for connection health
-- [ ] Graceful handling of disconnections
-
-**Dependencies**: TASK-001
-
-**Notes**: Hono has WebSocket support via `hono/ws`.
-
----
-
-### [TASK-005] Dashboard View
-- **Priority**: Medium
-- **Estimate**: 4 hours
-- **Assigned**: Unassigned
-
-**Description**: Create the main dashboard showing system overview.
-
-**Acceptance Criteria**:
-- [ ] Shows brain status (running/stopped)
-- [ ] Lists active arms with status indicators
-- [ ] Shows count of open proposals
-- [ ] Shows recent activity feed
-- [ ] Shows any pending human approvals
-- [ ] Real-time updates via WebSocket
-
-**Dependencies**: TASK-001, TASK-003, TASK-004
-
-**Notes**: This is the first thing users see. Keep it clean and informative.
-
----
-
-## In Progress
-
-*No tasks currently in progress.*
-
----
-
-## Blocked
-
-*No blocked tasks.*
-
----
+See `octopai activity` or the API for recent arm activity.
 
 ## Notes
 
-Tasks are ordered roughly by dependency. TASK-001 and TASK-002 can be done in parallel. TASK-003 can start once TASK-001 has basic endpoints. TASK-004 and TASK-005 build on earlier work.
-
-Estimated total for Phase 1 initial sprint: ~17 hours of focused work.
+Tasks are ordered by plan dependencies and priority. The brain automatically determines what to work on next based on:
+- What's in the current phase of plan.md
+- What's already completed
+- What discoveries have been made
+- What the human has requested
