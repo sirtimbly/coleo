@@ -5,6 +5,9 @@ hero:
   name: Octopai
   text: AI Agent Orchestrator
   tagline: Progressive planning with general-purpose AI arms
+  image:
+    src: /centralimage.png
+    alt: Octopai - AI Agent Orchestrator
   actions:
     - theme: brand
       text: Architecture Overview

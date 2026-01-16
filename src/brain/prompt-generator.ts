@@ -213,7 +213,7 @@ function tryUnblockDependencies(db: Database, phaseLabel: string): Determination
 
 function createPlanTaskDeliverable(
   db: Database,
-  plan: { currentPhase: string; bullets: string[] },
+  plan: { currentPhase: string; bullets: string[]; dependencies: string[] },
   phaseLabel: string,
   now: string
 ): DeterminationStepResult | null {
@@ -222,7 +222,13 @@ function createPlanTaskDeliverable(
     return null;
   }
 
-  const dependencies = detectDependencies(db, nextTask.id, nextTask.subject);
+  const dependencyInfo = collectDependenciesForTask(db, {
+    taskId: nextTask.id,
+    subject: nextTask.subject,
+    phaseLabel: phaseLabel || "Unknown Phase",
+    planDependencies: plan.dependencies || [],
+  });
+  const dependencies = dependencyInfo.dependencies;
   const sourceRef = plan.currentPhase.split('\n')[0]?.substring(0, 100) || phaseLabel || "plan";
 
   db.run(`
@@ -247,18 +253,16 @@ function createPlanTaskDeliverable(
     `, [nextTask.id, dep.taskId, dep.reason]);
   }
 
-  const depTaskIds = dependencies.map(d => d.taskId);
-  if (depTaskIds.length > 0) {
-    const placeholders = depTaskIds.map(() => '?').join(',');
-    const incompleteDeps = db.query(`
-      SELECT id FROM tasks WHERE id IN (${placeholders})
-        AND status != 'completed'
-        AND (consensus_status IS NULL OR consensus_status != 'reached')
-    `).all(...depTaskIds) as Array<{ id: string }>;
+  if (dependencies.some(dep => dep.blocking)) {
+    db.run(`UPDATE tasks SET dependency_blocked = 1 WHERE id = ?`, [nextTask.id]);
+  }
 
-    if (incompleteDeps.length > 0) {
-      db.run(`UPDATE tasks SET dependency_blocked = 1 WHERE id = ?`, [nextTask.id]);
-    }
+  if (dependencyInfo.planUpdateReasons.length > 0) {
+    ensurePlanDependencyTask(db, {
+      phaseLabel: phaseLabel || "Unknown Phase",
+      reasons: dependencyInfo.planUpdateReasons,
+      now,
+    });
   }
 
   return {
@@ -307,17 +311,146 @@ async function buildStatusSnapshot(db: Database): Promise<StatusSnapshot> {
 interface DetectedDependency {
   taskId: string;
   reason: string;
+  blocking: boolean;
 }
 
-function detectDependencies(
+interface DependencyCollectionResult {
+  dependencies: DetectedDependency[];
+  planUpdateReasons: string[];
+}
+
+interface KeywordDependencyResult {
+  matches: DetectedDependency[];
+  missingReasons: string[];
+}
+
+type TaskRow = {
+  id: string;
+  subject: string;
+  status: string;
+  consensus_status: string | null;
+  phase?: string | null;
+};
+
+function collectDependenciesForTask(
+  db: Database,
+  options: { taskId: string; subject: string; phaseLabel: string; planDependencies: string[] }
+): DependencyCollectionResult {
+  const planResolution = resolvePlanDependencies(db, options.planDependencies || []);
+  const keywordResult = detectKeywordDependencies(db, options.taskId, options.subject);
+
+  const dependencyMap = new Map<string, DetectedDependency>();
+  const addDependency = (dep: DetectedDependency) => {
+    const existing = dependencyMap.get(dep.taskId);
+    if (!existing) {
+      dependencyMap.set(dep.taskId, dep);
+      return;
+    }
+
+    const mergedReason = existing.reason.includes(dep.reason)
+      ? existing.reason
+      : `${existing.reason}; ${dep.reason}`;
+
+    dependencyMap.set(dep.taskId, {
+      taskId: dep.taskId,
+      reason: mergedReason,
+      blocking: existing.blocking || dep.blocking,
+    });
+  };
+
+  planResolution.matched.forEach(addDependency);
+  keywordResult.matches.forEach(addDependency);
+
+  const planUpdateReasons = new Set<string>();
+  planResolution.unresolved.forEach(dep => {
+    planUpdateReasons.add(`Plan references "${dep}" but no matching tasks were found in SQLite.`);
+  });
+  keywordResult.missingReasons.forEach(reason => planUpdateReasons.add(reason));
+
+  return {
+    dependencies: Array.from(dependencyMap.values()),
+    planUpdateReasons: Array.from(planUpdateReasons),
+  };
+}
+
+function resolvePlanDependencies(db: Database, rawDependencies: string[]): {
+  matched: DetectedDependency[];
+  unresolved: string[];
+} {
+  const matched: DetectedDependency[] = [];
+  const unresolved: string[] = [];
+
+  for (const depText of rawDependencies) {
+    const trimmed = depText.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const matches = findTasksMatchingDependency(db, trimmed);
+    if (matches.length === 0) {
+      unresolved.push(trimmed);
+      continue;
+    }
+
+    matches.forEach(task => {
+      matched.push({
+        taskId: task.id,
+        reason: `Plan dependency "${trimmed}"`,
+        blocking: task.status !== 'completed' && task.consensus_status !== 'reached',
+      });
+    });
+  }
+
+  return { matched, unresolved };
+}
+
+function findTasksMatchingDependency(db: Database, dependencyLabel: string): TaskRow[] {
+  const normalized = dependencyLabel.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const phaseMatch = normalized.match(/Phase\s+([\d.]+)/i);
+  const patterns: string[] = [`%${normalized}%`];
+  if (phaseMatch) {
+    patterns.push(`Phase ${phaseMatch[1]}%`);
+  }
+
+  const matches = new Map<string, TaskRow>();
+  for (const pattern of patterns) {
+    const rows = db.query(`
+      SELECT id, subject, status, consensus_status, phase
+      FROM tasks
+      WHERE status != 'cancelled'
+        AND (
+          LOWER(subject) LIKE LOWER(?)
+          OR LOWER(IFNULL(phase, '')) LIKE LOWER(?)
+        )
+    `).all(pattern, pattern) as TaskRow[];
+
+    for (const row of rows) {
+      if (!matches.has(row.id)) {
+        matches.set(row.id, row);
+      }
+    }
+  }
+
+  return Array.from(matches.values());
+}
+
+function detectKeywordDependencies(
   db: Database,
   taskId: string,
   taskSubject: string
-): DetectedDependency[] {
-  const dependencies: DetectedDependency[] = [];
+): KeywordDependencyResult {
+  const matches: DetectedDependency[] = [];
+  const missingReasons: string[] = [];
   const subjectLower = taskSubject.toLowerCase();
 
-  // Common dependency patterns
+  if (!subjectLower) {
+    return { matches, missingReasons };
+  }
+
   const dependencyRules: Array<{
     keywords: string[];
     dependsOnKeywords: string[];
@@ -355,37 +488,89 @@ function detectDependencies(
     },
   ];
 
-  // Find existing tasks that could be dependencies
   const existingTasks = db.query(`
     SELECT id, subject, status, consensus_status FROM tasks
-    WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
-    AND id != ?
+    WHERE id != ?
+      AND status != 'cancelled'
   `).all(taskId) as Array<{ id: string; subject: string; status: string; consensus_status: string | null }>;
 
   for (const rule of dependencyRules) {
-    // Check if current task matches keywords
-    const taskMatches = rule.keywords.some(k => subjectLower.includes(k));
-    if (!taskMatches) continue;
-
-    // Find existing tasks that match dependsOnKeywords
-    for (const existingTask of existingTasks) {
-      const existingLower = existingTask.subject.toLowerCase();
-      const isBlocked = existingTask.status !== 'completed' && existingTask.consensus_status !== 'reached';
-      
-      if (isBlocked && rule.dependsOnKeywords.some(k => existingLower.includes(k))) {
-        // Check if we already have this dependency
-        const existing = dependencies.find(d => d.taskId === existingTask.id);
-        if (!existing) {
-          dependencies.push({
-            taskId: existingTask.id,
-            reason: rule.reason,
-          });
-        }
-      }
+    if (!rule.keywords.some(keyword => subjectLower.includes(keyword))) {
+      continue;
     }
+
+    const ruleMatches = existingTasks.filter(task =>
+      rule.dependsOnKeywords.some(keyword => task.subject.toLowerCase().includes(keyword))
+    );
+
+    if (ruleMatches.length === 0) {
+      missingReasons.push(`Missing tracked dependency for ${taskSubject}: ${rule.reason}`);
+      continue;
+    }
+
+    ruleMatches.forEach(task => {
+      matches.push({
+        taskId: task.id,
+        reason: `${rule.reason} (matched ${task.subject})`,
+        blocking: task.status !== 'completed' && task.consensus_status !== 'reached',
+      });
+    });
   }
 
-  return dependencies;
+  return { matches, missingReasons };
+}
+
+function ensurePlanDependencyTask(
+  db: Database,
+  options: { phaseLabel: string; reasons: string[]; now: string }
+): void {
+  const uniqueReasons = Array.from(new Set(options.reasons.filter(Boolean)));
+  if (uniqueReasons.length === 0) {
+    return;
+  }
+
+  const label = options.phaseLabel || "Current Phase";
+  const subject = `Update plan dependencies for ${label}`;
+  const existing = db.query(`
+    SELECT id FROM tasks
+    WHERE subject = ?
+      AND status NOT IN ('completed', 'failed', 'cancelled')
+  `).get(subject) as { id: string } | undefined;
+
+  if (existing) {
+    return;
+  }
+
+  const taskId = `deps-${slugify(label)}-${Date.now().toString(36)}`;
+  const description = [
+    `Dependencies for ${label} need clarification.`,
+    "",
+    "Document the following in .project/plan.md:",
+    ...uniqueReasons.map(reason => `- ${reason}`),
+    "",
+    "Update the ### Dependencies section so the brain can schedule work confidently.",
+  ].join("\n");
+
+  db.run(`
+    INSERT INTO tasks (id, subject, description, status, priority, domain, phase, source_type, source_ref, created_at, updated_at)
+    VALUES (?, ?, ?, 'pending', 'normal', 'architect', ?, 'manual', ?, ?, ?)
+  `, [
+    taskId,
+    subject,
+    description,
+    label,
+    `dependency:${label}`,
+    options.now,
+    options.now,
+  ]);
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40) || 'phase';
 }
 
 function parseArmsFromJson(json: string): string[] {
@@ -597,7 +782,7 @@ ${d.file ? `File: ${d.file}` : ""}`
 // Helper Functions
 // ============================================
 
-async function readCurrentPlan(projectRoot: string): Promise<{ content: string; goals: string[]; bullets: string[]; currentPhase: string }> {
+async function readCurrentPlan(projectRoot: string): Promise<{ content: string; goals: string[]; bullets: string[]; currentPhase: string; dependencies: string[] }> {
   const plansDir = join(projectRoot, ".project", "plans");
   let planFiles: string[] = [];
   try {
@@ -657,6 +842,7 @@ async function readCurrentPlan(projectRoot: string): Promise<{ content: string; 
   }
 
   currentPhase = phaseContent.join("\n").trim();
+  const dependencies = extractDependenciesFromPhase(currentPhase);
 
   let inGoals = false;
   let inBullets = false;
@@ -686,7 +872,48 @@ async function readCurrentPlan(projectRoot: string): Promise<{ content: string; 
     }
   }
 
-  return { content, goals, bullets, currentPhase };
+  return { content, goals, bullets, currentPhase, dependencies };
+}
+
+function extractDependenciesFromPhase(phaseContent: string): string[] {
+  if (!phaseContent) {
+    return [];
+  }
+
+  const lines = phaseContent.split("\n");
+  const dependencies: string[] = [];
+  let inDependencies = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      continue;
+    }
+
+    if (line.toLowerCase().startsWith("### dependencies")) {
+      inDependencies = true;
+      continue;
+    }
+
+    if (inDependencies && (line.startsWith("### ") || line.startsWith("## "))) {
+      break;
+    }
+
+    if (!inDependencies) {
+      continue;
+    }
+
+    if (line.startsWith("-") || line.startsWith("*")) {
+      const cleaned = line.replace(/^[-*]\s*/, "").trim();
+      if (cleaned) {
+        dependencies.push(cleaned);
+      }
+    } else if (dependencies.length > 0) {
+      dependencies[dependencies.length - 1] = `${dependencies[dependencies.length - 1]} ${line}`.trim();
+    }
+  }
+
+  return dependencies;
 }
 
 async function getCompletedTasks(db: Database): Promise<Array<{ subject: string; status: string; completedAt?: string }>> {
@@ -1023,3 +1250,12 @@ ${result.openDiscoveries.length > 0 ? result.openDiscoveries.join("\n") : "None 
 export function formatContextBundle(result: ContextBundleResult): string {
   return result.fullOutput;
 }
+
+export const __promptTestables = {
+  readCurrentPlan,
+  extractDependenciesFromPhase,
+  collectDependenciesForTask,
+  detectKeywordDependencies,
+  ensurePlanDependencyTask,
+  createPlanTaskDeliverable,
+};

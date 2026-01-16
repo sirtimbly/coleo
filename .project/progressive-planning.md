@@ -4,6 +4,15 @@
 
 The Brain doesn't pre-generate all tasks upfront. Instead, it **progressively determines** the next task at runtime by re-evaluating plan documents, completed task history, and status reports.
 
+### Current Implementation Status
+
+- [x] Parse plan phases (including `### Dependencies`) directly from `.project/plan.md`
+- [x] Auto-link plan dependencies to SQLite tasks and block new work until prerequisites complete
+- [x] File "Update plan dependencies" architect tasks when prerequisites are unknown
+- [ ] Assign primary + watcher arms during task claims
+- [ ] Consensus update API so arms can approve/reject work
+- [ ] Discovery-based dependency reporting to extend the graph over time
+
 ## Inputs to Task Determination
 
 ```

@@ -164,6 +164,15 @@ For each plan bullet point:
 - [ ] History tracking for completed tasks
 - [ ] Status report parsing and influence on tasking
 
+### Dependency Graph Enhancements
+
+- [x] Parse `### Dependencies` sections directly from plan phases
+- [x] Auto-link plan dependencies to matching tasks and mark new work as blocked when prerequisites are unfinished
+- [x] Spawn "Update plan dependencies" architect tasks when unresolved prerequisites are discovered
+- [ ] Assign primary + watcher arms automatically when tasks are claimed
+- [ ] Consensus update API so arms can submit approvals/rejections and reach quorum
+- [ ] Discovery-based dependency reporting (`report_dependency` tool) to capture relationships surfaced during execution
+
 ### Dependencies
 
 - Phase 2 (context bundles)
