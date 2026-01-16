@@ -330,6 +330,109 @@ brainCmd
     }
   });
 
+brainCmd
+  .command("prompt:task")
+  .description("Show what task the brain would determine next (for copying to agent)")
+  .action(async () => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    const { Database } = await import("bun:sqlite");
+
+    try {
+      const db = new Database(dbPath);
+      const { generateTaskDetermination, formatTaskDetermination } = await import("../brain/prompt-generator");
+      
+      const result = await generateTaskDetermination({
+        projectRoot: process.cwd(),
+        octopaiDir,
+        db,
+      });
+      
+      console.log(formatTaskDetermination(result));
+      db.close();
+    } catch (err) {
+      console.error("Error determining task:", err);
+      process.exit(1);
+    }
+  });
+
+brainCmd
+  .command("prompt:context")
+  .description("Show context bundle for a task (for copying to agent)")
+  .argument("[task-id-or-subject]", "Task ID or subject to generate context for")
+  .action(async (taskIdOrSubject) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    const { Database } = await import("bun:sqlite");
+
+    try {
+      const db = new Database(dbPath);
+      const { generateContextBundle, formatContextBundle } = await import("../brain/prompt-generator");
+      
+      const taskInput = taskIdOrSubject || "next";
+      
+      // If "next", find the highest priority pending task
+      let taskSubject = taskInput;
+      if (taskInput === "next") {
+        const pendingTask = db.query(`
+          SELECT subject FROM tasks
+          WHERE status = 'pending'
+          ORDER BY 
+            CASE priority 
+              WHEN 'critical' THEN 1 
+              WHEN 'high' THEN 2 
+              WHEN 'normal' THEN 3 
+              WHEN 'low' THEN 4 
+            END,
+            created_at ASC
+          LIMIT 1
+        `).get() as { subject: string } | undefined;
+        
+        if (pendingTask) {
+          taskSubject = pendingTask.subject;
+        } else {
+          console.log("No pending tasks found. Please specify a task ID or subject.");
+          db.close();
+          process.exit(1);
+        }
+      }
+      
+      const result = await generateContextBundle({
+        projectRoot: process.cwd(),
+        octopaiDir,
+        db,
+      }, taskSubject);
+      
+      if (result) {
+        console.log(formatContextBundle(result));
+      } else {
+        console.log(`Task not found: ${taskSubject}`);
+        console.log("\nAvailable tasks:");
+        const tasks = db.query(`
+          SELECT id, subject, status, priority FROM tasks
+          WHERE status IN ('pending', 'in_progress')
+          ORDER BY 
+            CASE priority 
+              WHEN 'critical' THEN 1 
+              WHEN 'high' THEN 2 
+              WHEN 'normal' THEN 3 
+              WHEN 'low' THEN 4 
+            END
+          LIMIT 10
+        `).all() as Array<{ id: string; subject: string; status: string; priority: string }>;
+        
+        for (const task of tasks) {
+          console.log(`  - ${task.id}: ${task.subject} [${task.priority}]`);
+        }
+      }
+      
+      db.close();
+    } catch (err) {
+      console.error("Error generating context:", err);
+      process.exit(1);
+    }
+  });
+
 // ============================================
 // ARM COMMANDS
 // ============================================
