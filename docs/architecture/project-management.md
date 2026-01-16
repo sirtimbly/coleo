@@ -1,62 +1,83 @@
 # Project Management
 
-Octopai includes a specialized "PM Arm" that manages the software project itself - coordinating tasks, updating documentation, tracking progress, and ensuring human feedback is properly incorporated.
+Octopai manages the software project itself through **architect-classified tasks** that coordinate work, update documentation, track progress, and ensure human feedback is properly incorporated.
 
-## The PM Arm
+Instead of a permanently specialized "PM arm", **any general-purpose arm** can temporarily execute **project management tasks** when the brain assigns it an `architect` (project-management) classification with the right context.
 
-Unlike other arms that write code, the PM arm **observes and coordinates**. It's the human's primary interface into the system's progress.
+## Project Management via Architect Tasks
+
+When running in a project management role, an architect-classified task behaves like a project manager. It is the human's primary interface into the system's overall progress and plans.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      PM ARM ROLE                             │
+│                ARCHITECT (PROJECT MANAGEMENT)               │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Does NOT write code. Instead:                               │
-│                                                              │
-│  ├── Watches all arm activity                                │
-│  ├── Updates project plans and task lists                    │
-│  ├── Maintains acceptance criteria                           │
-│  ├── Writes status updates and summaries                     │
-│  ├── Drafts communications to humans                         │
-│  ├── Ensures human feedback is captured and acted on         │
-│  ├── Tracks blockers and escalates when needed               │
-│  └── Keeps documentation in sync with reality                │
-│                                                              │
+│                                                             │
+│  Does NOT primarily write product code. Instead it:         │
+│                                                             │
+│  ├── Watches arm and task activity                          │
+│  ├── Updates project plans and task lists in .project/      │
+│  ├── Maintains phase acceptance criteria                    │
+│  ├── Writes status updates and summaries                    │
+│  ├── Drafts communications to humans                        │
+│  ├── Ensures human feedback is captured and acted on        │
+│  ├── Tracks blockers and escalates when needed              │
+│  └── Keeps documentation in sync with reality               │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### PM Arm Profile
+These responsibilities are fulfilled by **architect tasks operating over the `.project/` directory and docs/**, not by a separate PM-only agent type.
+
+### Architect Task Profile (Project Management Flavor)
+
+Architect tasks that focus on project management use a predictable set of inputs and outputs.
 
 ```typescript
-const PM_ARM: ArmProfile = {
-  id: "pm",
-  name: "Project Manager",
-  agent: "opencode",  // or any harness
-  
-  domain: {
-    name: "project-management",
-    description: "Project coordination, documentation, human communication",
-    defaultPatterns: [
-      ".project/**",
-      "docs/**/*.md",
-      "README.md",
-      "CHANGELOG.md",
-      "TODO.md",
-    ],
-    mcpServers: ["git", "docs"],
-  },
-  
-  // PM has read access to everything, write access to docs/project files
-  expertise: ["documentation", "planning", "communication", "coordination"],
-  
-  // PM observes but rarely proposes code changes
-  permissions: {
-    canPropose: ["docs", "refactor"],  // Not deploy
-    canVeto: false,                     // Observes, doesn't block
-    canEscalate: true,                  // Can always ping human
-  },
-};
+interface ProjectManagementTaskContext {
+  classification: "architect";               // Architect task
+  subtype: "project-management";             // Flavor: project management
+
+  // Inputs from the brain
+  projectRoot: string;                        // Path to repo
+  projectDir: string;                         // Path to .project/
+  docsDir: string;                            // Path to docs/
+  recentActivityMinutes: number;              // Window to summarize
+
+  // Current state snapshots
+  statusFile: string;                         // .project/status.md contents
+  planFile: string;                           // .project/plan.md contents
+  requirementsFile: string;                   // .project/requirements.md contents
+  decisionsIndex: string[];                   // .project/decisions/*.md
+  taskFiles: {
+    backlog: string;
+    current: string;
+    blocked: string;
+    completed: string;
+  };
+  feedbackFiles: {
+    pending: string;
+    incorporated: string;
+  };
+}
+
+interface ProjectManagementTaskOutput {
+  updatedFiles: {
+    path: string;
+    content: string;
+  }[];
+  statusSummary?: string;                     // For email / Observatory
+  humanAttentionItems?: string[];             // Bullets for "Human Attention Needed"
+}
 ```
+
+The **same physical arm instance** might perform:
+
+- A development task (implementing code)
+- Then an architect/project-management task (updating `.project/status.md` and docs)
+- Then a QA task (writing tests)
+
+The brain decides which classification to assign based on current needs.
 
 ## On-Disk Project Structure
 
@@ -69,45 +90,48 @@ All project management happens through **plain text files** in a `.project/` dir
 
 ### Directory Structure
 
+This structure reflects the current implementation and planning in `.project/`:
+
 ```
 .project/
 ├── README.md              # Project overview and quick status
+├── requirements.md        # Core philosophy & task classifications
 ├── plan.md                # High-level project plan and phases
 ├── status.md              # Current status, updated frequently
 ├── decisions/             # Architecture Decision Records (ADRs)
 │   ├── 001-use-bun.md
-│   ├── 002-maildir-for-ipc.md
-│   └── ...
+│   ├── 002-maildir-for-communication.md
+│   ├── ...
 ├── tasks/
 │   ├── backlog.md         # Future work, ideas, nice-to-haves
-│   ├── current.md         # Active sprint/iteration tasks
+│   ├── current.md         # Active work items
 │   ├── blocked.md         # Tasks waiting on something
-│   └── completed.md       # Done tasks (recent, then archived)
+│   └── completed.md       # Recently done tasks
 ├── feedback/
 │   ├── pending.md         # Human feedback awaiting action
 │   ├── incorporated.md    # Feedback that's been addressed
 │   └── sessions/          # Per-session feedback logs
-│       └── 2024-01-15.md
-├── communications/
-│   ├── drafts/            # Messages being composed
-│   └── sent/              # Sent updates (for reference)
-└── acceptance/
-    ├── phase-1.md         # Acceptance criteria for Phase 1
-    ├── phase-2.md
-    └── ...
+├── acceptance/
+│   ├── phase-0.md         # Acceptance criteria for Phase 0
+│   ├── phase-1.md
+│   ├── phase-2.md
+│   └── ...
+└── plans/                 # Implementation plans generated by architect tasks
 ```
+
+> Note: older references to a dedicated `communications/` folder and `pm-arm` should now be interpreted as **architect project-management tasks** reading from and writing to these core `.project/` files.
 
 ## File Formats
 
 ### status.md
 
-Updated frequently (every significant change):
+`status.md` is the canonical high-level status for the project, updated by architect project-management tasks whenever significant changes occur.
 
 ```markdown
 # Project Status
 
 **Last Updated**: 2024-01-15 14:30 UTC
-**Updated By**: PM Arm
+**Updated By**: Architect task (project-management)
 
 ## Current State
 
@@ -115,16 +139,16 @@ Updated frequently (every significant change):
 
 ### Active Work
 
-| Arm | Task | Status | Since |
-|-----|------|--------|-------|
-| api-arm | Hono server setup | 🔨 In Progress | 2h ago |
-| ui-arm | React shell | 🔨 In Progress | 1h ago |
-| test-arm | API test suite | ⏳ Waiting | Blocked on api-arm |
+| Classification | Task | Status | Since |
+|----------------|------|--------|-------|
+| development | Hono server setup | 🔨 In Progress | 2h ago |
+| development | React shell | 🔨 In Progress | 1h ago |
+| qa | API test suite | ⏳ Waiting | Blocked on Hono server setup |
 
 ### Recent Completions (Last 24h)
 
-- ✅ Database schema design (api-arm)
-- ✅ WebSocket integration plan (api-arm)
+- ✅ Database schema design (development)
+- ✅ WebSocket integration plan (architect)
 
 ### Blockers
 
@@ -132,7 +156,7 @@ None currently.
 
 ### Human Attention Needed
 
-- [ ] Review API authentication approach (see decisions/003-api-auth.md)
+- [ ] Review API authentication approach (see decisions/003-api-authentication.md)
 
 ---
 
@@ -145,7 +169,7 @@ None currently.
 
 ### tasks/current.md
 
-Active work items:
+Architect project-management tasks maintain an overview of active work items, but the **brain uses progressive planning** to determine the next task at runtime. `tasks/current.md` is a human-readable projection, not a canonical backlog.
 
 ```markdown
 # Current Tasks
@@ -153,7 +177,8 @@ Active work items:
 ## In Progress
 
 ### [TASK-012] Hono API Server Setup
-- **Assigned**: api-arm
+- **Classification**: development
+- **Assigned Arm**: worker-1
 - **Started**: 2024-01-15 10:00
 - **Estimate**: 4 hours
 - **Status**: 🔨 In Progress
@@ -174,7 +199,8 @@ Active work items:
 ---
 
 ### [TASK-013] React Shell
-- **Assigned**: ui-arm
+- **Classification**: development
+- **Assigned Arm**: worker-2
 - **Started**: 2024-01-15 11:00
 - **Estimate**: 3 hours
 - **Status**: 🔨 In Progress
@@ -192,18 +218,19 @@ Active work items:
 ## Waiting
 
 ### [TASK-014] API Test Suite
-- **Assigned**: test-arm
+- **Classification**: qa
+- **Assigned Arm**: worker-3
 - **Waiting On**: TASK-012 (Hono server)
 - **Estimate**: 2 hours
 
 **Description**: Create test suite for API endpoints.
 
-**Notes**: Can start once api-arm has basic endpoints working.
+**Notes**: Can start once the Hono server has basic endpoints working.
 ```
 
 ### feedback/pending.md
 
-Human feedback awaiting action:
+Human feedback is tracked as structured markdown that architect project-management tasks can parse, prioritize, and incorporate.
 
 ```markdown
 # Pending Feedback
@@ -225,74 +252,30 @@ Human feedback awaiting action:
 
 ---
 
-### [FB-008] Add project management arm
+### [FB-008] Clarify project management responsibilities
 **Received**: 2024-01-15 14:30
 **Source**: Human (Tim)
 **Priority**: High
 
-> Need documentation about management of the software project. The brain 
-> probably needs an arm that updates docs, tasks, acceptance criteria, 
-> and makes sure human feedback is incorporated properly.
+> Project management (status updates, task tracking, doc sync) should be
+> handled by architect-classified tasks, not a separate PM-only arm.
 
 **Status**: 🔨 In Progress
-**Assigned To**: pm-arm (self)
-**Notes**: Creating project-management.md and .project/ structure.
+**Assigned To**: architect (project-management)
+**Notes**: Updating project-management.md and .project/ structure.
 ```
 
-### decisions/001-example.md
+## Architect Project-Management Behaviors
 
-Architecture Decision Records:
-
-```markdown
-# ADR-001: Use Bun as Runtime
-
-**Status**: Accepted
-**Date**: 2024-01-10
-**Deciders**: Human (Tim)
-
-## Context
-
-Need to choose a JavaScript/TypeScript runtime for Octopai.
-
-## Decision
-
-Use Bun as the primary runtime.
-
-## Rationale
-
-- First-party SQLite support (bun:sqlite)
-- Fast startup time (good for spawning arms)
-- TypeScript native
-- Built-in test runner
-- Growing ecosystem
-
-## Consequences
-
-**Positive**:
-- Simplified stack (no separate bundler/transpiler)
-- Fast development iteration
-- Native SQLite without dependencies
-
-**Negative**:
-- Newer ecosystem, some packages may not work
-- Team may need to learn Bun-specific APIs
-- Less battle-tested than Node.js
-
-## Alternatives Considered
-
-- **Node.js**: More mature, but needs more tooling
-- **Deno**: Good security model, but smaller ecosystem
-```
-
-## PM Arm Behaviors
+The following behaviors describe **architect project-management tasks**, not a dedicated PM arm type. Any general-purpose arm can perform these when assigned the appropriate classification and context.
 
 ### 1. Status Updates
 
-The PM arm regularly updates `status.md`:
+Architect project-management tasks regularly update `status.md`:
 
 ```typescript
 interface StatusUpdateTrigger {
-  event: 
+  event:
     | "task_completed"
     | "task_started"
     | "blocker_detected"
@@ -300,7 +283,7 @@ interface StatusUpdateTrigger {
     | "arm_paused"
     | "deploy_completed"
     | "scheduled";  // Every 30 min if active work
-  
+
   action: "update_status";
 }
 
@@ -309,7 +292,7 @@ async function updateStatus(event: StatusUpdateTrigger): Promise<void> {
   const recentActivity = await getRecentActivity(24 * 60); // 24h
   const blockers = await detectBlockers();
   const humanNeeds = await getPendingHumanItems();
-  
+
   await writeStatusFile({
     timestamp: new Date(),
     state: determineOverallState(currentState, blockers),
@@ -324,23 +307,23 @@ async function updateStatus(event: StatusUpdateTrigger): Promise<void> {
 
 ### 2. Task Tracking
 
-When arms complete work:
+When tasks complete, architect project-management tasks keep `.project/tasks/*.md` in sync:
 
 ```typescript
 async function onTaskCompleted(armId: string, taskId: string): Promise<void> {
   // Move from current.md to completed.md
   await moveTask(taskId, "current.md", "completed.md");
-  
+
   // Update task with completion details
   await appendToTask(taskId, {
     completedAt: new Date(),
     completedBy: armId,
     notes: await getCompletionNotes(armId, taskId),
   });
-  
+
   // Check if any waiting tasks can now start
   await checkUnblocked(taskId);
-  
+
   // Update status
   await updateStatus({ event: "task_completed" });
 }
@@ -348,7 +331,7 @@ async function onTaskCompleted(armId: string, taskId: string): Promise<void> {
 
 ### 3. Feedback Incorporation
 
-When human provides feedback:
+When humans provide feedback (typically via email or direct edits), architect project-management tasks ensure it is tracked and acted on:
 
 ```typescript
 interface FeedbackItem {
@@ -365,11 +348,11 @@ interface FeedbackItem {
 async function onHumanFeedback(feedback: string, session: string): Promise<void> {
   // Parse and categorize feedback
   const items = await parseFeedback(feedback);
-  
+
   for (const item of items) {
     // Add to pending feedback
     await appendToPendingFeedback(item);
-    
+
     // Determine if it needs immediate action
     if (item.priority === "high") {
       // Notify relevant arms
@@ -379,18 +362,18 @@ async function onHumanFeedback(feedback: string, session: string): Promise<void>
         action: "review_and_incorporate",
       });
     }
-    
+
     // Log to session file
     await appendToSessionLog(session, item);
   }
-  
+
   await updateStatus({ event: "human_feedback" });
 }
 ```
 
 ### 4. Communication Drafting
 
-PM arm drafts updates for humans:
+Architect project-management tasks draft updates for humans, which can then be sent via the Maildir/IMAP gateway:
 
 ```typescript
 interface CommunicationDraft {
@@ -406,7 +389,7 @@ async function draftDailySummary(): Promise<CommunicationDraft> {
   const activity = await getActivitySince(lastSummary);
   const blockers = await getBlockers();
   const decisions = await getPendingDecisions();
-  
+
   return {
     type: "daily_summary",
     recipient: "human",
@@ -419,12 +402,12 @@ async function draftDailySummary(): Promise<CommunicationDraft> {
 
 ### 5. Documentation Sync
 
-Keep docs in sync with actual implementation:
+Architect project-management tasks help keep docs in sync with implementation:
 
 ```typescript
 async function checkDocSync(): Promise<DocSyncReport> {
   const issues: DocSyncIssue[] = [];
-  
+
   // Check if code has changed but docs haven't
   const codeChanges = await getRecentCodeChanges();
   for (const change of codeChanges) {
@@ -440,7 +423,7 @@ async function checkDocSync(): Promise<DocSyncReport> {
       }
     }
   }
-  
+
   // Check if docs reference non-existent code
   const docRefs = await extractCodeReferences(getAllDocs());
   for (const ref of docRefs) {
@@ -453,14 +436,14 @@ async function checkDocSync(): Promise<DocSyncReport> {
       });
     }
   }
-  
+
   return { issues, checkedAt: new Date() };
 }
 ```
 
 ## Human Communication Principles
 
-The PM arm follows these principles for human communication:
+These principles still apply, but they now describe **how architect project-management tasks communicate with humans** (usually via email), rather than a special PM arm.
 
 ### 1. Proactive, Not Reactive
 
@@ -521,23 +504,23 @@ Humans should never be surprised by:
 
 ## Metrics and Reporting
 
-The PM arm tracks metrics for project health:
+Architect project-management tasks track metrics for project health:
 
 ```typescript
 interface ProjectMetrics {
   // Velocity
   tasksCompletedThisWeek: number;
   averageTaskDuration: number;  // hours
-  
+
   // Quality
   feedbackIncorporationRate: number;  // % of feedback acted on
   docSyncScore: number;  // % of docs up-to-date
-  
+
   // Health
   currentBlockers: number;
   averageBlockerDuration: number;  // hours
   armUtilization: Record<string, number>;  // % time active
-  
+
   // Communication
   humanResponseTime: number;  // avg hours to respond to questions
   decisionsAwaitingInput: number;
@@ -546,23 +529,17 @@ interface ProjectMetrics {
 
 ## Integration with Brain
 
-The PM arm has special privileges:
+Rather than a dedicated PM arm with special privileges, the **brain** knows how to:
 
-```typescript
-interface PMBrainIntegration {
-  // PM can observe all arm activity
-  subscriptions: ["arm.*", "proposal.*", "deploy.*", "claim.*"];
-  
-  // PM can request arm attention
-  canPing: true;
-  
-  // PM can escalate to human without proposal
-  canEscalate: true;
-  
-  // PM updates are visible in Observatory dashboard
-  statusFeed: true;
-}
-```
+- Spawn general-purpose arms
+- Assign them architect project-management tasks when the project needs coordination
+- Provide `.project/` and activity context bundles to those tasks
+
+Architect project-management tasks, in turn, rely on the brain for:
+
+- Subscriptions to activity streams (`arm.*`, `proposal.*`, `deploy.*`, `claim.*`, etc.)
+- A way to send human-facing messages (Maildir/IMAP gateway)
+- APIs for querying current arms, tasks, and discoveries
 
 ## Why Text Files?
 

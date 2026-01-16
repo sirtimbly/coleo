@@ -15,6 +15,7 @@ import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
+import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
 
@@ -143,6 +144,7 @@ export class Brain {
   private natsClient: NatsClient | null = null;
   private mailProcessor: MailProcessor;
   private stuckArmAnalyzer: StuckArmAnalyzer;
+  private docTracker: DocUpdateTracker | null = null;
   // Track last stuck state per arm to avoid duplicate escalations
   private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
   // Track idle arm prompt-response patterns to detect stuck loops
@@ -293,6 +295,9 @@ export class Brain {
     const dbPath = join(this.options.octopaiDir, "octopai.db");
     this.db = await initDatabase(dbPath);
     
+    // Initialize doc update tracker
+    this.docTracker = new DocUpdateTracker(this.db, this.options.octopaiDir, process.cwd());
+    
     // Create necessary directories
     const dirs = [
       "mail/inbox",
@@ -377,6 +382,9 @@ export class Brain {
     
     // Step 8: Sync tasks from plan files
     await this.syncPlanTasks();
+    
+    // Step 8b: Check for documentation update triggers
+    await this.checkDocUpdateTrigger();
     
     // Step 9: Save state
     await this.saveState();
@@ -807,21 +815,219 @@ export class Brain {
     this.log(`Completed task: ${task.subject}`);
   }
 
-  /**
-   * Handle a discovery from an arm
-   */
-  private async handleDiscovery(armId: string, discovery: Discovery): Promise<void> {
-    // For now, always escalate to human
-    await this.sendToHuman({
-      subject: `[octopai] Discovery: ${discovery.title}`,
-      body: `Arm ${armId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
-      headers: {
-        "X-Octopai-Type": "discovery",
-        "X-Octopai-From": armId,
-        "X-Octopai-Severity": discovery.severity || "info",
-      },
-    });
-  }
+   /**
+    * Handle a discovery from an arm
+    */
+   private async handleDiscovery(armId: string, discovery: Discovery): Promise<void> {
+     const discoveryId = `disc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+     
+     // Store in database
+     if (this.db) {
+       const now = new Date().toISOString();
+       this.db.run(`
+         INSERT INTO discoveries (id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
+       `, [
+         discoveryId,
+         armId,
+         armId, // arm_name is the same as arm_id for now
+         discovery.kind,
+         discovery.title,
+         discovery.details,
+         discovery.file || null,
+         discovery.line || null,
+         discovery.severity || "info",
+         now,
+         now,
+       ]);
+       
+       this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
+     }
+     
+     // Also notify human for high-severity discoveries
+     if (discovery.severity === "error" || discovery.severity === "warning") {
+       await this.sendToHuman({
+         subject: `[octopai] Discovery: ${discovery.title}`,
+         body: `Arm ${armId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
+         headers: {
+           "X-Octopai-Type": "discovery",
+           "X-Octopai-From": armId,
+           "X-Octopai-Severity": discovery.severity || "info",
+         },
+       });
+     }
+   }
+
+   /**
+    * Get discoveries relevant to an arm's domain and context
+    */
+   async getDiscoveriesForArm(armId: string, domain: string, options?: {
+     limit?: number;
+     severity?: string[];
+     status?: string[];
+     filePattern?: string;
+   }): Promise<Array<{
+     id: string;
+     kind: string;
+     title: string;
+     details: string;
+     filePath?: string;
+     lineNumber?: number;
+     severity: string;
+     createdAt: string;
+   }>> {
+     if (!this.db) return [];
+     
+     const limit = options?.limit || 20;
+     let query = `
+       SELECT id, kind, title, details, file_path, line_number, severity, status, created_at
+       FROM discoveries
+       WHERE status = 'open'
+     `;
+     
+      const params: (string | number)[] = [];
+      
+      // Filter by severity if specified
+      if (options?.severity && options.severity.length > 0) {
+        query += ` AND severity IN (${options.severity.map(() => '?').join(',')})`;
+        params.push(...options.severity);
+      }
+      
+      // Filter by file pattern if specified
+      if (options?.filePattern) {
+        query += ` AND (file_path LIKE ? OR file_path GLOB ?)`;
+        params.push(`%${options.filePattern}%`, `*${options.filePattern}*`);
+      }
+      
+      query += ` ORDER BY 
+          CASE severity 
+            WHEN 'error' THEN 1 
+            WHEN 'warning' THEN 2 
+            WHEN 'info' THEN 3 
+          END,
+          created_at DESC
+        LIMIT ?`;
+      params.push(limit);
+      
+      try {
+        const stmt = this.db.query(query);
+        const rows = (params.length > 0 ? stmt.all(...params) : stmt.all()) as Array<{
+          id: string;
+          kind: string;
+          title: string;
+          details: string;
+          file_path: string | null;
+          line_number: number | null;
+          severity: string;
+          status: string;
+          created_at: string;
+        }>;
+       
+       return rows.map(row => ({
+         id: row.id,
+         kind: row.kind,
+         title: row.title,
+         details: row.details,
+         filePath: row.file_path || undefined,
+         lineNumber: row.line_number || undefined,
+         severity: row.severity,
+         createdAt: row.created_at,
+       }));
+     } catch (err) {
+       this.log(`Error querying discoveries: ${err}`);
+       return [];
+     }
+   }
+
+   /**
+    * Search discoveries using full-text search
+    */
+    async searchDiscoveries(query: string, options?: {
+      limit?: number;
+      severity?: string[];
+    }): Promise<Array<{
+      id: string;
+      kind: string;
+      title: string;
+      details: string;
+      severity: string;
+      createdAt: string;
+    }>> {
+      if (!this.db) return [];
+      
+      const limit = options?.limit || 20;
+      
+      try {
+        // Build FTS query with parameters
+        const ftsQuery = `
+          SELECT d.id, d.kind, d.title, d.details, d.severity, d.created_at
+          FROM discoveries d
+          JOIN discoveries_fts fts ON d.rowid = fts.rowid
+          WHERE discoveries_fts MATCH ?
+          ${options?.severity ? `AND d.severity IN (${options.severity.map(() => '?').join(',')})` : ''}
+          ORDER BY d.created_at DESC
+          LIMIT ?
+        `;
+        
+        const ftsParams: (string | number)[] = [query];
+        if (options?.severity) {
+          ftsParams.push(...options.severity);
+        }
+        ftsParams.push(limit);
+        
+        const stmt = this.db.query(ftsQuery);
+        const rows = ftsParams.length > 0 ? stmt.all(...ftsParams) : stmt.all();
+        const typedRows = rows as Array<{
+          id: string;
+          kind: string;
+          title: string;
+          details: string;
+          severity: string;
+          created_at: string;
+        }>;
+        
+        return typedRows.map(row => ({
+          id: row.id,
+          kind: row.kind,
+          title: row.title,
+          details: row.details,
+          severity: row.severity,
+          createdAt: row.created_at,
+        }));
+      } catch (err) {
+        // FTS might not be available, fall back to LIKE search
+        this.log(`FTS search failed, falling back to LIKE: ${err}`);
+        return this.getDiscoveriesForArm("system", "general", {
+          limit,
+          severity: options?.severity,
+          filePattern: query,
+        });
+      }
+    }
+
+    /**
+     * Get discoveries summary for context
+    */
+   async getDiscoveriesContext(armId: string, domain: string): Promise<string> {
+     const discoveries = await this.getDiscoveriesForArm(armId, domain, { limit: 10 });
+     
+     if (discoveries.length === 0) {
+       return "No prior discoveries recorded.";
+     }
+     
+     const lines = [`## Prior Discoveries (${discoveries.length} open)`];
+     
+     for (const d of discoveries) {
+       lines.push(`- **[${d.severity.toUpperCase()}] ${d.title}**`);
+       lines.push(`  - Kind: ${d.kind}`);
+       if (d.filePath) {
+         lines.push(`  - File: ${d.filePath}${d.lineNumber ? `:${d.lineNumber}` : ""}`);
+       }
+       lines.push(`  - ${d.details.slice(0, 200)}${d.details.length > 200 ? "..." : ""}`);
+     }
+     
+     return lines.join("\n");
+   }
 
   /**
    * Send an approval request to the human
@@ -1335,50 +1541,61 @@ export class Brain {
     }
   }
 
-  /**
-   * Assign initial tasks to newly spawned arms based on their domain
-   */
-  private async assignInitialTasks(): Promise<void> {
-    for (const [armId, arm] of this.arms) {
-      // Skip if we've already assigned initial tasks to this arm
-      if (this.seenArmIds.has(armId)) continue;
-      
-      // Skip if arm is not idle
-      if (arm.status !== "idle") continue;
-      
-      // Get the domain (stored as extra property)
-      const domain = (arm as Arm & { domain?: string }).domain || "general";
-      
-      // Get initial tasks for this domain
-      const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
-      
-      // Create tasks for this arm
-      for (const taskTemplate of initialTasks) {
-        const task = await this.createTask(
-          taskTemplate.subject,
-          taskTemplate.description
-        );
-        
-        // Immediately assign to this arm
-        task.status = "claimed";
-        task.assignedTo = armId;
-        task.updatedAt = new Date();
-        
-        // Send to arm
-        await this.sendToArm(armId, {
-          type: "task_assignment",
-          payload: task,
-        });
-        
-        this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain})`);
-        this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject });
-      }
-      
-      // Mark arm as having received initial tasks
-      this.seenArmIds.add(armId);
-      await this.saveSeenArmIds();
-    }
-  }
+   /**
+    * Assign initial tasks to newly spawned arms based on their domain
+    */
+   private async assignInitialTasks(): Promise<void> {
+     for (const [armId, arm] of this.arms) {
+       // Skip if we've already assigned initial tasks to this arm
+       if (this.seenArmIds.has(armId)) continue;
+       
+       // Skip if arm is not idle
+       if (arm.status !== "idle") continue;
+       
+       // Get the domain (stored as extra property)
+       const domain = (arm as Arm & { domain?: string }).domain || "general";
+       
+       // Get relevant discoveries for this arm
+       const discoveries = await this.getDiscoveriesForArm(armId, domain, { limit: 10 });
+       
+       // Get initial tasks for this domain
+       const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
+       
+       // Create tasks for this arm
+       for (const taskTemplate of initialTasks) {
+         const task = await this.createTask(
+           taskTemplate.subject,
+           taskTemplate.description
+         );
+         
+         // Immediately assign to this arm
+         task.status = "claimed";
+         task.assignedTo = armId;
+         task.updatedAt = new Date();
+         
+         // Include discoveries context if any exist
+         if (discoveries.length > 0) {
+           task.context = {
+             discoveries,
+             notes: "Review these prior discoveries before starting work.",
+           };
+         }
+         
+         // Send to arm
+         await this.sendToArm(armId, {
+           type: "task_assignment",
+           payload: task,
+         });
+         
+         this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain}, discoveries: ${discoveries.length})`);
+         this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject, discoveryCount: discoveries.length });
+       }
+       
+       // Mark arm as having received initial tasks
+       this.seenArmIds.add(armId);
+       await this.saveSeenArmIds();
+     }
+   }
 
   /**
    * Load seen arm IDs from state
@@ -2188,58 +2405,70 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
     tracker.promptCount = 0;
   }
 
-  /**
-   * Assign pending tasks to available arms
-   * Considers task domain preferences when assigning
-   */
-  private async assignTasks(): Promise<void> {
-    const pendingTasks = this.tasks.filter(t => t.status === "pending");
-    const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
-    
-    for (const task of pendingTasks) {
-      // Find best matching arm based on task domain preference
-      let bestArm = idleArms.shift();
-      
-      if (task.domain) {
-        // Look for an arm with matching domain
-        const matchingArm = idleArms.find(arm => {
-          const armDomain = (arm as Arm & { domain?: string }).domain || "general";
-          return armDomain === task.domain || armDomain === "general";
-        });
-        
-        if (matchingArm) {
-          // Remove matching arm from idleArms and use it
-          const index = idleArms.indexOf(matchingArm);
-          if (index > -1) {
-            idleArms.splice(index, 1);
-          }
-          bestArm = matchingArm;
-        }
-      }
-      
-      if (!bestArm) break;
-      
-      task.status = "claimed";
-      task.assignedTo = bestArm.id;
-      task.updatedAt = new Date();
-      
-      bestArm.status = "busy";
-      bestArm.currentTask = task.id;
-      
-      // Write task assignment to arm's queue
-      await this.sendToArm(bestArm.id, {
-        type: "task_assignment",
-        payload: task,
-      });
-      
-      const domainMatch = task.domain ? ` (domain: ${task.domain})` : "";
-      this.log(`Assigned task "${task.subject}" to ${bestArm.id}${domainMatch}`);
-      this.logActivity("brain", "task_assigned", task.id, { armId: bestArm.id, domain: task.domain, taskSubject: task.subject });
-    }
-    
-    await this.saveTasks();
-    await this.saveArms();
-  }
+   /**
+    * Assign pending tasks to available arms
+    * Considers task domain preferences when assigning
+    */
+   private async assignTasks(): Promise<void> {
+     const pendingTasks = this.tasks.filter(t => t.status === "pending");
+     const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
+     
+     for (const task of pendingTasks) {
+       // Find best matching arm based on task domain preference
+       let bestArm = idleArms.shift();
+       const armDomain = bestArm ? ((bestArm as Arm & { domain?: string }).domain || "general") : "general";
+       
+       if (task.domain) {
+         // Look for an arm with matching domain
+         const matchingArm = idleArms.find(arm => {
+           const aDomain = (arm as Arm & { domain?: string }).domain || "general";
+           return aDomain === task.domain || aDomain === "general";
+         });
+         
+         if (matchingArm) {
+           // Remove matching arm from idleArms and use it
+           const index = idleArms.indexOf(matchingArm);
+           if (index > -1) {
+             idleArms.splice(index, 1);
+           }
+           bestArm = matchingArm;
+         }
+       }
+       
+       if (!bestArm) break;
+       
+       task.status = "claimed";
+       task.assignedTo = bestArm.id;
+       task.updatedAt = new Date();
+       
+       bestArm.status = "busy";
+       bestArm.currentTask = task.id;
+       
+       // Get relevant discoveries for this arm
+       const discoveries = await this.getDiscoveriesForArm(bestArm.id, armDomain, { limit: 10 });
+       
+       // Include discoveries context if any exist
+       if (discoveries.length > 0) {
+         task.context = {
+           discoveries,
+           notes: "Review these prior discoveries before starting work.",
+         };
+       }
+       
+       // Write task assignment to arm's queue
+       await this.sendToArm(bestArm.id, {
+         type: "task_assignment",
+         payload: task,
+       });
+       
+       const domainMatch = task.domain ? ` (domain: ${task.domain})` : "";
+       this.log(`Assigned task "${task.subject}" to ${bestArm.id}${domainMatch}, discoveries: ${discoveries.length}`);
+       this.logActivity("brain", "task_assigned", task.id, { armId: bestArm.id, domain: task.domain, taskSubject: task.subject, discoveryCount: discoveries.length });
+     }
+     
+     await this.saveTasks();
+     await this.saveArms();
+   }
 
   /**
    * Send a message to an arm's queue
@@ -2619,6 +2848,119 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
 
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Check if documentation update should be triggered
+   */
+  private async checkDocUpdateTrigger(): Promise<void> {
+    if (!this.docTracker) return;
+
+    const trigger = await this.docTracker.checkDocUpdateTrigger();
+    if (trigger) {
+      this.log(`Doc update trigger: ${trigger.trigger} - ${trigger.reason}`);
+      await this.handleDocUpdateTrigger(trigger.trigger);
+    }
+  }
+
+  /**
+   * Handle documentation update trigger
+   */
+  private async handleDocUpdateTrigger(trigger: "threshold" | "periodic"): Promise<void> {
+    if (!this.docTracker || !this.db) return;
+
+    const context = await this.docTracker.getDocUpdateContext();
+    
+    // Only create task if there are actual changes to review
+    if (context.changedFilesCount === 0) {
+      this.log("No files changed since last doc update, skipping");
+      return;
+    }
+
+    // Build task description
+    const description = this.buildDocUpdateDescription(context);
+    
+    // Create documentation task
+    const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const task: Task = {
+      id: taskId,
+      subject: "Documentation Sync: Feature Docs Alignment",
+      description,
+      status: "pending",
+      priority: "normal",
+      domain: "docs",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      context: {
+        notes: JSON.stringify({
+          triggerType: trigger,
+          filesChanged: context.filesChanged,
+          featureDocsToUpdate: context.featureDocsToUpdate,
+          changedFilesCount: context.changedFilesCount,
+        }),
+      },
+    };
+
+    this.tasks.push(task);
+    await this.saveTasks();
+
+    // Create doc update record
+    const docUpdateId = await this.docTracker.createDocUpdate(taskId, trigger);
+    this.docTracker.startDocUpdate(docUpdateId);
+
+    this.log(`Created doc update task: ${taskId} (trigger: ${trigger})`);
+    this.logActivity("brain", "doc_update_task_created", taskId, {
+      trigger,
+      filesChanged: context.changedFilesCount,
+      docsToUpdate: context.featureDocsToUpdate.length,
+    });
+  }
+
+  /**
+   * Build description for documentation update task
+   */
+  private buildDocUpdateDescription(context: {
+    filesChanged: string[];
+    changedFilesCount: number;
+    featureDocsToUpdate: string[];
+    planDocument?: string;
+  }): string {
+    let desc = `## Documentation Update Task
+
+This task ensures feature documentation remains aligned with actual code implementation.
+
+### Files Changed Since Last Update
+${context.changedFilesCount} files have been modified:
+${context.filesChanged.slice(0, 10).map(f => `- ${f}`).join("\n")}
+${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
+
+### Feature Docs to Review
+${context.featureDocsToUpdate.length > 0 
+  ? context.featureDocsToUpdate.map(d => `- ${d}`).join("\n")
+  : "No specific feature docs identified - review general docs for accuracy."}
+
+### Your Tasks
+
+1. **Review changed files** - Understand what code changes were made
+2. **Update feature docs** - Ensure docs/features/, docs/api/, and docs/capabilities/ match implementation
+3. **Add "Future Work" notes** - For features documented but not yet implemented:
+   - Mark as "Planned for Phase N"
+   - Reference the plan document
+4. **Do NOT update** - Conceptual docs, architecture decisions, or requirements
+
+### Output
+When complete, report:
+- Which docs were updated
+- Any "Future Work" notes added
+- Any features that need attention
+
+`;
+
+    if (context.planDocument) {
+      desc += `### Reference\nSee \`${context.planDocument}\` for planned features that may need "Future Work" notes.\n`;
+    }
+
+    return desc;
   }
 }
 

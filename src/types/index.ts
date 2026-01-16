@@ -35,6 +35,18 @@ export interface Task {
   completedAt?: Date;
   artifacts?: string[]; // commit hashes, file paths, etc.
   mailThreadId?: string; // link back to mail conversation
+  context?: {
+    discoveries?: Array<{
+      id: string;
+      kind: string;
+      title: string;
+      details: string;
+      filePath?: string;
+      lineNumber?: number;
+      severity: string;
+    }>;
+    notes?: string;
+  };
 }
 
 // Message between agents (in queue)

@@ -57,6 +57,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["012_arm_tokens_cost", MIGRATION_012],
     ["013_arm_current_task", MIGRATION_013],
     ["014_arm_agent_host", MIGRATION_014],
+    ["015_discoveries", MIGRATION_015],
+    ["016_doc_updates", MIGRATION_016],
   ];
 
 
@@ -431,6 +433,83 @@ ALTER TABLE arms ADD COLUMN host TEXT;
 
 -- Index for looking up arms by agent
 CREATE INDEX IF NOT EXISTS idx_arms_agent ON arms(agent_id);
+`;
+
+// Migration 015: Add discoveries table for cataloging arm discoveries
+const MIGRATION_015 = `
+-- Discoveries table: stores discoveries made by arms about their environment
+CREATE TABLE IF NOT EXISTS discoveries (
+  id TEXT PRIMARY KEY,
+  arm_id TEXT NOT NULL,
+  arm_name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('test_failure', 'unused_code', 'security_issue', 'performance', 'pattern', 'other')),
+  title TEXT NOT NULL,
+  details TEXT NOT NULL,
+  file_path TEXT,
+  line_number INTEGER,
+  severity TEXT DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'error')),
+  status TEXT DEFAULT 'open' CHECK (status IN ('open', 'acknowledged', 'resolved', 'dismissed')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  metadata TEXT DEFAULT '{}'
+);
+
+-- Indexes for common queries
+CREATE INDEX IF NOT EXISTS idx_discoveries_arm ON discoveries(arm_id);
+CREATE INDEX IF NOT EXISTS idx_discoveries_kind ON discoveries(kind);
+CREATE INDEX IF NOT EXISTS idx_discoveries_severity ON discoveries(severity);
+CREATE INDEX IF NOT EXISTS idx_discoveries_status ON discoveries(status);
+CREATE INDEX IF NOT EXISTS idx_discoveries_file ON discoveries(file_path);
+CREATE INDEX IF NOT EXISTS idx_discoveries_created ON discoveries(created_at DESC);
+
+-- Full-text search index on title and details (SQLite FTS5)
+CREATE VIRTUAL TABLE IF NOT EXISTS discoveries_fts USING fts5(
+  title,
+  details,
+  content='discoveries',
+  content_rowid='rowid'
+);
+
+-- Triggers to keep FTS index in sync
+CREATE TRIGGER IF NOT EXISTS discoveries_ai AFTER INSERT ON discoveries BEGIN
+  INSERT INTO discoveries_fts(rowid, title, details) VALUES (new.rowid, new.title, new.details);
+END;
+
+CREATE TRIGGER IF NOT EXISTS discoveries_ad AFTER DELETE ON discoveries BEGIN
+  INSERT INTO discoveries_fts(discoveries_fts, rowid, title, details) VALUES('delete', old.rowid, old.title, old.details);
+END;
+
+CREATE TRIGGER IF NOT EXISTS discoveries_au AFTER UPDATE ON discoveries BEGIN
+  INSERT INTO discoveries_fts(discoveries_fts, rowid, title, details) VALUES('delete', old.rowid, old.title, old.details);
+  INSERT INTO discoveries_fts(rowid, title, details) VALUES (new.rowid, new.title, new.details);
+END;
+`;
+
+// Migration 016: Doc updates tracking for documentation sync
+const MIGRATION_016 = `
+-- Doc updates table: track documentation updates and file changes
+CREATE TABLE IF NOT EXISTS doc_updates (
+  id TEXT PRIMARY KEY,
+  task_id TEXT,
+  trigger_type TEXT NOT NULL CHECK (trigger_type IN ('phase_complete', 'threshold', 'human_request', 'periodic')),
+  files_reviewed INTEGER DEFAULT 0,
+  docs_updated INTEGER DEFAULT 0,
+  future_work_notes_added INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'in_progress', 'completed', 'failed')),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  metadata TEXT DEFAULT '{}'
+);
+
+-- Index for looking up recent doc updates
+CREATE INDEX IF NOT EXISTS idx_doc_updates_time ON doc_updates(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_doc_updates_status ON doc_updates(status);
+
+-- Config for doc update thresholds
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('doc_update_file_threshold', '10'),
+  ('doc_update_poll_interval', '10'),
+  ('doc_update_enabled', 'true');
 `;
 
 /**
