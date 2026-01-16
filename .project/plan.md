@@ -22,7 +22,7 @@ To keep humans, the brain, and arms aligned we now standardize three primary com
 
 1. **CLI ↔ API Server** – The `octopai` CLI becomes a thin client that authenticates against the Hono REST API for every management action (spawn, list, kill, status). Local-only code paths are considered legacy fallbacks.
 2. **Web UI ↔ API Server** – The React/Vite Observatory consumes the same authenticated REST and WebSocket endpoints, mirroring CLI capabilities with dashboards and controls.
-3. **Mail Client ↔ Email Server** – A dedicated IMAP/SMTP gateway exposes the Maildir inbox/outbox so humans can use any email client. The gateway synchronizes threads with a coordination arm that mirrors conversations between the brain and worker arms.
+3. **Mail Client ↔ Email Server** – A future IMAP/SMTP gateway will expose the Maildir inbox/outbox so humans can use any email client. Until then, humans interact via Maildir-backed tools and the Observatory’s Mail UI.
 
 ---
 
@@ -67,55 +67,23 @@ See [acceptance/phase-0.md](./acceptance/phase-0.md)
 - shadcn/ui components (decisions/004)
 - Bun runtime (decisions/001)
 
----
+### Enhancements (Non-Blocking)
 
-## Phase 1: Observatory Foundation 🔜 Next
+These are useful Observatory improvements that build on Phase 1 but do not retroactively block calling the phase "complete":
 
-**Goal**: Web UI and API for human observation and control
-
-### Deliverables
-- [ ] Hono API server with REST endpoints
-- [ ] SQLite database with schema
-- [ ] WebSocket for real-time updates
-- [ ] React shell with routing
-- [ ] Basic dashboard view
-- [ ] Arm list and status view
-- [ ] CLI proxy layer (spawn/list/kill/status) routed through the API
-- [ ] Mail API surface (list/read/send) exposing Maildir metadata for downstream gateways
-- [ ] **Project Plan Viewer** in the web Observatory:
-  - [ ] File/folder tree of `.project/` and key docs on the left (e.g., `README.md`, `plan.md`, `requirements.md`, `status.md`, `decisions/`, `acceptance/`, `plans/`, `tasks/`).
-  - [ ] Markdown rendering panel on the right for the selected file.
-  - [ ] Visible "Last Updated" timestamp for each rendered file, derived from git commit metadata or filesystem mtime.
-  - [ ] Clear indication of which files changed most recently so humans can quickly find the latest updates.
-
-### Key Decisions Needed
-- API authentication approach (see decisions/)
-- React component library choice
-- State management approach
+- **Project Plan Viewer** in the web Observatory:
+  - File/folder tree of `.project/` and key docs on the left (e.g., `README.md`, `plan.md`, `requirements.md`, `status.md`, `decisions/`, `acceptance/`, `plans/`, `tasks/`).
+  - Markdown rendering panel on the right for the selected file.
+  - Visible "Last Updated" timestamp for each rendered file, derived from git commit metadata or filesystem mtime.
+  - Clear indication of which files changed most recently so humans can quickly find the latest updates.
 
 ### Estimated Duration
-2-3 weeks
+
+2–3 weeks (completed in early 2026, with ongoing non-blocking enhancements)
 
 ### Acceptance Criteria
+
 See [acceptance/phase-1.md](./acceptance/phase-1.md)
-
----
-
-## Phase 1.5: Email Gateway (New)
-
-**Goal**: Operate an IMAP/SMTP bridge that keeps human email threads synchronized with the brain and working arms.
-
-### Deliverables
-- [ ] IMAP server backed by Maildir with authentication
-- [ ] SMTP submission endpoint that routes inbound mail into the brain queue
-- [ ] Coordinator arm (mail dispatcher) that mirrors relevant replies to working arms
-- [ ] Health checks and observability for email transport
-
-### Dependencies
-- Phase 1
-
-### Estimated Duration
-1 week
 
 ---
 
@@ -358,22 +326,22 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 ### Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Agentic Brain                                 │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐    ┌─────────────────┐    ┌──────────────┐    │
-│  │ Human Input │───▶│  Brain Agent    │───▶│ Arm Actions  │    │
-│  │ (Email/     │    │  (LLM + Tools)  │    │ (via MCP/    │    │
-│  │  Tasks)     │    │                 │    │  NATS)       │    │
-│  └─────────────┘    └─────────────────┘    └──────────────┘    │
-│                           │                                      │
-│                           ▼                                      │
-│                  ┌─────────────────┐                             │
-│                  │  Tools (SQLite, │                             │
-│                  │   File System,  │                             │
-│                  │   MCP, NATS)    │                             │
-│                  └─────────────────┘                             │
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    Agentic Brain                                           │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  ┌───────────────┐    ┌───────────────────────┐    ┌─────────────────────┐ │
+│  │ Human Input   │──▶ │  Brain Agent          │──▶ │ Arm Actions         │ │
+│  │ (Email/       │    │  (LLM + Tools)        │    │ (via MCP/ NATS)    │ │
+│  │  Tasks)       │    │                       │    │                     │ │
+│  └───────────────┘    └───────────────────────┘    └─────────────────────┘ │
+│                           │                                      │         │
+│                           ▼                                      │         │
+│                  ┌───────────────────────┐                       │         │
+│                  │  Tools (SQLite,      │                       │         │
+│                  │   File System,       │                       │         │
+│                  │   MCP, NATS)         │                       │         │
+│                  └───────────────────────┘                       │         │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Framework: LangChain.js
@@ -436,22 +404,154 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 
 ---
 
-## Phase 3: Governance
+## Phase 2.7: Context Compression (New)
 
-**Goal**: Arms debate and reach consensus on plans and changes.
+**Goal**: Configure context size limits and automatic task context re-injection after compression to maintain agent focus on brain's directives.
+
+### Problem Statement
+
+OpenCode and similar agent harnesses have built-in context compression that runs automatically when context fills up (typically around 80% of maximum). When compression runs:
+
+1. The most recent messages (often including task instructions) may be summarized or dropped
+2. Agents lose visibility into their original objectives
+3. Quality degrades as the agent loses track of what it's supposed to do
+
+### Solution: Task Context Re-injection
+
+After any context compression event, the agent should receive:
+
+1. **Reinforced task description** - "You are working on: [task subject]"
+2. **Work-in-progress note** - "This is work in progress that you've already started"
+3. **Relevant context bundle** - Key discoveries, completed tasks, plan excerpts
+4. **Priority indicator** - Critical/High/Normal
+
+### Configuration Options
+
+| Config Key | Description | Default |
+|------------|-------------|---------|
+| `context_compression_threshold` | % of max context that triggers compaction | 80 |
+| `context_hard_limit` | Hard limit % - compaction MUST run if exceeded | 95 |
+| `context_reinforce_after_compression` | Enable task re-injection | true |
+| `context_wip_prefix` | Text before task description after compression | "This is work in progress that you've already started:" |
+
+### Implementation
+
+#### OpenCode Configuration
+
+When running arms with OpenCode harness, the configuration includes:
+
+```json
+{
+  "contextCompression": {
+    "autoCompact": true,
+    "threshold": 80,
+    "hardLimit": 95,
+    "reinforceAfterCompression": true,
+    "wipPrefix": "This is work in progress that you've already started:"
+  }
+}
+```
+
+#### Brain Output for Agent Prompt
+
+The `prompt:context` command already generates this output format:
+
+```
+=== OCTOPAI TASK ASSIGNMENT ===
+...
+
+## IMPORTANT: Context Compression Notice
+
+This message has been re-injected after context compression.
+You were in the middle of working on this task.
+
+Your Task: [task subject]
+Priority: [priority]
+Classification: [classification]
+
+[Original task description]
+
+## What You've Done So Far
+[Completed tasks summary]
+
+## Open Discoveries
+[Any discoveries relevant to this task]
+
+## Next Steps
+[Guidance based on where you likely left off]
+
+Good luck continuing your work!
+===
+```
+
+#### For OpenCode MCP Tool
+
+Add a new MCP tool for arms to signal context compression:
+
+```typescript
+server.registerTool(
+  "report_context_compression",
+  {
+    description: "Report that context compression occurred",
+    inputSchema: {
+      compressed_at: z.string().datetime(),
+      original_tokens: z.number(),
+      compressed_tokens: z.number(),
+      retention_summary: z.string(),
+    },
+  },
+  async ({ compressed_at, original_tokens, compressed_tokens, retention_summary }) => {
+    // Brain logs this and may re-inject context if configured
+    await sendToBrain({
+      from: ARM_ID,
+      to: "brain",
+      type: "context_compression",
+      payload: { compressed_at, original_tokens, compressed_tokens, retention_summary },
+    });
+  }
+);
+```
 
 ### Deliverables
 
-- [ ] Proposal system
-- [ ] Arguments and signals
-- [ ] Consensus calculation
-- [ ] Reputation tracking
-- [ ] Creative override flow
-- [ ] Emergency stop (andon cord)
+- [ ] Context compression configuration options in brain config
+- [ ] Prompt template for re-injection after compression
+- [ ] MCP tool for arms to report compression events
+- [ ] Brain logic to detect compression and optionally re-inject
+- [ ] Documentation for harness-specific configuration
+- [ ] Tests for context compression scenarios
+
+### Dependencies
+
+- Phase 2 (Task Classification)
+- Phase 2.6 (Agentic Brain - for tool integration)
 
 ### Estimated Duration
 
-2-3 weeks
+1 week
+
+---
+
+## Phase 3: Governance
+
+**Goal**: Arms debate and reach consensus on plans and changes, using proposals, arguments, and signals rather than human-maintained MR workflows.
+
+### Deliverables
+
+- [ ] Proposal system (deploy, claim, refactor, dependency, breaking_change, creative_override)
+- [ ] Arguments and signals tied to tasks and classifications (no fixed arm roles)
+- [ ] Consensus calculation that uses reputation and task/subject relevance (not static domains)
+- [ ] Reputation tracking and enforcement hooks in the Brain
+- [ ] Creative override flow with clear rollback plans
+- [ ] Emergency stop (andon cord) signals and handling
+- [ ] Transition from MR templates to **task configuration templates**, where:
+  - Task classification (architect, development, qa, documentation, etc.) selects a configuration template.
+  - Templates define defaults for tools, context bundles, safety rules, and governance expectations.
+  - Any remaining MR-style templates are removed or updated to reference task configuration templates instead of fixed arm/MR roles.
+
+### Estimated Duration
+
+2–3 weeks
 
 ---
 
@@ -460,6 +560,7 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 **Goal**: 3D visualization of workspace
 
 ### Deliverables
+
 - [ ] React Three Fiber integration
 - [ ] Radial coordinate system
 - [ ] Real-time file activity display
@@ -556,7 +657,7 @@ Future: 3+ weeks (if PTY harnesses revisited)
 
 ### Estimated Duration
 
-2-3 weeks
+2–3 weeks
 
 ---
 
@@ -574,16 +675,12 @@ Future: 3+ weeks (if PTY harnesses revisited)
 
 ---
 
-## Open Questions
-
-See [decisions/](./decisions/) for resolved questions and [../docs/architecture/questions.md](../docs/architecture/questions.md) for open questions.
-
----
-
 ## Changelog
 
 | Date | Change |
 |------|--------|
+| 2026-01-16 | Phase 3 governance updated to use proposals/arguments/signals without MR-specific workflows; plan now calls for migration from MR templates to task configuration templates |
+| 2026-01-16 | Phase 1 marked complete; Project Plan Viewer treated as non-blocking enhancement; IMAP/SMTP email gateway deferred to later phases |
 | 2026-01-16 | Phase 2.2: Documentation update tasks (keep feature docs aligned with code) |
 | 2026-01-16 | Phase 6 focused on opencode-api only; PTY harnesses deferred to Phase 7+ |
 | 2026-01-15 | Updated philosophy: Arms are not specialized (ADR-009) |
