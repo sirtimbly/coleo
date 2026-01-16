@@ -4,6 +4,15 @@
     "code-search": {
       "type": "local",
       "command": ["/Users/timothy.bendt/granular/code-search/.venv/bin/python", "/Users/timothy.bendt/granular/code-search/mcp_server.py", "--project", "/Users/timothy.bendt/developer/octopai"]
+    },
+    "octopai": {
+      "type": "local",
+      "command": ["/Users/timothy.bendt/.bun/bin/bun", "run", "/Users/timothy.bendt/developer/octopai/src/cli/index.ts", "mcp", "serve"],
+      "environment": {
+        "OCTOPAI_ARM_ID": "opencode-test",
+        "OCTOPAI_DIR": "/Users/timothy.bendt/.octopai"
+      },
+      "enabled": true
     }
   }
 }
