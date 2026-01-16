@@ -30,6 +30,11 @@ High-level work to extend and refine the Observatory (API + Web UI + CLI).
 - Add a simple **Activity Timeline** view that shows recent events with filters (arm, type, time range).
 - Add an **Arm Detail** sidebar/panel (status, recent tasks, last errors) linked from the arm list.
 - Expose a minimal **Config** view for API key and environment information (read-only for now).
+- Add a **Project Plan Viewer** in the Observatory that:
+  - Shows a file/folder tree of `.project/` and key docs (e.g., `README.md`, `plan.md`, `requirements.md`, `status.md`, `decisions/`, `acceptance/`, `plans/`, `tasks/`).
+  - Renders the selected file as Markdown.
+  - Displays a "Last Updated" timestamp based on git or filesystem metadata.
+  - Highlights recently changed documents so humans can see what’s new.
 
 ### CLI / API Alignment
 
@@ -38,28 +43,27 @@ High-level work to extend and refine the Observatory (API + Web UI + CLI).
 
 ---
 
-## Phase 1.5: Email Gateway
+## Phase 2.x: Mail UI & Metadata
 
-Work toward the IMAP/SMTP bridge described in `.project/plan.md`.
-
-### IMAP/SMTP Skeleton
-
-- Sketch and stub an IMAP server that reads from the existing Maildir structure.
-- Define configuration format for IMAP/SMTP credentials and ports.
+Lightweight web and API support for viewing Maildir-backed messages.
 
 ### Mail API Surface
 
-- Add `/api/mail/*` endpoints that expose Maildir metadata needed by an eventual email gateway:
-  - List threads / conversations.
+- Add `/api/mail/*` endpoints that expose Maildir metadata and content:
+  - List messages (with basic filters for folder, read/unread, date).
   - Fetch message metadata (subject, from, to, date, tags).
+  - Fetch message body for display in the web UI.
 
-### Coordinator Logic (Design Level)
+### Mail UI in Observatory
 
-- Outline the "mail dispatcher" behavior:
-  - How to mirror relevant human ↔ brain messages to working arms.
-  - How to tag or route messages by task or phase.
+- Add a **Mail** section in the Observatory that:
+  - Lists messages from Maildir (inbox, sent, archive views).
+  - Shows message detail (headers + body) on selection.
+  - Supports basic reply/compose actions, writing new messages back to Maildir and triggering the existing send mechanism.
 
-(Implementation of full IMAP/SMTP behavior is later; these items help architect tasks define concrete plan bullets.)
+### Future: Email Gateway (IMAP/SMTP)
+
+- Design and implement a full IMAP/SMTP gateway as a later phase once Maildir-based UI and metadata access are solid.
 
 ---
 

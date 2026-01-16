@@ -393,6 +393,58 @@ For each discovery:
     };
   }
 
+  // Check if this is a fresh/empty project with no pending work
+  const hasPendingPlanWork = plan.bullets && plan.bullets.length > 0;
+  
+  if (!hasPendingPlanWork && pendingTasks.length === 0) {
+    // Fresh/empty project - offer specific options
+    return {
+      task: {
+        subject: "New Project Setup - What would you like help with?",
+        description: `This project has no pending tasks or planned work. What would you like me to help with?
+
+## Options
+
+### 1. Code Review & Refactoring
+I'll explore the codebase and identify:
+- Dead code or unused files
+- Code that could be simplified
+- Inconsistent patterns or style issues
+- Performance improvement opportunities
+- Test coverage gaps
+
+### 2. Documentation & README Updates
+I'll analyze the codebase and update:
+- README.md with accurate project description
+- Documentation for existing features
+- API documentation if applicable
+- Architecture decision records
+- "Future work" notes for unimplemented features
+
+### 3. Create a Project Plan
+I'll work with you to define:
+- Goals for the project
+- Phased implementation approach
+- Task breakdown for future work
+
+## How to Proceed
+
+Reply with one of:
+- "do code review" or "refactor" → I'll start exploring the codebase
+- "update documentation" or "write docs" → I'll document what exists
+- "help me plan" or "create plan" → We'll define work together
+- Your own description of what you'd like help with
+
+## Note
+
+I won't start any actual implementation work without your explicit direction. I can explore, document, and plan - but I need your approval before making code changes.`,
+        classification: "architect",
+        priority: "normal",
+      },
+      reasoning: "Fresh/empty project detected. Offering options: code review, documentation, or planning.",
+    };
+  }
+
   return {
     task: {
       subject: "Determine Next Work",

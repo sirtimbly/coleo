@@ -222,11 +222,12 @@ ${preset ? `Preset "${preset}" arms have been configured in .octopai/arms/` : ""
 ${scriptInfo}${symlinkInfo}
  Edit or delete arm configs in .octopai/arms/ before spawning.
 
- Next steps:
-   1. Start the API server: octopai serve
-   2. Configure arms: edit .octopai/arms/*.toml
-   3. Spawn an arm: octopai arm spawn
- `);
+  Next steps:
+    1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b octopai)
+    2. Start the API server: octopai serve
+    3. Configure arms: edit .octopai/arms/*.toml
+    4. Spawn an arm pointed at your project worktree: octopai arm spawn --workdir /path/to/your/project
+  `);
   });
 
 // ============================================

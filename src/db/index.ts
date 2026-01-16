@@ -59,6 +59,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["014_arm_agent_host", MIGRATION_014],
     ["015_discoveries", MIGRATION_015],
     ["016_doc_updates", MIGRATION_016],
+    ["017_context_compression", MIGRATION_017],
   ];
 
 
@@ -512,7 +513,39 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('doc_update_enabled', 'true');
 `;
 
-/**
+// Migration 017: Context compression tracking for Phase 2.7
+const MIGRATION_017 = `
+-- Context compression events: track when arms compress context due to budget limits
+CREATE TABLE IF NOT EXISTS context_compressions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  task_id TEXT NOT NULL,
+  original_tokens INTEGER NOT NULL,
+  compressed_tokens INTEGER NOT NULL,
+  compression_ratio REAL NOT NULL,
+  removed_content TEXT NOT NULL DEFAULT '[]',
+  work_in_progress TEXT,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Indexes for context compression queries
+CREATE INDEX IF NOT EXISTS idx_ctx_comp_arm ON context_compressions(arm_id);
+CREATE INDEX IF NOT EXISTS idx_ctx_comp_task ON context_compressions(task_id);
+CREATE INDEX IF NOT EXISTS idx_ctx_comp_time ON context_compressions(timestamp DESC);
+
+-- Add context_budget_total and context_budget_used columns to arms
+-- These track the total budget allocated vs actual usage for cost optimization
+ALTER TABLE arms ADD COLUMN context_budget_total INTEGER DEFAULT 128000;
+ALTER TABLE arms ADD COLUMN context_budget_used REAL DEFAULT 0;
+
+-- Context budget thresholds config
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('context_soft_threshold', '0.80'),
+  ('context_hard_threshold', '0.95'),
+  ('context_compression_enabled', 'true');
+`;
+
+ /**
  * Seed development data for testing
  */
 export async function seedDatabase(db: Database): Promise<void> {

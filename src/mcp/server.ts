@@ -23,6 +23,7 @@ import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 const OCTOPAI_DIR = getOctopaiDir();
 const ARM_ID = process.env.OCTOPAI_ARM_ID || process.env.OCTOPAI_TENTACLE_ID || "unknown";
 const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+const OPENCOD_API_URL = process.env.OPENCOD_API_URL || "http://127.0.0.1:19300";
 
 // Database connection (lazy initialization)
 let db: Database | null = null;
@@ -30,6 +31,80 @@ let dbWritable: Database | null = null;
 
 // NATS client (lazy initialization)
 let natsClient: NatsClient | null = null;
+
+// Session ID to compacting status tracking
+const sessionCompactionStatus = new Map<string, {
+  lastCompactionAt: Date;
+  compactionCount: number;
+  lastTokens: number;
+}>();
+
+// Start SSE listener for OpenCode events (automatic context compaction detection)
+// This connects to the local OpenCode API and listens for session.compacted events
+async function startOpenCodeEventListener(): Promise<void> {
+  const eventSourceUrl = `${OPENCOD_API_URL}/global/event`;
+  
+  try {
+    const eventsource = await import("eventsource");
+    const EventSource = (eventsource as unknown as { default: unknown }).default || eventsource;
+    
+    const eventSource = new (EventSource as new (url: string) => EventSource)(eventSourceUrl);
+
+    eventSource.onopen = () => {
+      console.error(`[MCP] Connected to OpenCode event stream at ${eventSourceUrl}`);
+    };
+
+    eventSource.onerror = () => {
+      console.error(`[MCP] OpenCode event stream error, reconnecting in 5s...`);
+      eventSource.close();
+      setTimeout(startOpenCodeEventListener, 5000);
+    };
+
+    eventSource.addEventListener("session.compacted", async (event: unknown) => {
+      const messageEvent = event as { data: string };
+      try {
+        const data = JSON.parse(messageEvent.data);
+        const sessionID = data?.properties?.sessionID;
+
+        if (!sessionID) return;
+
+        console.error(`[MCP] Context compaction detected for session: ${sessionID}`);
+
+        const existing = sessionCompactionStatus.get(sessionID) || {
+          lastCompactionAt: new Date(),
+          compactionCount: 0,
+          lastTokens: 0,
+        };
+        existing.compactionCount++;
+        existing.lastCompactionAt = new Date();
+        sessionCompactionStatus.set(sessionID, existing);
+
+        await sendToBrain({
+          from: ARM_ID,
+          to: "brain",
+          type: "context_compression",
+          payload: {
+            sessionId: sessionID,
+            detectedBy: "opencode-sse",
+            timestamp: new Date().toISOString(),
+            compactionCount: existing.compactionCount,
+          },
+        });
+
+        logActivity(ARM_ID, "auto_context_compaction", sessionID, {
+          compactionCount: existing.compactionCount,
+          detectedBy: "opencode-sse",
+        });
+      } catch (err) {
+        console.error(`[MCP] Error processing compaction event: ${err}`);
+      }
+    });
+
+    console.error(`[MCP] OpenCode event listener started`);
+  } catch (err) {
+    console.error(`[MCP] Failed to start OpenCode event listener: ${err}`);
+  }
+}
 
 function getDatabase(readonly = true): Database {
   if (readonly) {
@@ -673,6 +748,351 @@ export function createMcpServer(): McpServer {
           },
         ],
       };
+    }
+  );
+
+  // ============================================
+  // CONTEXT COMPRESSION TOOLS - Phase 2.7
+  // ============================================
+
+  // Report context compression event
+  server.registerTool(
+    "report_context_compression",
+    {
+      description: "Report when your context has been compressed due to budget limits. The brain tracks context usage across all arms to optimize resource allocation.",
+      inputSchema: {
+        task_id: z.string().describe("The ID of the task being worked on"),
+        original_tokens: z.number().describe("Original context token count before compression"),
+        compressed_tokens: z.number().describe("Token count after compression"),
+        compression_ratio: z.number().describe("Compression ratio (compressed/original, e.g., 0.5 means 50% reduction)"),
+        what_was_removed: z.array(z.object({
+          type: z.enum(["history", "artifacts", "notes", "tools", "context"]).describe("Type of content removed"),
+          description: z.string().describe("Brief description of what was removed"),
+          token_count: z.number().describe("Estimated tokens removed"),
+        })).describe("Details about what content was removed"),
+        work_in_progress: z.string().optional().describe("Brief summary of your current work to reinforce after compression"),
+      },
+    },
+    async ({ task_id, original_tokens, compressed_tokens, compression_ratio, what_was_removed, work_in_progress }) => {
+      try {
+        const database = getDatabase(false);
+        const now = new Date().toISOString();
+
+        database.run(
+          `INSERT INTO context_compressions
+           (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio,
+            removed_content, work_in_progress, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ARM_ID,
+            task_id,
+            original_tokens,
+            compressed_tokens,
+            compression_ratio,
+            JSON.stringify(what_was_removed),
+            work_in_progress || null,
+            now,
+          ]
+        );
+
+        const estimatedCost = original_tokens * 0.01;
+        database.run(
+          `UPDATE arms SET context_budget_used = context_budget_used + ? WHERE id = ?`,
+          [estimatedCost, ARM_ID]
+        );
+
+        logActivity(ARM_ID, "context_compression", task_id, {
+          original_tokens,
+          compressed_tokens,
+          compression_ratio,
+          estimated_cost: estimatedCost,
+          removed_items: what_was_removed.length,
+        });
+
+        database.close();
+      } catch {
+        // Database not available
+      }
+
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "context_compression",
+        payload: {
+          taskId: task_id,
+          originalTokens: original_tokens,
+          compressedTokens: compressed_tokens,
+          compressionRatio: compression_ratio,
+          removedContent: what_was_removed,
+          workInProgress: work_in_progress,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Context compression reported: ${original_tokens} → ${compressed_tokens} tokens (${(compression_ratio * 100).toFixed(1)}% remaining)${work_in_progress ? `\n\nCurrent work reinforced: ${work_in_progress}` : ""}\n\nBrain will adjust context budget allocation (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Get context budget status
+  server.registerTool(
+    "get_context_budget",
+    {
+      description: "Check your current context budget and usage. This helps you understand how much context you have remaining before compression will occur.",
+      inputSchema: {
+        task_id: z.string().optional().describe("Optional task ID to check specific budget for"),
+      },
+    },
+    async ({ task_id }) => {
+      try {
+        const database = getDatabase();
+
+        let armBudget = database.query(
+          "SELECT context_budget_total, context_budget_used FROM arms WHERE id = ?"
+        ).get(ARM_ID) as { context_budget_total: number; context_budget_used: number } | null;
+
+        if (!armBudget) {
+          armBudget = { context_budget_total: 128000, context_budget_used: 0 };
+        }
+
+        const remaining = armBudget.context_budget_total - armBudget.context_budget_used;
+        const usagePercent = (armBudget.context_budget_used / armBudget.context_budget_total) * 100;
+
+        const recentCompressions = database.query(
+          `SELECT timestamp, original_tokens, compressed_tokens, compression_ratio
+           FROM context_compressions
+           WHERE arm_id = ? AND timestamp > datetime('now', '-1 hour')
+           ORDER BY timestamp DESC
+           LIMIT 10`
+        ).all(ARM_ID) as Array<{
+          timestamp: string;
+          original_tokens: number;
+          compressed_tokens: number;
+          compression_ratio: number;
+        }>;
+
+        database.close();
+
+        const compressionCount = recentCompressions.length;
+        const avgCompression = compressionCount > 0
+          ? (recentCompressions.reduce((sum, c) => sum + c.compression_ratio, 0) / compressionCount * 100).toFixed(1)
+          : "N/A";
+
+        let statusEmoji = "✅";
+        if (usagePercent > 80) statusEmoji = "⚠️";
+        if (usagePercent > 95) statusEmoji = "🔥";
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `# Context Budget Status\n\n` +
+                    `${statusEmoji} **${ARM_ID}**\n\n` +
+                    `**Budget:** ${(armBudget.context_budget_total / 1000).toFixed(0)}K tokens\n` +
+                    `**Used:** ${(armBudget.context_budget_used / 1000).toFixed(1)}K tokens (${usagePercent.toFixed(1)}%)\n` +
+                    `**Remaining:** ${(remaining / 1000).toFixed(1)}K tokens\n\n` +
+                    `**Recent compressions (1h):** ${compressionCount}\n` +
+                    `**Avg compression:** ${avgCompression}%\n\n` +
+                    `**Thresholds:**\n` +
+                    `- 80%: Warning - consider completing or compressing\n` +
+                    `- 95%: Hard limit - compression will trigger\n` +
+                    `- 100%: Maximum - forced compression or task handoff${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get context budget: ${errorMsg}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // FILE CLAIM SYSTEM TOOLS - Coordinate file access between arms
+  // ============================================
+  // CONTEXT COMPRESSION TOOLS - Phase 2.7
+  // ============================================
+
+  // Report context compression event
+  server.registerTool(
+    "report_context_compression",
+    {
+      description: "Report when your context has been compressed due to budget limits. The brain tracks context usage across all arms to optimize resource allocation.",
+      inputSchema: {
+        task_id: z.string().describe("The ID of the task being worked on"),
+        original_tokens: z.number().describe("Original context token count before compression"),
+        compressed_tokens: z.number().describe("Token count after compression"),
+        compression_ratio: z.number().describe("Compression ratio (compressed/original, e.g., 0.5 means 50% reduction)"),
+        what_was_removed: z.array(z.object({
+          type: z.enum(["history", "artifacts", "notes", "tools", "context"]).describe("Type of content removed"),
+          description: z.string().describe("Brief description of what was removed"),
+          token_count: z.number().describe("Estimated tokens removed"),
+        })).describe("Details about what content was removed"),
+        work_in_progress: z.string().optional().describe("Brief summary of your current work to reinforce after compression"),
+      },
+    },
+    async ({ task_id, original_tokens, compressed_tokens, compression_ratio, what_was_removed, work_in_progress }) => {
+      // Store compression event in database for brain analytics
+      try {
+        const database = getDatabase(false);
+        const now = new Date().toISOString();
+
+        database.run(
+          `INSERT INTO context_compressions
+           (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio,
+            removed_content, work_in_progress, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            ARM_ID,
+            task_id,
+            original_tokens,
+            compressed_tokens,
+            compression_ratio,
+            JSON.stringify(what_was_removed),
+            work_in_progress || null,
+            now,
+          ]
+        );
+
+        // Update arm's context budget tracking
+        const estimatedCost = original_tokens * 0.01; // Rough cost estimate per token
+        database.run(
+          `UPDATE arms SET context_budget_used = context_budget_used + ? WHERE id = ?`,
+          [estimatedCost, ARM_ID]
+        );
+
+        logActivity(ARM_ID, "context_compression", task_id, {
+          original_tokens,
+          compressed_tokens,
+          compression_ratio,
+          estimated_cost: estimatedCost,
+          removed_items: what_was_removed.length,
+        });
+
+        database.close();
+      } catch {
+        // Database not available, continue with message to brain
+      }
+
+      // Notify brain via message queue
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "context_compression",
+        payload: {
+          taskId: task_id,
+          originalTokens: original_tokens,
+          compressedTokens: compressed_tokens,
+          compressionRatio: compression_ratio,
+          removedContent: what_was_removed,
+          workInProgress: work_in_progress,
+          timestamp: new Date().toISOString(),
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Context compression reported: ${original_tokens} → ${compressed_tokens} tokens (${(compression_ratio * 100).toFixed(1)}% remaining)${work_in_progress ? `\n\nCurrent work reinforced: ${work_in_progress}` : ""}\n\nBrain will adjust context budget allocation (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Get context budget status
+  server.registerTool(
+    "get_context_budget",
+    {
+      description: "Check your current context budget and usage. This helps you understand how much context you have remaining before compression will occur.",
+      inputSchema: {
+        task_id: z.string().optional().describe("Optional task ID to check specific budget for"),
+      },
+    },
+    async ({ task_id }) => {
+      try {
+        const database = getDatabase();
+
+        let armBudget = database.query(
+          "SELECT context_budget_total, context_budget_used FROM arms WHERE id = ?"
+        ).get(ARM_ID) as { context_budget_total: number; context_budget_used: number } | null;
+
+        if (!armBudget) {
+          // Default budget for arms not in database
+          armBudget = { context_budget_total: 128000, context_budget_used: 0 };
+        }
+
+        const remaining = armBudget.context_budget_total - armBudget.context_budget_used;
+        const usagePercent = (armBudget.context_budget_used / armBudget.context_budget_total) * 100;
+
+        // Get recent compression history
+        const recentCompressions = database.query(
+          `SELECT timestamp, original_tokens, compressed_tokens, compression_ratio
+           FROM context_compressions
+           WHERE arm_id = ? AND timestamp > datetime('now', '-1 hour')
+           ORDER BY timestamp DESC
+           LIMIT 10`
+        ).all(ARM_ID) as Array<{
+          timestamp: string;
+          original_tokens: number;
+          compressed_tokens: number;
+          compression_ratio: number;
+        }>;
+
+        database.close();
+
+        const compressionCount = recentCompressions.length;
+        const avgCompression = compressionCount > 0
+          ? (recentCompressions.reduce((sum, c) => sum + c.compression_ratio, 0) / compressionCount * 100).toFixed(1)
+          : "N/A";
+
+        let statusEmoji = "✅";
+        if (usagePercent > 80) statusEmoji = "⚠️";
+        if (usagePercent > 95) statusEmoji = "🔥";
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `# Context Budget Status\n\n` +
+                    `${statusEmoji} **${ARM_ID}**\n\n` +
+                    `**Budget:** ${(armBudget.context_budget_total / 1000).toFixed(0)}K tokens\n` +
+                    `**Used:** ${(armBudget.context_budget_used / 1000).toFixed(1)}K tokens (${usagePercent.toFixed(1)}%)\n` +
+                    `**Remaining:** ${(remaining / 1000).toFixed(1)}K tokens\n\n` +
+                    `**Recent compressions (1h):** ${compressionCount}\n` +
+                    `**Avg compression:** ${avgCompression}%\n\n` +
+                    `**Thresholds:**\n` +
+                    `- 80%: Warning - consider completing or compressing\n` +
+                    `- 95%: Hard limit - compression will trigger\n` +
+                    `- 100%: Maximum - forced compression or task handoff${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to get context budget: ${errorMsg}`,
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -2213,4 +2633,9 @@ export async function runMcpServer(): Promise<void> {
   await server.connect(transport);
 
   console.error(`[octopai] MCP server started for arm: ${ARM_ID}`);
+
+  // Start listening for OpenCode context compaction events
+  startOpenCodeEventListener().catch(err => {
+    console.error(`[octopai] Failed to start OpenCode event listener: ${err}`);
+  });
 }
