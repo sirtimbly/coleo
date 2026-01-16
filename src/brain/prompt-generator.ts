@@ -57,17 +57,33 @@ export async function generateTaskDetermination(ctx: PromptContext): Promise<Tas
   // 1. Read current plan
   const plan = await readCurrentPlan(projectRoot);
   
-  // 2. Get completed tasks
+  // 2. Get completed tasks from database
   const completedTasks = await getCompletedTasks(db);
   
   // 3. Get open discoveries
   const discoveries = await getOpenDiscoveries(db);
   
-  // 4. Get pending tasks
-  const pendingTasks = await getPendingTasks(db);
-
-  // 5. Determine next task based on progressive planning
-  const result = determineNextTask(plan, completedTasks, discoveries, pendingTasks);
+  // 4. Get pending tasks from both database and file system
+  const dbPendingTasks = await getPendingTasks(db);
+  const filePendingTasks = await getTasksFromFiles(projectRoot);
+  
+  // 5. Merge tasks - prefer file tasks, then db tasks
+  const allTasks: Task[] = [
+    ...filePendingTasks.map(t => ({
+      id: t.id,
+      subject: t.subject,
+      description: t.description,
+      status: t.status,
+      priority: t.priority,
+      domain: t.domain || undefined,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })),
+    ...dbPendingTasks,
+  ];
+  
+  // 6. Determine next task based on progressive planning
+  const result = determineNextTask(plan, completedTasks, discoveries, allTasks);
 
   return {
     task: result.task,
@@ -254,6 +270,85 @@ async function getPendingTasks(db: Database): Promise<Task[]> {
   } catch {
     return [];
   }
+}
+
+async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string }>> {
+  const tasks: Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string }> = [];
+  
+  const currentPath = join(projectRoot, ".project", "tasks", "current.md");
+  try {
+    const content = await readFile(currentPath, "utf-8");
+    const lines = content.split("\n");
+    let currentTask: { id: string; subject: string; description: string; priority: Task["priority"] } | null = null;
+    let inReady = false;
+    let inProgress = false;
+
+    for (const line of lines) {
+      if (line.startsWith("## Ready to Start")) {
+        inReady = true;
+        inProgress = false;
+        continue;
+      }
+      if (line.startsWith("## In Progress")) {
+        inReady = false;
+        inProgress = true;
+        continue;
+      }
+      if (line.startsWith("## ")) {
+        inReady = false;
+        inProgress = false;
+        continue;
+      }
+
+      const taskMatch = line.match(/^### \[(TASK-\d+)\] (.+)/);
+      if (taskMatch && inReady) {
+        if (currentTask) {
+          tasks.push({
+            id: currentTask.id,
+            subject: currentTask.subject,
+            description: currentTask.description,
+            status: "pending",
+            priority: currentTask.priority,
+          });
+        }
+        const taskId = taskMatch[1]!;
+        const taskSubject = taskMatch[2]!;
+        currentTask = {
+          id: taskId,
+          subject: taskSubject,
+          description: "",
+          priority: "high",
+        };
+        continue;
+      }
+
+      const priorityMatch = line.match(/- \*\*Priority\*\*: (\w+)/);
+      if (priorityMatch && currentTask) {
+        const priority = priorityMatch[1]!;
+        currentTask.priority = priority.toLowerCase() as Task["priority"];
+        continue;
+      }
+
+      if (line.startsWith("**Description**:") && currentTask) {
+        currentTask.description = line.replace("**Description**:", "").trim();
+        continue;
+      }
+    }
+
+    if (currentTask) {
+      tasks.push({
+        id: currentTask.id,
+        subject: currentTask.subject,
+        description: currentTask.description,
+        status: "pending",
+        priority: currentTask.priority,
+      });
+    }
+  } catch {
+    // File might not exist or be parseable
+  }
+
+  return tasks;
 }
 
 async function getOpenDiscoveries(db: Database): Promise<Discovery[]> {
