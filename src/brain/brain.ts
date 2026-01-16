@@ -738,6 +738,39 @@ export class Brain {
         await this.handleFileChange(message.from, payload);
         break;
       }
+
+      case "status_report": {
+        const payload = message.payload as {
+          id: string;
+          taskId: string;
+          armId: string;
+          status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+          summary: string;
+          issues: string[];
+          blockers: string[];
+          nextSteps?: string;
+          filesChanged: string[];
+          testsStatus?: "passing" | "failing" | "not_run";
+        };
+        await this.handleStatusReport(payload);
+        break;
+      }
+
+      case "task_assignment": {
+        // Arm is claiming or releasing a task
+        const payload = message.payload as { action: string; taskId: string };
+        if (payload.action === "claim") {
+          await this.claimTaskForArm(message.from, payload.taskId);
+        }
+        break;
+      }
+
+      case "status_update": {
+        // Arm is updating their status on a task (e.g., acknowledging it)
+        const payload = message.payload as { taskId: string; status: string; message?: string };
+        await this.updateTaskStatus(message.from, payload.taskId, payload.status, payload.message);
+        break;
+      }
     }
   }
 
@@ -782,12 +815,131 @@ export class Brain {
   }
 
   /**
+   * Handle an arm claiming a task
+   * Updates the database to assign the task to the arm
+   */
+  private async claimTaskForArm(armId: string, taskId: string): Promise<void> {
+    this.log(`Arm ${armId} claiming task ${taskId}`);
+    
+    try {
+      const now = new Date().toISOString();
+      
+      if (!this.db) {
+        this.log(`Database not initialized, cannot claim task`);
+        return;
+      }
+      
+      // Update task in database - set assigned_to and add to assigned_arms array
+      this.db.run(`
+        UPDATE tasks 
+        SET assigned_to = ?,
+            assigned_arms = json_insert(
+              COALESCE(assigned_arms, '[]'),
+              '$[#]',
+              ?
+            ),
+            status = CASE WHEN status = 'pending' THEN 'claimed' ELSE status END,
+            updated_at = ?
+        WHERE id = ?
+      `, [armId, armId, now, taskId]);
+      
+      // Also update the in-memory tasks array
+      const task = this.tasks.find(t => t.id === taskId);
+      if (task) {
+        task.assignedTo = armId;
+        task.status = task.status === "pending" ? "claimed" : task.status;
+        task.updatedAt = new Date();
+      }
+      
+      this.logActivity("brain", "task_claimed", taskId, { armId });
+      this.log(`Task ${taskId} claimed by arm ${armId}`);
+    } catch (err) {
+      this.log(`Error claiming task ${taskId} for arm ${armId}: ${err}`);
+    }
+  }
+
+  /**
+   * Handle an arm updating their status on a task (e.g., acknowledging work started)
+   */
+  private async updateTaskStatus(armId: string, taskId: string, status: string, message?: string): Promise<void> {
+    this.log(`Arm ${armId} updating task ${taskId} status to ${status}`);
+    
+    try {
+      const now = new Date().toISOString();
+      
+      if (!this.db) {
+        this.log(`Database not initialized, cannot update task status`);
+        return;
+      }
+      
+      // Map incoming status to valid task status
+      let dbStatus = status;
+      if (status === "in_progress") {
+        dbStatus = "in_progress";
+      } else if (status === "claimed") {
+        dbStatus = "claimed";
+      }
+      
+      // Update task in database
+      this.db.run(`
+        UPDATE tasks 
+        SET status = ?,
+            assigned_to = COALESCE(assigned_to, ?),
+            assigned_arms = CASE 
+              WHEN assigned_arms IS NULL OR assigned_arms = '[]' THEN json_array(?)
+              WHEN NOT json_valid(assigned_arms) THEN json_array(?)
+              WHEN NOT EXISTS (SELECT 1 FROM json_each(assigned_arms) WHERE value = ?) 
+                THEN json_insert(assigned_arms, '$[#]', ?)
+              ELSE assigned_arms
+            END,
+            updated_at = ?
+        WHERE id = ?
+      `, [dbStatus, armId, armId, armId, armId, armId, now, taskId]);
+      
+      // Also update the in-memory tasks array
+      const task = this.tasks.find(t => t.id === taskId);
+      if (task) {
+        task.status = dbStatus as Task["status"];
+        task.assignedTo = task.assignedTo || armId;
+        task.updatedAt = new Date();
+      }
+      
+      this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message });
+      this.log(`Task ${taskId} status updated to ${dbStatus} by arm ${armId}`);
+    } catch (err) {
+      this.log(`Error updating task ${taskId} status: ${err}`);
+    }
+  }
+
+  /**
    * Complete a task
+   * Enhanced for progressive planning: checks for status reports with issues
+   * and triggers plan re-evaluation to determine next tasks
    */
   private async completeTask(taskId: string, summary: string, artifacts: string[]): Promise<void> {
     const task = this.tasks.find(t => t.id === taskId);
     if (!task) {
       this.log(`Task not found: ${taskId}`);
+      return;
+    }
+    
+    // Check for status reports with issues for this task
+    const statusReportsWithIssues = await this.getStatusReportsWithIssues(taskId);
+    
+    if (statusReportsWithIssues.length > 0) {
+      // There are issues - create a verification task instead of just completing
+      const latestReport = statusReportsWithIssues[0]!; // Most recent report (guaranteed by length check)
+      this.log(`Task ${taskId} has ${statusReportsWithIssues.length} status reports with issues. Creating verification task.`);
+      
+      await this.createVerificationTask(task, {
+        id: latestReport.id,
+        summary: latestReport.summary,
+        issues: latestReport.issues,
+        nextSteps: latestReport.nextSteps,
+        testsStatus: latestReport.testsStatus,
+      });
+      
+      // The verification task creation also completes the original task
       return;
     }
     
@@ -802,6 +954,9 @@ export class Brain {
     // Log activity
     this.logActivity("brain", "task_completed", taskId, { subject: task.subject, artifacts });
     
+    // Check for tasks that were blocked on this task and unblock them
+    await this.unblockDependentTasks(taskId);
+    
     // Notify human
     await this.sendToHuman({
       subject: `[octopai] Task completed: ${task.subject}`,
@@ -813,6 +968,314 @@ export class Brain {
     });
     
     this.log(`Completed task: ${task.subject}`);
+  }
+
+  /**
+   * Get status reports with issues for a task
+   */
+  private async getStatusReportsWithIssues(taskId: string): Promise<Array<{
+    id: string;
+    summary: string;
+    issues: string[];
+    nextSteps?: string;
+    testsStatus?: "passing" | "failing" | "not_run";
+  }>> {
+    if (!this.db) return [];
+    
+    try {
+      const rows = this.db.query(`
+        SELECT id, summary, issues, next_steps, tests_status
+        FROM status_reports
+        WHERE task_id = ? AND status IN ('issues_found', 'completed_with_issues', 'needs_review')
+        ORDER BY created_at DESC
+      `).all(taskId) as Array<{
+        id: string;
+        summary: string;
+        issues: string;
+        next_steps: string | null;
+        tests_status: string | null;
+      }>;
+      
+      return rows.map(row => ({
+        id: row.id,
+        summary: row.summary,
+        issues: JSON.parse(row.issues || "[]") as string[],
+        nextSteps: row.next_steps || undefined,
+        testsStatus: row.tests_status as "passing" | "failing" | "not_run" | undefined,
+      }));
+    } catch (err) {
+      this.log(`Error querying status reports: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Unblock tasks that were waiting on a completed task
+   * Part of progressive planning - re-evaluates which tasks can now proceed
+   */
+  private async unblockDependentTasks(completedTaskId: string): Promise<void> {
+    if (!this.db) return;
+    
+    try {
+      // Find tasks that depend on the completed task
+      const dependentRows = this.db.query(`
+        SELECT td.task_id, t.subject, t.dependency_blocked
+        FROM task_dependencies td
+        JOIN tasks t ON td.task_id = t.id
+        WHERE td.depends_on_task_id = ?
+        AND t.status IN ('pending', 'blocked')
+      `).all(completedTaskId) as Array<{
+        task_id: string;
+        subject: string;
+        dependency_blocked: number;
+      }>;
+      
+      for (const row of dependentRows) {
+        // Check if this task has any other unmet dependencies
+        const unmetDeps = this.db.query(`
+          SELECT COUNT(*) as count
+          FROM task_dependencies td
+          WHERE td.task_id = ?
+          AND td.depends_on_task_id != ?
+          AND NOT EXISTS (
+            SELECT 1 FROM tasks t
+            WHERE t.id = td.depends_on_task_id
+            AND t.status = 'completed'
+          )
+        `).get(row.task_id, completedTaskId) as { count: number };
+        
+        if (unmetDeps.count === 0) {
+          // All dependencies met - unblock the task
+          const task = this.tasks.find(t => t.id === row.task_id);
+          if (task && (task.status === "blocked" || task.status === "pending")) {
+            task.status = "pending";
+            task.updatedAt = new Date();
+            
+            // Update the dependency_blocked flag in DB
+            this.db.run(`
+              UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ?
+              WHERE id = ?
+            `, [new Date().toISOString(), row.task_id]);
+            
+            this.log(`Unblocked task: ${row.subject} (was waiting on ${completedTaskId})`);
+            this.logActivity("brain", "task_unblocked", row.task_id, {
+              completedDependency: completedTaskId,
+              subject: row.subject,
+            });
+          }
+        }
+      }
+      
+      await this.saveTasks();
+    } catch (err) {
+      this.log(`Error unblocking dependent tasks: ${err}`);
+    }
+  }
+
+  /**
+   * Handle a status report from an arm
+   * Status reports allow the brain to re-evaluate plans based on progress, issues, or blockers
+   */
+  private async handleStatusReport(report: {
+    id: string;
+    taskId: string;
+    armId: string;
+    status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+    summary: string;
+    issues: string[];
+    blockers: string[];
+    nextSteps?: string;
+    filesChanged: string[];
+    testsStatus?: "passing" | "failing" | "not_run";
+  }): Promise<void> {
+    const task = this.tasks.find(t => t.id === report.taskId);
+    if (!task) {
+      this.log(`Status report for unknown task: ${report.taskId}`);
+      return;
+    }
+
+    // Store status report in database
+    if (this.db) {
+      const now = new Date().toISOString();
+      try {
+        this.db.run(`
+          INSERT INTO status_reports (id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          report.id,
+          report.taskId,
+          report.armId,
+          report.status,
+          report.summary,
+          JSON.stringify(report.issues),
+          JSON.stringify(report.blockers),
+          report.nextSteps || null,
+          JSON.stringify(report.filesChanged),
+          report.testsStatus || null,
+          now,
+        ]);
+        this.log(`Stored status report: ${report.id} for task ${report.taskId}`);
+      } catch (err) {
+        this.log(`Error storing status report: ${err}`);
+      }
+    }
+
+    // Log activity
+    this.logActivity("brain", "status_report_received", report.taskId, {
+      reportId: report.id,
+      armId: report.armId,
+      status: report.status,
+      issueCount: report.issues.length,
+      blockerCount: report.blockers.length,
+    });
+
+    // Handle based on status
+    switch (report.status) {
+      case "blocked": {
+        // Update task status to blocked
+        task.status = "blocked";
+        task.updatedAt = new Date();
+        await this.saveTasks();
+
+        // Notify human about blockers
+        await this.sendToHuman({
+          subject: `[octopai] Task blocked: ${task.subject}`,
+          body: `Task "${task.subject}" is blocked by arm ${report.armId}.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
+          headers: {
+            "X-Octopai-Task-Id": report.taskId,
+            "X-Octopai-Type": "task-blocked",
+          },
+        });
+        this.log(`Task ${task.subject} blocked. Notified human.`);
+        break;
+      }
+
+      case "issues_found": {
+        // Log issues but don't change task status yet
+        this.log(`Issues found in task ${task.subject}: ${report.issues.length} issues`);
+        
+        // If significant issues, notify human
+        if (report.issues.length > 0) {
+          await this.sendToHuman({
+            subject: `[octopai] Issues found: ${task.subject}`,
+            body: `Arm ${report.armId} found issues while working on "${task.subject}":\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n## Summary\n${report.summary}\n\n## Next Steps\n${report.nextSteps || "Continuing work..."}`,
+            headers: {
+              "X-Octopai-Task-Id": report.taskId,
+              "X-Octopai-Type": "issues-found",
+            },
+          });
+        }
+        break;
+      }
+
+      case "needs_review": {
+        // Task needs human or other arm review
+        this.log(`Task ${task.subject} needs review`);
+        await this.sendToHuman({
+          subject: `[octopai] Review needed: ${task.subject}`,
+          body: `Arm ${report.armId} requests review for "${task.subject}":\n\n## Summary\n${report.summary}\n\n## Files Changed\n${report.filesChanged.map(f => `- ${f}`).join("\n") || "None listed"}\n\n## Tests\n${report.testsStatus || "Not run"}`,
+          headers: {
+            "X-Octopai-Task-Id": report.taskId,
+            "X-Octopai-Type": "needs-review",
+          },
+        });
+        break;
+      }
+
+      case "completed_with_issues": {
+        // Create a verification task for follow-up
+        await this.createVerificationTask(task, report);
+        break;
+      }
+
+      case "on_track": {
+        // Just log progress, no action needed
+        this.log(`Task ${task.subject} progressing: ${report.summary}`);
+        break;
+      }
+    }
+  }
+
+  /**
+   * Create a verification/polish task when a task completes with issues
+   * This is part of progressive planning - the brain re-evaluates and creates follow-up work
+   */
+  private async createVerificationTask(
+    originalTask: Task,
+    report: {
+      id: string;
+      summary: string;
+      issues: string[];
+      nextSteps?: string;
+      testsStatus?: "passing" | "failing" | "not_run";
+    }
+  ): Promise<Task> {
+    const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    
+    const issuesList = report.issues.length > 0 
+      ? `## Issues to Address\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n`
+      : "";
+    
+    const testInfo = report.testsStatus === "failing"
+      ? "## ⚠️ Tests are failing - this should be addressed first\n\n"
+      : "";
+
+    const description = `This is a verification task for: "${originalTask.subject}"
+
+The original task was completed but with issues that need attention.
+
+## Original Completion Summary
+${report.summary}
+
+${issuesList}${testInfo}## Suggested Next Steps
+${report.nextSteps || "Review and polish the implementation"}
+
+## Original Task ID
+${originalTask.id}`;
+
+    const verifyTask: Task = {
+      id: taskId,
+      subject: `Verify & Polish: ${originalTask.subject}`,
+      description,
+      status: "pending",
+      priority: originalTask.priority === "critical" ? "critical" : "high",
+      classification: "qa", // Verification tasks are QA-type work
+      domain: originalTask.domain,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      context: {
+        notes: `Follow-up verification for ${originalTask.id}. Status report: ${report.id}`,
+      },
+    };
+
+    this.tasks.push(verifyTask);
+    await this.saveTasks();
+
+    // Mark original task as completed (with issues noted)
+    originalTask.status = "completed";
+    originalTask.completedAt = new Date();
+    originalTask.updatedAt = new Date();
+    this.state.completedToday++;
+    await this.saveTasks();
+
+    this.log(`Created verification task: ${verifyTask.subject} (${taskId})`);
+    this.logActivity("brain", "verification_task_created", taskId, {
+      originalTaskId: originalTask.id,
+      issueCount: report.issues.length,
+      testsStatus: report.testsStatus,
+    });
+
+    // Notify human
+    await this.sendToHuman({
+      subject: `[octopai] Verification needed: ${originalTask.subject}`,
+      body: `Task "${originalTask.subject}" completed with issues. Created verification task.\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed"}\n\n## Original Summary\n${report.summary}`,
+      headers: {
+        "X-Octopai-Task-Id": taskId,
+        "X-Octopai-Type": "verification-task-created",
+      },
+    });
+
+    return verifyTask;
   }
 
    /**

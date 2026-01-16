@@ -171,6 +171,58 @@ function logActivity(actor: string, action: string, target?: string, details?: R
 }
 
 /**
+ * Ensure the arm is registered in the database.
+ * This allows "manual arms" (agents started by the user directly) to auto-register
+ * when they first call an MCP tool, without requiring `octopai arm spawn`.
+ */
+function ensureArmRegistered(): void {
+  try {
+    const database = getDatabase(false);
+    const now = new Date().toISOString();
+    
+    // Check if arm already exists
+    const existing = database.query("SELECT id, status FROM arms WHERE id = ?").get(ARM_ID) as { id: string; status: string } | null;
+    
+    if (existing) {
+      // Update last_activity_at and ensure status is running
+      database.run(
+        `UPDATE arms SET last_activity_at = ?, status = CASE WHEN status = 'stopped' THEN 'running' ELSE status END, updated_at = ? WHERE id = ?`,
+        [now, now, ARM_ID]
+      );
+      return;
+    }
+    
+    // Auto-register as a manual arm
+    const armName = ARM_ID.startsWith("arm-") ? ARM_ID : `manual-${ARM_ID}`;
+    
+    database.run(`
+      INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, last_activity_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      ARM_ID,
+      armName,
+      "general",        // domain - can be updated later
+      "manual",         // harness - indicates manually started
+      "running",        // status
+      100000,           // context_budget
+      0,                // current_context_used
+      now,
+      now,
+      now,
+    ]);
+    
+    console.error(`[MCP] Auto-registered manual arm: ${ARM_ID}`);
+    logActivity(ARM_ID, "arm_auto_registered", ARM_ID, { 
+      harness: "manual",
+      source: "mcp_tool_call",
+    });
+  } catch (err) {
+    // Best-effort registration - don't fail the tool call
+    console.error(`[MCP] Failed to auto-register arm: ${err}`);
+  }
+}
+
+/**
  * Write a message to the brain's queue (file-based fallback)
  */
 async function sendToBrainFile(message: QueueMessage): Promise<string> {
@@ -492,6 +544,72 @@ export function createMcpServer(): McpServer {
     }
   );
 
+  // Submit a status report for a task
+  server.registerTool(
+    "submit_status_report",
+    {
+      description: "Submit a status report for a task in progress or just completed. Use this to report issues, blockers, or completion with issues that require brain re-evaluation.",
+      inputSchema: {
+        task_id: z.string().describe("The ID of the task this report is for"),
+        status: z.enum(["on_track", "blocked", "issues_found", "needs_review", "completed_with_issues"])
+          .describe("Current status: on_track (normal progress), blocked (cannot continue), issues_found (found problems), needs_review (needs human/other arm review), completed_with_issues (done but with problems)"),
+        summary: z.string().describe("Summary of current progress or completion state"),
+        issues: z.array(z.string()).optional().describe("List of issues discovered during work"),
+        blockers: z.array(z.string()).optional().describe("List of blockers preventing progress"),
+        next_steps: z.string().optional().describe("Suggested next steps if issues were found"),
+        files_changed: z.array(z.string()).optional().describe("List of files modified"),
+        tests_status: z.enum(["passing", "failing", "not_run"]).optional().describe("Status of tests if run"),
+      },
+    },
+    async ({ task_id, status, summary, issues, blockers, next_steps, files_changed, tests_status }) => {
+      const reportId = `sr-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "status_report",
+        payload: {
+          id: reportId,
+          taskId: task_id,
+          armId: ARM_ID,
+          status,
+          summary,
+          issues: issues || [],
+          blockers: blockers || [],
+          nextSteps: next_steps,
+          filesChanged: files_changed || [],
+          testsStatus: tests_status,
+        },
+      });
+
+      logActivity(ARM_ID, "submit_status_report", task_id, { 
+        messageId, 
+        reportId, 
+        status, 
+        issueCount: (issues || []).length,
+        blockerCount: (blockers || []).length 
+      });
+
+      let responseText = `Status report submitted (${reportId}). Brain will review`;
+      if (status === "blocked" || status === "issues_found") {
+        responseText += " and may adjust the plan or create verification tasks.";
+      } else if (status === "completed_with_issues") {
+        responseText += " and may create a 'verify & polish' follow-up task.";
+      } else {
+        responseText += ".";
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: responseText,
+          },
+        ],
+      };
+    }
+  );
+
   // Report a discovery
   server.registerTool(
     "report_discovery",
@@ -654,6 +772,9 @@ export function createMcpServer(): McpServer {
       inputSchema: {},
       },
     async () => {
+      // Auto-register manual arms on first call
+      ensureArmRegistered();
+      
       const { tasks, messages } = await getMyInstructions();
       
       // Log the activity
@@ -699,6 +820,9 @@ export function createMcpServer(): McpServer {
       },
       },
     async ({ task_id }) => {
+      // Auto-register manual arms
+      ensureArmRegistered();
+      
       const messageId = await sendToBrain({
         from: ARM_ID,
         to: "brain",
@@ -734,6 +858,9 @@ export function createMcpServer(): McpServer {
       },
       },
     async ({ status, current_task }) => {
+      // Auto-register manual arms - heartbeat is a natural registration point
+      ensureArmRegistered();
+      
       const messageId = await sendToBrain({
         from: ARM_ID,
         to: "brain",
@@ -2395,6 +2522,9 @@ export function createMcpServer(): McpServer {
       inputSchema: {},
     },
     async () => {
+      // Auto-register manual arms
+      ensureArmRegistered();
+      
       try {
         const database = getDatabase();
         
@@ -2505,6 +2635,9 @@ export function createMcpServer(): McpServer {
       inputSchema: {},
     },
     async () => {
+      // Auto-register manual arms - this is the recommended entry point
+      ensureArmRegistered();
+      
       try {
         const database = getDatabase();
         

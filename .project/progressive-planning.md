@@ -122,13 +122,48 @@ Assigned when:
 
 ## Status Reports Influence Task Assignment
 
-Status reports contain:
-- What was done
-- What was discovered
-- What's blocking progress
-- Recommendations for next steps
+Arms submit status reports during or after task execution using the `submit_status_report` MCP tool. Status reports are stored in the `status_reports` SQLite table and influence how the brain determines next steps.
 
-The Brain uses this to adjust task assignment:
+### Status Report Format
+
+```typescript
+interface StatusReport {
+  id: string;              // Unique report ID (e.g., "sr-1737123456789-abc123")
+  taskId: string;          // ID of the task this report is for
+  armId: string;           // ID of the arm submitting the report
+  status: StatusReportStatus;
+  summary: string;         // Summary of progress or completion state
+  issues?: string[];       // List of issues discovered
+  blockers?: string[];     // List of blockers preventing progress
+  nextSteps?: string;      // Suggested next steps
+  filesChanged?: string[]; // List of files modified
+  testsStatus?: "passing" | "failing" | "not_run";
+  createdAt: string;       // ISO timestamp
+}
+
+type StatusReportStatus =
+  | "on_track"              // Normal progress, no action needed
+  | "blocked"               // Cannot continue, needs intervention
+  | "issues_found"          // Found problems but can continue
+  | "needs_review"          // Needs human or other arm review
+  | "completed_with_issues" // Done but with problems requiring follow-up
+```
+
+### Status Report Actions
+
+The Brain takes action based on status:
+
+| Status                   | Brain Action                                      |
+| ------------------------ | ------------------------------------------------- |
+| `on_track`               | Log progress, no immediate action                 |
+| `blocked`                | Update task to blocked, notify human              |
+| `issues_found`           | Log issues, notify human if significant           |
+| `needs_review`           | Notify human, may assign review task              |
+| `completed_with_issues`  | Create "verify & polish" task, mark original done |
+
+### Legacy: Status Report Content Patterns
+
+For backward compatibility, the Brain also recognizes these patterns:
 
 | Status Report Content    | Brain Action                        |
 | ------------------------ | ----------------------------------- |
@@ -172,8 +207,10 @@ When assigning any task, the Brain includes:
 Plans should have:
 - Clear phase/goal statement
 - Numbered or bulleted implementation steps
-- Dependencies noted
+- Dependencies noted (with task IDs when available)
 - Acceptance criteria per step
+
+### Basic Plan Structure
 
 ```markdown
 # Phase N: [Phase Name]
@@ -196,6 +233,63 @@ Plans should have:
 - [ ] Criterion 1
 - [ ] Criterion 2
 ```
+
+### Enhanced Plan with Task Dependencies
+
+For more complex plans, use explicit task IDs and dependency declarations:
+
+```markdown
+# Phase 2.1: Progressive Planning
+
+## Goal
+Brain dynamically determines next task based on plan, history, and status reports.
+
+## Tasks
+
+### [2.1.1] Add StatusReport type and database migration
+- Classification: development
+- Description: Add StatusReport interface and SQLite migration
+- Depends on: None (first task)
+
+### [2.1.2] Add MCP tool for status reports
+- Classification: development
+- Description: Add submit_status_report tool to MCP server
+- Depends on: [2.1.1]
+
+### [2.1.3] Implement brain handleStatusReport
+- Classification: development
+- Description: Brain handles status_report messages and stores them
+- Depends on: [2.1.1], [2.1.2]
+
+### [2.1.4] Implement verify & polish task creation
+- Classification: development
+- Description: Create verification tasks when status reports show issues
+- Depends on: [2.1.3]
+
+### [2.1.5] Implement brain re-evaluation on completion
+- Classification: development
+- Description: Brain checks for status reports and unblocks dependent tasks
+- Depends on: [2.1.3], [2.1.4]
+
+## Dependencies
+- Phase 2 (context bundles) must be complete
+- Database migration system working
+
+## Acceptance Criteria
+- [ ] Arms can submit status reports via MCP tool
+- [ ] Brain stores status reports in SQLite
+- [ ] Verify & polish tasks created for issues
+- [ ] Dependent tasks unblocked on completion
+```
+
+### Dependency Resolution
+
+The Brain uses the `task_dependencies` table to track which tasks depend on others:
+
+1. **Parse dependencies** from `Depends on:` lines in plan documents
+2. **Block tasks** whose dependencies are not yet completed
+3. **Unblock tasks** when all dependencies are satisfied
+4. **Create verification tasks** when completion has issues
 
 ## Brain Re-evaluation Points
 

@@ -87,6 +87,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["018_task_verification", MIGRATION_018, { table: "tasks", columns: MIGRATION_018_COLUMNS }],
     ["019_task_dependencies", MIGRATION_019],
     ["020_multi_arm_assignment", MIGRATION_020, { table: "tasks", columns: MIGRATION_020_COLUMNS }],
+    ["021_status_reports", MIGRATION_021],
   ];
 
 
@@ -695,6 +696,31 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('watch_mode_enabled', 'true'),
   ('consensus_required', 'true'),
   ('max_arms_per_task', '3');
+`;
+
+// Migration 021: Status reports for progressive planning
+const MIGRATION_021 = `
+-- Status reports from arms during or after task execution
+-- Used by brain to re-evaluate plans and create verification tasks
+CREATE TABLE IF NOT EXISTS status_reports (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  arm_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('on_track', 'blocked', 'issues_found', 'needs_review', 'completed_with_issues')),
+  summary TEXT NOT NULL,
+  issues TEXT DEFAULT '[]',
+  blockers TEXT DEFAULT '[]',
+  next_steps TEXT,
+  files_changed TEXT DEFAULT '[]',
+  tests_status TEXT CHECK (tests_status IS NULL OR tests_status IN ('passing', 'failing', 'not_run')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_status_reports_task ON status_reports(task_id);
+CREATE INDEX IF NOT EXISTS idx_status_reports_arm ON status_reports(arm_id);
+CREATE INDEX IF NOT EXISTS idx_status_reports_status ON status_reports(status);
+CREATE INDEX IF NOT EXISTS idx_status_reports_created ON status_reports(created_at DESC);
 `;
 
   /**

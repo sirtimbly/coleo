@@ -157,12 +157,12 @@ For each plan bullet point:
 
 ### Deliverables
 
-- [ ] Brain re-evaluates plan on task completion
-- [ ] Brain reads status reports to adjust task assignment
-- [ ] "Verify & polish" task classification
-- [ ] Plan document format specification
-- [ ] History tracking for completed tasks
-- [ ] Status report parsing and influence on tasking
+- [x] Brain re-evaluates plan on task completion
+- [x] Brain reads status reports to adjust task assignment
+- [x] "Verify & polish" task classification
+- [x] Plan document format specification
+- [x] History tracking for completed tasks (via status_reports table)
+- [x] Status report parsing and influence on tasking
 
 ### Dependency Graph Enhancements
 

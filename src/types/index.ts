@@ -246,7 +246,8 @@ export type MessageType =
   | "file_change"
   | "claim_transfer"
   | "dev_server_restart_request"
-  | "context_compression";
+  | "context_compression"
+  | "status_report";
 
 // Discovery report from an arm
 export interface Discovery {
@@ -293,6 +294,28 @@ export interface ContextCompression {
   }>;
   workInProgress?: string;
   timestamp: string;
+}
+
+// Status report from arm during or after task execution
+export type StatusReportStatus = 
+  | "on_track"
+  | "blocked" 
+  | "issues_found"
+  | "needs_review"
+  | "completed_with_issues";
+
+export interface StatusReport {
+  id: string;
+  taskId: string;
+  armId: string;
+  status: StatusReportStatus;
+  summary: string;
+  issues?: string[];
+  blockers?: string[];
+  nextSteps?: string;
+  filesChanged?: string[];
+  testsStatus?: "passing" | "failing" | "not_run";
+  createdAt: string;
 }
 
 // Brain state
