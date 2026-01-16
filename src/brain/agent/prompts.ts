@@ -64,9 +64,9 @@ Input: { planId?: string, limit?: number, status?: "completed" | "in_progress" }
 Output: Array of task records with subject, status, completion date
 
 ### getStatusReports
-Get recent status reports from arms.
-Input: { taskId?: string, armId?: string, since?: string }
-Output: Array of status reports with discoveries, issues, progress
+Get recent status reports from arms. Status reports contain progress updates, issues found, blockers, and test status. Used to influence task assignment - tasks with issues trigger 'verify & polish' follow-up tasks.
+Input: { taskId?: string, armId?: string, status?: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues", since?: string, limit?: number }
+Output: Array of status reports with summary, issues, blockers, next steps, files changed, test status
 
 ### getDiscoveries
 Query discoveries made by arms.
@@ -74,9 +74,15 @@ Input: { filePattern?: string, severity?: string[], limit?: number }
 Output: Array of discoveries with kind, title, details, severity
 
 ### determineNextTask
-Determine the next task based on plan, history, and context.
-Input: { planId: string, armId?: string, context?: DiscoveryItem[] }
-Output: Next task with description, classification, domain, priority
+Determine the next task based on progressive planning. Analyzes the plan, completed tasks, status reports, and discoveries to find the most appropriate next task. Returns 'verify & polish' tasks for work with issues, or the next incomplete bullet point from the plan.
+Input: { planId?: string, armId?: string, forceVerify?: boolean }
+Output: Next task with description, classification, domain, priority, context (planExcerpt, discoveries, history), and reasoning
+
+**Progressive Planning Decision Logic:**
+- If completed AND no issues → skip
+- If completed BUT has issues → assign "verify & polish" task  
+- If incomplete AND ready → assign development task
+- If blocked → skip, notify human
 
 ### assignTask
 Send a task to an arm for execution.

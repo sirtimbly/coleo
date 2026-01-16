@@ -9,6 +9,12 @@ The Brain doesn't pre-generate all tasks upfront. Instead, it **progressively de
 - [x] Parse plan phases (including `### Dependencies`) directly from `.project/plan.md`
 - [x] Auto-link plan dependencies to SQLite tasks and block new work until prerequisites complete
 - [x] File "Update plan dependencies" architect tasks when prerequisites are unknown
+- [x] Brain re-evaluates plan on task completion
+- [x] Brain reads status reports to adjust task assignment
+- [x] "Verify & polish" task classification
+- [x] Plan document format specification
+- [x] History tracking for completed tasks
+- [x] Status report parsing and influence on tasking
 - [ ] Assign primary + watcher arms during task claims
 - [ ] Consensus update API so arms can approve/reject work
 - [ ] Discovery-based dependency reporting to extend the graph over time

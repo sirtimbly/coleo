@@ -55,6 +55,25 @@ export interface ArmStatusItem {
   lastActivity?: string;
 }
 
+/**
+ * Status report from an arm during or after task execution.
+ * Used by brain to re-evaluate plans and determine next tasks.
+ */
+export interface StatusReportItem {
+  id: string;
+  taskId: string;
+  taskSubject?: string;
+  armId: string;
+  status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+  summary: string;
+  issues: string[];
+  blockers: string[];
+  nextSteps?: string;
+  filesChanged: string[];
+  testsStatus?: "passing" | "failing" | "not_run";
+  createdAt: string;
+}
+
 export interface NextTaskResult {
   task: {
     subject: string;

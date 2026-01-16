@@ -17,6 +17,7 @@ import { spawnArm, listArms, killArm } from "../arm";
 import { startServer, disableHeartbeat } from "../api";
 import type { OctopaiConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
+import { generateArmName } from "./arm-names";
 
 // Load .env file if it exists (check cwd/.octopai and cwd)
 async function loadEnvFile(): Promise<void> {
@@ -514,21 +515,18 @@ async function loadArmTemplates(): Promise<Array<{ name: string; file: string; d
 armCmd
   .command("spawn")
   .description("Spawn a new arm (interactive if no arguments provided)")
-  .option("-n, --name <name>", "Arm name/ID")
-  .option("-a, --agent <agent>", "Agent type (opencode, claude-code, aider)", "opencode")
-  .option("-d, --domain <domain>", "Arm domain (backend, frontend, testing, docs, etc.)", "general")
+  .option("-n, --name <name>", "Arm name/ID (auto-generates a sci-fi name if not provided)")
   .option("-w, --workdir <path>", "Working directory", process.cwd())
   .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses API server.")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
   .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
   .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
   .option("--template <name>", "Use a template from ~/.octopai/arms/")
-  .option("--harness <harness>", "Harness type (opencode, opencode-api). API harness is more reliable for headless operation.")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
     let armName = options.name || "";
-    let armAgent = options.agent || "opencode";
-    let armDomain = options.domain || "general";
+    const armAgent = "opencode";
+    const armDomain = "general";
     let armWorkdir = options.workdir || process.cwd();
     let armProvider = options.provider;
     let armModel = options.model;
@@ -537,50 +535,43 @@ armCmd
     if (!armName) {
       console.log("\n=== Arm Configuration ===\n");
 
+      // Generate a suggested name (sci-fi alien style)
+      const suggestedName = generateArmName();
+
       // Load templates
       const templates = await loadArmTemplates();
 
       // Select template or custom
       let useTemplate = false;
-      let templateConfig: { name: string; file: string; domain: string; description: string } | undefined;
 
       if (templates.length > 0) {
         useTemplate = await promptYN("Would you like to use an arm template?", true);
         if (useTemplate) {
-          const templateNames = templates.map((t) => `${t.name} [${t.domain}] - ${t.description}`);
+          const templateNames = templates.map((t) => `${t.name} - ${t.description}`);
           templateNames.push("Custom arm (no template)");
           const selected = await promptSelect("Select a template:", templateNames);
           const selectedIdx = templateNames.indexOf(selected);
           if (selectedIdx >= 0 && selectedIdx < templates.length) {
             const selectedTemplate = templates[selectedIdx];
             if (selectedTemplate) {
-              templateConfig = selectedTemplate;
-              armName = templateConfig.name;
-              armDomain = templateConfig.domain;
+              armName = selectedTemplate.name;
             }
           } else {
-            armName = await prompt("Arm name: ");
+            const customName = await prompt(`Arm name [${suggestedName}]: `);
+            armName = customName.trim() || suggestedName;
           }
         } else {
-          armName = await prompt("Arm name: ");
+          const customName = await prompt(`Arm name [${suggestedName}]: `);
+          armName = customName.trim() || suggestedName;
         }
       } else {
-        console.log("No templates found in ~/.octopai/arms/");
-        armName = await prompt("Arm name: ");
+        const customName = await prompt(`Arm name [${suggestedName}]: `);
+        armName = customName.trim() || suggestedName;
       }
 
       if (!armName.trim()) {
-        console.error("Arm name is required.");
-        process.exit(1);
-      }
-
-      // Select agent
-      armAgent = await promptSelect("Select agent type:", ["opencode", "claude-code", "aider"]);
-
-      // Select domain (unless using template)
-      if (!templateConfig) {
-        const domains = ["general", "frontend", "backend", "testing", "docs", "architect"];
-        armDomain = await promptSelect("Select domain:", domains);
+        // Fallback - should not happen since we have a suggested name
+        armName = suggestedName;
       }
 
       // Working directory
@@ -604,8 +595,6 @@ armCmd
 
       console.log("\n=== Spawning Arm ===");
       console.log(`  Name: ${armName}`);
-      console.log(`  Agent: ${armAgent}`);
-      console.log(`  Domain: ${armDomain}`);
       console.log(`  Workdir: ${armWorkdir}`);
       if (armProvider) {
         console.log(`  Provider: ${armProvider}`);
@@ -630,11 +619,9 @@ armCmd
       });
 
       console.log(`Arm spawned in terminal: ${arm.id}`);
-      console.log(`  Agent: ${arm.agent}`);
       if (arm.provider || arm.model) {
         console.log(`  Model: ${arm.provider ? arm.provider + "/" : ""}${arm.model || "default"}`);
       }
-      console.log(`  Domain: ${armDomain}`);
       console.log(`  Status: ${arm.status}`);
       console.log(`  PID: ${arm.pid || "unknown"}`);
       return;
@@ -668,17 +655,8 @@ armCmd
       }
       console.log(`Restarting stopped arm: ${armName}`);
     } else {
-      // Determine harness: explicit --harness > agent-based default
-      // Use opencode-api by default for API server spawning (more reliable)
-      let harnessType = options.harness;
-      if (!harnessType) {
-        // Default to opencode-api for headless/API spawning
-        if (armAgent === "opencode") {
-          harnessType = "opencode-api";
-        } else {
-          harnessType = armAgent;
-        }
-      }
+      // Always use opencode-api harness
+      const harnessType = "opencode-api";
 
       // Create new arm
       const createRes = await fetch(`${apiUrl}/api/arms`, {
@@ -722,11 +700,9 @@ armCmd
     const result = await spawnRes.json() as { sessionId?: string; pid?: number };
     
     console.log(`Arm spawned via API: ${armName}`);
-    console.log(`  Agent: ${armAgent}`);
     if (armProvider || armModel) {
       console.log(`  Model: ${armProvider ? armProvider + "/" : ""}${armModel || "default"}`);
     }
-    console.log(`  Domain: ${armDomain}`);
     console.log(`  Session: ${result.sessionId}`);
     console.log(`  PID: ${result.pid || "unknown"}`);
     console.log("");
@@ -734,6 +710,38 @@ armCmd
     console.log(`Watch events: octopai arm tail ${armName}`);
     console.log(`View status:  octopai arm status ${armName}`);
     console.log(`View todos:   octopai arm todos ${armName}`);
+  });
+
+armCmd
+  .command("names")
+  .description("Generate sample sci-fi arm names (inspired by Children of Time/Ruin)")
+  .option("-c, --count <number>", "Number of names to generate", "10")
+  .option("--stats", "Show name generator statistics")
+  .action(async (options) => {
+    const { generateArmNames, getNameGeneratorStats } = await import("./arm-names");
+    
+    if (options.stats) {
+      const stats = getNameGeneratorStats();
+      console.log("\n=== Arm Name Generator ===");
+      console.log("Inspired by Adrian Tchaikovsky's 'Children of Time' series\n");
+      console.log(`Prefixes:          ${stats.prefixes}`);
+      console.log(`Suffixes:          ${stats.suffixes}`);
+      console.log(`Epithets:          ${stats.epithets}`);
+      console.log(`Classic names:     ${stats.classics}`);
+      console.log(`Base combinations: ${stats.baseCombinations.toLocaleString()}`);
+      console.log(`With epithets:     ${stats.withEpithets.toLocaleString()}`);
+      console.log(`Total unique:      ${stats.total.toLocaleString()}`);
+      console.log("");
+    }
+    
+    const count = Math.min(Math.max(1, parseInt(options.count) || 10), 100);
+    const names = generateArmNames(count);
+    
+    console.log(`\n=== ${count} Arm Name Suggestions ===\n`);
+    names.forEach((name, i) => {
+      console.log(`  ${(i + 1).toString().padStart(2)}. ${name}`);
+    });
+    console.log("");
   });
 
 armCmd

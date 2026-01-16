@@ -604,15 +604,15 @@ function createNextTaskFromPlan(
 
   // Find the first incomplete deliverable from the current phase
   const phaseLines = plan.currentPhase.split('\n');
-  
+
   for (let i = 0; i < phaseLines.length; i++) {
     const line = phaseLines[i]!;
-    
+
     // Look for unchecked deliverables: "- [ ]" or "- [x]" patterns
     const deliverableMatch = line.match(/^- \[ \] (.+)/);
     if (deliverableMatch) {
       const subject = deliverableMatch[1]!.trim();
-      
+
       // Skip if already created
       if (existingSubjects.has(subject.toLowerCase())) {
         continue;
@@ -620,10 +620,10 @@ function createNextTaskFromPlan(
 
       // Generate a task ID based on phase and subject
       const taskId = generateTaskId(phaseName, subject);
-      
+
       // Look for associated acceptance criteria
       let description = `Implement: ${subject}\n\n`;
-      
+
       // Look for acceptance criteria below (lines starting with "- [ ]")
       const acceptanceCriteria: string[] = [];
       for (let j = i + 1; j < phaseLines.length; j++) {
@@ -638,7 +638,7 @@ function createNextTaskFromPlan(
           break;
         }
       }
-      
+
       if (acceptanceCriteria.length > 0) {
         description += `**Acceptance Criteria**:\n${acceptanceCriteria.join('\n')}`;
       } else {
@@ -694,11 +694,11 @@ export async function generateContextBundle(ctx: PromptContext, taskSubject: str
   // 2. If not found, search in file-based tasks
   if (!task) {
     const fileTasks = await getTasksFromFiles(projectRoot);
-    const matchingTask = fileTasks.find(t => 
-      t.id === taskSubject || 
+    const matchingTask = fileTasks.find(t =>
+      t.id === taskSubject ||
       t.subject.toLowerCase().includes(taskSubject.toLowerCase())
     );
-    
+
     if (matchingTask) {
       // Insert the task into the database for future lookups
       const insertStmt = db.prepare(`
@@ -938,7 +938,7 @@ async function getCompletedTasks(db: Database): Promise<Array<{ subject: string;
 
 async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string; phase: string }>> {
   const tasks: Array<{ id: string; subject: string; description: string; status: Task["status"]; priority: Task["priority"]; domain?: string; phase: string }> = [];
-  
+
   const currentPath = join(projectRoot, ".project", "tasks", "current.md");
   try {
     const content = await readFile(currentPath, "utf-8");
@@ -1107,6 +1107,8 @@ ${task.description}
 ## Important Context
 
 - You are an AI agent executing a specific task, but this task may already be started by previous iterations or other agents so verify existing code against your acceptance criteria before making changes.
+- Use the MCP tools you have available to explore, modify, and analyze the codebase.
+- If you are uncertain about if a task is really done, search the codebase for references to the feature that was changed and analyze each location to see if it matches the purpose outlined in the task.
 - Report discoveries as you find them using report_discovery
 - Complete the task when done using complete_task
 - If you need clarification, ask for it
@@ -1138,6 +1140,7 @@ ${task.description}
 
 ## Testing-Specific
 
+- search for existing tests, read comments, and find code that should have been tested that other agents left behind.
 - Write tests that verify the implementation
 - Consider edge cases
 - Ensure tests are maintainable

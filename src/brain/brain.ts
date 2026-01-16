@@ -386,6 +386,10 @@ export class Brain {
     // Step 8b: Check for documentation update triggers
     await this.checkDocUpdateTrigger();
     
+    // Step 8c: Re-evaluate plan progress (progressive planning)
+    // Creates verification tasks for completed work with issues
+    await this.reEvaluatePlanProgress();
+    
     // Step 9: Save state
     await this.saveState();
     
@@ -815,6 +819,39 @@ export class Brain {
   }
 
   /**
+   * Ensure an arm exists in the database (for manual arms that call MCP tools)
+   * This prevents FK constraint failures when assigning tasks to arms
+   */
+  private ensureArmExists(armId: string): void {
+    if (!this.db) return;
+    
+    const now = new Date().toISOString();
+    const armName = armId.startsWith("arm-") ? armId : `manual-${armId}`;
+    
+    // Use INSERT OR IGNORE to create if not exists
+    this.db.run(`
+      INSERT OR IGNORE INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, last_activity_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      armId,
+      armName,
+      "general",
+      "manual",
+      "running",
+      100000,
+      0,
+      now,
+      now,
+      now,
+    ]);
+    
+    // Update last_activity_at for existing arms
+    this.db.run(`
+      UPDATE arms SET last_activity_at = ?, updated_at = ? WHERE id = ?
+    `, [now, now, armId]);
+  }
+
+  /**
    * Handle an arm claiming a task
    * Updates the database to assign the task to the arm
    */
@@ -828,6 +865,9 @@ export class Brain {
         this.log(`Database not initialized, cannot claim task`);
         return;
       }
+      
+      // Ensure the arm exists in the database (prevents FK constraint failure)
+      this.ensureArmExists(armId);
       
       // Update task in database - set assigned_to and add to assigned_arms array
       this.db.run(`
@@ -871,6 +911,9 @@ export class Brain {
         this.log(`Database not initialized, cannot update task status`);
         return;
       }
+      
+      // Ensure the arm exists in the database (prevents FK constraint failure)
+      this.ensureArmExists(armId);
       
       // Map incoming status to valid task status
       let dbStatus = status;
@@ -3111,6 +3154,227 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
     } catch (err) {
       this.log(`Failed to sync plan tasks: ${err}`);
     }
+  }
+
+  /**
+   * Re-evaluate plan progress (Progressive Planning)
+   * 
+   * This method implements the core progressive planning logic:
+   * 1. Check recently completed tasks for status reports with issues
+   * 2. Create "verify & polish" tasks for work that needs follow-up
+   * 3. Unblock tasks whose dependencies are now satisfied
+   * 4. Log re-evaluation activity for observability
+   * 
+   * Called periodically during the poll cycle.
+   */
+  private async reEvaluatePlanProgress(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      // Step 1: Find recently completed tasks that have status reports with issues
+      // but don't yet have verification tasks created
+      const tasksNeedingVerification = this.db.query(`
+        SELECT DISTINCT
+          t.id,
+          t.subject,
+          t.classification,
+          t.domain,
+          t.priority,
+          sr.id as report_id,
+          sr.summary,
+          sr.issues,
+          sr.tests_status
+        FROM tasks t
+        INNER JOIN status_reports sr ON t.id = sr.task_id
+        LEFT JOIN tasks vt ON vt.subject LIKE 'Verify & Polish: ' || t.subject
+        WHERE t.status = 'completed'
+          AND sr.status IN ('issues_found', 'completed_with_issues', 'needs_review')
+          AND vt.id IS NULL
+          AND sr.created_at > datetime('now', '-24 hours')
+        ORDER BY sr.created_at DESC
+        LIMIT 5
+      `).all() as Array<{
+        id: string;
+        subject: string;
+        classification: string | null;
+        domain: string | null;
+        priority: string | null;
+        report_id: string;
+        summary: string;
+        issues: string;
+        tests_status: string | null;
+      }>;
+
+      let verificationTasksCreated = 0;
+
+      for (const row of tasksNeedingVerification) {
+        const issues = JSON.parse(row.issues || "[]") as string[];
+        
+        // Create a verify & polish task
+        const verifyTask = await this.createVerificationTaskFromReEval(
+          {
+            id: row.id,
+            subject: row.subject,
+            classification: row.classification || "development",
+            domain: row.domain || undefined,
+            priority: row.priority || "normal",
+          },
+          {
+            id: row.report_id,
+            summary: row.summary,
+            issues,
+            testsStatus: row.tests_status as "passing" | "failing" | "not_run" | undefined,
+          }
+        );
+        
+        if (verifyTask) {
+          verificationTasksCreated++;
+          this.log(`Re-evaluation: Created verification task for "${row.subject}"`);
+        }
+      }
+
+      // Step 2: Check for blocked tasks whose dependencies are now complete
+      const unblockedTasks = this.db.query(`
+        SELECT t.id, t.subject
+        FROM tasks t
+        WHERE (t.status = 'blocked' OR t.dependency_blocked = 1)
+          AND NOT EXISTS (
+            SELECT 1 
+            FROM task_dependencies td
+            WHERE td.task_id = t.id
+              AND NOT EXISTS (
+                SELECT 1 FROM tasks dep 
+                WHERE dep.id = td.depends_on_task_id 
+                  AND dep.status = 'completed'
+              )
+          )
+        LIMIT 10
+      `).all() as Array<{ id: string; subject: string }>;
+
+      let unblockedCount = 0;
+      const now = new Date().toISOString();
+
+      for (const row of unblockedTasks) {
+        // Unblock the task
+        this.db.run(`
+          UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ?
+          WHERE id = ?
+        `, [now, row.id]);
+        
+        // Update in-memory task list
+        const task = this.tasks.find(t => t.id === row.id);
+        if (task) {
+          task.status = "pending";
+          task.updatedAt = new Date();
+        }
+        
+        unblockedCount++;
+        this.log(`Re-evaluation: Unblocked task "${row.subject}"`);
+        this.logActivity("brain", "task_unblocked", row.id, {
+          reason: "dependencies_satisfied",
+          subject: row.subject,
+        });
+      }
+
+      // Log summary if any actions were taken
+      if (verificationTasksCreated > 0 || unblockedCount > 0) {
+        this.logActivity("brain", "plan_reevaluated", undefined, {
+          verificationTasksCreated,
+          tasksUnblocked: unblockedCount,
+        });
+      }
+    } catch (err) {
+      this.log(`Failed to re-evaluate plan progress: ${err}`);
+    }
+  }
+
+  /**
+   * Create a verification task during re-evaluation
+   * Similar to createVerificationTask but called from re-evaluation context
+   */
+  private async createVerificationTaskFromReEval(
+    originalTask: {
+      id: string;
+      subject: string;
+      classification: string;
+      domain?: string;
+      priority: string;
+    },
+    report: {
+      id: string;
+      summary: string;
+      issues: string[];
+      testsStatus?: "passing" | "failing" | "not_run";
+    }
+  ): Promise<Task | null> {
+    const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    
+    const issuesList = report.issues.length > 0 
+      ? `## Issues to Address\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n`
+      : "";
+    
+    const testInfo = report.testsStatus === "failing"
+      ? "## ⚠️ Tests are failing - this should be addressed first\n\n"
+      : "";
+
+    const description = `This is a verification task for: "${originalTask.subject}"
+
+The original task was completed but with issues that need attention.
+
+## Original Completion Summary
+${report.summary}
+
+${issuesList}${testInfo}## Suggested Next Steps
+Review and polish the implementation, addressing any issues found.
+
+## Original Task ID
+${originalTask.id}`;
+
+    const verifyTask: Task = {
+      id: taskId,
+      subject: `Verify & Polish: ${originalTask.subject}`,
+      description,
+      status: "pending",
+      priority: originalTask.priority === "critical" ? "critical" : "high",
+      classification: "qa", // Verification tasks are QA-type work
+      domain: originalTask.domain,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      context: {
+        notes: `Follow-up verification for ${originalTask.id}. Status report: ${report.id}`,
+      },
+    };
+
+    // Add to in-memory list
+    this.tasks.push(verifyTask);
+    
+    // Save to database
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(`
+        INSERT INTO tasks (id, subject, description, status, priority, classification, domain, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        verifyTask.id,
+        verifyTask.subject,
+        verifyTask.description,
+        verifyTask.status,
+        verifyTask.priority,
+        verifyTask.classification || "qa",
+        verifyTask.domain || null,
+        now,
+        now,
+      ]);
+    }
+
+    this.logActivity("brain", "verification_task_created", taskId, {
+      originalTaskId: originalTask.id,
+      issueCount: report.issues.length,
+      testsStatus: report.testsStatus,
+      source: "re_evaluation",
+    });
+
+    return verifyTask;
   }
 
   private async loadArms(): Promise<void> {

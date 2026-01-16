@@ -9,8 +9,10 @@ import { ReadPlanTool } from "./tools/plans";
 import { GetTaskHistoryTool } from "./tools/tasks";
 import { GetDiscoveriesTool } from "./tools/discoveries";
 import { GetArmStatusTool } from "./tools/arm";
+import { GetStatusReportsTool } from "./tools/status-reports";
+import { DetermineNextTaskTool } from "./tools/determine-next-task";
 import type { ToolContext } from "./tools/base";
-import type { BrainAgentInput, BrainAgentOutput, PlanDocument, TaskHistoryItem, DiscoveryItem, ArmStatusItem, NextTaskResult } from "./types";
+import type { BrainAgentInput, BrainAgentOutput, PlanDocument, TaskHistoryItem, DiscoveryItem, ArmStatusItem, NextTaskResult, StatusReportItem } from "./types";
 import { BRAIN_AGENT_SYSTEM_PROMPT, TOOL_DESCRIPTIONS } from "./prompts";
 
 export class BrainAgent {
@@ -26,6 +28,8 @@ export class BrainAgent {
     this.registerTool(new GetTaskHistoryTool(context));
     this.registerTool(new GetDiscoveriesTool(context));
     this.registerTool(new GetArmStatusTool(context));
+    this.registerTool(new GetStatusReportsTool(context));
+    this.registerTool(new DetermineNextTaskTool(context));
   }
 
   private registerTool(tool: BrainTool): void {
