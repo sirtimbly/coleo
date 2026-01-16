@@ -2,32 +2,32 @@
 
 Octopai manages the software project itself through **architect-classified tasks** that coordinate work, update documentation, track progress, and ensure human feedback is properly incorporated.
 
-Instead of a permanently specialized "PM arm", **any general-purpose arm** can temporarily execute **project management tasks** when the brain assigns it an `architect` (project-management) classification with the right context.
+Instead of a permanently specialized "PM arm", **any general-purpose arm** can temporarily execute **project management tasks** when the brain assigns it an `architect` (project-management) classification with the right context and **task configuration template**.
 
 ## Project Management via Architect Tasks
 
 When running in a project management role, an architect-classified task behaves like a project manager. It is the human's primary interface into the system's overall progress and plans.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                ARCHITECT (PROJECT MANAGEMENT)               │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  Does NOT primarily write product code. Instead it:         │
-│                                                             │
-│  ├── Watches arm and task activity                          │
-│  ├── Updates project plans and task lists in .project/      │
-│  ├── Maintains phase acceptance criteria                    │
-│  ├── Writes status updates and summaries                    │
-│  ├── Drafts communications to humans                        │
-│  ├── Ensures human feedback is captured and acted on        │
-│  ├── Tracks blockers and escalates when needed              │
-│  └── Keeps documentation in sync with reality               │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                ARCHITECT (PROJECT MANAGEMENT)                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  Does NOT primarily write product code. Instead it:                          │
+│                                                                              │
+│  ├── Watches arm and task activity                                           │
+│  ├── Updates project plans and task lists in .project/                       │
+│  ├── Maintains phase acceptance criteria                                     │
+│  ├── Writes status updates and summaries                                     │
+│  ├── Drafts communications to humans                                         │
+│  ├── Ensures human feedback is captured and acted on                         │
+│  ├── Tracks blockers and escalates when needed                               │
+│  └── Keeps documentation in sync with reality                                │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-These responsibilities are fulfilled by **architect tasks operating over the `.project/` directory and docs/**, not by a separate PM-only agent type.
+These responsibilities are fulfilled by **architect tasks operating over the `.project/` directory and docs/**, guided by a **task configuration template**, not by a separate PM-only agent type.
 
 ### Architect Task Profile (Project Management Flavor)
 
@@ -77,7 +77,48 @@ The **same physical arm instance** might perform:
 - Then an architect/project-management task (updating `.project/status.md` and docs)
 - Then a QA task (writing tests)
 
-The brain decides which classification to assign based on current needs.
+The brain decides which classification to assign based on current needs, and then selects an appropriate **task configuration template** for that classification.
+
+## Task Configuration Templates
+
+Octopai replaces MR-specific templates with **task configuration templates** that are keyed by task classification (and optional subtype). These templates live in code (see `src/types/index.ts`) and describe how different kinds of tasks should behave.
+
+### Template Fields
+
+```typescript
+interface TaskConfigurationTemplate {
+  classification: string;       // e.g., "architect", "development", "qa"
+  subtype?: string;             // e.g., "project-management"
+  description: string;          // Human-readable summary
+  allowedTools?: string[];      // Logical tool names ("fs", "git", "mcp:guidance")
+  contextBundles?: string[];    // What context to load (".project/*", "docs/", "discoveries")
+  governance?: {
+    requiresProposal?: boolean; // Should large changes go through proposals?
+    typicalProposalTypes?: string[]; // Common proposal types for this task
+    emphasizeStatusReports?: boolean; // Should tasks send frequent status?
+  };
+  hints?: {
+    systemHint?: string;        // Short instruction for the arm
+  };
+}
+```
+
+A registry of built-in templates (`TASK_CONFIGURATION_TEMPLATES`) maps keys of the form `"classification:subtype"` to concrete configurations. Examples:
+
+- `"architect:project-management"` – drives status/doc-focused architect tasks over `.project/` and `docs/`.
+- `"development:default"` – for ordinary implementation work.
+- `"qa:default"` – for testing and verification.
+- `"documentation:default"` – for documentation sync.
+
+### How the Brain Uses Templates
+
+1. **Determine next task** via progressive planning.
+2. **Choose classification and (optional) subtype** for that task.
+3. **Look up template key** `${classification}:${subtype ?? "default"}` in `TASK_CONFIGURATION_TEMPLATES`.
+4. **Prepare context** according to `contextBundles` (e.g., `.project/*`, related files, discoveries).
+5. **Shape prompts and tools** based on `allowedTools`, `governance`, and `hints.systemHint`.
+
+This replaces MR-style templates and "spawn a special arm for this MR" patterns with **classification-driven behavior for general-purpose arms**.
 
 ## On-Disk Project Structure
 
@@ -119,7 +160,7 @@ This structure reflects the current implementation and planning in `.project/`:
 └── plans/                 # Implementation plans generated by architect tasks
 ```
 
-> Note: older references to a dedicated `communications/` folder and `pm-arm` should now be interpreted as **architect project-management tasks** reading from and writing to these core `.project/` files.
+> Note: older references to a dedicated `communications/` folder and `pm-arm` should now be interpreted as **architect project-management tasks** reading from and writing to these core `.project/` files, guided by their task configuration template.
 
 ## File Formats
 
@@ -248,7 +289,6 @@ Human feedback is tracked as structured markdown that architect project-manageme
 
 **Status**: ✅ Incorporated
 **Action Taken**: Updated components.md with radial coordinate system design.
-**Completed**: 2024-01-15 14:00
 
 ---
 
@@ -267,7 +307,7 @@ Human feedback is tracked as structured markdown that architect project-manageme
 
 ## Architect Project-Management Behaviors
 
-The following behaviors describe **architect project-management tasks**, not a dedicated PM arm type. Any general-purpose arm can perform these when assigned the appropriate classification and context.
+The following behaviors describe **architect project-management tasks**, not a dedicated PM arm type. Any general-purpose arm can perform these when assigned the appropriate classification, template, and context.
 
 ### 1. Status Updates
 
@@ -373,7 +413,7 @@ async function onHumanFeedback(feedback: string, session: string): Promise<void>
 
 ### 4. Communication Drafting
 
-Architect project-management tasks draft updates for humans, which can then be sent via the Maildir/IMAP gateway:
+Architect project-management tasks draft updates for humans, which can then be sent via Maildir / future IMAP/SMTP gateway:
 
 ```typescript
 interface CommunicationDraft {
@@ -443,7 +483,7 @@ async function checkDocSync(): Promise<DocSyncReport> {
 
 ## Human Communication Principles
 
-These principles still apply, but they now describe **how architect project-management tasks communicate with humans** (usually via email), rather than a special PM arm.
+These principles describe **how architect project-management tasks communicate with humans** (usually via email), rather than a special PM arm.
 
 ### 1. Proactive, Not Reactive
 
@@ -533,12 +573,12 @@ Rather than a dedicated PM arm with special privileges, the **brain** knows how 
 
 - Spawn general-purpose arms
 - Assign them architect project-management tasks when the project needs coordination
-- Provide `.project/` and activity context bundles to those tasks
+- Provide `.project/` and activity context bundles to those tasks based on the selected task configuration template
 
 Architect project-management tasks, in turn, rely on the brain for:
 
 - Subscriptions to activity streams (`arm.*`, `proposal.*`, `deploy.*`, `claim.*`, etc.)
-- A way to send human-facing messages (Maildir/IMAP gateway)
+- A way to send human-facing messages (Maildir / future IMAP/SMTP gateway)
 - APIs for querying current arms, tasks, and discoveries
 
 ## Why Text Files?

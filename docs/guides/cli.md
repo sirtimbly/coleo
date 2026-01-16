@@ -122,7 +122,7 @@ octopai arm spawn [options]
 Options:
   -n, --name <name>       Arm name/ID
   -a, --agent <agent>     Agent type: opencode, claude-code, aider (default: opencode)
-  -d, --domain <domain>   Arm domain: general, frontend, backend, testing, docs, architect
+  -d, --domain <domain>   (Legacy) Optional focus tag; newer flows rely on task classifications rather than fixed domains
   -w, --workdir <path>    Working directory
   -t, --terminal <type>   Terminal: ghostty, iterm2, terminal, tmux, headless
   -p, --prompt <prompt>   Initial task/prompt for the arm
@@ -601,6 +601,8 @@ Arms can be configured via TOML files in `~/.octopai/arms/`. Each file defines a
 
 [arm]
 name = "my-arm"
+# Optional legacy focus hint; behavior is primarily driven by task classification
+# and history rather than static domains.
 domain = "frontend"  # general, frontend, backend, infrastructure, etc.
 harness = "opencode"  # Agent harness type
 
@@ -622,7 +624,9 @@ core = [
 ]
 ```
 
-### Domain Types
+### Legacy Domain Types
+
+These domains were used as coarse focus hints for arms. In the current design, arms are general-purpose and behavior is primarily guided by task classification and history.
 
 | Domain | Description |
 |--------|-------------|
@@ -633,7 +637,7 @@ core = [
 | `testing` | Test infrastructure, QA |
 | `architect` | Code review, patterns, decisions |
 
-### Preset Configurations
+### Preset Configurations (Legacy team shapes)
 
 Load preset arm configurations:
 

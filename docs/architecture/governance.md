@@ -2,14 +2,18 @@
 
 Octopai uses an anarchic governance model where arms persuade each other through reasoned arguments, with the brain acting as a backstop against destructive behavior.
 
+Arms are **general-purpose**: they do not represent permanent roles like "UI arm" or "API arm". Instead, they take on tasks with specific **classifications** (architect, development, qa, documentation, etc.), and governance flows operate over those tasks and the arms currently working on them.
+
 ## Core Principle: Anarchy with Persuasion
 
-Arms don't just vote - they **persuade**. Each arm can:
+Arms don't just vote – they **persuade**. Each arm can:
 
-1. **Propose** - Suggest an action that affects others
-2. **Argue** - Add reasoning for/against proposals
-3. **Signal** - Indicate support/opposition with weight
-4. **Override** - Push forward despite opposition (with stated reason)
+1. **Propose** – Suggest an action that affects others
+2. **Argue** – Add reasoning for/against proposals
+3. **Signal** – Indicate support/opposition with weight
+4. **Override** – Push forward despite opposition (with stated reason)
+
+Governance happens around **proposals** and **tasks**, not around fixed arm roles.
 
 ## Proposals
 
@@ -75,29 +79,35 @@ interface Argument {
 | `concern` | Neutral worry | Noted, may need addressing |
 | `suggestion` | Alternative approach | May modify proposal |
 
-### Example Arguments
+### Example Arguments (Classification-Oriented)
 
-```
+```text
 Proposal: Deploy to staging
 
-[UI Arm - FOR]
-"All component tests pass. Visual regression shows no changes 
-to critical paths. Ready from UI perspective."
+[Arm A – development task, web-facing]
+Position: FOR
+"All component tests pass. Visual checks show no changes to
+critical user flows. Ready from a web-facing perspective."
 Evidence: [test-results.json, visual-diff.png]
 
-[API Arm - CONCERN]
+[Arm B – qa task]
+Position: CONCERN
 "New endpoint /api/users/bulk hasn't been load tested yet.
-Suggest we add basic load test before staging."
+Suggest we add a basic load test before staging."
 Evidence: [routes/users.ts:45]
 
-[Test Arm - FOR]
-"E2E suite passes. Added coverage for bulk endpoint. 
-@API Arm - load test added, results attached."
+[Arm C – qa task]
+Position: FOR
+"E2E suite passes. Added coverage for the bulk endpoint.
+Load test added and results are within acceptable limits."
 Evidence: [load-test-results.json]
 
-[DevOps Arm - FOR]
-"Infrastructure ready. Rollback procedure documented."
+[Arm D – development task, infra-focused]
+Position: FOR
+"Infrastructure changes are minimal and rollback is documented."
 ```
+
+Rather than permanently specialized "UI" or "API" arms, the **task classification** and evidence (files, tests, logs) make it clear which perspectives are represented.
 
 ## Signals
 
@@ -116,11 +126,23 @@ interface Signal {
 The weight is influenced by:
 - Arm's conviction level (-100 to +100)
 - Arm's reputation (multiplier)
-- Arm's domain relevance (bonus if proposal is in their domain)
+- Task and subject relevance (bonus if the arm's current or recent tasks are clearly related to the proposal)
+
+Instead of domain-based bonuses, relevance is determined from:
+- Recent task classifications (e.g., `qa` tasks have more weight on test adequacy questions)
+- Files and systems touched in recent tasks that overlap with the proposal subject
 
 ### Consensus Calculation
 
 ```typescript
+function isTaskRelevant(arm: Arm, proposal: Proposal): boolean {
+  // Example heuristic:
+  // - Check arm.currentTask.classification vs proposal.type
+  // - Check overlap between proposal.subject/description and
+  //   files/systems in arm's recent activity
+  return true; // Implementation-specific
+}
+
 function calculateConsensus(proposal: Proposal, arms: Arm[]): ConsensusResult {
   let weightedSum = 0;
   let totalWeight = 0;
@@ -131,11 +153,11 @@ function calculateConsensus(proposal: Proposal, arms: Arm[]): ConsensusResult {
 
     // Apply reputation as multiplier (0.5 to 1.5)
     const reputationMultiplier = 0.5 + (arm.reputation / 100);
-    
-    // Bonus for domain relevance
-    const domainBonus = isDomainRelevant(arm, proposal) ? 1.2 : 1.0;
-    
-    const effectiveWeight = signal.weight * reputationMultiplier * domainBonus;
+
+    // Bonus for task/subject relevance instead of fixed domains
+    const relevanceBonus = isTaskRelevant(arm, proposal) ? 1.2 : 1.0;
+
+    const effectiveWeight = signal.weight * reputationMultiplier * relevanceBonus;
     weightedSum += effectiveWeight;
     totalWeight += Math.abs(effectiveWeight);
   }
@@ -192,6 +214,8 @@ interface ReputationEvent {
 }
 ```
 
+Reputation is **per arm**, not per domain. Over time, arms that perform well across many task types become more influential, but any arm can take on any classification as needed.
+
 ## Brain Intervention
 
 The Brain monitors for misbehavior and can override arm autonomy.
@@ -241,36 +265,36 @@ interface EmergencySignal {
 ### Emergency Response Flow
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   EMERGENCY STOP FLOW                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  1. Arm detects critical issue                               │
-│     │                                                        │
-│  2. Arm sends EmergencySignal to Brain                       │
-│     │                                                        │
-│  3. Brain IMMEDIATELY:                                       │
-│     ├── Pauses ALL arms (no new actions)                     │
-│     ├── Logs the emergency with full context                 │
-│     ├── Sends urgent push notification to human              │
-│     └── Broadcasts emergency to all arms                     │
-│                                                              │
-│  4. Brain enters problem-solving mode:                       │
-│     ├── Asks arms to propose solutions to the problem        │
-│     ├── Arms can still communicate, just can't act           │
-│     └── Proposals for resolution are fast-tracked            │
-│                                                              │
-│  5. Resolution:                                              │
-│     ├── Human approves a solution, OR                        │
-│     ├── Arms reach consensus on fix, OR                      │
-│     └── Human manually resolves and signals all-clear        │
-│                                                              │
-│  6. Brain resumes operations:                                │
-│     ├── Arms resume from where they paused                   │
-│     ├── Emergency logged for post-mortem                     │
-│     └── Reputation bonus for arm that caught the issue       │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                   EMERGENCY STOP FLOW                                      │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Arm detects critical issue                                               │
+│     │                                                                        │
+│  2. Arm sends EmergencySignal to Brain                                       │
+│     │                                                                        │
+│  3. Brain IMMEDIATELY:                                                       │
+│     ├── Pauses ALL arms (no new actions)                                     │
+│     ├── Logs the emergency with full context                                 │
+│     ├── Sends urgent notification to human                                   │
+│     └── Broadcasts emergency to all arms                                     │
+│                                                                              │
+│  4. Brain enters problem-solving mode:                                       │
+│     ├── Asks arms to propose solutions to the problem                        │
+│     ├── Arms can still communicate, just can't act                           │
+│     └── Proposals for resolution are fast-tracked                            │
+│                                                                              │
+│  5. Resolution:                                                              │
+│     ├── Human approves a solution, OR                                        │
+│     ├── Arms reach consensus on fix, OR                                      │
+│     └── Human manually resolves and signals all-clear                        │
+│                                                                              │
+│  6. Brain resumes operations:                                                │
+│     ├── Arms resume from where they paused                                   │
+│     ├── Emergency logged for post-mortem                                     │
+│     └── Reputation bonus for the arm that caught the issue                   │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Emergency vs Proposal
@@ -340,21 +364,21 @@ interface CreativeOverride {
 
 ### Override Example
 
-```
-[Test Arm - CREATIVE OVERRIDE]
+```text
+[Arm X – qa task]
 
-Proposal: Skip integration tests for hotfix deploy
+Proposal: Skip full integration suite for hotfix deploy
 
-Reason: Production is down. Users cannot log in. The fix is 
-a one-line config change. Waiting for full test suite (45 min) 
+Reason: Production is down. Users cannot log in. The fix is
+small and well-understood. Waiting for the full test suite (45 min)
 will extend outage unnecessarily.
 
 Acknowledged Risks:
-- Config change could have unintended side effects
+- Change could have unintended side effects
 - Skipping tests sets bad precedent
 
 Alternatives Considered:
-- Run only auth-related tests (still 15 min)
+- Run only auth-related tests (still ~15 min)
 - Partial rollback (would affect other users)
 
 Rollback Plan:
@@ -372,33 +396,33 @@ The brain logs the override and may:
 ## Proposal Lifecycle
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                   PROPOSAL LIFECYCLE                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  1. Arm creates proposal                                     │
-│     │                                                        │
-│  2. Broadcast to all arms                                    │
-│     │                                                        │
-│  3. Arms add arguments (for/against/concern/suggestion)      │
-│     │ (timeout: type-dependent)                              │
-│     │                                                        │
-│  4. Arms add signals (weighted support/opposition)           │
-│     │                                                        │
-│  5. Auto-resolve conditions:                                 │
-│     ├── Timeout reached                                      │
-│     ├── All arms have signaled                               │
-│     └── No new arguments for 1 minute                        │
-│                                                              │
-│  6. Brain calculates consensus                               │
-│     ├── Positive → ACCEPTED                                  │
-│     ├── Negative → REJECTED                                  │
-│     └── Undecided → ESCALATE to human                        │
-│                                                              │
-│  7. (Optional) Arm invokes creative override                 │
-│     └── Brain allows or vetoes                               │
-│                                                              │
-│  8. Proposal resolved, logged, reputation updated            │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                   PROPOSAL LIFECYCLE                                       │
+├──────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  1. Arm creates proposal                                                     │
+│     │                                                                        │
+│  2. Proposal broadcast to all arms                                           │
+│     │                                                                        │
+│  3. Arms add arguments (for/against/concern/suggestion)                     │
+│     │  (timeout: type-dependent)                                             │
+│     │                                                                        │
+│  4. Arms add signals (weighted support/opposition)                          │
+│     │                                                                        │
+│  5. Auto-resolve conditions:                                                │
+│     ├── Timeout reached                                                      │
+│     ├── All active arms have signaled                                       │
+│     └── No new arguments for 1 minute                                       │
+│                                                                              │
+│  6. Brain calculates consensus                                               │
+│     ├── Positive → ACCEPTED                                                  │
+│     ├── Negative → REJECTED                                                  │
+│     └── Undecided → ESCALATE to human                                       │
+│                                                                              │
+│  7. (Optional) Arm invokes creative override                                 │
+│     └── Brain allows or vetoes                                              │
+│                                                                              │
+│  8. Proposal resolved, logged, reputation updated                            │
+│                                                                              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```

@@ -7,8 +7,8 @@ This document outlines the phased approach to building Octopai's full architectu
 | Phase | Focus | Duration | Status |
 |-------|-------|----------|--------|
 | Phase 0 | Core Infrastructure | Complete | Done |
-| Phase 1 | Observatory Foundation | 2 weeks | Planned |
-| Phase 2 | Arm Specialization | 2 weeks | Planned |
+| Phase 1 | Observatory Foundation | 2 weeks | In progress |
+| Phase 2 | Task Classification & Context | 2 weeks | In progress |
 | Phase 3 | Governance | 2 weeks | Planned |
 | Phase 4 | Garden Visualization | 2 weeks | Planned |
 | Phase 5 | Notifications & Deployment | 2 weeks | Planned |
@@ -78,20 +78,17 @@ A working web UI at `http://localhost:3001` showing:
 
 ---
 
-## Phase 2: Arm Specialization
+## Phase 2: Task Classification & Context
 
-**Goal:** Give arms focused domains, context budgets, and ownership capabilities.
+**Goal:** Give arms classification-driven behavior, context budgets, and ownership capabilities.
 
 ### Tasks
 
-- [ ] **2.1** Arm profile system
-  - Define domain types and default patterns
-  - Create arm profile configuration templates (`templates/arms/*.toml`)
-  - Update arm spawning to use profiles
-  - Add preset configurations (`templates/presets/*.json`):
-    - `fullstack.json` - Single generalist arm
-    - `split-stack.json` - Frontend + backend specialists
-    - `full-team.json` - All specialists
+- [ ] **2.1** Task classification and templates
+  - Define task classification keys and default patterns (e.g. architect:project-management, development:default, qa:default, documentation:default)
+  - Create task configuration templates (in code) and align arm profile configuration templates (`templates/arms/*.toml`) with them
+  - Update task assignment and arm spawning to respect classifications and templates
+  - Add preset configurations (`templates/presets/*.json`) that describe default task mixes rather than fixed specialist identities (e.g. a single generalist arm, a mix of development + qa + documentation tasks)
 
 - [ ] **2.2** Context budget tracking
   - Implement `ContextBudget` type
@@ -141,16 +138,15 @@ A working web UI at `http://localhost:3001` showing:
   - Brain re-prioritizes tasks when plans/requirements change
 
 - [ ] **2.9** Email-to-Documentation Workflow
-  - Parse user emails for doc update intent
-  - Create `doc_update` tasks with domain="docs"
-  - Add "docs" domain arm profile with initial tasks
-  - Update tasks with domain preference for targeted assignment
+  - Parse user emails for documentation update intent
+  - Create `doc_update` tasks classified as `documentation`
+  - Route documentation-classified tasks to appropriate arms based on recent work and preferences (not fixed docs-only identities)
   - Notify human when docs are updated
-  - Broadcast updates to other arms
+  - Broadcast updates to other arms so they can reassess their work against the new documentation
 
 ### Deliverable
 
-Arms with defined domains that claim files and respect context limits.
+Tasks with explicit classifications, and arms that claim files and respect context limits while executing those tasks.
 
 ---
 
@@ -363,9 +359,9 @@ Phase 0 ─┬─► Phase 1 ─┬─► Phase 2 ───► Phase 3
 ```
 
 - Phase 1 (Observatory) can start immediately
-- Phase 2 (Specialization) requires Phase 1 for UI
+- Phase 2 (Task Classification & Context) requires Phase 1 for UI
 - Phase 3 (Governance) requires Phase 2 for arm profiles
-- Phase 4 (Garden) can run parallel to Phase 2-3
+- Phase 4 (Garden) can run parallel to Phases 2-3
 - Phase 5 (Deployment) requires Phase 3 for consensus
 - Phase 6 (Polish) is final integration
 
@@ -376,7 +372,7 @@ Phase 0 ─┬─► Phase 1 ─┬─► Phase 2 ───► Phase 3
 | Phase | Success Criteria |
 |-------|------------------|
 | 1 | Web UI loads, shows arms, can spawn/kill |
-| 2 | Arms claim files, context tracked, no overflow |
+| 2 | Tasks have classifications, arms claim files, context tracked, no overflow |
 | 3 | Proposals work, consensus calculated, overrides logged |
 | 4 | 3D garden renders, ownership visible, interactive |
 | 5 | Push notifications work, deployments flow through approval |

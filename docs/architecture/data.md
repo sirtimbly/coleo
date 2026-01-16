@@ -37,7 +37,9 @@ import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core";
 const arms = sqliteTable("arms", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  domain: text("domain").notNull(),
+  // Legacy: domain was used for static specialization.
+  // Newer code should prefer task classifications and history.
+  domain: text("domain"),
   reputation: integer("reputation").default(50),
 });
 
@@ -46,7 +48,7 @@ const sqlite = new Database("octopai.db");
 const db = drizzle(sqlite);
 
 const allArms = await db.select().from(arms);
-const uiArm = await db.select().from(arms).where(eq(arms.domain, "ui"));
+const recentlyActiveArms = await db.select().from(arms) /* filter by recent tasks or activity instead of static domain */;
 ```
 
 **Pros**: Type-safe, lightweight, great DX, supports migrations  
@@ -61,19 +63,22 @@ import { Kysely, SqliteDialect } from "kysely";
 import Database from "better-sqlite3"; // or bun:sqlite adapter
 
 interface DB {
-  arms: {
-    id: string;
-    name: string;
-    domain: string;
-    reputation: number;
-  };
+    arms: {
+      id: string;
+      name: string;
+      // Legacy: domain was used for static specialization.
+      // Prefer task history and classifications instead.
+      domain: string | null;
+      reputation: number;
+    };
+
 }
 
 const db = new Kysely<DB>({ dialect: new SqliteDialect({ database }) });
 
 const arms = await db
   .selectFrom("arms")
-  .where("domain", "=", "ui")
+  // Prefer filtering by task history, recent activity, or explicit classification fields
   .selectAll()
   .execute();
 ```
@@ -211,7 +216,9 @@ CREATE TABLE arms (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   agent TEXT NOT NULL,
-  domain TEXT NOT NULL,
+  -- Legacy: domain captured static specialization. Newer designs should
+  -- lean on task classifications and activity history instead.
+  domain TEXT,
   expertise TEXT,           -- JSON array
   status TEXT NOT NULL DEFAULT 'idle',
   reputation INTEGER NOT NULL DEFAULT 50,

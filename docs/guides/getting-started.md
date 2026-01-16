@@ -8,6 +8,8 @@ This guide will help you set up Octopai and run your first brain + arm session.
 - Git
 - (Optional) Docker for containerized deployment
 
+> **Git workflow:** The happy path is a single clone and a shared `octopai` branch that multiple arms work in together. You can still use other branches and stashes, but we assume a mostly linear history coordinated by tasks, claims, and proposals rather than one worktree per arm.
+
 ## Installation
 
 ### From Source
@@ -42,17 +44,170 @@ octopai init --preset split-stack
 octopai init --preset full-team
 ```
 
+## Quickstart: Existing Codebase (Partial Adoption)
+
+Use this path when you already have a repository and just want Octopai to help inside it.
+
+### 1. Prepare your project
+
+In your project repo:
+
+```bash
+git clone git@github.com:you/your-project.git
+cd your-project
+
+# Create a branch that Octopai will use
+git checkout -b octopai
+
+# Make sure it runs / builds in your environment
+npm install        # or bun install / pnpm install / etc.
+npm test           # optional but recommended
+```
+
+This `octopai` branch is where arms will make changes. You can merge or rebase it into your main branch whenever you’re comfortable.
+
+### 2. Initialize Octopai (one-time)
+
+In the Octopai repo:
+
+```bash
+cd /path/to/octopai
+bun install
+
+# Set up ~/.octopai (maildir, config, templates, SQLite DB)
+bun run src/cli/index.ts init
+```
+
+### 3. Start the brain
+
+```bash
+bun run src/cli/index.ts brain run
+```
+
+Leave this running in a terminal; it coordinates arms and tracks tasks.
+
+### 4. Spawn a general-purpose arm on your repo
+
+In another terminal:
+
+```bash
+cd /path/to/octopai
+
+bun run src/cli/index.ts arm spawn \
+  --name dev-arm \
+  --agent opencode \
+  --workdir /absolute/path/to/your-project
+```
+
+This registers an arm in SQLite and starts an `opencode-api` agent pointed at your existing codebase.
+
+### 5. Give it a task and review its work
+
+```bash
+# Send a task via mail
+bun run src/cli/index.ts mail send \
+  "Improve error handling in the user signup flow"
+
+# Or prompt the arm directly
+bun run src/cli/index.ts arm prompt dev-arm \
+  "Add a dark mode toggle to the settings page"
+```
+
+Then review changes in your repo on the `octopai` branch:
+
+```bash
+cd /absolute/path/to/your-project
+git status
+git diff
+```
+
+You decide when to commit, squash, or merge those changes into your main branch. This is “partial adoption”: Octopai helps inside your existing process, without taking it over.
+
+---
+
+## Quickstart: New Project (Greenfield)
+
+Use this path when you’re starting from a blank slate and want Octopai involved from the first commit.
+
+### 1. Create a new repo and branch
+
+```bash
+mkdir ~/projects/my-new-idea
+cd ~/projects/my-new-idea
+
+git init
+git checkout -b octopai
+
+echo "# My New Idea" > README.md
+git add README.md
+git commit -m "chore: initial project skeleton"
+```
+
+You can optionally bootstrap a framework here (`bun init`, `npm create vite@latest`, etc.), or let an arm do that in the next step.
+
+### 2. Initialize Octopai
+
+In the Octopai repo:
+
+```bash
+cd /path/to/octopai
+bun install
+bun run src/cli/index.ts init
+```
+
+### 3. Start the brain
+
+```bash
+bun run src/cli/index.ts brain run
+```
+
+### 4. Spawn a development arm into your new project
+
+```bash
+cd /path/to/octopai
+
+bun run src/cli/index.ts arm spawn \
+  --name greenfield-dev \
+  --agent opencode \
+  --workdir ~/projects/my-new-idea
+```
+
+Both you and the arm now share the same working tree and the same `octopai` branch.
+
+### 5. Describe the idea and let the arm scaffold
+
+```bash
+bun run src/cli/index.ts mail send \
+  "Create a minimal Bun + React app for a personal task tracker. Start with a single page that lists in-memory tasks and a simple form to add a new task."
+```
+
+The brain will turn this into a task (eventually with explicit classification like `development`), assign it to the arm, and the arm will:
+
+- Create files and run commands in `~/projects/my-new-idea`.
+- Report progress and discoveries via Maildir.
+
+You stay in control:
+
+```bash
+cd ~/projects/my-new-idea
+git status
+git diff
+git commit -am "feat: initial task tracker UI"
+```
+
+When you’re happy, you can push the `octopai` branch to your remote and open a PR as usual.
+
 ### Arm Templates
 
-Octopai includes arm configuration templates in `templates/arms/`:
+Octopai includes arm configuration templates in `templates/arms/`. These provide starting points and focus hints; arms remain general-purpose and their behavior is primarily guided by task classification and history.
 
-| Template | Domain | Description |
-|----------|--------|-------------|
+| Template | Legacy Domain Hint | Description |
+|----------|--------------------|-------------|
 | `fullstack.toml` | general | Versatile generalist for any task |
 | `frontend.toml` | frontend | UI/UX, React, accessibility |
 | `backend.toml` | backend | APIs, databases, infrastructure |
 | `testing.toml` | testing | QA, test infrastructure |
-| `docs.toml` | docs | Documentation specialist |
+| `docs.toml` | docs | Documentation-focused starting point |
 | `architect.toml` | architect | Code review, patterns |
 
 These templates are copied to `~/.octopai/arms/` during initialization and can be edited before spawning arms.
@@ -143,7 +298,7 @@ This will:
 
 ## Arm Configurations
 
-Arms can be configured for different patterns of work distribution. The brain assigns tasks based on arm domains and availability.
+Arms can be configured for different patterns of work distribution. Historically this used domains; the current design emphasizes task classifications, history, and availability instead.
 
 ### From Templates
 
@@ -157,36 +312,33 @@ ls templates/arms/
 
 These templates are copied to `~/.octopai/arms/` when you run `octopai init`.
 
-### Full-Stack Arms (Default)
+### General-Purpose Arms (Default)
 
-By default, arms are "generalist" and can work on any part of your codebase:
+By default, arms are general-purpose and can work on any part of your codebase. Their behavior is shaped by task classification and task history rather than a fixed domain:
 
 ```bash
-# Spawn a full-stack arm
-octopai arm spawn --name fullstack-dev --domain general
-
-# Or explicitly
-octopai arm spawn --name fullstack-dev --domain fullstack
+# Spawn a general-purpose arm
+octopai arm spawn --name fullstack-dev
 ```
 
-A full-stack arm will handle both frontend and backend tasks as assigned by the brain.
+A general-purpose arm will handle frontend, backend, QA, and documentation tasks as assigned by the brain.
 
-### Split-Stack Configuration
+### Split-Stack Configuration (Legacy style)
 
-For larger projects, you can run specialized arms that focus on specific layers:
+For larger projects, you can still run arms with focus hints that tend to work on specific layers:
 
 ```bash
-# Frontend specialist
+# Frontend-leaning arm
 octopai arm spawn --name frontend-arm --domain frontend
 
-# Backend specialist  
+# Backend-leaning arm  
 octopai arm spawn --name backend-arm --domain backend
 
-# Database/ infrastructure specialist
+# Infrastructure-leaning arm
 octopai arm spawn --name infra-arm --domain infrastructure
 ```
 
-The brain will match tasks to the appropriate specialist arm based on the task context.
+In the current design, these domains are hints; the brain primarily matches tasks using task classifications, recent work, and availability.
 
 ### Preset Configurations
 
@@ -237,7 +389,7 @@ core = [
 
 The brain considers multiple factors when assigning tasks:
 
-1. **Domain match** - Task keywords vs arm domain
+1. **Task classification match** - Task type vs an arm's recent work and configuration templates
 2. **Availability** - Idle arms preferred over busy ones
 3. **Workload** - Arms with fewer active claims get priority
 4. **Context budget** - Arms with remaining budget for the task scope
@@ -442,8 +594,8 @@ report_file_change({
 |--------|---------------|--------|
 | docs/requirements/* | All arms | Re-evaluate task alignment |
 | docs/plans/* | All arms | Update sprint priorities |
-| docs/architecture/* | Architect, backend | Review consistency |
-| Source code changes | Related domain arms | Check for regressions |
+| docs/architecture/* | Arms running architect or backend-classified tasks | Review consistency |
+| Source code changes | Arms with claims or recent work on affected files | Check for regressions |
 
 ### For Source Code Arms
 
@@ -454,7 +606,7 @@ When requirements change:
 3. Assess if your current work is affected
 4. Report back to brain if you need to adjust your approach
 
-### For Docs Arms
+### For Documentation-Classified Tasks
 
 When monitoring documentation:
 
@@ -467,7 +619,7 @@ When monitoring documentation:
 
 ## Documentation Updates from Email
 
-When you reply to emails from Octopai with documentation changes, the brain creates documentation update tasks assigned to "docs" domain arms.
+When you reply to emails from Octopai with documentation changes, the brain creates documentation update tasks classified as `documentation`.
 
 ### How It Works
 
@@ -491,23 +643,19 @@ When you reply to emails from Octopai with documentation changes, the brain crea
 You: "Please update docs/requirements/auth.md to reflect the new OAuth flow"
       (subject: Update auth requirements)
 
-Brain: Creates task "Docs: Update auth requirements" with domain=docs
+Brain: Creates task "Docs: Update auth requirements" classified as `documentation`
 
 Docs Arm: Receives task, reads current docs, updates with new OAuth requirements
 
 Brain: Notifies you when complete, other arms detect the change
 ```
 
-### For Docs Arms
+### For Documentation Work
 
-Arms with `domain = "docs"` receive initial tasks to:
+Tasks classified as `documentation` tend to involve:
 
-1. Review and update project documentation
-2. Update requirements based on user feedback
-3. Keep docs/architecture/ in sync with implementation
+1. Reviewing and updating project documentation
+2. Updating requirements based on user feedback
+3. Keeping docs/architecture/ in sync with implementation
 
-Spawn a docs arm:
-
-```bash
-octopai arm spawn --name docs-arm --domain docs
-```
+Any general-purpose arm can take on documentation tasks; you can still use a documentation-leaning template as a hint if you want one arm to focus there.

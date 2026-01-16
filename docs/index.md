@@ -28,7 +28,7 @@ features:
     details: Web UI and CLI over a shared API for monitoring and intervening in arm activity
   - icon: ✉️
     title: Email Interface
-    details: Communicate with the system via Maildir-backed IMAP/SMTP, keeping familiar email workflows
+    details: Communicate with the system via Maildir-backed mail, with web UI and CLI integrations. IMAP/SMTP gateway is future work.
   - icon: ⚖️
     title: Governance
     details: Proposal and consensus system for higher-risk changes (planned phases)
@@ -54,6 +54,18 @@ bun run server
 # Spawn an arm (general-purpose)
 bun run src/cli/index.ts arm spawn --name worker-1 --agent opencode
 ```
+
+### Two ways to start using Octopai
+
+You don’t need to redesign your whole workflow to try Octopai.
+
+- **Point it at an existing repo**  
+  Keep your current stack, CI, and habits. Run the brain locally, spawn a general-purpose arm with `--workdir` pointing at your existing project, and let it help with refactors, tests, and docs. You can start by reviewing its changes on a shared `octopai` branch in your own Git history.
+
+- **Start a brand new idea with it**  
+  Create a fresh project directory and git repo, make an `octopai` branch, and spawn an arm into that working tree. Describe the idea in a single task ("scaffold a minimal app that does X"), and let the arm handle the initial structure while you stay in control of commits and reviews.
+
+From there, the [Getting Started guide](/guides/getting-started) walks through both flows step by step.
 
 ## Current Status
 

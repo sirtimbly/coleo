@@ -1,6 +1,33 @@
 # Agent Harnesses
 
-Octopai needs to interface with various AI coding agents, each with their own proprietary CLI/TUI. Rather than depending on specific APIs, we treat these tools as **interactive terminal applications** and communicate via keystrokes and text parsing.
+Octopai currently uses a single, reliable harness: the `opencode-api` harness, which communicates with the OpenCode agent over HTTP.
+
+Future harnesses for other tools (including PTY/GUI-based agents) are possible but **not implemented yet** and are treated as long-term ideas.
+
+---
+
+## Current Harness: opencode-api
+
+The `opencode-api` harness is the only supported harness in the system today. It:
+- Connects to an `opencode-api` server over HTTP (no PTY required)
+- Exposes MCP tools to arms
+- Avoids terminal/PTY complexity and cross-platform issues
+
+High-level responsibilities:
+- Manage arm sessions with the `opencode-api` service
+- Route MCP/tool calls between the Brain and the agent
+- Report arm status and activity back into SQLite and the API
+
+(Details of the HTTP contract are documented in the code and may evolve.)
+
+---
+
+## Future Harnesses (Design Notes)
+
+The rest of this document describes a **future harness architecture** that may be implemented later if PTY and GUI automation concerns are resolved.
+
+Octopai needs to interface with various AI coding agents, each with their own proprietary CLI/TUI. Rather than depending on specific proprietary APIs, we can treat these tools as **interactive terminal applications** and communicate via keystrokes and text parsing.
+
 
 ## The Problem
 
@@ -573,18 +600,12 @@ async function testHarness(harnessName: string): Promise<TestReport> {
 }
 ```
 
-## Planned Harness Support
+## Planned Harness Support (Future)
 
 | Agent | Priority | Status | Notes |
 |-------|----------|--------|-------|
-| OpenCode | High | Planned | MCP native, good DX |
-| Claude Code | High | Planned | Popular, MCP support |
-| Aider | High | Planned | Multiple LLM backends |
-| Codex CLI | Medium | Planned | OpenAI official |
-| Roo | Medium | Planned | MCP support |
-| Gemini CLI | Medium | Planned | Google's offering |
-| Kilo | Low | Planned | Newer, needs research |
-| Cursor | Low | Deferred | GUI-based, harder to automate |
+| opencode-api | High | Implemented | HTTP-based, reliable harness used in production |
+| Other PTY/GUI agents | Low | Future | May be revisited if PTY/GUI automation is stable |
 
 ## Terminal Output Parsing
 

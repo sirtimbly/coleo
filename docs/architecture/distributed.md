@@ -176,7 +176,9 @@ interface ArmPlacement {
   // Or automatic placement based on:
   preferLocal?: boolean;       // Prefer garden on same machine as requestor
   requireMcp?: string[];       // Must have these MCP servers
-  domainAffinity?: string;     // Prefer gardens with matching domain focus
+  // Legacy: domainAffinity assumed static domains. Future implementations
+  // should use task classifications or capability tags instead.
+  domainAffinity?: string;
 }
 ```
 

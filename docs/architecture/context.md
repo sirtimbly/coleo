@@ -1,27 +1,31 @@
 # Context Management
 
-Each arm has a limited context budget to prevent cognitive overload. This page describes how context is managed and how file ownership works.
+Each arm has a limited context budget to prevent cognitive overload. This page describes how context is managed at a high level and how file ownership works.
 
 ## Context Budget
 
 Every arm operates within a context budget that limits how much information they hold at once.
 
-### Budget Configuration
+### Budget Configuration (Conceptual)
+
+The exact mechanics of context budgeting and pruning are handled by the harness (`opencode-api`) and the underlying model. Octopai treats these as **conceptual constraints** rather than implementing its own token-level pruning logic.
+
+We think about budgets in terms of:
+
+- **How many files** it is reasonable for an arm to consider at once
+- **How much text** (roughly, tokens) those files represent
+- **Which areas** of the repo are most relevant to the current task
+
+In code, this is represented as a simple configuration shape that higher-level logic can reference when deciding what to show or emphasize to arms:
 
 ```typescript
 interface ContextBudget {
   mode: "auto" | "manual";
-  
-  // Limits (manual mode)
-  maxFiles?: number;         // Max files in context
-  maxTokens?: number;        // Max estimated tokens
-  maxDirectories?: number;   // Max directories claimed
-  
-  // Auto mode settings
-  autoMode?: {
-    aggressiveness: "conservative" | "moderate" | "aggressive";
-    priorityPatterns: string[];  // Patterns to keep even when pruning
-  };
+
+  // Hints for manual/advanced use; not a hard tokenizer
+  maxFiles?: number;         // Max files that should be considered
+  maxTokens?: number;        // Rough guidance for prompt size
+  maxDirectories?: number;   // Max directories before work should be narrowed
 }
 ```
 
@@ -29,27 +33,25 @@ interface ContextBudget {
 
 | Mode | Description | Use Case |
 |------|-------------|----------|
-| **Auto** | System manages context based on activity | Default, hands-off |
-| **Manual** | User sets explicit limits | Fine-tuned control |
+| **Auto** | Harness/model manage context pruning internally | Default, hands-off |
+| **Manual** | Humans give high-level hints (e.g., "focus only on these dirs") | Advanced, debugging or constrained work |
 
-### Auto Mode Aggressiveness
+In practice, **auto** is the default: we trust `opencode-api` and the model to manage token budgets. Octopai focuses on passing **good, focused context** (relevant files, plan excerpts, decisions) rather than micromanaging token counts.
 
-| Level | Behavior |
-|-------|----------|
-| `conservative` | Keep context longer, prune slowly |
-| `moderate` | Balance between retention and freshness |
-| `aggressive` | Frequently prune, focus on immediate task |
+### Context Snapshot (Conceptual)
 
-### Context Snapshot
+When we talk about an arm's "current context" in the Observatory or status reports, we mean a soft snapshot like:
 
 ```typescript
 interface ContextSnapshot {
-  files: string[];           // Files currently in context
-  estimatedTokens: number;   // Token count estimate
-  utilization: number;       // 0-1, how full is the budget
-  lastPruned?: Date;         // When context was last trimmed
+  files: string[];           // Files the arm is currently focused on
+  estimatedTokens?: number;  // Optional rough estimate from harness
+  utilization?: number;      // 0-1, rough sense of fullness (if available)
+  lastUpdated?: Date;        // When this snapshot was last refreshed
 }
 ```
+
+This is primarily for **observability** and **human understanding**, not for driving a home-grown pruning algorithm.
 
 ## Ownership Protocol
 
@@ -71,9 +73,11 @@ interface ClaimConfig {
 | `lazy` | Claims optional, detected on conflict | Default - balance speed and safety |
 | `disabled` | No claims, parallel writes allowed | Solo arm, trusted coordination |
 
-### Lazy Mode with Thrashing Detection
+### Lazy Mode with Thrashing Detection (Design)
 
-In `lazy` mode, arms can work in parallel without claiming files. The system monitors for **thrashing** - when an arm's changes get overwritten by another arm during their work session.
+In `lazy` mode, arms can work in parallel without claiming files. The long-term design is for the system to monitor for **thrashing** – when one arm's changes repeatedly get overwritten by another arm during their work session.
+
+The following types describe the intended shape of such events and responses; they are **design-level**, not fully implemented behavior:
 
 ```typescript
 interface ThrashingEvent {
@@ -92,32 +96,11 @@ interface ThrashingResponse {
 }
 ```
 
-**Thrashing Detection Flow:**
+At a high level, repeated thrashing should:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                  THRASHING DETECTION                         │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  1. Arm A writes to file F at time T1                        │
-│  2. Arm B writes to file F at time T2 (T2 > T1)              │
-│  3. Brain detects: A's changes from T1 are not in T2 write   │
-│     │                                                        │
-│  4. First occurrence:                                        │
-│     └── NOTIFY both arms, log event                          │
-│                                                              │
-│  5. Second occurrence (same file or same arm pair):          │
-│     ├── AUTO-ENABLE claims for that file                     │
-│     ├── Arm that was overwritten gets first claim            │
-│     └── NOTIFY: "Claims now required for F"                  │
-│                                                              │
-│  6. Repeated thrashing (3+ times):                           │
-│     ├── PAUSE the overwriting arm                            │
-│     ├── Request claim before resuming                        │
-│     └── Reputation penalty for overwriter                    │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
-```
+- Notify affected arms and log the event
+- Encourage or auto-enable claims for the affected file(s)
+- Potentially pause an arm that is repeatedly overwriting others without coordination
 
 ### Requesting a Claim After Thrashing
 
@@ -137,37 +120,23 @@ interface ClaimRequest {
 }
 ```
 
-### The Protocol
+### The Protocol (Conceptual)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                   OWNERSHIP PROTOCOL                         │
+│                   OWNERSHIP PROTOCOL                       │
 ├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  1. Arm wants to touch file F                                │
-│     │                                                        │
-│  2. Check: Is F claimed by another arm?                      │
-│     ├── NO  → Claim F, proceed                               │
-│     └── YES → Go to step 3                                   │
-│                                                              │
-│  3. Is this a read or write?                                 │
-│     ├── READ  → Proceed (no claim needed)                    │
-│     └── WRITE → Go to step 4                                 │
-│                                                              │
-│  4. Request handoff from owner                               │
-│     ├── Owner agrees → Claim transferred                     │
-│     ├── Owner busy   → Wait or propose collaboration         │
-│     └── Owner refuses → Go to step 5                         │
-│                                                              │
-│  5. Escalate to Brain                                        │
-│     ├── Brain mediates based on:                             │
-│     │   - Task priority                                      │
-│     │   - Arm reputation                                     │
-│     │   - File volatility                                    │
-│     └── Brain decides: transfer, split, or deny              │
-│                                                              │
+│                                                             │
+│  1. Arm wants to touch file F                               │
+│  2. Check: Is F claimed by another arm?                     │
+│  3. If unclaimed or shared, proceed                         │
+│  4. If claimed and write is needed, request handoff         │
+│  5. If handoff fails, escalate to Brain / human             │
+│                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+The exact mechanics of detection and enforcement live in the Brain and database layers, not in this document.
 
 ### File Claims
 
@@ -191,86 +160,30 @@ interface FileClaim {
 | Directory claim | All files matching pattern | No (read ok) | Domain ownership |
 | Temporary claim | Time-limited | Yes | Quick fix |
 
-### Conflict Resolution
+### Conflict Resolution (Design)
 
-When two arms want the same file:
+When two arms want the same file, the Brain should consider:
 
-1. **Check priority**: Higher priority task wins
-2. **Check reputation**: Higher reputation arm wins ties
-3. **Check history**: Arm with more recent touch wins ties
-4. **Escalate**: Brain asks human if still unclear
+1. **Task priority**: Higher priority task wins
+2. **Reputation**: Higher reputation arm wins ties
+3. **History**: Arm with more recent relevant work wins ties
+4. **Escalation**: Ask a human if still unclear
 
 ## Context Pruning
 
-When an arm's context gets full, old/unused files are pruned.
+Octopai does **not** implement its own token-level pruning algorithm. Instead, it relies on the harness (`opencode-api`) and the underlying model to manage context windows safely.
 
-### Pruning Algorithm
+Octopai's responsibility is to:
 
-```typescript
-function pruneContext(arm: Arm): string[] {
-  const { files, estimatedTokens } = arm.currentContext;
-  const { maxTokens, autoMode } = arm.contextBudget;
-  
-  if (estimatedTokens <= maxTokens * 0.9) {
-    return []; // Under 90%, no pruning needed
-  }
+- Select and pass **relevant** files, plan excerpts, decisions, and status information
+- Avoid flooding arms with unnecessary or low-signal context
+- Expose a high-level view of what an arm is currently focused on (for humans)
 
-  // Score each file
-  const scored = files.map(file => ({
-    path: file,
-    score: calculateRetentionScore(file, arm, autoMode)
-  }));
+In other words, **we shape the inputs; the harness enforces the limits.**
 
-  // Sort by score (lower = prune first)
-  scored.sort((a, b) => a.score - b.score);
+## Handoff Protocol (Design)
 
-  // Remove files until under 70% capacity
-  const toPrune: string[] = [];
-  let currentTokens = estimatedTokens;
-  
-  while (currentTokens > maxTokens * 0.7 && scored.length > 0) {
-    const file = scored.shift()!;
-    toPrune.push(file.path);
-    currentTokens -= estimateTokens(file.path);
-  }
-
-  return toPrune;
-}
-
-function calculateRetentionScore(
-  file: string, 
-  arm: Arm, 
-  autoMode: AutoModeConfig
-): number {
-  let score = 0;
-
-  // Recency: Recently touched files score higher
-  const lastTouch = getLastTouchTime(file, arm.id);
-  const hoursSinceTouch = (Date.now() - lastTouch) / (1000 * 60 * 60);
-  score += Math.max(0, 100 - hoursSinceTouch * 5);
-
-  // Priority patterns: Files matching priority patterns score higher
-  if (autoMode?.priorityPatterns?.some(p => minimatch(file, p))) {
-    score += 50;
-  }
-
-  // Active task: Files related to current task score higher
-  if (arm.currentTask && isRelatedToTask(file, arm.currentTask)) {
-    score += 75;
-  }
-
-  // Ownership: Files arm owns score higher
-  if (arm.claims.some(c => matchesClaim(file, c))) {
-    score += 25;
-  }
-
-  return score;
-}
-```
-
-## Handoff Protocol
-
-When one arm needs a file that another owns:
+When one arm needs a file that another owns, we model a simple handoff:
 
 ### Request Message
 
@@ -299,9 +212,9 @@ interface HandoffResponse {
 }
 ```
 
-### Collaboration Mode
+### Collaboration Mode (Conceptual)
 
-If both arms need the file:
+If both arms need the file at the same time:
 
 ```typescript
 interface CollaborationAgreement {
@@ -318,64 +231,29 @@ interface CollaborationAgreement {
 | `sequential` | Arms take turns, one edits at a time |
 | `parallel` | Both edit, merge conflicts later |
 
-## Domain Auto-Claiming
+These shapes describe how a future governance/coordination layer might reason about shared files; they are **not** a promise that such workflows are fully implemented today.
 
-Arms automatically claim files matching their domain patterns.
+## Monitoring Context (Future UI)
 
-### Example Domain Patterns
+The Observatory is intended to provide views into arm context and ownership over time.
 
-```typescript
-const UI_ARM_PATTERNS = [
-  "src/components/**",
-  "src/pages/**",
-  "src/styles/**",
-  "*.css",
-  "*.scss",
-  "*.module.css",
-];
+### Context Dashboard (Planned)
 
-const API_ARM_PATTERNS = [
-  "src/api/**",
-  "src/routes/**",
-  "src/services/**",
-  "src/middleware/**",
-];
+- **Utilization gauge**: Rough sense of how much context an arm is using (if harness exposes it)
+- **File list**: What files the arm is currently focused on
+- **Claim map**: Who (if anyone) currently claims what
+- **Conflict alerts**: Where ownership disputes or thrashing have been detected
 
-const TEST_ARM_PATTERNS = [
-  "**/*.test.ts",
-  "**/*.test.tsx",
-  "**/*.spec.ts",
-  "e2e/**",
-  "cypress/**",
-  "__tests__/**",
-];
-```
+### API Endpoints (Design)
 
-### Claim Priority
-
-When multiple arms' patterns match a file:
-
-1. More specific pattern wins
-2. Higher reputation arm wins ties
-3. First to touch wins remaining ties
-
-## Monitoring Context
-
-The Observatory provides views into arm context:
-
-### Context Dashboard
-
-- **Utilization gauge**: How full is each arm's context?
-- **File list**: What files are in context?
-- **Claim map**: Who owns what?
-- **Conflict alerts**: Where are ownership disputes?
-
-### API Endpoints
+These endpoints describe the intended surface once context/claims are wired through the Brain and database:
 
 ```
-GET /api/arms/:id/context      # Get arm's current context
+GET /api/arms/:id/context      # Get arm's current context snapshot
 GET /api/arms/:id/claims       # Get arm's file claims
-POST /api/arms/:id/prune       # Force context prune
+POST /api/arms/:id/prune       # Hint that an arm may want to prune context (optional)
 POST /api/claims/:id/transfer  # Transfer claim to another arm
 DELETE /api/claims/:id         # Release claim
 ```
+
+Until these exist in code, treat this section as **forward-looking design**, not current behavior.

@@ -37,6 +37,16 @@ Humans provide requirements and decisions; arms execute and report. Critical dec
 ### 5. Client Agnostic
 CLI, Web, and Email clients all interact with the same core API and Maildir state.
 
+### 6. Linear, Shared Git Workflow
+
+Multiple arms often work in the same codebase at once. Rather than giving each arm its own worktree or long-lived feature branch, Octopai assumes:
+
+- A **single clone** of the project.
+- A shared integration branch (typically named `octopai`) where arms make changes.
+- A **mostly linear git history**, with humans in control of commits, rebases, and merges.
+
+The design does not forbid more advanced flows (temporary branches, stashes, or branch-per-feature models). Those can be layered on later. The default is “many arms, one garden, one branch,” with coordination handled through tasks, claims, and proposals rather than Git topology.
+
 ## High-Level Architecture
 
 ```

@@ -32,7 +32,7 @@ A markdown file at the project root that AI coding agents automatically read.
 - Code organization
 - Naming conventions
 - Current state (what's working, what's in progress)
-- Domain-specific guidelines (UI arms, backend arms, etc.)
+- Domain-specific guidelines and task classification guidance
 
 **Supported by:** OpenCode, Claude Code, Cursor, and most AI coding tools
 
@@ -86,31 +86,31 @@ check_architectural_alignment(change: string) → {
 - Arms may forget to query
 - Adds latency
 
-### 3. Review: Architect Arm
+### 3. Review via Architect-Classified Tasks
 
-A specialized arm that reviews other arms' work for architectural compliance.
+Instead of a dedicated, permanently specialized "architect arm", Octopai uses **architect-classified tasks**, often guided by the `architect:project-management` task configuration template, to review other work for architectural compliance.
 
-**Domain:** `architect`
+**Classification:** `architect` (with subtype `project-management` when in a PM/review role)
 
 **Responsibilities:**
 - Review proposals before they're accepted
 - Scan commits for architectural violations
 - Suggest refactors when patterns diverge
-- Maintain and update AGENTS.md
-- Answer architectural questions from other arms
+- Maintain and update AGENTS.md and key architecture docs
+- Answer architectural questions from other arms (via MCP tools or mail)
 
 **Triggers:**
-- New proposal created → Architect reviews
-- PR/commit ready → Architect checks alignment
-- Arm asks question via mail → Architect responds
+- New proposal created → Architect-classified review task
+- Significant code changes touching architectural boundaries → Review task
+- Arm asks question via mail → Architect-classified Q&A task
 
 **Powers:**
-- Can veto proposals that violate architecture
-- Can request changes before merge
+- Can recommend veto of proposals that violate architecture (the Brain enforces)
+- Can request changes before risky deployments
 - Can escalate to human for ambiguous cases
 
 **Pros:**
-- Catches mistakes before merge
+- Catches mistakes before merge/deploy
 - Can handle nuanced cases
 - Learns and adapts over time
 
@@ -124,14 +124,14 @@ A specialized arm that reviews other arms' work for architectural compliance.
 | Component | Status | Location |
 |-----------|--------|----------|
 | AGENTS.md | ✅ Done | `/AGENTS.md` |
-| MCP Guidance Tools | 🔲 Planned | `src/mcp/tools/guidance.ts` |
-| Architect Arm | 🔲 Planned | Spawned with `--domain architect` |
+| MCP Guidance Tools | 🟢 Planned / Partial | `src/mcp/tools/guidance.ts` |
+| Architect-Classified Review Tasks | 🟢 Planned | Brain assigns `architect` tasks with the appropriate template |
 
 ## Configuration
 
 ### AGENTS.md Auto-Update
 
-The Architect arm can be configured to automatically update AGENTS.md:
+Architect-classified tasks can be configured to automatically update AGENTS.md:
 
 ```toml
 [architect]
@@ -155,36 +155,38 @@ CREATE TABLE architectural_decisions (
 );
 ```
 
-### Architect Arm Configuration
+### Architect Task Configuration Template
 
-```bash
-octopai arm spawn \
-  --name architect \
-  --domain architect \
-  --agent opencode \
-  --provider anthropic \
-  --model claude-sonnet-4
-```
+Architect review and project-management behavior is driven by the `TaskConfigurationTemplate` registry:
+
+- Key: `"architect:project-management"`
+- Location: `src/types/index.ts` (`TASK_CONFIGURATION_TEMPLATES`)
+
+This template defines:
+- Allowed tools (e.g., `fs`, `git`, `mcp:guidance`)
+- Context bundles to load (`.project/*`, `docs/`, recent activity, status reports)
+- Governance expectations (when proposals are expected, when status reports are emphasized)
+- A short system hint describing how architect tasks should behave
 
 ## Best Practices
 
 ### For Arms
 
-1. **Read AGENTS.md** - It's automatically loaded, but pay attention to it
-2. **Query when unsure** - Use `get_storage_guidance` before creating new persistence
-3. **Create proposals** - For significant architectural changes, create a proposal for review
-4. **Check alignment** - Before submitting, run `check_architectural_alignment`
+1. **Read AGENTS.md** – It's automatically loaded, but pay attention to it.
+2. **Query when unsure** – Use `get_storage_guidance` before creating new persistence.
+3. **Create proposals** – For significant architectural changes, create a proposal for review.
+4. **Check alignment** – Before submitting, run `check_architectural_alignment`.
 
 ### For Humans
 
-1. **Keep AGENTS.md current** - Update when architecture changes
-2. **Review Architect decisions** - Occasionally check the Architect's vetoes
-3. **Override when needed** - Use proposals to override architectural decisions
-4. **Document rationale** - When making decisions, explain why
+1. **Keep AGENTS.md current** – Update when architecture changes.
+2. **Review architect-classified decisions** – Occasionally check vetoes and recommendations.
+3. **Override when needed** – Use proposals to override architectural decisions.
+4. **Document rationale** – When making decisions, explain why.
 
 ## Future Enhancements
 
-- **Architectural fitness functions** - Automated tests for architectural compliance
-- **Decision history** - Track how architecture evolved over time
-- **Cross-project patterns** - Share architectural patterns across Octopai instances
-- **Visualization** - Show architectural boundaries in the Garden view
+- **Architectural fitness functions** – Automated tests for architectural compliance
+- **Decision history** – Track how architecture evolved over time
+- **Cross-project patterns** – Share architectural patterns across Octopai instances
+- **Visualization** – Show architectural boundaries in the Garden view

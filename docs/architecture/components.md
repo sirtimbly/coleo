@@ -32,13 +32,13 @@ The Brain monitors arms for problematic behavior:
 
 | Behavior | Detection | Response |
 |----------|-----------|----------|
-| Touching files outside domain | Pattern matching on file paths | WARN, then PAUSE |
+| Touching files outside task scope/claims | Pattern matching on file paths vs. claims | WARN, then PAUSE |
 | Ignoring consensus without override | Proposal tracking | WARN, reputation penalty |
 | Destructive changes | Pattern matching (rm -rf, DROP, etc.) | KILL immediately |
 | Resource exhaustion | Token/API call counters | PAUSE, notify human |
 | Stuck in loop | Action repetition detection | PAUSE with exponential backoff |
 
-### Loop Detection & Backoff Throttling
+### Loop Detection & Backoff Throttling (Design)
 
 When an arm gets stuck in a loop (repeating the same actions, hitting the same errors, or consuming tokens without progress), the brain intervenes with an escalating backoff strategy:
 
@@ -80,7 +80,7 @@ interface LoopRecoveryMessage {
 }
 ```
 
-**Token Budget Protection:**
+**Token Budget Protection (Design):**
 
 ```typescript
 interface TokenThrottle {
@@ -106,9 +106,9 @@ interface BrainState {
 
 ---
 
-## Arms (Specialized Agents)
+## Arms (General-Purpose Agents)
 
-Each arm is a semi-autonomous AI agent with focused expertise.
+Each arm is a semi-autonomous **general-purpose** AI agent. Its behavior is determined by the **task classification** it is executing (architect, development, QA, documentation, etc.), not by a permanently assigned domain.
 
 ### Arm Profile
 
@@ -116,40 +116,29 @@ Each arm is a semi-autonomous AI agent with focused expertise.
 interface ArmProfile {
   id: string;
   name: string;
-  agent: "opencode" | "claude-code" | "aider" | "custom";
-  
-  // Specialization
-  domain: ArmDomain;           // e.g., "ui", "api", "testing", "devops"
-  expertise: string[];         // e.g., ["react", "tailwind", "figma"]
-  
+  agent: "opencode-api" | "custom";
+
+  // Task execution
+  supportedClassifications: string[]; // e.g., ["architect", "development", "qa"]
+
   // Context Management
   contextBudget: ContextBudget;
   currentContext: ContextSnapshot;
-  
+
   // Ownership
   claims: FileClaim[];         // Files/dirs this arm is tending
-  
+
   // Governance
   reputation: number;          // 0-100, affects persuasion weight
   activeProposals: Proposal[];
-  
+
   // State
   status: "idle" | "working" | "blocked" | "proposing" | "paused" | "dead";
   currentTask?: Task;
 }
 ```
 
-### Default Arm Domains
-
-| Domain | Description | Default Patterns | MCP Servers |
-|--------|-------------|------------------|-------------|
-| `ui` | Frontend, CSS, components | `src/components/**`, `*.css`, `*.scss` | git, docs, devtools |
-| `api` | Backend, routes, DB | `src/api/**`, `src/services/**` | git, docs, db |
-| `testing` | Tests, fixtures, E2E | `**/*.test.*`, `**/*.spec.*`, `e2e/**` | git, devtools, docs |
-| `devops` | CI/CD, Docker, deploy | `Dockerfile`, `.github/**`, `*.yml` | git, deploy, env, observability |
-| `docs` | Documentation, comments | `*.md`, `docs/**` | git, docs |
-| `sre` | Reliability, monitoring, incidents | `infra/**`, `monitoring/**` | observability, alerts, deploy |
-| `explorer` | General purpose, unowned files | `*` (lowest priority) | all |
+Arms can be used for different task classifications over time. The same arm might run an architect task for one assignment, then a development or QA task for the next.
 
 ### MCP Server Catalog
 
@@ -276,7 +265,7 @@ interface Alert {
 }
 ```
 
-### Arm Domain Definition
+### Legacy: Arm Domain Definition
 
 ```typescript
 interface ArmDomain {
@@ -285,6 +274,10 @@ interface ArmDomain {
   defaultPatterns: string[];   // Glob patterns for auto-claiming
   mcpServers: string[];        // Which MCP servers this arm can use
 }
+
+// Note: ArmDomain reflects an earlier design that relied on static domains.
+// In the current design, arms are general-purpose and behavior is primarily
+// guided by task classifications, task history, and configuration templates.
 ```
 
 ---
@@ -348,7 +341,7 @@ interface GardenNode {
 
 | Axis | Heuristic | Meaning |
 |------|-----------|---------|
-| **Category (angle)** | File type/domain | Each domain gets a slice: UI (0-60°), API (60-120°), DB (120-180°), Infra (180-240°), Tests (240-300°), Docs (300-360°) |
+| **Category (angle)** | File type/category | Each file category gets a slice: UI (0-60°), API (60-120°), DB (120-180°), Infra (180-240°), Tests (240-300°), Docs (300-360°) |
 | **Activity (radius)** | Recency & frequency | 0=center=very active, 100=edge=dormant. Based on touches in last 7 days |
 | **Depth (vertical)** | Stack layer | 0=frontend/surface, 100=infrastructure/deep |
 
