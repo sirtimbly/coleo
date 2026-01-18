@@ -255,23 +255,49 @@ const brainCmd = program.command("brain").description("Manage the Octopai brain"
 
 brainCmd
   .command("run")
-  .description("Run the brain polling loop (foreground)")
+  .description("Run brain polling loop (foreground)")
   .option("-i, --interval <ms>", "Poll interval in milliseconds", "30000")
   .option("-v, --verbose", "Verbose output", false)
   .option("--once", "Run a single poll cycle and exit")
+  .option("--clean", "Kill zombie/stale OpenCode processes before starting")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
     const interval = parseInt(options.interval, 10);
+    const verbose = options.verbose ?? false;
+
+    // Handle clean mode - kill zombie processes first
+    if (options.clean) {
+      console.log("Cleaning up zombie OpenCode processes...");
+      const { execSync } = await import("node:child_process");
+      try {
+        // First find the PIDs
+        const pidsOutput = execSync(
+          "ps aux | grep 'opencode.*serve' | grep -v grep | awk '{print $2}'",
+          { encoding: "utf-8", cwd: process.cwd() }
+        ).trim();
+        const pids = pidsOutput.split("\n").filter((p: string) => p.length > 0);
+        
+        if (pids.length > 0) {
+          // Kill each PID
+          execSync(`kill -9 ${pids.join(" ")} 2>/dev/null || true`, { cwd: process.cwd() });
+          console.log(`Killed ${pids.length} stale process(es): ${pids.join(", ")}`);
+        } else {
+          console.log("No zombie processes found.");
+        }
+      } catch (err) {
+        // If ps finds nothing, that's fine
+        console.log("No zombie processes found.");
+      }
+    }
 
     const brain = new Brain({
       octopaiDir,
       pollIntervalMs: interval,
-      verbose: options.verbose || true, // Default to verbose in foreground
+      verbose: verbose || true,
     });
 
     await brain.init();
 
-    // Handle graceful shutdown
     process.on("SIGINT", () => {
       console.log("\nShutting down brain...");
       brain.stop();

@@ -155,6 +155,20 @@ export class Brain {
     escalationLevel: number;       // 0 = none, 1 = interrupt, 2 = compact, 3 = kill
   }> = new Map();
 
+  // Infrastructure health tracking
+  private infrastructureHealth: {
+    database: { healthy: boolean; lastCheck: Date | null; error?: string };
+    apiServer: { healthy: boolean; lastCheck: Date | null; error?: string };
+    nats: { healthy: boolean; lastCheck: Date | null; error?: string; optional: boolean };
+    maildir: { healthy: boolean; lastCheck: Date | null; error?: string };
+  } = {
+    database: { healthy: false, lastCheck: null },
+    apiServer: { healthy: false, lastCheck: null },
+    nats: { healthy: false, lastCheck: null, optional: true },
+    maildir: { healthy: false, lastCheck: null },
+  };
+  private lastInfraFailureNotification: Date | null = null;
+
   /**
    * Log an activity entry
    */
@@ -356,31 +370,61 @@ export class Brain {
   async poll(): Promise<void> {
     this.state.lastPollAt = new Date().toISOString();
     
-    // Step 1: Check for new human messages
-    await this.processHumanMail();
+    // Step 0: Infrastructure health check - verify the "body" is healthy before arms
+    const infraHealth = await this.checkInfrastructureHealth();
     
-    // Step 2: Process arm messages
+    if (!infraHealth.healthy) {
+      // Attempt recovery
+      const recovered = await this.attemptInfrastructureRecovery();
+      if (recovered) {
+        // Re-check after recovery attempt
+        const recheckHealth = await this.checkInfrastructureHealth();
+        if (!recheckHealth.healthy) {
+          await this.notifyInfrastructureIssues(recheckHealth.issues);
+        }
+      } else {
+        await this.notifyInfrastructureIssues(infraHealth.issues);
+      }
+    }
+    
+    // If database is down, we can't do anything meaningful
+    if (!infraHealth.components.database.healthy) {
+      this.log("CRITICAL: Database unhealthy, skipping poll cycle");
+      return;
+    }
+    
+    // Step 1: Check for new human messages (works even if API is down)
+    if (infraHealth.components.maildir.healthy) {
+      await this.processHumanMail();
+    }
+    
+    // Step 2: Process arm messages (works even if API is down - uses queue files)
     await this.processArmQueue();
     
-    // Step 3: Check arm health and detect new arms
-    await this.checkArms();
+    // Steps 3-7 require API server for arm communication
+    if (infraHealth.canWorkWithArms) {
+      // Step 3: Check arm health and detect new arms
+      await this.checkArms();
+      
+      // Step 4: Check for stuck arms and help them
+      await this.checkStuckArms();
+       
+      // Step 4b: Check for idle arms stuck in prompt loops
+      await this.checkIdleArmStuckLoops();
+       
+      // Step 5: Assign initial tasks to new arms
+      await this.assignInitialTasks();
+      
+      // Step 6: Assign pending tasks to idle arms
+      await this.assignTasks();
+      
+      // Step 7: Prompt idle arms to check for work or file changes
+      await this.promptIdleArms();
+    } else {
+      this.log("API server unavailable - skipping arm operations");
+    }
     
-     // Step 4: Check for stuck arms and help them
-     await this.checkStuckArms();
-     
-     // Step 4b: Check for idle arms stuck in prompt loops
-     await this.checkIdleArmStuckLoops();
-     
-     // Step 5: Assign initial tasks to new arms
-    await this.assignInitialTasks();
-    
-    // Step 6: Assign pending tasks to idle arms
-    await this.assignTasks();
-    
-    // Step 7: Prompt idle arms to check for work or file changes
-    await this.promptIdleArms();
-    
-    // Step 8: Sync tasks from plan files
+    // Step 8: Sync tasks from plan files (database only, no API needed)
     await this.syncPlanTasks();
     
     // Step 8b: Check for documentation update triggers
@@ -591,12 +635,38 @@ export class Brain {
 
         case "prompt_arm":
           if (intent.armName && intent.instruction) {
-            await this.sendPromptToArm(intent.armName, intent.instruction);
-            this.log(`Prompted arm ${intent.armName} directly`);
-            this.logActivity("brain", "arm_prompted", intent.armName, {
-              reason: "human_mail",
-              instruction: intent.instruction.slice(0, 100),
-            });
+            // Check if arm exists and its status
+            const targetArm = this.arms.get(intent.armName);
+            if (!targetArm) {
+              this.log(`Arm ${intent.armName} not found, creating task instead`);
+              await this.createTask(
+                `Task for ${intent.armName}: ${message.subject}`,
+                intent.instruction,
+                message.id,
+                intent.priority
+              );
+            } else if (targetArm.status === "busy" || targetArm.status === "running" || targetArm.status === "starting") {
+              // Arm is busy - create a task instead of interrupting
+              this.log(`Arm ${intent.armName} is ${targetArm.status}, creating task instead of interrupting`);
+              await this.createTask(
+                message.subject,
+                intent.instruction,
+                message.id,
+                intent.priority
+              );
+              await this.sendToHuman({
+                subject: `[octopai] Task queued (${intent.armName} is busy)`,
+                body: `The arm ${intent.armName} is currently ${targetArm.status}. I've created a task instead:\n\nSubject: ${message.subject}\n\nThe task will be assigned when an arm becomes available.`,
+              });
+            } else {
+              // Arm is idle, can prompt directly
+              await this.sendPromptToArm(intent.armName, intent.instruction);
+              this.log(`Prompted arm ${intent.armName} directly`);
+              this.logActivity("brain", "arm_prompted", intent.armName, {
+                reason: "human_mail",
+                instruction: intent.instruction.slice(0, 100),
+              });
+            }
           }
           break;
 
@@ -2156,6 +2226,25 @@ ${originalTask.id}`;
         continue;
       }
 
+      // Health check: verify the arm's harness is actually responsive
+      if (isApi) {
+        const harnessState = await this.getArmHarnessState(arm.id);
+        if (!harnessState) {
+          this.log(`Arm ${arm.id} [${armDomain}]: Cannot get harness state, skipping prompt`);
+          continue;
+        }
+        if (!harnessState.hasSession) {
+          this.log(`Arm ${arm.id} [${armDomain}]: No active session (zombie?), marking as stopped`);
+          await this.syncArmStatus(arm.id, "stopped");
+          continue;
+        }
+        if (harnessState.state === "stopped" || harnessState.state === "dead") {
+          this.log(`Arm ${arm.id} [${armDomain}]: Harness state is ${harnessState.state}, marking as stopped`);
+          await this.syncArmStatus(arm.id, "stopped");
+          continue;
+        }
+      }
+
       // Get all unassigned pending tasks - any idle arm should be able to work on them
       // Domain is a preference, not a hard filter
       const availableTasks = this.tasks.filter(task => {
@@ -2395,6 +2484,191 @@ ${originalTask.id}`;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Check all infrastructure components and return health status
+   * This should be called at the start of each poll cycle to ensure
+   * the brain's "body" is healthy before working with arms.
+   * 
+   * @returns Object with overall health status and details per component
+   */
+  private async checkInfrastructureHealth(): Promise<{
+    healthy: boolean;
+    canWorkWithArms: boolean;
+    components: {
+      database: { healthy: boolean; lastCheck: Date | null; error?: string };
+      apiServer: { healthy: boolean; lastCheck: Date | null; error?: string };
+      nats: { healthy: boolean; lastCheck: Date | null; error?: string; optional: boolean };
+      maildir: { healthy: boolean; lastCheck: Date | null; error?: string };
+    };
+    issues: string[];
+  }> {
+    const now = new Date();
+    const issues: string[] = [];
+
+    // 1. Check Database (CRITICAL - required for everything)
+    try {
+      if (!this.db) {
+        this.infrastructureHealth.database = { healthy: false, lastCheck: now, error: "Database not initialized" };
+        issues.push("Database not initialized");
+      } else {
+        // Try a simple query to verify connection
+        this.db.query("SELECT 1").get();
+        this.infrastructureHealth.database = { healthy: true, lastCheck: now };
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.infrastructureHealth.database = { healthy: false, lastCheck: now, error: errorMsg };
+      issues.push(`Database error: ${errorMsg}`);
+    }
+
+    // 2. Check API Server (CRITICAL for arm communication)
+    try {
+      const apiHealthy = await this.isApiServerAvailable();
+      if (apiHealthy) {
+        this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
+      } else {
+        this.infrastructureHealth.apiServer = { healthy: false, lastCheck: now, error: "API server not responding" };
+        issues.push("API server not responding at " + this.apiBaseUrl);
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.infrastructureHealth.apiServer = { healthy: false, lastCheck: now, error: errorMsg };
+      issues.push(`API server error: ${errorMsg}`);
+    }
+
+    // 3. Check NATS (OPTIONAL - degrades functionality but not critical)
+    try {
+      if (this.natsClient) {
+        const connected = this.natsClient.connected();
+        if (connected) {
+          this.infrastructureHealth.nats = { healthy: true, lastCheck: now, optional: true };
+        } else {
+          this.infrastructureHealth.nats = { healthy: false, lastCheck: now, error: "NATS disconnected", optional: true };
+          // Not a critical issue - we can work without NATS
+        }
+      } else {
+        this.infrastructureHealth.nats = { healthy: false, lastCheck: now, error: "NATS client not initialized", optional: true };
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.infrastructureHealth.nats = { healthy: false, lastCheck: now, error: errorMsg, optional: true };
+    }
+
+    // 4. Check Maildir (IMPORTANT for human communication but not blocking)
+    try {
+      // Try to list inbox to verify maildir is accessible
+      await this.inbox.list("new");
+      this.infrastructureHealth.maildir = { healthy: true, lastCheck: now };
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      this.infrastructureHealth.maildir = { healthy: false, lastCheck: now, error: errorMsg };
+      issues.push(`Maildir error: ${errorMsg}`);
+    }
+
+    // Determine overall health
+    // Critical: database must be healthy
+    // For arm work: API server must be healthy
+    const databaseHealthy = this.infrastructureHealth.database.healthy;
+    const apiHealthy = this.infrastructureHealth.apiServer.healthy;
+    const canWorkWithArms = databaseHealthy && apiHealthy;
+    const healthy = databaseHealthy && apiHealthy && this.infrastructureHealth.maildir.healthy;
+
+    // Log health status
+    if (!healthy) {
+      this.log(`Infrastructure health check: ${issues.length} issue(s)`);
+      for (const issue of issues) {
+        this.log(`  - ${issue}`);
+      }
+    }
+
+    return {
+      healthy,
+      canWorkWithArms,
+      components: this.infrastructureHealth,
+      issues,
+    };
+  }
+
+  /**
+   * Attempt to recover from infrastructure failures
+   * Returns true if recovery was successful
+   */
+  private async attemptInfrastructureRecovery(): Promise<boolean> {
+    let recovered = false;
+
+    // Try to reconnect database if needed
+    if (!this.infrastructureHealth.database.healthy && !this.db) {
+      try {
+        const dbPath = join(this.options.octopaiDir, "octopai.db");
+        this.db = await initDatabase(dbPath);
+        this.log("Recovered database connection");
+        recovered = true;
+      } catch (err) {
+        this.log(`Failed to recover database: ${err}`);
+      }
+    }
+
+    // Try to reconnect NATS if needed
+    if (!this.infrastructureHealth.nats.healthy && !this.natsClient) {
+      try {
+        this.natsClient = new NatsClient({
+          serverUrl: this.natsUrl,
+          clientId: `brain-${process.pid}`,
+        });
+        await this.natsClient.connect();
+        this.log("Recovered NATS connection");
+        recovered = true;
+      } catch {
+        // NATS is optional, don't log as error
+      }
+    }
+
+    return recovered;
+  }
+
+  /**
+   * Notify human about infrastructure issues (rate-limited)
+   */
+  private async notifyInfrastructureIssues(issues: string[]): Promise<void> {
+    // Rate limit: only notify once per 15 minutes
+    if (this.lastInfraFailureNotification) {
+      const minutesSince = (Date.now() - this.lastInfraFailureNotification.getTime()) / 1000 / 60;
+      if (minutesSince < 15) {
+        return;
+      }
+    }
+
+    this.lastInfraFailureNotification = new Date();
+
+    await this.sendToHuman({
+      subject: "[octopai] Infrastructure health issues detected",
+      body: `The Octopai brain detected infrastructure issues that may prevent it from working properly.
+
+**Issues Detected:**
+${issues.map(i => `- ${i}`).join("\n")}
+
+**Component Status:**
+- Database: ${this.infrastructureHealth.database.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.database.error || "Unhealthy")}
+- API Server: ${this.infrastructureHealth.apiServer.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.apiServer.error || "Unhealthy")}
+- NATS: ${this.infrastructureHealth.nats.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.nats.error || "Unhealthy")} (optional)
+- Maildir: ${this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy")}
+
+**Recommendations:**
+1. Check if the API server is running: \`octopai serve\`
+2. Check database integrity: \`sqlite3 ~/.octopai/octopai.db "PRAGMA integrity_check;"\`
+3. Check NATS server: \`nats-server\` or verify OCTOPAI_NATS_URL
+4. Review brain logs for more details
+
+The brain will continue to retry and recover automatically where possible.`,
+      headers: {
+        "X-Octopai-Type": "infrastructure-alert",
+        "Priority": "high",
+      },
+    });
+
+    this.logActivity("brain", "infrastructure_alert", undefined, { issues });
   }
 
   /**
@@ -2895,20 +3169,100 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
         tracker.escalationLevel = 3;
         break;
         
-      case 3: // Already escalated - may need kill
-        if (stuckMinutes >= 15) {
-          this.log(`Arm ${arm.id} stuck for 15+ minutes after escalation. Consider killing.`);
-          this.logActivity("brain", "arm_stuck_long", arm.id, {
+      case 3: // Already escalated - auto-kill after 20+ minutes
+        if (stuckMinutes >= 20) {
+          this.log(`Arm ${arm.id} stuck for 20+ minutes after escalation. Auto-killing zombie arm...`);
+          this.logActivity("brain", "arm_zombie_killed", arm.id, {
             stuckMinutes,
             promptCount: tracker.promptCount,
-            action: "may_need_kill",
+            action: "auto_kill",
           });
+          await this.killZombieArm(arm);
+        } else if (stuckMinutes >= 15) {
+          this.log(`Arm ${arm.id} stuck for 15+ minutes. Will auto-kill at 20 minutes.`);
         }
         break;
     }
     
     // Reset prompt count after any intervention (we'll re-detect if still stuck)
     tracker.promptCount = 0;
+  }
+
+  /**
+   * Kill a zombie arm that has been unresponsive for too long
+   * Terminates the process and cleans up database state
+   */
+  private async killZombieArm(arm: Arm): Promise<void> {
+    try {
+      // First try to kill via API (graceful shutdown)
+      try {
+        await this.apiRequest(`/api/arms/${arm.id}/kill`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "zombie_detection" }),
+        });
+        this.log(`Sent kill request to API for arm ${arm.name}`);
+      } catch {
+        this.log(`API kill failed for arm ${arm.name}, trying direct kill...`);
+      }
+
+      // Direct process kill if we have a PID
+      if (arm.pid) {
+        try {
+          process.kill(arm.pid, "SIGKILL");
+          this.log(`Killed arm ${arm.name} process (PID: ${arm.pid})`);
+        } catch (err) {
+          this.log(`Failed to kill PID ${arm.pid}: ${err}`);
+        }
+      }
+
+      // Update database status
+      if (this.db) {
+        const now = new Date().toISOString();
+        this.db.run(
+          "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+          [now, arm.id]
+        );
+      }
+
+      // Remove from in-memory tracking
+      this.arms.delete(arm.id);
+      this.idleArmPromptTracker.delete(arm.id);
+      this.lastStuckState.delete(arm.id);
+
+      // Notify human
+      await this.sendToHuman({
+        subject: `[octopai] Auto-killed zombie arm: ${arm.name}`,
+        body: `The arm "${arm.name}" was automatically killed after being unresponsive for 20+ minutes.
+
+**Reason:** Arm received multiple prompts but never performed productive work.
+**Interventions tried:** interrupt, compact, human escalation
+
+The arm's current task (if any) has been marked as blocked.
+
+You can respawn this arm with:
+\`\`\`
+octopai arm spawn -n ${arm.name}
+\`\`\``,
+      });
+
+      // Mark any current task as blocked
+      if (arm.currentTask) {
+        const task = this.tasks.find(t => t.id === arm.currentTask);
+        if (task) {
+          task.status = "blocked";
+          task.updatedAt = new Date();
+          await this.saveTasks();
+          this.log(`Marked task ${task.id} as blocked due to zombie arm kill`);
+        }
+      }
+
+      this.logActivity("brain", "arm_killed", arm.id, {
+        reason: "zombie_detection",
+        pid: arm.pid,
+      });
+    } catch (err) {
+      this.log(`Error killing zombie arm ${arm.name}: ${err}`);
+    }
   }
 
    /**
@@ -3740,16 +4094,35 @@ export class MailProcessor {
 
     const systemPrompt = `You are the Octopai Brain, an AI agent orchestrator. Your job is to process messages from a human and determine the appropriate action.
 
-## Available Actions
-1. **new_task** - Create a new task for arms to work on
-2. **doc_update** - Update documentation based on human feedback
-3. **approval_response** - Human responded to an approval request
-4. **query** - Human is asking a question about system status
-5. **prompt_arm** - Directly prompt a specific arm with instructions
-6. **escalate** - Requires human attention or cannot be automated
+## Available Actions (in order of preference)
+
+1. **new_task** - Create a new task for arms to work on. USE THIS for any request that involves:
+   - Adding a feature
+   - Fixing a bug  
+   - Making code changes
+   - Updating documentation content
+   - Any work that should be tracked and assigned to an available arm
+   This is the DEFAULT choice for most human requests about work to be done.
+
+2. **doc_update** - Update documentation structure/format based on human feedback (not content changes)
+
+3. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
+
+4. **query** - Human is asking a question about system status, what's happening, or requesting information
+
+5. **prompt_arm** - ONLY use this when the human EXPLICITLY names a specific arm AND wants to send it a direct message.
+   Example: "Tell arm Portia to stop what it's doing" or "Send this to Xenix: ..."
+   DO NOT use this for general work requests - those should be new_task.
+
+6. **escalate** - Cannot determine what to do, or requires human clarification
+
+## IMPORTANT RULES
+- If the human describes work to be done (feature, fix, update, add, etc.), ALWAYS use **new_task**
+- NEVER use prompt_arm unless the human explicitly names an arm and asks to message it directly
+- Arms might be busy with other tasks. Creating a new_task ensures work is queued properly.
 
 ## Context
-Available arms: ${context.availableArms.map(a => `${a.name}[${a.domain}]`).join(", ") || "none"}
+Available arms: ${context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none"}
 Pending tasks: ${context.pendingTasks}
 Recent activity: ${context.recentActivity.slice(0, 5).join("; ") || "none"}
 
@@ -3757,8 +4130,8 @@ Recent activity: ${context.recentActivity.slice(0, 5).join("; ") || "none"}
 Respond with a JSON object (no markdown):
 {"type": "...", "reasoning": "...", ...other fields based on type}
 
-For new_task: include subject, body, priority (default: normal), domain (optional)
-For prompt_arm: include armName and instruction
+For new_task: include subject, body, priority (default: normal)
+For prompt_arm: include armName and instruction (only if arm was explicitly named)
 For query: include the query type
 For approval_response: include originalId, approved (boolean), comment`;
 
