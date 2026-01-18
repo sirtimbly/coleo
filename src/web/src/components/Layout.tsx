@@ -1,30 +1,30 @@
 import { useState, useEffect } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  Bot, 
+import {
+  LayoutDashboard,
+  Bot,
   Eye,
-  Terminal, 
-  Flower2, 
+  Terminal,
+  Flower2,
   Mail,
-  Vote, 
+  Vote,
   Activity,
   Settings,
   Octagon,
   MessageSquarePlus,
   ListTodo
 } from 'lucide-react';
-import { cn } from '@/lib';
+import { cn, api, useToast } from '@/lib';
 import { MessageModal } from './MessageModal';
 
-const navItems = [
+const getNavItems = (unreadCount: number) => [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/brain', icon: Terminal, label: 'Brain' },
   { to: '/arms', icon: Bot, label: 'Arms' },
   { to: '/viewer', icon: Eye, label: 'Viewer' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/garden', icon: Flower2, label: 'Garden' },
-  { to: '/mail', icon: Mail, label: 'Mail' },
+  { to: '/messaging', icon: Mail, label: 'Messaging', badge: unreadCount },
   { to: '/proposals', icon: Vote, label: 'Proposals' },
   { to: '/activity', icon: Activity, label: 'Activity' },
   { to: '/settings', icon: Settings, label: 'Settings' },
@@ -32,6 +32,69 @@ const navItems = [
 
 export function Layout() {
   const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const { showToast } = useToast();
+
+  // Fetch unread message counts
+  const fetchUnreadCount = async () => {
+    try {
+      const [inboxResult] = await Promise.all([
+        api.listInbox({ limit: 1 }), // Get pagination info with unread count
+      ]);
+      setUnreadCount(inboxResult.pagination.unread);
+    } catch (error) {
+      console.error('Failed to fetch unread count:', error);
+    }
+  };
+
+  // WebSocket connection for real-time updates
+  useEffect(() => {
+    const ws = new WebSocket('ws://localhost:3000/ws');
+
+    ws.onopen = () => {
+      // Authenticate and subscribe to mail events
+      ws.send(JSON.stringify({
+        type: 'auth',
+        apiKey: api.getApiKey()
+      }));
+      ws.send(JSON.stringify({
+        type: 'subscribe',
+        channel: 'mail'
+      }));
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.channel === 'mail') {
+          // Handle mail events
+          if (message.event === 'mail.received') {
+            showToast(`New message: ${message.data.subject || 'New message'}`, 'info');
+            fetchUnreadCount(); // Refresh unread count
+          } else if (message.event === 'mail.archived' || message.event === 'mail.read') {
+            fetchUnreadCount(); // Refresh unread count
+          }
+        }
+      } catch (error) {
+        console.error('WebSocket message parse error:', error);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [showToast]);
+
+  // Fetch unread counts on mount and every 30 seconds
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Global keyboard shortcut: 'N' to open message modal
   useEffect(() => {
@@ -41,14 +104,14 @@ export function Layout() {
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
-      
+
       // 'N' key opens the message modal
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
         setIsMessageModalOpen(true);
       }
     }
-    
+
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
@@ -71,7 +134,7 @@ export function Layout() {
         {/* Navigation */}
         <nav className="flex-1 p-4">
           <ul className="space-y-1">
-            {navItems.map((item) => (
+            {getNavItems(unreadCount).map((item) => (
               <li key={item.to}>
                 <NavLink
                   to={item.to}
@@ -86,6 +149,11 @@ export function Layout() {
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
+                  {item.badge && item.badge > 0 && (
+                    <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                      {item.badge > 99 ? '99+' : item.badge}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             ))}

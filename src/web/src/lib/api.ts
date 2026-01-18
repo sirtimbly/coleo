@@ -318,8 +318,39 @@ class ApiClient {
     });
   }
 
+  // Status Reports
+  async listStatusReports(params?: {
+    taskId?: string;
+    armId?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.taskId) query.set('taskId', params.taskId);
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      reports: StatusReport[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/status-reports${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getStatusReport(id: string) {
+    return this.request<{ report: StatusReport }>(`/status-reports/${id}`);
+  }
+
+  async getStatusReportStats() {
+    return this.request<{
+      statusDistribution: Array<{ status: string; count: number }>;
+      recentReports: number;
+      reportsByArm: Array<{ armId: string; count: number }>;
+    }>('/status-reports/stats');
+  }
+
   // Tasks
-  async listTasks(params?: { 
+  async listTasks(params?: {
     status?: string; 
     priority?: string; 
     domain?: string;
@@ -536,6 +567,24 @@ export interface ArmTodo {
   content: string;
   status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
   priority: 'high' | 'medium' | 'low';
+}
+
+// Status report from arm during or after task execution
+export interface StatusReport {
+  id: string;
+  taskId: string;
+  armId: string;
+  status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+  summary: string;
+  issues?: string[];
+  blockers?: string[];
+  nextSteps?: string;
+  filesChanged?: string[];
+  testsStatus?: "passing" | "failing" | "not_run";
+  createdAt: string;
+  updatedAt?: string;
+  resolvedAt?: string;
+  resolution?: string;
 }
 
 // Brain-managed task

@@ -8,3 +8,5 @@ export { ProposalsPage } from './ProposalsPage';
 export { ActivityPage } from './ActivityPage';
 export { SettingsPage } from './SettingsPage';
 export { TasksPage } from './TasksPage';
+export { StatusReportsPage } from './StatusReportsPage';
+export { MessagingPage } from './MessagingPage';
