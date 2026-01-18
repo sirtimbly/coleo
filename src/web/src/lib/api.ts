@@ -69,9 +69,35 @@ class ApiClient {
       status: string;
       version: string;
       uptime: number;
-      arms: { total: number };
+      brain: {
+        running: boolean;
+        lastPoll?: string;
+        status?: string;
+      };
+      arms: {
+        total: number;
+        healthy: number;
+        idle: number;
+        stuck: number;
+        stale: number;
+        details: Array<{
+          id: string;
+          name: string;
+          status: string;
+          domain: string;
+          currentTask?: string;
+          lastActivity?: string;
+          lastHeartbeat?: string;
+          health: "healthy" | "idle" | "stuck" | "stale" | "unknown";
+        }>;
+      };
       proposals: { open: number };
       activity: { last24h: number };
+      infrastructure: {
+        database: { healthy: boolean; error?: string };
+        nats: { healthy: boolean; optional: boolean; error?: string };
+        maildir: { healthy: boolean; error?: string };
+      };
       timestamp: string;
     }>('/status');
   }

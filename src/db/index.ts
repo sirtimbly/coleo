@@ -88,6 +88,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["019_task_dependencies", MIGRATION_019],
     ["020_multi_arm_assignment", MIGRATION_020, { table: "tasks", columns: MIGRATION_020_COLUMNS }],
     ["021_status_reports", MIGRATION_021],
+    ["022_infrastructure_health", MIGRATION_022],
   ];
 
 
@@ -721,6 +722,27 @@ CREATE INDEX IF NOT EXISTS idx_status_reports_task ON status_reports(task_id);
 CREATE INDEX IF NOT EXISTS idx_status_reports_arm ON status_reports(arm_id);
 CREATE INDEX IF NOT EXISTS idx_status_reports_status ON status_reports(status);
 CREATE INDEX IF NOT EXISTS idx_status_reports_created ON status_reports(created_at DESC);
+`;
+
+// Migration 022: Infrastructure health tracking
+const MIGRATION_022 = `
+-- Infrastructure health status
+-- Updated by brain during poll cycle, read by API server for status endpoint
+CREATE TABLE IF NOT EXISTS infrastructure_health (
+  component TEXT PRIMARY KEY,
+  healthy INTEGER NOT NULL DEFAULT 0,
+  optional INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  last_check TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Insert default components
+INSERT OR IGNORE INTO infrastructure_health (component, healthy, optional) VALUES
+  ('database', 1, 0),
+  ('nats', 0, 1),
+  ('maildir', 1, 0),
+  ('api_server', 1, 0);
 `;
 
   /**

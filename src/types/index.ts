@@ -297,9 +297,9 @@ export interface ContextCompression {
 }
 
 // Status report from arm during or after task execution
-export type StatusReportStatus = 
+export type StatusReportStatus =
   | "on_track"
-  | "blocked" 
+  | "blocked"
   | "issues_found"
   | "needs_review"
   | "completed_with_issues";
@@ -316,6 +316,9 @@ export interface StatusReport {
   filesChanged?: string[];
   testsStatus?: "passing" | "failing" | "not_run";
   createdAt: string;
+  updatedAt?: string;
+  resolvedAt?: string;
+  resolution?: string;
 }
 
 // Brain state

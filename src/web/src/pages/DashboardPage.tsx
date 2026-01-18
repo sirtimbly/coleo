@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Bot, Vote, Activity, Clock, Wifi, WifiOff } from 'lucide-react';
+import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare, AlertCircle, CheckCircle } from 'lucide-react';
 import { api, type Arm, type ActivityEntry } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks';
@@ -8,10 +8,57 @@ interface SystemStatus {
   status: string;
   version: string;
   uptime: number;
-  arms: { total: number };
+  arms: {
+    total: number;
+    healthy: number;
+    idle: number;
+    stuck: number;
+    stale: number;
+    details: Array<{
+      id: string;
+      name: string;
+      status: string;
+      domain: string;
+      currentTask?: string;
+      lastActivity?: string;
+      lastHeartbeat?: string;
+      health: "healthy" | "idle" | "stuck" | "stale" | "unknown";
+    }>;
+  };
   proposals: { open: number };
   activity: { last24h: number };
+  infrastructure: {
+    database: { healthy: boolean; error?: string };
+    nats: { healthy: boolean; optional: boolean; error?: string };
+    maildir: { healthy: boolean; error?: string };
+  };
 }
+
+const HealthIcon = ({ healthy, optional = false }: { healthy: boolean; optional?: boolean }) => {
+  if (healthy) {
+    return <CheckCircle className="h-4 w-4 text-green-500" />;
+  }
+  if (optional) {
+    return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+  }
+  return <AlertCircle className="h-4 w-4 text-destructive" />;
+};
+
+const ArmHealthBadge = ({ health }: { health: "healthy" | "idle" | "stuck" | "stale" | "unknown" }) => {
+  const colors = {
+    healthy: "bg-green-500/20 text-green-700 dark:text-green-400",
+    idle: "bg-blue-500/20 text-blue-700 dark:text-blue-400",
+    stuck: "bg-destructive/20 text-destructive",
+    stale: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400",
+    unknown: "bg-secondary text-muted-foreground",
+  };
+  
+  return (
+    <span className={`text-xs px-2 py-1 rounded ${colors[health]}`}>
+      {health}
+    </span>
+  );
+};
 
 export function DashboardPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
@@ -108,12 +155,23 @@ export function DashboardPage() {
     return `${minutes}m`;
   };
 
+  const formatLastSeen = (timestamp?: string) => {
+    if (!timestamp) return 'Never';
+    const ms = Date.now() - new Date(timestamp).getTime();
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ago`;
+  };
+
   return (
     <div className="p-8 space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <h1 className="text-2xl font-bold text-gradient-heading">Dashboard</h1>
           <p className="text-muted-foreground">System overview and status</p>
         </div>
         <div className="flex items-center gap-2 text-sm">
@@ -131,6 +189,58 @@ export function DashboardPage() {
         </div>
       </div>
 
+      {/* Infrastructure Health */}
+      {status?.infrastructure && (
+        <Card className={status.status === "degraded" ? "border-yellow-500" : ""}>
+          <CardHeader>
+            <CardTitle>Infrastructure Health</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="flex items-center gap-3">
+                <Database className="h-5 w-5 text-muted-foreground" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Database</span>
+                    <HealthIcon healthy={status.infrastructure.database.healthy} />
+                  </div>
+                  {status.infrastructure.database.error && (
+                    <p className="text-xs text-destructive mt-1">{status.infrastructure.database.error}</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">NATS</span>
+                    <HealthIcon healthy={status.infrastructure.nats.healthy} optional={status.infrastructure.nats.optional} />
+                    {status.infrastructure.nats.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
+                  </div>
+                  {status.infrastructure.nats.error && (
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">{status.infrastructure.nats.error}</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <Activity className="h-5 w-5 text-muted-foreground" />
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">Maildir</span>
+                    <HealthIcon healthy={status.infrastructure.maildir.healthy} />
+                  </div>
+                  {status.infrastructure.maildir.error && (
+                    <p className="text-xs text-destructive mt-1">{status.infrastructure.maildir.error}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-4 gap-4">
         <Card>
@@ -141,6 +251,13 @@ export function DashboardPage() {
             <div>
               <p className="text-2xl font-bold">{status?.arms.total ?? 0}</p>
               <p className="text-sm text-muted-foreground">Active Arms</p>
+              {status && status.arms.total > 0 && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {status.arms.healthy} healthy, {status.arms.idle} idle
+                  {status.arms.stuck > 0 && <span className="text-destructive">, {status.arms.stuck} stuck</span>}
+                  {status.arms.stale > 0 && <span className="text-yellow-500">, {status.arms.stale} stale</span>}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -184,13 +301,41 @@ export function DashboardPage() {
 
       {/* Arms & Activity */}
       <div className="grid grid-cols-2 gap-8">
-        {/* Arms List */}
+        {/* Arms List with Enhanced Details */}
         <Card>
           <CardHeader>
             <CardTitle>Arms</CardTitle>
           </CardHeader>
           <CardContent>
-            {arms.length === 0 ? (
+            {status?.arms.details && status.arms.details.length > 0 ? (
+              <div className="space-y-3">
+                {status.arms.details.map((arm) => (
+                  <div
+                    key={arm.id}
+                    className="p-3 rounded-lg bg-secondary/50 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{arm.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {arm.domain} · {arm.status}
+                        </p>
+                      </div>
+                      <ArmHealthBadge health={arm.health} />
+                    </div>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      {arm.currentTask && (
+                        <p>Task: {arm.currentTask}</p>
+                      )}
+                      <div className="flex gap-4">
+                        <span>Heartbeat: {formatLastSeen(arm.lastHeartbeat)}</span>
+                        <span>Activity: {formatLastSeen(arm.lastActivity)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : arms.length === 0 ? (
               <p className="text-muted-foreground text-sm">
                 No arms registered yet. Spawn one with:
                 <code className="block mt-2 p-2 bg-secondary rounded text-xs">

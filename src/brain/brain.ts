@@ -1031,10 +1031,6 @@ export class Brain {
    */
   private async completeTask(taskId: string, summary: string, artifacts: string[]): Promise<void> {
     const task = this.tasks.find(t => t.id === taskId);
-    if (!task) {
-      this.log(`Task not found: ${taskId}`);
-      return;
-    }
     
     // Check for status reports with issues for this task
     const statusReportsWithIssues = await this.getStatusReportsWithIssues(taskId);
@@ -1044,43 +1040,76 @@ export class Brain {
       const latestReport = statusReportsWithIssues[0]!; // Most recent report (guaranteed by length check)
       this.log(`Task ${taskId} has ${statusReportsWithIssues.length} status reports with issues. Creating verification task.`);
       
-      await this.createVerificationTask(task, {
-        id: latestReport.id,
-        summary: latestReport.summary,
-        issues: latestReport.issues,
-        nextSteps: latestReport.nextSteps,
-        testsStatus: latestReport.testsStatus,
-      });
+      if (task) {
+        await this.createVerificationTask(task, {
+          id: latestReport.id,
+          summary: latestReport.summary,
+          issues: latestReport.issues,
+          nextSteps: latestReport.nextSteps,
+          testsStatus: latestReport.testsStatus,
+        });
+      }
       
       // The verification task creation also completes the original task
       return;
     }
     
-    task.status = "completed";
-    task.completedAt = new Date();
-    task.updatedAt = new Date();
-    task.artifacts = artifacts;
+    // Update in-memory task if found
+    if (task) {
+      task.status = "completed";
+      task.completedAt = new Date();
+      task.updatedAt = new Date();
+      task.artifacts = artifacts;
+      await this.saveTasks();
+    }
+    
+    // Always update database
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(`
+        UPDATE tasks 
+        SET status = 'completed',
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [now, now, taskId]);
+    }
     
     this.state.completedToday++;
-    await this.saveTasks();
+    
+    // Get task info for logging (from memory or database)
+    const taskSubject = task?.subject || await this.getTaskSubjectFromDb(taskId);
     
     // Log activity
-    this.logActivity("brain", "task_completed", taskId, { subject: task.subject, artifacts });
+    this.logActivity("brain", "task_completed", taskId, { subject: taskSubject, artifacts });
     
     // Check for tasks that were blocked on this task and unblock them
     await this.unblockDependentTasks(taskId);
     
     // Notify human
     await this.sendToHuman({
-      subject: `[octopai] Task completed: ${task.subject}`,
-      body: `Task "${task.subject}" has been completed.\n\n## Summary\n${summary}\n\n## Artifacts\n${artifacts.map(a => `- ${a}`).join("\n") || "None"}`,
+      subject: `[octopai] Task completed: ${taskSubject}`,
+      body: `Task "${taskSubject}" has been completed.\n\n## Summary\n${summary}\n\n## Artifacts\n${artifacts.map(a => `- ${a}`).join("\n") || "None"}`,
       headers: {
         "X-Octopai-Task-Id": taskId,
         "X-Octopai-Type": "task-complete",
       },
     });
     
-    this.log(`Completed task: ${task.subject}`);
+    this.log(`Completed task: ${taskSubject}`);
+  }
+  
+  /**
+   * Get task subject from database (fallback when not in memory)
+   */
+  private async getTaskSubjectFromDb(taskId: string): Promise<string> {
+    if (!this.db) return taskId;
+    try {
+      const row = this.db.query("SELECT subject FROM tasks WHERE id = ?").get(taskId) as { subject: string } | null;
+      return row?.subject || taskId;
+    } catch {
+      return taskId;
+    }
   }
 
   /**
@@ -1362,12 +1391,35 @@ ${originalTask.id}`;
     };
 
     this.tasks.push(verifyTask);
+    
+    // Insert verification task into database
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(`
+        INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `, [verifyTask.id, verifyTask.subject, verifyTask.description, verifyTask.status, verifyTask.priority, now, now]);
+    }
+    
     await this.saveTasks();
 
     // Mark original task as completed (with issues noted)
     originalTask.status = "completed";
     originalTask.completedAt = new Date();
     originalTask.updatedAt = new Date();
+    
+    // Update original task in database
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(`
+        UPDATE tasks 
+        SET status = 'completed',
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [now, now, originalTask.id]);
+    }
+    
     this.state.completedToday++;
     await this.saveTasks();
 
@@ -2273,9 +2325,9 @@ ${originalTask.id}`;
         const promptSuccess = await this.sendPromptToArm(
           arm.name,
           `You have ${taskCount} task(s) available. Use the MCP tools to:\n` +
-          `1. Call octopai_get_my_instructions to see your current assignment\n` +
+          `1. Call get_full_briefing to get your assigned task with full context\n` +
           `2. If you have an active task, continue working on it\n` +
-          `3. If no active task, call octopai_get_pending_tasks to see available tasks and claim one`
+          `3. When done, call complete_task with your task ID and summary`
         );
 
         if (promptSuccess) {
@@ -2580,6 +2632,59 @@ ${originalTask.id}`;
       this.log(`Infrastructure health check: ${issues.length} issue(s)`);
       for (const issue of issues) {
         this.log(`  - ${issue}`);
+      }
+    }
+
+    // Persist infrastructure health to database for API server to read
+    if (this.db) {
+      try {
+        const now = new Date().toISOString();
+        
+        // Update database health
+        this.db.run(`
+          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
+          VALUES ('database', ?, 0, ?, ?, ?)
+        `, [
+          this.infrastructureHealth.database.healthy ? 1 : 0,
+          this.infrastructureHealth.database.error || null,
+          now,
+          now,
+        ]);
+        
+        // Update NATS health
+        this.db.run(`
+          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
+          VALUES ('nats', ?, 1, ?, ?, ?)
+        `, [
+          this.infrastructureHealth.nats.healthy ? 1 : 0,
+          this.infrastructureHealth.nats.error || null,
+          now,
+          now,
+        ]);
+        
+        // Update maildir health
+        this.db.run(`
+          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
+          VALUES ('maildir', ?, 0, ?, ?, ?)
+        `, [
+          this.infrastructureHealth.maildir.healthy ? 1 : 0,
+          this.infrastructureHealth.maildir.error || null,
+          now,
+          now,
+        ]);
+        
+        // Update API server health
+        this.db.run(`
+          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
+          VALUES ('api_server', ?, 0, ?, ?, ?)
+        `, [
+          this.infrastructureHealth.apiServer.healthy ? 1 : 0,
+          this.infrastructureHealth.apiServer.error || null,
+          now,
+          now,
+        ]);
+      } catch (err) {
+        this.log(`Failed to persist infrastructure health: ${err}`);
       }
     }
 
@@ -3298,10 +3403,22 @@ octopai arm spawn -n ${arm.name}
        if (!bestArm) break;
        
        task.status = "claimed";
-       task.assignedTo = bestArm.id;
-       task.updatedAt = new Date();
-       
-       bestArm.status = "busy";
+        task.assignedTo = bestArm.id;
+        task.updatedAt = new Date();
+        
+        // Update database
+        if (this.db) {
+          const now = new Date().toISOString();
+          this.db.run(`
+            UPDATE tasks 
+            SET status = 'claimed',
+                assigned_to = ?,
+                updated_at = ?
+            WHERE id = ?
+          `, [bestArm.id, now, task.id]);
+        }
+        
+        bestArm.status = "busy";
        bestArm.currentTask = task.id;
        
        // Get relevant discoveries for this arm
@@ -3395,6 +3512,7 @@ octopai arm spawn -n ${arm.name}
   }
 
   private async loadTasks(): Promise<void> {
+    // Load from JSON first
     try {
       const content = await readFile(
         join(this.options.octopaiDir, "state", "tasks.json"),
@@ -3404,6 +3522,51 @@ octopai arm spawn -n ${arm.name}
     } catch {
       this.tasks = [];
     }
+    
+    // Also load tasks from database and merge any missing ones
+    if (this.db) {
+      try {
+        const dbTasks = this.db.query(`
+          SELECT id, subject, description, status, priority, domain, assigned_to, 
+                 created_at, updated_at, completed_at
+          FROM tasks
+          WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
+        `).all() as Array<{
+          id: string;
+          subject: string;
+          description: string;
+          status: string;
+          priority: string;
+          domain: string | null;
+          assigned_to: string | null;
+          created_at: string;
+          updated_at: string;
+          completed_at: string | null;
+        }>;
+        
+        // Merge database tasks that aren't in memory
+        for (const dbTask of dbTasks) {
+          const existing = this.tasks.find(t => t.id === dbTask.id);
+          if (!existing) {
+            this.tasks.push({
+              id: dbTask.id,
+              subject: dbTask.subject,
+              description: dbTask.description,
+              status: dbTask.status as Task["status"],
+              priority: dbTask.priority as Task["priority"],
+              domain: dbTask.domain || undefined,
+              assignedTo: dbTask.assigned_to || undefined,
+              createdAt: new Date(dbTask.created_at),
+              updatedAt: new Date(dbTask.updated_at),
+              completedAt: dbTask.completed_at ? new Date(dbTask.completed_at) : undefined,
+            });
+          }
+        }
+      } catch (err) {
+        this.log(`Error loading tasks from database: ${err}`);
+      }
+    }
+    
     this.state.pendingTasks = this.tasks.filter(t => t.status === "pending").length;
   }
 
