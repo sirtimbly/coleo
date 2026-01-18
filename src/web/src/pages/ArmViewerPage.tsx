@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { 
+import {
   Eye, Radio, Wrench, CheckCircle2, XCircle, Clock, Loader2,
   ChevronDown, ChevronRight, FileEdit, Terminal, AlertTriangle,
-  MessageSquare, GitBranch, ListTodo, Zap, Bot, Coins, Trash2
+  MessageSquare, GitBranch, ListTodo, Zap, Bot, Coins, Trash2,
+  RefreshCw, Maximize2, Minimize2
 } from 'lucide-react';
 import { api, type Arm, type ArmTodo, type OpenCodeEvent } from '@/lib';
 import { StatusBadge } from '@/components';
@@ -69,18 +70,7 @@ function loadArmHistory(armId: string): ArmHistoryState | null {
   }
 }
 
-function saveArmHistory(armId: string, state: Omit<ArmHistoryState, 'lastUpdated'>): void {
-  try {
-    const key = getStorageKey(armId);
-    const toSave: ArmHistoryState = {
-      ...state,
-      lastUpdated: Date.now(),
-    };
-    localStorage.setItem(key, JSON.stringify(toSave));
-  } catch (err) {
-    console.warn('Failed to save arm history:', err);
-  }
-}
+
 
 function pruneOldHistories(): void {
   try {
@@ -138,7 +128,7 @@ const activityIcons: Record<ActivityType, typeof Wrench> = {
 export function ArmViewerPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedArmId = searchParams.get('arm');
-  
+
   const [arms, setArms] = useState<Arm[]>([]);
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [todos, setTodos] = useState<ArmTodo[]>([]);
@@ -148,6 +138,9 @@ export function ArmViewerPage() {
   const [currentText, setCurrentText] = useState<string>('');
   const [totalCost, setTotalCost] = useState<number>(0);
   const [totalTokens, setTotalTokens] = useState<{ input: number; output: number }>({ input: 0, output: 0 });
+  const [panelWidth, setPanelWidth] = useState(400);
+  const [isResizing, setIsResizing] = useState(false);
+  const [viewerExpanded, setViewerExpanded] = useState(false);
   
   const activityEndRef = useRef<HTMLDivElement>(null);
   const activityIdCounter = useRef(0);
@@ -498,23 +491,30 @@ export function ArmViewerPage() {
     }
   }, [selectedArmId]);
 
-  // Save to localStorage whenever state changes (debounced)
+  // Handle panel resizing
   useEffect(() => {
-    if (!selectedArmId) return;
-    
-    const timeoutId = setTimeout(() => {
-      saveArmHistory(selectedArmId, {
-        activities,
-        todos,
-        currentText,
-        totalCost,
-        totalTokens,
-        sessionStatus,
-      });
-    }, 1000); // Debounce saves by 1 second
-    
-    return () => clearTimeout(timeoutId);
-  }, [selectedArmId, activities, todos, currentText, totalCost, totalTokens, sessionStatus]);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      const newWidth = e.clientX;
+      if (newWidth > 300 && newWidth < window.innerWidth - 400) {
+        setPanelWidth(newWidth);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -559,16 +559,32 @@ export function ArmViewerPage() {
 
   return (
     <div className="flex h-full">
-      {/* Sidebar - Arm selector */}
-      <aside className="w-64 border-r border-border bg-card flex flex-col">
-        <div className="p-4 border-b border-border">
-          <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Active Arms</h2>
+      {/* Left Panel - Arm selector */}
+      <div className="flex flex-col" style={{ width: panelWidth }}>
+        <div className="border-b border-border px-4 py-3 bg-muted/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <Eye className="h-4 w-4 text-muted-foreground" />
+              <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Active Arms</h2>
+            </div>
+            <button
+              onClick={() => setViewerExpanded(!viewerExpanded)}
+              className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
+              title={viewerExpanded ? "Collapse panel" : "Expand panel"}
+            >
+              {viewerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
-        <div className="flex-1 overflow-auto p-2">
+
+        <div className="flex-1 overflow-auto">
           {arms.length === 0 ? (
-            <p className="p-4 text-sm text-muted-foreground">No active arms</p>
+            <div className="p-8 text-center text-muted-foreground">
+              <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p className="text-sm">No active arms</p>
+            </div>
           ) : (
-            <div className="space-y-1">
+            <div className="p-2 space-y-1">
               {arms.map(arm => (
                 <button
                   key={arm.id}
@@ -593,81 +609,95 @@ export function ArmViewerPage() {
             </div>
           )}
         </div>
-      </aside>
+      </div>
 
-      {/* Main content */}
+      {/* Resizable divider */}
+      <div
+        className="w-1 bg-border hover:bg-primary/20 cursor-col-resize transition-colors"
+        onMouseDown={() => setIsResizing(true)}
+      />
+
+      {/* Right Panel - Activity viewer */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <header className="p-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Eye className="h-5 w-5 text-muted-foreground" />
-            <div>
+        <div className="border-b border-border px-4 py-3 bg-muted/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
               <h1 className="text-lg font-semibold">
                 {selectedArm ? selectedArm.name : 'Arm Viewer'}
               </h1>
-               <p className="text-sm text-muted-foreground">
-                 {selectedArm ? `${selectedArm.domain} - ${selectedArm.harness}` : 'Select an arm to view activity'}
-                 {selectedArm && (selectedArm.provider || selectedArm.model) && (
-                   <span className="block">
-                     {selectedArm.provider && <span className="text-blue-600">{selectedArm.provider}</span>}
-                     {selectedArm.provider && selectedArm.model && <span> · </span>}
-                     {selectedArm.model && <span className="text-green-600">{selectedArm.model}</span>}
-                   </span>
-                 )}
-               </p>
+              {selectedArm && (selectedArm.provider || selectedArm.model) && (
+                <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+                  {selectedArm.provider && <span className="text-blue-600">{selectedArm.provider}</span>}
+                  {selectedArm.provider && selectedArm.model && <span>·</span>}
+                  {selectedArm.model && <span className="text-green-600">{selectedArm.model}</span>}
+                </div>
+              )}
             </div>
-          </div>
-          {selectedArmId && (
-            <div className="flex items-center gap-4">
-              {/* Clear history button */}
-              {activities.length > 0 && (
+
+            {selectedArmId && (
+              <div className="flex items-center gap-4">
                 <button
-                  onClick={handleClearHistory}
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                  title="Clear message history"
+                  onClick={loadArms}
+                  disabled={loading}
+                  className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50"
                 >
-                  <Trash2 className="h-3 w-3" />
-                  <span>Clear</span>
+                  <RefreshCw className="h-4 w-4" />
                 </button>
-              )}
-              
-              {/* Stats */}
-              {(totalCost > 0 || totalTokens.input > 0) && (
-                <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                  <span className="flex items-center gap-1">
-                    <Coins className="h-3 w-3" />
-                    ${totalCost.toFixed(4)}
-                  </span>
-                  <span>{(totalTokens.input + totalTokens.output).toLocaleString()} tokens</span>
-                </div>
-              )}
-              
-              {/* Connection status */}
-              {connected ? (
-                <div className="flex items-center gap-1 text-green-500 text-sm">
-                  <Radio className="h-4 w-4" />
-                  <span>Live</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 text-muted-foreground text-sm">
-                  <XCircle className="h-4 w-4" />
-                  <span>Disconnected</span>
-                </div>
-              )}
-              
-              {sessionStatus === 'busy' && (
-                <div className="flex items-center gap-1 text-yellow-500 text-sm">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Working...</span>
-                </div>
-              )}
-            </div>
-          )}
-        </header>
+
+                {/* Clear history button */}
+                {activities.length > 0 && (
+                  <button
+                    onClick={handleClearHistory}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    title="Clear message history"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    <span>Clear</span>
+                  </button>
+                )}
+
+                {/* Stats */}
+                {(totalCost > 0 || totalTokens.input > 0) && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Coins className="h-3 w-3" />
+                      ${totalCost.toFixed(4)}
+                    </span>
+                    <span>{(totalTokens.input + totalTokens.output).toLocaleString()} tokens</span>
+                  </div>
+                )}
+
+                {/* Connection status */}
+                {connected ? (
+                  <div className="flex items-center gap-1 text-green-500 text-sm">
+                    <Radio className="h-4 w-4" />
+                    <span>Live</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 text-muted-foreground text-sm">
+                    <XCircle className="h-4 w-4" />
+                    <span>Disconnected</span>
+                  </div>
+                )}
+
+                {sessionStatus === 'busy' && (
+                  <div className="flex items-center gap-1 text-yellow-500 text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Working...</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
 
         {error && (
           <div className="p-4 bg-destructive/10 text-destructive border-b border-destructive/20">
-            {error}
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-sm">{error}</span>
+            </div>
           </div>
         )}
 
@@ -676,7 +706,7 @@ export function ArmViewerPage() {
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
             <div className="text-center">
               <Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Select an arm from the sidebar to view its activity</p>
+              <p>Select an arm from the left panel to view its activity</p>
             </div>
           </div>
         ) : (
@@ -704,9 +734,9 @@ export function ArmViewerPage() {
                 </div>
               ) : (
                 activities.map(activity => (
-                  <ActivityItemComponent 
-                    key={activity.id} 
-                    activity={activity} 
+                  <ActivityItemComponent
+                    key={activity.id}
+                    activity={activity}
                     onToggle={() => toggleActivity(activity.id)}
                   />
                 ))
