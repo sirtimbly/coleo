@@ -109,6 +109,8 @@ export interface TestContext {
   db?: import("bun:sqlite").Database;
   /** Subprocess handles for cleanup */
   processes: Array<{ pid: number; name: string; kill: () => void }>;
+  /** Spawned arm info for cleanup */
+  arms: Array<{ id: string; pid?: number; port?: number }>;
 }
 
 /**

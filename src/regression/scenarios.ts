@@ -251,7 +251,7 @@ export const simpleTaskCompletion: TestScenario = {
 The file is located at: ${join(ctx.workDir, "src", "hello.ts")}
 
 When done, mark the task as completed.`,
-      { priority: 1 }
+      { priority: 'high' }
     );
     checks.push({ name: "task_created", passed: true });
 
@@ -268,7 +268,10 @@ When done, mark the task as completed.`,
     try {
       const arm = await spawnArm(ctx, "test-arm", {
         domain: "general",
-        prompt: "You are a helpful coding assistant. Complete the assigned task.",
+        // The system prompt already tells arms to immediately get tasks
+        // We just provide context about the workspace
+        prompt: `You are working in a test workspace at ${ctx.workDir}.
+The task involves modifying src/hello.ts. Start by calling 'get_full_briefing' to see the task, then call 'claim_task' with the task ID to claim it.`,
       });
       armId = arm.id;
       checks.push({ name: "arm_spawned", passed: true });
@@ -441,6 +444,8 @@ function createFailedResult(
   };
 }
 
+import { armRecoveryScenario } from "./scenarios/arm-recovery";
+
 /**
  * All core scenarios
  */
@@ -449,4 +454,5 @@ export const coreScenarios: TestScenario[] = [
   selfHealingApiRestart,
   zombieArmDetection,
   simpleTaskCompletion,
+  armRecoveryScenario,
 ];

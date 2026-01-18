@@ -110,6 +110,7 @@ model = "${model.model}"
     },
     timing: createTimingHelper(),
     processes: [],
+    arms: [],
   };
 
   return ctx;
@@ -134,6 +135,8 @@ export async function initTestDatabase(ctx: TestContext): Promise<void> {
 export async function startApiServer(ctx: TestContext): Promise<void> {
   ctx.timing.mark("api_start");
   
+  ctx.log(`Starting API server with key: ${ctx.apiKey.slice(0, 16)}...`);
+  
   const proc = spawn({
     cmd: ["bun", "run", "src/cli/index.ts", "serve", "-p", String(ctx.apiPort)],
     cwd: process.cwd(),
@@ -141,11 +144,36 @@ export async function startApiServer(ctx: TestContext): Promise<void> {
       ...process.env,
       OCTOPAI_DIR: ctx.octopaiDir,
       OCTOPAI_API_KEY: ctx.apiKey,
+      OCTOPAI_API_PORT: String(ctx.apiPort),
       OCTOPAI_DB_PATH: join(ctx.octopaiDir, "octopai.db"),
     },
     stdout: "pipe",
     stderr: "pipe",
   });
+
+  // Stream output to console for debugging
+  const streamOutput = async (stream: ReadableStream, prefix: string) => {
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const text = decoder.decode(value);
+        const lines = text.split("\n");
+        for (const line of lines) {
+          if (line.trim()) {
+            console.log(`[${prefix}] ${line}`);
+          }
+        }
+      }
+    } catch {
+      // Ignore stream errors
+    }
+  };
+
+  streamOutput(proc.stdout, "API");
+  streamOutput(proc.stderr, "API-ERR");
 
   ctx.processes.push({
     pid: proc.pid,
@@ -214,11 +242,12 @@ export async function startBrain(ctx: TestContext, options?: { once?: boolean })
 export async function spawnArm(
   ctx: TestContext,
   name: string,
-  options?: { domain?: string; prompt?: string }
-): Promise<{ id: string; pid?: number }> {
+  options?: { domain?: string; prompt?: string; harness?: string }
+): Promise<{ id: string; pid?: number; port?: number }> {
   ctx.timing.mark(`arm_spawn_${name}`);
   
-  const res = await fetch(`${ctx.apiUrl}/api/arms`, {
+  // Step 1: Create the arm record
+  const createRes = await fetch(`${ctx.apiUrl}/api/arms`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -227,22 +256,83 @@ export async function spawnArm(
     body: JSON.stringify({
       name,
       domain: options?.domain || "general",
+      harness: options?.harness || "opencode-api",
       provider: ctx.model.provider,
       model: ctx.model.model,
       prompt: options?.prompt,
     }),
   });
 
-  if (!res.ok) {
-    const error = await res.text();
+  if (!createRes.ok) {
+    const error = await createRes.text();
+    throw new Error(`Failed to create arm: ${error}`);
+  }
+
+  const createData = await createRes.json() as { arm: { id: string } };
+  const armId = createData.arm.id;
+  ctx.log(`Arm ${name} created (ID: ${armId})`);
+
+  // Step 2: Spawn the arm (start the harness process)
+  const spawnRes = await fetch(`${ctx.apiUrl}/api/arms/${armId}/spawn`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-API-Key": ctx.apiKey,
+    },
+    body: JSON.stringify({
+      workdir: ctx.workDir,
+      provider: ctx.model.provider,
+      model: ctx.model.model,
+      initialPrompt: options?.prompt,
+    }),
+  });
+
+  if (!spawnRes.ok) {
+    const error = await spawnRes.text();
     throw new Error(`Failed to spawn arm: ${error}`);
   }
 
-  const data = await res.json() as { arm: { id: string; pid?: number } };
+  const spawnData = await spawnRes.json() as { spawned: boolean; pid?: number; port?: number };
   ctx.timing.mark(`arm_spawned_${name}`);
-  ctx.log(`Arm ${name} spawned (ID: ${data.arm.id})`);
+  ctx.log(`Arm ${name} spawned (PID: ${spawnData.pid}, Port: ${spawnData.port})`);
   
-  return data.arm;
+  // Wait for MCP servers to connect (give it a few seconds)
+  if (spawnData.port) {
+    const mcpUrl = `http://localhost:${spawnData.port}/mcp`;
+    let mcpConnected = false;
+    const mcpStartTime = Date.now();
+    const mcpTimeout = 10000; // 10 seconds
+    
+    while (Date.now() - mcpStartTime < mcpTimeout && !mcpConnected) {
+      try {
+        const mcpRes = await fetch(mcpUrl);
+        if (mcpRes.ok) {
+          const mcpStatus = await mcpRes.json() as Record<string, { status: string }>;
+          if (mcpStatus.octopai?.status === "connected") {
+            mcpConnected = true;
+            ctx.log(`MCP octopai server connected`);
+          } else {
+            ctx.log(`MCP status: ${JSON.stringify(mcpStatus.octopai)}`);
+          }
+        }
+      } catch {
+        // Server not ready yet
+      }
+      if (!mcpConnected) {
+        await Bun.sleep(500);
+      }
+    }
+    
+    if (!mcpConnected) {
+      ctx.log(`Warning: MCP octopai server did not connect within ${mcpTimeout}ms`);
+    }
+  }
+  
+  // Track arm for cleanup
+  const armInfo = { id: armId, pid: spawnData.pid, port: spawnData.port };
+  ctx.arms.push(armInfo);
+  
+  return armInfo;
 }
 
 /**
@@ -252,7 +342,7 @@ export async function createTask(
   ctx: TestContext,
   subject: string,
   description: string,
-  options?: { domain?: string; priority?: number }
+  options?: { domain?: string; priority?: 'critical' | 'high' | 'normal' | 'low' }
 ): Promise<string> {
   if (!ctx.db) {
     throw new Error("Database not initialized");
@@ -264,7 +354,7 @@ export async function createTask(
   ctx.db.run(`
     INSERT INTO tasks (id, subject, description, status, priority, domain, created_at, updated_at)
     VALUES (?, ?, ?, 'pending', ?, ?, ?, ?)
-  `, [id, subject, description, options?.priority || 1, options?.domain || null, now, now]);
+  `, [id, subject, description, options?.priority || 'normal', options?.domain || null, now, now]);
 
   ctx.timing.mark(`task_created_${id.slice(0, 8)}`);
   ctx.log(`Task created: ${subject} (ID: ${id.slice(0, 8)})`);
@@ -286,6 +376,8 @@ export async function waitForTaskStatus(
   }
 
   const startTime = Date.now();
+  let lastLogTime = 0;
+  let lastStatus = "";
   
   while (Date.now() - startTime < timeoutMs) {
     const row = ctx.db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string } | null;
@@ -296,10 +388,42 @@ export async function waitForTaskStatus(
       return true;
     }
     
+    // Log status changes and periodic activity
+    if (row?.status !== lastStatus) {
+      ctx.log(`Task ${taskId.slice(0, 8)} status changed: ${lastStatus || "none"} -> ${row?.status || "unknown"}`);
+      lastStatus = row?.status || "";
+    }
+    
+    // Every 10 seconds, dump recent activity for debugging
+    const now = Date.now();
+    if (now - lastLogTime > 10000) {
+      lastLogTime = now;
+      try {
+        const activities = ctx.db.query(`
+          SELECT timestamp, actor, action, target 
+          FROM activity 
+          ORDER BY timestamp DESC 
+          LIMIT 5
+        `).all() as Array<{ timestamp: string; actor: string; action: string; target: string | null }>;
+        
+        if (activities.length > 0) {
+          const elapsed = Math.round((now - startTime) / 1000);
+          ctx.log(`[${elapsed}s] Recent activity:`);
+          for (const a of activities.reverse()) {
+            ctx.log(`  ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+          }
+        }
+      } catch {
+        // Ignore activity log errors
+      }
+    }
+    
     await Bun.sleep(500);
   }
 
-  ctx.log(`Task ${taskId.slice(0, 8)} did not reach status ${status} within ${timeoutMs}ms (current: unknown)`);
+  // Get the final status for logging
+  const finalRow = ctx.db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string } | null;
+  ctx.log(`Task ${taskId.slice(0, 8)} did not reach status ${status} within ${timeoutMs}ms (current: ${finalRow?.status ?? "not found"})`);
   return false;
 }
 
@@ -349,15 +473,89 @@ export async function checkInfraHealth(ctx: TestContext): Promise<boolean> {
  * Clean up a test context
  */
 export async function cleanupTestContext(ctx: TestContext, options?: { keep?: boolean }): Promise<void> {
+  // Dump activity log for debugging
+  if (ctx.db) {
+    try {
+      const activities = ctx.db.query("SELECT timestamp, actor, action, target, details FROM activity ORDER BY timestamp DESC LIMIT 20").all() as Array<{
+        timestamp: string;
+        actor: string;
+        action: string;
+        target: string | null;
+        details: string;
+      }>;
+      if (activities.length > 0) {
+        ctx.log("=== Recent Activity (last 20) ===");
+        for (const a of activities.reverse()) {
+          ctx.log(`  ${a.timestamp} ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+        }
+        ctx.log("=================================");
+      }
+    } catch {
+      // Ignore activity log errors
+    }
+  }
+  
   ctx.log("Cleaning up test context...");
 
-  // Kill all processes
+  // Kill all arms first (OpenCode servers and their child processes)
+  for (const arm of ctx.arms) {
+    // Kill via API if available
+    try {
+      await fetch(`${ctx.apiUrl}/api/arms/${arm.id}/kill`, {
+        method: "POST",
+        headers: { "X-API-Key": ctx.apiKey },
+      });
+      ctx.log(`Killed arm ${arm.id} via API`);
+    } catch {
+      // API may not be running, fall back to direct kill
+    }
+    
+    // Also kill by PID directly to ensure cleanup
+    if (arm.pid) {
+      try {
+        // Kill the process group to catch child processes (MCP servers)
+        process.kill(-arm.pid, "SIGTERM");
+        ctx.log(`Killed arm ${arm.id} process group (PID: ${arm.pid})`);
+      } catch {
+        // Try regular kill
+        try {
+          process.kill(arm.pid, "SIGKILL");
+          ctx.log(`Force killed arm ${arm.id} (PID: ${arm.pid})`);
+        } catch {
+          // Process may already be dead
+        }
+      }
+    }
+  }
+
+  // Kill all tracked processes
   for (const proc of ctx.processes) {
     try {
       proc.kill();
       ctx.log(`Killed ${proc.name} (PID: ${proc.pid})`);
     } catch {
       // Process may already be dead
+    }
+  }
+  
+  // Give processes a moment to die
+  await Bun.sleep(500);
+  
+  // Force kill any remaining processes by PID
+  for (const proc of ctx.processes) {
+    try {
+      process.kill(proc.pid, "SIGKILL");
+    } catch {
+      // Already dead
+    }
+  }
+  for (const arm of ctx.arms) {
+    if (arm.pid) {
+      try {
+        process.kill(arm.pid, "SIGKILL");
+      } catch {
+        // Already dead
+      }
     }
   }
 
