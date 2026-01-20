@@ -89,6 +89,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["020_multi_arm_assignment", MIGRATION_020, { table: "tasks", columns: MIGRATION_020_COLUMNS }],
     ["021_status_reports", MIGRATION_021],
     ["022_infrastructure_health", MIGRATION_022],
+    ["023_sqlite_state_migration", MIGRATION_023],
+    ["024_task_type_columns", MIGRATION_024, { table: "tasks", columns: MIGRATION_024_COLUMNS }],
   ];
 
 
@@ -743,6 +745,115 @@ INSERT OR IGNORE INTO infrastructure_health (component, healthy, optional) VALUE
   ('nats', 0, 1),
   ('maildir', 1, 0),
   ('api_server', 1, 0);
+`;
+
+// Migration 023: SQLite state migration - replaces JSON files
+// This migration adds tables for brain_state, messages, tools, and notes
+// to eliminate JSON file storage and maintain single source of truth
+const MIGRATION_023 = `
+-- Brain state table (replaces .octopai/state/brain.json)
+-- Single row table for brain coordinator state
+CREATE TABLE IF NOT EXISTS brain_state (
+  id INTEGER PRIMARY KEY CHECK (id = 1), -- Ensure only one row
+  status TEXT NOT NULL DEFAULT 'stopped' CHECK (status IN ('stopped', 'running', 'paused')),
+  poll_interval_ms INTEGER NOT NULL DEFAULT 30000,
+  started_at TEXT,
+  last_poll_at TEXT,
+  pending_tasks INTEGER NOT NULL DEFAULT 0,
+  completed_today INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Initialize with default state
+INSERT OR IGNORE INTO brain_state (id, status, poll_interval_ms) VALUES (1, 'stopped', 30000);
+
+-- Messages table (replaces .octopai/queue/ files)
+-- Stores messages between brain and arms
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  from_id TEXT NOT NULL,
+  to_id TEXT NOT NULL,
+  message_type TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'completed', 'failed')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  processed_at TEXT,
+  error TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_id, status);
+CREATE INDEX IF NOT EXISTS idx_messages_from ON messages(from_id);
+CREATE INDEX IF NOT EXISTS idx_messages_status ON messages(status);
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at DESC);
+
+-- Tools table (replaces .octopai/state/toolbox.json)
+-- Stores tools discovered by arms
+CREATE TABLE IF NOT EXISTS tools (
+  name TEXT PRIMARY KEY,
+  command TEXT NOT NULL,
+  description TEXT NOT NULL,
+  discovered_by TEXT NOT NULL,
+  discovered_at TEXT NOT NULL DEFAULT (datetime('now')),
+  metadata TEXT DEFAULT '{}'
+);
+
+CREATE INDEX IF NOT EXISTS idx_tools_discovered_by ON tools(discovered_by);
+
+-- Notes table (replaces .octopai/state/notes/ files)
+-- Stores shared notes between arms
+CREATE TABLE IF NOT EXISTS notes (
+  id TEXT PRIMARY KEY,
+  author TEXT NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT,
+  tags TEXT DEFAULT '[]',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_author ON notes(author);
+CREATE INDEX IF NOT EXISTS idx_notes_category ON notes(category);
+CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC);
+
+-- Full-text search on notes
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
+  title,
+  content,
+  content='notes',
+  content_rowid='rowid'
+);
+
+-- Triggers to keep FTS index in sync
+CREATE TRIGGER IF NOT EXISTS notes_ai AFTER INSERT ON notes BEGIN
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_ad AFTER DELETE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
+END;
+
+CREATE TRIGGER IF NOT EXISTS notes_au AFTER UPDATE ON notes BEGIN
+  INSERT INTO notes_fts(notes_fts, rowid, title, content) VALUES('delete', old.rowid, old.title, old.content);
+  INSERT INTO notes_fts(rowid, title, content) VALUES (new.rowid, new.title, new.content);
+END;
+`;
+
+// Columns to add for migration 024 (task fields for full Task type support)
+const MIGRATION_024_COLUMNS = [
+  { name: 'classification', sql: "ALTER TABLE tasks ADD COLUMN classification TEXT" },
+  { name: 'mail_thread_id', sql: "ALTER TABLE tasks ADD COLUMN mail_thread_id TEXT" },
+  { name: 'context', sql: "ALTER TABLE tasks ADD COLUMN context TEXT DEFAULT '{}'" },
+];
+
+// Migration 024: Add missing task columns for full Task type support
+// Supports classification, mail_thread_id, and context fields from src/types/index.ts
+const MIGRATION_024 = `
+-- Add index for mail thread lookups
+CREATE INDEX IF NOT EXISTS idx_tasks_mail_thread ON tasks(mail_thread_id) WHERE mail_thread_id IS NOT NULL;
+
+-- Add index for classification queries
+CREATE INDEX IF NOT EXISTS idx_tasks_classification ON tasks(classification) WHERE classification IS NOT NULL;
 `;
 
   /**

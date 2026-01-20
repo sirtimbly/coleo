@@ -493,13 +493,13 @@ The following tasks were created by the Brain but were not in the plan. They rep
 
 Migrate all JSON-based state to SQLite to maintain single source of truth:
 
-- [ ] Migrate brain state from `.octopai/state/brain.json` to `brain_state` table
-- [ ] Migrate task queue from `.octopai/state/tasks.json` to `tasks` table (partially done)
-- [ ] Migrate message queue from `.octopai/queue/` files to `messages` table
-- [ ] Migrate toolbox from `.octopai/state/toolbox.json` to `tools` table
-- [ ] Migrate arm states from `.octopai/state/arms/` to `arms` table fields
-- [ ] Migrate shared notes from `.octopai/state/notes/` to `notes` table
-- [ ] Remove JSON file fallbacks after migration verified
+- [x] Migrate brain state from `.octopai/state/brain.json` to `brain_state` table
+- [x] Migrate task queue from `.octopai/state/tasks.json` to `tasks` table
+- [x] Migrate message queue from `.octopai/queue/` files to `messages` table
+- [x] Migrate toolbox from `.octopai/state/toolbox.json` to `tools` table
+- [x] Remove seenArmIds - derive from task assignments instead
+- [x] Migrate shared notes from `.octopai/state/notes/` to `notes` table
+- [ ] Remove JSON file fallbacks after migration verified (file fallbacks kept for safety during transition)
 
 ### Future Consideration: NATS JetStream Event Sourcing
 
@@ -535,6 +535,70 @@ Some "current state" data is better modeled as derived state from an event strea
 - MCP configs (external tool requirement)
 - Plan documents (human-editable, version controlled)
 - Configuration (TOML, human-editable)
+
+### Future Consideration: Task File References
+
+Tasks should reference git-tracked files as dependencies and outputs. This creates durable artifacts that outlive any specific orchestration tool.
+
+**File categories to track:**
+
+| Directory | Purpose | Relation to Task |
+|-----------|---------|------------------|
+| `.project/acceptance/` | Acceptance criteria per phase | Input dependency |
+| `.project/decisions/` | Architectural decisions (ADRs) | Input/output |
+| `.project/tasks/` | Task definitions and context | Input dependency |
+| Source files | Implementation artifacts | Output |
+
+**Database schema addition:**
+
+```sql
+-- Task file references (links tasks to git-tracked files)
+CREATE TABLE task_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  relation TEXT NOT NULL CHECK (relation IN ('dependency', 'output', 'context')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, file_path)
+);
+
+CREATE INDEX idx_task_files_task ON task_files(task_id);
+CREATE INDEX idx_task_files_path ON task_files(file_path);
+```
+
+**Benefits:**
+- **Tool-agnostic**: Any AI agent can read `.project/` files without Octopai
+- **Git-tracked**: Decisions and acceptance criteria persist in version control
+- **Queryable**: SQLite tracks which tasks read/wrote which files
+- **Audit trail**: Know why a decision was made and which task created it
+
+**Implementation notes:**
+- Arms report file dependencies when claiming tasks
+- Arms report output files when completing tasks
+- Brain can verify outputs exist before marking task complete
+- UI can show file graph for any task
+
+### Future Consideration: Status Reports in Maildir
+
+Status reports (currently `.project/status-*.md`) are communication artifacts between arms and humans. They should be stored in Maildir format:
+
+**Current state (to migrate):**
+- `.project/status-2026-01-16-*.md` files in project root
+- Not queryable, not integrated with mail UI
+
+**Target state:**
+- Status reports written as Maildir messages to `~/.octopai/mail/brain/cur/`
+- Headers: `X-Octopai-Type: status-report`, `X-Octopai-Task: <task-id>`
+- Body: Markdown content (same as current files)
+- Queryable via mail UI and API
+- Human can reply to status reports
+
+**Benefits:**
+- Unified communication channel (all brain→human messages in one place)
+- Status reports appear in Observatory mail UI
+- Human can reply with feedback or corrections
+- Consistent with Maildir-as-communication-channel philosophy
 
 ### Priority 2: Code Consolidation (High)
 

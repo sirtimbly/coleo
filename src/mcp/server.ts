@@ -18,6 +18,7 @@ import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
 import { getOctopaiDir } from "../config";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import { queueMessage, getPendingMessages, markMessageCompleted, getNotes } from "../db/state";
 import {
   generateTaskDetermination,
   generateContextBundle,
@@ -49,22 +50,41 @@ const sessionCompactionStatus = new Map<string, {
 // Start SSE listener for OpenCode events (automatic context compaction detection)
 // This connects to the local OpenCode API and listens for session.compacted events
 async function startOpenCodeEventListener(): Promise<void> {
+  // If the API URL is not reachable or set to default (which might be occupied by another instance),
+  // this will fail. We should be careful about spamming logs.
   const eventSourceUrl = `${OPENCOD_API_URL}/global/event`;
   
   try {
     const eventsource = await import("eventsource");
-    const EventSource = eventsource.EventSource;
+    // Handle both default export and CommonJS export styles
+    // @ts-ignore - Dynamic import handling
+    const EventSource = eventsource.default || eventsource.EventSource || eventsource;
+
+    if (!EventSource) {
+      console.error("[MCP] Failed to load EventSource constructor");
+      return;
+    }
 
     const eventSource = new EventSource(eventSourceUrl);
 
     eventSource.onopen = () => {
-      console.error(`[MCP] Connected to OpenCode event stream at ${eventSourceUrl}`);
+      // console.error(`[MCP] Connected to OpenCode event stream at ${eventSourceUrl}`);
     };
 
-    eventSource.onerror = () => {
-      console.error(`[MCP] OpenCode event stream error, reconnecting in 5s...`);
+    eventSource.onerror = (err: unknown) => {
+      // Don't spam the logs with reconnect messages
+      // console.error(`[MCP] OpenCode event stream error: ${JSON.stringify(err)}, reconnecting in 5s...`);
       eventSource.close();
-      setTimeout(startOpenCodeEventListener, 5000);
+      // Retry connection after delay with exponential backoff or simple delay
+      setTimeout(startOpenCodeEventListener, 10000);
+    };
+
+    eventSource.onerror = (err: unknown) => {
+      // Don't spam the logs with reconnect messages
+      eventSource.close();
+      // Only retry if we haven't failed too many times in a row
+      // For now, just retry with a longer delay
+      setTimeout(startOpenCodeEventListener, 10000);
     };
 
     eventSource.addEventListener("session.compacted", async (event: unknown) => {
@@ -223,13 +243,35 @@ function ensureArmRegistered(): void {
 }
 
 /**
- * Write a message to the brain's queue (file-based fallback)
+ * Write a message to the brain's queue (SQLite-based with file fallback)
  */
 async function sendToBrainFile(message: QueueMessage): Promise<string> {
+  const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
+  
+  // Try SQLite first (primary)
+  try {
+    const dbPath = join(OCTOPAI_DIR, "octopai.db");
+    const db = new Database(dbPath, { readonly: false });
+    try {
+      queueMessage(db, {
+        id,
+        from: message.from,
+        to: "brain",
+        type: message.type,
+        payload: message.payload,
+      });
+      return id;
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    console.error(`[MCP] Failed to queue message to SQLite, falling back to file: ${err}`);
+  }
+  
+  // Fallback to file-based queue
   const queueDir = join(OCTOPAI_DIR, "queue", "brain", "pending");
   await mkdir(queueDir, { recursive: true });
 
-  const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
   const fullMessage: QueueMessage = {
     ...message,
     id,
@@ -355,6 +397,31 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
   try {
     const database = getDatabase();
     
+    // Get pending messages from SQLite messages table
+    const dbMessages = getPendingMessages(database, ARM_ID);
+    for (const msg of dbMessages) {
+      const queueMsg: QueueMessage = {
+        id: msg.id,
+        from: msg.from,
+        to: msg.to,
+        type: msg.type as QueueMessage["type"],
+        payload: msg.payload,
+        timestamp: msg.createdAt,
+      };
+      messages.push(queueMsg);
+      
+      // Extract task from task_assignment messages
+      if (msg.type === "task_assignment" && msg.payload) {
+        const task = msg.payload as Task;
+        if (!tasks.find(t => t.id === task.id)) {
+          tasks.push(task);
+        }
+      }
+      
+      // Mark message as completed after reading
+      markMessageCompleted(database, msg.id);
+    }
+    
     // Get tasks: assigned to this arm, OR pending/unassigned (any arm can claim)
     const dbTasks = database.query(`
       SELECT id, subject, description, status, priority, phase, domain, assigned_to, metadata, created_at, updated_at
@@ -435,9 +502,42 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
 }
 
 /**
- * Read shared notes
+ * Read shared notes (from SQLite with file fallback)
  */
 async function getSharedNotes(tags?: string[]): Promise<Note[]> {
+  // Try SQLite first
+  try {
+    const database = getDatabase();
+    const dbNotes = getNotes(database, { category: "shared" });
+    
+    // Filter by tags if provided
+    if (tags && tags.length > 0) {
+      return dbNotes
+        .filter(n => tags.some(t => n.tags.includes(t)))
+        .map(n => ({
+          id: n.id,
+          author: n.author,
+          title: n.title,
+          content: n.content,
+          tags: n.tags,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+        }));
+    }
+    
+    return dbNotes.map(n => ({
+      id: n.id,
+      author: n.author,
+      title: n.title,
+      content: n.content,
+      tags: n.tags,
+      createdAt: n.createdAt,
+      updatedAt: n.updatedAt,
+    }));
+  } catch {
+    // Fall back to file-based notes
+  }
+  
   const notesDir = join(OCTOPAI_DIR, "state", "notes", "shared");
   try {
     const files = await readdir(notesDir);
@@ -2797,7 +2897,13 @@ export async function runMcpServer(): Promise<void> {
   console.error(`[octopai] MCP server started for arm: ${ARM_ID}`);
 
   // Start listening for OpenCode context compaction events
-  startOpenCodeEventListener().catch(err => {
-    console.error(`[octopai] Failed to start OpenCode event listener: ${err}`);
-  });
+  // NOTE: We wrap this in a try/catch block to prevent unhandled rejection crashes
+  // The listener itself handles reconnection, but we want to be safe
+  try {
+      startOpenCodeEventListener().catch(err => {
+        console.error(`[octopai] Failed to start OpenCode event listener: ${err}`);
+      });
+  } catch (err) {
+      console.error(`[octopai] Error initializing OpenCode event listener: ${err}`);
+  }
 }
