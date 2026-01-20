@@ -26,7 +26,7 @@ export function SettingsPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold text-gradient-heading">Settings</h1>
         <p className="text-muted-foreground">Configure the Observatory</p>
       </div>
 

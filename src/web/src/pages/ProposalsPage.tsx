@@ -4,7 +4,7 @@ export function ProposalsPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Proposals</h1>
+        <h1 className="text-2xl font-bold text-gradient-heading">Proposals</h1>
         <p className="text-muted-foreground">Governance and decision making</p>
       </div>
 

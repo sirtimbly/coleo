@@ -4,7 +4,7 @@ export function GardenPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Garden</h1>
+        <h1 className="text-2xl font-bold text-gradient-heading">Garden</h1>
         <p className="text-muted-foreground">3D visualization of your codebase</p>
       </div>
 

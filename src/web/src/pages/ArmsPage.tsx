@@ -95,7 +95,7 @@ export function ArmsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Arms</h1>
+          <h1 className="text-2xl font-bold text-gradient-heading">Arms</h1>
           <p className="text-muted-foreground">Manage your AI agents</p>
         </div>
         <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">

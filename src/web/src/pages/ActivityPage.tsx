@@ -26,7 +26,7 @@ export function ActivityPage() {
   return (
     <div className="p-8 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Activity</h1>
+        <h1 className="text-2xl font-bold text-gradient-heading">Activity</h1>
         <p className="text-muted-foreground">System activity log</p>
       </div>
 

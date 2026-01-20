@@ -106,7 +106,7 @@ export function MailPage() {
     <div className="p-8 space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Mail</h1>
+          <h1 className="text-2xl font-bold text-gradient-heading">Mail</h1>
           <p className="text-muted-foreground">Human-agent communication</p>
         </div>
         <button

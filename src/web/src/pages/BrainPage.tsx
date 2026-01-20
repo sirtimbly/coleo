@@ -442,7 +442,7 @@ export function BrainPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Brain</h1>
+          <h1 className="text-2xl font-bold text-gradient-heading">Brain</h1>
           <p className="text-muted-foreground">Central coordinator status and configuration</p>
         </div>
         <div className="flex items-center gap-2">
