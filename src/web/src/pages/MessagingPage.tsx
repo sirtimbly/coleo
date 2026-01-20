@@ -234,30 +234,37 @@ export function MessagingPage({}: MessagingPageProps) {
     ));
   };
 
-  const handleArchive = (messageIds: string[]) => {
-    // For now, just remove from the list (in future this would archive)
-    setMessages(prev => prev.filter(m => !messageIds.includes(m.id)));
+  const handleArchive = async (messageIds: string[]) => {
+    try {
+      // Archive each selected message via API
+      await Promise.all(messageIds.map(id => api.archiveMail(id)));
 
-    // Clear selected message IDs
-    setSelectedMessageIds(prev => {
-      const newSet = new Set(prev);
-      messageIds.forEach(id => newSet.delete(id));
-      return newSet;
-    });
+      // Remove archived messages from the current view
+      setMessages(prev => prev.filter(m => !messageIds.includes(m.id)));
 
-    if (selectedMessage && messageIds.includes(selectedMessage.id)) {
-      // Find the next message in the filtered list
-      const currentIndex = filteredMessages.findIndex(m => m.id === selectedMessage.id);
-      if (currentIndex >= 0) {
-        const nextMessage = filteredMessages[currentIndex + 1] || filteredMessages[currentIndex - 1];
-        if (nextMessage) {
-          handleMessageClick(nextMessage);
+      // Clear selected message IDs
+      setSelectedMessageIds(prev => {
+        const newSet = new Set(prev);
+        messageIds.forEach(id => newSet.delete(id));
+        return newSet;
+      });
+
+      if (selectedMessage && messageIds.includes(selectedMessage.id)) {
+        // Find the next message in the filtered list
+        const currentIndex = filteredMessages.findIndex(m => m.id === selectedMessage.id);
+        if (currentIndex >= 0) {
+          const nextMessage = filteredMessages[currentIndex + 1] || filteredMessages[currentIndex - 1];
+          if (nextMessage) {
+            handleMessageClick(nextMessage);
+          } else {
+            setSelectedMessage(null);
+          }
         } else {
           setSelectedMessage(null);
         }
-      } else {
-        setSelectedMessage(null);
       }
+    } catch (error) {
+      console.error('Failed to archive messages:', error);
     }
   };
 
@@ -314,7 +321,11 @@ export function MessagingPage({}: MessagingPageProps) {
       if (type === 'proposals') return msg.type === 'proposal';
       return msg.type === type.replace('-reports', '-report');
     });
-    return filtered.filter(m => m.unread).length; // Return unread count
+    // Archive tab shows total count (all are read), others show unread count
+    if (type === 'archive') {
+      return filtered.length;
+    }
+    return filtered.filter(m => m.unread).length;
   };
 
   if (loading) {
