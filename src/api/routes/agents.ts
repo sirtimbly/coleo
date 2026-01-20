@@ -14,12 +14,12 @@ export function createAgentsRoutes(): Hono<ServerContext> {
    */
   app.get("/", (c) => {
     const armClient = getArmClient();
-    
+
     if (!armClient) {
       throw new HttpError(503, "NATS/ArmClient not available");
     }
 
-    const agents = armClient.getAgents().map(agent => ({
+    const agents = armClient.getAgents().map((agent: any) => ({
       agentId: agent.agentId,
       hostname: agent.hostname,
       platform: agent.platform,
@@ -38,7 +38,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
   app.get("/:id", (c) => {
     const armClient = getArmClient();
     const agentId = c.req.param("id");
-    
+
     if (!armClient) {
       throw new HttpError(503, "NATS/ArmClient not available");
     }
@@ -57,7 +57,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
   app.get("/:id/arms", async (c) => {
     const armClient = getArmClient();
     const agentId = c.req.param("id");
-    
+
     if (!armClient) {
       return c.json({ error: "NATS/ArmClient not available" }, 503);
     }

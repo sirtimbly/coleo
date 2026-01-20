@@ -368,13 +368,14 @@ export async function createTask(
 export async function waitForTaskStatus(
   ctx: TestContext,
   taskId: string,
-  status: string,
+  status: string | string[],
   timeoutMs: number = 60000
 ): Promise<boolean> {
   if (!ctx.db) {
     throw new Error("Database not initialized");
   }
 
+  const targetStatuses = Array.isArray(status) ? status : [status];
   const startTime = Date.now();
   let lastLogTime = 0;
   let lastStatus = "";
@@ -382,9 +383,9 @@ export async function waitForTaskStatus(
   while (Date.now() - startTime < timeoutMs) {
     const row = ctx.db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string } | null;
     
-    if (row?.status === status) {
-      ctx.timing.mark(`task_${status}_${taskId.slice(0, 8)}`);
-      ctx.log(`Task ${taskId.slice(0, 8)} reached status: ${status}`);
+    if (row?.status && targetStatuses.includes(row.status)) {
+      ctx.timing.mark(`task_${row.status}_${taskId.slice(0, 8)}`);
+      ctx.log(`Task ${taskId.slice(0, 8)} reached status: ${row.status}`);
       return true;
     }
     
@@ -423,7 +424,7 @@ export async function waitForTaskStatus(
 
   // Get the final status for logging
   const finalRow = ctx.db.query("SELECT status FROM tasks WHERE id = ?").get(taskId) as { status: string } | null;
-  ctx.log(`Task ${taskId.slice(0, 8)} did not reach status ${status} within ${timeoutMs}ms (current: ${finalRow?.status ?? "not found"})`);
+  ctx.log(`Task ${taskId.slice(0, 8)} did not reach status ${targetStatuses.join(" or ")} within ${timeoutMs}ms (current: ${finalRow?.status ?? "not found"})`);
   return false;
 }
 

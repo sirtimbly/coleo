@@ -282,7 +282,8 @@ The task involves modifying src/hello.ts. Start by calling 'get_full_briefing' t
 
     // Wait for task to be claimed
     ctx.timing.mark("wait_claim");
-    const claimed = await waitForTaskStatus(ctx, taskId, "claimed", 60000);
+    // Allow 'completed' as well, in case it finishes extremely fast (race condition)
+    const claimed = await waitForTaskStatus(ctx, taskId, ["claimed", "completed"], 60000);
     ctx.timing.mark("task_claimed");
     checks.push({ name: "task_claimed", passed: claimed });
     if (!claimed) {

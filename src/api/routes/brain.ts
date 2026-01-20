@@ -2,6 +2,8 @@
  * Brain routes
  *
  * Brain state, control, and management endpoints
+ * 
+ * NOTE: Brain state is now stored in SQLite (brain_state table), not JSON files.
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
@@ -9,24 +11,15 @@ import { HttpError } from "../middleware";
 import { broadcastBrainEvent } from "../websocket";
 import { getOctopaiDir } from "../../config";
 import { join } from "path";
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { mkdir } from "fs/promises";
 import { Maildir } from "../../mail/maildir";
+import { getBrainState, updateBrainState, type BrainState } from "../../db/state";
 
 interface BrainContext {
   Variables: {
     db: Database;
     octopaiDir: string;
   };
-}
-
-export interface BrainState {
-  status: "stopped" | "running" | "paused";
-  pollIntervalMs: number;
-  activeArms: string[];
-  pendingTasks: number;
-  completedToday: number;
-  lastPollAt?: string;
-  startedAt?: string;
 }
 
 export interface BrainStatus {
@@ -39,6 +32,9 @@ export interface BrainStatus {
   uptime: number | null;
 }
 
+// Re-export BrainState for backward compatibility
+export type { BrainState } from "../../db/state";
+
 export function createBrainRoutes() {
   const app = new Hono<BrainContext>();
 
@@ -48,149 +44,104 @@ export function createBrainRoutes() {
     await next();
   });
 
-  app.get("/status", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+  app.get("/status", (c) => {
     const db = c.get("db");
 
-    let brainState: Partial<BrainState> = {
-      status: "stopped",
-      pollIntervalMs: 30000,
-      activeArms: [],
-      pendingTasks: 0,
-      completedToday: 0,
-    };
-
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      brainState = { ...brainState, ...JSON.parse(content) };
-    } catch {
-      // No state file, use defaults
-    }
+    const brainState = getBrainState(db);
 
     const activeArmsCount = db.query("SELECT COUNT(*) as count FROM arms WHERE status NOT IN ('stopped', 'error')").get() as { count: number } | null;
-    const pendingTasksCount = brainState.pendingTasks || 0;
 
     const now = Date.now();
     const startedAt = brainState.startedAt ? new Date(brainState.startedAt).getTime() : null;
     const uptime = startedAt ? Math.floor((now - startedAt) / 1000) : null;
 
     const status: BrainStatus = {
-      status: (brainState.status as BrainStatus["status"]) || "stopped",
+      status: brainState.status,
       lastPollAt: brainState.lastPollAt || null,
-      pollIntervalMs: brainState.pollIntervalMs || 30000,
+      pollIntervalMs: brainState.pollIntervalMs,
       activeArmsCount: activeArmsCount?.count || 0,
-      pendingTasksCount,
-      completedToday: brainState.completedToday || 0,
+      pendingTasksCount: brainState.pendingTasks,
+      completedToday: brainState.completedToday,
       uptime,
     };
 
     return c.json({ brain: status });
   });
 
-  app.get("/state", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      return c.json({ state: JSON.parse(content) });
-    } catch {
-      return c.json({ state: null });
-    }
+  app.get("/state", (c) => {
+    const db = c.get("db");
+    const state = getBrainState(db);
+    return c.json({ state });
   });
 
-  app.post("/start", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-
+  app.post("/start", (c) => {
+    const db = c.get("db");
     const now = new Date().toISOString();
 
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      const state = JSON.parse(content);
-      if (state.status === "running") {
-        throw HttpError.badRequest("Brain is already running");
-      }
-      state.status = "running";
-      state.startedAt = state.startedAt || now;
-      state.lastPollAt = now;
-      await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(state, null, 2), "utf-8");
-    } catch (err) {
-      if (err instanceof HttpError) throw err;
-      const newState = {
-        status: "running",
-        pollIntervalMs: 30000,
-        activeArms: [],
-        pendingTasks: 0,
-        completedToday: 0,
-        startedAt: now,
-        lastPollAt: now,
-      };
-      await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(newState, null, 2), "utf-8");
+    const currentState = getBrainState(db);
+    if (currentState.status === "running") {
+      throw HttpError.badRequest("Brain is already running");
     }
+
+    updateBrainState(db, {
+      status: "running",
+      startedAt: currentState.startedAt || now,
+      lastPollAt: now,
+    });
 
     broadcastBrainEvent("started", { status: "running" });
 
     return c.json({ started: true, status: "running" });
   });
 
-  app.post("/stop", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+  app.post("/stop", (c) => {
+    const db = c.get("db");
 
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      const state = JSON.parse(content);
-      if (state.status === "stopped") {
-        throw HttpError.badRequest("Brain is already stopped");
-      }
-      state.status = "stopped";
-      state.lastPollAt = new Date().toISOString();
-      await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(state, null, 2), "utf-8");
-    } catch (err) {
-      if (err instanceof HttpError) throw err;
+    const currentState = getBrainState(db);
+    if (currentState.status === "stopped") {
+      throw HttpError.badRequest("Brain is already stopped");
     }
+
+    updateBrainState(db, {
+      status: "stopped",
+      lastPollAt: new Date().toISOString(),
+    });
 
     broadcastBrainEvent("stopped", { status: "stopped" });
 
     return c.json({ stopped: true, status: "stopped" });
   });
 
-  app.post("/pause", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+  app.post("/pause", (c) => {
+    const db = c.get("db");
 
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      const state = JSON.parse(content);
-      if (state.status !== "running") {
-        throw HttpError.badRequest("Brain must be running to pause");
-      }
-      state.status = "paused";
-      state.lastPollAt = new Date().toISOString();
-      await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(state, null, 2), "utf-8");
-    } catch (err) {
-      if (err instanceof HttpError) throw err;
-      throw HttpError.badRequest("Brain is not running");
+    const currentState = getBrainState(db);
+    if (currentState.status !== "running") {
+      throw HttpError.badRequest("Brain must be running to pause");
     }
+
+    updateBrainState(db, {
+      status: "paused",
+      lastPollAt: new Date().toISOString(),
+    });
 
     broadcastBrainEvent("paused", { status: "paused" });
 
     return c.json({ paused: true, status: "paused" });
   });
 
-  app.post("/resume", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+  app.post("/resume", (c) => {
+    const db = c.get("db");
 
-    try {
-      const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
-      const state = JSON.parse(content);
-      if (state.status !== "paused") {
-        throw HttpError.badRequest("Brain must be paused to resume");
-      }
-      state.status = "running";
-      state.lastPollAt = new Date().toISOString();
-      await writeFile(join(octopaiDir, "state", "brain.json"), JSON.stringify(state, null, 2), "utf-8");
-    } catch (err) {
-      if (err instanceof HttpError) throw err;
-      throw HttpError.badRequest("Brain is not paused");
+    const currentState = getBrainState(db);
+    if (currentState.status !== "paused") {
+      throw HttpError.badRequest("Brain must be paused to resume");
     }
+
+    updateBrainState(db, {
+      status: "running",
+      lastPollAt: new Date().toISOString(),
+    });
 
     broadcastBrainEvent("resumed", { status: "running" });
 

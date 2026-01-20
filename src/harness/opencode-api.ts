@@ -199,7 +199,9 @@ export class OpenCodeApiHarness implements AgentHarness {
           type: "local",
           // IMPORTANT: The MCP command runs relative to CWD of the OpenCode process
           // Since OpenCode runs in a temp dir, we must use absolute path to the CLI
-          command: [bunBinary, "run", cliEntrypoint, "mcp", "serve"],
+          // NOTE: We cannot use 'bun run' here because 'bun run' looks for package.json in the current directory
+          // Instead, we execute the script directly with bun
+          command: [bunBinary, cliEntrypoint, "mcp", "serve"],
           environment: {
             OCTOPAI_ARM_ID: armId,
             OCTOPAI_DIR: octopaiDir,
