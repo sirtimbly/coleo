@@ -325,6 +325,17 @@ class ApiClient {
     }>(`/mail/sent${queryStr ? `?${queryStr}` : ''}`);
   }
 
+  async listArchive(params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{
+      messages: MailMessage[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/mail/archive${queryStr ? `?${queryStr}` : ''}`);
+  }
+
   async sendMail(data: { from: string; to: string; subject: string; body: string; headers?: Record<string, string> }) {
     return this.request<{ message: MailMessage }>('/mail/send', {
       method: 'POST',

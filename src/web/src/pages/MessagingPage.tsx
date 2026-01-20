@@ -8,11 +8,11 @@ import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, C
 
 interface MessagingPageProps {}
 
-type MessageType = 'all' | 'mail' | 'status-reports' | 'proposals';
+type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
 
 interface UnifiedMessage {
   id: string;
-  type: 'mail' | 'status-report' | 'proposal';
+  type: 'mail' | 'sent' | 'archive' | 'status-report' | 'proposal';
   timestamp: string;
   title: string;
   summary: string;
@@ -42,14 +42,16 @@ export function MessagingPage({}: MessagingPageProps) {
       setError(null);
 
       // Note: Proposals API not implemented yet, will add when available
-      const [mailResponse, statusReportsResponse] = await Promise.all([
+      const [mailResponse, sentResponse, archiveResponse, statusReportsResponse] = await Promise.all([
         api.listInbox({ limit: 50 }),
+        api.listSent({ limit: 50 }),
+        api.listArchive({ limit: 50 }),
         api.listStatusReports({ limit: 50 }),
       ]);
 
       const unifiedMessages: UnifiedMessage[] = [];
 
-      // Add mail messages
+      // Add inbox mail messages
       mailResponse.messages.forEach((mail: MailMessage) => {
         unifiedMessages.push({
           id: `mail-${mail.id}`,
@@ -58,6 +60,34 @@ export function MessagingPage({}: MessagingPageProps) {
           title: mail.subject,
           summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
           unread: !mail.flags.seen,
+          priority: mail.flags.flagged ? 'high' : 'normal',
+          data: mail,
+        });
+      });
+
+      // Add sent messages
+      sentResponse.messages.forEach((mail: MailMessage) => {
+        unifiedMessages.push({
+          id: `sent-${mail.id}`,
+          type: 'sent',
+          timestamp: mail.date,
+          title: mail.subject,
+          summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
+          unread: false, // Sent messages are always "read"
+          priority: mail.flags.flagged ? 'high' : 'normal',
+          data: mail,
+        });
+      });
+
+      // Add archived messages
+      archiveResponse.messages.forEach((mail: MailMessage) => {
+        unifiedMessages.push({
+          id: `archive-${mail.id}`,
+          type: 'archive',
+          timestamp: mail.date,
+          title: mail.subject,
+          summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
+          unread: false, // Archived messages are already read
           priority: mail.flags.flagged ? 'high' : 'normal',
           data: mail,
         });
@@ -136,8 +166,12 @@ export function MessagingPage({}: MessagingPageProps) {
 
   const filteredMessages = messages.filter(msg => {
     if (activeTab === 'all') return true;
-    if (activeTab === 'proposals') return msg.type === 'proposal'; // Placeholder for future
-    return msg.type === activeTab.replace('-reports', '-report');
+    if (activeTab === 'mail') return msg.type === 'mail';
+    if (activeTab === 'sent') return msg.type === 'sent';
+    if (activeTab === 'archive') return msg.type === 'archive';
+    if (activeTab === 'status-reports') return msg.type === 'status-report';
+    if (activeTab === 'proposals') return msg.type === 'proposal';
+    return true;
   });
 
   // Keyboard shortcuts
@@ -229,14 +263,12 @@ export function MessagingPage({}: MessagingPageProps) {
 
   const getMessageIcon = (type: UnifiedMessage['type']) => {
     switch (type) {
-      case 'mail':
-        return <Mail className="h-4 w-4" />;
-      case 'status-report':
-        return <FileText className="h-4 w-4" />;
-      case 'proposal':
-        return <Vote className="h-4 w-4" />;
-      default:
-        return <MessageSquare className="h-4 w-4" />;
+      case 'mail': return <Mail className="h-4 w-4 text-blue-500" />;
+      case 'sent': return <Mail className="h-4 w-4 text-green-500" />;
+      case 'archive': return <Archive className="h-4 w-4 text-gray-500" />;
+      case 'status-report': return <FileText className="h-4 w-4 text-yellow-500" />;
+      case 'proposal': return <Vote className="h-4 w-4 text-purple-500" />;
+      default: return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -348,14 +380,16 @@ export function MessagingPage({}: MessagingPageProps) {
             <nav className="space-y-1">
               {[
                 { key: 'all' as MessageType, label: 'All', icon: MessageSquare },
-                { key: 'mail' as MessageType, label: 'Mail', icon: Mail },
+                { key: 'mail' as MessageType, label: 'Inbox', icon: Mail },
+                { key: 'sent' as MessageType, label: 'Sent', icon: Mail },
+                { key: 'archive' as MessageType, label: 'Archive', icon: Archive },
                 { key: 'status-reports' as MessageType, label: 'Status Reports', icon: FileText },
                 { key: 'proposals' as MessageType, label: 'Proposals', icon: Vote },
               ].map(({ key, label, icon: Icon }) => (
                 <button
                   key={key}
                   onClick={() => setActiveTab(key)}
-                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
                     activeTab === key
                       ? 'bg-secondary text-secondary-foreground'
                       : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'

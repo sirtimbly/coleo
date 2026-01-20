@@ -7,19 +7,22 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 export function MailPage() {
   const [inbox, setInbox] = useState<{ messages: MailMessage[]; pagination: { unread: number } } | null>(null);
   const [sent, setSent] = useState<{ messages: MailMessage[] } | null>(null);
+  const [archive, setArchive] = useState<{ messages: MailMessage[] } | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<MailMessage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'inbox' | 'sent'>('inbox');
+  const [activeTab, setActiveTab] = useState<'inbox' | 'sent' | 'archive'>('inbox');
 
   const loadMail = useCallback(async () => {
     try {
-      const [inboxRes, sentRes] = await Promise.all([
+      const [inboxRes, sentRes, archiveRes] = await Promise.all([
         api.listInbox({ limit: 20 }),
         api.listSent({ limit: 20 }),
+        api.listArchive({ limit: 20 }),
       ]);
       setInbox(inboxRes);
       setSent(sentRes);
+      setArchive(archiveRes);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load mail');
@@ -100,7 +103,9 @@ export function MailPage() {
     );
   }
 
-  const messages = activeTab === 'inbox' ? inbox?.messages || [] : sent?.messages || [];
+  const messages = activeTab === 'inbox' ? inbox?.messages || [] : 
+                   activeTab === 'sent' ? sent?.messages || [] :
+                   archive?.messages || [];
 
   return (
     <div className="p-8 space-y-8">
@@ -111,7 +116,7 @@ export function MailPage() {
         </div>
         <button
           onClick={loadMail}
-          className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+          className="p-2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
           title="Refresh"
         >
           <RefreshCw className="h-4 w-4" />
@@ -125,7 +130,7 @@ export function MailPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => setActiveTab('inbox')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
                     activeTab === 'inbox'
                       ? 'bg-secondary text-secondary-foreground'
                       : 'text-muted-foreground hover:text-foreground'
@@ -141,7 +146,7 @@ export function MailPage() {
                 </button>
                 <button
                   onClick={() => setActiveTab('sent')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
                     activeTab === 'sent'
                       ? 'bg-secondary text-secondary-foreground'
                       : 'text-muted-foreground hover:text-foreground'
@@ -149,6 +154,17 @@ export function MailPage() {
                 >
                   <Send className="h-4 w-4" />
                   Sent
+                </button>
+                <button
+                  onClick={() => setActiveTab('archive')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
+                    activeTab === 'archive'
+                      ? 'bg-secondary text-secondary-foreground'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Archive className="h-4 w-4" />
+                  Archive
                 </button>
               </div>
             </CardHeader>
@@ -164,7 +180,7 @@ export function MailPage() {
                     <button
                       key={msg.id}
                       onClick={() => setSelectedMessage(msg)}
-                      className={`w-full p-4 text-left hover:bg-secondary/50 transition-colors ${
+                      className={`w-full p-4 text-left hover:bg-secondary/50 transition-colors cursor-pointer ${
                         activeTab === 'inbox' && !msg.flags.seen ? 'bg-primary/5' : ''
                       }`}
                     >
@@ -216,7 +232,7 @@ export function MailPage() {
                       {selectedMessage.flags.seen ? null : (
                         <button
                           onClick={() => handleMarkRead(selectedMessage.id)}
-                          className="flex-1 flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+                          className="flex-1 flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           Mark as Read
@@ -224,7 +240,7 @@ export function MailPage() {
                       )}
                       <button
                         onClick={() => handleArchive(selectedMessage.id)}
-                        className="flex-1 flex items-center justify-center px-4 py-2 border border-input bg-background rounded-md hover:bg-accent hover:text-accent-foreground transition-colors"
+                        className="flex-1 flex items-center justify-center px-4 py-2 border border-input bg-background rounded-md hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
                       >
                         <Archive className="h-4 w-4 mr-2" />
                         Archive

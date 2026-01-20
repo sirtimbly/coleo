@@ -465,6 +465,30 @@ export function createMailRoutes() {
     }
   });
 
+  app.get("/archive", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const offset = parseInt(c.req.query("offset") || "0", 10);
+
+    try {
+      const allMessages = await inbox.list("archive");
+      const messages = allMessages.slice(offset, offset + limit);
+
+      return c.json({
+        messages,
+        pagination: {
+          limit,
+          offset,
+          total: allMessages.length,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to list archived messages: ${err}`);
+    }
+  });
+
   app.post("/send", async (c) => {
     const octopaiDir = c.get("octopaiDir");
     const sent = new Maildir(join(octopaiDir, "mail", "sent"));
