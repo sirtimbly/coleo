@@ -501,6 +501,41 @@ Migrate all JSON-based state to SQLite to maintain single source of truth:
 - [ ] Migrate shared notes from `.octopai/state/notes/` to `notes` table
 - [ ] Remove JSON file fallbacks after migration verified
 
+### Future Consideration: NATS JetStream Event Sourcing
+
+Some "current state" data is better modeled as derived state from an event stream (event sourcing pattern). NATS JetStream provides:
+
+- **Streams**: Append-only event logs with configurable retention (time, size, count)
+- **Key-Value Store**: Built on streams, good for derived state snapshots
+- **Replay**: Can rebuild state from event history
+
+**Candidates for event sourcing (migrate after SQLite cleanup):**
+
+| Current State | Event Stream | Derived Query |
+|---------------|--------------|---------------|
+| `seenArmIds` (has arm received tasks?) | `task_assigned` events | "Any task_assigned events for this arm?" |
+| Arm heartbeats/last seen | `heartbeat` events | "Most recent heartbeat for arm X" |
+| Task state transitions | `task_claimed`, `task_completed`, etc. | "Current status = last event type" |
+| Message delivery status | `message_sent`, `message_acked` | "Was message X acknowledged?" |
+
+**Benefits:**
+- Full audit trail of state changes
+- Current state is computed, not stored (no sync bugs)
+- Time-series queries ("what was happening at time T?")
+- Natural fit for distributed systems
+
+**Implementation notes:**
+- NATS JetStream already integrated for arm communication
+- Start with task state transitions as first candidate
+- Keep SQLite for complex queries, use JetStream for event log
+- Current state can be cached in SQLite, rebuilt from stream on startup
+
+**Not candidates for event sourcing (keep in SQLite/files):**
+- Maildir messages (standard format, interoperable)
+- MCP configs (external tool requirement)
+- Plan documents (human-editable, version controlled)
+- Configuration (TOML, human-editable)
+
 ### Priority 2: Code Consolidation (High)
 
 Create shared utilities to reduce duplication:
