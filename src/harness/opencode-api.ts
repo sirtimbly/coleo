@@ -152,6 +152,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     const port = await this.findAvailablePort();
 
     // Build environment for the OpenCode server
+    // IMPORTANT: Include full process.env to ensure MCP servers can spawn subprocesses
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       ...config.env,
@@ -159,6 +160,8 @@ export class OpenCodeApiHarness implements AgentHarness {
       // Disable SSL certificate verification to work around corporate proxies/VPNs
       // TODO: Make this configurable or find a better solution
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
+      // Ensure PATH includes bun for MCP servers
+      PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
     };
 
     // Always create OpenCode config file for this arm
@@ -171,22 +174,41 @@ export class OpenCodeApiHarness implements AgentHarness {
     const { mkdir, writeFile } = await import("node:fs/promises");
     await mkdir(mcpDir, { recursive: true });
     
-    // Use bun from the system PATH or fall back to ~/.bun/bin/bun
-    const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+    // Try to find bun in PATH first, fall back to ~/.bun/bin/bun
+    const { execSync } = await import("child_process");
+    let bunPath: string;
+    try {
+      bunPath = execSync("which bun", { encoding: "utf-8" }).trim();
+    } catch {
+      bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+    }
     
     // Build the OpenCode config
+    // Use /usr/bin/env to find the binary - this works better with OpenCode's spawn mechanism
+    // DEBUG: Use absolute path to bun and CLI entrypoint to eliminate PATH issues
+    const bunBinary = process.execPath; // Typically the bun binary
+    const cliEntrypoint = join(process.cwd(), "src/cli/index.ts");
+    
+    console.log(`[harness-api] Configuring MCP command: ${bunBinary} run ${cliEntrypoint} mcp serve`);
+
     const opencodeConfig: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
       // Configure the Octopai MCP server for brain communication
       mcp: {
         octopai: {
           type: "local",
-          command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
+          // IMPORTANT: The MCP command runs relative to CWD of the OpenCode process
+          // Since OpenCode runs in a temp dir, we must use absolute path to the CLI
+          command: [bunBinary, "run", cliEntrypoint, "mcp", "serve"],
           environment: {
             OCTOPAI_ARM_ID: armId,
             OCTOPAI_DIR: octopaiDir,
+            // Ensure PATH includes bun
+            PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
+            HOME: process.env.HOME || "",
           },
-          enabled: true,
+          // DEBUG: Re-enable MCP with fix attempts
+          enabled: true, 
         },
       },
     };
@@ -212,11 +234,43 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     // Start OpenCode server
     const serverProcess = spawn(["opencode", "serve", "--port", String(port)], {
-      cwd: config.workdir,
-      env,
+      cwd: config.workdir, // This is usually /tmp/...
+      env: {
+          ...env,
+          // Limit memory usage if possible (node options)
+          NODE_OPTIONS: "--max-old-space-size=512",
+          // Force no color to avoid escape codes in logs
+          NO_COLOR: "1" 
+      },
       stdout: "pipe",
       stderr: "pipe",
     });
+
+    // Stream output for debugging and logging
+    const streamLog = async (stream: ReadableStream, type: "stdout" | "stderr") => {
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const text = decoder.decode(value);
+          // Print to console for immediate debugging
+          process.stdout.write(`[opencode-${port}-${type}] ${text}`);
+
+          
+          // Forward to PTY session if available (for logs)
+          if (apiSession?.pty?.onData) {
+            apiSession.pty.onData(text);
+          }
+        }
+      } catch {
+        // Ignore stream errors
+      }
+    };
+
+    streamLog(serverProcess.stdout, "stdout");
+    streamLog(serverProcess.stderr, "stderr");
 
     const serverUrl = `http://127.0.0.1:${port}`;
 

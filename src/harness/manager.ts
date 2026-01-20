@@ -161,10 +161,16 @@ export class HarnessManager {
 
     console.log(`[harness-manager] ${armId} spawned (pid: ${harness.getPid?.(session)}, session: ${session.id})`);
 
-    // Send initial prompt if provided
+    // Send initial prompt if provided - use async endpoint so we don't block spawn
+    // The AI will process the prompt in the background and call MCP tools as needed
     if (options.initialPrompt) {
-      console.log(`[harness-manager] Sending initial prompt to ${armId}...`);
-      await harness.sendPrompt(session, options.initialPrompt);
+      console.log(`[harness-manager] Sending initial prompt to ${armId} (async)...`);
+      try {
+        await harness.sendPrompt(session, options.initialPrompt);
+        console.log(`[harness-manager] Initial prompt sent to ${armId}`);
+      } catch (err) {
+        console.error(`[harness-manager] Failed to send initial prompt: ${err}`);
+      }
     }
 
     return activeSession;

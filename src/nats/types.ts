@@ -201,9 +201,18 @@ export interface BrainMessage {
   timestamp: string;
 }
 
+
+export interface ArmRecoveredEvent {
+  type: 'arm.recovered';
+  armId: string;
+  agentId: string;
+  state: ArmState;
+}
+
 export type ArmEvent = 
   | ArmSpawnedEvent 
   | ArmKilledEvent 
+  | ArmRecoveredEvent
   | ArmStatusChangedEvent 
   | ArmActivityEvent
   | ArmLogEvent;

@@ -6,6 +6,8 @@
  */
 
 import { hostname } from 'os';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import { 
   NatsClient, 
   generateRequestId,
@@ -18,7 +20,9 @@ import {
   type SpawnResponse,
   type ListArmsResponse,
 } from '../nats';
-import { harnessRegistry, type AgentHarness, type HarnessSession, type SpawnConfig } from '../harness';
+import { harnessRegistry, type AgentHarness, type HarnessSession, type SpawnConfig, OpenCodeApiHarness } from '../harness';
+
+const execAsync = promisify(exec);
 
 export interface ArmAgentOptions {
   agentId?: string;
@@ -427,12 +431,122 @@ export class ArmAgent {
   }
 
   private async recoverExistingArms(): Promise<void> {
-    // TODO: Implement recovery of arms that were running before agent restart
-    // This would involve:
-    // 1. Reading a local state file or checking running processes
-    // 2. Re-establishing connections to OpenCode servers
-    // 3. Re-registering them with NATS
     this.log('Checking for existing arms to recover...', 'debug');
+
+    try {
+      // Find running opencode processes
+      // We look for processes with OCTOPAI_ARM_ID environment variable
+      // Using ps eww -A on macOS/Linux to get environment variables
+      const command = process.platform === 'darwin' || process.platform === 'linux' 
+        ? 'ps eww -A' 
+        : ''; // Windows not supported for recovery yet
+
+      if (!command) {
+        this.log('Skipping arm recovery: platform not supported', 'debug');
+        return;
+      }
+
+      const { stdout } = await execAsync(command, { maxBuffer: 10 * 1024 * 1024 }); // 10MB buffer
+      const lines = stdout.split('\n');
+
+      const recoveredArms: Map<string, { pid: number; port: number | null }> = new Map();
+
+      for (const line of lines) {
+        // Look for opencode processes
+        if (!line.includes('opencode')) continue;
+        
+        // Extract PID
+        const pidMatch = line.trim().match(/^(\d+)/);
+        if (!pidMatch || !pidMatch[1]) continue;
+        const pidStr = pidMatch[1];
+        const pid = parseInt(pidStr, 10);
+
+        // Skip our own PID
+        if (pid === process.pid) continue;
+
+        // Extract OCTOPAI_ARM_ID
+        const armIdMatch = line.match(/OCTOPAI_ARM_ID=([a-zA-Z0-9_-]+)/);
+        if (!armIdMatch || !armIdMatch[1]) continue;
+        const armId: string = armIdMatch[1];
+
+        // Check if we already found this arm (might be multiple threads/processes)
+        if (recoveredArms.has(armId)) continue;
+
+        // Extract port if available (for API harness)
+        // Look for --port argument
+        const portMatch = line.match(/--port\s+(\d+)/);
+        const port = (portMatch && portMatch[1]) ? parseInt(portMatch[1], 10) : null;
+
+        recoveredArms.set(armId, { pid, port });
+      }
+
+      if (recoveredArms.size === 0) {
+        this.log('No existing arms found to recover.', 'debug');
+        return;
+      }
+
+      this.log(`Found ${recoveredArms.size} potential arms to recover: ${Array.from(recoveredArms.keys()).join(', ')}`);
+
+      // Try to recover each arm
+      for (const [armId, info] of recoveredArms.entries()) {
+        try {
+          // Determine harness type - currently only opencode-api supports recovery effectively
+          // In the future, we might infer this from process args or other env vars
+          const harnessName = info.port ? 'opencode-api' : 'opencode';
+
+          if (harnessName === 'opencode-api' && info.port !== null) {
+            this.log(`Attempting to recover arm ${armId} (port ${info.port})...`);
+            
+            const harness = harnessRegistry.get('opencode-api') as OpenCodeApiHarness;
+            if (!harness) {
+              this.log(`Skipping ${armId}: opencode-api harness not found`, 'error');
+              continue;
+            }
+
+            const session = await harness.recover(armId, info.port, info.pid);
+            
+            if (session) {
+              // Create managed arm entry
+              const managedArm: ManagedArm = {
+                armId,
+                name: armId, // We don't have the original name, use ID
+                domain: 'recovered', // Unknown domain
+                harnessName: 'opencode-api',
+                harness,
+                session,
+                status: 'idle', // Assume idle initially
+                provider: null, // Unknown
+                model: null, // Unknown
+                startedAt: new Date().toISOString(), // Use now as start time since we just recovered
+                lastActivityAt: null,
+                error: null,
+              };
+
+              this.managedArms.set(armId, managedArm);
+              this.log(`Successfully recovered arm: ${armId}`);
+              
+              // Publish recovery event
+              await this.natsClient.publishArmEvent(armId, {
+                type: 'arm.recovered',
+                armId,
+                agentId: this.agentId,
+                state: this.armToState(managedArm),
+              });
+            } else {
+              this.log(`Failed to recover session for arm ${armId}`, 'warn');
+            }
+          } else {
+            // PTY-based recovery is harder because we can't easily re-attach to the PTY
+            // For now, we just log it
+            this.log(`Skipping recovery for PTY-based arm ${armId} (PID ${info.pid}) - re-attachment not supported yet`, 'debug');
+          }
+        } catch (err) {
+          this.log(`Error recovering arm ${armId}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+        }
+      }
+    } catch (err) {
+      this.log(`Error scanning for existing arms: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
   }
 
   private armToState(arm: ManagedArm): ArmState {
@@ -460,11 +574,13 @@ export class ArmAgent {
     };
   }
 
-  private log(message: string, level: 'debug' | 'info' | 'error' = 'info'): void {
+  private log(message: string, level: 'debug' | 'info' | 'warn' | 'error' = 'info'): void {
     if (!this.debug && level === 'debug') return;
     const prefix = `[ArmAgent:${this.agentId}]`;
     if (level === 'error') {
       console.error(prefix, message);
+    } else if (level === 'warn') {
+      console.warn(prefix, message);
     } else {
       console.log(prefix, message);
     }
