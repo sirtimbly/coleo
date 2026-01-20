@@ -393,7 +393,11 @@ export function TasksPage() {
                 <div className="space-y-4">
                   <div>
                     <h4 className="font-medium mb-2">{selectedTask.subject}</h4>
-                    <TaskPriorityBadge priority={selectedTask.priority} />
+                    <TaskPriorityBadge 
+                      priority={selectedTask.priority}
+                      taskId={selectedTask.id}
+                      onPriorityChange={handlePriorityChange}
+                    />
                   </div>
 
                   <div>
@@ -414,7 +418,11 @@ export function TasksPage() {
                     <div>
                       <span className="text-muted-foreground">Priority:</span>
                       <div className="mt-1">
-                        <TaskPriorityBadge priority={selectedTask.priority} />
+                        <TaskPriorityBadge 
+                          priority={selectedTask.priority}
+                          taskId={selectedTask.id}
+                          onPriorityChange={handlePriorityChange}
+                        />
                       </div>
                     </div>
                   </div>
