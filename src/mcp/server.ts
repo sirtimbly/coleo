@@ -53,9 +53,9 @@ async function startOpenCodeEventListener(): Promise<void> {
   
   try {
     const eventsource = await import("eventsource");
-    const EventSource = (eventsource as unknown as { default: unknown }).default || eventsource;
-    
-    const eventSource = new (EventSource as new (url: string) => EventSource)(eventSourceUrl);
+    const EventSource = eventsource.EventSource;
+
+    const eventSource = new EventSource(eventSourceUrl);
 
     eventSource.onopen = () => {
       console.error(`[MCP] Connected to OpenCode event stream at ${eventSourceUrl}`);
@@ -485,6 +485,7 @@ export function createMcpServer(): McpServer {
       },
     },
     async ({ task_id }) => {
+      console.error(`[MCP] claim_task called by ${ARM_ID} for task ${task_id}`);
       const messageId = await sendToBrain({
         from: ARM_ID,
         to: "brain",
@@ -496,6 +497,7 @@ export function createMcpServer(): McpServer {
       });
 
       logActivity(ARM_ID, "claim_task", task_id, { messageId });
+      console.error(`[MCP] claim_task completed, messageId: ${messageId}`);
 
       return {
         content: [
@@ -520,6 +522,7 @@ export function createMcpServer(): McpServer {
       },
       },
     async ({ task_id, summary, artifacts }) => {
+      console.error(`[MCP] complete_task called by ${ARM_ID} for task ${task_id}`);
       const messageId = await sendToBrain({
         from: ARM_ID,
         to: "brain",
@@ -2631,10 +2634,11 @@ export function createMcpServer(): McpServer {
   server.registerTool(
     "get_full_briefing",
     {
-      description: "Get a complete briefing: the brain's task determination AND the full context bundle for that task. This is the recommended way to start work - it combines 'get_task_determination' and 'get_context_bundle' into a single call for efficiency.",
+      description: "Get a complete briefing: the brain's task determination AND the full context bundle for that task. This is the recommended way to start work - it combines 'get_task_determination' and 'get_context_bundle' into a single call for efficiency. After reviewing the briefing, use 'claim_task' to claim ownership of the task.",
       inputSchema: {},
     },
     async () => {
+      console.error(`[MCP] get_full_briefing called by ${ARM_ID}`);
       // Auto-register manual arms - this is the recommended entry point
       ensureArmRegistered();
       
@@ -2674,9 +2678,9 @@ export function createMcpServer(): McpServer {
         
         if (contextBundle) {
           const contextFormatted = formatContextBundle(contextBundle);
-          fullBriefing += "\n\n" + "=".repeat(60) + "\n\n" + contextFormatted;
+          fullBriefing += "\n" + "=".repeat(60) + "\n\n" + contextFormatted;
         } else {
-          fullBriefing += "\n\n---\n\n*Context bundle could not be generated for this task.*";
+          fullBriefing += "\n---\n\n*Context bundle could not be generated for this task.*";
         }
         
         logActivity(ARM_ID, "get_full_briefing", determination.task.id, {
