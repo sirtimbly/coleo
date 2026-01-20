@@ -253,7 +253,7 @@ export class Brain {
 
   constructor(options: BrainOptions) {
     this.options = options;
-    this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:7777";
+    this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:8080";
     this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
     this.natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
     this.state = {
