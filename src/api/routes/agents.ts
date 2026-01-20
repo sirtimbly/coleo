@@ -4,6 +4,7 @@
 import { Hono } from "hono";
 import type { ServerContext } from "../server";
 import { getArmClient } from "../server";
+import { HttpError } from "../middleware";
 
 export function createAgentsRoutes(): Hono<ServerContext> {
   const app = new Hono<ServerContext>();
@@ -15,10 +16,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
     const armClient = getArmClient();
     
     if (!armClient) {
-      return c.json({ 
-        agents: [],
-        error: "NATS/ArmClient not available" 
-      });
+      throw new HttpError(503, "NATS/ArmClient not available");
     }
 
     const agents = armClient.getAgents().map(agent => ({
@@ -42,12 +40,12 @@ export function createAgentsRoutes(): Hono<ServerContext> {
     const agentId = c.req.param("id");
     
     if (!armClient) {
-      return c.json({ error: "NATS/ArmClient not available" }, 503);
+      throw new HttpError(503, "NATS/ArmClient not available");
     }
 
     const agent = armClient.getAgent(agentId);
     if (!agent) {
-      return c.json({ error: "Agent not found" }, 404);
+      throw HttpError.notFound("Agent not found");
     }
 
     return c.json({ agent });

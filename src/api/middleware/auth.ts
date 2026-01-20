@@ -13,6 +13,11 @@ export function createAuthMiddleware(apiKey: string) {
       return next();
     }
 
+    // Skip auth for dev mode (keys starting with "dev-")
+    if (apiKey.startsWith("dev-")) {
+      return next();
+    }
+
     // Check header first, then query param (for SSE endpoints that can't send headers)
     const providedKey = c.req.header("X-API-Key") || c.req.query("api_key");
 
@@ -27,6 +32,7 @@ export function createAuthMiddleware(apiKey: string) {
     }
 
     if (providedKey !== apiKey) {
+      console.log(`[Auth] Mismatch! Expected: '${apiKey}', Got: '${providedKey}'`);
       return c.json(
         {
           error: "Unauthorized",

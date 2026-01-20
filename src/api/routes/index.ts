@@ -1,6 +1,7 @@
 export { createSystemRoutes } from "./system";
 export { createArmsRoutes, loadArmTemplate, listArmTemplates } from "./arms";
 export { createActivityRoutes } from "./activity";
+export { createStatusReportsRoutes } from "./status-reports";
 export { createMailRoutes } from "./mail";
 export { createBrainRoutes } from "./brain";
 export { createConfigRoutes } from "./config";

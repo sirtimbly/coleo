@@ -12,6 +12,7 @@ import { loadConfig, getOctopaiDir } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
 import { getArmClient } from "../server";
+import { generateSystemPrompt } from "../../arm/prompts";
 
 interface ArmsContext {
   Variables: {
@@ -609,13 +610,30 @@ export function createArmsRoutes() {
       // Recovery failed, continue with fresh spawn
     }
 
+    // Generate system prompt for the arm
+    const workdir = body.workdir || process.cwd();
+    const systemPrompt = generateSystemPrompt({
+      armId: id,
+      name: row.name,
+      domain: row.domain,
+      harness: row.harness,
+      workdir,
+      provider,
+      model,
+    });
+
+    // Combine system prompt with any user-provided initial prompt
+    const fullInitialPrompt = body.initialPrompt 
+      ? `${systemPrompt}\n\n---\n\n## Additional Instructions\n\n${body.initialPrompt}`
+      : systemPrompt;
+
     try {
       // Spawn via harness
       const session = await manager.spawn(id, row.harness, {
-        workdir: body.workdir || process.cwd(),
+        workdir,
         provider,
         model,
-        initialPrompt: body.initialPrompt,
+        initialPrompt: fullInitialPrompt,
       });
 
       // Update database

@@ -195,9 +195,105 @@ export function createMailRoutes() {
   });
 
   /**
-   * Update message flags - for IMAP flag synchronization
+   * Mark message as read - tracks processing confirmation
+   * POST /api/mail/inbox/:id/read
    */
-  app.patch("/folders/:folder/messages/:id/flags", async (c) => {
+  app.post("/inbox/:id/read", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const id = c.req.param("id");
+
+    const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
+
+    try {
+      // Move message from new/ to cur/ (mark as read)
+      await maildir.markSeen(id);
+
+      broadcastMailEvent("read", {
+        messageId: id,
+        from: "unknown", // Could be enhanced to extract from message
+        to: "brain",
+        subject: "unknown",
+      });
+
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to mark message as read: ${err}`);
+    }
+  });
+
+  /**
+   * Archive message - tracks that message was processed
+   * POST /api/mail/inbox/:id/archive
+   */
+  app.post("/inbox/:id/archive", async (c) => {
+    const octopaiDir = c.get("octopaiDir");
+    const id = c.req.param("id");
+
+    const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
+
+    try {
+      // Move message to archive folder (or mark as archived)
+      await maildir.archive(id);
+
+      broadcastMailEvent("archived", {
+        messageId: id,
+        from: "unknown",
+        to: "brain",
+        subject: "unknown",
+      });
+
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to archive message: ${err}`);
+    }
+  });
+
+  /**
+   * Track message processing outcomes
+   * POST /api/mail/inbox/:id/track
+   */
+  app.post("/inbox/:id/track", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      outcome: "added_to_plan" | "unblocked_arm" | "created_task" | "ignored" | "error";
+      details?: Record<string, unknown>;
+      taskId?: string;
+      armId?: string;
+    }>();
+
+    if (!body.outcome) {
+      throw HttpError.badRequest("outcome is required");
+    }
+
+    try {
+      // Log the message processing outcome
+      db.run(`
+        INSERT INTO activity (actor, action, target, details)
+        VALUES (?, ?, ?, ?)
+      `, [
+        "brain",
+        "message_processed",
+        id,
+        JSON.stringify({
+          outcome: body.outcome,
+          details: body.details,
+          taskId: body.taskId,
+          armId: body.armId,
+          timestamp: new Date().toISOString(),
+        }),
+      ]);
+
+      return c.json({ success: true });
+    } catch (err) {
+      throw HttpError.internal(`Failed to track message processing: ${err}`);
+    }
+  });
+
+  /**
+    * Update message flags - for IMAP flag synchronization
+    */
+   app.patch("/folders/:folder/messages/:id/flags", async (c) => {
     const octopaiDir = c.get("octopaiDir");
     const folder = c.req.param("folder");
     const id = c.req.param("id");
