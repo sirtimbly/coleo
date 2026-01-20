@@ -143,7 +143,31 @@ export class Maildir {
         if (file.startsWith(".")) continue; // Skip hidden files
         
         try {
-          const message = await this.read(join(folderPath, file));
+          const filePath = join(folderPath, file);
+          
+          // For archive folder, check if it's a subdirectory (e.g., 2026-01)
+          if (folder === "archive") {
+            const { stat } = await import("fs/promises");
+            const stats = await stat(filePath);
+            
+            if (stats.isDirectory()) {
+              // Read all messages from this archive subdirectory
+              const subFiles = await readdir(filePath);
+              for (const subFile of subFiles) {
+                if (subFile.startsWith(".")) continue;
+                try {
+                  const message = await this.read(join(filePath, subFile));
+                  messages.push(message);
+                } catch (err) {
+                  console.error(`Failed to read archived message ${subFile}:`, err);
+                }
+              }
+              continue;
+            }
+          }
+          
+          // Regular file - read it
+          const message = await this.read(filePath);
           messages.push(message);
         } catch (err) {
           console.error(`Failed to read message ${file}:`, err);
