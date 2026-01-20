@@ -8,8 +8,9 @@ harness = "opencode-api"
 
 [model]
 # Provider and model for this arm (uses OpenCode format: provider/model_id)
-provider = "opencode"
-model = "gpt-5.1-codex"
+# See: https://opencode.ai/docs/models/#set-a-default
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
 
 [context]
 budget = 200000
