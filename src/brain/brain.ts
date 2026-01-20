@@ -13,6 +13,7 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
+import { updateInfrastructureHealth, assignTaskToArm, updateArmStatusWithActivity } from "../db/transactions";
 import {
   queueMessage,
   getPendingBrainMessages,
@@ -27,6 +28,7 @@ import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
@@ -155,6 +157,7 @@ export class Brain {
   private mailProcessor: MailProcessor;
   private stuckArmAnalyzer: StuckArmAnalyzer;
   private docTracker: DocUpdateTracker | null = null;
+  private armStateMachine: ArmStateMachine | null = null;
   // Track last stuck state per arm to avoid duplicate escalations
   private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
   // Track idle arm prompt-response patterns to detect stuck loops
@@ -189,6 +192,63 @@ export class Brain {
       `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
       [now, actor, action, target || null, JSON.stringify(details || {})]
     );
+  }
+
+  /**
+   * Handle side effects from the arm state machine
+   */
+  private async handleStateMachineSideEffect(effect: SideEffect): Promise<void> {
+    switch (effect.type) {
+      case "LOG":
+        this.log(effect.message);
+        break;
+
+      case "NOTIFY_ARM":
+        await this.sendPromptToArm(effect.armId, effect.message);
+        break;
+
+      case "UPDATE_TASK_STATUS":
+        if (this.db) {
+          const now = new Date().toISOString();
+          if (effect.status === "completed") {
+            this.db.run(
+              "UPDATE tasks SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+              [effect.status, now, now, effect.taskId]
+            );
+          } else {
+            this.db.run(
+              "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
+              [effect.status, now, effect.taskId]
+            );
+          }
+        }
+        break;
+
+      case "RELEASE_TASK":
+        if (this.db) {
+          const now = new Date().toISOString();
+          this.db.run(
+            "UPDATE tasks SET status = 'pending', assigned_to = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?",
+            [now, effect.taskId]
+          );
+          this.log(`Released task ${effect.taskId} back to pending`);
+        }
+        break;
+
+      case "MARK_ARM_STOPPED":
+        if (this.db) {
+          const now = new Date().toISOString();
+          this.db.run(
+            "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+            [now, effect.armId]
+          );
+          this.arms.delete(effect.armId);
+          this.idleArmPromptTracker.delete(effect.armId);
+        }
+        break;
+
+      // SCHEDULE_TIMEOUT is handled internally by ArmStateMachine
+    }
   }
 
   constructor(options: BrainOptions) {
@@ -321,6 +381,9 @@ export class Brain {
 
     // Initialize doc update tracker
     this.docTracker = new DocUpdateTracker(this.db, this.options.octopaiDir, process.cwd());
+
+    // Initialize arm state machine
+    this.armStateMachine = new ArmStateMachine(this.db, (effect) => this.handleStateMachineSideEffect(effect));
 
     // Create necessary directories
     const dirs = [
@@ -969,8 +1032,6 @@ export class Brain {
     this.log(`Arm ${armId} claiming task ${taskId}`);
 
     try {
-      const now = new Date().toISOString();
-
       if (!this.db) {
         this.log(`Database not initialized, cannot claim task`);
         return;
@@ -979,19 +1040,13 @@ export class Brain {
       // Ensure the arm exists in the database (prevents FK constraint failure)
       this.ensureArmExists(armId);
 
-      // Update task in database - set assigned_to and add to assigned_arms array
-      this.db.run(`
-        UPDATE tasks
-        SET assigned_to = ?,
-            assigned_arms = json_insert(
-              COALESCE(assigned_arms, '[]'),
-              '$[#]',
-              ?
-            ),
-            status = CASE WHEN status = 'pending' THEN 'claimed' ELSE status END,
-            updated_at = ?
-        WHERE id = ?
-      `, [armId, armId, now, taskId]);
+      // Use transaction for task assignment
+      const result = await assignTaskToArm(this.db, taskId, armId, 'primary');
+      
+      if (!result.success) {
+        this.log(`Error claiming task ${taskId} for arm ${armId}: ${result.error}`);
+        return;
+      }
 
       // Also update the in-memory tasks array
       const task = this.tasks.find(t => t.id === taskId);
@@ -1001,7 +1056,6 @@ export class Brain {
         task.updatedAt = new Date();
       }
 
-      this.logActivity("brain", "task_claimed", taskId, { armId });
       this.log(`Task ${taskId} claimed by arm ${armId}`);
     } catch (err) {
       this.log(`Error claiming task ${taskId} for arm ${armId}: ${err}`);
@@ -1029,6 +1083,14 @@ export class Brain {
       let dbStatus = status;
       if (status === "in_progress") {
         dbStatus = "in_progress";
+        
+        // This is a task acknowledgment - transition state machine
+        if (this.armStateMachine) {
+          await this.armStateMachine.transition(armId, {
+            type: "TASK_ACKNOWLEDGED",
+            taskId,
+          });
+        }
       } else if (status === "claimed") {
         dbStatus = "claimed";
       }
@@ -1045,9 +1107,10 @@ export class Brain {
                 THEN json_insert(assigned_arms, '$[#]', ?)
               ELSE assigned_arms
             END,
+            started_at = CASE WHEN ? = 'in_progress' AND started_at IS NULL THEN ? ELSE started_at END,
             updated_at = ?
         WHERE id = ?
-      `, [dbStatus, armId, armId, armId, armId, armId, now, taskId]);
+      `, [dbStatus, armId, armId, armId, armId, armId, dbStatus, now, now, taskId]);
 
       // Also update the in-memory tasks array
       const task = this.tasks.find(t => t.id === taskId);
@@ -1071,6 +1134,21 @@ export class Brain {
    */
   private async completeTask(taskId: string, summary: string, artifacts: string[]): Promise<void> {
     const task = this.tasks.find(t => t.id === taskId);
+
+    // Find the arm that was working on this task and transition its state
+    if (task?.assignedTo && this.armStateMachine) {
+      await this.armStateMachine.transition(task.assignedTo, {
+        type: "TASK_COMPLETED",
+        taskId,
+      });
+      
+      // Also update the legacy in-memory arm status
+      const arm = this.arms.get(task.assignedTo);
+      if (arm) {
+        arm.status = "idle";
+        arm.currentTask = undefined;
+      }
+    }
 
     // Check for status reports with issues for this task
     const statusReportsWithIssues = await this.getStatusReportsWithIssues(taskId);
@@ -1113,6 +1191,19 @@ export class Brain {
             updated_at = ?
         WHERE id = ?
       `, [now, now, taskId]);
+      
+      // Update arm status in database
+      if (task?.assignedTo) {
+        this.db.run(`
+          UPDATE arms
+          SET status = 'idle',
+              current_task_id = NULL,
+              current_task_subject = NULL,
+              last_activity_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [now, now, task.assignedTo]);
+      }
     }
 
     this.state.completedToday++;
@@ -2046,6 +2137,11 @@ ${originalTask.id}`;
       [now, now, now, armId]
     );
 
+    // Update state machine with heartbeat event
+    if (this.armStateMachine) {
+      await this.armStateMachine.transition(armId, { type: "HEARTBEAT" });
+    }
+
     // Update in-memory state too
     const arm = this.arms.get(armId);
     if (arm) {
@@ -2260,6 +2356,24 @@ ${originalTask.id}`;
           [now, now, arm.id]
         );
 
+        // Initialize state machine for this arm
+        if (this.armStateMachine) {
+          const existingContext = this.armStateMachine.getContext(arm.id);
+          if (!existingContext) {
+            // New arm to state machine - initialize as idle (already running)
+            this.armStateMachine.initializeArm(arm.id, "idle");
+            this.log(`  ${arm.name}: initialized state machine as idle`);
+          } else if (existingContext.state === "disconnected") {
+            // Was disconnected, now reconnected - emit CONNECTION_RESTORED
+            await this.armStateMachine.transition(arm.id, { type: "CONNECTION_RESTORED" });
+            this.log(`  ${arm.name}: state machine transition from disconnected to ${this.armStateMachine.getContext(arm.id)?.state}`);
+          } else if (existingContext.state === "stopped" || existingContext.state === "error") {
+            // Was stopped/error, now running again - re-initialize as idle
+            this.armStateMachine.initializeArm(arm.id, "idle");
+            this.log(`  ${arm.name}: re-initialized state machine as idle (was ${existingContext.state})`);
+          }
+        }
+
         // Add to in-memory tracking
         const trackedArm: Arm = {
           id: arm.id,
@@ -2276,11 +2390,17 @@ ${originalTask.id}`;
       } catch {
         // Process dead
         if (arm.status !== "stopped") {
-          this.log(`  ${arm.name}: process dead, marking as stopped`);
-          this.db.run(
-            "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-            [new Date().toISOString(), arm.id]
-          );
+          this.log(`  ${arm.name}: process dead, transitioning to stopped via state machine`);
+          
+          if (this.armStateMachine) {
+            // Emit STOP event - this will handle releasing tasks and cleanup via side effects
+            await this.armStateMachine.transition(arm.id, { type: "STOP", reason: "process_dead_on_scan" });
+          } else {
+            this.db.run(
+              "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+              [new Date().toISOString(), arm.id]
+            );
+          }
         } else {
           this.log(`  ${arm.name}: already marked stopped, process confirmed dead`);
         }
@@ -2307,8 +2427,32 @@ ${originalTask.id}`;
 
           if (stateResult) {
             if (stateResult.hasSession && stateResult.state !== "stopped" && stateResult.state !== "dead") {
-              // Arm is properly connected - sync status based on harness state
+              // Arm is properly connected - check state machine instead of ad-hoc grace period
               const harnessStatus = stateResult.state === "processing" ? "busy" : "idle";
+              
+              // Use state machine to determine if we should sync status
+              if (this.armStateMachine) {
+                const smContext = this.armStateMachine.getContext(armId);
+                
+                // If state machine says arm is in task_assigned or working state,
+                // don't sync to idle - the state machine handles this with proper timeouts
+                if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
+                  if (harnessStatus === "idle") {
+                    // Harness reports idle but state machine knows we have a task
+                    // This is the race condition the state machine is designed to handle
+                    this.log(`Arm ${armId}: harness reports idle but state machine is in "${smContext.state}" - keeping current state (task: "${smContext.currentTaskSubject}")`);
+                    continue;
+                  }
+                }
+                
+                // If harness says processing but state machine is idle, the harness may be
+                // working on something without a brain task - leave it alone
+                if (smContext && smContext.state === "idle" && harnessStatus === "busy") {
+                  this.log(`Arm ${armId}: harness reports busy but state machine is idle - arm may be working on non-brain task`);
+                  continue;
+                }
+              }
+              
               if (arm.status !== harnessStatus) {
                 this.log(`Arm ${armId}: syncing status from "${arm.status}" to "${harnessStatus}" based on harness state`);
                 await this.syncArmStatus(armId, harnessStatus);
@@ -2318,8 +2462,14 @@ ${originalTask.id}`;
               continue;
             } else if (!stateResult.hasSession) {
               // Process is running but API session was lost (server restart)
-              // Keep the arm but prompt it to re-register
-              this.log(`Arm ${armId} process alive but session lost (server restart), prompting to re-register...`);
+              // Emit CONNECTION_LOST to state machine - it will set up reconnect timeout
+              this.log(`Arm ${armId} process alive but session lost (server restart), emitting CONNECTION_LOST`);
+              
+              if (this.armStateMachine) {
+                await this.armStateMachine.transition(armId, { type: "CONNECTION_LOST" });
+              }
+              
+              // Also prompt the arm to re-register
               await this.sendPromptToArm(
                 arm.name,
                 "The API server restarted. Please re-register by calling the MCP tool octopai_register_session if available, or confirm you can still receive tasks."
@@ -2332,13 +2482,20 @@ ${originalTask.id}`;
             continue;
           }
         } catch {
-          // Process is dead - mark as stopped
-          this.log(`Arm ${armId} process dead (PID: ${arm.pid}), marking as stopped`);
-          if (this.db) {
-            this.db.run(
-              "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-              [new Date().toISOString(), armId]
-            );
+          // Process is dead - transition through state machine
+          this.log(`Arm ${armId} process dead (PID: ${arm.pid}), transitioning to stopped via state machine`);
+          
+          if (this.armStateMachine) {
+            // Emit STOP event - this will handle releasing tasks and cleanup via side effects
+            await this.armStateMachine.transition(armId, { type: "STOP", reason: "process_dead" });
+          } else {
+            // Fallback if state machine not initialized
+            if (this.db) {
+              this.db.run(
+                "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+                [new Date().toISOString(), armId]
+              );
+            }
           }
           this.arms.delete(armId);
           this.idleArmPromptTracker.delete(armId);
@@ -2348,11 +2505,17 @@ ${originalTask.id}`;
         const stateResult = await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
 
         if (stateResult && !stateResult.hasSession) {
-          this.log(`Arm ${armId} has no session, marking as stopped`);
-          await this.apiRequest(`/api/arms/${armId}`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: "stopped" }),
-          });
+          this.log(`Arm ${armId} has no session and no PID, transitioning to stopped via state machine`);
+          
+          if (this.armStateMachine) {
+            // Emit STOP event - this will handle releasing tasks and cleanup via side effects
+            await this.armStateMachine.transition(armId, { type: "STOP", reason: "no_session" });
+          } else {
+            await this.apiRequest(`/api/arms/${armId}`, {
+              method: "PATCH",
+              body: JSON.stringify({ status: "stopped" }),
+            });
+          }
           this.arms.delete(armId);
           this.idleArmPromptTracker.delete(armId);
         }
@@ -2441,6 +2604,15 @@ ${originalTask.id}`;
 
        // Skip if arm is not idle
        if (arm.status !== "idle") continue;
+
+       // Verify arm exists in database before assigning tasks (foreign key constraint)
+       if (this.db) {
+         const armExists = this.db.query("SELECT 1 FROM arms WHERE id = ?").get(armId);
+         if (!armExists) {
+           this.log(`Arm ${armId} not found in database, skipping initial task assignment`);
+           continue;
+         }
+       }
 
        // Get the domain (stored as extra property)
        const domain = (arm as Arm & { domain?: string }).domain || "general";
@@ -2885,51 +3057,37 @@ ${originalTask.id}`;
     // Persist infrastructure health to database for API server to read
     if (this.db) {
       try {
-        const now = new Date().toISOString();
+        const components = [
+          {
+            component: 'database',
+            healthy: this.infrastructureHealth.database.healthy,
+            optional: false,
+            error: this.infrastructureHealth.database.error,
+          },
+          {
+            component: 'nats',
+            healthy: this.infrastructureHealth.nats.healthy,
+            optional: true,
+            error: this.infrastructureHealth.nats.error,
+          },
+          {
+            component: 'maildir',
+            healthy: this.infrastructureHealth.maildir.healthy,
+            optional: false,
+            error: this.infrastructureHealth.maildir.error,
+          },
+          {
+            component: 'api_server',
+            healthy: this.infrastructureHealth.apiServer.healthy,
+            optional: false,
+            error: this.infrastructureHealth.apiServer.error,
+          },
+        ];
 
-        // Update database health
-        this.db.run(`
-          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
-          VALUES ('database', ?, 0, ?, ?, ?)
-        `, [
-          this.infrastructureHealth.database.healthy ? 1 : 0,
-          this.infrastructureHealth.database.error || null,
-          now,
-          now,
-        ]);
-
-        // Update NATS health
-        this.db.run(`
-          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
-          VALUES ('nats', ?, 1, ?, ?, ?)
-        `, [
-          this.infrastructureHealth.nats.healthy ? 1 : 0,
-          this.infrastructureHealth.nats.error || null,
-          now,
-          now,
-        ]);
-
-        // Update maildir health
-        this.db.run(`
-          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
-          VALUES ('maildir', ?, 0, ?, ?, ?)
-        `, [
-          this.infrastructureHealth.maildir.healthy ? 1 : 0,
-          this.infrastructureHealth.maildir.error || null,
-          now,
-          now,
-        ]);
-
-        // Update API server health
-        this.db.run(`
-          INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
-          VALUES ('api_server', ?, 0, ?, ?, ?)
-        `, [
-          this.infrastructureHealth.apiServer.healthy ? 1 : 0,
-          this.infrastructureHealth.apiServer.error || null,
-          now,
-          now,
-        ]);
+        const result = await updateInfrastructureHealth(this.db, components);
+        if (!result.success) {
+          this.log(`Failed to persist infrastructure health: ${result.error}`);
+        }
       } catch (err) {
         this.log(`Failed to persist infrastructure health: ${err}`);
       }
@@ -3623,7 +3781,26 @@ octopai arm spawn -n ${arm.name}
     */
    private async assignTasks(): Promise<void> {
      const pendingTasks = this.tasks.filter(t => t.status === "pending");
-     const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
+     let idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
+
+     // Filter out arms that don't exist in the database (prevents foreign key constraint failures)
+     if (this.db) {
+       idleArms = idleArms.filter(arm => {
+         const armExists = this.db!.query("SELECT 1 FROM arms WHERE id = ?").get(arm.id);
+         if (!armExists) {
+           this.log(`Arm ${arm.id} not found in database, excluding from task assignment`);
+           return false;
+         }
+         return true;
+       });
+     }
+
+     // Also filter by state machine state - only arms in 'idle' state can accept tasks
+     if (this.armStateMachine) {
+       idleArms = idleArms.filter(arm => {
+         return this.armStateMachine!.canAcceptTask(arm.id);
+       });
+     }
 
      for (const task of pendingTasks) {
        // Find best matching arm based on task domain preference
@@ -3649,6 +3826,20 @@ octopai arm spawn -n ${arm.name}
 
        if (!bestArm) break;
 
+       // Use state machine to transition arm to task_assigned state
+       if (this.armStateMachine) {
+         const result = await this.armStateMachine.transition(bestArm.id, {
+           type: "TASK_ASSIGNED",
+           taskId: task.id,
+           taskSubject: task.subject,
+         });
+         
+         if (!result.success) {
+           this.log(`Failed to assign task to ${bestArm.id}: ${result.error}`);
+           continue;
+         }
+       }
+
        task.status = "claimed";
         task.assignedTo = bestArm.id;
         task.updatedAt = new Date();
@@ -3660,9 +3851,21 @@ octopai arm spawn -n ${arm.name}
             UPDATE tasks
             SET status = 'claimed',
                 assigned_to = ?,
+                claimed_at = ?,
                 updated_at = ?
             WHERE id = ?
-          `, [bestArm.id, now, task.id]);
+          `, [bestArm.id, now, now, task.id]);
+          
+          // Update arm status in database
+          this.db.run(`
+            UPDATE arms
+            SET status = 'busy',
+                current_task_id = ?,
+                current_task_subject = ?,
+                last_activity_at = ?,
+                updated_at = ?
+            WHERE id = ?
+          `, [task.id, task.subject, now, now, bestArm.id]);
         }
 
         bestArm.status = "busy";
@@ -4233,20 +4436,32 @@ ${originalTask.id}`;
       for (const row of apiResult.arms) {
         if (row.status === "stopped") continue;
 
-        const arm: Arm = {
-          id: row.id,
-          name: row.name,
-          agent: row.harness,
-          status: row.status as Arm["status"],
-          pid: row.pid,
-          provider: row.provider,
-          model: row.model,
-          startedAt: new Date(row.createdAt),
-          lastActivity: row.lastActivityAt ? new Date(row.lastActivityAt) : undefined,
-        };
-        (arm as Arm & { domain?: string }).domain = row.domain;
-        this.arms.set(arm.id, arm);
-      }
+const arm: Arm = {
+            id: row.id,
+            name: row.name,
+            agent: row.harness,
+            status: row.status as Arm["status"],
+            pid: row.pid,
+            provider: row.provider,
+            model: row.model,
+            startedAt: new Date(row.createdAt),
+            lastActivity: row.lastActivityAt ? new Date(row.lastActivityAt) : undefined,
+          };
+          (arm as Arm & { domain?: string }).domain = row.domain;
+          this.arms.set(arm.id, arm);
+          
+          // Ensure arm has state machine entry
+          if (this.armStateMachine) {
+            const ctx = this.armStateMachine.getContext(arm.id);
+            if (!ctx) {
+              // Initialize state based on current arm status
+              const initialState = row.status === "busy" ? "working" : 
+                                   row.status === "idle" ? "idle" :
+                                   row.status === "starting" ? "starting" : "idle";
+              this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
+            }
+          }
+        }
       this.log(`Loaded ${this.arms.size} active arms from API`);
       return;
     }
@@ -4322,6 +4537,18 @@ ${originalTask.id}`;
           // Store domain in a way we can access it
           (arm as Arm & { domain?: string }).domain = row.domain;
           this.arms.set(arm.id, arm);
+          
+          // Ensure arm has state machine entry
+          if (this.armStateMachine) {
+            const ctx = this.armStateMachine.getContext(arm.id);
+            if (!ctx) {
+              // Initialize state based on current arm status
+              const initialState = status === "busy" ? "working" : 
+                                   status === "idle" ? "idle" :
+                                   status === "starting" ? "starting" : "idle";
+              this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
+            }
+          }
         }
       }
 

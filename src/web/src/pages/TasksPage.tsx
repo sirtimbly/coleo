@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, Trash2, RefreshCw, Pencil, ListTodo, ChevronUp, ChevronDown } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, Trash2, RefreshCw, Pencil, ListTodo, ChevronUp, ChevronDown, Square, CheckSquare, Undo2 } from 'lucide-react';
 import { api, type Task, cn } from '@/lib';
 import { Card, CardContent, TaskModal } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -96,6 +96,8 @@ export function TasksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [isReleasing, setIsReleasing] = useState(false);
 
   const loadTasks = async () => {
     try {
@@ -171,6 +173,64 @@ export function TasksPage() {
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update priority');
       loadTasks(); // Reload on error
+    }
+  };
+
+  // Toggle selection of a single task
+  const toggleTaskSelection = (taskId: string) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      return next;
+    });
+  };
+
+  // Toggle selection of all tasks in a status group
+  const toggleAllInStatus = (status: string) => {
+    const statusTasks = groupedTasks[status] || [];
+    const statusTaskIds = statusTasks.map(t => t.id);
+    const allSelected = statusTaskIds.every(id => selectedTaskIds.has(id));
+    
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (allSelected) {
+        // Deselect all in this status
+        statusTaskIds.forEach(id => next.delete(id));
+      } else {
+        // Select all in this status
+        statusTaskIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  // Release selected claimed tasks (set status to pending, clear assignedTo)
+  const handleReleaseSelected = async () => {
+    const claimedTasks = (groupedTasks['claimed'] || []).filter(t => selectedTaskIds.has(t.id));
+    if (claimedTasks.length === 0) {
+      alert('No claimed tasks selected');
+      return;
+    }
+    
+    if (!confirm(`Release ${claimedTasks.length} claimed task(s) back to pending?`)) return;
+    
+    setIsReleasing(true);
+    try {
+      await Promise.all(
+        claimedTasks.map(task => 
+          api.updateTask(task.id, { status: 'pending', assignedTo: null })
+        )
+      );
+      setSelectedTaskIds(new Set());
+      loadTasks();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to release tasks');
+    } finally {
+      setIsReleasing(false);
     }
   };
 
@@ -288,11 +348,39 @@ export function TasksPage() {
 
                   return (
                     <div key={status}>
-                      <h2 className={cn("flex items-center gap-2 text-sm font-medium mb-3", config.color)}>
-                        <config.icon className="h-4 w-4" />
-                        {config.label}
-                        <span className="text-muted-foreground">({statusTasks.length})</span>
-                      </h2>
+                      <div className="flex items-center justify-between mb-3">
+                        <h2 className={cn("flex items-center gap-2 text-sm font-medium", config.color)}>
+                          {status === 'claimed' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleAllInStatus(status);
+                              }}
+                              className="p-0.5 hover:bg-secondary rounded transition-colors"
+                              title={statusTasks.every(t => selectedTaskIds.has(t.id)) ? "Deselect all" : "Select all"}
+                            >
+                              {statusTasks.every(t => selectedTaskIds.has(t.id)) ? (
+                                <CheckSquare className="h-4 w-4" />
+                              ) : (
+                                <Square className="h-4 w-4" />
+                              )}
+                            </button>
+                          )}
+                          <config.icon className="h-4 w-4" />
+                          {config.label}
+                          <span className="text-muted-foreground">({statusTasks.length})</span>
+                        </h2>
+                        {status === 'claimed' && selectedTaskIds.size > 0 && (
+                          <button
+                            onClick={handleReleaseSelected}
+                            disabled={isReleasing}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded bg-orange-500/20 text-orange-500 hover:bg-orange-500/30 transition-colors disabled:opacity-50"
+                          >
+                            <Undo2 className="h-3 w-3" />
+                            {isReleasing ? 'Releasing...' : `Release ${[...selectedTaskIds].filter(id => (groupedTasks['claimed'] || []).some(t => t.id === id)).length} Selected`}
+                          </button>
+                        )}
+                      </div>
 
                        <div className="space-y-2">
                         {statusTasks.map((task) => (
@@ -309,6 +397,22 @@ export function TasksPage() {
                             >
                             <CardContent className="py-4">
                               <div className="flex items-start justify-between gap-4">
+                                {/* Checkbox for claimed tasks */}
+                                {status === 'claimed' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleTaskSelection(task.id);
+                                    }}
+                                    className="mt-0.5 p-0.5 hover:bg-secondary rounded transition-colors flex-shrink-0"
+                                  >
+                                    {selectedTaskIds.has(task.id) ? (
+                                      <CheckSquare className="h-4 w-4 text-primary" />
+                                    ) : (
+                                      <Square className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </button>
+                                )}
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <h3 className="font-medium truncate">{task.subject}</h3>

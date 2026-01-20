@@ -91,6 +91,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["022_infrastructure_health", MIGRATION_022],
     ["023_sqlite_state_migration", MIGRATION_023],
     ["024_task_type_columns", MIGRATION_024, { table: "tasks", columns: MIGRATION_024_COLUMNS }],
+    ["025_arm_state_machine", MIGRATION_025],
   ];
 
 
@@ -854,6 +855,60 @@ CREATE INDEX IF NOT EXISTS idx_tasks_mail_thread ON tasks(mail_thread_id) WHERE 
 
 -- Add index for classification queries
 CREATE INDEX IF NOT EXISTS idx_tasks_classification ON tasks(classification) WHERE classification IS NOT NULL;
+`;
+
+// Migration 025: Arm state machine table
+const MIGRATION_025 = `
+-- Arm state machine: formal state tracking that survives restarts
+-- This replaces the ad-hoc status field with a proper state machine
+CREATE TABLE IF NOT EXISTS arm_state_machine (
+  arm_id TEXT PRIMARY KEY,
+  state TEXT NOT NULL DEFAULT 'spawning' CHECK (state IN (
+    'spawning', 'starting', 'idle', 'task_assigned', 'working', 
+    'completing', 'disconnected', 'stopped', 'error'
+  )),
+  previous_state TEXT,
+  current_task_id TEXT,
+  current_task_subject TEXT,
+  last_event_type TEXT,
+  last_event_at TEXT NOT NULL,
+  state_entered_at TEXT NOT NULL,
+  task_assigned_at TEXT,
+  disconnected_at TEXT,
+  last_error TEXT,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  last_heartbeat TEXT,
+  consecutive_missed_heartbeats INTEGER NOT NULL DEFAULT 0,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+-- Indexes for efficient queries
+CREATE INDEX IF NOT EXISTS idx_arm_sm_state ON arm_state_machine(state);
+CREATE INDEX IF NOT EXISTS idx_arm_sm_task ON arm_state_machine(current_task_id);
+CREATE INDEX IF NOT EXISTS idx_arm_sm_heartbeat ON arm_state_machine(last_heartbeat);
+
+-- State machine event log for debugging and audit
+CREATE TABLE IF NOT EXISTS arm_state_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  event_type TEXT NOT NULL,
+  from_state TEXT NOT NULL,
+  to_state TEXT NOT NULL,
+  event_data TEXT DEFAULT '{}',
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_arm_events_arm ON arm_state_events(arm_id);
+CREATE INDEX IF NOT EXISTS idx_arm_events_time ON arm_state_events(timestamp DESC);
+
+-- Config for state machine timeouts (in seconds)
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('arm_spawn_timeout_seconds', '60'),
+  ('arm_startup_timeout_seconds', '120'),
+  ('arm_task_ack_timeout_seconds', '180'),
+  ('arm_reconnect_timeout_seconds', '300'),
+  ('arm_working_reconnect_timeout_seconds', '600');
 `;
 
   /**

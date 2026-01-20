@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import { withTransaction } from "../../db/transactions";
 
 interface TasksContext {
   Variables: {
@@ -574,59 +575,69 @@ export function createTasksRoutes() {
 
     const now = new Date().toISOString();
 
-    const existing = db.query("SELECT id, role FROM task_arm_consensus WHERE task_id = ? AND arm_id = ?").get(id, armId) as { id: number; role: string } | null;
-    const role = body.role || existing?.role || "watcher";
-    const approval = body.approval || null;
-    const approvalReason = body.approvalReason?.trim() || null;
-    const hasReportField = Object.prototype.hasOwnProperty.call(body, "report");
-    const reportValue = body.report ?? null;
-    const reportTimestamp = reportValue ? now : null;
+    // Wrap consensus update in transaction for atomicity
+    const result = await withTransaction(db, async (db) => {
+      const existing = db.query("SELECT id, role FROM task_arm_consensus WHERE task_id = ? AND arm_id = ?").get(id, armId) as { id: number; role: string } | null;
+      const role = body.role || existing?.role || "watcher";
+      const approval = body.approval || null;
+      const approvalReason = body.approvalReason?.trim() || null;
+      const hasReportField = Object.prototype.hasOwnProperty.call(body, "report");
+      const reportValue = body.report ?? null;
+      const reportTimestamp = reportValue ? now : null;
 
-    if (existing) {
-      const updates = ["role = ?", "status = ?", "approval = ?", "approval_reason = ?", "updated_at = ?"];
-      const params: (string | number | null)[] = [role, body.status, approval, approvalReason, now];
+      if (existing) {
+        const updates = ["role = ?", "status = ?", "approval = ?", "approval_reason = ?", "updated_at = ?"];
+        const params: (string | number | null)[] = [role, body.status, approval, approvalReason, now];
 
-      if (hasReportField) {
-        updates.push("last_report = ?");
-        updates.push("last_report_at = ?");
-        params.push(reportValue, reportTimestamp);
+        if (hasReportField) {
+          updates.push("last_report = ?");
+          updates.push("last_report_at = ?");
+          params.push(reportValue, reportTimestamp);
+        }
+
+        params.push(existing.id);
+        db.run(`UPDATE task_arm_consensus SET ${updates.join(", ")} WHERE id = ?`, params);
+      } else {
+        db.run(
+          `INSERT INTO task_arm_consensus (task_id, arm_id, role, status, approval, approval_reason, last_report, last_report_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            armId,
+            role,
+            body.status,
+            approval,
+            approvalReason,
+            reportValue,
+            reportTimestamp,
+            now,
+            now,
+          ]
+        );
       }
 
-      params.push(existing.id);
-      db.run(`UPDATE task_arm_consensus SET ${updates.join(", ")} WHERE id = ?`, params);
-    } else {
-      db.run(
-        `INSERT INTO task_arm_consensus (task_id, arm_id, role, status, approval, approval_reason, last_report, last_report_at, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          armId,
-          role,
-          body.status,
-          approval,
-          approvalReason,
-          reportValue,
-          reportTimestamp,
-          now,
-          now,
-        ]
-      );
-    }
+      const entries = fetchConsensusEntries(db, id);
+      const consensusStatus = determineConsensusStatus(entries);
+      const currentStatus = task.consensus_status || "pending";
 
-    const entries = fetchConsensusEntries(db, id);
-    const consensusStatus = determineConsensusStatus(entries);
-    const currentStatus = task.consensus_status || "pending";
+      if (consensusStatus !== currentStatus) {
+        db.run(`UPDATE tasks SET consensus_status = ?, updated_at = ? WHERE id = ?`, [consensusStatus, now, id]);
+      }
 
-    if (consensusStatus !== currentStatus) {
-      db.run(`UPDATE tasks SET consensus_status = ?, updated_at = ? WHERE id = ?`, [consensusStatus, now, id]);
-    }
+      logActivity(db, `arm:${armId}`, "task_consensus_update", id, {
+        role,
+        status: body.status,
+        approval,
+      });
 
-    logActivity(db, `arm:${armId}`, "task_consensus_update", id, {
-      role,
-      status: body.status,
-      approval,
+      return { consensusStatus, entries };
     });
 
+    if (!result.success) {
+      throw HttpError.internal(`Failed to update consensus: ${result.error}`);
+    }
+
+    const { consensusStatus, entries } = result.data!;
     broadcast("tasks", "task.consensus", { taskId: id, consensusStatus });
 
     return c.json({

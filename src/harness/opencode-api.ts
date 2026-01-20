@@ -101,13 +101,27 @@ export class OpenCodeApiHarness implements AgentHarness {
 
   private sessions = new Map<string, ApiHarnessSession>();
   private nextPort = 19300; // Start port for OpenCode servers
-  private eventCallback: ArmEventCallback | null = null;
+  private eventCallbacks: Set<ArmEventCallback> = new Set();
 
   /**
-   * Set a callback to receive arm events for broadcasting
+   * Add a callback to receive arm events for broadcasting
+   * Multiple callbacks are supported for multiple arms
    */
   setEventCallback(callback: ArmEventCallback): void {
-    this.eventCallback = callback;
+    this.eventCallbacks.add(callback);
+  }
+
+  /**
+   * Emit an event to all registered callbacks
+   */
+  private emitEvent(armId: string, event: string, data: unknown): void {
+    for (const callback of this.eventCallbacks) {
+      try {
+        callback(armId, event, data);
+      } catch {
+        // Ignore callback errors
+      }
+    }
   }
 
   /**
@@ -303,15 +317,15 @@ export class OpenCodeApiHarness implements AgentHarness {
     };
 
     // Start event stream subscription
-    if (this.eventCallback) {
+    if (this.eventCallbacks.size > 0) {
       const eventStream = new OpenCodeEventStream({
         serverUrl,
         armId,
         sessionId: session.id,
         onEvent: (event: OpenCodeEvent) => {
           const { shouldBroadcast, eventName, data } = filterEvent(event);
-          if (shouldBroadcast && this.eventCallback) {
-            this.eventCallback(armId, eventName, data);
+          if (shouldBroadcast) {
+            this.emitEvent(armId, eventName, data);
           }
         },
         onError: (error) => {
@@ -444,15 +458,15 @@ export class OpenCodeApiHarness implements AgentHarness {
       };
 
       // Start event stream subscription for recovered session
-      if (this.eventCallback) {
+      if (this.eventCallbacks.size > 0) {
         const eventStream = new OpenCodeEventStream({
           serverUrl,
           armId,
           sessionId: existingSession.id,
           onEvent: (event: OpenCodeEvent) => {
             const { shouldBroadcast, eventName, data } = filterEvent(event);
-            if (shouldBroadcast && this.eventCallback) {
-              this.eventCallback(armId, eventName, data);
+            if (shouldBroadcast) {
+              this.emitEvent(armId, eventName, data);
             }
           },
           onError: (error) => {
