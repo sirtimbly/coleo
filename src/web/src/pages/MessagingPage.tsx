@@ -239,8 +239,8 @@ export function MessagingPage({}: MessagingPageProps) {
       // Archive each selected message via API
       await Promise.all(messageIds.map(id => api.archiveMail(id)));
 
-      // Remove archived messages from the current view
-      setMessages(prev => prev.filter(m => !messageIds.includes(m.id)));
+      // Reload messages to get updated archive list
+      await loadMessages();
 
       // Clear selected message IDs
       setSelectedMessageIds(prev => {
@@ -250,18 +250,7 @@ export function MessagingPage({}: MessagingPageProps) {
       });
 
       if (selectedMessage && messageIds.includes(selectedMessage.id)) {
-        // Find the next message in the filtered list
-        const currentIndex = filteredMessages.findIndex(m => m.id === selectedMessage.id);
-        if (currentIndex >= 0) {
-          const nextMessage = filteredMessages[currentIndex + 1] || filteredMessages[currentIndex - 1];
-          if (nextMessage) {
-            handleMessageClick(nextMessage);
-          } else {
-            setSelectedMessage(null);
-          }
-        } else {
-          setSelectedMessage(null);
-        }
+        setSelectedMessage(null);
       }
     } catch (error) {
       console.error('Failed to archive messages:', error);
