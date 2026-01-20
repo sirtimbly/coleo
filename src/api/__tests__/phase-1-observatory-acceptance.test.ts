@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createApp } from "../server";
 import { initDatabase } from "../../db";
-import { loadApiConfig } from "../config";
+import { loadApiConfig, type ApiConfig } from "../config";
 
 let db: Database;
 let app: ReturnType<typeof createApp>;
@@ -10,8 +10,13 @@ let apiKey: string;
 
 beforeAll(async () => {
   db = await initDatabase(":memory:");
-  const config = loadApiConfig();
-  apiKey = config.apiKey;
+  const baseConfig = loadApiConfig();
+  
+  // Use a production-style API key (not "dev-*") to ensure auth is enforced in tests
+  // We explicitly set a non-dev key to test that auth middleware works correctly
+  apiKey = "test-api-key-12345";
+  const config: ApiConfig = { ...baseConfig, apiKey };
+  
   app = createApp(db, config);
 });
 
