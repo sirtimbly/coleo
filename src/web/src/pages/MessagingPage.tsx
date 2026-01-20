@@ -3,8 +3,8 @@
  * Combines Mail, Status Reports, and Proposals in one interface
  */
 import { useState, useEffect, useRef } from 'react';
-import { api, type StatusReport, type MailMessage, useToast } from '@/lib';
-import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2 } from 'lucide-react';
+import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
+import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
 interface MessagingPageProps {}
 
@@ -35,6 +35,7 @@ export function MessagingPage({}: MessagingPageProps) {
   const [previousMessageCount, setPreviousMessageCount] = useState(0);
   const resizeRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
+  const { openReply } = useMessage();
 
   const loadMessages = async () => {
     try {
@@ -211,6 +212,19 @@ export function MessagingPage({}: MessagingPageProps) {
           // Archive current message
           handleArchive([selectedMessage.id]);
           break;
+        case 'r':
+        case 'R':
+          e.preventDefault();
+          // Reply to current message (only for mail types)
+          if (selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') {
+            openReply({
+              messageId: selectedMessage.data.id,
+              from: selectedMessage.data.from,
+              subject: selectedMessage.title,
+              body: selectedMessage.data.body,
+            });
+          }
+          break;
       }
     }
 
@@ -237,7 +251,11 @@ export function MessagingPage({}: MessagingPageProps) {
   const handleArchive = async (messageIds: string[]) => {
     try {
       // Archive each selected message via API
-      await Promise.all(messageIds.map(id => api.archiveMail(id)));
+      // Extract raw ID by removing the type prefix (e.g., 'mail-' -> '')
+      await Promise.all(messageIds.map(id => {
+        const rawId = id.replace(/^(mail|sent|archive)-/, '');
+        return api.archiveMail(rawId);
+      }));
 
       // Reload messages to get updated archive list
       await loadMessages();
@@ -310,8 +328,9 @@ export function MessagingPage({}: MessagingPageProps) {
       if (type === 'proposals') return msg.type === 'proposal';
       return msg.type === type.replace('-reports', '-report');
     });
-    // Archive tab shows total count (all are read), others show unread count
-    if (type === 'archive') {
+    // Sent and Archive tabs show total count (messages are never "unread")
+    // Other tabs show unread count
+    if (type === 'archive' || type === 'sent') {
       return filtered.length;
     }
     return filtered.filter(m => m.unread).length;
@@ -578,6 +597,20 @@ export function MessagingPage({}: MessagingPageProps) {
                     </div>
                   </div>
                   <div className="flex items-center space-x-2">
+                    {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') && (
+                      <button
+                        onClick={() => openReply({
+                          messageId: selectedMessage.data.id,
+                          from: selectedMessage.data.from,
+                          subject: selectedMessage.title,
+                          body: selectedMessage.data.body,
+                        })}
+                        className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
+                      >
+                        <Reply className="h-4 w-4 mr-1" />
+                        Reply
+                      </button>
+                    )}
                     <button
                       onClick={() => handleMarkRead([selectedMessage.id], selectedMessage.unread ?? false)}
                       className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
@@ -599,7 +632,7 @@ export function MessagingPage({}: MessagingPageProps) {
               {/* Message Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="prose prose-sm max-w-none">
-                  {selectedMessage.type === 'mail' ? (
+                  {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') ? (
                     <div className="whitespace-pre-wrap font-mono text-sm bg-muted p-4 rounded-lg text-foreground">
                       {selectedMessage.data.body}
                     </div>

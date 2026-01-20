@@ -449,7 +449,9 @@ export function createMailRoutes() {
     const offset = parseInt(c.req.query("offset") || "0", 10);
 
     try {
-      const allMessages = await sent.list("new");
+      const newMessages = await sent.list("new");
+      const curMessages = await sent.list("cur");
+      const allMessages = [...newMessages, ...curMessages];
       const messages = allMessages.slice(offset, offset + limit);
 
       return c.json({

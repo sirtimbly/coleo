@@ -7,12 +7,18 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, Brain, Cpu, ChevronDown } from 'lucide-react';
+import { X, Send, Brain, Cpu, ChevronDown, Reply } from 'lucide-react';
 import { api, type Arm } from '@/lib/api';
 
 interface MessageModalProps {
   isOpen: boolean;
   onClose: () => void;
+  replyTo?: {
+    messageId: string;
+    from: string;
+    subject: string;
+    body: string;
+  };
 }
 
 type MessageMode = 'brain' | 'arm';
@@ -24,7 +30,7 @@ interface ArmOption {
   domain: string;
 }
 
-export function MessageModal({ isOpen, onClose }: MessageModalProps) {
+export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
   const [mode, setMode] = useState<MessageMode>('brain');
   const [message, setMessage] = useState('');
   const [selectedArmId, setSelectedArmId] = useState<string>('');
@@ -33,9 +39,27 @@ export function MessageModal({ isOpen, onClose }: MessageModalProps) {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [isReply, setIsReply] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Set up reply context when modal opens with replyTo
+  useEffect(() => {
+    if (isOpen && replyTo) {
+      setIsReply(true);
+      setMode('brain'); // Replies go to brain
+      // Pre-fill with quoted original message
+      const quotedBody = replyTo.body
+        .split('\n')
+        .map(line => `> ${line}`)
+        .join('\n');
+      setMessage(`\n\n---\nIn reply to: ${replyTo.subject}\nFrom: ${replyTo.from}\n\n${quotedBody}`);
+    } else if (isOpen) {
+      setIsReply(false);
+      setMessage('');
+    }
+  }, [isOpen, replyTo]);
 
   // Load arms when modal opens
   useEffect(() => {
@@ -269,7 +293,9 @@ export function MessageModal({ isOpen, onClose }: MessageModalProps) {
         <div className="p-4">
           {/* Description */}
           <p className="text-sm text-zinc-400 mb-3">
-            {mode === 'brain' ? (
+            {isReply ? (
+              <>Replying to: <span className="text-white font-medium">{replyTo?.subject}</span></>
+            ) : mode === 'brain' ? (
               <>Send a message to the Brain. It will parse your intent and route to the appropriate arm(s).</>
             ) : (
               <>Send a prompt directly to the selected arm. Use this for specific instructions or to unblock an arm.</>
@@ -312,6 +338,11 @@ export function MessageModal({ isOpen, onClose }: MessageModalProps) {
           >
             {isSending ? (
               <>Sending...</>
+            ) : isReply ? (
+              <>
+                <Reply className="w-4 h-4" />
+                Send Reply
+              </>
             ) : (
               <>
                 <Send className="w-4 h-4" />

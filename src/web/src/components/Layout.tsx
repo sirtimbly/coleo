@@ -14,7 +14,7 @@ import {
   MessageSquarePlus,
   ListTodo
 } from 'lucide-react';
-import { cn, api, useToast } from '@/lib';
+import { cn, api, useToast, useMessage } from '@/lib';
 import { MessageModal } from './MessageModal';
 
 const getNavItems = (unreadCount: number) => [
@@ -31,9 +31,9 @@ const getNavItems = (unreadCount: number) => [
 ];
 
 export function Layout() {
-  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const { showToast } = useToast();
+  const { isMessageModalOpen, replyContext, openNewMessage, closeMessageModal } = useMessage();
 
   // Fetch unread message counts
   const fetchUnreadCount = async () => {
@@ -108,13 +108,13 @@ export function Layout() {
       // 'N' key opens the message modal
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault();
-        setIsMessageModalOpen(true);
+        openNewMessage();
       }
     }
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [openNewMessage]);
 
   return (
     <div className="flex h-screen">
@@ -163,7 +163,7 @@ export function Layout() {
         {/* New Message Button */}
         <div className="p-4 border-t border-border">
           <button
-            onClick={() => setIsMessageModalOpen(true)}
+            onClick={openNewMessage}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-sm font-medium transition-colors"
           >
             <MessageSquarePlus className="h-4 w-4" />
@@ -186,7 +186,8 @@ export function Layout() {
       {/* Message Modal */}
       <MessageModal 
         isOpen={isMessageModalOpen} 
-        onClose={() => setIsMessageModalOpen(false)} 
+        onClose={closeMessageModal}
+        replyTo={replyContext}
       />
     </div>
   );

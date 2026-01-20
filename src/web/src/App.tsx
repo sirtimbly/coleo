@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from '@/components';
-import { ToastProvider } from '@/lib';
+import { ToastProvider, MessageProvider } from '@/lib';
 import {
   DashboardPage,
   ArmsPage,
@@ -16,21 +16,23 @@ import {
 function App() {
   return (
     <ToastProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="arms" element={<ArmsPage />} />
-            <Route path="viewer" element={<ArmViewerPage />} />
-            <Route path="brain" element={<BrainPage />} />
-              <Route path="tasks" element={<TasksPage />} />
-              <Route path="garden" element={<GardenPage />} />
-              <Route path="messaging" element={<MessagingPage />} />
-              <Route path="activity" element={<ActivityPage />} />
-              <Route path="settings" element={<SettingsPage />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+      <MessageProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<DashboardPage />} />
+              <Route path="arms" element={<ArmsPage />} />
+              <Route path="viewer" element={<ArmViewerPage />} />
+              <Route path="brain" element={<BrainPage />} />
+                <Route path="tasks" element={<TasksPage />} />
+                <Route path="garden" element={<GardenPage />} />
+                <Route path="messaging" element={<MessagingPage />} />
+                <Route path="activity" element={<ActivityPage />} />
+                <Route path="settings" element={<SettingsPage />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </MessageProvider>
     </ToastProvider>
   );
 }
