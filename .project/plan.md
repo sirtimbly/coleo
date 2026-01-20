@@ -74,8 +74,41 @@ These are useful Observatory improvements that build on Phase 1 but do not retro
 - **Project Plan Viewer** in the web Observatory:
   - File/folder tree of `.project/` and key docs on the left (e.g., `README.md`, `plan.md`, `requirements.md`, `status.md`, `decisions/`, `acceptance/`, `plans/`, `tasks/`).
   - Markdown rendering panel on the right for the selected file.
+  - Edit mode to modify plan documents directly in the browser.
   - Visible "Last Updated" timestamp for each rendered file, derived from git commit metadata or filesystem mtime.
   - Clear indication of which files changed most recently so humans can quickly find the latest updates.
+
+- **Mail and Message Interface** enhancements:
+  - Show sent messages from users to the brain or arms (currently only shows inbox).
+  - Threaded conversation view with arm responses.
+
+- **Task List enhancements**:
+  - Show past completed tasks
+  - Show current in-progress task
+  - Show next scheduled/upcoming task
+  - Timeline view with recent activity
+
+- **Arm Viewer Page** (central arm detail view):
+  - Accessible by clicking on any arm anywhere in the UI
+  - Shows live arm status and activity
+  - Displays history of all arms that have closed/finished in this project
+  - For dead arms: retains only the last 100 activity items (not full history)
+  - Color-coded arms with unique randomly-assigned colors
+
+- **Arm Spawning from Web UI**:
+  - Form to spawn new arms directly from the browser
+  - Name input auto-populates with generated names
+  - Button to regenerate new name if user doesn't like it
+  - Provider and model selection dropdowns with cost estimates and budget warnings
+  - Real-time feedback on spawn status
+
+- **Model Recommendations & Budget Tracking**:
+  - Show cost estimates per model (GPT-4.1 vs Claude-3.5) based on expected token usage
+  - Include budget warnings for high-cost models when spawning arms
+
+- **Message Queue Visualization**:
+  - Add API endpoint for queue metrics (depth, processing times)
+  - UI shows real-time queue status with graphs
 
 ### Estimated Duration
 
@@ -293,6 +326,70 @@ Do NOT update conceptual/architecture docs.
 
 ---
 
+## Phase 2.4: Bug Tracking & Resolution (New)
+
+**Goal**: Handle bug reports from arms and humans with priority escalation and resolution tracking.
+
+### Problem
+
+Arms may encounter errors or bugs during execution, or humans may report issues that block progress. These need to be tracked, prioritized, and resolved to prevent work stoppages.
+
+### Bug Sources
+
+- **Arm-reported bugs**: Errors encountered during task execution (compilation failures, test failures, runtime errors)
+- **Human-reported bugs**: Issues sent via email or UI that affect system operation
+- **System-detected bugs**: Failures in infrastructure (database errors, communication issues)
+
+### Priority Rules
+
+Brain applies priority based on impact:
+
+| Priority | Criteria | Response |
+|----------|----------|----------|
+| **Critical** | Blocks all work, system down | Immediate pause, human alert |
+| **High** | Blocks current task, affects multiple arms | Escalate to next available arm |
+| **Medium** | Blocks current task but isolated | Reassign task to different arm |
+| **Low** | Non-blocking, cosmetic | Log for later resolution |
+
+### Deliverables
+
+- [ ] Bug report message types (arm_reported, human_reported, system_detected)
+- [ ] Bug tracking table with status, priority, assignee, blockers
+- [ ] Brain priority rules for bug handling
+- [ ] Escalation logic when bugs block tasks
+- [ ] Bug resolution workflow (investigation → fix → verification)
+- [ ] Human notifications for critical/blocking bugs
+- [ ] API endpoints for bug management
+- [ ] UI for bug tracking and status
+
+### Brain Rules for Bug Handling
+
+```
+When bug reported:
+  IF critical → pause all work, alert human immediately
+  IF high → find alternative arm, escalate priority
+  IF medium → reassign task, log for resolution
+  IF low → continue work, track for later
+
+During task assignment:
+  IF task depends on unresolved bug → block task, notify human
+
+When bug resolved:
+  IF was blocking → resume blocked tasks
+  Update task history with resolution details
+```
+
+### Dependencies
+
+- Phase 2.1 (Progressive Planning - for blocking logic)
+- Phase 2.5 (Status Reports - bug reports as status)
+
+### Estimated Duration
+
+1 week
+
+---
+
 ## Phase 2.5: Status Reports (New)
 
 **Goal**: Formalize status reporting from arms to human via Brain.
@@ -313,6 +410,7 @@ Arm → Status Report → Brain → Aggregates → Human (email)
 - [ ] Brain aggregates and routes to human
 - [ ] Status influences task determination
 - [ ] Status dashboard in API
+- [ ] User message confirmation & tracking (processing fate, plan addition, unblocking)
 
 ### Dependencies
 
@@ -346,6 +444,105 @@ The following tasks were created by the Brain but were not in the plan. They rep
   - Define protocol for graceful task handoff
   - Include context transfer mechanism
   - Handle edge cases (abandoned tasks, conflicts)
+
+---
+
+## Known Architectural Issues
+
+**IMPORTANT:** The following issues were identified during comprehensive architectural review (January 2026) and should be addressed:
+
+### Critical Issues
+
+1. **SQLite Principle Violations**: 50+ JSON files found storing state that violates the core principle
+   - Brain state (`.octopai/state/brain.json`) - coordinator status, poll intervals, active arms
+   - Task management (`.octopai/state/tasks.json`) - task queue and status tracking
+   - Tool discovery (`.octopai/state/toolbox.json`) - discovered tools from arms
+   - Arm tracking (`.octopai/state/seen_arms.json`) - arm ID tracking
+   - Message queuing (31+ files in `.octopai/queue/`) - persistent message system
+   - Individual arm states (`.octopai/state/arms/`) - per-arm state persistence
+   - Shared notes (`.octopai/state/notes/`) - inter-arm communication
+
+2. **Data Consistency Risk**: Dual storage systems (SQLite + JSON files) create data inconsistency potential
+
+### Code Quality Issues
+
+3. **API Convention Violations**: 7 instances of direct error returns instead of `HttpError` middleware
+   - `src/api/routes/agents.ts`: 6 violations (lines 45, 50, 64, 69, 75, 79)
+   - `src/api/routes/activity.ts`: 1 violation (line 90)
+
+4. **Type Safety Issues**: Extensive unsafe patterns found
+   - 39+ instances of unsafe `JSON.parse()` without validation
+   - 20+ instances of overused `unknown` types where specific interfaces needed
+   - 38+ instances of `Record<string, unknown>` instead of proper interfaces
+   - Unsafe type casting with `as unknown as` chains
+
+5. **Code Duplication**: Massive duplication across codebase
+   - 50+ instances of database connection duplication
+   - 100+ instances of similar error handling patterns
+   - 100+ instances of JSON operations duplication
+   - Duplicate type definitions across multiple files (OctopaiConfig, ArmConfig, Arm interfaces)
+   - Activity logging patterns repeated across files
+
+---
+
+## Phase 2.3: Technical Debt Resolution (New)
+
+**Goal**: Address architectural issues identified in January 2026 review to improve code quality and data consistency.
+
+### Priority 1: SQLite Migration (Critical)
+
+Migrate all JSON-based state to SQLite to maintain single source of truth:
+
+- [ ] Migrate brain state from `.octopai/state/brain.json` to `brain_state` table
+- [ ] Migrate task queue from `.octopai/state/tasks.json` to `tasks` table (partially done)
+- [ ] Migrate message queue from `.octopai/queue/` files to `messages` table
+- [ ] Migrate toolbox from `.octopai/state/toolbox.json` to `tools` table
+- [ ] Migrate arm states from `.octopai/state/arms/` to `arms` table fields
+- [ ] Migrate shared notes from `.octopai/state/notes/` to `notes` table
+- [ ] Remove JSON file fallbacks after migration verified
+
+### Priority 2: Code Consolidation (High)
+
+Create shared utilities to reduce duplication:
+
+- [ ] Create `src/db/utils.ts` for database connection patterns
+- [ ] Create `src/utils/json.ts` for safe JSON operations with Zod validation
+- [ ] Create `src/utils/errors.ts` for standardized error handling
+- [ ] Consolidate duplicate type definitions in `src/types/index.ts`
+- [ ] Create `src/utils/activity.ts` for activity logging helpers
+
+### Priority 3: API & Type Fixes (Medium)
+
+Fix API convention violations and type safety:
+
+- [ ] Fix `src/api/routes/agents.ts` to use `HttpError` middleware (6 violations)
+- [ ] Fix `src/api/routes/activity.ts` to use `HttpError` middleware (1 violation)
+- [ ] Add Zod schema validation for all `JSON.parse()` operations
+- [ ] Replace `Record<string, unknown>` with specific interfaces
+- [ ] Remove unsafe `as unknown as` type casting chains
+
+### Deliverables
+
+- [ ] All state in SQLite (no JSON files for persistent state)
+- [ ] Shared utility modules for common patterns
+- [ ] All API routes using `HttpError` middleware
+- [ ] Type-safe JSON parsing throughout codebase
+- [ ] Reduced code duplication by 50%+
+
+### Dependencies
+
+- None (can start immediately)
+
+### Estimated Duration
+
+2 weeks
+
+### Acceptance Criteria
+
+- [ ] `find .octopai -name "*.json" -path "*state*"` returns no results
+- [ ] No direct `c.json({ error: ... })` in API routes
+- [ ] All `JSON.parse()` calls wrapped with schema validation
+- [ ] No duplicate type definitions across files
 
 ---
 
@@ -409,6 +606,9 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 - [ ] Tool implementations (9 tools)
 - [ ] Memory/checkpointer for state
 - [ ] Fallback to existing logic on errors
+- [ ] Control loop for system alignment with human approval gates
+- [ ] Optimize polling frequency and add arm "busy" status to prevent interruptions
+- [ ] Vector database integration for searchable arm context history
 
 ### Migration Strategy
 
@@ -556,6 +756,8 @@ server.registerTool(
 - [ ] Brain logic to detect compression and optionally re-inject
 - [ ] Documentation for harness-specific configuration
 - [ ] Tests for context compression scenarios
+- [ ] Tool selection/filtering based on task specialization to prevent context overload
+- [ ] Vector database for arm conversation history with configurable retention
 
 ### Dependencies
 
@@ -584,6 +786,7 @@ server.registerTool(
   - Task classification (architect, development, qa, documentation, etc.) selects a configuration template.
   - Templates define defaults for tools, context bundles, safety rules, and governance expectations.
   - Any remaining MR-style templates are removed or updated to reference task configuration templates instead of fixed arm/MR roles.
+- [ ] Brain can update plans directly; arm-initiated changes require proposals for consensus
 
 ### Estimated Duration
 
@@ -603,6 +806,8 @@ server.registerTool(
 - [ ] Ownership coloring
 - [ ] Conflict zone highlighting
 - [ ] Interactive navigation
+- [ ] Generate octopus avatars for arms with reuse logic and color/personality traits
+- [ ] Brain mascot with personality and animation
 
 ### Estimated Duration
 
@@ -715,6 +920,9 @@ Future: 3+ weeks (if PTY harnesses revisited)
 
 | Date | Change |
 |------|--------|
+| 2026-01-17 | Added Phase 2.4: Bug Tracking & Resolution with priority escalation rules for arm/human-reported bugs |
+| 2026-01-17 | Added user feedback enhancements: model recommendations & budget tracking, vector DB for arm history, context compression improvements, status report tracking, governance clarifications, and garden visualization avatars/personality |
+| 2026-01-16 | Phase 1 enhancements updated: added Mail/sent messages, Task List (past/current/next), Arm Viewer page (clickable arms, history, color-coded), and Arm Spawning from web UI (generated names, regenerate button) |
 | 2026-01-16 | Phase 3 governance updated to use proposals/arguments/signals without MR-specific workflows; plan now calls for migration from MR templates to task configuration templates |
 | 2026-01-16 | Phase 1 marked complete; Project Plan Viewer treated as non-blocking enhancement; IMAP/SMTP email gateway deferred to later phases |
 | 2026-01-16 | Phase 2.2: Documentation update tasks (keep feature docs aligned with code) |
