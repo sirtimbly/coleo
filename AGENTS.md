@@ -10,29 +10,29 @@ Octopai is an AI agent orchestrator using the "Octopus Model" - a central brain 
 
 **SQLite is the system of record for all persistent state.**
 
-| Data | Storage | Location |
-|------|---------|----------|
-| Arms | SQLite | `~/.octopai/octopai.db` → `arms` table |
-| Proposals | SQLite | `~/.octopai/octopai.db` → `proposals` table |
-| Activity | SQLite | `~/.octopai/octopai.db` → `activity` table |
-| Config | SQLite | `~/.octopai/octopai.db` → `config` table |
-| Claims | SQLite | `~/.octopai/octopai.db` → `claims` table |
+| Data        | Storage    | Location                                               |
+| ----------- | ---------- | ------------------------------------------------------ |
+| Arms        | SQLite     | `~/.octopai/octopai.db` → `arms` table                 |
+| Proposals   | SQLite     | `~/.octopai/octopai.db` → `proposals` table            |
+| Activity    | SQLite     | `~/.octopai/octopai.db` → `activity` table             |
+| Config      | SQLite     | `~/.octopai/octopai.db` → `config` table               |
+| Claims      | SQLite     | `~/.octopai/octopai.db` → `claims` table               |
 | MCP configs | JSON files | `~/.octopai/mcp/*.json` (generated, not authoritative) |
-| Mail | Maildir | `~/.octopai/mail/` (human-agent communication) |
+| Mail        | Maildir    | `~/.octopai/mail/` (human-agent communication)         |
 
 **DO NOT** create JSON files for state that should be in SQLite. If you need to persist arm state, proposals, or configuration, use the database.
 
 ## Technology Stack
 
-| Layer | Technology |
-|-------|------------|
-| Runtime | Bun |
-| Language | TypeScript (strict mode) |
-| API Server | Hono |
-| Database | SQLite (bun:sqlite) with migrations |
-| Web UI | React + Vite + TailwindCSS + shadcn/ui |
-| Agent Protocol | MCP (Model Context Protocol) |
-| Mail | Maildir format |
+| Layer          | Technology                             |
+| -------------- | -------------------------------------- |
+| Runtime        | Bun                                    |
+| Language       | TypeScript (strict mode)               |
+| API Server     | Hono                                   |
+| Database       | SQLite (bun:sqlite) with migrations    |
+| Web UI         | React + Vite + TailwindCSS + shadcn/ui |
+| Agent Protocol | MCP (Model Context Protocol)           |
+| Mail           | Maildir format                         |
 
 ## Code Organization
 
@@ -86,90 +86,36 @@ src/
 - Arm spawning in terminal windows (Ghostty, iTerm2, Terminal.app, tmux)
 - Provider/model selection for arms
 
-### What's In Progress
+## Multi-Agent Environment
 
-- Arm context budget tracking
-- Proposal/governance system
-- 3D garden visualization
+This repository may have multiple arms working concurrently.
 
-## For UI Arms
+### Contention Protocol
 
-When working on the React UI (`src/web/`):
+1. **Before committing**: Run `git status` to check for unexpected changes
+2. **If you see changes you didn't make**:
+   - Do NOT commit those files
+   - Report contention to the brain via MCP: `report_contention` tool
+   - Include: conflicting files, your task, what you were trying to do
+3. **File ownership**: Check `.octopai/claims` table for active file claims before editing
+4. **Claim files**: Before major edits, claim files via `claim_file` MCP tool
 
-- Use shadcn/ui components from `src/web/src/components/ui/`
-- Follow existing patterns in `src/web/src/pages/`
-- API calls go through `src/web/src/lib/api.ts`
-- Build with `cd src/web && bun run build` to verify
+### Signs of Contention
 
-## For Backend Arms
+- Unexpected modified files in `git status`
+- Files changing between reads
+- Merge conflicts on commit
+- TypeScript errors in files you didn't touch
 
-When working on the API or core:
+### Reporting Contention (MCP)
 
-- Database changes require migrations
-- Update types in `src/types/index.ts` when changing data shapes
-- Test with `bun run typecheck`
-- CLI should exit cleanly after async commands
-
-## Known Architectural Issues
-
-**IMPORTANT:** The following issues were identified during comprehensive architectural review (January 2026) and should be addressed:
-
-### Critical Issues
-
-1. **SQLite Principle Violations**: 50+ JSON files found storing state that violates the core principle
-   - Brain state (`.octopai/state/brain.json`) - coordinator status, poll intervals, active arms
-   - Task management (`.octopai/state/tasks.json`) - task queue and status tracking
-   - Tool discovery (`.octopai/state/toolbox.json`) - discovered tools from arms
-   - Arm tracking (`.octopai/state/seen_arms.json`) - arm ID tracking
-   - Message queuing (31+ files in `.octopai/queue/`) - persistent message system
-   - Individual arm states (`.octopai/state/arms/`) - per-arm state persistence
-   - Shared notes (`.octopai/state/notes/`) - inter-arm communication
-
-2. **Data Consistency Risk**: Dual storage systems (SQLite + JSON files) create data inconsistency potential
-
-### Code Quality Issues
-
-3. **API Convention Violations**: 7 instances of direct error returns instead of `HttpError` middleware
-   - `src/api/routes/agents.ts`: 6 violations (lines 45, 50, 64, 69, 75, 79)
-   - `src/api/routes/activity.ts`: 1 violation (line 90)
-
-4. **Type Safety Issues**: Extensive unsafe patterns found
-   - 39+ instances of unsafe `JSON.parse()` without validation
-   - 20+ instances of overused `unknown` types where specific interfaces needed
-   - 38+ instances of `Record<string, unknown>` instead of proper interfaces
-   - Unsafe type casting with `as unknown as` chains
-
-5. **Code Duplication**: Massive duplication across codebase
-   - 50+ instances of database connection duplication
-   - 100+ instances of similar error handling patterns
-   - 100+ instances of JSON operations duplication
-   - Duplicate type definitions across multiple files (OctopaiConfig, ArmConfig, Arm interfaces)
-   - Activity logging patterns repeated across files
-
-### Immediate Actions Required
-
-**Priority 1: SQLite Migration**
-- Migrate brain state from JSON to `brain_state` table
-- Migrate task queue from JSON to `tasks` table  
-- Migrate message queue from JSON files to `messages` table
-- Migrate toolbox from JSON to `tools` table
-
-**Priority 2: Code Consolidation**
-- Create `src/db/utils.ts` for database connection patterns
-- Create `src/utils/json.ts` for safe JSON operations
-- Create `src/utils/errors.ts` for error handling utilities
-- Consolidate duplicate type definitions in `src/types/index.ts`
-
-**Priority 3: API Fixes**
-- Fix `agents.ts` and `activity.ts` to use `HttpError` middleware
-- Add proper type validation for JSON parsing operations
-
-### Recommended Fixes
-
-- **Database Utilities**: Create shared helpers for connection management
-- **JSON Safety**: Implement schema validation with Zod or similar
-- **Type Safety**: Define specific interfaces, remove `Record<string, unknown>` patterns
-- **Error Handling**: Standardize error patterns across all routes
+// Use the brain MCP server to report
+mcp.call('report_contention', {
+  files: ['src/api/routes/index.ts', 'src/web/...'],
+  my_task: 'regression test suite',
+  other_changes: 'status reports feature, messaging page',
+  action_taken: 'skipped committing those files'
+});
 
 ## Questions?
 
@@ -273,11 +219,11 @@ Use this when you need to find:
 
 ### Sources
 
-| Source | Content |
-|--------|---------|
-| `gds` | GDS Design System components and guidelines |
-| `eng_portal` | Engineering Portal (ADRs, guides, RFCs) |
-| `api` | API specifications |
+| Source       | Content                                     |
+| ------------ | ------------------------------------------- |
+| `gds`        | GDS Design System components and guidelines |
+| `eng_portal` | Engineering Portal (ADRs, guides, RFCs)     |
+| `api`        | API specifications                          |
 
 Leave `sources` empty to search all documentation.
 
@@ -308,15 +254,15 @@ Use this when you need to:
 
 ### Parameters
 
-| Parameter | Description | Example |
-|-----------|-------------|---------|
-| `query` | What you're looking for | "create field" |
-| `service` | Filter by service name | "fields-svc" |
-| `method` | Filter by HTTP method | "POST" |
+| Parameter | Description             | Example        |
+| --------- | ----------------------- | -------------- |
+| `query`   | What you're looking for | "create field" |
+| `service` | Filter by service name  | "fields-svc"   |
+| `method`  | Filter by HTTP method   | "POST"         |
 
 ### Available Services
 
-Common services include: `fields-svc`, `auth-svc`, `user-svc`, `activities`, 
+Common services include: `fields-svc`, `auth-svc`, `user-svc`, `activities`,
 `crops-svc`, `imagery-api`, `integrations-svc`, `planning-svc`, and 40+ more.
 
 ### Examples
@@ -338,10 +284,10 @@ search_api(query="get user profile")
 
 ## When to Use Which Tool
 
-| Need | Tool |
-|------|------|
-| Find code in this project | `search_code` |
-| Find GDS component usage | `search_docs` (sources="gds") |
+| Need                        | Tool                                 |
+| --------------------------- | ------------------------------------ |
+| Find code in this project   | `search_code`                        |
+| Find GDS component usage    | `search_docs` (sources="gds")        |
 | Find architecture decisions | `search_docs` (sources="eng_portal") |
-| Find API endpoints | `search_api` |
-| General documentation | `search_docs` (no sources filter) |
+| Find API endpoints          | `search_api`                         |
+| General documentation       | `search_docs` (no sources filter)    |

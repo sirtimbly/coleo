@@ -48,3 +48,4 @@ docs/.vitepress
 .octopai/octopai.db-shm
 .octopai/octopai.db-wal
 .vitepress/cache/deps
+.octopai/regression-results
