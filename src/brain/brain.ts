@@ -1,6 +1,6 @@
 /**
  * Brain - The central coordinator for Octopai
- * 
+ *
  * Runs a polling loop that:
  * 1. Reads human mail from sent/
  * 2. Processes arm messages from queue/ and NATS
@@ -13,6 +13,16 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
+import {
+  queueMessage,
+  getPendingBrainMessages,
+  markMessageProcessing,
+  markMessageCompleted,
+  markMessageFailed,
+  cleanupOldMessages,
+  upsertTool,
+  createNote
+} from "../db/state";
 import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
 import { DocUpdateTracker } from "./doc-tracker";
@@ -135,7 +145,7 @@ export class Brain {
   private sent: Maildir;
   private tasks: Task[] = [];
   private arms: Map<string, Arm> = new Map();
-  private seenArmIds: Set<string> = new Set();
+  // seenArmIds removed - now derived from database via hasReceivedInitialTasks()
   private running = false;
   private db: Database | null = null;
   private apiBaseUrl: string;
@@ -215,15 +225,15 @@ export class Brain {
         clientId: `brain-${process.pid}`,
         debug: this.options.verbose,
       });
-      
+
       await this.natsClient.connect();
       this.log(`Connected to NATS at ${this.natsUrl}`);
-      
+
       // Subscribe to brain messages from arms
       this.natsClient.subscribe<BrainMessage>(TOPICS.BRAIN_MESSAGES, async (message) => {
         await this.handleBrainMessage(message);
       });
-      
+
       this.log("Subscribed to brain messages on NATS");
     } catch (err) {
       this.log(`NATS not available: ${err}`);
@@ -247,7 +257,7 @@ export class Brain {
    */
   private async handleBrainMessage(message: BrainMessage): Promise<void> {
     this.log(`NATS: Received ${message.type} from ${message.from}`);
-    
+
     // Convert NATS message to QueueMessage format and handle
     const queueMessage: QueueMessage = {
       id: `nats-${Date.now()}`,
@@ -257,7 +267,7 @@ export class Brain {
       payload: message.payload,
       timestamp: new Date(message.timestamp),
     };
-    
+
     await this.handleArmMessage(queueMessage);
   }
 
@@ -308,14 +318,14 @@ export class Brain {
     // Initialize database
     const dbPath = join(this.options.octopaiDir, "octopai.db");
     this.db = await initDatabase(dbPath);
-    
+
     // Initialize doc update tracker
     this.docTracker = new DocUpdateTracker(this.db, this.options.octopaiDir, process.cwd());
-    
+
     // Create necessary directories
     const dirs = [
       "mail/inbox",
-      "mail/sent", 
+      "mail/sent",
       "mail/drafts",
       "mail/archive",
       "queue/brain/pending",
@@ -325,23 +335,23 @@ export class Brain {
       "state/notes/shared",
       "logs",
     ];
-    
+
     for (const dir of dirs) {
       await mkdir(join(this.options.octopaiDir, dir), { recursive: true });
     }
-    
+
     // Initialize maildirs
     await this.inbox.init();
     await this.sent.init();
-    
+
     // Load existing state (but reset activeArms - they'll be populated from DB)
     await this.loadState();
     this.state.activeArms = []; // Reset - get from database on first poll
-    
+
     await this.loadTasks();
     await this.loadArms();
-    await this.loadSeenArmIds();
-    
+    // seenArmIds removed - now derived from database (hasReceivedInitialTasks)
+
     // Start documentation watcher for project docs
     try {
       const projectRoot = process.cwd();
@@ -349,7 +359,7 @@ export class Brain {
       docWatcher.onChange(async (event) => {
         // Log doc changes
         this.log(`Documentation changed: ${event.relativePath} (${event.type})`);
-        
+
         // If requirements or plans changed, re-evaluate pending tasks
         if (event.relativePath.includes("requirements") || event.relativePath.includes("plans")) {
           this.log(`Re-evaluating tasks due to doc change: ${event.relativePath}`);
@@ -360,7 +370,7 @@ export class Brain {
     } catch (err) {
       this.log(`Could not start doc watcher: ${err}`);
     }
-    
+
     this.log("Brain initialized");
   }
 
@@ -369,10 +379,10 @@ export class Brain {
    */
   async poll(): Promise<void> {
     this.state.lastPollAt = new Date().toISOString();
-    
+
     // Step 0: Infrastructure health check - verify the "body" is healthy before arms
     const infraHealth = await this.checkInfrastructureHealth();
-    
+
     if (!infraHealth.healthy) {
       // Attempt recovery
       const recovered = await this.attemptInfrastructureRecovery();
@@ -386,60 +396,60 @@ export class Brain {
         await this.notifyInfrastructureIssues(infraHealth.issues);
       }
     }
-    
+
     // If database is down, we can't do anything meaningful
     if (!infraHealth.components.database.healthy) {
       this.log("CRITICAL: Database unhealthy, skipping poll cycle");
       return;
     }
-    
+
     // Step 1: Check for new human messages (works even if API is down)
     if (infraHealth.components.maildir.healthy) {
       await this.processHumanMail();
     }
-    
+
     // Step 2: Process arm messages (works even if API is down - uses queue files)
     await this.processArmQueue();
-    
+
     // Steps 3-7 require API server for arm communication
     if (infraHealth.canWorkWithArms) {
       // Step 3: Check arm health and detect new arms
       await this.checkArms();
-      
+
       // Step 4: Check for stuck arms and help them
       await this.checkStuckArms();
-       
+
       // Step 4b: Check for idle arms stuck in prompt loops
       await this.checkIdleArmStuckLoops();
-       
+
       // Step 5: Assign initial tasks to new arms
       await this.assignInitialTasks();
-      
+
       // Step 6: Assign pending tasks to idle arms
       await this.assignTasks();
-      
+
       // Step 7: Prompt idle arms to check for work or file changes
       await this.promptIdleArms();
     } else {
       this.log("API server unavailable - skipping arm operations");
     }
-    
+
     // Step 8: Sync tasks from plan files (database only, no API needed)
     await this.syncPlanTasks();
-    
+
     // Step 8b: Check for documentation update triggers
     await this.checkDocUpdateTrigger();
-    
+
     // Step 8c: Re-evaluate plan progress (progressive planning)
     // Creates verification tasks for completed work with issues
     await this.reEvaluatePlanProgress();
-    
+
     // Step 9: Save state
     await this.saveState();
-    
+
     // Step 10: Notify Observatory of poll completion
     await this.notifyObservatory("poll");
-    
+
     this.log(`Poll complete. ${this.tasks.filter(t => t.status === "pending").length} pending, ${this.arms.size} arms`);
   }
 
@@ -482,19 +492,19 @@ export class Brain {
      this.running = true;
      this.state.status = "running";
      this.state.startedAt = this.state.startedAt || new Date().toISOString();
-     
+
      this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
      this.logActivity("brain", "started", undefined, { pollIntervalMs: this.options.pollIntervalMs });
-     
+
      // Connect to NATS
      await this.startNats();
-     
+
      // Notify Observatory that brain is starting
      await this.notifyObservatory("started");
-     
+
      // Initial poll
      await this.poll();
-     
+
      // Polling loop
      while (this.running) {
        await this.sleep(this.options.pollIntervalMs);
@@ -502,10 +512,10 @@ export class Brain {
          await this.poll();
        }
      }
-     
+
      // Disconnect from NATS
      await this.stopNats();
-     
+
      this.state.status = "stopped";
      await this.saveState();
      await this.notifyObservatory("stopped");
@@ -519,16 +529,16 @@ export class Brain {
    async runOnce(): Promise<void> {
      this.state.status = "running";
      this.state.startedAt = this.state.startedAt || new Date().toISOString();
-     
+
      // Connect to NATS (optional)
      await this.startNats();
-     
+
      await this.notifyObservatory("started");
      await this.poll();
-     
+
      // Disconnect from NATS
      await this.stopNats();
-     
+
      this.state.status = "stopped";
      await this.saveState();
      await this.notifyObservatory("stopped");
@@ -719,28 +729,58 @@ export class Brain {
   }
 
   /**
-   * Process messages from arms
+   * Process messages from arms (SQLite-based with file fallback)
    */
   private async processArmQueue(): Promise<void> {
+    // Process messages from SQLite (primary)
+    if (this.db) {
+      const messages = getPendingBrainMessages(this.db);
+      for (const message of messages) {
+        try {
+          markMessageProcessing(this.db, message.id);
+
+          await this.handleArmMessage({
+            id: message.id,
+            from: message.from,
+            to: message.to,
+            type: message.type as MessageType,
+            payload: message.payload,
+            timestamp: message.createdAt,
+          });
+
+          markMessageCompleted(this.db, message.id);
+        } catch (err) {
+          this.log(`Error processing queue message ${message.id}: ${err}`);
+          markMessageFailed(this.db, message.id, String(err));
+        }
+      }
+
+      // Periodically cleanup old messages (once per hour via modulo check)
+      if (Date.now() % 3600000 < this.options.pollIntervalMs) {
+        cleanupOldMessages(this.db, 7);
+      }
+    }
+
+    // Also check file queue for legacy/fallback messages
     const queueDir = join(this.options.octopaiDir, "queue", "brain", "pending");
     const processedDir = join(this.options.octopaiDir, "queue", "brain", "processed");
-    
+
     let files: string[];
     try {
       files = await readdir(queueDir);
     } catch {
       return; // Queue doesn't exist yet
     }
-    
+
     for (const file of files) {
       if (!file.endsWith(".json")) continue;
-      
+
       try {
         const content = await readFile(join(queueDir, file), "utf-8");
         const message: QueueMessage = JSON.parse(content);
-        
+
         await this.handleArmMessage(message);
-        
+
         // Move to processed
         await rename(
           join(queueDir, file),
@@ -757,38 +797,38 @@ export class Brain {
    */
   private async handleArmMessage(message: QueueMessage): Promise<void> {
     this.log(`Arm message: ${message.type} from ${message.from}`);
-    
+
     switch (message.type) {
       case "task_complete": {
         const payload = message.payload as { taskId: string; summary: string; artifacts: string[] };
         await this.completeTask(payload.taskId, payload.summary, payload.artifacts);
         break;
       }
-      
+
       case "discovery": {
         const discovery = message.payload as Discovery;
         await this.handleDiscovery(message.from, discovery);
         break;
       }
-      
+
       case "approval_request": {
         const payload = message.payload as { action: string; context: string; options: string[] };
         await this.sendApprovalRequest(message.from, payload);
         break;
       }
-      
+
       case "share_note": {
         const note = message.payload as { title: string; content: string; tags: string[] };
         await this.saveSharedNote(message.from, note);
         break;
       }
-      
+
       case "tool_discovery": {
         const tool = message.payload as { name: string; command: string; description: string };
         await this.handleToolDiscovery(message.from, tool);
         break;
       }
-      
+
       case "heartbeat": {
         const payload = message.payload as { status?: string; currentTask?: string; timestamp: string };
         await this.handleHeartbeat(message.from, payload);
@@ -859,14 +899,14 @@ export class Brain {
     mailThreadId?: string
   ): Promise<Task> {
     const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    
+
     let fullDescription = description;
     if (targetDoc) {
       fullDescription = `Update documentation: docs/${targetDoc}\n\n${description}`;
     } else {
       fullDescription = `Update project documentation based on human feedback:\n\n${description}`;
     }
-    
+
     const task: Task = {
       id: taskId,
       subject: `Docs: ${subject}`,
@@ -878,13 +918,13 @@ export class Brain {
       updatedAt: new Date(),
       mailThreadId,
     };
-    
+
     this.tasks.push(task);
     await this.saveTasks();
-    
+
     this.log(`Created doc update task: ${subject} (${taskId})`);
     this.logActivity("brain", "task_created", taskId, { subject, priority: task.priority, domain: "docs", targetDoc });
-    
+
     return task;
   }
 
@@ -894,10 +934,10 @@ export class Brain {
    */
   private ensureArmExists(armId: string): void {
     if (!this.db) return;
-    
+
     const now = new Date().toISOString();
     const armName = armId.startsWith("arm-") ? armId : `manual-${armId}`;
-    
+
     // Use INSERT OR IGNORE to create if not exists
     this.db.run(`
       INSERT OR IGNORE INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, last_activity_at)
@@ -914,7 +954,7 @@ export class Brain {
       now,
       now,
     ]);
-    
+
     // Update last_activity_at for existing arms
     this.db.run(`
       UPDATE arms SET last_activity_at = ?, updated_at = ? WHERE id = ?
@@ -927,21 +967,21 @@ export class Brain {
    */
   private async claimTaskForArm(armId: string, taskId: string): Promise<void> {
     this.log(`Arm ${armId} claiming task ${taskId}`);
-    
+
     try {
       const now = new Date().toISOString();
-      
+
       if (!this.db) {
         this.log(`Database not initialized, cannot claim task`);
         return;
       }
-      
+
       // Ensure the arm exists in the database (prevents FK constraint failure)
       this.ensureArmExists(armId);
-      
+
       // Update task in database - set assigned_to and add to assigned_arms array
       this.db.run(`
-        UPDATE tasks 
+        UPDATE tasks
         SET assigned_to = ?,
             assigned_arms = json_insert(
               COALESCE(assigned_arms, '[]'),
@@ -952,7 +992,7 @@ export class Brain {
             updated_at = ?
         WHERE id = ?
       `, [armId, armId, now, taskId]);
-      
+
       // Also update the in-memory tasks array
       const task = this.tasks.find(t => t.id === taskId);
       if (task) {
@@ -960,7 +1000,7 @@ export class Brain {
         task.status = task.status === "pending" ? "claimed" : task.status;
         task.updatedAt = new Date();
       }
-      
+
       this.logActivity("brain", "task_claimed", taskId, { armId });
       this.log(`Task ${taskId} claimed by arm ${armId}`);
     } catch (err) {
@@ -973,18 +1013,18 @@ export class Brain {
    */
   private async updateTaskStatus(armId: string, taskId: string, status: string, message?: string): Promise<void> {
     this.log(`Arm ${armId} updating task ${taskId} status to ${status}`);
-    
+
     try {
       const now = new Date().toISOString();
-      
+
       if (!this.db) {
         this.log(`Database not initialized, cannot update task status`);
         return;
       }
-      
+
       // Ensure the arm exists in the database (prevents FK constraint failure)
       this.ensureArmExists(armId);
-      
+
       // Map incoming status to valid task status
       let dbStatus = status;
       if (status === "in_progress") {
@@ -992,23 +1032,23 @@ export class Brain {
       } else if (status === "claimed") {
         dbStatus = "claimed";
       }
-      
+
       // Update task in database
       this.db.run(`
-        UPDATE tasks 
+        UPDATE tasks
         SET status = ?,
             assigned_to = COALESCE(assigned_to, ?),
-            assigned_arms = CASE 
+            assigned_arms = CASE
               WHEN assigned_arms IS NULL OR assigned_arms = '[]' THEN json_array(?)
               WHEN NOT json_valid(assigned_arms) THEN json_array(?)
-              WHEN NOT EXISTS (SELECT 1 FROM json_each(assigned_arms) WHERE value = ?) 
+              WHEN NOT EXISTS (SELECT 1 FROM json_each(assigned_arms) WHERE value = ?)
                 THEN json_insert(assigned_arms, '$[#]', ?)
               ELSE assigned_arms
             END,
             updated_at = ?
         WHERE id = ?
       `, [dbStatus, armId, armId, armId, armId, armId, now, taskId]);
-      
+
       // Also update the in-memory tasks array
       const task = this.tasks.find(t => t.id === taskId);
       if (task) {
@@ -1016,7 +1056,7 @@ export class Brain {
         task.assignedTo = task.assignedTo || armId;
         task.updatedAt = new Date();
       }
-      
+
       this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message });
       this.log(`Task ${taskId} status updated to ${dbStatus} by arm ${armId}`);
     } catch (err) {
@@ -1031,15 +1071,15 @@ export class Brain {
    */
   private async completeTask(taskId: string, summary: string, artifacts: string[]): Promise<void> {
     const task = this.tasks.find(t => t.id === taskId);
-    
+
     // Check for status reports with issues for this task
     const statusReportsWithIssues = await this.getStatusReportsWithIssues(taskId);
-    
+
     if (statusReportsWithIssues.length > 0) {
       // There are issues - create a verification task instead of just completing
       const latestReport = statusReportsWithIssues[0]!; // Most recent report (guaranteed by length check)
       this.log(`Task ${taskId} has ${statusReportsWithIssues.length} status reports with issues. Creating verification task.`);
-      
+
       if (task) {
         await this.createVerificationTask(task, {
           id: latestReport.id,
@@ -1049,11 +1089,11 @@ export class Brain {
           testsStatus: latestReport.testsStatus,
         });
       }
-      
+
       // The verification task creation also completes the original task
       return;
     }
-    
+
     // Update in-memory task if found
     if (task) {
       task.status = "completed";
@@ -1062,30 +1102,30 @@ export class Brain {
       task.artifacts = artifacts;
       await this.saveTasks();
     }
-    
+
     // Always update database
     if (this.db) {
       const now = new Date().toISOString();
       this.db.run(`
-        UPDATE tasks 
+        UPDATE tasks
         SET status = 'completed',
             completed_at = ?,
             updated_at = ?
         WHERE id = ?
       `, [now, now, taskId]);
     }
-    
+
     this.state.completedToday++;
-    
+
     // Get task info for logging (from memory or database)
     const taskSubject = task?.subject || await this.getTaskSubjectFromDb(taskId);
-    
+
     // Log activity
     this.logActivity("brain", "task_completed", taskId, { subject: taskSubject, artifacts });
-    
+
     // Check for tasks that were blocked on this task and unblock them
     await this.unblockDependentTasks(taskId);
-    
+
     // Notify human
     await this.sendToHuman({
       subject: `[octopai] Task completed: ${taskSubject}`,
@@ -1095,10 +1135,10 @@ export class Brain {
         "X-Octopai-Type": "task-complete",
       },
     });
-    
+
     this.log(`Completed task: ${taskSubject}`);
   }
-  
+
   /**
    * Get task subject from database (fallback when not in memory)
    */
@@ -1123,7 +1163,7 @@ export class Brain {
     testsStatus?: "passing" | "failing" | "not_run";
   }>> {
     if (!this.db) return [];
-    
+
     try {
       const rows = this.db.query(`
         SELECT id, summary, issues, next_steps, tests_status
@@ -1137,7 +1177,7 @@ export class Brain {
         next_steps: string | null;
         tests_status: string | null;
       }>;
-      
+
       return rows.map(row => ({
         id: row.id,
         summary: row.summary,
@@ -1157,7 +1197,7 @@ export class Brain {
    */
   private async unblockDependentTasks(completedTaskId: string): Promise<void> {
     if (!this.db) return;
-    
+
     try {
       // Find tasks that depend on the completed task
       const dependentRows = this.db.query(`
@@ -1171,7 +1211,7 @@ export class Brain {
         subject: string;
         dependency_blocked: number;
       }>;
-      
+
       for (const row of dependentRows) {
         // Check if this task has any other unmet dependencies
         const unmetDeps = this.db.query(`
@@ -1185,20 +1225,20 @@ export class Brain {
             AND t.status = 'completed'
           )
         `).get(row.task_id, completedTaskId) as { count: number };
-        
+
         if (unmetDeps.count === 0) {
           // All dependencies met - unblock the task
           const task = this.tasks.find(t => t.id === row.task_id);
           if (task && (task.status === "blocked" || task.status === "pending")) {
             task.status = "pending";
             task.updatedAt = new Date();
-            
+
             // Update the dependency_blocked flag in DB
             this.db.run(`
               UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ?
               WHERE id = ?
             `, [new Date().toISOString(), row.task_id]);
-            
+
             this.log(`Unblocked task: ${row.subject} (was waiting on ${completedTaskId})`);
             this.logActivity("brain", "task_unblocked", row.task_id, {
               completedDependency: completedTaskId,
@@ -1207,11 +1247,177 @@ export class Brain {
           }
         }
       }
-      
+
       await this.saveTasks();
     } catch (err) {
       this.log(`Error unblocking dependent tasks: ${err}`);
     }
+  }
+
+  /**
+   * Determine if a status report should be forwarded to the human user
+   * 
+   * Decision factors:
+   * 1. Report status type - some always forward, some conditional
+   * 2. Other arms working on same task - if yes, maybe wait
+   * 3. Idle arms available - if another arm can pick up immediately, don't notify yet
+   * 4. Completion states - if work is done and no follow-up assigned, notify
+   * 5. Blocked/stuck - if brain decides to move arm to new task, notify user task is deferred
+   * 
+   * Returns: { 
+   *   shouldForward: boolean, 
+   *   reason: string, 
+   *   assignedToArm?: string,
+   *   action?: 'notify' | 'defer_task' | 'reassign' 
+   * }
+   */
+  private async shouldForwardStatusReportToUser(
+    report: {
+      taskId: string;
+      armId: string;
+      status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+      summary: string;
+      blockers?: string[];
+    },
+    task: Task
+  ): Promise<{ 
+    shouldForward: boolean; 
+    reason: string; 
+    assignedToArm?: string;
+    action?: 'notify' | 'defer_task' | 'reassign';
+  }> {
+    // on_track - never forward, just progress updates
+    if (report.status === "on_track") {
+      return { shouldForward: false, reason: "Progress update - no user action needed" };
+    }
+
+    // Always forward needs_review - explicit request for human attention
+    if (report.status === "needs_review") {
+      return { shouldForward: true, reason: "Arm explicitly requested human review", action: 'notify' };
+    }
+
+    // For blocked status, check if:
+    // 1. Another arm can take over the task
+    // 2. The brain should defer the task and move the arm to new work
+    // 3. User needs to be notified immediately
+    if (report.status === "blocked") {
+      if (!this.db) {
+        return { shouldForward: true, reason: "Task is blocked - no DB to check alternatives", action: 'notify' };
+      }
+
+      // Check if another arm (different expertise/domain) could help
+      const alternativeArms = this.db.query(`
+        SELECT id, name, domain, status
+        FROM arms
+        WHERE id != ?
+        AND status IN ('idle', 'busy')
+        AND (domain != ? OR domain IS NULL)
+        ORDER BY 
+          CASE status WHEN 'idle' THEN 0 ELSE 1 END,
+          last_activity_at DESC
+        LIMIT 1
+      `).all(report.armId, task.domain || '') as Array<{ id: string; name: string; domain: string | null; status: string }>;
+
+      const idleAlternative = alternativeArms.find(a => a.status === 'idle');
+      
+      if (idleAlternative) {
+        // Another arm with different expertise can take over
+        this.log(`Task ${task.subject} blocked - can reassign to ${idleAlternative.name}`);
+        return {
+          shouldForward: false,
+          reason: `Blocked task can be reassigned to arm with different expertise: ${idleAlternative.name}`,
+          assignedToArm: idleAlternative.id,
+          action: 'reassign',
+        };
+      }
+
+      // Check if there are other pending tasks this arm could work on instead
+      const pendingTasks = this.db.query(`
+        SELECT COUNT(*) as count
+        FROM tasks
+        WHERE status = 'pending'
+        AND id != ?
+      `).get(task.id) as { count: number } | null;
+
+      if (pendingTasks && pendingTasks.count > 0) {
+        // There's other work to do - defer this task and notify user
+        this.log(`Task ${task.subject} blocked - deferring and moving arm to other work`);
+        return {
+          shouldForward: true,
+          reason: `Task blocked and deferred. Arm will be assigned to other pending work. User notified.`,
+          action: 'defer_task',
+        };
+      }
+
+      // No alternatives, must notify user
+      return { shouldForward: true, reason: "Task is blocked and requires human intervention", action: 'notify' };
+    }
+
+    // For issues_found and completed_with_issues, check if another arm can handle it
+    if (!this.db) {
+      // No database, default to forwarding
+      return { shouldForward: true, reason: "No database connection - defaulting to forward", action: 'notify' };
+    }
+
+    // Check how many arms are currently working on this task
+    const armsOnTask = this.db.query(`
+      SELECT a.id, a.name, a.status
+      FROM arms a
+      WHERE a.current_task_id = ?
+      AND a.status = 'busy'
+      AND a.id != ?
+    `).all(task.id, report.armId) as Array<{ id: string; name: string; status: string }>;
+
+    if (armsOnTask.length > 0) {
+      // Other arms are still working on this task
+      this.log(`Status report for task ${task.subject}: ${armsOnTask.length} other arms still working`);
+      return { 
+        shouldForward: false, 
+        reason: `${armsOnTask.length} other arm(s) still working on this task: ${armsOnTask.map(a => a.name).join(", ")}`
+      };
+    }
+
+    // Check for available idle arms that could pick up verification work
+    const idleArms = this.db.query(`
+      SELECT id, name, domain
+      FROM arms
+      WHERE status = 'idle'
+      AND id != ?
+      ORDER BY last_activity_at DESC
+      LIMIT 1
+    `).all(report.armId) as Array<{ id: string; name: string; domain: string | null }>;
+
+    if (report.status === "completed_with_issues" && idleArms.length > 0) {
+      // An idle arm could pick up the verification task
+      const idleArm = idleArms[0]!;
+      this.log(`Verification task for ${task.subject} can be assigned to idle arm: ${idleArm.name}`);
+      return {
+        shouldForward: false,
+        reason: `Verification task will be assigned to idle arm: ${idleArm.name}`,
+        assignedToArm: idleArm.id,
+        action: 'reassign',
+      };
+    }
+
+    if (report.status === "issues_found" && idleArms.length > 0) {
+      // Could assign investigation to another arm, but might still want to notify human
+      // For issues_found, we typically continue working, so check if the arm is continuing
+      const idleArm = idleArms[0]!;
+      this.log(`Issues found in ${task.subject} - idle arm available: ${idleArm.name}`);
+      // Still forward issues to user, but note that another arm could help
+      return {
+        shouldForward: true,
+        reason: `Issues found - user should be aware. Idle arm ${idleArm.name} available if needed.`,
+        action: 'notify',
+      };
+    }
+
+    // No other arms available, forward to user
+    return { 
+      shouldForward: true, 
+      reason: "No other arms available to continue work - user should be notified",
+      action: 'notify',
+    };
   }
 
   /**
@@ -1271,47 +1477,102 @@ export class Brain {
       blockerCount: report.blockers.length,
     });
 
+    // Determine if we should forward this status report to the user
+    const forwardDecision = await this.shouldForwardStatusReportToUser(report, task);
+    this.log(`Status report forward decision: ${forwardDecision.shouldForward ? "FORWARD" : "HOLD"} - ${forwardDecision.reason}`);
+
+    // Log the decision for transparency
+    this.logActivity("brain", "status_report_forward_decision", report.taskId, {
+      reportId: report.id,
+      shouldForward: forwardDecision.shouldForward,
+      reason: forwardDecision.reason,
+      assignedToArm: forwardDecision.assignedToArm,
+    });
+
     // Handle based on status
     switch (report.status) {
       case "blocked": {
-        // Update task status to blocked
-        task.status = "blocked";
+        // Update task status based on brain's decision
         task.updatedAt = new Date();
-        await this.saveTasks();
 
-        // Notify human about blockers
-        await this.sendToHuman({
-          subject: `[octopai] Task blocked: ${task.subject}`,
-          body: `Task "${task.subject}" is blocked by arm ${report.armId}.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
-          headers: {
-            "X-Octopai-Task-Id": report.taskId,
-            "X-Octopai-Type": "task-blocked",
-          },
-        });
-        this.log(`Task ${task.subject} blocked. Notified human.`);
+        if (forwardDecision.action === 'reassign' && forwardDecision.assignedToArm) {
+          // Another arm can take over - reassign without bothering the user
+          task.status = "pending"; // Reset to pending for reassignment
+          await this.saveTasks();
+          await this.claimTaskForArm(forwardDecision.assignedToArm, task.id);
+          this.log(`Task ${task.subject} blocked by ${report.armId}, reassigned to ${forwardDecision.assignedToArm}`);
+          
+          // Log but don't notify user
+          this.logActivity("brain", "task_reassigned_on_block", task.id, {
+            fromArm: report.armId,
+            toArm: forwardDecision.assignedToArm,
+            reason: forwardDecision.reason,
+          });
+        } else if (forwardDecision.action === 'defer_task') {
+          // Defer the task and notify user - arm will move to other work
+          task.status = "blocked";
+          await this.saveTasks();
+          
+          // Update database to mark task as deferred
+          if (this.db) {
+            this.db.run(`
+              UPDATE tasks
+              SET status = 'blocked',
+                  metadata = json_set(COALESCE(metadata, '{}'), '$.deferred', true, '$.deferredAt', ?),
+                  updated_at = ?
+              WHERE id = ?
+            `, [new Date().toISOString(), new Date().toISOString(), task.id]);
+          }
+
+          await this.sendToHuman({
+            subject: `[octopai] Task deferred: ${task.subject}`,
+            body: `Task "${task.subject}" has been deferred.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Brain Decision\nThe arm could not complete this task. There are other pending tasks, so the arm has been moved to other work. This task will remain blocked until you provide guidance or another arm becomes available.\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
+            headers: {
+              "X-Octopai-Task-Id": report.taskId,
+              "X-Octopai-Type": "task-deferred",
+            },
+          });
+          this.log(`Task ${task.subject} deferred. Arm ${report.armId} will be assigned to other work.`);
+        } else {
+          // Standard blocked handling - notify user immediately
+          task.status = "blocked";
+          await this.saveTasks();
+
+          await this.sendToHuman({
+            subject: `[octopai] Task blocked: ${task.subject}`,
+            body: `Task "${task.subject}" is blocked by arm ${report.armId}.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
+            headers: {
+              "X-Octopai-Task-Id": report.taskId,
+              "X-Octopai-Type": "task-blocked",
+            },
+          });
+          this.log(`Task ${task.subject} blocked. Notified human.`);
+        }
         break;
       }
 
       case "issues_found": {
         // Log issues but don't change task status yet
         this.log(`Issues found in task ${task.subject}: ${report.issues.length} issues`);
-        
-        // If significant issues, notify human
-        if (report.issues.length > 0) {
+
+        // Only notify human if decision says to forward
+        if (forwardDecision.shouldForward && report.issues.length > 0) {
           await this.sendToHuman({
             subject: `[octopai] Issues found: ${task.subject}`,
-            body: `Arm ${report.armId} found issues while working on "${task.subject}":\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n## Summary\n${report.summary}\n\n## Next Steps\n${report.nextSteps || "Continuing work..."}`,
+            body: `Arm ${report.armId} found issues while working on "${task.subject}":\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n## Summary\n${report.summary}\n\n## Next Steps\n${report.nextSteps || "Continuing work..."}\n\n---\n_Brain decision: ${forwardDecision.reason}_`,
             headers: {
               "X-Octopai-Task-Id": report.taskId,
               "X-Octopai-Type": "issues-found",
             },
           });
+        } else if (!forwardDecision.shouldForward) {
+          this.log(`Issues found but not forwarding to user: ${forwardDecision.reason}`);
         }
         break;
       }
 
       case "needs_review": {
-        // Task needs human or other arm review
+        // Task needs human or other arm review - always forward
         this.log(`Task ${task.subject} needs review`);
         await this.sendToHuman({
           subject: `[octopai] Review needed: ${task.subject}`,
@@ -1326,7 +1587,13 @@ export class Brain {
 
       case "completed_with_issues": {
         // Create a verification task for follow-up
-        await this.createVerificationTask(task, report);
+        const verifyTask = await this.createVerificationTask(task, report, !forwardDecision.shouldForward);
+        
+        // If we decided not to forward because an idle arm can handle it, assign the task
+        if (!forwardDecision.shouldForward && forwardDecision.assignedToArm) {
+          await this.claimTaskForArm(forwardDecision.assignedToArm, verifyTask.id);
+          this.log(`Assigned verification task ${verifyTask.id} to ${forwardDecision.assignedToArm} instead of notifying human`);
+        }
         break;
       }
 
@@ -1341,6 +1608,7 @@ export class Brain {
   /**
    * Create a verification/polish task when a task completes with issues
    * This is part of progressive planning - the brain re-evaluates and creates follow-up work
+   * @param skipNotification - If true, don't send notification to human (e.g., when assigning to another arm)
    */
   private async createVerificationTask(
     originalTask: Task,
@@ -1350,14 +1618,15 @@ export class Brain {
       issues: string[];
       nextSteps?: string;
       testsStatus?: "passing" | "failing" | "not_run";
-    }
+    },
+    skipNotification: boolean = false
   ): Promise<Task> {
     const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    
-    const issuesList = report.issues.length > 0 
+
+    const issuesList = report.issues.length > 0
       ? `## Issues to Address\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n`
       : "";
-    
+
     const testInfo = report.testsStatus === "failing"
       ? "## ⚠️ Tests are failing - this should be addressed first\n\n"
       : "";
@@ -1391,7 +1660,7 @@ ${originalTask.id}`;
     };
 
     this.tasks.push(verifyTask);
-    
+
     // Insert verification task into database
     if (this.db) {
       const now = new Date().toISOString();
@@ -1400,26 +1669,26 @@ ${originalTask.id}`;
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `, [verifyTask.id, verifyTask.subject, verifyTask.description, verifyTask.status, verifyTask.priority, now, now]);
     }
-    
+
     await this.saveTasks();
 
     // Mark original task as completed (with issues noted)
     originalTask.status = "completed";
     originalTask.completedAt = new Date();
     originalTask.updatedAt = new Date();
-    
+
     // Update original task in database
     if (this.db) {
       const now = new Date().toISOString();
       this.db.run(`
-        UPDATE tasks 
+        UPDATE tasks
         SET status = 'completed',
             completed_at = ?,
             updated_at = ?
         WHERE id = ?
       `, [now, now, originalTask.id]);
     }
-    
+
     this.state.completedToday++;
     await this.saveTasks();
 
@@ -1428,17 +1697,22 @@ ${originalTask.id}`;
       originalTaskId: originalTask.id,
       issueCount: report.issues.length,
       testsStatus: report.testsStatus,
+      skipNotification,
     });
 
-    // Notify human
-    await this.sendToHuman({
-      subject: `[octopai] Verification needed: ${originalTask.subject}`,
-      body: `Task "${originalTask.subject}" completed with issues. Created verification task.\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed"}\n\n## Original Summary\n${report.summary}`,
-      headers: {
-        "X-Octopai-Task-Id": taskId,
-        "X-Octopai-Type": "verification-task-created",
-      },
-    });
+    // Notify human unless explicitly skipped (e.g., when assigning to another arm)
+    if (!skipNotification) {
+      await this.sendToHuman({
+        subject: `[octopai] Verification needed: ${originalTask.subject}`,
+        body: `Task "${originalTask.subject}" completed with issues. Created verification task.\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed"}\n\n## Original Summary\n${report.summary}`,
+        headers: {
+          "X-Octopai-Task-Id": taskId,
+          "X-Octopai-Type": "verification-task-created",
+        },
+      });
+    } else {
+      this.log(`Skipping human notification for verification task ${taskId} - will be assigned to another arm`);
+    }
 
     return verifyTask;
   }
@@ -1448,7 +1722,7 @@ ${originalTask.id}`;
     */
    private async handleDiscovery(armId: string, discovery: Discovery): Promise<void> {
      const discoveryId = `disc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-     
+
      // Store in database
      if (this.db) {
        const now = new Date().toISOString();
@@ -1468,10 +1742,10 @@ ${originalTask.id}`;
          now,
          now,
        ]);
-       
+
        this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
      }
-     
+
      // Also notify human for high-severity discoveries
      if (discovery.severity === "error" || discovery.severity === "warning") {
        await this.sendToHuman({
@@ -1505,38 +1779,38 @@ ${originalTask.id}`;
      createdAt: string;
    }>> {
      if (!this.db) return [];
-     
+
      const limit = options?.limit || 20;
      let query = `
        SELECT id, kind, title, details, file_path, line_number, severity, status, created_at
        FROM discoveries
        WHERE status = 'open'
      `;
-     
+
       const params: (string | number)[] = [];
-      
+
       // Filter by severity if specified
       if (options?.severity && options.severity.length > 0) {
         query += ` AND severity IN (${options.severity.map(() => '?').join(',')})`;
         params.push(...options.severity);
       }
-      
+
       // Filter by file pattern if specified
       if (options?.filePattern) {
         query += ` AND (file_path LIKE ? OR file_path GLOB ?)`;
         params.push(`%${options.filePattern}%`, `*${options.filePattern}*`);
       }
-      
-      query += ` ORDER BY 
-          CASE severity 
-            WHEN 'error' THEN 1 
-            WHEN 'warning' THEN 2 
-            WHEN 'info' THEN 3 
+
+      query += ` ORDER BY
+          CASE severity
+            WHEN 'error' THEN 1
+            WHEN 'warning' THEN 2
+            WHEN 'info' THEN 3
           END,
           created_at DESC
         LIMIT ?`;
       params.push(limit);
-      
+
       try {
         const stmt = this.db.query(query);
         const rows = (params.length > 0 ? stmt.all(...params) : stmt.all()) as Array<{
@@ -1550,7 +1824,7 @@ ${originalTask.id}`;
           status: string;
           created_at: string;
         }>;
-       
+
        return rows.map(row => ({
          id: row.id,
          kind: row.kind,
@@ -1582,9 +1856,9 @@ ${originalTask.id}`;
       createdAt: string;
     }>> {
       if (!this.db) return [];
-      
+
       const limit = options?.limit || 20;
-      
+
       try {
         // Build FTS query with parameters
         const ftsQuery = `
@@ -1596,13 +1870,13 @@ ${originalTask.id}`;
           ORDER BY d.created_at DESC
           LIMIT ?
         `;
-        
+
         const ftsParams: (string | number)[] = [query];
         if (options?.severity) {
           ftsParams.push(...options.severity);
         }
         ftsParams.push(limit);
-        
+
         const stmt = this.db.query(ftsQuery);
         const rows = ftsParams.length > 0 ? stmt.all(...ftsParams) : stmt.all();
         const typedRows = rows as Array<{
@@ -1613,7 +1887,7 @@ ${originalTask.id}`;
           severity: string;
           created_at: string;
         }>;
-        
+
         return typedRows.map(row => ({
           id: row.id,
           kind: row.kind,
@@ -1638,13 +1912,13 @@ ${originalTask.id}`;
     */
    async getDiscoveriesContext(armId: string, domain: string): Promise<string> {
      const discoveries = await this.getDiscoveriesForArm(armId, domain, { limit: 10 });
-     
+
      if (discoveries.length === 0) {
        return "No prior discoveries recorded.";
      }
-     
+
      const lines = [`## Prior Discoveries (${discoveries.length} open)`];
-     
+
      for (const d of discoveries) {
        lines.push(`- **[${d.severity.toUpperCase()}] ${d.title}**`);
        lines.push(`  - Kind: ${d.kind}`);
@@ -1653,7 +1927,7 @@ ${originalTask.id}`;
        }
        lines.push(`  - ${d.details.slice(0, 200)}${d.details.length > 200 ? "..." : ""}`);
      }
-     
+
      return lines.join("\n");
    }
 
@@ -1661,11 +1935,11 @@ ${originalTask.id}`;
    * Send an approval request to the human
    */
   private async sendApprovalRequest(
-    armId: string, 
+    armId: string,
     request: { action: string; context: string; options: string[] }
   ): Promise<void> {
     const requestId = `approval-${Date.now()}`;
-    
+
     await this.sendToHuman({
       subject: `[octopai] [${requestId}] Approval needed: ${request.action}`,
       body: `Arm ${armId} needs your approval.\n\n**Action:** ${request.action}\n\n**Context:**\n${request.context}\n\n**Options:** ${request.options.join(" | ")}\n\nReply to this email with your decision.`,
@@ -1694,7 +1968,7 @@ ${originalTask.id}`;
       const pendingTasks = this.tasks.filter(t => t.status === "pending");
       const inProgress = this.tasks.filter(t => t.status === "in_progress");
       const completedToday = this.state.completedToday;
-      
+
       await this.sendToHuman({
         subject: "[octopai] Status Report",
         body: `## Current Status\n\n- **Arms active:** ${this.arms.size}\n- **Pending tasks:** ${pendingTasks.length}\n- **In progress:** ${inProgress.length}\n- **Completed today:** ${completedToday}\n\n## Pending Tasks\n${pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None"}\n\n## In Progress\n${inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None"}`,
@@ -1713,52 +1987,40 @@ ${originalTask.id}`;
     author: string,
     note: { title: string; content: string; tags: string[] }
   ): Promise<void> {
-    const notesDir = join(this.options.octopaiDir, "state", "notes", "shared");
     const noteId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    
-    const fullNote = {
-      id: noteId,
-      author,
-      ...note,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    await writeFile(
-      join(notesDir, `${noteId}.json`),
-      JSON.stringify(fullNote, null, 2),
-      "utf-8"
-    );
-    
+
+    // Save to SQLite notes table
+    if (this.db) {
+      createNote(this.db, {
+        id: noteId,
+        author,
+        title: note.title,
+        content: note.content,
+        category: "shared",
+        tags: note.tags,
+      });
+    }
+
     this.log(`Saved shared note: ${note.title} from ${author}`);
   }
 
   /**
-   * Handle a tool discovery
+   * Handle a tool discovery (stored in SQLite tools table)
    */
   private async handleToolDiscovery(
     armId: string,
     tool: { name: string; command: string; description: string }
   ): Promise<void> {
-    // Save to toolbox
-    const toolboxPath = join(this.options.octopaiDir, "state", "toolbox.json");
-    let toolbox: Record<string, unknown> = {};
-    
-    try {
-      const content = await readFile(toolboxPath, "utf-8");
-      toolbox = JSON.parse(content);
-    } catch {
-      // Toolbox doesn't exist yet
+    // Save to SQLite tools table
+    if (this.db) {
+      upsertTool(this.db, {
+        name: tool.name,
+        command: tool.command,
+        description: tool.description,
+        discoveredBy: armId,
+      });
     }
-    
-    toolbox[tool.name] = {
-      ...tool,
-      discoveredBy: armId,
-      discoveredAt: new Date(),
-    };
-    
-    await writeFile(toolboxPath, JSON.stringify(toolbox, null, 2), "utf-8");
-    
+
     // Notify human
     await this.sendToHuman({
       subject: `[octopai] Tool discovered: ${tool.name}`,
@@ -1777,13 +2039,13 @@ ${originalTask.id}`;
     payload: { status?: string; currentTask?: string; timestamp: string }
   ): Promise<void> {
     if (!this.db) return;
-    
+
     const now = new Date().toISOString();
     this.db.run(
       "UPDATE arms SET last_heartbeat = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
       [now, now, now, armId]
     );
-    
+
     // Update in-memory state too
     const arm = this.arms.get(armId);
     if (arm) {
@@ -1795,7 +2057,7 @@ ${originalTask.id}`;
         arm.status = "idle";
       }
     }
-    
+
     this.log(`Heartbeat from ${armId}: ${payload.status || "alive"}`);
   }
 
@@ -2174,33 +2436,33 @@ ${originalTask.id}`;
     */
    private async assignInitialTasks(): Promise<void> {
      for (const [armId, arm] of this.arms) {
-       // Skip if we've already assigned initial tasks to this arm
-       if (this.seenArmIds.has(armId)) continue;
-       
+       // Skip if we've already assigned initial tasks to this arm (check database)
+       if (await this.hasReceivedInitialTasks(armId)) continue;
+
        // Skip if arm is not idle
        if (arm.status !== "idle") continue;
-       
+
        // Get the domain (stored as extra property)
        const domain = (arm as Arm & { domain?: string }).domain || "general";
-       
+
        // Get relevant discoveries for this arm
        const discoveries = await this.getDiscoveriesForArm(armId, domain, { limit: 10 });
-       
+
        // Get initial tasks for this domain
        const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
-       
+
        // Create tasks for this arm
        for (const taskTemplate of initialTasks) {
          const task = await this.createTask(
            taskTemplate.subject,
            taskTemplate.description
          );
-         
+
          // Immediately assign to this arm
          task.status = "claimed";
          task.assignedTo = armId;
          task.updatedAt = new Date();
-         
+
          // Include discoveries context if any exist
          if (discoveries.length > 0) {
            task.context = {
@@ -2208,48 +2470,33 @@ ${originalTask.id}`;
              notes: "Review these prior discoveries before starting work.",
            };
          }
-         
+
          // Send to arm
          await this.sendToArm(armId, {
            type: "task_assignment",
            payload: task,
          });
-         
+
          this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain}, discoveries: ${discoveries.length})`);
          this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject, discoveryCount: discoveries.length });
        }
-       
-       // Mark arm as having received initial tasks
-       this.seenArmIds.add(armId);
-       await this.saveSeenArmIds();
+
+       // Task assignments are saved to database, so no need to track separately
      }
    }
 
   /**
-   * Load seen arm IDs from state
+   * Check if an arm has already received initial tasks (derived from database)
    */
-  private async loadSeenArmIds(): Promise<void> {
-    try {
-      const content = await readFile(
-        join(this.options.octopaiDir, "state", "seen_arms.json"),
-        "utf-8"
-      );
-      const ids = JSON.parse(content);
-      this.seenArmIds = new Set(ids);
-    } catch {
-      this.seenArmIds = new Set();
-    }
-  }
+  private async hasReceivedInitialTasks(armId: string): Promise<boolean> {
+    if (!this.db) return false;
 
-  /**
-   * Save seen arm IDs to state
-   */
-  private async saveSeenArmIds(): Promise<void> {
-    await writeFile(
-      join(this.options.octopaiDir, "state", "seen_arms.json"),
-      JSON.stringify(Array.from(this.seenArmIds)),
-      "utf-8"
-    );
+    // Check if there are any tasks that were assigned to this arm
+    const result = this.db.query(`
+      SELECT COUNT(*) as count FROM tasks WHERE assigned_to = ?
+    `).get(armId) as { count: number } | null;
+
+    return (result?.count ?? 0) > 0;
   }
 
   /**
@@ -2319,7 +2566,7 @@ ${originalTask.id}`;
         // There are tasks available - prompt the arm to fetch its assignment
         const taskCount = uniqueTasks.length;
         const domainMatchCount = uniqueTasks.filter(t => !t.domain || t.domain === armDomain).length;
-        
+
         this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available (${domainMatchCount} domain match), prompting to check instructions...`);
 
         const promptSuccess = await this.sendPromptToArm(
@@ -2542,7 +2789,7 @@ ${originalTask.id}`;
    * Check all infrastructure components and return health status
    * This should be called at the start of each poll cycle to ensure
    * the brain's "body" is healthy before working with arms.
-   * 
+   *
    * @returns Object with overall health status and details per component
    */
   private async checkInfrastructureHealth(): Promise<{
@@ -2639,7 +2886,7 @@ ${originalTask.id}`;
     if (this.db) {
       try {
         const now = new Date().toISOString();
-        
+
         // Update database health
         this.db.run(`
           INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
@@ -2650,7 +2897,7 @@ ${originalTask.id}`;
           now,
           now,
         ]);
-        
+
         // Update NATS health
         this.db.run(`
           INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
@@ -2661,7 +2908,7 @@ ${originalTask.id}`;
           now,
           now,
         ]);
-        
+
         // Update maildir health
         this.db.run(`
           INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
@@ -2672,7 +2919,7 @@ ${originalTask.id}`;
           now,
           now,
         ]);
-        
+
         // Update API server health
         this.db.run(`
           INSERT OR REPLACE INTO infrastructure_health (component, healthy, optional, error, last_check, updated_at)
@@ -2794,7 +3041,7 @@ The brain will continue to retry and recover automatically where possible.`,
 
   /**
    * Check for stuck arms and help them
-   * 
+   *
    * This method:
    * 1. First checks harness state via API (most reliable for API harness arms)
    * 2. Syncs harness state with database if they've drifted
@@ -2813,11 +3060,11 @@ The brain will continue to retry and recover automatically where possible.`,
 
     for (const arm of busyArms) {
       const armDomain = (arm as Arm & { domain?: string }).domain || "general";
-      
+
       // First, check harness state via API - this is more reliable than PTY log parsing
       // especially for API harness arms (opencode-api)
       const harnessState = await this.getArmHarnessState(arm.id);
-      
+
       if (harnessState) {
         // Handle based on harness state
         if (harnessState.state === "idle") {
@@ -2859,10 +3106,10 @@ The brain will continue to retry and recover automatically where possible.`,
           this.log(`Arm ${arm.name}: could not get harness state, falling back to log analysis`);
         }
       }
-      
+
       // Read recent logs for this arm
       const recentOutput = await this.readArmLogs(arm.name, 100);
-      
+
       if (!recentOutput || recentOutput.trim().length < 50) {
         // No significant output - might be starting up or truly idle
         this.log(`Arm ${arm.name}: insufficient log output to analyze`);
@@ -2947,7 +3194,7 @@ The brain will continue to retry and recover automatically where possible.`,
         // Arm is looping - send /compact command and retry
         this.log(`Sending /compact to ${arm.name} due to looping`);
         await this.sendPromptToArm(arm.name, "/compact");
-        
+
         // Wait a bit then send a nudge to continue
         setTimeout(async () => {
           await this.sendPromptToArm(
@@ -2955,7 +3202,7 @@ The brain will continue to retry and recover automatically where possible.`,
             "You were stuck in a loop. I've compacted your context. Please review the current state and try a different approach to complete your task."
           );
         }, 2000);
-        
+
         this.logActivity("brain", "arm_unstuck", arm.id, {
           action: "compacted",
           reason: analysis.reasoning,
@@ -2978,7 +3225,7 @@ The brain will continue to retry and recover automatically where possible.`,
 
       case "prompt":
         // Send a generic nudge to continue
-        const nudgeMessage = analysis.suggestedResponse || 
+        const nudgeMessage = analysis.suggestedResponse ||
           "Please continue with your current task. If you're waiting for input, make a reasonable decision and proceed.";
         this.log(`Prompting ${arm.name} to continue: "${nudgeMessage.slice(0, 50)}..."`);
         await this.sendPromptToArm(arm.name, nudgeMessage);
@@ -3002,7 +3249,7 @@ The brain will continue to retry and recover automatically where possible.`,
    */
   private async escalateStuckArm(arm: Arm, analysis: StuckAnalysis): Promise<void> {
     const stuckType = analysis.stuckType || "unknown";
-    
+
     // Check if we already escalated for this same stuck type
     const lastStuck = this.lastStuckState.get(arm.id);
     if (lastStuck && lastStuck.stuckType === stuckType) {
@@ -3057,31 +3304,31 @@ octopai arm prompt ${arm.name} "your message here"
 
   /**
    * Check for idle arms that are stuck in a prompt-response loop
-   * 
+   *
    * This detects a specific pattern where:
    * 1. Brain sends prompts to idle arms (prompt_received events)
-   * 2. Arm responds with status_changed to "idle" 
+   * 2. Arm responds with status_changed to "idle"
    * 3. No productive activity (no heartbeat, task claims, etc.)
    * 4. Repeats indefinitely
    */
   private async checkIdleArmStuckLoops(): Promise<void> {
     if (!this.db) return;
-    
+
     const idleArms = Array.from(this.arms.values()).filter(arm => arm.status === "idle");
     if (idleArms.length === 0) return;
-    
+
     this.log(`Checking ${idleArms.length} idle arm(s) for stuck loops...`);
-    
+
     for (const arm of idleArms) {
       // Get recent activity for this arm
       const recentActivity = await this.getRecentArmActivity(arm.id, 15);
       if (!recentActivity || recentActivity.length < 5) continue;
-      
+
       // Analyze the pattern
       const pattern = this.analyzePromptResponsePattern(arm.id, recentActivity);
-      
+
       if (!pattern.hasPrompt) continue;
-      
+
       // Update or create tracker for this arm
       let tracker = this.idleArmPromptTracker.get(arm.id);
       if (!tracker) {
@@ -3093,26 +3340,26 @@ octopai arm prompt ${arm.name} "your message here"
         };
         this.idleArmPromptTracker.set(arm.id, tracker);
       }
-      
+
       // Check for productive activity since last prompt
-      const hasProductiveActivity = recentActivity.some(a => 
-        this.isProductiveAction(a.action) && 
+      const hasProductiveActivity = recentActivity.some(a =>
+        this.isProductiveAction(a.action) &&
         new Date(a.timestamp) > tracker!.lastPromptAt
       );
-      
+
       if (hasProductiveActivity) {
         // Arm is doing real work - reset tracking
         tracker.promptCount = 0;
         tracker.lastProductiveAt = new Date();
         continue;
       }
-      
+
        // No productive activity - increment prompt count
       if (pattern.justReceivedPrompt) {
         tracker.promptCount++;
         tracker.lastPromptAt = new Date();
       }
-      
+
        // Determine if arm is stuck based on prompt count and time
       // If lastProductiveAt is null, use the oldest activity timestamp as reference
       let stuckMinutes = 0;
@@ -3129,11 +3376,11 @@ octopai arm prompt ${arm.name} "your message here"
       } else {
         stuckMinutes = 15; // Default to triggering detection
       }
-      
+
       const promptInterval = (Date.now() - tracker.lastPromptAt.getTime()) / 1000;
-      
+
       this.log(`Arm ${arm.id}: promptCount=${tracker.promptCount}, stuckMinutes=${stuckMinutes.toFixed(1)}, interval=${promptInterval.toFixed(0)}s`);
-      
+
       // Check if stuck based on pattern
       // Pattern: 3+ prompts without productive response, or 5+ minutes with no real work
       if (tracker.promptCount >= 3 || stuckMinutes >= 5) {
@@ -3141,13 +3388,13 @@ octopai arm prompt ${arm.name} "your message here"
       }
     }
   }
-  
+
   /**
    * Analyze recent activity to detect prompt-response patterns
    */
   private async getRecentArmActivity(armId: string, minutes: number): Promise<Array<{timestamp: string; action: string; details: string}> | null> {
     if (!this.db) return null;
-    
+
     const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
     try {
       return this.db.query(`
@@ -3159,7 +3406,7 @@ octopai arm prompt ${arm.name} "your message here"
       return null;
     }
   }
-  
+
   /**
    * Detect prompt-response patterns in activity stream
    */
@@ -3170,13 +3417,13 @@ octopai arm prompt ${arm.name} "your message here"
     let promptCount = 0;
     let justReceivedPrompt = false;
     let hasPrompt = false;
-    
+
     // Count prompt_received events and check for prompt -> idle patterns
     for (const entry of activity) {
       if (entry.action === "prompt_received") {
         hasPrompt = true;
         promptCount++;
-        
+
         // Check if this is very recent (within last 60 seconds)
         const entryTime = new Date(entry.timestamp).getTime();
         if (Date.now() - entryTime < 60 * 1000) {
@@ -3184,10 +3431,10 @@ octopai arm prompt ${arm.name} "your message here"
         }
       }
     }
-    
+
     return { hasPrompt, justReceivedPrompt, promptCount };
   }
-  
+
   /**
    * Check if an action represents productive work
    */
@@ -3195,7 +3442,7 @@ octopai arm prompt ${arm.name} "your message here"
     const productiveActions = [
       "heartbeat",
       "claim_task",
-      "acknowledge_task", 
+      "acknowledge_task",
       "complete_task",
       "get_my_instructions",
       "task_progress",
@@ -3206,7 +3453,7 @@ octopai arm prompt ${arm.name} "your message here"
     ];
     return productiveActions.includes(action);
   }
-  
+
   /**
    * Handle a detected stuck idle arm with escalating interventions
    */
@@ -3228,7 +3475,7 @@ octopai arm prompt ${arm.name} "your message here"
         tracker.escalationLevel = 1;
         tracker.promptCount = 0; // Reset after intervention
         break;
-        
+
       case 1: // Second detection - send /compact
         this.log(`Arm ${arm.id} still stuck after interrupt. Sending /compact...`);
         this.logActivity("brain", "idle_arm_stuck", arm.id, {
@@ -3240,7 +3487,7 @@ octopai arm prompt ${arm.name} "your message here"
         tracker.escalationLevel = 2;
         tracker.promptCount = 0;
         break;
-        
+
       case 2: // Third detection - escalate to human
         this.log(`Arm ${arm.id} still stuck after compact. Escalating to human...`);
         this.logActivity("brain", "idle_arm_stuck", arm.id, {
@@ -3273,7 +3520,7 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
         });
         tracker.escalationLevel = 3;
         break;
-        
+
       case 3: // Already escalated - auto-kill after 20+ minutes
         if (stuckMinutes >= 20) {
           this.log(`Arm ${arm.id} stuck for 20+ minutes after escalation. Auto-killing zombie arm...`);
@@ -3288,7 +3535,7 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
         }
         break;
     }
-    
+
     // Reset prompt count after any intervention (we'll re-detect if still stuck)
     tracker.promptCount = 0;
   }
@@ -3377,19 +3624,19 @@ octopai arm spawn -n ${arm.name}
    private async assignTasks(): Promise<void> {
      const pendingTasks = this.tasks.filter(t => t.status === "pending");
      const idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
-     
+
      for (const task of pendingTasks) {
        // Find best matching arm based on task domain preference
        let bestArm = idleArms.shift();
        const armDomain = bestArm ? ((bestArm as Arm & { domain?: string }).domain || "general") : "general";
-       
+
        if (task.domain) {
          // Look for an arm with matching domain
          const matchingArm = idleArms.find(arm => {
            const aDomain = (arm as Arm & { domain?: string }).domain || "general";
            return aDomain === task.domain || aDomain === "general";
          });
-         
+
          if (matchingArm) {
            // Remove matching arm from idleArms and use it
            const index = idleArms.indexOf(matchingArm);
@@ -3399,31 +3646,31 @@ octopai arm spawn -n ${arm.name}
            bestArm = matchingArm;
          }
        }
-       
+
        if (!bestArm) break;
-       
+
        task.status = "claimed";
         task.assignedTo = bestArm.id;
         task.updatedAt = new Date();
-        
+
         // Update database
         if (this.db) {
           const now = new Date().toISOString();
           this.db.run(`
-            UPDATE tasks 
+            UPDATE tasks
             SET status = 'claimed',
                 assigned_to = ?,
                 updated_at = ?
             WHERE id = ?
           `, [bestArm.id, now, task.id]);
         }
-        
+
         bestArm.status = "busy";
        bestArm.currentTask = task.id;
-       
+
        // Get relevant discoveries for this arm
        const discoveries = await this.getDiscoveriesForArm(bestArm.id, armDomain, { limit: 10 });
-       
+
        // Include discoveries context if any exist
        if (discoveries.length > 0) {
          task.context = {
@@ -3431,43 +3678,42 @@ octopai arm spawn -n ${arm.name}
            notes: "Review these prior discoveries before starting work.",
          };
        }
-       
+
        // Write task assignment to arm's queue
        await this.sendToArm(bestArm.id, {
          type: "task_assignment",
          payload: task,
        });
-       
+
        const domainMatch = task.domain ? ` (domain: ${task.domain})` : "";
        this.log(`Assigned task "${task.subject}" to ${bestArm.id}${domainMatch}, discoveries: ${discoveries.length}`);
        this.logActivity("brain", "task_assigned", task.id, { armId: bestArm.id, domain: task.domain, taskSubject: task.subject, discoveryCount: discoveries.length });
      }
-     
+
      await this.saveTasks();
      await this.saveArms();
    }
 
   /**
-   * Send a message to an arm's queue
+   * Send a message to an arm's queue (SQLite-based)
    */
   private async sendToArm(
-    armId: string, 
+    armId: string,
     message: { type: string; payload: unknown }
   ): Promise<void> {
-    const queueDir = join(this.options.octopaiDir, "queue", "arms", armId);
-    await mkdir(queueDir, { recursive: true });
-    
-    const filename = `${Date.now()}-${message.type}.json`;
-    await writeFile(
-      join(queueDir, filename),
-      JSON.stringify({
-        ...message,
-        from: "brain",
-        to: armId,
-        timestamp: new Date(),
-      }, null, 2),
-      "utf-8"
-    );
+    if (!this.db) {
+      this.log(`Cannot send to arm ${armId}: database not initialized`);
+      return;
+    }
+
+    const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    queueMessage(this.db, {
+      id: messageId,
+      from: "brain",
+      to: armId,
+      type: message.type,
+      payload: message.payload,
+    });
   }
 
   /**
@@ -3488,94 +3734,164 @@ octopai arm spawn -n ${arm.name}
     });
   }
 
-  // State persistence methods
+  // State persistence methods - use SQLite instead of file storage
 
   private async loadState(): Promise<void> {
+    if (!this.db) return;
+
     try {
-      const content = await readFile(
-        join(this.options.octopaiDir, "state", "brain.json"),
-        "utf-8"
-      );
-      const saved = JSON.parse(content);
-      this.state = { ...this.state, ...saved };
-    } catch {
-      // No state file yet
+      const row = this.db.query("SELECT * FROM brain_state WHERE id = 1").get() as {
+        status: string;
+        poll_interval_ms: number;
+        started_at: string | null;
+        last_poll_at: string | null;
+        pending_tasks: number;
+        completed_today: number;
+      } | null;
+
+      if (row) {
+        this.state = {
+          status: row.status as BrainState["status"],
+          pollIntervalMs: row.poll_interval_ms,
+          activeArms: [],
+          startedAt: row.started_at || undefined,
+          lastPollAt: row.last_poll_at || undefined,
+          pendingTasks: row.pending_tasks,
+          completedToday: row.completed_today,
+        };
+      }
+    } catch (err) {
+      // Table might not exist yet
+      console.error(`Failed to load brain state from database: ${err}`);
     }
   }
 
   private async saveState(): Promise<void> {
-    await writeFile(
-      join(this.options.octopaiDir, "state", "brain.json"),
-      JSON.stringify(this.state, null, 2),
-      "utf-8"
-    );
+    if (!this.db) return;
+
+    try {
+      this.db.run(`
+        INSERT OR REPLACE INTO brain_state (
+          id, status, poll_interval_ms, started_at, last_poll_at, pending_tasks, completed_today, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        1,
+        this.state.status,
+        this.state.pollIntervalMs,
+        this.state.startedAt || null,
+        this.state.lastPollAt || null,
+        this.state.pendingTasks,
+        this.state.completedToday,
+        new Date().toISOString(),
+      ]);
+    } catch (err) {
+      console.error(`Failed to save brain state to database: ${err}`);
+    }
   }
 
   private async loadTasks(): Promise<void> {
-    // Load from JSON first
+    // Load tasks from SQLite only (single source of truth)
+    if (!this.db) {
+      this.log("Cannot load tasks: database not initialized");
+      this.tasks = [];
+      return;
+    }
+
     try {
-      const content = await readFile(
-        join(this.options.octopaiDir, "state", "tasks.json"),
-        "utf-8"
-      );
-      this.tasks = JSON.parse(content);
-    } catch {
+      const dbTasks = this.db.query(`
+        SELECT id, subject, description, status, priority, domain, classification,
+               assigned_to, created_at, updated_at, completed_at, artifacts,
+               mail_thread_id, context
+        FROM tasks
+        WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
+      `).all() as Array<{
+        id: string;
+        subject: string;
+        description: string;
+        status: string;
+        priority: string;
+        domain: string | null;
+        classification: string | null;
+        assigned_to: string | null;
+        created_at: string;
+        updated_at: string;
+        completed_at: string | null;
+        artifacts: string | null;
+        mail_thread_id: string | null;
+        context: string | null;
+      }>;
+
+      this.tasks = dbTasks.map(dbTask => ({
+        id: dbTask.id,
+        subject: dbTask.subject,
+        description: dbTask.description,
+        status: dbTask.status as Task["status"],
+        priority: dbTask.priority as Task["priority"],
+        domain: dbTask.domain || undefined,
+        classification: dbTask.classification || undefined,
+        assignedTo: dbTask.assigned_to || undefined,
+        createdAt: new Date(dbTask.created_at),
+        updatedAt: new Date(dbTask.updated_at),
+        completedAt: dbTask.completed_at ? new Date(dbTask.completed_at) : undefined,
+        artifacts: dbTask.artifacts ? JSON.parse(dbTask.artifacts) : undefined,
+        mailThreadId: dbTask.mail_thread_id || undefined,
+        context: dbTask.context ? JSON.parse(dbTask.context) : undefined,
+      }));
+    } catch (err) {
+      this.log(`Error loading tasks from database: ${err}`);
       this.tasks = [];
     }
-    
-    // Also load tasks from database and merge any missing ones
-    if (this.db) {
-      try {
-        const dbTasks = this.db.query(`
-          SELECT id, subject, description, status, priority, domain, assigned_to, 
-                 created_at, updated_at, completed_at
-          FROM tasks
-          WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
-        `).all() as Array<{
-          id: string;
-          subject: string;
-          description: string;
-          status: string;
-          priority: string;
-          domain: string | null;
-          assigned_to: string | null;
-          created_at: string;
-          updated_at: string;
-          completed_at: string | null;
-        }>;
-        
-        // Merge database tasks that aren't in memory
-        for (const dbTask of dbTasks) {
-          const existing = this.tasks.find(t => t.id === dbTask.id);
-          if (!existing) {
-            this.tasks.push({
-              id: dbTask.id,
-              subject: dbTask.subject,
-              description: dbTask.description,
-              status: dbTask.status as Task["status"],
-              priority: dbTask.priority as Task["priority"],
-              domain: dbTask.domain || undefined,
-              assignedTo: dbTask.assigned_to || undefined,
-              createdAt: new Date(dbTask.created_at),
-              updatedAt: new Date(dbTask.updated_at),
-              completedAt: dbTask.completed_at ? new Date(dbTask.completed_at) : undefined,
-            });
-          }
-        }
-      } catch (err) {
-        this.log(`Error loading tasks from database: ${err}`);
-      }
-    }
-    
+
     this.state.pendingTasks = this.tasks.filter(t => t.status === "pending").length;
   }
 
   private async saveTasks(): Promise<void> {
-    await writeFile(
-      join(this.options.octopaiDir, "state", "tasks.json"),
-      JSON.stringify(this.tasks, null, 2),
-      "utf-8"
-    );
+    // Sync in-memory tasks to SQLite (single source of truth)
+    if (!this.db) {
+      this.log("Cannot save tasks: database not initialized");
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    for (const task of this.tasks) {
+      this.db.run(
+        `INSERT INTO tasks (id, subject, description, status, priority, domain, classification,
+                           assigned_to, created_at, updated_at, completed_at, artifacts,
+                           mail_thread_id, context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           subject = excluded.subject,
+           description = excluded.description,
+           status = excluded.status,
+           priority = excluded.priority,
+           domain = excluded.domain,
+           classification = excluded.classification,
+           assigned_to = excluded.assigned_to,
+           updated_at = excluded.updated_at,
+           completed_at = excluded.completed_at,
+           artifacts = excluded.artifacts,
+           mail_thread_id = excluded.mail_thread_id,
+           context = excluded.context`,
+        [
+          task.id,
+          task.subject,
+          task.description,
+          task.status,
+          task.priority,
+          task.domain || null,
+          task.classification || null,
+          task.assignedTo || null,
+          task.createdAt.toISOString(),
+          now,
+          task.completedAt?.toISOString() || null,
+          task.artifacts ? JSON.stringify(task.artifacts) : null,
+          task.mailThreadId || null,
+          task.context ? JSON.stringify(task.context) : null,
+        ]
+      );
+    }
+
     this.state.pendingTasks = this.tasks.filter(t => t.status === "pending").length;
   }
 
@@ -3591,18 +3907,18 @@ octopai arm spawn -n ${arm.name}
     try {
       // Get project root (current working directory or configured)
       const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
-      
+
       // Check if task auto-discover is enabled
       const autoDiscover = this.db.query("SELECT value FROM config WHERE key = ?")
         .get("task_auto_discover") as { value: string } | undefined;
-      
+
       if (autoDiscover?.value !== "true") {
         return; // Task sync disabled
       }
 
       // Find and parse all plan files
       const planFiles = await findPlanFiles(projectRoot);
-      
+
       if (planFiles.length === 0) {
         return; // No plan files found
       }
@@ -3612,7 +3928,7 @@ octopai arm spawn -n ${arm.name}
 
       for (const filePath of planFiles) {
         const result = await parsePlanFile(filePath);
-        
+
         if (result.errors.length > 0) {
           this.log(`Plan parse errors in ${filePath}: ${result.errors.join(", ")}`);
           continue;
@@ -3629,11 +3945,11 @@ octopai arm spawn -n ${arm.name}
 
         // Import tasks from plan
         const dbTasks = tasksToDatabaseFormat(result.tasks);
-        
+
         for (const task of dbTasks) {
           // Check if task exists
           const existing = this.db.query("SELECT id, status FROM tasks WHERE id = ?").get(task.id) as { id: string; status: string } | undefined;
-          
+
           if (!existing) {
             // Insert new task
             this.db.run(`
@@ -3675,13 +3991,13 @@ octopai arm spawn -n ${arm.name}
 
   /**
    * Re-evaluate plan progress (Progressive Planning)
-   * 
+   *
    * This method implements the core progressive planning logic:
    * 1. Check recently completed tasks for status reports with issues
    * 2. Create "verify & polish" tasks for work that needs follow-up
    * 3. Unblock tasks whose dependencies are now satisfied
    * 4. Log re-evaluation activity for observability
-   * 
+   *
    * Called periodically during the poll cycle.
    */
   private async reEvaluatePlanProgress(): Promise<void> {
@@ -3726,7 +4042,7 @@ octopai arm spawn -n ${arm.name}
 
       for (const row of tasksNeedingVerification) {
         const issues = JSON.parse(row.issues || "[]") as string[];
-        
+
         // Create a verify & polish task
         const verifyTask = await this.createVerificationTaskFromReEval(
           {
@@ -3743,7 +4059,7 @@ octopai arm spawn -n ${arm.name}
             testsStatus: row.tests_status as "passing" | "failing" | "not_run" | undefined,
           }
         );
-        
+
         if (verifyTask) {
           verificationTasksCreated++;
           this.log(`Re-evaluation: Created verification task for "${row.subject}"`);
@@ -3756,12 +4072,12 @@ octopai arm spawn -n ${arm.name}
         FROM tasks t
         WHERE (t.status = 'blocked' OR t.dependency_blocked = 1)
           AND NOT EXISTS (
-            SELECT 1 
+            SELECT 1
             FROM task_dependencies td
             WHERE td.task_id = t.id
               AND NOT EXISTS (
-                SELECT 1 FROM tasks dep 
-                WHERE dep.id = td.depends_on_task_id 
+                SELECT 1 FROM tasks dep
+                WHERE dep.id = td.depends_on_task_id
                   AND dep.status = 'completed'
               )
           )
@@ -3777,14 +4093,14 @@ octopai arm spawn -n ${arm.name}
           UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ?
           WHERE id = ?
         `, [now, row.id]);
-        
+
         // Update in-memory task list
         const task = this.tasks.find(t => t.id === row.id);
         if (task) {
           task.status = "pending";
           task.updatedAt = new Date();
         }
-        
+
         unblockedCount++;
         this.log(`Re-evaluation: Unblocked task "${row.subject}"`);
         this.logActivity("brain", "task_unblocked", row.id, {
@@ -3825,11 +4141,11 @@ octopai arm spawn -n ${arm.name}
     }
   ): Promise<Task | null> {
     const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    
-    const issuesList = report.issues.length > 0 
+
+    const issuesList = report.issues.length > 0
       ? `## Issues to Address\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n`
       : "";
-    
+
     const testInfo = report.testsStatus === "failing"
       ? "## ⚠️ Tests are failing - this should be addressed first\n\n"
       : "";
@@ -3864,7 +4180,7 @@ ${originalTask.id}`;
 
     // Add to in-memory list
     this.tasks.push(verifyTask);
-    
+
     // Save to database
     if (this.db) {
       const now = new Date().toISOString();
@@ -3908,15 +4224,15 @@ ${originalTask.id}`;
       createdAt: string;
       lastActivityAt?: string;
     }
-    
+
     const apiResult = await this.apiRequest<{ arms: ApiArm[] }>("/api/arms");
-    
+
     if (apiResult) {
       // API is available - use it
       this.arms.clear();
       for (const row of apiResult.arms) {
         if (row.status === "stopped") continue;
-        
+
         const arm: Arm = {
           id: row.id,
           name: row.name,
@@ -3934,13 +4250,13 @@ ${originalTask.id}`;
       this.log(`Loaded ${this.arms.size} active arms from API`);
       return;
     }
-    
+
     // Fallback to direct database access
     if (!this.db) return;
-    
+
     try {
       const rows = this.db.query(`
-        SELECT id, name, domain, harness, status, pid, provider, model, 
+        SELECT id, name, domain, harness, status, pid, provider, model,
                created_at, last_activity_at
         FROM arms
         WHERE status != 'stopped'
@@ -3956,7 +4272,7 @@ ${originalTask.id}`;
         created_at: string;
         last_activity_at: string | null;
       }>;
-      
+
       for (const row of rows) {
         // Check if process is still running
         let status = row.status as Arm["status"];
@@ -3971,7 +4287,7 @@ ${originalTask.id}`;
             // Process is dead
             status = "stopped";
           }
-          
+
           // Update status in database if changed
           if (status !== row.status) {
             this.db.run(
@@ -3980,7 +4296,7 @@ ${originalTask.id}`;
             );
           }
         }
-        
+
         if (status !== "stopped") {
           // For API harness arms, skip if API server is unavailable
           // We can't communicate with them without the API server
@@ -4008,7 +4324,7 @@ ${originalTask.id}`;
           this.arms.set(arm.id, arm);
         }
       }
-      
+
       this.log(`Loaded ${this.arms.size} active arms from database`);
     } catch (err) {
       this.log(`Error loading arms: ${err}`);
@@ -4018,7 +4334,7 @@ ${originalTask.id}`;
   private async saveArms(): Promise<void> {
     for (const arm of this.arms.values()) {
       const now = new Date().toISOString();
-      
+
       // Try API first
       const apiResult = await this.apiRequest<{ arm: unknown }>(`/api/arms/${arm.id}`, {
         method: "PATCH",
@@ -4027,9 +4343,9 @@ ${originalTask.id}`;
           lastActivityAt: arm.lastActivity?.toISOString() || now,
         }),
       });
-      
+
       if (apiResult) continue; // Success via API
-      
+
       // Fallback to direct database access
       if (this.db) {
         this.db.run(
@@ -4075,11 +4391,11 @@ ${originalTask.id}`;
   private log(message: string): void {
     const timestamp = new Date().toISOString();
     const line = `[${timestamp}] ${message}`;
-    
+
     if (this.options.verbose) {
       console.log(line);
     }
-    
+
     // Also append to log file (async, don't await)
     this.appendLog(line).catch(() => {});
   }
@@ -4114,7 +4430,7 @@ ${originalTask.id}`;
     if (!this.docTracker || !this.db) return;
 
     const context = await this.docTracker.getDocUpdateContext();
-    
+
     // Only create task if there are actual changes to review
     if (context.changedFilesCount === 0) {
       this.log("No files changed since last doc update, skipping");
@@ -4123,7 +4439,7 @@ ${originalTask.id}`;
 
     // Build task description
     const description = this.buildDocUpdateDescription(context);
-    
+
     // Create documentation task
     const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const task: Task = {
@@ -4179,7 +4495,7 @@ ${context.filesChanged.slice(0, 10).map(f => `- ${f}`).join("\n")}
 ${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
 
 ### Feature Docs to Review
-${context.featureDocsToUpdate.length > 0 
+${context.featureDocsToUpdate.length > 0
   ? context.featureDocsToUpdate.map(d => `- ${d}`).join("\n")
   : "No specific feature docs identified - review general docs for accuracy."}
 
@@ -4261,7 +4577,7 @@ export class MailProcessor {
 
 1. **new_task** - Create a new task for arms to work on. USE THIS for any request that involves:
    - Adding a feature
-   - Fixing a bug  
+   - Fixing a bug
    - Making code changes
    - Updating documentation content
    - Any work that should be tracked and assigned to an available arm
@@ -4637,3 +4953,4 @@ Is this arm stuck? If so, what should we do?`;
     };
   }
 }
+
