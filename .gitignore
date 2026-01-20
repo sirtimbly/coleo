@@ -49,3 +49,14 @@ docs/.vitepress
 .octopai/octopai.db-wal
 .vitepress/cache/deps
 .octopai/regression-results
+.octopai/mcp/*.json
+
+# Test artifacts
+.test-octopai/
+
+# Debug/repro scripts (temporary)
+repro_*.ts
+debug-*.sh
+mock-*.ts
+test-*.ts
+init-db.js
