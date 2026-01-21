@@ -482,60 +482,11 @@ async function prompt(text: string): Promise<string> {
   });
 }
 
-async function promptSelect(text: string, options: string[]): Promise<string> {
-  if (options.length === 0) {
-    return "";
-  }
-  console.log(text);
-  for (let i = 0; i < options.length; i++) {
-    console.log(`  ${i + 1}. ${options[i]}`);
-  }
-  const answer = await prompt("Select: ");
-  const idx = parseInt(answer, 10) - 1;
-  if (idx >= 0 && idx < options.length) {
-    const result = options[idx];
-    return result !== undefined ? result : "";
-  }
-  const fallback = options[0];
-  return fallback !== undefined ? fallback : "";
-}
-
 async function promptYN(text: string, defaultYes = true): Promise<boolean> {
   const suffix = defaultYes ? " [Y/n] " : " [y/N] ";
   const answer = await prompt(text + suffix);
   if (!answer) return defaultYes;
   return answer.toLowerCase().startsWith("y");
-}
-
-// Load arm templates from ~/.octopai/arms/
-async function loadArmTemplates(): Promise<Array<{ name: string; file: string; domain: string; description: string }>> {
-  const octopaiDir = getOctopaiDir();
-  const armsDir = join(octopaiDir, "arms");
-  const templates: Array<{ name: string; file: string; domain: string; description: string }> = [];
-
-  try {
-    const files = await readdir(armsDir);
-    for (const file of files) {
-      if (!file.endsWith(".toml")) continue;
-      const filePath = join(armsDir, file);
-      try {
-        const content = await readFile(filePath, "utf-8");
-        const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
-        const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
-        const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
-        const name = nameMatch?.[1] || file.replace(".toml", "");
-        const domain = domainMatch?.[1] || "general";
-        const description = traitsMatch?.[1] || `${domain} specialist`;
-        templates.push({ name, file, domain, description });
-      } catch {
-        // Skip unreadable files
-      }
-    }
-  } catch {
-    // No templates directory
-  }
-
-  return templates;
 }
 
 armCmd
@@ -545,9 +496,8 @@ armCmd
   .option("-w, --workdir <path>", "Working directory", process.cwd())
   .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses API server.")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
-  .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
-  .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
-  .option("--template <name>", "Use a template from ~/.octopai/arms/")
+  .option("--provider <provider>", "AI provider (e.g., anthropic, openai, github-copilot)")
+  .option("--model <model>", "Model name or provider/model (e.g., anthropic/claude-sonnet-4-20250514)")
   .action(async (options) => {
     const octopaiDir = getOctopaiDir();
     let armName = options.name || "";
@@ -557,6 +507,12 @@ armCmd
     let armProvider = options.provider;
     let armModel = options.model;
 
+    if (!armProvider && armModel && armModel.includes("/")) {
+      const [provider, ...modelParts] = armModel.split("/");
+      armProvider = provider;
+      armModel = modelParts.join("/");
+    }
+
     // Interactive mode if no name provided
     if (!armName) {
       console.log("\n=== Arm Configuration ===\n");
@@ -564,36 +520,8 @@ armCmd
       // Generate a suggested name (sci-fi alien style)
       const suggestedName = generateArmName();
 
-      // Load templates
-      const templates = await loadArmTemplates();
-
-      // Select template or custom
-      let useTemplate = false;
-
-      if (templates.length > 0) {
-        useTemplate = await promptYN("Would you like to use an arm template?", true);
-        if (useTemplate) {
-          const templateNames = templates.map((t) => `${t.name} - ${t.description}`);
-          templateNames.push("Custom arm (no template)");
-          const selected = await promptSelect("Select a template:", templateNames);
-          const selectedIdx = templateNames.indexOf(selected);
-          if (selectedIdx >= 0 && selectedIdx < templates.length) {
-            const selectedTemplate = templates[selectedIdx];
-            if (selectedTemplate) {
-              armName = selectedTemplate.name;
-            }
-          } else {
-            const customName = await prompt(`Arm name [${suggestedName}]: `);
-            armName = customName.trim() || suggestedName;
-          }
-        } else {
-          const customName = await prompt(`Arm name [${suggestedName}]: `);
-          armName = customName.trim() || suggestedName;
-        }
-      } else {
-        const customName = await prompt(`Arm name [${suggestedName}]: `);
-        armName = customName.trim() || suggestedName;
-      }
+      const customName = await prompt(`Arm name [${suggestedName}]: `);
+      armName = customName.trim() || suggestedName;
 
       if (!armName.trim()) {
         // Fallback - should not happen since we have a suggested name
@@ -606,25 +534,23 @@ armCmd
         armWorkdir = workdir;
       }
 
-      // Provider and model
-      const hasProvider = await promptYN("Configure provider/model?", false);
-      if (hasProvider) {
-        const provider = await prompt("Provider (anthropic, openai, github-copilot, opencode-zen): ");
-        if (provider.trim()) {
+      // Model (provider/model format)
+      const modelInput = await prompt("Model (provider/model) [optional]: ");
+      if (modelInput.trim()) {
+        if (modelInput.includes("/")) {
+          const [provider, ...modelParts] = modelInput.split("/");
           armProvider = provider;
-          const model = await prompt("Model [optional]: ");
-          if (model.trim()) {
-            armModel = model;
-          }
+          armModel = modelParts.join("/");
+        } else {
+          armModel = modelInput;
         }
       }
 
       console.log("\n=== Spawning Arm ===");
       console.log(`  Name: ${armName}`);
       console.log(`  Workdir: ${armWorkdir}`);
-      if (armProvider) {
-        console.log(`  Provider: ${armProvider}`);
-        if (armModel) console.log(`  Model: ${armModel}`);
+      if (armProvider || armModel) {
+        console.log(`  Model: ${armProvider ? armProvider + "/" : ""}${armModel || "default"}`);
       }
       console.log("");
     }

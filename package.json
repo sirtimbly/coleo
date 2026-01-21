@@ -37,6 +37,7 @@
     "@modelcontextprotocol/sdk": "^1.25.2",
     "@tribe-x/imap-server": "^0.0.25",
     "@types/eventsource": "^1.1.15",
+    "@vitejs/plugin-react": "^5.1.2",
     "bun-pty": "^0.4.7",
     "commander": "^14.0.2",
     "eventsource": "^4.1.0",
