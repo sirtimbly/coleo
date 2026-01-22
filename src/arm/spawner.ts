@@ -16,7 +16,7 @@ import type { Arm, OctopaiConfig } from "../types";
 
 const execAsync = promisify(exec);
 
-export type AgentType = "opencode" | "claude-code" | "aider" | "custom";
+export type AgentType = "opencode" | "opencode-api" | "opencode-tui" | "claude-code" | "aider" | "custom";
 export type TerminalEmulator = "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "headless" | "tmux" | "harness";
 
 export interface SpawnOptions {

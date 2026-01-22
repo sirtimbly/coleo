@@ -14,6 +14,7 @@ import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { updateInfrastructureHealth, assignTaskToArm, updateArmStatusWithActivity } from "../db/transactions";
+import { spawnArm, type SpawnOptions } from "../arm/spawner";
 import {
   queueMessage,
   getPendingBrainMessages,
@@ -498,11 +499,11 @@ export class Brain {
       // Step 4b: Check for idle arms stuck in prompt loops
       await this.checkIdleArmStuckLoops();
 
-      // Step 5: Assign initial tasks to new arms
-      await this.assignInitialTasks();
-
-      // Step 6: Assign pending tasks to idle arms
+      // Step 5: Assign pending tasks to idle arms first
       await this.assignTasks();
+
+      // Step 6: Assign initial tasks to arms that are still idle
+      await this.assignInitialTasks();
 
       // Step 7: Prompt idle arms to check for work or file changes
       await this.promptIdleArms();
@@ -955,6 +956,19 @@ export class Brain {
         break;
       }
 
+      case "dependency_discovery": {
+        // Arm discovered a dependency during task execution
+        const payload = message.payload as {
+          taskId: string;
+          dependsOn: string;
+          type: string;
+          description: string;
+          severity?: string;
+        };
+        await this.handleDependencyDiscovery(message.from, payload);
+        break;
+      }
+
       case "status_update": {
         // Arm is updating their status on a task (e.g., acknowledging it)
         const payload = message.payload as { taskId: string; status: string; message?: string };
@@ -962,6 +976,27 @@ export class Brain {
         break;
       }
     }
+  }
+
+  /**
+   * Handle dependency discovery from an arm
+   */
+  private async handleDependencyDiscovery(
+    armId: string,
+    payload: { taskId: string; dependsOn: string; type: string; description: string; severity?: string }
+  ): Promise<void> {
+    this.log(`Arm ${armId} discovered dependency: ${payload.dependsOn} (${payload.type}) for task ${payload.taskId}`);
+
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(`
+        INSERT INTO activity (timestamp, actor, action, target, details)
+        VALUES (?, ?, ?, ?, ?)
+      `, [now, armId, "dependency_discovered", payload.taskId, JSON.stringify(payload)]);
+    }
+
+    // TODO: Store dependency relationships in database for future task planning
+    // For now, just log it
   }
 
   /**
@@ -1054,11 +1089,20 @@ export class Brain {
       this.ensureArmExists(armId);
 
       // Use transaction for task assignment
-      const result = await assignTaskToArm(this.db, taskId, armId, 'primary');
-      
+      const result = await assignTaskToArm(this.db, taskId, armId, 'primary', true);
+
       if (!result.success) {
         this.log(`Error claiming task ${taskId} for arm ${armId}: ${result.error}`);
         return;
+      }
+
+      // Check if we need to spawn additional arms for watchers
+      if (result.success && result.data && result.data.needsMoreArms) {
+        // Only spawn if there's only 1 non-stopped arm total (the primary one)
+        const nonStoppedArms = Array.from(this.arms.values()).filter(arm => arm.status !== 'stopped');
+        if (nonStoppedArms.length === 1) {
+          await this.spawnWatcherArmForTask(taskId, armId);
+        }
       }
 
       // Also update the in-memory tasks array
@@ -1072,6 +1116,86 @@ export class Brain {
       this.log(`Task ${taskId} claimed by arm ${armId}`);
     } catch (err) {
       this.log(`Error claiming task ${taskId} for arm ${armId}: ${err}`);
+    }
+  }
+
+  /**
+   * Spawn an additional arm to act as a watcher for a task when no other arms are available
+   */
+  private async spawnWatcherArmForTask(taskId: string, primaryArmId: string): Promise<void> {
+    try {
+      this.log(`Spawning additional arm as watcher for task ${taskId}`);
+
+      // Generate a unique name for the new arm
+      const timestamp = Date.now();
+      const armName = `watcher-${timestamp}`;
+
+      // Get the task details for context
+      const task = this.tasks.find(t => t.id === taskId);
+      if (!task) {
+        this.log(`Task ${taskId} not found, cannot spawn watcher arm`);
+        return;
+      }
+
+      // Spawn arm with default settings
+      const spawnOptions: SpawnOptions = {
+        name: armName,
+        agent: 'opencode-tui', // Default agent
+        workdir: process.cwd(), // Use current working directory
+        octopaiDir: this.options.octopaiDir,
+        terminal: 'auto'
+      };
+
+      const newArm = await spawnArm(spawnOptions);
+      this.log(`Spawned watcher arm ${newArm.id} for task ${taskId}`);
+
+      // Add to our in-memory tracking immediately
+      this.arms.set(newArm.id, newArm);
+
+      // Wait for the arm to become idle before assigning it
+      const maxWaitTime = 30000; // 30 seconds
+      const checkInterval = 1000; // Check every 1 second
+      let waited = 0;
+
+      while (waited < maxWaitTime) {
+        // Check if arm is idle via state machine
+        if (this.armStateMachine) {
+          const ctx = this.armStateMachine.getContext(newArm.id);
+          if (ctx?.state === 'idle') {
+            break;
+          }
+        }
+
+        // Also check database status as fallback
+        if (this.db) {
+          const armRow = this.db.query("SELECT status FROM arms WHERE id = ?").get(newArm.id) as { status: string } | null;
+          if (armRow?.status === 'idle') {
+            break;
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+        waited += checkInterval;
+      }
+
+      if (waited >= maxWaitTime) {
+        this.log(`Timeout waiting for watcher arm ${newArm.id} to become idle (waited ${waited}ms)`);
+        return;
+      }
+
+      this.log(`Watcher arm ${newArm.id} is now idle, assigning to task ${taskId}`);
+
+      // Assign the new arm as a watcher to the task
+      const result = await assignTaskToArm(this.db!, taskId, newArm.id, 'watcher');
+      if (!result.success) {
+        this.log(`Failed to assign spawned arm ${newArm.id} as watcher: ${result.error}`);
+        return;
+      }
+
+      this.log(`Watcher arm ${newArm.id} assigned to task ${taskId}`);
+
+    } catch (err) {
+      this.log(`Failed to spawn watcher arm for task ${taskId}: ${err}`);
     }
   }
 
@@ -2638,35 +2762,44 @@ ${originalTask.id}`;
        // Get initial tasks for this domain
        const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
 
-       // Create tasks for this arm
-       for (const taskTemplate of initialTasks) {
-         const task = await this.createTask(
-           taskTemplate.subject,
-           taskTemplate.description
-         );
+        // Create and assign tasks for this arm
+        for (const taskTemplate of initialTasks) {
+          const task = await this.createTask(
+            taskTemplate.subject,
+            taskTemplate.description
+          );
 
-         // Immediately assign to this arm
-         task.status = "claimed";
-         task.assignedTo = armId;
-         task.updatedAt = new Date();
+          // Immediately assign and claim to this arm
+          if (this.db) {
+            const result = await assignTaskToArm(this.db, task.id, armId, 'primary', true);
+            if (!result.success) {
+              this.log(`Failed to assign initial task ${task.id} to arm ${armId}: ${result.error}`);
+              continue;
+            }
+          }
 
-         // Include discoveries context if any exist
-         if (discoveries.length > 0) {
-           task.context = {
-             discoveries,
-             notes: "Review these prior discoveries before starting work.",
-           };
-         }
+          // Update in-memory task
+          task.status = "claimed";
+          task.assignedTo = armId;
+          task.updatedAt = new Date();
 
-         // Send to arm
-         await this.sendToArm(armId, {
-           type: "task_assignment",
-           payload: task,
-         });
+          // Include discoveries context if any exist
+          if (discoveries.length > 0) {
+            task.context = {
+              discoveries,
+              notes: "Review these prior discoveries before starting work.",
+            };
+          }
 
-         this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain}, discoveries: ${discoveries.length})`);
-         this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject, discoveryCount: discoveries.length });
-       }
+          // Send to arm
+          await this.sendToArm(armId, {
+            type: "task_assignment",
+            payload: task,
+          });
+
+          this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain}, discoveries: ${discoveries.length})`);
+          this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject, discoveryCount: discoveries.length });
+        }
 
        // Task assignments are saved to database, so no need to track separately
      }
@@ -2756,8 +2889,8 @@ ${originalTask.id}`;
        const lastEventTime = this.lastArmEventTime.get(arm.id);
        if (lastEventTime) {
          const secondsSinceEvent = (Date.now() - lastEventTime.getTime()) / 1000;
-         if (secondsSinceEvent < 60) {
-           // Arm had activity in the last 60 seconds - it's likely processing
+         if (secondsSinceEvent < 160) {
+           // Arm had activity in the last 160 seconds - it's likely processing
            this.log(`Arm ${arm.id} [${armDomain}]: recent event ${secondsSinceEvent.toFixed(1)}s ago, skipping prompt`);
            continue;
          }
@@ -3876,9 +4009,9 @@ octopai arm spawn -n ${arm.name}
     * Assign pending tasks to available arms
     * Considers task domain preferences when assigning
     */
-   private async assignTasks(): Promise<void> {
-     const pendingTasks = this.tasks.filter(t => t.status === "pending");
-     let idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
+    private async assignTasks(): Promise<void> {
+      const pendingTasks = this.tasks.filter(t => t.status === "pending");
+      let idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
 
      // Filter out arms that don't exist in the database (prevents foreign key constraint failures)
      if (this.db) {
@@ -3937,23 +4070,15 @@ octopai arm spawn -n ${arm.name}
          }
        }
 
-       task.status = "claimed";
         task.assignedTo = bestArm.id;
-        task.updatedAt = new Date();
+         task.updatedAt = new Date();
 
-        // Update database
+        // Assign task to arm in database
         if (this.db) {
-          const now = new Date().toISOString();
-          this.db.run(`
-            UPDATE tasks
-            SET status = 'claimed',
-                assigned_to = ?,
-                claimed_at = ?,
-                updated_at = ?
-            WHERE id = ?
-          `, [bestArm.id, now, now, task.id]);
-          
+          const result = await assignTaskToArm(this.db, task.id, bestArm.id, 'primary', false);
+
           // Update arm status in database
+          const now = new Date().toISOString();
           this.db.run(`
             UPDATE arms
             SET status = 'busy',

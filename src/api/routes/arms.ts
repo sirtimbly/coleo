@@ -170,7 +170,7 @@ export function createArmsRoutes() {
     
     try {
       const rows = db.query(`
-        SELECT 
+        SELECT
           id, name, domain, harness, status,
           context_budget as contextBudget,
           current_context_used as currentContextUsed,
@@ -185,6 +185,7 @@ export function createArmsRoutes() {
           host,
           config
         FROM arms
+        WHERE NOT (harness = 'manual' AND status = 'idle' AND current_task_subject IS NULL)
         ORDER BY name
       `).all() as ArmRow[];
 
@@ -588,9 +589,10 @@ export function createArmsRoutes() {
       if (recovered) {
         // Update database to reflect recovered state
         const now = new Date().toISOString();
+        const recoveredSessionId = manager.getSession(id)?.session.id;
         db.run(
-          "UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?",
-          [now, now, id]
+          "UPDATE arms SET status = 'idle', session_id = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [recoveredSessionId ?? null, now, now, id]
         );
         
         // Log activity
@@ -641,8 +643,8 @@ export function createArmsRoutes() {
       const pid = manager.getPid(id);
       const port = manager.getPort(id);
       db.run(
-        "UPDATE arms SET status = 'idle', pid = ?, port = ?, agent_id = NULL, host = NULL, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-        [pid ?? null, port ?? null, now, now, id]
+        "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [pid ?? null, port ?? null, session.session.id, now, now, id]
       );
 
       // Log activity
@@ -1411,6 +1413,63 @@ export function createArmsRoutes() {
       }),
       { headers: { "Content-Type": "text/event-stream" } }
     );
+  });
+
+  /**
+   * Get stored arm events (for MCP servers)
+   * GET /api/arms/:id/stored-events
+   */
+  app.get("/:id/stored-events", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists
+    const arm = db.query("SELECT id FROM arms WHERE id = ?").get(id);
+    if (!arm) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Get query parameters
+    const limit = parseInt(c.req.query("limit") || "50");
+    const since = c.req.query("since"); // ISO timestamp
+    const eventType = c.req.query("type"); // Filter by event type
+
+    // Build query
+    let query = "SELECT event_type, event_data, timestamp FROM arm_events WHERE arm_id = ?";
+    let params: any[] = [id];
+
+    if (since) {
+      query += " AND timestamp > ?";
+      params.push(since);
+    }
+
+    if (eventType) {
+      query += " AND event_type = ?";
+      params.push(eventType);
+    }
+
+    query += " ORDER BY timestamp DESC LIMIT ?";
+    params.push(Math.min(limit, 1000)); // Cap at 1000 events
+
+    // Execute query
+    const events = db.query(query).all(...params) as Array<{
+      event_type: string;
+      event_data: string;
+      timestamp: string;
+    }>;
+
+    // Parse event data and return
+    const parsedEvents = events.map(row => ({
+      type: row.event_type,
+      data: JSON.parse(row.event_data),
+      timestamp: row.timestamp,
+    }));
+
+    return c.json({
+      armId: id,
+      events: parsedEvents,
+      count: parsedEvents.length,
+    });
   });
 
   return app;

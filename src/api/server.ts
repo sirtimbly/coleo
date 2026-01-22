@@ -55,7 +55,7 @@ async function cleanupOrphanedArms(db: Database, harnessManager?: HarnessManager
         [now, arm.id]
       );
       orphanedCount++;
-    } else if (harnessManager && arm.port && arm.harness === "opencode-api") {
+    } else if (harnessManager && arm.port && (arm.harness === "opencode-api" || arm.harness === "opencode-tui")) {
       // Try to recover the session
       console.log(`[cleanup] Attempting to recover arm: ${arm.name} (port ${arm.port})`);
       const recovered = await harnessManager.recover(arm.id, arm.harness, arm.port, arm.pid!);
@@ -248,9 +248,61 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   await harnessManager.init();
   setGlobalHarnessManager(harnessManager);
   
-  // Subscribe to arm events and broadcast via WebSocket
+  // Subscribe to arm events: store them and broadcast via WebSocket
   harnessManager.onEvent((armId, event, data) => {
+    // Store the event in the database
+    const now = new Date().toISOString();
+    const eventData = JSON.stringify(data);
+
+    try {
+      db.run(
+        "INSERT INTO arm_events (arm_id, session_id, event_type, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
+        [armId, (data as any)?.sessionId || null, event, eventData, now]
+      );
+    } catch (err) {
+      console.error(`[server] Failed to store arm event: ${err}`);
+    }
+
+    // Broadcast the event via WebSocket
     broadcastArmEvent(armId, event, data);
+  });
+
+  // Subscribe to arm death events - update database and broadcast
+  harnessManager.onDeath((armId, reason) => {
+    const now = new Date().toISOString();
+    
+    // Update arm status in database
+    db.run(
+      "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+      [now, armId]
+    );
+    
+    // Unassign any tasks assigned to this arm
+    const tasksResult = db.query(
+      "SELECT id, subject FROM tasks WHERE assigned_to = ? AND status IN ('pending', 'claimed')"
+    ).all(armId) as Array<{ id: string; subject: string }>;
+    
+    if (tasksResult.length > 0) {
+      db.run(
+        "UPDATE tasks SET assigned_to = NULL, status = 'pending', updated_at = ? WHERE assigned_to = ? AND status IN ('pending', 'claimed')",
+        [now, armId]
+      );
+      console.log(`[server] Unassigned ${tasksResult.length} task(s) from dead arm ${armId}`);
+      
+      // Broadcast task updates
+      for (const task of tasksResult) {
+        broadcast("tasks", "task.unassigned", { 
+          taskId: task.id, 
+          subject: task.subject,
+          previousArm: armId, 
+          reason: "arm_died" 
+        });
+      }
+    }
+    
+    // Broadcast arm death
+    broadcast("arms", "arm.died", { id: armId, reason, tasksUnassigned: tasksResult.length });
+    console.log(`[server] Arm ${armId} died: ${reason}`);
   });
   
   // Now clean up/recover orphaned arms (after harness manager is ready)

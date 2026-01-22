@@ -228,17 +228,30 @@ export async function assignTaskToArm(
   db: Database,
   taskId: string,
   armId: string,
-  role: 'primary' | 'watcher' = 'primary'
-): Promise<TransactionResult<void>> {
-  return withTransaction(db, (db) => {
+  role: 'primary' | 'watcher' = 'primary',
+  isClaim: boolean = false
+): Promise<TransactionResult<{ needsMoreArms?: boolean }>> {
+  return withTransaction(db, async (db) => {
     const now = new Date().toISOString();
 
     // Update task assignment
+    const updateFields = ['assigned_to = ?'];
+    const updateValues = [armId];
+
+    if (isClaim) {
+      updateFields.push('status = ?', 'claimed_at = ?');
+      updateValues.push('claimed', now);
+    }
+
+    updateFields.push('updated_at = ?');
+    updateValues.push(now);
+    updateValues.push(taskId);
+
     db.run(`
       UPDATE tasks
-      SET assigned_to = ?, status = 'claimed', updated_at = ?, claimed_at = ?
-      WHERE id = ? AND status = 'pending'
-    `, [armId, now, now, taskId]);
+      SET ${updateFields.join(', ')}
+      WHERE id = ?
+    `, updateValues);
 
     // Add or update consensus entry
     db.run(`
@@ -252,6 +265,99 @@ export async function assignTaskToArm(
       INSERT INTO activity (timestamp, actor, action, target, details)
       VALUES (?, 'brain', 'task_assigned', ?, ?)
     `, [now, taskId, JSON.stringify({ armId, role })]);
+
+    // Auto-assign watcher arms if this is a primary assignment
+    let needsMoreArms = false;
+    if (role === 'primary') {
+      const taskRow = db.query("SELECT domain FROM tasks WHERE id = ?").get(taskId) as { domain: string | null };
+      const watchersResult = await autoAssignWatcherArms(db, taskId, armId, taskRow?.domain || undefined);
+      if (watchersResult.success && watchersResult.data) {
+        // Log watcher assignments
+        db.run(`
+          INSERT INTO activity (timestamp, actor, action, target, details)
+          VALUES (?, 'brain', 'auto_assigned_watchers', ?, ?)
+        `, [now, taskId, JSON.stringify({ watchers: watchersResult.data.watchersAssigned })]);
+        needsMoreArms = watchersResult.data.needsMoreArms;
+      }
+    }
+
+    return { needsMoreArms };
+  });
+}
+
+/**
+ * Auto-assign watcher arms when a task is claimed
+ * Selects appropriate arms based on domain and availability
+ */
+export async function autoAssignWatcherArms(
+  db: Database,
+  taskId: string,
+  primaryArmId: string,
+  taskDomain?: string
+): Promise<TransactionResult<{ watchersAssigned: string[]; needsMoreArms: boolean }>> {
+  return withTransaction(db, (db) => {
+    const now = new Date().toISOString();
+
+    // Get max arms per task from config
+    const configRow = db.query("SELECT value FROM config WHERE key = 'max_arms_per_task'").get() as { value: string } | null;
+    const maxArms = parseInt(configRow?.value || "3", 10);
+
+    // Get current consensus entries for this task
+    const currentEntries = db.query("SELECT COUNT(*) as count FROM task_arm_consensus WHERE task_id = ?").get(taskId) as { count: number };
+    const currentCount = currentEntries.count;
+
+    // Calculate how many more arms we can assign (max - current)
+    const armsToAssign = Math.max(0, maxArms - currentCount);
+    if (armsToAssign === 0) {
+      return { watchersAssigned: [], needsMoreArms: false };
+    }
+
+    // Find available arms (not already assigned to this task, not the primary arm)
+    let availableArms = db.query(`
+      SELECT id, name, domain, status
+      FROM arms
+      WHERE id != ?
+        AND status IN ('idle', 'running')
+        AND id NOT IN (SELECT arm_id FROM task_arm_consensus WHERE task_id = ?)
+    `).all(primaryArmId, taskId) as Array<{ id: string; name: string; domain: string; status: string }>;
+
+    // Prioritize arms by domain match, then general arms
+    const prioritizedArms = availableArms.sort((a, b) => {
+      const aDomain = a.domain || 'general';
+      const bDomain = b.domain || 'general';
+      const taskDomainNormalized = taskDomain || 'general';
+
+      // Exact domain match gets highest priority
+      if (aDomain === taskDomainNormalized && bDomain !== taskDomainNormalized) return -1;
+      if (bDomain === taskDomainNormalized && aDomain !== taskDomainNormalized) return 1;
+
+      // General arms get medium priority
+      if (aDomain === 'general' && bDomain !== 'general') return -1;
+      if (bDomain === 'general' && aDomain !== 'general') return 1;
+
+      // Otherwise maintain order
+      return 0;
+    });
+
+    // Assign up to armsToAssign watchers
+    const watchersAssigned: string[] = [];
+    for (let i = 0; i < Math.min(armsToAssign, prioritizedArms.length); i++) {
+      const watcherArm = prioritizedArms[i];
+      if (watcherArm) {
+        db.run(`
+          INSERT OR REPLACE INTO task_arm_consensus (
+            task_id, arm_id, role, status, created_at, updated_at
+          ) VALUES (?, ?, ?, 'watching', ?, ?)
+        `, [taskId, watcherArm.id, 'watcher', now, now]);
+
+        watchersAssigned.push(watcherArm.id);
+      }
+    }
+
+    // Check if we need more arms than we could assign
+    const needsMoreArms = watchersAssigned.length < armsToAssign;
+
+    return { watchersAssigned, needsMoreArms };
   });
 }
 

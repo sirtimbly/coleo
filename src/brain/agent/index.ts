@@ -11,8 +11,9 @@ import { GetDiscoveriesTool } from "./tools/discoveries";
 import { GetArmStatusTool } from "./tools/arm";
 import { GetStatusReportsTool } from "./tools/status-reports";
 import { DetermineNextTaskTool } from "./tools/determine-next-task";
+import { ReportDependencyTool } from "./tools/dependencies";
 import type { ToolContext } from "./tools/base";
-import type { BrainAgentInput, BrainAgentOutput, PlanDocument, TaskHistoryItem, DiscoveryItem, ArmStatusItem, NextTaskResult, StatusReportItem } from "./types";
+import type { BrainAgentInput, BrainAgentOutput, PlanDocument, TaskHistoryItem, DiscoveryItem, ArmStatusItem, NextTaskResult, StatusReportItem, DependencyReport } from "./types";
 import { BRAIN_AGENT_SYSTEM_PROMPT, TOOL_DESCRIPTIONS } from "./prompts";
 
 export class BrainAgent {
@@ -30,6 +31,7 @@ export class BrainAgent {
     this.registerTool(new GetArmStatusTool(context));
     this.registerTool(new GetStatusReportsTool(context));
     this.registerTool(new DetermineNextTaskTool(context));
+    this.registerTool(new ReportDependencyTool(context));
   }
 
   private registerTool(tool: BrainTool): void {

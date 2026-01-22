@@ -11,9 +11,11 @@ import type { HarnessSession, SpawnConfig, SendPromptOptions } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
 import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
+import type { OpenCodeTuiHarness, ArmDeathCallback } from "./opencode-tui";
 
 export type LogCallback = (armId: string, data: string) => void;
 export type EventCallback = (armId: string, event: string, data: unknown) => void;
+export type DeathCallback = (armId: string, reason: string) => void;
 
 export interface ActiveSession {
   session: HarnessSession;
@@ -32,6 +34,7 @@ export class HarnessManager {
   private logsDir: string;
   private logCallbacks: Set<LogCallback> = new Set();
   private eventCallbacks: Set<EventCallback> = new Set();
+  private deathCallbacks: Set<DeathCallback> = new Set();
 
   constructor(octopaiDir: string) {
     this.octopaiDir = octopaiDir;
@@ -63,6 +66,14 @@ export class HarnessManager {
   }
 
   /**
+   * Subscribe to arm death notifications
+   */
+  onDeath(callback: DeathCallback): () => void {
+    this.deathCallbacks.add(callback);
+    return () => this.deathCallbacks.delete(callback);
+  }
+
+  /**
    * Emit log data to all subscribers
    */
   private emitLog(armId: string, data: string): void {
@@ -82,6 +93,23 @@ export class HarnessManager {
     for (const callback of this.eventCallbacks) {
       try {
         callback(armId, event, data);
+      } catch {
+        // Ignore callback errors
+      }
+    }
+  }
+
+  /**
+   * Emit death notification to all subscribers
+   */
+  private emitDeath(armId: string, reason: string): void {
+    // Remove the session from our map
+    this.sessions.delete(armId);
+    console.log(`[harness-manager] Arm ${armId} died: ${reason}`);
+
+    for (const callback of this.deathCallbacks) {
+      try {
+        callback(armId, reason);
       } catch {
         // Ignore callback errors
       }
@@ -112,10 +140,17 @@ export class HarnessManager {
     }
     const harness = harnessRegistry.get(agent);
 
-    // Set up event callback for opencode-api harness
-    if (agent === "opencode-api" && this.eventCallbacks.size > 0) {
-      (harness as OpenCodeApiHarness).setEventCallback((armId, event, data) => {
+    // Set up event callback for opencode-api or opencode-tui harness
+    if ((agent === "opencode-api" || agent === "opencode-tui") && this.eventCallbacks.size > 0) {
+      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback((armId, event, data) => {
         this.emitEvent(armId, event, data);
+      });
+    }
+
+    // Set up death callback for opencode-tui harness
+    if (agent === "opencode-tui") {
+      (harness as OpenCodeTuiHarness).onDeath((armId, reason) => {
+        this.emitDeath(armId, reason);
       });
     }
 
@@ -208,8 +243,8 @@ export class HarnessManager {
       return true;
     }
 
-    // Only opencode-api harness supports recovery
-    if (harnessType !== "opencode-api") {
+    // Only opencode-api and opencode-tui harnesses support recovery
+    if (harnessType !== "opencode-api" && harnessType !== "opencode-tui") {
       console.log(`[harness-manager] Recovery not supported for harness type: ${harnessType}`);
       return false;
     }
@@ -221,10 +256,17 @@ export class HarnessManager {
       return false;
     }
 
-    // Set up event callback for opencode-api harness
-    if (harnessType === "opencode-api" && this.eventCallbacks.size > 0) {
-      (harness as OpenCodeApiHarness).setEventCallback((armId, event, data) => {
+    // Set up event callback for opencode-api or opencode-tui harness
+    if ((harnessType === "opencode-api" || harnessType === "opencode-tui") && this.eventCallbacks.size > 0) {
+      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback((armId, event, data) => {
         this.emitEvent(armId, event, data);
+      });
+    }
+
+    // Set up death callback for opencode-tui harness
+    if (harnessType === "opencode-tui") {
+      (harness as OpenCodeTuiHarness).onDeath((armId, reason) => {
+        this.emitDeath(armId, reason);
       });
     }
 

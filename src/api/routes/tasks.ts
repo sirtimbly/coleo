@@ -411,7 +411,7 @@ export function createTasksRoutes() {
     }>();
 
     // Check task exists
-    const existing = db.query("SELECT id, status FROM tasks WHERE id = ?").get(id) as { id: string; status: string } | null;
+    const existing = db.query("SELECT id, status, domain FROM tasks WHERE id = ?").get(id) as { id: string; status: string; domain: string | null } | null;
     if (!existing) {
       throw HttpError.notFound(`Task not found: ${id}`);
     }

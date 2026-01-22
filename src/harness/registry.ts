@@ -7,8 +7,9 @@
 import type { AgentHarness } from "./types";
 import { OpenCodeHarness } from "./opencode";
 import { OpenCodeApiHarness } from "./opencode-api";
+import { OpenCodeTuiHarness } from "./opencode-tui";
 
-export type HarnessType = "opencode" | "opencode-api" | "claude-code" | "aider" | "custom";
+export type HarnessType = "opencode" | "opencode-api" | "opencode-tui" | "claude-code" | "aider" | "custom";
 
 /**
  * Registry of available harnesses
@@ -20,6 +21,7 @@ class HarnessRegistry {
     // Register default harnesses
     this.register("opencode", () => new OpenCodeHarness());
     this.register("opencode-api", () => new OpenCodeApiHarness());
+    this.register("opencode-tui", () => new OpenCodeTuiHarness());
     // TODO: Add more harnesses as they're implemented
     // this.register("claude-code", () => new ClaudeCodeHarness());
     // this.register("aider", () => new AiderHarness());

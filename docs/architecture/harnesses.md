@@ -1,24 +1,48 @@
 # Agent Harnesses
 
-Octopai currently uses a single, reliable harness: the `opencode-api` harness, which communicates with the OpenCode agent over HTTP.
+Octopai supports multiple harness types for different use cases:
 
-Future harnesses for other tools (including PTY/GUI-based agents) are possible but **not implemented yet** and are treated as long-term ideas.
+1. **`opencode-api`** - Headless HTTP-based harness (default for API usage)
+2. **`opencode-tui`** - Terminal UI harness with visual debugging (default when terminal specified)  
+3. **`opencode`** - Legacy PTY harness
 
 ---
 
-## Current Harness: opencode-api
+## Current Harnesses
 
-The `opencode-api` harness is the only supported harness in the system today. It:
+### opencode-api (Headless)
+
+The `opencode-api` harness is the default for API-based arm management. It:
 - Connects to an `opencode-api` server over HTTP (no PTY required)
 - Exposes MCP tools to arms
 - Avoids terminal/PTY complexity and cross-platform issues
+- Best for production and automated environments
 
 High-level responsibilities:
 - Manage arm sessions with the `opencode-api` service
 - Route MCP/tool calls between the Brain and the agent
 - Report arm status and activity back into SQLite and the API
 
-(Details of the HTTP contract are documented in the code and may evolve.)
+### opencode-tui (Visual + API)
+
+The `opencode-tui` harness provides the best of both worlds:
+- Spawns OpenCode in a visible terminal window (Ghostty, iTerm2, Terminal.app, tmux)
+- Controls the agent via well-defined HTTP API endpoints  
+- Enables visual debugging and observability
+- Supports real-time event streaming and health monitoring
+
+Key features:
+- **Visual feedback**: See the agent's work in a real terminal window
+- **Programmatic control**: Full API access for automation
+- **Health monitoring**: Automatic detection when processes die
+- **Event streaming**: Real-time updates for dashboards
+- **Terminal flexibility**: Works with multiple terminal emulators
+
+This harness is automatically selected when using `octopai arm spawn -t <terminal>`.
+
+### opencode (Legacy)
+
+The original PTY-based harness. Still available but `opencode-tui` is recommended for terminal-based workflows.
 
 ---
 

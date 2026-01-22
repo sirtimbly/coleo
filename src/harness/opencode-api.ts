@@ -4,6 +4,8 @@
  * Controls OpenCode AI agent via its HTTP API server.
  * This is more reliable than PTY-based control as it uses well-defined endpoints.
  * 
+ * Uses @opencode-ai/sdk for type-safe API interactions.
+ * 
  * See: https://opencode.ai/docs/server/
  */
 
@@ -12,6 +14,7 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getOctopaiDir } from "../config";
 import { OpenCodeEventStream, filterEvent, type OpenCodeEvent } from "./event-stream";
+import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import type {
   AgentHarness,
   HarnessSession,
@@ -23,57 +26,7 @@ import type {
 } from "./types";
 
 /**
- * Session status from OpenCode API
- */
-interface SessionStatus {
-  status: "idle" | "pending" | "running" | "error";
-  error?: string;
-}
-
-/**
- * Session info from OpenCode API
- */
-interface Session {
-  id: string;
-  version: string;
-  projectID: string;
-  directory: string;
-  title: string;
-  time: {
-    created: number;
-    updated: number;
-  };
-  summary?: {
-    additions: number;
-    deletions: number;
-    files: number;
-  };
-}
-
-/**
- * Message part from OpenCode API
- */
-interface MessagePart {
-  type: string;
-  content?: string;
-  [key: string]: unknown;
-}
-
-/**
- * Message info from OpenCode API
- */
-interface MessageInfo {
-  id: string;
-  role: "user" | "assistant";
-  sessionID: string;
-  time: {
-    created: number;
-    updated: number;
-  };
-}
-
-/**
- * Extended harness session for API-based control
+ * Extended harness session for API-based control with SDK client
  */
 interface ApiHarnessSession extends HarnessSession {
   serverUrl: string;
@@ -81,6 +34,9 @@ interface ApiHarnessSession extends HarnessSession {
   sessionId: string;
   port: number;
   eventStream?: OpenCodeEventStream;
+  client: OpencodeClient;
+  provider?: string;
+  model?: string;
 }
 
 // Callback type for event forwarding
@@ -293,8 +249,35 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Wait for server to be ready
     await this.waitForServer(serverUrl, 30000);
 
-    // Create a new session
-    const session = await this.createSession(serverUrl);
+    // Create SDK client for type-safe API calls
+    const client = createOpencodeClient({ baseUrl: serverUrl });
+
+    // Create a new session using SDK (access .data to get the actual session)
+    const sessionResponse = await client.session.create({
+      body: { title: "Octopai Arm Session" },
+    });
+    const session = sessionResponse.data;
+
+    if (!session?.id) {
+      throw new Error("Failed to create session: no session ID returned");
+    }
+
+    // Initialize session with model if specified
+    if (config.provider && config.model) {
+      try {
+        await client.session.init({
+          path: { id: session.id },
+          body: {
+            modelID: config.model,
+            providerID: config.provider,
+            messageID: `init_${Date.now()}`,
+          },
+        });
+        console.log(`[harness-api] Initialized session with model: ${config.provider}/${config.model}`);
+      } catch (initError) {
+        console.log(`[harness-api] Session init warning: ${initError}`);
+      }
+    }
 
     // Create a dummy PTY session for compatibility
     const ptySession: PTYSession = {
@@ -314,6 +297,9 @@ export class OpenCodeApiHarness implements AgentHarness {
       serverProcess,
       sessionId: session.id,
       port,
+      client,
+      provider: config.provider,
+      model: config.model,
     };
 
     // Start event stream subscription
@@ -323,10 +309,13 @@ export class OpenCodeApiHarness implements AgentHarness {
         armId,
         sessionId: session.id,
         onEvent: (event: OpenCodeEvent) => {
-          const { shouldBroadcast, eventName, data } = filterEvent(event);
-          if (shouldBroadcast) {
-            this.emitEvent(armId, eventName, data);
-          }
+          // Forward ALL events to the main server - it will decide what to do with them
+          // Include the full event structure for maximum information
+          this.emitEvent(armId, event.type, {
+            ...event.properties,
+            _fullEvent: event, // Include full event for debugging/analysis
+            _timestamp: new Date().toISOString(),
+          });
         },
         onError: (error) => {
           console.error(`[harness-api] ${armId} event stream error:`, error.message);
@@ -370,23 +359,6 @@ export class OpenCodeApiHarness implements AgentHarness {
   }
 
   /**
-   * Create a new OpenCode session
-   */
-  private async createSession(serverUrl: string): Promise<Session> {
-    const response = await fetch(`${serverUrl}/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "Octopai Arm Session" }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to create session: ${response.statusText}`);
-    }
-
-    return await response.json() as Session;
-  }
-
-  /**
    * Recover/reconnect to an existing OpenCode server
    * Used when the Octopai API server restarts but OpenCode servers are still running
    */
@@ -395,12 +367,12 @@ export class OpenCodeApiHarness implements AgentHarness {
     
     // Check if server is healthy
     try {
-      const response = await fetch(`${serverUrl}/global/health`);
-      if (!response.ok) {
+      const healthResponse = await fetch(`${serverUrl}/global/health`);
+      if (!healthResponse.ok) {
         console.log(`[harness-api] Server on port ${port} not healthy`);
         return null;
       }
-      const health = await response.json() as { healthy: boolean };
+      const health = await healthResponse.json() as { healthy: boolean };
       if (!health.healthy) {
         console.log(`[harness-api] Server on port ${port} reports unhealthy`);
         return null;
@@ -410,21 +382,29 @@ export class OpenCodeApiHarness implements AgentHarness {
       return null;
     }
 
-    // Get existing sessions from the server
+    // Create SDK client for recovered session
+    const client = createOpencodeClient({ baseUrl: serverUrl });
+
+    // Get existing sessions from the server using SDK
     try {
-      const response = await fetch(`${serverUrl}/session`);
-      if (!response.ok) {
-        console.log(`[harness-api] Failed to list sessions: ${response.statusText}`);
-        return null;
-      }
+      const sessionsResponse = await client.session.list();
+      const sessions = sessionsResponse.data;
       
-      const sessions = await response.json() as Session[];
       let existingSession: Session;
       
-      if (sessions.length === 0) {
+      if (!sessions || sessions.length === 0) {
         // No sessions, create one
         console.log(`[harness-api] No existing sessions, creating new one`);
-        existingSession = await this.createSession(serverUrl);
+        const newSessionResponse = await client.session.create({
+          body: { title: "Octopai Arm Session" },
+        });
+        const newSession = newSessionResponse.data;
+        
+        if (!newSession?.id) {
+          console.log(`[harness-api] Failed to create session`);
+          return null;
+        }
+        existingSession = newSession;
       } else {
         // Use the first (or only) session
         const first = sessions[0];
@@ -455,6 +435,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         serverProcess: undefined, // We don't have a reference to the process
         sessionId: existingSession.id,
         port,
+        client,
       };
 
       // Start event stream subscription for recovered session
@@ -508,18 +489,15 @@ export class OpenCodeApiHarness implements AgentHarness {
       apiSession.eventStream.stop();
     }
 
-    // Try to gracefully dispose via API first
+    // Try to gracefully dispose via SDK first
     try {
-      const response = await fetch(`${apiSession.serverUrl}/instance/dispose`, {
-        method: "POST",
-        signal: AbortSignal.timeout(5000),
-      });
-      if (response.ok) {
-        console.log(`[harness-api] Disposed OpenCode instance via API`);
+      const response = await apiSession.client.instance.dispose();
+      if (!response.error) {
+        console.log(`[harness-api] Disposed OpenCode instance via SDK`);
       }
-    } catch (err) {
+    } catch {
       // API might not be available, continue with process kill
-      console.log(`[harness-api] Could not dispose via API, killing process directly`);
+      console.log(`[harness-api] Could not dispose via SDK, killing process directly`);
     }
 
     // Kill the server process if we have a reference
@@ -554,17 +532,16 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
-    // Use async prompt endpoint so we don't block
-    const response = await fetch(`${apiSession.serverUrl}/session/${apiSession.sessionId}/prompt_async`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    // Use SDK's async prompt endpoint
+    const response = await apiSession.client.session.promptAsync({
+      body: {
         parts: [{ type: "text", text: prompt }],
-      }),
+      },
+      path: { id: apiSession.sessionId },
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to send prompt: ${response.statusText}`);
+    if (response.error) {
+      throw new Error(`Failed to send prompt: ${response.error}`);
     }
 
     // Update activity timestamp
@@ -574,7 +551,7 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Send a prompt and wait for the response
    */
-  async sendPromptSync(session: HarnessSession, prompt: string): Promise<{ info: MessageInfo; parts: MessagePart[] }> {
+  async sendPromptSync(session: HarnessSession, prompt: string): Promise<{ info: Message; parts: Part[] }> {
     const apiSession = this.sessions.get(session.id);
     if (!apiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -582,19 +559,18 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending sync prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
-    const response = await fetch(`${apiSession.serverUrl}/session/${apiSession.sessionId}/message`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    const response = await apiSession.client.session.prompt({
+      body: {
         parts: [{ type: "text", text: prompt }],
-      }),
+      },
+      path: { id: apiSession.sessionId },
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to send prompt: ${response.statusText}`);
+    if (response.error) {
+      throw new Error(`Failed to send prompt: ${response.error}`);
     }
 
-    return await response.json() as { info: MessageInfo; parts: MessagePart[] };
+    return { info: response.data.info, parts: response.data.parts };
   }
 
   /**
@@ -612,15 +588,19 @@ export class OpenCodeApiHarness implements AgentHarness {
     while (Date.now() - startTime < timeout) {
       const state = await this.getState(session);
       if (state === "idle") {
-        // Get the last message
-        const messages = await this.getMessages(apiSession);
-        if (messages.length > 0) {
+        // Get the last message using SDK
+        const messagesResponse = await apiSession.client.session.messages({
+          path: { id: apiSession.sessionId },
+        });
+        const messages = messagesResponse.data;
+        
+        if (messages && messages.length > 0) {
           const lastMessage = messages[messages.length - 1];
           if (lastMessage && lastMessage.info.role === "assistant") {
-            // Extract text from parts
+            // Extract text from parts - TextPart has text property
             const textParts = lastMessage.parts
-              .filter(p => p.type === "text")
-              .map(p => p.content || "");
+              .filter((p): p is Extract<Part, { type: "text" }> => p.type === "text")
+              .map(p => p.text || "");
             return textParts.join("\n");
           }
         }
@@ -631,17 +611,6 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     throw new Error(`Timeout waiting for response after ${timeout}ms`);
-  }
-
-  /**
-   * Get messages from a session
-   */
-  private async getMessages(apiSession: ApiHarnessSession): Promise<{ info: MessageInfo; parts: MessagePart[] }[]> {
-    const response = await fetch(`${apiSession.serverUrl}/session/${apiSession.sessionId}/message`);
-    if (!response.ok) {
-      return [];
-    }
-    return await response.json() as { info: MessageInfo; parts: MessagePart[] }[];
   }
 
   /**
@@ -662,7 +631,7 @@ export class OpenCodeApiHarness implements AgentHarness {
   }
 
   /**
-   * Get the current state of OpenCode via API
+   * Get the current state of OpenCode via API using SDK
    */
   async getState(session: HarnessSession): Promise<AgentState> {
     const apiSession = this.sessions.get(session.id);
@@ -671,26 +640,25 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     try {
-      const response = await fetch(`${apiSession.serverUrl}/session/status`);
-      if (!response.ok) {
-        return "error";
+      const response = await apiSession.client.session.status({});
+      const statuses = response.data;
+      
+      if (!statuses) {
+        return "idle";
       }
 
-      const statuses = await response.json() as Record<string, SessionStatus>;
       const status = statuses[apiSession.sessionId];
-
       if (!status) {
-        return "idle"; // Session exists but no status means idle
+        return "idle";
       }
 
-      switch (status.status) {
+      // The SDK returns status as { type: "idle" } | { type: "retry", ... } | { type: "busy" }
+      switch (status.type) {
         case "idle":
           return "idle";
-        case "pending":
-        case "running":
+        case "retry":
+        case "busy":
           return "processing";
-        case "error":
-          return "error";
         default:
           return "idle";
       }
@@ -718,11 +686,11 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     try {
-      const response = await fetch(`${apiSession.serverUrl}/session/${apiSession.sessionId}/abort`, {
-        method: "POST",
+      const response = await apiSession.client.session.abort({
+        path: { id: apiSession.sessionId },
       });
       
-      if (response.ok) {
+      if (!response.error) {
         console.log(`[harness-api] Aborted session ${session.id}`);
       }
     } catch (err) {
@@ -740,16 +708,15 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     try {
-      const response = await fetch(`${apiSession.serverUrl}/session/${apiSession.sessionId}/command`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const response = await apiSession.client.session.command({
+        body: {
           command: "compact",
-          arguments: [],
-        }),
+          arguments: "",
+        },
+        path: { id: apiSession.sessionId },
       });
 
-      if (response.ok) {
+      if (!response.error) {
         console.log(`[harness-api] Compacted context for session ${session.id}`);
       }
     } catch (err) {

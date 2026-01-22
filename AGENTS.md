@@ -34,6 +34,26 @@ Octopai is an AI agent orchestrator using the "Octopus Model" - a central brain 
 | Agent Protocol | MCP (Model Context Protocol)           |
 | Mail           | Maildir format                         |
 
+## Standard Protocols
+
+When integrating with external services, prefer standard protocols over proprietary solutions.
+
+### Agent Client Protocol (ACP)
+
+ACP is an open standard for AI agent communication. OpenCode implements ACP (see `packages/opencode/src/acp/` in the OpenCode repository), which provides:
+
+- **JSON-RPC 2.0** messaging over stdio
+- **Session management** (`session/new`, `session/load`, `session/prompt`)
+- **Capability negotiation** during initialization
+- **Tool calling** with structured responses
+
+Benefits of ACP:
+- IDE integration (Zed, VS Code, etc. can connect directly)
+- Interoperability with ACP-compliant tools
+- Decoupling (arms can run as standalone ACP servers)
+
+See `.project/plan.md` for ACP implementation roadmap.
+
 ## Code Organization
 
 ```
@@ -291,3 +311,106 @@ search_api(query="get user profile")
 | Find architecture decisions | `search_docs` (sources="eng_portal") |
 | Find API endpoints          | `search_api`                         |
 | General documentation       | `search_docs` (no sources filter)    |
+
+---
+
+## External SDK Integration Best Practices
+
+When integrating with external services that have official SDKs, prefer the SDK over raw HTTP calls.
+
+### Use Official SDKs
+
+When an official SDK is available, use it for type-safe API interactions:
+
+```typescript
+// Good: Use official SDK
+import { createOpencodeClient } from "@opencode-ai/sdk";
+
+const client = createOpencodeClient({ baseUrl: "http://localhost:4096" });
+const session = await client.session.create({ body: { title: "My Session" } });
+
+// Bad: Raw fetch (no type safety)
+const response = await fetch(`${url}/session`, {
+  method: "POST",
+  body: JSON.stringify({ title: "My Session" }),
+});
+```
+
+Benefits:
+- Type-safe request/response shapes
+- Automatic response parsing
+- Consistent error handling
+- Future API changes handled by SDK updates
+
+### SDK Response Patterns
+
+Most SDKs return responses with a specific structure. Handle them correctly:
+
+```typescript
+// SDK responses typically have .data property with the actual result
+const response = await client.session.create({ body: { title: "Session" } });
+const session = response.data; // Access the actual session object
+
+// SDK methods may not have error property - check response structure
+if (!response.response.ok) {
+  throw new Error(`Request failed: ${response.response.status}`);
+}
+```
+
+### Model Format Conventions
+
+Different APIs have different model format requirements. Check the documentation:
+
+```typescript
+// OpenCode SDK expects object format:
+model: { providerID: "opencode", modelID: "grok-code" }
+
+// NOT string format (will fail):
+model: "opencode/grok-code"
+```
+
+When in doubt, test the format by making a request and checking for validation errors.
+
+### When SDKs Are Not Available
+
+If no SDK exists for an API:
+
+1. **Generate one** if OpenAPI spec is available (use `openapi-typescript-codegen`)
+2. **Create typed wrappers** that define request/response interfaces
+3. **Use fetch with proper typing** - avoid `any` for responses
+
+```typescript
+// Typed wrapper pattern
+interface Session {
+  id: string;
+  title: string;
+  time: { created: number; updated: number };
+}
+
+async function createSession(url: string, title: string): Promise<Session> {
+  const response = await fetch(`${url}/session`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to create session: ${response.statusText}`);
+  }
+  
+  return response.json() as Promise<Session>;
+}
+```
+
+### TUI/Control Endpoints
+
+Some APIs have UI-specific endpoints (e.g., `/tui/*`) that may not be covered by SDKs. For these, raw fetch is acceptable:
+
+```typescript
+// Keep fetch for TUI-specific endpoints not in SDK
+const response = await fetch(`${url}/tui/control/next`, {
+  signal: AbortSignal.timeout(timeout),
+});
+```
+
+Document which endpoints require raw fetch vs SDK usage.

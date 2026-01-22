@@ -40,98 +40,30 @@ let dbWritable: Database | null = null;
 // NATS client (lazy initialization)
 let natsClient: NatsClient | null = null;
 
-// Session ID to compacting status tracking
-const sessionCompactionStatus = new Map<string, {
-  lastCompactionAt: Date;
-  compactionCount: number;
-  lastTokens: number;
-}>();
+// Cache for arm's session ID to avoid repeated DB queries
+let cachedSessionId: string | null = null;
 
-// Start SSE listener for OpenCode events (automatic context compaction detection)
-// This connects to the local OpenCode API and listens for session.compacted events
-async function startOpenCodeEventListener(): Promise<void> {
-  // If the API URL is not reachable or set to default (which might be occupied by another instance),
-  // this will fail. We should be careful about spamming logs.
-  const eventSourceUrl = `${OPENCOD_API_URL}/global/event`;
-  
+/**
+ * Get the session ID for this arm from the database
+ */
+async function getArmSessionId(): Promise<string | null> {
+  if (cachedSessionId !== null) {
+    return cachedSessionId;
+  }
+
   try {
-    const eventsource = await import("eventsource");
-    // Handle both default export and CommonJS export styles
-    // @ts-ignore - Dynamic import handling
-    const EventSource = eventsource.default || eventsource.EventSource || eventsource;
-
-    if (!EventSource) {
-      console.error("[MCP] Failed to load EventSource constructor");
-      return;
-    }
-
-    const eventSource = new EventSource(eventSourceUrl);
-
-    eventSource.onopen = () => {
-      // console.error(`[MCP] Connected to OpenCode event stream at ${eventSourceUrl}`);
-    };
-
-    eventSource.onerror = (err: unknown) => {
-      // Don't spam the logs with reconnect messages
-      // console.error(`[MCP] OpenCode event stream error: ${JSON.stringify(err)}, reconnecting in 5s...`);
-      eventSource.close();
-      // Retry connection after delay with exponential backoff or simple delay
-      setTimeout(startOpenCodeEventListener, 10000);
-    };
-
-    eventSource.onerror = (err: unknown) => {
-      // Don't spam the logs with reconnect messages
-      eventSource.close();
-      // Only retry if we haven't failed too many times in a row
-      // For now, just retry with a longer delay
-      setTimeout(startOpenCodeEventListener, 10000);
-    };
-
-    eventSource.addEventListener("session.compacted", async (event: unknown) => {
-      const messageEvent = event as { data: string };
-      try {
-        const data = JSON.parse(messageEvent.data);
-        const sessionID = data?.properties?.sessionID;
-
-        if (!sessionID) return;
-
-        console.error(`[MCP] Context compaction detected for session: ${sessionID}`);
-
-        const existing = sessionCompactionStatus.get(sessionID) || {
-          lastCompactionAt: new Date(),
-          compactionCount: 0,
-          lastTokens: 0,
-        };
-        existing.compactionCount++;
-        existing.lastCompactionAt = new Date();
-        sessionCompactionStatus.set(sessionID, existing);
-
-        await sendToBrain({
-          from: ARM_ID,
-          to: "brain",
-          type: "context_compression",
-          payload: {
-            sessionId: sessionID,
-            detectedBy: "opencode-sse",
-            timestamp: new Date().toISOString(),
-            compactionCount: existing.compactionCount,
-          },
-        });
-
-        logActivity(ARM_ID, "auto_context_compaction", sessionID, {
-          compactionCount: existing.compactionCount,
-          detectedBy: "opencode-sse",
-        });
-      } catch (err) {
-        console.error(`[MCP] Error processing compaction event: ${err}`);
-      }
-    });
-
-    console.error(`[MCP] OpenCode event listener started`);
+    const database = getDatabase();
+    const row = database.query("SELECT session_id FROM arms WHERE id = ?").get(ARM_ID) as { session_id: string } | null;
+    cachedSessionId = row?.session_id || null;
+    return cachedSessionId;
   } catch (err) {
-    console.error(`[MCP] Failed to start OpenCode event listener: ${err}`);
+    console.error(`[MCP] Failed to get session ID for arm ${ARM_ID}: ${err}`);
+    return null;
   }
 }
+
+// REMOVED: OpenCode event listener moved to harness system
+// The harness now forwards events to the main server via callbacks
 
 function getDatabase(readonly = true): Database {
   if (readonly) {
@@ -752,6 +684,54 @@ export function createMcpServer(): McpServer {
           {
             type: "text" as const,
             text: `Discovery reported: "${title}" (message: ${messageId}). Brain will review and may escalate to human.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Report task dependency discovered during execution
+  server.registerTool(
+    "report_dependency",
+    {
+      description: "Report a dependency relationship discovered during task execution",
+      inputSchema: {
+        task_id: z.string().describe("The ID of the task this dependency relates to"),
+        depends_on: z.string().describe("What this task depends on (file, component, service, etc.)"),
+        dependency_type: z.enum(["file", "component", "service", "external", "data", "other"])
+          .describe("Type of dependency"),
+        description: z.string().describe("Description of the dependency relationship"),
+        severity: z.enum(["info", "warning", "blocking"]).optional().describe("How critical this dependency is"),
+      },
+    },
+    async ({ task_id, depends_on, dependency_type, description, severity }) => {
+      const dependency = {
+        taskId: task_id,
+        dependsOn: depends_on,
+        type: dependency_type,
+        description,
+        severity,
+      };
+
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "dependency_discovery",
+        payload: dependency,
+      });
+
+      logActivity(ARM_ID, "report_dependency", task_id, {
+        messageId,
+        dependsOn: depends_on,
+        type: dependency_type,
+        severity
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Dependency reported: ${depends_on} (${dependency_type}) for task ${task_id} (message: ${messageId}). Brain will track this relationship.`,
           },
         ],
       };
@@ -2629,7 +2609,8 @@ export function createMcpServer(): McpServer {
       ensureArmRegistered();
       
       try {
-        const database = getDatabase();
+        // Use writable database - generateTaskDetermination may create tasks from plan
+        const database = getDatabase(false);
         
         const ctx: PromptContext = {
           projectRoot: PROJECT_ROOT,
@@ -2743,7 +2724,8 @@ export function createMcpServer(): McpServer {
       ensureArmRegistered();
       
       try {
-        const database = getDatabase();
+        // Use writable database - generateTaskDetermination may create tasks from plan
+        const database = getDatabase(false);
         
         const ctx: PromptContext = {
           projectRoot: PROJECT_ROOT,
@@ -2806,6 +2788,83 @@ export function createMcpServer(): McpServer {
             {
               type: "text" as const,
               text: `Failed to get full briefing: ${errorMsg}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Get recent events for this arm
+  server.registerTool(
+    "get_arm_events",
+    {
+      description: "Get recent events from this arm's OpenCode session. Events include session compaction, message updates, tool invocations, and other session activity. Use this to monitor session state and detect important changes.",
+      inputSchema: {
+        limit: z.number().optional().describe("Maximum number of events to return (default: 20, max: 100)"),
+        since: z.string().optional().describe("Only return events after this ISO timestamp"),
+        event_type: z.string().optional().describe("Filter by specific event type (e.g., 'session.compacted', 'message.updated')"),
+      },
+    },
+    async ({ limit = 20, since, event_type }) => {
+      console.error(`[MCP] get_arm_events called by ${ARM_ID} (limit: ${limit}, since: ${since}, type: ${event_type})`);
+
+      try {
+        // Query the main server for stored events
+        const apiUrl = process.env.OCTOPAI_API_URL || "http://127.0.0.1:8080";
+        const params = new URLSearchParams();
+        params.set("limit", Math.min(limit, 100).toString());
+        if (since) params.set("since", since);
+        if (event_type) params.set("type", event_type);
+
+        const response = await fetch(`${apiUrl}/api/arms/${ARM_ID}/stored-events?${params}`, {
+          headers: {
+            "Authorization": `Bearer ${process.env.OCTOPAI_API_KEY || "dev-api-key-12345"}`,
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json() as {
+          armId: string;
+          events: Array<{ type: string; data: unknown; timestamp: string }>;
+          count: number;
+        };
+
+        if (!data.events || data.events.length === 0) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `No events found for arm ${ARM_ID}${event_type ? ` of type "${event_type}"` : ""}${since ? ` since ${since}` : ""}.`,
+              },
+            ],
+          };
+        }
+
+        // Format events for display
+        const eventSummary = data.events.map((event) =>
+          `- **${event.timestamp}** | ${event.type}: ${JSON.stringify(event.data, null, 2).slice(0, 200)}${JSON.stringify(event.data, null, 2).length > 200 ? "..." : ""}`
+        ).join("\n");
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `# Recent Events for Arm ${ARM_ID}\n\nFound ${data.events.length} events:\n\n${eventSummary}`,
+            },
+          ],
+        };
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[MCP] get_arm_events failed: ${errorMsg}`);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to retrieve arm events: ${errorMsg}`,
             },
           ],
         };
@@ -2894,16 +2953,5 @@ export async function runMcpServer(): Promise<void> {
 
   await server.connect(transport);
 
-  console.error(`[octopai] MCP server started for arm: ${ARM_ID}`);
-
-  // Start listening for OpenCode context compaction events
-  // NOTE: We wrap this in a try/catch block to prevent unhandled rejection crashes
-  // The listener itself handles reconnection, but we want to be safe
-  try {
-      startOpenCodeEventListener().catch(err => {
-        console.error(`[octopai] Failed to start OpenCode event listener: ${err}`);
-      });
-  } catch (err) {
-      console.error(`[octopai] Error initializing OpenCode event listener: ${err}`);
-  }
+   console.error(`[octopai] MCP server started for arm: ${ARM_ID}`);
 }

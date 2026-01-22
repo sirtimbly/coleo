@@ -15,7 +15,7 @@ import { initMaildir, Maildir } from "../mail";
 import { runMcpServer } from "../mcp";
 import { spawnArm, listArms, killArm } from "../arm";
 import { startServer, disableHeartbeat } from "../api";
-import type { OctopaiConfig } from "../types";
+import type { OctopaiConfig, Arm } from "../types";
 import { DEFAULT_CONFIG } from "../types";
 import { generateArmName } from "./arm-names";
 
@@ -543,8 +543,9 @@ armCmd
   .description("Spawn a new arm (interactive if no arguments provided)")
   .option("-n, --name <name>", "Arm name/ID (auto-generates a sci-fi name if not provided)")
   .option("-w, --workdir <path>", "Working directory", process.cwd())
-  .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses API server.")
+  .option("-t, --terminal <terminal>", "Terminal emulator (ghostty, iterm2, terminal, tmux). If not specified, uses headless API server.")
   .option("-p, --prompt <prompt>", "Initial prompt/task for the agent")
+  .option("--harness <harness>", "Harness type (opencode-api, opencode-tui, opencode). Default: opencode-tui if terminal specified, otherwise opencode-api.")
   .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
   .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
   .option("--template <name>", "Use a template from ~/.octopai/arms/")
@@ -629,8 +630,92 @@ armCmd
       console.log("");
     }
 
-    // If terminal is specified, use the direct spawner (opens a terminal window)
-    if (options.terminal) {
+    // If terminal is specified and no explicit harness, use opencode-tui for visible terminal + API control
+    // The opencode-tui harness spawns OpenCode in a terminal window and controls it via HTTP API
+    if (options.terminal && !options.harness) {
+      console.log(`Using opencode-tui harness for visible terminal with API control...`);
+      
+      // Check if API server is running (needed for arm tracking)
+      const { apiUrl, headers } = getApiConfig();
+      if (!await isApiRunning()) {
+        console.error("API server is not running.");
+        console.error(`Expected at: ${apiUrl}`);
+        console.error("");
+        console.error("The opencode-tui harness requires the API server for arm tracking.");
+        console.error("Start the API server: octopai serve");
+        process.exit(1);
+      }
+
+      // Create or update the arm in the database via API
+      const existsRes = await fetch(`${apiUrl}/api/arms/${armName}`, { headers });
+      const armExists = existsRes.ok;
+
+      if (armExists) {
+        const existingArm = await existsRes.json() as { arm: { status: string } };
+        if (existingArm.arm.status !== "stopped") {
+          console.error(`Arm ${armName} already exists with status: ${existingArm.arm.status}`);
+          console.error("Use 'octopai arm kill <name>' first, or choose a different name.");
+          process.exit(1);
+        }
+        console.log(`Restarting stopped arm: ${armName}`);
+      } else {
+        // Create new arm with opencode-tui harness
+        const createRes = await fetch(`${apiUrl}/api/arms`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            name: armName,
+            domain: armDomain,
+            harness: "opencode-tui",
+            status: "starting",
+            provider: armProvider,
+            model: armModel,
+          }),
+        });
+
+        if (!createRes.ok) {
+          const err = await createRes.json().catch(() => ({}));
+          console.error(`Failed to create arm: ${(err as { error?: string }).error || createRes.statusText}`);
+          process.exit(1);
+        }
+      }
+
+      // Spawn via harness with terminal option
+      const spawnRes = await fetch(`${apiUrl}/api/arms/${armName}/spawn`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          workdir: expandPath(armWorkdir),
+          provider: armProvider,
+          model: armModel,
+          initialPrompt: options.prompt,
+          harness: "opencode-tui",
+          terminal: options.terminal,
+        }),
+      });
+
+      if (!spawnRes.ok) {
+        const err = await spawnRes.json().catch(() => ({}));
+        console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
+        process.exit(1);
+      }
+
+      const result = await spawnRes.json() as { arm: Arm };
+      console.log(`Arm spawned with opencode-tui harness in ${options.terminal}:`);
+      console.log(`  ID: ${result.arm.id}`);
+      if (result.arm.provider || result.arm.model) {
+        console.log(`  Model: ${result.arm.provider ? result.arm.provider + "/" : ""}${result.arm.model || "default"}`);
+      }
+      console.log(`  Status: ${result.arm.status}`);
+      console.log(`  PID: ${result.arm.pid || "unknown"}`);
+      console.log("");
+      console.log("The arm is now running in a visible terminal window.");
+      console.log("You can interact with it directly or via the API.");
+      return;
+    }
+
+    // Legacy: If terminal is specified with legacy harness, use direct spawner (old behavior)
+    if (options.terminal && options.harness === "opencode") {
       const arm = await spawnArm({
         octopaiDir,
         name: armName,
@@ -644,7 +729,7 @@ armCmd
         domain: armDomain,
       });
 
-      console.log(`Arm spawned in terminal: ${arm.id}`);
+      console.log(`Arm spawned in terminal (legacy mode): ${arm.id}`);
       if (arm.provider || arm.model) {
         console.log(`  Model: ${arm.provider ? arm.provider + "/" : ""}${arm.model || "default"}`);
       }
@@ -681,8 +766,8 @@ armCmd
       }
       console.log(`Restarting stopped arm: ${armName}`);
     } else {
-      // Always use opencode-api harness
-      const harnessType = "opencode-api";
+      // Use specified harness or default to opencode-api
+      const harnessType = options.harness || "opencode-api";
 
       // Create new arm
       const createRes = await fetch(`${apiUrl}/api/arms`, {

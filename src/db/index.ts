@@ -92,6 +92,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["023_sqlite_state_migration", MIGRATION_023],
     ["024_task_type_columns", MIGRATION_024, { table: "tasks", columns: MIGRATION_024_COLUMNS }],
     ["025_arm_state_machine", MIGRATION_025],
+    ["026_arm_session_id", MIGRATION_026],
+    ["027_arm_events", MIGRATION_027],
   ];
 
 
@@ -910,6 +912,41 @@ INSERT OR IGNORE INTO config (key, value) VALUES
   ('arm_task_ack_timeout_seconds', '180'),
   ('arm_reconnect_timeout_seconds', '300'),
   ('arm_working_reconnect_timeout_seconds', '600');
+`;
+
+// Migration 026: Add session_id to arms table for MCP session isolation
+const MIGRATION_026 = `
+-- Add session_id column to track OpenCode session ID for each arm
+-- This enables MCP servers to filter events by their own session
+ALTER TABLE arms ADD COLUMN session_id TEXT;
+
+-- Index for efficient session lookup
+CREATE INDEX IF NOT EXISTS idx_arms_session_id ON arms(session_id);
+`;
+
+// Migration 027: Arm events table for storing all OpenCode events
+const MIGRATION_027 = `
+-- Arm events table: stores all events from OpenCode sessions
+-- This replaces the previous approach of MCP servers listening directly to OpenCode
+CREATE TABLE IF NOT EXISTS arm_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  session_id TEXT,
+  event_type TEXT NOT NULL,
+  event_data TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+-- Indexes for efficient event queries
+CREATE INDEX IF NOT EXISTS idx_arm_events_arm ON arm_events(arm_id);
+CREATE INDEX IF NOT EXISTS idx_arm_events_session ON arm_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_arm_events_type ON arm_events(event_type);
+CREATE INDEX IF NOT EXISTS idx_arm_events_time ON arm_events(timestamp DESC);
+
+-- Config for event retention (days)
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('arm_events_retention_days', '7');
 `;
 
   /**

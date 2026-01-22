@@ -234,6 +234,7 @@ export type MessageType =
   | "task_complete"
   | "task_failed"
   | "discovery"
+  | "dependency_discovery"
   | "approval_request"
   | "approval_response"
   | "share_note"

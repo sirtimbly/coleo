@@ -47,6 +47,13 @@ export interface DiscoveryItem {
   filePath?: string;
 }
 
+export interface DependencyReport {
+  taskId: string;
+  dependsOnTaskId: string;
+  dependencyType?: 'finish_to_start' | 'start_to_start' | 'finish_to_finish' | 'start_to_finish';
+  reason: string;
+}
+
 export interface ArmStatusItem {
   id: string;
   name: string;
