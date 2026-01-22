@@ -10,6 +10,7 @@ import { join } from "node:path";
 import type { HarnessSession, SpawnConfig, SendPromptOptions } from "./types";
 import { harnessRegistry } from "./registry";
 import type { AgentHarness } from "./types";
+import { eventStore } from "../nats/jetstream";
 import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
 import type { OpenCodeTuiHarness, ArmDeathCallback } from "./opencode-tui";
 
@@ -87,9 +88,23 @@ export class HarnessManager {
   }
 
   /**
-   * Emit event data to all subscribers
+   * Emit event data to all subscribers and publish to JetStream
    */
-  private emitEvent(armId: string, event: string, data: unknown): void {
+  private async emitEvent(armId: string, event: string, data: unknown): Promise<void> {
+    // Publish to JetStream for persistence
+    try {
+      const subject = `octopai.events.arm.${armId}.${event}`;
+      await eventStore.publishEvent(subject, {
+        type: event,
+        armId,
+        data: data as Record<string, unknown>,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error(`[harness-manager] Failed to publish event to JetStream: ${err}`);
+    }
+
+    // Emit to legacy subscribers (for backward compatibility)
     for (const callback of this.eventCallbacks) {
       try {
         callback(armId, event, data);
@@ -142,8 +157,8 @@ export class HarnessManager {
 
     // Set up event callback for opencode-api or opencode-tui harness
     if ((agent === "opencode-api" || agent === "opencode-tui") && this.eventCallbacks.size > 0) {
-      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback((armId, event, data) => {
-        this.emitEvent(armId, event, data);
+      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback(async (armId, event, data) => {
+        await this.emitEvent(armId, event, data);
       });
     }
 
@@ -258,8 +273,8 @@ export class HarnessManager {
 
     // Set up event callback for opencode-api or opencode-tui harness
     if ((harnessType === "opencode-api" || harnessType === "opencode-tui") && this.eventCallbacks.size > 0) {
-      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback((armId, event, data) => {
-        this.emitEvent(armId, event, data);
+      (harness as OpenCodeApiHarness | OpenCodeTuiHarness).setEventCallback(async (armId, event, data) => {
+        await this.emitEvent(armId, event, data);
       });
     }
 

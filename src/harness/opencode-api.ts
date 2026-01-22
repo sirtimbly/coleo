@@ -14,6 +14,7 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getOctopaiDir } from "../config";
 import { OpenCodeEventStream, filterEvent, type OpenCodeEvent } from "./event-stream";
+import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import type {
   AgentHarness,
@@ -308,9 +309,22 @@ export class OpenCodeApiHarness implements AgentHarness {
         serverUrl,
         armId,
         sessionId: session.id,
-        onEvent: (event: OpenCodeEvent) => {
-          // Forward ALL events to the main server - it will decide what to do with them
-          // Include the full event structure for maximum information
+        onEvent: async (event: OpenCodeEvent) => {
+          // Publish to JetStream for persistence
+          try {
+            const subject = `octopai.events.arm.${armId}.${event.type}`;
+            await eventStore.publishEvent(subject, {
+              type: event.type,
+              armId,
+              sessionId: event.properties?.sessionID as string,
+              data: event.properties || {},
+              timestamp: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.error(`[harness-api] Failed to publish event to JetStream: ${err}`);
+          }
+
+          // Also emit to legacy callbacks for backward compatibility
           this.emitEvent(armId, event.type, {
             ...event.properties,
             _fullEvent: event, // Include full event for debugging/analysis

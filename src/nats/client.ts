@@ -6,9 +6,9 @@
  */
 
 import { connect, type NatsConnection, JSONCodec, type Subscription, type Msg } from 'nats';
-import { 
-  TOPICS, 
-  type AgentCommand, 
+import {
+  TOPICS,
+  type AgentCommand,
   type CommandResponse,
   type AgentInfo,
   type AgentHeartbeat,
@@ -16,6 +16,7 @@ import {
   type ArmState,
   type BrainMessage,
 } from './types';
+import { eventStore } from './jetstream';
 
 const jc = JSONCodec<unknown>();
 
@@ -53,6 +54,16 @@ export class NatsClient {
 
       this.isConnected = true;
       this.log('Connected to NATS server');
+
+      // Initialize JetStream EventStore
+      try {
+        const js = this.connection.jetstream();
+        const jsm = await this.connection.jetstreamManager();
+        await eventStore.initialize(js, jsm);
+        this.log('JetStream EventStore initialized');
+      } catch (err) {
+        this.log(`Failed to initialize JetStream: ${err}`, 'error');
+      }
 
       // Handle disconnection
       (async () => {
