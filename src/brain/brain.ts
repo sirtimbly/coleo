@@ -169,6 +169,8 @@ export class Brain {
   }> = new Map();
   // Track when each arm was first detected (for grace period)
   private armDetectionTimes: Map<string, Date> = new Map();
+  // Track recent activity from event stream (for real-time busy detection)
+  private lastArmEventTime: Map<string, Date> = new Map();
 
   // Infrastructure health tracking
   private infrastructureHealth: {
@@ -291,12 +293,21 @@ export class Brain {
       await this.natsClient.connect();
       this.log(`Connected to NATS at ${this.natsUrl}`);
 
-      // Subscribe to brain messages from arms
-      this.natsClient.subscribe<BrainMessage>(TOPICS.BRAIN_MESSAGES, async (message) => {
-        await this.handleBrainMessage(message);
-      });
+       // Subscribe to brain messages from arms
+       this.natsClient.subscribe<BrainMessage>(TOPICS.BRAIN_MESSAGES, async (message) => {
+         await this.handleBrainMessage(message);
+       });
 
-      this.log("Subscribed to brain messages on NATS");
+       // Subscribe to arm events for real-time activity tracking
+       this.natsClient.subscribe<{ armId: string; type: string }>(TOPICS.BROADCAST_ARMS, async (event) => {
+         if (event.armId) {
+           this.lastArmEventTime.set(event.armId, new Date());
+           // Also log to activity table for history
+           this.logActivity("brain", `event-${event.type}`, event.armId, event as unknown as Record<string, unknown>);
+         }
+       });
+
+       this.log("Subscribed to brain messages and arm events on NATS");
     } catch (err) {
       this.log(`NATS not available: ${err}`);
       this.natsClient = null;
@@ -2732,16 +2743,27 @@ ${originalTask.id}`;
         }
       }
 
-      // Double-check state machine - don't prompt if it knows the arm has work
-      if (this.armStateMachine) {
-        const smContext = this.armStateMachine.getContext(arm.id);
-        if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
-          this.log(`Arm ${arm.id} [${armDomain}]: state machine says "${smContext.state}", skipping prompt`);
-          continue;
-        }
-      }
+       // Double-check state machine - don't prompt if it knows the arm has work
+       if (this.armStateMachine) {
+         const smContext = this.armStateMachine.getContext(arm.id);
+         if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
+           this.log(`Arm ${arm.id} [${armDomain}]: state machine says "${smContext.state}", skipping prompt`);
+           continue;
+         }
+       }
 
-      // Get all unassigned pending tasks - any idle arm should be able to work on them
+       // Check for recent event stream activity - arms emit events when actively working
+       const lastEventTime = this.lastArmEventTime.get(arm.id);
+       if (lastEventTime) {
+         const secondsSinceEvent = (Date.now() - lastEventTime.getTime()) / 1000;
+         if (secondsSinceEvent < 60) {
+           // Arm had activity in the last 60 seconds - it's likely processing
+           this.log(`Arm ${arm.id} [${armDomain}]: recent event ${secondsSinceEvent.toFixed(1)}s ago, skipping prompt`);
+           continue;
+         }
+       }
+
+       // Get all unassigned pending tasks - any idle arm should be able to work on them
       // Domain is a preference, not a hard filter
       const availableTasks = this.tasks.filter(task => {
         if (task.status !== "pending") return false;
@@ -3278,8 +3300,18 @@ The brain will continue to retry and recover automatically where possible.`,
               continue;
             }
           }
-          // No state machine or state machine agrees it's idle - sync them
-          this.log(`Arm ${arm.name}: harness state is "idle" but DB says "busy", syncing...`);
+           // No state machine or state machine agrees it's idle - sync them
+           // But first check if arm has recent event activity (might be processing)
+           const lastEventTime = this.lastArmEventTime.get(arm.id);
+           if (lastEventTime) {
+             const secondsSinceEvent = (Date.now() - lastEventTime.getTime()) / 1000;
+             if (secondsSinceEvent < 60) {
+               // Arm had activity in the last 60 seconds - don't sync to idle yet
+               this.log(`Arm ${arm.name}: recent event ${secondsSinceEvent.toFixed(1)}s ago, keeping busy`);
+               continue;
+             }
+           }
+           this.log(`Arm ${arm.name}: harness state is "idle" but DB says "busy", syncing...`);
           await this.syncArmStatus(arm.id, "idle");
           arm.status = "idle";
           continue;
