@@ -478,14 +478,23 @@ export class OpenCodeTuiHarness implements AgentHarness {
         armId,
         sessionId: openCodeSession.id,
         onEvent: async (event: OpenCodeEvent) => {
-          // Publish to JetStream for persistence
+          // Publish to JetStream for persistence (limit payload size)
           try {
             const subject = `octopai.events.arm.${armId}.${event.type}`;
+            // Limit event data size to prevent MAX_PAYLOAD_EXCEEDED
+            const eventData = event.properties || {};
+            const limitedData = {
+              ...eventData,
+              // Remove large fields that aren't needed for state reconstruction
+              _fullEvent: undefined,
+              _timestamp: undefined,
+            };
+
             await eventStore.publishEvent(subject, {
               type: event.type,
               armId,
               sessionId: event.properties?.sessionID as string,
-              data: event.properties || {},
+              data: limitedData,
               timestamp: new Date().toISOString(),
             });
           } catch (err) {

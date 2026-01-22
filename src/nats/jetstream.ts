@@ -83,10 +83,26 @@ export class EventStore {
   async initialize(js: JetStreamClient, jsm: JetStreamManager): Promise<void> {
     this.js = js;
     this.jsm = jsm;
-    this.initialized = true;
 
-    // Ensure the main event stream exists
-    await this.ensureEventStream();
+    // Retry stream creation in case JetStream isn't ready immediately
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        await this.ensureEventStream();
+        this.initialized = true;
+        console.log('[EventStore] Successfully initialized JetStream');
+        return;
+      } catch (err) {
+        retries--;
+        if (retries > 0) {
+          console.log(`[EventStore] JetStream not ready, retrying in 2s... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          console.error('[EventStore] Failed to initialize JetStream after retries:', err);
+          this.initialized = false;
+        }
+      }
+    }
   }
 
   /**

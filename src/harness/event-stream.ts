@@ -52,7 +52,13 @@ export class OpenCodeEventStream {
    * Start listening to the event stream
    */
   async start(): Promise<void> {
-    this.isClosing = false;
+    if (this.isClosing) return;
+
+    console.log(`[event-stream] Starting event stream for ${this.armId}`);
+
+    // Wait a bit for the server to be ready
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
     await this.connect();
   }
 
@@ -80,19 +86,42 @@ export class OpenCodeEventStream {
 
     this.abortController = new AbortController();
     
-    try {
-      const response = await fetch(`${this.serverUrl}/event`, {
-        signal: this.abortController.signal,
-        headers: {
-          'Accept': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-        },
-      });
+    // Try to connect with retries
+    let response: Response | undefined;
+    let retries = 3;
 
-      if (!response.ok) {
-        throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+    while (retries > 0) {
+      try {
+        console.log(`[event-stream] Attempting to connect to ${this.serverUrl}/event (${4 - retries}/3)`);
+        response = await fetch(`${this.serverUrl}/event`, {
+          signal: this.abortController.signal,
+          headers: {
+            'Accept': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+          },
+        });
+
+        if (response.ok) {
+          break; // Connection successful
+        } else {
+          throw new Error(`SSE connection failed: ${response.status} ${response.statusText}`);
+        }
+      } catch (err) {
+        retries--;
+        if (retries > 0) {
+          console.log(`[event-stream] Connection attempt failed, retrying in 1s... (${retries} retries left)`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+          throw err;
+        }
       }
+    }
 
+    if (!response) {
+      throw new Error('Failed to establish connection after all retries');
+    }
+
+    try {
       if (!response.body) {
         throw new Error('Response body is null');
       }
