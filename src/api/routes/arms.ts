@@ -921,16 +921,9 @@ export function createArmsRoutes() {
         WHERE actor = ?
         ORDER BY timestamp DESC
         LIMIT ? OFFSET ?
-      `).all(id, limit, offset) as Array<{
-        id: number;
-        timestamp: string;
-        actor: string;
-        action: string;
-        target: string | null;
-        details: string;
-      }>;
+      `).all(id, limit, offset);
 
-      const activity = rows.map((row) => ({
+      const activity = rows.map((row: any) => ({
         ...row,
         details: JSON.parse(row.details || "{}"),
       }));
@@ -951,7 +944,7 @@ export function createArmsRoutes() {
         activity: [],
         pagination: { limit, offset, total: 0 },
       });
-    });
+    }
   });
 
   return app;
