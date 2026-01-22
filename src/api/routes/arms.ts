@@ -451,12 +451,13 @@ export function createArmsRoutes() {
       provider?: string;
       model?: string;
       initialPrompt?: string;
+      harness?: string; // Allow specifying harness for auto-created arms
       preferAgent?: boolean; // Explicitly request agent spawning
       agentId?: string; // Spawn on a specific agent
     }>();
 
     // Check if arm exists (include port and pid for potential recovery)
-    const row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as {
+    let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
@@ -471,8 +472,49 @@ export function createArmsRoutes() {
       context_budget: number;
     } | null;
 
+    // If arm doesn't exist, create it first (for CLI convenience)
     if (!row) {
-      throw HttpError.notFound(`Arm not found: ${id}`);
+      console.log(`[spawn] Arm ${id} not found, creating arm record first`);
+
+      // Load config for defaults
+      const config = await loadConfig();
+      const defaults = config.defaults;
+
+      const now = new Date().toISOString();
+      const harness = body.harness || defaults.harness;
+      const provider = body.provider || defaults.provider;
+      const model = body.model || defaults.model;
+      const contextBudget = defaults.contextBudget;
+
+      // Create the arm record
+      db.run(`
+        INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `, [
+        id,
+        id, // name = id for spawned arms
+        "general", // default domain
+        harness,
+        "starting",
+        contextBudget,
+        0,
+        now,
+        now,
+        null,
+        provider,
+        model,
+        JSON.stringify({}),
+      ]);
+
+      // Log activity
+      logActivity(db, id, "registered", undefined, { domain: "general", harness, provider, model });
+
+      // Fetch the newly created arm
+      row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as typeof row;
+
+      if (!row) {
+        throw HttpError.internal(`Failed to create arm record for ${id}`);
+      }
     }
 
     // Load config for defaults
