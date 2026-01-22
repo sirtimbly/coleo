@@ -105,10 +105,55 @@ Define comprehensive event schema:
 "file.created" | "file.modified" | "file.deleted"
 "session.compacted" | "session.created" | "session.error"
 
+// Question/Decision Events (CRITICAL for Brain Decision Handling)
+"question.asked" | "question.replied" | "question.rejected"
+
 // System Events
 "brain.task_determined" | "brain.status_analyzed"
 "discovery.created" | "plan.updated"
 ```
+
+### 2.3 Question Event Format (Critical for Brain Decision Handling)
+
+When arms ask questions requiring human decision, they emit `question.asked` events with this structure:
+
+```typescript
+interface QuestionAskedEvent {
+  type: "question.asked";
+  properties: {
+    id: string;        // Question request ID (starts with "que")
+    sessionID: string; // OpenCode session ID (starts with "ses")
+    questions: QuestionInfo[]; // Array of questions to ask
+    tool?: {           // Optional: links to MCP tool call
+      messageID: string;
+      callID: string;
+    };
+  };
+}
+
+interface QuestionInfo {
+  question: string;     // The actual question text
+  header: string;       // Short label (max 12 chars)
+  options: QuestionOption[]; // Available choices
+  multiple?: boolean;   // Allow multiple selections
+}
+
+interface QuestionOption {
+  label: string;        // Display text (1-5 words, concise)
+  description: string;  // Explanation of choice
+}
+```
+
+**Brain Response Events:**
+- `question.replied`: Human answered the question
+- `question.rejected`: Question was rejected/ignored
+
+**Brain Action Required:**
+When the brain detects a `question.asked` event from any arm, it should:
+1. Parse the question content and options
+2. Evaluate if it can answer autonomously or needs human input
+3. Either respond directly or escalate to human
+4. Track the question-response cycle for learning
 
 ## Phase 3: State Reconstruction Functions
 

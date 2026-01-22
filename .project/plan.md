@@ -530,7 +530,11 @@ Some "current state" data is better modeled as derived state from an event strea
 - Keep SQLite for complex queries, use JetStream for event log
 - Current state can be cached in SQLite, rebuilt from stream on startup
 
-**Migration Plan:** See [jetstream-migration-plan.md](./jetstream-migration-plan.md) for comprehensive implementation details.
+**Migration Plan:** See [jetstream-migration-plan.md](./jetstream-migration-plan.md) for comprehensive implementation details, including question event formats for brain decision handling.
+
+### Question Event Handling (New)
+
+Arms can emit `question.asked` events when they need decisions that require human input. The brain must detect these events and either handle them autonomously or escalate to humans. See the JetStream migration plan for the complete event schema and handling requirements.
 
 **Not candidates for event sourcing (keep in SQLite/files):**
 - Maildir messages (standard format, interoperable)
