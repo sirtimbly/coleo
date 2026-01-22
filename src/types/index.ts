@@ -339,6 +339,7 @@ export interface OctopaiConfig {
   brain: {
     pollIntervalMs: number;
     maxArms: number;
+    armGracePeriodMinutes: number;
   };
   mail: {
     fromAddress: string;
@@ -368,6 +369,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   brain: {
     pollIntervalMs: 30000,
     maxArms: 8,
+    armGracePeriodMinutes: 5,
   },
   mail: {
     fromAddress: "brain@octopai.local",
@@ -378,8 +380,8 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   },
   defaults: {
     harness: "opencode-api",
-    provider: "github-copilot",
-    model: "claude-sonnet-4",
+    provider: "opencode",
+    model: "grok-code",
     contextBudget: 100000,
   },
 };

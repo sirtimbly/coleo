@@ -152,6 +152,7 @@ CREATE TABLE IF NOT EXISTS config (
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('brain_poll_interval_ms', '30000'),
   ('brain_max_arms', '8'),
+  ('brain_arm_grace_period_minutes', '5'),
   ('context_claim_mode', 'lazy');
 `;
 
@@ -938,8 +939,8 @@ export async function seedDatabase(db: Database): Promise<void> {
       generation: 1,
       parent_arm_id: null,
       pid: null,
-      provider: "github-copilot",
-      model: "claude-sonnet-4",
+      provider: "opencode",
+      model: "grok-code",
       config: JSON.stringify({ workdir: "~/projects" }),
     },
     {

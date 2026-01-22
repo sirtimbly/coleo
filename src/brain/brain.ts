@@ -167,6 +167,8 @@ export class Brain {
     lastProductiveAt: Date | null; // When arm last did real work
     escalationLevel: number;       // 0 = none, 1 = interrupt, 2 = compact, 3 = kill
   }> = new Map();
+  // Track when each arm was first detected (for grace period)
+  private armDetectionTimes: Map<string, Date> = new Map();
 
   // Infrastructure health tracking
   private infrastructureHealth: {
@@ -2385,6 +2387,8 @@ ${originalTask.id}`;
         };
         (trackedArm as Arm & { domain?: string }).domain = arm.domain;
         this.arms.set(trackedArm.id, trackedArm);
+        // Record detection time for grace period calculation
+        this.armDetectionTimes.set(trackedArm.id, new Date());
 
         this.logActivity("brain", "arm_detected", arm.id, { pid: arm.pid, reason: "process_scan" });
       } catch {
@@ -2697,6 +2701,18 @@ ${originalTask.id}`;
         continue;
       }
 
+      // Grace period: skip prompting arms that were just detected
+      // This prevents interrupting arms that were working autonomously before brain came online
+      const detectionTime = this.armDetectionTimes.get(arm.id);
+      if (detectionTime) {
+        const gracePeriod = await this.getBrainConfigNumber("brain_arm_grace_period_minutes", 5);
+        const detectedMinutesAgo = (Date.now() - detectionTime.getTime()) / 1000 / 60;
+        if (detectedMinutesAgo < gracePeriod) {
+          this.log(`Arm ${arm.id} [${armDomain}]: recently detected (${detectedMinutesAgo.toFixed(1)}m ago, grace period: ${gracePeriod}m), skipping prompt`);
+          continue;
+        }
+      }
+
       // Health check: verify the arm's harness is actually responsive
       if (isApi) {
         const harnessState = await this.getArmHarnessState(arm.id);
@@ -2825,17 +2841,33 @@ ${originalTask.id}`;
    * Get the harness state for an arm via the API server
    * This is more reliable than PTY log parsing for API harness arms
    */
-  private async getArmHarnessState(armId: string): Promise<{ state: string; hasSession: boolean } | null> {
-    try {
-      return await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
-    } catch (err) {
-      this.log(`Failed to get harness state for arm ${armId}: ${err}`);
-      return null;
-    }
-  }
+   private async getArmHarnessState(armId: string): Promise<{ state: string; hasSession: boolean } | null> {
+     try {
+       return await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+     } catch (err) {
+       this.log(`Failed to get harness state for arm ${armId}: ${err}`);
+       return null;
+     }
+   }
 
-  /**
-   * Sync an arm's status in the database and in-memory tracking
+   /**
+    * Get a numeric config value from the database config table
+    */
+   private async getBrainConfigNumber(key: string, defaultValue: number): Promise<number> {
+     if (!this.db) return defaultValue;
+     try {
+       const row = this.db.query("SELECT value FROM config WHERE key = ?").get(key) as { value: string } | null;
+       if (row) {
+         return parseInt(row.value, 10);
+       }
+       return defaultValue;
+     } catch {
+       return defaultValue;
+     }
+   }
+
+   /**
+    * Sync an arm's status in the database and in-memory tracking
    * Used when harness state differs from database state
    */
    private async syncArmStatus(armId: string, status: "idle" | "busy" | "stopped"): Promise<void> {
@@ -3490,13 +3522,26 @@ octopai arm prompt ${arm.name} "your message here"
       // Update or create tracker for this arm
       let tracker = this.idleArmPromptTracker.get(arm.id);
       if (!tracker) {
+        // New tracker for this arm - check if it has recent productive activity
+        // This handles arms that were working autonomously before brain came online
+        const recentActivity = await this.getRecentArmActivity(arm.id, 60); // Check last 60 minutes
+        const lastProductiveActivity = recentActivity?.find(a => this.isProductiveAction(a.action));
+
         tracker = {
           promptCount: 0,
           lastPromptAt: new Date(),
-          lastProductiveAt: null,
+          lastProductiveAt: lastProductiveActivity ? new Date(lastProductiveActivity.timestamp) : null,
           escalationLevel: 0,
         };
         this.idleArmPromptTracker.set(arm.id, tracker);
+
+        // If the arm has recent productive activity, skip stuck loop detection for now
+        // This prevents the brain from interrupting arms that were working autonomously
+        if (tracker.lastProductiveAt) {
+          const idleMinutes = (Date.now() - tracker.lastProductiveAt.getTime()) / 1000 / 60;
+          this.log(`Arm ${arm.id}: has recent productive activity (${idleMinutes.toFixed(1)}m ago), skipping stuck loop check`);
+          continue;
+        }
       }
 
       // Check for productive activity since last prompt

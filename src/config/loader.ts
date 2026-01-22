@@ -24,6 +24,7 @@ interface TomlConfig {
   brain?: {
     poll_interval_ms?: number;
     max_arms?: number;
+    arm_grace_period_minutes?: number;
   };
   mail?: {
     from_address?: string;
@@ -104,6 +105,7 @@ function tomlToConfig(toml: TomlConfig, octopaiDir: string): Partial<OctopaiConf
     config.brain = {
       pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
       maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
+      armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
     };
   }
 
@@ -228,6 +230,9 @@ export async function loadConfig(octopaiDir?: string): Promise<OctopaiConfig> {
   }
   if (process.env.OCTOPAI_MAX_ARMS) {
     config.brain.maxArms = parseInt(process.env.OCTOPAI_MAX_ARMS, 10);
+  }
+  if (process.env.OCTOPAI_ARM_GRACE_PERIOD_MINUTES) {
+    config.brain.armGracePeriodMinutes = parseInt(process.env.OCTOPAI_ARM_GRACE_PERIOD_MINUTES, 10);
   }
   if (process.env.OCTOPAI_DEFAULT_HARNESS) {
     config.defaults.harness = process.env.OCTOPAI_DEFAULT_HARNESS;

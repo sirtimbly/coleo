@@ -1,0 +1,239 @@
+/**
+ * Octopai Custom Theme
+ * Shared palette maps to the Observatory UI tokens
+ */
+
+:root {
+  /* Brand oranges inspired by the octopus hero */
+  --octo-brand-300: #F0A876;
+  --octo-brand-400: #E39660;
+  --octo-brand-500: #D4854A;
+  --octo-brand-600: #C67438;
+
+  /* Cosmic teal accent */
+  --octo-accent-300: #60E0D6;
+  --octo-accent-400: #4ECDC4;
+  --octo-accent-500: #3DBDB5;
+  --octo-accent-600: #2FA8A1;
+
+  /* Nebula highlight */
+  --octo-highlight-400: #E079B5;
+
+  /* Deep space backgrounds */
+  --octo-bg-900: #0D1B2A;
+  --octo-bg-800: #162432;
+  --octo-bg-700: #1B2838;
+
+  /* Supporting tokens */
+  --octo-border: rgba(78, 205, 196, 0.15);
+  --octo-divider: rgba(78, 205, 196, 0.1);
+  --octo-scrollbar: rgba(78, 205, 196, 0.3);
+  --octo-scrollbar-hover: rgba(78, 205, 196, 0.5);
+
+  --octo-text-primary: rgba(255, 255, 255, 0.92);
+  --octo-text-secondary: rgba(235, 235, 245, 0.7);
+  --octo-text-muted: rgba(235, 235, 245, 0.5);
+
+  /* Map palette into VitePress tokens */
+  --vp-c-brand-1: var(--octo-brand-400);
+  --vp-c-brand-2: var(--octo-brand-500);
+  --vp-c-brand-3: var(--octo-brand-600);
+  --vp-c-brand-soft: rgba(212, 133, 74, 0.14);
+
+  --vp-c-tip-1: var(--octo-accent-400);
+  --vp-c-tip-2: var(--octo-accent-500);
+  --vp-c-tip-3: var(--octo-accent-600);
+  --vp-c-tip-soft: rgba(78, 205, 196, 0.14);
+}
+
+.dark {
+  color-scheme: dark;
+
+  /* Surface tokens */
+  --vp-c-bg: var(--octo-bg-900);
+  --vp-c-bg-alt: var(--octo-bg-700);
+  --vp-c-bg-elv: var(--octo-bg-800);
+  --vp-c-bg-soft: var(--octo-bg-700);
+
+  /* Text tokens */
+  --vp-c-text-1: var(--octo-text-primary);
+  --vp-c-text-2: var(--octo-text-secondary);
+  --vp-c-text-3: var(--octo-text-muted);
+
+  /* Border tokens */
+  --vp-c-border: var(--octo-border);
+  --vp-c-divider: var(--octo-divider);
+  --vp-c-gutter: var(--octo-bg-900);
+
+  /* Brand adjustments */
+  --vp-c-brand-1: var(--octo-brand-400);
+  --vp-c-brand-2: var(--octo-brand-500);
+  --vp-c-brand-3: var(--octo-brand-600);
+
+  /* Home hero */
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(135deg, var(--octo-brand-300) 0%, var(--octo-brand-500) 50%, var(--octo-brand-600) 100%);
+  --vp-home-hero-image-background-image: radial-gradient(ellipse at center, rgba(78, 205, 196, 0.25) 0%, rgba(13, 27, 42, 0) 70%);
+  --vp-home-hero-image-filter: drop-shadow(0 0 40px rgba(78, 205, 196, 0.3));
+}
+
+/* Hero section styling */
+.VPHero {
+  padding-bottom: 64px !important;
+}
+
+.VPHero .image-container {
+  transform: scale(1.1);
+}
+
+.VPHero .image-container img {
+  border-radius: 24px;
+  box-shadow:
+    0 0 60px rgba(78, 205, 196, 0.2),
+    0 0 120px rgba(212, 133, 74, 0.15);
+}
+
+/* Feature cards with cosmic styling */
+.VPFeature {
+  background: linear-gradient(135deg, rgba(27, 40, 56, 0.85) 0%, rgba(22, 36, 50, 0.95) 100%) !important;
+  border: 1px solid var(--octo-border) !important;
+  transition: all 0.3s ease !important;
+}
+
+.VPFeature:hover {
+  border-color: rgba(212, 133, 74, 0.4) !important;
+  box-shadow: 0 8px 32px rgba(78, 205, 196, 0.1);
+  transform: translateY(-2px);
+}
+
+.VPFeature .title {
+  color: var(--vp-c-brand-1) !important;
+}
+
+/* Navigation bar */
+.VPNav {
+  background: rgba(13, 27, 42, 0.85) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* Sidebar */
+.VPSidebar {
+  background: linear-gradient(180deg, rgba(13, 27, 42, 0.95) 0%, rgba(27, 40, 56, 0.95) 100%) !important;
+}
+
+/* Button styling */
+.VPButton.brand {
+  background: linear-gradient(135deg, var(--octo-brand-500) 0%, var(--octo-brand-600) 100%) !important;
+  border: none !important;
+  box-shadow: 0 4px 20px rgba(212, 133, 74, 0.3);
+  transition: all 0.3s ease !important;
+}
+
+.VPButton.brand:hover {
+  background: linear-gradient(135deg, var(--octo-brand-400) 0%, var(--octo-brand-500) 100%) !important;
+  box-shadow: 0 6px 30px rgba(212, 133, 74, 0.4);
+  transform: translateY(-1px);
+}
+
+.VPButton.alt {
+  background: rgba(78, 205, 196, 0.1) !important;
+  border: 1px solid rgba(78, 205, 196, 0.4) !important;
+  color: var(--octo-accent-400) !important;
+  transition: all 0.3s ease !important;
+}
+
+.VPButton.alt:hover {
+  background: rgba(78, 205, 196, 0.2) !important;
+  border-color: var(--octo-accent-400) !important;
+}
+
+/* Code blocks with cosmic theme */
+.dark .vp-code-group .tabs label {
+  background: rgba(27, 40, 56, 0.8);
+}
+
+.dark .vp-code-group .tabs label.active {
+  background: rgba(78, 205, 196, 0.15);
+  color: var(--octo-accent-400);
+}
+
+.dark div[class*='language-'] {
+  background: rgba(13, 27, 42, 0.9) !important;
+  border: 1px solid rgba(78, 205, 196, 0.1);
+}
+
+/* Links with orange accent */
+.dark .vp-doc a {
+  color: var(--vp-c-brand-1);
+}
+
+.dark .vp-doc a:hover {
+  color: var(--vp-c-brand-3);
+}
+
+/* Table styling */
+.dark .vp-doc table {
+  border: 1px solid var(--octo-border);
+}
+
+.dark .vp-doc th {
+  background: rgba(27, 40, 56, 0.8);
+  border-color: var(--octo-border);
+}
+
+.dark .vp-doc td {
+  border-color: var(--octo-divider);
+}
+
+/* Footer */
+.VPFooter {
+  background: rgba(13, 27, 42, 0.95) !important;
+  border-top: 1px solid var(--octo-divider) !important;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(13, 27, 42, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--octo-scrollbar);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--octo-scrollbar-hover);
+}
+
+/* Search box */
+.dark .DocSearch {
+  --docsearch-modal-background: var(--octo-bg-900) !important;
+  --docsearch-searchbox-background: var(--octo-bg-700) !important;
+  --docsearch-hit-background: var(--octo-bg-800) !important;
+  --docsearch-primary-color: var(--octo-brand-500) !important;
+}
+
+/* Mermaid diagram styling - nodes have light backgrounds, use dark text */
+.mermaid-container .nodeLabel,
+.mermaid-container .nodeLabel text,
+.mermaid-container .nodeLabel span,
+.mermaid-container .label text,
+.mermaid-container .label span {
+  fill: #1a1a1a !important;
+  color: #1a1a1a !important;
+  font-family: inherit !important;
+}
+
+/* Edge labels and comments use light text (no background) */
+.mermaid-container .edgeLabel text,
+.mermaid-container .edgeLabel span,
+.mermaid-container .loopText,
+.mermaid-container .loopText > span {
+  fill: var(--vp-c-text-1) !important;
+  color: var(--vp-c-text-1) !important;
+}

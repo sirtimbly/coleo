@@ -104,6 +104,161 @@ interface BrainState {
 }
 ```
 
+## Brain Logic
+
+The brain runs a polling cycle every 30 seconds that orchestrates arm lifecycle and task assignment.
+
+### Poll Cycle
+
+```mermaid
+flowchart TD
+    classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef decision fill:#fff3e0,stroke:#e65100,stroke-width:2px,shape:rhombus
+
+    subgraph POLL["Poll Cycle - Runs every 30s"]
+        A[Start Poll] --> B[scanForRunningArms]
+        B --> C{API Server Available?}
+        C -->|Yes| D[Get Idle Arms]
+        C -->|No| E[Skip API Arms]
+        D --> F[promptIdleArms]
+        F --> G[checkIdleArmStuckLoops]
+        G --> H[End Poll]
+        E --> H
+    end
+
+    class A,B,D,F,G,H process
+    class C decision
+```
+
+### Arm State Machine
+
+Arms follow a formal state machine with 7 states:
+
+```mermaid
+flowchart LR
+    classDef state fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+
+    subgraph LIFECYCLE["Arm State Machine"]
+        direction LR
+        disconnected["disconnected<br/>(not tracked)"] -->|scan finds process| idle["idle<br/>(ready for work)"]
+        idle -->|brain assigns task| task_assigned["task_assigned<br/>(task assigned, awaiting ack)"]
+        task_assigned -->|arm acknowledges| working["working<br/>(has task, processing)"]
+        working -->|complete_task| idle
+        idle -->|no activity after prompt| stuck["stuck detection"]
+        stuck -->|productive activity detected| working
+        stuck -->|confirmed stuck| intervention["intervention"]
+        intervention -->|recover| idle
+        working -->|process dies| stopped["stopped"]
+        idle -->|process dies| stopped
+        task_assigned -->|process dies| stopped
+        stopped -->|restart| disconnected
+    end
+
+    class disconnected,idle,task_assigned,working,stuck,intervention,stopped state
+```
+
+### State Transition Truth Table
+
+| From State | Event | To State | Notes |
+|------------|-------|----------|-------|
+| spawning | PROCESS_STARTED | starting | Process is running |
+| starting | HARNESS_CONNECTED | idle | Harness ready |
+| idle | TASK_ASSIGNED | task_assigned | Brain assigns task |
+| task_assigned | TASK_ACKNOWLEDGED | working | Arm accepts task |
+| task_assigned | TIMEOUT (3min) | idle | Arm didn't ack, release task |
+| working | TASK_COMPLETED | idle | Task done |
+| working | TASK_FAILED | idle | Task failed |
+| idle/working | CONNECTION_LOST | disconnected | Network issue |
+| disconnected | CONNECTION_RESTORED | previous | Reconnected |
+| any | STOP | stopped | Intentional stop |
+
+### Task Assignment Flow
+
+```mermaid
+sequenceDiagram
+    participant Arm
+    participant Brain
+    participant DB[SQLite Database]
+    participant State[State Machine]
+
+    Note over Arm,State: Arm is IDLE and waiting
+
+    Arm->>Brain: heartbeat (status: idle)
+    Brain->>Arm: "You have tasks, call get_full_briefing"
+
+    Note over Arm: Arm calls get_full_briefing
+
+    Arm->>Brain: get_full_briefing()
+    Brain->>Arm: Task context bundle
+
+    Note over Arm: Arm decides to claim task
+    Arm->>Brain: claim_task(task-id)
+
+    Brain->>State: TASK_ASSIGNED event
+    State->>State: idle → task_assigned
+    Brain->>DB: UPDATE tasks SET status='claimed', assigned_to=arm
+    Brain->>DB: UPDATE arms SET status='busy'
+
+    Brain->>Arm: task_assignment message (via queue)
+    Arm->>Brain: acknowledge_task(task-id)
+
+    Brain->>State: TASK_ACKNOWLEDGED event
+    State->>State: task_assigned → working
+    Brain->>DB: UPDATE tasks SET status='in_progress'
+
+    Note over Arm,State: Arm is now WORKING on the task
+```
+
+**Key insight:** The brain assigns tasks to arms in `idle` state, transitioning them to `task_assigned`. The arm must then explicitly acknowledge to transition to `working`. This two-step process ensures both brain and arm agree on task ownership.
+
+### Grace Period for Autonomous Arms
+
+When the brain starts up and finds arms that were working autonomously (before the brain was running), it protects them from being interrupted:
+
+```mermaid
+sequenceDiagram
+    participant Brain
+    participant DB[SQLite Database]
+    participant Arm
+
+    Note over Brain,DB: Brain starts up - finds arm working autonomously
+
+    Brain->>DB: scanForRunningArms()
+    DB->>Brain: arm "rand" exists, status=busy
+    Brain->>Arm: Check if process alive (kill(pid, 0))
+    Arm-->>Brain: Process alive!
+    Brain->>DB: UPDATE arms SET status='idle'
+    Brain->>DB: armDetectionTimes.set("rand", now)
+
+    Note over Brain: Grace period - no prompting for configured time
+
+    Brain->>DB: checkIdleArmStuckLoops()
+    Brain->>DB: Query productive activity in last 60 min
+    DB-->>Brain: Found: complete_task at 14:30
+    Brain->>Brain: lastProductiveAt = 14:30<br/>skip stuck detection<br/>arm was working autonomously!
+
+    Note over Brain,Arm: Arm continues working without interruption
+```
+
+**Grace period behavior:**
+- Arms detected during `scanForRunningArms()` are not prompted for a configurable grace period
+- Default: **5 minutes**
+- Configurable via `brain.arm_grace_period_minutes` in config.toml
+- The brain also checks for recent productive activity (heartbeat, claim_task, complete_task) before marking an arm as stuck
+
+### Stuck Loop Detection
+
+The brain detects when arms repeatedly respond with "idle" without productive work:
+
+1. **Idle arm prompting**: Brain prompts idle arms to check for work
+2. **Activity tracking**: Recent activity is analyzed for prompt-response patterns
+3. **Productive actions**: heartbeat, claim_task, acknowledge_task, complete_task, file_changed, tool_call
+4. **Escalation**: If arm doesn't respond productively:
+   - Level 0: Interrupt + different prompt
+   - Level 1: Force context compaction
+   - Level 2: Kill and respawn arm
+   - Level 3: Notify human via email
+
 ---
 
 ## Arms (General-Purpose Agents)
