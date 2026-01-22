@@ -74,6 +74,8 @@ export interface HarnessSession {
 export interface SendPromptOptions {
   /** Send escape key twice before the prompt to interrupt/cancel current work */
   interrupt?: boolean;
+  /** Override the model to use for this prompt */
+  model?: string;
 }
 
 /**

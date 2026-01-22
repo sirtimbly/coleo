@@ -2732,6 +2732,15 @@ ${originalTask.id}`;
         }
       }
 
+      // Double-check state machine - don't prompt if it knows the arm has work
+      if (this.armStateMachine) {
+        const smContext = this.armStateMachine.getContext(arm.id);
+        if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
+          this.log(`Arm ${arm.id} [${armDomain}]: state machine says "${smContext.state}", skipping prompt`);
+          continue;
+        }
+      }
+
       // Get all unassigned pending tasks - any idle arm should be able to work on them
       // Domain is a preference, not a hard filter
       const availableTasks = this.tasks.filter(task => {
@@ -3258,16 +3267,27 @@ The brain will continue to retry and recover automatically where possible.`,
       if (harnessState) {
         // Handle based on harness state
         if (harnessState.state === "idle") {
-          // Harness says idle but DB says busy - sync them
+          // Harness says idle but DB says busy - check state machine first
+          // The state machine is the source of truth for task assignment state
+          if (this.armStateMachine) {
+            const smContext = this.armStateMachine.getContext(arm.id);
+            if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
+              // State machine knows arm has a task - don't sync to idle
+              // The harness reporting idle is expected during task acknowledgment
+              this.log(`Arm ${arm.name}: harness reports idle but state machine is in "${smContext.state}" - keeping busy (task: "${smContext.currentTaskSubject}")`);
+              continue;
+            }
+          }
+          // No state machine or state machine agrees it's idle - sync them
           this.log(`Arm ${arm.name}: harness state is "idle" but DB says "busy", syncing...`);
           await this.syncArmStatus(arm.id, "idle");
           arm.status = "idle";
           continue;
-         } else if (harnessState.state === "dead" || harnessState.state === "stopped") {
-           // Arm is dead/stopped - update DB
-           this.log(`Arm ${arm.name}: harness state is "${harnessState.state}", marking as stopped`);
-           await this.syncArmStatus(arm.id, "stopped");
-           continue;
+        } else if (harnessState.state === "dead" || harnessState.state === "stopped") {
+          // Arm is dead/stopped - update DB
+          this.log(`Arm ${arm.name}: harness state is "${harnessState.state}", marking as stopped`);
+          await this.syncArmStatus(arm.id, "stopped");
+          continue;
         } else if (harnessState.state === "error") {
           // Arm is in error state - this might need intervention
           this.log(`Arm ${arm.name}: harness state is "error", will analyze logs`);
