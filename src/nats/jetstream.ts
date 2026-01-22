@@ -50,6 +50,28 @@ export interface StreamMetrics {
   subjects: string[];
 }
 
+// State reconstruction types
+export interface TaskState {
+  id: string;
+  status: 'pending' | 'claimed' | 'in_progress' | 'completed' | 'blocked' | 'failed';
+  assignedTo?: string;
+  claimedAt?: string;
+  completedAt?: string;
+  blockedReason?: string;
+  createdAt: string;
+  subject: string;
+}
+
+export interface ArmState {
+  id: string;
+  status: 'idle' | 'busy' | 'starting' | 'stopped' | 'stale';
+  currentTaskId?: string;
+  sessionId?: string;
+  lastHeartbeat?: string;
+  startedAt?: string;
+  harness?: string;
+}
+
 export class EventStore {
   private js: JetStreamClient | null = null;
   private jsm: JetStreamManager | null = null;
@@ -191,6 +213,168 @@ export class EventStore {
     // JetStream handles retention automatically, but we can force cleanup
     const streamInfo = await this.jsm.streams.info('octopai-events');
     console.log(`[EventStore] Stream has ${streamInfo.state.messages} messages, ${streamInfo.state.bytes} bytes`);
+  }
+
+  /**
+   * Reconstruct task state from event stream
+   */
+  async reconstructTaskState(taskId: string, options?: StateReconstructionOptions): Promise<TaskState> {
+    const events = await this.queryEvents({
+      subject: `octopai.events.task.${taskId}.*`,
+      limit: options?.maxEvents || 1000,
+    });
+
+    // Default state
+    const state: TaskState = {
+      id: taskId,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+      subject: `Task ${taskId}`, // Will be overridden by events
+    };
+
+    // Apply events in chronological order
+    for (const event of events.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )) {
+      switch (event.type) {
+        case 'task.created':
+          state.createdAt = event.timestamp;
+          state.subject = (event.data.subject as string) || state.subject;
+          break;
+
+        case 'task.assigned':
+          state.assignedTo = event.data.armId as string;
+          if (state.status === 'pending') {
+            state.status = 'claimed';
+          }
+          break;
+
+        case 'task.claimed':
+          state.status = 'in_progress';
+          state.claimedAt = event.timestamp;
+          break;
+
+        case 'task.completed':
+          state.status = 'completed';
+          state.completedAt = event.timestamp;
+          break;
+
+        case 'task.blocked':
+          state.status = 'blocked';
+          state.blockedReason = event.data.reason as string;
+          break;
+
+        case 'task.failed':
+          state.status = 'failed';
+          break;
+      }
+    }
+
+    return state;
+  }
+
+  /**
+   * Reconstruct arm state from event stream
+   */
+  async reconstructArmState(armId: string, options?: StateReconstructionOptions): Promise<ArmState> {
+    const events = await this.queryEvents({
+      subject: `octopai.events.arm.${armId}.*`,
+      limit: options?.maxEvents || 500,
+    });
+
+    // Default state
+    const state: ArmState = {
+      id: armId,
+      status: 'idle', // Default to idle, will be updated by events
+    };
+
+    // Apply events in chronological order
+    for (const event of events.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )) {
+      switch (event.type) {
+        case 'arm.spawned':
+          state.status = 'idle';
+          state.startedAt = event.timestamp;
+          state.harness = event.data.harness as string;
+          state.sessionId = event.data.sessionId as string;
+          break;
+
+        case 'arm.status_changed':
+          state.status = event.data.to as ArmState['status'];
+          if (event.data.taskId) {
+            state.currentTaskId = event.data.taskId as string;
+          }
+          break;
+
+        case 'arm.heartbeat':
+          state.lastHeartbeat = event.timestamp;
+          // Mark as not stale if recent heartbeat
+          if (state.status === 'stale') {
+            state.status = 'idle';
+          }
+          break;
+
+        case 'arm.killed':
+        case 'arm.stopped':
+          state.status = 'stopped';
+          break;
+      }
+    }
+
+    // Check if arm is stale (no heartbeat in last 5 minutes)
+    if (state.lastHeartbeat) {
+      const lastHeartbeat = new Date(state.lastHeartbeat).getTime();
+      const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+      if (lastHeartbeat < fiveMinutesAgo && state.status !== 'stopped') {
+        state.status = 'stale';
+      }
+    }
+
+    return state;
+  }
+
+  /**
+   * Get activity summary for an arm over a time period
+   */
+  async getArmActivitySummary(armId: string, since: Date): Promise<{
+    messageCount: number;
+    toolUsage: number;
+    fileChanges: number;
+    errors: number;
+    lastActivity: string | null;
+  }> {
+    const events = await this.queryEvents({
+      subject: `octopai.events.arm.${armId}.*`,
+      since,
+    });
+
+    const summary = {
+      messageCount: 0,
+      toolUsage: 0,
+      fileChanges: 0,
+      errors: 0,
+      lastActivity: null as string | null,
+    };
+
+    for (const event of events) {
+      if (event.timestamp > (summary.lastActivity || '')) {
+        summary.lastActivity = event.timestamp;
+      }
+
+      // Categorize events
+      if (event.type.startsWith('message.')) {
+        summary.messageCount++;
+      } else if (event.type.startsWith('tool.')) {
+        summary.toolUsage++;
+      } else if (event.type.startsWith('file.')) {
+        summary.fileChanges++;
+      } else if (event.type.includes('error') || event.type.includes('failed')) {
+        summary.errors++;
+      }
+    }
+
+    return summary;
   }
 
   /**
