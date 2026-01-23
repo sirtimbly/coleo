@@ -29,7 +29,9 @@ import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import { eventStore } from "../nats/jetstream";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
+import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor";
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
@@ -159,9 +161,12 @@ export class Brain {
   private stuckArmAnalyzer: StuckArmAnalyzer;
   private docTracker: DocUpdateTracker | null = null;
   private armStateMachine: ArmStateMachine | null = null;
+  private healthMonitor: ArmHealthMonitor | null = null;
   // Track last stuck state per arm to avoid duplicate escalations
+  // DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
   private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
   // Track idle arm prompt-response patterns to detect stuck loops
+  // DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
   private idleArmPromptTracker: Map<string, {
     promptCount: number;           // How many prompts sent without productive response
     lastPromptAt: Date;            // When we last prompted this arm
@@ -188,15 +193,25 @@ export class Brain {
   private lastInfraFailureNotification: Date | null = null;
 
   /**
-   * Log an activity entry
+   * Log an activity entry to JetStream
+   * This replaces the old SQLite activity table - JetStream is now the single source of truth
    */
   private logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
-    if (!this.db) return;
-    const now = new Date().toISOString();
-    this.db.run(
-      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-      [now, actor, action, target || null, JSON.stringify(details || {})]
-    );
+    // Publish to JetStream if initialized
+    if (eventStore.isInitialized()) {
+      const subject = target 
+        ? `octopai.events.arm.${target}.${action}`
+        : `octopai.events.brain.${action}`;
+      
+      eventStore.publishEvent(subject, {
+        type: action,
+        armId: target,
+        data: { actor, ...details },
+        timestamp: new Date().toISOString(),
+      }).catch(err => {
+        console.error(`[brain] Failed to publish activity event: ${err}`);
+      });
+    }
   }
 
   /**
@@ -303,7 +318,7 @@ export class Brain {
        this.natsClient.subscribe<{ armId: string; type: string }>(TOPICS.BROADCAST_ARMS, async (event) => {
          if (event.armId) {
            this.lastArmEventTime.set(event.armId, new Date());
-           // Also log to activity table for history
+           // Log to JetStream for history
            this.logActivity("brain", `event-${event.type}`, event.armId, event as unknown as Record<string, unknown>);
          }
        });
@@ -398,6 +413,54 @@ export class Brain {
 
     // Initialize arm state machine
     this.armStateMachine = new ArmStateMachine(this.db, (effect) => this.handleStateMachineSideEffect(effect));
+
+    // Initialize health monitor with callbacks
+    const healthCallbacks: HealthMonitorCallbacks = {
+      getActiveArmIds: async () => {
+        if (!this.db) return [];
+        const rows = this.db.query(
+          "SELECT id FROM arms WHERE status NOT IN ('stopped', 'error')"
+        ).all() as Array<{ id: string }>;
+        return rows.map((r) => r.id);
+      },
+      sendPromptToArm: async (armId, message) => {
+        await this.sendPromptToArm(armId, message);
+      },
+      interruptArm: async (armId) => {
+        // Send /compact to try to recover the arm
+        await this.sendPromptToArm(armId, "/compact");
+      },
+      killArm: async (armId, reason) => {
+        this.log(`Health monitor requested kill for arm ${armId}: ${reason}`);
+        // Mark arm as stopped in database
+        if (this.db) {
+          const now = new Date().toISOString();
+          this.db.run(
+            "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
+            [now, armId]
+          );
+        }
+        this.arms.delete(armId);
+        this.logActivity("brain", "arm_killed", armId, { reason, source: "health_monitor" });
+      },
+      notifyHuman: async (subject, body) => {
+        await this.sendToHuman({ subject, body });
+      },
+      replyToPermission: async (armId, _requestId, approved) => {
+        const response = approved ? "Yes, proceed." : "No, do not proceed.";
+        await this.sendPromptToArm(armId, response);
+      },
+    };
+
+    this.healthMonitor = new ArmHealthMonitor(healthCallbacks, {
+      db: this.db,
+      log: (msg) => this.log(msg),
+      config: {
+        checkIntervalMs: 30 * 1000, // 30 seconds
+        eventWindowMs: 10 * 60 * 1000, // 10 minutes
+        autoInterventionEnabled: true,
+      },
+    });
 
     // Create necessary directories
     const dirs = [
@@ -496,11 +559,22 @@ export class Brain {
       // Step 3: Check arm health and detect new arms
       await this.checkArms();
 
-      // Step 4: Check for stuck arms and help them
-      await this.checkStuckArms();
-
-      // Step 4b: Check for idle arms stuck in prompt loops
-      await this.checkIdleArmStuckLoops();
+      // Step 4: Use unified health monitor for stuck detection
+      // This replaces checkStuckArms() and checkIdleArmStuckLoops()
+      if (this.healthMonitor) {
+        // Health monitor runs on its own interval, but we can trigger a check here
+        // if it's not already running (e.g., first poll or after restart)
+        if (!this.healthMonitor.isMonitoring()) {
+          this.healthMonitor.start();
+        }
+        // Optionally run an immediate check during poll for faster response
+        // This is in addition to the periodic checks the monitor runs on its own
+        // await this.healthMonitor.runHealthCheck();
+      } else {
+        // Fallback to legacy methods if health monitor not initialized
+        await this.checkStuckArms();
+        await this.checkIdleArmStuckLoops();
+      }
 
       // Step 5: Assign pending tasks to idle arms first
       await this.assignTasks();
@@ -637,6 +711,11 @@ export class Brain {
     * This should be called after run() or runOnce() completes
     */
    async shutdown(): Promise<void> {
+     // Stop the health monitor
+     if (this.healthMonitor) {
+       this.healthMonitor.stop();
+     }
+
      // Stop the doc watcher
      stopDocWatcher();
 
@@ -669,10 +748,16 @@ export class Brain {
       status: arm.status,
     }));
 
-    const recentActivity = this.db
-      ? (this.db.query("SELECT actor, action FROM activity ORDER BY timestamp DESC LIMIT 5").all() as Array<{ actor: string; action: string }>)
-        .map(a => `${a.actor} ${a.action}`)
-      : [];
+    // Get recent activity from JetStream for LLM context
+    let recentActivity: string[] = [];
+    if (eventStore.isInitialized()) {
+      try {
+        const events = await eventStore.getRecentEvents(5);
+        recentActivity = events.map(e => `${e.data.actor || e.armId || 'brain'} ${e.type}`);
+      } catch {
+        // Fall back to empty if JetStream query fails
+      }
+    }
 
     for (const message of messages) {
       this.log(`Processing: ${message.subject}`);
@@ -1003,12 +1088,20 @@ export class Brain {
   ): Promise<void> {
     this.log(`Arm ${armId} discovered dependency: ${payload.dependsOn} (${payload.type}) for task ${payload.taskId}`);
 
-    if (this.db) {
-      const now = new Date().toISOString();
-      this.db.run(`
-        INSERT INTO activity (timestamp, actor, action, target, details)
-        VALUES (?, ?, ?, ?, ?)
-      `, [now, armId, "dependency_discovered", payload.taskId, JSON.stringify(payload)]);
+    // Publish to JetStream instead of SQLite
+    if (eventStore.isInitialized()) {
+      eventStore.publishEvent(`octopai.events.arm.${armId}.dependency_discovered`, {
+        type: "dependency_discovered",
+        armId,
+        data: {
+          taskId: payload.taskId,
+          dependsOn: payload.dependsOn,
+          dependencyType: payload.type,
+          description: payload.description,
+          severity: payload.severity,
+        },
+        timestamp: new Date().toISOString(),
+      }).catch(() => {});
     }
 
     // TODO: Store dependency relationships in database for future task planning
@@ -4081,17 +4174,24 @@ octopai arm prompt ${arm.name} "your message here"
 
   /**
    * Analyze recent activity to detect prompt-response patterns
+   * Now reads from JetStream instead of SQLite
    */
   private async getRecentArmActivity(armId: string, minutes: number): Promise<Array<{timestamp: string; action: string; details: string}> | null> {
-    if (!this.db) return null;
+    if (!eventStore.isInitialized()) return null;
 
-    const cutoff = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+    const since = new Date(Date.now() - minutes * 60 * 1000);
     try {
-      return this.db.query(`
-        SELECT timestamp, action, details FROM activity
-        WHERE actor = ? AND timestamp > ?
-        ORDER BY timestamp DESC
-      `).all(armId, cutoff) as Array<{timestamp: string; action: string; details: string}>;
+      const events = await eventStore.getArmEvents(armId, 100);
+      
+      // Filter to events within the time window and transform to expected format
+      return events
+        .filter(e => new Date(e.timestamp) > since)
+        .map(e => ({
+          timestamp: e.timestamp,
+          action: e.type,
+          details: JSON.stringify(e.data),
+        }))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
     } catch {
       return null;
     }

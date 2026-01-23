@@ -522,6 +522,77 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Events API - arm health monitoring
+  async getArmEventWindow(armId: string, options?: { windowMs?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    if (options?.limit) query.set('limit', options.limit.toString());
+    const queryStr = query.toString();
+    return this.request<EventWindowResponse>(
+      `/events/arms/${armId}/window${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getArmAnalysis(armId: string, options?: { windowMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    const queryStr = query.toString();
+    return this.request<ArmAnalysisFull>(
+      `/events/arms/${armId}/analysis${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getAllArmsAnalysis(options?: { windowMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
+    const queryStr = query.toString();
+    return this.request<AllArmsAnalysis>(
+      `/events/analysis${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getRecentEvents(options?: { limit?: number; sinceMs?: number }) {
+    const query = new URLSearchParams();
+    if (options?.limit) query.set('limit', options.limit.toString());
+    if (options?.sinceMs) query.set('sinceMs', options.sinceMs.toString());
+    const queryStr = query.toString();
+    return this.request<RecentEventsResponse>(
+      `/events/recent${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getEventTypes() {
+    return this.request<{ knownTypes: string[]; count: number }>('/events/types');
+  }
+
+  async getHealthConfig() {
+    return this.request<{
+      analyzer: {
+        silentThresholdMs: number;
+        productiveEventThreshold: number;
+        loopRepetitionThreshold: number;
+        permissionEscalationMs: number;
+        startupGracePeriodMs: number;
+      };
+      sse: {
+        minIntervalPerArmMs: number;
+        maxQueueSize: number;
+        flushIntervalMs: number;
+        heartbeatIntervalMs: number;
+      };
+    }>('/events/health/config');
+  }
+
+  // SSE Event stream URL for global events
+  getEventsStreamUrl(options?: { armIds?: string[]; types?: string[] }): string {
+    const apiKey = this.getApiKey();
+    const params = new URLSearchParams();
+    if (apiKey) params.set('api_key', apiKey);
+    if (options?.armIds?.length) params.set('armIds', options.armIds.join(','));
+    if (options?.types?.length) params.set('types', options.types.join(','));
+    return `${API_BASE}/events/stream?${params.toString()}`;
+  }
 }
 
 // Types
@@ -738,6 +809,105 @@ export interface Task {
 export interface OpenCodeEvent {
   type: string;
   properties: Record<string, unknown>;
+}
+
+// Arm activity analysis types (from brain event-window system)
+export type ArmActivityState =
+  | "productive"
+  | "idle"
+  | "waiting_permission"
+  | "looping"
+  | "silent"
+  | "error"
+  | "starting";
+
+export interface ArmAnalysis {
+  armId: string;
+  state: ArmActivityState;
+  confidence: "high" | "medium" | "low";
+  reason: string;
+  recommendedAction?: "none" | "prompt" | "interrupt" | "kill" | "escalate";
+  silentDurationMs: number;
+  hasPermissionPending: boolean;
+}
+
+export interface ArmAnalysisFull {
+  armId: string;
+  analysis: {
+    state: ArmActivityState;
+    confidence: "high" | "medium" | "low";
+    reason: string;
+    recommendedAction?: string;
+    metrics: {
+      eventCount: number;
+      silentDurationMs: number;
+      lastEventAt: string | null;
+      recentMessageCount: number;
+      recentToolCount: number;
+      recentFileEditCount: number;
+    };
+    pendingPermission?: {
+      requestedAt: string;
+      action: string;
+      context?: string;
+    };
+    loopPattern?: {
+      pattern: string[];
+      repetitions: number;
+    };
+    unknownEventTypes: string[];
+  };
+  trend: {
+    improving: boolean;
+    degrading: boolean;
+    stable: boolean;
+    recentStates: ArmActivityState[];
+  };
+}
+
+export interface AllArmsAnalysis {
+  arms: ArmAnalysis[];
+  summary: {
+    total: number;
+    productive: number;
+    idle: number;
+    waiting: number;
+    looping: number;
+    silent: number;
+    error: number;
+    starting: number;
+  };
+}
+
+export interface EventWindowResponse {
+  armId: string;
+  window: {
+    events: Array<{
+      type: string;
+      timestamp: string;
+      data: Record<string, unknown>;
+    }>;
+    lastEventAt: string | null;
+    silentDurationMs: number;
+    unknownEventTypes: string[];
+  };
+  summary: {
+    totalEvents: number;
+    eventTypeCounts: Record<string, number>;
+    firstEventAt: string | null;
+    lastEventAt: string | null;
+    durationMs: number;
+  };
+}
+
+export interface RecentEventsResponse {
+  events: Array<{
+    type: string;
+    armId?: string;
+    timestamp: string;
+    data: Record<string, unknown>;
+  }>;
+  count: number;
 }
 
 // Singleton instance

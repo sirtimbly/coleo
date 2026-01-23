@@ -156,14 +156,88 @@ export class EventStore {
   }
 
   /**
-   * Query events from the stream
-   * TODO: Implement proper JetStream querying with consumers
+   * Query events from the stream using an ephemeral consumer
    */
   async queryEvents(options: QueryOptions): Promise<EventData[]> {
-    // Temporary implementation - return empty array
-    // Will be implemented with proper JetStream consumer API
-    console.log('[EventStore] queryEvents called with options:', options);
-    return [];
+    if (!this.js || !this.jsm) {
+      console.log('[EventStore] JetStream not initialized, cannot query events');
+      return [];
+    }
+
+    const events: EventData[] = [];
+    const limit = options.limit ?? 100;
+    
+    try {
+      // Determine the filter subject
+      let filterSubject = options.subject ?? 'octopai.events.>';
+      
+      // Create an ephemeral ordered consumer for querying
+      const consumer = await this.js.consumers.get('octopai-events', {
+        filterSubjects: [filterSubject],
+      });
+
+      // Fetch messages
+      const messages = await consumer.fetch({ max_messages: limit, expires: 5000 });
+      
+      for await (const msg of messages) {
+        try {
+          const data = JSON.parse(msg.string()) as EventData;
+          
+          // Apply time filters if specified
+          if (options.since) {
+            const eventTime = new Date(data.timestamp);
+            if (eventTime < options.since) continue;
+          }
+          if (options.until) {
+            const eventTime = new Date(data.timestamp);
+            if (eventTime > options.until) continue;
+          }
+          
+          // Apply event type filter if specified
+          if (options.eventType && data.type !== options.eventType) continue;
+          
+          events.push(data);
+          
+          if (events.length >= limit) break;
+        } catch {
+          // Skip malformed messages
+        }
+      }
+    } catch (err) {
+      console.error('[EventStore] Failed to query events:', err);
+    }
+
+    return events;
+  }
+
+  /**
+   * Get recent events for a specific arm
+   */
+  async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
+    return this.queryEvents({
+      subject: `octopai.events.arm.${armId}.>`,
+      limit,
+    });
+  }
+
+  /**
+   * Get recent events of a specific type across all arms
+   */
+  async getEventsByType(eventType: string, limit: number = 50): Promise<EventData[]> {
+    return this.queryEvents({
+      eventType,
+      limit,
+    });
+  }
+
+  /**
+   * Get all recent events (for activity feed)
+   */
+  async getRecentEvents(limit: number = 50, since?: Date): Promise<EventData[]> {
+    return this.queryEvents({
+      limit,
+      since,
+    });
   }
 
   /**
@@ -415,5 +489,175 @@ export class EventStore {
   }
 }
 
-// Global EventStore instance
-export const eventStore = new EventStore();
+/**
+ * Interface for EventStore implementations
+ * Used to allow dependency injection for testing
+ */
+export interface IEventStore {
+  publishEvent(subject: string, data: EventData): Promise<void>;
+  queryEvents(options: QueryOptions): Promise<EventData[]>;
+  getArmEvents(armId: string, limit?: number): Promise<EventData[]>;
+  getEventsByType(eventType: string, limit?: number): Promise<EventData[]>;
+  getRecentEvents(limit?: number, since?: Date): Promise<EventData[]>;
+  isInitialized(): boolean;
+}
+
+/**
+ * In-memory EventStore for testing
+ * Stores events in memory without requiring NATS/JetStream
+ */
+export class InMemoryEventStore implements IEventStore {
+  private events: Array<{ subject: string; data: EventData }> = [];
+  private _initialized = false;
+
+  /**
+   * Initialize the in-memory store (always succeeds)
+   */
+  initialize(): void {
+    this._initialized = true;
+  }
+
+  /**
+   * Clear all events (useful between tests)
+   */
+  clear(): void {
+    this.events = [];
+  }
+
+  /**
+   * Publish an event to the in-memory store
+   */
+  async publishEvent(subject: string, data: EventData): Promise<void> {
+    this.events.push({ subject, data });
+  }
+
+  /**
+   * Query events from the in-memory store
+   */
+  async queryEvents(options: QueryOptions): Promise<EventData[]> {
+    let results = this.events.map(e => e.data);
+    
+    // Apply subject filter
+    if (options.subject) {
+      const pattern = options.subject.replace(/>/g, '.*').replace(/\*/g, '[^.]*');
+      const regex = new RegExp(`^${pattern}$`);
+      results = this.events
+        .filter(e => regex.test(e.subject))
+        .map(e => e.data);
+    }
+    
+    // Apply time filters
+    if (options.since) {
+      results = results.filter(e => new Date(e.timestamp) >= options.since!);
+    }
+    if (options.until) {
+      results = results.filter(e => new Date(e.timestamp) <= options.until!);
+    }
+    
+    // Apply event type filter
+    if (options.eventType) {
+      results = results.filter(e => e.type === options.eventType);
+    }
+    
+    // Apply limit
+    const limit = options.limit ?? 100;
+    return results.slice(0, limit);
+  }
+
+  /**
+   * Get recent events for a specific arm
+   */
+  async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
+    return this.queryEvents({
+      subject: `octopai.events.arm.${armId}.>`,
+      limit,
+    });
+  }
+
+  /**
+   * Get recent events of a specific type across all arms
+   */
+  async getEventsByType(eventType: string, limit: number = 50): Promise<EventData[]> {
+    return this.queryEvents({
+      eventType,
+      limit,
+    });
+  }
+
+  /**
+   * Get all recent events (for activity feed)
+   */
+  async getRecentEvents(limit: number = 50, since?: Date): Promise<EventData[]> {
+    return this.queryEvents({
+      limit,
+      since,
+    });
+  }
+
+  /**
+   * Check if initialized
+   */
+  isInitialized(): boolean {
+    return this._initialized;
+  }
+
+  /**
+   * Get all events (for debugging/assertions in tests)
+   */
+  getAllEvents(): Array<{ subject: string; data: EventData }> {
+    return [...this.events];
+  }
+}
+
+// Global EventStore instance (can be swapped for testing)
+let _eventStore: IEventStore = new EventStore();
+
+/**
+ * Get the current event store instance
+ */
+export const eventStore: IEventStore = {
+  get publishEvent() { return _eventStore.publishEvent.bind(_eventStore); },
+  get queryEvents() { return _eventStore.queryEvents.bind(_eventStore); },
+  get getArmEvents() { return _eventStore.getArmEvents.bind(_eventStore); },
+  get getEventsByType() { return _eventStore.getEventsByType.bind(_eventStore); },
+  get getRecentEvents() { return _eventStore.getRecentEvents.bind(_eventStore); },
+  get isInitialized() { return _eventStore.isInitialized.bind(_eventStore); },
+};
+
+/**
+ * Set a custom event store (for testing)
+ */
+export function setEventStore(store: IEventStore): void {
+  _eventStore = store;
+}
+
+/**
+ * Reset to the default JetStream-backed event store
+ */
+export function resetEventStore(): void {
+  _eventStore = new EventStore();
+}
+
+/**
+ * Initialize the JetStream-backed event store
+ * Called by NATS client when JetStream is available
+ */
+export async function initializeJetStreamEventStore(
+  js: JetStreamClient,
+  jsm: JetStreamManager
+): Promise<void> {
+  // Ensure we're using the real EventStore, not a test mock
+  if (!(_eventStore instanceof EventStore)) {
+    _eventStore = new EventStore();
+  }
+  await (_eventStore as EventStore).initialize(js, jsm);
+}
+
+/**
+ * Create and configure an in-memory event store for testing
+ */
+export function createTestEventStore(): InMemoryEventStore {
+  const store = new InMemoryEventStore();
+  store.initialize();
+  return store;
+}

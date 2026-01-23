@@ -16,6 +16,12 @@ export {
   type OpenCodeEvent,
   type Task,
   type Bug,
+  type ArmActivityState,
+  type ArmAnalysis,
+  type ArmAnalysisFull,
+  type AllArmsAnalysis,
+  type EventWindowResponse,
+  type RecentEventsResponse,
 } from './api';
 export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';

@@ -4,9 +4,10 @@ import {
   Eye, Radio, Wrench, CheckCircle2, XCircle, Clock, Loader2,
   ChevronDown, ChevronRight, FileEdit, Terminal, AlertTriangle,
   MessageSquare, GitBranch, ListTodo, Zap, Bot, Coins, Trash2,
-  RefreshCw, Maximize2, Minimize2
+  RefreshCw, Maximize2, Minimize2, ShieldQuestion, TrendingUp,
+  TrendingDown, Minus, CircleDashed, Play, Pause, AlertOctagon
 } from 'lucide-react';
-import { api, type Arm, type ArmTodo, type OpenCodeEvent } from '@/lib';
+import { api, type Arm, type ArmTodo, type OpenCodeEvent, type ArmAnalysisFull, type ArmActivityState } from '@/lib';
 import { StatusBadge } from '@/components';
 import { useArmEvents, useWebSocket } from '@/hooks';
 
@@ -141,6 +142,8 @@ export function ArmViewerPage() {
   const [panelWidth, setPanelWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const [viewerExpanded, setViewerExpanded] = useState(false);
+  const [armAnalysis, setArmAnalysis] = useState<ArmAnalysisFull | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
   
   const activityEndRef = useRef<HTMLDivElement>(null);
   const activityIdCounter = useRef(0);
@@ -189,6 +192,21 @@ export function ArmViewerPage() {
       }
     } catch (err) {
       console.error('Failed to load todos:', err);
+    }
+  };
+
+  // Load analysis for selected arm
+  const loadAnalysis = async (armId: string) => {
+    setAnalysisLoading(true);
+    try {
+      const res = await api.getArmAnalysis(armId);
+      setArmAnalysis(res);
+    } catch (err) {
+      // Analysis might not be available if NATS isn't running
+      console.error('Failed to load analysis:', err);
+      setArmAnalysis(null);
+    } finally {
+      setAnalysisLoading(false);
     }
   };
 
@@ -486,8 +504,12 @@ export function ArmViewerPage() {
         setTotalTokens({ input: 0, output: 0 });
         activityIdCounter.current = 0;
       }
-      // Always fetch fresh todos to ensure they match the selected arm
+      // Always fetch fresh todos and analysis
       loadTodos(selectedArmId);
+      loadAnalysis(selectedArmId);
+    } else {
+      // Clear analysis when no arm selected
+      setArmAnalysis(null);
     }
   }, [selectedArmId]);
 
@@ -701,6 +723,15 @@ export function ArmViewerPage() {
           </div>
         )}
 
+        {/* Arm Analysis Panel */}
+        {selectedArmId && (
+          <ArmAnalysisPanel 
+            analysis={armAnalysis} 
+            loading={analysisLoading}
+            onRefresh={() => loadAnalysis(selectedArmId)}
+          />
+        )}
+
         {/* Content area */}
         {!selectedArmId ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -855,6 +886,138 @@ function TodoItem({ todo }: { todo: ArmTodo }) {
           {todo.content}
         </span>
       </div>
+    </div>
+  );
+}
+
+// State colors and icons for arm analysis
+const stateConfig: Record<ArmActivityState, { bg: string; border: string; text: string; icon: typeof Bot }> = {
+  productive: { bg: 'bg-green-500/20', border: 'border-green-500', text: 'text-green-600', icon: Zap },
+  idle: { bg: 'bg-blue-500/20', border: 'border-blue-500', text: 'text-blue-600', icon: Pause },
+  waiting_permission: { bg: 'bg-yellow-500/20', border: 'border-yellow-500', text: 'text-yellow-600', icon: ShieldQuestion },
+  looping: { bg: 'bg-orange-500/20', border: 'border-orange-500', text: 'text-orange-600', icon: RefreshCw },
+  silent: { bg: 'bg-gray-500/20', border: 'border-gray-500', text: 'text-gray-600', icon: CircleDashed },
+  error: { bg: 'bg-red-500/20', border: 'border-red-500', text: 'text-red-600', icon: AlertOctagon },
+  starting: { bg: 'bg-cyan-500/20', border: 'border-cyan-500', text: 'text-cyan-600', icon: Play },
+};
+
+function ArmAnalysisPanel({ 
+  analysis, 
+  loading,
+  onRefresh 
+}: { 
+  analysis: ArmAnalysisFull | null; 
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  if (loading) {
+    return (
+      <div className="p-4 border-b border-border">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span>Loading analysis...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!analysis) {
+    return null;
+  }
+
+  const state = analysis.analysis.state;
+  const config = stateConfig[state];
+  const StateIcon = config.icon;
+
+  const trendIcon = analysis.trend.improving 
+    ? <TrendingUp className="h-3 w-3 text-green-500" />
+    : analysis.trend.degrading 
+      ? <TrendingDown className="h-3 w-3 text-red-500" />
+      : <Minus className="h-3 w-3 text-muted-foreground" />;
+
+  const trendLabel = analysis.trend.improving 
+    ? 'Improving' 
+    : analysis.trend.degrading 
+      ? 'Degrading' 
+      : 'Stable';
+
+  return (
+    <div className={`p-4 border-b border-l-2 ${config.border} ${config.bg}`}>
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <StateIcon className={`h-4 w-4 ${config.text}`} />
+          <span className={`font-medium text-sm capitalize ${config.text}`}>
+            {state.replace('_', ' ')}
+          </span>
+          <span className={`text-xs px-1.5 py-0.5 rounded ${
+            analysis.analysis.confidence === 'high' 
+              ? 'bg-green-500/20 text-green-700' 
+              : analysis.analysis.confidence === 'medium'
+                ? 'bg-yellow-500/20 text-yellow-700'
+                : 'bg-gray-500/20 text-gray-600'
+          }`}>
+            {analysis.analysis.confidence}
+          </span>
+        </div>
+        <button
+          onClick={onRefresh}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          title="Refresh analysis"
+        >
+          <RefreshCw className="h-3 w-3" />
+        </button>
+      </div>
+
+      <p className="text-xs text-muted-foreground mb-2">{analysis.analysis.reason}</p>
+
+      {/* Metrics row */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+        <span>{analysis.analysis.metrics.eventCount} events</span>
+        <span>{analysis.analysis.metrics.recentFileEditCount} files edited</span>
+        <span className="flex items-center gap-1">
+          {trendIcon}
+          {trendLabel}
+        </span>
+      </div>
+
+      {/* Permission pending alert */}
+      {analysis.analysis.pendingPermission && (
+        <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
+          <div className="flex items-center gap-2 text-yellow-700">
+            <ShieldQuestion className="h-3 w-3" />
+            <span className="font-medium">Permission requested:</span>
+            <span>{analysis.analysis.pendingPermission.action}</span>
+          </div>
+          {analysis.analysis.pendingPermission.context && (
+            <p className="mt-1 text-muted-foreground">{analysis.analysis.pendingPermission.context}</p>
+          )}
+        </div>
+      )}
+
+      {/* Loop pattern alert */}
+      {analysis.analysis.loopPattern && (
+        <div className="mt-3 p-2 bg-orange-500/10 border border-orange-500/30 rounded text-xs">
+          <div className="flex items-center gap-2 text-orange-700">
+            <RefreshCw className="h-3 w-3" />
+            <span className="font-medium">Loop detected:</span>
+            <span>{analysis.analysis.loopPattern.repetitions} repetitions</span>
+          </div>
+          <p className="mt-1 text-muted-foreground font-mono">
+            {analysis.analysis.loopPattern.pattern.slice(0, 3).join(' → ')}
+            {analysis.analysis.loopPattern.pattern.length > 3 && '...'}
+          </p>
+        </div>
+      )}
+
+      {/* Unknown event types warning */}
+      {analysis.analysis.unknownEventTypes.length > 0 && (
+        <div className="mt-3 p-2 bg-gray-500/10 border border-gray-500/30 rounded text-xs">
+          <div className="flex items-center gap-2 text-gray-600">
+            <AlertTriangle className="h-3 w-3" />
+            <span>Unknown events: {analysis.analysis.unknownEventTypes.slice(0, 3).join(', ')}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

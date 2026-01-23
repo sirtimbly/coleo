@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare, AlertCircle, CheckCircle } from 'lucide-react';
-import { api, type Arm, type ActivityEntry } from '@/lib';
+import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare, AlertCircle, CheckCircle, Zap, Pause, RefreshCw, CircleDashed, Play, AlertOctagon, ShieldQuestion } from 'lucide-react';
+import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks';
 
@@ -60,10 +60,39 @@ const ArmHealthBadge = ({ health }: { health: "healthy" | "idle" | "stuck" | "st
   );
 };
 
+// State badge and icon for event-based analysis
+const stateConfig: Record<ArmActivityState, { 
+  bg: string; 
+  text: string; 
+  icon: typeof Bot;
+  label: string;
+}> = {
+  productive: { bg: 'bg-green-500/20', text: 'text-green-700 dark:text-green-400', icon: Zap, label: 'Productive' },
+  idle: { bg: 'bg-blue-500/20', text: 'text-blue-700 dark:text-blue-400', icon: Pause, label: 'Idle' },
+  waiting_permission: { bg: 'bg-yellow-500/20', text: 'text-yellow-700 dark:text-yellow-400', icon: ShieldQuestion, label: 'Waiting' },
+  looping: { bg: 'bg-orange-500/20', text: 'text-orange-700 dark:text-orange-400', icon: RefreshCw, label: 'Looping' },
+  silent: { bg: 'bg-gray-500/20', text: 'text-gray-600 dark:text-gray-400', icon: CircleDashed, label: 'Silent' },
+  error: { bg: 'bg-red-500/20', text: 'text-red-700 dark:text-red-400', icon: AlertOctagon, label: 'Error' },
+  starting: { bg: 'bg-cyan-500/20', text: 'text-cyan-700 dark:text-cyan-400', icon: Play, label: 'Starting' },
+};
+
+const ArmStateBadge = ({ state }: { state: ArmActivityState }) => {
+  const config = stateConfig[state];
+  const Icon = config.icon;
+  
+  return (
+    <span className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1 ${config.bg} ${config.text}`}>
+      <Icon className="h-3 w-3" />
+      {config.label}
+    </span>
+  );
+};
+
 export function DashboardPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,6 +108,15 @@ export function DashboardPage() {
       setArms(armsRes.arms);
       setActivity(activityRes.activity);
       setError(null);
+      
+      // Load arms analysis (may fail if NATS not available)
+      try {
+        const analysisRes = await api.getAllArmsAnalysis();
+        setArmsAnalysis(analysisRes);
+      } catch {
+        // Analysis not available - this is OK
+        setArmsAnalysis(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load data');
     } finally {
@@ -298,6 +336,78 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Arm Analysis Summary (from event-window system) */}
+      {armsAnalysis && armsAnalysis.arms.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span>Arm Activity Analysis</span>
+              <span className="text-xs font-normal text-muted-foreground">
+                Event-based health monitoring
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-7 gap-4 mb-4">
+              {/* Summary counts */}
+              <div className="text-center p-2 rounded bg-green-500/10">
+                <p className="text-lg font-bold text-green-600">{armsAnalysis.summary.productive}</p>
+                <p className="text-xs text-muted-foreground">Productive</p>
+              </div>
+              <div className="text-center p-2 rounded bg-blue-500/10">
+                <p className="text-lg font-bold text-blue-600">{armsAnalysis.summary.idle}</p>
+                <p className="text-xs text-muted-foreground">Idle</p>
+              </div>
+              <div className="text-center p-2 rounded bg-cyan-500/10">
+                <p className="text-lg font-bold text-cyan-600">{armsAnalysis.summary.starting}</p>
+                <p className="text-xs text-muted-foreground">Starting</p>
+              </div>
+              <div className="text-center p-2 rounded bg-yellow-500/10">
+                <p className="text-lg font-bold text-yellow-600">{armsAnalysis.summary.waiting}</p>
+                <p className="text-xs text-muted-foreground">Waiting</p>
+              </div>
+              <div className="text-center p-2 rounded bg-orange-500/10">
+                <p className="text-lg font-bold text-orange-600">{armsAnalysis.summary.looping}</p>
+                <p className="text-xs text-muted-foreground">Looping</p>
+              </div>
+              <div className="text-center p-2 rounded bg-gray-500/10">
+                <p className="text-lg font-bold text-gray-600">{armsAnalysis.summary.silent}</p>
+                <p className="text-xs text-muted-foreground">Silent</p>
+              </div>
+              <div className="text-center p-2 rounded bg-red-500/10">
+                <p className="text-lg font-bold text-red-600">{armsAnalysis.summary.error}</p>
+                <p className="text-xs text-muted-foreground">Error</p>
+              </div>
+            </div>
+
+            {/* Arms needing attention */}
+            {armsAnalysis.arms.filter(a => 
+              a.state === 'looping' || a.state === 'silent' || a.state === 'error' || a.hasPermissionPending
+            ).length > 0 && (
+              <div className="mt-4">
+                <p className="text-sm font-medium mb-2 text-muted-foreground">Needs Attention</p>
+                <div className="space-y-2">
+                  {armsAnalysis.arms
+                    .filter(a => a.state === 'looping' || a.state === 'silent' || a.state === 'error' || a.hasPermissionPending)
+                    .map(arm => (
+                      <div key={arm.armId} className="flex items-center justify-between p-2 rounded bg-secondary/50">
+                        <span className="text-sm truncate">{arm.armId.slice(0, 8)}...</span>
+                        <div className="flex items-center gap-2">
+                          <ArmStateBadge state={arm.state} />
+                          {arm.hasPermissionPending && (
+                            <span className="text-xs text-yellow-600">permission pending</span>
+                          )}
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Arms & Activity */}
       <div className="grid grid-cols-2 gap-8">
