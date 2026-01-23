@@ -15,9 +15,9 @@ The Brain doesn't pre-generate all tasks upfront. Instead, it **progressively de
 - [x] Plan document format specification
 - [x] History tracking for completed tasks
 - [x] Status report parsing and influence on tasking
-- [ ] Assign primary + watcher arms during task claims
-- [ ] Consensus update API so arms can approve/reject work
-- [ ] Discovery-based dependency reporting to extend the graph over time
+- [x] Assign primary + watcher arms during task claims
+- [x] Consensus update API so arms can approve/reject work
+- [x] Discovery-based dependency reporting to extend the graph over time
 
 ## Inputs to Task Determination
 
@@ -278,7 +278,7 @@ Brain dynamically determines next task based on plan, history, and status report
 - Depends on: [2.1.3], [2.1.4]
 
 ## Dependencies
-- Phase 2 (context bundles) must be complete
+- Phase 2: Task Classification & Context must be complete (provides task classification and context bundle infrastructure)
 - Database migration system working
 
 ## Acceptance Criteria

@@ -10,6 +10,7 @@ import { join } from "path";
 import { readFile } from "fs/promises";
 import fg from "fast-glob";
 import type { Discovery, Task } from "../types";
+import { DiscoverySummarizer, formatDiscoverySummary, type DiscoverySummary } from "./discovery-summarizer";
 
 export interface PromptContext {
   projectRoot: string;
@@ -737,6 +738,17 @@ export async function generateContextBundle(ctx: PromptContext, taskSubject: str
   // 3. Get discoveries relevant to the task
   const discoveries = await getOpenDiscoveries(db);
 
+  // 3b. Get task-specific discoveries (especially exploration phase discoveries from other arms)
+  const taskDiscoveries = await getTaskRelatedDiscoveries(db, task.id);
+
+  // 3c. Use LLM to summarize discoveries for this task's context
+  const summarizer = new DiscoverySummarizer();
+  const discoverySummary = await summarizer.summarize({
+    task,
+    globalDiscoveries: discoveries,
+    taskDiscoveries,
+  });
+
   // 4. Get completed tasks
   const completedTasks = await getCompletedTasks(db);
 
@@ -747,7 +759,7 @@ export async function generateContextBundle(ctx: PromptContext, taskSubject: str
   const instructions = generateInstructions(task);
 
   const fullOutput = buildContextBundle(task, {
-    discoveries,
+    discoverySummary,
     completedTasks,
     planExcerpt: plan.currentPhase || plan.content,
     instructions,
@@ -761,13 +773,7 @@ export async function generateContextBundle(ctx: PromptContext, taskSubject: str
       priority: task.priority,
     },
     context: {
-      discoveries: discoveries.map(d =>
-        `## Discovery: ${d.title}
-Kind: ${d.kind}
-Severity: ${d.severity || "info"}
-Details: ${d.details}
-${d.file ? `File: ${d.file}` : ""}`
-      ).join("\n\n"),
+      discoveries: formatDiscoverySummary(discoverySummary),
       planExcerpt: plan.currentPhase || plan.content,
       taskHistory: completedTasks.slice(0, 5).map(t =>
         `- ${t.subject} (completed: ${t.completedAt || "unknown"})`
@@ -1030,7 +1036,7 @@ async function getTasksFromFiles(projectRoot: string): Promise<Array<{ id: strin
 async function getOpenDiscoveries(db: Database): Promise<Discovery[]> {
   try {
     const results = db.query(`
-      SELECT kind, title, details, file_path, line_number, severity
+      SELECT kind, title, details, file_path, line_number, severity, task_id, phase
       FROM discoveries
       WHERE status = 'open'
       ORDER BY
@@ -1048,6 +1054,8 @@ async function getOpenDiscoveries(db: Database): Promise<Discovery[]> {
       file_path: string | null;
       line_number: number | null;
       severity: string;
+      task_id: string | null;
+      phase: string | null;
     }>;
 
     return results.map(r => ({
@@ -1057,6 +1065,60 @@ async function getOpenDiscoveries(db: Database): Promise<Discovery[]> {
       file: r.file_path || undefined,
       line: r.line_number || undefined,
       severity: (r.severity || "info") as Discovery["severity"],
+      taskId: r.task_id || undefined,
+      phase: (r.phase || "implementation") as Discovery["phase"],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get discoveries related to a specific task
+ * Returns exploration discoveries from other arms that worked on this task,
+ * plus any discoveries explicitly linked to the task
+ */
+async function getTaskRelatedDiscoveries(db: Database, taskId: string): Promise<Discovery[]> {
+  try {
+    const results = db.query(`
+      SELECT kind, title, details, file_path, line_number, severity, task_id, phase, arm_id
+      FROM discoveries
+      WHERE task_id = ?
+        AND status = 'open'
+      ORDER BY
+        CASE phase
+          WHEN 'exploration' THEN 1
+          WHEN 'implementation' THEN 2
+          WHEN 'verification' THEN 3
+        END,
+        CASE severity
+          WHEN 'error' THEN 1
+          WHEN 'warning' THEN 2
+          WHEN 'info' THEN 3
+        END,
+        created_at DESC
+      LIMIT 30
+    `).all(taskId) as Array<{
+      kind: string;
+      title: string;
+      details: string;
+      file_path: string | null;
+      line_number: number | null;
+      severity: string;
+      task_id: string | null;
+      phase: string | null;
+      arm_id: string;
+    }>;
+
+    return results.map(r => ({
+      kind: r.kind as Discovery["kind"],
+      title: r.title,
+      details: r.details,
+      file: r.file_path || undefined,
+      line: r.line_number || undefined,
+      severity: (r.severity || "info") as Discovery["severity"],
+      taskId: r.task_id || undefined,
+      phase: (r.phase || "implementation") as Discovery["phase"],
     }));
   } catch {
     return [];
@@ -1153,12 +1215,15 @@ ${task.description}
 function buildContextBundle(
   task: Task,
   context: {
-    discoveries: Discovery[];
+    discoverySummary: DiscoverySummary;
     completedTasks: Array<{ subject: string; completedAt?: string }>;
     planExcerpt: string;
     instructions: string;
   }
 ): string {
+  // Format the LLM-summarized discoveries
+  const discoverySection = formatDiscoverySummary(context.discoverySummary);
+
   return `=== OCTOPAI TASK ASSIGNMENT ===
 
 ## TASK INFORMATION
@@ -1175,13 +1240,7 @@ ${task.description}
 ## INSTRUCTIONS
 ${context.instructions}
 
-## OPEN DISCOVERIES
-${context.discoveries.length > 0 ? context.discoveries.map(d =>
-`- [${(d.severity || "info").toUpperCase()}] ${d.title}
-  Kind: ${d.kind}
-  Details: ${d.details}
-  ${d.file ? `File: ${d.file}${d.line ? `:${d.line}` : ""}` : ""}`
-).join("\n") : "No open discoveries."}
+${discoverySection}
 
 ## COMPLETED TASKS (Recent)
 ${context.completedTasks.length > 0 ? context.completedTasks.slice(0, 5).map(t =>

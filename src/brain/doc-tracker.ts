@@ -49,8 +49,19 @@ export class DocUpdateTracker {
 
   /**
    * Get the timestamp of the last completed doc update
+   * Uses config cache for performance, falls back to table query
    */
   async getLastDocUpdateTime(): Promise<Date | null> {
+    // Try config first for fast access
+    const configResult = this.db.query(`
+      SELECT value FROM config WHERE key = 'last_doc_update'
+    `).get() as { value: string } | undefined;
+
+    if (configResult && configResult.value) {
+      return new Date(configResult.value);
+    }
+
+    // Fallback to table query for backward compatibility
     const result = this.db.query(`
       SELECT completed_at FROM doc_updates
       WHERE status = 'completed'
@@ -224,15 +235,22 @@ export class DocUpdateTracker {
     docsUpdated: number,
     futureWorkNotesAdded: number
   ): void {
+    const now = new Date().toISOString();
     this.db.run(`
-      UPDATE doc_updates SET 
+      UPDATE doc_updates SET
         status = 'completed',
-        completed_at = datetime('now'),
+        completed_at = ?,
         files_reviewed = ?,
         docs_updated = ?,
         future_work_notes_added = ?
       WHERE id = ?
-    `, [filesReviewed, docsUpdated, futureWorkNotesAdded, id]);
+    `, [now, filesReviewed, docsUpdated, futureWorkNotesAdded, id]);
+
+    // Update last_doc_update config for fast access
+    this.db.run(`
+      INSERT OR REPLACE INTO config (key, value, updated_at)
+      VALUES ('last_doc_update', ?, ?)
+    `, [now, now]);
   }
 
   /**

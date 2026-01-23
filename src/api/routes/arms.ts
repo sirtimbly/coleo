@@ -8,7 +8,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
-import { loadConfig, getOctopaiDir } from "../../config";
+import { loadConfig, getOctopaiDir, getRandomPreferredModel } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
 import { getArmClient } from "../server";
@@ -531,9 +531,23 @@ export function createArmsRoutes() {
     const config = await loadConfig();
     const defaults = config.defaults;
 
-    // Use body > arm record > config defaults
-    const provider = body.provider || row.provider || defaults.provider;
-    const model = body.model || row.model || defaults.model;
+    // Use body > arm record > random preferred model > config defaults
+    let provider = body.provider || row.provider;
+    let model = body.model || row.model;
+    
+    // If no provider/model specified, try random preferred model
+    if (!provider && !model) {
+      const randomModel = getRandomPreferredModel();
+      if (randomModel) {
+        console.log(`[spawn] Selected random preferred model: ${randomModel.provider}/${randomModel.model}`);
+        provider = randomModel.provider;
+        model = randomModel.model;
+      }
+    }
+    
+    // Fall back to config defaults if still not set
+    provider = provider || defaults.provider;
+    model = model || defaults.model;
 
     // Try distributed spawning via ArmClient if available
     const armClient = getArmClient();
@@ -903,6 +917,41 @@ export function createArmsRoutes() {
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, params);
 
     return c.json({ success: true });
+  });
+
+  /**
+   * Get arm's harness state (for brain to check arm status)
+   * GET /api/arms/:id/state
+   */
+  app.get("/:id/state", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists
+    const row = db.query("SELECT id FROM arms WHERE id = ?").get(id) as { id: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Get the harness manager to check session state
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      return c.json({ state: "unknown", hasSession: false });
+    }
+
+    const hasSession = manager.hasSession(id);
+    let state = "stopped";
+
+    if (hasSession) {
+      try {
+        state = await manager.getState(id);
+      } catch {
+        // If we can't get state, report as unknown
+        state = "unknown";
+      }
+    }
+
+    return c.json({ state, hasSession });
   });
 
   /**

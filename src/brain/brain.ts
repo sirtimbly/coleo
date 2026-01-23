@@ -930,6 +930,19 @@ export class Brain {
         break;
       }
 
+      case "bug_report": {
+        const payload = message.payload as {
+          id: string;
+          title: string;
+          description: string;
+          source: "arm_reported" | "human_reported" | "system_detected";
+          sourceTaskId?: string;
+          errorDetails?: string;
+        };
+        await this.handleBugReport(message.from, payload);
+        break;
+      }
+
       case "status_report": {
         const payload = message.payload as {
           id: string;
@@ -2320,6 +2333,155 @@ ${originalTask.id}`;
         VALUES (?, 'modified', ?, ?)
       `, [payload.path, payload.newContent ? createHash("sha256").update(payload.newContent).digest("hex").slice(0, 16) : null, armId]);
     }
+  }
+
+  /**
+   * Handle bug report from an arm or system
+   */
+  private async handleBugReport(
+    armId: string,
+    payload: {
+      id: string;
+      title: string;
+      description: string;
+      source: "arm_reported" | "human_reported" | "system_detected";
+      sourceTaskId?: string;
+      errorDetails?: string;
+    }
+  ): Promise<void> {
+    if (!this.db) {
+      this.log(`Bug report received but database not available: ${payload.title}`);
+      return;
+    }
+
+    try {
+      const now = new Date().toISOString();
+      const bugId = payload.id || `bug-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+      // Determine priority based on source and content
+      let priority: "low" | "medium" | "high" | "critical" = "medium";
+      if (payload.source === "system_detected") {
+        priority = "high"; // System issues are usually high priority
+      } else if (payload.title.toLowerCase().includes("crash") ||
+                 payload.title.toLowerCase().includes("fail") ||
+                 payload.description.toLowerCase().includes("block")) {
+        priority = "high";
+      }
+      // Critical priority for system-wide blocking issues
+      if (payload.source === "system_detected" &&
+          (payload.title.toLowerCase().includes("down") ||
+           payload.description.toLowerCase().includes("unavailable"))) {
+        priority = "critical";
+      }
+
+      // Insert bug report
+      this.db.run(`
+        INSERT OR REPLACE INTO bugs (
+          id, title, description, source, source_arm_id, source_task_id,
+          status, priority, error_details, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)
+      `, [
+        bugId,
+        payload.title,
+        payload.description,
+        payload.source,
+        payload.source === "arm_reported" ? armId : null,
+        payload.sourceTaskId || null,
+        priority,
+        payload.errorDetails || null,
+        now,
+        now
+      ]);
+
+      this.log(`Bug reported: ${payload.title} (${priority} priority) by ${payload.source}`);
+
+      // Notify human for critical/high priority bugs
+      if (priority === "critical" || priority === "high") {
+        await this.sendToHuman({
+          subject: `[octopai] ${priority.toUpperCase()} Priority Bug: ${payload.title}`,
+          body: `A ${priority} priority bug has been reported.
+
+**Title:** ${payload.title}
+**Description:** ${payload.description}
+**Source:** ${payload.source}
+**Reported by:** ${armId}
+
+Please review and assign if needed.`,
+          headers: {
+            "X-Octopai-Type": "bug-report",
+            "X-Octopai-Bug-Id": bugId,
+            "X-Octopai-Priority": priority,
+          },
+        });
+
+        // Mark as human notified
+        this.db.run(`UPDATE bugs SET human_notified = TRUE WHERE id = ?`, [bugId]);
+      }
+
+      // If bug blocks a task, try to assign an arm to investigate
+      if (payload.sourceTaskId) {
+        const task = this.tasks.find(t => t.id === payload.sourceTaskId);
+        if (task && task.status !== "completed" && task.status !== "failed") {
+          // Create investigation task
+          await this.createBugInvestigationTask(bugId, payload);
+        }
+      }
+
+    } catch (err) {
+      this.log(`Error handling bug report: ${err}`);
+    }
+  }
+
+  /**
+   * Create a task to investigate a bug
+   */
+  private async createBugInvestigationTask(
+    bugId: string,
+    bugPayload: {
+      title: string;
+      description: string;
+      source: string;
+      sourceTaskId?: string;
+    }
+  ): Promise<void> {
+    const taskId = `bug-investigate-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+    const task: Task = {
+      id: taskId,
+      subject: `Investigate Bug: ${bugPayload.title}`,
+      description: `Investigate and diagnose the reported bug.
+
+**Bug Details:**
+- Title: ${bugPayload.title}
+- Description: ${bugPayload.description}
+- Source: ${bugPayload.source}
+${bugPayload.sourceTaskId ? `- Related Task: ${bugPayload.sourceTaskId}` : ''}
+
+**Investigation Steps:**
+1. Reproduce the issue
+2. Identify root cause
+3. Determine impact on other tasks
+4. Propose fix or workaround
+5. Update bug status
+
+Report findings using bug resolution workflow.`,
+      status: "pending",
+      priority: "high",
+      classification: "development",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      context: {
+        notes: JSON.stringify({
+          bugId,
+          investigationRequired: true,
+        }),
+      },
+    };
+
+    this.tasks.push(task);
+    await this.saveTasks();
+
+    this.log(`Created bug investigation task: ${taskId} for bug ${bugId}`);
   }
 
   /**

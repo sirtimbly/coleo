@@ -13,3 +13,11 @@ export {
   getOctopaiDir,
   getConfigPath,
 } from "./loader";
+
+export {
+  getPreferredModels,
+  getRandomPreferredModel,
+  parseModelSpec,
+  formatModelSpec,
+  type ModelSpec,
+} from "./models";

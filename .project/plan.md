@@ -160,7 +160,7 @@ See [acceptance/phase-1.md](./acceptance/phase-1.md)
 
 ---
 
-## Phase 2.1: Progressive Planning (New)
+## Phase 2.1: Progressive Planning ✅ Complete
 
 **Goal**: Brain dynamically determines next task based on plan, history, and status reports.
 
@@ -196,15 +196,15 @@ For each plan bullet point:
 - [x] Plan document format specification
 - [x] History tracking for completed tasks (via status_reports table)
 - [x] Status report parsing and influence on tasking
+- [x] Assign primary + watcher arms automatically when tasks are claimed
+- [x] Consensus update API so arms can submit approvals/rejections and reach quorum
+- [x] Discovery-based dependency reporting (`report_dependency` tool) to capture relationships surfaced during execution
 
 ### Dependency Graph Enhancements
 
 - [x] Parse `### Dependencies` sections directly from plan phases
 - [x] Auto-link plan dependencies to matching tasks and mark new work as blocked when prerequisites are unfinished
 - [x] Spawn "Update plan dependencies" architect tasks when unresolved prerequisites are discovered
-- [ ] Assign primary + watcher arms automatically when tasks are claimed
-- [ ] Consensus update API so arms can submit approvals/rejections and reach quorum
-- [ ] Discovery-based dependency reporting (`report_dependency` tool) to capture relationships surfaced during execution
 
 ### Dependencies
 
@@ -216,7 +216,7 @@ For each plan bullet point:
 
 ---
 
-## Phase 2.2: Documentation Updates (New)
+## Phase 2.2: Documentation Updates ✅ Complete (In Progress)
 
 **Goal**: Brain creates documentation update tasks to keep feature docs aligned with code.
 
@@ -280,17 +280,18 @@ For features partially implemented:
 
 ### Deliverables
 
-- [ ] Documentation update task classification
-- [ ] Brain triggers doc updates on conditions
-- [ ] Arm reviews changed files since last update
-- [ ] Feature documentation sync logic
-- [ ] "Future work" note template
-- [ ] Track last doc update timestamp
+- [x] Documentation update task classification (completed - added to brain task determination)
+- [x] Implement brain logic to trigger doc updates on phase completion (implemented in checkPhaseCompletionDocUpdate)
+- [x] Add last_doc_update timestamp tracking to database (implemented via doc_updates table)
+- [x] Create documentation update task template with file change review logic (implemented in buildDocUpdateDescription)
+- [x] Implement "Future Work" note template for incomplete features (included in task descriptions)
+- [x] Add periodic doc update scheduling (every N polls) (implemented in checkDocUpdateTrigger)
+- [x] Test doc update triggers with sample tasks (comprehensive tests in doc-tracker.test.ts)
 
 ### Dependencies
 
-- Phase 2 (context bundles)
-- Phase 2.1 (progressive planning for context)
+- Phase 2: Task Classification & Context (completed - provides task classification and context bundle infrastructure)
+- Phase 2.1: Progressive Planning (provides progressive task determination)
 
 ### Estimated Duration
 

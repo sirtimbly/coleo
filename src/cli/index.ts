@@ -2698,6 +2698,636 @@ configCmd
   });
 
 // ============================================
+// DISCOVERIES COMMANDS
+// ============================================
+const discoveriesCmd = program.command("discoveries").description("Discovery analysis tools");
+
+discoveriesCmd
+  .command("summarize")
+  .description("Test the LLM discovery summarizer for a task")
+  .option("-t, --task <subject>", "Task subject or ID to summarize discoveries for")
+  .option("-v, --verbose", "Show raw LLM response and reasoning")
+  .action(async (options: { task?: string; verbose?: boolean }) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    
+    try {
+      const { initDatabase } = await import("../db");
+      const { DiscoverySummarizer, formatDiscoverySummary } = await import("../brain/discovery-summarizer");
+      
+      const db = await initDatabase(dbPath);
+      
+      // Get all open discoveries
+      const globalDiscoveries = db.query(`
+        SELECT kind, title, details, file_path, line_number, severity, task_id, phase
+        FROM discoveries
+        WHERE status = 'open'
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).all() as Array<{
+        kind: string;
+        title: string;
+        details: string;
+        file_path: string | null;
+        line_number: number | null;
+        severity: string;
+        task_id: string | null;
+        phase: string | null;
+      }>;
+      
+      console.log(`Found ${globalDiscoveries.length} global discoveries\n`);
+      
+      // Get or create a mock task
+      let task: { id: string; subject: string; description: string; priority: string; domain?: string };
+      
+      if (options.task) {
+        // Try to find task by subject or ID
+        const taskRow = db.query(`
+          SELECT id, subject, description, priority, domain
+          FROM tasks
+          WHERE subject LIKE ? OR id = ?
+          LIMIT 1
+        `).get(`%${options.task}%`, options.task) as {
+          id: string;
+          subject: string;
+          description: string;
+          priority: string;
+          domain: string | null;
+        } | null;
+        
+        if (taskRow) {
+          task = {
+            id: taskRow.id,
+            subject: taskRow.subject,
+            description: taskRow.description,
+            priority: taskRow.priority,
+            domain: taskRow.domain || undefined,
+          };
+          console.log(`Using task: ${task.subject} (${task.id})\n`);
+        } else {
+          // Use the provided string as a mock task subject
+          task = {
+            id: "test-task",
+            subject: options.task,
+            description: `Test task: ${options.task}`,
+            priority: "normal",
+          };
+          console.log(`Using mock task: ${task.subject}\n`);
+        }
+      } else {
+        // Get the first pending task or create a mock one
+        const pendingTask = db.query(`
+          SELECT id, subject, description, priority, domain
+          FROM tasks
+          WHERE status = 'pending'
+          ORDER BY created_at DESC
+          LIMIT 1
+        `).get() as {
+          id: string;
+          subject: string;
+          description: string;
+          priority: string;
+          domain: string | null;
+        } | null;
+        
+        if (pendingTask) {
+          task = {
+            id: pendingTask.id,
+            subject: pendingTask.subject,
+            description: pendingTask.description,
+            priority: pendingTask.priority,
+            domain: pendingTask.domain || undefined,
+          };
+          console.log(`Using pending task: ${task.subject} (${task.id})\n`);
+        } else {
+          task = {
+            id: "demo-task",
+            subject: "Implement new feature",
+            description: "A demonstration task for testing the discovery summarizer",
+            priority: "normal",
+            domain: "development",
+          };
+          console.log(`No pending tasks found. Using demo task: ${task.subject}\n`);
+        }
+      }
+      
+      // Get task-specific discoveries
+      const taskDiscoveries = db.query(`
+        SELECT kind, title, details, file_path, line_number, severity, task_id, phase
+        FROM discoveries
+        WHERE task_id = ? AND status = 'open'
+        ORDER BY created_at DESC
+      `).all(task.id) as typeof globalDiscoveries;
+      
+      console.log(`Found ${taskDiscoveries.length} task-specific discoveries\n`);
+      
+      // Convert to Discovery type
+      type DiscoveryKind = "test_failure" | "unused_code" | "security_issue" | "performance" | "pattern" | "missing_context" | "ambiguous_requirement" | "potential_blocker" | "related_code" | "suggested_approach" | "other";
+      
+      const toDiscovery = (row: typeof globalDiscoveries[0]) => ({
+        kind: (row.kind as DiscoveryKind) || "other",
+        title: row.title,
+        details: row.details,
+        file: row.file_path || undefined,
+        line: row.line_number || undefined,
+        severity: (row.severity || "info") as "info" | "warning" | "error",
+        taskId: row.task_id || undefined,
+        phase: (row.phase || "implementation") as "exploration" | "implementation" | "verification",
+      });
+      
+      const globalDisc = globalDiscoveries.map(toDiscovery);
+      const taskDisc = taskDiscoveries.map(toDiscovery);
+      
+      console.log("=".repeat(60));
+      console.log("CALLING DISCOVERY SUMMARIZER...");
+      console.log("=".repeat(60));
+      console.log();
+      
+      // Check for API key
+      if (!process.env.OPENAI_API_KEY) {
+        console.log("WARNING: OPENAI_API_KEY not set. Using fallback summarization.\n");
+      } else {
+        console.log(`Using model: ${process.env.OPENAI_MODEL || "gpt-4o-mini"}\n`);
+      }
+      
+      const summarizer = new DiscoverySummarizer((msg) => {
+        if (options.verbose) {
+          console.log(`[DEBUG] ${msg}`);
+        }
+      });
+      
+      const startTime = Date.now();
+      const summary = await summarizer.summarize({
+        task: task as any,
+        globalDiscoveries: globalDisc,
+        taskDiscoveries: taskDisc,
+      });
+      const elapsed = Date.now() - startTime;
+      
+      console.log(`Summarization completed in ${elapsed}ms\n`);
+      console.log("=".repeat(60));
+      console.log("FORMATTED SUMMARY (as it appears in context bundle)");
+      console.log("=".repeat(60));
+      console.log();
+      console.log(formatDiscoverySummary(summary));
+      console.log();
+      
+      if (options.verbose && summary.reasoning) {
+        console.log("=".repeat(60));
+        console.log("LLM REASONING");
+        console.log("=".repeat(60));
+        console.log(summary.reasoning);
+        console.log();
+      }
+      
+      // Show raw data
+      if (options.verbose) {
+        console.log("=".repeat(60));
+        console.log("RAW SUMMARY OBJECT");
+        console.log("=".repeat(60));
+        console.log(JSON.stringify(summary, null, 2));
+      }
+      
+      db.close();
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+  });
+
+discoveriesCmd
+  .command("list")
+  .description("List all open discoveries")
+  .option("-l, --limit <n>", "Maximum number to show", "20")
+  .option("-p, --phase <phase>", "Filter by phase (exploration, implementation, verification)")
+  .action(async (options: { limit: string; phase?: string }) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    
+    try {
+      const { initDatabase } = await import("../db");
+      const db = await initDatabase(dbPath);
+      
+      let query = `
+        SELECT kind, title, details, file_path, severity, phase, task_id, created_at
+        FROM discoveries
+        WHERE status = 'open'
+      `;
+      const params: (string | number)[] = [];
+      
+      if (options.phase) {
+        query += ` AND phase = ?`;
+        params.push(options.phase);
+      }
+      
+      query += ` ORDER BY created_at DESC LIMIT ?`;
+      params.push(parseInt(options.limit, 10));
+      
+      const discoveries = db.query(query).all(...params) as Array<{
+        kind: string;
+        title: string;
+        details: string;
+        file_path: string | null;
+        severity: string;
+        phase: string | null;
+        task_id: string | null;
+        created_at: string;
+      }>;
+      
+      if (discoveries.length === 0) {
+        console.log("No open discoveries found.");
+        db.close();
+        return;
+      }
+      
+      console.log(`Open Discoveries (${discoveries.length}):\n`);
+      
+      for (const d of discoveries) {
+        const phase = d.phase ? `[${d.phase.toUpperCase()}]` : "";
+        const severity = `[${(d.severity || "info").toUpperCase()}]`;
+        const file = d.file_path ? ` @ ${d.file_path}` : "";
+        const taskRef = d.task_id ? ` (task: ${d.task_id.substring(0, 20)}...)` : "";
+        
+        console.log(`${phase} ${severity} ${d.kind}: ${d.title}${file}${taskRef}`);
+        console.log(`  ${d.details.substring(0, 100)}${d.details.length > 100 ? "..." : ""}`);
+        console.log();
+      }
+      
+      db.close();
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+  });
+
+discoveriesCmd
+  .command("resolve <title>")
+  .description("Resolve or dismiss a discovery by title match")
+  .option("-r, --resolution <type>", "Resolution type: resolved or dismissed", "resolved")
+  .option("--reason <reason>", "Reason for resolution", "Manually resolved via CLI")
+  .action(async (title: string, options: { resolution: string; reason: string }) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    
+    try {
+      const { initDatabase } = await import("../db");
+      const db = await initDatabase(dbPath);
+      
+      // Find matching discovery
+      const discovery = db.query(`
+        SELECT id, title, kind, severity, details
+        FROM discoveries
+        WHERE status = 'open' AND title LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).get(`%${title}%`) as {
+        id: string;
+        title: string;
+        kind: string;
+        severity: string;
+        details: string;
+      } | null;
+      
+      if (!discovery) {
+        console.log(`No open discovery found matching: "${title}"`);
+        db.close();
+        return;
+      }
+      
+      console.log(`Found discovery:`);
+      console.log(`  ID: ${discovery.id}`);
+      console.log(`  Title: ${discovery.title}`);
+      console.log(`  Kind: ${discovery.kind}`);
+      console.log(`  Severity: ${discovery.severity}`);
+      console.log();
+      
+      const resolution = options.resolution === "dismissed" ? "dismissed" : "resolved";
+      const now = new Date().toISOString();
+      
+      db.run(`
+        UPDATE discoveries 
+        SET status = ?, 
+            updated_at = ?,
+            metadata = json_set(COALESCE(metadata, '{}'), '$.resolution_reason', ?, '$.resolved_by', ?, '$.resolved_at', ?)
+        WHERE id = ?
+      `, [resolution, now, options.reason, "cli", now, discovery.id]);
+      
+      console.log(`Discovery marked as ${resolution}.`);
+      console.log(`Reason: ${options.reason}`);
+      
+      db.close();
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+  });
+
+discoveriesCmd
+  .command("history")
+  .description("Show resolved/dismissed discoveries")
+  .option("-l, --limit <n>", "Maximum number to show", "20")
+  .action(async (options: { limit: string }) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    
+    try {
+      const { initDatabase } = await import("../db");
+      const db = await initDatabase(dbPath);
+      
+      const discoveries = db.query(`
+        SELECT id, kind, title, status, severity, updated_at, metadata
+        FROM discoveries
+        WHERE status IN ('resolved', 'dismissed')
+        ORDER BY updated_at DESC
+        LIMIT ?
+      `).all(parseInt(options.limit, 10)) as Array<{
+        id: string;
+        kind: string;
+        title: string;
+        status: string;
+        severity: string;
+        updated_at: string;
+        metadata: string;
+      }>;
+      
+      if (discoveries.length === 0) {
+        console.log("No resolved or dismissed discoveries found.");
+        db.close();
+        return;
+      }
+      
+      console.log(`Resolved/Dismissed Discoveries (${discoveries.length}):\n`);
+      
+      for (const d of discoveries) {
+        const status = d.status === "resolved" ? "[RESOLVED]" : "[DISMISSED]";
+        const severity = `[${(d.severity || "info").toUpperCase()}]`;
+        let reason = "";
+        try {
+          const meta = JSON.parse(d.metadata || "{}");
+          if (meta.resolution_reason) {
+            reason = `\n  Reason: ${meta.resolution_reason}`;
+          }
+        } catch {
+          // ignore parse errors
+        }
+        
+        console.log(`${status} ${severity} ${d.kind}: ${d.title}`);
+        console.log(`  Updated: ${d.updated_at}${reason}`);
+        console.log();
+      }
+      
+      db.close();
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+    });
+
+// ============================================
+// DEBUG/TEST COMMANDS
+// ============================================
+const debugCmd = program.command("debug").description("Debug and test brain components");
+
+debugCmd
+  .command("intent <message>")
+  .description("Test message intent processing (how the brain interprets a message)")
+  .option("-s, --subject <subject>", "Message subject", "Test message")
+  .option("-v, --verbose", "Show full LLM prompt and response")
+  .option("--mock-arms <arms>", "Mock available arms (comma-separated name:status pairs)", "")
+  .action(async (message: string, options: { subject: string; verbose?: boolean; mockArms: string }) => {
+    const octopaiDir = getOctopaiDir();
+    const dbPath = join(octopaiDir, "octopai.db");
+    
+    try {
+      const { MailProcessor } = await import("../brain/brain");
+      const { initDatabase } = await import("../db");
+      
+      console.log("=".repeat(60));
+      console.log("MESSAGE INTENT PROCESSING TEST");
+      console.log("=".repeat(60));
+      console.log();
+      
+      // Check for API key
+      if (!process.env.OPENAI_API_KEY) {
+        console.log("WARNING: OPENAI_API_KEY not set. Using fallback parsing.\n");
+      } else {
+        console.log(`Using model: ${process.env.OPENAI_MODEL || "gpt-4o-mini"}\n`);
+      }
+      
+      // Build context
+      let availableArms: Array<{ name: string; domain: string; status: string }> = [];
+      let pendingTasks = 0;
+      let recentActivity: string[] = [];
+      
+      // Try to get real context from database
+      try {
+        const db = await initDatabase(dbPath);
+        
+        // Get arms
+        const arms = db.query(`
+          SELECT name, domain, status FROM arms WHERE status != 'stopped' LIMIT 10
+        `).all() as Array<{ name: string; domain: string; status: string }>;
+        if (arms.length > 0) {
+          availableArms = arms;
+        }
+        
+        // Get pending task count
+        const taskCount = db.query(`
+          SELECT COUNT(*) as count FROM tasks WHERE status = 'pending'
+        `).get() as { count: number };
+        pendingTasks = taskCount?.count || 0;
+        
+        // Get recent activity
+        const activity = db.query(`
+          SELECT actor, action FROM activity ORDER BY timestamp DESC LIMIT 5
+        `).all() as Array<{ actor: string; action: string }>;
+        recentActivity = activity.map(a => `${a.actor} ${a.action}`);
+        
+        db.close();
+      } catch {
+        // Use defaults if DB not available
+      }
+      
+      // Override with mock arms if provided
+      if (options.mockArms) {
+        availableArms = options.mockArms.split(",").map(pair => {
+          const [name, status] = pair.split(":");
+          return { name: name || "unknown", domain: "general", status: status || "idle" };
+        });
+      }
+      
+      console.log("Input:");
+      console.log(`  Subject: ${options.subject}`);
+      console.log(`  Body: ${message}`);
+      console.log();
+      
+      console.log("Context:");
+      console.log(`  Available arms: ${availableArms.map(a => `${a.name}(${a.status})`).join(", ") || "none"}`);
+      console.log(`  Pending tasks: ${pendingTasks}`);
+      console.log(`  Recent activity: ${recentActivity.slice(0, 3).join(", ") || "none"}`);
+      console.log();
+      
+      const processor = new MailProcessor((msg) => {
+        if (options.verbose) {
+          console.log(`[DEBUG] ${msg}`);
+        }
+      });
+      
+      console.log("=".repeat(60));
+      console.log("PROCESSING...");
+      console.log("=".repeat(60));
+      console.log();
+      
+      const startTime = Date.now();
+      const intent = await processor.processMessage(
+        options.subject,
+        message,
+        {
+          availableArms,
+          pendingTasks,
+          recentActivity,
+        }
+      );
+      const elapsed = Date.now() - startTime;
+      
+      console.log(`Completed in ${elapsed}ms\n`);
+      
+      console.log("=".repeat(60));
+      console.log("DETECTED INTENT");
+      console.log("=".repeat(60));
+      console.log();
+      
+      console.log(`Type: ${intent.type}`);
+      console.log(`Reasoning: ${intent.reasoning || "N/A"}`);
+      console.log();
+      
+      // Show type-specific fields
+      switch (intent.type) {
+        case "new_task":
+          console.log("Task Details:");
+          console.log(`  Subject: ${intent.subject}`);
+          console.log(`  Body: ${intent.body?.substring(0, 200)}${(intent.body?.length || 0) > 200 ? "..." : ""}`);
+          console.log(`  Priority: ${intent.priority || "normal"}`);
+          console.log(`  Domain: ${intent.domain || "any"}`);
+          break;
+          
+        case "prompt_arm":
+          console.log("Arm Prompt:");
+          console.log(`  Arm Name: ${intent.armName}`);
+          console.log(`  Instruction: ${intent.instruction}`);
+          break;
+          
+        case "doc_update":
+          console.log("Doc Update:");
+          console.log(`  Subject: ${intent.subject}`);
+          console.log(`  Target Doc: ${intent.targetDoc || "unspecified"}`);
+          break;
+          
+        case "approval_response":
+          console.log("Approval Response:");
+          console.log(`  Original ID: ${intent.originalId}`);
+          console.log(`  Approved: ${intent.approved}`);
+          console.log(`  Comment: ${intent.comment}`);
+          break;
+          
+        case "query":
+          console.log("Query:");
+          console.log(`  Query Type: ${intent.query}`);
+          break;
+          
+        case "escalate":
+          console.log("Escalation:");
+          console.log(`  Reason: ${intent.reasoning}`);
+          break;
+      }
+      
+      if (options.verbose) {
+        console.log();
+        console.log("=".repeat(60));
+        console.log("RAW INTENT OBJECT");
+        console.log("=".repeat(60));
+        console.log(JSON.stringify(intent, null, 2));
+      }
+      
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+  });
+
+debugCmd
+  .command("intent-batch")
+  .description("Test multiple messages for intent processing")
+  .option("-v, --verbose", "Show detailed output for each message")
+  .action(async (options: { verbose?: boolean }) => {
+    const testMessages = [
+      { subject: "Add dark mode", body: "Please add a dark mode toggle to the settings page" },
+      { subject: "What's happening?", body: "Can you give me a status update on current work?" },
+      { subject: "Re: [approval-123] Deploy changes?", body: "Yes, approved. Go ahead." },
+      { subject: "Tell Xenix to stop", body: "Tell arm Xenix to stop what it's doing and focus on tests" },
+      { subject: "Bug in login", body: "The login page is broken, users can't sign in" },
+      { subject: "Update the README", body: "The README is out of date, please update it" },
+      { subject: "asdfgh", body: "random gibberish that makes no sense 12345" },
+    ];
+    
+    try {
+      const { MailProcessor } = await import("../brain/brain");
+      
+      console.log("=".repeat(60));
+      console.log("BATCH INTENT PROCESSING TEST");
+      console.log("=".repeat(60));
+      console.log();
+      
+      if (!process.env.OPENAI_API_KEY) {
+        console.log("WARNING: OPENAI_API_KEY not set. Using fallback parsing.\n");
+      }
+      
+      const processor = new MailProcessor((msg) => {
+        if (options.verbose) {
+          console.log(`[DEBUG] ${msg}`);
+        }
+      });
+      
+      const mockContext = {
+        availableArms: [
+          { name: "Xenix", domain: "backend", status: "busy" },
+          { name: "Portia", domain: "frontend", status: "idle" },
+        ],
+        pendingTasks: 3,
+        recentActivity: ["brain started", "arm spawned"],
+      };
+      
+      console.log("Testing with mock context:");
+      console.log(`  Arms: ${mockContext.availableArms.map(a => `${a.name}(${a.status})`).join(", ")}`);
+      console.log(`  Pending: ${mockContext.pendingTasks} tasks`);
+      console.log();
+      console.log("-".repeat(60));
+      console.log();
+      
+      for (const msg of testMessages) {
+        const startTime = Date.now();
+        const intent = await processor.processMessage(msg.subject, msg.body, mockContext);
+        const elapsed = Date.now() - startTime;
+        
+        console.log(`Subject: "${msg.subject}"`);
+        console.log(`Body: "${msg.body.substring(0, 50)}${msg.body.length > 50 ? "..." : ""}"`);
+        console.log(`  → Intent: ${intent.type} (${elapsed}ms)`);
+        console.log(`  → Reasoning: ${intent.reasoning || "N/A"}`);
+        
+        if (options.verbose) {
+          console.log(`  → Full: ${JSON.stringify(intent)}`);
+        }
+        
+        console.log();
+      }
+      
+    } catch (err) {
+      console.error("Error:", err);
+      process.exit(1);
+    }
+  });
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 

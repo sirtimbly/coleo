@@ -248,16 +248,21 @@ export type MessageType =
   | "claim_transfer"
   | "dev_server_restart_request"
   | "context_compression"
-  | "status_report";
+  | "status_report"
+  | "bug_report";
 
 // Discovery report from an arm
 export interface Discovery {
-  kind: "test_failure" | "unused_code" | "security_issue" | "performance" | "pattern" | "other";
+  kind: "test_failure" | "unused_code" | "security_issue" | "performance" | "pattern" | "missing_context" | "ambiguous_requirement" | "potential_blocker" | "related_code" | "suggested_approach" | "other";
   title: string;
   details: string;
   file?: string;
   line?: number;
   severity?: "info" | "warning" | "error";
+  /** Task ID this discovery is related to */
+  taskId?: string;
+  /** Phase when discovery was made: exploration (before changes) or implementation (during changes) */
+  phase?: "exploration" | "implementation" | "verification";
 }
 
 // Shared note between arms
@@ -408,6 +413,26 @@ export interface ArmConfig {
   tools?: {
     requires_browser?: boolean;
   };
+}
+
+// Bug tracking
+export interface Bug {
+  id: string;
+  title: string;
+  description: string;
+  source: "arm_reported" | "human_reported" | "system_detected";
+  sourceArmId?: string;
+  sourceTaskId?: string;
+  status: "open" | "investigating" | "fixing" | "verifying" | "resolved" | "closed";
+  priority: "low" | "medium" | "high" | "critical";
+  assigneeArmId?: string;
+  blockers: string[]; // Array of blocking task IDs
+  errorDetails?: string; // JSON with stack traces, logs, etc.
+  resolution?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  resolvedAt?: Date;
+  humanNotified: boolean;
 }
 
 // Summary of arm config for listing

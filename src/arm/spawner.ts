@@ -11,7 +11,7 @@ import { writeFile, mkdir, readFile, readdir, appendFile } from "fs/promises";
 import { join } from "path";
 import { initDatabase, Database } from "../db";
 import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
-import { getOctopaiDir } from "../config";
+import { getOctopaiDir, getRandomPreferredModel } from "../config";
 import type { Arm, OctopaiConfig } from "../types";
 
 const execAsync = promisify(exec);
@@ -499,6 +499,16 @@ export async function spawnArmInTerminal(options: SpawnOptions): Promise<Arm> {
  * Spawn a new arm - uses harness by default, falls back to terminal if --terminal specified
  */
 export async function spawnArm(options: SpawnOptions): Promise<Arm> {
+  // If no provider/model specified, try to get a random preferred model
+  if (!options.provider && !options.model) {
+    const randomModel = getRandomPreferredModel();
+    if (randomModel) {
+      console.log(`Selected random preferred model: ${randomModel.provider}/${randomModel.model}`);
+      options.provider = randomModel.provider;
+      options.model = randomModel.model;
+    }
+  }
+
   // Use harness by default (headless PTY with full control)
   // Only use terminal mode if explicitly requested
   if (options.terminal && options.terminal !== "auto" && options.terminal !== "harness") {

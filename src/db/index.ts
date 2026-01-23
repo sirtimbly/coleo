@@ -15,6 +15,7 @@ export async function initDatabase(dbPath: string): Promise<Database> {
   // Open database with WAL mode for better concurrency
   const db = new Database(dbPath, { create: true });
   db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 5000"); // Wait up to 5 seconds if database is locked
   db.exec("PRAGMA foreign_keys = ON");
 
   // Run migrations
@@ -94,6 +95,9 @@ async function runMigrations(db: Database): Promise<void> {
     ["025_arm_state_machine", MIGRATION_025],
     ["026_arm_session_id", MIGRATION_026],
     ["027_arm_events", MIGRATION_027],
+    ["028_discoveries_task_phase", MIGRATION_028],
+    ["029_last_doc_update_config", MIGRATION_029_LAST_DOC_UPDATE],
+    ["030_bug_tracking", MIGRATION_030_BUG_TRACKING],
   ];
 
 
@@ -947,6 +951,56 @@ CREATE INDEX IF NOT EXISTS idx_arm_events_time ON arm_events(timestamp DESC);
 -- Config for event retention (days)
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('arm_events_retention_days', '7');
+`;
+
+// Migration 028: Add task_id and phase to discoveries table for exploration-first workflow
+const MIGRATION_028 = `
+-- Add task_id column to link discoveries to specific tasks
+-- This enables feeding prior discoveries to arms working on related tasks
+ALTER TABLE discoveries ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;
+
+-- Add phase column to distinguish exploration vs implementation discoveries
+ALTER TABLE discoveries ADD COLUMN phase TEXT DEFAULT 'implementation' CHECK (phase IN ('exploration', 'implementation', 'verification'));
+
+-- Index for efficient task-based discovery queries
+CREATE INDEX IF NOT EXISTS idx_discoveries_task ON discoveries(task_id);
+CREATE INDEX IF NOT EXISTS idx_discoveries_phase ON discoveries(phase);
+`;
+
+// Migration 029: Add last_doc_update config for tracking last documentation update timestamp
+const MIGRATION_029_LAST_DOC_UPDATE = `
+-- Add last_doc_update config key for fast access to last documentation update timestamp
+INSERT OR IGNORE INTO config (key, value) VALUES
+  ('last_doc_update', '');
+`;
+
+const MIGRATION_030_BUG_TRACKING = `
+-- Bug tracking table for arm-reported, human-reported, and system-detected bugs
+CREATE TABLE IF NOT EXISTS bugs (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('arm_reported', 'human_reported', 'system_detected')),
+  source_arm_id TEXT REFERENCES arms(id) ON DELETE SET NULL,
+  source_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'investigating', 'fixing', 'verifying', 'resolved', 'closed')),
+  priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high', 'critical')),
+  assignee_arm_id TEXT REFERENCES arms(id) ON DELETE SET NULL,
+  blockers TEXT DEFAULT '[]', -- JSON array of blocking task IDs
+  error_details TEXT, -- JSON with stack traces, logs, etc.
+  resolution TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  human_notified BOOLEAN DEFAULT FALSE
+);
+
+-- Index for efficient bug queries
+CREATE INDEX IF NOT EXISTS idx_bugs_source ON bugs(source);
+CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
+CREATE INDEX IF NOT EXISTS idx_bugs_priority ON bugs(priority);
+CREATE INDEX IF NOT EXISTS idx_bugs_assignee ON bugs(assignee_arm_id);
+CREATE INDEX IF NOT EXISTS idx_bugs_created ON bugs(created_at DESC);
 `;
 
   /**

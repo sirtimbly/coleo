@@ -649,18 +649,23 @@ export function createMcpServer(): McpServer {
   server.registerTool(
     "report_discovery",
     {
-      description: "Report something interesting found while working",
+      description: "Report something interesting found while working. Use during exploration phase to report context gaps, ambiguous requirements, blockers, related code, and suggested approaches.",
       inputSchema: {
-        kind: z.enum(["test_failure", "unused_code", "security_issue", "performance", "pattern", "other"])
-          .describe("Type of discovery"),
+        kind: z.enum([
+          "test_failure", "unused_code", "security_issue", "performance", "pattern",
+          "missing_context", "ambiguous_requirement", "potential_blocker", "related_code", "suggested_approach",
+          "other"
+        ]).describe("Type of discovery: exploration kinds (missing_context, ambiguous_requirement, potential_blocker, related_code, suggested_approach) or implementation kinds (test_failure, unused_code, security_issue, performance, pattern, other)"),
         title: z.string().describe("Brief title"),
         details: z.string().describe("Detailed description"),
         file: z.string().optional().describe("Related file path"),
         line: z.number().optional().describe("Line number if applicable"),
         severity: z.enum(["info", "warning", "error"]).optional().describe("Severity level"),
+        task_id: z.string().optional().describe("Task ID this discovery relates to (important for exploration phase)"),
+        phase: z.enum(["exploration", "implementation", "verification"]).optional().describe("Phase when discovery was made: exploration (before changes), implementation (during changes), verification (testing/review)"),
       },
       },
-    async ({ kind, title, details, file, line, severity }) => {
+    async ({ kind, title, details, file, line, severity, task_id, phase }) => {
       const discovery: Discovery = {
         kind,
         title,
@@ -668,6 +673,8 @@ export function createMcpServer(): McpServer {
         file,
         line,
         severity,
+        taskId: task_id,
+        phase,
       };
 
       const messageId = await sendToBrain({
@@ -677,13 +684,123 @@ export function createMcpServer(): McpServer {
         payload: discovery,
       });
 
-      logActivity(ARM_ID, "report_discovery", undefined, { messageId, kind, title, severity, file });
+      logActivity(ARM_ID, "report_discovery", task_id, { messageId, kind, title, severity, file, phase });
+
+      const phaseNote = phase === "exploration" 
+        ? " This exploration insight will be shared with other arms working on related tasks."
+        : "";
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Discovery reported: "${title}" (message: ${messageId}). Brain will review and may escalate to human.`,
+            text: `Discovery reported: "${title}" (${kind}, ${phase || "implementation"}) (message: ${messageId}).${phaseNote} Brain will review and may escalate to human.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Resolve or dismiss a discovery
+  server.registerTool(
+    "resolve_discovery",
+    {
+      description: "Mark a discovery as resolved or dismissed. Use when you find that a previously reported blocker, issue, or concern is no longer valid or has been fixed.",
+      inputSchema: {
+        discovery_id: z.string().optional().describe("The ID of the discovery to resolve (if known)"),
+        title_match: z.string().optional().describe("Partial title to match if ID is not known"),
+        resolution: z.enum(["resolved", "dismissed"]).describe("resolved = issue was fixed/addressed, dismissed = issue was not actually valid"),
+        reason: z.string().describe("Explanation of why this discovery is being resolved/dismissed"),
+      },
+    },
+    async ({ discovery_id, title_match, resolution, reason }) => {
+      if (!discovery_id && !title_match) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Must provide either discovery_id or title_match to identify the discovery.",
+            },
+          ],
+        };
+      }
+
+      const db = getDatabase();
+      if (!db) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Error: Database not available.",
+            },
+          ],
+        };
+      }
+
+      const now = new Date().toISOString();
+      type DiscoveryRow = { id: string; title: string; kind: string } | null;
+      let discovery: DiscoveryRow = null;
+
+      if (discovery_id) {
+        // Find by exact ID
+        discovery = db.query(`
+          SELECT id, title, kind FROM discoveries WHERE id = ? AND status = 'open'
+        `).get(discovery_id) as DiscoveryRow;
+      } else if (title_match) {
+        // Find by title match (most recent open discovery matching the title)
+        discovery = db.query(`
+          SELECT id, title, kind FROM discoveries 
+          WHERE status = 'open' AND title LIKE ? 
+          ORDER BY created_at DESC LIMIT 1
+        `).get(`%${title_match}%`) as DiscoveryRow;
+      }
+
+      if (!discovery) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No open discovery found matching ${discovery_id ? `ID: ${discovery_id}` : `title: "${title_match}"`}. It may already be resolved.`,
+            },
+          ],
+        };
+      }
+
+      // Update the discovery status
+      db.run(`
+        UPDATE discoveries 
+        SET status = ?, 
+            updated_at = ?,
+            metadata = json_set(COALESCE(metadata, '{}'), '$.resolution_reason', ?, '$.resolved_by', ?, '$.resolved_at', ?)
+        WHERE id = ?
+      `, [resolution, now, reason, ARM_ID, now, discovery.id]);
+
+      // Log the activity
+      logActivity(ARM_ID, "resolve_discovery", discovery.id, { 
+        title: discovery.title, 
+        kind: discovery.kind, 
+        resolution, 
+        reason 
+      });
+
+      // Notify brain about the resolution
+      await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "discovery",
+        payload: {
+          kind: "other" as const,
+          title: `Discovery ${resolution}: ${discovery.title}`,
+          details: `Arm ${ARM_ID} marked discovery "${discovery.title}" as ${resolution}. Reason: ${reason}`,
+          severity: "info" as const,
+        },
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Discovery "${discovery.title}" marked as ${resolution}. Reason: ${reason}. This will be reflected in future context bundles.`,
           },
         ],
       };
@@ -732,6 +849,52 @@ export function createMcpServer(): McpServer {
           {
             type: "text" as const,
             text: `Dependency reported: ${depends_on} (${dependency_type}) for task ${task_id} (message: ${messageId}). Brain will track this relationship.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Report a bug encountered during execution
+  server.registerTool(
+    "report_bug",
+    {
+      description: "Report a bug encountered during task execution. Use this for compilation errors, test failures, runtime crashes, or other issues that prevent task completion.",
+      inputSchema: {
+        title: z.string().describe("Brief title describing the bug"),
+        description: z.string().describe("Detailed description of the bug, including steps to reproduce and error messages"),
+        source_task_id: z.string().optional().describe("ID of the task where the bug was encountered"),
+        error_details: z.string().optional().describe("JSON string with additional error details like stack traces"),
+      },
+    },
+    async ({ title, description, source_task_id, error_details }) => {
+      const bugPayload = {
+        id: `bug-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title,
+        description,
+        source: "arm_reported" as const,
+        sourceTaskId: source_task_id,
+        errorDetails: error_details,
+      };
+
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "bug_report",
+        payload: bugPayload,
+      });
+
+      logActivity(ARM_ID, "report_bug", source_task_id, {
+        messageId,
+        bugId: bugPayload.id,
+        title,
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Bug reported: "${title}" (ID: ${bugPayload.id}). Brain will prioritize and assign investigation (message: ${messageId}).`,
           },
         ],
       };
