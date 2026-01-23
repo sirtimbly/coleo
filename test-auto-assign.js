@@ -1,5 +1,3 @@
-const { Database } = require('bun:sqlite');
-const db = new Database(':memory:');
 
 const { Database } = require('bun:sqlite');
 const db = new Database(':memory:');
