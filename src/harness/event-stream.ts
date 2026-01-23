@@ -236,12 +236,57 @@ export class OpenCodeEventStream {
 }
 
 /**
+ * Maximum length for text fields in event data to prevent MAX_PAYLOAD_EXCEEDED errors
+ */
+const MAX_TEXT_FIELD_LENGTH = 2000;
+
+/**
+ * Truncate large text fields in an object to prevent payload size issues.
+ * Recursively processes nested objects and arrays.
+ */
+export function truncateLargeFields(obj: unknown, maxLength = MAX_TEXT_FIELD_LENGTH): unknown {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (typeof obj === 'string') {
+    if (obj.length > maxLength) {
+      return obj.slice(0, maxLength) + `... [truncated, ${obj.length - maxLength} chars omitted]`;
+    }
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => truncateLargeFields(item, maxLength));
+  }
+
+  if (typeof obj === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj)) {
+      // Skip internal/debugging fields that can be very large
+      if (key === '_fullEvent' || key === '_rawResponse') {
+        continue;
+      }
+      result[key] = truncateLargeFields(value, maxLength);
+    }
+    return result;
+  }
+
+  return obj;
+}
+
+/**
  * Filter events that are relevant to broadcast
  * Returns a simplified event name and whether to broadcast
+ * 
+ * NOTE: All data is truncated to prevent MAX_PAYLOAD_EXCEEDED errors
  */
 export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; eventName: string; data: Record<string, unknown> } {
   const type = event.type;
   const props = event.properties;
+
+  // Helper to truncate and return data
+  const truncate = (data: Record<string, unknown>) => truncateLargeFields(data) as Record<string, unknown>;
 
   // Skip server.connected as it's just a keepalive
   if (type === 'server.connected') {
@@ -253,11 +298,11 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     return {
       shouldBroadcast: true,
       eventName: 'status',
-      data: {
+      data: truncate({
         status: props.status || 'unknown',
         sessionId: props.id || props.sessionId,
         ...props,
-      },
+      }),
     };
   }
 
@@ -267,11 +312,11 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     return {
       shouldBroadcast: true,
       eventName: type.replace('message.', 'message-'),
-      data: {
+      data: truncate({
         messageId: props.id || props.messageID,
         role,
         ...props,
-      },
+      }),
     };
   }
 
@@ -281,7 +326,7 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     return {
       shouldBroadcast: true,
       eventName: `part-${partType}`,
-      data: {
+      data: truncate({
         partId: props.id,
         partType,
         // Include tool name if it's a tool invocation
@@ -289,7 +334,7 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
         // Include status if available
         status: props.status,
         ...props,
-      },
+      }),
     };
   }
 
@@ -298,7 +343,7 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     return {
       shouldBroadcast: true,
       eventName: type,
-      data: props,
+      data: truncate(props),
     };
   }
 
@@ -307,10 +352,10 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     return {
       shouldBroadcast: true,
       eventName: type,
-      data: {
+      data: truncate({
         path: props.path,
         ...props,
-      },
+      }),
     };
   }
 
@@ -318,6 +363,6 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
   return {
     shouldBroadcast: true,
     eventName: type.replace(/\./g, '-'),
-    data: props,
+    data: truncate(props),
   };
 }

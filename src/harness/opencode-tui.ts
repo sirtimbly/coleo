@@ -27,7 +27,7 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { getOctopaiDir } from "../config";
-import { OpenCodeEventStream, filterEvent, type OpenCodeEvent } from "./event-stream";
+import { OpenCodeEventStream, filterEvent, truncateLargeFields, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import type {
@@ -470,23 +470,17 @@ export class OpenCodeTuiHarness implements AgentHarness {
         armId,
         sessionId: openCodeSession.id,
         onEvent: async (event: OpenCodeEvent) => {
-          // Publish to JetStream for persistence (limit payload size)
+          // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
+          const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
+          
+          // Publish to JetStream for persistence
           try {
             const subject = `octopai.events.arm.${armId}.${event.type}`;
-            // Limit event data size to prevent MAX_PAYLOAD_EXCEEDED
-            const eventData = event.properties || {};
-            const limitedData = {
-              ...eventData,
-              // Remove large fields that aren't needed for state reconstruction
-              _fullEvent: undefined,
-              _timestamp: undefined,
-            };
-
             await eventStore.publishEvent(subject, {
               type: event.type,
               armId,
               sessionId: event.properties?.sessionID as string,
-              data: limitedData,
+              data: truncatedProps,
               timestamp: new Date().toISOString(),
             });
           } catch (err) {
@@ -495,8 +489,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
           // Also emit to legacy callbacks for backward compatibility
           this.emitEvent(armId, event.type, {
-            ...event.properties,
-            _fullEvent: event, // Include full event for debugging/analysis
+            ...truncatedProps,
             _timestamp: new Date().toISOString(),
           });
         },
@@ -1153,6 +1146,9 @@ export class OpenCodeTuiHarness implements AgentHarness {
           armId,
           sessionId: recoveredSession.id,
           onEvent: async (event: OpenCodeEvent) => {
+            // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
+            const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
+            
             // Publish to JetStream for persistence
             try {
               const subject = `octopai.events.arm.${armId}.${event.type}`;
@@ -1160,7 +1156,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
                 type: event.type,
                 armId,
                 sessionId: event.properties?.sessionID as string,
-                data: event.properties || {},
+                data: truncatedProps,
                 timestamp: new Date().toISOString(),
               });
             } catch (err) {
@@ -1169,8 +1165,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
             // Also emit to legacy callbacks for backward compatibility
             this.emitEvent(armId, event.type, {
-              ...event.properties,
-              _fullEvent: event, // Include full event for debugging/analysis
+              ...truncatedProps,
               _timestamp: new Date().toISOString(),
             });
           },

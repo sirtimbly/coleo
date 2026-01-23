@@ -13,6 +13,7 @@ import type { AgentHarness } from "./types";
 import { eventStore } from "../nats/jetstream";
 import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
 import type { OpenCodeTuiHarness, ArmDeathCallback } from "./opencode-tui";
+import { truncateLargeFields } from "./event-stream";
 
 export type LogCallback = (armId: string, data: string) => void;
 export type EventCallback = (armId: string, event: string, data: unknown) => void;
@@ -91,13 +92,16 @@ export class HarnessManager {
    * Emit event data to all subscribers and publish to JetStream
    */
   private async emitEvent(armId: string, event: string, data: unknown): Promise<void> {
+    // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
+    const truncatedData = truncateLargeFields(data) as Record<string, unknown>;
+    
     // Publish to JetStream for persistence
     try {
       const subject = `octopai.events.arm.${armId}.${event}`;
       await eventStore.publishEvent(subject, {
         type: event,
         armId,
-        data: data as Record<string, unknown>,
+        data: truncatedData,
         timestamp: new Date().toISOString(),
       });
     } catch (err) {
@@ -107,7 +111,7 @@ export class HarnessManager {
     // Emit to legacy subscribers (for backward compatibility)
     for (const callback of this.eventCallbacks) {
       try {
-        callback(armId, event, data);
+        callback(armId, event, truncatedData);
       } catch {
         // Ignore callback errors
       }

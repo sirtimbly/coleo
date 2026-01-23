@@ -386,6 +386,72 @@ class ApiClient {
     }>('/status-reports/stats');
   }
 
+  // Bugs
+  async listBugs(params?: {
+    source?: string;
+    status?: string;
+    priority?: string;
+    assignee?: string;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.source) query.set('source', params.source);
+    if (params?.status) query.set('status', params.status);
+    if (params?.priority) query.set('priority', params.priority);
+    if (params?.assignee) query.set('assignee', params.assignee);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    const queryStr = query.toString();
+    return this.request<{ bugs: Bug[] }>(`/bugs${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getBug(id: string) {
+    return this.request<{ bug: Bug }>(`/bugs/${id}`);
+  }
+
+  async createBug(bug: {
+    title: string;
+    description: string;
+    source: "arm_reported" | "human_reported" | "system_detected";
+    sourceTaskId?: string;
+    priority?: "low" | "medium" | "high" | "critical";
+    errorDetails?: string;
+  }) {
+    return this.request<{ bug: Bug }>(`/bugs`, {
+      method: 'POST',
+      body: JSON.stringify(bug),
+    });
+  }
+
+  async updateBug(id: string, updates: {
+    status?: string;
+    priority?: string;
+    assigneeArmId?: string;
+    blockers?: string[];
+    resolution?: string;
+    humanNotified?: boolean;
+  }) {
+    return this.request<{ success: boolean }>(`/bugs/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteBug(id: string) {
+    return this.request<{ success: boolean }>(`/bugs/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getBugStats() {
+    return this.request<{
+      bySource: Record<string, number>;
+      byStatus: Record<string, number>;
+      byPriority: Record<string, number>;
+      recent24h: number;
+      unresolved: number;
+    }>('/bugs/stats');
+  }
+
   // Tasks
   async listTasks(params?: {
     status?: string; 
@@ -622,6 +688,27 @@ export interface StatusReport {
   updatedAt?: string;
   resolvedAt?: string;
   resolution?: string;
+}
+
+// Bug tracking
+export interface Bug {
+  id: string;
+  title: string;
+  description: string;
+  source: "arm_reported" | "human_reported" | "system_detected";
+  sourceArmId?: string;
+  sourceTaskId?: string;
+  status: "open" | "investigating" | "fixing" | "verifying" | "resolved" | "closed";
+  priority: "low" | "medium" | "high" | "critical";
+  assigneeArmId?: string;
+  assigneeArmName?: string;
+  blockers: string[]; // Array of blocking task IDs
+  errorDetails?: string;
+  resolution?: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  humanNotified: boolean;
 }
 
 // Brain-managed task

@@ -488,6 +488,9 @@ export class Brain {
     // Step 2: Process arm messages (works even if API is down - uses queue files)
     await this.processArmQueue();
 
+    // Step 2.5: Check for resolved bugs and resume blocked tasks
+    await this.checkResolvedBugsAndResumeTasks();
+
     // Steps 3-7 require API server for arm communication
     if (infraHealth.canWorkWithArms) {
       // Step 3: Check arm health and detect new arms
@@ -2363,8 +2366,8 @@ ${originalTask.id}`;
       if (payload.source === "system_detected") {
         priority = "high"; // System issues are usually high priority
       } else if (payload.title.toLowerCase().includes("crash") ||
-                 payload.title.toLowerCase().includes("fail") ||
-                 payload.description.toLowerCase().includes("block")) {
+                  payload.title.toLowerCase().includes("fail") ||
+                  payload.description.toLowerCase().includes("block")) {
         priority = "high";
       }
       // Critical priority for system-wide blocking issues
@@ -2372,6 +2375,13 @@ ${originalTask.id}`;
           (payload.title.toLowerCase().includes("down") ||
            payload.description.toLowerCase().includes("unavailable"))) {
         priority = "critical";
+      }
+      // Low priority for minor issues
+      if (payload.source === "human_reported" &&
+          !payload.title.toLowerCase().includes("crash") &&
+          !payload.title.toLowerCase().includes("fail") &&
+          !payload.description.toLowerCase().includes("block")) {
+        priority = "low";
       }
 
       // Insert bug report
@@ -2418,6 +2428,15 @@ Please review and assign if needed.`,
         this.db.run(`UPDATE bugs SET human_notified = TRUE WHERE id = ?`, [bugId]);
       }
 
+      // Handle escalation based on priority and impact
+      if (priority === "medium") {
+        // For medium priority bugs, reassign affected tasks and log for resolution
+        await this.handleMediumPriorityBugEscalation(bugId, payload);
+      } else if (priority === "low") {
+        // For low priority bugs, continue work but track for later resolution
+        this.log(`Low priority bug ${bugId} logged for later resolution`);
+      }
+
       // If bug blocks a task, try to assign an arm to investigate
       if (payload.sourceTaskId) {
         const task = this.tasks.find(t => t.id === payload.sourceTaskId);
@@ -2433,8 +2452,129 @@ Please review and assign if needed.`,
   }
 
   /**
-   * Create a task to investigate a bug
+   * Check for recently resolved bugs and resume any tasks they were blocking
    */
+  private async checkResolvedBugsAndResumeTasks(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      // Find bugs that were resolved/closed since last check
+      const recentlyResolvedBugs = this.db.query(`
+        SELECT id, title, blockers, resolved_at
+        FROM bugs
+        WHERE status IN ('resolved', 'closed')
+          AND resolved_at IS NOT NULL
+          AND resolved_at > datetime('now', '-1 hour')  -- Check last hour
+          AND json_array_length(blockers) > 0
+      `).all() as Array<{ id: string; title: string; blockers: string; resolved_at: string }>;
+
+      for (const bug of recentlyResolvedBugs) {
+        const blockedTaskIds = JSON.parse(bug.blockers) as string[];
+
+        for (const taskId of blockedTaskIds) {
+          // Find the task in our local cache
+          const task = this.tasks.find(t => t.id === taskId);
+          if (task && task.status === "blocked") {
+            // Resume the blocked task
+            task.status = "pending";
+            task.updatedAt = new Date();
+
+            this.log(`Resuming blocked task ${taskId} after bug ${bug.id} resolution`);
+
+            // Update task in database
+            this.db.run(`
+              UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = ?
+            `, [new Date().toISOString(), taskId]);
+
+            // Notify human about task resumption
+            await this.sendToHuman({
+              subject: `[octopai] Task Resumed: ${task.subject}`,
+              body: `Task "${task.subject}" has been resumed after resolution of blocking bug.
+
+**Task Details:**
+- ID: ${taskId}
+- Subject: ${task.subject}
+
+**Resolved Bug:**
+- ID: ${bug.id}
+- Title: ${bug.title}
+- Resolved: ${bug.resolved_at}
+
+The task is now available for assignment.`,
+              headers: {
+                "X-Octopai-Type": "task-resumed",
+                "X-Octopai-Task-Id": taskId,
+                "X-Octopai-Bug-Id": bug.id,
+              },
+            });
+
+            // Log activity
+            this.logActivity("brain", "task_resumed", taskId, {
+              reason: "blocking_bug_resolved",
+              bugId: bug.id,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      this.log(`Error checking resolved bugs: ${err}`);
+    }
+  }
+
+  /**
+   * Handle escalation for medium priority bugs
+   */
+  private async handleMediumPriorityBugEscalation(
+    bugId: string,
+    bugPayload: {
+      title: string;
+      description: string;
+      source: string;
+      sourceTaskId?: string;
+    }
+  ): Promise<void> {
+    // For medium priority bugs, reassign any currently assigned tasks that might be affected
+    // and log for resolution
+    this.log(`Medium priority bug ${bugId} - checking for task reassignment needs`);
+
+    // If this bug came from a specific task, consider reassigning that task to a different arm
+    if (bugPayload.sourceTaskId) {
+      const task = this.tasks.find(t => t.id === bugPayload.sourceTaskId);
+      if (task && task.assignedTo && task.status === "in_progress") {
+        // Task is in progress, check if we should reassign
+        const assignedArm = Array.from(this.arms.values()).find(a => a.id === task.assignedTo);
+        if (assignedArm) {
+          this.log(`Considering reassignment of task ${task.id} due to bug ${bugId}`);
+
+          // For now, just log - could implement reassignment logic here
+          // In a more sophisticated system, we might check if the arm is still suitable
+        }
+      }
+    }
+
+    // Log the escalation for human review
+    await this.sendToHuman({
+      subject: `[octopai] Medium Priority Bug Escalation: ${bugPayload.title}`,
+      body: `A medium priority bug has been reported and escalated for review.
+
+**Bug Details:**
+- Title: ${bugPayload.title}
+- Description: ${bugPayload.description}
+- Source: ${bugPayload.source}
+- ID: ${bugId}
+
+This bug has been logged for resolution. Tasks may continue but should be monitored for issues.`,
+      headers: {
+        "X-Octopai-Type": "bug-escalation",
+        "X-Octopai-Bug-Id": bugId,
+        "X-Octopai-Priority": "medium",
+      },
+    });
+  }
+
+  /**
+    * Create a task to investigate a bug
+    */
   private async createBugInvestigationTask(
     bugId: string,
     bugPayload: {
@@ -4194,9 +4334,57 @@ octopai arm spawn -n ${arm.name}
        });
      }
 
-     for (const task of pendingTasks) {
-       // Find best matching arm based on task domain preference
-       let bestArm = idleArms.shift();
+      for (const task of pendingTasks) {
+        // Check for blocking bugs before assigning
+        if (this.db) {
+          const blockingBugs = this.db.query(`
+            SELECT id, title, priority, blockers
+            FROM bugs
+            WHERE status NOT IN ('resolved', 'closed')
+              AND json_array_length(blockers) > 0
+              AND EXISTS (
+                SELECT 1 FROM json_each(blockers) WHERE json_each.value = ?
+              )
+          `).all(task.id) as Array<{ id: string; title: string; priority: string; blockers: string }>;
+
+          if (blockingBugs.length > 0) {
+            // Task is blocked by unresolved bugs
+            this.log(`Task ${task.id} blocked by ${blockingBugs.length} unresolved bug(s)`);
+
+            // Update task status to blocked
+            task.status = "blocked";
+            task.updatedAt = new Date();
+
+            // Notify human about blocked task for critical/high priority bugs
+            const criticalBugs = blockingBugs.filter(b => b.priority === 'critical');
+            const highBugs = blockingBugs.filter(b => b.priority === 'high');
+
+            if (criticalBugs.length > 0 || highBugs.length > 0) {
+              await this.sendToHuman({
+                subject: `[octopai] Task Blocked by ${criticalBugs.length + highBugs.length} Critical/High Priority Bug(s)`,
+                body: `Task "${task.subject}" cannot be assigned due to blocking bugs.
+
+**Blocked Task:**
+- ID: ${task.id}
+- Subject: ${task.subject}
+
+**Blocking Bugs:**
+${blockingBugs.map(b => `- ${b.title} (${b.priority} priority)`).join('\n')}
+
+Please resolve these bugs before the task can proceed.`,
+                headers: {
+                  "X-Octopai-Type": "task-blocked",
+                  "X-Octopai-Task-Id": task.id,
+                },
+              });
+            }
+
+            continue; // Skip this task, it's blocked
+          }
+        }
+
+        // Find best matching arm based on task domain preference
+        let bestArm = idleArms.shift();
        const armDomain = bestArm ? ((bestArm as Arm & { domain?: string }).domain || "general") : "general";
 
        if (task.domain) {
@@ -4441,7 +4629,34 @@ octopai arm spawn -n ${arm.name}
 
     const now = new Date().toISOString();
 
+    // Get valid arm IDs to avoid foreign key constraint failures
+    // The tasks table has a FK constraint: FOREIGN KEY (assigned_to) REFERENCES arms(id)
+    const validArmIds = new Set<string>();
+    try {
+      const armRows = this.db.query("SELECT id FROM arms").all() as Array<{ id: string }>;
+      for (const row of armRows) {
+        validArmIds.add(row.id);
+      }
+    } catch (err) {
+      this.log(`Error getting arm IDs for task save: ${err}`);
+    }
+
     for (const task of this.tasks) {
+      // Clear assignedTo if the arm doesn't exist (avoids FK constraint failure)
+      const assignedTo = task.assignedTo && validArmIds.has(task.assignedTo) 
+        ? task.assignedTo 
+        : null;
+      
+      // Also update in-memory task if we cleared the assignment
+      if (task.assignedTo && !validArmIds.has(task.assignedTo)) {
+        this.log(`Clearing invalid assignment for task ${task.id}: arm ${task.assignedTo} not found`);
+        task.assignedTo = undefined;
+        // Reset status if it was claimed/in_progress but arm is gone
+        if (task.status === "claimed" || task.status === "in_progress") {
+          task.status = "pending";
+        }
+      }
+      
       this.db.run(
         `INSERT INTO tasks (id, subject, description, status, priority, domain, classification,
                            assigned_to, created_at, updated_at, completed_at, artifacts,
@@ -4468,7 +4683,7 @@ octopai arm spawn -n ${arm.name}
           task.priority,
           task.domain || null,
           task.classification || null,
-          task.assignedTo || null,
+          assignedTo,
           task.createdAt.toISOString(),
           now,
           task.completedAt?.toISOString() || null,

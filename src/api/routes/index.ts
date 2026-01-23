@@ -11,3 +11,4 @@ export { createProposalsRoutes } from "./proposals";
 export { createTasksRoutes } from "./tasks";
 export { createAgentsRoutes } from "./agents";
 export { createDiscoveriesRoutes } from "./discoveries";
+export { createBugsRoutes } from "./bugs";

@@ -8,10 +8,11 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
+import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
 
 /**
@@ -143,6 +144,7 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/agents", createAgentsRoutes());
   app.route("/api/discoveries", createDiscoveriesRoutes());
   app.route("/api/status-reports", createStatusReportsRoutes());
+  app.route("/api/bugs", createBugsRoutes());
 
   // Root redirect to health
   app.get("/", (c) => c.redirect("/api/health"));
@@ -250,21 +252,24 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   
   // Subscribe to arm events: store them and broadcast via WebSocket
   harnessManager.onEvent((armId, event, data) => {
+    // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
+    const truncatedData = truncateLargeFields(data) as Record<string, unknown>;
+    
     // Store the event in the database
     const now = new Date().toISOString();
-    const eventData = JSON.stringify(data);
+    const eventData = JSON.stringify(truncatedData);
 
     try {
       db.run(
         "INSERT INTO arm_events (arm_id, session_id, event_type, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [armId, (data as any)?.sessionId || null, event, eventData, now]
+        [armId, (truncatedData as any)?.sessionId || null, event, eventData, now]
       );
     } catch (err) {
       console.error(`[server] Failed to store arm event: ${err}`);
     }
 
     // Broadcast the event via WebSocket
-    broadcastArmEvent(armId, event, data);
+    broadcastArmEvent(armId, event, truncatedData);
   });
 
   // Subscribe to arm death events - update database and broadcast

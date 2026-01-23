@@ -10,6 +10,7 @@ import {
   ActivityPage,
   SettingsPage,
   TasksPage,
+  BugsPage,
   MessagingPage,
 } from '@/pages';
 
@@ -25,6 +26,7 @@ function App() {
               <Route path="viewer" element={<ArmViewerPage />} />
               <Route path="brain" element={<BrainPage />} />
                 <Route path="tasks" element={<TasksPage />} />
+                <Route path="bugs" element={<BugsPage />} />
                 <Route path="garden" element={<GardenPage />} />
                 <Route path="messaging" element={<MessagingPage />} />
                 <Route path="activity" element={<ActivityPage />} />

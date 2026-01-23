@@ -12,7 +12,8 @@ import {
   Settings,
   Octagon,
   MessageSquarePlus,
-  ListTodo
+  ListTodo,
+  Bug
 } from 'lucide-react';
 import { cn, api, useToast, useMessage } from '@/lib';
 import { MessageModal } from './MessageModal';
@@ -23,6 +24,7 @@ const getNavItems = (unreadCount: number) => [
   { to: '/arms', icon: Bot, label: 'Arms' },
   { to: '/viewer', icon: Eye, label: 'Viewer' },
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
+  { to: '/bugs', icon: Bug, label: 'Bugs' },
   { to: '/garden', icon: Flower2, label: 'Garden' },
   { to: '/messaging', icon: Mail, label: 'Messaging', badge: unreadCount },
   { to: '/proposals', icon: Vote, label: 'Proposals' },

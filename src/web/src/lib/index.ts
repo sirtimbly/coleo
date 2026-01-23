@@ -15,6 +15,7 @@ export {
   type ArmTodo,
   type OpenCodeEvent,
   type Task,
+  type Bug,
 } from './api';
 export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';

@@ -9,4 +9,5 @@ export { ActivityPage } from './ActivityPage';
 export { SettingsPage } from './SettingsPage';
 export { TasksPage } from './TasksPage';
 export { StatusReportsPage } from './StatusReportsPage';
+export { BugsPage } from './BugsPage';
 export { MessagingPage } from './MessagingPage';
