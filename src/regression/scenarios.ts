@@ -446,6 +446,7 @@ function createFailedResult(
 }
 
 import { armRecoveryScenario } from "./scenarios/arm-recovery";
+import { sessionIsolationScenario } from "./scenarios/session-isolation";
 
 /**
  * All core scenarios
@@ -456,4 +457,5 @@ export const coreScenarios: TestScenario[] = [
   zombieArmDetection,
   simpleTaskCompletion,
   armRecoveryScenario,
+  sessionIsolationScenario,
 ];

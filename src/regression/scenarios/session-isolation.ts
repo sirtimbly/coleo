@@ -13,7 +13,7 @@ import { initTestDatabase, startApiServer, startBrain, spawnArm, waitForArmStatu
 export const sessionIsolationScenario: TestScenario = {
   name: "session-isolation",
   description: "Verifies that multiple arms get unique OpenCode sessions",
-  tags: ["core", "isolation", "session"],
+  tags: ["core", "isolation", "session", "quick"],
   timeout: 180000, // 3 minutes - spawning multiple arms takes time
   
   async setup(ctx: TestContext) {

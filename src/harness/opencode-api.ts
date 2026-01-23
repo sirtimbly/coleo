@@ -219,6 +219,13 @@ export class OpenCodeApiHarness implements AgentHarness {
       stderr: "pipe",
     });
 
+    // Monitor process exit
+    serverProcess.exited.then((exitCode) => {
+      console.log(`[harness-api] OpenCode server on port ${port} exited with code ${exitCode}`);
+    });
+
+    console.log(`[harness-api] Spawned OpenCode process PID: ${serverProcess.pid}`);
+
     // Stream output for debugging and logging
     const streamLog = async (stream: ReadableStream, type: "stdout" | "stderr") => {
       const reader = stream.getReader();
@@ -248,7 +255,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     const serverUrl = `http://127.0.0.1:${port}`;
 
     // Wait for server to be ready
-    await this.waitForServer(serverUrl, 30000);
+    await this.waitForServer(serverUrl, 30000, serverProcess);
 
     // Create SDK client for type-safe API calls
     const client = createOpencodeClient({ baseUrl: serverUrl });
@@ -359,10 +366,16 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Wait for the OpenCode server to be ready
    */
-  private async waitForServer(serverUrl: string, timeoutMs: number): Promise<void> {
+  private async waitForServer(serverUrl: string, timeoutMs: number, serverProcess?: Subprocess): Promise<void> {
     const startTime = Date.now();
+    let lastError = "";
     
     while (Date.now() - startTime < timeoutMs) {
+      // Check if process died
+      if (serverProcess && serverProcess.exitCode !== null) {
+        throw new Error(`OpenCode server process died with exit code ${serverProcess.exitCode}`);
+      }
+      
       try {
         const response = await fetch(`${serverUrl}/global/health`);
         if (response.ok) {
@@ -372,13 +385,14 @@ export class OpenCodeApiHarness implements AgentHarness {
             return;
           }
         }
-      } catch {
+      } catch (err) {
         // Server not ready yet
+        lastError = String(err);
       }
       await new Promise(resolve => setTimeout(resolve, 200));
     }
 
-    throw new Error(`OpenCode server failed to start within ${timeoutMs}ms`);
+    throw new Error(`OpenCode server failed to start within ${timeoutMs}ms (last error: ${lastError})`);
   }
 
   /**

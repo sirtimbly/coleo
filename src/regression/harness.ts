@@ -208,7 +208,10 @@ export async function startApiServer(ctx: TestContext): Promise<void> {
 export async function startBrain(ctx: TestContext, options?: { once?: boolean }): Promise<Subprocess> {
   ctx.timing.mark("brain_start");
   
-  const args = ["bun", "run", "src/cli/index.ts", "brain", "run", "--clean"];
+  // Note: We do NOT use --clean here because it would kill OpenCode processes
+  // from other arms that might already be running. The test environment is
+  // already isolated, so there's no need to clean up zombie processes.
+  const args = ["bun", "run", "src/cli/index.ts", "brain", "run"];
   if (options?.once) {
     args.push("--once");
   }

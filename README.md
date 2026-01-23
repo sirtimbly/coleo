@@ -193,7 +193,7 @@ bun test src/brain/__tests__/
 
 ### Integration Tests
 
-Self-contained tests that verify specific features work end-to-end.
+Standalone scripts for quick manual verification of specific features. These are **not** run by `test:integration` - they're meant for ad-hoc testing during development.
 
 ```bash
 # Session isolation test - verifies each arm gets a unique session
@@ -210,30 +210,35 @@ bun run test-task-assignment.ts
 
 ### Regression Tests
 
-Comprehensive test suite that runs scenarios against multiple AI models.
+Comprehensive test suite that runs scenarios against multiple AI models. Use `test:integration` for quick checks or `test:e2e` for full coverage.
 
 ```bash
-# Quick regression tests (subset of scenarios)
+# Quick regression tests (only scenarios tagged 'quick')
 bun run test:integration
 
-# Full regression test suite
+# Full regression test suite (all scenarios)
 bun run test:e2e
 
 # Run the regression runner directly with options
-bun run src/regression/runner.ts --quick          # Quick mode
-bun run src/regression/runner.ts --scenario arm-recovery  # Specific scenario
+bun run src/regression/runner.ts --quick                    # Quick mode
+bun run src/regression/runner.ts --scenario session-isolation  # Specific scenario
+bun run src/regression/runner.ts --tag core                 # All 'core' tagged scenarios
 ```
 
 Regression test results are saved to `~/.octopai/regression-results/`.
 
 ### Test Scenarios
 
-Located in `src/regression/scenarios/`:
+Located in `src/regression/scenarios/`. Scenarios tagged `quick` run with `test:integration`.
 
-| Scenario | Description |
-|----------|-------------|
-| `arm-recovery` | Tests arm crash recovery and session restoration |
-| `session-isolation` | Verifies arms don't share session history |
+| Scenario | Tags | Description |
+|----------|------|-------------|
+| `infrastructure-startup` | quick | Verifies all infrastructure components start correctly |
+| `session-isolation` | quick | Verifies arms don't share session history |
+| `self-healing-api-restart` | - | Tests API server recovery after restart |
+| `zombie-arm-detection` | - | Tests detection and cleanup of zombie arms |
+| `simple-task-completion` | - | Tests basic task assignment and completion |
+| `arm-recovery` | - | Tests arm crash recovery and session restoration |
 
 ### Writing New Tests
 
