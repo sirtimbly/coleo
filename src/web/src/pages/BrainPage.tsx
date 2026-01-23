@@ -715,7 +715,6 @@ export function BrainPage() {
                     >
                       <div className="font-medium">{arm.name}</div>
                       <div className="text-sm text-muted-foreground flex gap-3">
-                        <span>{arm.domain}</span>
                         <span>{arm.harness}</span>
                         {arm.budget && <span>{arm.budget.toLocaleString()} tokens</span>}
                       </div>

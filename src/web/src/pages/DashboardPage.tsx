@@ -318,7 +318,7 @@ export function DashboardPage() {
                       <div>
                         <p className="font-medium">{arm.name}</p>
                         <p className="text-xs text-muted-foreground">
-                          {arm.domain} · {arm.status}
+                          {arm.status}
                         </p>
                       </div>
                       <ArmHealthBadge health={arm.health} />
@@ -352,7 +352,7 @@ export function DashboardPage() {
                     <div>
                       <p className="font-medium">{arm.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {arm.domain} · {arm.harness}
+                        {arm.harness}
                       </p>
                     </div>
                     <StatusBadge status={arm.status} />

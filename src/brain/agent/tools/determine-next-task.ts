@@ -42,7 +42,7 @@ export class DetermineNextTaskTool extends BrainTool {
     type: "object",
     properties: {
       planId: { type: "string", description: "Specific plan to evaluate (defaults to current phase plan)" },
-      armId: { type: "string", description: "Arm ID to consider for domain matching" },
+      armId: { type: "string", description: "Arm ID requesting the task" },
       forceVerify: { type: "boolean", description: "Force verification task creation even if no issues", default: false },
     },
     required: [],
@@ -98,30 +98,31 @@ export class DetermineNextTaskTool extends BrainTool {
         };
       }
       
+      // NOTE: Domain-based task assignment is disabled for now
       // Step 5: If arm is specified, try to find domain-appropriate task
-      if (input.armId && pendingTasks.length > 0) {
-        const armDomain = await this.getArmDomain(input.armId);
-        const domainTask = pendingTasks.find(t => !t.domain || t.domain === armDomain);
-        
-        if (domainTask) {
-          return {
-            success: true,
-            data: {
-              task: {
-                subject: domainTask.subject,
-                description: domainTask.description,
-                classification: domainTask.classification || "development",
-                domain: domainTask.domain,
-                priority: domainTask.priority || "normal",
-              },
-              context: {
-                history: await this.getRecentHistory(3),
-              },
-              reasoning: `Assigning pending task matching arm domain (${armDomain}).`,
-            },
-          };
-        }
-      }
+      // if (input.armId && pendingTasks.length > 0) {
+      //   const armDomain = await this.getArmDomain(input.armId);
+      //   const domainTask = pendingTasks.find(t => !t.domain || t.domain === armDomain);
+      //   
+      //   if (domainTask) {
+      //     return {
+      //       success: true,
+      //       data: {
+      //         task: {
+      //           subject: domainTask.subject,
+      //           description: domainTask.description,
+      //           classification: domainTask.classification || "development",
+      //           domain: domainTask.domain,
+      //           priority: domainTask.priority || "normal",
+      //         },
+      //         context: {
+      //           history: await this.getRecentHistory(3),
+      //         },
+      //         reasoning: `Assigning pending task matching arm domain (${armDomain}).`,
+      //       },
+      //     };
+      //   }
+      // }
       
       // Step 6: Return any pending task
       if (pendingTasks.length > 0) {
@@ -420,14 +421,15 @@ ${taskWithIssues.id}`,
     return rows.map(r => `✓ ${r.subject}`);
   }
 
-  /**
-   * Get domain preference for an arm
-   */
-  private async getArmDomain(armId: string): Promise<string> {
-    const row = this.context.db.query(`
-      SELECT domain FROM arms WHERE id = ?
-    `).get(armId) as { domain: string | null } | null;
-    
-    return row?.domain || "general";
-  }
+  // NOTE: Domain-based arm matching is disabled for now
+  // /**
+  //  * Get domain preference for an arm
+  //  */
+  // private async getArmDomain(armId: string): Promise<string> {
+  //   const row = this.context.db.query(`
+  //     SELECT domain FROM arms WHERE id = ?
+  //   `).get(armId) as { domain: string | null } | null;
+  //   
+  //   return row?.domain || "general";
+  // }
 }

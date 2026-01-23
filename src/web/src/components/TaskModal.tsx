@@ -42,8 +42,9 @@ const SOURCE_TYPE_OPTIONS: { value: TaskSourceType; label: string }[] = [
   { value: 'proposal', label: 'Proposal' },
 ];
 
-// Common domains
-const DOMAIN_SUGGESTIONS = ['backend', 'frontend', 'testing', 'devops', 'docs', 'design', 'security'];
+// NOTE: Domain functionality is temporarily disabled
+// Common domains - kept for future use
+// const DOMAIN_SUGGESTIONS = ['backend', 'frontend', 'testing', 'devops', 'docs', 'design', 'security'];
 
 export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
   const isEditing = Boolean(task);
@@ -283,8 +284,9 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
               )}
             </div>
             
-            {/* Domain & Phase (side by side) */}
+            {/* Phase (domain field hidden for now) */}
             <div className="grid grid-cols-2 gap-4">
+              {/* Domain field - temporarily hidden
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Domain
@@ -304,6 +306,7 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
                   ))}
                 </datalist>
               </div>
+              */}
               
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1">

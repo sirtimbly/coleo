@@ -602,7 +602,7 @@ export function ArmViewerPage() {
                   <p className={`text-xs mt-1 ${
                     selectedArmId === arm.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
                   }`}>
-                    {arm.domain}
+                    {arm.harness}
                   </p>
                 </button>
               ))}

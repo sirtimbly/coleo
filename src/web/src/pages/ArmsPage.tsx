@@ -123,7 +123,7 @@ export function ArmsPage() {
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No arms registered yet</p>
             <code className="block p-4 bg-secondary rounded text-sm text-left max-w-md mx-auto">
-              octopai arm spawn --name backend --agent opencode --domain backend
+              octopai arm spawn --name my-arm --agent opencode
             </code>
           </CardContent>
         </Card>
@@ -138,7 +138,7 @@ export function ArmsPage() {
                     <StatusBadge status={arm.status} />
                   </CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {arm.domain} · {arm.harness}
+                    {arm.harness}
                     {(arm.provider || arm.model) && (
                       <span className="block mt-1">
                         {arm.provider && <span className="text-blue-600">{arm.provider}</span>}

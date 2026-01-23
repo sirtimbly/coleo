@@ -240,7 +240,6 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                     <>
                       {getStatusDot(selectedArm.status)}
                       <span className="text-white">{selectedArm.name}</span>
-                      <span className="text-zinc-500 text-xs">({selectedArm.domain})</span>
                     </>
                   ) : (
                     <span className="text-zinc-400">Select arm...</span>
@@ -267,7 +266,6 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                           >
                             {getStatusDot(arm.status)}
                             <span className="text-white flex-1">{arm.name}</span>
-                            <span className="text-zinc-500 text-xs">{arm.domain}</span>
                             <span className={`text-xs ${getStatusColor(arm.status)}`}>
                               {arm.status}
                             </span>

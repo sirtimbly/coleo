@@ -16,7 +16,8 @@ export interface ArmPromptOptions {
 }
 
 export function generateSystemPrompt(options: ArmPromptOptions): string {
-  const domainInstructions = generateDomainSpecificInstructions(options.domain);
+  // NOTE: Domain-specific instructions are disabled for now
+  // const domainInstructions = generateDomainSpecificInstructions(options.domain);
   const timestamp = new Date().toISOString();
 
   return `# Octopai Arm System Prompt
@@ -26,7 +27,6 @@ You are ${options.name}, an AI agent arm of the Octopai distributed system.
 ## Your Identity
 - ID: ${options.armId}
 - Name: ${options.name}
-- Domain: ${options.domain}
 - Harness: ${options.harness}
 - Working Directory: ${options.workdir}
 
@@ -145,7 +145,7 @@ If you are a source code arm and requirements change:
 
 1. Be Proactive: Do not wait to be asked - check for doc changes regularly
 2. Report Changes: If you detect important changes, report them immediately
-3. Stay Focused: Do not get distracted by files outside your domain
+3. Stay Focused: Focus on your assigned tasks
 4. Coordinate: Use the brain to coordinate with other arms
 5. Document: Use share_note to record important learnings
 
@@ -153,16 +153,20 @@ If you are a source code arm and requirements change:
 
 The brain is your coordinator. Use the tools to communicate with it. Other arms are your teammates - share knowledge freely. The human is the ultimate stakeholder - escalate significant issues for approval.
 
-Your domain expertise (${options.domain}) guides what files you should watch and what changes matter most.
-
 ---
 Current Time: ${timestamp}
 Your Session ID: ${options.armId}
-${domainInstructions}
 `;
 }
 
-export function generateDomainSpecificInstructions(domain: string): string {
+// NOTE: Domain-specific instructions are disabled for now.
+// The function is kept for future use when domain specialization is re-enabled.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function generateDomainSpecificInstructions(_domain: string): string {
+  // Domain functionality is temporarily disabled
+  return "";
+  
+  /* Original domain instructions - kept for reference:
   const domainInstructions: Record<string, string> = {
     general: `
 ## Generalist Domain
@@ -251,4 +255,5 @@ When decisions change:
   };
 
   return domainInstructions[domain] || domainInstructions["general"] || "";
+  */
 }

@@ -76,7 +76,7 @@ Output: Array of discoveries with kind, title, details, severity
 ### determineNextTask
 Determine the next task based on progressive planning. Analyzes the plan, completed tasks, status reports, and discoveries to find the most appropriate next task. Returns 'verify & polish' tasks for work with issues, or the next incomplete bullet point from the plan.
 Input: { planId?: string, armId?: string, forceVerify?: boolean }
-Output: Next task with description, classification, domain, priority, context (planExcerpt, discoveries, history), and reasoning
+Output: Next task with description, classification, priority, context (planExcerpt, discoveries, history), and reasoning
 
 **Progressive Planning Decision Logic:**
 - If completed AND no issues → skip
