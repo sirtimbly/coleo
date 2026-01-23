@@ -111,22 +111,36 @@ export class EventStore {
   private async ensureEventStream(): Promise<void> {
     if (!this.jsm) throw new Error('JetStream manager not initialized');
 
+    const streamConfig = {
+      name: 'octopai-events',
+      subjects: ['octopai.events.arm.>'],
+      retention: RetentionPolicy.Limits,
+      max_age: 7 * 24 * 60 * 60 * 1000,  // 7 days
+      max_msgs: 100000,                   // 100K events
+      max_bytes: 500 * 1024 * 1024,      // 500MB
+      storage: StorageType.File,
+      allow_rollup_hdrs: true,           // Allow rollup headers for compaction
+    };
+
     try {
       // Check if stream exists
-      await this.jsm.streams.info('octopai-events');
+      const existingStream = await this.jsm.streams.info('octopai-events');
+      
+      // Check if subjects need updating (e.g., from old '*.*' pattern to new '>' pattern)
+      const existingSubjects = existingStream.config.subjects || [];
+      const expectedSubjects = streamConfig.subjects;
+      
+      if (JSON.stringify(existingSubjects) !== JSON.stringify(expectedSubjects)) {
+        console.log(`[EventStore] Updating stream subjects from ${existingSubjects} to ${expectedSubjects}`);
+        await this.jsm.streams.update('octopai-events', {
+          ...existingStream.config,
+          subjects: expectedSubjects,
+        });
+        console.log('[EventStore] Updated octopai-events stream configuration');
+      }
     } catch (error) {
       // Stream doesn't exist, create it
-      await this.jsm.streams.add({
-        name: 'octopai-events',
-        subjects: ['octopai.events.arm.*.*'],
-        retention: RetentionPolicy.Limits,
-        max_age: 7 * 24 * 60 * 60 * 1000,  // 7 days
-        max_msgs: 100000,                   // 100K events
-        max_bytes: 500 * 1024 * 1024,      // 500MB
-        storage: StorageType.File,
-        allow_rollup_hdrs: true,           // Allow rollup headers for compaction
-      });
-
+      await this.jsm.streams.add(streamConfig);
       console.log('[EventStore] Created octopai-events stream');
     }
   }
@@ -199,7 +213,7 @@ export class EventStore {
       durable_name: name,
       deliver_policy: DeliverPolicy.Last,
       ack_policy: AckPolicy.None,
-      filter_subject: 'octopai.events.arm.*.*',
+      filter_subject: 'octopai.events.arm.>',
       replay_policy: ReplayPolicy.Instant,
       ...config,
     };

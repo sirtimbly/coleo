@@ -1,6 +1,6 @@
 # Octopai
 
-AI agent orchestrator using the **Octopus Model** - distributed autonomous tentacles coordinated by a central brain, with human-agent communication via email.
+AI agent orchestrator using the **Octopus Model** - semi-autonomous AI "arms" coordinated by a central brain, with human-agent communication via mail.
 
 ## Quick Start
 
@@ -14,8 +14,8 @@ bun run src/cli/index.ts init
 # Start the brain (foreground)
 bun run src/cli/index.ts brain run
 
-# In another terminal, spawn a tentacle
-bun run src/cli/index.ts tentacle spawn --name explorer --agent opencode
+# In another terminal, spawn an arm
+bun run src/cli/index.ts arm spawn --name explorer --harness opencode
 
 # Send a task via mail
 bun run src/cli/index.ts mail send "Add dark mode toggle to settings"
@@ -40,11 +40,11 @@ docker compose up -d
 ssh -p 2222 octopai@localhost  # password: octopai
 
 # Inside the container:
-octopai brain run                           # Start the brain
-octopai tentacle spawn -n coder --agent opencode  # Spawn in tmux
-octopai status                              # Check status
+octopai brain run                              # Start the brain
+octopai arm spawn -n coder --harness opencode  # Spawn in tmux
+octopai status                                 # Check status
 
-# View tentacle logs (headless mode)
+# View arm logs (headless mode)
 tail -f ~/.octopai/logs/octopai_coder.log
 ```
 
@@ -71,29 +71,9 @@ Human (You)
      │
 ┌────┴────┬─────────┐
 ▼         ▼         ▼
-Tentacle  Tentacle  Tentacle
+Arm       Arm       Arm
 (opencode)(claude)  (aider)
 ```
-
-## Phases & Roadmap
-
-- **Phase 0 – Core Infrastructure (Complete)**: Brain polling loop, maildir IO, MCP server, arm spawner, CLI tooling, Docker/Gitea setup, and shared type definitions delivered.
-- **Phase 1 – Observatory Foundation (Next)**: Hono REST API, SQLite schema, WebSocket updates, React shell with dashboards, arm list/status views, CLI proxy routing, and mail metadata API; pending decisions on authentication, component library, and state management (est. 2–3 weeks).
-- **Phase 1.5 – Email Gateway (Planned)**: IMAP server over Maildir, SMTP submission into the brain queue, coordinator arm for mirroring replies, and transport observability once Phase 1 ships (~1 week).
-- **Phase 2 – Arm Specialization (Planned)**: Domain configuration, context budget tracking, file claim system, thrash detection, and handoff protocol (est. 2 weeks).
-- **Phase 3 – Governance (Planned)**: Proposal workflow, argument/signaling system, consensus scoring, reputation tracking, creative override, and emergency stop features (est. 2–3 weeks).
-- **Phase 4 – Garden Visualization (Planned)**: React Three Fiber scene, radial layout, real-time file activity and ownership coloring, conflict highlighting, and interactive navigation (est. 2 weeks).
-- **Phase 5 – Notifications & Deployment (Planned)**: Browser push notifications, deployment proposal flow, blue/green rollout with rollback + pause, and monitoring hooks (est. 2 weeks).
-- **Phase 6 – Agent Harnesses (Planned)**: Harness interface/registry, PTY session management, and harness implementations for OpenCode, Claude Code, and Aider plus a test suite (est. 3 weeks).
-- **Phase 7 – Polish & Production (Planned)**: PostgreSQL option, comprehensive tests, performance tuning, security hardening, Docker Swarm support, and user documentation (est. 2–3 weeks).
-
-### Milestones
-
-- **M1 – Observable**: End of Phase 1, arm activity visible through the web UI.
-- **M2 – Coordinated**: End of Phase 3, arms negotiate and reach consensus.
-- **M3 – Visual**: End of Phase 4, 3D Garden reflects workspace state.
-- **M4 – Multi-Agent**: End of Phase 6, multiple harnesses supported.
-- **M5 – Production**: End of Phase 7, system ready for real-world use.
 
 ## Commands
 
@@ -101,27 +81,167 @@ Tentacle  Tentacle  Tentacle
 octopai init                    # Initialize ~/.octopai
 octopai brain run               # Start brain (foreground)
 octopai brain run --once        # Single poll cycle
-octopai tentacle spawn -n NAME  # Spawn a tentacle
-octopai tentacle spawn -n NAME --headless  # Spawn without terminal window
-octopai tentacle list           # List tentacles
+octopai arm spawn -n NAME       # Spawn an arm
+octopai arm spawn -n NAME --headless  # Spawn without terminal window
+octopai arm list                # List arms
 octopai mail inbox              # View inbox
 octopai mail send "task"        # Send task to brain
 octopai status                  # Overall status
-octopai mcp serve               # Run MCP server (for tentacles)
+octopai mcp serve               # Run MCP server (for arms)
 ```
 
 ## Headless Mode
 
-In environments without a display (Docker, SSH), tentacles run in headless mode:
+In environments without a display (Docker, SSH), arms run in headless mode:
 
-- **tmux**: If available, creates a tmux session (attach with `tmux attach -t tentacle_name`)
+- **tmux**: If available, creates a tmux session (attach with `tmux attach -t arm_name`)
 - **headless**: Runs as background process, logs to `~/.octopai/logs/`
 
 Force headless mode with `--headless` flag:
 
 ```bash
-octopai tentacle spawn -n worker --agent opencode --headless
+octopai arm spawn -n worker --harness opencode --headless
 ```
+
+## Local Development
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) runtime (v1.0+)
+- [NATS Server](https://nats.io/) with JetStream enabled (optional, for event streaming)
+- [OpenCode](https://opencode.ai/) CLI (for spawning AI arms)
+
+### Setup
+
+```bash
+# Clone and install dependencies
+git clone <repo-url>
+cd octopai
+bun install
+
+# Initialize Octopai (creates ~/.octopai directory and database)
+bun run src/cli/index.ts init
+
+# Build the web UI
+bun run web:build
+```
+
+### Running Locally
+
+```bash
+# Start the API server (serves both API and web UI)
+bun run server
+
+# Or run the brain directly (includes API server)
+bun run brain
+
+# Development mode for web UI (hot reload)
+bun run web:dev
+```
+
+### Available Scripts
+
+| Script | Description |
+|--------|-------------|
+| `bun run dev` | Run CLI commands directly |
+| `bun run brain` | Start the brain orchestrator |
+| `bun run server` | Start the API server |
+| `bun run typecheck` | Run TypeScript type checking |
+| `bun run test` | Run unit tests |
+| `bun run test:watch` | Run unit tests in watch mode |
+| `bun run test:integration` | Run quick integration tests |
+| `bun run test:e2e` | Run full end-to-end regression tests |
+| `bun run web:dev` | Start web UI dev server (hot reload) |
+| `bun run web:build` | Build web UI for production |
+| `bun run docs:dev` | Start documentation dev server |
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```bash
+# Required for AI arms
+ANTHROPIC_API_KEY=your-key-here
+OPENAI_API_KEY=your-key-here      # Optional
+
+# Optional configuration
+OCTOPAI_PORT=7337                  # API server port (default: 7337)
+OCTOPAI_DB_PATH=~/.octopai/octopai.db  # Database location
+NATS_URL=nats://localhost:4222    # NATS server URL
+```
+
+## Testing
+
+Octopai has three levels of testing:
+
+### Unit Tests
+
+Fast, isolated tests for individual modules.
+
+```bash
+# Run all unit tests
+bun run test
+
+# Run in watch mode during development
+bun run test:watch
+
+# Run tests for a specific module
+bun test src/mcp/__tests__/
+bun test src/api/__tests__/
+bun test src/brain/__tests__/
+```
+
+### Integration Tests
+
+Self-contained tests that verify specific features work end-to-end.
+
+```bash
+# Session isolation test - verifies each arm gets a unique session
+# (Self-contained: starts its own API server)
+bun run test-session-isolation.ts
+
+# JetStream pattern test - verifies multi-part event subjects work
+# Requires: nats-server -js (running separately)
+bun run test-jetstream-pattern.ts
+
+# Task assignment test
+bun run test-task-assignment.ts
+```
+
+### Regression Tests
+
+Comprehensive test suite that runs scenarios against multiple AI models.
+
+```bash
+# Quick regression tests (subset of scenarios)
+bun run test:integration
+
+# Full regression test suite
+bun run test:e2e
+
+# Run the regression runner directly with options
+bun run src/regression/runner.ts --quick          # Quick mode
+bun run src/regression/runner.ts --scenario arm-recovery  # Specific scenario
+```
+
+Regression test results are saved to `~/.octopai/regression-results/`.
+
+### Test Scenarios
+
+Located in `src/regression/scenarios/`:
+
+| Scenario | Description |
+|----------|-------------|
+| `arm-recovery` | Tests arm crash recovery and session restoration |
+| `session-isolation` | Verifies arms don't share session history |
+
+### Writing New Tests
+
+**Unit tests**: Create `*.test.ts` files in `__tests__/` directories alongside source files.
+
+**Integration tests**: Create standalone `test-*.ts` files in the project root. These should be self-contained and clean up after themselves.
+
+**Regression scenarios**: Add new scenarios to `src/regression/scenarios/` following the existing pattern. Export them from `src/regression/scenarios.ts`.
 
 ## Gitea (Optional)
 
@@ -132,6 +252,3 @@ docker compose up -d
 open http://localhost:3000
 ```
 
-## License
-
-MIT

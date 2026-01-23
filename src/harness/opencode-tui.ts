@@ -405,42 +405,34 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Create SDK client for type-safe API calls
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    // Get or create a session using SDK
-    const sessionsResponse = await client.session.list();
-    const sessions = sessionsResponse.data;
-    let openCodeSession: Session;
+    // Always create a NEW session for this arm to prevent cross-contamination
+    // Each arm gets its own isolated session with a unique title
+    const createResponse = await client.session.create({
+      body: { title: `Octopai Arm: ${armId}` },
+    });
+    const newSession = createResponse.data;
 
-    if (sessions && sessions.length > 0) {
-      // Use existing session
-      openCodeSession = sessions[0]!;
-    } else {
-      // Create new session
-      const createResponse = await client.session.create({
-        body: { title: "Octopai Arm Session" },
-      });
-      const newSession = createResponse.data;
-      
-      if (!newSession?.id) {
-        throw new Error("Failed to create session: no session ID returned");
-      }
-      
-      openCodeSession = newSession;
-      
-      // Initialize with model if specified
-      if (config.provider && config.model) {
-        try {
-          await client.session.init({
-            path: { id: openCodeSession.id },
-            body: {
-              modelID: config.model,
-              providerID: config.provider,
-              messageID: `init_${Date.now()}`,
-            },
-          });
-          console.log(`[harness-tui] Initialized session with model: ${config.provider}/${config.model}`);
-        } catch (initError) {
-          console.log(`[harness-tui] Session init warning: ${initError}`);
-        }
+    if (!newSession?.id) {
+      throw new Error("Failed to create session: no session ID returned");
+    }
+
+    const openCodeSession = newSession;
+    console.log(`[harness-tui] Created new session ${openCodeSession.id} for arm ${armId}`);
+
+    // Initialize with model if specified
+    if (config.provider && config.model) {
+      try {
+        await client.session.init({
+          path: { id: openCodeSession.id },
+          body: {
+            modelID: config.model,
+            providerID: config.provider,
+            messageID: `init_${Date.now()}`,
+          },
+        });
+        console.log(`[harness-tui] Initialized session with model: ${config.provider}/${config.model}`);
+      } catch (initError) {
+        console.log(`[harness-tui] Session init warning: ${initError}`);
       }
     }
 
@@ -1115,25 +1107,19 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Create SDK client for recovered session
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    // Get existing sessions using SDK
+    // Always create a NEW session for recovered arm to prevent cross-contamination
     try {
-      const sessionsResponse = await client.session.list();
-      const sessions = sessionsResponse.data;
-      let existingSession: Session;
+      const createResponse = await client.session.create({
+        body: { title: `Octopai Arm: ${armId} (recovered)` },
+      });
+      const recoveredSession = createResponse.data;
 
-      if (!sessions || sessions.length === 0) {
-        const createResponse = await client.session.create({
-          body: { title: "Octopai Arm Session" },
-        });
-        const newSession = createResponse.data;
-        if (!newSession?.id) {
-          console.log(`[harness-tui] Failed to create session`);
-          return null;
-        }
-        existingSession = newSession;
-      } else {
-        existingSession = sessions[0]!;
+      if (!recoveredSession?.id) {
+        console.log(`[harness-tui] Failed to create session for recovered arm`);
+        return null;
       }
+
+      console.log(`[harness-tui] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
 
       const sessionId = `opencode-tui-recovered-${armId}-${Date.now().toString(36)}`;
 
@@ -1151,7 +1137,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
         spawnedAt: new Date(),
         lastHeartbeat: new Date(),
         serverUrl,
-        sessionId: existingSession.id,
+        sessionId: recoveredSession.id,
         port,
         terminal: "ghostty", // Assume ghostty for recovered sessions
         armId,
@@ -1165,7 +1151,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
         const eventStream = new OpenCodeEventStream({
           serverUrl,
           armId,
-          sessionId: existingSession.id,
+          sessionId: recoveredSession.id,
           onEvent: async (event: OpenCodeEvent) => {
             // Publish to JetStream for persistence
             try {
@@ -1207,7 +1193,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
         this.nextPort = port + 1;
       }
 
-      console.log(`[harness-tui] Recovered session for ${armId} on port ${port} (session: ${existingSession.id})`);
+      console.log(`[harness-tui] Recovered session for ${armId} on port ${port} (session: ${recoveredSession.id})`);
       return tuiSession;
     } catch (err) {
       console.log(`[harness-tui] Failed to recover session: ${err}`);
