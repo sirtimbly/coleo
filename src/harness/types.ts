@@ -104,6 +104,16 @@ export interface AgentHarness {
   interrupt(session: HarnessSession): Promise<void>;
   compact?(session: HarnessSession): Promise<void>;
   getPid?(session: HarnessSession): number;
+  
+  /**
+   * Reset the session by creating a new OpenCode session.
+   * This clears the conversation context, removing any stale task references.
+   * Called by the brain after an arm completes a task and needs a fresh context
+   * for the next task.
+   * 
+   * @returns The new session ID, or undefined if reset is not supported
+   */
+  resetSession?(session: HarnessSession): Promise<string | undefined>;
 
   // MCP (if supported)
   hasMCP(): boolean;

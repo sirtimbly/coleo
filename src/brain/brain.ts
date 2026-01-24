@@ -27,6 +27,7 @@ import {
 } from "../db/state";
 import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
+import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
@@ -152,6 +153,8 @@ export class Brain {
   private arms: Map<string, Arm> = new Map();
   // seenArmIds removed - now derived from database via hasReceivedInitialTasks()
   private running = false;
+  private shuttingDown = false;
+  private abortController: AbortController | null = null;
   private db: Database | null = null;
   private apiBaseUrl: string;
   private apiKey: string;
@@ -197,6 +200,11 @@ export class Brain {
    * This replaces the old SQLite activity table - JetStream is now the single source of truth
    */
   private logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+    // Skip logging during shutdown to avoid connection errors
+    if (this.shuttingDown) {
+      return;
+    }
+    
     // Publish to JetStream if initialized
     if (eventStore.isInitialized()) {
       const subject = target 
@@ -209,7 +217,10 @@ export class Brain {
         data: { actor, ...details },
         timestamp: new Date().toISOString(),
       }).catch(err => {
-        console.error(`[brain] Failed to publish activity event: ${err}`);
+        // Only log if not shutting down
+        if (!this.shuttingDown) {
+          console.error(`[brain] Failed to publish activity event: ${err}`);
+        }
       });
     }
   }
@@ -218,6 +229,11 @@ export class Brain {
    * Handle side effects from the arm state machine
    */
   private async handleStateMachineSideEffect(effect: SideEffect): Promise<void> {
+    // Skip side effects during shutdown to avoid accessing closed resources
+    if (this.shuttingDown) {
+      return;
+    }
+    
     switch (effect.type) {
       case "LOG":
         this.log(effect.message);
@@ -228,7 +244,7 @@ export class Brain {
         break;
 
       case "UPDATE_TASK_STATUS":
-        if (this.db) {
+        if (this.db && !this.shuttingDown) {
           const now = new Date().toISOString();
           if (effect.status === "completed") {
             this.db.run(
@@ -245,7 +261,7 @@ export class Brain {
         break;
 
       case "RELEASE_TASK":
-        if (this.db) {
+        if (this.db && !this.shuttingDown) {
           const now = new Date().toISOString();
           this.db.run(
             "UPDATE tasks SET status = 'pending', assigned_to = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?",
@@ -256,7 +272,7 @@ export class Brain {
         break;
 
       case "MARK_ARM_STOPPED":
-        if (this.db) {
+        if (this.db && !this.shuttingDown) {
           const now = new Date().toISOString();
           this.db.run(
             "UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
@@ -314,14 +330,19 @@ export class Brain {
          await this.handleBrainMessage(message);
        });
 
-       // Subscribe to arm events for real-time activity tracking
-       this.natsClient.subscribe<{ armId: string; type: string }>(TOPICS.BROADCAST_ARMS, async (event) => {
-         if (event.armId) {
-           this.lastArmEventTime.set(event.armId, new Date());
-           // Log to JetStream for history
-           this.logActivity("brain", `event-${event.type}`, event.armId, event as unknown as Record<string, unknown>);
-         }
-       });
+        // Subscribe to arm events for real-time activity tracking
+        this.natsClient.subscribe<{ armId: string; type: string }>(TOPICS.BROADCAST_ARMS, async (event) => {
+          if (event.armId) {
+            this.lastArmEventTime.set(event.armId, new Date());
+            // Log to JetStream for history
+            this.logActivity("brain", `event-${event.type}`, event.armId, event as unknown as Record<string, unknown>);
+          }
+        });
+
+        // Subscribe to individual arm events to update status based on session changes
+        this.natsClient.subscribe<{ armId: string; type: string; properties: Record<string, unknown> }>(`arm.>`, async (event) => {
+          await this.handleArmEvent(event.armId, event.type, event.properties);
+        });
 
        this.log("Subscribed to brain messages and arm events on NATS");
     } catch (err) {
@@ -342,9 +363,63 @@ export class Brain {
   }
 
   /**
-   * Handle a message received via NATS
+   * Handle individual arm events to update status
+   */
+  private async handleArmEvent(armId: string, eventType: string, properties: Record<string, unknown>): Promise<void> {
+    // Skip event handling during shutdown
+    if (!this.db || this.shuttingDown) return;
+
+    // Update arm status based on session status events
+    if (eventType === 'session.status') {
+      const status = properties.status as { type: string } | undefined;
+      if (status?.type) {
+        let dbStatus: string;
+        switch (status.type) {
+          case 'busy':
+            dbStatus = 'busy';
+            break;
+          case 'idle':
+            dbStatus = 'idle';
+            break;
+          case 'error':
+            dbStatus = 'error';
+            break;
+          default:
+            return; // Don't update for unknown statuses
+        }
+
+        try {
+          const now = new Date().toISOString();
+          this.db.run(
+            "UPDATE arms SET status = ?, updated_at = ?, last_activity_at = ? WHERE id = ?",
+            [dbStatus, now, now, armId]
+          );
+
+          this.log(`Updated arm ${armId} status to ${dbStatus} based on session.status event`);
+
+          // Broadcast status change to API/WebSocket
+          if (this.natsClient) {
+            await this.natsClient.publish(TOPICS.BROADCAST_ARMS, {
+              armId,
+              type: 'arm.status_changed',
+              status: dbStatus,
+              source: 'session_event'
+            });
+          }
+        } catch (err) {
+          this.log(`Failed to update arm status: ${err}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Handle brain messages from arms
    */
   private async handleBrainMessage(message: BrainMessage): Promise<void> {
+    // Skip message handling during shutdown
+    if (this.shuttingDown) return;
+    
     this.log(`NATS: Received ${message.type} from ${message.from}`);
 
     // Convert NATS message to QueueMessage format and handle
@@ -518,6 +593,11 @@ export class Brain {
    * Run a single poll cycle
    */
   async poll(): Promise<void> {
+    // Skip polling if shutdown has been requested
+    if (this.shuttingDown) {
+      return;
+    }
+    
     this.state.lastPollAt = new Date().toISOString();
 
     // Step 0: Infrastructure health check - verify the "body" is healthy before arms
@@ -591,6 +671,9 @@ export class Brain {
     // Step 8: Sync tasks from plan files (database only, no API needed)
     await this.syncPlanTasks();
 
+    // Step 8a: Process inbox items (convert to tasks, clear inbox)
+    await this.processInbox();
+
     // Step 8b: Check for documentation update triggers
     await this.checkDocUpdateTrigger();
 
@@ -644,6 +727,8 @@ export class Brain {
      */
    async run(): Promise<void> {
      this.running = true;
+     this.shuttingDown = false;
+     this.abortController = new AbortController();
      this.state.status = "running";
      this.state.startedAt = this.state.startedAt || new Date().toISOString();
 
@@ -660,9 +745,9 @@ export class Brain {
      await this.poll();
 
      // Polling loop
-     while (this.running) {
+     while (this.running && !this.shuttingDown) {
        await this.sleep(this.options.pollIntervalMs);
-       if (this.running) {
+       if (this.running && !this.shuttingDown) {
          await this.poll();
        }
      }
@@ -699,10 +784,17 @@ export class Brain {
    }
 
    /**
-    * Stop the brain
+    * Stop the brain - signals to exit the polling loop
     */
    stop(): void {
      this.running = false;
+     this.shuttingDown = true;
+     
+     // Abort any pending sleep operations to wake up immediately
+     if (this.abortController) {
+       this.abortController.abort();
+     }
+     
      this.log("Stop requested");
    }
 
@@ -711,7 +803,10 @@ export class Brain {
     * This should be called after run() or runOnce() completes
     */
    async shutdown(): Promise<void> {
-     // Stop the health monitor
+     // Mark as shutting down to prevent new operations
+     this.shuttingDown = true;
+     
+     // Stop the health monitor first (it may be using callbacks)
      if (this.healthMonitor) {
        this.healthMonitor.stop();
      }
@@ -719,14 +814,24 @@ export class Brain {
      // Stop the doc watcher
      stopDocWatcher();
 
-     // Disconnect from NATS
+     // Shutdown arm state machine BEFORE closing database
+     // This clears pending timeouts that might try to use the DB
+     if (this.armStateMachine) {
+       this.armStateMachine.shutdown();
+       this.armStateMachine = null;
+     }
+
+     // Disconnect from NATS (with timeout to avoid hanging)
      await this.stopNats();
 
-     // Close the database
+     // Now safe to close the database
      if (this.db) {
        this.db.close();
        this.db = null;
      }
+     
+     // Clear abort controller
+     this.abortController = null;
 
     this.log("Brain shutdown complete");
   }
@@ -792,6 +897,14 @@ export class Brain {
             intent.subject || message.subject,
             intent.body || message.body,
             intent.targetDoc,
+            message.id
+          );
+          break;
+
+        case "bug_report":
+          await this.createHumanBugReport(
+            intent.title || message.subject,
+            intent.description || message.body,
             message.id
           );
           break;
@@ -961,8 +1074,6 @@ export class Brain {
    * Handle a message from an arm
    */
   private async handleArmMessage(message: QueueMessage): Promise<void> {
-    this.log(`Arm message: ${message.type} from ${message.from}`);
-
     switch (message.type) {
       case "task_complete": {
         const payload = message.payload as { taskId: string; summary: string; artifacts: string[] };
@@ -1028,6 +1139,17 @@ export class Brain {
           errorDetails?: string;
         };
         await this.handleBugReport(message.from, payload);
+        break;
+      }
+
+      case "bug_assignment": {
+        const payload = message.payload as {
+          bugId: string;
+          title: string;
+          assignedBy: string;
+          reason: string;
+        };
+        await this.handleBugAssignment(message.to, payload);
         break;
       }
 
@@ -1146,6 +1268,49 @@ export class Brain {
     this.logActivity("brain", "task_created", taskId, { subject, priority: task.priority, domain: "docs", targetDoc });
 
     return task;
+  }
+
+  /**
+   * Create a bug report from human email
+   */
+  private async createHumanBugReport(
+    title: string,
+    description: string,
+    mailThreadId?: string
+  ): Promise<void> {
+    if (!this.db) {
+      this.log(`Cannot create human bug report: database not available`);
+      return;
+    }
+
+    const bugPayload = {
+      id: `bug-human-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      title,
+      description,
+      source: "human_reported" as const,
+      sourceTaskId: undefined, // Human reports don't have associated tasks
+      errorDetails: undefined,
+    };
+
+    await this.handleBugReport("human", bugPayload);
+
+    this.log(`Created human bug report: ${title}`);
+    this.logActivity("brain", "bug_created", bugPayload.id, { title, source: "human_reported", mailThreadId });
+
+    // Send confirmation to human
+    await this.sendToHuman({
+      subject: `[octopai] Bug Report Received: ${title}`,
+      body: `Thank you for reporting this issue. Your bug report has been logged and will be investigated.
+
+**Bug ID:** ${bugPayload.id}
+**Title:** ${title}
+
+We'll notify you when we start investigating or have updates.`,
+      headers: {
+        "X-Octopai-Type": "bug-confirmation",
+        "X-Octopai-Bug-Id": bugPayload.id,
+      },
+    });
   }
 
   /**
@@ -1430,13 +1595,17 @@ export class Brain {
     // Always update database
     if (this.db) {
       const now = new Date().toISOString();
-      this.db.run(`
+      const result = this.db.run(`
         UPDATE tasks
         SET status = 'completed',
             completed_at = ?,
             updated_at = ?
         WHERE id = ?
       `, [now, now, taskId]);
+      
+      if (result.changes === 0) {
+        this.log(`[completeTask] WARNING: Task ${taskId} not found in database (0 rows updated)`);
+      }
       
       // Update arm status in database
       if (task?.assignedTo) {
@@ -2666,6 +2835,37 @@ This bug has been logged for resolution. Tasks may continue but should be monito
   }
 
   /**
+   * Handle bug assignment notification to an arm
+   */
+  private async handleBugAssignment(
+    armId: string,
+    payload: {
+      bugId: string;
+      title: string;
+      assignedBy: string;
+      reason: string;
+    }
+  ): Promise<void> {
+    // Send notification to the assigned arm via their MCP session
+    await this.sendPromptToArm(armId, `You have been assigned to investigate bug "${payload.title}" (ID: ${payload.bugId}).
+
+**Assignment Details:**
+- Assigned by: ${payload.assignedBy}
+- Reason: ${payload.reason}
+
+Please investigate this bug and update its status using the update_bug_status MCP tool as you progress through the resolution workflow:
+1. Set status to "investigating" when you start investigation
+2. Set status to "fixing" when you implement a fix
+3. Set status to "verifying" when testing the fix
+4. Set status to "resolved" when the bug is fixed
+5. Set status to "closed" when verification is complete
+
+Use the assign_bug tool if you need to delegate this to another arm.`);
+
+    this.log(`Bug ${payload.bugId} assigned to arm ${armId} by ${payload.assignedBy}`);
+  }
+
+  /**
     * Create a task to investigate a bug
     */
   private async createBugInvestigationTask(
@@ -3396,16 +3596,40 @@ Report findings using bug resolution workflow.`,
     }
   }
 
-  /**
-   * Get the harness state for an arm via the API server
-   * This is more reliable than PTY log parsing for API harness arms
-   */
-   private async getArmHarnessState(armId: string): Promise<{ state: string; hasSession: boolean } | null> {
+   /**
+    * Get the harness state for an arm via the API server
+    * This is more reliable than PTY log parsing for API harness arms
+    */
+    private async getArmHarnessState(armId: string): Promise<{ state: string; hasSession: boolean } | null> {
+      try {
+        return await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+      } catch (err) {
+        this.log(`Failed to get harness state for arm ${armId}: ${err}`);
+        return null;
+      }
+    }
+
+   /**
+    * Reset an arm's OpenCode session to clear stale context.
+    * This is called before assigning a new task to ensure the arm
+    * doesn't have old task IDs in its conversation history.
+    * 
+    * @returns true if reset was successful, false otherwise
+    */
+   private async resetArmSession(armId: string): Promise<boolean> {
      try {
-       return await this.apiRequest<{ state: string; hasSession: boolean }>(`/api/arms/${armId}/state`);
+       const result = await this.apiRequest<{ success: boolean; newSessionId?: string }>(
+         `/api/arms/${armId}/reset-session`,
+         { method: "POST" }
+       );
+       if (result?.success) {
+         this.log(`Reset session for arm ${armId}: new session ${result.newSessionId}`);
+         return true;
+       }
+       return false;
      } catch (err) {
-       this.log(`Failed to get harness state for arm ${armId}: ${err}`);
-       return null;
+       this.log(`Failed to reset session for arm ${armId}: ${err}`);
+       return false;
      }
    }
 
@@ -3742,6 +3966,28 @@ Report findings using bug resolution workflow.`,
     }
 
     this.lastInfraFailureNotification = new Date();
+
+    // Create a system-detected bug report for critical infrastructure issues
+    const criticalIssues = issues.filter(issue =>
+      issue.includes("Database") || issue.includes("API Server") || issue.includes("Maildir")
+    );
+    if (criticalIssues.length > 0) {
+      const bugPayload = {
+        id: `bug-system-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: "Critical Infrastructure Issues Detected",
+        description: `The brain detected critical infrastructure failures that may prevent normal operation:\n\n${criticalIssues.map(i => `- ${i}`).join("\n")}\n\nComponent Status:\n- Database: ${this.infrastructureHealth.database.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.database.error || "Unhealthy")}\n- API Server: ${this.infrastructureHealth.apiServer.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.apiServer.error || "Unhealthy")}\n- NATS: ${this.infrastructureHealth.nats.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.nats.error || "Unhealthy")} (optional)\n- Maildir: ${this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy")}`,
+        source: "system_detected" as const,
+        sourceTaskId: undefined,
+        errorDetails: JSON.stringify({
+          infrastructureHealth: this.infrastructureHealth,
+          issues,
+          timestamp: new Date().toISOString(),
+        }),
+      };
+
+      await this.handleBugReport("system", bugPayload);
+      this.log(`Created system-detected bug report for infrastructure issues`);
+    }
 
     await this.sendToHuman({
       subject: "[octopai] Infrastructure health issues detected",
@@ -4506,6 +4752,14 @@ Please resolve these bugs before the task can proceed.`,
 
        if (!bestArm) break;
 
+       // Reset the arm's OpenCode session to clear stale context before assigning new task
+       // This prevents the arm from trying to work on old task IDs from previous sessions
+       const sessionReset = await this.resetArmSession(bestArm.id);
+       if (!sessionReset) {
+         this.log(`Warning: Could not reset session for ${bestArm.id} before task assignment (arm may have stale context)`);
+         // Continue anyway - the arm might still work correctly
+       }
+
        // Use state machine to transition arm to task_assigned state
        if (this.armStateMachine) {
          const result = await this.armStateMachine.transition(bestArm.id, {
@@ -4888,6 +5142,74 @@ Please resolve these bugs before the task can proceed.`,
       }
     } catch (err) {
       this.log(`Failed to sync plan tasks: ${err}`);
+    }
+  }
+
+  /**
+   * Process inbox items
+   * 
+   * Reads .project/inbox.md, creates tasks from items, clears the inbox.
+   * Items are deduplicated against existing tasks.
+   */
+  private async processInbox(): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+      
+      // Parse inbox
+      const result = await parseInbox(projectRoot);
+      
+      if (result.wasEmpty) {
+        return; // Nothing to process
+      }
+
+      if (result.errors.length > 0) {
+        this.log(`Inbox parse errors: ${result.errors.join(", ")}`);
+        return;
+      }
+
+      // Get existing tasks for deduplication
+      const existingTasks = this.db.query(`
+        SELECT subject, description FROM tasks 
+        WHERE status NOT IN ('completed', 'failed', 'cancelled')
+      `).all() as Array<{ subject: string; description: string }>;
+
+      // Deduplicate
+      const newItems = deduplicateItems(result.items, existingTasks);
+
+      if (newItems.length === 0) {
+        // All items were duplicates, clear inbox anyway
+        await clearInbox(projectRoot);
+        this.log(`Inbox: ${result.items.length} items were duplicates, cleared inbox`);
+        return;
+      }
+
+      // Create tasks from inbox items
+      let created = 0;
+      for (const item of newItems) {
+        const taskId = `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        
+        this.db.run(`
+          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, created_at, updated_at)
+          VALUES (?, ?, ?, 'pending', ?, 'inbox', '.project/inbox.md', datetime('now'), datetime('now'))
+        `, [taskId, item.subject, item.description, item.priority]);
+        
+        created++;
+      }
+
+      // Clear the inbox
+      await clearInbox(projectRoot);
+
+      this.log(`Inbox: created ${created} tasks, cleared inbox`);
+      this.logActivity("brain", "inbox_processed", undefined, { 
+        itemsFound: result.items.length, 
+        duplicates: result.items.length - newItems.length,
+        tasksCreated: created 
+      });
+
+    } catch (err) {
+      this.log(`Failed to process inbox: ${err}`);
     }
   }
 
@@ -5332,8 +5654,26 @@ const arm: Arm = {
     await appendFile(logPath, line + "\n", "utf-8");
   }
 
+  /**
+   * Sleep for a given number of milliseconds, but can be interrupted by abort signal
+   */
   private sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      if (!this.abortController || this.abortController.signal.aborted) {
+        resolve();
+        return;
+      }
+      
+      const timeoutId = setTimeout(resolve, ms);
+      
+      // Listen for abort signal to wake up early
+      const abortHandler = () => {
+        clearTimeout(timeoutId);
+        resolve();
+      };
+      
+      this.abortController.signal.addEventListener('abort', abortHandler, { once: true });
+    });
   }
 
   /**
@@ -5456,9 +5796,11 @@ When complete, report:
  */
 
 interface ProcessedIntent {
-  type: "new_task" | "doc_update" | "approval_response" | "query" | "prompt_arm" | "arm_instruction" | "escalate";
+  type: "new_task" | "doc_update" | "bug_report" | "approval_response" | "query" | "prompt_arm" | "arm_instruction" | "escalate";
   subject?: string;
   body?: string;
+  title?: string;
+  description?: string;
   targetDoc?: string;
   originalId?: string;
   approved?: boolean;
@@ -5509,17 +5851,21 @@ export class MailProcessor {
    - Any work that should be tracked and assigned to an available arm
    This is the DEFAULT choice for most human requests about work to be done.
 
-2. **doc_update** - Update documentation structure/format based on human feedback (not content changes)
+2. **bug_report** - Human is reporting a bug or issue they've encountered.
+   USE THIS when the human describes problems, errors, crashes, or unexpected behavior.
+   Example: "The login button doesn't work", "I'm getting an error message", "Something is broken"
 
-3. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
+3. **doc_update** - Update documentation structure/format based on human feedback (not content changes)
 
-4. **query** - Human is asking a question about system status, what's happening, or requesting information
+4. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
 
-5. **prompt_arm** - ONLY use this when the human EXPLICITLY names a specific arm AND wants to send it a direct message.
+5. **query** - Human is asking a question about system status, what's happening, or requesting information
+
+6. **prompt_arm** - ONLY use this when the human EXPLICITLY names a specific arm AND wants to send it a direct message.
    Example: "Tell arm Portia to stop what it's doing" or "Send this to Xenix: ..."
    DO NOT use this for general work requests - those should be new_task.
 
-6. **escalate** - Cannot determine what to do, or requires human clarification
+7. **escalate** - Cannot determine what to do, or requires human clarification
 
 ## IMPORTANT RULES
 - If the human describes work to be done (feature, fix, update, add, etc.), ALWAYS use **new_task**
@@ -5536,6 +5882,7 @@ Respond with a JSON object (no markdown):
 {"type": "...", "reasoning": "...", ...other fields based on type}
 
 For new_task: include subject, body, priority (default: normal)
+For bug_report: include title, description, priority (default: medium)
 For prompt_arm: include armName and instruction (only if arm was explicitly named)
 For query: include the query type
 For approval_response: include originalId, approved (boolean), comment`;

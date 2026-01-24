@@ -18,7 +18,9 @@ import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
 import { getOctopaiDir } from "../config";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import { eventStore } from "../nats/jetstream";
 import { queueMessage, getPendingMessages, markMessageCompleted, getNotes } from "../db/state";
+import { broadcast } from "../api/websocket";
 import {
   generateTaskDetermination,
   generateContextBundle,
@@ -26,6 +28,15 @@ import {
   formatContextBundle,
   type PromptContext,
 } from "../brain/prompt-generator";
+import {
+  getServiceStatus,
+  restartService,
+  stopService,
+  startService,
+  isSelfModifyAllowed,
+  formatUptime,
+  type ServiceType,
+} from "../daemon";
 
 // Get octopai directory from env or default (project-local)
 const OCTOPAI_DIR = getOctopaiDir();
@@ -107,18 +118,22 @@ async function getNatsClient(): Promise<NatsClient | null> {
 }
 
 /**
- * Log an activity to the database
+ * Log an activity to JetStream
  */
 function logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
-  try {
-    const database = getDatabase(false);
-    const now = new Date().toISOString();
-    database.run(
-      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-      [now, actor, action, target || null, JSON.stringify(details || {})]
-    );
-  } catch {
-    // Activity logging is best-effort
+  if (eventStore.isInitialized()) {
+    const subject = target 
+      ? `octopai.events.arm.${target}.${action}`
+      : `octopai.events.mcp.${action}`;
+    
+    eventStore.publishEvent(subject, {
+      type: action,
+      armId: target,
+      data: { actor, ...details },
+      timestamp: new Date().toISOString(),
+    }).catch(() => {
+      // Activity logging is best-effort
+    });
   }
 }
 
@@ -894,10 +909,201 @@ export function createMcpServer(): McpServer {
         content: [
           {
             type: "text" as const,
-            text: `Bug reported: "${title}" (ID: ${bugPayload.id}). Brain will prioritize and assign investigation (message: ${messageId}).`,
+            text: `Bug reported: ${title} (message: ${messageId}). Brain will process and may create investigation tasks.`,
           },
         ],
       };
+    }
+  );
+
+  // Update bug status during investigation/fix process
+  server.registerTool(
+    "update_bug_status",
+    {
+      description: "Update the status of a bug during investigation or resolution. Use this to mark bugs as investigating, fixing, verifying, resolved, or closed.",
+      inputSchema: {
+        bug_id: z.string().describe("ID of the bug to update"),
+        status: z.enum(["open", "investigating", "fixing", "verifying", "resolved", "closed"]).describe("New status for the bug"),
+        resolution: z.string().optional().describe("Resolution details if marking as resolved"),
+        assignee_arm_id: z.string().optional().describe("Assign this bug to a specific arm"),
+      },
+    },
+    async ({ bug_id, status, resolution, assignee_arm_id }) => {
+      const database = getDatabase();
+
+      try {
+        // Get current bug
+        const existingBug = database.query("SELECT * FROM bugs WHERE id = ?").get(bug_id) as any;
+        if (!existingBug) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Bug ${bug_id} not found.`,
+              },
+            ],
+          };
+        }
+
+        const now = new Date().toISOString();
+        const updates: string[] = [];
+        const params: any[] = [];
+
+        if (status !== existingBug.status) {
+          updates.push("status = ?");
+          params.push(status);
+        }
+
+        if (resolution && resolution !== existingBug.resolution) {
+          updates.push("resolution = ?");
+          params.push(resolution);
+        }
+
+        if (assignee_arm_id && assignee_arm_id !== existingBug.assignee_arm_id) {
+          updates.push("assignee_arm_id = ?");
+          params.push(assignee_arm_id);
+        }
+
+        if (status === "resolved" || status === "closed") {
+          updates.push("resolved_at = ?");
+          params.push(now);
+        }
+
+        updates.push("updated_at = ?");
+        params.push(now);
+
+        if (updates.length > 1) { // More than just updated_at
+          const result = database.run(`UPDATE bugs SET ${updates.join(", ")} WHERE id = ?`, [...params, bug_id]);
+
+          if (result.changes > 0) {
+            // Broadcast update
+            broadcast("bugs", "bug.updated", { bugId: bug_id, updates: { status, resolution, assigneeArmId: assignee_arm_id } });
+
+            logActivity(ARM_ID, "update_bug_status", bug_id, {
+              status,
+              resolution: resolution ? "provided" : undefined,
+              assignee: assignee_arm_id,
+            });
+
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Bug ${bug_id} updated: status=${status}${resolution ? `, resolution provided` : ''}${assignee_arm_id ? `, assigned to ${assignee_arm_id}` : ''}`,
+                },
+              ],
+            };
+          }
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No changes needed for bug ${bug_id}.`,
+            },
+          ],
+        };
+      } catch (err) {
+        console.error(`[MCP] Error updating bug ${bug_id}:`, err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to update bug ${bug_id}: ${err}`,
+            },
+          ],
+        };
+      }
+    }
+  );
+
+  // Assign bug to an arm for investigation/fix
+  server.registerTool(
+    "assign_bug",
+    {
+      description: "Assign a bug to a specific arm for investigation or fixing. Use this when you need to delegate bug handling to another arm.",
+      inputSchema: {
+        bug_id: z.string().describe("ID of the bug to assign"),
+        assignee_arm_id: z.string().describe("ID of the arm to assign this bug to"),
+        reason: z.string().optional().describe("Reason for this assignment"),
+      },
+    },
+    async ({ bug_id, assignee_arm_id, reason }) => {
+      const database = getDatabase();
+
+      try {
+        // Verify bug exists
+        const bug = database.query("SELECT title FROM bugs WHERE id = ?").get(bug_id) as any;
+        if (!bug) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Bug ${bug_id} not found.`,
+              },
+            ],
+          };
+        }
+
+        // Update assignee
+        const now = new Date().toISOString();
+        const result = database.run(
+          "UPDATE bugs SET assignee_arm_id = ?, updated_at = ? WHERE id = ?",
+          [assignee_arm_id, now, bug_id]
+        );
+
+        if (result.changes > 0) {
+          // Broadcast update
+          broadcast("bugs", "bug.updated", { bugId: bug_id, updates: { assigneeArmId: assignee_arm_id } });
+
+          logActivity(ARM_ID, "assign_bug", bug_id, {
+            assignee: assignee_arm_id,
+            reason,
+          });
+
+          // Send notification to assigned arm
+          await sendToBrain({
+            from: ARM_ID,
+            to: assignee_arm_id,
+            type: "bug_assignment",
+            payload: {
+              bugId: bug_id,
+              title: bug.title,
+              assignedBy: ARM_ID,
+              reason: reason || "Bug investigation required",
+            },
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Bug "${bug.title}" assigned to arm ${assignee_arm_id}.`,
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Bug ${bug_id} is already assigned to ${assignee_arm_id}.`,
+            },
+          ],
+        };
+      } catch (err) {
+        console.error(`[MCP] Error assigning bug ${bug_id}:`, err);
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to assign bug ${bug_id}: ${err}`,
+            },
+          ],
+        };
+      }
     }
   );
 
@@ -1829,7 +2035,7 @@ export function createMcpServer(): McpServer {
         
         // Check for thrashing if this was a write operation
         if ((operation === "write" || operation === "create") && success) {
-          checkAndEscalateIfThrashing(database, file_path);
+          await checkAndEscalateIfThrashing(database, file_path);
         }
         
         database.close();
@@ -3030,6 +3236,298 @@ export function createMcpServer(): McpServer {
               text: `Failed to retrieve arm events: ${errorMsg}`,
             },
           ],
+        };
+      }
+    }
+  );
+
+  // ============================================
+  // SERVICE MANAGEMENT TOOLS
+  // These tools require OCTOPAI_SELF_MODIFY=1 env var
+  // Only available to arms working on Octopai itself
+  // ============================================
+
+  // Get service status
+  server.registerTool(
+    "service_status",
+    {
+      description: "Get the status of Octopai services (server, brain). Always available.",
+      inputSchema: {
+        service: z.enum(["server", "brain", "all"]).describe("Which service to check"),
+      },
+    },
+    async ({ service }) => {
+      try {
+        if (service === "all") {
+          const [serverStatus, brainStatus] = await Promise.all([
+            getServiceStatus("server"),
+            getServiceStatus("brain"),
+          ]);
+          
+          const formatStatus = (s: typeof serverStatus) => {
+            if (s.running) {
+              return `${s.type}: RUNNING (PID: ${s.pid}, uptime: ${formatUptime(s.uptime || 0)})`;
+            }
+            return `${s.type}: STOPPED`;
+          };
+          
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Service Status:\n  ${formatStatus(serverStatus)}\n  ${formatStatus(brainStatus)}`,
+              },
+            ],
+          };
+        }
+        
+        const status = await getServiceStatus(service as ServiceType);
+        
+        if (status.running) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${service}: RUNNING\n  PID: ${status.pid}\n  Started: ${status.startedAt}\n  Uptime: ${formatUptime(status.uptime || 0)}`,
+              },
+            ],
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `${service}: STOPPED`,
+            },
+          ],
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error checking service status: ${err}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Restart a service (requires OCTOPAI_SELF_MODIFY=1)
+  server.registerTool(
+    "service_restart",
+    {
+      description: 
+        "Restart an Octopai service (server or brain). " +
+        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable. " +
+        "Only use this when working on Octopai code itself and need to apply changes.",
+      inputSchema: {
+        service: z.enum(["server", "brain"]).describe("Which service to restart"),
+        force: z.boolean().optional().describe("Force kill if graceful shutdown fails"),
+      },
+    },
+    async ({ service, force }) => {
+      // Check permission first
+      if (!isSelfModifyAllowed()) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: 
+                "ERROR: Service restart requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Octopai codebase itself. " +
+                "The environment variable acts as a safety guard to prevent accidental service restarts.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      
+      try {
+        console.error(`[MCP] service_restart called by ${ARM_ID} for ${service}`);
+        logActivity(ARM_ID, "service_restart", service, { force });
+        
+        const status = await restartService(service as ServiceType, {
+          force: force ?? false,
+          timeout: 5000,
+        });
+        
+        if (status.running) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${service} restarted successfully.\n  PID: ${status.pid}\n  Started: ${status.startedAt}`,
+              },
+            ],
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to restart ${service}. Service is not running after restart attempt.`,
+            },
+          ],
+          isError: true,
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error restarting ${service}: ${err}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Stop a service (requires OCTOPAI_SELF_MODIFY=1)
+  server.registerTool(
+    "service_stop",
+    {
+      description: 
+        "Stop an Octopai service (server or brain). " +
+        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable. " +
+        "Use with caution - stopping the server will disconnect this arm!",
+      inputSchema: {
+        service: z.enum(["server", "brain"]).describe("Which service to stop"),
+        force: z.boolean().optional().describe("Force kill if graceful shutdown fails"),
+      },
+    },
+    async ({ service, force }) => {
+      // Check permission first
+      if (!isSelfModifyAllowed()) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: 
+                "ERROR: Service stop requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Octopai codebase itself.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      
+      // Warn about stopping the server
+      if (service === "server") {
+        console.error(`[MCP] WARNING: ${ARM_ID} is stopping the server - this arm will lose connection!`);
+      }
+      
+      try {
+        console.error(`[MCP] service_stop called by ${ARM_ID} for ${service}`);
+        logActivity(ARM_ID, "service_stop", service, { force });
+        
+        const status = await stopService(service as ServiceType, {
+          force: force ?? false,
+          timeout: 5000,
+        });
+        
+        if (!status.running) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${service} stopped successfully.`,
+              },
+            ],
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to stop ${service}. Service is still running (PID: ${status.pid}).`,
+            },
+          ],
+          isError: true,
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error stopping ${service}: ${err}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // Start a service (requires OCTOPAI_SELF_MODIFY=1)
+  server.registerTool(
+    "service_start",
+    {
+      description: 
+        "Start an Octopai service (server or brain). " +
+        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable.",
+      inputSchema: {
+        service: z.enum(["server", "brain"]).describe("Which service to start"),
+      },
+    },
+    async ({ service }) => {
+      // Check permission first
+      if (!isSelfModifyAllowed()) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: 
+                "ERROR: Service start requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Octopai codebase itself.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      
+      try {
+        console.error(`[MCP] service_start called by ${ARM_ID} for ${service}`);
+        logActivity(ARM_ID, "service_start", service, {});
+        
+        const status = await startService(service as ServiceType);
+        
+        if (status.running) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `${service} started successfully.\n  PID: ${status.pid}\n  Started: ${status.startedAt}`,
+              },
+            ],
+          };
+        }
+        
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Failed to start ${service}.`,
+            },
+          ],
+          isError: true,
+        };
+      } catch (err) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Error starting ${service}: ${err}`,
+            },
+          ],
+          isError: true,
         };
       }
     }

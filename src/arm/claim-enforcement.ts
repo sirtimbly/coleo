@@ -10,6 +10,7 @@
 import { Database } from "bun:sqlite";
 import { join } from "path";
 import { getOctopaiDir } from "../config";
+import { eventStore } from "../nats/jetstream";
 
 export type ClaimMode = "strict" | "lazy" | "disabled";
 
@@ -162,11 +163,15 @@ export function autoClaimFile(
       [armId, filePath, claimType, now]
     );
     
-    // Log the activity
-    db.run(
-      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-      [now, armId, "auto_claim_file", filePath, JSON.stringify({ claim_type: claimType })]
-    );
+    // Log the activity to JetStream
+    if (eventStore.isInitialized()) {
+      eventStore.publishEvent(`octopai.events.arm.${armId}.auto_claim_file`, {
+        type: "auto_claim_file",
+        armId,
+        data: { filePath, claim_type: claimType },
+        timestamp: now,
+      }).catch(() => {});
+    }
     
     return true;
   } catch (err) {
@@ -178,21 +183,37 @@ export function autoClaimFile(
 /**
  * Detect file thrashing (multiple arms overwriting same file)
  */
-export function detectThrashing(
-  db: Database,
+export async function detectThrashing(
+  _db: Database,
   filePath: string,
   windowMinutes: number = 30
-): { isTrash: boolean; arms: string[]; overwriteCount: number } {
+): Promise<{ isTrash: boolean; arms: string[]; overwriteCount: number }> {
   try {
-    const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000).toISOString();
+    if (!eventStore.isInitialized()) {
+      return { isTrash: false, arms: [], overwriteCount: 0 };
+    }
     
-    // Look for file write activities in the time window
-    const activities = db.query(`
-      SELECT actor, timestamp FROM activity 
-      WHERE target = ? AND timestamp > ?
-      AND (action LIKE '%write%' OR action LIKE '%edit%' OR action LIKE '%modify%')
-      ORDER BY timestamp ASC
-    `).all(filePath, windowStart) as Array<{ actor: string; timestamp: string }>;
+    const windowStart = new Date(Date.now() - windowMinutes * 60 * 1000);
+    
+    // Query JetStream for file write activities
+    const events = await eventStore.queryEvents({
+      limit: 100,
+      since: windowStart,
+    });
+    
+    // Filter for file write/edit/modify activities on this file
+    const activities = events
+      .filter(e => {
+        const action = e.type || "";
+        const target = e.data?.filePath || e.data?.file_path || e.data?.target || "";
+        const isWriteAction = action.includes("write") || action.includes("edit") || action.includes("modify");
+        return isWriteAction && target === filePath;
+      })
+      .map(e => ({
+        actor: e.armId || "unknown",
+        timestamp: e.timestamp,
+      }))
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
     
     if (activities.length < 2) {
       return { isTrash: false, arms: [], overwriteCount: 0 };
@@ -234,11 +255,14 @@ export function escalateClaimModeForFile(
   try {
     const now = new Date().toISOString();
     
-    // Log the escalation
-    db.run(
-      `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-      [now, "system", "claim_mode_escalated", filePath, JSON.stringify({ reason, mode: "strict" })]
-    );
+    // Log the escalation to JetStream
+    if (eventStore.isInitialized()) {
+      eventStore.publishEvent(`octopai.events.system.claim_mode_escalated`, {
+        type: "claim_mode_escalated",
+        data: { filePath, reason, mode: "strict" },
+        timestamp: now,
+      }).catch(() => {});
+    }
     
     // For now, we could store per-file claim modes in a separate table
     // But for this implementation, we'll just log it and rely on global mode
@@ -259,16 +283,16 @@ export function getDatabase(readonly = true): Database {
 /**
  * Monitor file for thrashing and auto-escalate if needed
  */
-export function checkAndEscalateIfThrashing(
+export async function checkAndEscalateIfThrashing(
   db: Database,
   filePath: string
-): void {
+): Promise<void> {
   const config = getClaimEnforcementConfig(db);
   if (!config.enableThrashingDetection) {
     return;
   }
   
-  const thrashResult = detectThrashing(db, filePath);
+  const thrashResult = await detectThrashing(db, filePath);
   if (thrashResult.isTrash) {
     escalateClaimModeForFile(
       db,

@@ -16,7 +16,7 @@ import {
   type ArmState,
   type BrainMessage,
 } from './types';
-import { eventStore } from './jetstream';
+import { initializeJetStreamEventStore } from './jetstream';
 
 const jc = JSONCodec<unknown>();
 
@@ -59,7 +59,7 @@ export class NatsClient {
       try {
         const js = this.connection.jetstream();
         const jsm = await this.connection.jetstreamManager();
-        await eventStore.initialize(js, jsm);
+        await initializeJetStreamEventStore(js, jsm);
         this.log('JetStream EventStore initialized');
       } catch (err) {
         this.log(`Failed to initialize JetStream: ${err}`, 'error');
@@ -86,17 +86,43 @@ export class NatsClient {
 
   /**
    * Disconnect from the NATS server
+   * @param timeoutMs Maximum time to wait for drain (default 2000ms)
    */
-  async disconnect(): Promise<void> {
-    // Unsubscribe from all subscriptions
+  async disconnect(timeoutMs = 2000): Promise<void> {
+    // Unsubscribe from all subscriptions first
     for (const sub of this.subscriptions) {
-      sub.unsubscribe();
+      try {
+        sub.unsubscribe();
+      } catch {
+        // Ignore errors during unsubscribe
+      }
     }
     this.subscriptions = [];
 
     if (this.connection) {
-      await this.connection.drain();
-      await this.connection.close();
+      try {
+        // Use a race between drain and timeout for graceful shutdown
+        // If drain takes too long, force close
+        const drainPromise = this.connection.drain();
+        const timeoutPromise = new Promise<'timeout'>((resolve) => {
+          setTimeout(() => resolve('timeout'), timeoutMs);
+        });
+        
+        const result = await Promise.race([drainPromise, timeoutPromise]);
+        
+        if (result === 'timeout') {
+          this.log('NATS drain timed out, forcing close');
+        }
+      } catch (err) {
+        // Drain may fail if connection is already closed
+        this.log(`NATS drain error (expected during shutdown): ${err}`, 'debug');
+      }
+      
+      try {
+        await this.connection.close();
+      } catch {
+        // Ignore close errors
+      }
       this.connection = null;
     }
 

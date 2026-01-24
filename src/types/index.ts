@@ -249,7 +249,8 @@ export type MessageType =
   | "dev_server_restart_request"
   | "context_compression"
   | "status_report"
-  | "bug_report";
+  | "bug_report"
+  | "bug_assignment";
 
 // Discovery report from an arm
 export interface Discovery {
@@ -369,9 +370,10 @@ export interface OctopaiConfig {
 }
 
 // Default config
+// Note: octopaiDir is set dynamically by loadConfig() based on cwd or OCTOPAI_DIR env var
 export const DEFAULT_CONFIG: OctopaiConfig = {
   version: 1,
-  octopaiDir: "~/.octopai",
+  octopaiDir: ".octopai", // Placeholder - always overwritten by loadConfig()
   brain: {
     pollIntervalMs: 30000,
     maxArms: 8,
@@ -387,7 +389,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   defaults: {
     harness: "opencode-api",
     provider: "opencode",
-    model: "grok-code",
+    model: "claude-sonnet-4",
     contextBudget: 100000,
   },
 };

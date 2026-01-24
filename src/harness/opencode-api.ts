@@ -13,9 +13,10 @@ import { spawn, type Subprocess } from "bun";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getOctopaiDir } from "../config";
-import { OpenCodeEventStream, filterEvent, truncateLargeFields, type OpenCodeEvent } from "./event-stream";
+import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
+import { resolveModel } from "./model-resolver";
 import type {
   AgentHarness,
   HarnessSession,
@@ -122,6 +123,28 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Find an available port (handles case where old processes are still running)
     const port = await this.findAvailablePort();
 
+    // Resolve model - validate and fallback if needed
+    // This ensures we use a model that's actually available
+    let resolvedProvider = config.provider;
+    let resolvedModel = config.model;
+    
+    if (config.provider && config.model) {
+      try {
+        // Use Octopai API to check available models (server runs on 8080)
+        const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
+        resolvedProvider = resolved.providerId;
+        resolvedModel = resolved.modelId;
+        
+        if (resolved.fallback) {
+          console.log(`[harness-api] Model fallback: ${config.provider}/${config.model} -> ${resolved.providerId}/${resolved.modelId}`);
+          console.log(`[harness-api] Reason: ${resolved.fallbackReason}`);
+        }
+      } catch (err) {
+        console.log(`[harness-api] Model resolution failed, using original: ${err}`);
+        // Continue with original model - OpenCode will handle the error
+      }
+    }
+
     // Build environment for the OpenCode server
     // IMPORTANT: Include full process.env to ensure MCP servers can spawn subprocesses
     const env: Record<string, string> = {
@@ -186,13 +209,13 @@ export class OpenCodeApiHarness implements AgentHarness {
       },
     };
 
-    // Set default model if provider/model specified
+    // Set default model if provider/model specified (use resolved model)
     // Format: "provider_id/model_id" (e.g., "anthropic/claude-sonnet-4-20250514")
-    if (config.provider && config.model) {
-      opencodeConfig.model = `${config.provider}/${config.model}`;
-    } else if (config.model) {
+    if (resolvedProvider && resolvedModel) {
+      opencodeConfig.model = `${resolvedProvider}/${resolvedModel}`;
+    } else if (resolvedModel) {
       // If only model specified, use it directly (might include provider already)
-      opencodeConfig.model = config.model;
+      opencodeConfig.model = resolvedModel;
     }
 
     // Write OpenCode config to the MCP directory
@@ -270,18 +293,18 @@ export class OpenCodeApiHarness implements AgentHarness {
       throw new Error("Failed to create session: no session ID returned");
     }
 
-    // Initialize session with model if specified
-    if (config.provider && config.model) {
+    // Initialize session with model if specified (use resolved model)
+    if (resolvedProvider && resolvedModel) {
       try {
         await client.session.init({
           path: { id: session.id },
           body: {
-            modelID: config.model,
-            providerID: config.provider,
+            modelID: resolvedModel,
+            providerID: resolvedProvider,
             messageID: `init_${Date.now()}`,
           },
         });
-        console.log(`[harness-api] Initialized session with model: ${config.provider}/${config.model}`);
+        console.log(`[harness-api] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
       } catch (initError) {
         console.log(`[harness-api] Session init warning: ${initError}`);
       }
@@ -306,8 +329,8 @@ export class OpenCodeApiHarness implements AgentHarness {
       sessionId: session.id,
       port,
       client,
-      provider: config.provider,
-      model: config.model,
+      provider: resolvedProvider,
+      model: resolvedModel,
     };
 
     // Start event stream subscription
@@ -320,18 +343,27 @@ export class OpenCodeApiHarness implements AgentHarness {
           // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
           const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
           
-          // Publish to JetStream for persistence (limit payload size)
-          try {
-            const subject = `octopai.events.arm.${armId}.${event.type}`;
-            await eventStore.publishEvent(subject, {
-              type: event.type,
-              armId,
-              sessionId: event.properties?.sessionID as string,
-              data: truncatedProps,
-              timestamp: new Date().toISOString(),
-            });
-          } catch (err) {
-            console.error(`[harness-api] Failed to publish event to JetStream: ${err}`);
+          // Check if this event should be persisted to JetStream
+          const persistCheck = shouldPersistEvent(event);
+          
+          // Publish to JetStream for persistence (only meaningful events)
+          if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+            try {
+              const subject = `octopai.events.arm.${armId}.${event.type}`;
+              await eventStore.publishEvent(subject, {
+                type: event.type,
+                armId,
+                sessionId: event.properties?.sessionID as string,
+                data: truncatedProps,
+                timestamp: new Date().toISOString(),
+                // Include extracted data for monitoring
+                ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+              });
+            } catch (err) {
+              console.error(`[harness-api] Failed to publish event to JetStream: ${err}`);
+            }
           }
 
           // Also emit to legacy callbacks for backward compatibility
@@ -415,35 +447,21 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Create SDK client for recovered session
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    // Get existing sessions from the server using SDK
+    // Always create a NEW session for recovered arm to prevent stale context
+    // Previous sessions may have old task IDs that no longer exist in the database
     try {
-      const sessionsResponse = await client.session.list();
-      const sessions = sessionsResponse.data;
+      console.log(`[harness-api] Creating new session for recovered arm ${armId}`);
+      const newSessionResponse = await client.session.create({
+        body: { title: `Octopai Arm: ${armId} (recovered)` },
+      });
+      const recoveredSession = newSessionResponse.data;
       
-      let existingSession: Session;
-      
-      if (!sessions || sessions.length === 0) {
-        // No sessions, create one
-        console.log(`[harness-api] No existing sessions, creating new one`);
-        const newSessionResponse = await client.session.create({
-          body: { title: "Octopai Arm Session" },
-        });
-        const newSession = newSessionResponse.data;
-        
-        if (!newSession?.id) {
-          console.log(`[harness-api] Failed to create session`);
-          return null;
-        }
-        existingSession = newSession;
-      } else {
-        // Use the first (or only) session
-        const first = sessions[0];
-        if (!first) {
-          console.log(`[harness-api] Sessions array empty after check`);
-          return null;
-        }
-        existingSession = first;
+      if (!recoveredSession?.id) {
+        console.log(`[harness-api] Failed to create session for recovered arm`);
+        return null;
       }
+      
+      console.log(`[harness-api] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
       
       const sessionId = `opencode-api-recovered-${armId}-${Date.now().toString(36)}`;
       
@@ -463,7 +481,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         lastHeartbeat: new Date(),
         serverUrl,
         serverProcess: undefined, // We don't have a reference to the process
-        sessionId: existingSession.id,
+        sessionId: recoveredSession.id,
         port,
         client,
       };
@@ -473,7 +491,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         const eventStream = new OpenCodeEventStream({
           serverUrl,
           armId,
-          sessionId: existingSession.id,
+          sessionId: recoveredSession.id,
           onEvent: (event: OpenCodeEvent) => {
             const { shouldBroadcast, eventName, data } = filterEvent(event);
             if (shouldBroadcast) {
@@ -496,7 +514,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         this.nextPort = port + 1;
       }
 
-      console.log(`[harness-api] Recovered session for ${armId} on port ${port} (session: ${existingSession.id})`);
+      console.log(`[harness-api] Recovered session for ${armId} on port ${port} (session: ${recoveredSession.id})`);
       return apiSession;
     } catch (err) {
       console.log(`[harness-api] Failed to recover session: ${err}`);
@@ -541,6 +559,71 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     this.sessions.delete(session.id);
     console.log(`[harness-api] OpenCode API session ${session.id} killed`);
+  }
+
+  /**
+   * Reset the session by creating a new OpenCode session.
+   * This clears the conversation context, removing any stale task references.
+   * Called by the brain after an arm completes a task and needs a fresh context.
+   * 
+   * @returns The new OpenCode session ID
+   */
+  async resetSession(session: HarnessSession): Promise<string | undefined> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      console.log(`[harness-api] Session ${session.id} not found for reset`);
+      return undefined;
+    }
+
+    try {
+      console.log(`[harness-api] Resetting session ${session.id} - creating new OpenCode session`);
+      
+      // Stop the existing event stream
+      if (apiSession.eventStream) {
+        apiSession.eventStream.stop();
+      }
+
+      // Create a new OpenCode session via SDK
+      const newSessionResponse = await apiSession.client.session.create({
+        body: { title: `Octopai Arm Session (reset ${Date.now()})` },
+      });
+      const newSession = newSessionResponse.data;
+
+      if (!newSession?.id) {
+        console.log(`[harness-api] Failed to create new session during reset`);
+        return undefined;
+      }
+
+      const oldSessionId = apiSession.sessionId;
+      apiSession.sessionId = newSession.id;
+      apiSession.lastHeartbeat = new Date();
+
+      // Restart event stream with new session ID
+      if (this.eventCallbacks.size > 0) {
+        const eventStream = new OpenCodeEventStream({
+          serverUrl: apiSession.serverUrl,
+          armId: session.id.replace(/^opencode-api-/, ""),
+          sessionId: newSession.id,
+          onEvent: (event: OpenCodeEvent) => {
+            const { shouldBroadcast, eventName, data } = filterEvent(event);
+            if (shouldBroadcast) {
+              this.emitEvent(session.id, eventName, data);
+            }
+          },
+          onError: (error) => {
+            console.error(`[harness-api] ${session.id} event stream error:`, error.message);
+          },
+        });
+        eventStream.start();
+        apiSession.eventStream = eventStream;
+      }
+
+      console.log(`[harness-api] Session reset complete: ${oldSessionId} -> ${newSession.id}`);
+      return newSession.id;
+    } catch (err) {
+      console.error(`[harness-api] Failed to reset session: ${err}`);
+      return undefined;
+    }
   }
 
   /**
@@ -787,4 +870,109 @@ export class OpenCodeApiHarness implements AgentHarness {
     const apiSession = this.sessions.get(session.id);
     return apiSession?.sessionId;
   }
+
+  /**
+   * Wait for the next control request (question, permission, approval, etc.)
+   * Returns null if timeout is reached without a control request
+   */
+  async waitForControlRequest(session: HarnessSession, timeout: number = 60000): Promise<ControlRequest | null> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    try {
+      const response = await apiSession.client.tui.control.next({
+        query: { directory: process.cwd() },
+      });
+
+      if (!response.data) {
+        return null;
+      }
+
+      // The response is { path: string, body: unknown }
+      // The path indicates the type (e.g., "/session/{id}/permissions/{permissionID}")
+      const { path, body } = response.data as { path: string; body: unknown };
+      
+      console.log(`[harness-api] Control request received: ${path}`);
+      
+      return {
+        type: path.includes("/permissions/") ? "permission" : "question",
+        path,
+        data: body,
+      };
+    } catch (err) {
+      // Timeout or no pending request
+      console.log(`[harness-api] No control request: ${err}`);
+      return null;
+    }
+  }
+
+  /**
+   * Respond to a control request (question/approval/permission)
+   */
+  async respondToControl(session: HarnessSession, response: string | ControlResponse): Promise<void> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    // If response is a string, wrap it in the expected format
+    const body = typeof response === "string" ? { body: response } : response;
+
+    const res = await apiSession.client.tui.control.response({
+      body,
+      query: { directory: process.cwd() },
+    });
+
+    if (res.error) {
+      throw new Error(`Failed to respond to control: ${res.error}`);
+    }
+
+    console.log(`[harness-api] Control response sent`);
+  }
+
+  /**
+   * Respond to a permission request specifically
+   * @param permissionResponse - "once" to allow once, "always" to always allow, "reject" to deny
+   */
+  async respondToPermission(
+    session: HarnessSession, 
+    permissionId: string, 
+    permissionResponse: "once" | "always" | "reject"
+  ): Promise<void> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    const res = await apiSession.client.postSessionIdPermissionsPermissionId({
+      path: { id: apiSession.sessionId, permissionID: permissionId },
+      body: { response: permissionResponse },
+      query: { directory: process.cwd() },
+    });
+
+    if (res.error) {
+      throw new Error(`Failed to respond to permission: ${JSON.stringify(res.error)}`);
+    }
+
+    console.log(`[harness-api] Permission ${permissionId} responded with: ${permissionResponse}`);
+  }
+}
+
+/**
+ * Control request from OpenCode (question, permission, etc.)
+ */
+export interface ControlRequest {
+  type: "question" | "permission" | string;
+  path: string;
+  data?: unknown;
+}
+
+/**
+ * Response to a control request
+ */
+export interface ControlResponse {
+  body?: unknown;
+  [key: string]: unknown;
 }

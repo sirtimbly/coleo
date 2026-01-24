@@ -211,9 +211,18 @@ export class OpenCodeEventStream {
             sessionId: this.sessionId,
           },
         };
-        this.onEvent(event);
+        if (event.type !== "message.part.updated") {
+          // const propsStr = JSON.stringify(event.properties, null, 2);
+          // const truncatedProps = propsStr.length > 2000 
+          //   ? propsStr.slice(0, 2000) + `\n... [truncated ${propsStr.length - 2000} chars]`
+          //   : propsStr;
+          // console.log(`[event-stream] ${this.armId} EVENT: ${event.type}\n${truncatedProps}`);
+        
+          this.onEvent(event);
+        }        
       } catch {
         // Non-JSON data, wrap it
+        console.log(`[event-stream] ${this.armId} RAW EVENT: ${eventType} - ${data.slice(0, 500)}`);
         this.onEvent({
           type: eventType,
           properties: { raw: data, armId: this.armId, sessionId: this.sessionId },
@@ -365,4 +374,220 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
     eventName: type.replace(/\./g, '-'),
     data: truncate(props),
   };
+}
+
+// ============================================================================
+// JetStream Persistence Filtering
+// ============================================================================
+
+/**
+ * Result of checking if an event should be persisted to JetStream.
+ * Includes extracted data for token tracking and file change monitoring.
+ */
+export interface PersistenceCheckResult {
+  /** Whether this event should be stored in JetStream */
+  shouldPersist: boolean;
+  
+  /** Reason for the decision (for debugging) */
+  reason: string;
+  
+  /** Extracted token/cost data from step-finish events */
+  tokenData?: {
+    input: number;
+    output: number;
+    reasoning: number;
+    cacheRead: number;
+    cacheWrite: number;
+    cost: number;
+  };
+  
+  /** Extracted file changes from session.diff events */
+  fileChanges?: string[];
+  
+  /** Extracted message completion data */
+  messageData?: {
+    messageId: string;
+    role: string;
+    modelId?: string;
+    providerId?: string;
+    agent?: string;
+    completedAt: number;
+  };
+}
+
+/**
+ * Determine if an OpenCode event should be persisted to JetStream.
+ * 
+ * Persistence rules:
+ * - ALWAYS persist: session.status, session.idle, session.updated, session.error, session.diff (non-empty)
+ * - PERSIST ONCE: message.updated (only with time.completed), message.part.updated (only step-finish)
+ * - NEVER persist: streaming text updates, server.connected, intermediate message.updated
+ * 
+ * This function also extracts relevant data for token tracking and file change monitoring.
+ */
+export function shouldPersistEvent(event: OpenCodeEvent): PersistenceCheckResult {
+  const type = event.type;
+  const props = event.properties || {};
+  
+  // -------------------------------------------------------------------------
+  // NEVER PERSIST: Connection/keepalive events
+  // -------------------------------------------------------------------------
+  if (type === 'server.connected') {
+    return { shouldPersist: false, reason: 'keepalive event' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // ALWAYS PERSIST: Session state machine events
+  // -------------------------------------------------------------------------
+  if (type === 'session.status') {
+    return { shouldPersist: true, reason: 'session status change' };
+  }
+  
+  if (type === 'session.idle') {
+    return { shouldPersist: true, reason: 'session became idle' };
+  }
+  
+  if (type === 'session.error') {
+    return { shouldPersist: true, reason: 'session error' };
+  }
+  
+  if (type === 'session.updated') {
+    return { shouldPersist: true, reason: 'session metadata update' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST IF NON-EMPTY: File changes for claims/contention tracking
+  // -------------------------------------------------------------------------
+  if (type === 'session.diff') {
+    const diff = props.diff as Array<{ file?: string }> | undefined;
+    if (diff && Array.isArray(diff) && diff.length > 0) {
+      const fileChanges = diff.map(d => d.file).filter((f): f is string => !!f);
+      return { 
+        shouldPersist: true, 
+        reason: 'file changes detected',
+        fileChanges,
+      };
+    }
+    return { shouldPersist: false, reason: 'empty session.diff' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST ONCE: Message completion (only when time.completed is present)
+  // -------------------------------------------------------------------------
+  if (type === 'message.updated') {
+    const info = props.info as Record<string, unknown> | undefined;
+    if (!info) {
+      return { shouldPersist: false, reason: 'message.updated without info' };
+    }
+    
+    const time = info.time as { created?: number; completed?: number } | undefined;
+    if (!time?.completed) {
+      return { shouldPersist: false, reason: 'message.updated without completion time (streaming)' };
+    }
+    
+    // This is a completed message - extract data for logging
+    return {
+      shouldPersist: true,
+      reason: 'completed message',
+      messageData: {
+        messageId: info.id as string,
+        role: info.role as string,
+        modelId: info.modelID as string | undefined,
+        providerId: info.providerID as string | undefined,
+        agent: info.agent as string | undefined,
+        completedAt: time.completed,
+      },
+    };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST ONCE: Step completion with token/cost data
+  // -------------------------------------------------------------------------
+  if (type === 'message.part.updated') {
+    const part = props.part as Record<string, unknown> | undefined;
+    if (!part) {
+      return { shouldPersist: false, reason: 'message.part.updated without part data' };
+    }
+    
+    const partType = part.type as string;
+    
+    // Only persist step-finish events (contains token/cost data)
+    if (partType === 'step-finish') {
+      const tokens = part.tokens as {
+        input?: number;
+        output?: number;
+        reasoning?: number;
+        cache?: { read?: number; write?: number };
+      } | undefined;
+      
+      return {
+        shouldPersist: true,
+        reason: 'step completion with token data',
+        tokenData: {
+          input: tokens?.input ?? 0,
+          output: tokens?.output ?? 0,
+          reasoning: tokens?.reasoning ?? 0,
+          cacheRead: tokens?.cache?.read ?? 0,
+          cacheWrite: tokens?.cache?.write ?? 0,
+          cost: (part.cost as number) ?? 0,
+        },
+      };
+    }
+    
+    // Don't persist streaming text parts, tool invocations in progress, etc.
+    return { shouldPersist: false, reason: `message.part.updated type=${partType} (streaming)` };
+  }
+  
+  // -------------------------------------------------------------------------
+  // NEVER PERSIST: Other message part events (streaming noise)
+  // -------------------------------------------------------------------------
+  if (type === 'message.removed' || type === 'message.part.removed') {
+    // These are rare but we should persist them as they indicate state changes
+    return { shouldPersist: true, reason: 'message/part removed' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST: Permission events (important for monitoring approval workflows)
+  // -------------------------------------------------------------------------
+  if (type === 'permission.asked' || type === 'permission.replied') {
+    return { shouldPersist: true, reason: 'permission event' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST: Todo updates (task tracking)
+  // -------------------------------------------------------------------------
+  if (type === 'todo.updated') {
+    return { shouldPersist: true, reason: 'todo list updated' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST: File edits (for claims tracking)
+  // -------------------------------------------------------------------------
+  if (type === 'file.edited') {
+    const file = props.file as string | undefined;
+    return { 
+      shouldPersist: true, 
+      reason: 'file edited',
+      fileChanges: file ? [file] : undefined,
+    };
+  }
+  
+  // -------------------------------------------------------------------------
+  // DON'T PERSIST: File watcher updates (too noisy)
+  // -------------------------------------------------------------------------
+  if (type === 'file.watcher.updated') {
+    return { shouldPersist: false, reason: 'file watcher noise' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // PERSIST: Command execution (useful for auditing)
+  // -------------------------------------------------------------------------
+  if (type === 'command.executed') {
+    return { shouldPersist: true, reason: 'command executed' };
+  }
+  
+  // -------------------------------------------------------------------------
+  // DEFAULT: Don't persist unknown events to avoid noise
+  // -------------------------------------------------------------------------
+  return { shouldPersist: false, reason: `unknown event type: ${type}` };
 }

@@ -22,14 +22,25 @@ interface ArmsContext {
 }
 
 /**
- * Log an activity entry
+ * Log an activity entry to JetStream
+ * This replaces the old SQLite activity table - JetStream is now the single source of truth
  */
-function logActivity(db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
-  const now = new Date().toISOString();
-  db.run(
-    `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-    [now, actor, action, target || null, JSON.stringify(details || {})]
-  );
+function logActivity(_db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+  // Publish to JetStream if initialized
+  if (eventStore.isInitialized()) {
+    const subject = target 
+      ? `octopai.events.arm.${target}.${action}`
+      : `octopai.events.api.${action}`;
+    
+    eventStore.publishEvent(subject, {
+      type: action,
+      armId: target,
+      data: { actor, ...details },
+      timestamp: new Date().toISOString(),
+    }).catch(err => {
+      console.error(`[arms-api] Failed to publish activity event: ${err}`);
+    });
+  }
 }
 
 export interface ArmProfile {
@@ -955,6 +966,52 @@ export function createArmsRoutes() {
   });
 
   /**
+   * Reset arm's OpenCode session to clear stale context
+   * POST /api/arms/:id/reset-session
+   * 
+   * Used by the brain after task completion to ensure the arm gets
+   * fresh context for the next task assignment. This prevents stale
+   * task IDs from previous sessions causing foreign key errors.
+   */
+  app.post("/:id/reset-session", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if arm exists
+    const row = db.query("SELECT id, name FROM arms WHERE id = ?").get(id) as { id: string; name: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Get the harness manager
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not available");
+    }
+
+    if (!manager.hasSession(id)) {
+      throw HttpError.badRequest(`Arm ${id} has no active session to reset`);
+    }
+
+    // Reset the session
+    const newSessionId = await manager.resetSession(id);
+    
+    if (!newSessionId) {
+      throw HttpError.internal(`Failed to reset session for arm ${id}`);
+    }
+
+    // Log the activity
+    logActivity(db, id, "session_reset", undefined, { newSessionId });
+
+    return c.json({ 
+      success: true, 
+      armId: id,
+      newSessionId,
+      message: `Session reset for arm ${row.name}. Fresh context ready for new task.`
+    });
+  });
+
+  /**
    * Get arm's current context (files, tokens)
    * GET /api/arms/:id/context
    */
@@ -1000,14 +1057,13 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Get arm's activity log
+   * Get arm's activity log from JetStream
    * GET /api/arms/:id/activity
    */
-  app.get("/:id/activity", (c) => {
+  app.get("/:id/activity", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
-    const offset = parseInt(c.req.query("offset") || "0", 10);
 
     // Check if arm exists
     const exists = db.query("SELECT id FROM arms WHERE id = ?").get(id);
@@ -1016,35 +1072,224 @@ export function createArmsRoutes() {
     }
 
     try {
-      const rows = db.query(`
-        SELECT id, timestamp, actor, action, target, details
-        FROM activity
-        WHERE actor = ?
-        ORDER BY timestamp DESC
-        LIMIT ? OFFSET ?
-      `).all(id, limit, offset);
+      if (!eventStore.isInitialized()) {
+        return c.json({
+          activity: [],
+          pagination: { limit, offset: 0, total: 0 },
+          message: "JetStream not available",
+        });
+      }
 
-      const activity = rows.map((row: any) => ({
-        ...row,
-        details: JSON.parse(row.details || "{}"),
+      const events = await eventStore.getArmEvents(id, limit);
+      
+      const activity = events.map(event => ({
+        timestamp: event.timestamp,
+        actor: event.armId || (event.data.actor as string) || "unknown",
+        action: event.type,
+        target: event.armId,
+        details: event.data,
       }));
-
-      // Get total count
-      const countRow = db.query("SELECT COUNT(*) as count FROM activity WHERE actor = ?").get(id) as { count: number };
 
       return c.json({
         activity,
         pagination: {
           limit,
-          offset,
-          total: countRow.count,
+          offset: 0,
+          total: events.length, // JetStream doesn't provide easy total counts
         },
       });
     } catch {
       return c.json({
         activity: [],
-        pagination: { limit, offset, total: 0 },
+        pagination: { limit, offset: 0, total: 0 },
       });
+    }
+  });
+
+  /**
+   * Get arm's todos from OpenCode session
+   * GET /api/arms/:id/todos
+   */
+  app.get("/:id/todos", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Get arm with port and session info
+    const row = db.query("SELECT id, port, status, session_id FROM arms WHERE id = ?").get(id) as {
+      id: string;
+      port: number | null;
+      status: string;
+      session_id: string | null;
+    } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!row.port || row.status === "stopped") {
+      return c.json({ todos: [], message: "Arm not running" });
+    }
+
+    if (!row.session_id) {
+      return c.json({ todos: [], message: "No session ID available" });
+    }
+
+    // Fetch todos from OpenCode server using session-specific endpoint
+    try {
+      const response = await fetch(`http://127.0.0.1:${row.port}/session/${row.session_id}/todo`, {
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!response.ok) {
+        return c.json({ todos: [], message: `OpenCode returned ${response.status}` });
+      }
+
+      const data = await response.json() as { todos?: unknown[] } | unknown[];
+      if (Array.isArray(data)) {
+        return c.json({ todos: data });
+      }
+      return c.json({ todos: data.todos || [] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json({ todos: [], message: `Failed to fetch todos: ${message}` });
+    }
+  });
+
+  /**
+   * SSE stream for arm events from OpenCode
+   * GET /api/arms/:id/events
+   * 
+   * This proxies the OpenCode server's /event SSE endpoint to the web client,
+   * allowing real-time updates in the dashboard.
+   */
+  app.get("/:id/events", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Get arm with port info
+    const row = db.query("SELECT id, port, status FROM arms WHERE id = ?").get(id) as {
+      id: string;
+      port: number | null;
+      status: string;
+    } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (!row.port || row.status === "stopped") {
+      // Return an SSE stream that immediately sends an error and closes
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: "Arm not running" } })}\n\n`));
+            controller.close();
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        }
+      );
+    }
+
+    // Proxy the OpenCode server's event stream
+    const openCodeUrl = `http://127.0.0.1:${row.port}/event`;
+
+    try {
+      const upstreamResponse = await fetch(openCodeUrl, {
+        headers: {
+          "Accept": "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      if (!upstreamResponse.ok || !upstreamResponse.body) {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: `OpenCode returned ${upstreamResponse.status}` } })}\n\n`));
+              controller.close();
+            },
+          }),
+          {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              "Connection": "keep-alive",
+            },
+          }
+        );
+      }
+
+      // Create a transform stream that enriches events with armId
+      const transformStream = new TransformStream({
+        transform(chunk, controller) {
+          const decoder = new TextDecoder();
+          const encoder = new TextEncoder();
+          const text = decoder.decode(chunk);
+
+          // Parse SSE events and add armId context
+          const lines = text.split("\n");
+          let outputText = "";
+
+          for (const line of lines) {
+            if (line.startsWith("data:")) {
+              try {
+                const data = JSON.parse(line.slice(5).trim());
+                // Enrich with armId
+                if (data.properties) {
+                  data.properties.armId = id;
+                } else {
+                  data.armId = id;
+                }
+                outputText += `data: ${JSON.stringify(data)}\n`;
+              } catch {
+                // Pass through unparseable data as-is
+                outputText += line + "\n";
+              }
+            } else {
+              outputText += line + "\n";
+            }
+          }
+
+          controller.enqueue(encoder.encode(outputText));
+        },
+      });
+
+      // Pipe the upstream response through the transform
+      const transformedStream = upstreamResponse.body.pipeThrough(transformStream);
+
+      return new Response(transformedStream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: message } })}\n\n`));
+            controller.close();
+          },
+        }),
+        {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+          },
+        }
+      );
     }
   });
 

@@ -95,17 +95,19 @@ export class HarnessManager {
     // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
     const truncatedData = truncateLargeFields(data) as Record<string, unknown>;
     
-    // Publish to JetStream for persistence
-    try {
-      const subject = `octopai.events.arm.${armId}.${event}`;
-      await eventStore.publishEvent(subject, {
-        type: event,
-        armId,
-        data: truncatedData,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error(`[harness-manager] Failed to publish event to JetStream: ${err}`);
+    // Publish to JetStream for persistence (only if initialized)
+    if (eventStore.isInitialized()) {
+      try {
+        const subject = `octopai.events.arm.${armId}.${event}`;
+        await eventStore.publishEvent(subject, {
+          type: event,
+          armId,
+          data: truncatedData,
+          timestamp: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error(`[harness-manager] Failed to publish event to JetStream: ${err}`);
+      }
     }
 
     // Emit to legacy subscribers (for backward compatibility)
@@ -392,6 +394,43 @@ export class HarnessManager {
     // Check if session has a port property (API harness sessions do)
     const session = active.session as { port?: number };
     return session.port;
+  }
+
+  /**
+   * Reset an arm's OpenCode session to clear stale context.
+   * Creates a new OpenCode session while keeping the same harness process.
+   * This is used by the brain after task completion to ensure fresh context
+   * for the next task assignment.
+   * 
+   * @returns The new session ID, or undefined if reset failed
+   */
+  async resetSession(armId: string): Promise<string | undefined> {
+    const active = this.sessions.get(armId);
+    if (!active) {
+      console.log(`[harness-manager] No active session for arm ${armId}, cannot reset`);
+      return undefined;
+    }
+
+    // Check if the harness supports resetSession
+    if (!active.harness.resetSession) {
+      console.log(`[harness-manager] Harness ${active.harness.name} does not support resetSession`);
+      return undefined;
+    }
+
+    console.log(`[harness-manager] Resetting session for arm ${armId}...`);
+    const newSessionId = await active.harness.resetSession(active.session);
+    
+    if (newSessionId) {
+      console.log(`[harness-manager] Session reset for arm ${armId}: new session ${newSessionId}`);
+      
+      // Log to file
+      const logEntry = `[${new Date().toISOString()}] Session reset: ${newSessionId}\n`;
+      appendFile(active.logFile, logEntry).catch(() => {});
+    } else {
+      console.log(`[harness-manager] Session reset failed for arm ${armId}`);
+    }
+    
+    return newSessionId;
   }
 
   /**

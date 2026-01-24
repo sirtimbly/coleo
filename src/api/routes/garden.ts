@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
+import { eventStore } from "../../nats/jetstream";
 
 interface GardenContext {
   Variables: {
@@ -45,17 +46,17 @@ export function createGardenRoutes() {
   const app = new Hono<GardenContext>();
 
   /**
-   * Get full garden topology (3D coordinates for all files)
+   * Get garden topology - a 3D view of file ownership and activity
    * GET /api/garden
    */
-  app.get("/", (c) => {
+  app.get("/", async (c) => {
     const db = c.get("db");
 
     // Get all active claims to determine file ownership
     const claims = getActiveClaims(db);
 
-    // Get recent file activity
-    const activity = getRecentActivity(db);
+    // Get recent file activity from JetStream
+    const activity = await getRecentActivity();
 
     // Build nodes from claims and activity
     const nodeMap = new Map<string, GardenNode>();
@@ -301,24 +302,34 @@ export function createGardenRoutes() {
   });
 
   /**
-   * Get recent file touch activity
+   * Get recent file touch activity from JetStream
    * GET /api/garden/activity
    */
-  app.get("/activity", (c) => {
-    const db = c.get("db");
+  app.get("/activity", async (c) => {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
 
-    const activity = db
-      .query(
-        `SELECT target as path, actor as armId, action, timestamp
-         FROM activity
-         WHERE target IS NOT NULL
-         ORDER BY timestamp DESC
-         LIMIT ?`
-      )
-      .all(limit) as FileActivity[];
+    if (!eventStore.isInitialized()) {
+      return c.json({ activity: [], message: "JetStream not available" });
+    }
 
-    return c.json({ activity });
+    try {
+      const events = await eventStore.getRecentEvents(limit);
+      
+      // Filter to events that have file targets
+      const activity = events
+        .filter(e => e.data.target || e.data.filePath)
+        .map(e => ({
+          path: (e.data.target || e.data.filePath) as string,
+          armId: e.armId || (e.data.actor as string) || "unknown",
+          action: e.type,
+          timestamp: e.timestamp,
+        }));
+
+      return c.json({ activity });
+    } catch (err) {
+      console.error("Garden activity query error:", err);
+      return c.json({ activity: [] });
+    }
   });
 
   return app;
@@ -342,17 +353,24 @@ function getActiveClaims(db: Database): FileClaim[] {
   }
 }
 
-function getRecentActivity(db: Database): Array<{ actor: string; target: string | null; timestamp: string }> {
+/**
+ * Get recent activity from JetStream
+ * Note: This is now async - callers need to await it
+ */
+async function getRecentActivity(): Promise<Array<{ actor: string; target: string | null; timestamp: string }>> {
+  if (!eventStore.isInitialized()) {
+    return [];
+  }
+  
   try {
-    return db
-      .query(
-        `SELECT actor, target, timestamp
-         FROM activity
-         WHERE target IS NOT NULL
-         ORDER BY timestamp DESC
-         LIMIT 100`
-      )
-      .all() as Array<{ actor: string; target: string | null; timestamp: string }>;
+    const events = await eventStore.getRecentEvents(100);
+    return events
+      .filter(e => e.data.target || e.data.filePath)
+      .map(e => ({
+        actor: e.armId || (e.data.actor as string) || "unknown",
+        target: (e.data.target || e.data.filePath) as string | null,
+        timestamp: e.timestamp,
+      }));
   } catch {
     return [];
   }

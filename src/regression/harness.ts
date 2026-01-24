@@ -11,6 +11,7 @@ import { spawn, type Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import type { TestContext, TimingHelper, TestResult, TestScenario } from "./types";
+import { eventStore, setEventStore, resetEventStore, createTestEventStore, type InMemoryEventStore } from "../nats/jetstream";
 
 const BASE_PORT = 18000;
 let portCounter = 0;
@@ -64,6 +65,10 @@ export async function createTestContext(
   const workDir = join(baseDir, "workspace");
   const apiPort = getNextPort();
   const apiKey = `test-key-${runId}`;
+
+  // Set up in-memory event store for isolated testing
+  const testEventStore = createTestEventStore();
+  setEventStore(testEventStore);
 
   // Create directories
   await mkdir(octopaiDir, { recursive: true });
@@ -399,28 +404,32 @@ export async function waitForTaskStatus(
     }
     
     // Every 10 seconds, dump recent activity for debugging
-    const now = Date.now();
-    if (now - lastLogTime > 10000) {
-      lastLogTime = now;
-      try {
-        const activities = ctx.db.query(`
-          SELECT timestamp, actor, action, target 
-          FROM activity 
-          ORDER BY timestamp DESC 
-          LIMIT 5
-        `).all() as Array<{ timestamp: string; actor: string; action: string; target: string | null }>;
-        
-        if (activities.length > 0) {
-          const elapsed = Math.round((now - startTime) / 1000);
-          ctx.log(`[${elapsed}s] Recent activity:`);
-          for (const a of activities.reverse()) {
-            ctx.log(`  ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+      const now = Date.now();
+      if (now - lastLogTime > 10000) {
+        lastLogTime = now;
+        try {
+          // Use in-memory event store (set up in createTestContext)
+          if (eventStore.isInitialized()) {
+            const events = await eventStore.getRecentEvents(5);
+            const activities = events.map(e => ({
+              timestamp: e.timestamp,
+              actor: e.armId || "unknown",
+              action: e.type || "unknown",
+              target: (e.data?.target as string) || (e.data?.taskId as string) || null,
+            }));
+            
+            if (activities.length > 0) {
+              const elapsed = Math.round((now - startTime) / 1000);
+              ctx.log(`[${elapsed}s] Recent activity:`);
+              for (const a of activities.reverse()) {
+                ctx.log(`  ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+              }
+            }
           }
+        } catch {
+          // Ignore activity log errors
         }
-      } catch {
-        // Ignore activity log errors
       }
-    }
     
     await Bun.sleep(500);
   }
@@ -480,19 +489,23 @@ export async function cleanupTestContext(ctx: TestContext, options?: { keep?: bo
   // Dump activity log for debugging
   if (ctx.db) {
     try {
-      const activities = ctx.db.query("SELECT timestamp, actor, action, target, details FROM activity ORDER BY timestamp DESC LIMIT 20").all() as Array<{
-        timestamp: string;
-        actor: string;
-        action: string;
-        target: string | null;
-        details: string;
-      }>;
-      if (activities.length > 0) {
-        ctx.log("=== Recent Activity (last 20) ===");
-        for (const a of activities.reverse()) {
-          ctx.log(`  ${a.timestamp} ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+      // Use in-memory event store (set up in createTestContext)
+      if (eventStore.isInitialized()) {
+        const events = await eventStore.getRecentEvents(20);
+        const activities = events.map(e => ({
+          timestamp: e.timestamp,
+          actor: e.armId || "unknown",
+          action: e.type || "unknown",
+          target: (e.data?.target as string) || (e.data?.taskId as string) || null,
+        }));
+        
+        if (activities.length > 0) {
+          ctx.log("=== Recent Activity (last 20) ===");
+          for (const a of activities.reverse()) {
+            ctx.log(`  ${a.timestamp} ${a.actor}: ${a.action}${a.target ? ` [${a.target.slice(0, 8)}]` : ""}`);
+          }
+          ctx.log("=================================");
         }
-        ctx.log("=================================");
       }
     } catch {
       // Ignore activity log errors
@@ -583,6 +596,9 @@ export async function cleanupTestContext(ctx: TestContext, options?: { keep?: bo
   } else {
     ctx.log(`Keeping test directory: ${ctx.octopaiDir}`);
   }
+
+  // Reset event store to default (JetStream-backed) for non-test code
+  resetEventStore();
 }
 
 /**

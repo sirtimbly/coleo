@@ -113,7 +113,12 @@ export class EventStore {
 
     const streamConfig = {
       name: 'octopai-events',
-      subjects: ['octopai.events.arm.>'],
+      // Capture all event types: arm, brain, and task events
+      subjects: [
+        'octopai.events.arm.>',
+        'octopai.events.brain.>',
+        'octopai.events.task.>',
+      ],
       retention: RetentionPolicy.Limits,
       max_age: 7 * 24 * 60 * 60 * 1000,  // 7 days
       max_msgs: 100000,                   // 100K events
@@ -287,7 +292,7 @@ export class EventStore {
       durable_name: name,
       deliver_policy: DeliverPolicy.Last,
       ack_policy: AckPolicy.None,
-      filter_subject: 'octopai.events.arm.>',
+      filter_subject: 'octopai.events.>',  // Match all event types: arm, brain, task
       replay_policy: ReplayPolicy.Instant,
       ...config,
     };

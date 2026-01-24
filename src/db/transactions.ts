@@ -3,9 +3,13 @@
  * 
  * Provides safe transaction wrapping for multi-step database operations.
  * Ensures atomicity, consistency, and proper error handling.
+ * 
+ * NOTE: Activity logging has been moved to JetStream - see src/nats/jetstream.ts
+ * The activity table is deprecated and will be removed in a future migration.
  */
 
 import { Database } from "bun:sqlite";
+import { eventStore } from "../nats/jetstream";
 
 /**
  * Result of a transaction operation
@@ -186,6 +190,7 @@ export async function createTaskWithDependencies(
 
 /**
  * Update arm status and log activity atomically
+ * Activity is now logged to JetStream, not SQLite
  */
 export async function updateArmStatusWithActivity(
   db: Database,
@@ -207,17 +212,18 @@ export async function updateArmStatusWithActivity(
       WHERE id = ?
     `, [status, now, now, armId]);
 
-    // Log activity
-    db.run(`
-      INSERT INTO activity (timestamp, actor, action, target, details)
-      VALUES (?, ?, ?, ?, ?)
-    `, [
-      now,
-      armId,
-      activityDetails.action,
-      activityDetails.target || null,
-      JSON.stringify(activityDetails.details || {}),
-    ]);
+    // Log activity to JetStream (fire-and-forget, don't block the transaction)
+    if (eventStore.isInitialized()) {
+      const subject = `octopai.events.arm.${armId}.${activityDetails.action}`;
+      eventStore.publishEvent(subject, {
+        type: activityDetails.action,
+        armId,
+        data: { ...activityDetails.details },
+        timestamp: now,
+      }).catch(err => {
+        console.error(`[transactions] Failed to publish activity event: ${err}`);
+      });
+    }
   });
 }
 
@@ -233,6 +239,12 @@ export async function assignTaskToArm(
 ): Promise<TransactionResult<{ needsMoreArms?: boolean }>> {
   return withTransaction(db, async (db) => {
     const now = new Date().toISOString();
+
+    // Validate task exists before trying to assign (prevents FK constraint failures)
+    const taskExists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
+    if (!taskExists) {
+      throw new Error(`Task not found: ${taskId} - the task may have been deleted or never existed in this database`);
+    }
 
     // Update task assignment
     const updateFields = ['assigned_to = ?'];
@@ -260,11 +272,14 @@ export async function assignTaskToArm(
       ) VALUES (?, ?, ?, 'pending', ?, ?)
     `, [taskId, armId, role, now, now]);
 
-    // Log the assignment
-    db.run(`
-      INSERT INTO activity (timestamp, actor, action, target, details)
-      VALUES (?, 'brain', 'task_assigned', ?, ?)
-    `, [now, taskId, JSON.stringify({ armId, role })]);
+    // Log the assignment to JetStream
+    if (eventStore.isInitialized()) {
+      eventStore.publishEvent(`octopai.events.task.${taskId}.assigned`, {
+        type: "task_assigned",
+        data: { armId, role },
+        timestamp: now,
+      }).catch(() => {});
+    }
 
     // Auto-assign watcher arms if this is a primary assignment
     let needsMoreArms = false;
@@ -272,11 +287,14 @@ export async function assignTaskToArm(
       const taskRow = db.query("SELECT domain FROM tasks WHERE id = ?").get(taskId) as { domain: string | null };
       const watchersResult = await autoAssignWatcherArms(db, taskId, armId, taskRow?.domain || undefined);
       if (watchersResult.success && watchersResult.data) {
-        // Log watcher assignments
-        db.run(`
-          INSERT INTO activity (timestamp, actor, action, target, details)
-          VALUES (?, 'brain', 'auto_assigned_watchers', ?, ?)
-        `, [now, taskId, JSON.stringify({ watchers: watchersResult.data.watchersAssigned })]);
+        // Log watcher assignments to JetStream
+        if (eventStore.isInitialized()) {
+          eventStore.publishEvent(`octopai.events.task.${taskId}.watchers_assigned`, {
+            type: "auto_assigned_watchers",
+            data: { watchers: watchersResult.data.watchersAssigned },
+            timestamp: now,
+          }).catch(() => {});
+        }
         needsMoreArms = watchersResult.data.needsMoreArms;
       }
     }

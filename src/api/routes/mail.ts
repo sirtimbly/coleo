@@ -10,6 +10,7 @@ import { getOctopaiDir } from "../../config";
 import { join, basename } from "path";
 import { readdir, stat } from "fs/promises";
 import { HttpError } from "../middleware/error";
+import { eventStore } from "../../nats/jetstream";
 
 interface MailContext {
   Variables: {
@@ -267,22 +268,20 @@ export function createMailRoutes() {
     }
 
     try {
-      // Log the message processing outcome
-      db.run(`
-        INSERT INTO activity (actor, action, target, details)
-        VALUES (?, ?, ?, ?)
-      `, [
-        "brain",
-        "message_processed",
-        id,
-        JSON.stringify({
-          outcome: body.outcome,
-          details: body.details,
-          taskId: body.taskId,
-          armId: body.armId,
+      // Log the message processing outcome to JetStream
+      if (eventStore.isInitialized()) {
+        await eventStore.publishEvent(`octopai.events.mail.${id}.processed`, {
+          type: "message_processed",
+          data: {
+            actor: "brain",
+            outcome: body.outcome,
+            details: body.details,
+            taskId: body.taskId,
+            armId: body.armId,
+          },
           timestamp: new Date().toISOString(),
-        }),
-      ]);
+        });
+      }
 
       return c.json({ success: true });
     } catch (err) {

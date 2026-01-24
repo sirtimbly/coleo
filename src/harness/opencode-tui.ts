@@ -27,9 +27,10 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { getOctopaiDir } from "../config";
-import { OpenCodeEventStream, filterEvent, truncateLargeFields, type OpenCodeEvent } from "./event-stream";
+import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
+import { resolveModel } from "./model-resolver";
 import type {
   AgentHarness,
   HarnessSession,
@@ -310,6 +311,28 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Detect terminal if needed
     const terminal = this.defaultTerminal || (await this.detectTerminal());
 
+    // Resolve model - validate and fallback if needed
+    // This ensures we use a model that's actually available
+    let resolvedProvider = config.provider;
+    let resolvedModel = config.model;
+    
+    if (config.provider && config.model) {
+      try {
+        // Use Octopai API to check available models (server runs on 8080)
+        const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
+        resolvedProvider = resolved.providerId;
+        resolvedModel = resolved.modelId;
+        
+        if (resolved.fallback) {
+          console.log(`[harness-tui] Model fallback: ${config.provider}/${config.model} -> ${resolved.providerId}/${resolved.modelId}`);
+          console.log(`[harness-tui] Reason: ${resolved.fallbackReason}`);
+        }
+      } catch (err) {
+        console.log(`[harness-tui] Model resolution failed, using original: ${err}`);
+        // Continue with original model - OpenCode will handle the error
+      }
+    }
+
     // Build environment for OpenCode
     const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
     const mcpDir = join(octopaiDir, "mcp");
@@ -346,11 +369,11 @@ export class OpenCodeTuiHarness implements AgentHarness {
       },
     };
 
-    // Set model if specified
-    if (config.provider && config.model) {
-      opencodeConfig.model = `${config.provider}/${config.model}`;
-    } else if (config.model) {
-      opencodeConfig.model = config.model;
+    // Set model if specified (use resolved model if available)
+    if (resolvedProvider && resolvedModel) {
+      opencodeConfig.model = `${resolvedProvider}/${resolvedModel}`;
+    } else if (resolvedModel) {
+      opencodeConfig.model = resolvedModel;
     }
 
     // Write OpenCode config
@@ -419,18 +442,18 @@ export class OpenCodeTuiHarness implements AgentHarness {
     const openCodeSession = newSession;
     console.log(`[harness-tui] Created new session ${openCodeSession.id} for arm ${armId}`);
 
-    // Initialize with model if specified
-    if (config.provider && config.model) {
+    // Initialize with model if specified (use resolved model)
+    if (resolvedProvider && resolvedModel) {
       try {
         await client.session.init({
           path: { id: openCodeSession.id },
           body: {
-            modelID: config.model,
-            providerID: config.provider,
+            modelID: resolvedModel,
+            providerID: resolvedProvider,
             messageID: `init_${Date.now()}`,
           },
         });
-        console.log(`[harness-tui] Initialized session with model: ${config.provider}/${config.model}`);
+        console.log(`[harness-tui] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
       } catch (initError) {
         console.log(`[harness-tui] Session init warning: ${initError}`);
       }
@@ -458,8 +481,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
       armId,
       workdir: config.workdir,
       consecutiveFailures: 0,
-      provider: config.provider,
-      model: config.model,
+      provider: resolvedProvider,
+      model: resolvedModel,
       client,
     };
 
@@ -473,18 +496,27 @@ export class OpenCodeTuiHarness implements AgentHarness {
           // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
           const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
           
-          // Publish to JetStream for persistence
-          try {
-            const subject = `octopai.events.arm.${armId}.${event.type}`;
-            await eventStore.publishEvent(subject, {
-              type: event.type,
-              armId,
-              sessionId: event.properties?.sessionID as string,
-              data: truncatedProps,
-              timestamp: new Date().toISOString(),
-            });
-          } catch (err) {
-            console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+          // Check if this event should be persisted to JetStream
+          const persistCheck = shouldPersistEvent(event);
+          
+          // Publish to JetStream for persistence (only meaningful events)
+          if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+            try {
+              const subject = `octopai.events.arm.${armId}.${event.type}`;
+              await eventStore.publishEvent(subject, {
+                type: event.type,
+                armId,
+                sessionId: event.properties?.sessionID as string,
+                data: truncatedProps,
+                timestamp: new Date().toISOString(),
+                // Include extracted data for monitoring
+                ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+              });
+            } catch (err) {
+              console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+            }
           }
 
           // Also emit to legacy callbacks for backward compatibility
@@ -641,6 +673,101 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     this.sessions.delete(session.id);
     console.log(`[harness-tui] OpenCode TUI session ${session.id} killed`);
+  }
+
+  /**
+   * Reset the session by creating a new OpenCode session.
+   * This clears the conversation context, removing any stale task references.
+   * Called by the brain after an arm completes a task and needs a fresh context.
+   * 
+   * @returns The new OpenCode session ID
+   */
+  async resetSession(session: HarnessSession): Promise<string | undefined> {
+    const tuiSession = this.sessions.get(session.id);
+    if (!tuiSession) {
+      console.log(`[harness-tui] Session ${session.id} not found for reset`);
+      return undefined;
+    }
+
+    try {
+      console.log(`[harness-tui] Resetting session ${session.id} - creating new OpenCode session`);
+      
+      // Stop the existing event stream
+      if (tuiSession.eventStream) {
+        tuiSession.eventStream.stop();
+      }
+
+      // Create a new OpenCode session via SDK
+      const newSessionResponse = await tuiSession.client.session.create({
+        body: { title: `Octopai Arm Session (reset ${Date.now()})` },
+      });
+      const newSession = newSessionResponse.data;
+
+      if (!newSession?.id) {
+        console.log(`[harness-tui] Failed to create new session during reset`);
+        return undefined;
+      }
+
+      const oldSessionId = tuiSession.sessionId;
+      tuiSession.sessionId = newSession.id;
+      tuiSession.lastHeartbeat = new Date();
+      tuiSession.consecutiveFailures = 0;
+
+      // Restart event stream with new session ID
+      if (this.eventCallbacks.size > 0) {
+        const eventStream = new OpenCodeEventStream({
+          serverUrl: tuiSession.serverUrl,
+          armId: tuiSession.armId,
+          sessionId: newSession.id,
+          onEvent: async (event: OpenCodeEvent) => {
+            // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
+            const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
+            
+            // Check if this event should be persisted to JetStream
+            const persistCheck = shouldPersistEvent(event);
+            
+            // Publish to JetStream for persistence (only meaningful events)
+            if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+              try {
+                const subject = `octopai.events.arm.${tuiSession.armId}.${event.type}`;
+                await eventStore.publishEvent(subject, {
+                  type: event.type,
+                  armId: tuiSession.armId,
+                  sessionId: event.properties?.sessionID as string,
+                  data: truncatedProps,
+                  timestamp: new Date().toISOString(),
+                  ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                  ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                  ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+                });
+              } catch (err) {
+                console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+              }
+            }
+
+            // Also emit to legacy callbacks for backward compatibility
+            this.emitEvent(tuiSession.armId, event.type, {
+              ...truncatedProps,
+              _timestamp: new Date().toISOString(),
+            });
+          },
+          onError: (error) => {
+            console.error(`[harness-tui] ${tuiSession.armId} event stream error:`, error.message);
+          },
+        });
+        eventStream.start();
+        tuiSession.eventStream = eventStream;
+      }
+
+      // Select the new session in the TUI
+      await this.selectNewestSession(tuiSession, { maxRetries: 5, retryDelayMs: 200 });
+
+      console.log(`[harness-tui] Session reset complete: ${oldSessionId} -> ${newSession.id}`);
+      return newSession.id;
+    } catch (err) {
+      console.error(`[harness-tui] Failed to reset session: ${err}`);
+      return undefined;
+    }
   }
 
   /**
@@ -917,6 +1044,39 @@ export class OpenCodeTuiHarness implements AgentHarness {
   }
 
   /**
+   * Respond to a permission request via SDK
+   * 
+   * This uses the event-based permission flow:
+   * 1. permission.asked event is received via SSE
+   * 2. This method responds with "once", "always", or "reject"
+   * 3. permission.replied event confirms the response
+   */
+  async respondToPermission(
+    session: HarnessSession,
+    permissionId: string,
+    response: "once" | "always" | "reject"
+  ): Promise<void> {
+    const tuiSession = this.sessions.get(session.id);
+    if (!tuiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    const result = await tuiSession.client.postSessionIdPermissionsPermissionId({
+      path: {
+        id: tuiSession.sessionId,
+        permissionID: permissionId,
+      },
+      body: { response },
+    });
+
+    if (!result.response.ok) {
+      throw new Error(`Permission response failed: ${result.response.status}`);
+    }
+
+    console.log(`[harness-tui] Permission ${permissionId} responded with: ${response}`);
+  }
+
+  /**
    * Get messages from a session using SDK
    */
   private async getMessages(tuiSession: TuiHarnessSession): Promise<{ info: Message; parts: Part[] }[]> {
@@ -1149,18 +1309,26 @@ export class OpenCodeTuiHarness implements AgentHarness {
             // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
             const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
             
-            // Publish to JetStream for persistence
-            try {
-              const subject = `octopai.events.arm.${armId}.${event.type}`;
-              await eventStore.publishEvent(subject, {
-                type: event.type,
-                armId,
-                sessionId: event.properties?.sessionID as string,
-                data: truncatedProps,
-                timestamp: new Date().toISOString(),
-              });
-            } catch (err) {
-              console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+            // Check if this event should be persisted to JetStream
+            const persistCheck = shouldPersistEvent(event);
+            
+            // Publish to JetStream for persistence (only filtered events, and only if NATS is initialized)
+            if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+              try {
+                const subject = `octopai.events.arm.${armId}.${event.type}`;
+                await eventStore.publishEvent(subject, {
+                  type: event.type,
+                  armId,
+                  sessionId: event.properties?.sessionID as string,
+                  data: truncatedProps,
+                  timestamp: new Date().toISOString(),
+                  ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                  ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                  ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+                });
+              } catch (err) {
+                console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+              }
             }
 
             // Also emit to legacy callbacks for backward compatibility

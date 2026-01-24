@@ -66,6 +66,18 @@ const CLASSIC_NAMES = [
   "Avrana", "Holsten", "Lain", "Guyen",
 ] as const;
 
+// Playful creative names inspired by Bingo & Bluey episodes
+const BINGO_BLUEY_NAMES = [
+  "Copernicus",
+  "Gerald",
+  "Featherwand",
+  "Sparklegirl",
+  "Fluffnut",
+  "Pom Pom",
+  "Professor Pancake",
+  "Princess Sparklehorse",
+] as const;
+
 /**
  * Generate a random alien name for an arm
  * 
@@ -78,6 +90,12 @@ export function generateArmName(includeEpithet = true, useClassic = true): strin
   if (useClassic && Math.random() < 0.05) {
     const classic = CLASSIC_NAMES[Math.floor(Math.random() * CLASSIC_NAMES.length)];
     return classic ?? "Portia";
+  }
+
+  // 5% chance to use a Bingo/Bluey creative name
+  if (Math.random() < 0.05) {
+    const playful = BINGO_BLUEY_NAMES[Math.floor(Math.random() * BINGO_BLUEY_NAMES.length)];
+    return playful ?? "Copernicus";
   }
 
   // Generate a combined name from prefix + suffix
@@ -128,6 +146,11 @@ export function isGeneratedName(name: string): boolean {
   
   // Check classic names
   if (CLASSIC_NAMES.some(c => c.toLowerCase() === lowerBase)) {
+    return true;
+  }
+
+  // Check playful Bingo/Bluey names
+  if (BINGO_BLUEY_NAMES.some(c => c.toLowerCase() === lowerBase)) {
     return true;
   }
   

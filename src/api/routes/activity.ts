@@ -1,8 +1,12 @@
 /**
  * Activity log routes
+ * 
+ * Activity is now stored in JetStream, not SQLite.
+ * This provides event sourcing with the stream as the single source of truth.
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { eventStore } from "../../nats/jetstream";
 
 interface ActivityContext {
   Variables: {
@@ -11,7 +15,6 @@ interface ActivityContext {
 }
 
 export interface ActivityEntry {
-  id: number;
   timestamp: string;
   actor: string;
   action: string;
@@ -23,124 +26,106 @@ export function createActivityRoutes() {
   const app = new Hono<ActivityContext>();
 
   /**
-   * List activity entries
-   * GET /api/activity?limit=50&offset=0&actor=arm-123
+   * List activity entries from JetStream
+   * GET /api/activity?limit=50&actor=arm-123
    */
-  app.get("/", (c) => {
-    const db = c.get("db");
+  app.get("/", async (c) => {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
-    const offset = parseInt(c.req.query("offset") || "0", 10);
     const actor = c.req.query("actor");
 
-    let query = `
-      SELECT id, timestamp, actor, action, target, details
-      FROM activity
-    `;
-    const params: unknown[] = [];
-
-    if (actor) {
-      query += " WHERE actor = ?";
-      params.push(actor);
+    if (!eventStore.isInitialized()) {
+      return c.json({ 
+        activity: [],
+        message: "JetStream not available - start the API server with NATS",
+      });
     }
 
-    query += " ORDER BY timestamp DESC LIMIT ? OFFSET ?";
-    params.push(limit, offset);
-
     try {
-      const rows = db.query(query).all(...(params as (string | number)[])) as ActivityRow[];
+      let events;
+      if (actor) {
+        // Filter by specific arm
+        events = await eventStore.getArmEvents(actor, limit);
+      } else {
+        // Get all recent events
+        events = await eventStore.getRecentEvents(limit);
+      }
 
-      const activity = rows.map(row => parseActivityRow(row));
+      const activity = events.map(event => ({
+        timestamp: event.timestamp,
+        actor: event.armId || (event.data.actor as string) || "brain",
+        action: event.type,
+        target: event.armId || null,
+        details: event.data,
+      }));
 
       return c.json({ activity });
     } catch (err) {
-      return c.json({ error: "Database error" }, 500);
+      console.error("Activity query error:", err);
+      return c.json({ error: "JetStream error" }, 500);
     }
   });
 
   /**
    * Get activity stats for arms with time-bucketed data
    * GET /api/activity/stats?minutes=20&bucket_minutes=1
+   * 
+   * Note: This is a simplified version that returns event counts from JetStream.
+   * Time bucketing is done client-side for now since JetStream doesn't support SQL-like grouping.
    */
-  app.get("/stats", (c) => {
-    const db = c.get("db");
-    const minutes = Math.min(parseInt(c.req.query("minutes") || "20", 10), 120); // Max 2 hours
-    const bucketMinutes = Math.max(parseInt(c.req.query("bucket_minutes") || "1", 10), 1);
+  app.get("/stats", async (c) => {
+    const minutes = Math.min(parseInt(c.req.query("minutes") || "20", 10), 120);
     
-    // Calculate the start time
+    if (!eventStore.isInitialized()) {
+      return c.json({ 
+        timeRange: { startTime: new Date().toISOString(), endTime: new Date().toISOString() },
+        armStats: {},
+        message: "JetStream not available",
+      });
+    }
+
     const startTime = new Date();
     startTime.setMinutes(startTime.getMinutes() - minutes);
-    const startTimeStr = startTime.toISOString();
     
     try {
-      // Query activity counts per arm per time bucket
-      const query = `
-        SELECT 
-          actor,
-          DATETIME((STRFTIME('%s', timestamp) / (? * 60)) * (? * 60), 'unixepoch') as bucket_time,
-          COUNT(*) as activity_count
-        FROM activity 
-        WHERE timestamp >= ? 
-        AND actor LIKE 'arm-%'
-        GROUP BY actor, bucket_time
-        ORDER BY bucket_time ASC, actor ASC
-      `;
-      
-      const rows = db.query(query).all(bucketMinutes, bucketMinutes, startTimeStr) as Array<{
-        actor: string;
-        bucket_time: string;
-        activity_count: number;
-      }>;
+      // Get recent events within the time range
+      const events = await eventStore.getRecentEvents(1000, startTime);
 
-      // Build the response structure
+      // Group by arm
       const armStats: Record<string, Array<{ time: string; count: number }>> = {};
       
-      // Initialize all time buckets for each arm that has activity
-      const uniqueArms = new Set(rows.map(r => r.actor));
-      const timeBuckets: string[] = [];
-      
-      // Generate all time buckets for the time range
-      for (let i = 0; i < minutes / bucketMinutes; i++) {
-        const bucketTime = new Date(startTime.getTime() + i * bucketMinutes * 60 * 1000);
-        const bucketTimeStr = bucketTime.toISOString().substring(0, 19).replace('T', ' ');
-        timeBuckets.push(bucketTimeStr);
-      }
-      
-      // Initialize arm stats with empty buckets
-      uniqueArms.forEach(arm => {
-        armStats[arm] = timeBuckets.map(time => ({ time, count: 0 }));
-      });
-      
-      // Fill in actual activity counts
-      rows.forEach(row => {
-        const arm = row.actor;
-        const bucketIndex = timeBuckets.findIndex(t => t === row.bucket_time);
-        const armData = armStats[arm];
-        if (bucketIndex >= 0 && armData && armData[bucketIndex]) {
-          armData[bucketIndex].count = row.activity_count;
+      for (const event of events) {
+        const armId = event.armId;
+        if (!armId || !armId.startsWith('arm-')) continue;
+        
+        if (!armStats[armId]) {
+          armStats[armId] = [];
         }
-      });
+        
+        // Simple aggregation - add each event
+        armStats[armId].push({
+          time: event.timestamp,
+          count: 1,
+        });
+      }
 
       return c.json({
         timeRange: {
-          startTime: startTimeStr,
+          startTime: startTime.toISOString(),
           endTime: new Date().toISOString(),
-          bucketMinutes,
-          totalBuckets: timeBuckets.length
         },
-        armStats
+        armStats,
       });
     } catch (err) {
       console.error("Activity stats error:", err);
-      return c.json({ error: "Database error" }, 500);
+      return c.json({ error: "JetStream error" }, 500);
     }
   });
 
   /**
-   * Log a new activity entry
+   * Log a new activity entry to JetStream
    * POST /api/activity
    */
   app.post("/", async (c) => {
-    const db = c.get("db");
     const body = await c.req.json<{
       actor: string;
       action: string;
@@ -152,46 +137,37 @@ export function createActivityRoutes() {
       return c.json({ error: "actor and action are required" }, 400);
     }
 
+    if (!eventStore.isInitialized()) {
+      return c.json({ error: "JetStream not available" }, 503);
+    }
+
     const now = new Date().toISOString();
+    const subject = body.target 
+      ? `octopai.events.arm.${body.target}.${body.action}`
+      : `octopai.events.api.${body.action}`;
 
-    const result = db.run(`
-      INSERT INTO activity (timestamp, actor, action, target, details)
-      VALUES (?, ?, ?, ?, ?)
-    `, [
-      now,
-      body.actor,
-      body.action,
-      body.target || null,
-      JSON.stringify(body.details || {}),
-    ]);
-
-    return c.json({
-      entry: {
-        id: Number(result.lastInsertRowid),
+    try {
+      await eventStore.publishEvent(subject, {
+        type: body.action,
+        armId: body.target,
+        data: { actor: body.actor, ...body.details },
         timestamp: now,
-        actor: body.actor,
-        action: body.action,
-        target: body.target || null,
-        details: body.details || {},
-      },
-    }, 201);
+      });
+
+      return c.json({
+        entry: {
+          timestamp: now,
+          actor: body.actor,
+          action: body.action,
+          target: body.target || null,
+          details: body.details || {},
+        },
+      }, 201);
+    } catch (err) {
+      console.error("Failed to publish activity:", err);
+      return c.json({ error: "Failed to publish event" }, 500);
+    }
   });
 
   return app;
-}
-
-interface ActivityRow {
-  id: number;
-  timestamp: string;
-  actor: string;
-  action: string;
-  target: string | null;
-  details: string;
-}
-
-function parseActivityRow(row: ActivityRow): ActivityEntry {
-  return {
-    ...row,
-    details: JSON.parse(row.details || "{}"),
-  };
 }

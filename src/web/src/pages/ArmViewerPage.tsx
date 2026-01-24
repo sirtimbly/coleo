@@ -645,8 +645,9 @@ export function ArmViewerPage() {
         <div className="border-b border-border px-4 py-3 bg-muted/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-semibold">
+              <h1 className="text-lg font-semibold flex items-center gap-2">
                 {selectedArm ? selectedArm.name : 'Arm Viewer'}
+                {selectedArm && <StatusBadge status={selectedArm.status} />}
               </h1>
               {selectedArm && (selectedArm.provider || selectedArm.model) && (
                 <div className="flex items-center space-x-2 text-sm text-muted-foreground">

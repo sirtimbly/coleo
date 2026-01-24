@@ -3,6 +3,7 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { eventStore } from "../../nats/jetstream";
 
 interface SystemContext {
   Variables: {
@@ -29,7 +30,7 @@ export function createSystemRoutes() {
    * System status - requires auth
    * GET /api/status
    */
-  app.get("/status", (c) => {
+  app.get("/status", async (c) => {
     const db = c.get("db");
     const startedAt = c.get("startedAt");
 
@@ -41,11 +42,20 @@ export function createSystemRoutes() {
     try {
       const armRow = db.query("SELECT COUNT(*) as count FROM arms").get() as { count: number } | null;
       const proposalRow = db.query("SELECT COUNT(*) as count FROM proposals WHERE status = 'open'").get() as { count: number } | null;
-      const activityRow = db.query("SELECT COUNT(*) as count FROM activity WHERE timestamp > datetime('now', '-24 hours')").get() as { count: number } | null;
 
       armCount = armRow?.count ?? 0;
       proposalCount = proposalRow?.count ?? 0;
-      activityCount = activityRow?.count ?? 0;
+      
+      // Get activity count from JetStream (approximate - last 24h worth of events)
+      if (eventStore.isInitialized()) {
+        try {
+          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const events = await eventStore.getRecentEvents(1000, since);
+          activityCount = events.length;
+        } catch {
+          // Fall back to 0 if JetStream query fails
+        }
+      }
     } catch {
       // Tables may not exist yet
     }

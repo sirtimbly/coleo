@@ -4,6 +4,7 @@
 
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
+import { eventStore } from "../../../nats/jetstream";
 
 export interface DependencyReport {
   taskId: string;
@@ -83,21 +84,21 @@ export class ReportDependencyTool extends BrainTool {
         );
       }
 
-      // Log the dependency report
-      this.context.db.run(
-        `INSERT INTO activity (timestamp, actor, action, target, details)
-         VALUES (?, 'brain', 'dependency_reported', ?, ?)`,
-        [
-          new Date().toISOString(),
-          input.taskId,
-          JSON.stringify({
+      // Log the dependency report to JetStream
+      if (eventStore.isInitialized()) {
+        eventStore.publishEvent(`octopai.events.brain.dependency_reported`, {
+          type: "dependency_reported",
+          armId: "brain",
+          data: {
+            taskId: input.taskId,
             dependsOnTaskId: input.dependsOnTaskId,
             dependencyType: input.dependencyType || 'finish_to_start',
             reason: input.reason,
             autoDetected: false
-          })
-        ]
-      );
+          },
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
+      }
 
       const result: DependencyReport = {
         taskId: input.taskId,

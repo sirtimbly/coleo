@@ -1031,7 +1031,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       parent_arm_id: null,
       pid: null,
       provider: "opencode",
-      model: "grok-code",
+      model: "claude-sonnet-4",
       config: JSON.stringify({ workdir: "~/projects" }),
     },
     {
@@ -1052,7 +1052,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       parent_arm_id: null,
       pid: null,
       provider: "opencode",
-      model: "claude-opus-4",
+      model: "claude-sonnet-4",
       config: JSON.stringify({ workdir: "~/projects/web" }),
     },
     {

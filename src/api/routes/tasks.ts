@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
+import { eventStore } from "../../nats/jetstream";
 
 interface TasksContext {
   Variables: {
@@ -87,14 +88,23 @@ function parseTaskRow(row: TaskRow): Task {
 }
 
 /**
- * Log an activity entry
+ * Log an activity entry to JetStream
  */
-function logActivity(db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
-  const now = new Date().toISOString();
-  db.run(
-    `INSERT INTO activity (timestamp, actor, action, target, details) VALUES (?, ?, ?, ?, ?)`,
-    [now, actor, action, target || null, JSON.stringify(details || {})]
-  );
+function logActivity(_db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+  if (eventStore.isInitialized()) {
+    const subject = target 
+      ? `octopai.events.task.${target}.${action}`
+      : `octopai.events.api.${action}`;
+    
+    eventStore.publishEvent(subject, {
+      type: action,
+      armId: target,
+      data: { actor, ...details },
+      timestamp: new Date().toISOString(),
+    }).catch(err => {
+      console.error(`[tasks-api] Failed to publish activity event: ${err}`);
+    });
+  }
 }
 
 const CONSENSUS_ROLES = new Set(["primary", "watcher"]);
