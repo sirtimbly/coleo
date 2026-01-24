@@ -459,6 +459,22 @@ export class OpenCodeTuiHarness implements AgentHarness {
       }
     }
 
+    // Select this session in the TUI so it displays correctly
+    try {
+      const selectResponse = await fetch(`${serverUrl}/tui/select-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionID: openCodeSession.id }),
+      });
+      if (selectResponse.ok) {
+        console.log(`[harness-tui] Selected session ${openCodeSession.id} in TUI`);
+      } else {
+        console.log(`[harness-tui] Failed to select session in TUI: ${selectResponse.statusText}`);
+      }
+    } catch (selectErr) {
+      console.log(`[harness-tui] Error selecting session in TUI: ${selectErr}`);
+    }
+
     // Create dummy PTY session for compatibility
     const ptySession: PTYSession = {
       pty: null as any,
@@ -760,7 +776,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       }
 
       // Select the new session in the TUI
-      await this.selectNewestSession(tuiSession, { maxRetries: 5, retryDelayMs: 200 });
+      await this.selectSession(tuiSession, { maxRetries: 5, retryDelayMs: 200 });
 
       console.log(`[harness-tui] Session reset complete: ${oldSessionId} -> ${newSession.id}`);
       return newSession.id;
@@ -791,9 +807,6 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     console.log(`[harness-tui] Sending prompt to ${tuiSession.armId}: "${prompt.slice(0, 50)}..."`);
 
-    // Capture timestamp before sending so we can filter sessions updated after this point
-    const timestampBeforeSend = Date.now();
-
     // Build the message body - include model if specified
     const messageBody: { parts: Array<{ type: "text"; text: string }>; model?: { providerID: string; modelID: string } } = {
       parts: [{ type: "text", text: prompt }],
@@ -814,13 +827,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
       path: { id: tuiSession.sessionId },
     });
 
-    // Tell TUI to select the newest session so it displays the prompt
-    // Retry for up to 5 seconds since the session may take time to appear
-    await this.selectNewestSession(tuiSession, {
-      sinceTimestamp: timestampBeforeSend,
-      maxRetries: 10,
-      retryDelayMs: 500,
-    });
+    // Ensure the TUI is showing our session (the one we initialized with the model)
+    await this.selectSession(tuiSession, { maxRetries: 5, retryDelayMs: 200 });
 
     console.log(`[harness-tui] Prompt sent successfully to ${tuiSession.armId}`);
 
@@ -829,11 +837,56 @@ export class OpenCodeTuiHarness implements AgentHarness {
   }
 
   /**
-   * Select the newest session in the TUI
+   * Select the current session in the TUI
+   * This ensures the TUI displays the session we're tracking for this arm.
+   *
+   * After sending a prompt via prompt_async, the TUI may not automatically show it.
+   * This method retries selection for up to `maxRetries` attempts.
+   */
+  private async selectSession(
+    tuiSession: TuiHarnessSession,
+    options: { maxRetries?: number; retryDelayMs?: number } = {}
+  ): Promise<void> {
+    const { maxRetries = 5, retryDelayMs = 200 } = options;
+    const sessionId = tuiSession.sessionId;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        // Tell TUI to select our tracked session
+        const selectResponse = await fetch(`${tuiSession.serverUrl}/tui/select-session`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionID: sessionId }),
+        });
+
+        if (selectResponse.ok) {
+          console.log(`[harness-tui] Selected session ${sessionId} (attempt ${attempt})`);
+          return;
+        }
+
+        console.log(`[harness-tui] Failed to select session (attempt ${attempt}/${maxRetries}): ${selectResponse.statusText}`);
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      } catch (err) {
+        console.log(`[harness-tui] Error selecting session (attempt ${attempt}/${maxRetries}): ${err}`);
+        if (attempt < maxRetries) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        }
+      }
+    }
+
+    console.log(`[harness-tui] Failed to select session ${sessionId} after ${maxRetries} attempts`);
+  }
+
+  /**
+   * Select the newest session in the TUI (legacy method)
    * This ensures the TUI displays the most recent conversation after sending a prompt.
    *
    * After sending a prompt via prompt_async, the session may take a moment to appear.
    * This method retries for up to `maxRetries` attempts with `retryDelayMs` between each.
+   * 
+   * @deprecated Use selectSession instead to avoid session confusion
    */
   private async selectNewestSession(
     tuiSession: TuiHarnessSession,
