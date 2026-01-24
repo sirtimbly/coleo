@@ -95,6 +95,49 @@ These are useful Observatory improvements that build on Phase 1 but do not retro
   - For dead arms: retains only the last 100 activity items (not full history)
   - Color-coded arms with unique randomly-assigned colors
 
+- **Arm Activity & Efficiency Visualization** (NEW):
+  - **Activity Bar Graph** (30-minute window, minute-by-minute):
+    - Stacked/grouped bars showing events per minute
+    - Event types with distinct colors/dots:
+      - File writes (blue)
+      - Thinking/reasoning (yellow)
+      - Tool calls (green)
+      - Completed tasks (purple, prominent)
+    - Gaps left for inactive minutes to show efficiency patterns
+    - Tasks "pile up" vertically within each minute bar
+    - Shows at-a-glance how active and efficient the arm is being
+  - **Context Length Line Graph** (below activity graph):
+    - Higher resolution than activity graph (e.g., every 10-15 seconds)
+    - Shows context token usage over time
+    - Visual indicator when approaching compression threshold (80%)
+    - Warning zone shading near context limits
+  - **Cost/Money Usage Line Graph** (below context graph):
+    - Shows cumulative cost in dollars over the 30-minute window
+    - Data sourced from OpenCode API:
+      - Model pricing: `GET /provider` → `Provider.models[].cost` (input/output/cache rates per token)
+      - Per-message cost: `AssistantMessage.cost` (calculated cost per response)
+      - Token usage: `AssistantMessage.tokens` (input, output, reasoning, cache read/write)
+    - Graph features:
+      - Running total line showing spend over time
+      - Optional: stacked area showing input vs output vs cache costs
+      - Cost rate indicator ($/hour based on recent activity)
+      - Budget threshold line if configured
+    - Helps users understand:
+      - Which arms are expensive vs cheap
+      - Cost spikes during complex reasoning
+      - ROI of different model choices
+  - **Two display modes**:
+    - **Full view** (Arms list page): Complete 30-minute graphs with legends
+    - **Compressed view** (Arm Viewer page): Sparkline-style mini graphs
+  - **Data sources**:
+    - Generated from SSE event stream data
+    - Frontend polls for graph data (aggregated metrics endpoint)
+    - Live events still come via WebSocket for real-time list updates
+  - **API endpoints needed**:
+    - `GET /api/arms/:id/metrics` - Aggregated activity data for graphs
+    - `GET /api/arms/:id/context-history` - Context length over time
+    - `GET /api/arms/:id/cost-history` - Cost data over time (from OpenCode `/provider` and message events)
+
 - **Arm Spawning from Web UI**:
   - Form to spawn new arms directly from the browser
   - Name input auto-populates with generated names
@@ -876,6 +919,143 @@ server.registerTool(
 
 ---
 
+## Regular Refactoring Cycle
+
+**Goal**: Maintain file sizes small enough for LLM context windows through periodic refactoring.
+
+### Problem Statement
+
+Large files (>400 lines) are difficult for LLMs to process effectively:
+- They consume significant context budget
+- Arms may not be able to load entire files into context
+- Complex files lead to more errors and incomplete understanding
+
+### Trigger Conditions
+
+Brain creates a refactoring task when:
+
+1. **Task completion threshold**: Every 5 completed tasks
+2. **File size detected**: Any file >400 lines found during work
+3. **Human request**: Human explicitly requests refactoring
+
+### Refactoring Task Classification
+
+| Classification | Purpose | Output |
+|----------------|---------|--------|
+| **refactoring** | Split large files | Smaller, focused modules |
+
+### Prerequisites (CRITICAL)
+
+Before any refactoring task begins, the arm MUST verify:
+
+1. **Clean git state**: `git status` shows no uncommitted changes to target files
+2. **Files committed**: All files to be refactored are checked in
+3. **No active claims**: No other arm has claimed the target files
+
+If prerequisites are not met:
+- Arm reports blocker to Brain
+- Brain either waits or reassigns task
+- NO refactoring proceeds with uncommitted changes
+
+### File Size Rules
+
+| Threshold | Action |
+|-----------|--------|
+| **>400 lines** | Flag for refactoring |
+| **>600 lines** | High priority refactoring |
+| **>800 lines** | Critical - block new work on file until refactored |
+
+### Brain Implementation
+
+```typescript
+// Track task completion count
+let completedTaskCount = 0;
+
+async function onTaskCompleted(task: Task) {
+  completedTaskCount++;
+  
+  // Check for refactoring cycle every 5 tasks
+  if (completedTaskCount % 5 === 0) {
+    const largeFiles = await findLargeFiles(400);
+    if (largeFiles.length > 0) {
+      await createRefactoringTask(largeFiles);
+    }
+  }
+}
+
+async function findLargeFiles(threshold: number): Promise<string[]> {
+  // Use wc -l or similar to find files > threshold lines
+  // Exclude: node_modules, .git, build artifacts
+}
+
+async function createRefactoringTask(files: string[]) {
+  await db.run(`
+    INSERT INTO tasks (id, subject, description, classification, priority)
+    VALUES (?, ?, ?, 'refactoring', ?)
+  `, [
+    generateTaskId(),
+    `Refactor large files (${files.length} files)`,
+    buildRefactoringDescription(files),
+    files.some(f => getLineCount(f) > 600) ? 'high' : 'medium'
+  ]);
+}
+```
+
+### Refactoring Task Description Template
+
+```markdown
+## Refactoring Task
+
+### Prerequisites (VERIFY FIRST)
+- [ ] Run `git status` - confirm target files have no uncommitted changes
+- [ ] Confirm files are checked in before making changes
+- [ ] Check no other arms have active claims on these files
+
+### Files to Refactor
+
+| File | Lines | Priority |
+|------|-------|----------|
+{{#each files}}
+| `{{path}}` | {{lines}} | {{priority}} |
+{{/each}}
+
+### Guidelines
+
+1. **Extract focused modules**: Each file should do one thing well
+2. **Preserve exports**: Don't break existing imports
+3. **Add barrel files**: Use index.ts for clean re-exports
+4. **Test after split**: Run `bun run typecheck` and `bun test`
+5. **Commit incrementally**: One logical change per commit
+
+### Example Splits
+
+- Extract types to `types.ts`
+- Extract utilities to `utils.ts`
+- Extract constants to `constants.ts`
+- Split by feature/domain into subdirectories
+```
+
+### Deliverables
+
+- [ ] Brain tracks completed task count
+- [ ] `findLargeFiles()` utility function
+- [ ] Refactoring task classification in brain
+- [ ] Prerequisite verification in refactoring task template
+- [ ] File size threshold configuration (default 400 lines)
+- [ ] High priority escalation for files >600 lines
+- [ ] Integration with claims system to prevent conflicts
+
+### Dependencies
+
+- Phase 2.1 (Progressive Planning - for task creation)
+- Claims system (for conflict prevention)
+
+### Estimated Duration
+
+1 week
+
+---
+
 ## Phase 3: Governance
 
 **Goal**: Arms debate and reach consensus on plans and changes, using proposals, arguments, and signals rather than human-maintained MR workflows.
@@ -1026,6 +1206,9 @@ Future: 3+ weeks (if PTY harnesses revisited)
 
 | Date | Change |
 |------|--------|
+| 2026-01-23 | Added Cost/Money Usage Line Graph to Arm Activity Visualization - shows cumulative spend over time using OpenCode API pricing data |
+| 2026-01-23 | Added Arm Activity & Efficiency Visualization: 30-min activity bar graph (file writes, thinking, tool calls, tasks) and context length line graph with full/compressed views |
+| 2026-01-23 | Added Regular Refactoring Cycle: periodic refactoring every 5 tasks for files >400 lines, with git clean state prerequisites |
 | 2026-01-17 | Added Phase 2.4: Bug Tracking & Resolution with priority escalation rules for arm/human-reported bugs |
 | 2026-01-17 | Added user feedback enhancements: model recommendations & budget tracking, vector DB for arm history, context compression improvements, status report tracking, governance clarifications, and garden visualization avatars/personality |
 | 2026-01-16 | Phase 1 enhancements updated: added Mail/sent messages, Task List (past/current/next), Arm Viewer page (clickable arms, history, color-coded), and Arm Spawning from web UI (generated names, regenerate button) |
