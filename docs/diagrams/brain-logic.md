@@ -25,7 +25,11 @@ flowchart TD
         C -->|No| E[Skip API Arms]
         D --> F[promptIdleArms]
         F --> G[checkIdleArmStuckLoops]
-        G --> H[End Poll]
+        G --> S8[syncPlanTasks<br/>reads .project/plan.md]
+        S8 --> S8a[processInbox<br/>reads .project/inbox.md]
+        S8a --> S8b[checkDocUpdateTrigger]
+        S8b --> S8c[reEvaluatePlanProgress]
+        S8c --> H[End Poll]
         E --> H
     end
 
@@ -92,12 +96,29 @@ flowchart TD
         I6 --> G2
     end
 
-    class A,B,D,G1,G2,F1,F2,B1,B2,F5,G4,G8,G12 process
+    class A,B,D,G1,G2,F1,F2,B1,B2,F5,G4,G8,G12,S8,S8a,S8b,S8c process
     class C,F3,F4,F6,F9,G3,G4,G6,G9,G13,I1 decision
     class state,idle,blocked,disconnected,stopped state
     class External,DB,Arm external
     class arm arm
 ```
+
+## File Reading Steps
+
+After checking arm status, the brain reads markdown files to sync tasks:
+
+| Step | Function | File(s) Read | Purpose |
+|------|----------|--------------|---------|
+| 8 | `syncPlanTasks()` | `.project/plan.md` | Extracts `- [ ]` checkboxes as tasks |
+| 8a | `processInbox()` | `.project/inbox.md` | Parses `## headers` and `- [ ]` items, creates tasks, clears inbox |
+| 8b | `checkDocUpdateTrigger()` | (various) | Checks if docs need updating |
+| 8c | `reEvaluatePlanProgress()` | (various) | Creates verification tasks for issues |
+
+**Inbox processing:**
+- `## Header` creates task with header as title, following paragraph as description
+- `- [ ] Text` creates task with Text as title
+- Deduplicates against existing tasks by title similarity
+- Clears inbox after processing (goal: inbox always empty after brain poll)
 
 ## Arm State Machine
 

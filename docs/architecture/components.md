@@ -130,6 +130,36 @@ flowchart TD
     class C decision
 ```
 
+### File Reading During Poll
+
+The brain reads markdown files during its poll cycle to sync tasks from human-editable sources:
+
+```
+Poll Cycle File Reading:
+├── Step 8: syncPlanTasks()
+│   └── Reads .project/plan.md
+│   └── Extracts tasks from `- [ ]` checkbox items
+│   └── Creates/updates tasks in SQLite
+│
+├── Step 8a: processInbox()
+│   └── Reads .project/inbox.md
+│   └── Parses ## headers and - [ ] items as new tasks
+│   └── Deduplicates against existing tasks (by title similarity)
+│   └── Clears inbox after processing
+│
+├── Step 8b: checkDocUpdateTrigger()
+│   └── Checks if documentation needs updating
+│
+└── Step 8c: reEvaluatePlanProgress()
+    └── Creates verification tasks for issues
+```
+
+**Files the brain reads:**
+- `.project/plan.md` - Main plan with phases and deliverables
+- `.project/inbox.md` - Quick task input (cleared after processing)
+- `**/*.plan.md` - Any file ending in .plan.md
+- `**/plans/*.md` - Files in plans/ directories
+
 ### Arm State Machine
 
 Arms follow a formal state machine with 7 states:
@@ -584,33 +614,73 @@ The Observatory is how humans observe and control the system.
 
 ## Nerve System (Communication Layer)
 
-All communication flows through the Nerve System.
+All communication flows through the Nerve System using NATS for distributed messaging and an internal queue for brain↔arm messages.
 
 ### Message Flow
 
 ```
 Human ◄──────► Observatory ◄──────► Brain ◄──────► Arms
          │                    │              │
-         │ WebSocket          │ Internal     │ MCP
-         │ Push Notifications │ Event Bus    │ Protocol
+         │ WebSocket          │ NATS         │ NATS/Queue
+         │ Push Notifications │ JetStream    │ MCP Tools
          │ REST API           │              │
 ```
 
-### Message Types
+### NATS Event Types (Arm Lifecycle)
 
-| Message | Direction | Description |
-|---------|-----------|-------------|
-| `arm.spawn` | Brain → All | New arm created |
-| `arm.status` | Arm → Brain | Arm status change |
-| `arm.activity` | Arm → Brain | Arm performed action |
-| `proposal.new` | Arm → All | Arm proposed something |
-| `proposal.argue` | Arm → All | Arm added argument |
-| `proposal.resolve` | Brain → All | Proposal decided |
-| `claim.request` | Arm → Brain | Arm wants to own file |
-| `claim.granted` | Brain → Arm | Ownership granted |
-| `claim.conflict` | Brain → All | Multiple claims detected |
-| `deploy.request` | Arm → Brain | Deployment requested |
-| `deploy.consensus` | Brain → All | Arms reached consensus |
-| `human.approval` | Brain → Human | Human decision needed |
-| `human.notify` | Brain → Human | Notification for human |
-| `brain.intervene` | Brain → Arm | Brain taking action |
+Events published via NATS for distributed arm management:
+
+| Event Type | Direction | Description |
+|------------|-----------|-------------|
+| `arm.spawned` | Agent → All | Arm process started |
+| `arm.killed` | Agent → All | Arm process terminated |
+| `arm.recovered` | Agent → All | Arm recovered from error |
+| `arm.status_changed` | Agent → All | Arm status transition (idle→busy, etc.) |
+| `arm.activity` | Agent → Brain | Arm performed an action |
+| `arm.log` | Agent → Brain | Log message from arm |
+| `agent.connected` | Agent → All | Agent host came online |
+| `agent.disconnected` | Agent → All | Agent host went offline |
+
+### Queue Message Types (Brain ↔ Arm)
+
+Messages passed through the brain's message queue:
+
+| Message Type | Direction | Description |
+|--------------|-----------|-------------|
+| `task_assignment` | Brain → Arm | Assign task to arm |
+| `task_complete` | Arm → Brain | Task finished successfully |
+| `task_failed` | Arm → Brain | Task failed with error |
+| `discovery` | Arm → Brain | Arm found something noteworthy |
+| `dependency_discovery` | Arm → Brain | Arm found a dependency |
+| `status_report` | Arm → Brain | Progress report on current task |
+| `status_update` | Arm → Brain | General status update |
+| `heartbeat` | Arm → Brain | Arm is alive and working |
+| `approval_request` | Arm → Brain | Arm needs approval for action |
+| `approval_response` | Brain → Arm | Approval granted/denied |
+| `human_message` | Human → Brain | Message from human |
+| `share_note` | Arm → All | Note shared between arms |
+| `tool_discovery` | Arm → Brain | Arm found useful tool |
+| `doc_update` | Brain → Arm | Documentation needs updating |
+| `file_subscription` | Arm → Brain | Arm watching a file |
+| `file_change` | Brain → Arm | Watched file changed |
+| `claim_transfer` | Brain → Arm | File claim transferred |
+| `bug_report` | Arm → Brain | Bug discovered |
+| `bug_assignment` | Brain → Arm | Bug assigned for fixing |
+| `context_compression` | Arm → Brain | Context was compressed |
+| `dev_server_restart_request` | Arm → Brain | Request to restart dev server |
+
+### Activity Event Types (JetStream)
+
+Events tracked in JetStream for activity analysis:
+
+| Category | Event Types |
+|----------|-------------|
+| **Session** | `session.status`, `session.idle`, `session.error`, `session.updated`, `session.diff` |
+| **Message** | `message.updated`, `message.removed`, `message.part.updated`, `message.part.removed` |
+| **Permission** | `permission.asked`, `permission.replied` |
+| **Todo** | `todo.updated` |
+| **File** | `file.edited`, `file.watcher.updated` |
+| **Command** | `command.executed` |
+| **Arm Lifecycle** | `arm.spawned`, `arm.status_changed`, `arm.heartbeat`, `arm.killed`, `arm.stopped` |
+| **Task** | `task.created`, `task.assigned`, `task.claimed`, `task.completed`, `task.blocked`, `task.failed` |
+| **Brain** | `arm_prompted`, `event-status`, `started`, `stopped` |

@@ -26,7 +26,7 @@ To keep humans, the brain, and arms aligned we now standardize three primary com
 
 ---
 
-## Phase 0: Core Infrastructure ✅ Complete
+## Phase 0: Core Infrastructure
 
 **Goal**: Basic brain/arm lifecycle and communication
 
@@ -46,7 +46,7 @@ See [acceptance/phase-0.md](./acceptance/phase-0.md)
 
 ---
 
-## Phase 1: Observatory Foundation ✅ Complete
+## Phase 1: Observatory Foundation
 
 **Goal**: Web UI and API for human observation and control
 
@@ -72,7 +72,7 @@ See [acceptance/phase-0.md](./acceptance/phase-0.md)
 These are useful Observatory improvements that build on Phase 1 but do not retroactively block calling the phase "complete":
 
 - **Project Plan Viewer** in the web Observatory:
-  - File/folder tree of `.project/` and key docs on the left (e.g., `README.md`, `plan.md`, `requirements.md`, `status.md`, `decisions/`, `acceptance/`, `plans/`, `tasks/`).
+  - File/folder tree of `.project/` and key docs on the left (e.g., `README.md`, `plan.md`, `requirements.md`, `decisions/`, `acceptance/`, `plans/`).
   - Markdown rendering panel on the right for the selected file.
   - Edit mode to modify plan documents directly in the browser.
   - Visible "Last Updated" timestamp for each rendered file, derived from git commit metadata or filesystem mtime.
@@ -153,17 +153,13 @@ These are useful Observatory improvements that build on Phase 1 but do not retro
   - Add API endpoint for queue metrics (depth, processing times)
   - UI shows real-time queue status with graphs
 
-### Estimated Duration
-
-2–3 weeks (completed in early 2026, with ongoing non-blocking enhancements)
-
 ### Acceptance Criteria
 
 See [acceptance/phase-1.md](./acceptance/phase-1.md)
 
 ---
 
-## Phase 2: Task Classification & Context ✅ Complete
+## Phase 2: Task Classification & Context
 
 **Goal**: Implement task classifications (architect, development, QA, documentation) with context bundles for arms.
 
@@ -190,10 +186,6 @@ See [acceptance/phase-1.md](./acceptance/phase-1.md)
 
 - Phase 0 (Brain, MCP, CLI)
 
-### Estimated Duration
-
-1 week (completed as part of Jan 2026 work)
-
 ### Acceptance Criteria
 
 - [x] Arms receive discoveries when tasks are assigned
@@ -203,7 +195,7 @@ See [acceptance/phase-1.md](./acceptance/phase-1.md)
 
 ---
 
-## Phase 2.1: Progressive Planning ✅ Complete
+## Phase 2.1: Progressive Planning
 
 **Goal**: Brain dynamically determines next task based on plan, history, and status reports.
 
@@ -253,13 +245,9 @@ For each plan bullet point:
 
 - Phase 2 (context bundles)
 
-### Estimated Duration
-
-2 weeks
-
 ---
 
-## Phase 2.2: Documentation Updates ✅ Complete (In Progress)
+## Phase 2.2: Documentation Updates
 
 **Goal**: Brain creates documentation update tasks to keep feature docs aligned with code.
 
@@ -336,10 +324,6 @@ For features partially implemented:
 - Phase 2: Task Classification & Context (completed - provides task classification and context bundle infrastructure)
 - Phase 2.1: Progressive Planning (provides progressive task determination)
 
-### Estimated Duration
-
-1 week
-
 ### Context for Doc Update Task
 
 When Brain assigns a documentation task, it provides:
@@ -370,7 +354,42 @@ Do NOT update conceptual/architecture docs.
 
 ---
 
-## Phase 2.4: Bug Tracking & Resolution (New)
+## Phase 2.4: Status Reports
+
+**Goal**: Formalize status reporting from arms to human via Brain.
+
+### Why This Is Next
+
+Status Reports is the foundation for human oversight and enables:
+- Bug tracking (bugs are a type of status report)
+- Agentic brain decisions (brain needs status to determine next tasks)
+- Human visibility into arm progress
+
+### Status Report Flow
+
+```
+Arm → Status Report → Brain → Aggregates → Human (email)
+                       ↓
+              Updates task history
+              Influences next task
+```
+
+### Deliverables
+
+- [ ] Status report message type
+- [ ] Status report parsing in Brain
+- [ ] Brain aggregates and routes to human
+- [ ] Status influences task determination
+- [ ] Status dashboard in API
+- [ ] User message confirmation & tracking (processing fate, plan addition, unblocking)
+
+### Dependencies
+
+- Phase 2.1 (Progressive Planning)
+
+---
+
+## Phase 2.5: Bug Tracking & Resolution
 
 **Goal**: Handle bug reports from arms and humans with priority escalation and resolution tracking.
 
@@ -426,43 +445,8 @@ When bug resolved:
 ### Dependencies
 
 - Phase 2.1 (Progressive Planning - for blocking logic)
-- Phase 2.5 (Status Reports - bug reports as status)
+- Phase 2.4 (Status Reports - bug reports as status)
 
-### Estimated Duration
-
-1 week
-
----
-
-## Phase 2.5: Status Reports (New)
-
-**Goal**: Formalize status reporting from arms to human via Brain.
-
-### Status Report Flow
-
-```
-Arm → Status Report → Brain → Aggregates → Human (email)
-                       ↓
-              Updates task history
-              Influences next task
-```
-
-### Deliverables
-
-- [ ] Status report message type
-- [ ] Status report parsing in Brain
-- [ ] Brain aggregates and routes to human
-- [ ] Status influences task determination
-- [ ] Status dashboard in API
-- [ ] User message confirmation & tracking (processing fate, plan addition, unblocking)
-
-### Dependencies
-
-- Phase 2.1 (Progressive Planning)
-
-### Estimated Duration
-
-1 week
 ---
 
 ## New Tasks from Brain (Jan 2026)
@@ -682,10 +666,6 @@ Fix API convention violations and type safety:
 
 - None (can start immediately)
 
-### Estimated Duration
-
-2 weeks
-
 ### Acceptance Criteria
 
 - [ ] `find .octopai -name "*.json" -path "*state*"` returns no results
@@ -774,10 +754,6 @@ See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details
 - Phase 2 (Task Classification)
 - Phase 2.1 (Progressive Planning)
 - Phase 2.5 (Status Reports)
-
-### Estimated Duration
-
-3 weeks
 
 ### Acceptance Criteria
 
@@ -913,9 +889,214 @@ server.registerTool(
 - Phase 2 (Task Classification)
 - Phase 2.6 (Agentic Brain - for tool integration)
 
-### Estimated Duration
+---
 
-1 week
+## Phase 2.8: Global Status History Search
+
+**Goal**: Provide searchable full-text history of all arm status messages and completions via vector database indexing.
+
+### Problem Statement
+
+As arms work over time, they generate valuable status reports, task completions, discoveries, and progress updates. This institutional knowledge is currently ephemeral - once processed, it's difficult to search or query. Users and the brain need:
+
+1. **Historical context** - "What did we try before that failed?"
+2. **Pattern recognition** - "Which arms tend to get stuck on similar problems?"
+3. **Knowledge retrieval** - "Has anyone solved this type of problem before?"
+4. **Audit trail** - "What happened during that overnight run?"
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     Status History Pipeline                        │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   Arms ──▶ Status Reports ──▶ NATS JetStream ──▶ Consumer          │
+│                                    │                 │              │
+│                                    ▼                 ▼              │
+│                              Event Stream      Vector DB            │
+│                              (audit log)       (embeddings)         │
+│                                    │                 │              │
+│                                    └────────┬────────┘              │
+│                                             ▼                       │
+│                                      Search API                     │
+│                                        │    │                       │
+│                                        ▼    ▼                       │
+│                                    Users  Brain                     │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### NATS JetStream Consumer
+
+A dedicated consumer processes status events and indexes them:
+
+```typescript
+interface StatusHistoryEvent {
+  id: string;
+  arm_id: string;
+  arm_name: string;
+  timestamp: string;
+  event_type: 'status_report' | 'task_completed' | 'discovery' | 'bug_reported';
+  
+  // Searchable content
+  summary: string;
+  full_text: string;
+  
+  // Metadata for filtering
+  task_id?: string;
+  task_subject?: string;
+  classification?: string;
+  status?: 'on_track' | 'blocked' | 'issues_found' | 'completed';
+  
+  // For relevance ranking
+  importance: 'routine' | 'notable' | 'critical';
+}
+```
+
+### Vector Database Integration
+
+| Option | Pros | Cons |
+|--------|------|------|
+| **SQLite + sqlite-vss** | No external deps, single DB | Limited scale |
+| **LanceDB** | Embedded, Rust-based, fast | Newer, less mature |
+| **Chroma** | Popular, good Python ecosystem | Requires separate process |
+| **Qdrant** | Production-ready, excellent filtering | Requires container |
+
+**Recommendation**: Use **Qdrant** from the start.
+
+Rationale:
+- Production-ready with excellent filtered vector search (by arm_id, dates, event types)
+- Octopai is already distributed (NATS, API server) - adding a container fits the architecture
+- Single `docker run qdrant/qdrant` to start
+- Avoids migration cost of starting with something simpler then rewriting
+- Battle-tested at scale for autonomous long-running systems
+
+### Search Capabilities
+
+| Query Type | Example | Implementation |
+|------------|---------|----------------|
+| **Semantic** | "problems with database migrations" | Vector similarity |
+| **Filtered** | "status reports from arm-alpha last week" | Metadata + vector |
+| **Exact** | "error: SQLITE_BUSY" | Full-text search |
+| **Hybrid** | "authentication issues" + arm_id filter | Combined ranking |
+
+### API Endpoints
+
+```typescript
+// Search status history
+POST /api/status-history/search
+{
+  query: string;           // Natural language query
+  filters?: {
+    arm_ids?: string[];    // Filter by specific arms
+    event_types?: string[]; // Filter by event type
+    from?: string;         // Start date
+    to?: string;           // End date
+    task_id?: string;      // Related to specific task
+    classification?: string;
+  };
+  limit?: number;          // Max results (default: 20)
+  include_context?: boolean; // Include surrounding messages
+}
+
+// Response
+{
+  results: Array<{
+    event: StatusHistoryEvent;
+    score: number;         // Relevance score
+    highlights: string[];  // Matching snippets
+  }>;
+  total: number;
+  query_time_ms: number;
+}
+
+// Get status history for specific arm
+GET /api/arms/:id/status-history
+  ?from=2026-01-01
+  &to=2026-01-23
+  &limit=100
+
+// Get aggregated stats
+GET /api/status-history/stats
+  ?period=week
+```
+
+### MCP Tool for Brain/Arms
+
+```typescript
+server.registerTool(
+  "search_status_history",
+  {
+    description: "Search historical status reports and completions from all arms",
+    inputSchema: {
+      query: z.string().describe("Natural language search query"),
+      filters: z.object({
+        arm_ids: z.array(z.string()).optional(),
+        event_types: z.array(z.enum(['status_report', 'task_completed', 'discovery', 'bug_reported'])).optional(),
+        days_back: z.number().optional().default(30),
+      }).optional(),
+      limit: z.number().optional().default(10),
+    },
+  },
+  async ({ query, filters, limit }) => {
+    const results = await statusHistorySearch.search(query, filters, limit);
+    return {
+      content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+    };
+  }
+);
+```
+
+### Use Cases
+
+| Actor | Use Case | Query Example |
+|-------|----------|---------------|
+| **Human** | Debug overnight run | "errors or blockers from last night" |
+| **Human** | Find past solution | "how did we fix the rate limiting issue" |
+| **Brain** | Avoid repeated failures | "previous attempts at database migration" |
+| **Brain** | Learn from success | "successful deployments this month" |
+| **Arm** | Context for similar task | "past work on authentication" |
+
+### UI Components
+
+**Status History Search Page**:
+- Search bar with natural language input
+- Filter sidebar (date range, arms, event types)
+- Results with highlighted matches
+- Expandable cards showing full context
+- Timeline view option
+
+**Dashboard Widget**:
+- "Recent Notable Events" quick view
+- Link to full search
+
+### Retention Policy
+
+| Event Type | Retention | Rationale |
+|------------|-----------|-----------|
+| Task completions | Forever | Critical audit trail |
+| Status reports | 90 days | Useful for debugging |
+| Routine heartbeats | 7 days | High volume, low value |
+| Critical events | Forever | Important history |
+
+### Deliverables
+
+- [ ] NATS JetStream consumer for status events
+- [ ] Qdrant integration for vector storage (Docker container)
+- [ ] Embedding generation (OpenAI or local model)
+- [ ] Search API with hybrid query support
+- [ ] MCP tool for brain/arm search access
+- [ ] Status history search UI page
+- [ ] Dashboard widget for notable events
+- [ ] Retention policy implementation
+- [ ] Backfill script for existing status reports
+
+### Dependencies
+
+- Phase 2.4 (Status Reports - provides the events to index)
+- Phase 2.3 (NATS JetStream integration)
+- Phase 2.6 (Agentic Brain - primary consumer of search)
 
 ---
 
@@ -1050,10 +1231,6 @@ async function createRefactoringTask(files: string[]) {
 - Phase 2.1 (Progressive Planning - for task creation)
 - Claims system (for conflict prevention)
 
-### Estimated Duration
-
-1 week
-
 ---
 
 ## Phase 3: Governance
@@ -1074,10 +1251,6 @@ async function createRefactoringTask(files: string[]) {
   - Any remaining MR-style templates are removed or updated to reference task configuration templates instead of fixed arm/MR roles.
 - [ ] Brain can update plans directly; arm-initiated changes require proposals for consensus
 
-### Estimated Duration
-
-2–3 weeks
-
 ---
 
 ## Phase 4: Garden Visualization
@@ -1095,10 +1268,6 @@ async function createRefactoringTask(files: string[]) {
 - [ ] Generate octopus avatars for arms with reuse logic and color/personality traits
 - [ ] Brain mascot with personality and animation
 
-### Estimated Duration
-
-2 weeks
-
 ---
 
 ## Phase 5: Notifications & Deployment
@@ -1113,13 +1282,9 @@ async function createRefactoringTask(files: string[]) {
 - [ ] Rollback with pause
 - [ ] Monitoring integration hooks
 
-### Estimated Duration
-
-2 weeks
-
 ---
 
-## Phase 6: Agent Harnesses ⚠️ Deferred
+## Phase 6: Agent Harnesses
 
 **Goal**: Support multiple AI agents via pluggable harnesses.
 
@@ -1161,11 +1326,6 @@ If PTY issues are resolved:
 - [ ] Add PTY session management (if needed)
 - [ ] Support for other agents
 
-### Estimated Duration
-
-1 week (opencode-api only, done)
-Future: 3+ weeks (if PTY harnesses revisited)
-
 ---
 
 ## Phase 7: Polish & Production
@@ -1182,9 +1342,211 @@ Future: 3+ weeks (if PTY harnesses revisited)
 - [ ] User documentation
 - [ ] PTY harness evaluation (if issues resolved)
 
-### Estimated Duration
+---
 
-2–3 weeks
+## Phase 8: Budget Planning & Burn Rate Estimation (New)
+
+**Goal**: Enable long-running autonomous operation with predictable costs through model cost tracking, burn rate estimation, and budget forecasting.
+
+### Problem Statement
+
+Users want to run Octopai autonomously for extended periods (hours, days, weeks) without constant monitoring. To do this safely, they need:
+
+1. **Predictable costs** - Know how much a work session will cost before starting
+2. **Model flexibility** - Choose between quality (expensive models) vs economy (cheaper models)
+3. **Adaptive pricing** - Handle model price changes without breaking budgets
+4. **Task distribution** - Understand cost implications of routing tasks to different models
+
+### User Scenarios
+
+| Scenario | Need |
+|----------|------|
+| "Run overnight on this feature" | Estimate 8-hour cost at current burn rate |
+| "I have $50 budget for this sprint" | Calculate how many hours/tasks that buys |
+| "Use GPT-4.1 for architecture, cheaper models for tests" | Model routing with cost awareness |
+| "Prices changed, recalculate my estimates" | Dynamic repricing without manual updates |
+
+### Model Preference System
+
+Users configure model preferences with cost/quality tradeoffs:
+
+```toml
+# ~/.octopai/config.toml
+[models]
+# Ordered list: first = preferred, last = fallback
+preferred = ["claude-sonnet-4", "gpt-4.1", "grok-code"]
+
+# Models explicitly banned from receiving work
+banned = ["gpt-3.5-turbo", "claude-haiku"]
+
+# Task-specific overrides
+[models.overrides]
+architect = ["claude-sonnet-4"]  # Only use top model for planning
+qa = ["grok-code", "gpt-4.1-mini"]  # Cheaper models ok for tests
+documentation = ["grok-code"]  # Cheapest for docs
+```
+
+### Price Tracking
+
+Model prices change over time. Brain tracks historical prices:
+
+```sql
+CREATE TABLE model_prices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_cost_per_1k REAL NOT NULL,  -- $/1K input tokens
+  output_cost_per_1k REAL NOT NULL, -- $/1K output tokens
+  cache_read_cost_per_1k REAL,      -- $/1K cache read tokens
+  cache_write_cost_per_1k REAL,     -- $/1K cache write tokens
+  effective_from TEXT NOT NULL DEFAULT (datetime('now')),
+  effective_to TEXT,  -- NULL = current price
+  source TEXT NOT NULL,  -- 'opencode_api', 'manual', 'provider_api'
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_model_prices_current ON model_prices(provider, model, effective_to);
+```
+
+### Burn Rate Calculation
+
+Brain calculates burn rate from recent activity:
+
+```typescript
+interface BurnRate {
+  // Current rates
+  tokensPerMinute: { input: number; output: number };
+  costPerMinute: number;
+  costPerHour: number;
+  
+  // Projections
+  estimatedDailyCost: number;
+  estimatedWeeklyCost: number;
+  
+  // By model breakdown
+  byModel: Record<string, {
+    tokensUsed: { input: number; output: number };
+    cost: number;
+    percentOfTotal: number;
+  }>;
+  
+  // Confidence based on sample size
+  confidence: 'low' | 'medium' | 'high';
+  samplePeriodMinutes: number;
+}
+```
+
+### Budget Forecasting
+
+Given a budget, calculate how long work can continue:
+
+```typescript
+interface BudgetForecast {
+  budget: number;  // Total budget in $
+  spent: number;   // Already spent
+  remaining: number;
+  
+  // At current burn rate
+  estimatedHoursRemaining: number;
+  estimatedTasksRemaining: number;
+  depletionTime: Date;
+  
+  // Scenarios
+  scenarios: {
+    // If we switch to cheaper models
+    economyMode: {
+      hoursRemaining: number;
+      qualityImpact: 'minimal' | 'moderate' | 'significant';
+    };
+    // If we use premium models only
+    premiumMode: {
+      hoursRemaining: number;
+    };
+  };
+}
+```
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/budget` | Current budget status and forecast |
+| `GET /api/budget/burn-rate` | Real-time burn rate calculation |
+| `GET /api/budget/history` | Historical spend over time |
+| `POST /api/budget/set` | Set budget limits and alerts |
+| `GET /api/models/prices` | Current and historical model prices |
+| `POST /api/models/prices/refresh` | Fetch latest prices from providers |
+
+### UI Components
+
+**Budget Dashboard Widget**:
+- Current spend vs budget (progress bar)
+- Burn rate indicator ($/hour)
+- Time remaining at current rate
+- Model breakdown pie chart
+
+**Budget Planning Page**:
+- Set budget for session/day/week
+- Simulate costs with different model mixes
+- Price change alerts and impact analysis
+- Historical cost graphs
+
+**Model Selector with Costs**:
+- Show $/1K tokens for each model
+- Estimated task cost based on historical averages
+- Budget impact warning when selecting expensive models
+
+### Brain Budget Enforcement
+
+Brain can optionally enforce budget limits:
+
+```typescript
+interface BudgetPolicy {
+  // Hard limits
+  dailyLimit?: number;
+  sessionLimit?: number;
+  
+  // Soft limits (warnings)
+  warningThreshold: number;  // % of budget
+  
+  // Actions when limit approached
+  onWarning: 'notify' | 'downgrade_models' | 'pause_low_priority';
+  onLimit: 'pause' | 'stop' | 'notify_only';
+  
+  // Model downgrade rules
+  downgradeOrder: string[];  // Models to switch to when economizing
+}
+```
+
+### Deliverables
+
+- [ ] Model prices table with historical tracking
+- [ ] Price refresh from OpenCode API (`GET /provider`)
+- [ ] Burn rate calculation from recent activity
+- [ ] Budget forecasting with scenario modeling
+- [ ] Model preference configuration (preferred/banned lists)
+- [ ] Task-to-model routing based on classification and cost
+- [ ] Budget dashboard UI widget
+- [ ] Budget planning page with simulations
+- [ ] Budget enforcement policies (optional)
+- [ ] Price change detection and alert system
+- [ ] API endpoints for budget management
+
+### Dependencies
+
+- Phase 1 (Observatory - for UI)
+- Phase 2 (Task Classification - for task routing)
+- OpenCode API integration (for real-time pricing)
+
+### Acceptance Criteria
+
+- [ ] Users can set daily/weekly budgets
+- [ ] Burn rate updates in real-time based on actual usage
+- [ ] Budget forecasts are within 20% of actual spend
+- [ ] Price changes are detected and estimates updated
+- [ ] Model preference ordering is respected
+- [ ] Banned models never receive work
+- [ ] UI shows clear cost/quality tradeoffs
 
 ---
 
@@ -1206,6 +1568,9 @@ Future: 3+ weeks (if PTY harnesses revisited)
 
 | Date | Change |
 |------|--------|
+| 2026-01-23 | Added Phase 2.8: Global Status History Search - vector DB indexing of all status messages via NATS stream consumer, searchable by users and brain/arms |
+| 2026-01-23 | Reordered phases: Status Reports (now 2.4) moved before Bug Tracking (now 2.5) since status reports are foundational for bug tracking and agentic brain |
+| 2026-01-24 | Added Phase 8: Budget Planning & Burn Rate Estimation - model cost tracking, burn rate calculation, budget forecasting with scenario modeling, and model preference/ban lists |
 | 2026-01-23 | Added Cost/Money Usage Line Graph to Arm Activity Visualization - shows cumulative spend over time using OpenCode API pricing data |
 | 2026-01-23 | Added Arm Activity & Efficiency Visualization: 30-min activity bar graph (file writes, thinking, tool calls, tasks) and context length line graph with full/compressed views |
 | 2026-01-23 | Added Regular Refactoring Cycle: periodic refactoring every 5 tasks for files >400 lines, with git clean state prerequisites |
