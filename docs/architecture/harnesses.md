@@ -46,6 +46,119 @@ The original PTY-based harness. Still available but `opencode-tui` is recommende
 
 ---
 
+## Model Selection & Fallback
+
+Both `opencode-api` and `opencode-tui` harnesses include automatic model validation and fallback. This ensures arms can spawn successfully even when configured with unavailable models.
+
+### How It Works
+
+When spawning an arm with a provider/model configuration, the harness:
+
+1. **Validates** the requested model against available providers
+2. **Falls back** automatically if the model isn't available
+3. **Logs** the fallback reason for debugging
+
+### Resolution Order
+
+The model resolver tries these options in order:
+
+| Step | Condition | Action |
+|------|-----------|--------|
+| 1 | Exact match exists | Use requested `provider/model` |
+| 2 | Model not found in provider | Use **cheapest model** from same provider |
+| 3 | Provider not available | Find same model from **different provider** |
+| 4 | Both invalid | Use **first available model** from any connected provider |
+
+### Example Fallback Scenarios
+
+```
+# Requested model doesn't exist
+Request: opencode/grok-code
+Fallback: opencode/gemini-2.5-pro
+Reason: Model "grok-code" not available in OpenCode Zen, using cheapest alternative
+
+# Provider not connected
+Request: anthropic/claude-sonnet-4
+Fallback: opencode/claude-sonnet-4
+Reason: Provider "anthropic" not available, using OpenCode Zen
+
+# Both invalid
+Request: fake-provider/fake-model
+Fallback: opencode/gemini-2.5-pro
+Reason: Neither provider "fake-provider" nor model "fake-model" available
+```
+
+### Configuration
+
+Model selection happens at arm spawn time. Configure via:
+
+**CLI:**
+```bash
+# Specify model when spawning
+octopai arm spawn --model claude-sonnet-4 --provider opencode
+
+# Or use combined format
+octopai arm spawn --model opencode/claude-sonnet-4
+```
+
+**Database default:**
+The default model is stored in the `arms` table and can be changed in `src/db/index.ts` seed data.
+
+### Cost-Based Selection
+
+When falling back to "cheapest model from same provider", the resolver uses known pricing data:
+
+| Model | Input ($/M tokens) | Output ($/M tokens) |
+|-------|-------------------|---------------------|
+| gemini-2.5-flash | $0.075 | $0.30 |
+| gpt-4o-mini | $0.15 | $0.60 |
+| gemini-2.5-pro | $1.25 | $5.00 |
+| gpt-4o | $2.50 | $10.00 |
+| claude-sonnet-4 | $3.00 | $15.00 |
+| claude-opus-4 | $15.00 | $75.00 |
+
+### API Endpoint
+
+The resolver fetches available models from the Octopai API:
+
+```
+GET /api/opencode/providers
+```
+
+Response:
+```json
+{
+  "providers": [
+    {
+      "id": "opencode",
+      "name": "OpenCode Zen",
+      "models": [
+        { "id": "claude-sonnet-4", "name": "Claude Sonnet 4" },
+        { "id": "gemini-2.5-pro", "name": "Gemini 2.5 Pro" }
+      ]
+    }
+  ],
+  "connected": ["opencode"]
+}
+```
+
+### Implementation
+
+The model resolver is implemented in `src/harness/model-resolver.ts` with these key functions:
+
+```typescript
+// Main resolution function
+resolveModel(provider: string, model: string, apiUrl?: string): Promise<ResolvedModel>
+
+// Check if a specific model is available
+isModelAvailable(provider: string, model: string, apiUrl?: string): Promise<boolean>
+
+// Get all models sorted by cost
+getAvailableModelsByCost(apiUrl?: string): Promise<Array<{providerId, modelId, cost}>>
+```
+
+---
+
 ## Future Harnesses (Design Notes)
 
 The rest of this document describes a **future harness architecture** that may be implemented later if PTY and GUI automation concerns are resolved.
