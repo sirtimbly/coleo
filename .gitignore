@@ -60,3 +60,5 @@ debug-*.sh
 mock-*.ts
 test-*.ts
 init-db.js
+.octopai/run
+.octopai/mcp

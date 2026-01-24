@@ -113,11 +113,15 @@ export class EventStore {
 
     const streamConfig = {
       name: 'octopai-events',
-      // Capture all event types: arm, brain, and task events
+      // Capture all event types
       subjects: [
         'octopai.events.arm.>',
         'octopai.events.brain.>',
         'octopai.events.task.>',
+        'octopai.events.api.>',
+        'octopai.events.mail.>',
+        'octopai.events.mcp.>',
+        'octopai.events.system.>',
       ],
       retention: RetentionPolicy.Limits,
       max_age: 7 * 24 * 60 * 60 * 1000,  // 7 days
