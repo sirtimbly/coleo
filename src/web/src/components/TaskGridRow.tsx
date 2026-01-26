@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { KeyboardEvent, Key } from 'react';
-import { Bold, GripVertical, MessageSquare, SlidersHorizontal } from 'lucide-react';
-import { Chip, Select, SelectItem } from '@heroui/react';
+import type { KeyboardEvent } from 'react';
+import { Bold, GripVertical, MessageSquare, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Chip, Button, Dropdown, Menu } from '@heroui/react';
 import { type Task } from '@/lib/api';
 import { cn } from '@/lib';
 
@@ -42,12 +42,14 @@ interface TaskGridRowProps {
 const PRIORITY_OPTIONS: Task['priority'][] = ['low', 'normal', 'high', 'critical'];
 
 const COLOR_OPTIONS = ['slate', 'blue', 'emerald', 'amber', 'rose'] as const;
-const COLOR_CLASSES: Record<(typeof COLOR_OPTIONS)[number], { dot: string; row: string }> = {
-  slate: { dot: 'bg-slate-400', row: 'bg-slate-500/5 border-slate-500/30 border-l-slate-400' },
-  blue: { dot: 'bg-sky-400', row: 'bg-sky-500/5 border-sky-500/30 border-l-sky-400' },
-  emerald: { dot: 'bg-emerald-400', row: 'bg-emerald-500/5 border-emerald-500/30 border-l-emerald-400' },
-  amber: { dot: 'bg-amber-400', row: 'bg-amber-500/5 border-amber-500/30 border-l-amber-400' },
-  rose: { dot: 'bg-rose-400', row: 'bg-rose-500/5 border-rose-500/30 border-l-rose-400' },
+type ColorOption = (typeof COLOR_OPTIONS)[number];
+
+const COLOR_CLASSES: Record<ColorOption, { dot: string; row: string }> = {
+  slate: { dot: 'bg-slate-400', row: 'bg-slate-50 border-slate-200 border-l-slate-400' },
+  blue: { dot: 'bg-blue-400', row: 'bg-blue-50 border-blue-200 border-l-blue-400' },
+  emerald: { dot: 'bg-emerald-400', row: 'bg-emerald-50 border-emerald-200 border-l-emerald-400' },
+  amber: { dot: 'bg-amber-400', row: 'bg-amber-50 border-amber-200 border-l-amber-400' },
+  rose: { dot: 'bg-rose-400', row: 'bg-rose-50 border-rose-200 border-l-rose-400' },
 };
 
 export function TaskGridRow({
@@ -76,13 +78,16 @@ export function TaskGridRow({
 
   const [subjectValue, setSubjectValue] = useState(task.subject);
   const [tagSearch, setTagSearch] = useState('');
-  const [isFormatOpen, setIsFormatOpen] = useState(false);
+  const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
 
   useEffect(() => setSubjectValue(task.subject), [task.subject]);
 
-  const colorKey = (COLOR_OPTIONS.includes(uiMeta.color as (typeof COLOR_OPTIONS)[number])
-    ? (uiMeta.color as (typeof COLOR_OPTIONS)[number])
+  const savedColor = (COLOR_OPTIONS.includes(uiMeta.color as ColorOption)
+    ? (uiMeta.color as ColorOption)
     : 'slate');
+  
+  // Use preview color if hovering, otherwise use saved color
+  const colorKey = previewColor ?? savedColor;
 
   const handleSubjectBlur = () => {
     const next = subjectValue.trim();
@@ -93,10 +98,8 @@ export function TaskGridRow({
     }
   };
 
-  const handleTagSelection = (keys: 'all' | Set<Key>) => {
-    if (keys === 'all') return;
-    const nextTags = Array.from(keys).map((key) => String(key));
-    onUpdateUi?.(task.id, { tags: nextTags });
+  const handleTagSelection = (tags: string[]) => {
+    onUpdateUi?.(task.id, { tags });
   };
 
   const handleCreateTag = (value: string) => {
@@ -127,15 +130,42 @@ export function TaskGridRow({
     }
   };
 
+  const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
+    // Don't open details if clicking on interactive elements
+    const target = event.target as HTMLElement;
+    if (
+      target.closest('button') ||
+      target.closest('input') ||
+      target.closest('[role="menu"]') ||
+      target.closest('[data-slot]')
+    ) {
+      return;
+    }
+    onOpenDetails?.(task);
+  };
+
+  const handleRowKeyDown = (event: React.KeyboardEvent<HTMLLIElement>) => {
+    // Open details on Enter when the row background is focused (not child elements)
+    if (event.key === 'Enter' && event.target === event.currentTarget) {
+      onOpenDetails?.(task);
+    }
+  };
+
   return (
     <li
       className={cn(
-        'grid grid-cols-[24px_2.2fr_1fr_1fr_1.4fr_200px] items-center gap-3 px-3 py-2 text-sm border-b border-border hover:bg-muted/40 transition-colors',
-        'border-l-4',
-        COLOR_CLASSES[colorKey]?.row,
-        isSelected && 'bg-blue-500/10 border-blue-500/30',
+        'grid grid-cols-[24px_2.2fr_1fr_1fr_1.4fr_200px] items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer',
+        'border-l-4 rounded-md border',
+        // Base color from row color setting
+        !isSelected && COLOR_CLASSES[colorKey]?.row,
+        // Hover state (only when not selected)
+        !isSelected && 'hover:bg-primary-50 hover:border-primary-200',
+        // Selected state - strong visual indication
+        isSelected && 'bg-primary-100 border-primary-400 border-l-primary-500 ring-2 ring-primary-200 shadow-sm',
         className
       )}
+      onClick={handleRowClick}
+      onKeyDown={handleRowKeyDown}
       onDragOver={(event) => {
         event.preventDefault();
         onDragOver?.(index);
@@ -144,7 +174,7 @@ export function TaskGridRow({
     >
       <button
         type="button"
-        className="p-1 text-muted-foreground hover:text-foreground rounded cursor-move" 
+        className="p-1 text-default-500 hover:text-default-700 rounded cursor-move" 
         draggable
         onDragStart={() => onDragStart?.(index)}
         onKeyDown={onGridKeyDown}
@@ -170,144 +200,169 @@ export function TaskGridRow({
         data-row={index}
         data-col={1}
         className={cn(
-          'bg-transparent border border-transparent rounded px-2 py-1 focus:border-border focus:bg-background focus:outline-none',
+          'bg-transparent border border-transparent rounded-md px-2 py-1 transition-all',
+          'hover:border-default-300 hover:bg-default-50',
+          'focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20',
           uiMeta.bold && 'font-semibold'
         )}
-        aria-label="Task subject"
+        aria-label="Task subject (click to edit)"
+        title="Click to edit task title"
       />
 
-      <div className="px-2 py-1 text-muted-foreground text-xs uppercase tracking-wide">
+      <div className="px-2 py-1 text-default-500 text-xs uppercase tracking-wide">
         {task.status.replace('_', ' ')}
       </div>
 
-      <select
-        value={task.priority}
-        onChange={(event) => onUpdateTask?.(task.id, { priority: event.target.value as Task['priority'] })}
-        onKeyDown={onGridKeyDown}
-        data-cell
-        data-row={index}
-        data-col={2}
-        className="bg-transparent border border-transparent rounded px-2 py-1 focus:border-border focus:bg-background focus:outline-none"
-        aria-label="Task priority"
-      >
-        {PRIORITY_OPTIONS.map((priority) => (
-          <option key={priority} value={priority}>
-            {priority}
-          </option>
-        ))}
-      </select>
-
-      <div className="flex flex-col gap-1">
-        <input
-          value={tagSearch}
-          onChange={(event) => setTagSearch(event.target.value)}
-          onKeyDown={handleTagInputKeyDown}
-          placeholder="Search or add tag"
-          className="h-6 rounded border border-transparent bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground focus:border-border focus:bg-background focus:outline-none"
-        />
-        <Select
-          aria-label="Task tags"
-          selectionMode="multiple"
-          isMultiline
-          size="sm"
-          placeholder="tags"
-          selectedKeys={new Set(uiMeta.tags)}
-          onSelectionChange={handleTagSelection}
-          data-cell
-          data-row={index}
-          data-col={3}
-          classNames={{
-            base: 'min-h-0',
-            trigger: 'bg-transparent border border-transparent px-2 py-1 min-h-0 h-auto',
-            value: 'text-xs text-muted-foreground',
-            listbox: 'text-xs',
-          }}
-          renderValue={(items) => (
-            <div className="flex flex-wrap items-center gap-1">
-              {items.map((item) => (
-                <Chip key={item.key} size="sm" variant="flat" className="text-xs">
-                  {item.textValue}
-                </Chip>
-              ))}
-            </div>
-          )}
-        >
-          {filteredTags.map((tag) => (
-            <SelectItem key={tag}>{tag}</SelectItem>
-          ))}
-        </Select>
-      </div>
-
-      <div className="flex items-center justify-end gap-2">
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setIsFormatOpen((prev) => !prev)}
-            onKeyDown={onGridKeyDown}
+      {/* Priority dropdown */}
+      <Dropdown>
+        <Dropdown.Trigger>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-between min-w-24"
             data-cell
             data-row={index}
-            data-col={4}
-            className="p-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-            title="Formatting & appearance"
+            data-col={2}
           >
-            <SlidersHorizontal className="h-4 w-4" />
-          </button>
-          {isFormatOpen && (
-            <div className="absolute right-0 mt-2 w-44 rounded border border-border bg-card shadow-lg p-2 z-10">
-              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
-                Formatting & appearance
-              </div>
+            <span className="text-xs">{task.priority}</span>
+            <ChevronDown className="h-3 w-3 opacity-50" />
+          </Button>
+        </Dropdown.Trigger>
+        <Dropdown.Popover>
+          <Dropdown.Menu
+            onAction={(key) => onUpdateTask?.(task.id, { priority: key as Task['priority'] })}
+          >
+            {PRIORITY_OPTIONS.map((priority) => (
+              <Dropdown.Item key={priority}>{priority}</Dropdown.Item>
+            ))}
+          </Dropdown.Menu>
+        </Dropdown.Popover>
+      </Dropdown>
+
+      {/* Tags dropdown */}
+      <Dropdown>
+        <Dropdown.Trigger>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-start min-w-32"
+            data-cell
+            data-row={index}
+            data-col={3}
+          >
+            <div className="flex flex-wrap items-center gap-1 flex-1">
+              {uiMeta.tags.length === 0 ? (
+                <span className="text-xs text-default-400">tags</span>
+              ) : (
+                uiMeta.tags.slice(0, 2).map((tag) => (
+                  <Chip key={tag} size="sm" variant="soft" className="text-xs">
+                    {tag}
+                  </Chip>
+                ))
+              )}
+              {uiMeta.tags.length > 2 && (
+                <span className="text-xs text-default-400">+{uiMeta.tags.length - 2}</span>
+              )}
+            </div>
+            <ChevronDown className="h-3 w-3 opacity-50 ml-1" />
+          </Button>
+        </Dropdown.Trigger>
+        <Dropdown.Popover className="min-w-64">
+          <div className="px-2 py-2">
+            <input
+              value={tagSearch}
+              onChange={(event) => setTagSearch(event.target.value)}
+              onKeyDown={handleTagInputKeyDown}
+              placeholder="Search or add tag (press Enter)"
+              className="w-full h-8 rounded-lg border border-default-300 bg-default-100 px-3 text-sm text-default-700 placeholder:text-default-400 focus:border-primary focus:outline-none"
+            />
+          </div>
+          <Menu
+            selectionMode="multiple"
+            selectedKeys={new Set(uiMeta.tags)}
+            onSelectionChange={(keys) => {
+              if (keys === 'all') return;
+              handleTagSelection(Array.from(keys as Set<string>));
+            }}
+            className="max-h-60"
+          >
+            {filteredTags.map((tag) => (
+              <Menu.Item key={tag} id={tag}>{tag}</Menu.Item>
+            ))}
+          </Menu>
+        </Dropdown.Popover>
+      </Dropdown>
+
+      <div className="flex items-center justify-end gap-2">
+        {/* Formatting dropdown */}
+        <Dropdown>
+          <Dropdown.Trigger>
+            <Button
+              variant="ghost"
+              size="sm"
+              isIconOnly
+              data-cell
+              data-row={index}
+              data-col={4}
+              aria-label="Formatting & appearance"
+            >
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+          </Dropdown.Trigger>
+          <Dropdown.Popover>
+            <div className="p-2">
+              {/* Bold toggle */}
               <button
                 type="button"
                 onClick={() => onUpdateUi?.(task.id, { bold: !uiMeta.bold })}
-                onKeyDown={onGridKeyDown}
-                data-cell
-                data-row={index}
-                data-col={4}
-                className={cn(
-                  'w-full flex items-center gap-2 px-2 py-1 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted',
-                  uiMeta.bold && 'text-foreground bg-muted'
-                )}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-default-100 transition-colors cursor-pointer"
               >
                 <Bold className="h-3.5 w-3.5" />
-                Bold row
+                <span className="text-sm">{uiMeta.bold ? 'Unbold row' : 'Bold row'}</span>
               </button>
-              <div className="mt-2 text-[11px] text-muted-foreground">Row color</div>
-              <div className="mt-1 flex flex-wrap gap-1">
-                {COLOR_OPTIONS.map((color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    onClick={() => onUpdateUi?.(task.id, { color })}
-                    onKeyDown={onGridKeyDown}
-                    data-cell
-                    data-row={index}
-                    data-col={4}
-                    className={cn(
-                      'h-4 w-4 rounded-full border border-border',
-                      COLOR_CLASSES[color].dot,
-                      colorKey === color && 'ring-2 ring-foreground/20'
-                    )}
-                    title={`Set color ${color}`}
-                  />
-                ))}
+              
+              {/* Color picker */}
+              <div className="mt-2 px-2">
+                <div className="text-[11px] uppercase tracking-wide text-default-500 mb-2">Row color</div>
+                <div className="flex flex-wrap gap-2">
+                  {COLOR_OPTIONS.map((color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      onClick={() => {
+                        onUpdateUi?.(task.id, { color });
+                        setPreviewColor(null);
+                      }}
+                      onMouseEnter={() => setPreviewColor(color)}
+                      onMouseLeave={() => setPreviewColor(null)}
+                      className={cn(
+                        'h-5 w-5 rounded-full border-2 transition-all cursor-pointer',
+                        COLOR_CLASSES[color].dot,
+                        savedColor === color 
+                          ? 'border-primary ring-2 ring-primary/30 scale-110' 
+                          : 'border-white shadow-sm hover:scale-110 hover:shadow-md'
+                      )}
+                      title={`Set color to ${color}`}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
-          )}
-        </div>
+          </Dropdown.Popover>
+        </Dropdown>
 
-        <button
-          type="button"
-          onClick={() => onOpenDetails?.(task)}
-          onKeyDown={onGridKeyDown}
+        <Button
+          variant="ghost"
+          size="sm"
+          isIconOnly
+          onPress={() => onOpenDetails?.(task)}
           data-cell
           data-row={index}
           data-col={5}
-          className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-          title="Open details"
+          aria-label="Open details"
         >
           <MessageSquare className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
     </li>
   );

@@ -92,21 +92,20 @@ export function TaskGrid({
   };
 
   const renderInsertRow = (index: number) => (
-    <li key={`insert-${index}`} className="group relative h-6">
-      <div className="absolute inset-x-3 top-1/2 h-px bg-border/60" />
-      <div className="absolute inset-0 flex items-center justify-center">
+    <li key={`insert-${index}`} className="group relative h-1">
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10">
         <button
           type="button"
           onClick={() => setDraftIndex(index)}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-background border border-border text-muted-foreground hover:text-foreground"
+          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-full bg-primary text-primary-foreground shadow-md hover:bg-primary/90 hover:shadow-lg"
           title="Insert row"
         >
           <Plus className="h-3 w-3" />
         </button>
       </div>
       {draftIndex === index && (
-        <div className="grid grid-cols-[24px_2.2fr_1fr_1fr_1.4fr_200px] items-center gap-3 px-3 py-2 text-xs text-muted-foreground border-b border-border/60 bg-background">
-          <div className="text-muted-foreground">+</div>
+        <div className="absolute top-0 left-0 right-0 z-20 grid grid-cols-[24px_2.2fr_1fr_1fr_1.4fr_200px] items-center gap-3 px-3 py-2 text-xs text-muted-foreground bg-background border border-primary-200 rounded-md shadow-lg">
+          <div className="text-primary">+</div>
           <input
             ref={draftRef}
             value={draftSubject}
@@ -119,13 +118,13 @@ export function TaskGrid({
               }
             }}
             placeholder="New task"
-            className="col-span-3 bg-background border border-border rounded px-2 py-1 text-sm"
+            className="col-span-3 bg-background border border-default-300 rounded-md px-2 py-1 text-sm focus:border-primary focus:outline-none"
           />
           <div className="text-right">
             <button
               type="button"
               onClick={handleSubmitDraft}
-              className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground"
+              className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Add
             </button>
@@ -147,12 +146,12 @@ export function TaskGrid({
       </div>
       <div ref={gridRef} className="max-h-[600px] overflow-y-auto">
         {tasks.length === 0 ? (
-          <ul className="divide-y divide-border/60 list-none">
+          <ul className="list-none p-1 space-y-1">
             {renderInsertRow(0)}
             <li className="p-6 text-center text-muted-foreground text-sm">No tasks found</li>
           </ul>
         ) : (
-          <ul className="divide-y divide-border/60 list-none">
+          <ul className="list-none p-1 space-y-1">
             {tasks.map((task, index) => (
               <Fragment key={task.id}>
                 {renderInsertRow(index)}

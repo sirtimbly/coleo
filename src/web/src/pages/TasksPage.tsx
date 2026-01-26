@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, MessageSquareText, Send, Sparkles, Tag, X } from 'lucide-react';
+import { Button, Chip, Card, TextArea } from '@heroui/react';
 import { api, type Task, cn } from '@/lib';
 import { TaskModal } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -63,15 +64,13 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
   const canIncrease = currentIndex < priorityOrder.length - 1;
   const canDecrease = currentIndex > 0;
   
-  const handleIncrease = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleIncrease = () => {
     if (canIncrease) {
       onPriorityChange(taskId, priorityOrder[currentIndex + 1]);
     }
   };
   
-  const handleDecrease = (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDecrease = () => {
     if (canDecrease) {
       onPriorityChange(taskId, priorityOrder[currentIndex - 1]);
     }
@@ -80,27 +79,31 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
   return (
     <div className="inline-flex items-center gap-0.5 group">
       {canIncrease && (
-        <button
-          type="button"
-          onClick={handleIncrease}
-          className="p-0.5 hover:bg-secondary rounded transition-colors opacity-0 group-hover:opacity-100"
-          title="Increase priority"
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          onPress={handleIncrease}
+          className="opacity-0 group-hover:opacity-100 min-w-unit-6 w-unit-6 h-unit-6"
+          aria-label="Increase priority"
         >
           <ChevronUp className="h-3 w-3" />
-        </button>
+        </Button>
       )}
-      <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', config.bgColor, config.color)}>
+      <Chip size="sm" variant="soft" className={cn(config.color)}>
         {config.label}
-      </span>
+      </Chip>
       {canDecrease && (
-        <button
-          type="button"
-          onClick={handleDecrease}
-          className="p-0.5 hover:bg-secondary rounded transition-colors opacity-0 group-hover:opacity-100"
-          title="Decrease priority"
+        <Button
+          isIconOnly
+          size="sm"
+          variant="ghost"
+          onPress={handleDecrease}
+          className="opacity-0 group-hover:opacity-100 min-w-unit-6 w-unit-6 h-unit-6"
+          aria-label="Decrease priority"
         >
           <ChevronDown className="h-3 w-3" />
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -266,6 +269,14 @@ export function TasksPage() {
     setTagFilter((prev) => (prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]));
   }, []);
 
+  const handleRemoveTagFromTask = useCallback((taskId: string, tagToRemove: string) => {
+    const target = tasks.find((task) => task.id === taskId);
+    if (!target) return;
+    const currentTags = getTaskUiMeta(target).tags ?? [];
+    const nextTags = currentTags.filter((tag) => tag !== tagToRemove);
+    handleUpdateUi(taskId, { tags: nextTags });
+  }, [tasks, getTaskUiMeta, handleUpdateUi]);
+
   const handleSendDiscussion = useCallback(async () => {
     if (!selectedTask) return;
     const message = draftMessage.trim();
@@ -364,112 +375,103 @@ export function TasksPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Header with filters and actions */}
-      <div className="border-b border-border px-4 py-3 bg-muted/50">
+      <div className="border-b px-4 py-3 bg-content2">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center space-x-2">
             <h1 className="text-lg font-semibold">Tasks</h1>
-            <span className="text-sm text-muted-foreground">Brain-managed task queue</span>
+            <span className="text-sm text-foreground-500">Brain-managed task queue</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => loadTasks()}
-              className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
-              title="Refresh"
+            <Button
+              isIconOnly
+              variant="ghost"
+              onPress={() => loadTasks()}
+              aria-label="Refresh"
             >
               <RefreshCw className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
+            </Button>
+            <Button
+              variant="primary"
+              onPress={() => {
                 setEditingTask(undefined);
                 setIsModalOpen(true);
               }}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors text-sm"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 mr-2" />
               New Task
-            </button>
+            </Button>
           </div>
         </div>
 
         {/* Compact filter bar */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Total:</span>
+            <span className="text-foreground-500">Total:</span>
             <span className="font-medium">{counts.total}</span>
           </div>
-          <div className="h-4 w-px bg-border" />
+          <div className="h-4 w-px bg-divider" />
           <div className="flex items-center gap-2 flex-wrap">
             {Object.entries(counts.byStatus).map(([status, count]) => (
-              <button
-                type="button"
+              <Button
                 key={status}
-                onClick={() => setFilter(f => f.status === status ? {} : { ...f, status })}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-                  filter.status === status 
-                    ? "bg-primary text-primary-foreground" 
-                    : "bg-card border border-border hover:bg-secondary"
-                )}
+                size="sm"
+                variant={filter.status === status ? "primary" : "ghost"}
+                onPress={() => setFilter(f => f.status === status ? {} : { ...f, status })}
+                className="h-7"
               >
-                <span className={filter.status === status ? "" : STATUS_CONFIG[status as Task['status']]?.color || 'text-muted-foreground'}>
+                <span className={filter.status === status ? "" : STATUS_CONFIG[status as Task['status']]?.color || 'text-foreground-500'}>
                   {status.replace('_', ' ')}
                 </span>
                 <span>{count}</span>
-              </button>
+              </Button>
             ))}
             {filter.status && (
-              <button
-                type="button"
-                onClick={() => setFilter({})}
-                className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+              <Button
+                size="sm"
+                variant="ghost"
+                onPress={() => setFilter({})}
               >
                 Clear filter
-              </button>
+              </Button>
             )}
           </div>
         </div>
 
         <div className="mt-3 flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 text-xs text-foreground-500">
             <Tag className="h-3.5 w-3.5" />
             <span>Tags</span>
           </div>
           {availableTags.length === 0 ? (
-            <span className="text-xs text-muted-foreground">No tags yet</span>
+            <span className="text-xs text-foreground-500">No tags yet</span>
           ) : (
             availableTags.map((tag) => (
-              <button
+              <Chip
                 key={tag}
-                type="button"
+                size="sm"
+                variant={tagFilter.includes(tag) ? "primary" : "soft"}
                 onClick={() => toggleTagFilter(tag)}
-                className={cn(
-                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs border transition-colors',
-                  tagFilter.includes(tag)
-                    ? 'bg-primary text-primary-foreground border-primary'
-                    : 'bg-card border-border text-muted-foreground hover:text-foreground'
-                )}
+                className="cursor-pointer"
               >
                 {tag}
-              </button>
+              </Chip>
             ))
           )}
           {tagFilter.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setTagFilter([])}
-              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+            <Button
+              size="sm"
+              variant="ghost"
+              onPress={() => setTagFilter([])}
             >
               Clear tags
-            </button>
+            </Button>
           )}
         </div>
       </div>
 
       {error && (
-        <div className="p-4 bg-destructive/10 text-destructive border-b border-destructive/20">
+        <div className="p-4 bg-danger/10 text-danger border-b border-danger/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
             <span className="text-sm">{error}</span>
@@ -484,7 +486,9 @@ export function TasksPage() {
             {loading ? (
               <div className="p-4 space-y-4">
                 {[1, 2, 3].map((i) => (
-                  <div key={i} className="h-24 bg-secondary rounded-lg animate-pulse" />
+                  <Card key={i} className="h-24">
+                    <Card.Content className="animate-pulse bg-default-100" />
+                  </Card>
                 ))}
               </div>
             ) : (
@@ -505,20 +509,22 @@ export function TasksPage() {
 
         {/* Task details sidebar */}
         {selectedTask && (
-            <aside className="w-80 border-l border-border bg-card overflow-auto">
-              <div className="p-4 border-b border-border">
+          <Card className="w-80 border-l rounded-none shadow-none">
+            <Card.Content className="overflow-auto">
+              <div className="p-4 border-b">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                  <h3 className="font-semibold text-sm text-foreground-500 uppercase tracking-wide">
                     Task Details
                   </h3>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTask(null)}
-                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
-                    title="Close"
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="ghost"
+                    onPress={() => setSelectedTask(null)}
+                    aria-label="Close"
                   >
                     <X className="h-4 w-4" />
-                  </button>
+                  </Button>
                 </div>
               </div>
               <div className="p-4">
@@ -533,14 +539,14 @@ export function TasksPage() {
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-muted-foreground mb-1">Original one-liner</h5>
+                    <h5 className="text-sm font-medium text-foreground-500 mb-1">Original one-liner</h5>
                     <p className="text-sm">
                       {getTaskUiMeta(selectedTask).llm?.originalPrompt ?? selectedTask.subject}
                     </p>
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                    <h5 className="text-sm font-medium text-foreground-500 mb-1 flex items-center gap-1">
                       <Sparkles className="h-3.5 w-3.5" />
                       LLM-generated description
                     </h5>
@@ -551,7 +557,7 @@ export function TasksPage() {
 
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div>
-                      <span className="text-muted-foreground">Status:</span>
+                      <span className="text-foreground-500">Status:</span>
                       <div className="flex items-center gap-1 mt-1">
                         {React.createElement(STATUS_CONFIG[selectedTask.status].icon, { className: 'h-3 w-3' })}
                         <span className={STATUS_CONFIG[selectedTask.status].color}>
@@ -560,7 +566,7 @@ export function TasksPage() {
                       </div>
                     </div>
                     <div>
-                      <span className="text-muted-foreground">Priority:</span>
+                      <span className="text-foreground-500">Priority:</span>
                       <div className="mt-1">
                         <TaskPriorityBadge 
                           priority={selectedTask.priority}
@@ -572,15 +578,23 @@ export function TasksPage() {
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-muted-foreground mb-1">Tags</h5>
+                    <h5 className="text-sm font-medium text-foreground-500 mb-1">Tags</h5>
                     <div className="flex flex-wrap gap-1">
                       {(getTaskUiMeta(selectedTask).tags ?? []).length === 0 ? (
-                        <span className="text-xs text-muted-foreground">No tags</span>
+                        <span className="text-xs text-foreground-500">No tags</span>
                       ) : (
                         (getTaskUiMeta(selectedTask).tags ?? []).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-0.5 bg-muted rounded-full">
+                          <Chip key={tag} size="sm" variant="soft" className="pr-1 gap-1 group hover:bg-default-200 transition-colors cursor-default">
                             {tag}
-                          </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveTagFromTask(selectedTask.id, tag)}
+                              className="ml-0.5 p-0.5 rounded-full hover:bg-danger-100 hover:text-danger transition-colors cursor-pointer opacity-60 group-hover:opacity-100"
+                              aria-label={`Remove tag ${tag}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </Chip>
                         ))
                       )}
                     </div>
@@ -588,54 +602,55 @@ export function TasksPage() {
 
                   {selectedTask.assignedArmName && (
                     <div>
-                      <span className="text-sm text-muted-foreground">Assigned to:</span>
+                      <span className="text-sm text-foreground-500">Assigned to:</span>
                       <p className="text-sm font-medium">{selectedTask.assignedArmName}</p>
                     </div>
                   )}
 
-                  <div className="border-t border-border pt-3">
+                  <div className="border-t pt-3">
                     <div className="flex items-center gap-2 mb-2 text-sm font-medium">
                       <MessageSquareText className="h-4 w-4" />
                       Discussion
                     </div>
                     <div className="space-y-2 max-h-48 overflow-auto">
                       {(getTaskUiMeta(selectedTask).llm?.history ?? []).length === 0 ? (
-                        <p className="text-xs text-muted-foreground">No discussion yet.</p>
+                        <p className="text-xs text-foreground-500">No discussion yet.</p>
                       ) : (
                         (getTaskUiMeta(selectedTask).llm?.history ?? []).map((entry, index) => (
                           <div key={`${entry.at}-${index}`} className="text-xs">
                             <span className="font-medium capitalize">{entry.role}:</span>{' '}
-                            <span className="text-muted-foreground">{entry.content}</span>
+                            <span className="text-foreground-500">{entry.content}</span>
                           </div>
                         ))
                       )}
                     </div>
                     <div className="mt-3 space-y-2">
-                      <textarea
+                      <TextArea
                         value={draftMessage}
-                        onChange={(event) => setDraftMessage(event.target.value)}
+                        onChange={(e) => setDraftMessage(e.target.value)}
                         placeholder="Ask the LLM to expand or clarify..."
                         rows={3}
-                        className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                        className="text-sm"
                       />
-                      <button
-                        type="button"
-                        onClick={handleSendDiscussion}
-                        disabled={isDiscussing || !draftMessage.trim()}
-                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        onPress={handleSendDiscussion}
+                        isDisabled={isDiscussing || !draftMessage.trim()}
                       >
-                        <Send className="h-3.5 w-3.5" />
+                        <Send className="h-3.5 w-3.5 mr-1" />
                         {isDiscussing ? 'Sending...' : 'Send'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-xs text-foreground-500">
                     Created {new Date(selectedTask.createdAt).toLocaleString()}
                   </div>
                 </div>
               </div>
-            </aside>
+            </Card.Content>
+          </Card>
         )}
       </div>
 

@@ -1,108 +1,14 @@
 @import "tailwindcss";
-@plugin "./hero.ts";
-@source "../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
-@custom-variant dark (&:is(.dark *));
-
-:root {
-  /* Shared Octopai palette (HSL values derived from docs palette) */
-  --octo-bg-900: 211 53% 11%;
-  --octo-bg-800: 210 39% 14%;
-  --octo-bg-700: 213 35% 16%;
-
-  --octo-text-primary: 214 47% 97%;
-  --octo-text-secondary: 207 35% 83%;
-  --octo-text-muted: 213 17% 65%;
-
-  --octo-brand-600: 25 56% 50%;
-  --octo-brand-500: 26 62% 56%;
-  --octo-brand-400: 25 70% 63%;
-  --octo-brand-300: 26 78% 70%;
-
-  --octo-accent-600: 177 56% 42%;
-  --octo-accent-500: 176 51% 49%;
-  --octo-accent-400: 176 56% 56%;
-  --octo-accent-300: 176 64% 63%;
-
-  --octo-highlight-400: 325 62% 68%;
-
-  --octo-border: 190 36% 22%;
-  --octo-ring: 176 51% 49%;
-
-  /* Status colors aligned with palette */
-  --octo-status-idle: 142 76% 36%;
-  --octo-status-busy: 46 96% 53%;
-  --octo-status-error: 0 84% 60%;
-  --octo-status-paused: 217 33% 50%;
-
-  /* Shadcn token mappings */
-  --background: var(--octo-bg-900);
-  --foreground: var(--octo-text-primary);
-  --card: var(--octo-bg-800);
-  --card-foreground: var(--octo-text-primary);
-  --popover: var(--octo-bg-800);
-  --popover-foreground: var(--octo-text-primary);
-  --primary: var(--octo-brand-400);
-  --primary-foreground: 223 47% 12%;
-  --secondary: var(--octo-bg-700);
-  --secondary-foreground: var(--octo-text-primary);
-  --muted: var(--octo-bg-700);
-  --muted-foreground: var(--octo-text-muted);
-  --accent: var(--octo-accent-500);
-  --accent-foreground: var(--octo-bg-900);
-  --destructive: 0 84% 60%;
-  --destructive-foreground: var(--octo-text-primary);
-  --border: var(--octo-border);
-  --input: var(--octo-border);
-  --ring: var(--octo-ring);
-  --radius: 0.5rem;
-
-  --status-idle: var(--octo-status-idle);
-  --status-busy: var(--octo-status-busy);
-  --status-error: var(--octo-status-error);
-  --status-paused: var(--octo-status-paused);
-}
-
-@theme inline {
-  --color-background: hsl(var(--background));
-  --color-foreground: hsl(var(--foreground));
-  --color-card: hsl(var(--card));
-  --color-card-foreground: hsl(var(--card-foreground));
-  --color-primary: hsl(var(--primary));
-  --color-primary-foreground: hsl(var(--primary-foreground));
-  --color-secondary: hsl(var(--secondary));
-  --color-secondary-foreground: hsl(var(--secondary-foreground));
-  --color-muted: hsl(var(--muted));
-  --color-muted-foreground: hsl(var(--muted-foreground));
-  --color-accent: hsl(var(--accent));
-  --color-accent-foreground: hsl(var(--accent-foreground));
-  --color-destructive: hsl(var(--destructive));
-  --color-destructive-foreground: hsl(var(--destructive-foreground));
-  --color-border: hsl(var(--border));
-  --color-input: hsl(var(--input));
-  --color-ring: hsl(var(--ring));
-
-  --color-status-idle: hsl(var(--status-idle));
-  --color-status-busy: hsl(var(--status-busy));
-  --color-status-error: hsl(var(--status-error));
-  --color-status-paused: hsl(var(--status-paused));
-}
-
-* {
-  border-color: hsl(var(--border));
-}
+@import "@heroui/styles";
 
 body {
-  background-color: hsl(var(--background));
-  color: hsl(var(--foreground));
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   margin: 0;
   min-height: 100vh;
 }
 
-/* Gradient text for page headings */
-.text-gradient-heading {
-  background: linear-gradient(135deg, hsl(var(--octo-brand-400)) 0%, hsl(var(--octo-highlight-400)) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* Override dropdown/popover radius from 3xl to 2xl */
+.dropdown__popover,
+.popover {
+  border-radius: calc(var(--radius) * 2);
 }
