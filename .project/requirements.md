@@ -68,6 +68,7 @@ Tasks are **not a CRUD list**. See [tasks-representation.md](./tasks-representat
 1. **Recent Activity Timeline** - Recently completed tasks with outputs
 2. **In Progress** - Currently working tasks
 3. **Next Task** - Single next task determined by Brain
+4. **Collaborative Planning Board** - High-density grid for sorting items and discussing design with agents
 
 ### What the UI Does NOT Show
 

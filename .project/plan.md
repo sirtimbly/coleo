@@ -150,14 +150,31 @@ These are useful Observatory improvements that build on Phase 1 but do not retro
   - Include budget warnings for high-cost models when spawning arms
 
 - **Message Queue Visualization**:
-  - Add API endpoint for queue metrics (depth, processing times)
-  - UI shows real-time queue status with graphs
+   - Add API endpoint for queue metrics (depth, processing times)
+   - UI shows real-time queue status with graphs
+
+## Phase 1.2: Collaborative Planning & Task Refinement (New)
+
+**Goal**: Enable humans and agents to collaboratively refine plan items into actionable tasks using a high-density interactive UI.
+
+### Deliverables
+
+- [ ] **Multi-tabbed Grid View**: High-performance grid for sorting and filtering large numbers of plan items, tasks, and discoveries.
+- [ ] **Progress Visualization**: Real-time progress tracking for items, showing completion status and sub-task breakdown.
+- [ ] **Collaborative Discussion UI**: Integrated chat interface for discussing implementation and design for specific items with an "Architect" agent.
+- [ ] **Task Preparation Agent**: Specialized agent behavior that can take a discussion and "prepare" a detailed task definition (context, requirements, acceptance criteria).
+- [ ] **Task Handoff Mechanism**: Ability to queue prepared tasks for execution by other arms, bridging the gap between planning and execution.
 
 ### Acceptance Criteria
 
-See [acceptance/phase-1.md](./acceptance/phase-1.md)
+- [ ] Users can sort and filter 100+ items in the grid view without performance degradation.
+- [ ] Discussion history is preserved per item.
+- [ ] Agent can generate a valid task definition from a discussion.
+- [ ] Prepared tasks appear in the "Next Task" preview when ready.
+- [ ] See [acceptance/phase-1.md](./acceptance/phase-1.md) for foundational criteria.
 
 ---
+
 
 ## Phase 2: Task Classification & Context
 
@@ -1568,6 +1585,7 @@ interface BudgetPolicy {
 
 | Date | Change |
 |------|--------|
+| 2026-01-25 | Added Phase 1.2: Collaborative Planning & Task Refinement - multi-tabbed grid view for sorting items, progress tracking, and agent-assisted task preparation/discussion |
 | 2026-01-23 | Added Phase 2.8: Global Status History Search - vector DB indexing of all status messages via NATS stream consumer, searchable by users and brain/arms |
 | 2026-01-23 | Reordered phases: Status Reports (now 2.4) moved before Bug Tracking (now 2.5) since status reports are foundational for bug tracking and agentic brain |
 | 2026-01-24 | Added Phase 8: Budget Planning & Burn Rate Estimation - model cost tracking, burn rate calculation, budget forecasting with scenario modeling, and model preference/ban lists |

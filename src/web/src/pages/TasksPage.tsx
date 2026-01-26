@@ -1,14 +1,36 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, Trash2, RefreshCw, Pencil, ListTodo, ChevronUp, ChevronDown, Square, CheckSquare, Undo2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, MessageSquareText, Send, Sparkles, Tag, X } from 'lucide-react';
 import { api, type Task, cn } from '@/lib';
-import { Card, CardContent, TaskModal } from '@/components';
+import { TaskModal } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { TaskGrid } from '@/components/TaskGrid';
+import type { TaskUpdate } from '@/components/TaskGridRow';
 
 interface TaskEventData {
   task?: Task;
   taskId?: string;
   changes?: Partial<Task>;
 }
+
+type TaskLlmMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  at: string;
+};
+
+type TaskLlmMeta = {
+  originalPrompt?: string;
+  generatedDescription?: string;
+  history?: TaskLlmMessage[];
+};
+
+type TaskUiMeta = {
+  tags?: string[];
+  color?: string;
+  bold?: boolean;
+  llm?: TaskLlmMeta;
+};
+
 
 // Status configuration
 const STATUS_CONFIG: Record<Task['status'], { color: string; bgColor: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
@@ -34,7 +56,6 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
   taskId: string;
   onPriorityChange: (taskId: string, newPriority: Task['priority']) => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
   const config = PRIORITY_CONFIG[priority];
   
   const priorityOrder: Task['priority'][] = ['low', 'normal', 'high', 'critical'];
@@ -57,15 +78,12 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
   };
   
   return (
-    <div 
-      className="inline-flex items-center gap-0.5 group"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-    >
-      {isHovered && canIncrease && (
+    <div className="inline-flex items-center gap-0.5 group">
+      {canIncrease && (
         <button
+          type="button"
           onClick={handleIncrease}
-          className="p-0.5 hover:bg-secondary rounded transition-colors"
+          className="p-0.5 hover:bg-secondary rounded transition-colors opacity-0 group-hover:opacity-100"
           title="Increase priority"
         >
           <ChevronUp className="h-3 w-3" />
@@ -74,10 +92,11 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
       <span className={cn('inline-flex items-center px-2 py-0.5 rounded text-xs font-medium', config.bgColor, config.color)}>
         {config.label}
       </span>
-      {isHovered && canDecrease && (
+      {canDecrease && (
         <button
+          type="button"
           onClick={handleDecrease}
-          className="p-0.5 hover:bg-secondary rounded transition-colors"
+          className="p-0.5 hover:bg-secondary rounded transition-colors opacity-0 group-hover:opacity-100"
           title="Decrease priority"
         >
           <ChevronDown className="h-3 w-3" />
@@ -93,13 +112,14 @@ export function TasksPage() {
   const [error, setError] = useState<string | null>(null);
   const [counts, setCounts] = useState<{ total: number; byStatus: Record<string, number> }>({ total: 0, byStatus: {} });
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-  const [isReleasing, setIsReleasing] = useState(false);
+  const [draftMessage, setDraftMessage] = useState('');
+  const [isDiscussing, setIsDiscussing] = useState(false);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
       const res = await api.listTasks(filter);
       setTasks(res.tasks);
@@ -110,7 +130,182 @@ export function TasksPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filter]);
+  
+  const getTaskUiMeta = useCallback((task: Task): TaskUiMeta => {
+    const meta = (task.metadata ?? {}) as Record<string, unknown>;
+    const ui = (meta.ui ?? {}) as Record<string, unknown>;
+    return {
+      tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
+      color: typeof ui.color === 'string' ? (ui.color as string) : 'slate',
+      bold: Boolean(ui.bold),
+      llm: (ui.llm ?? {}) as TaskLlmMeta,
+    };
+  }, []);
+
+  const availableTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    tasks.forEach((task) => {
+      getTaskUiMeta(task).tags?.forEach((tag) => {
+        tagSet.add(tag);
+      });
+    });
+    return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
+  }, [tasks, getTaskUiMeta]);
+
+  const filteredTasks = useMemo(() => {
+    if (tagFilter.length === 0) return tasks;
+    return tasks.filter((task) => {
+      const tags = getTaskUiMeta(task).tags ?? [];
+      return tagFilter.some((tag) => tags.includes(tag));
+    });
+  }, [tasks, tagFilter, getTaskUiMeta]);
+
+  const handleUpdateTask = useCallback(async (taskId: string, updates: TaskUpdate) => {
+    let previousStatus: Task['status'] | null = null;
+    setTasks((prev) => prev.map((task) => {
+      if (task.id === taskId) {
+        previousStatus = task.status;
+        return { ...task, ...updates };
+      }
+      return task;
+    }));
+
+    if (updates.status && previousStatus && updates.status !== previousStatus) {
+      const fromStatus = previousStatus as Task['status'];
+      const toStatus = updates.status as Task['status'];
+      setCounts((prev) => {
+        const nextByStatus = { ...prev.byStatus };
+        nextByStatus[fromStatus] = Math.max(0, (nextByStatus[fromStatus] ?? 0) - 1);
+        nextByStatus[toStatus] = (nextByStatus[toStatus] ?? 0) + 1;
+        return { total: prev.total, byStatus: nextByStatus };
+      });
+    }
+    try {
+      await api.updateTask(taskId, updates);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update task');
+      loadTasks();
+    }
+  }, [loadTasks]);
+
+  const handleUpdateUi = useCallback(async (taskId: string, updates: TaskUiMeta) => {
+    const target = tasks.find((task) => task.id === taskId);
+    if (!target) return;
+    const currentUi = getTaskUiMeta(target);
+    const nextUi: TaskUiMeta = {
+      ...currentUi,
+      ...updates,
+      tags: updates.tags ?? currentUi.tags,
+      llm: updates.llm ? { ...currentUi.llm, ...updates.llm } : currentUi.llm,
+    };
+    const nextMetadata = {
+      ...(target.metadata ?? {}),
+      ui: nextUi,
+    } as Record<string, unknown>;
+
+    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, metadata: nextMetadata } : task)));
+    try {
+      await api.updateTask(taskId, { metadata: nextMetadata });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update task');
+      loadTasks();
+    }
+  }, [tasks, getTaskUiMeta, loadTasks]);
+
+  const handleCreateTaskAt = useCallback(async (index: number, subject: string) => {
+    const now = new Date().toISOString();
+    const llmMeta: TaskLlmMeta = {
+      originalPrompt: subject,
+      generatedDescription: `LLM draft: ${subject}`,
+      history: [
+        { role: 'user', content: subject, at: now },
+        { role: 'assistant', content: 'LLM stub: detailed description will appear here.', at: now },
+      ],
+    };
+    try {
+      const result = await api.createTask({
+        subject,
+        description: llmMeta.generatedDescription ?? subject,
+        priority: 'normal',
+        metadata: { ui: { tags: [], bold: false, color: 'slate', llm: llmMeta } },
+      });
+      setTasks((prev) => {
+        const next = [...prev];
+        next.splice(index, 0, result.task);
+        return next;
+      });
+      setCounts((prev) => ({
+        total: prev.total + 1,
+        byStatus: {
+          ...prev.byStatus,
+          [result.task.status]: (prev.byStatus[result.task.status] ?? 0) + 1,
+        },
+      }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to create task');
+    }
+  }, []);
+
+  const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
+    setTasks((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      if (!moved) return prev;
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+  }, []);
+
+  const handleOpenDetails = useCallback((task: Task) => {
+    setSelectedTask(task);
+    setDraftMessage('');
+  }, []);
+
+  const toggleTagFilter = useCallback((tag: string) => {
+    setTagFilter((prev) => (prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]));
+  }, []);
+
+  const handleSendDiscussion = useCallback(async () => {
+    if (!selectedTask) return;
+    const message = draftMessage.trim();
+    if (!message) return;
+
+    setIsDiscussing(true);
+    const now = new Date().toISOString();
+    const currentUi = getTaskUiMeta(selectedTask);
+    const history = currentUi.llm?.history ?? [];
+    const assistantReply = `LLM stub: expanded notes for "${message}".`;
+
+    const nextLlm: TaskLlmMeta = {
+      originalPrompt: currentUi.llm?.originalPrompt ?? selectedTask.subject,
+      generatedDescription: currentUi.llm?.generatedDescription ?? selectedTask.description,
+      history: [
+        ...history,
+        { role: 'user', content: message, at: now },
+        { role: 'assistant', content: assistantReply, at: now },
+      ],
+    };
+
+    try {
+      await handleUpdateUi(selectedTask.id, { llm: nextLlm });
+      setDraftMessage('');
+    } finally {
+      setIsDiscussing(false);
+    }
+  }, [selectedTask, draftMessage, getTaskUiMeta, handleUpdateUi]);
+
+  useEffect(() => {
+    if (!selectedTask) return;
+    const latest = tasks.find((task) => task.id === selectedTask.id) || null;
+    setSelectedTask(latest);
+  }, [tasks, selectedTask]);
+
+  useEffect(() => {
+    if (selectedTask) {
+      setDraftMessage('');
+    }
+  }, [selectedTask]);
 
   // Handle WebSocket messages for real-time updates
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
@@ -141,7 +336,7 @@ export function TasksPage() {
         }
         break;
     }
-  }, [filter]);
+  }, [loadTasks]);
 
   // Subscribe to tasks channel
   useWebSocket({
@@ -151,17 +346,7 @@ export function TasksPage() {
 
   useEffect(() => {
     loadTasks();
-  }, [filter]);
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-    try {
-      await api.deleteTask(id);
-      loadTasks();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete task');
-    }
-  };
+  }, [loadTasks]);
 
   const handlePriorityChange = async (taskId: string, newPriority: Task['priority']) => {
     try {
@@ -176,73 +361,6 @@ export function TasksPage() {
     }
   };
 
-  // Toggle selection of a single task
-  const toggleTaskSelection = (taskId: string) => {
-    setSelectedTaskIds(prev => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
-  };
-
-  // Toggle selection of all tasks in a status group
-  const toggleAllInStatus = (status: string) => {
-    const statusTasks = groupedTasks[status] || [];
-    const statusTaskIds = statusTasks.map(t => t.id);
-    const allSelected = statusTaskIds.every(id => selectedTaskIds.has(id));
-    
-    setSelectedTaskIds(prev => {
-      const next = new Set(prev);
-      if (allSelected) {
-        // Deselect all in this status
-        statusTaskIds.forEach(id => next.delete(id));
-      } else {
-        // Select all in this status
-        statusTaskIds.forEach(id => next.add(id));
-      }
-      return next;
-    });
-  };
-
-  // Release selected claimed tasks (set status to pending, clear assignedTo)
-  const handleReleaseSelected = async () => {
-    const claimedTasks = (groupedTasks['claimed'] || []).filter(t => selectedTaskIds.has(t.id));
-    if (claimedTasks.length === 0) {
-      alert('No claimed tasks selected');
-      return;
-    }
-    
-    if (!confirm(`Release ${claimedTasks.length} claimed task(s) back to pending?`)) return;
-    
-    setIsReleasing(true);
-    try {
-      await Promise.all(
-        claimedTasks.map(task => 
-          api.updateTask(task.id, { status: 'pending', assignedTo: null })
-        )
-      );
-      setSelectedTaskIds(new Set());
-      loadTasks();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to release tasks');
-    } finally {
-      setIsReleasing(false);
-    }
-  };
-
-  // Group tasks by status for display
-  const groupedTasks = tasks.reduce((acc, task) => {
-    if (!acc[task.status]) acc[task.status] = [];
-    acc[task.status].push(task);
-    return acc;
-  }, {} as Record<string, Task[]>);
-
-  const statusOrder: Task['status'][] = ['in_progress', 'claimed', 'pending', 'blocked', 'completed', 'failed', 'cancelled'];
-
   return (
     <div className="flex flex-col h-full">
       {/* Header with filters and actions */}
@@ -255,6 +373,7 @@ export function TasksPage() {
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => loadTasks()}
               className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
               title="Refresh"
@@ -262,6 +381,7 @@ export function TasksPage() {
               <RefreshCw className="h-4 w-4" />
             </button>
             <button
+              type="button"
               onClick={() => {
                 setEditingTask(undefined);
                 setIsModalOpen(true);
@@ -284,6 +404,7 @@ export function TasksPage() {
           <div className="flex items-center gap-2 flex-wrap">
             {Object.entries(counts.byStatus).map(([status, count]) => (
               <button
+                type="button"
                 key={status}
                 onClick={() => setFilter(f => f.status === status ? {} : { ...f, status })}
                 className={cn(
@@ -301,6 +422,7 @@ export function TasksPage() {
             ))}
             {filter.status && (
               <button
+                type="button"
                 onClick={() => setFilter({})}
                 className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
               >
@@ -308,6 +430,41 @@ export function TasksPage() {
               </button>
             )}
           </div>
+        </div>
+
+        <div className="mt-3 flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+            <Tag className="h-3.5 w-3.5" />
+            <span>Tags</span>
+          </div>
+          {availableTags.length === 0 ? (
+            <span className="text-xs text-muted-foreground">No tags yet</span>
+          ) : (
+            availableTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => toggleTagFilter(tag)}
+                className={cn(
+                  'inline-flex items-center px-2 py-0.5 rounded-full text-xs border transition-colors',
+                  tagFilter.includes(tag)
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-card border-border text-muted-foreground hover:text-foreground'
+                )}
+              >
+                {tag}
+              </button>
+            ))
+          )}
+          {tagFilter.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setTagFilter([])}
+              className="text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+            >
+              Clear tags
+            </button>
+          )}
         </div>
       </div>
 
@@ -330,157 +487,18 @@ export function TasksPage() {
                   <div key={i} className="h-24 bg-secondary rounded-lg animate-pulse" />
                 ))}
               </div>
-            ) : tasks.length === 0 ? (
-              <div className="flex items-center justify-center h-full p-8">
-                <div className="text-center text-muted-foreground">
-                  <ListTodo className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p className="mb-2">No tasks found</p>
-                  <p className="text-sm">Tasks will appear here when created by the Brain or manually.</p>
-                </div>
-              </div>
             ) : (
-              <div className="p-4 space-y-4">
-                {statusOrder.map((status) => {
-                  const statusTasks = groupedTasks[status];
-                  if (!statusTasks || statusTasks.length === 0) return null;
-
-                  const config = STATUS_CONFIG[status];
-
-                  return (
-                    <div key={status}>
-                      <div className="flex items-center justify-between mb-3">
-                        <h2 className={cn("flex items-center gap-2 text-sm font-medium", config.color)}>
-                          {status === 'claimed' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleAllInStatus(status);
-                              }}
-                              className="p-0.5 hover:bg-secondary rounded transition-colors"
-                              title={statusTasks.every(t => selectedTaskIds.has(t.id)) ? "Deselect all" : "Select all"}
-                            >
-                              {statusTasks.every(t => selectedTaskIds.has(t.id)) ? (
-                                <CheckSquare className="h-4 w-4" />
-                              ) : (
-                                <Square className="h-4 w-4" />
-                              )}
-                            </button>
-                          )}
-                          <config.icon className="h-4 w-4" />
-                          {config.label}
-                          <span className="text-muted-foreground">({statusTasks.length})</span>
-                        </h2>
-                        {status === 'claimed' && selectedTaskIds.size > 0 && (
-                          <button
-                            onClick={handleReleaseSelected}
-                            disabled={isReleasing}
-                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded bg-orange-500/20 text-orange-500 hover:bg-orange-500/30 transition-colors disabled:opacity-50"
-                          >
-                            <Undo2 className="h-3 w-3" />
-                            {isReleasing ? 'Releasing...' : `Release ${[...selectedTaskIds].filter(id => (groupedTasks['claimed'] || []).some(t => t.id === id)).length} Selected`}
-                          </button>
-                        )}
-                      </div>
-
-                       <div className="space-y-2">
-                        {statusTasks.map((task) => (
-                          <div
-                            key={task.id}
-                            className={cn(
-                              "transition-colors cursor-pointer group",
-                              selectedTask?.id === task.id ? "ring-2 ring-primary rounded-lg" : ""
-                            )}
-                            onClick={() => setSelectedTask(selectedTask?.id === task.id ? null : task)}
-                          >
-                            <Card
-                              className={cn("transition-colors", config.bgColor)}
-                            >
-                            <CardContent className="py-4">
-                              <div className="flex items-start justify-between gap-4">
-                                {/* Checkbox for claimed tasks */}
-                                {status === 'claimed' && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      toggleTaskSelection(task.id);
-                                    }}
-                                    className="mt-0.5 p-0.5 hover:bg-secondary rounded transition-colors flex-shrink-0"
-                                  >
-                                    {selectedTaskIds.has(task.id) ? (
-                                      <CheckSquare className="h-4 w-4 text-primary" />
-                                    ) : (
-                                      <Square className="h-4 w-4 text-muted-foreground" />
-                                    )}
-                                  </button>
-                                )}
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h3 className="font-medium truncate">{task.subject}</h3>
-                                    <TaskPriorityBadge 
-                                      priority={task.priority} 
-                                      taskId={task.id}
-                                      onPriorityChange={handlePriorityChange}
-                                    />
-                                    {task.domain && (
-                                      <span className="text-xs px-2 py-0.5 bg-secondary rounded text-muted-foreground">
-                                        {task.domain}
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">
-                                    {task.description}
-                                  </p>
-
-                                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                                    {task.assignedArmName && (
-                                      <span className="flex items-center gap-1">
-                                        <span className="text-foreground font-medium">{task.assignedArmName}</span>
-                                      </span>
-                                    )}
-                                    {task.phase && (
-                                      <span>Phase: {task.phase}</span>
-                                    )}
-                                    {task.sourceType !== 'manual' && (
-                                      <span>Source: {task.sourceType}</span>
-                                    )}
-                                    <span>Created {new Date(task.createdAt).toLocaleDateString()}</span>
-                                   </div>
-                                </div>
-
-                                {/* Card actions - visible on hover */}
-                                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingTask(task);
-                                      setIsModalOpen(true);
-                                    }}
-                                    className="p-2 text-muted-foreground hover:text-foreground hover:bg-secondary rounded transition-colors"
-                                    title="Edit task"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(task.id);
-                                    }}
-                                    className="p-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors"
-                                    title="Delete task"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              </div>
-                            </CardContent>
-                            </Card>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="p-4">
+                <TaskGrid 
+                  tasks={filteredTasks} 
+                  availableTags={availableTags}
+                  selectedTaskId={selectedTask?.id} 
+                  onOpenDetails={handleOpenDetails}
+                  onUpdateTask={handleUpdateTask}
+                  onUpdateUi={handleUpdateUi}
+                  onCreateTaskAt={handleCreateTaskAt}
+                  onReorder={handleReorder}
+                />
               </div>
             )}
         </div>
@@ -489,9 +507,19 @@ export function TasksPage() {
         {selectedTask && (
             <aside className="w-80 border-l border-border bg-card overflow-auto">
               <div className="p-4 border-b border-border">
-                <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-                  Task Details
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
+                    Task Details
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTask(null)}
+                    className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="Close"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-4">
                 <div className="space-y-4">
@@ -505,8 +533,20 @@ export function TasksPage() {
                   </div>
 
                   <div>
-                    <h5 className="text-sm font-medium text-muted-foreground mb-1">Description</h5>
-                    <p className="text-sm">{selectedTask.description}</p>
+                    <h5 className="text-sm font-medium text-muted-foreground mb-1">Original one-liner</h5>
+                    <p className="text-sm">
+                      {getTaskUiMeta(selectedTask).llm?.originalPrompt ?? selectedTask.subject}
+                    </p>
+                  </div>
+
+                  <div>
+                    <h5 className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-1">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      LLM-generated description
+                    </h5>
+                    <p className="text-sm">
+                      {getTaskUiMeta(selectedTask).llm?.generatedDescription ?? selectedTask.description}
+                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-sm">
@@ -531,12 +571,64 @@ export function TasksPage() {
                     </div>
                   </div>
 
+                  <div>
+                    <h5 className="text-sm font-medium text-muted-foreground mb-1">Tags</h5>
+                    <div className="flex flex-wrap gap-1">
+                      {(getTaskUiMeta(selectedTask).tags ?? []).length === 0 ? (
+                        <span className="text-xs text-muted-foreground">No tags</span>
+                      ) : (
+                        (getTaskUiMeta(selectedTask).tags ?? []).map((tag) => (
+                          <span key={tag} className="text-xs px-2 py-0.5 bg-muted rounded-full">
+                            {tag}
+                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
                   {selectedTask.assignedArmName && (
                     <div>
                       <span className="text-sm text-muted-foreground">Assigned to:</span>
                       <p className="text-sm font-medium">{selectedTask.assignedArmName}</p>
                     </div>
                   )}
+
+                  <div className="border-t border-border pt-3">
+                    <div className="flex items-center gap-2 mb-2 text-sm font-medium">
+                      <MessageSquareText className="h-4 w-4" />
+                      Discussion
+                    </div>
+                    <div className="space-y-2 max-h-48 overflow-auto">
+                      {(getTaskUiMeta(selectedTask).llm?.history ?? []).length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No discussion yet.</p>
+                      ) : (
+                        (getTaskUiMeta(selectedTask).llm?.history ?? []).map((entry, index) => (
+                          <div key={`${entry.at}-${index}`} className="text-xs">
+                            <span className="font-medium capitalize">{entry.role}:</span>{' '}
+                            <span className="text-muted-foreground">{entry.content}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      <textarea
+                        value={draftMessage}
+                        onChange={(event) => setDraftMessage(event.target.value)}
+                        placeholder="Ask the LLM to expand or clarify..."
+                        rows={3}
+                        className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSendDiscussion}
+                        disabled={isDiscussing || !draftMessage.trim()}
+                        className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded bg-primary text-primary-foreground disabled:opacity-50"
+                      >
+                        <Send className="h-3.5 w-3.5" />
+                        {isDiscussing ? 'Sending...' : 'Send'}
+                      </button>
+                    </div>
+                  </div>
 
                   <div className="text-xs text-muted-foreground">
                     Created {new Date(selectedTask.createdAt).toLocaleString()}

@@ -70,6 +70,14 @@ The **single next task** ready for an idle arm. This is **not** a static list—
 4. Calculate what comes next
 5. **This is a single value**, not a list
 
+#### 4. Collaborative Planning Board (New)
+
+For complex phases with many items, a high-density grid view allows for:
+- **Sorting & Filtering**: Manage large numbers of plan items and discoveries.
+- **Progress Tracking**: Visual indicators for item completion and sub-task progress.
+- **Discussion**: Integrated chat with an "Architect" agent to refine implementation details.
+- **Task Preparation**: Agent-assisted generation of detailed task definitions for other arms.
+
 ### What NOT to Show
 
 - ❌ Full task backlog (too many items, mostly speculative)
