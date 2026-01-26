@@ -1,6 +1,6 @@
 /**
  * OpenCode API Harness
- * 
+ *
  * Controls OpenCode AI agent via its HTTP API server.
  * This is more reliable than PTY-based control as it uses well-defined endpoints.
  * 
@@ -18,13 +18,13 @@ import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 import type {
-  AgentHarness,
-  HarnessSession,
-  HarnessCapabilities,
-  SpawnConfig,
-  AgentState,
-  PTYSession,
-  SendPromptOptions,
+	AgentHarness,
+	HarnessSession,
+	HarnessCapabilities,
+	SpawnConfig,
+	AgentState,
+	PTYSession,
+	SendPromptOptions,
 } from "./types";
 
 /**
@@ -42,7 +42,11 @@ interface ApiHarnessSession extends HarnessSession {
 }
 
 // Callback type for event forwarding
-export type ArmEventCallback = (armId: string, event: string, data: unknown) => void;
+export type ArmEventCallback = (
+	armId: string,
+	event: string,
+	data: unknown,
+) => void;
 
 export class OpenCodeApiHarness implements AgentHarness {
   name = "opencode-api";
