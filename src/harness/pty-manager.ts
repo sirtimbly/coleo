@@ -146,24 +146,36 @@ export class PTYManager {
   async waitForPattern(
     session: PTYSession,
     pattern: RegExp,
-    timeoutMs: number = 30000
+    timeoutMs: number = 30000,
+    options?: { label?: string; logProgress?: boolean }
   ): Promise<string> {
     const startTime = Date.now();
     const startIndex = session.buffer.length;
+    const label = options?.label ?? pattern.toString();
+    const logProgress = options?.logProgress ?? true;
+    let lastLogTime = startTime;
 
     return new Promise((resolve, reject) => {
       const check = () => {
         const newContent = session.buffer.slice(startIndex);
         const strippedContent = stripAnsi(newContent);
+        const elapsed = Date.now() - startTime;
         
         if (pattern.test(strippedContent)) {
           resolve(strippedContent);
           return;
         }
 
-        if (Date.now() - startTime > timeoutMs) {
-          reject(new Error(`Timeout waiting for pattern: ${pattern}`));
+        if (elapsed > timeoutMs) {
+          reject(new Error(`Timeout waiting for pattern: ${label} (waited ${elapsed}ms)`));
           return;
+        }
+
+        // Log progress every 5 seconds
+        if (logProgress && Date.now() - lastLogTime > 5000) {
+          const remaining = Math.ceil((timeoutMs - elapsed) / 1000);
+          console.log(`  [wait] Still waiting for ${label}... (${remaining}s remaining)`);
+          lastLogTime = Date.now();
         }
 
         setTimeout(check, 100);
