@@ -523,6 +523,19 @@ class ApiClient {
     });
   }
 
+  async removeTaskFromPlan(id: string) {
+    return this.request<{ deleted: boolean; removedFromPlan: boolean }>(`/tasks/${id}/remove-from-plan`, {
+      method: 'POST',
+    });
+  }
+
+  async reorderTask(taskId: string, toIndex: number) {
+    return this.request<{ success: boolean }>('/tasks/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ taskId, toIndex }),
+    });
+  }
+
   // Events API - arm health monitoring
   async getArmEventWindow(armId: string, options?: { windowMs?: number; limit?: number }) {
     const query = new URLSearchParams();
@@ -795,6 +808,8 @@ export interface Task {
   domain: string | null;
   assignedTo: string | null;
   assignedArmName?: string;
+  planLineUid?: string | null;
+  sortOrder?: number | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

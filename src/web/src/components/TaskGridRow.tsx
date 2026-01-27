@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { KeyboardEvent } from 'react';
-import { Bold, GripVertical, MessageSquare, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Bold, GripVertical, MessageSquare, SlidersHorizontal, ChevronDown, ChevronRight, Trash2, ArrowUpDown } from 'lucide-react';
 import { Chip, Button, Dropdown, Menu } from '@heroui/react';
 import { type Task } from '@/lib/api';
 import { cn } from '@/lib';
@@ -29,27 +29,56 @@ interface TaskGridRowProps {
   index: number;
   availableTags?: string[];
   isSelected?: boolean;
+  isDragging?: boolean;
+  isExpanded?: boolean;
   onOpenDetails?: (task: Task) => void;
   onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
   onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
-  onDragStart?: (index: number) => void;
-  onDragOver?: (index: number) => void;
-  onDrop?: (index: number) => void;
+  onDelete?: (task: Task) => void;
+  onReorderToIndex?: (fromIndex: number, toIndex: number) => void;
+  dragHandleProps?: Record<string, unknown>;
   onGridKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
   className?: string;
 }
 
 const PRIORITY_OPTIONS: Task['priority'][] = ['low', 'normal', 'high', 'critical'];
 
+const PRIORITY_STYLES: Record<Task['priority'], string> = {
+  low: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+  normal: 'bg-sky-50 text-sky-700 border-sky-100',
+  high: 'bg-amber-50 text-amber-700 border-amber-100',
+  critical: 'bg-rose-50 text-rose-700 border-rose-100',
+};
+
 const COLOR_OPTIONS = ['slate', 'blue', 'emerald', 'amber', 'rose'] as const;
 type ColorOption = (typeof COLOR_OPTIONS)[number];
 
-const COLOR_CLASSES: Record<ColorOption, { dot: string; row: string }> = {
-  slate: { dot: 'bg-slate-400', row: 'bg-slate-50 border-slate-200 border-l-slate-400' },
-  blue: { dot: 'bg-blue-400', row: 'bg-blue-50 border-blue-200 border-l-blue-400' },
-  emerald: { dot: 'bg-emerald-400', row: 'bg-emerald-50 border-emerald-200 border-l-emerald-400' },
-  amber: { dot: 'bg-amber-400', row: 'bg-amber-50 border-amber-200 border-l-amber-400' },
-  rose: { dot: 'bg-rose-400', row: 'bg-rose-50 border-rose-200 border-l-rose-400' },
+const COLOR_CLASSES: Record<ColorOption, { dot: string; row: string; rowBold: string }> = {
+  slate: { 
+    dot: 'bg-slate-400', 
+    row: 'bg-slate-50 border-slate-200 border-l-slate-400',
+    rowBold: 'bg-slate-100 border-slate-400 border-l-slate-600 border-2'
+  },
+  blue: { 
+    dot: 'bg-blue-400', 
+    row: 'bg-blue-50 border-blue-200 border-l-blue-400',
+    rowBold: 'bg-blue-100 border-blue-400 border-l-blue-600 border-2'
+  },
+  emerald: { 
+    dot: 'bg-emerald-400', 
+    row: 'bg-emerald-50 border-emerald-200 border-l-emerald-400',
+    rowBold: 'bg-emerald-100 border-emerald-400 border-l-emerald-600 border-2'
+  },
+  amber: { 
+    dot: 'bg-amber-400', 
+    row: 'bg-amber-50 border-amber-200 border-l-amber-400',
+    rowBold: 'bg-amber-100 border-amber-400 border-l-amber-600 border-2'
+  },
+  rose: { 
+    dot: 'bg-rose-400', 
+    row: 'bg-rose-50 border-rose-200 border-l-rose-400',
+    rowBold: 'bg-rose-100 border-rose-400 border-l-rose-600 border-2'
+  },
 };
 
 export function TaskGridRow({
@@ -57,12 +86,14 @@ export function TaskGridRow({
   index,
   availableTags = [],
   isSelected,
+  isDragging,
+  isExpanded,
   onOpenDetails,
   onUpdateTask,
   onUpdateUi,
-  onDragStart,
-  onDragOver,
-  onDrop,
+  onDelete,
+  onReorderToIndex,
+  dragHandleProps,
   onGridKeyDown,
   className,
 }: TaskGridRowProps) {
@@ -88,6 +119,8 @@ export function TaskGridRow({
   
   // Use preview color if hovering, otherwise use saved color
   const colorKey = previewColor ?? savedColor;
+
+  const priorityClasses = PRIORITY_STYLES[task.priority];
 
   const handleSubjectBlur = () => {
     const next = subjectValue.trim();
@@ -154,30 +187,25 @@ export function TaskGridRow({
   return (
     <li
       className={cn(
-        'grid grid-cols-[24px_2.2fr_1fr_1fr_1.4fr_200px] items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer',
+        'grid grid-cols-[24px_minmax(0,1fr)_96px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer',
         'border-l-4 rounded-md border',
         // Base color from row color setting
-        !isSelected && COLOR_CLASSES[colorKey]?.row,
-        // Hover state (only when not selected)
-        !isSelected && 'hover:bg-primary-50 hover:border-primary-200',
-        // Selected state - strong visual indication
-        isSelected && 'bg-primary-100 border-primary-400 border-l-primary-500 ring-2 ring-primary-200 shadow-sm',
+        !isDragging && (uiMeta.bold ? COLOR_CLASSES[colorKey]?.rowBold : COLOR_CLASSES[colorKey]?.row),
+        // Hover state (only when not selected and not dragging)
+        !isSelected && !isDragging && 'hover:bg-primary-50 hover:border-primary-200',
+        // Selected state - bright primary color with glow
+        isSelected && 'bg-primary-300 shadow-md shadow-primary/20',
+        // Dragging state - dim the original row
+        isDragging && 'opacity-40 bg-default-100 border-dashed border-default-300',
         className
       )}
       onClick={handleRowClick}
       onKeyDown={handleRowKeyDown}
-      onDragOver={(event) => {
-        event.preventDefault();
-        onDragOver?.(index);
-      }}
-      onDrop={() => onDrop?.(index)}
     >
       <button
         type="button"
-        className="p-1 text-default-500 hover:text-default-700 rounded cursor-move" 
-        draggable
-        onDragStart={() => onDragStart?.(index)}
-        onKeyDown={onGridKeyDown}
+        className="p-1 text-default-500 hover:text-default-700 rounded cursor-move"
+        {...dragHandleProps}
         data-cell
         data-row={index}
         data-col={0}
@@ -186,28 +214,64 @@ export function TaskGridRow({
         <GripVertical className="h-4 w-4" />
       </button>
 
-      <input
-        value={subjectValue}
-        onChange={(event) => setSubjectValue(event.target.value)}
-        onBlur={handleSubjectBlur}
-        onKeyDown={(event) => {
-          onGridKeyDown?.(event);
-          if (event.key === 'Enter') {
-            event.currentTarget.blur();
-          }
-        }}
-        data-cell
-        data-row={index}
-        data-col={1}
-        className={cn(
-          'bg-transparent border border-transparent rounded-md px-2 py-1 transition-all',
-          'hover:border-default-300 hover:bg-default-50',
-          'focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20',
-          uiMeta.bold && 'font-semibold'
-        )}
-        aria-label="Task subject (click to edit)"
-        title="Click to edit task title"
-      />
+      {isExpanded ? (
+        <textarea
+          ref={(el) => {
+            if (el) el.style.height = 'auto';
+            el?.style.setProperty('height', el?.scrollHeight + 'px');
+          }}
+          value={subjectValue}
+          onChange={(event) => setSubjectValue(event.target.value)}
+          onBlur={handleSubjectBlur}
+          onKeyDown={(event) => {
+            onGridKeyDown?.(event);
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.currentTarget.blur();
+            }
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          data-cell
+          data-row={index}
+          data-col={1}
+          rows={1}
+          className={cn(
+            'min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all resize-none overflow-hidden',
+            'hover:border-default-300 hover:bg-default-50',
+            'focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20',
+            uiMeta.bold && 'font-semibold',
+            'w-full'
+          )}
+          aria-label="Task subject (click to edit)"
+          title="Click to edit task title"
+          style={{ height: 'auto', minHeight: '28px' }}
+        />
+      ) : (
+        <input
+          value={subjectValue}
+          onChange={(event) => setSubjectValue(event.target.value)}
+          onBlur={handleSubjectBlur}
+          onKeyDown={(event) => {
+            onGridKeyDown?.(event);
+            if (event.key === 'Enter') {
+              event.currentTarget.blur();
+            }
+          }}
+          data-cell
+          data-row={index}
+          data-col={1}
+          className={cn(
+            'min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all',
+            'hover:border-default-300 hover:bg-default-50',
+            'focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20',
+            uiMeta.bold && 'font-semibold'
+          )}
+          aria-label="Task subject (click to edit)"
+          title="Click to edit task title"
+        />
+      )}
 
       <div className="px-2 py-1 text-default-500 text-xs uppercase tracking-wide">
         {task.status.replace('_', ' ')}
@@ -219,12 +283,16 @@ export function TaskGridRow({
           <Button
             variant="ghost"
             size="sm"
-            className="justify-between min-w-24"
+            className={cn(
+              'justify-between min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold transition focus-visible:outline-none',
+              'hover:shadow-sm',
+              priorityClasses
+            )}
             data-cell
             data-row={index}
             data-col={2}
           >
-            <span className="text-xs">{task.priority}</span>
+            <span className="capitalize">{task.priority}</span>
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </Dropdown.Trigger>
@@ -355,15 +423,60 @@ export function TaskGridRow({
           variant="ghost"
           size="sm"
           isIconOnly
-          onPress={() => onOpenDetails?.(task)}
+          onPress={() => onDelete?.(task)}
           data-cell
           data-row={index}
           data-col={5}
+          aria-label="Delete task"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+
+        <Dropdown>
+          <Dropdown.Trigger>
+            <Button
+              variant="ghost"
+              size="sm"
+              isIconOnly
+              data-cell
+              data-row={index}
+              data-col={6}
+              aria-label="More actions"
+            >
+              <ArrowUpDown className="h-4 w-4" />
+            </Button>
+          </Dropdown.Trigger>
+          <Dropdown.Popover>
+            <Dropdown.Menu
+              onAction={(key) => {
+                if (key === 'top') {
+                  onReorderToIndex?.(index, 0);
+                } else if (key === 'bottom') {
+                  onReorderToIndex?.(index, -1);
+                }
+              }}
+            >
+              <Dropdown.Item key="top">Move to Top</Dropdown.Item>
+              <Dropdown.Item key="bottom">Move to Bottom</Dropdown.Item>
+            </Dropdown.Menu>
+          </Dropdown.Popover>
+        </Dropdown>
+
+        <Button
+          variant={isSelected ? "secondary" : "ghost"}
+          size="sm"
+          isIconOnly
+          onPress={() => onOpenDetails?.(task)}
+          data-cell
+          data-row={index}
+          data-col={7}
           aria-label="Open details"
         >
-          <MessageSquare className="h-4 w-4" />
+          <ChevronRight className={cn("h-4 w-4", isSelected ?? "text-primary-700")} />
         </Button>
-      </div>
+
+        {/* Selected indicator chevron */}
+       </div>
     </li>
   );
 }

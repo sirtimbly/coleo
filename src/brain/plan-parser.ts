@@ -18,6 +18,8 @@ export interface ParsedTask {
   status: "pending" | "in_progress" | "completed";
   sourceRef: string;
   lineNumber: number;
+  planLineUid?: string;
+  tags: string[];
 }
 
 export interface PlanParseResult {
@@ -76,9 +78,14 @@ export async function parsePlanFile(filePath: string): Promise<PlanParseResult> 
         const isCompleted = checkboxMatch[1]?.toLowerCase() === "x";
         const taskContent = checkboxMatch[2]?.trim() ?? "";
         
+        // Extract UID from HTML comment if present (e.g., "Task name <!--octopai:abcd1234-->")
+        const uidMatch = taskContent.match(/<!--octopai:([a-zA-Z0-9]+)-->$/);
+        const planLineUid = uidMatch?.[1];
+        const cleanContent = uidMatch ? taskContent.replace(/<!--octopai:[a-zA-Z0-9]+-->$/, "").trim() : taskContent;
+        
         // Extract task details
-        const taskId = generateTaskId(currentPhase, taskContent);
-        const { priority, subject, description } = parseTaskContent(taskContent, sectionDescription);
+        const taskId = generateTaskId(currentPhase, cleanContent);
+        const { priority, subject, description } = parseTaskContent(cleanContent, sectionDescription);
         
         tasks.push({
           id: taskId,
@@ -89,6 +96,8 @@ export async function parsePlanFile(filePath: string): Promise<PlanParseResult> 
           status: isCompleted ? "completed" : "pending",
           sourceRef: `${filePath}:${lineNumber}`,
           lineNumber,
+          planLineUid,
+          tags: extractTags(currentPhase, cleanContent),
         });
       }
     }
@@ -159,6 +168,39 @@ function parseTaskContent(
 }
 
 /**
+ * Extract tags from phase and task content
+ * Tags include: phase number, frontend/backend if mentioned
+ */
+function extractTags(phase: string, content: string): string[] {
+  const tags: string[] = [];
+
+  // Add phase tag (extract just the phase number like "Phase 2", "Phase 2.5")
+  if (phase) {
+    const phaseMatch = phase.match(/^Phase\s+(\d+(?:\.\d+)?)/i);
+    if (phaseMatch) {
+      tags.push(`phase-${phaseMatch[1]}`);
+    } else {
+      // Use sanitized phase name as tag
+      const sanitized = phase.replace(/[^a-zA-Z0-9]/g, "").toLowerCase().slice(0, 20);
+      if (sanitized) {
+        tags.push(sanitized);
+      }
+    }
+  }
+
+  // Check for frontend/backend mentions in content (case-insensitive)
+  const lowerContent = content.toLowerCase();
+  if (/\bfrontend\b/.test(lowerContent)) {
+    tags.push("frontend");
+  }
+  if (/\bbackend\b/.test(lowerContent)) {
+    tags.push("backend");
+  }
+
+  return tags;
+}
+
+/**
  * Find all plan files in a directory
  */
 export async function findPlanFiles(
@@ -211,6 +253,8 @@ export function tasksToDatabaseFormat(
   source_type: string;
   source_ref: string;
   phase: string;
+  plan_line_uid?: string;
+  tags: string;
   metadata: string;
 }> {
   return tasks.map(task => ({
@@ -222,9 +266,65 @@ export function tasksToDatabaseFormat(
     source_type: sourceType,
     source_ref: task.sourceRef,
     phase: task.phase || "",
+    plan_line_uid: task.planLineUid,
+    tags: JSON.stringify(task.tags),
     metadata: JSON.stringify({
       lineNumber: task.lineNumber,
       importedAt: new Date().toISOString(),
     }),
   }));
+}
+
+/**
+ * Generate a short UID for plan.md line linking (8 alphanumeric chars)
+ */
+export function generatePlanLineUid(): string {
+  return createHash("md5")
+    .update(Date.now().toString() + Math.random().toString())
+    .digest("hex")
+    .slice(0, 8);
+}
+
+/**
+ * Insert or update UID comment in a plan.md line
+ */
+function insertUidInLine(line: string, uid: string): string {
+  // Check if line already has an octopai UID comment
+  const hasUidMatch = line.match(/<!--octopai:[a-zA-Z0-9]+-->$/);
+  if (hasUidMatch) {
+    // Replace existing UID
+    return line.replace(/<!--octopai:[a-zA-Z0-9]+-->$/, `<!--octopai:${uid}-->`);
+  }
+  // Add new UID at end of line
+  return `${line.trim()} <!--octopai:${uid}-->`;
+}
+
+/**
+ * Remove a line from plan.md by its UID
+ */
+export async function removeTaskLineFromPlan(
+  filePath: string,
+  uid: string
+): Promise<boolean> {
+  try {
+    const { readFile, writeFile } = await import("fs/promises");
+    const content = await readFile(filePath, "utf-8");
+    const lines = content.split("\n");
+    
+    // Find the line with the matching UID
+    const matchingIndex = lines.findIndex(line => line.includes(`<!--octopai:${uid}-->`));
+    if (matchingIndex === -1) {
+      return false;
+    }
+    
+    // Remove the entire line
+    lines.splice(matchingIndex, 1);
+    
+    // Write back the modified content
+    await writeFile(filePath, lines.join("\n"), "utf-8");
+    return true;
+  } catch (err) {
+    console.error(`Failed to remove task line from ${filePath}:`, err);
+    return false;
+  }
 }

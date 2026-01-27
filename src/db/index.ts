@@ -98,6 +98,9 @@ async function runMigrations(db: Database): Promise<void> {
     ["028_discoveries_task_phase", MIGRATION_028],
     ["029_last_doc_update_config", MIGRATION_029_LAST_DOC_UPDATE],
     ["030_bug_tracking", MIGRATION_030_BUG_TRACKING],
+    ["031_task_plan_line_uid", MIGRATION_031, { table: "tasks", columns: MIGRATION_031_COLUMNS }],
+    ["032_task_sort_order", MIGRATION_032, { table: "tasks", columns: MIGRATION_032_COLUMNS }],
+    ["033_task_tags", MIGRATION_033, { table: "tasks", columns: MIGRATION_033_COLUMNS }],
   ];
 
 
@@ -1001,6 +1004,35 @@ CREATE INDEX IF NOT EXISTS idx_bugs_status ON bugs(status);
 CREATE INDEX IF NOT EXISTS idx_bugs_priority ON bugs(priority);
 CREATE INDEX IF NOT EXISTS idx_bugs_assignee ON bugs(assignee_arm_id);
 CREATE INDEX IF NOT EXISTS idx_bugs_created ON bugs(created_at DESC);
+`;
+
+// Migration 031: Add plan_line_uid for linking tasks to plan.md lines
+const MIGRATION_031_COLUMNS = [
+  { name: 'plan_line_uid', sql: "ALTER TABLE tasks ADD COLUMN plan_line_uid TEXT" },
+];
+
+const MIGRATION_031 = `
+-- Create index for quick lookup of tasks by plan line UID
+CREATE INDEX IF NOT EXISTS idx_tasks_plan_line_uid ON tasks(plan_line_uid);
+`;
+
+// Migration 032: Add sort_order for task reordering
+const MIGRATION_032_COLUMNS = [
+  { name: 'sort_order', sql: "ALTER TABLE tasks ADD COLUMN sort_order INTEGER DEFAULT 0" },
+];
+
+const MIGRATION_032 = `
+-- Create index for ordering tasks by their sort order
+CREATE INDEX IF NOT EXISTS idx_tasks_sort_order ON tasks(sort_order);
+`;
+
+const MIGRATION_033_COLUMNS = [
+  { name: 'tags', sql: "ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT '[]'" },
+];
+
+const MIGRATION_033 = `
+-- Create index for tag queries
+CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks(tags);
 `;
 
   /**

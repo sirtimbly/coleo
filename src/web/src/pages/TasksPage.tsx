@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, MessageSquareText, Send, Sparkles, Tag, X } from 'lucide-react';
+import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, MessageSquareText, Send, Sparkles, Tag, X, Search } from 'lucide-react';
 import { Button, Chip, Card, TextArea } from '@heroui/react';
 import { api, type Task, cn } from '@/lib';
 import { TaskModal } from '@/components';
@@ -116,11 +116,13 @@ export function TasksPage() {
   const [counts, setCounts] = useState<{ total: number; byStatus: Record<string, number> }>({ total: 0, byStatus: {} });
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [searchText, setSearchText] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [draftMessage, setDraftMessage] = useState('');
   const [isDiscussing, setIsDiscussing] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; task: Task | null }>({ show: false, task: null });
 
   const loadTasks = useCallback(async () => {
     try {
@@ -157,12 +159,26 @@ export function TasksPage() {
   }, [tasks, getTaskUiMeta]);
 
   const filteredTasks = useMemo(() => {
-    if (tagFilter.length === 0) return tasks;
-    return tasks.filter((task) => {
-      const tags = getTaskUiMeta(task).tags ?? [];
-      return tagFilter.some((tag) => tags.includes(tag));
-    });
-  }, [tasks, tagFilter, getTaskUiMeta]);
+    let result = tasks;
+    
+    if (searchText.trim()) {
+      const search = searchText.toLowerCase();
+      result = result.filter((task) => 
+        task.subject.toLowerCase().includes(search) ||
+        task.description.toLowerCase().includes(search) ||
+        task.phase?.toLowerCase().includes(search)
+      );
+    }
+    
+    if (tagFilter.length > 0) {
+      result = result.filter((task) => {
+        const tags = getTaskUiMeta(task).tags ?? [];
+        return tagFilter.some((tag) => tags.includes(tag));
+      });
+    }
+    
+    return result;
+  }, [tasks, tagFilter, searchText, getTaskUiMeta]);
 
   const handleUpdateTask = useCallback(async (taskId: string, updates: TaskUpdate) => {
     let previousStatus: Task['status'] | null = null;
@@ -215,6 +231,40 @@ export function TasksPage() {
       loadTasks();
     }
   }, [tasks, getTaskUiMeta, loadTasks]);
+
+  const handleDeleteTask = useCallback((task: Task) => {
+    if (task.planLineUid) {
+      setDeleteConfirm({ show: true, task });
+    } else {
+      if (confirm('Are you sure you want to delete this task?')) {
+        api.deleteTask(task.id).then(() => loadTasks());
+      }
+    }
+  }, [loadTasks]);
+
+  const confirmDeleteFromPlan = useCallback(async () => {
+    if (!deleteConfirm.task) return;
+    try {
+      await api.removeTaskFromPlan(deleteConfirm.task.id);
+      loadTasks();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to remove task from plan');
+    } finally {
+      setDeleteConfirm({ show: false, task: null });
+    }
+  }, [deleteConfirm, loadTasks]);
+
+  const confirmDeleteOnly = useCallback(async () => {
+    if (!deleteConfirm.task) return;
+    try {
+      await api.deleteTask(deleteConfirm.task.id);
+      loadTasks();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete task');
+    } finally {
+      setDeleteConfirm({ show: false, task: null });
+    }
+  }, [deleteConfirm, loadTasks]);
 
   const handleCreateTaskAt = useCallback(async (index: number, subject: string) => {
     const now = new Date().toISOString();
@@ -406,6 +456,17 @@ export function TasksPage() {
 
         {/* Compact filter bar */}
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
+            <input
+              type="text"
+              placeholder="Search tasks..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-primary w-64"
+            />
+          </div>
+          <div className="h-4 w-px bg-divider" />
           <div className="flex items-center gap-2 text-sm">
             <span className="text-foreground-500">Total:</span>
             <span className="font-medium">{counts.total}</span>
@@ -500,6 +561,7 @@ export function TasksPage() {
                   onOpenDetails={handleOpenDetails}
                   onUpdateTask={handleUpdateTask}
                   onUpdateUi={handleUpdateUi}
+                  onDelete={handleDeleteTask}
                   onCreateTaskAt={handleCreateTaskAt}
                   onReorder={handleReorder}
                 />
@@ -664,6 +726,60 @@ export function TasksPage() {
         onSaved={() => loadTasks()}
         task={editingTask}
       />
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm.show && deleteConfirm.task && (() => {
+        const task = deleteConfirm.task;
+        const taskId = task.id;
+        const lineNumber = task.sourceRef?.split(':').pop();
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold mb-2">Delete Task</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                This task is linked to plan.md at line {lineNumber}.
+              </p>
+              <div className="space-y-3 mb-4">
+                <div className="flex items-center gap-2 text-sm">
+                  <input type="radio" name={`deleteOption-${taskId}`} id={`deleteOnly-${taskId}`} defaultChecked />
+                  <label htmlFor={`deleteOnly-${taskId}`}>
+                    <span className="font-medium">Delete task only</span>
+                    <span className="text-gray-500 ml-1">- removes from tasks list, keeps in plan.md</span>
+                  </label>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <input type="radio" name={`deleteOption-${taskId}`} id={`removeFromPlan-${taskId}`} />
+                  <label htmlFor={`removeFromPlan-${taskId}`}>
+                    <span className="font-medium">Remove from plan.md & delete</span>
+                    <span className="text-gray-500 ml-1">- removes checkbox line from plan.md and deletes task</span>
+                  </label>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <Button
+                  variant="ghost"
+                  onPress={() => setDeleteConfirm({ show: false, task: null })}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  onPress={() => {
+                    const radio = document.querySelector<HTMLInputElement>(`input[name="deleteOption-${taskId}"]:checked`);
+                    if (radio?.id?.includes('removeFromPlan')) {
+                      confirmDeleteFromPlan();
+                    } else {
+                      confirmDeleteOnly();
+                    }
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

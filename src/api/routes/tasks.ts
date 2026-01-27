@@ -29,6 +29,8 @@ export interface Task {
   assignedTo: string | null;
   assignedArmName?: string;
   consensusStatus?: "pending" | "in_progress" | "reached" | "failed";
+  planLineUid?: string | null;
+  sortOrder?: number | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -52,6 +54,8 @@ interface TaskRow {
   assigned_to: string | null;
   assigned_arm_name: string | null;
   consensus_status: string | null;
+  plan_line_uid: string | undefined;
+  sort_order: number | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -76,6 +80,8 @@ function parseTaskRow(row: TaskRow): Task {
     assignedTo: row.assigned_to,
     assignedArmName: row.assigned_arm_name || undefined,
     consensusStatus: (row.consensus_status as Task["consensusStatus"]) || undefined,
+    planLineUid: row.plan_line_uid,
+    sortOrder: row.sort_order,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -238,7 +244,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
-        t.consensus_status,
+        t.consensus_status, t.sort_order,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -246,6 +252,7 @@ export function createTasksRoutes() {
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
       ORDER BY 
+        t.sort_order DESC,
         CASE t.status 
           WHEN 'in_progress' THEN 1
           WHEN 'claimed' THEN 2
@@ -362,8 +369,8 @@ export function createTasksRoutes() {
     const now = new Date().toISOString();
 
     db.run(`
-      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, sort_order, metadata, created_at, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       body.subject.trim(),
@@ -374,6 +381,7 @@ export function createTasksRoutes() {
       body.phase || null,
       body.domain || null,
       body.dueDate || null,
+      Date.now(), // sort_order - higher value = appears first
       JSON.stringify(body.metadata || {}),
       now,
       now,
@@ -676,6 +684,97 @@ export function createTasksRoutes() {
     broadcast("tasks", "task.deleted", { taskId: id });
 
     return c.json({ deleted: true });
+  });
+
+  /**
+   * Remove a task from plan.md and delete it
+   * POST /api/tasks/:id/remove-from-plan
+   */
+  app.post("/:id/remove-from-plan", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Get the task to find its plan_line_uid
+    const taskRow = db.query("SELECT id, source_ref, plan_line_uid FROM tasks WHERE id = ?").get(id) as TaskRow | undefined;
+    if (!taskRow) {
+      throw HttpError.notFound(`Task not found: ${id}`);
+    }
+
+    // Remove from plan.md if the task has a plan_line_uid
+    const planLineUidValue = taskRow.plan_line_uid;
+    if (typeof planLineUidValue === "string" && taskRow.source_ref) {
+      // Extract file path from source_ref (format: "/path/to/file:lineNumber")
+      const sourceRefMatch = taskRow.source_ref.match(/^(.+):\d+$/);
+      if (sourceRefMatch) {
+        const planFilePath = sourceRefMatch[1];
+        try {
+          const mod = await import("../../brain/plan-parser");
+          const removeFn: (path: string, uid: string) => Promise<boolean> = mod.removeTaskLineFromPlan;
+          // @ts-expect-error - TypeScript doesn't properly narrow the type here
+          await removeFn(planFilePath, planLineUidValue);
+        } catch (err) {
+          console.error(`Failed to remove line from plan file: ${err}`);
+          // Continue with deletion even if plan file removal fails
+        }
+      }
+    }
+
+    // Delete the task from database
+    db.run("DELETE FROM tasks WHERE id = ?", [id]);
+
+    logActivity(db, "api", "task_removed_from_plan", id);
+
+    // Broadcast task deleted
+    broadcast("tasks", "task.deleted", { taskId: id });
+
+    return c.json({ deleted: true, removedFromPlan: true });
+  });
+
+  /**
+   * Reorder a task to a specific position
+   * POST /api/tasks/reorder
+   * Body: { taskId: string, toIndex: number }
+   */
+  app.post("/reorder", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{ taskId: string; toIndex: number }>();
+    const { taskId, toIndex } = body;
+
+    // Get current task order
+    const tasks = db.query("SELECT id, sort_order FROM tasks ORDER BY sort_order, created_at DESC").all() as Array<{ id: string; sort_order: number | null }>;
+
+    // Find the task in the list
+    const taskIndex = tasks.findIndex(t => t.id === taskId);
+    if (taskIndex === -1) {
+      throw HttpError.notFound(`Task not found: ${taskId}`);
+    }
+
+    // Remove task from current position
+    const movedTask = tasks.splice(taskIndex, 1)[0];
+    if (!movedTask) {
+      throw HttpError.notFound(`Task not found: ${taskId}`);
+    }
+
+    // Insert at new position (handle -1 for "move to bottom")
+    const finalIndex = toIndex < 0 ? tasks.length : Math.min(toIndex, tasks.length);
+    tasks.splice(finalIndex, 0, movedTask);
+
+    // Update sort_order for all affected tasks
+    for (let i = 0; i < tasks.length; i++) {
+      const sortOrder = tasks.length - i; // Higher sort_order = appears first
+      const taskIdAtIndex = tasks[i]?.id;
+      if (taskIdAtIndex) {
+        db.run("UPDATE tasks SET sort_order = ? WHERE id = ?", [sortOrder, taskIdAtIndex]);
+      }
+    }
+
+    logActivity(db, "api", "task_reordered", taskId, { toIndex });
+
+    // Broadcast task updated
+    const updatedTask = tasks.find(t => t.id === taskId);
+    broadcast("tasks", "task.updated", { taskId, changes: { sort_order: updatedTask?.sort_order } });
+
+    return c.json({ success: true });
   });
 
   return app;

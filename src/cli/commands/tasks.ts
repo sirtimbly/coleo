@@ -82,8 +82,8 @@ export function registerTasksCommands(program: Command): void {
             if (!existing) {
               db.run(
                 `
-                INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, tags, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               `,
                 [
                   task.id,
@@ -94,6 +94,7 @@ export function registerTasksCommands(program: Command): void {
                   task.source_type,
                   task.source_ref,
                   task.phase,
+                  task.tags,
                   task.metadata,
                 ],
               );
@@ -237,6 +238,138 @@ export function registerTasksCommands(program: Command): void {
       } catch {
         console.log("No task database found.");
         console.log("Start the API server or run 'octopai tasks sync'.");
+        }
+      });
+
+  tasksCmd
+    .command("unclaim")
+    .description("Reset claimed or in-progress tasks back to pending for testing")
+    .action(async () => {
+      const octopaiDir = getOctopaiDir();
+      const dbPath = join(octopaiDir, "octopai.db");
+
+      try {
+        const { initDatabase } = await import("../../db");
+        const db = await initDatabase(dbPath);
+        const now = new Date().toISOString();
+        const result = db.run(
+          "UPDATE tasks SET status = 'pending', assigned_to = NULL, claimed_at = NULL, started_at = NULL, updated_at = ? WHERE status IN ('claimed', 'in_progress')",
+          [now],
+        );
+        db.close();
+        console.log(`Unclaimed ${result.changes ?? 0} task(s)`);
+      } catch (err) {
+        console.error(`Failed to unclaim tasks: ${err}`);
+        process.exit(1);
+      }
+    });
+
+  tasksCmd
+    .command("reparse")
+    .description("Clear plan-sourced tasks and reimport from plan.md files")
+    .option("-v, --verbose", "Show detailed output", false)
+    .action(async (options) => {
+      const octopaiDir = getOctopaiDir();
+      const dbPath = join(octopaiDir, "octopai.db");
+
+      try {
+        const { Database } = await import("bun:sqlite");
+        const db = new Database(dbPath, { readwrite: true });
+
+        // First, delete all tasks sourced from plan.md (keeps manually created tasks)
+        const deleteResult = db.run("DELETE FROM tasks WHERE source_type = 'plan'");
+        const deletedCount = deleteResult.changes ?? 0;
+        console.log(`Deleted ${deletedCount} plan-sourced task(s)`);
+
+        // Also clear plan_files tracking so they get re-parsed
+        db.run("DELETE FROM plan_files");
+        console.log("Cleared plan file tracking");
+
+        db.close();
+
+        // Now run sync to reimport
+        console.log("");
+        console.log("Reparsing plan files...");
+
+        // Re-run the sync logic
+        const { findPlanFiles, parsePlanFile, tasksToDatabaseFormat } = await import("../../brain/plan-parser");
+
+        const projectRoot = process.cwd();
+        const planFiles = await findPlanFiles(projectRoot);
+
+        if (planFiles.length === 0) {
+          console.log("No plan files found.");
+          return;
+        }
+
+        const db2 = new Database(dbPath, { readwrite: true });
+        let newTasksCount = 0;
+
+        for (const filePath of planFiles) {
+          const result = await parsePlanFile(filePath);
+
+          if (result.errors.length > 0) {
+            console.log(`Parse errors in ${filePath}:`);
+            for (const err of result.errors) {
+              console.log(`  - ${err}`);
+            }
+            continue;
+          }
+
+          console.log(`Processing: ${filePath}`);
+          console.log(`  Found ${result.tasks.length} task(s), ${result.phases.length} phase(s)`);
+
+          const dbTasks = tasksToDatabaseFormat(result.tasks);
+
+          for (const task of dbTasks) {
+            const existing = db2.query("SELECT id, status FROM tasks WHERE id = ?").get(task.id) as
+              | { id: string; status: string }
+              | undefined;
+
+            if (!existing) {
+              db2.run(
+                `
+                INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, tags, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `,
+                [
+                  task.id,
+                  task.subject,
+                  task.description,
+                  task.status,
+                  task.priority,
+                  task.source_type,
+                  task.source_ref,
+                  task.phase,
+                  task.tags,
+                  task.metadata,
+                ],
+              );
+              newTasksCount++;
+              if (options.verbose) {
+                console.log(`    + Added: ${task.subject}`);
+              }
+            }
+          }
+
+          const now = new Date().toISOString();
+          db2.run("INSERT INTO plan_files (file_path, last_parsed_at, last_hash, updated_at) VALUES (?, ?, ?, ?)", [
+            filePath,
+            now,
+            result.fileHash,
+            now,
+          ]);
+        }
+
+        console.log("\nReparse Summary:");
+        console.log(`  Deleted: ${deletedCount} plan-sourced tasks`);
+        console.log(`  Imported: ${newTasksCount} new task(s)`);
+        console.log(`  Plan files: ${planFiles.length}`);
+
+        db2.close();
+      } catch (err) {
+        console.error(`Failed to reparse tasks: ${err}`);
+        process.exit(1);
       }
     });
 }
