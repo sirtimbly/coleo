@@ -4,3 +4,6 @@ export { Card, CardHeader, CardTitle, CardContent, CardDescription } from './Car
 export { MessageModal } from './MessageModal';
 export { TaskModal } from './TaskModal';
 export { ToastProvider, ToastContainer } from '../lib/toast.tsx';
+export { TaskDiscussionPanel } from './TaskDiscussionPanel';
+export { DiscussionItem } from './DiscussionItem';
+export { DiscussionComposer } from './DiscussionComposer';

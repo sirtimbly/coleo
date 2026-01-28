@@ -188,6 +188,8 @@ export function registerTasksCommands(program: Command): void {
         console.log("Tasks:");
 
         const headers = ["Status", "Priority", "Subject", "Phase", "ID"];
+        const SUBJECT_MAX_WIDTH = 50;
+
         const tableRows = rows.map((row) => {
           const statusIcon =
             row.status === "pending"
@@ -205,10 +207,14 @@ export function registerTasksCommands(program: Command): void {
                 : row.priority === "low"
                   ? "🔵"
                   : "⚪";
+          // Truncate subject if too long
+          const subject = row.subject.length > SUBJECT_MAX_WIDTH
+            ? row.subject.slice(0, SUBJECT_MAX_WIDTH - 3) + "..."
+            : row.subject;
           return [
             `${statusIcon} ${row.status}`,
             `${priorityIcon} ${row.priority}`,
-            row.subject,
+            subject,
             row.phase || "-",
             row.id,
           ];
@@ -217,6 +223,10 @@ export function registerTasksCommands(program: Command): void {
         const colWidths: number[] = headers.map((header, idx) => {
           const cells = tableRows.map((row) => row[idx] ?? "");
           const maxCellLength = cells.length > 0 ? Math.max(...cells.map((cell) => cell.length)) : 0;
+          // Cap subject column width
+          if (idx === 2) {
+            return Math.max(header.length, Math.min(maxCellLength, SUBJECT_MAX_WIDTH));
+          }
           return Math.max(header.length, maxCellLength);
         });
 
@@ -361,14 +371,132 @@ export function registerTasksCommands(program: Command): void {
           ]);
         }
 
-        console.log("\nReparse Summary:");
-        console.log(`  Deleted: ${deletedCount} plan-sourced tasks`);
-        console.log(`  Imported: ${newTasksCount} new task(s)`);
-        console.log(`  Plan files: ${planFiles.length}`);
+      console.log("\nReparse Summary:");
+      console.log(`  Deleted: ${deletedCount} plan-sourced tasks`);
+      console.log(`  Imported: ${newTasksCount} new task(s)`);
+      console.log(`  Plan files: ${planFiles.length}`);
 
-        db2.close();
+      db2.close();
+    } catch (err) {
+      console.error(`Failed to reparse tasks: ${err}`);
+      process.exit(1);
+    }
+  });
+
+  tasksCmd
+    .command("discuss <taskId> <message>")
+    .description("Add a comment to a task discussion")
+    .option("-r, --reply-to <commentId>", "Reply to a specific comment")
+    .action(async (taskId, message, options) => {
+      const apiUrl = process.env.OCTOPAI_API_URL || `http://localhost:8080`;
+      const apiKey = process.env.OCTOPAI_API_KEY || "";
+
+      // Get author info from git config or env
+      let authorId = process.env.USER || "unknown";
+      let authorName = process.env.USER || "CLI User";
+      try {
+        const { execSync } = await import("child_process");
+        const gitEmail = execSync("git config user.email", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        const gitName = execSync("git config user.name", { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+        if (gitEmail) authorId = gitEmail;
+        if (gitName) authorName = gitName;
+      } catch {
+        // Git config not available, use defaults
+      }
+
+      try {
+        const response = await fetch(`${apiUrl}/api/tasks/${taskId}/discussions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": apiKey,
+          },
+          body: JSON.stringify({
+            content: message,
+            parentId: options.replyTo,
+            authorType: "human",
+            authorId,
+            authorName,
+            client: "cli",
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
+          console.error(`Failed to add comment: ${errorData.error || response.statusText}`);
+          process.exit(1);
+        }
+
+        const result = await response.json() as { comment: { id: string } };
+        console.log(`Comment added: ${result.comment.id}`);
       } catch (err) {
-        console.error(`Failed to reparse tasks: ${err}`);
+        console.error(`Failed to add comment: ${err}`);
+        process.exit(1);
+      }
+    });
+
+  tasksCmd
+    .command("discussions <taskId>")
+    .description("Show task discussions")
+    .option("-n, --limit <n>", "Number of comments to show", "20")
+    .option("--json", "Output as JSON")
+    .action(async (taskId, options) => {
+      const apiUrl = process.env.OCTOPAI_API_URL || `http://localhost:8080`;
+      const apiKey = process.env.OCTOPAI_API_KEY || "";
+
+      try {
+        const response = await fetch(
+          `${apiUrl}/api/tasks/${taskId}/discussions?limit=${options.limit}`,
+          {
+            headers: {
+              "X-API-Key": apiKey,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
+          console.error(`Failed to fetch discussions: ${errorData.error || response.statusText}`);
+          process.exit(1);
+        }
+
+        const result = await response.json() as {
+          discussions: Array<{
+            id: string;
+            createdAt: string;
+            authorName?: string;
+            authorId: string;
+            edited: boolean;
+            parentId?: string;
+            content: string;
+          }>;
+          totalCount: number;
+        };
+
+        if (options.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        if (result.discussions.length === 0) {
+          console.log("No discussions yet.");
+          return;
+        }
+
+        console.log(`Discussions (${result.totalCount} total):\n`);
+
+        for (const comment of result.discussions) {
+          const date = new Date(comment.createdAt).toLocaleString();
+          const author = comment.authorName || comment.authorId;
+          const edited = comment.edited ? " (edited)" : "";
+          const replyPrefix = comment.parentId ? "  ↳ " : "";
+
+          console.log(`${replyPrefix}[${date}] ${author}${edited}:`);
+          console.log(`${replyPrefix}  ${comment.content}`);
+          console.log();
+        }
+      } catch (err) {
+        console.error(`Failed to fetch discussions: ${err}`);
         process.exit(1);
       }
     });

@@ -14,6 +14,7 @@ interface TaskGridProps {
   availableTags?: string[];
   selectedTaskId?: string;
   onOpenDetails?: (task: Task) => void;
+  onOpenDiscussions?: (task: Task) => void;
   onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
   onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
   onDelete?: (task: Task) => void;
@@ -29,6 +30,7 @@ function SortableTaskRow({
   isSelected,
   isExpanded,
   onOpenDetails,
+  onOpenDiscussions,
   onUpdateTask,
   onUpdateUi,
   onDelete,
@@ -40,6 +42,7 @@ function SortableTaskRow({
   isSelected?: boolean;
   isExpanded?: boolean;
   onOpenDetails?: (task: Task) => void;
+  onOpenDiscussions?: (task: Task) => void;
   onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
   onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
   onDelete?: (task: Task) => void;
@@ -71,6 +74,7 @@ function SortableTaskRow({
         isDragging={isDragging}
         isExpanded={isExpanded}
         onOpenDetails={onOpenDetails}
+        onOpenDiscussions={onOpenDiscussions}
         onUpdateTask={onUpdateTask}
         onUpdateUi={onUpdateUi}
         onDelete={onDelete}
@@ -106,6 +110,7 @@ export function TaskGrid({
   availableTags,
   selectedTaskId,
   onOpenDetails,
+  onOpenDiscussions,
   onUpdateTask,
   onUpdateUi,
   onDelete,
@@ -187,17 +192,21 @@ export function TaskGrid({
   }, [items, onReorder, tasks]);
 
   const handleReorderToIndex = useCallback((fromIndex: number, toIndex: number) => {
+    console.log('[TaskGrid] handleReorderToIndex called:', { fromIndex, toIndex, tasksLength: tasks.length });
     if (fromIndex === toIndex) return;
     const taskId = tasks[fromIndex]?.id;
+    console.log('[TaskGrid] taskId:', taskId);
     if (!taskId) return;
     
     const targetIndex = toIndex < 0 ? tasks.length - 1 : Math.min(toIndex, tasks.length - 1);
+    console.log('[TaskGrid] targetIndex:', targetIndex);
     
     // Update local state
     setItems((items) => arrayMove(items, fromIndex, targetIndex));
     onReorder?.(fromIndex, targetIndex);
     
     // Persist to server
+    console.log('[TaskGrid] Calling api.reorderTask:', { taskId, targetIndex });
     api.reorderTask(taskId, targetIndex).catch((err) => {
       console.error('Failed to reorder task:', err);
       window.location.reload();
@@ -266,6 +275,7 @@ export function TaskGrid({
                       isSelected={task.id === selectedTaskId}
                       isExpanded={isExpanded}
                       onOpenDetails={onOpenDetails}
+                      onOpenDiscussions={onOpenDiscussions}
                       onUpdateTask={onUpdateTask}
                       onUpdateUi={onUpdateUi}
                       onDelete={onDelete}

@@ -445,3 +445,19 @@ export interface ArmConfigSummary {
   harness: string;
   budget?: number;
 }
+
+// Task comment/discussion
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  parentId?: string;
+  content: string;
+  authorType: "human" | "arm" | "brain";
+  authorId: string;
+  authorName?: string;
+  client: "web" | "mail" | "mcp" | "cli";
+  edited: boolean;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}

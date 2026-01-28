@@ -8,7 +8,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -140,7 +140,8 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/opencode", createOpenCodeRoutes());
   app.route("/api/garden", createGardenRoutes());
   app.route("/api/proposals", createProposalsRoutes());
-   app.route("/api/tasks", createTasksRoutes());
+  app.route("/api/tasks", createTasksRoutes());
+  app.route("/api/tasks/:id/discussions", createTaskDiscussionsRoutes());
   app.route("/api/agents", createAgentsRoutes());
   app.route("/api/discoveries", createDiscoveriesRoutes());
   app.route("/api/status-reports", createStatusReportsRoutes());

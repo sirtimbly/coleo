@@ -461,3 +461,241 @@ function rowToNote(row: NoteRow): Note {
     updatedAt: new Date(row.updated_at),
   };
 }
+
+// ============================================
+// Task Comments (Discussions)
+// ============================================
+
+export interface TaskCommentRow {
+  id: string;
+  task_id: string;
+  parent_id: string | null;
+  content: string;
+  author_type: "human" | "arm" | "brain";
+  author_id: string;
+  author_name: string | null;
+  client: "web" | "mail" | "mcp" | "cli";
+  edited: number;
+  deleted: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  parentId?: string;
+  content: string;
+  authorType: "human" | "arm" | "brain";
+  authorId: string;
+  authorName?: string;
+  client: "web" | "mail" | "mcp" | "cli";
+  edited: boolean;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Create a new task comment
+ */
+export function createTaskComment(
+  db: Database,
+  comment: {
+    id: string;
+    taskId: string;
+    parentId?: string;
+    content: string;
+    authorType: "human" | "arm" | "brain";
+    authorId: string;
+    authorName?: string;
+    client: "web" | "mail" | "mcp" | "cli";
+  }
+): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO task_comments (id, task_id, parent_id, content, author_type, author_id, author_name, client, edited, deleted, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+    [
+      comment.id,
+      comment.taskId,
+      comment.parentId || null,
+      comment.content,
+      comment.authorType,
+      comment.authorId,
+      comment.authorName || null,
+      comment.client,
+      now,
+      now,
+    ]
+  );
+}
+
+/**
+ * Get comments for a task
+ */
+export function getTaskComments(
+  db: Database,
+  taskId: string,
+  options?: { limit?: number; offset?: number; includeDeleted?: boolean }
+): TaskComment[] {
+  let query = `SELECT * FROM task_comments WHERE task_id = ?`;
+  const params: (string | number)[] = [taskId];
+
+  if (!options?.includeDeleted) {
+    query += ` AND deleted = 0`;
+  }
+
+  query += ` ORDER BY created_at DESC`;
+
+  if (options?.limit) {
+    query += ` LIMIT ?`;
+    params.push(options.limit);
+  }
+
+  if (options?.offset) {
+    query += ` OFFSET ?`;
+    params.push(options.offset);
+  }
+
+  const rows = db.query(query).all(...params) as TaskCommentRow[];
+  return rows.map(rowToTaskComment);
+}
+
+/**
+ * Get a single comment by ID
+ */
+export function getTaskComment(db: Database, commentId: string): TaskComment | null {
+  const row = db.query("SELECT * FROM task_comments WHERE id = ?").get(commentId) as TaskCommentRow | null;
+  return row ? rowToTaskComment(row) : null;
+}
+
+/**
+ * Update a comment's content
+ */
+export function updateTaskComment(
+  db: Database,
+  commentId: string,
+  updates: { content?: string; deleted?: boolean }
+): void {
+  const setClauses: string[] = ["updated_at = ?"];
+  const values: (string | number | null)[] = [new Date().toISOString()];
+
+  if (updates.content !== undefined) {
+    setClauses.push("content = ?");
+    values.push(updates.content);
+    setClauses.push("edited = 1");
+  }
+
+  if (updates.deleted !== undefined) {
+    setClauses.push("deleted = ?");
+    values.push(updates.deleted ? 1 : 0);
+  }
+
+  values.push(commentId);
+  db.run(`UPDATE task_comments SET ${setClauses.join(", ")} WHERE id = ?`, values);
+}
+
+/**
+ * Soft delete a comment
+ */
+export function deleteTaskComment(db: Database, commentId: string): void {
+  db.run(
+    "UPDATE task_comments SET deleted = 1, updated_at = ? WHERE id = ?",
+    [new Date().toISOString(), commentId]
+  );
+}
+
+/**
+ * Update task comment stats (comment_count and last_comment_at)
+ */
+export function updateTaskCommentStats(db: Database, taskId: string): void {
+  const now = new Date().toISOString();
+  const result = db.query(
+    "SELECT COUNT(*) as count, MAX(created_at) as last_at FROM task_comments WHERE task_id = ? AND deleted = 0"
+  ).get(taskId) as { count: number; last_at: string | null };
+
+  db.run(
+    "UPDATE tasks SET comment_count = ?, last_comment_at = ?, updated_at = ? WHERE id = ?",
+    [result.count, result.last_at, now, taskId]
+  );
+}
+
+/**
+ * Mark comments as read for a user
+ */
+export function markTaskCommentsRead(
+  db: Database,
+  taskId: string,
+  userId: string,
+  lastReadCommentId: string
+): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO task_comment_reads (task_id, user_id, last_read_comment_id, read_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       last_read_comment_id = excluded.last_read_comment_id,
+       read_at = excluded.read_at`,
+    [taskId, userId, lastReadCommentId, now]
+  );
+}
+
+/**
+ * Get unread comment count for a user on a task
+ */
+export function getUnreadCommentCount(db: Database, taskId: string, userId: string): number {
+  const readReceipt = db.query(
+    "SELECT last_read_comment_id FROM task_comment_reads WHERE task_id = ? AND user_id = ?"
+  ).get(taskId, userId) as { last_read_comment_id: string } | null;
+
+  if (!readReceipt) {
+    // No read receipt - count all non-deleted comments
+    const result = db.query(
+      "SELECT COUNT(*) as count FROM task_comments WHERE task_id = ? AND deleted = 0"
+    ).get(taskId) as { count: number };
+    return result.count;
+  }
+
+  // Count comments created after the last read comment
+  const lastReadAt = db.query(
+    "SELECT created_at FROM task_comments WHERE id = ?"
+  ).get(readReceipt.last_read_comment_id) as { created_at: string } | null;
+
+  if (!lastReadAt) {
+    return 0;
+  }
+
+  const result = db.query(
+    "SELECT COUNT(*) as count FROM task_comments WHERE task_id = ? AND deleted = 0 AND created_at > ?"
+  ).get(taskId, lastReadAt.created_at) as { count: number };
+
+  return result.count;
+}
+
+/**
+ * Get total comment count for a task
+ */
+export function getTaskCommentCount(db: Database, taskId: string): number {
+  const result = db.query(
+    "SELECT COUNT(*) as count FROM task_comments WHERE task_id = ? AND deleted = 0"
+  ).get(taskId) as { count: number };
+  return result.count;
+}
+
+function rowToTaskComment(row: TaskCommentRow): TaskComment {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    parentId: row.parent_id || undefined,
+    content: row.content,
+    authorType: row.author_type,
+    authorId: row.author_id,
+    authorName: row.author_name || undefined,
+    client: row.client,
+    edited: row.edited === 1,
+    deleted: row.deleted === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}

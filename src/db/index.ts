@@ -101,6 +101,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["031_task_plan_line_uid", MIGRATION_031, { table: "tasks", columns: MIGRATION_031_COLUMNS }],
     ["032_task_sort_order", MIGRATION_032, { table: "tasks", columns: MIGRATION_032_COLUMNS }],
     ["033_task_tags", MIGRATION_033, { table: "tasks", columns: MIGRATION_033_COLUMNS }],
+    ["034_task_discussions", MIGRATION_034_TASK_DISCUSSIONS, { table: "tasks", columns: MIGRATION_034_COLUMNS }],
   ];
 
 
@@ -1033,6 +1034,67 @@ const MIGRATION_033_COLUMNS = [
 const MIGRATION_033 = `
 -- Create index for tag queries
 CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks(tags);
+`;
+
+// Columns to add for migration 034 (task discussions)
+const MIGRATION_034_COLUMNS = [
+  { name: 'comment_count', sql: "ALTER TABLE tasks ADD COLUMN comment_count INTEGER DEFAULT 0" },
+  { name: 'last_comment_at', sql: "ALTER TABLE tasks ADD COLUMN last_comment_at TEXT" },
+];
+
+// Migration 034: Task discussions (comments and threading)
+const MIGRATION_034_TASK_DISCUSSIONS = `
+-- Task comments table for discussions
+CREATE TABLE IF NOT EXISTS task_comments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  parent_id TEXT REFERENCES task_comments(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'arm', 'brain')),
+  author_id TEXT NOT NULL,
+  author_name TEXT,
+  client TEXT NOT NULL CHECK (client IN ('web', 'mail', 'mcp', 'cli')),
+  edited INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+-- Indexes for task comments
+CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_comments_parent ON task_comments(parent_id);
+CREATE INDEX IF NOT EXISTS idx_task_comments_created ON task_comments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_comments_author ON task_comments(author_type, author_id);
+
+-- Task comment read receipts (for unread counts)
+CREATE TABLE IF NOT EXISTS task_comment_reads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  last_read_comment_id TEXT NOT NULL,
+  read_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_comment_reads_task ON task_comment_reads(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_comment_reads_user ON task_comment_reads(user_id);
+
+-- Mail thread mapping for email integration
+CREATE TABLE IF NOT EXISTS mail_thread_map (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  mail_message_id TEXT NOT NULL UNIQUE,
+  task_id TEXT NOT NULL,
+  comment_id TEXT,
+  direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+  mapped_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (comment_id) REFERENCES task_comments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mail_thread_map_mail ON mail_thread_map(mail_message_id);
+CREATE INDEX IF NOT EXISTS idx_mail_thread_map_task ON mail_thread_map(task_id);
 `;
 
   /**

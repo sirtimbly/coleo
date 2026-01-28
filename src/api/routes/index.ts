@@ -9,6 +9,7 @@ export { createOpenCodeRoutes } from "./opencode";
 export { createGardenRoutes } from "./garden";
 export { createProposalsRoutes } from "./proposals";
 export { createTasksRoutes } from "./tasks";
+export { createTaskDiscussionsRoutes } from "./task-discussions";
 export { createAgentsRoutes } from "./agents";
 export { createDiscoveriesRoutes } from "./discoveries";
 export { createBugsRoutes } from "./bugs";

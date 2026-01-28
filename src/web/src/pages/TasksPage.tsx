@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, MessageSquareText, Send, Sparkles, Tag, X, Search } from 'lucide-react';
-import { Button, Chip, Card, TextArea } from '@heroui/react';
+import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, Sparkles, Tag, X, Search, FileText, MessageSquare } from 'lucide-react';
+import { Button, Chip, Card, Tabs } from '@heroui/react';
 import { api, type Task, cn } from '@/lib';
-import { TaskModal } from '@/components';
+import { TaskModal, TaskDiscussionPanel } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { TaskGrid } from '@/components/TaskGrid';
 import type { TaskUpdate } from '@/components/TaskGridRow';
+
+type SidebarTab = 'details' | 'discussions';
 
 interface TaskEventData {
   task?: Task;
@@ -120,8 +122,8 @@ export function TasksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [draftMessage, setDraftMessage] = useState('');
-  const [isDiscussing, setIsDiscussing] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+  const [discussionCount, setDiscussionCount] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; task: Task | null }>({ show: false, task: null });
 
   const loadTasks = useCallback(async () => {
@@ -312,7 +314,12 @@ export function TasksPage() {
 
   const handleOpenDetails = useCallback((task: Task) => {
     setSelectedTask(task);
-    setDraftMessage('');
+    setSidebarTab('details');
+  }, []);
+
+  const handleOpenDiscussions = useCallback((task: Task) => {
+    setSelectedTask(task);
+    setSidebarTab('discussions');
   }, []);
 
   const toggleTagFilter = useCallback((tag: string) => {
@@ -327,46 +334,16 @@ export function TasksPage() {
     handleUpdateUi(taskId, { tags: nextTags });
   }, [tasks, getTaskUiMeta, handleUpdateUi]);
 
-  const handleSendDiscussion = useCallback(async () => {
-    if (!selectedTask) return;
-    const message = draftMessage.trim();
-    if (!message) return;
-
-    setIsDiscussing(true);
-    const now = new Date().toISOString();
-    const currentUi = getTaskUiMeta(selectedTask);
-    const history = currentUi.llm?.history ?? [];
-    const assistantReply = `LLM stub: expanded notes for "${message}".`;
-
-    const nextLlm: TaskLlmMeta = {
-      originalPrompt: currentUi.llm?.originalPrompt ?? selectedTask.subject,
-      generatedDescription: currentUi.llm?.generatedDescription ?? selectedTask.description,
-      history: [
-        ...history,
-        { role: 'user', content: message, at: now },
-        { role: 'assistant', content: assistantReply, at: now },
-      ],
-    };
-
-    try {
-      await handleUpdateUi(selectedTask.id, { llm: nextLlm });
-      setDraftMessage('');
-    } finally {
-      setIsDiscussing(false);
-    }
-  }, [selectedTask, draftMessage, getTaskUiMeta, handleUpdateUi]);
-
   useEffect(() => {
     if (!selectedTask) return;
     const latest = tasks.find((task) => task.id === selectedTask.id) || null;
     setSelectedTask(latest);
   }, [tasks, selectedTask]);
 
+  // Reset discussion count when selected task changes
   useEffect(() => {
-    if (selectedTask) {
-      setDraftMessage('');
-    }
-  }, [selectedTask]);
+    setDiscussionCount(0);
+  }, [selectedTask?.id]);
 
   // Handle WebSocket messages for real-time updates
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
@@ -559,6 +536,7 @@ export function TasksPage() {
                   availableTags={availableTags}
                   selectedTaskId={selectedTask?.id} 
                   onOpenDetails={handleOpenDetails}
+                  onOpenDiscussions={handleOpenDiscussions}
                   onUpdateTask={handleUpdateTask}
                   onUpdateUi={handleUpdateUi}
                   onDelete={handleDeleteTask}
@@ -571,147 +549,159 @@ export function TasksPage() {
 
         {/* Task details sidebar */}
         {selectedTask && (
-          <Card className="w-80 border-l rounded-none shadow-none">
-            <Card.Content className="overflow-auto">
-              <div className="p-4 border-b">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-sm text-foreground-500 uppercase tracking-wide">
-                    Task Details
-                  </h3>
-                  <Button
-                    isIconOnly
-                    size="sm"
-                    variant="ghost"
-                    onPress={() => setSelectedTask(null)}
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <div className="p-4">
-                <div className="space-y-4">
-                  <div>
-                    <h4 className="font-medium mb-2">{selectedTask.subject}</h4>
-                    <TaskPriorityBadge 
-                      priority={selectedTask.priority}
-                      taskId={selectedTask.id}
-                      onPriorityChange={handlePriorityChange}
-                    />
-                  </div>
+          <Card className="w-96 border-l rounded-none shadow-none flex flex-col">
+            {/* Header with close button */}
+            <div className="p-3 border-b flex items-center justify-between flex-shrink-0">
+              <h3 className="font-semibold text-sm truncate max-w-[280px]" title={selectedTask.subject}>
+                {selectedTask.subject}
+              </h3>
+              <Button
+                isIconOnly
+                size="sm"
+                variant="ghost"
+                onPress={() => setSelectedTask(null)}
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            
+            {/* Tabs */}
+            <Tabs
+              selectedKey={sidebarTab}
+              onSelectionChange={(key) => setSidebarTab(key as SidebarTab)}
+              className="flex-1 flex flex-col"
+            >
+              <Tabs.ListContainer className="flex-shrink-0 border-b">
+                <Tabs.List aria-label="Task tabs" className="w-full">
+                  <Tabs.Tab id="details" className="flex-1">
+                    <FileText className="h-4 w-4" />
+                    Details
+                    <Tabs.Indicator />
+                  </Tabs.Tab>
+                  <Tabs.Tab id="discussions" className="flex-1">
+                    <MessageSquare className="h-4 w-4" />
+                    Discussions
+                    <Tabs.Indicator />
+                    {discussionCount > 0 && (
+                      <Chip color="accent" size="sm" variant="soft">
+                        {discussionCount}
+                      </Chip>
+                    )}
+                  </Tabs.Tab>
+                </Tabs.List>
+              </Tabs.ListContainer>
 
-                  <div>
-                    <h5 className="text-sm font-medium text-foreground-500 mb-1">Original one-liner</h5>
-                    <p className="text-sm">
-                      {getTaskUiMeta(selectedTask).llm?.originalPrompt ?? selectedTask.subject}
-                    </p>
-                  </div>
-
-                  <div>
-                    <h5 className="text-sm font-medium text-foreground-500 mb-1 flex items-center gap-1">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      LLM-generated description
-                    </h5>
-                    <p className="text-sm">
-                      {getTaskUiMeta(selectedTask).llm?.generatedDescription ?? selectedTask.description}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4 text-sm">
+              <Tabs.Panel id="details" className="flex-1 overflow-hidden p-0">
+                <div className="p-4 overflow-auto h-full">
+                  <div className="space-y-4">
                     <div>
-                      <span className="text-foreground-500">Status:</span>
-                      <div className="flex items-center gap-1 mt-1">
-                        {React.createElement(STATUS_CONFIG[selectedTask.status].icon, { className: 'h-3 w-3' })}
-                        <span className={STATUS_CONFIG[selectedTask.status].color}>
-                          {STATUS_CONFIG[selectedTask.status].label}
-                        </span>
-                      </div>
+                      <span className="text-xs text-foreground-500 font-mono">ID: {selectedTask.id}</span>
                     </div>
+
                     <div>
-                      <span className="text-foreground-500">Priority:</span>
-                      <div className="mt-1">
-                        <TaskPriorityBadge 
-                          priority={selectedTask.priority}
-                          taskId={selectedTask.id}
-                          onPriorityChange={handlePriorityChange}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h5 className="text-sm font-medium text-foreground-500 mb-1">Tags</h5>
-                    <div className="flex flex-wrap gap-1">
-                      {(getTaskUiMeta(selectedTask).tags ?? []).length === 0 ? (
-                        <span className="text-xs text-foreground-500">No tags</span>
-                      ) : (
-                        (getTaskUiMeta(selectedTask).tags ?? []).map((tag) => (
-                          <Chip key={tag} size="sm" variant="soft" className="pr-1 gap-1 group hover:bg-default-200 transition-colors cursor-default">
-                            {tag}
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveTagFromTask(selectedTask.id, tag)}
-                              className="ml-0.5 p-0.5 rounded-full hover:bg-danger-100 hover:text-danger transition-colors cursor-pointer opacity-60 group-hover:opacity-100"
-                              aria-label={`Remove tag ${tag}`}
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </Chip>
-                        ))
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedTask.assignedArmName && (
-                    <div>
-                      <span className="text-sm text-foreground-500">Assigned to:</span>
-                      <p className="text-sm font-medium">{selectedTask.assignedArmName}</p>
-                    </div>
-                  )}
-
-                  <div className="border-t pt-3">
-                    <div className="flex items-center gap-2 mb-2 text-sm font-medium">
-                      <MessageSquareText className="h-4 w-4" />
-                      Discussion
-                    </div>
-                    <div className="space-y-2 max-h-48 overflow-auto">
-                      {(getTaskUiMeta(selectedTask).llm?.history ?? []).length === 0 ? (
-                        <p className="text-xs text-foreground-500">No discussion yet.</p>
-                      ) : (
-                        (getTaskUiMeta(selectedTask).llm?.history ?? []).map((entry, index) => (
-                          <div key={`${entry.at}-${index}`} className="text-xs">
-                            <span className="font-medium capitalize">{entry.role}:</span>{' '}
-                            <span className="text-foreground-500">{entry.content}</span>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      <TextArea
-                        value={draftMessage}
-                        onChange={(e) => setDraftMessage(e.target.value)}
-                        placeholder="Ask the LLM to expand or clarify..."
-                        rows={3}
-                        className="text-sm"
+                      <TaskPriorityBadge
+                        priority={selectedTask.priority}
+                        taskId={selectedTask.id}
+                        onPriorityChange={handlePriorityChange}
                       />
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onPress={handleSendDiscussion}
-                        isDisabled={isDiscussing || !draftMessage.trim()}
-                      >
-                        <Send className="h-3.5 w-3.5 mr-1" />
-                        {isDiscussing ? 'Sending...' : 'Send'}
-                      </Button>
+                    </div>
+
+                    <div>
+                      <h5 className="text-sm font-medium text-foreground-500 mb-1">Description</h5>
+                      <p className="text-sm">
+                        {selectedTask.description}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-foreground-500">Status:</span>
+                        <div className="flex items-center gap-1 mt-1">
+                          {React.createElement(STATUS_CONFIG[selectedTask.status].icon, { className: 'h-3 w-3' })}
+                          <span className={STATUS_CONFIG[selectedTask.status].color}>
+                            {STATUS_CONFIG[selectedTask.status].label}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-foreground-500">Priority:</span>
+                        <div className="mt-1">
+                          <TaskPriorityBadge
+                            priority={selectedTask.priority}
+                            taskId={selectedTask.id}
+                            onPriorityChange={handlePriorityChange}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h5 className="text-sm font-medium text-foreground-500 mb-1">Tags</h5>
+                      <div className="flex flex-wrap gap-1">
+                        {(getTaskUiMeta(selectedTask).tags ?? []).length === 0 ? (
+                          <span className="text-xs text-foreground-500">No tags</span>
+                        ) : (
+                          (getTaskUiMeta(selectedTask).tags ?? []).map((tag) => (
+                            <Chip key={tag} size="sm" variant="soft" className="pr-1 gap-1 group hover:bg-default-200 transition-colors cursor-default">
+                              {tag}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveTagFromTask(selectedTask.id, tag)}
+                                className="ml-0.5 p-0.5 rounded-full hover:bg-danger-100 hover:text-danger transition-colors cursor-pointer opacity-60 group-hover:opacity-100"
+                                aria-label={`Remove tag ${tag}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Chip>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedTask.assignedArmName && (
+                      <div>
+                        <span className="text-sm text-foreground-500">Assigned to:</span>
+                        <p className="text-sm font-medium">{selectedTask.assignedArmName}</p>
+                      </div>
+                    )}
+
+                    {getTaskUiMeta(selectedTask).llm?.originalPrompt && (
+                      <div>
+                        <h5 className="text-sm font-medium text-foreground-500 mb-1">Original one-liner</h5>
+                        <p className="text-sm">
+                          {getTaskUiMeta(selectedTask).llm?.originalPrompt}
+                        </p>
+                      </div>
+                    )}
+
+                    {getTaskUiMeta(selectedTask).llm?.generatedDescription && (
+                      <div>
+                        <h5 className="text-sm font-medium text-foreground-500 mb-1 flex items-center gap-1">
+                          <Sparkles className="h-3.5 w-3.5" />
+                          LLM-generated description
+                        </h5>
+                        <p className="text-sm">
+                          {getTaskUiMeta(selectedTask).llm?.generatedDescription}
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="text-xs text-foreground-500">
+                      Created {new Date(selectedTask.createdAt).toLocaleString()}
                     </div>
                   </div>
-
-                  <div className="text-xs text-foreground-500">
-                    Created {new Date(selectedTask.createdAt).toLocaleString()}
-                  </div>
                 </div>
-              </div>
-            </Card.Content>
+              </Tabs.Panel>
+
+              <Tabs.Panel id="discussions" className="flex-1 overflow-hidden p-0">
+                <TaskDiscussionPanel
+                  taskId={selectedTask.id}
+                  onCommentCountChange={setDiscussionCount}
+                  className="h-full"
+                />
+              </Tabs.Panel>
+            </Tabs>
           </Card>
         )}
       </div>

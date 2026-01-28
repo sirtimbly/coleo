@@ -523,6 +523,72 @@ class ApiClient {
     });
   }
 
+  // Task Discussions
+  async getTaskDiscussions(
+    taskId: string,
+    params?: {
+      limit?: number;
+      offset?: number;
+      threaded?: boolean;
+    }
+  ) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    if (params?.threaded) query.set('threaded', 'true');
+    const queryStr = query.toString();
+    return this.request<{
+      discussions: TaskComment[];
+      totalCount: number;
+    }>(`/tasks/${taskId}/discussions${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async createTaskDiscussion(
+    taskId: string,
+    data: {
+      content: string;
+      parentId?: string;
+      authorType: 'human' | 'arm' | 'brain';
+      authorId: string;
+      authorName?: string;
+      client: 'web' | 'mail' | 'mcp' | 'cli';
+    }
+  ) {
+    return this.request<{ comment: TaskComment }>(`/tasks/${taskId}/discussions`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTaskDiscussion(
+    taskId: string,
+    commentId: string,
+    data: { content: string; authorId: string }
+  ) {
+    return this.request<{ comment: TaskComment }>(`/tasks/${taskId}/discussions/${commentId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteTaskDiscussion(taskId: string, commentId: string, authorId: string) {
+    return this.request<{ deleted: boolean }>(`/tasks/${taskId}/discussions/${commentId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ authorId }),
+    });
+  }
+
+  async markTaskDiscussionsRead(taskId: string, userId: string, lastReadCommentId: string) {
+    return this.request<{ marked: boolean }>(`/tasks/${taskId}/discussions/mark-read`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, lastReadCommentId }),
+    });
+  }
+
+  async getUnreadDiscussionCount(taskId: string, userId: string) {
+    return this.request<{ unreadCount: number }>(`/tasks/${taskId}/discussions/unread?userId=${encodeURIComponent(userId)}`);
+  }
+
   async removeTaskFromPlan(id: string) {
     return this.request<{ deleted: boolean; removedFromPlan: boolean }>(`/tasks/${id}/remove-from-plan`, {
       method: 'POST',
@@ -795,6 +861,23 @@ export interface Bug {
   humanNotified: boolean;
 }
 
+// Task comment/discussion
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  parentId?: string;
+  content: string;
+  authorType: 'human' | 'arm' | 'brain';
+  authorId: string;
+  authorName?: string;
+  client: 'web' | 'mail' | 'mcp' | 'cli';
+  edited: boolean;
+  deleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  replies?: TaskComment[]; // For threaded view
+}
+
 // Brain-managed task
 export interface Task {
   id: string;
@@ -818,6 +901,8 @@ export interface Task {
   dueDate: string | null;
   artifacts: string[];
   metadata: Record<string, unknown>;
+  commentCount?: number;
+  lastCommentAt?: string | null;
 }
 
 // OpenCode SSE event types

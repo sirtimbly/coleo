@@ -31,6 +31,8 @@ export interface Task {
   consensusStatus?: "pending" | "in_progress" | "reached" | "failed";
   planLineUid?: string | null;
   sortOrder?: number | null;
+  commentCount?: number;
+  lastCommentAt?: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -56,6 +58,8 @@ interface TaskRow {
   consensus_status: string | null;
   plan_line_uid: string | undefined;
   sort_order: number | null;
+  comment_count: number | null;
+  last_comment_at: string | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -82,6 +86,8 @@ function parseTaskRow(row: TaskRow): Task {
     consensusStatus: (row.consensus_status as Task["consensusStatus"]) || undefined,
     planLineUid: row.plan_line_uid,
     sortOrder: row.sort_order,
+    commentCount: row.comment_count ?? 0,
+    lastCommentAt: row.last_comment_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -240,20 +246,21 @@ export function createTasksRoutes() {
 
     // Get tasks with arm name via join
     const rows = db.query(`
-      SELECT 
+      SELECT
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
         t.consensus_status, t.sort_order,
+        t.comment_count, t.last_comment_at,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
-      ORDER BY 
+      ORDER BY
         t.sort_order DESC,
-        CASE t.status 
+        CASE t.status
           WHEN 'in_progress' THEN 1
           WHEN 'claimed' THEN 2
           WHEN 'pending' THEN 3
@@ -262,7 +269,7 @@ export function createTasksRoutes() {
           WHEN 'failed' THEN 6
           WHEN 'cancelled' THEN 7
         END,
-        CASE t.priority 
+        CASE t.priority
           WHEN 'critical' THEN 1
           WHEN 'high' THEN 2
           WHEN 'normal' THEN 3
@@ -303,17 +310,22 @@ export function createTasksRoutes() {
   /**
    * Get a single task
    * GET /api/tasks/:id
+   * Query params:
+   *   - include: comma-separated list of additional data (discussions)
    */
   app.get("/:id", (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
+    const include = c.req.query("include") || "";
+    const includeDiscussions = include.split(",").includes("discussions");
 
     const row = db.query(`
-      SELECT 
+      SELECT
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
         t.consensus_status,
+        t.comment_count, t.last_comment_at,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -333,10 +345,49 @@ export function createTasksRoutes() {
 
     const task = parseTaskRow(row);
 
-    return c.json({
+    const response: Record<string, unknown> = {
       task,
       dependencies: deps.map(d => d.depends_on_task_id),
-    });
+    };
+
+    // Include discussions if requested
+    if (includeDiscussions) {
+      const commentRows = db.query(`
+        SELECT * FROM task_comments
+        WHERE task_id = ? AND deleted = 0
+        ORDER BY created_at DESC
+      `).all(id) as Array<{
+        id: string;
+        task_id: string;
+        parent_id: string | null;
+        content: string;
+        author_type: "human" | "arm" | "brain";
+        author_id: string;
+        author_name: string | null;
+        client: "web" | "mail" | "mcp" | "cli";
+        edited: number;
+        deleted: number;
+        created_at: string;
+        updated_at: string;
+      }>;
+
+      response.discussions = commentRows.map(row => ({
+        id: row.id,
+        taskId: row.task_id,
+        parentId: row.parent_id || undefined,
+        content: row.content,
+        authorType: row.author_type,
+        authorId: row.author_id,
+        authorName: row.author_name || undefined,
+        client: row.client,
+        edited: row.edited === 1,
+        deleted: row.deleted === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }));
+    }
+
+    return c.json(response);
   });
 
   /**
