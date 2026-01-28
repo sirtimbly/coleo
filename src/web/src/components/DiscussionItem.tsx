@@ -22,9 +22,9 @@ const AUTHOR_CONFIG = {
   human: { 
     icon: User,
     label: 'Human', 
-    bgClass: 'bg-primary/10',
-    textClass: 'text-primary',
-    iconClass: 'text-primary',
+    bgClass: 'bg-accent/10',
+    textClass: 'text-accent',
+    iconClass: 'text-accent',
   },
   arm: { 
     icon: Bot,
@@ -170,7 +170,7 @@ export function DiscussionItem({
         className={cn(
           'p-3 rounded-lg transition-all border group',
           isUnread
-            ? 'bg-primary/5 border-primary/30'
+            ? 'bg-accent/5 border-accent/30'
             : 'bg-content2 border-divider',
           isHovered && 'bg-content3'
         )}
@@ -199,7 +199,7 @@ export function DiscussionItem({
                 <span className="text-foreground-400 text-xs">(edited)</span>
               )}
               {isUnread && (
-                <Chip size="sm" variant="soft" className="h-5 text-xs bg-primary text-white">
+                <Chip size="sm" variant="soft" className="h-5 text-xs bg-accent text-white">
                   new
                 </Chip>
               )}

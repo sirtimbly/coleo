@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import type { KeyboardEvent } from "react";
 import {
 	Bold,
@@ -46,7 +46,7 @@ interface TaskGridRowProps {
 	onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
 	onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
 	onDelete?: (task: Task) => void;
-	onReorderToIndex?: (fromIndex: number, toIndex: number) => void;
+	onReorderToSortOrder?: (taskId: string, fromSortOrder: number, toSortOrder: number) => void;
 	dragHandleProps?: Record<string, unknown>;
 	onGridKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
 	className?: string;
@@ -100,7 +100,7 @@ const COLOR_CLASSES: Record<
 	},
 };
 
-export function TaskGridRow({
+export const TaskGridRow = memo(function TaskGridRow({
 	task,
 	index,
 	availableTags = [],
@@ -112,11 +112,15 @@ export function TaskGridRow({
 	onUpdateTask,
 	onUpdateUi,
 	onDelete,
-	onReorderToIndex,
+	onReorderToSortOrder,
 	dragHandleProps,
 	onGridKeyDown,
 	className,
 }: TaskGridRowProps) {
+	// Use sortOrder from database if available, otherwise fall back to index+1
+	const displayRowNumber = task.sortOrder !== null && task.sortOrder !== undefined 
+		? task.sortOrder + 1 
+		: index + 1;
 	const uiMeta = useMemo(() => {
 		const meta = (task.metadata ?? {}) as Record<string, unknown>;
 		const ui = (meta.ui ?? {}) as Record<string, unknown>;
@@ -126,7 +130,7 @@ export function TaskGridRow({
 			bold: Boolean(ui.bold),
 		};
 	}, [task.metadata]);
-
+  const [open, setOpen] = useState(false);
 	const [subjectValue, setSubjectValue] = useState(task.subject);
 	const [tagSearch, setTagSearch] = useState("");
 	const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
@@ -218,41 +222,44 @@ export function TaskGridRow({
 		}
 	};
 
-	return (
-		<li
-			className={cn(
-				"grid grid-cols-[24px_minmax(0,1fr)_96px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
-				"border-l-4 rounded-md border",
-				// Base color from row color setting
-				!isDragging &&
-					(uiMeta.bold
-						? COLOR_CLASSES[colorKey]?.rowBold
-						: COLOR_CLASSES[colorKey]?.row),
-				// Hover state (only when not selected and not dragging)
-				!isSelected &&
-					!isDragging &&
-					"hover:bg-primary-50 hover:border-primary-200",
-				// Selected state - bright primary color with glow
-				isSelected && "bg-primary-300 shadow-md shadow-primary/20",
-				// Dragging state - dim the original row
-				isDragging &&
-					"opacity-40 bg-default-100 border-dashed border-default-300",
-				className,
-			)}
-			onClick={handleRowClick}
-			onKeyDown={handleRowKeyDown}
-		>
-			<button
-				type="button"
-				className="p-1 text-default-500 hover:text-default-700 rounded cursor-move"
-				{...dragHandleProps}
-				data-cell
-				data-row={index}
-				data-col={0}
-				title="Drag to reorder"
-			>
-				<GripVertical className="h-4 w-4" />
-			</button>
+  return (
+    <li
+      className={cn(
+        "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        "border-l-4 rounded-md border",
+        // Base color from row color setting
+        !isDragging &&
+          (uiMeta.bold
+            ? COLOR_CLASSES[colorKey]?.rowBold
+            : COLOR_CLASSES[colorKey]?.row),
+        // Hover state (only when not selected and not dragging)
+        !isSelected &&
+          !isDragging &&
+          "hover:bg-accent/20 hover:border-accent",
+        // Selected state - bright accent color with glow
+        isSelected && "bg-accent shadow-md shadow-accent/20",
+        // Dragging state - dim the original row
+        isDragging &&
+          "opacity-40 bg-default-100 border-dashed border-default-300",
+        className,
+      )}
+      onClick={handleRowClick}
+      onKeyDown={handleRowKeyDown}
+    >
+		{/* Row number - based on database sortOrder */}
+      <div className="text-xs text-muted-foreground font-mono text-right pr-1" title={`Database order: ${task.sortOrder ?? index}`}>
+        {displayRowNumber}
+      </div>
+      <div
+        className="p-1 text-default-500 hover:text-default-700 rounded cursor-move"
+        {...dragHandleProps}
+        data-cell
+        data-row={index}
+        data-col={0}
+        title="Drag to reorder"
+      >
+        <GripVertical className="h-4 w-4" />
+      </div>
 
 			{isExpanded ? (
 				<textarea
@@ -280,7 +287,7 @@ export function TaskGridRow({
 					className={cn(
 						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all resize-none overflow-hidden",
 						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20",
+						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
 						uiMeta.bold && "font-semibold",
 						"w-full",
 					)}
@@ -305,7 +312,7 @@ export function TaskGridRow({
 					className={cn(
 						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all",
 						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-primary focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20",
+						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
 						uiMeta.bold && "font-semibold",
 					)}
 					aria-label="Task subject (click to edit)"
@@ -320,11 +327,9 @@ export function TaskGridRow({
 			{/* Priority dropdown */}
 			<Dropdown>
 				<Dropdown.Trigger>
-					<Button
-						variant="ghost"
-						size="sm"
+					<div
 						className={cn(
-							"justify-between min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold transition focus-visible:outline-none",
+							"flex items-center justify-between min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold transition cursor-pointer select-none",
 							"hover:shadow-sm",
 							priorityClasses,
 						)}
@@ -334,7 +339,7 @@ export function TaskGridRow({
 					>
 						<span className="capitalize">{task.priority}</span>
 						<ChevronDown className="h-3 w-3 opacity-50" />
-					</Button>
+					</div>
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
@@ -352,10 +357,8 @@ export function TaskGridRow({
 			{/* Tags dropdown */}
 			<Dropdown onOpenChange={setIsTagDropdownOpen}>
 				<Dropdown.Trigger>
-					<Button
-						variant="ghost"
-						size="sm"
-						className="justify-start min-w-32"
+					<div
+						className="flex items-center justify-start min-w-32 px-3 py-1 text-sm cursor-pointer select-none hover:bg-default-100 rounded-md"
 						data-cell
 						data-row={index}
 						data-col={3}
@@ -377,7 +380,7 @@ export function TaskGridRow({
 							)}
 						</div>
 						<ChevronDown className="h-3 w-3 opacity-50 ml-1" />
-					</Button>
+					</div>
 				</Dropdown.Trigger>
 				<Dropdown.Popover className="min-w-64">
 					<div className="px-2 py-2">
@@ -391,27 +394,16 @@ export function TaskGridRow({
 						/>
 					</div>
 					<div className="max-h-160 overflow-y-auto gap-2 grid grid-cols[120px_120px] p-2">
-						{filteredTags.map((tag) => {
+					{filteredTags.map((tag) => {
 							const isSelected = uiMeta.tags.includes(tag);
-							console.log(
-								`[TaskGridRow] Tag "${tag}" isSelected:`,
-								isSelected,
-								"uiMeta.tags:",
-								uiMeta.tags,
-							);
 							return (
 								<Button
 									key={tag}
 									variant={isSelected ? "secondary" : "tertiary"}
 									onClick={() => {
-										console.log(
-											`[TaskGridRow] Clicked tag "${tag}", current isSelected:`,
-											isSelected,
-										);
 										const next = isSelected
 											? uiMeta.tags.filter((t) => t !== tag)
 											: [...uiMeta.tags, tag];
-										console.log(`[TaskGridRow] New tags array:`, next);
 										handleTagSelection(next);
 									}}
 									className={cn(
@@ -421,8 +413,8 @@ export function TaskGridRow({
 											: "text-default-700"
 									)}
 								>
-												{isSelected ? <Check className="h-4 w-4" /> : <Checkbox className="w-4 h-4" />}
-												{tag}
+													{isSelected ? <Check className="h-4 w-4" /> : <Checkbox className="w-4 h-4" />}
+													{tag}
 								</Button>
 							);
 						})}
@@ -434,17 +426,15 @@ export function TaskGridRow({
 				{/* Formatting dropdown */}
 				<Dropdown>
 					<Dropdown.Trigger>
-						<Button
-							variant="ghost"
-							size="sm"
-							isIconOnly
+						<div
+							className="p-1 text-default-500 hover:text-default-700 rounded cursor-pointer"
 							data-cell
 							data-row={index}
 							data-col={4}
-							aria-label="Formatting & appearance"
+							title="Formatting & appearance"
 						>
 							<SlidersHorizontal className="h-4 w-4" />
-						</Button>
+						</div>
 					</Dropdown.Trigger>
 					<Dropdown.Popover>
 						<div className="p-2">
@@ -480,7 +470,7 @@ export function TaskGridRow({
 												"h-5 w-5 rounded-full border-2 transition-all cursor-pointer",
 												COLOR_CLASSES[color].dot,
 												savedColor === color
-													? "border-primary ring-2 ring-primary/30 scale-110"
+													? "border-accent ring-2 ring-accent/30 scale-110"
 													: "border-white shadow-sm hover:scale-110 hover:shadow-md",
 											)}
 											title={`Set color to ${color}`}
@@ -520,36 +510,64 @@ export function TaskGridRow({
 					<Trash2 className="h-4 w-4" />
 				</Button>
 
-				<Dropdown>
-					<Dropdown.Trigger>
-						<Button
-							variant="ghost"
-							size="sm"
-							isIconOnly
-							data-cell
-							data-row={index}
-							data-col={6}
-							aria-label="More actions"
-						>
-							<ArrowUpDown className="h-4 w-4" />
-						</Button>
-					</Dropdown.Trigger>
-					<Dropdown.Popover>
-						<Dropdown.Menu
-							onAction={(key) => {
-								console.log("key of menuitem:", key)
-								if (key === "top") {
-									onReorderToIndex?.(index, 0);
-								} else if (key === "bottom") {
-									onReorderToIndex?.(index, -1);
-								}
-							}}
-						>
-							<Dropdown.Item id="top" textValue="Move to Top">Move to Top</Dropdown.Item>
-							<Dropdown.Item id="bottom" textValue="Move to Bottom">Move to Bottom</Dropdown.Item>
-						</Dropdown.Menu>
-					</Dropdown.Popover>
-				</Dropdown>
+        <Dropdown isOpen={open} onOpenChange={setOpen}>
+          <Dropdown.Trigger>
+            <div
+              className="p-1 text-default-500 hover:text-default-700 rounded cursor-pointer"
+              data-cell
+              data-row={index}
+              data-col={6}
+              title="More actions"
+            >
+              <ArrowUpDown className="h-4 w-4" />
+            </div>
+          </Dropdown.Trigger>
+          <Dropdown.Popover>
+            <div className="p-2 min-w-[200px]">
+              <Dropdown.Menu
+                onAction={(key) => {
+                  const currentSortOrder = task.sortOrder ?? index;
+                  if (key === "top") {
+                    onReorderToSortOrder?.(task.id, currentSortOrder, 0);
+                  } else if (key === "bottom") {
+                    onReorderToSortOrder?.(task.id, currentSortOrder, -1);
+                  }
+                }}
+              >
+                <Dropdown.Item id="top" textValue="Move to Top">Move to Top</Dropdown.Item>
+                <Dropdown.Item id="bottom" textValue="Move to Bottom">Move to Bottom</Dropdown.Item>
+              </Dropdown.Menu>
+              <div className="mt-3 pt-2 border-t border-default-200">
+                <form 
+                  className="flex items-center gap-2"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const input = e.currentTarget.querySelector('input') as HTMLInputElement;
+                    const targetRowNumber = parseInt(input.value, 10);
+                    if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
+                      // Convert from 1-based row number to 0-based sortOrder
+                      const targetSortOrder = targetRowNumber - 1;
+                      const currentSortOrder = task.sortOrder ?? index;
+                      onReorderToSortOrder?.(task.id, currentSortOrder, targetSortOrder);
+                      input.value = '';
+                    }
+                    setOpen(false);
+                  }}
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Row #"
+                    className="w-16 h-8 px-2 text-sm bg-default-100 border border-default-300 rounded-md focus:outline-none focus:border-accent"
+                  />
+                  <Button type="submit" size="sm" variant="primary">
+                    Move
+                  </Button>
+                </form>
+              </div>
+            </div>
+          </Dropdown.Popover>
+        </Dropdown>
 
 				<Button
 					variant={isSelected ? "secondary" : "ghost"}
@@ -562,12 +580,12 @@ export function TaskGridRow({
 					aria-label="Open details"
 				>
 					<ChevronRight
-						className={cn("h-4 w-4", isSelected ?? "text-primary-700")}
+						className={cn("h-4 w-4", isSelected ? "" : "text-accent-700")}
 					/>
 				</Button>
 
-				{/* Selected indicator chevron */}
-			</div>
-		</li>
-	);
-}
+			{/* Selected indicator chevron */}
+		</div>
+	</li>
+);
+});

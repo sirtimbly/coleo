@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Button, Chip } from '@heroui/react';
 import { NavLink, Outlet } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -125,7 +126,7 @@ export function Layout() {
         {/* Logo */}
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-2">
-            <Octagon className="h-8 w-8 text-primary" />
+            <Octagon className="h-8 w-8 text-accent" />
             <div>
               <h1 className="font-bold text-lg">Octopai</h1>
               <p className="text-xs text-muted-foreground">Observatory</p>
@@ -144,18 +145,18 @@ export function Layout() {
                     cn(
                       'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-secondary text-secondary-foreground'
+                        ? 'bg-accent text-accent-foreground'
                         : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
                     )
                   }
                 >
                   <item.icon className="h-4 w-4" />
                   {item.label}
-                  {item.badge && item.badge > 0 && (
-                    <span className="ml-auto bg-red-500 text-white text-xs px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                  {item.badge ? (
+                    <Chip size="sm" variant="primary" color="danger" className="ml-auto">
                       {item.badge > 99 ? '99+' : item.badge}
-                    </span>
-                  )}
+                    </Chip>
+                  ) : null}
                 </NavLink>
               </li>
             ))}
@@ -164,14 +165,14 @@ export function Layout() {
 
         {/* New Message Button */}
         <div className="p-4 border-t border-border">
-          <button
-            onClick={openNewMessage}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-sm font-medium transition-colors"
+          <Button
+            onPress={openNewMessage}
+            className="w-full justify-center gap-2"
           >
             <MessageSquarePlus className="h-4 w-4" />
             New Message
             <kbd className="ml-auto px-1.5 py-0.5 bg-purple-700 rounded text-xs">N</kbd>
-          </button>
+          </Button>
         </div>
 
         {/* Footer */}

@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare, AlertCircle, CheckCircle, Zap, Pause, RefreshCw, CircleDashed, Play, AlertOctagon, ShieldQuestion } from 'lucide-react';
+import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare } from 'lucide-react';
 import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
+import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket } from '@/hooks';
 
 interface SystemStatus {
@@ -34,58 +35,403 @@ interface SystemStatus {
   };
 }
 
-const HealthIcon = ({ healthy, optional = false }: { healthy: boolean; optional?: boolean }) => {
-  if (healthy) {
-    return <CheckCircle className="h-4 w-4 text-green-500" />;
-  }
-  if (optional) {
-    return <AlertCircle className="h-4 w-4 text-yellow-500" />;
-  }
-  return <AlertCircle className="h-4 w-4 text-destructive" />;
+const healthColorMap: Record<string, "success" | "warning" | "danger" | "default"> = {
+  healthy: "success",
+  idle: "default",
+  stuck: "danger",
+  stale: "warning",
+  unknown: "default",
 };
 
-const ArmHealthBadge = ({ health }: { health: "healthy" | "idle" | "stuck" | "stale" | "unknown" }) => {
-  const colors = {
-    healthy: "bg-green-500/20 text-green-700 dark:text-green-400",
-    idle: "bg-blue-500/20 text-blue-700 dark:text-blue-400",
-    stuck: "bg-destructive/20 text-destructive",
-    stale: "bg-yellow-500/20 text-yellow-700 dark:text-yellow-400",
-    unknown: "bg-secondary text-muted-foreground",
+const stateColorMap: Record<ArmActivityState, "success" | "warning" | "danger" | "default" | "accent"> = {
+  productive: "success",
+  idle: "default",
+  waiting_permission: "warning",
+  looping: "accent",
+  silent: "default",
+  error: "danger",
+  starting: "warning",
+};
+
+function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: SystemStatus['infrastructure'], isLoading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Infrastructure Health</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="grid grid-cols-3 gap-4">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-5 w-5 rounded" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-20 rounded mb-1" />
+                  <Skeleton className="h-3 w-16 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : !infrastructure ? null : (
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex items-center gap-3">
+              <Database className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Database</span>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={infrastructure.database.healthy ? "success" : "danger"}
+                  >
+                    {infrastructure.database.healthy ? "Healthy" : "Error"}
+                  </Chip>
+                </div>
+                {infrastructure.database.error && (
+                  <p className="text-xs text-danger mt-1">{infrastructure.database.error}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <MessageSquare className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">NATS</span>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={infrastructure.nats.healthy ? "success" : infrastructure.nats.optional ? "warning" : "danger"}
+                  >
+                    {infrastructure.nats.healthy ? "Healthy" : infrastructure.nats.optional ? "Optional" : "Error"}
+                  </Chip>
+                  {infrastructure.nats.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
+                </div>
+                {infrastructure.nats.error && (
+                  <p className="text-xs text-warning mt-1">{infrastructure.nats.error}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Activity className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Maildir</span>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={infrastructure.maildir.healthy ? "success" : "danger"}
+                  >
+                    {infrastructure.maildir.healthy ? "Healthy" : "Error"}
+                  </Chip>
+                </div>
+                {infrastructure.maildir.error && (
+                  <p className="text-xs text-danger mt-1">{infrastructure.maildir.error}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function StatsGrid({ status, isLoading }: { status?: SystemStatus, isLoading: boolean }) {
+  const formatUptime = (seconds: number) => {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
   };
-  
-  return (
-    <span className={`text-xs px-2 py-1 rounded ${colors[health]}`}>
-      {health}
-    </span>
-  );
-};
 
-// State badge and icon for event-based analysis
-const stateConfig: Record<ArmActivityState, { 
-  bg: string; 
-  text: string; 
-  icon: typeof Bot;
-  label: string;
-}> = {
-  productive: { bg: 'bg-green-500/20', text: 'text-green-700 dark:text-green-400', icon: Zap, label: 'Productive' },
-  idle: { bg: 'bg-blue-500/20', text: 'text-blue-700 dark:text-blue-400', icon: Pause, label: 'Idle' },
-  waiting_permission: { bg: 'bg-yellow-500/20', text: 'text-yellow-700 dark:text-yellow-400', icon: ShieldQuestion, label: 'Waiting' },
-  looping: { bg: 'bg-orange-500/20', text: 'text-orange-700 dark:text-orange-400', icon: RefreshCw, label: 'Looping' },
-  silent: { bg: 'bg-gray-500/20', text: 'text-gray-600 dark:text-gray-400', icon: CircleDashed, label: 'Silent' },
-  error: { bg: 'bg-red-500/20', text: 'text-red-700 dark:text-red-400', icon: AlertOctagon, label: 'Error' },
-  starting: { bg: 'bg-cyan-500/20', text: 'text-cyan-700 dark:text-cyan-400', icon: Play, label: 'Starting' },
-};
+  const stats = [
+    { key: "arms", icon: Bot, value: status?.arms.total ?? 0, label: "Active Arms", sublabel: status && status.arms.total > 0 ? `${status.arms.healthy} healthy, ${status.arms.idle} idle` : undefined, sublabelErrors: status && (status.arms.stuck > 0 || status.arms.stale > 0) ? { stuck: status.arms.stuck, stale: status.arms.stale } : undefined },
+    { key: "proposals", icon: Vote, value: status?.proposals.open ?? 0, label: "Open Proposals" },
+    { key: "activity", icon: Activity, value: status?.activity.last24h ?? 0, label: "Activity (24h)" },
+    { key: "uptime", icon: Clock, value: status ? formatUptime(status.uptime) : "-", label: "Uptime" },
+  ];
 
-const ArmStateBadge = ({ state }: { state: ArmActivityState }) => {
-  const config = stateConfig[state];
-  const Icon = config.icon;
-  
   return (
-    <span className={`text-xs px-2 py-1 rounded inline-flex items-center gap-1 ${config.bg} ${config.text}`}>
-      <Icon className="h-3 w-3" />
-      {config.label}
-    </span>
+    <div className="grid grid-cols-4 gap-4">
+      {isLoading ? (
+        <>
+          {[1, 2, 3, 4].map((i) => (
+            <Card key={i}>
+              <CardContent className="flex items-center gap-4">
+                <Skeleton className="h-12 w-12 rounded-lg" />
+                <div className="flex-1">
+                  <Skeleton className="h-8 w-16 rounded mb-2" />
+                  <Skeleton className="h-4 w-24 rounded" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </>
+      ) : (
+        stats.map((stat) => (
+          <Card key={stat.key}>
+            <CardContent className="flex items-center gap-4">
+              <div className="p-3 rounded-lg bg-secondary">
+                <stat.icon className="h-6 w-6" />
+              </div>
+              <div>
+                <p className="text-2xl font-bold">{stat.value}</p>
+                <p className="text-sm text-muted-foreground">{stat.label}</p>
+                {stat.sublabel && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stat.sublabel}
+                    {stat.sublabelErrors && (
+                      <>
+                        {stat.sublabelErrors.stuck > 0 && (
+                          <span className="text-danger">, {stat.sublabelErrors.stuck} stuck</span>
+                        )}
+                        {stat.sublabelErrors.stale > 0 && (
+                          <span className="text-warning">, {stat.sublabelErrors.stale} stale</span>
+                        )}
+                      </>
+                    )}
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        ))
+      )}
+    </div>
   );
+}
+
+function ArmAnalysisSection({ analysis, isLoading }: { analysis?: AllArmsAnalysis, isLoading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Arm Activity Analysis</span>
+          <span className="text-xs font-normal text-muted-foreground">
+            Event-based health monitoring
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="grid grid-cols-7 gap-4 mb-4">
+            {["productive", "idle", "starting", "waiting", "looping", "silent", "error"].map((key) => (
+              <div key={key} className="text-center p-2 rounded bg-secondary/50">
+                <Skeleton className="h-6 w-8 mx-auto mb-1 rounded" />
+                <Skeleton className="h-3 w-12 mx-auto rounded" />
+              </div>
+            ))}
+          </div>
+        ) : !analysis || analysis.arms.length === 0 ? null : (
+          <>
+            <div className="grid grid-cols-7 gap-4 mb-4">
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-success">{analysis.summary.productive}</p>
+                <p className="text-xs text-muted-foreground">Productive</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-default">{analysis.summary.idle}</p>
+                <p className="text-xs text-muted-foreground">Idle</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-warning">{analysis.summary.starting}</p>
+                <p className="text-xs text-muted-foreground">Starting</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-warning">{analysis.summary.waiting}</p>
+                <p className="text-xs text-muted-foreground">Waiting</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-accent">{analysis.summary.looping}</p>
+                <p className="text-xs text-muted-foreground">Looping</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-default">{analysis.summary.silent}</p>
+                <p className="text-xs text-muted-foreground">Silent</p>
+              </Surface>
+              <Surface variant="secondary" className="text-center p-2 rounded">
+                <p className="text-lg font-bold text-danger">{analysis.summary.error}</p>
+                <p className="text-xs text-muted-foreground">Error</p>
+              </Surface>
+            </div>
+
+            {analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).length > 0 && (
+              <Disclosure>
+                <Disclosure.Trigger>
+                  <Button variant="secondary" className="w-full justify-between">
+                    <span>Needs Attention ({analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).length})</span>
+                    <Disclosure.Indicator />
+                  </Button>
+                </Disclosure.Trigger>
+                <Disclosure.Content>
+                  <Surface variant="secondary" className="mt-2 p-4 rounded">
+                    <div className="space-y-2">
+                      {analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).map((arm) => (
+                        <div key={arm.armId} className="flex items-center justify-between">
+                          <span className="text-sm font-mono">{arm.armId.slice(0, 12)}...</span>
+                          <div className="flex items-center gap-2">
+                            <Chip size="sm" variant="soft" color={stateColorMap[arm.state]}>
+                              {arm.state}
+                            </Chip>
+                            {arm.hasPermissionPending && (
+                              <Chip size="sm" variant="soft" color="warning">
+                                permission pending
+                              </Chip>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Surface>
+                </Disclosure.Content>
+              </Disclosure>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, arms: Arm[], isLoading: boolean }) {
+  const hasDetails = status?.arms.details && status.arms.details.length > 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Arms</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="p-3 rounded-lg bg-secondary/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Skeleton className="h-4 w-24 rounded mb-1" />
+                    <Skeleton className="h-3 w-16 rounded" />
+                  </div>
+                  <Skeleton className="h-6 w-16 rounded" />
+                </div>
+                <Skeleton className="h-3 w-full rounded" />
+              </div>
+            ))}
+          </div>
+        ) : hasDetails ? (
+          <div className="space-y-3">
+            {status.arms.details.map((arm) => (
+              <Surface key={arm.id} variant="secondary" className="p-3 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{arm.name}</p>
+                    <p className="text-xs text-muted-foreground">{arm.domain}</p>
+                  </div>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={healthColorMap[arm.health] || "default"}
+                  >
+                    {arm.health}
+                  </Chip>
+                </div>
+                {arm.currentTask && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Task: <span className="font-medium">{arm.currentTask}</span>
+                  </p>
+                )}
+                <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                  <span>Heartbeat: {formatLastSeen(arm.lastHeartbeat)}</span>
+                  <span>Activity: {formatLastSeen(arm.lastActivity)}</span>
+                </div>
+              </Surface>
+            ))}
+          </div>
+        ) : arms.length === 0 ? (
+          <p className="text-muted-foreground text-sm">
+            No arms registered yet. Spawn one with:
+            <code className="block mt-2 p-2 bg-secondary rounded text-xs font-mono">
+              octopai arm spawn --name explorer --agent opencode
+            </code>
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {arms.map((arm) => (
+              <div
+                key={arm.id}
+                className="flex items-center justify-between p-3 rounded-lg bg-secondary/50"
+              >
+                <div>
+                  <p className="font-medium">{arm.name}</p>
+                  <p className="text-xs text-muted-foreground">{arm.harness}</p>
+                </div>
+                <StatusBadge status={arm.status} />
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActivitySection({ activity, isLoading }: { activity: ActivityEntry[], isLoading: boolean }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent Activity</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-start gap-3">
+                <Skeleton className="h-2 w-2 rounded-full mt-1.5" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-full rounded mb-1" />
+                  <Skeleton className="h-3 w-24 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : activity.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No recent activity</p>
+        ) : (
+          <div className="space-y-3">
+            {activity.map((entry) => (
+              <div key={entry.id} className="flex items-start gap-3 text-sm">
+                <div className="h-2 w-2 rounded-full bg-accent mt-1.5" />
+                <div>
+                  <p>
+                    <span className="font-medium">{entry.actor}</span>{' '}
+                    <span className="text-muted-foreground">{entry.action}</span>
+                    {entry.target && (
+                      <span className="text-muted-foreground"> on {entry.target}</span>
+                    )}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(entry.timestamp).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+const formatLastSeen = (timestamp?: string) => {
+  if (!timestamp) return 'Never';
+  const ms = Date.now() - new Date(timestamp).getTime();
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
 };
 
 export function DashboardPage() {
@@ -94,55 +440,57 @@ export function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [detailsLoading, setDetailsLoading] = useState(true);
 
-  // Load initial data
-  const loadData = useCallback(async () => {
+  const loadCriticalData = useCallback(async () => {
     try {
-      const [statusRes, armsRes, activityRes] = await Promise.all([
-        api.status(),
+      const statusRes = await api.status();
+      setStatus(statusRes);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load status');
+    } finally {
+      setStatusLoading(false);
+    }
+  }, []);
+
+  const loadDetails = useCallback(async () => {
+    setDetailsLoading(true);
+    try {
+      const [armsRes, activityRes] = await Promise.all([
         api.listArms(),
         api.listActivity({ limit: 5 }),
       ]);
-      setStatus(statusRes);
       setArms(armsRes.arms);
       setActivity(activityRes.activity);
-      setError(null);
-      
-      // Load arms analysis (may fail if NATS not available)
-      try {
-        const analysisRes = await api.getAllArmsAnalysis();
-        setArmsAnalysis(analysisRes);
-      } catch {
-        // Analysis not available - this is OK
-        setArmsAnalysis(null);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load data');
+    } catch {
+      // Details might fail - that's OK, we show what we can
     } finally {
-      setLoading(false);
+      setDetailsLoading(false);
     }
   }, []);
 
-  // Handle WebSocket messages for real-time updates
+  const loadAnalysis = useCallback(async () => {
+    try {
+      const analysisRes = await api.getAllArmsAnalysis();
+      setArmsAnalysis(analysisRes);
+    } catch {
+      setArmsAnalysis(null);
+    }
+  }, []);
+
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
     if (msg.channel === 'arms') {
-      // Refresh arms list when arms change
       api.listArms().then((res) => setArms(res.arms)).catch(console.error);
-      // Also update status counts
-      api.status().then((res) => setStatus(res)).catch(console.error);
     } else if (msg.channel === 'activity') {
-      // Refresh activity when new activity comes in
       api.listActivity({ limit: 5 }).then((res) => setActivity(res.activity)).catch(console.error);
-      // Also update status counts
-      api.status().then((res) => setStatus(res)).catch(console.error);
-    } else if (msg.channel === 'brain') {
-      // Brain status changes
+    }
+    if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
       api.status().then((res) => setStatus(res)).catch(console.error);
     }
   }, []);
 
-  // Connect to WebSocket for real-time updates
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain'],
     onMessage: handleWSMessage,
@@ -150,35 +498,25 @@ export function DashboardPage() {
   });
 
   useEffect(() => {
-    loadData();
-    // Fallback polling if WebSocket isn't working
-    const interval = setInterval(loadData, 30000); // Refresh every 30s as fallback
+    loadCriticalData();
+    loadDetails();
+    loadAnalysis();
+
+    const interval = setInterval(() => {
+      loadCriticalData();
+      loadDetails();
+    }, 30000);
     return () => clearInterval(interval);
-  }, [loadData]);
+  }, [loadCriticalData, loadDetails, loadAnalysis]);
 
-  if (loading) {
+  if (error && !status) {
     return (
       <div className="p-8">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 bg-secondary rounded w-48" />
-          <div className="grid grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-secondary rounded" />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-8">
-        <Card className="border-destructive">
+        <Card className="border-danger">
           <CardContent>
-            <p className="text-destructive">Error: {error}</p>
+            <p className="text-danger">Error: {error}</p>
             <p className="text-sm text-muted-foreground mt-2">
-              Make sure the API server is running: <code>bun run server</code>
+              Make sure the API server is running: <code className="px-1 bg-secondary rounded">bun run server</code>
             </p>
           </CardContent>
         </Card>
@@ -186,27 +524,8 @@ export function DashboardPage() {
     );
   }
 
-  const formatUptime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
-
-  const formatLastSeen = (timestamp?: string) => {
-    if (!timestamp) return 'Never';
-    const ms = Date.now() - new Date(timestamp).getTime();
-    const seconds = Math.floor(ms / 1000);
-    if (seconds < 60) return `${seconds}s ago`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ago`;
-  };
-
   return (
     <div className="p-8 space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gradient-heading">Dashboard</h1>
@@ -214,299 +533,32 @@ export function DashboardPage() {
         </div>
         <div className="flex items-center gap-2 text-sm">
           {connected && authenticated ? (
-            <>
-              <Wifi className="h-4 w-4 text-green-500" />
-              <span className="text-muted-foreground">Live</span>
-            </>
+            <Chip variant="soft" color="success" size="sm">
+              <div className="flex items-center gap-1">
+                <Wifi className="h-3 w-3" />
+                <span>Live</span>
+              </div>
+            </Chip>
           ) : (
-            <>
-              <WifiOff className="h-4 w-4 text-muted-foreground" />
-              <span className="text-muted-foreground">Polling</span>
-            </>
+            <Chip variant="soft" color="warning" size="sm">
+              <div className="flex items-center gap-1">
+                <WifiOff className="h-3 w-3" />
+                <span>Polling</span>
+              </div>
+            </Chip>
           )}
         </div>
       </div>
 
-      {/* Infrastructure Health */}
-      {status?.infrastructure && (
-        <Card className={status.status === "degraded" ? "border-yellow-500" : ""}>
-          <CardHeader>
-            <CardTitle>Infrastructure Health</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5 text-muted-foreground" />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">Database</span>
-                    <HealthIcon healthy={status.infrastructure.database.healthy} />
-                  </div>
-                  {status.infrastructure.database.error && (
-                    <p className="text-xs text-destructive mt-1">{status.infrastructure.database.error}</p>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">NATS</span>
-                    <HealthIcon healthy={status.infrastructure.nats.healthy} optional={status.infrastructure.nats.optional} />
-                    {status.infrastructure.nats.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
-                  </div>
-                  {status.infrastructure.nats.error && (
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">{status.infrastructure.nats.error}</p>
-                  )}
-                </div>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <Activity className="h-5 w-5 text-muted-foreground" />
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">Maildir</span>
-                    <HealthIcon healthy={status.infrastructure.maildir.healthy} />
-                  </div>
-                  {status.infrastructure.maildir.error && (
-                    <p className="text-xs text-destructive mt-1">{status.infrastructure.maildir.error}</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <InfrastructureCard infrastructure={status?.infrastructure} isLoading={statusLoading} />
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-secondary">
-              <Bot className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{status?.arms.total ?? 0}</p>
-              <p className="text-sm text-muted-foreground">Active Arms</p>
-              {status && status.arms.total > 0 && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {status.arms.healthy} healthy, {status.arms.idle} idle
-                  {status.arms.stuck > 0 && <span className="text-destructive">, {status.arms.stuck} stuck</span>}
-                  {status.arms.stale > 0 && <span className="text-yellow-500">, {status.arms.stale} stale</span>}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <StatsGrid status={status ?? undefined} isLoading={statusLoading} />
 
-        <Card>
-          <CardContent className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-secondary">
-              <Vote className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{status?.proposals.open ?? 0}</p>
-              <p className="text-sm text-muted-foreground">Open Proposals</p>
-            </div>
-          </CardContent>
-        </Card>
+      <ArmAnalysisSection analysis={armsAnalysis ?? undefined} isLoading={detailsLoading} />
 
-        <Card>
-          <CardContent className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-secondary">
-              <Activity className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{status?.activity.last24h ?? 0}</p>
-              <p className="text-sm text-muted-foreground">Activity (24h)</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="flex items-center gap-4">
-            <div className="p-3 rounded-lg bg-secondary">
-              <Clock className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{status ? formatUptime(status.uptime) : '-'}</p>
-              <p className="text-sm text-muted-foreground">Uptime</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Arm Analysis Summary (from event-window system) */}
-      {armsAnalysis && armsAnalysis.arms.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Arm Activity Analysis</span>
-              <span className="text-xs font-normal text-muted-foreground">
-                Event-based health monitoring
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-7 gap-4 mb-4">
-              {/* Summary counts */}
-              <div className="text-center p-2 rounded bg-green-500/10">
-                <p className="text-lg font-bold text-green-600">{armsAnalysis.summary.productive}</p>
-                <p className="text-xs text-muted-foreground">Productive</p>
-              </div>
-              <div className="text-center p-2 rounded bg-blue-500/10">
-                <p className="text-lg font-bold text-blue-600">{armsAnalysis.summary.idle}</p>
-                <p className="text-xs text-muted-foreground">Idle</p>
-              </div>
-              <div className="text-center p-2 rounded bg-cyan-500/10">
-                <p className="text-lg font-bold text-cyan-600">{armsAnalysis.summary.starting}</p>
-                <p className="text-xs text-muted-foreground">Starting</p>
-              </div>
-              <div className="text-center p-2 rounded bg-yellow-500/10">
-                <p className="text-lg font-bold text-yellow-600">{armsAnalysis.summary.waiting}</p>
-                <p className="text-xs text-muted-foreground">Waiting</p>
-              </div>
-              <div className="text-center p-2 rounded bg-orange-500/10">
-                <p className="text-lg font-bold text-orange-600">{armsAnalysis.summary.looping}</p>
-                <p className="text-xs text-muted-foreground">Looping</p>
-              </div>
-              <div className="text-center p-2 rounded bg-gray-500/10">
-                <p className="text-lg font-bold text-gray-600">{armsAnalysis.summary.silent}</p>
-                <p className="text-xs text-muted-foreground">Silent</p>
-              </div>
-              <div className="text-center p-2 rounded bg-red-500/10">
-                <p className="text-lg font-bold text-red-600">{armsAnalysis.summary.error}</p>
-                <p className="text-xs text-muted-foreground">Error</p>
-              </div>
-            </div>
-
-            {/* Arms needing attention */}
-            {armsAnalysis.arms.filter(a => 
-              a.state === 'looping' || a.state === 'silent' || a.state === 'error' || a.hasPermissionPending
-            ).length > 0 && (
-              <div className="mt-4">
-                <p className="text-sm font-medium mb-2 text-muted-foreground">Needs Attention</p>
-                <div className="space-y-2">
-                  {armsAnalysis.arms
-                    .filter(a => a.state === 'looping' || a.state === 'silent' || a.state === 'error' || a.hasPermissionPending)
-                    .map(arm => (
-                      <div key={arm.armId} className="flex items-center justify-between p-2 rounded bg-secondary/50">
-                        <span className="text-sm truncate">{arm.armId.slice(0, 8)}...</span>
-                        <div className="flex items-center gap-2">
-                          <ArmStateBadge state={arm.state} />
-                          {arm.hasPermissionPending && (
-                            <span className="text-xs text-yellow-600">permission pending</span>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Arms & Activity */}
       <div className="grid grid-cols-2 gap-8">
-        {/* Arms List with Enhanced Details */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Arms</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {status?.arms.details && status.arms.details.length > 0 ? (
-              <div className="space-y-3">
-                {status.arms.details.map((arm) => (
-                  <div
-                    key={arm.id}
-                    className="p-3 rounded-lg bg-secondary/50 space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{arm.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {arm.status}
-                        </p>
-                      </div>
-                      <ArmHealthBadge health={arm.health} />
-                    </div>
-                    <div className="text-xs text-muted-foreground space-y-1">
-                      {arm.currentTask && (
-                        <p>Task: {arm.currentTask}</p>
-                      )}
-                      <div className="flex gap-4">
-                        <span>Heartbeat: {formatLastSeen(arm.lastHeartbeat)}</span>
-                        <span>Activity: {formatLastSeen(arm.lastActivity)}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : arms.length === 0 ? (
-              <p className="text-muted-foreground text-sm">
-                No arms registered yet. Spawn one with:
-                <code className="block mt-2 p-2 bg-secondary rounded text-xs">
-                  octopai arm spawn --name explorer --agent opencode
-                </code>
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {arms.map((arm) => (
-                  <div
-                    key={arm.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-secondary/50"
-                  >
-                    <div>
-                      <p className="font-medium">{arm.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {arm.harness}
-                      </p>
-                    </div>
-                    <StatusBadge status={arm.status} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Recent Activity */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {activity.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No recent activity</p>
-            ) : (
-              <div className="space-y-3">
-                {activity.map((entry) => (
-                  <div
-                    key={entry.id}
-                    className="flex items-start gap-3 text-sm"
-                  >
-                    <div className="h-2 w-2 rounded-full bg-primary mt-1.5" />
-                    <div>
-                      <p>
-                        <span className="font-medium">{entry.actor}</span>{' '}
-                        <span className="text-muted-foreground">{entry.action}</span>
-                        {entry.target && (
-                          <span className="text-muted-foreground"> on {entry.target}</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(entry.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} />
+        <ActivitySection activity={activity} isLoading={detailsLoading} />
       </div>
     </div>
   );

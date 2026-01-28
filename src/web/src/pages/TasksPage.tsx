@@ -1,19 +1,18 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, Sparkles, Tag, X, Search, FileText, MessageSquare } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
-import { api, type Task, cn } from '@/lib';
+import { type Task, cn } from '@/lib';
 import { TaskModal, TaskDiscussionPanel } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { TaskGrid } from '@/components/TaskGrid';
 import type { TaskUpdate } from '@/components/TaskGridRow';
+import { useTasks } from '@/hooks/useTasks';
+import { useQueryClient } from '@tanstack/react-query';
+import { tasksKeys } from '@/lib/queryKeys';
 
 type SidebarTab = 'details' | 'discussions';
 
-interface TaskEventData {
-  task?: Task;
-  taskId?: string;
-  changes?: Partial<Task>;
-}
+
 
 type TaskLlmMessage = {
   role: 'user' | 'assistant';
@@ -112,10 +111,7 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
 }
 
 export function TasksPage() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [counts, setCounts] = useState<{ total: number; byStatus: Record<string, number> }>({ total: 0, byStatus: {} });
+  const queryClient = useQueryClient();
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -126,19 +122,25 @@ export function TasksPage() {
   const [discussionCount, setDiscussionCount] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; task: Task | null }>({ show: false, task: null });
 
-  const loadTasks = useCallback(async () => {
-    try {
-      const res = await api.listTasks(filter);
-      setTasks(res.tasks);
-      setCounts(res.counts);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load tasks');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-  
+  // Use React Query hook for tasks
+  const {
+    tasks,
+    pagination,
+    counts,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    updateTask,
+    reorderTask,
+    createTask,
+    deleteTask,
+    removeFromPlan,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useTasks(filter);
+
   const getTaskUiMeta = useCallback((task: Task): TaskUiMeta => {
     const meta = (task.metadata ?? {}) as Record<string, unknown>;
     const ui = (meta.ui ?? {}) as Record<string, unknown>;
@@ -183,32 +185,9 @@ export function TasksPage() {
   }, [tasks, tagFilter, searchText, getTaskUiMeta]);
 
   const handleUpdateTask = useCallback(async (taskId: string, updates: TaskUpdate) => {
-    let previousStatus: Task['status'] | null = null;
-    setTasks((prev) => prev.map((task) => {
-      if (task.id === taskId) {
-        previousStatus = task.status;
-        return { ...task, ...updates };
-      }
-      return task;
-    }));
-
-    if (updates.status && previousStatus && updates.status !== previousStatus) {
-      const fromStatus = previousStatus as Task['status'];
-      const toStatus = updates.status as Task['status'];
-      setCounts((prev) => {
-        const nextByStatus = { ...prev.byStatus };
-        nextByStatus[fromStatus] = Math.max(0, (nextByStatus[fromStatus] ?? 0) - 1);
-        nextByStatus[toStatus] = (nextByStatus[toStatus] ?? 0) + 1;
-        return { total: prev.total, byStatus: nextByStatus };
-      });
-    }
-    try {
-      await api.updateTask(taskId, updates);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update task');
-      loadTasks();
-    }
-  }, [loadTasks]);
+    // Optimistic update is handled by the mutation
+    updateTask({ id: taskId, updates });
+  }, [updateTask]);
 
   const handleUpdateUi = useCallback(async (taskId: string, updates: TaskUiMeta) => {
     const target = tasks.find((task) => task.id === taskId);
@@ -225,50 +204,42 @@ export function TasksPage() {
       ui: nextUi,
     } as Record<string, unknown>;
 
-    setTasks((prev) => prev.map((task) => (task.id === taskId ? { ...task, metadata: nextMetadata } : task)));
-    try {
-      await api.updateTask(taskId, { metadata: nextMetadata });
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update task');
-      loadTasks();
-    }
-  }, [tasks, getTaskUiMeta, loadTasks]);
+    updateTask({ id: taskId, updates: { metadata: nextMetadata } });
+  }, [tasks, getTaskUiMeta, updateTask]);
 
   const handleDeleteTask = useCallback((task: Task) => {
     if (task.planLineUid) {
       setDeleteConfirm({ show: true, task });
     } else {
       if (confirm('Are you sure you want to delete this task?')) {
-        api.deleteTask(task.id).then(() => loadTasks());
+        deleteTask(task.id);
       }
     }
-  }, [loadTasks]);
+  }, [deleteTask]);
 
   const confirmDeleteFromPlan = useCallback(async () => {
     if (!deleteConfirm.task) return;
     try {
-      await api.removeTaskFromPlan(deleteConfirm.task.id);
-      loadTasks();
+      await removeFromPlan(deleteConfirm.task.id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to remove task from plan');
+      // Error is handled by the mutation
     } finally {
       setDeleteConfirm({ show: false, task: null });
     }
-  }, [deleteConfirm, loadTasks]);
+  }, [deleteConfirm, removeFromPlan]);
 
   const confirmDeleteOnly = useCallback(async () => {
     if (!deleteConfirm.task) return;
     try {
-      await api.deleteTask(deleteConfirm.task.id);
-      loadTasks();
+      await deleteTask(deleteConfirm.task.id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete task');
+      // Error is handled by the mutation
     } finally {
       setDeleteConfirm({ show: false, task: null });
     }
-  }, [deleteConfirm, loadTasks]);
+  }, [deleteConfirm, deleteTask]);
 
-  const handleCreateTaskAt = useCallback(async (index: number, subject: string) => {
+  const handleCreateTaskAt = useCallback(async (_index: number, subject: string) => {
     const now = new Date().toISOString();
     const llmMeta: TaskLlmMeta = {
       originalPrompt: subject,
@@ -279,38 +250,21 @@ export function TasksPage() {
       ],
     };
     try {
-      const result = await api.createTask({
+      await createTask({
         subject,
         description: llmMeta.generatedDescription ?? subject,
         priority: 'normal',
         metadata: { ui: { tags: [], bold: false, color: 'slate', llm: llmMeta } },
       });
-      setTasks((prev) => {
-        const next = [...prev];
-        next.splice(index, 0, result.task);
-        return next;
-      });
-      setCounts((prev) => ({
-        total: prev.total + 1,
-        byStatus: {
-          ...prev.byStatus,
-          [result.task.status]: (prev.byStatus[result.task.status] ?? 0) + 1,
-        },
-      }));
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create task');
+      // Error is handled by the mutation
     }
-  }, []);
+  }, [createTask]);
 
-  const handleReorder = useCallback((fromIndex: number, toIndex: number) => {
-    setTasks((prev) => {
-      const next = [...prev];
-      const [moved] = next.splice(fromIndex, 1);
-      if (!moved) return prev;
-      next.splice(toIndex, 0, moved);
-      return next;
-    });
-  }, []);
+  const handleReorder = useCallback((taskId: string, fromSortOrder: number, toSortOrder: number) => {
+    if (!taskId) return;
+    reorderTask({ taskId, fromSortOrder, toSortOrder });
+  }, [reorderTask]);
 
   const handleOpenDetails = useCallback((task: Task) => {
     setSelectedTask(task);
@@ -334,14 +288,16 @@ export function TasksPage() {
     handleUpdateUi(taskId, { tags: nextTags });
   }, [tasks, getTaskUiMeta, handleUpdateUi]);
 
-  useEffect(() => {
+  // Update selected task when tasks change
+  React.useEffect(() => {
     if (!selectedTask) return;
     const latest = tasks.find((task) => task.id === selectedTask.id) || null;
     setSelectedTask(latest);
   }, [tasks, selectedTask]);
 
   // Reset discussion count when selected task changes
-  useEffect(() => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  React.useEffect(() => {
     setDiscussionCount(0);
   }, [selectedTask?.id]);
 
@@ -349,32 +305,18 @@ export function TasksPage() {
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
     if (msg.channel !== 'tasks' || !msg.event || !msg.data) return;
 
-    const data = msg.data as TaskEventData;
+    // WebSocket data can be used for more granular updates if needed
+    // const data = msg.data as TaskEventData;
 
     switch (msg.event) {
       case 'task.created':
-        // Reload to get full task with arm name
-        loadTasks();
-        break;
-
       case 'task.updated':
-        if (data.taskId && data.changes) {
-          setTasks((prev) =>
-            prev.map((task) => (task.id === data.taskId ? { ...task, ...data.changes } : task))
-          );
-        } else {
-          // Reload if we don't have all the info
-          loadTasks();
-        }
-        break;
-
       case 'task.deleted':
-        if (data.taskId) {
-          setTasks((prev) => prev.filter((task) => task.id !== data.taskId));
-        }
+        // Invalidate queries to trigger refetch
+        queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
         break;
     }
-  }, [loadTasks]);
+  }, [queryClient]);
 
   // Subscribe to tasks channel
   useWebSocket({
@@ -382,21 +324,8 @@ export function TasksPage() {
     onMessage: handleWSMessage,
   });
 
-  useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
-
   const handlePriorityChange = async (taskId: string, newPriority: Task['priority']) => {
-    try {
-      await api.updateTask(taskId, { priority: newPriority });
-      // Update local state optimistically
-      setTasks((prev) =>
-        prev.map((task) => (task.id === taskId ? { ...task, priority: newPriority } : task))
-      );
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update priority');
-      loadTasks(); // Reload on error
-    }
+    updateTask({ id: taskId, updates: { priority: newPriority } });
   };
 
   return (
@@ -413,7 +342,7 @@ export function TasksPage() {
             <Button
               isIconOnly
               variant="ghost"
-              onPress={() => loadTasks()}
+              onPress={() => refetch()}
               aria-label="Refresh"
             >
               <RefreshCw className="h-4 w-4" />
@@ -440,17 +369,17 @@ export function TasksPage() {
               placeholder="Search tasks..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-primary w-64"
+              className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-64"
             />
           </div>
           <div className="h-4 w-px bg-divider" />
           <div className="flex items-center gap-2 text-sm">
             <span className="text-foreground-500">Total:</span>
-            <span className="font-medium">{counts.total}</span>
+            <span className="font-medium">{counts?.total ?? 0}</span>
           </div>
           <div className="h-4 w-px bg-divider" />
           <div className="flex items-center gap-2 flex-wrap">
-            {Object.entries(counts.byStatus).map(([status, count]) => (
+            {Object.entries(counts?.byStatus ?? {}).map(([status, count]) => (
               <Button
                 key={status}
                 size="sm"
@@ -508,11 +437,11 @@ export function TasksPage() {
         </div>
       </div>
 
-      {error && (
+      {isError && error && (
         <div className="p-4 bg-danger/10 text-danger border-b border-danger/20">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4" />
-            <span className="text-sm">{error}</span>
+            <span className="text-sm">{error.message}</span>
           </div>
         </div>
       )}
@@ -521,7 +450,7 @@ export function TasksPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Task list */}
         <div className="flex-1 overflow-auto">
-            {loading ? (
+            {isLoading ? (
               <div className="p-4 space-y-4">
                 {[1, 2, 3].map((i) => (
                   <Card key={i} className="h-24">
@@ -532,7 +461,8 @@ export function TasksPage() {
             ) : (
               <div className="p-4">
                 <TaskGrid 
-                  tasks={filteredTasks} 
+                  tasks={filteredTasks}
+                  totalTasks={pagination?.total}
                   availableTags={availableTags}
                   selectedTaskId={selectedTask?.id} 
                   onOpenDetails={handleOpenDetails}
@@ -543,6 +473,34 @@ export function TasksPage() {
                   onCreateTaskAt={handleCreateTaskAt}
                   onReorder={handleReorder}
                 />
+                {/* Load More Button */}
+                {hasNextPage && (
+                  <div className="mt-4 flex justify-center">
+                    <Button
+                      variant="secondary"
+                      onPress={() => fetchNextPage()}
+                      isDisabled={isFetchingNextPage}
+                      className="w-full max-w-md"
+                    >
+                      {isFetchingNextPage ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Loading more...
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="h-4 w-4 mr-2" />
+                          Load more tasks ({tasks.length} loaded)
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+                {!hasNextPage && tasks.length > 0 && (
+                  <div className="mt-4 text-center text-sm text-muted-foreground">
+                    All {tasks.length} tasks loaded
+                  </div>
+                )}
               </div>
             )}
         </div>
@@ -713,7 +671,7 @@ export function TasksPage() {
           setIsModalOpen(false);
           setEditingTask(undefined);
         }}
-        onSaved={() => loadTasks()}
+        onSaved={() => refetch()}
         task={editingTask}
       />
 

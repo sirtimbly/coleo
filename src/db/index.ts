@@ -102,6 +102,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["032_task_sort_order", MIGRATION_032, { table: "tasks", columns: MIGRATION_032_COLUMNS }],
     ["033_task_tags", MIGRATION_033, { table: "tasks", columns: MIGRATION_033_COLUMNS }],
     ["034_task_discussions", MIGRATION_034_TASK_DISCUSSIONS, { table: "tasks", columns: MIGRATION_034_COLUMNS }],
+    ["035_fix_sort_order", MIGRATION_035_FIX_SORT_ORDER],
   ];
 
 
@@ -1095,6 +1096,24 @@ CREATE TABLE IF NOT EXISTS mail_thread_map (
 
 CREATE INDEX IF NOT EXISTS idx_mail_thread_map_mail ON mail_thread_map(mail_message_id);
 CREATE INDEX IF NOT EXISTS idx_mail_thread_map_task ON mail_thread_map(task_id);
+`;
+
+// Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
+// Previously used descending order where higher values appeared first
+const MIGRATION_035_FIX_SORT_ORDER = `
+-- Update all tasks to use ascending sort_order
+-- First, get all tasks ordered by current sort_order DESC (so highest becomes first)
+-- Then assign new sort_order values starting from 0
+WITH ordered_tasks AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) DESC, created_at DESC) - 1 as new_sort_order
+  FROM tasks
+)
+UPDATE tasks
+SET sort_order = (
+  SELECT new_sort_order
+  FROM ordered_tasks
+  WHERE ordered_tasks.id = tasks.id
+);
 `;
 
   /**

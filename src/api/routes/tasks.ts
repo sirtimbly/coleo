@@ -259,7 +259,7 @@ export function createTasksRoutes() {
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
       ORDER BY
-        t.sort_order DESC,
+        t.sort_order ASC,
         CASE t.status
           WHEN 'in_progress' THEN 1
           WHEN 'claimed' THEN 2
@@ -784,42 +784,47 @@ export function createTasksRoutes() {
   /**
    * Reorder a task to a specific position
    * POST /api/tasks/reorder
-   * Body: { taskId: string, toIndex: number }
+   * Body: { taskId: string, toSortOrder: number }
+   * toSortOrder: 0-based position in the full task list (0 = top, -1 = bottom)
    */
-  app.post("/reorder", async (c) => {
-    const db = c.get("db");
-    const body = await c.req.json<{ taskId: string; toIndex: number }>();
-    const { taskId, toIndex } = body;
+   app.post("/reorder", async (c) => {
+     const db = c.get("db");
+     const body = await c.req.json<{ taskId: string; toSortOrder: number }>();
+     const { taskId, toSortOrder } = body;
+ 
+     // Get current task order (sort_order ASC means lower values appear first)
+     const tasks = db.query("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC, created_at DESC").all() as Array<{ id: string; sort_order: number | null }>;
+ 
+     // Find the task in the list
+     const taskIndex = tasks.findIndex(t => t.id === taskId);
+     if (taskIndex === -1) {
+       throw HttpError.notFound(`Task not found: ${taskId}`);
+     }
+ 
+     // Remove task from current position
+     const movedTask = tasks.splice(taskIndex, 1)[0];
+     if (!movedTask) {
+       throw HttpError.notFound(`Task not found: ${taskId}`);
+     }
+ 
+     // Insert at new position (handle -1 for "move to bottom")
+     const finalIndex = toSortOrder < 0 ? tasks.length : Math.min(toSortOrder, tasks.length);
+     tasks.splice(finalIndex, 0, movedTask);
+ 
+     console.log(`[REORDER] Moving task ${taskId} from index ${taskIndex} to index ${finalIndex}, total tasks: ${tasks.length}`);
+ 
+     // Update sort_order for all affected tasks
+     // Index 0 (top) = sort_order 0, Index 1 = sort_order 1, etc.
+     for (let i = 0; i < tasks.length; i++) {
+       const sortOrder = i; // Lower sort_order = appears first
+       const taskIdAtIndex = tasks[i]?.id;
+       if (taskIdAtIndex) {
+         console.log(`[REORDER] Updating task ${taskIdAtIndex} to sort_order ${sortOrder}`);
+         db.run("UPDATE tasks SET sort_order = ? WHERE id = ?", [sortOrder, taskIdAtIndex]);
+       }
+     }
 
-    // Get current task order
-    const tasks = db.query("SELECT id, sort_order FROM tasks ORDER BY sort_order, created_at DESC").all() as Array<{ id: string; sort_order: number | null }>;
-
-    // Find the task in the list
-    const taskIndex = tasks.findIndex(t => t.id === taskId);
-    if (taskIndex === -1) {
-      throw HttpError.notFound(`Task not found: ${taskId}`);
-    }
-
-    // Remove task from current position
-    const movedTask = tasks.splice(taskIndex, 1)[0];
-    if (!movedTask) {
-      throw HttpError.notFound(`Task not found: ${taskId}`);
-    }
-
-    // Insert at new position (handle -1 for "move to bottom")
-    const finalIndex = toIndex < 0 ? tasks.length : Math.min(toIndex, tasks.length);
-    tasks.splice(finalIndex, 0, movedTask);
-
-    // Update sort_order for all affected tasks
-    for (let i = 0; i < tasks.length; i++) {
-      const sortOrder = tasks.length - i; // Higher sort_order = appears first
-      const taskIdAtIndex = tasks[i]?.id;
-      if (taskIdAtIndex) {
-        db.run("UPDATE tasks SET sort_order = ? WHERE id = ?", [sortOrder, taskIdAtIndex]);
-      }
-    }
-
-    logActivity(db, "api", "task_reordered", taskId, { toIndex });
+    logActivity(db, "api", "task_reordered", taskId, { toSortOrder });
 
     // Broadcast task updated
     const updatedTask = tasks.find(t => t.id === taskId);

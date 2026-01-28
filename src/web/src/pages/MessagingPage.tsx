@@ -2,11 +2,10 @@
  * Unified Messaging Page
  * Combines Mail, Status Reports, and Proposals in one interface
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Button } from '@heroui/react';
 import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
 import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
-
-interface MessagingPageProps {}
 
 type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
 
@@ -19,17 +18,17 @@ interface UnifiedMessage {
   status?: string;
   priority?: 'critical' | 'high' | 'normal' | 'low';
   unread?: boolean;
-  data: any; // The original message data
+  data: unknown;
 }
 
-export function MessagingPage({}: MessagingPageProps) {
+export function MessagingPage() {
   const [activeTab, setActiveTab] = useState<MessageType>('all');
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedMessage, setSelectedMessage] = useState<UnifiedMessage | null>(null);
   const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
-  const [panelWidth, setPanelWidth] = useState(400); // Width of message list panel
+  const [panelWidth, setPanelWidth] = useState(400);
   const [isResizing, setIsResizing] = useState(false);
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [previousMessageCount, setPreviousMessageCount] = useState(0);
@@ -37,12 +36,11 @@ export function MessagingPage({}: MessagingPageProps) {
   const { showToast } = useToast();
   const { openReply } = useMessage();
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Note: Proposals API not implemented yet, will add when available
       const [mailResponse, sentResponse, archiveResponse, statusReportsResponse] = await Promise.all([
         api.listInbox({ limit: 50 }),
         api.listSent({ limit: 50 }),
@@ -52,7 +50,6 @@ export function MessagingPage({}: MessagingPageProps) {
 
       const unifiedMessages: UnifiedMessage[] = [];
 
-      // Add inbox mail messages
       mailResponse.messages.forEach((mail: MailMessage) => {
         unifiedMessages.push({
           id: `mail-${mail.id}`,
@@ -66,7 +63,6 @@ export function MessagingPage({}: MessagingPageProps) {
         });
       });
 
-      // Add sent messages
       sentResponse.messages.forEach((mail: MailMessage) => {
         unifiedMessages.push({
           id: `sent-${mail.id}`,
@@ -74,13 +70,12 @@ export function MessagingPage({}: MessagingPageProps) {
           timestamp: mail.date,
           title: mail.subject,
           summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
-          unread: false, // Sent messages are always "read"
+          unread: false,
           priority: mail.flags.flagged ? 'high' : 'normal',
           data: mail,
         });
       });
 
-      // Add archived messages
       archiveResponse.messages.forEach((mail: MailMessage) => {
         unifiedMessages.push({
           id: `archive-${mail.id}`,
@@ -88,13 +83,12 @@ export function MessagingPage({}: MessagingPageProps) {
           timestamp: mail.date,
           title: mail.subject,
           summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
-          unread: false, // Archived messages are already read
+          unread: false,
           priority: mail.flags.flagged ? 'high' : 'normal',
           data: mail,
         });
       });
 
-      // Add status reports
       statusReportsResponse.reports.forEach((report: StatusReport) => {
         unifiedMessages.push({
           id: `status-${report.id}`,
@@ -109,13 +103,10 @@ export function MessagingPage({}: MessagingPageProps) {
         });
       });
 
-      // Sort by timestamp (newest first)
       unifiedMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
       setMessages(unifiedMessages);
 
-      // Check for new messages and show toast
-      const newMessageCount = unifiedMessages.length;
       const newUnreadCount = unifiedMessages.filter(m => m.unread).length;
       const previousUnreadCount = messages.filter(m => m.unread).length;
 
@@ -128,19 +119,18 @@ export function MessagingPage({}: MessagingPageProps) {
         );
       }
 
-      setPreviousMessageCount(newMessageCount);
+      setPreviousMessageCount(unifiedMessages.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
     } finally {
       setLoading(false);
     }
-  };
+  }, [messages, previousMessageCount, showToast]);
 
   useEffect(() => {
     loadMessages();
-  }, []);
+  }, [loadMessages]);
 
-  // Handle panel resizing
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
@@ -175,105 +165,40 @@ export function MessagingPage({}: MessagingPageProps) {
     return true;
   });
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      // Ignore if typing in an input/textarea
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-
-      if (!selectedMessage) return;
-
-      const currentIndex = filteredMessages.findIndex(m => m.id === selectedMessage.id);
-      if (currentIndex === -1) return;
-
-      switch (e.key) {
-        case 'j':
-        case 'J':
-          e.preventDefault();
-          // Navigate to next message
-          if (currentIndex < filteredMessages.length - 1) {
-            handleMessageClick(filteredMessages[currentIndex + 1]);
-          }
-          break;
-        case 'k':
-        case 'K':
-          e.preventDefault();
-          // Navigate to previous message
-          if (currentIndex > 0) {
-            handleMessageClick(filteredMessages[currentIndex - 1]);
-          }
-          break;
-        case 'e':
-        case 'E':
-          e.preventDefault();
-          // Archive current message
-          handleArchive([selectedMessage.id]);
-          break;
-        case 'r':
-        case 'R':
-          e.preventDefault();
-          // Reply to current message (only for mail types)
-          if (selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') {
-            openReply({
-              messageId: selectedMessage.data.id,
-              from: selectedMessage.data.from,
-              subject: selectedMessage.title,
-              body: selectedMessage.data.body,
-            });
-          }
-          break;
-      }
-    }
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [selectedMessage, filteredMessages]);
-
-  const handleMessageClick = (message: UnifiedMessage) => {
+  const handleMessageClick = useCallback((message: UnifiedMessage) => {
     setSelectedMessage(message);
-    // Mark as read if it was unread
     if (message.unread) {
       setMessages(prev => prev.map(m =>
         m.id === message.id ? { ...m, unread: false } : m
       ));
     }
-  };
+  }, []);
 
-  const handleMarkRead = (messageIds: string[], read: boolean) => {
+  const handleMarkRead = useCallback((messageIds: string[], read: boolean) => {
     setMessages(prev => prev.map(m =>
       messageIds.includes(m.id) ? { ...m, unread: !read } : m
     ));
-  };
+  }, []);
 
-  const handleArchive = async (messageIds: string[]) => {
+  const handleArchive = useCallback(async (messageIds: string[]) => {
     try {
-      // Archive each selected message via API
-      // Extract raw ID by removing the type prefix (e.g., 'mail-' -> '')
       await Promise.all(messageIds.map(id => {
         const rawId = id.replace(/^(mail|sent|archive)-/, '');
         return api.archiveMail(rawId);
       }));
-
-      // Reload messages to get updated archive list
       await loadMessages();
-
-      // Clear selected message IDs
       setSelectedMessageIds(prev => {
         const newSet = new Set(prev);
         messageIds.forEach(id => newSet.delete(id));
         return newSet;
       });
-
       if (selectedMessage && messageIds.includes(selectedMessage.id)) {
         setSelectedMessage(null);
       }
     } catch (error) {
       console.error('Failed to archive messages:', error);
     }
-  };
+  }, [loadMessages, selectedMessage]);
 
   const getMessageIcon = (type: UnifiedMessage['type']) => {
     switch (type) {
@@ -328,8 +253,6 @@ export function MessagingPage({}: MessagingPageProps) {
       if (type === 'proposals') return msg.type === 'proposal';
       return msg.type === type.replace('-reports', '-report');
     });
-    // Sent and Archive tabs show total count (messages are never "unread")
-    // Other tabs show unread count
     if (type === 'archive' || type === 'sent') {
       return filtered.length;
     }
@@ -339,7 +262,7 @@ export function MessagingPage({}: MessagingPageProps) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+        <RefreshCw className="h-8 w-8 animate-spin text-accent" />
         <span className="ml-2 text-muted-foreground">Loading messages...</span>
       </div>
     );
@@ -360,7 +283,6 @@ export function MessagingPage({}: MessagingPageProps) {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
       <div className="flex items-center justify-between p-6 border-b border-border bg-card">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Messaging</h1>
@@ -369,32 +291,29 @@ export function MessagingPage({}: MessagingPageProps) {
           </p>
         </div>
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => setViewerExpanded(!viewerExpanded)}
-            className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
-            title={viewerExpanded ? "Collapse viewer" : "Expand viewer"}
+          <Button
+            variant="ghost"
+            onPress={() => setViewerExpanded(!viewerExpanded)}
+            aria-label={viewerExpanded ? "Collapse viewer" : "Expand viewer"}
           >
             {viewerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </button>
-          <button
-            onClick={loadMessages}
-            disabled={loading}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50"
+          </Button>
+          <Button
+            variant="primary"
+            isDisabled={loading}
+            onPress={loadMessages}
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
-      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Message List Panel */}
         <div
           className="bg-card border-r border-border flex flex-col"
           style={{ width: viewerExpanded ? '0px' : `${panelWidth}px`, minWidth: viewerExpanded ? '0px' : '300px' }}
         >
-          {/* Filter Tabs - Vertical Layout */}
           <div className="border-b border-border p-2">
             <nav className="space-y-1">
               {[
@@ -405,69 +324,66 @@ export function MessagingPage({}: MessagingPageProps) {
                 { key: 'status-reports' as MessageType, label: 'Status Reports', icon: FileText },
                 { key: 'proposals' as MessageType, label: 'Proposals', icon: Vote },
               ].map(({ key, label, icon: Icon }) => (
-                <button
+                <Button
                   key={key}
-                  onClick={() => setActiveTab(key)}
-                  className={`w-full flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors cursor-pointer ${
-                    activeTab === key
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground'
-                  }`}
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onPress={() => setActiveTab(key)}
                 >
                   <Icon className="h-4 w-4 mr-3" />
                   <span className="flex-1 text-left">{label}</span>
                   <span className="px-2 py-1 text-xs bg-muted rounded-full min-w-[20px] text-center">
                     {getTabCount(key)}
                   </span>
-                </button>
+                </Button>
               ))}
             </nav>
           </div>
 
-          {/* Toolbar */}
           <div className="border-b border-border px-4 py-2 bg-muted/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    className="rounded border-border bg-background"
-                    checked={filteredMessages.length > 0 && filteredMessages.every(m => selectedMessageIds.has(m.id))}
-                    onChange={() => {
-                      // Select/deselect all visible messages
-                      const allSelected = filteredMessages.every(m => selectedMessageIds.has(m.id));
-                      if (allSelected) {
-                        // Deselect all
-                        setSelectedMessageIds(prev => {
-                          const newSet = new Set(prev);
-                          filteredMessages.forEach(m => newSet.delete(m.id));
-                          return newSet;
-                        });
-                      } else {
-                        // Select all
-                        setSelectedMessageIds(prev => {
-                          const newSet = new Set(prev);
-                          filteredMessages.forEach(m => newSet.add(m.id));
-                          return newSet;
-                        });
-                      }
-                    }}
-                  />
-                <button
-                  onClick={() => handleMarkRead(filteredMessages.filter(m => m.unread).map(m => m.id), true)}
-                  className="inline-flex items-center px-2 py-1 text-xs border border-border rounded text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
-                  disabled={!filteredMessages.some(m => m.unread)}
+                <input
+                  type="checkbox"
+                  className="rounded border-border bg-background"
+                  checked={filteredMessages.length > 0 && filteredMessages.every(m => selectedMessageIds.has(m.id))}
+                  onChange={() => {
+                    const allSelected = filteredMessages.every(m => selectedMessageIds.has(m.id));
+                    if (allSelected) {
+                      setSelectedMessageIds(prev => {
+                        const newSet = new Set(prev);
+                        filteredMessages.forEach(m => newSet.delete(m.id));
+                        return newSet;
+                      });
+                    } else {
+                      setSelectedMessageIds(prev => {
+                        const newSet = new Set(prev);
+                        filteredMessages.forEach(m => newSet.add(m.id));
+                        return newSet;
+                      });
+                    }
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => handleMarkRead(filteredMessages.filter(m => m.unread).map(m => m.id), true)}
+                  isDisabled={!filteredMessages.some(m => m.unread)}
+                  className="text-muted-foreground"
                 >
                   <CheckCircle className="h-3 w-3 mr-1" />
                   Mark Read
-                </button>
-                <button
-                  onClick={() => handleArchive(Array.from(selectedMessageIds))}
-                  className="inline-flex items-center px-2 py-1 text-xs border border-border rounded text-muted-foreground hover:bg-secondary hover:text-secondary-foreground"
-                  disabled={selectedMessageIds.size === 0}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => handleArchive(Array.from(selectedMessageIds))}
+                  isDisabled={selectedMessageIds.size === 0}
+                  className="text-muted-foreground"
                 >
                   <Archive className="h-3 w-3 mr-1" />
                   Archive
-                </button>
+                </Button>
               </div>
               <div className="flex items-center space-x-1 text-sm text-muted-foreground">
                 <span>{filteredMessages.length} messages</span>
@@ -475,7 +391,6 @@ export function MessagingPage({}: MessagingPageProps) {
             </div>
           </div>
 
-          {/* Message List */}
           <div className="flex-1 overflow-y-auto">
             {filteredMessages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-8">
@@ -497,7 +412,7 @@ export function MessagingPage({}: MessagingPageProps) {
                     key={message.id}
                     onClick={() => handleMessageClick(message)}
                     className={`p-4 cursor-pointer hover:bg-muted/50 transition-colors ${
-                      selectedMessage?.id === message.id ? 'bg-secondary border-l-4 border-primary' : ''
+                      selectedMessage?.id === message.id ? 'bg-secondary border-l-4 border-accent' : ''
                     } ${getMessageColor(message.type, message.priority, message.status)}`}
                   >
                     <div className="flex items-start space-x-3">
@@ -507,7 +422,7 @@ export function MessagingPage({}: MessagingPageProps) {
                           className="rounded border-border bg-background"
                           checked={selectedMessageIds.has(message.id)}
                           onChange={(e) => {
-                            e.stopPropagation(); // Prevent message selection
+                            e.stopPropagation();
                             setSelectedMessageIds(prev => {
                               const newSet = new Set(prev);
                               if (newSet.has(message.id)) {
@@ -541,7 +456,7 @@ export function MessagingPage({}: MessagingPageProps) {
                         <div className="flex items-center justify-between mt-2">
                           <div className="flex items-center space-x-2">
                             {message.unread && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary/20 text-primary">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/20 text-accent">
                                 Unread
                               </span>
                             )}
@@ -559,7 +474,6 @@ export function MessagingPage({}: MessagingPageProps) {
           </div>
         </div>
 
-        {/* Resizer */}
         {!viewerExpanded && (
           <div
             ref={resizeRef}
@@ -568,11 +482,9 @@ export function MessagingPage({}: MessagingPageProps) {
           />
         )}
 
-        {/* Message Viewer Panel */}
         <div className={`flex-1 bg-card ${viewerExpanded ? 'block' : 'hidden md:block'}`}>
           {selectedMessage ? (
             <div className="h-full flex flex-col">
-              {/* Message Header */}
               <div className="border-b border-border p-6 bg-muted/30">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-start space-x-3 flex-1">
@@ -589,7 +501,7 @@ export function MessagingPage({}: MessagingPageProps) {
                       <div className="flex items-center space-x-2">
                         {getPriorityBadge(selectedMessage.priority, selectedMessage.status)}
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedMessage.unread ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
+                          selectedMessage.unread ? 'bg-accent/20 text-accent' : 'bg-muted text-muted-foreground'
                         }`}>
                           {selectedMessage.unread ? 'Unread' : 'Read'}
                         </span>
@@ -598,38 +510,37 @@ export function MessagingPage({}: MessagingPageProps) {
                   </div>
                   <div className="flex items-center space-x-2">
                     {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') && (
-                      <button
-                        onClick={() => openReply({
+                      <Button
+                        variant="ghost"
+                        onPress={() => openReply({
                           messageId: selectedMessage.data.id,
                           from: selectedMessage.data.from,
                           subject: selectedMessage.title,
                           body: selectedMessage.data.body,
                         })}
-                        className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
                       >
                         <Reply className="h-4 w-4 mr-1" />
                         Reply
-                      </button>
+                      </Button>
                     )}
-                    <button
-                      onClick={() => handleMarkRead([selectedMessage.id], selectedMessage.unread ?? false)}
-                      className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
+                    <Button
+                      variant="ghost"
+                      onPress={() => handleMarkRead([selectedMessage.id], selectedMessage.unread ?? false)}
                     >
                       {selectedMessage.unread ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                       {selectedMessage.unread ? 'Mark Read' : 'Mark Unread'}
-                    </button>
-                    <button
-                      onClick={() => handleArchive([selectedMessage.id])}
-                      className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      onPress={() => handleArchive([selectedMessage.id])}
                     >
                       <Archive className="h-4 w-4" />
                       Archive
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
 
-              {/* Message Content */}
               <div className="flex-1 overflow-y-auto p-6">
                 <div className="prose prose-sm max-w-none">
                   {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') ? (

@@ -613,7 +613,7 @@ export function ArmViewerPage() {
                   onClick={() => selectArm(arm.id)}
                   className={`w-full text-left p-3 rounded-lg transition-colors ${
                     selectedArmId === arm.id
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-accent text-accent-foreground'
                       : 'hover:bg-secondary'
                   }`}
                 >
@@ -622,7 +622,7 @@ export function ArmViewerPage() {
                     <StatusBadge status={arm.status} />
                   </div>
                   <p className={`text-xs mt-1 ${
-                    selectedArmId === arm.id ? 'text-primary-foreground/70' : 'text-muted-foreground'
+                    selectedArmId === arm.id ? 'text-accent-foreground/70' : 'text-muted-foreground'
                   }`}>
                     {arm.harness}
                   </p>
@@ -635,7 +635,7 @@ export function ArmViewerPage() {
 
       {/* Resizable divider */}
       <div
-        className="w-1 bg-border hover:bg-primary/20 cursor-col-resize transition-colors"
+        className="w-1 bg-border hover:bg-accent/20 cursor-col-resize transition-colors"
         onMouseDown={() => setIsResizing(true)}
       />
 

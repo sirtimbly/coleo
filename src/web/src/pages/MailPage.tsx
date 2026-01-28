@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Button, Chip } from '@heroui/react';
 import { Mail, Send, Inbox, RefreshCw, Eye, Archive } from 'lucide-react';
 import { api, type MailMessage } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components';
@@ -114,59 +115,27 @@ export function MailPage() {
           <h1 className="text-2xl font-bold text-gradient-heading">Mail</h1>
           <p className="text-muted-foreground">Human-agent communication</p>
         </div>
-        <button
-          onClick={loadMail}
-          className="p-2 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-          title="Refresh"
+        <Button
+          variant="ghost"
+          onPress={loadMail}
+          aria-label="Refresh"
         >
           <RefreshCw className="h-4 w-4" />
-        </button>
+        </Button>
       </div>
 
       <div className="grid grid-cols-3 gap-8">
         <div className="col-span-2">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between border-b">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setActiveTab('inbox')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
-                    activeTab === 'inbox'
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Inbox className="h-4 w-4" />
-                  Inbox
-                  {inbox?.pagination.unread ? (
-                    <span className="ml-1 px-1.5 py-0.5 text-xs bg-primary text-primary-foreground rounded-full">
-                      {inbox.pagination.unread}
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  onClick={() => setActiveTab('sent')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
-                    activeTab === 'sent'
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Send className="h-4 w-4" />
-                  Sent
-                </button>
-                <button
-                  onClick={() => setActiveTab('archive')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer ${
-                    activeTab === 'archive'
-                      ? 'bg-secondary text-secondary-foreground'
-                      : 'text-muted-foreground hover:text-foreground'
-                  }`}
-                >
-                  <Archive className="h-4 w-4" />
-                  Archive
-                </button>
-              </div>
+            <div className="flex gap-2">
+              <Button variant="primary" onPress={handleSave}>
+                {saved ? 'Saved!' : 'Save'}
+              </Button>
+              <Button variant="secondary" onPress={handleClear}>
+                Clear
+              </Button>
+            </div>
             </CardHeader>
             <CardContent className="p-0">
               {messages.length === 0 ? (
@@ -181,7 +150,7 @@ export function MailPage() {
                       key={msg.id}
                       onClick={() => setSelectedMessage(msg)}
                       className={`w-full p-4 text-left hover:bg-secondary/50 transition-colors cursor-pointer ${
-                        activeTab === 'inbox' && !msg.flags.seen ? 'bg-primary/5' : ''
+                          activeTab === 'inbox' && !msg.flags.seen ? 'bg-accent/5' : ''
                       }`}
                     >
                       <div className="flex items-start justify-between gap-4">

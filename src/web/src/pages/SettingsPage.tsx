@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Button } from '@heroui/react';
 import { api } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
 
@@ -55,7 +56,7 @@ export function SettingsPage() {
           <div className="flex gap-2">
             <button
               onClick={handleSave}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
+              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:bg-accent/90 transition-colors"
             >
               {saved ? 'Saved!' : 'Save'}
             </button>
@@ -80,13 +81,13 @@ export function SettingsPage() {
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Documentation</span>
-            <a href="http://localhost:5174" className="text-primary hover:underline">
+            <a href="http://localhost:5174" className="text-accent hover:underline">
               View Docs
             </a>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Repository</span>
-            <a href="https://github.com/anomalyco/octopai" className="text-primary hover:underline">
+            <a href="https://github.com/anomalyco/octopai" className="text-accent hover:underline">
               GitHub
             </a>
           </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Trash2, Coins, Zap } from 'lucide-react';
+import { Card, Chip, Button } from '@heroui/react';
 import { api, type Arm } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
+import { StatusBadge } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface ArmEventData {
@@ -16,7 +17,7 @@ export function ArmsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadArms = async () => {
+  const loadArms = useCallback(async () => {
     try {
       const res = await api.listArms();
       setArms(res.arms);
@@ -26,9 +27,8 @@ export function ArmsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  // Handle WebSocket messages for real-time updates
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
     if (msg.channel !== 'arms' || !msg.event || !msg.data) return;
 
@@ -58,7 +58,6 @@ export function ArmsPage() {
       case 'arm.spawned':
       case 'arm.killed':
       case 'arm.prompt_sent':
-        // Update arm status in place
         if (data.id && data.status) {
           setArms((prev) =>
             prev.map((arm) =>
@@ -70,7 +69,6 @@ export function ArmsPage() {
     }
   }, []);
 
-  // Subscribe to arms channel
   useWebSocket({
     channels: ['arms'],
     onMessage: handleWSMessage,
@@ -78,7 +76,7 @@ export function ArmsPage() {
 
   useEffect(() => {
     loadArms();
-  }, []);
+  }, [loadArms]);
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this arm?')) return;
@@ -90,74 +88,83 @@ export function ArmsPage() {
     }
   };
 
+  if (error) {
+    return (
+      <div className="p-8">
+        <Card className="border-danger">
+          <Card.Content>
+            <p className="text-danger">{error}</p>
+          </Card.Content>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gradient-heading">Arms</h1>
+          <h1 className="text-2xl font-bold">Arms</h1>
           <p className="text-muted-foreground">Manage your AI agents</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
+        <Button variant="primary">
           <Plus className="h-4 w-4" />
           Spawn Arm
-        </button>
+        </Button>
       </div>
-
-      {error && (
-        <Card className="border-destructive">
-          <CardContent>
-            <p className="text-destructive">{error}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {loading ? (
         <div className="grid grid-cols-2 gap-4">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-48 bg-secondary rounded-lg animate-pulse" />
+            <Card key={i} className="h-48">
+              <Card.Content>
+                <div className="h-full bg-muted animate-pulse rounded" />
+              </Card.Content>
+            </Card>
           ))}
         </div>
       ) : arms.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center">
+          <Card.Content className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No arms registered yet</p>
-            <code className="block p-4 bg-secondary rounded text-sm text-left max-w-md mx-auto">
+            <code className="block p-4 bg-muted rounded text-sm text-left max-w-md mx-auto">
               octopai arm spawn --name my-arm --agent opencode
             </code>
-          </CardContent>
+          </Card.Content>
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {arms.map((arm) => (
             <Card key={arm.id}>
-              <CardHeader className="flex flex-row items-start justify-between">
+              <Card.Header className="flex flex-row items-start justify-between">
                 <div>
-                  <CardTitle className="flex items-center gap-2">
+                  <Card.Title className="flex items-center gap-2">
                     {arm.name}
                     <StatusBadge status={arm.status} />
-                  </CardTitle>
+                  </Card.Title>
                   <p className="text-sm text-muted-foreground mt-1">
                     {arm.harness}
                     {(arm.provider || arm.model) && (
                       <span className="block mt-1">
-                        {arm.provider && <span className="text-blue-600">{arm.provider}</span>}
+                        {arm.provider && <Chip size="sm" variant="soft">{arm.provider}</Chip>}
                         {arm.provider && arm.model && <span> · </span>}
-                        {arm.model && <span className="text-green-600">{arm.model}</span>}
+                        {arm.model && <Chip size="sm" variant="soft" color="success">{arm.model}</Chip>}
                       </span>
                     )}
                   </p>
                 </div>
-                <button
-                  onClick={() => handleDelete(arm.id)}
-                  className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => handleDelete(arm.id)}
+                  className="text-danger hover:text-danger"
                 >
                   <Trash2 className="h-4 w-4" />
-                </button>
-              </CardHeader>
-              <CardContent>
+                </Button>
+              </Card.Header>
+              <Card.Content>
                 <div className="space-y-3 text-sm">
-                  {/* Context usage */}
                   <div>
                     <div className="flex justify-between text-muted-foreground mb-1">
                       <span>Context</span>
@@ -165,7 +172,7 @@ export function ArmsPage() {
                         {arm.currentContextUsed.toLocaleString()} / {arm.contextBudget.toLocaleString()}
                       </span>
                     </div>
-                    <div className="h-2 bg-secondary rounded-full overflow-hidden">
+                    <div className="h-2 bg-default-200 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-primary transition-all"
                         style={{
@@ -175,7 +182,6 @@ export function ArmsPage() {
                     </div>
                   </div>
 
-                  {/* Tokens and Cost */}
                   {(arm.totalTokens !== undefined || arm.totalCost !== undefined) && (
                     <div className="flex items-center gap-4 text-muted-foreground">
                       {arm.totalTokens !== undefined && (
@@ -193,15 +199,13 @@ export function ArmsPage() {
                     </div>
                   )}
 
-                  {/* Current Task */}
                   {arm.currentTaskSubject && (
-                    <div className="p-2 bg-secondary/50 rounded">
+                    <div className="p-2 bg-default-100 rounded">
                       <div className="text-xs text-muted-foreground mb-1">Current task</div>
                       <div className="text-sm truncate">{arm.currentTaskSubject}</div>
                     </div>
                   )}
 
-                  {/* Reputation */}
                   {arm.reputation !== undefined && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Reputation</span>
@@ -209,7 +213,6 @@ export function ArmsPage() {
                     </div>
                   )}
 
-                  {/* Last activity */}
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Last active</span>
                     <span>
@@ -220,13 +223,12 @@ export function ArmsPage() {
                   </div>
                 </div>
 
-                {/* Personality preview */}
                 {arm.personality && (
-                  <div className="mt-4 p-3 bg-secondary/50 rounded text-xs text-muted-foreground">
+                  <div className="mt-4 p-3 bg-default-100 rounded text-xs text-muted-foreground">
                     {arm.personality.slice(0, 150)}...
                   </div>
                 )}
-              </CardContent>
+              </Card.Content>
             </Card>
           ))}
         </div>

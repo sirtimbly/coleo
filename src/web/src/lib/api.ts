@@ -595,10 +595,10 @@ class ApiClient {
     });
   }
 
-  async reorderTask(taskId: string, toIndex: number) {
+  async reorderTask(taskId: string, toSortOrder: number) {
     return this.request<{ success: boolean }>('/tasks/reorder', {
       method: 'POST',
-      body: JSON.stringify({ taskId, toIndex }),
+      body: JSON.stringify({ taskId, toSortOrder }),
     });
   }
 

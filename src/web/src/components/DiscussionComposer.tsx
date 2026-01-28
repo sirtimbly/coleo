@@ -132,7 +132,7 @@ export function DiscussionComposer({
       {replyTo && (
         <div className="flex items-center justify-between px-3 py-2 border-b border-divider bg-content3/50">
           <span className="text-sm text-foreground-400">
-            Replying to <span className="text-primary font-medium">{replyTo.authorName}</span>
+            Replying to <span className="text-accent font-medium">{replyTo.authorName}</span>
           </span>
           <Button
             isIconOnly

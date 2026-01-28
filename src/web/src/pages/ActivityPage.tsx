@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Button } from '@heroui/react';
 import { api, type ActivityEntry } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components';
+import { Activity } from 'lucide-react';
 
 export function ActivityPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
@@ -57,7 +59,7 @@ export function ActivityPage() {
                   key={entry.id}
                   className="flex items-center gap-4 p-3 rounded hover:bg-secondary/50 transition-colors"
                 >
-                  <div className="h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                    <div className="h-2 w-2 rounded-full bg-accent flex-shrink-0" />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm">
                       <span className="font-medium">{entry.actor}</span>
@@ -81,23 +83,25 @@ export function ActivityPage() {
           {/* Pagination */}
           {pagination.total > pagination.limit && (
             <div className="flex justify-center gap-2 mt-4 pt-4 border-t border-border">
-              <button
-                onClick={() => loadActivity(Math.max(0, pagination.offset - pagination.limit))}
-                disabled={pagination.offset === 0}
-                className="px-3 py-1 text-sm rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50"
+              <Button
+                variant="secondary"
+                size="sm"
+                onPress={() => loadActivity(Math.max(0, pagination.offset - pagination.limit))}
+                isDisabled={pagination.offset === 0}
               >
                 Previous
-              </button>
+              </Button>
               <span className="px-3 py-1 text-sm text-muted-foreground">
                 {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} of {pagination.total}
               </span>
-              <button
-                onClick={() => loadActivity(pagination.offset + pagination.limit)}
-                disabled={pagination.offset + pagination.limit >= pagination.total}
-                className="px-3 py-1 text-sm rounded bg-secondary hover:bg-secondary/80 disabled:opacity-50"
+              <Button
+                variant="secondary"
+                size="sm"
+                onPress={() => loadActivity(pagination.offset + pagination.limit)}
+                isDisabled={pagination.offset + pagination.limit >= pagination.total}
               >
                 Next
-              </button>
+              </Button>
             </div>
           )}
         </CardContent>
