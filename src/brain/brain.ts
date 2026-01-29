@@ -105,13 +105,13 @@ export class Brain {
     if (this.shuttingDown) {
       return;
     }
-    
+
     // Publish to JetStream if initialized
     if (eventStore.isInitialized()) {
-      const subject = target 
+      const subject = target
         ? `octopai.events.arm.${target}.${action}`
         : `octopai.events.brain.${action}`;
-      
+
       eventStore.publishEvent(subject, {
         type: action,
         armId: target,
@@ -134,7 +134,7 @@ export class Brain {
     if (this.shuttingDown) {
       return;
     }
-    
+
     switch (effect.type) {
       case "LOG":
         this.log(effect.message);
@@ -320,7 +320,7 @@ export class Brain {
   private async handleBrainMessage(message: BrainMessage): Promise<void> {
     // Skip message handling during shutdown
     if (this.shuttingDown) return;
-    
+
     this.log(`NATS: Received ${message.type} from ${message.from}`);
 
     // Convert NATS message to QueueMessage format and handle
@@ -498,7 +498,7 @@ export class Brain {
     if (this.shuttingDown) {
       return;
     }
-    
+
     this.state.lastPollAt = new Date().toISOString();
 
     // Step 0: Infrastructure health check - verify the "body" is healthy before arms
@@ -690,12 +690,12 @@ export class Brain {
    stop(): void {
      this.running = false;
      this.shuttingDown = true;
-     
+
      // Abort any pending sleep operations to wake up immediately
      if (this.abortController) {
        this.abortController.abort();
      }
-     
+
      this.log("Stop requested");
    }
 
@@ -706,7 +706,7 @@ export class Brain {
    async shutdown(): Promise<void> {
      // Mark as shutting down to prevent new operations
      this.shuttingDown = true;
-     
+
      // Stop the health monitor first (it may be using callbacks)
      if (this.healthMonitor) {
        this.healthMonitor.stop();
@@ -730,7 +730,7 @@ export class Brain {
        this.db.close();
        this.db = null;
      }
-     
+
      // Clear abort controller
      this.abortController = null;
 
@@ -1395,7 +1395,7 @@ We'll notify you when we start investigating or have updates.`,
       let dbStatus = status;
       if (status === "in_progress") {
         dbStatus = "in_progress";
-        
+
         // This is a task acknowledgment - transition state machine
         if (this.armStateMachine) {
           await this.armStateMachine.transition(armId, {
@@ -1453,7 +1453,7 @@ We'll notify you when we start investigating or have updates.`,
         type: "TASK_COMPLETED",
         taskId,
       });
-      
+
       // Also update the legacy in-memory arm status
       const arm = this.arms.get(task.assignedTo);
       if (arm) {
@@ -1503,11 +1503,11 @@ We'll notify you when we start investigating or have updates.`,
             updated_at = ?
         WHERE id = ?
       `, [now, now, taskId]);
-      
+
       if (result.changes === 0) {
         this.log(`[completeTask] WARNING: Task ${taskId} not found in database (0 rows updated)`);
       }
-      
+
       // Update arm status in database
       if (task?.assignedTo) {
         this.db.run(`
@@ -1663,19 +1663,19 @@ We'll notify you when we start investigating or have updates.`,
 
   /**
    * Determine if a status report should be forwarded to the human user
-   * 
+   *
    * Decision factors:
    * 1. Report status type - some always forward, some conditional
    * 2. Other arms working on same task - if yes, maybe wait
    * 3. Idle arms available - if another arm can pick up immediately, don't notify yet
    * 4. Completion states - if work is done and no follow-up assigned, notify
    * 5. Blocked/stuck - if brain decides to move arm to new task, notify user task is deferred
-   * 
-   * Returns: { 
-   *   shouldForward: boolean, 
-   *   reason: string, 
+   *
+   * Returns: {
+   *   shouldForward: boolean,
+   *   reason: string,
    *   assignedToArm?: string,
-   *   action?: 'notify' | 'defer_task' | 'reassign' 
+   *   action?: 'notify' | 'defer_task' | 'reassign'
    * }
    */
   private async shouldForwardStatusReportToUser(
@@ -1687,9 +1687,9 @@ We'll notify you when we start investigating or have updates.`,
       blockers?: string[];
     },
     task: Task
-  ): Promise<{ 
-    shouldForward: boolean; 
-    reason: string; 
+  ): Promise<{
+    shouldForward: boolean;
+    reason: string;
     assignedToArm?: string;
     action?: 'notify' | 'defer_task' | 'reassign';
   }> {
@@ -1719,14 +1719,14 @@ We'll notify you when we start investigating or have updates.`,
         WHERE id != ?
         AND status IN ('idle', 'busy')
         AND (domain != ? OR domain IS NULL)
-        ORDER BY 
+        ORDER BY
           CASE status WHEN 'idle' THEN 0 ELSE 1 END,
           last_activity_at DESC
         LIMIT 1
       `).all(report.armId, task.domain || '') as Array<{ id: string; name: string; domain: string | null; status: string }>;
 
       const idleAlternative = alternativeArms.find(a => a.status === 'idle');
-      
+
       if (idleAlternative) {
         // Another arm with different expertise can take over
         this.log(`Task ${task.subject} blocked - can reassign to ${idleAlternative.name}`);
@@ -1778,8 +1778,8 @@ We'll notify you when we start investigating or have updates.`,
     if (armsOnTask.length > 0) {
       // Other arms are still working on this task
       this.log(`Status report for task ${task.subject}: ${armsOnTask.length} other arms still working`);
-      return { 
-        shouldForward: false, 
+      return {
+        shouldForward: false,
         reason: `${armsOnTask.length} other arm(s) still working on this task: ${armsOnTask.map(a => a.name).join(", ")}`
       };
     }
@@ -1820,8 +1820,8 @@ We'll notify you when we start investigating or have updates.`,
     }
 
     // No other arms available, forward to user
-    return { 
-      shouldForward: true, 
+    return {
+      shouldForward: true,
       reason: "No other arms available to continue work - user should be notified",
       action: 'notify',
     };
@@ -1908,7 +1908,7 @@ We'll notify you when we start investigating or have updates.`,
           await this.saveTasks();
           await this.claimTaskForArm(forwardDecision.assignedToArm, task.id);
           this.log(`Task ${task.subject} blocked by ${report.armId}, reassigned to ${forwardDecision.assignedToArm}`);
-          
+
           // Log but don't notify user
           this.logActivity("brain", "task_reassigned_on_block", task.id, {
             fromArm: report.armId,
@@ -1919,7 +1919,7 @@ We'll notify you when we start investigating or have updates.`,
           // Defer the task and notify user - arm will move to other work
           task.status = "blocked";
           await this.saveTasks();
-          
+
           // Update database to mark task as deferred
           if (this.db) {
             this.db.run(`
@@ -1995,7 +1995,7 @@ We'll notify you when we start investigating or have updates.`,
       case "completed_with_issues": {
         // Create a verification task for follow-up
         const verifyTask = await this.createVerificationTask(task, report, !forwardDecision.shouldForward);
-        
+
         // If we decided not to forward because an idle arm can handle it, assign the task
         if (!forwardDecision.shouldForward && forwardDecision.assignedToArm) {
           await this.claimTaskForArm(forwardDecision.assignedToArm, verifyTask.id);
@@ -3026,7 +3026,7 @@ Report findings using bug resolution workflow.`,
         // Process dead
         if (arm.status !== "stopped") {
           this.log(`  ${arm.name}: process dead, transitioning to stopped via state machine`);
-          
+
           if (this.armStateMachine) {
             // Emit STOP event - this will handle releasing tasks and cleanup via side effects
             await this.armStateMachine.transition(arm.id, { type: "STOP", reason: "process_dead_on_scan" });
@@ -3064,11 +3064,11 @@ Report findings using bug resolution workflow.`,
             if (stateResult.hasSession && stateResult.state !== "stopped" && stateResult.state !== "dead") {
               // Arm is properly connected - check state machine instead of ad-hoc grace period
               const harnessStatus = stateResult.state === "processing" ? "busy" : "idle";
-              
+
               // Use state machine to determine if we should sync status
               if (this.armStateMachine) {
                 const smContext = this.armStateMachine.getContext(armId);
-                
+
                 // If state machine says arm is in task_assigned or working state,
                 // don't sync to idle - the state machine handles this with proper timeouts
                 if (smContext && (smContext.state === "task_assigned" || smContext.state === "working")) {
@@ -3079,7 +3079,7 @@ Report findings using bug resolution workflow.`,
                     continue;
                   }
                 }
-                
+
                 // If harness says processing but state machine is idle, the harness may be
                 // working on something without a brain task - leave it alone
                 if (smContext && smContext.state === "idle" && harnessStatus === "busy") {
@@ -3087,7 +3087,7 @@ Report findings using bug resolution workflow.`,
                   continue;
                 }
               }
-              
+
               if (arm.status !== harnessStatus) {
                 this.log(`Arm ${armId}: syncing status from "${arm.status}" to "${harnessStatus}" based on harness state`);
                 await this.syncArmStatus(armId, harnessStatus);
@@ -3099,11 +3099,11 @@ Report findings using bug resolution workflow.`,
               // Process is running but API session was lost (server restart)
               // Emit CONNECTION_LOST to state machine - it will set up reconnect timeout
               this.log(`Arm ${armId} process alive but session lost (server restart), emitting CONNECTION_LOST`);
-              
+
               if (this.armStateMachine) {
                 await this.armStateMachine.transition(armId, { type: "CONNECTION_LOST" });
               }
-              
+
               // Also prompt the arm to re-register
               await this.sendPromptToArm(
                 arm.name,
@@ -3119,7 +3119,7 @@ Report findings using bug resolution workflow.`,
         } catch {
           // Process is dead - transition through state machine
           this.log(`Arm ${armId} process dead (PID: ${arm.pid}), transitioning to stopped via state machine`);
-          
+
           if (this.armStateMachine) {
             // Emit STOP event - this will handle releasing tasks and cleanup via side effects
             await this.armStateMachine.transition(armId, { type: "STOP", reason: "process_dead" });
@@ -3141,7 +3141,7 @@ Report findings using bug resolution workflow.`,
 
         if (stateResult && !stateResult.hasSession) {
           this.log(`Arm ${armId} has no session and no PID, transitioning to stopped via state machine`);
-          
+
           if (this.armStateMachine) {
             // Emit STOP event - this will handle releasing tasks and cleanup via side effects
             await this.armStateMachine.transition(armId, { type: "STOP", reason: "no_session" });
@@ -3277,10 +3277,10 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
 
         // Send the common initial prompt to the arm
         const success = await this.sendPromptToArm(armId, this.INITIAL_ARM_PROMPT);
-        
+
         if (success) {
           this.log(`Sent initial prompt to ${armId}`);
-          this.logActivity("brain", "arm_initialized", armId, { 
+          this.logActivity("brain", "arm_initialized", armId, {
             source: "initial_prompt_sent"
           });
         } else {
@@ -3513,7 +3513,7 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
     * Reset an arm's OpenCode session to clear stale context.
     * This is called before assigning a new task to ensure the arm
     * doesn't have old task IDs in its conversation history.
-    * 
+    *
     * @returns true if reset was successful, false otherwise
     */
    private async resetArmSession(armId: string): Promise<boolean> {
@@ -4328,7 +4328,7 @@ octopai arm prompt ${arm.name} "your message here"
     const since = new Date(Date.now() - minutes * 60 * 1000);
     try {
       const events = await eventStore.getArmEvents(armId, 100);
-      
+
       // Filter to events within the time window and transform to expected format
       return events
         .filter(e => new Date(e.timestamp) > since)
@@ -4667,7 +4667,7 @@ Please resolve these bugs before the task can proceed.`,
            taskId: task.id,
            taskSubject: task.subject,
          });
-         
+
          if (!result.success) {
            this.log(`Failed to assign task to ${bestArm.id}: ${result.error}`);
            continue;
@@ -4897,10 +4897,10 @@ Please resolve these bugs before the task can proceed.`,
 
     for (const task of this.tasks) {
       // Clear assignedTo if the arm doesn't exist (avoids FK constraint failure)
-      const assignedTo = task.assignedTo && validArmIds.has(task.assignedTo) 
-        ? task.assignedTo 
+      const assignedTo = task.assignedTo && validArmIds.has(task.assignedTo)
+        ? task.assignedTo
         : null;
-      
+
       // Also update in-memory task if we cleared the assignment
       if (task.assignedTo && !validArmIds.has(task.assignedTo)) {
         this.log(`Clearing invalid assignment for task ${task.id}: arm ${task.assignedTo} not found`);
@@ -4910,7 +4910,7 @@ Please resolve these bugs before the task can proceed.`,
           task.status = "pending";
         }
       }
-      
+
       this.db.run(
         `INSERT INTO tasks (id, subject, description, status, priority, domain, classification,
                            assigned_to, created_at, updated_at, completed_at, artifacts,
@@ -5047,7 +5047,7 @@ Please resolve these bugs before the task can proceed.`,
 
   /**
    * Process inbox items
-   * 
+   *
    * Reads .project/inbox.md, creates tasks from items, clears the inbox.
    * Items are deduplicated against existing tasks.
    */
@@ -5056,10 +5056,10 @@ Please resolve these bugs before the task can proceed.`,
 
     try {
       const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
-      
+
       // Parse inbox
       const result = await parseInbox(projectRoot);
-      
+
       if (result.wasEmpty) {
         return; // Nothing to process
       }
@@ -5069,14 +5069,33 @@ Please resolve these bugs before the task can proceed.`,
         return;
       }
 
-      // Get existing tasks for deduplication
+      // Get existing tasks with their comments for deduplication
+      // Join task_comments to get all text associated with each task
       const existingTasks = this.db.query(`
-        SELECT subject, description FROM tasks 
-        WHERE status NOT IN ('completed', 'failed', 'cancelled')
-      `).all() as Array<{ subject: string; description: string }>;
+        SELECT
+          t.id,
+          t.subject,
+          t.description,
+          GROUP_CONCAT(tc.content, ' ') as comments_text
+        FROM tasks t
+        LEFT JOIN task_comments tc ON t.id = tc.task_id
+        WHERE t.status IN ('pending', 'claimed', 'in_progress', 'blocked')
+        GROUP BY t.id, t.subject, t.description
+      `).all() as Array<{
+        id: string;
+        subject: string;
+        description: string;
+        comments_text: string | null;
+      }>;
+
+      // Map to format expected by deduplicateItems, combining all text
+      const tasksForDeduplication = existingTasks.map(task => ({
+        subject: task.subject,
+        description: `${task.description} ${task.comments_text || ''}`.trim(),
+      }));
 
       // Deduplicate
-      const newItems = deduplicateItems(result.items, existingTasks);
+      const newItems = deduplicateItems(result.items, tasksForDeduplication);
 
       if (newItems.length === 0) {
         // All items were duplicates, clear inbox anyway
@@ -5089,12 +5108,12 @@ Please resolve these bugs before the task can proceed.`,
       let created = 0;
       for (const item of newItems) {
         const taskId = `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        
+
         this.db.run(`
           INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, created_at, updated_at)
           VALUES (?, ?, ?, 'pending', ?, 'inbox', '.project/inbox.md', datetime('now'), datetime('now'))
         `, [taskId, item.subject, item.description, item.priority]);
-        
+
         created++;
       }
 
@@ -5102,10 +5121,10 @@ Please resolve these bugs before the task can proceed.`,
       await clearInbox(projectRoot);
 
       this.log(`Inbox: created ${created} tasks, cleared inbox`);
-      this.logActivity("brain", "inbox_processed", undefined, { 
-        itemsFound: result.items.length, 
+      this.logActivity("brain", "inbox_processed", undefined, {
+        itemsFound: result.items.length,
         duplicates: result.items.length - newItems.length,
-        tasksCreated: created 
+        tasksCreated: created
       });
 
     } catch (err) {
@@ -5370,13 +5389,13 @@ const arm: Arm = {
           };
           (arm as Arm & { domain?: string }).domain = row.domain;
           this.arms.set(arm.id, arm);
-          
+
           // Ensure arm has state machine entry
           if (this.armStateMachine) {
             const ctx = this.armStateMachine.getContext(arm.id);
             if (!ctx) {
               // Initialize state based on current arm status
-              const initialState = row.status === "busy" ? "working" : 
+              const initialState = row.status === "busy" ? "working" :
                                    row.status === "idle" ? "idle" :
                                    row.status === "starting" ? "starting" : "idle";
               this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
@@ -5458,13 +5477,13 @@ const arm: Arm = {
           // Store domain in a way we can access it
           (arm as Arm & { domain?: string }).domain = row.domain;
           this.arms.set(arm.id, arm);
-          
+
           // Ensure arm has state machine entry
           if (this.armStateMachine) {
             const ctx = this.armStateMachine.getContext(arm.id);
             if (!ctx) {
               // Initialize state based on current arm status
-              const initialState = status === "busy" ? "working" : 
+              const initialState = status === "busy" ? "working" :
                                    status === "idle" ? "idle" :
                                    status === "starting" ? "starting" : "idle";
               this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
@@ -5563,15 +5582,15 @@ const arm: Arm = {
         resolve();
         return;
       }
-      
+
       const timeoutId = setTimeout(resolve, ms);
-      
+
       // Listen for abort signal to wake up early
       const abortHandler = () => {
         clearTimeout(timeoutId);
         resolve();
       };
-      
+
       this.abortController.signal.addEventListener('abort', abortHandler, { once: true });
     });
   }

@@ -43,7 +43,7 @@ export class DiscoverySummarizer {
   constructor(logger?: (message: string) => void) {
     this.logger = logger || (() => {});
     this.apiKey = process.env.OPENAI_API_KEY || "";
-    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
     this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
   }
 
