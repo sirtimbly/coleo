@@ -7,3 +7,5 @@ export { ToastProvider, ToastContainer } from '../lib/toast.tsx';
 export { TaskDiscussionPanel } from './TaskDiscussionPanel';
 export { DiscussionItem } from './DiscussionItem';
 export { DiscussionComposer } from './DiscussionComposer';
+export { BugGrid } from './BugGrid';
+export { BugGridRow } from './BugGridRow';
