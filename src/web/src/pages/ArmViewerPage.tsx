@@ -621,7 +621,7 @@ export function ArmViewerPage() {
                 onPress={() => selectArm(arm.id)}
               >
                 <div className="flex items-center justify-between">
-                  <span className="font-medium truncate">{arm.name}</span>
+                  <span className="font-medium truncate pr-2">{arm.name}</span>
                   <StatusBadge status={arm.status} />
                 </div>
                 <p className={`text-xs mt-1 ${
@@ -919,7 +919,7 @@ function ArmAnalysisPanel({
 }) {
   if (loading) {
     return (
-      <div className="p-4 border-b border-border">
+      <div className="p-4 border-b border">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading analysis...</span>
@@ -963,7 +963,7 @@ function ArmAnalysisPanel({
                 ? 'bg-yellow-500/20 text-yellow-700'
                 : 'bg-gray-500/20 text-gray-600'
           }`}>
-            {analysis.analysis.confidence}
+            {analysis.analysis.confidence} confidence
           </span>
         </div>
         <button
@@ -1016,7 +1016,7 @@ function ArmAnalysisPanel({
         </div>
       )}
 
-      {/* Unknown event types warning */}
+      {/* Unknown event types warning 
       {analysis.analysis.unknownEventTypes.length > 0 && (
         <div className="mt-3 p-2 bg-gray-500/10 border border-gray-500/30 rounded text-xs">
           <div className="flex items-center gap-2 text-gray-600">
@@ -1024,7 +1024,7 @@ function ArmAnalysisPanel({
             <span>Unknown events: {analysis.analysis.unknownEventTypes.slice(0, 3).join(', ')}</span>
           </div>
         </div>
-      )}
+      )} */}
     </div>
   );
 }

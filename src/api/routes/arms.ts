@@ -1293,6 +1293,74 @@ export function createArmsRoutes() {
     }
   });
 
+  /**
+   * Send a prompt to an arm
+   * POST /api/arms/:id/prompt
+   *
+   * Sends a prompt to a running arm via the harness manager.
+   * The arm must have an active session.
+   */
+  app.post("/:id/prompt", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      prompt: string;
+      interrupt?: boolean;
+    }>();
+
+    if (!body.prompt) {
+      throw HttpError.badRequest("prompt is required");
+    }
+
+    // Check if arm exists
+    const row = db.query("SELECT id, status, agent_id FROM arms WHERE id = ?").get(id) as {
+      id: string;
+      status: string;
+      agent_id: string | null;
+    } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    // Check if arm is running
+    if (row.status === "stopped") {
+      throw HttpError.badRequest(`Arm ${id} is stopped. Spawn it first.`);
+    }
+
+    // Get the harness manager
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    // Check if arm has an active session
+    if (!manager.hasSession(id)) {
+      throw HttpError.badRequest(`Arm ${id} has no active session. Spawn it first.`);
+    }
+
+    try {
+      // Send the prompt via harness manager
+      await manager.sendPrompt(id, body.prompt, {
+        interrupt: body.interrupt,
+      });
+
+      // Log activity
+      logActivity(db, id, "prompt_sent", undefined, {
+        promptLength: body.prompt.length,
+        interrupt: body.interrupt,
+      });
+
+      return c.json({
+        success: true,
+        message: `Prompt sent to arm ${id}`,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to send prompt: ${message}`);
+    }
+  });
+
   return app;
 }
 

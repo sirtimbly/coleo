@@ -321,7 +321,14 @@ export const TaskGridRow = memo(function TaskGridRow({
 			)}
 
 			<div className="px-2 py-1 text-default-500 text-xs uppercase tracking-wide">
-				{task.status.replace("_", " ")}
+				<div className="flex flex-col gap-1">
+					<span>{task.status.replace("_", " ")}</span>
+					{task.assignedArmName && (task.status === 'in_progress' || task.status === 'claimed') && (
+						<Chip size="sm" variant="soft" color="accent" className="text-xs">
+							{task.assignedArmName}
+						</Chip>
+					)}
+				</div>
 			</div>
 
 			{/* Priority dropdown */}
