@@ -17,6 +17,30 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+
+/**
+ * Format an SDK error for display
+ * SDK errors can be objects with name/data properties or plain strings
+ */
+function formatSdkError(error: unknown): string {
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object') {
+    const err = error as { name?: string; data?: { message?: string } };
+    if (err.name && err.data?.message) {
+      return `${err.name}: ${err.data.message}`;
+    }
+    // Try to get a meaningful string representation
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
 import type {
 	AgentHarness,
 	HarnessSession,
@@ -602,16 +626,19 @@ export class OpenCodeApiHarness implements AgentHarness {
       apiSession.sessionId = newSession.id;
       apiSession.lastHeartbeat = new Date();
 
+      // Get the actual arm ID (strip the opencode-api- prefix from session ID)
+      const armId = session.id.replace(/^opencode-api-/, "");
+
       // Restart event stream with new session ID
       if (this.eventCallbacks.size > 0) {
         const eventStream = new OpenCodeEventStream({
           serverUrl: apiSession.serverUrl,
-          armId: session.id.replace(/^opencode-api-/, ""),
+          armId,
           sessionId: newSession.id,
           onEvent: (event: OpenCodeEvent) => {
             const { shouldBroadcast, eventName, data } = filterEvent(event);
             if (shouldBroadcast) {
-              this.emitEvent(session.id, eventName, data);
+              this.emitEvent(armId, eventName, data);
             }
           },
           onError: (error) => {
@@ -658,7 +685,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     });
 
     if (response.error) {
-      throw new Error(`Failed to send prompt: ${response.error}`);
+      throw new Error(`Failed to send prompt: ${formatSdkError(response.error)}`);
     }
 
     // Update activity timestamp
@@ -684,7 +711,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     });
 
     if (response.error) {
-      throw new Error(`Failed to send prompt: ${response.error}`);
+      throw new Error(`Failed to send prompt: ${formatSdkError(response.error)}`);
     }
 
     return { info: response.data.info, parts: response.data.parts };

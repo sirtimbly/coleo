@@ -9,7 +9,7 @@
  *   OCTOPAI_PREFERRED_MODELS="provider/model,provider/model,..."
  *
  * Example:
- *   OCTOPAI_PREFERRED_MODELS="anthropic/claude-sonnet-4-20250514,openai/gpt-4o,opencode-zen/o4-mini"
+ *   OCTOPAI_PREFERRED_MODELS="openai/gpt-5.1-codex-mini,openai/gpt-4o,opencode-zen/o4-mini"
  */
 
 export interface ModelSpec {

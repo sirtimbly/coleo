@@ -50,7 +50,7 @@ export interface ResolvedModel {
 // This is used when pricing info isn't available from the API
 const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   // Claude models
-  "claude-sonnet-4": { input: 3, output: 15 },
+  "gpt-5.1-codex-mini": { input: 3, output: 15 },
   "claude-opus-4": { input: 15, output: 75 },
   "claude-3-5-sonnet": { input: 3, output: 15 },
   "claude-3-opus": { input: 15, output: 75 },

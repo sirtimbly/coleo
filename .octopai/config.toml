@@ -1,5 +1,5 @@
 # Octopai Configuration
-# Generated on 2026-01-16T22:35:57.493Z
+# Updated: 2026-01-29T19:04:15.099Z
 
 version = 1
 
@@ -14,9 +14,8 @@ digest_schedule = "immediate"
 [terminal]
 emulator = "auto"
 
-# Gitea configuration (optional)
-# [gitea]
-# url = "http://localhost:3000"
-# token = "your-token-here"
-# default_org = "octopai"
-# default_repo = "workspace"
+[defaults]
+harness = "opencode"
+provider = "opencode"
+model = "gpt-5.1-codex-mini"
+context_budget = 100000

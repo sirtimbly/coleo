@@ -331,7 +331,7 @@ export async function main(): Promise<void> {
     if (arg === "--model" && nextArg) {
       const parts = nextArg.split("/");
       const provider = parts[0] || "anthropic";
-      const model = parts[1] || "claude-sonnet-4-20250514";
+      const model = parts[1] || "gpt-5.1-codex-mini";
       config.models.push({ provider, model });
       i++;
     } else if (arg === "--scenario" && nextArg) {
@@ -375,7 +375,7 @@ Examples:
   bun run src/regression/runner.ts --quick
 
   # Compare two models
-  bun run src/regression/runner.ts --model anthropic/claude-sonnet-4-20250514 --model openai/gpt-4o
+  bun run src/regression/runner.ts --model openai/gpt-5.1-codex-mini --model openai/gpt-4o
 
   # Run specific scenario 3 times
   bun run src/regression/runner.ts --scenario simple-task-completion --iterations 3

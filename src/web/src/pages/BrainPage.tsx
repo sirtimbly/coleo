@@ -227,7 +227,7 @@ function DefaultsSection({
                     setHarness(e.target.value);
                     if (e.target.value === 'opencode') {
                       setProvider('github-copilot');
-                      setModel('claude-sonnet-4');
+                      setModel('gpt-5.1-codex-mini');
                     }
                   }}
                   className="w-full px-3 py-2 bg-secondary border border-border rounded-md"

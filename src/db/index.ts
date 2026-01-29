@@ -1168,7 +1168,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       parent_arm_id: null,
       pid: null,
       provider: "opencode",
-      model: "claude-sonnet-4",
+      model: "gpt-5.1-codex-mini",
       config: JSON.stringify({ workdir: "~/projects" }),
     },
     {
@@ -1189,7 +1189,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       parent_arm_id: null,
       pid: null,
       provider: "opencode",
-      model: "claude-sonnet-4",
+      model: "gpt-5.1-codex-mini",
       config: JSON.stringify({ workdir: "~/projects/web" }),
     },
     {

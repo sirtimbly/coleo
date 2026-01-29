@@ -222,6 +222,17 @@ export class HarnessManager {
     if (options.initialPrompt) {
       console.log(`[harness-manager] Sending initial prompt to ${armId} (async)...`);
       try {
+        // Reset session before sending initial prompt to ensure a fresh context
+        // This prevents stale conversation history from previous sessions
+        if (harness.resetSession) {
+          console.log(`[harness-manager] Resetting session for ${armId} before sending initial prompt...`);
+          const newSessionId = await harness.resetSession(session);
+          if (newSessionId) {
+            console.log(`[harness-manager] Session reset for ${armId}: new session ${newSessionId}`);
+          }
+          // Small delay to ensure the new session is fully ready
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
         await harness.sendPrompt(session, options.initialPrompt);
         console.log(`[harness-manager] Initial prompt sent to ${armId}`);
       } catch (err) {

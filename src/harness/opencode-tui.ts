@@ -31,6 +31,30 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+
+/**
+ * Format an SDK error for display
+ * SDK errors can be objects with name/data properties or plain strings
+ */
+function formatSdkError(error: unknown): string {
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error && typeof error === 'object') {
+    const err = error as { name?: string; data?: { message?: string } };
+    if (err.name && err.data?.message) {
+      return `${err.name}: ${err.data.message}`;
+    }
+    // Try to get a meaningful string representation
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return String(error);
+    }
+  }
+  return String(error);
+}
+
 import type {
   AgentHarness,
   HarnessSession,
@@ -1010,7 +1034,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     });
 
     if (response.error) {
-      throw new Error(`Failed to send prompt: ${response.error}`);
+      throw new Error(`Failed to send prompt: ${formatSdkError(response.error)}`);
     }
 
     return { info: response.data.info, parts: response.data.parts };

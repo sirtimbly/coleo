@@ -43,106 +43,7 @@ export interface BrainOptions {
   apiKey?: string;
 }
 
-/**
- * Domain-specific initial tasks for newly spawned arms
- */
-const DOMAIN_INITIAL_TASKS: Record<string, { subject: string; description: string }[]> = {
-  frontend: [
-    {
-      subject: "Review and improve the Dashboard UI",
-      description: `Review the current dashboard implementation in src/web/src/pages/DashboardPage.tsx.
 
-Look for opportunities to:
-1. Improve the layout and visual hierarchy
-2. Add missing status indicators
-3. Ensure real-time updates are working
-4. Fix any TypeScript errors
-
-When done, report your findings and any changes made.`,
-    },
-  ],
-  backend: [
-    {
-      subject: "Review API endpoints and add missing functionality",
-      description: `Review the API implementation in src/api/.
-
-Look for:
-1. Missing CRUD operations
-2. Proper error handling
-3. Input validation
-4. Consistent response formats
-
-When done, report your findings and any changes made.`,
-    },
-  ],
-  testing: [
-    {
-      subject: "Set up test infrastructure and write initial tests",
-      description: `Set up a testing framework for the project.
-
-Tasks:
-1. Add vitest or bun test configuration
-2. Write unit tests for core functions
-3. Add integration tests for API endpoints
-
-When done, report the test coverage and any issues found.`,
-    },
-  ],
-  architect: [
-    {
-      subject: "Review codebase for architectural consistency",
-      description: `Review the codebase to ensure architectural consistency.
-
-Check:
-1. All state goes to SQLite (not JSON files)
-2. API follows conventions in AGENTS.md
-3. Types are properly defined
-4. No code duplication
-
-When done, update AGENTS.md if needed and report findings.`,
-    },
-  ],
-  docs: [
-    {
-      subject: "Review and update project documentation",
-      description: `Review the docs/ directory to ensure documentation is up to date.
-
-Tasks:
-1. Check docs/architecture/ for accuracy
-2. Review docs/guides/ for completeness
-3. Check docs/plans/ matches implemented features
-4. Identify gaps in documentation
-
-When done, report findings and update any outdated docs.`,
-    },
-    {
-      subject: "Update requirements based on user feedback",
-      description: `Review recent email responses from the human and update documentation accordingly.
-
-Tasks:
-1. Check inbox for user feedback on requirements
-2. Update docs/requirements/ with any clarified specifications
-3. Update docs/plans/ with any priority changes
-4. Sync docs/architecture/ if system design was discussed
-
-When done, report what documentation was updated.`,
-    },
-  ],
-  general: [
-    {
-      subject: "Explore the codebase and identify improvements",
-      description: `Familiarize yourself with the Octopai codebase.
-
-Tasks:
-1. Read AGENTS.md for project guidelines
-2. Explore the directory structure
-3. Identify any issues or improvements
-4. Report your findings
-
-Focus on understanding how the system works before making changes.`,
-    },
-  ],
-};
 
 export class Brain {
   private options: BrainOptions;
@@ -3328,88 +3229,87 @@ Report findings using bug resolution workflow.`,
     }
   }
 
-   /**
-    * Assign initial tasks to newly spawned arms based on their domain
-    */
-   private async assignInitialTasks(): Promise<void> {
-     for (const [armId, arm] of this.arms) {
-       // Skip if we've already assigned initial tasks to this arm (check database)
-       if (await this.hasReceivedInitialTasks(armId)) continue;
+    /**
+     * Common initial prompt template for all newly spawned arms
+     */
+    private readonly INITIAL_ARM_PROMPT = `You are an AI agent arm in the Octopai distributed system.
 
-       // Skip if arm is not idle
-       if (arm.status !== "idle") continue;
+Your purpose is to execute tasks assigned to you by the central brain coordinator.
 
-       // Verify arm exists in database before assigning tasks (foreign key constraint)
-       if (this.db) {
-         const armExists = this.db.query("SELECT 1 FROM arms WHERE id = ?").get(armId);
-         if (!armExists) {
-           this.log(`Arm ${armId} not found in database, skipping initial task assignment`);
-           continue;
-         }
-       }
+## Getting Started
 
-       // Get the domain (stored as extra property)
-       const domain = (arm as Arm & { domain?: string }).domain || "general";
+1. Call 'get_full_briefing' to receive your assigned task with full context
+2. Read the task description and evaluate if it's feasible for you to complete
+3. If feasible, call 'claim_task' to claim ownership of the task
+4. Execute the task according to the description
+5. Report your progress regularly using 'submit_status_report'
+6. When complete, call 'complete_task' with a summary of what you did
 
-       // Get relevant discoveries for this arm
-       const discoveries = await this.getDiscoveriesForArm(armId, domain, { limit: 10 });
+## Important Guidelines
 
-       // Get initial tasks for this domain
-       const initialTasks = DOMAIN_INITIAL_TASKS[domain] ?? DOMAIN_INITIAL_TASKS.general ?? [];
+- Always claim a task before starting work on it
+- If a task seems infeasible, report back immediately rather than struggling silently
+- Keep the brain updated on your progress through status reports
+- If you get stuck, ask for help or clarification
+- Focus on completing one task at a time before moving to the next
 
-        // Create and assign tasks for this arm
-        for (const taskTemplate of initialTasks) {
-          const task = await this.createTask(
-            taskTemplate.subject,
-            taskTemplate.description
-          );
+Call 'get_full_briefing' now to see what task is waiting for you.`;
 
-          // Immediately assign and claim to this arm
-          if (this.db) {
-            const result = await assignTaskToArm(this.db, task.id, armId, 'primary', true);
-            if (!result.success) {
-              this.log(`Failed to assign initial task ${task.id} to arm ${armId}: ${result.error}`);
-              continue;
-            }
+    /**
+     * Send initial prompt to newly spawned arms
+     */
+    private async assignInitialTasks(): Promise<void> {
+      for (const [armId, arm] of this.arms) {
+        // Skip if we've already sent initial prompt to this arm (check database)
+        if (await this.hasReceivedInitialTasks(armId)) continue;
+
+        // Skip if arm is not idle
+        if (arm.status !== "idle") continue;
+
+        // Verify arm exists in database before proceeding (foreign key constraint)
+        if (this.db) {
+          const armExists = this.db.query("SELECT 1 FROM arms WHERE id = ?").get(armId);
+          if (!armExists) {
+            this.log(`Arm ${armId} not found in database, skipping initial prompt`);
+            continue;
           }
-
-          // Update in-memory task
-          task.status = "claimed";
-          task.assignedTo = armId;
-          task.updatedAt = new Date();
-
-          // Include discoveries context if any exist
-          if (discoveries.length > 0) {
-            task.context = {
-              discoveries,
-              notes: "Review these prior discoveries before starting work.",
-            };
-          }
-
-          // Send to arm
-          await this.sendToArm(armId, {
-            type: "task_assignment",
-            payload: task,
-          });
-
-          this.log(`Assigned initial task "${task.subject}" to ${armId} (domain: ${domain}, discoveries: ${discoveries.length})`);
-          this.logActivity("brain", "task_assigned", task.id, { armId, domain, taskSubject: task.subject, discoveryCount: discoveries.length });
         }
 
-       // Task assignments are saved to database, so no need to track separately
-     }
-   }
+        // Send the common initial prompt to the arm
+        const success = await this.sendPromptToArm(armId, this.INITIAL_ARM_PROMPT);
+        
+        if (success) {
+          this.log(`Sent initial prompt to ${armId}`);
+          this.logActivity("brain", "arm_initialized", armId, { 
+            source: "initial_prompt_sent"
+          });
+        } else {
+          this.log(`Failed to send initial prompt to ${armId}`);
+        }
+
+        // Create a placeholder task record so hasReceivedInitialTasks returns true next time
+        // This prevents sending the prompt multiple times
+        if (this.db) {
+          const now = new Date().toISOString();
+          this.db.run(
+            `INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at)
+             VALUES (?, ?, ?, 'completed', 'normal', ?, ?)`,
+            [`init-${armId}`, `Arm ${armId} initialized`, `Initial prompt sent to arm`, now, now]
+          );
+        }
+      }
+    }
 
   /**
-   * Check if an arm has already received initial tasks (derived from database)
+   * Check if an arm has already received the initial prompt (derived from database)
    */
   private async hasReceivedInitialTasks(armId: string): Promise<boolean> {
     if (!this.db) return false;
 
-    // Check if there are any tasks that were assigned to this arm
+    // Check if the initialization placeholder task exists
     const result = this.db.query(`
-      SELECT COUNT(*) as count FROM tasks WHERE assigned_to = ?
-    `).get(armId) as { count: number } | null;
+      SELECT COUNT(*) as count FROM tasks WHERE id = ?
+    `).get(`init-${armId}`) as { count: number } | null;
 
     return (result?.count ?? 0) > 0;
   }

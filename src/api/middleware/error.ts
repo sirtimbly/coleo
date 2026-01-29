@@ -7,9 +7,12 @@ export async function errorHandler(c: Context, next: Next): Promise<void | Respo
   try {
     await next();
   } catch (err) {
-    console.error("Unhandled error:", err);
-
     const status = err instanceof HttpError ? err.status : 500;
+    // Don't log 404s for GET requests - they're expected when checking if resources exist
+    if (!(status === 404 && c.req.method === "GET")) {
+      console.error("Unhandled error:", err);
+    }
+
     const message = err instanceof Error ? err.message : "Internal server error";
 
     return c.json(

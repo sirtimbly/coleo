@@ -10,7 +10,7 @@ harness = "opencode-api"
 # Provider and model for this arm (uses OpenCode format: provider/model_id)
 # See: https://opencode.ai/docs/models/#set-a-default
 provider = "anthropic"
-model = "claude-sonnet-4-20250514"
+model = "gpt-5.1-codex-mini"
 
 [context]
 budget = 150000

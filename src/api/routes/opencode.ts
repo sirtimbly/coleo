@@ -79,7 +79,7 @@ export function createOpenCodeRoutes() {
               id: "github-copilot",
               name: "GitHub Copilot",
               models: [
-                { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+                { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
                 { id: "gpt-4o", name: "GPT-4o" },
                 { id: "o3-mini", name: "o3-mini" },
                 { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
@@ -89,7 +89,7 @@ export function createOpenCodeRoutes() {
               id: "opencode",
               name: "OpenCode Zen",
               models: [
-                { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+                { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
                 { id: "claude-opus-4", name: "Claude Opus 4" },
                 { id: "gpt-4o", name: "GPT-4o" },
                 { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
@@ -153,7 +153,7 @@ export function createOpenCodeRoutes() {
             id: "github-copilot",
             name: "GitHub Copilot",
             models: [
-              { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+              { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
               { id: "gpt-4o", name: "GPT-4o" },
             ],
           },
@@ -161,7 +161,7 @@ export function createOpenCodeRoutes() {
             id: "opencode",
             name: "OpenCode Zen",
             models: [
-              { id: "claude-sonnet-4", name: "Claude Sonnet 4" },
+              { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
             ],
           },
         ] as OpenCodeProvider[],

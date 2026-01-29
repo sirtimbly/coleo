@@ -211,7 +211,8 @@ function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
   switch (agent) {
     case "opencode":
       // OpenCode with MCP config pointing to octopai
-      return `${modelEnv}OCTOPAI_ARM_ID=${options.name} opencode`;
+      // Use the MCP config file we created for this arm
+      return `${modelEnv}OCTOPAI_ARM_ID=${options.name} OPENCODE_MCP_CONFIG="${mcpConfig}" opencode`;
 
     case "claude-code":
       // Claude Code (assuming similar CLI)

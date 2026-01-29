@@ -129,7 +129,7 @@ export class OpenCodeEventStream {
       console.log(`[event-stream] Connected to ${this.armId} event stream`);
       
       // Process the stream
-      await this.processStream(response.body);
+      await this.processStream(response.body as ReadableStream<Uint8Array>);
     } catch (error) {
       if (this.isClosing) return;
       

@@ -389,7 +389,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   defaults: {
     harness: "opencode-api",
     provider: "opencode",
-    model: "claude-sonnet-4",
+    model: "gpt-5.1-codex-mini",
     contextBudget: 100000,
   },
 };

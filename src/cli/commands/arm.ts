@@ -31,8 +31,10 @@ export function registerArmCommands(program: Command): void {
       "Harness type (opencode-api, opencode-tui, opencode). Default: opencode-tui if terminal specified, otherwise opencode-api.",
     )
     .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
-    .option("--model <model>", "Model name (e.g., claude-sonnet-4-20250514)")
+    .option("--model <model>", "Model name (e.g., gpt-5.1-codex-mini)")
     .option("--template <name>", "Use a template from ~/.octopai/arms/")
+    .option("--recover", "Attempt to recover an existing OpenCode server (default: false)")
+    .option("--watch", "Watch the arm's conversation in real-time after spawning")
     .action(async (options) => {
       const octopaiDir = getOctopaiDir();
       const armAgent = "opencode";
@@ -172,6 +174,7 @@ export function registerArmCommands(program: Command): void {
             initialPrompt: options.prompt,
             harness: "opencode-tui",
             terminal: options.terminal,
+            recover: options.recover || false,
           }),
         });
 
@@ -274,6 +277,7 @@ export function registerArmCommands(program: Command): void {
           provider: armProvider,
           model: armModel,
           initialPrompt: options.prompt,
+          recover: options.recover || false,
         }),
       });
 
@@ -293,9 +297,15 @@ export function registerArmCommands(program: Command): void {
       console.log(`  PID: ${result.pid || "unknown"}`);
       console.log("");
       console.log("The arm is running in the API server process.");
-      console.log(`Watch events: octopai arm tail ${armName}`);
-      console.log(`View status:  octopai arm status ${armName}`);
-      console.log(`View todos:   octopai arm todos ${armName}`);
+
+      if (options.watch) {
+        console.log("\n");
+        await watchArm(armName, { history: "0" });
+      } else {
+        console.log(`Watch events: octopai arm tail ${armName}`);
+        console.log(`View status:  octopai arm status ${armName}`);
+        console.log(`View todos:   octopai arm todos ${armName}`);
+      }
     });
 
   armCmd
@@ -585,6 +595,319 @@ export function registerArmCommands(program: Command): void {
       await new Promise(() => {});
     });
 
+  /**
+   * Watch an arm's conversation in real-time
+   */
+  async function watchArm(
+    name: string,
+    options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }
+  ): Promise<void> {
+    const { apiUrl, headers } = getApiConfig();
+    const apiKey = process.env.OCTOPAI_API_KEY;
+    const showTools = options?.tools !== false;
+    const showSystem = options?.system !== false;
+    const historyCount = parseInt(options?.history || "2", 10);
+    const verbose = options?.verbose === true;
+
+    if (!(await isApiRunning())) {
+      console.error("API server is not running. Start it with: octopai serve");
+      process.exit(1);
+    }
+
+    if (!apiKey) {
+      console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
+      process.exit(1);
+    }
+
+    const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
+    if (!armRes.ok) {
+      console.error(`Arm not found: ${name}`);
+      process.exit(1);
+    }
+
+    const armData = (await armRes.json()) as { arm: { port: number | null; status: string } };
+    if (!armData.arm.port) {
+      console.error(`Arm ${name} is not running (no port assigned)`);
+      process.exit(1);
+    }
+
+    const port = armData.arm.port;
+    const opencodeBaseUrl = `http://127.0.0.1:${port}`;
+
+    console.log(`Watching arm: ${name} (${armData.arm.status})`);
+    console.log("Press Ctrl+C to stop\n");
+
+    if (historyCount > 0) {
+      try {
+        const sessionsRes = await fetch(`${opencodeBaseUrl}/session`);
+        if (sessionsRes.ok) {
+          const sessions = (await sessionsRes.json()) as Array<{ id: string; title: string }>;
+          if (sessions.length > 0) {
+            const currentSession = sessions[sessions.length - 1];
+            if (currentSession) {
+              console.log(`Session: ${currentSession.title || currentSession.id}`);
+              console.log("─".repeat(60));
+
+              const msgsRes = await fetch(
+                `${opencodeBaseUrl}/session/${currentSession.id}/message?limit=${historyCount * 2}`
+              );
+              if (msgsRes.ok) {
+                const messages = (await msgsRes.json()) as Array<{
+                  info: { role: string; id: string };
+                  parts: Array<{
+                    type: string;
+                    text?: string;
+                    toolName?: string;
+                    name?: string;
+                    state?: string;
+                  }>;
+                }>;
+
+                const recentMessages = messages.slice(-historyCount);
+                for (const msg of recentMessages) {
+                  const role = msg.info.role;
+                  const roleLabel =
+                    role === "assistant"
+                      ? "🤖 Assistant"
+                      : role === "user"
+                        ? "👤 User"
+                        : role === "system"
+                          ? "⚙️ System"
+                          : role;
+
+                  if (role === "system" && !showSystem) continue;
+
+                  console.log(roleLabel);
+                  console.log("");
+
+                  for (const part of msg.parts) {
+                    if (part.type === "text" && part.text) {
+                      const text =
+                        part.text.length > 500
+                          ? part.text.slice(0, 500) + "\n... (truncated, showing last 500 chars)"
+                          : part.text;
+                      console.log(text);
+                    } else if (part.type === "tool-invocation" && showTools) {
+                      const toolName = part.toolName || part.name || "unknown";
+                      const state = part.state || "completed";
+                      console.log(`🔧 Tool: ${toolName} [${state}]`);
+                    }
+                  }
+                  console.log("");
+                  console.log("─".repeat(60));
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        console.log("(Could not fetch message history)");
+        console.log("─".repeat(60));
+      }
+    }
+
+    console.log("Waiting for new messages...\n");
+
+    const opencodeUrl = `${opencodeBaseUrl}/event`;
+
+    let currentRole = "";
+    let lastWasNewline = true;
+    let currentToolName = "";
+
+    const processEvent = (eventStr: string) => {
+      const lines = eventStr.split("\n");
+      let data = "";
+
+      for (const line of lines) {
+        if (line.startsWith("data:")) {
+          data = line.slice(5).trim();
+        }
+      }
+
+      if (!data) return;
+
+      try {
+        const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
+        const { type, properties: props } = event;
+        
+        // Debug: Log ALL events to see what's coming through
+        if (verbose || type === "message.part.updated" || type === "message.part.created") {
+          console.error(`\n[DEBUG] ${type}:`, JSON.stringify(props, null, 2).slice(0, 500));
+        }
+
+        if (type === "message.created" || type === "message.updated") {
+          const info = props.info as Record<string, unknown> | undefined;
+          const role = info?.role as string;
+          if (role && role !== currentRole) {
+            if (!lastWasNewline) {
+              process.stdout.write("\n");
+            }
+            console.log("─".repeat(60));
+            const roleLabel =
+              role === "assistant"
+                ? "🤖 Assistant"
+                : role === "user"
+                  ? "👤 User"
+                  : role === "system"
+                    ? "⚙️ System"
+                    : role;
+            console.log(roleLabel);
+            console.log("");
+            currentRole = role;
+            lastWasNewline = true;
+          }
+
+          const error = info?.error as Record<string, unknown> | undefined;
+          if (error) {
+            const errorData = error.data as Record<string, unknown> | undefined;
+            const errorMessage = errorData?.message || error.name || "Unknown error";
+            if (!lastWasNewline) process.stdout.write("\n");
+            console.log(`\n❌ Error: ${errorMessage}`);
+            lastWasNewline = true;
+          }
+        }
+
+        if (type === "message.part.updated" || type === "message.part.created") {
+          const part = props.part as Record<string, unknown> | undefined;
+          const delta = props.delta as string | undefined;
+
+          if (part) {
+            const partType = part.type as string;
+
+            if (partType === "text") {
+              const textToWrite =
+                delta ?? (type === "message.part.created" ? (part.text as string) : null);
+              if (textToWrite) {
+                process.stdout.write(textToWrite);
+                lastWasNewline = textToWrite.endsWith("\n");
+              }
+            }
+
+            if (partType === "tool-invocation" && showTools) {
+              const toolName = (part.toolName as string) || (part.name as string);
+              const state = part.state as string;
+
+              if (state === "pending" || state === "running") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                console.log(`\n🔧 Tool: ${toolName}`);
+                currentToolName = toolName;
+                lastWasNewline = true;
+              } else if (state === "completed") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                console.log(`   ✓ ${currentToolName || toolName} completed`);
+                lastWasNewline = true;
+              } else if (state === "error") {
+                if (!lastWasNewline) process.stdout.write("\n");
+                const error = (part.error as string) || "unknown error";
+                console.log(`   ✗ ${currentToolName || toolName} failed: ${error}`);
+                lastWasNewline = true;
+              }
+            }
+
+            if (partType === "tool-result" && showTools) {
+              if (!lastWasNewline) process.stdout.write("\n");
+              lastWasNewline = true;
+            }
+          }
+        }
+
+        if (type === "session.status") {
+          const status = props.status as Record<string, unknown> | undefined;
+          const statusType = status?.type as string;
+          if (statusType === "idle") {
+            if (!lastWasNewline) process.stdout.write("\n");
+            console.log("\n" + "─".repeat(60));
+            console.log("✓ Response complete");
+            console.log("─".repeat(60) + "\n");
+            lastWasNewline = true;
+            currentRole = "";
+          }
+        }
+
+        if (type === "session.error") {
+          const error = props.error as Record<string, unknown> | undefined;
+          if (error) {
+            const errorData = error.data as Record<string, unknown> | undefined;
+            const errorMessage = errorData?.message || error.name || "Unknown error";
+            if (!lastWasNewline) process.stdout.write("\n");
+            console.log(`\n❌ Session Error: ${errorMessage}`);
+            lastWasNewline = true;
+          }
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    };
+
+    try {
+      if (verbose) {
+        console.log(`[DEBUG] Connecting to SSE: ${opencodeUrl}`);
+      }
+
+      const response = await fetch(opencodeUrl, {
+        headers: {
+          Accept: "text/event-stream",
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      if (!response.ok) {
+        console.error(`Failed to connect to OpenCode: ${response.statusText}`);
+        process.exit(1);
+      }
+
+      if (!response.body) {
+        console.error("No response body from OpenCode");
+        process.exit(1);
+      }
+
+      if (verbose) {
+        console.log(`[DEBUG] Connected! Response status: ${response.status}`);
+        console.log(`[DEBUG] Content-Type: ${response.headers.get("content-type")}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      let running = true;
+      process.on("SIGINT", () => {
+        console.log("\n\nStopping...");
+        running = false;
+        reader.cancel();
+        process.exit(0);
+      });
+
+      while (running) {
+        const { done, value } = await reader.read();
+        if (done) {
+          if (verbose) console.log("[DEBUG] Stream ended (done=true)");
+          break;
+        }
+
+        const chunk = decoder.decode(value, { stream: true });
+        if (chunk.trim()) {
+          console.log(
+            `[DEBUG] Received chunk (${chunk.length} bytes): ${chunk.slice(0, 100).replace(/\n/g, "\\n")}...`
+          );
+        }
+        buffer += chunk;
+
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const eventStr of events) {
+          if (eventStr.trim()) {
+            processEvent(eventStr);
+          }
+        }
+      }
+    } catch (err) {
+      console.error(`Connection error: ${err}`);
+      process.exit(1);
+    }
+  }
+
   armCmd
     .command("watch <name>")
     .description("Watch an arm's conversation in real-time (shows message text as it streams)")
@@ -593,283 +916,7 @@ export function registerArmCommands(program: Command): void {
     .option("-n, --history <count>", "Show last N messages on connect", "2")
     .option("-v, --verbose", "Show all SSE events for debugging")
     .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }) => {
-      const { apiUrl, headers } = getApiConfig();
-      const apiKey = process.env.OCTOPAI_API_KEY;
-      const showTools = options?.tools !== false;
-      const showSystem = options?.system !== false;
-      const historyCount = parseInt(options?.history || "2", 10);
-      const verbose = options?.verbose === true;
-
-      if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
-        process.exit(1);
-      }
-
-      if (!apiKey) {
-        console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
-        process.exit(1);
-      }
-
-      const armRes = await fetch(`${apiUrl}/api/arms/${name}`, { headers });
-      if (!armRes.ok) {
-        console.error(`Arm not found: ${name}`);
-        process.exit(1);
-      }
-
-      const armData = await armRes.json() as { arm: { port: number | null; status: string } };
-      if (!armData.arm.port) {
-        console.error(`Arm ${name} is not running (no port assigned)`);
-        process.exit(1);
-      }
-
-      const port = armData.arm.port;
-      const opencodeBaseUrl = `http://127.0.0.1:${port}`;
-
-      console.log(`Watching arm: ${name} (${armData.arm.status})`);
-      console.log("Press Ctrl+C to stop\n");
-
-      if (historyCount > 0) {
-        try {
-          const sessionsRes = await fetch(`${opencodeBaseUrl}/session`);
-          if (sessionsRes.ok) {
-            const sessions = await sessionsRes.json() as Array<{ id: string; title: string }>;
-            if (sessions.length > 0) {
-              const currentSession = sessions[sessions.length - 1];
-              if (currentSession) {
-                console.log(`Session: ${currentSession.title || currentSession.id}`);
-                console.log("─".repeat(60));
-
-                const msgsRes = await fetch(`${opencodeBaseUrl}/session/${currentSession.id}/message?limit=${historyCount * 2}`);
-                if (msgsRes.ok) {
-                  const messages = await msgsRes.json() as Array<{
-                    info: { role: string; id: string };
-                    parts: Array<{ type: string; text?: string; toolName?: string; name?: string; state?: string }>;
-                  }>;
-
-                  const recentMessages = messages.slice(-historyCount);
-                  for (const msg of recentMessages) {
-                    const role = msg.info.role;
-                    const roleLabel = role === "assistant" ? "🤖 Assistant"
-                      : role === "user" ? "👤 User"
-                        : role === "system" ? "⚙️ System" : role;
-
-                    if (role === "system" && !showSystem) continue;
-
-                    console.log(roleLabel);
-                    console.log("");
-
-                    for (const part of msg.parts) {
-                      if (part.type === "text" && part.text) {
-                        const text = part.text.length > 500
-                          ? part.text.slice(0, 500) + "\n... (truncated, showing last 500 chars)"
-                          : part.text;
-                        console.log(text);
-                      } else if (part.type === "tool-invocation" && showTools) {
-                        const toolName = part.toolName || part.name || "unknown";
-                        const state = part.state || "completed";
-                        console.log(`🔧 Tool: ${toolName} [${state}]`);
-                      }
-                    }
-                    console.log("");
-                    console.log("─".repeat(60));
-                  }
-                }
-              }
-            }
-          }
-        } catch {
-          console.log("(Could not fetch message history)");
-          console.log("─".repeat(60));
-        }
-      }
-
-      console.log("Waiting for new messages...\n");
-
-      const opencodeUrl = `${opencodeBaseUrl}/event`;
-
-      let currentRole = "";
-      let lastWasNewline = true;
-      let currentToolName = "";
-
-      const processEvent = (eventStr: string) => {
-        const lines = eventStr.split("\n");
-        let data = "";
-
-        for (const line of lines) {
-          if (line.startsWith("data:")) {
-            data = line.slice(5).trim();
-          }
-        }
-
-        if (!data) return;
-
-        try {
-          const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
-          const { type, properties: props } = event;
-
-          if (type === "message.created" || type === "message.updated") {
-            const info = props.info as Record<string, unknown> | undefined;
-            const role = info?.role as string;
-            if (role && role !== currentRole) {
-              if (!lastWasNewline) {
-                process.stdout.write("\n");
-              }
-              console.log("─".repeat(60));
-              const roleLabel = role === "assistant" ? "🤖 Assistant"
-                : role === "user" ? "👤 User"
-                  : role === "system" ? "⚙️ System" : role;
-              console.log(roleLabel);
-              console.log("");
-              currentRole = role;
-              lastWasNewline = true;
-            }
-
-            const error = info?.error as Record<string, unknown> | undefined;
-            if (error) {
-              const errorData = error.data as Record<string, unknown> | undefined;
-              const errorMessage = errorData?.message || error.name || "Unknown error";
-              if (!lastWasNewline) process.stdout.write("\n");
-              console.log(`\n❌ Error: ${errorMessage}`);
-              lastWasNewline = true;
-            }
-          }
-
-          if (type === "message.part.updated" || type === "message.part.created") {
-            const part = props.part as Record<string, unknown> | undefined;
-            const delta = props.delta as string | undefined;
-
-            if (part) {
-              const partType = part.type as string;
-
-              if (partType === "text") {
-                const textToWrite = delta ?? (type === "message.part.created" ? part.text as string : null);
-                if (textToWrite) {
-                  process.stdout.write(textToWrite);
-                  lastWasNewline = textToWrite.endsWith("\n");
-                }
-              }
-
-              if (partType === "tool-invocation" && showTools) {
-                const toolName = part.toolName as string || part.name as string;
-                const state = part.state as string;
-
-                if (state === "pending" || state === "running") {
-                  if (!lastWasNewline) process.stdout.write("\n");
-                  console.log(`\n🔧 Tool: ${toolName}`);
-                  currentToolName = toolName;
-                  lastWasNewline = true;
-                } else if (state === "completed") {
-                  if (!lastWasNewline) process.stdout.write("\n");
-                  console.log(`   ✓ ${currentToolName || toolName} completed`);
-                  lastWasNewline = true;
-                } else if (state === "error") {
-                  if (!lastWasNewline) process.stdout.write("\n");
-                  const error = part.error as string || "unknown error";
-                  console.log(`   ✗ ${currentToolName || toolName} failed: ${error}`);
-                  lastWasNewline = true;
-                }
-              }
-
-              if (partType === "tool-result" && showTools) {
-                if (!lastWasNewline) process.stdout.write("\n");
-                lastWasNewline = true;
-              }
-            }
-          }
-
-          if (type === "session.status") {
-            const status = props.status as Record<string, unknown> | undefined;
-            const statusType = status?.type as string;
-            if (statusType === "idle") {
-              if (!lastWasNewline) process.stdout.write("\n");
-              console.log("\n" + "─".repeat(60));
-              console.log("✓ Response complete");
-              console.log("─".repeat(60) + "\n");
-              lastWasNewline = true;
-              currentRole = "";
-            }
-          }
-
-          if (type === "session.error") {
-            const error = props.error as Record<string, unknown> | undefined;
-            if (error) {
-              const errorData = error.data as Record<string, unknown> | undefined;
-              const errorMessage = errorData?.message || error.name || "Unknown error";
-              if (!lastWasNewline) process.stdout.write("\n");
-              console.log(`\n❌ Session Error: ${errorMessage}`);
-              lastWasNewline = true;
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      };
-
-      try {
-        if (verbose) {
-          console.log(`[DEBUG] Connecting to SSE: ${opencodeUrl}`);
-        }
-
-        const response = await fetch(opencodeUrl, {
-          headers: {
-            Accept: "text/event-stream",
-            "Cache-Control": "no-cache",
-          },
-        });
-
-        if (!response.ok) {
-          console.error(`Failed to connect to OpenCode: ${response.statusText}`);
-          process.exit(1);
-        }
-
-        if (!response.body) {
-          console.error("No response body from OpenCode");
-          process.exit(1);
-        }
-
-        if (verbose) {
-          console.log(`[DEBUG] Connected! Response status: ${response.status}`);
-          console.log(`[DEBUG] Content-Type: ${response.headers.get("content-type")}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        let running = true;
-        process.on("SIGINT", () => {
-          console.log("\n\nStopping...");
-          running = false;
-          reader.cancel();
-          process.exit(0);
-        });
-
-        while (running) {
-          const { done, value } = await reader.read();
-          if (done) {
-            if (verbose) console.log("[DEBUG] Stream ended (done=true)");
-            break;
-          }
-
-          const chunk = decoder.decode(value, { stream: true });
-          if (verbose && chunk.trim()) {
-            console.log(`[DEBUG] Received chunk (${chunk.length} bytes): ${chunk.slice(0, 100).replace(/\n/g, "\\n")}...`);
-          }
-          buffer += chunk;
-
-          const events = buffer.split("\n\n");
-          buffer = events.pop() || "";
-
-          for (const eventStr of events) {
-            if (eventStr.trim()) {
-              processEvent(eventStr);
-            }
-          }
-        }
-      } catch (err) {
-        console.error(`Connection error: ${err}`);
-        process.exit(1);
-      }
+      await watchArm(name, options);
     });
 
   armCmd

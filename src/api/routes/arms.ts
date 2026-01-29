@@ -465,6 +465,7 @@ export function createArmsRoutes() {
       harness?: string; // Allow specifying harness for auto-created arms
       preferAgent?: boolean; // Explicitly request agent spawning
       agentId?: string; // Spawn on a specific agent
+      recover?: boolean; // Enable recovery of existing OpenCode server (default: false)
     }>();
 
     // Check if arm exists (include port and pid for potential recovery)
@@ -662,7 +663,9 @@ export function createArmsRoutes() {
     }
 
     // If arm was stopped but has port/pid, try to recover existing OpenCode server
-    if (row.status === "stopped" && row.port && row.pid && row.harness === "opencode-api") {
+    // Recovery is disabled by default - must pass recover: true to enable
+    if (body.recover && row.status === "stopped" && row.port && row.pid && row.harness === "opencode-api") {
+      console.log(`[spawn] Attempting to recover existing OpenCode server for ${id} (port: ${row.port}, pid: ${row.pid})`);
       const recovered = await manager.recover(id, row.harness, row.port, row.pid);
       if (recovered) {
         // Update database to reflect recovered state
@@ -1328,6 +1331,11 @@ export function createArmsRoutes() {
       throw HttpError.badRequest(`Arm ${id} is stopped. Spawn it first.`);
     }
 
+    // Check if arm is still starting up
+    if (row.status === "starting") {
+      throw HttpError.badRequest(`Arm ${id} is still starting up. Wait for it to finish spawning.`);
+    }
+
     // Get the harness manager
     const manager = getGlobalHarnessManager();
     if (!manager) {
@@ -1336,7 +1344,8 @@ export function createArmsRoutes() {
 
     // Check if arm has an active session
     if (!manager.hasSession(id)) {
-      throw HttpError.badRequest(`Arm ${id} has no active session. Spawn it first.`);
+      console.error(`[prompt] Arm ${id} status is '${row.status}' but no active session found in manager`);
+      throw HttpError.badRequest(`Arm ${id} has no active session. The arm may have crashed or the server restarted. Spawn it first.`);
     }
 
     try {

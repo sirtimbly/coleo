@@ -17,7 +17,7 @@
  *   bun run src/regression/runner.ts
  * 
  * Compare models:
- *   bun run src/regression/runner.ts --model anthropic/claude-sonnet-4-20250514 --model openai/gpt-4o
+ *   bun run src/regression/runner.ts --model openai/gpt-5.1-codex-mini --model openai/gpt-4o
  */
 
 export * from "./types";
