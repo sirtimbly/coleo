@@ -257,6 +257,265 @@ Resume a paused arm.
 
 ---
 
+### Tasks
+
+```http
+GET /api/tasks
+```
+List all tasks.
+
+Query params:
+- `status`: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked" | "cancelled" (comma-separated for multiple)
+- `priority`: "critical" | "high" | "normal" | "low"
+- `domain`: filter by domain
+- `assignedTo`: filter by assigned arm
+- `phase`: filter by phase
+- `limit`: max results (default 100)
+- `offset`: pagination offset
+
+```http
+POST /api/tasks
+```
+Create a new task.
+
+```http
+GET /api/tasks/:id
+```
+Get task details.
+
+Query params:
+- `include`: "discussions" to include task comments.
+
+```http
+PATCH /api/tasks/:id
+```
+Update task fields.
+
+```http
+DELETE /api/tasks/:id
+```
+Delete a task.
+
+```http
+POST /api/tasks/reorder
+```
+Reorder a task to a specific position.
+
+```json
+{
+  "taskId": "task-123",
+  "toSortOrder": 0
+}
+```
+
+```http
+POST /api/tasks/:id/remove-from-plan
+```
+Remove a task from its source `plan.md` file and delete it from the database.
+
+## Task Discussions
+
+Task Discussions provide threaded commenting functionality for tasks, allowing humans and arms to collaborate on task implementation. Each comment is associated with a specific task and can be a top-level comment or a reply to another comment.
+
+```http
+GET /api/tasks/:id/discussions
+```
+List all comments for a task.
+
+Query params:
+- `limit`: max results (default 50)
+- `offset`: pagination offset
+- `threaded`: "true" to return comments in a nested tree structure.
+
+Response:
+```json
+{
+  "discussions": [
+    {
+      "id": "comment-123",
+      "taskId": "task-456",
+      "content": "This task is blocked by PR-789",
+      "authorType": "human",
+      "authorId": "user-1",
+      "authorName": "Tim",
+      "client": "web",
+      "edited": false,
+      "deleted": false,
+      "createdAt": "2024-01-15T10:30:00Z",
+      "updatedAt": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "totalCount": 1
+}
+```
+
+```http
+POST /api/tasks/:id/discussions
+```
+Add a new comment to a task discussion.
+
+Body:
+```json
+{
+  "content": "This task is blocked by PR-456",
+  "parentId": "comment-789",
+  "authorType": "human",
+  "authorId": "user-1",
+  "authorName": "Tim",
+  "client": "web"
+}
+```
+
+```http
+PATCH /api/tasks/:id/discussions/:commentId
+```
+Edit a comment (24-hour window, author only).
+
+Body:
+```json
+{
+  "content": "Updated comment content",
+  "authorId": "user-1"
+}
+```
+
+```http
+DELETE /api/tasks/:id/discussions/:commentId
+```
+Soft delete a comment (author only).
+
+Body:
+```json
+{
+  "authorId": "user-1"
+}
+```
+
+```http
+POST /api/tasks/:id/discussions/mark-read
+```
+Mark comments as read for a user.
+
+Body:
+```json
+{
+  "userId": "user-1",
+  "lastReadCommentId": "comment-789"
+}
+```
+
+```http
+GET /api/tasks/:id/discussions/unread
+```
+Get unread comment count for a user.
+
+Query params:
+- `userId`: User ID to check for unread comments
+
+Response:
+```json
+{
+  "unreadCount": 3
+}
+```
+
+### Comment Structure
+
+```typescript
+interface TaskComment {
+  id: string;                    // Unique comment identifier
+  taskId: string;                // Associated task ID
+  parentId?: string;            // Parent comment ID (for replies)
+  content: string;               // Comment content
+  authorType: "human" | "arm" | "brain";  // Who created the comment
+  authorId: string;              // Author identifier
+  authorName?: string;           // Display name for author
+  client: "web" | "mail" | "mcp" | "cli"; // How the comment was created
+  edited: boolean;                // Whether comment was edited
+  deleted: boolean;              // Whether comment was soft-deleted
+  createdAt: string;             // ISO timestamp
+  updatedAt: string;             // ISO timestamp
+}
+```
+
+### Threaded Discussions
+
+Comments can be organized in a threaded structure where replies are nested under parent comments. The API supports both flat and threaded views of discussions.
+
+### Comment Lifecycle
+
+1. **Creation**: Comments are created with content, author information, and optional parent ID for replies
+2. **Editing**: Authors can edit their comments within a 24-hour window
+3. **Soft Deletion**: Comments can be deleted by their author but are soft-deleted to preserve context
+4. **Read Tracking**: Users can mark comments as read for notification purposes
+
+### Comment Metadata
+
+Comments track additional metadata for better collaboration:
+- **Author Information**: Type (human/arm/brain), ID, and display name
+- **Client Context**: How the comment was created (web UI, email, MCP tool, CLI)
+- **Edit History**: Whether the comment was edited and when
+- **Deletion Status**: Soft deletion preserves context while hiding content
+
+---
+
+### Task Discussions
+
+```http
+GET /api/tasks/:id/discussions
+```
+List all comments for a task.
+
+Query params:
+- `limit`: max results (default 50)
+- `offset`: pagination offset
+- `threaded`: "true" to return comments in a nested tree structure.
+
+```http
+POST /api/tasks/:id/discussions
+```
+Add a new comment.
+
+```json
+{
+  "content": "This task is blocked by PR-456",
+  "parentId": "comment-789",
+  "authorType": "human",
+  "authorId": "user-1",
+  "authorName": "Tim",
+  "client": "web"
+}
+```
+
+```http
+PATCH /api/tasks/:id/discussions/:commentId
+```
+Edit a comment (24-hour window, author only).
+
+```http
+DELETE /api/tasks/:id/discussions/:commentId
+```
+Soft delete a comment (author only).
+
+```http
+POST /api/tasks/:id/discussions/mark-read
+```
+Mark comments as read for a user.
+
+```json
+{
+  "userId": "user-1",
+  "lastReadCommentId": "comment-789"
+}
+```
+
+```http
+GET /api/tasks/:id/discussions/unread
+```
+Get unread comment count for a user.
+
+---
+
 ### Garden
 
 ```http

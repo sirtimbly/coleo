@@ -1,6 +1,7 @@
 import { Card, CardContent } from '@/components';
 
 export function ProposalsPage() {
+  document.title = "Octopai Observatory - Proposals";
   return (
     <div className="p-8 space-y-8">
       <div>

@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 export function MailPage() {
+  document.title = "Octopai Observatory - Mail";
   const [inbox, setInbox] = useState<{ messages: MailMessage[]; pagination: { unread: number } } | null>(null);
   const [sent, setSent] = useState<{ messages: MailMessage[] } | null>(null);
   const [archive, setArchive] = useState<{ messages: MailMessage[] } | null>(null);
@@ -146,12 +147,13 @@ export function MailPage() {
               ) : (
                 <div className="divide-y">
                   {messages.map((msg) => (
-                    <button
+                    <Button
                       key={msg.id}
-                      onClick={() => setSelectedMessage(msg)}
-                      className={`w-full p-4 text-left hover:bg-secondary/50 transition-colors cursor-pointer ${
+                      variant="ghost"
+                      className={`w-full justify-start h-auto py-3 px-4 ${
                           activeTab === 'inbox' && !msg.flags.seen ? 'bg-accent/5' : ''
                       }`}
+                      onPress={() => setSelectedMessage(msg)}
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex-1 min-w-0">
@@ -169,7 +171,7 @@ export function MailPage() {
                           {formatDate(msg.date)}
                         </span>
                       </div>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               )}
@@ -199,21 +201,15 @@ export function MailPage() {
                   {activeTab === 'inbox' && (
                     <div className="mt-4 flex gap-2">
                       {selectedMessage.flags.seen ? null : (
-                        <button
-                          onClick={() => handleMarkRead(selectedMessage.id)}
-                          className="flex-1 flex items-center justify-center px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors cursor-pointer"
-                        >
+                        <Button variant="primary" onPress={() => handleMarkRead(selectedMessage.id)} className="flex-1">
                           <Eye className="h-4 w-4 mr-2" />
                           Mark as Read
-                        </button>
+                        </Button>
                       )}
-                      <button
-                        onClick={() => handleArchive(selectedMessage.id)}
-                        className="flex-1 flex items-center justify-center px-4 py-2 border border-input bg-background rounded-md hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer"
-                      >
+                      <Button variant="secondary" onPress={() => handleArchive(selectedMessage.id)} className="flex-1">
                         <Archive className="h-4 w-4 mr-2" />
                         Archive
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </CardContent>

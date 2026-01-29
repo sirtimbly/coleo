@@ -8,12 +8,6 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 
-interface BugsContext {
-  Variables: {
-    db: Database;
-  };
-}
-
 export interface Bug {
   id: string;
   title: string;
@@ -28,6 +22,8 @@ export interface Bug {
   blockers: string[]; // JSON array of blocking task IDs
   errorDetails?: string; // JSON with stack traces, logs, etc.
   resolution?: string;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -48,10 +44,18 @@ interface BugRow {
   blockers: string | null;
   error_details: string | null;
   resolution: string | null;
+  sort_order: number | null;
+  metadata: string | null;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
   human_notified: number;
+}
+
+interface BugsContext {
+  Variables: {
+    db: Database;
+  };
 }
 
 export function createBugsRoutes() {
@@ -59,7 +63,7 @@ export function createBugsRoutes() {
 
   // List bugs with filtering
   app.get("/", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
     const source = c.req.query("source");
     const status = c.req.query("status");
     const priority = c.req.query("priority");
@@ -97,7 +101,7 @@ export function createBugsRoutes() {
       params.push(assignee);
     }
 
-    query += " ORDER BY b.created_at DESC LIMIT ?";
+    query += " ORDER BY b.sort_order ASC, b.created_at DESC LIMIT ?";
     params.push(limit);
 
     try {
@@ -119,6 +123,8 @@ export function createBugsRoutes() {
         blockers: JSON.parse(row.blockers || "[]"),
         errorDetails: row.error_details || undefined,
         resolution: row.resolution || undefined,
+        sortOrder: row.sort_order ?? undefined,
+        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         resolvedAt: row.resolved_at || undefined,
@@ -133,7 +139,7 @@ export function createBugsRoutes() {
 
   // Get a single bug
   app.get("/:id", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
     const id = c.req.param("id");
 
     const row = db.query(`
@@ -163,6 +169,8 @@ export function createBugsRoutes() {
       blockers: JSON.parse(row.blockers || "[]"),
       errorDetails: row.error_details || undefined,
       resolution: row.resolution || undefined,
+      sortOrder: row.sort_order ?? undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       resolvedAt: row.resolved_at || undefined,
@@ -174,7 +182,7 @@ export function createBugsRoutes() {
 
   // Create a new bug
   app.post("/", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
     const body = await c.req.json();
 
     // Validate required fields
@@ -196,13 +204,17 @@ export function createBugsRoutes() {
     const now = new Date().toISOString();
     const bugId = body.id || `bug-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
+    // Get the current max sort_order to place new bug at the end
+    const maxSortOrder = db.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM bugs").get() as { max_sort: number };
+    const newSortOrder = (maxSortOrder?.max_sort ?? -1) + 1;
+
     try {
       db.run(`
         INSERT INTO bugs (
           id, title, description, source, source_arm_id, source_task_id,
-          status, priority, assignee_arm_id, blockers, error_details,
-          created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?)
+          status, priority, assignee_arm_id, blockers, error_details, metadata,
+          sort_order, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         bugId,
         body.title,
@@ -214,6 +226,8 @@ export function createBugsRoutes() {
         body.assigneeArmId || null,
         JSON.stringify(body.blockers || []),
         body.errorDetails || null,
+        JSON.stringify(body.metadata || {}),
+        newSortOrder,
         now,
         now
       ]);
@@ -229,7 +243,7 @@ export function createBugsRoutes() {
 
   // Update a bug
   app.patch("/:id", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
     const id = c.req.param("id");
     const body = await c.req.json();
 
@@ -281,6 +295,21 @@ export function createBugsRoutes() {
       params.push(body.humanNotified ? 1 : 0);
     }
 
+    if (body.metadata !== undefined) {
+      updates.push("metadata = ?");
+      params.push(JSON.stringify(body.metadata));
+    }
+
+    if (body.title !== undefined) {
+      updates.push("title = ?");
+      params.push(body.title);
+    }
+
+    if (body.description !== undefined) {
+      updates.push("description = ?");
+      params.push(body.description);
+    }
+
     if (updates.length === 0) {
       throw HttpError.badRequest("No updates provided");
     }
@@ -308,7 +337,7 @@ export function createBugsRoutes() {
 
   // Delete a bug
   app.delete("/:id", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
     const id = c.req.param("id");
 
     try {
@@ -330,7 +359,7 @@ export function createBugsRoutes() {
 
   // Get bug statistics
   app.get("/stats", async (c) => {
-    const db = c.var.db;
+    const db = c.get("db");
 
     try {
       const bySource = db.query(`
@@ -371,8 +400,59 @@ export function createBugsRoutes() {
         unresolved: unresolvedCount.count,
       });
     } catch (err) {
+      console.error("[BUGS STATS ERROR]", err);
       throw HttpError.internal("Failed to get bug stats");
     }
+  });
+
+  /**
+   * Reorder a bug to a specific position
+   * POST /api/bugs/reorder
+   * Body: { bugId: string, toSortOrder: number }
+   * toSortOrder: 0-based position in the full bug list (0 = top, -1 = bottom)
+   */
+  app.post("/reorder", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{ bugId: string; toSortOrder: number }>();
+    const { bugId, toSortOrder } = body;
+
+    // Get current bug order (sort_order ASC means lower values appear first)
+    const bugs = db.query("SELECT id, sort_order FROM bugs ORDER BY sort_order ASC, created_at DESC").all() as Array<{ id: string; sort_order: number | null }>;
+
+    // Find the bug in the list
+    const bugIndex = bugs.findIndex(b => b.id === bugId);
+    if (bugIndex === -1) {
+      throw HttpError.notFound(`Bug not found: ${bugId}`);
+    }
+
+    // Remove bug from current position
+    const movedBug = bugs.splice(bugIndex, 1)[0];
+    if (!movedBug) {
+      throw HttpError.notFound(`Bug not found: ${bugId}`);
+    }
+
+    // Insert at new position (handle -1 for "move to bottom")
+    const finalIndex = toSortOrder < 0 ? bugs.length : Math.min(toSortOrder, bugs.length);
+    bugs.splice(finalIndex, 0, movedBug);
+
+    console.log(`[BUG REORDER] Moving bug ${bugId} from index ${bugIndex} to index ${finalIndex}, total bugs: ${bugs.length}`);
+
+    // Update sort_order for all affected bugs
+    // Index 0 (top) = sort_order 0, Index 1 = sort_order 1, etc.
+    for (let i = 0; i < bugs.length; i++) {
+      const sortOrder = i; // Lower sort_order = appears first
+      const bugIdAtIndex = bugs[i]?.id;
+      if (bugIdAtIndex) {
+        console.log(`[BUG REORDER] Updating bug ${bugIdAtIndex} to sort_order ${sortOrder}`);
+        db.run("UPDATE bugs SET sort_order = ? WHERE id = ?", [sortOrder, bugIdAtIndex]);
+      }
+    }
+
+    // Broadcast bug updated
+    const updatedBug = bugs.find(b => b.id === bugId);
+    broadcast("bugs", "bug.updated", { bugId, changes: { sort_order: updatedBug?.sort_order } });
+
+    return c.json({ success: true });
   });
 
   return app;

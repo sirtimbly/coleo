@@ -267,6 +267,111 @@ CREATE TABLE proposal_signals (
 );
 ```
 
+### Tasks Table
+
+```sql
+CREATE TABLE tasks (
+  id TEXT PRIMARY KEY,
+  subject TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'in_progress', 'completed', 'failed', 'blocked', 'cancelled')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('critical', 'high', 'normal', 'low')),
+  source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'plan', 'email', 'discovery', 'proposal')),
+  source_ref TEXT,           -- Reference to source (e.g., plan.md:123)
+  phase TEXT,                -- Project phase
+  domain TEXT,               -- Preferred arm domain
+  assigned_to TEXT,          -- Reference to arms(id)
+  plan_line_uid TEXT,        -- Unique ID linking to plan.md line
+  sort_order INTEGER,        -- Display order (ascending)
+  comment_count INTEGER,     -- Cached comment count
+  last_comment_at TEXT,      -- Timestamp of last comment
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  completed_at TIMESTAMP,
+  claimed_at TIMESTAMP,
+  started_at TIMESTAMP,
+  due_date TIMESTAMP,
+  artifacts TEXT,            -- JSON array
+  metadata TEXT,             -- JSON object
+  FOREIGN KEY (assigned_to) REFERENCES arms(id) ON DELETE SET NULL
+);
+```
+
+### Task Consensus Table
+
+Tracks multi-arm involvement and approval for a specific task.
+
+```sql
+CREATE TABLE task_arm_consensus (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  arm_id TEXT NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('primary', 'watcher')),
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'working', 'approved', 'rejected', 'watching')),
+  approval TEXT,             -- 'approved' or 'rejected'
+  approval_reason TEXT,
+  last_report TEXT,
+  last_report_at TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, arm_id)
+);
+```
+
+### Task Discussions
+
+Threaded comments for tasks.
+
+```sql
+CREATE TABLE task_comments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  parent_id TEXT REFERENCES task_comments(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  author_type TEXT NOT NULL CHECK (author_type IN ('human', 'arm', 'brain')),
+  author_id TEXT NOT NULL,
+  author_name TEXT,
+  client TEXT NOT NULL CHECK (client IN ('web', 'mail', 'mcp', 'cli')),
+  edited INTEGER DEFAULT 0,
+  deleted INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE TABLE task_comment_reads (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  last_read_comment_id TEXT NOT NULL,
+  read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, user_id)
+);
+```
+
+### Bugs Table
+
+Tracks reported issues.
+
+```sql
+CREATE TABLE bugs (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('arm_reported', 'human_reported', 'system_detected')),
+  source_arm_id TEXT REFERENCES arms(id),
+  status TEXT NOT NULL DEFAULT 'open',
+  priority TEXT NOT NULL DEFAULT 'medium',
+  assignee_arm_id TEXT REFERENCES arms(id),
+  sort_order INTEGER DEFAULT 0,
+  metadata TEXT DEFAULT '{}',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
 ### Claims Table
 
 ```sql

@@ -3,7 +3,7 @@
  * Combines Mail, Status Reports, and Proposals in one interface
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button } from '@heroui/react';
+import { Button, Card } from '@heroui/react';
 import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
 import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
@@ -22,6 +22,7 @@ interface UnifiedMessage {
 }
 
 export function MessagingPage() {
+  document.title = "Octopai Observatory - Messaging";
   const [activeTab, setActiveTab] = useState<MessageType>('all');
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -125,7 +126,7 @@ export function MessagingPage() {
     } finally {
       setLoading(false);
     }
-  }, [messages, previousMessageCount, showToast]);
+  }, [previousMessageCount, showToast]);
 
   useEffect(() => {
     loadMessages();
@@ -332,15 +333,21 @@ export function MessagingPage() {
                 >
                   <Icon className="h-4 w-4 mr-3" />
                   <span className="flex-1 text-left">{label}</span>
-                  <span className="px-2 py-1 text-xs bg-muted rounded-full min-w-[20px] text-center">
-                    {getTabCount(key)}
-                  </span>
+                  {(() => {
+                    const count = getTabCount(key);
+                    if (count === 0) return null;
+                    return (
+                      <span className="px-2 py-0.5 text-xs bg-primary text-primary-foreground rounded-full min-w-[20px] text-center">
+                        {count}
+                      </span>
+                    );
+                  })()}
                 </Button>
               ))}
             </nav>
           </div>
 
-          <div className="border-b border-border px-4 py-2 bg-muted/50">
+          <div className="border-b border-border px-4 py-2 bg-muted/20">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <input
@@ -411,7 +418,7 @@ export function MessagingPage() {
                   <div
                     key={message.id}
                     onClick={() => handleMessageClick(message)}
-                    className={`p-4 cursor-pointer hover:bg-muted/50 transition-colors ${
+                    className={`p-4 cursor-pointer hover:bg-muted/20 transition-colors ${
                       selectedMessage?.id === message.id ? 'bg-secondary border-l-4 border-accent' : ''
                     } ${getMessageColor(message.type, message.priority, message.status)}`}
                   >
@@ -449,6 +456,9 @@ export function MessagingPage() {
                           <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
                             {new Date(message.timestamp).toLocaleDateString()}
                           </span>
+                          <span className="text-xs text-foreground font-bold ml-1">
+                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
                         <p className={`text-sm text-muted-foreground line-clamp-2 ${message.unread ? 'font-medium text-foreground' : ''}`}>
                           {message.summary}
@@ -461,9 +471,6 @@ export function MessagingPage() {
                               </span>
                             )}
                           </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
                         </div>
                       </div>
                     </div>
@@ -482,36 +489,39 @@ export function MessagingPage() {
           />
         )}
 
-        <div className={`flex-1 bg-card ${viewerExpanded ? 'block' : 'hidden md:block'}`}>
+        <div className={`flex-1 bg-background p-6 overflow-auto ${viewerExpanded ? 'block' : 'hidden md:block'}`}>
           {selectedMessage ? (
-            <div className="h-full flex flex-col">
-              <div className="border-b border-border p-6 bg-muted/30">
-                <div className="flex items-start justify-between mb-4">
+            <Card className="shadow-xl border-border/50">
+              <Card.Header className="border-b border-border/50 bg-white pb-4">
+                <div className="flex items-start justify-between w-full">
                   <div className="flex items-start space-x-3 flex-1">
-                    {getMessageIcon(selectedMessage.type)}
+                    <div className="mt-1 p-2 bg-background rounded-lg border border-border/50 shadow-sm">
+                      {getMessageIcon(selectedMessage.type)}
+                    </div>
                     <div className="flex-1">
-                      <h2 className="text-xl font-semibold text-foreground mb-1">
+                      <Card.Title className="text-xl font-semibold text-foreground mb-1">
                         {selectedMessage.title}
-                      </h2>
-                      <div className="flex items-center space-x-2 text-sm text-muted-foreground mb-2">
+                      </Card.Title>
+                      <Card.Description className="flex items-center space-x-2 text-sm mb-2">
                         <span>From: {selectedMessage.type === 'mail' ? selectedMessage.data.from : `System (${selectedMessage.data.armId || 'Brain'})`}</span>
-                        <span>•</span>
-                        <span>{new Date(selectedMessage.timestamp).toLocaleString()}</span>
-                      </div>
+                        <span className="text-muted-foreground">•</span>
+                        <span className="text-muted-foreground">{new Date(selectedMessage.timestamp).toLocaleString()}</span>
+                      </Card.Description>
                       <div className="flex items-center space-x-2">
                         {getPriorityBadge(selectedMessage.priority, selectedMessage.status)}
                         <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedMessage.unread ? 'bg-accent/20 text-accent' : 'bg-muted text-muted-foreground'
+                          selectedMessage.unread ? 'bg-accent/20 text-accent' : 'bg-secondary text-secondary-foreground border border-border'
                         }`}>
                           {selectedMessage.unread ? 'Unread' : 'Read'}
                         </span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-1">
                     {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') && (
                       <Button
                         variant="ghost"
+                        size="sm"
                         onPress={() => openReply({
                           messageId: selectedMessage.data.id,
                           from: selectedMessage.data.from,
@@ -525,97 +535,123 @@ export function MessagingPage() {
                     )}
                     <Button
                       variant="ghost"
+                      size="sm"
                       onPress={() => handleMarkRead([selectedMessage.id], selectedMessage.unread ?? false)}
                     >
-                      {selectedMessage.unread ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                      {selectedMessage.unread ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
                       {selectedMessage.unread ? 'Mark Read' : 'Mark Unread'}
                     </Button>
                     <Button
                       variant="ghost"
+                      size="sm"
                       onPress={() => handleArchive([selectedMessage.id])}
                     >
-                      <Archive className="h-4 w-4" />
+                      <Archive className="h-4 w-4 mr-1" />
                       Archive
                     </Button>
                   </div>
                 </div>
-              </div>
+              </Card.Header>
 
-              <div className="flex-1 overflow-y-auto p-6">
+              <Card.Content className="pt-6">
                 <div className="prose prose-sm max-w-none">
                   {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') ? (
-                    <div className="whitespace-pre-wrap font-mono text-sm bg-muted p-4 rounded-lg text-foreground">
+                    <div className="whitespace-pre-wrap font-mono text-sm bg-slate-50 p-5 rounded-xl border border-border/50 text-foreground leading-relaxed">
                       {selectedMessage.data.body}
                     </div>
                   ) : selectedMessage.type === 'status-report' ? (
                     <div className="space-y-4">
-                      <div className="bg-secondary/50 border border-border rounded-lg p-4">
-                        <h3 className="font-medium text-secondary-foreground mb-2">Status Report Details</h3>
-                        <div className="space-y-2 text-sm text-foreground">
-                          <p><strong className="text-muted-foreground">Arm:</strong> {selectedMessage.data.armId}</p>
-                          <p><strong className="text-muted-foreground">Status:</strong> <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            selectedMessage.data.status === 'on_track' ? 'bg-green-500/20 text-green-400' :
-                            selectedMessage.data.status === 'blocked' ? 'bg-red-500/20 text-red-400' :
-                            selectedMessage.data.status === 'issues_found' ? 'bg-orange-500/20 text-orange-400' :
-                            'bg-muted text-muted-foreground'
-                          }`}>
-                            {selectedMessage.data.status.replace('_', ' ').toUpperCase()}
-                          </span></p>
-                          <p><strong className="text-muted-foreground">Summary:</strong> {selectedMessage.data.summary}</p>
+                      <Card className="shadow-md border-border/30 bg-white">
+                        <Card.Header>
+                          <Card.Title className="text-base">Status Report Details</Card.Title>
+                        </Card.Header>
+                        <Card.Content className="space-y-3">
+                          <div className="flex items-center justify-between py-2 border-b border-border/30">
+                            <span className="text-muted-foreground text-sm">Arm</span>
+                            <span className="font-medium text-sm">{selectedMessage.data.armId}</span>
+                          </div>
+                          <div className="flex items-center justify-between py-2 border-b border-border/30">
+                            <span className="text-muted-foreground text-sm">Status</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                              selectedMessage.data.status === 'on_track' ? 'bg-green-500/20 text-green-400' :
+                              selectedMessage.data.status === 'blocked' ? 'bg-red-500/20 text-red-400' :
+                              selectedMessage.data.status === 'issues_found' ? 'bg-orange-500/20 text-orange-400' :
+                              'bg-muted text-muted-foreground'
+                            }`}>
+                              {selectedMessage.data.status.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="py-2">
+                            <span className="text-muted-foreground text-sm block mb-1">Summary</span>
+                            <p className="text-sm">{selectedMessage.data.summary}</p>
+                          </div>
                           {selectedMessage.data.issues && selectedMessage.data.issues.length > 0 && (
-                            <div>
-                              <strong className="text-muted-foreground">Issues:</strong>
-                              <ul className="list-disc list-inside mt-1 text-foreground">
+                            <div className="py-2 border-t border-border/30">
+                              <span className="text-muted-foreground text-sm block mb-2">Issues</span>
+                              <ul className="space-y-1">
                                 {selectedMessage.data.issues.map((issue: string, i: number) => (
-                                  <li key={i}>{issue}</li>
+                                  <li key={i} className="flex items-start space-x-2 text-sm">
+                                    <span className="text-orange-400 mt-1">•</span>
+                                    <span>{issue}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
                           )}
                           {selectedMessage.data.blockers && selectedMessage.data.blockers.length > 0 && (
-                            <div>
-                              <strong className="text-muted-foreground">Blockers:</strong>
-                              <ul className="list-disc list-inside mt-1 text-foreground">
+                            <div className="py-2 border-t border-border/30">
+                              <span className="text-muted-foreground text-sm block mb-2">Blockers</span>
+                              <ul className="space-y-1">
                                 {selectedMessage.data.blockers.map((blocker: string, i: number) => (
-                                  <li key={i}>{blocker}</li>
+                                  <li key={i} className="flex items-start space-x-2 text-sm">
+                                    <span className="text-red-400 mt-1">•</span>
+                                    <span>{blocker}</span>
+                                  </li>
                                 ))}
                               </ul>
                             </div>
                           )}
                           {selectedMessage.data.nextSteps && (
-                            <p><strong className="text-muted-foreground">Next Steps:</strong> {selectedMessage.data.nextSteps}</p>
-                          )}
-                          {selectedMessage.data.filesChanged && selectedMessage.data.filesChanged.length > 0 && (
-                            <div>
-                              <strong className="text-muted-foreground">Files Changed:</strong>
-                              <ul className="list-disc list-inside mt-1 text-foreground">
-                                {selectedMessage.data.filesChanged.map((file: string, i: number) => (
-                                  <li key={i} className="font-mono text-xs">{file}</li>
-                                ))}
-                              </ul>
+                            <div className="py-2 border-t border-border/30">
+                              <span className="text-muted-foreground text-sm block mb-1">Next Steps</span>
+                              <p className="text-sm">{selectedMessage.data.nextSteps}</p>
                             </div>
                           )}
-                        </div>
-                      </div>
+                          {selectedMessage.data.filesChanged && selectedMessage.data.filesChanged.length > 0 && (
+                            <div className="py-2 border-t border-border/30">
+                              <span className="text-muted-foreground text-sm block mb-2">Files Changed</span>
+                              <div className="flex flex-wrap gap-2">
+                                {selectedMessage.data.filesChanged.map((file: string, i: number) => (
+                                  <span key={i} className="font-mono text-xs bg-muted px-2 py-1 rounded border border-border/30">
+                                    {file}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </Card.Content>
+                      </Card>
                     </div>
                   ) : (
-                    <div className="text-muted-foreground italic">
+                    <div className="text-muted-foreground italic text-center py-8">
                       Proposal content would be displayed here.
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
+              </Card.Content>
+            </Card>
           ) : (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8">
-              <Mail className="h-16 w-16 text-muted mb-4" />
-              <h3 className="text-lg font-medium text-foreground mb-2">
-                No message selected
-              </h3>
-              <p className="text-muted-foreground max-w-sm">
-                Select a message from the list to view its contents.
-              </p>
-            </div>
+            <Card className="h-full flex flex-col items-center justify-center text-center shadow-lg border-border/30">
+              <Card.Content className="py-16">
+                <div className="p-4 bg-muted/30 rounded-full mb-4 inline-block">
+                  <Mail className="h-12 w-12 text-muted-foreground" />
+                </div>
+                <Card.Title className="text-lg mb-2">No message selected</Card.Title>
+                <Card.Description className="max-w-sm">
+                  Select a message from the list to view its contents.
+                </Card.Description>
+              </Card.Content>
+            </Card>
           )}
         </div>
       </div>

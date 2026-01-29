@@ -106,7 +106,7 @@ interface BrainState {
 
 ## Brain Logic
 
-The brain runs a polling cycle every 30 seconds that orchestrates arm lifecycle and task assignment.
+The brain runs a polling cycle every 30 seconds that orchestrates arm lifecycle and task assignment. It includes event-window based arm health monitoring and automatic intervention capabilities.
 
 ### Poll Cycle
 
@@ -123,11 +123,61 @@ flowchart TD
         D --> F[promptIdleArms]
         F --> G[checkIdleArmStuckLoops]
         G --> H[End Poll]
-        E --> H
     end
 
     class A,B,D,F,G,H process
     class C decision
+```
+
+### Event-Window Based Health Monitoring
+
+The brain continuously monitors arm health using an event-window based system that analyzes recent activity patterns to detect issues before they become critical.
+
+#### Event Window Analysis
+
+The health monitoring system fetches event windows for each arm from JetStream, grouping events by type and analyzing patterns to classify arm states:
+
+```typescript
+interface ArmActivityState {
+  productive: "actively doing useful work";
+  idle: "waiting for work";
+  waiting_permission: "blocked on a permission request";
+  looping: "stuck in a repetitive pattern";
+  silent: "no events for an extended period";
+  error: "encountered an error state";
+  starting: "in startup grace period";
+}
+```
+
+#### Health Monitoring Components
+
+1. **BrainEventWindow**: Centralized JetStream event window fetcher that retrieves event slices per arm
+2. **ArmActivityAnalyzer**: Classifies arm states based on event windows using pattern recognition
+3. **ArmHealthMonitor**: Coordinates health checks and automatic interventions
+
+#### Automatic Intervention Capabilities
+
+When issues are detected, the health monitoring system can automatically intervene:
+
+- **Prompting**: Send messages to arms that appear stuck or idle
+- **Interrupting**: Send /compact commands to arms stuck in loops
+- **Killing**: Terminate arms that are consistently problematic
+- **Escalating**: Notify humans for permission requests that timeout
+- **Recovering**: Restart arms that crash or become unresponsive
+
+#### Configuration Options
+
+The health monitoring system is highly configurable:
+
+```typescript
+interface HealthMonitorConfig {
+  checkIntervalMs: number;      // How often to run health checks
+  eventWindowMs: number;        // Size of event window to analyze
+  autoInterventionEnabled: boolean; // Whether automatic interventions are enabled
+  silentThresholdMs: number;    // Time before arm considered silent
+  loopRepetitionThreshold: number; // Repetitions before considering looping
+  permissionEscalationMs: number; // Time before escalating permission requests
+}
 ```
 
 ### File Reading During Poll
@@ -201,6 +251,26 @@ flowchart LR
 | idle/working | CONNECTION_LOST | disconnected | Network issue |
 | disconnected | CONNECTION_RESTORED | previous | Reconnected |
 | any | STOP | stopped | Intentional stop |
+
+### Task Reordering and Management
+
+Tasks now include a `sort_order` field that allows manual reordering:
+
+```http
+POST /api/tasks/reorder
+{
+  "taskId": "task-123",
+  "toSortOrder": 0  // 0=top, -1=bottom
+}
+```
+
+Tasks can also be removed directly from plan.md files:
+
+```http
+POST /api/tasks/:id/remove-from-plan
+```
+
+This links plan.md lines to tasks via `plan_line_uid` and removes both the line and the database entry.
 
 ### Task Assignment Flow
 
@@ -612,6 +682,72 @@ The Observatory is how humans observe and control the system.
 
 ---
 
+## Model Fallback System
+
+The model fallback system ensures arms can spawn successfully even when configured with unavailable models by automatically resolving to alternative models based on availability and cost.
+
+### Model Resolution Process
+
+1. **Exact Match**: Try the requested provider/model combination
+2. **Provider Fallback**: If model not found, find cheapest model from same provider
+3. **Cross-Provider**: If provider not available, find same model from another provider
+4. **Last Resort**: Use first available model from any connected provider
+
+### Model Pricing Information
+
+The resolver includes known model pricing to make cost-based decisions when multiple fallback options are available:
+
+```typescript
+interface ModelPricing {
+  input: number;   // Price per million input tokens
+  output: number;  // Price per million output tokens
+}
+
+// Examples of known model pricing:
+// Claude Sonnet 4: { input: 3, output: 15 }
+// GPT-4o: { input: 2.5, output: 10 }
+// Gemini 2.5 Flash: { input: 0.075, output: 0.3 }
+```
+
+### Model Resolution Response
+
+```typescript
+interface ResolvedModel {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  fallback: boolean;
+  fallbackReason?: string;
+}
+```
+
+When a fallback occurs, the system logs the reason for debugging and transparency.
+
+### Provider Availability Checking
+
+The system can validate model availability before spawning arms:
+
+```typescript
+async function isModelAvailable(
+  providerId: string,
+  modelId: string,
+  apiUrl: string
+): Promise<boolean>
+```
+
+### Cost-Based Model Selection
+
+For scenarios where cost optimization is important, the system can provide a list of all available models sorted by cost:
+
+```typescript
+async function getAvailableModelsByCost(
+  apiUrl: string
+): Promise<Array<{ providerId: string; modelId: string; cost: number }>>
+```
+
+---
+ 
 ## Nerve System (Communication Layer)
 
 All communication flows through the Nerve System using NATS for distributed messaging and an internal queue for brain↔arm messages.

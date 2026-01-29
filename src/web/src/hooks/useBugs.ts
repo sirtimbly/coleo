@@ -24,18 +24,28 @@ interface CreateBugVariables {
   sourceTaskId?: string;
   priority?: "low" | "medium" | "high" | "critical";
   errorDetails?: string;
+  metadata?: Record<string, unknown>;
 }
 
 interface UpdateBugVariables {
   id: string;
   updates: {
+    title?: string;
+    description?: string;
     status?: string;
     priority?: string;
     assigneeArmId?: string;
     blockers?: string[];
     resolution?: string;
     humanNotified?: boolean;
+    metadata?: Record<string, unknown>;
   };
+}
+
+interface ReorderBugVariables {
+  bugId: string;
+  fromSortOrder: number;
+  toSortOrder: number;
 }
 
 export function useBugs(filters?: BugFilters) {
@@ -143,6 +153,51 @@ export function useBugs(filters?: BugFilters) {
     },
   });
 
+  // Mutation: Reorder bug with optimistic update
+  const reorderBugMutation = useMutation({
+    mutationFn: async ({ bugId, toSortOrder }: ReorderBugVariables) => {
+      await api.reorderBug(bugId, toSortOrder);
+    },
+    onMutate: async ({ toSortOrder, fromSortOrder }) => {
+      await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
+
+      const previousData = queryClient.getQueryData(bugsKeys.list(filters ?? {}));
+
+      queryClient.setQueryData(
+        bugsKeys.list(filters ?? {}),
+        (old: Bug[] | undefined) => {
+          if (!old) return old;
+          
+          // Sort bugs by sortOrder to get proper order for optimistic update
+          const bugs = [...old].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          const fromIndex = bugs.findIndex(b => (b.sortOrder ?? 0) === fromSortOrder);
+          if (fromIndex === -1) return old;
+          const [movedBug] = bugs.splice(fromIndex, 1);
+          // Calculate target index based on toSortOrder
+          const toIndex = toSortOrder < 0 ? bugs.length : Math.min(toSortOrder, bugs.length);
+          bugs.splice(toIndex, 0, movedBug);
+          // Update sortOrder values
+          bugs.forEach((bug, i) => {
+            bug.sortOrder = i;
+          });
+          
+          return bugs;
+        }
+      );
+
+      return { previousData };
+    },
+    onError: (err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(bugsKeys.list(filters ?? {}), context.previousData);
+      }
+      showError(`Failed to reorder bug: ${err.message}`, 'Reorder Failed');
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: bugsKeys.all() });
+    },
+  });
+
   return {
     bugs: bugsQuery.data ?? [],
     stats: statsQuery.data,
@@ -162,6 +217,10 @@ export function useBugs(filters?: BugFilters) {
     deleteBug: deleteBugMutation.mutate,
     deleteBugAsync: deleteBugMutation.mutateAsync,
     isDeleting: deleteBugMutation.isPending,
+
+    reorderBug: reorderBugMutation.mutate,
+    reorderBugAsync: reorderBugMutation.mutateAsync,
+    isReordering: reorderBugMutation.isPending,
   };
 }
 

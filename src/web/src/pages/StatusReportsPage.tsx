@@ -2,13 +2,15 @@
  * Status Reports Page
  * Displays status reports from arms and allows tracking message processing
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { api, type StatusReport } from '@/lib/api';
+import { Button } from '@heroui/react';
 import { RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, FileText } from 'lucide-react';
 
 interface StatusReportsPageProps {}
 
 export function StatusReportsPage({}: StatusReportsPageProps) {
+  document.title = "Octopai Observatory - Status Reports";
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,14 +72,10 @@ export function StatusReportsPage({}: StatusReportsPageProps) {
             Monitor arm progress and track task status updates
           </p>
         </div>
-        <button
-          onClick={loadReports}
-          disabled={loading}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-        >
+        <Button variant="primary" onPress={loadReports} isDisabled={loading} className="inline-flex">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
-        </button>
+        </Button>
       </div>
 
       {/* Stats Overview */}
@@ -144,33 +142,21 @@ export function StatusReportsPage({}: StatusReportsPageProps) {
       <div className="bg-white rounded-lg border">
         <div className="border-b">
           <nav className="flex">
-            <button
-              className="px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-600"
-              onClick={() => setReports(reports)}
-            >
+            <Button variant="ghost" onPress={() => setReports(reports)} className="px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
               All Reports
-            </button>
-            <button
-              className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
-              onClick={() => setReports(reports.filter(r => r.status === 'blocked'))}
-            >
+            </Button>
+            <Button variant="ghost" onPress={() => setReports(reports.filter(r => r.status === 'blocked'))} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
               Blocked
-            </button>
-            <button
-              className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
-              onClick={() => setReports(reports.filter(r => r.status === 'issues_found' || r.status === 'completed_with_issues'))}
-            >
+            </Button>
+            <Button variant="ghost" onPress={() => setReports(reports.filter(r => r.status === 'issues_found' || r.status === 'completed_with_issues'))} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
               Issues
-            </button>
-            <button
-              className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
-              onClick={() => {
+            </Button>
+            <Button variant="ghost" onPress={() => {
                 const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
                 setReports(reports.filter(r => new Date(r.createdAt) > oneDayAgo));
-              }}
-            >
+              }} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
               Recent
-            </button>
+            </Button>
           </nav>
         </div>
 

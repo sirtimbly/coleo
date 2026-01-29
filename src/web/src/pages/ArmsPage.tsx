@@ -13,6 +13,7 @@ interface ArmEventData {
 }
 
 export function ArmsPage() {
+  document.title = "Octopai Observatory - Arms";
   const [arms, setArms] = useState<Arm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,7 +128,7 @@ export function ArmsPage() {
         <Card>
           <Card.Content className="py-12 text-center">
             <p className="text-muted-foreground mb-4">No arms registered yet</p>
-            <code className="block p-4 bg-muted rounded text-sm text-left max-w-md mx-auto">
+            <code className="block p-4 bg-muted/20 rounded text-sm text-left max-w-md mx-auto">
               octopai arm spawn --name my-arm --agent opencode
             </code>
           </Card.Content>

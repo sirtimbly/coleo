@@ -14,6 +14,7 @@ interface TaskGridProps {
   totalTasks?: number;
   availableTags?: string[];
   selectedTaskId?: string;
+  newTaskId?: string | null;
   onOpenDetails?: (task: Task) => void;
   onOpenDiscussions?: (task: Task) => void;
   onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
@@ -123,6 +124,7 @@ export function TaskGrid({
   totalTasks,
   availableTags,
   selectedTaskId,
+  newTaskId,
   onOpenDetails,
   onOpenDiscussions,
   onUpdateTask,
@@ -139,6 +141,15 @@ export function TaskGrid({
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const draftRef = useRef<HTMLInputElement>(null);
   const hoverIndexRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const newTaskRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to newly created task
+  useEffect(() => {
+    if (newTaskId && newTaskRef.current && containerRef.current) {
+      newTaskRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [newTaskId]);
 
   // Memoize task lookup map for O(1) access
   const taskMap = useMemo(() => {
@@ -290,13 +301,17 @@ export function TaskGrid({
           <div>Tags</div>
           <div className="text-right">Actions</div>
         </div>
-        <div className="flex-1 overflow-y-auto p-1">
+        <div ref={containerRef} className="flex-1 overflow-y-auto p-1">
           {displayTasks.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-sm">No tasks found</div>
           ) : (
             <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
               {displayTasks.map((task, index) => (
-                <div key={task.id} className="relative -mt-2">
+                <div 
+                  key={task.id} 
+                  ref={task.id === newTaskId ? newTaskRef : undefined}
+                  className="relative -mt-2"
+                >
                    <InsertRow
                      isActive={activeId !== null && hoverIndex === index}
                      onClick={(e) => {

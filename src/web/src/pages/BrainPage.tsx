@@ -422,6 +422,7 @@ function ActivityCard({ status }: { status: BrainStatus | null }) {
 }
 
 export function BrainPage() {
+  document.title = "Octopai Observatory - Brain";
   const [status, setStatus] = useState<BrainStatus | null>(null);
   const [config, setConfig] = useState<OctopaiConfig | null>(null);
   const [loading, setLoading] = useState(true);

@@ -435,6 +435,7 @@ const formatLastSeen = (timestamp?: string) => {
 };
 
 export function DashboardPage() {
+  document.title = "Octopai Observatory - Dashboard";
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);

@@ -452,6 +452,13 @@ class ApiClient {
     }>('/bugs/stats');
   }
 
+  async reorderBug(bugId: string, toSortOrder: number) {
+    return this.request<{ success: boolean }>('/bugs/reorder', {
+      method: 'POST',
+      body: JSON.stringify({ bugId, toSortOrder }),
+    });
+  }
+
   // Tasks
   async listTasks(params?: {
     status?: string; 
@@ -855,6 +862,8 @@ export interface Bug {
   blockers: string[]; // Array of blocking task IDs
   errorDetails?: string;
   resolution?: string;
+  sortOrder?: number;
+  metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;

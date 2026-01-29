@@ -25,12 +25,12 @@ function App() {
               <Route path="arms" element={<ArmsPage />} />
               <Route path="viewer" element={<ArmViewerPage />} />
               <Route path="brain" element={<BrainPage />} />
-                <Route path="tasks" element={<TasksPage />} />
-                <Route path="bugs" element={<BugsPage />} />
-                <Route path="garden" element={<GardenPage />} />
-                <Route path="messaging" element={<MessagingPage />} />
-                <Route path="activity" element={<ActivityPage />} />
-                <Route path="settings" element={<SettingsPage />} />
+              <Route path="tasks" element={<TasksPage />} />
+              <Route path="bugs" element={<BugsPage />} />
+              <Route path="garden" element={<GardenPage />} />
+              <Route path="messaging" element={<MessagingPage />} />
+              <Route path="activity" element={<ActivityPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

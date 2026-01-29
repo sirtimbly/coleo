@@ -105,7 +105,7 @@ octopai garden token create --name "home-laptop"
 #
 #   octopai garden join \
 #     --token SWMTKN-1-abc123xyz... \
-#     --control-plane https://octopai.example.com:7777
+#     --control-plane https://octopai.example.com:8080
 #
 # Token expires in 24 hours. Run 'octopai garden token refresh' to extend.
 ```
@@ -118,7 +118,7 @@ cd /path/to/my-project
 
 octopai garden join \
   --token SWMTKN-1-abc123xyz... \
-  --control-plane https://octopai.example.com:7777
+  --control-plane https://octopai.example.com:8080
 
 # Output:
 # Connecting to control plane...
@@ -249,8 +249,8 @@ Arm (PTY)                 Garden Daemon              Control Plane
 
 | Direction | Port | Protocol | Purpose |
 |-----------|------|----------|---------|
-| Garden → Control Plane | 7777 | HTTPS | REST API calls |
-| Garden → Control Plane | 7777 | WSS | Real-time commands, log streaming |
+| Garden → Control Plane | 8080 | HTTPS | REST API calls |
+| Garden → Control Plane | 8080 | WSS | Real-time commands, log streaming |
 | Control Plane → Garden | N/A | (via WS) | Commands sent over existing connection |
 
 Gardens only need outbound connectivity - no inbound ports required.

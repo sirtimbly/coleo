@@ -111,6 +111,7 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
 }
 
 export function TasksPage() {
+  document.title = "Octopai Observatory - Tasks";
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
   const [tagFilter, setTagFilter] = useState<string[]>([]);
@@ -121,6 +122,7 @@ export function TasksPage() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
   const [discussionCount, setDiscussionCount] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState<{ show: boolean; task: Task | null }>({ show: false, task: null });
+  const [newTaskId, setNewTaskId] = useState<string | null>(null);
 
   // Use React Query hook for tasks
   const {
@@ -133,7 +135,7 @@ export function TasksPage() {
     refetch,
     updateTask,
     reorderTask,
-    createTask,
+    createTaskAsync,
     deleteTask,
     removeFromPlan,
     hasNextPage,
@@ -250,16 +252,22 @@ export function TasksPage() {
       ],
     };
     try {
-      await createTask({
+      const result = await createTaskAsync({
         subject,
         description: llmMeta.generatedDescription ?? subject,
         priority: 'normal',
         metadata: { ui: { tags: [], bold: false, color: 'slate', llm: llmMeta } },
       });
+      // Set the new task ID to trigger scroll
+      if (result?.id) {
+        setNewTaskId(result.id);
+        // Clear after 3 seconds
+        setTimeout(() => setNewTaskId(null), 3000);
+      }
     } catch (err) {
       // Error is handled by the mutation
     }
-  }, [createTask]);
+  }, [createTaskAsync]);
 
   const handleReorder = useCallback((taskId: string, fromSortOrder: number, toSortOrder: number) => {
     if (!taskId) return;
@@ -460,11 +468,12 @@ export function TasksPage() {
               </div>
             ) : (
               <div className="p-4">
-                <TaskGrid 
+                <TaskGrid
                   tasks={filteredTasks}
                   totalTasks={pagination?.total}
                   availableTags={availableTags}
-                  selectedTaskId={selectedTask?.id} 
+                  selectedTaskId={selectedTask?.id}
+                  newTaskId={newTaskId}
                   onOpenDetails={handleOpenDetails}
                   onOpenDiscussions={handleOpenDiscussions}
                   onUpdateTask={handleUpdateTask}
@@ -603,14 +612,16 @@ export function TasksPage() {
                           (getTaskUiMeta(selectedTask).tags ?? []).map((tag) => (
                             <Chip key={tag} size="sm" variant="soft" className="pr-1 gap-1 group hover:bg-default-200 transition-colors cursor-default">
                               {tag}
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveTagFromTask(selectedTask.id, tag)}
-                                className="ml-0.5 p-0.5 rounded-full hover:bg-danger-100 hover:text-danger transition-colors cursor-pointer opacity-60 group-hover:opacity-100"
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                isIconOnly
+                                onPress={() => handleRemoveTagFromTask(selectedTask.id, tag)}
                                 aria-label={`Remove tag ${tag}`}
+                                className="ml-0.5 p-0.5 h-auto rounded-full hover:bg-danger-100 hover:text-danger transition-colors cursor-pointer opacity-60 group-hover:opacity-100"
                               >
                                 <X className="h-3 w-3" />
-                              </button>
+                              </Button>
                             </Chip>
                           ))
                         )}

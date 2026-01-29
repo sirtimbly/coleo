@@ -4,6 +4,7 @@ import { api } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
 
 export function SettingsPage() {
+  document.title = "Octopai Observatory - Settings";
   const [apiKey, setApiKey] = useState(api.getApiKey() || '');
   const [saved, setSaved] = useState(false);
 
@@ -54,18 +55,12 @@ export function SettingsPage() {
           </div>
 
           <div className="flex gap-2">
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 bg-accent text-accent-foreground rounded-md hover:bg-accent/90 transition-colors"
-            >
+            <Button variant="primary" onPress={handleSave}>
               {saved ? 'Saved!' : 'Save'}
-            </button>
-            <button
-              onClick={handleClear}
-              className="px-4 py-2 bg-secondary text-secondary-foreground rounded-md hover:bg-secondary/80 transition-colors"
-            >
+            </Button>
+            <Button variant="secondary" onPress={handleClear}>
               Clear
-            </button>
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -416,7 +416,15 @@ export function createTasksRoutes() {
       throw HttpError.badRequest("description is required");
     }
 
-    const id = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    // Generate sequential task ID
+    const maxIdResult = db.query("SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER)) as max_num FROM tasks WHERE id LIKE 'task-%'").get() as { max_num: number | null };
+    const nextNum = (maxIdResult?.max_num ?? 0) + 1;
+    const id = `task-${nextNum}`;
+    
+    // Get current max sort_order to place new task at the end
+    const maxSortOrder = db.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM tasks").get() as { max_sort: number };
+    const newSortOrder = (maxSortOrder?.max_sort ?? -1) + 1;
+    
     const now = new Date().toISOString();
 
     db.run(`
@@ -432,7 +440,7 @@ export function createTasksRoutes() {
       body.phase || null,
       body.domain || null,
       body.dueDate || null,
-      Date.now(), // sort_order - higher value = appears first
+      newSortOrder, // Place at the end of the list
       JSON.stringify(body.metadata || {}),
       now,
       now,
@@ -448,7 +456,8 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, NULL as assigned_arm_name,
-        t.consensus_status,
+        t.consensus_status, t.sort_order,
+        t.comment_count, t.last_comment_at,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata

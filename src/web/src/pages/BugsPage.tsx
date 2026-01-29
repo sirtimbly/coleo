@@ -42,7 +42,8 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 };
 
 export function BugsPage() {
-	const queryClient = useQueryClient();
+  document.title = "Octopai Observatory - Bugs";
+  const queryClient = useQueryClient();
 	const [filter, setFilter] = useState<{ status?: string; priority?: string; source?: string }>({});
 	const [tagFilter, setTagFilter] = useState<string[]>([]);
 	const [searchText, setSearchText] = useState('');
@@ -60,14 +61,16 @@ export function BugsPage() {
 		updateBug,
 		createBug,
 		deleteBug,
+		reorderBug,
 	} = useBugs(filter);
 
-	const getBugUiMeta = useCallback((_bug: Bug): BugUiMeta => {
-		// For now, bugs don't have metadata, return defaults
+	const getBugUiMeta = useCallback((bug: Bug): BugUiMeta => {
+		const meta = (bug.metadata ?? {}) as Record<string, unknown>;
+		const ui = (meta.ui ?? {}) as Record<string, unknown>;
 		return {
-			tags: [],
-			color: 'slate',
-			bold: false,
+			tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
+			color: typeof ui.color === 'string' ? (ui.color as string) : 'slate',
+			bold: Boolean(ui.bold),
 		};
 	}, []);
 
@@ -113,11 +116,22 @@ export function BugsPage() {
 
 	const handleUpdateUi = useCallback(
 		async (bugId: string, updates: BugUiMeta) => {
-			// For now, UI metadata is not persisted for bugs
-			// This could be stored in localStorage or a separate field in the future
-			console.log('UI update for bug', bugId, updates);
+			const target = bugs.find((bug) => bug.id === bugId);
+			if (!target) return;
+			const currentUi = getBugUiMeta(target);
+			const nextUi: BugUiMeta = {
+				...currentUi,
+				...updates,
+				tags: updates.tags ?? currentUi.tags,
+			};
+			const nextMetadata = {
+				...(target.metadata ?? {}),
+				ui: nextUi,
+			} as Record<string, unknown>;
+
+			updateBug({ id: bugId, updates: { metadata: nextMetadata } });
 		},
-		[]
+		[bugs, getBugUiMeta, updateBug]
 	);
 
 	const handleDeleteBug = useCallback(
@@ -148,10 +162,9 @@ export function BugsPage() {
 	const handleReorder = useCallback(
 		(bugId: string, fromSortOrder: number, toSortOrder: number) => {
 			if (!bugId) return;
-			// Note: Reordering bugs is not yet supported by the API
-			console.log('Reorder bug', bugId, fromSortOrder, toSortOrder);
+			reorderBug({ bugId, fromSortOrder, toSortOrder });
 		},
-		[]
+		[reorderBug]
 	);
 
 	const handleOpenDetails = useCallback((bug: Bug) => {

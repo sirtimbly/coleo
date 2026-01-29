@@ -249,7 +249,7 @@ export const BugGridRow = memo(function BugGridRow({
     <li
       className={cn(
         "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
-        "border-l-4 rounded-md border",
+        "rounded-md ",
         // Base color from row color setting
         !isDragging &&
           (uiMeta.bold

@@ -103,6 +103,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["033_task_tags", MIGRATION_033, { table: "tasks", columns: MIGRATION_033_COLUMNS }],
     ["034_task_discussions", MIGRATION_034_TASK_DISCUSSIONS, { table: "tasks", columns: MIGRATION_034_COLUMNS }],
     ["035_fix_sort_order", MIGRATION_035_FIX_SORT_ORDER],
+    ["036_bugs_sort_order", MIGRATION_036, { table: "bugs", columns: MIGRATION_036_COLUMNS }],
   ];
 
 
@@ -1113,6 +1114,29 @@ SET sort_order = (
   SELECT new_sort_order
   FROM ordered_tasks
   WHERE ordered_tasks.id = tasks.id
+);
+`;
+
+// Migration 036: Add sort_order and metadata to bugs table
+const MIGRATION_036_COLUMNS = [
+  { name: 'sort_order', sql: "ALTER TABLE bugs ADD COLUMN sort_order INTEGER DEFAULT 0" },
+  { name: 'metadata', sql: "ALTER TABLE bugs ADD COLUMN metadata TEXT DEFAULT '{}'" },
+];
+
+const MIGRATION_036 = `
+-- Create index for ordering bugs by their sort order
+CREATE INDEX IF NOT EXISTS idx_bugs_sort_order ON bugs(sort_order);
+
+-- Initialize sort_order for existing bugs based on created_at
+WITH ordered_bugs AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) - 1 as new_sort_order
+  FROM bugs
+)
+UPDATE bugs
+SET sort_order = (
+  SELECT new_sort_order
+  FROM ordered_bugs
+  WHERE ordered_bugs.id = bugs.id
 );
 `;
 

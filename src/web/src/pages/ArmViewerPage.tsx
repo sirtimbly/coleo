@@ -1,3 +1,4 @@
+import { Button } from '@heroui/react';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -583,19 +584,20 @@ export function ArmViewerPage() {
     <div className="flex h-full">
       {/* Left Panel - Arm selector */}
       <div className="flex flex-col" style={{ width: panelWidth }}>
-        <div className="border-b border-border px-4 py-3 bg-muted/50">
+        <div className="border-b border-border px-4 py-3 bg-muted/20">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Eye className="h-4 w-4 text-muted-foreground" />
               <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Active Arms</h2>
             </div>
-            <button
+            <Button
+              variant="secondary"
               onClick={() => setViewerExpanded(!viewerExpanded)}
-              className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground"
-              title={viewerExpanded ? "Collapse panel" : "Expand panel"}
+              aria-label={viewerExpanded ? "Collapse panel" : "Expand panel"}
+              isIconOnly
             >
               {viewerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -608,26 +610,27 @@ export function ArmViewerPage() {
           ) : (
             <div className="p-2 space-y-1">
               {arms.map(arm => (
-                <button
-                  key={arm.id}
-                  onClick={() => selectArm(arm.id)}
-                  className={`w-full text-left p-3 rounded-lg transition-colors ${
-                    selectedArmId === arm.id
-                      ? 'bg-accent text-accent-foreground'
-                      : 'hover:bg-secondary'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium truncate">{arm.name}</span>
-                    <StatusBadge status={arm.status} />
-                  </div>
-                  <p className={`text-xs mt-1 ${
-                    selectedArmId === arm.id ? 'text-accent-foreground/70' : 'text-muted-foreground'
-                  }`}>
-                    {arm.harness}
-                  </p>
-                </button>
-              ))}
+              <Button
+                key={arm.id}
+                variant="ghost"
+                className={`w-full justify-start h-auto py-3 px-4 ${
+                  selectedArmId === arm.id
+                    ? 'bg-accent text-accent-foreground'
+                    : 'hover:bg-secondary'
+                }`}
+                onPress={() => selectArm(arm.id)}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium truncate">{arm.name}</span>
+                  <StatusBadge status={arm.status} />
+                </div>
+                <p className={`text-xs mt-1 ${
+                  selectedArmId === arm.id ? 'text-accent-foreground/70' : 'text-muted-foreground'
+                }`}>
+                  {arm.harness}
+                </p>
+              </Button>
+            ))}
             </div>
           )}
         </div>
@@ -642,11 +645,11 @@ export function ArmViewerPage() {
       {/* Right Panel - Activity viewer */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="border-b border-border px-4 py-3 bg-muted/50">
+        <div className="border-b border-border px-4 py-3 bg-muted/10">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <h1 className="text-lg font-semibold flex items-center gap-2">
-                {selectedArm ? selectedArm.name : 'Arm Viewer'}
+                {selectedArm ? selectedArm.name : '🐙'}
                 {selectedArm && <StatusBadge status={selectedArm.status} />}
               </h1>
               {selectedArm && (selectedArm.provider || selectedArm.model) && (
@@ -660,24 +663,26 @@ export function ArmViewerPage() {
 
             {selectedArmId && (
               <div className="flex items-center gap-4">
-                <button
-                  onClick={loadArms}
-                  disabled={loading}
-                  className="inline-flex items-center px-3 py-2 border border-border rounded-md text-sm font-medium text-muted-foreground bg-card hover:bg-secondary hover:text-secondary-foreground disabled:opacity-50"
+                <Button
+                  variant="secondary"
+                  onPress={loadArms}
+                  isDisabled={loading}
+                  isIconOnly
                 >
                   <RefreshCw className="h-4 w-4" />
-                </button>
+                </Button>
 
                 {/* Clear history button */}
                 {activities.length > 0 && (
-                  <button
-                    onClick={handleClearHistory}
-                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                    title="Clear message history"
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onPress={handleClearHistory}
+                    aria-label="Clear message history"
                   >
                     <Trash2 className="h-3 w-3" />
                     <span>Clear</span>
-                  </button>
+                  </Button>
                 )}
 
                 {/* Stats */}
@@ -817,10 +822,11 @@ function ActivityItemComponent({ activity, onToggle }: { activity: ActivityItem;
 
   return (
     <div className={`rounded-lg border-l-2 ${colors.border} ${colors.bg} overflow-hidden`}>
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center gap-2 p-2 text-left hover:bg-black/5 transition-colors"
-        disabled={!hasDetails}
+      <Button
+        variant="ghost"
+        onPress={onToggle}
+        isDisabled={!hasDetails}
+        className="w-full justify-start h-auto py-2 px-2"
       >
         {hasDetails ? (
           activity.expanded ? (
@@ -847,7 +853,7 @@ function ActivityItemComponent({ activity, onToggle }: { activity: ActivityItem;
         <span className="text-xs text-muted-foreground flex-shrink-0">
           {formatTime(activity.timestamp)}
         </span>
-      </button>
+      </Button>
 
       {/* Expanded details */}
       {activity.expanded && hasDetails && (
@@ -963,7 +969,7 @@ function ArmAnalysisPanel({
         <button
           onClick={onRefresh}
           className="text-muted-foreground hover:text-foreground transition-colors"
-          title="Refresh analysis"
+          aria-label="Refresh analysis"
         >
           <RefreshCw className="h-3 w-3" />
         </button>
