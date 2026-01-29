@@ -1,6 +1,6 @@
 /**
  * Arm State Machine
- * 
+ *
  * A formal state machine for managing arm lifecycle with persistence.
  * Survives process restarts and handles network disconnects gracefully.
  */
@@ -54,15 +54,15 @@ export interface ArmStateContext {
   lastEventType?: string;
   lastEventAt: string;  // ISO timestamp
   stateEnteredAt: string;  // When we entered current state
-  
+
   // Timeout tracking
   taskAssignedAt?: string;  // When task was assigned (for ack timeout)
   disconnectedAt?: string;  // When connection was lost (for reconnect timeout)
-  
+
   // Error tracking
   lastError?: string;
   errorCount: number;
-  
+
   // Connection tracking
   lastHeartbeat?: string;
   consecutiveMissedHeartbeats: number;
@@ -553,34 +553,6 @@ export class ArmStateMachine {
   constructor(db: Database, onSideEffect?: (effect: SideEffect) => void | Promise<void>) {
     this.db = db;
     this.onSideEffect = onSideEffect;
-  }
-
-  /**
-   * Initialize the state machine tables (call during migration)
-   */
-  static createTables(db: Database): void {
-    db.run(`
-      CREATE TABLE IF NOT EXISTS arm_state_machine (
-        arm_id TEXT PRIMARY KEY,
-        state TEXT NOT NULL DEFAULT 'spawning',
-        previous_state TEXT,
-        current_task_id TEXT,
-        current_task_subject TEXT,
-        last_event_type TEXT,
-        last_event_at TEXT NOT NULL,
-        state_entered_at TEXT NOT NULL,
-        task_assigned_at TEXT,
-        disconnected_at TEXT,
-        last_error TEXT,
-        error_count INTEGER NOT NULL DEFAULT 0,
-        last_heartbeat TEXT,
-        consecutive_missed_heartbeats INTEGER NOT NULL DEFAULT 0,
-        FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
-      )
-    `);
-
-    db.run(`CREATE INDEX IF NOT EXISTS idx_arm_sm_state ON arm_state_machine(state)`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_arm_sm_task ON arm_state_machine(current_task_id)`);
   }
 
   /**
