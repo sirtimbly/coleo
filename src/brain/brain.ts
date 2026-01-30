@@ -11,6 +11,7 @@
 import { readdir, readFile, writeFile, mkdir, rename, unlink } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
+import nunjucks from "nunjucks";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { updateInfrastructureHealth, assignTaskToArm, updateArmStatusWithActivity } from "../db/transactions";
@@ -66,7 +67,158 @@ export class Brain {
   private docTracker: DocUpdateTracker | null = null;
   private armStateMachine: ArmStateMachine | null = null;
   private healthMonitor: ArmHealthMonitor | null = null;
-  // Track last stuck state per arm to avoid duplicate escalations
+
+  /**
+   * Load and render the mail processor system prompt template
+   */
+  private async loadMailProcessorSystemPrompt(context: {
+    availableArms: Array<{ name: string; domain: string; status: string }>;
+    pendingTasks: number;
+    recentActivity: string[];
+  }): Promise<string> {
+    const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "mail-processor-system-prompt.jinja");
+    try {
+      const templateContent = await readFile(templatePath, "utf-8");
+      const availableArms = context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none";
+      const recentActivity = context.recentActivity.slice(0, 5).join("; ") || "none";
+      return nunjucks.renderString(templateContent, {
+        available_arms: availableArms,
+        pending_tasks: context.pendingTasks,
+        recent_activity: recentActivity,
+      });
+    } catch (err) {
+      this.log(`Failed to load mail processor system prompt template: ${err}`);
+      // Fallback to hardcoded prompt
+      return `You are Octopai Brain, an AI agent orchestrator. Your job is to process messages from a human and determine appropriate action.
+
+## Available Actions (in order of preference)
+
+1. **new_task** - Create a new task for arms to work on. USE THIS for any request that involves:
+   - Adding a feature
+   - Fixing a bug
+   - Making code changes
+   - Updating documentation content
+   - Any work that should be tracked and assigned to an available arm
+   This is the DEFAULT choice for most human requests about work to be done.
+2. **bug_report*
+3. **doc_update**
+4. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
+5. **query** - Human is asking a question about system status
+6. **prompt_arm** - ONLY use this when human EXPLICITLY names a specific arm
+7. **escalate** - Cannot determine what to do, or requires human clarification
+
+For new_task: include subject, body, priority (default: normal)
+For bug_report: include title, description, priority (default: medium)
+For prompt_arm: include armName and instruction (only if arm was explicitly named)
+For query: include query type
+For approval_response: include originalId, approved (boolean), comment`;
+    }
+  }
+      /**
+     * Load the initial arm prompt template
+     */
+    private async loadInitialArmPrompt(): Promise<string> {
+      const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "initial-arm-prompt.jinja");
+      try {
+        const templateContent = await readFile(templatePath, "utf-8");
+        return templateContent;
+      } catch (err) {
+        this.log(`Failed to load initial arm prompt template: ${err}`);
+        // Fallback to hardcoded prompt
+        return `You are an AI agent arm in the Octopai distributed system.
+
+Your purpose is to execute tasks assigned to you by the central brain coordinator.
+
+## Getting Started
+
+1. Call 'get_full_briefing' to receive your assigned task with full context
+2. Read the task description and evaluate if it's feasible for you to complete
+3. If feasible, call 'claim_task' to claim ownership of the task
+4. Execute the task according to the description
+5. Report your progress regularly using 'submit_status_report'
+6. When complete, call 'complete_task' with a summary of what you did
+
+## Important Guidelines
+
+- Always claim a task before starting work on it
+- If a task seems infeasible, report back immediately rather than struggling silently
+- Keep the brain updated on your progress through status reports
+- If you get stuck, ask for help or clarification
+- Focus on completing one task at a time before moving to the next
+
+Call 'get_full_briefing' now to see what task is waiting for you.`;
+      }
+    }
+
+        /**
+     * Load and render the bug assignment prompt template
+     */
+    private async loadBugAssignmentPrompt(context: {
+      bugId: string;
+      title: string;
+      assignedBy: string;
+      reason: string;
+    }): Promise<string> {
+      const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "bug-assignment-prompt.jinja");
+      try {
+        const templateContent = await readFile(templatePath, "utf-8");
+        return nunjucks.renderString(templateContent, {
+          bug_id: context.bugId,
+          bug_title: context.title,
+          assigned_by: context.assignedBy,
+          reason: context.reason,
+        });
+      } catch (err) {
+        this.log(`Failed to load bug assignment prompt template: ${err}`);
+        // Fallback to hardcoded prompt
+        return `You have been assigned to investigate bug "${context.title}" (ID: ${context.bugId}).
+
+**Assignment Details:**
+- Assigned by: ${context.assignedBy}
+- Reason: ${context.reason}
+
+Please investigate this bug and update its status using the update_bug_status MCP tool as you progress through the resolution workflow:
+1. Set status to "investigating" when you start investigation
+2. Set status to "fixing" when you implement a fix
+3. Set status to "verifying" when testing the fix
+4. Set status to "resolved" when the bug is fixed
+5. Set status to "closed" when verification is complete
+
+Use the assign_bug tool if you need to delegate this to another arm.`;
+      }
+    }
+
+    /**
+     * Ensure template files exist, creating them from source if needed
+     */
+    private async ensureTemplatesExist(): Promise<void> {
+      const templateDir = join(this.options.octopaiDir, "src", "brain", "templates");
+      const templates = [
+        { name: "mail-processor-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "mail-processor-system-prompt.jinja") },
+        { name: "initial-arm-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "initial-arm-prompt.jinja") },
+        { name: "bug-assignment-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "bug-assignment-prompt.jinja") },
+      ];
+
+      for (const template of templates) {
+        const destPath = join(templateDir, template.name);
+        try {
+          await readFile(destPath, "utf-8");
+          // Template exists, skip
+        } catch {
+          // Template doesn't exist, try to create from source
+          try {
+            const sourceContent = await readFile(template.source, "utf-8");
+            await mkdir(templateDir, { recursive: true });
+            await writeFile(destPath, sourceContent, "utf-8");
+            this.log(`Created template: ${template.name}`);
+          } catch (sourceErr) {
+            this.log(`Could not create template ${template.name}: ${sourceErr}`);
+          }
+        }
+      }
+    }
+
+    // Track last stuck state per arm to avoid duplicate escalations
   // DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
   private lastStuckState: Map<string, { stuckType: string; escalatedAt: Date }> = new Map();
   // Track idle arm prompt-response patterns to detect stuck loops
@@ -206,7 +358,7 @@ export class Brain {
     this.sent = new Maildir(join(options.octopaiDir, "mail", "sent"));
 
     // Initialize mail processor
-    this.mailProcessor = new MailProcessor((msg) => this.log(msg));
+    this.mailProcessor = new MailProcessor((msg) => this.log(msg), "");
 
     // Initialize stuck arm analyzer
     this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg));
@@ -450,11 +602,15 @@ export class Brain {
       "state/arms",
       "state/notes/shared",
       "logs",
+      "src/brain/templates",
     ];
 
     for (const dir of dirs) {
       await mkdir(join(this.options.octopaiDir, dir), { recursive: true });
     }
+
+    // Ensure template files exist
+    await this.ensureTemplatesExist();
 
     // Initialize maildirs
     await this.inbox.init();
@@ -764,7 +920,11 @@ export class Brain {
         // Fall back to empty if JetStream query fails
       }
     }
-
+    const systemPrompt = await this.loadMailProcessorSystemPrompt({
+      availableArms: armContexts,
+      pendingTasks: this.tasks.filter(t => t.status === "pending").length,
+      recentActivity,
+  });
     for (const message of messages) {
       this.log(`Processing: ${message.subject}`);
 
@@ -772,11 +932,7 @@ export class Brain {
       const intent = await this.mailProcessor.processMessage(
         message.subject,
         message.body,
-        {
-          availableArms: armContexts,
-          pendingTasks: this.tasks.filter(t => t.status === "pending").length,
-          recentActivity,
-        }
+        systemPrompt
       );
 
       this.log(`Intent: ${intent.type} (${intent.reasoning})`);
@@ -2738,7 +2894,7 @@ This bug has been logged for resolution. Tasks may continue but should be monito
   /**
    * Handle bug assignment notification to an arm
    */
-  private async handleBugAssignment(
+   private async handleBugAssignment(
     armId: string,
     payload: {
       bugId: string;
@@ -2747,21 +2903,16 @@ This bug has been logged for resolution. Tasks may continue but should be monito
       reason: string;
     }
   ): Promise<void> {
+    // Load and render the bug assignment prompt template
+    const prompt = await this.loadBugAssignmentPrompt({
+      bugId: payload.bugId,
+      title: payload.title,
+      assignedBy: payload.assignedBy,
+      reason: payload.reason,
+    });
+
     // Send notification to the assigned arm via their MCP session
-    await this.sendPromptToArm(armId, `You have been assigned to investigate bug "${payload.title}" (ID: ${payload.bugId}).
-
-**Assignment Details:**
-- Assigned by: ${payload.assignedBy}
-- Reason: ${payload.reason}
-
-Please investigate this bug and update its status using the update_bug_status MCP tool as you progress through the resolution workflow:
-1. Set status to "investigating" when you start investigation
-2. Set status to "fixing" when you implement a fix
-3. Set status to "verifying" when testing the fix
-4. Set status to "resolved" when the bug is fixed
-5. Set status to "closed" when verification is complete
-
-Use the assign_bug tool if you need to delegate this to another arm.`);
+    await this.sendPromptToArm(armId, prompt);
 
     this.log(`Bug ${payload.bugId} assigned to arm ${armId} by ${payload.assignedBy}`);
   }
@@ -3276,7 +3427,8 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
         }
 
         // Send the common initial prompt to the arm
-        const success = await this.sendPromptToArm(armId, this.INITIAL_ARM_PROMPT);
+        const prompt = await this.loadInitialArmPrompt();
+        const success = await this.sendPromptToArm(armId, prompt);
 
         if (success) {
           this.log(`Sent initial prompt to ${armId}`);
@@ -5737,74 +5889,26 @@ export class MailProcessor {
   private model: string;
   private baseUrl: string;
   private logger: (message: string) => void;
+  private systemPrompt: string;
 
-  constructor(logger: (message: string) => void) {
+  constructor(logger: (message: string) => void, systemPrompt: string) {
     this.logger = logger;
+    this.systemPrompt = systemPrompt;
     this.apiKey = process.env.OPENAI_API_KEY || "";
-    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
     this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
   }
 
   async processMessage(
     subject: string,
     body: string,
-    context: {
-      availableArms: Array<{ name: string; domain: string; status: string }>;
-      pendingTasks: number;
-      recentActivity: string[];
-    }
+    systemPrompt: string,
   ): Promise<ProcessedIntent> {
     if (!this.apiKey) {
       return this.fallbackParse(subject, body);
     }
 
-    const systemPrompt = `You are the Octopai Brain, an AI agent orchestrator. Your job is to process messages from a human and determine the appropriate action.
 
-## Available Actions (in order of preference)
-
-1. **new_task** - Create a new task for arms to work on. USE THIS for any request that involves:
-   - Adding a feature
-   - Fixing a bug
-   - Making code changes
-   - Updating documentation content
-   - Any work that should be tracked and assigned to an available arm
-   This is the DEFAULT choice for most human requests about work to be done.
-
-2. **bug_report** - Human is reporting a bug or issue they've encountered.
-   USE THIS when the human describes problems, errors, crashes, or unexpected behavior.
-   Example: "The login button doesn't work", "I'm getting an error message", "Something is broken"
-
-3. **doc_update** - Update documentation structure/format based on human feedback (not content changes)
-
-4. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
-
-5. **query** - Human is asking a question about system status, what's happening, or requesting information
-
-6. **prompt_arm** - ONLY use this when the human EXPLICITLY names a specific arm AND wants to send it a direct message.
-   Example: "Tell arm Portia to stop what it's doing" or "Send this to Xenix: ..."
-   DO NOT use this for general work requests - those should be new_task.
-
-7. **escalate** - Cannot determine what to do, or requires human clarification
-
-## IMPORTANT RULES
-- If the human describes work to be done (feature, fix, update, add, etc.), ALWAYS use **new_task**
-- NEVER use prompt_arm unless the human explicitly names an arm and asks to message it directly
-- Arms might be busy with other tasks. Creating a new_task ensures work is queued properly.
-
-## Context
-Available arms: ${context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none"}
-Pending tasks: ${context.pendingTasks}
-Recent activity: ${context.recentActivity.slice(0, 5).join("; ") || "none"}
-
-## Response Format
-Respond with a JSON object (no markdown):
-{"type": "...", "reasoning": "...", ...other fields based on type}
-
-For new_task: include subject, body, priority (default: normal)
-For bug_report: include title, description, priority (default: medium)
-For prompt_arm: include armName and instruction (only if arm was explicitly named)
-For query: include the query type
-For approval_response: include originalId, approved (boolean), comment`;
 
     const userMessage = `Subject: ${subject}
 
@@ -5930,7 +6034,7 @@ export class StuckArmAnalyzer {
   constructor(logger: (message: string) => void) {
     this.logger = logger;
     this.apiKey = process.env.OPENAI_API_KEY || "";
-    this.model = process.env.OPENAI_MODEL || "gpt-4o-mini";
+    this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
     this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
   }
 

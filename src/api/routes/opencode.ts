@@ -1,6 +1,6 @@
 /**
  * OpenCode Integration Routes
- * 
+ *
  * Provides endpoints to interact with OpenCode server for:
  * - Fetching available providers and models
  * - Provider status
@@ -41,13 +41,13 @@ interface OpenCodeProvider {
  */
 async function findOpenCodeServer(): Promise<string | null> {
   const ports = [OPENCODE_DEFAULT_PORT, 4097, 4098, 4099];
-  
+
   for (const port of ports) {
     try {
       const url = `http://${OPENCODE_DEFAULT_HOST}:${port}/global/health`;
-      const response = await fetch(url, { 
+      const response = await fetch(url, {
         method: 'GET',
-        signal: AbortSignal.timeout(1000) 
+        signal: AbortSignal.timeout(1000)
       });
       if (response.ok) {
         return `http://${OPENCODE_DEFAULT_HOST}:${port}`;
@@ -56,7 +56,7 @@ async function findOpenCodeServer(): Promise<string | null> {
       // Try next port
     }
   }
-  
+
   return null;
 }
 
@@ -70,7 +70,7 @@ export function createOpenCodeRoutes() {
   app.get("/providers", async (c) => {
     try {
       const serverUrl = await findOpenCodeServer();
-      
+
       if (!serverUrl) {
         // Return fallback providers when no OpenCode server is running
         return c.json({
@@ -80,9 +80,6 @@ export function createOpenCodeRoutes() {
               name: "GitHub Copilot",
               models: [
                 { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
-                { id: "gpt-4o", name: "GPT-4o" },
-                { id: "o3-mini", name: "o3-mini" },
-                { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
               ],
             },
             {
@@ -91,8 +88,7 @@ export function createOpenCodeRoutes() {
               models: [
                 { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
                 { id: "claude-opus-4", name: "Claude Opus 4" },
-                { id: "gpt-4o", name: "GPT-4o" },
-                { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+
               ],
             },
           ] as OpenCodeProvider[],
@@ -125,13 +121,13 @@ export function createOpenCodeRoutes() {
       // Transform the response to our format
       // Filter to only show GitHub Copilot and OpenCode Zen for now
       const relevantProviderIds = ["github-copilot", "opencode"];
-      
+
       const providers: OpenCodeProvider[] = data.all
         .filter(p => relevantProviderIds.includes(p.id))
         .map(p => ({
           id: p.id,
           name: p.name,
-          models: p.models 
+          models: p.models
             ? Object.entries(p.models).map(([id, info]) => ({
                 id,
                 name: info.name || id,
@@ -179,7 +175,7 @@ export function createOpenCodeRoutes() {
   app.get("/health", async (c) => {
     try {
       const serverUrl = await findOpenCodeServer();
-      
+
       if (!serverUrl) {
         return c.json({
           running: false,
@@ -190,7 +186,7 @@ export function createOpenCodeRoutes() {
       const response = await fetch(`${serverUrl}/global/health`, {
         signal: AbortSignal.timeout(2000),
       });
-      
+
       const data = await response.json() as { healthy: boolean; version: string };
 
       return c.json({
