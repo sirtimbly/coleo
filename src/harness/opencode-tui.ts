@@ -26,7 +26,7 @@ import { promisify } from "util";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
@@ -327,7 +327,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `opencode-tui-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
-    const armId = config.env.OCTOPAI_ARM_ID || "unknown";
+    const armId = config.env.COLEO_ARM_ID || "unknown";
 
     // Find an available port
     const port = await this.findAvailablePort();
@@ -342,7 +342,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     
     if (config.provider && config.model) {
       try {
-        // Use Octopai API to check available models (server runs on 8080)
+        // Use Coleo API to check available models (server runs on 8080)
         const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
         resolvedProvider = resolved.providerId;
         resolvedModel = resolved.modelId;
@@ -358,8 +358,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
     }
 
     // Build environment for OpenCode
-    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
-    const mcpDir = join(octopaiDir, "mcp");
+    const coleoDir = config.env.COLEO_DIR || process.env.COLEO_DIR || getColeoDir();
+    const mcpDir = join(coleoDir, "mcp");
     await mkdir(mcpDir, { recursive: true });
 
     // Get bun path
@@ -379,12 +379,12 @@ export class OpenCodeTuiHarness implements AgentHarness {
     const opencodeConfig: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
       mcp: {
-        octopai: {
+        coleo: {
           type: "local",
           command: [bunBinary, cliEntrypoint, "mcp", "serve"],
           environment: {
-            OCTOPAI_ARM_ID: armId,
-            OCTOPAI_DIR: octopaiDir,
+            COLEO_ARM_ID: armId,
+            COLEO_DIR: coleoDir,
             PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
             HOME: process.env.HOME || "",
           },
@@ -409,8 +409,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     // Build environment variables
     const env: Record<string, string> = {
-      OCTOPAI_ARM_ID: armId,
-      OCTOPAI_DIR: octopaiDir,
+      COLEO_ARM_ID: armId,
+      COLEO_DIR: coleoDir,
       OPENCODE_CONFIG: opencodeConfigPath,
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
       PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
@@ -418,7 +418,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     };
 
     // OpenCode command with --port flag
-    const windowTitle = `octopai:${armId}`;
+    const windowTitle = `coleo:${armId}`;
     const opencodeCommand = `opencode --port ${port}`;
 
     console.log(`[harness-tui] Starting OpenCode TUI on port ${port} for arm ${armId} in ${terminal}...`);
@@ -455,7 +455,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for this arm to prevent cross-contamination
     // Each arm gets its own isolated session with a unique title
     const createResponse = await client.session.create({
-      body: { title: `Octopai Arm: ${armId}` },
+      body: { title: `Coleo Arm: ${armId}` },
     });
     const newSession = createResponse.data;
 
@@ -542,7 +542,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
           // Publish to JetStream for persistence (only meaningful events)
           if (persistCheck.shouldPersist && eventStore.isInitialized()) {
             try {
-              const subject = `octopai.events.arm.${armId}.${event.type}`;
+              const subject = `coleo.events.arm.${armId}.${event.type}`;
               await eventStore.publishEvent(subject, {
                 type: event.type,
                 armId,
@@ -739,7 +739,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
       // Create a new OpenCode session via SDK
       const newSessionResponse = await tuiSession.client.session.create({
-        body: { title: `Octopai Arm Session (reset ${Date.now()})` },
+        body: { title: `Coleo Arm Session (reset ${Date.now()})` },
       });
       const newSession = newSessionResponse.data;
 
@@ -769,7 +769,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
             // Publish to JetStream for persistence (only meaningful events)
             if (persistCheck.shouldPersist && eventStore.isInitialized()) {
               try {
-                const subject = `octopai.events.arm.${tuiSession.armId}.${event.type}`;
+                const subject = `coleo.events.arm.${tuiSession.armId}.${event.type}`;
                 await eventStore.publishEvent(subject, {
                   type: event.type,
                   armId: tuiSession.armId,
@@ -1340,7 +1340,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for recovered arm to prevent cross-contamination
     try {
       const createResponse = await client.session.create({
-        body: { title: `Octopai Arm: ${armId} (recovered)` },
+        body: { title: `Coleo Arm: ${armId} (recovered)` },
       });
       const recoveredSession = createResponse.data;
 
@@ -1392,7 +1392,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
             // Publish to JetStream for persistence (only filtered events, and only if NATS is initialized)
             if (persistCheck.shouldPersist && eventStore.isInitialized()) {
               try {
-                const subject = `octopai.events.arm.${armId}.${event.type}`;
+                const subject = `coleo.events.arm.${armId}.${event.type}`;
                 await eventStore.publishEvent(subject, {
                   type: event.type,
                   armId,

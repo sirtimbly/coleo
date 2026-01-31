@@ -374,7 +374,7 @@ export const permissionHandlingScenario: HarnessTestScenario = {
       // because /tmp is outside the project directory
       action: "prompt",
       params: { 
-        prompt: "Write a file at /tmp/octopai-test-permission.txt containing exactly 'Hello from Octopai permission test'. Do this in a single write tool call."
+        prompt: "Write a file at /tmp/coleo-test-permission.txt containing exactly 'Hello from Coleo permission test'. Do this in a single write tool call."
       },
     },
     {

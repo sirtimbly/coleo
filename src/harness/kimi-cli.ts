@@ -25,7 +25,7 @@
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import type {
   AgentHarness,
   HarnessSession,
@@ -231,15 +231,15 @@ export class KimiCliHarness implements AgentHarness {
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `kimi-cli-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
-    const armId = config.env.OCTOPAI_ARM_ID || "unknown";
+    const armId = config.env.COLEO_ARM_ID || "unknown";
 
     // Ensure MCP directory exists
-    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
-    const mcpDir = join(octopaiDir, "mcp");
+    const coleoDir = config.env.COLEO_DIR || process.env.COLEO_DIR || getColeoDir();
+    const mcpDir = join(coleoDir, "mcp");
     await mkdir(mcpDir, { recursive: true });
 
     // Build Kimi CLI config for MCP
-    const kimiConfig = await this.buildKimiConfig(armId, octopaiDir, config);
+    const kimiConfig = await this.buildKimiConfig(armId, coleoDir, config);
     const kimiConfigPath = join(mcpDir, `${armId}-kimi.json`);
     await writeFile(kimiConfigPath, JSON.stringify(kimiConfig, null, 2), "utf-8");
 
@@ -247,8 +247,8 @@ export class KimiCliHarness implements AgentHarness {
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       ...config.env,
-      OCTOPAI_ARM_ID: armId,
-      OCTOPAI_DIR: octopaiDir,
+      COLEO_ARM_ID: armId,
+      COLEO_DIR: coleoDir,
       KIMI_CONFIG_PATH: kimiConfigPath,
       // Force non-interactive settings
       NO_COLOR: "1",
@@ -333,7 +333,7 @@ export class KimiCliHarness implements AgentHarness {
    */
   private async buildKimiConfig(
     armId: string,
-    octopaiDir: string,
+    coleoDir: string,
     config: SpawnConfig
   ): Promise<Record<string, unknown>> {
     // Get bun path for MCP
@@ -351,11 +351,11 @@ export class KimiCliHarness implements AgentHarness {
     const kimiConfig: Record<string, unknown> = {
       // MCP configuration for brain communication
       mcpServers: {
-        octopai: {
+        coleo: {
           command: [bunBinary, cliEntrypoint, "mcp", "serve"],
           env: {
-            OCTOPAI_ARM_ID: armId,
-            OCTOPAI_DIR: octopaiDir,
+            COLEO_ARM_ID: armId,
+            COLEO_DIR: coleoDir,
             PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
             HOME: process.env.HOME || "",
           },

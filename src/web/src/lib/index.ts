@@ -3,7 +3,7 @@ export {
   api,
   type Arm,
   type ActivityEntry,
-  type OctopaiConfig,
+  type ColeoConfig,
   type ArmConfig,
   type ArmConfigSummary,
   type MailMessage,

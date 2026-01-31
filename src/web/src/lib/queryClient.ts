@@ -31,7 +31,7 @@ export const queryClient = new QueryClient({
 // Create localStorage persister for query cache
 export const persister = createSyncStoragePersister({
   storage: window.localStorage,
-  key: 'octopai-query-cache',
+  key: 'coleo-query-cache',
 });
 
 // Check if running on localhost

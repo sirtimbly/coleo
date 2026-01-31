@@ -1,7 +1,7 @@
 /**
  * OpenCode Event Stream Listener
  * 
- * Subscribes to OpenCode's SSE event stream and forwards events to Octopai.
+ * Subscribes to OpenCode's SSE event stream and forwards events to Coleo.
  * Events include:
  * - session.status: When session status changes (idle/running/pending)
  * - message.*: When messages are sent/received

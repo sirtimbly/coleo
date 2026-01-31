@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getApiConfig, getOctopaiDir, isApiRunning } from "../context";
+import { getApiConfig, getColeoDir, isApiRunning } from "../context";
 
 export function registerAgentCommands(program: Command): void {
   const agentCmd = program.command("agent").description("Manage arm agents (distributed arm management)");
@@ -13,14 +13,14 @@ export function registerAgentCommands(program: Command): void {
     .option("-v, --verbose", "Enable debug logging")
     .option("--id <id>", "Custom agent ID (default: auto-generated from hostname)")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
 
       const { ArmAgent } = await import("../../agent");
 
       const agent = new ArmAgent({
         agentId: options.id,
         natsUrl: options.natsUrl,
-        octopaiDir,
+        octopaiDir: coleoDir,
         maxArms: parseInt(options.maxArms, 10),
         heartbeatIntervalMs: parseInt(options.heartbeatInterval, 10),
         debug: options.verbose,
@@ -28,7 +28,7 @@ export function registerAgentCommands(program: Command): void {
 
       console.log("Starting arm agent...");
       console.log(`  NATS URL: ${options.natsUrl}`);
-      console.log(`  Octopai Dir: ${octopaiDir}`);
+      console.log(`  Coleo Dir: ${coleoDir}`);
       console.log(`  Max Arms: ${options.maxArms}`);
       console.log("");
 
@@ -60,7 +60,7 @@ export function registerAgentCommands(program: Command): void {
         console.error(`Failed to start agent: ${err}`);
         console.error("");
         console.error("Make sure the API server with embedded NATS is running:");
-        console.error("  octopai serve");
+        console.error("  coleo serve");
         process.exit(1);
       }
     });
@@ -72,7 +72,7 @@ export function registerAgentCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!(await isApiRunning())) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -96,7 +96,7 @@ export function registerAgentCommands(program: Command): void {
       if (agents.length === 0) {
         console.log("No agents connected.");
         console.log("");
-        console.log("Start an agent with: octopai agent start");
+        console.log("Start an agent with: coleo agent start");
         return;
       }
 

@@ -2,14 +2,14 @@ import { file } from "bun";
 import { homedir } from "os";
 import { dirname, join } from "path";
 
-// Re-export getOctopaiDir from config to ensure single source of truth
-export { getOctopaiDir } from "../config";
+// Re-export getColeoDir from config to ensure single source of truth
+export { getColeoDir } from "../config";
 
 export const TEMPLATES_DIR = join(dirname(import.meta.filename), "..", "..", "templates");
 
 export async function loadEnvFile(): Promise<void> {
   const envPaths = [
-    join(process.cwd(), ".octopai", ".env"),
+    join(process.cwd(), ".coleo", ".env"),
     join(process.cwd(), ".env"),
   ];
 
@@ -70,9 +70,9 @@ export interface ApiConfig {
 }
 
 export function getApiConfig(): ApiConfig {
-  const apiPort = process.env.OCTOPAI_API_PORT || "8080";
-  const apiHost = process.env.OCTOPAI_API_HOST || "localhost";
-  const apiKey = process.env.OCTOPAI_API_KEY;
+  const apiPort = process.env.COLEO_API_PORT || "8080";
+  const apiHost = process.env.COLEO_API_HOST || "localhost";
+  const apiKey = process.env.COLEO_API_KEY;
   const apiUrl = `http://${apiHost}:${apiPort}`;
 
   const headers: Record<string, string> = {

@@ -6,7 +6,7 @@ import { generateArmName, generateArmNames, getNameGeneratorStats } from "../arm
 import {
   expandPath,
   getApiConfig,
-  getOctopaiDir,
+  getColeoDir,
   getSubcommandArgs,
   isApiRunning,
 } from "../context";
@@ -32,11 +32,11 @@ export function registerArmCommands(program: Command): void {
     )
     .option("--provider <provider>", "AI provider (e.g., anthropic, openai, opencode-zen)")
     .option("--model <model>", "Model name (e.g., gpt-5.1-codex-mini)")
-    .option("--template <name>", "Use a template from ~/.octopai/arms/")
+    .option("--template <name>", "Use a template from ~/.coleo/arms/")
     .option("--recover", "Attempt to recover an existing OpenCode server (default: false)")
     .option("--watch", "Watch the arm's conversation in real-time after spawning")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
       const armAgent = "opencode";
       const armDomain = "general";
       const subcommandArgs = getSubcommandArgs(["arm", "spawn"]);
@@ -56,7 +56,7 @@ export function registerArmCommands(program: Command): void {
         console.log("\n=== Arm Configuration ===\n");
 
         const suggestedName = armName || generateArmName();
-        const templates = await loadArmTemplates(join(octopaiDir, "arms"));
+        const templates = await loadArmTemplates(join(coleoDir, "arms"));
 
         let useTemplate = false;
         if (templates.length > 0) {
@@ -128,7 +128,7 @@ export function registerArmCommands(program: Command): void {
           console.error(`Expected at: ${apiUrl}`);
           console.error("");
           console.error("The opencode-tui harness requires the API server for arm tracking.");
-          console.error("Start the API server: octopai serve");
+          console.error("Start the API server: coleo serve");
           process.exit(1);
         }
 
@@ -139,7 +139,7 @@ export function registerArmCommands(program: Command): void {
           const existingArm = await existsRes.json() as { arm: { status: string } };
           if (existingArm.arm.status !== "stopped") {
             console.error(`Arm ${armName} already exists with status: ${existingArm.arm.status}`);
-            console.error("Use 'octopai arm kill <name>' first, or choose a different name.");
+            console.error("Use 'coleo arm kill <name>' first, or choose a different name.");
             process.exit(1);
           }
           console.log(`Restarting stopped arm: ${armName}`);
@@ -202,7 +202,7 @@ export function registerArmCommands(program: Command): void {
 
       if (options.terminal && options.harness === "opencode") {
         const arm = await spawnArm({
-          octopaiDir,
+          octopaiDir: coleoDir,
           name: armName,
           agent: armAgent,
           workdir: expandPath(armWorkdir),
@@ -230,8 +230,8 @@ export function registerArmCommands(program: Command): void {
         console.error(`Expected at: ${apiUrl}`);
         console.error("");
         console.error("Options:");
-        console.error("  1. Start the API server: octopai serve");
-        console.error("  2. Use terminal mode: octopai arm spawn --name <name> --terminal ghostty");
+        console.error("  1. Start the API server: coleo serve");
+        console.error("  2. Use terminal mode: coleo arm spawn --name <name> --terminal ghostty");
         process.exit(1);
       }
 
@@ -242,7 +242,7 @@ export function registerArmCommands(program: Command): void {
         const existingArm = await existsRes.json() as { arm: { status: string } };
         if (existingArm.arm.status !== "stopped") {
           console.error(`Arm ${armName} already exists with status: ${existingArm.arm.status}`);
-          console.error("Use 'octopai arm kill <name>' first, or choose a different name.");
+          console.error("Use 'coleo arm kill <name>' first, or choose a different name.");
           process.exit(1);
         }
         console.log(`Restarting stopped arm: ${armName}`);
@@ -302,9 +302,9 @@ export function registerArmCommands(program: Command): void {
         console.log("\n");
         await watchArm(armName, { history: "0" });
       } else {
-        console.log(`Watch events: octopai arm tail ${armName}`);
-        console.log(`View status:  octopai arm status ${armName}`);
-        console.log(`View todos:   octopai arm todos ${armName}`);
+        console.log(`Watch events: coleo arm tail ${armName}`);
+        console.log(`View status:  coleo arm status ${armName}`);
+        console.log(`View todos:   coleo arm todos ${armName}`);
       }
     });
 
@@ -343,8 +343,8 @@ export function registerArmCommands(program: Command): void {
     .description("List all arms")
     .option("--all", "Include stopped arms (hidden by default)")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      let arms = await listArms(octopaiDir);
+      const coleoDir = getColeoDir();
+      let arms = await listArms(coleoDir);
 
       if (!options.all) {
         const activeArms = arms.filter((a) => a.status !== "stopped");
@@ -358,7 +358,7 @@ export function registerArmCommands(program: Command): void {
 
       if (arms.length === 0) {
         console.log("No arms registered.");
-        console.log("Spawn one with: octopai arm spawn --name <name> --agent opencode");
+        console.log("Spawn one with: coleo arm spawn --name <name> --agent opencode");
         return;
       }
 
@@ -379,7 +379,7 @@ export function registerArmCommands(program: Command): void {
         const stoppedCount = arms.filter((a) => a.status === "stopped").length;
         if (stoppedCount > 0) {
           console.log("");
-          console.log(`Tip: Run 'octopai arm cleanup' to remove ${stoppedCount} stopped arm(s).`);
+          console.log(`Tip: Run 'coleo arm cleanup' to remove ${stoppedCount} stopped arm(s).`);
         }
       }
     });
@@ -388,7 +388,7 @@ export function registerArmCommands(program: Command): void {
     .command("kill <name>")
     .description("Kill an arm")
     .action(async (name) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
       const { apiUrl, headers } = getApiConfig();
 
       if (await isApiRunning()) {
@@ -403,7 +403,7 @@ export function registerArmCommands(program: Command): void {
         }
       }
 
-      const success = await killArm(octopaiDir, name);
+      const success = await killArm(coleoDir, name);
 
       if (success) {
         console.log(`Arm ${name} killed.`);
@@ -420,7 +420,7 @@ export function registerArmCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -433,7 +433,7 @@ export function registerArmCommands(program: Command): void {
       const armData = await armRes.json() as { arm: { status: string } };
       if (armData.arm.status !== "idle" && armData.arm.status !== "busy") {
         console.error(`Arm ${name} is not running (status: ${armData.arm.status})`);
-        console.error("Start the arm first with: octopai arm spawn --name " + name);
+        console.error("Start the arm first with: coleo arm spawn --name " + name);
         process.exit(1);
       }
 
@@ -460,15 +460,15 @@ export function registerArmCommands(program: Command): void {
     .option("-f, --filter <types>", "Filter event types (comma-separated, e.g. 'status,tool')")
     .action(async (name?: string, options?: { all?: boolean; filter?: string }) => {
       const { apiUrl, headers } = getApiConfig();
-      const apiKey = process.env.OCTOPAI_API_KEY;
+      const apiKey = process.env.COLEO_API_KEY;
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
       if (!apiKey) {
-        console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
+        console.error("COLEO_API_KEY environment variable is required for WebSocket connection");
         process.exit(1);
       }
 
@@ -603,19 +603,19 @@ export function registerArmCommands(program: Command): void {
     options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }
   ): Promise<void> {
     const { apiUrl, headers } = getApiConfig();
-    const apiKey = process.env.OCTOPAI_API_KEY;
+    const apiKey = process.env.COLEO_API_KEY;
     const showTools = options?.tools !== false;
     const showSystem = options?.system !== false;
     const historyCount = parseInt(options?.history || "2", 10);
     const verbose = options?.verbose === true;
 
     if (!(await isApiRunning())) {
-      console.error("API server is not running. Start it with: octopai serve");
+      console.error("API server is not running. Start it with: coleo serve");
       process.exit(1);
     }
 
     if (!apiKey) {
-      console.error("OCTOPAI_API_KEY environment variable is required for WebSocket connection");
+      console.error("COLEO_API_KEY environment variable is required for WebSocket connection");
       process.exit(1);
     }
 
@@ -926,7 +926,7 @@ export function registerArmCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -974,7 +974,7 @@ export function registerArmCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -1032,7 +1032,7 @@ export function registerArmCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -1045,7 +1045,7 @@ export function registerArmCommands(program: Command): void {
       const armData = await armRes.json() as { arm: { status: string } };
       if (armData.arm.status !== "stopped") {
         console.error(`Cannot remove arm with status: ${armData.arm.status}`);
-        console.error("Kill the arm first with: octopai arm kill " + name);
+        console.error("Kill the arm first with: coleo arm kill " + name);
         process.exit(1);
       }
 
@@ -1070,7 +1070,7 @@ export function registerArmCommands(program: Command): void {
       const { apiUrl, headers } = getApiConfig();
 
       if (!await isApiRunning()) {
-        console.error("API server is not running. Start it with: octopai serve");
+        console.error("API server is not running. Start it with: coleo serve");
         process.exit(1);
       }
 
@@ -1111,8 +1111,8 @@ export function registerArmCommands(program: Command): void {
     .description("Tail the log file for an arm (Ctrl+C to exit)")
     .option("-n, --lines <n>", "Number of initial lines to show", "100")
     .action(async (name, options) => {
-      const octopaiDir = getOctopaiDir();
-      const logPath = join(octopaiDir, "logs", `${name}.log`);
+      const coleoDir = getColeoDir();
+      const logPath = join(coleoDir, "logs", `${name}.log`);
 
       const { existsSync } = await import("fs");
 

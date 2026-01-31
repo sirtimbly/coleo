@@ -4,7 +4,7 @@ import { api } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
 
 export function SettingsPage() {
-  document.title = "Octopai Observatory - Settings";
+  document.title = "Coleo Observatory - Settings";
   const [apiKey, setApiKey] = useState(api.getApiKey() || '');
   const [saved, setSaved] = useState(false);
 
@@ -36,7 +36,7 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>API Configuration</CardTitle>
           <CardDescription>
-            Set your API key to authenticate with the Octopai server
+            Set your API key to authenticate with the Coleo server
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -82,7 +82,7 @@ export function SettingsPage() {
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Repository</span>
-            <a href="https://github.com/anomalyco/octopai" className="text-accent hover:underline">
+            <a href="https://github.com/anomalyco/coleo" className="text-accent hover:underline">
               GitHub
             </a>
           </div>

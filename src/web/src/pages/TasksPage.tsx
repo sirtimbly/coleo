@@ -111,7 +111,7 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
 }
 
 export function TasksPage() {
-  document.title = "Octopai Observatory - Tasks";
+  document.title = "Coleo Observatory - Tasks";
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
   const [tagFilter, setTagFilter] = useState<string[]>([]);

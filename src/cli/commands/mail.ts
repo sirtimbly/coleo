@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 import { Maildir } from "../../mail";
 
 export function registerMailCommands(program: Command): void {
@@ -12,8 +12,8 @@ export function registerMailCommands(program: Command): void {
     .option("-n, --count <n>", "Number of messages to show", "10")
     .option("-a, --all", "Show all messages including read")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+      const coleoDir = getColeoDir();
+      const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
       const messages = await inbox.list("new");
       const curMessages = await inbox.list("cur");
@@ -41,7 +41,7 @@ export function registerMailCommands(program: Command): void {
         console.log(`  ${flag} ${shortId}  ${date}  ${msg.subject}`);
       }
       console.log("");
-      console.log("Use 'octopai mail read <id>' to read a message (id can be partial)");
+      console.log("Use 'coleo mail read <id>' to read a message (id can be partial)");
     });
 
   mailCmd
@@ -49,15 +49,15 @@ export function registerMailCommands(program: Command): void {
     .description("Send a message to the brain")
     .option("-s, --subject <subject>", "Message subject")
     .action(async (message, options) => {
-      const octopaiDir = getOctopaiDir();
-      const sent = new Maildir(join(octopaiDir, "mail", "sent"));
+      const coleoDir = getColeoDir();
+      const sent = new Maildir(join(coleoDir, "mail", "sent"));
       await sent.init();
 
       const subject = options.subject || `New task: ${message.slice(0, 50)}...`;
 
       await sent.write({
         from: "human@local",
-        to: "brain@octopai.local",
+        to: "brain@coleo.local",
         subject,
         date: new Date(),
         body: message,
@@ -72,8 +72,8 @@ export function registerMailCommands(program: Command): void {
     .command("read [id]")
     .description("Read a message (latest if no ID provided)")
     .action(async (id) => {
-      const octopaiDir = getOctopaiDir();
-      const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+      const coleoDir = getColeoDir();
+      const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
       const messages = [...(await inbox.list("new")), ...(await inbox.list("cur"))];
 

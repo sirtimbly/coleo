@@ -36,7 +36,7 @@ import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor"
 import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
-  octopaiDir: string;
+  coleoDir: string;
   pollIntervalMs: number;
   verbose: boolean;
   apiBaseUrl?: string;
@@ -190,9 +190,9 @@ export class Brain {
 
   constructor(options: BrainOptions) {
     this.options = options;
-    this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:8080";
-    this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
-    this.natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
+    this.apiBaseUrl = options.apiBaseUrl || process.env.COLEO_API_URL || "http://localhost:8080";
+    this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
+    this.natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
     this.state = {
       status: "stopped",
       pollIntervalMs: options.pollIntervalMs,
@@ -202,8 +202,8 @@ export class Brain {
     };
 
     // Set up mail directories
-    this.inbox = new Maildir(join(options.octopaiDir, "mail", "inbox"));
-    this.sent = new Maildir(join(options.octopaiDir, "mail", "sent"));
+    this.inbox = new Maildir(join(options.coleoDir, "mail", "inbox"));
+    this.sent = new Maildir(join(options.coleoDir, "mail", "sent"));
 
     // Initialize mail processor
     this.mailProcessor = new MailProcessor((msg) => this.log(msg));
@@ -453,7 +453,7 @@ export class Brain {
     ];
 
     for (const dir of dirs) {
-      await mkdir(join(this.options.octopaiDir, dir), { recursive: true });
+      await mkdir(join(this.options.coleoDir, dir), { recursive: true });
     }
 
     // Initialize maildirs
@@ -1113,7 +1113,7 @@ export class Brain {
 
     // Publish to JetStream instead of SQLite
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`octopai.events.arm.${armId}.dependency_discovered`, {
+      eventStore.publishEvent(`coleo.events.arm.${armId}.dependency_discovered`, {
         type: "dependency_discovered",
         armId,
         data: {
@@ -1124,7 +1124,7 @@ export class Brain {
           severity: payload.severity,
         },
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch(() ={> {});
     }
 
     // TODO: Store dependency relationships in database for future task planning

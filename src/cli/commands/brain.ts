@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { join } from "path";
 import { readFile } from "fs/promises";
 import { Brain } from "../../brain";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 import {
   startService,
   stopService,
@@ -13,7 +13,7 @@ import {
 } from "../../daemon";
 
 export function registerBrainCommands(program: Command): void {
-  const brainCmd = program.command("brain").description("Manage the Octopai brain");
+  const brainCmd = program.command("brain").description("Manage the Coleo brain");
 
   brainCmd
     .command("run")
@@ -23,7 +23,7 @@ export function registerBrainCommands(program: Command): void {
     .option("--once", "Run a single poll cycle and exit")
     .option("--clean", "Kill zombie/stale OpenCode processes before starting")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
       const interval = parseInt(options.interval, 10);
       const verbose = options.verbose ?? false;
 
@@ -49,7 +49,7 @@ export function registerBrainCommands(program: Command): void {
       }
 
       const brain = new Brain({
-        octopaiDir,
+        octopaiDir: coleoDir,
         pollIntervalMs: interval,
         verbose: verbose || true,
       });
@@ -78,11 +78,11 @@ export function registerBrainCommands(program: Command): void {
     .command("status")
     .description("Show brain status")
     .action(async () => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
+        const content = await readFile(join(coleoDir, "state", "brain.json"), "utf-8");
         const state = JSON.parse(content);
 
         let activeArmsCount = 0;
@@ -121,8 +121,8 @@ export function registerBrainCommands(program: Command): void {
           console.log(`  Uptime: ${formatUptime(daemonStatus.uptime || 0)}`);
         } else {
           console.log("Brain has not been started yet.");
-          console.log("Run: octopai brain run    (foreground)");
-          console.log("  or: octopai brain start  (background daemon)");
+          console.log("Run: coleo brain run    (foreground)");
+          console.log("  or: coleo brain start  (background daemon)");
         }
       }
     });
@@ -131,7 +131,7 @@ export function registerBrainCommands(program: Command): void {
   brainCmd
     .command("start")
     .description("Start the brain daemon in the background")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await startService("brain", {
@@ -152,7 +152,7 @@ export function registerBrainCommands(program: Command): void {
     .description("Stop the brain daemon")
     .option("-f, --force", "Force kill if graceful shutdown fails")
     .option("-t, --timeout <ms>", "Timeout for graceful shutdown", "5000")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await stopService("brain", {
@@ -178,7 +178,7 @@ export function registerBrainCommands(program: Command): void {
     .description("Restart the brain daemon")
     .option("-f, --force", "Force kill if graceful shutdown fails")
     .option("-t, --timeout <ms>", "Timeout for graceful shutdown", "5000")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await restartService("brain", {
@@ -216,8 +216,8 @@ export function registerBrainCommands(program: Command): void {
     .command("prompt:task")
     .description("Show what task the brain would determine next (for copying to agent)")
     .action(async () => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
       const { Database } = await import("bun:sqlite");
 
       try {
@@ -226,7 +226,7 @@ export function registerBrainCommands(program: Command): void {
 
         const result = await generateTaskDetermination({
           projectRoot: process.cwd(),
-          octopaiDir,
+          octopaiDir: coleoDir,
           db,
         });
 
@@ -243,8 +243,8 @@ export function registerBrainCommands(program: Command): void {
     .description("Show context bundle for a task (for copying to agent)")
     .argument("[task-id-or-subject]", "Task ID or subject to generate context for")
     .action(async (taskIdOrSubject) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
       const { Database } = await import("bun:sqlite");
 
       try {
@@ -283,7 +283,7 @@ export function registerBrainCommands(program: Command): void {
         const result = await generateContextBundle(
           {
             projectRoot: process.cwd(),
-            octopaiDir,
+            octopaiDir: coleoDir,
             db,
           },
           taskSubject,

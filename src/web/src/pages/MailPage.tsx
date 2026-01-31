@@ -6,7 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 export function MailPage() {
-  document.title = "Octopai Observatory - Mail";
+  document.title = "Coleo Observatory - Mail";
   const [inbox, setInbox] = useState<{ messages: MailMessage[]; pagination: { unread: number } } | null>(null);
   const [sent, setSent] = useState<{ messages: MailMessage[] } | null>(null);
   const [archive, setArchive] = useState<{ messages: MailMessage[] } | null>(null);

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 
 export function registerDiscoveriesCommands(program: Command): void {
   const discoveriesCmd = program.command("discoveries").description("Discovery analysis tools");
@@ -11,8 +11,8 @@ export function registerDiscoveriesCommands(program: Command): void {
     .option("-t, --task <subject>", "Task subject or ID to summarize discoveries for")
     .option("-v, --verbose", "Show raw LLM response and reasoning")
     .action(async (options: { task?: string; verbose?: boolean }) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { initDatabase } = await import("../../db");
@@ -222,8 +222,8 @@ export function registerDiscoveriesCommands(program: Command): void {
     .option("-l, --limit <n>", "Maximum number to show", "20")
     .option("-p, --phase <phase>", "Filter by phase (exploration, implementation, verification)")
     .action(async (options: { limit: string; phase?: string }) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { initDatabase } = await import("../../db");
@@ -287,8 +287,8 @@ export function registerDiscoveriesCommands(program: Command): void {
     .option("-r, --resolution <type>", "Resolution type: resolved or dismissed", "resolved")
     .option("--reason <reason>", "Reason for resolution", "Manually resolved via CLI")
     .action(async (title: string, options: { resolution: string; reason: string }) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { initDatabase } = await import("../../db");
@@ -354,8 +354,8 @@ export function registerDiscoveriesCommands(program: Command): void {
     .description("Show resolved/dismissed discoveries")
     .option("-l, --limit <n>", "Maximum number to show", "20")
     .action(async (options: { limit: string }) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { initDatabase } = await import("../../db");

@@ -46,7 +46,7 @@ interface ArmHistoryState {
 }
 
 const MAX_HISTORY_ITEMS = 200;
-const STORAGE_PREFIX = 'octopai-arm-history-';
+const STORAGE_PREFIX = 'coleo-arm-history-';
 
 function getStorageKey(armId: string): string {
   return `${STORAGE_PREFIX}${armId}`;

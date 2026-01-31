@@ -12,7 +12,7 @@
 import { spawn, type Subprocess } from "bun";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
@@ -146,7 +146,7 @@ export class OpenCodeApiHarness implements AgentHarness {
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `opencode-api-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
-    const armId = config.env.OCTOPAI_ARM_ID || "unknown";
+    const armId = config.env.COLEO_ARM_ID || "unknown";
     
     // Find an available port (handles case where old processes are still running)
     const port = await this.findAvailablePort();
@@ -158,7 +158,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     
     if (config.provider && config.model) {
       try {
-        // Use Octopai API to check available models (server runs on 8080)
+        // Use Coleo API to check available models (server runs on 8080)
         const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
         resolvedProvider = resolved.providerId;
         resolvedModel = resolved.modelId;
@@ -178,7 +178,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     const env: Record<string, string> = {
       ...process.env as Record<string, string>,
       ...config.env,
-      OCTOPAI_ARM_ID: armId,
+      COLEO_ARM_ID: armId,
       // Disable SSL certificate verification to work around corporate proxies/VPNs
       // TODO: Make this configurable or find a better solution
       NODE_TLS_REJECT_UNAUTHORIZED: "0",
@@ -189,8 +189,8 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Always create OpenCode config file for this arm
     // This is the proper way to configure OpenCode (not via env vars)
     // See: https://opencode.ai/docs/models/#set-a-default
-    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
-    const mcpDir = join(octopaiDir, "mcp");
+    const coleoDir = config.env.COLEO_DIR || process.env.COLEO_DIR || getColeoDir();
+    const mcpDir = join(coleoDir, "mcp");
     
     // Ensure MCP directory exists
     const { mkdir, writeFile } = await import("node:fs/promises");
@@ -215,9 +215,9 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     const opencodeConfig: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
-      // Configure the Octopai MCP server for brain communication
+      // Configure the Coleo MCP server for brain communication
       mcp: {
-        octopai: {
+        coleo: {
           type: "local",
           // IMPORTANT: The MCP command runs relative to CWD of the OpenCode process
           // Since OpenCode runs in a temp dir, we must use absolute path to the CLI
@@ -225,8 +225,8 @@ export class OpenCodeApiHarness implements AgentHarness {
           // Instead, we execute the script directly with bun
           command: [bunBinary, cliEntrypoint, "mcp", "serve"],
           environment: {
-            OCTOPAI_ARM_ID: armId,
-            OCTOPAI_DIR: octopaiDir,
+            COLEO_ARM_ID: armId,
+            COLEO_DIR: coleoDir,
             // Ensure PATH includes bun
             PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
             HOME: process.env.HOME || "",
@@ -313,7 +313,7 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     // Create a new session using SDK (access .data to get the actual session)
     const sessionResponse = await client.session.create({
-      body: { title: "Octopai Arm Session" },
+      body: { title: "Coleo Arm Session" },
     });
     const session = sessionResponse.data;
 
@@ -377,7 +377,7 @@ export class OpenCodeApiHarness implements AgentHarness {
           // Publish to JetStream for persistence (only meaningful events)
           if (persistCheck.shouldPersist && eventStore.isInitialized()) {
             try {
-              const subject = `octopai.events.arm.${armId}.${event.type}`;
+              const subject = `coleo.events.arm.${armId}.${event.type}`;
               await eventStore.publishEvent(subject, {
                 type: event.type,
                 armId,
@@ -450,7 +450,7 @@ export class OpenCodeApiHarness implements AgentHarness {
 
   /**
    * Recover/reconnect to an existing OpenCode server
-   * Used when the Octopai API server restarts but OpenCode servers are still running
+ * Used when the Coleo API server restarts but OpenCode servers are still running
    */
   async recover(armId: string, port: number, pid: number): Promise<HarnessSession | null> {
     const serverUrl = `http://127.0.0.1:${port}`;
@@ -480,7 +480,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     try {
       console.log(`[harness-api] Creating new session for recovered arm ${armId}`);
       const newSessionResponse = await client.session.create({
-        body: { title: `Octopai Arm: ${armId} (recovered)` },
+        body: { title: `Coleo Arm: ${armId} (recovered)` },
       });
       const recoveredSession = newSessionResponse.data;
       
@@ -613,7 +613,7 @@ export class OpenCodeApiHarness implements AgentHarness {
 
       // Create a new OpenCode session via SDK
       const newSessionResponse = await apiSession.client.session.create({
-        body: { title: `Octopai Arm Session (reset ${Date.now()})` },
+        body: { title: `Coleo Arm Session (reset ${Date.now()})` },
       });
       const newSession = newSessionResponse.data;
 

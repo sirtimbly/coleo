@@ -128,7 +128,7 @@ export function Layout() {
           <div className="flex items-center gap-2">
             <Octagon className="h-8 w-8 text-accent" />
             <div>
-              <h1 className="font-bold text-lg">Octopai</h1>
+              <h1 className="font-bold text-lg">Coleo</h1>
               <p className="text-xs text-muted-foreground">Observatory</p>
             </div>
           </div>

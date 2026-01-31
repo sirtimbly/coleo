@@ -1,10 +1,10 @@
 import { Command } from "commander";
 import { join } from "path";
 import { mkdir, readFile, readdir, writeFile } from "fs/promises";
-import { getOctopaiDir, TEMPLATES_DIR } from "../context";
+import { getColeoDir, TEMPLATES_DIR } from "../context";
 
 export function registerConfigCommands(program: Command): void {
-  const configCmd = program.command("config").description("Manage Octopai configuration");
+  const configCmd = program.command("config").description("Manage Coleo configuration");
 
   configCmd
     .command("presets")
@@ -28,8 +28,8 @@ export function registerConfigCommands(program: Command): void {
           console.log(`    ${presetInfo[preset] || "No description"}\n`);
         }
 
-        console.log("Usage: octopai init --preset <name>");
-        console.log("       octopai config load <name>");
+        console.log("Usage: coleo init --preset <name>");
+        console.log("       coleo config load <name>");
       } catch {
         console.log("No presets found.");
       }
@@ -39,8 +39,8 @@ export function registerConfigCommands(program: Command): void {
     .command("load <preset>")
     .description("Load an arm configuration preset")
     .action(async (preset) => {
-      const octopaiDir = getOctopaiDir();
-      const armsDir = join(octopaiDir, "arms");
+      const coleoDir = getColeoDir();
+      const armsDir = join(coleoDir, "arms");
       await mkdir(armsDir, { recursive: true });
 
       const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
@@ -73,8 +73,8 @@ export function registerConfigCommands(program: Command): void {
     .command("arms")
     .description("List configured arms")
     .action(async () => {
-      const octopaiDir = getOctopaiDir();
-      const armsDir = join(octopaiDir, "arms");
+      const coleoDir = getColeoDir();
+      const armsDir = join(coleoDir, "arms");
 
       try {
         const files = await readdir(armsDir);
@@ -82,7 +82,7 @@ export function registerConfigCommands(program: Command): void {
 
         if (configs.length === 0) {
           console.log("No arm configurations found.");
-          console.log("Run: octopai init");
+          console.log("Run: coleo init");
           return;
         }
 
@@ -96,7 +96,7 @@ export function registerConfigCommands(program: Command): void {
           console.log(`  ${name} [${domain}]`);
         }
       } catch {
-        console.log("Arms directory not found. Run: octopai init");
+        console.log("Arms directory not found. Run: coleo init");
       }
     });
 }

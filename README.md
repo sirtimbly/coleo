@@ -1,8 +1,10 @@
 [![Fair Source](https://img.shields.io/badge/license-Fair%20Source-blue.svg)](LICENSE.txt)
 
-# Octopai
+# Coleo
 
-AI agent orchestrator using the **Octopus Model** - semi-autonomous AI "arms" coordinated by a central brain, with human-agent communication via mail.
+Distributed agent orchestration for software development. Coleo coordinates semi-autonomous AI "Arms" through a central governance system, using a mail-based interface for human-agent communication.
+
+> *Named after Coleoidea, the subclass of intelligent cephalopods that ditched rigid shells for distributed neural architecture.*
 
 ## Quick Start
 
@@ -10,17 +12,17 @@ AI agent orchestrator using the **Octopus Model** - semi-autonomous AI "arms" co
 # Install dependencies
 bun install
 
-# Initialize Octopai
+# Initialize Coleo
 bun run src/cli/index.ts init
 
-# Start the brain (foreground)
+# Start the Brain (foreground)
 bun run src/cli/index.ts brain run
 
-# In another terminal, spawn an arm
+# In another terminal, spawn an Arm
 bun run src/cli/index.ts arm spawn --name explorer --harness opencode
 
 # Send a task via mail
-bun run src/cli/index.ts mail send "Add dark mode toggle to settings"
+bun run src/cli/index.ts mail send "Explore the codebase and identify refactoring opportunities"
 
 # Check status
 bun run src/cli/index.ts status
@@ -28,7 +30,7 @@ bun run src/cli/index.ts status
 
 ## Docker Quick Start
 
-Run Octopai in a container with SSH access:
+Run Coleo in a container with SSH access:
 
 ```bash
 # Copy env file and add your API keys
@@ -39,25 +41,25 @@ cp .env.example .env
 docker compose up -d
 
 # SSH into the container
-ssh -p 2222 octopai@localhost  # password: octopai
+ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside the container:
-octopai brain run                              # Start the brain
-octopai arm spawn -n coder --harness opencode  # Spawn in tmux
-octopai status                                 # Check status
+coleo brain run                     # Start the Brain
+coleo arm spawn -n coder --harness opencode  # Spawn in tmux
+coleo status                        # Check status
 
-# View arm logs (headless mode)
-tail -f ~/.octopai/logs/octopai_coder.log
+# View Arm logs (headless mode)
+tail -f ~/.coleo/logs/coleo_coder.log
 ```
 
 Ports:
-- **2222**: Octopai SSH
+- **2222**: Coleo SSH
 - **3000**: Gitea web UI
 - **2223**: Gitea git SSH
 
 ## Architecture
 
-See [NOTES.md](./NOTES.md) for detailed architecture documentation.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed system documentation.
 
 ```
 Human (You)
@@ -80,29 +82,29 @@ Arm       Arm       Arm
 ## Commands
 
 ```bash
-octopai init                    # Initialize ~/.octopai
-octopai brain run               # Start brain (foreground)
-octopai brain run --once        # Single poll cycle
-octopai arm spawn -n NAME       # Spawn an arm
-octopai arm spawn -n NAME --headless  # Spawn without terminal window
-octopai arm list                # List arms
-octopai mail inbox              # View inbox
-octopai mail send "task"        # Send task to brain
-octopai status                  # Overall status
-octopai mcp serve               # Run MCP server (for arms)
+coleo init                      # Initialize ~/.coleo
+coleo brain run                 # Start Brain (foreground)
+coleo brain run --once          # Single poll cycle
+coleo arm spawn -n NAME         # Spawn an Arm
+coleo arm spawn -n NAME --headless  # Spawn without terminal window
+coleo arm list                  # List active Arms
+coleo mail inbox                # View inbox
+coleo mail send "task"          # Send task to Brain
+coleo status                    # Overall status
+coleo mcp serve                 # Run MCP server (for Arms)
 ```
 
 ## Headless Mode
 
-In environments without a display (Docker, SSH), arms run in headless mode:
+In environments without a display (Docker, SSH), Arms run in headless mode:
 
 - **tmux**: If available, creates a tmux session (attach with `tmux attach -t arm_name`)
-- **headless**: Runs as background process, logs to `~/.octopai/logs/`
+- **headless**: Runs as background process, logs to `~/.coleo/logs/`
 
 Force headless mode with `--headless` flag:
 
 ```bash
-octopai arm spawn -n worker --harness opencode --headless
+coleo arm spawn -n worker --harness opencode --headless
 ```
 
 ## Local Development
@@ -111,17 +113,17 @@ octopai arm spawn -n worker --harness opencode --headless
 
 - [Bun](https://bun.sh/) runtime (v1.0+)
 - [NATS Server](https://nats.io/) with JetStream enabled (optional, for event streaming)
-- [OpenCode](https://opencode.ai/) CLI (for spawning AI arms)
+- [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
 
 ### Setup
 
 ```bash
 # Clone and install dependencies
 git clone <repo-url>
-cd octopai
+cd coleo
 bun install
 
-# Initialize Octopai (creates ~/.octopai directory and database)
+# Initialize Coleo (creates ~/.coleo directory and database)
 bun run src/cli/index.ts init
 
 # Build the web UI
@@ -134,7 +136,7 @@ bun run web:build
 # Start the API server (serves both API and web UI)
 bun run server
 
-# Or run the brain directly (includes API server)
+# Or run the Brain directly (includes API server)
 bun run brain
 
 # Development mode for web UI (hot reload)
@@ -146,7 +148,7 @@ bun run web:dev
 | Script | Description |
 |--------|-------------|
 | `bun run dev` | Run CLI commands directly |
-| `bun run brain` | Start the brain orchestrator |
+| `bun run brain` | Start the Brain orchestrator |
 | `bun run server` | Start the API server |
 | `bun run typecheck` | Run TypeScript type checking |
 | `bun run test` | Run unit tests |
@@ -162,19 +164,19 @@ bun run web:dev
 Create a `.env` file in the project root:
 
 ```bash
-# Required for AI arms
+# Required for AI Arms
 ANTHROPIC_API_KEY=your-key-here
 OPENAI_API_KEY=your-key-here      # Optional
 
 # Optional configuration
-OCTOPAI_PORT=7337                  # API server port (default: 7337)
-OCTOPAI_DB_PATH=~/.octopai/octopai.db  # Database location
+COLEO_PORT=7337                   # API server port (default: 7337)
+COLEO_DB_PATH=~/.coleo/coleo.db   # Database location
 NATS_URL=nats://localhost:4222    # NATS server URL
 ```
 
 ## Testing
 
-Octopai has three levels of testing:
+Coleo has three levels of testing:
 
 ### Unit Tests
 
@@ -195,15 +197,13 @@ bun test src/brain/__tests__/
 
 ### Integration Tests
 
-Standalone scripts for quick manual verification of specific features. These are **not** run by `test:integration` - they're meant for ad-hoc testing during development.
+Standalone scripts for quick manual verification of specific features. These are **not** run by `test:integration`—they're meant for ad-hoc testing during development.
 
 ```bash
-# Session isolation test - verifies each arm gets a unique session
-# (Self-contained: starts its own API server)
+# Session isolation test - verifies each Arm gets a unique session
 bun run test-session-isolation.ts
 
 # JetStream pattern test - verifies multi-part event subjects work
-# Requires: nats-server -js (running separately)
 bun run test-jetstream-pattern.ts
 
 # Task assignment test
@@ -222,12 +222,12 @@ bun run test:integration
 bun run test:e2e
 
 # Run the regression runner directly with options
-bun run src/regression/runner.ts --quick                    # Quick mode
-bun run src/regression/runner.ts --scenario session-isolation  # Specific scenario
-bun run src/regression/runner.ts --tag core                 # All 'core' tagged scenarios
+bun run src/regression/runner.ts --quick
+bun run src/regression/runner.ts --scenario session-isolation
+bun run src/regression/runner.ts --tag core
 ```
 
-Regression test results are saved to `~/.octopai/regression-results/`.
+Regression test results are saved to `~/.coleo/regression-results/`.
 
 ### Test Scenarios
 
@@ -236,11 +236,11 @@ Located in `src/regression/scenarios/`. Scenarios tagged `quick` run with `test:
 | Scenario | Tags | Description |
 |----------|------|-------------|
 | `infrastructure-startup` | quick | Verifies all infrastructure components start correctly |
-| `session-isolation` | quick | Verifies arms don't share session history |
+| `session-isolation` | quick | Verifies Arms don't share session history |
 | `self-healing-api-restart` | - | Tests API server recovery after restart |
-| `zombie-arm-detection` | - | Tests detection and cleanup of zombie arms |
+| `zombie-arm-detection` | - | Tests detection and cleanup of zombie Arms |
 | `simple-task-completion` | - | Tests basic task assignment and completion |
-| `arm-recovery` | - | Tests arm crash recovery and session restoration |
+| `arm-recovery` | - | Tests Arm crash recovery and session restoration |
 
 ### Writing New Tests
 
@@ -258,4 +258,8 @@ For local git collaboration:
 docker compose up -d
 open http://localhost:3000
 ```
+
+## License
+
+Business Source License 1.1 (BSL 1.1). Free for individual use. Contact for organizational licensing.
 

@@ -2,21 +2,21 @@ import { Command } from "commander";
 import { join } from "path";
 import { mkdir, writeFile, readFile, copyFile, symlink } from "fs/promises";
 import { homedir } from "os";
-import type { OctopaiConfig } from "../../types";
+import type { ColeoConfig } from "../../types";
 import { DEFAULT_CONFIG } from "../../types";
 import { initMaildir } from "../../mail";
-import { getOctopaiDir, TEMPLATES_DIR } from "../context";
+import { TEMPLATES_DIR } from "../context";
 
 export function registerInitCommand(program: Command): void {
   program
     .command("init")
-    .description("Initialize Octopai in the current project (.octopai/)")
-    .option("-d, --dir <path>", "Custom directory", ".octopai")
+    .description("Initialize Coleo in the current project (.coleo/)")
+    .option("-d, --dir <path>", "Custom directory", ".coleo")
     .option("--preset <name>", "Preset configuration (fullstack, split-stack, full-team)", "")
     .action(async (options) => {
-      const octopaiDir = options.dir.startsWith("/") ? options.dir : join(process.cwd(), options.dir);
+      const coleoDir = options.dir.startsWith("/") ? options.dir : join(process.cwd(), options.dir);
       const preset = options.preset;
-      console.log(`Initializing Octopai in ${octopaiDir}...`);
+      console.log(`Initializing Coleo in ${coleoDir}...`);
 
       const dirs = [
         "mail/inbox",
@@ -34,30 +34,30 @@ export function registerInitCommand(program: Command): void {
       ];
 
       for (const dir of dirs) {
-        await mkdir(join(octopaiDir, dir), { recursive: true });
+        await mkdir(join(coleoDir, dir), { recursive: true });
       }
 
-      await initMaildir(join(octopaiDir, "mail"));
+      await initMaildir(join(coleoDir, "mail"));
 
-      const config: OctopaiConfig = {
+      const config: ColeoConfig = {
         ...DEFAULT_CONFIG,
-        octopaiDir,
+        coleoDir,
       };
 
-      await writeFile(join(octopaiDir, "config.toml"), generateConfigToml(config), "utf-8");
-      await copyArmTemplates(octopaiDir, preset);
+      await writeFile(join(coleoDir, "config.toml"), generateConfigToml(config), "utf-8");
+      await copyArmTemplates(coleoDir, preset);
 
-      const octopaiScriptPath = join(octopaiDir, "bin", "octopai");
-      await mkdir(join(octopaiDir, "bin"), { recursive: true });
+      const coleoScriptPath = join(coleoDir, "bin", "coleo");
+      await mkdir(join(coleoDir, "bin"), { recursive: true });
       await writeFile(
-        octopaiScriptPath,
-        `#!/bin/bash\n# Octopai CLI wrapper - runs from source directory\ncd "${process.cwd()}"\nexec bun run src/cli/index.ts "$@"\n`,
+        coleoScriptPath,
+        `#!/bin/bash\n# Coleo CLI wrapper - runs from source directory\ncd "${process.cwd()}"\nexec bun run src/cli/index.ts "$@"\n`,
         "utf-8",
       );
 
       const { spawn } = await import("node:child_process");
       await new Promise<void>((resolve, reject) => {
-        spawn("chmod", ["+x", octopaiScriptPath]).on("close", (code) => {
+        spawn("chmod", ["+x", coleoScriptPath]).on("close", (code) => {
           if (code === 0) resolve();
           else reject(new Error(`chmod failed with code ${code}`));
         });
@@ -65,27 +65,27 @@ export function registerInitCommand(program: Command): void {
 
       let symlinkPath = "";
       try {
-        symlinkPath = "/usr/local/bin/octopai";
-        await symlink(octopaiScriptPath, symlinkPath);
+        symlinkPath = "/usr/local/bin/coleo";
+        await symlink(coleoScriptPath, symlinkPath);
       } catch {
         try {
           const userBin = join(homedir(), "bin");
           await mkdir(userBin, { recursive: true });
-          symlinkPath = join(userBin, "octopai");
-          await symlink(octopaiScriptPath, symlinkPath);
+          symlinkPath = join(userBin, "coleo");
+          await symlink(coleoScriptPath, symlinkPath);
         } catch {
           symlinkPath = "";
         }
       }
 
       const symlinkInfo = symlinkPath ? `\n  ✓ Symlink created: ${symlinkPath}` : "";
-      const scriptInfo = `\n  ✓ CLI wrapper: ${octopaiScriptPath}`;
+      const scriptInfo = `\n  ✓ CLI wrapper: ${coleoScriptPath}`;
 
       console.log(`
- Octopai initialized!
+ Coleo initialized!
 
  Directory structure created:
-   ${octopaiDir}/
+   ${coleoDir}/
    ├── mail/          # Human-agent communication (Maildir)
    ├── queue/         # Inter-agent message queue
    ├── state/         # Persistent state
@@ -93,21 +93,21 @@ export function registerInitCommand(program: Command): void {
    ├── mcp/           # MCP configurations
    └── logs/          # Log files
 
-${preset ? `Preset "${preset}" arms have been configured in .octopai/arms/` : ""}
+${preset ? `Preset "${preset}" arms have been configured in .coleo/arms/` : ""}
 ${scriptInfo}${symlinkInfo}
- Edit or delete arm configs in .octopai/arms/ before spawning.
+ Edit or delete arm configs in .coleo/arms/ before spawning.
 
-  Next steps:
-    1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b octopai)
-    2. Start the API server: octopai serve
-    3. Configure arms: edit .octopai/arms/*.toml
-    4. Spawn an arm pointed at your project worktree: octopai arm spawn --workdir /path/to/your/project
+ Next steps:
+    1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b coleo)
+    2. Start the API server: coleo serve
+    3. Configure arms: edit .coleo/arms/*.toml
+    4. Spawn an arm pointed at your project worktree: coleo arm spawn --workdir /path/to/your/project
   `);
     });
 }
 
-function generateConfigToml(config: OctopaiConfig): string {
-  return `# Octopai Configuration
+function generateConfigToml(config: ColeoConfig): string {
+  return `# Coleo Configuration
 # Generated on ${new Date().toISOString()}
 
 version = ${config.version}
@@ -127,13 +127,13 @@ emulator = "${config.terminal.emulator}"
 # [gitea]
 # url = "http://localhost:3000"
 # token = "your-token-here"
-# default_org = "octopai"
+# default_org = "coleo"
 # default_repo = "workspace"
 `;
 }
 
-async function copyArmTemplates(octopaiDir: string, preset: string): Promise<void> {
-  const armsDir = join(octopaiDir, "arms");
+async function copyArmTemplates(coleoDir: string, preset: string): Promise<void> {
+  const armsDir = join(coleoDir, "arms");
 
   if (preset) {
     const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
@@ -181,5 +181,5 @@ async function copyDefaultTemplates(armsDir: string): Promise<void> {
 
   console.log(`\nArm templates copied to ${armsDir}/`);
   console.log("Edit or delete these files before spawning arms.");
-  console.log("Run 'octopai arm spawn' to interactively spawn an arm.");
+  console.log("Run 'coleo arm spawn' to interactively spawn an arm.");
 }

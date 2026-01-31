@@ -6,7 +6,7 @@
 
 import { randomBytes } from "crypto";
 import { join } from "node:path";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import type {
   AgentHarness,
   HarnessSession,
@@ -25,7 +25,7 @@ import { PTYManager, stripAnsi } from "./pty-manager";
  */
 const OPENCODE_PATTERNS: UIPatterns = {
   // OpenCode shows "Ask anything..." when ready for input, and status bar shows path
-  prompt: /Ask anything|ctrl\+p commands|developer\/octopai/,
+  prompt: /Ask anything|ctrl\+p commands|developer\/coleo/,
   // Various thinking indicators  
   thinking: /thinking|processing|reading|searching|Generating/i,
   // Confirmation prompts
@@ -57,19 +57,19 @@ export class OpenCodeHarness implements AgentHarness {
    */
   async spawn(config: SpawnConfig): Promise<HarnessSession> {
     const sessionId = `opencode-${Date.now().toString(36)}-${randomBytes(4).toString("hex")}`;
-    const armId = config.env.OCTOPAI_ARM_ID || config.env.OCTOPAI_TENTACLE_ID || "unknown";
+    const armId = config.env.COLEO_ARM_ID || config.env.COLEO_TENTACLE_ID || "unknown";
 
     // Build environment
     const env: Record<string, string> = {
       ...config.env,
-      OCTOPAI_ARM_ID: armId,
+      COLEO_ARM_ID: armId,
       NODE_TLS_REJECT_UNAUTHORIZED: "0", // Allow self-signed certs for development
     };
 
     // Always create OpenCode config file for this arm
     // This is the proper way to configure OpenCode (not via env vars)
-    const octopaiDir = config.env.OCTOPAI_DIR || process.env.OCTOPAI_DIR || getOctopaiDir();
-    const mcpDir = join(octopaiDir, "mcp");
+    const coleoDir = config.env.COLEO_DIR || process.env.COLEO_DIR || getColeoDir();
+    const mcpDir = join(coleoDir, "mcp");
     
     // Ensure MCP directory exists
     const { mkdir, writeFile } = await import("node:fs/promises");
@@ -82,14 +82,14 @@ export class OpenCodeHarness implements AgentHarness {
     // See: https://opencode.ai/docs/models/#set-a-default
     const opencodeConfig: Record<string, unknown> = {
       $schema: "https://opencode.ai/config.json",
-      // Configure the Octopai MCP server for brain communication
+      // Configure the Coleo MCP server for brain communication
       mcp: {
-        octopai: {
+        coleo: {
           type: "local",
           command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
           environment: {
-            OCTOPAI_ARM_ID: armId,
-            OCTOPAI_DIR: octopaiDir,
+            COLEO_ARM_ID: armId,
+            COLEO_DIR: coleoDir,
           },
           enabled: true,
         },

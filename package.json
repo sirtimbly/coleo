@@ -1,56 +1,56 @@
 {
-  "name": "octopai",
-  "version": "0.1.0",
-  "description": "AI agent orchestrator using the Octopus Model",
-  "module": "src/cli/index.ts",
-  "type": "module",
-  "private": true,
-  "bin": {
-    "octopai": "./src/cli/index.ts"
-  },
-  "workspaces": [
-    "src/web"
-  ],
-  "scripts": {
-    "dev": "bun run src/cli/index.ts",
-    "brain": "bun run src/cli/index.ts brain run",
-    "server": "bun run src/cli/index.ts server start",
-    "build": "bun build src/cli/index.ts --outdir dist --target node",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test src/**/__tests__/",
-    "test:watch": "bun test --watch src/**/__tests__/",
-    "test:integration": "bun run src/regression/runner.ts --quick",
-    "test:e2e": "bun run src/regression/runner.ts",
-    "web:dev": "bun run --cwd src/web dev",
-    "web:build": "bun run --cwd src/web build",
-    "web:preview": "bun run --cwd src/web preview",
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
-  },
-  "devDependencies": {
-    "@types/bun": "latest",
-    "vitepress": "^1.6.4"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@hono/node-server": "^1.19.9",
-    "@modelcontextprotocol/sdk": "^1.25.2",
-    "@opencode-ai/sdk": "^1.1.36",
-    "@tribe-x/imap-server": "^0.0.25",
-    "@types/eventsource": "^1.1.15",
-    "bun-pty": "^0.4.7",
-    "commander": "^14.0.2",
-    "eventsource": "^4.1.0",
-    "fast-glob": "^3.3.3",
-    "hono": "^4.11.4",
-    "nats": "^2.29.3",
-    "smol-toml": "^1.6.0",
-    "zod": "^4.3.5"
-  },
-  "trustedDependencies": [
-    "nats-server"
-  ]
+	"name": "coleo",
+	"version": "0.1.0",
+	"description": "AI agent orchestrator using the Octopus Model",
+	"module": "src/cli/index.ts",
+	"type": "module",
+	"private": true,
+	"bin": {
+		"octopai": "./src/cli/index.ts"
+	},
+	"workspaces": [
+		"src/web"
+	],
+	"scripts": {
+		"dev": "bun run src/cli/index.ts",
+		"brain": "bun run src/cli/index.ts brain run",
+		"server": "bun run src/cli/index.ts server start",
+		"build": "bun build src/cli/index.ts --outdir dist --target node",
+		"typecheck": "tsc --noEmit",
+		"test": "bun test src/**/__tests__/",
+		"test:watch": "bun test --watch src/**/__tests__/",
+		"test:integration": "bun run src/regression/runner.ts --quick",
+		"test:e2e": "bun run src/regression/runner.ts",
+		"web:dev": "bun run --cwd src/web dev",
+		"web:build": "bun run --cwd src/web build",
+		"web:preview": "bun run --cwd src/web preview",
+		"docs:dev": "vitepress dev docs",
+		"docs:build": "vitepress build docs",
+		"docs:preview": "vitepress preview docs"
+	},
+	"devDependencies": {
+		"@types/bun": "latest",
+		"vitepress": "^1.6.4"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"dependencies": {
+		"@hono/node-server": "^1.19.9",
+		"@modelcontextprotocol/sdk": "^1.25.2",
+		"@opencode-ai/sdk": "^1.1.36",
+		"@tribe-x/imap-server": "^0.0.25",
+		"@types/eventsource": "^1.1.15",
+		"bun-pty": "^0.4.7",
+		"commander": "^14.0.2",
+		"eventsource": "^4.1.0",
+		"fast-glob": "^3.3.3",
+		"hono": "^4.11.4",
+		"nats": "^2.29.3",
+		"smol-toml": "^1.6.0",
+		"zod": "^4.3.5"
+	},
+	"trustedDependencies": [
+		"nats-server"
+	]
 }

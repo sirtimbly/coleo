@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 import { startImapServer } from "../../imap";
 
 export function registerImapCommands(program: Command): void {
@@ -11,16 +11,16 @@ export function registerImapCommands(program: Command): void {
     .description("Start the IMAP server")
     .option("-p, --port <port>", "IMAP server port", "1143")
     .option("-h, --host <host>", "IMAP server host", "127.0.0.1")
-    .option("-u, --username <username>", "IMAP username", "octopai")
+    .option("-u, --username <username>", "IMAP username", "coleo")
     .option("--password <password>", "IMAP password (defaults to auto-generated)")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
       let password = options.password;
 
       if (!password) {
         try {
           const { Database } = await import("bun:sqlite");
-          const dbPath = join(octopaiDir, "octopai.db");
+          const dbPath = join(coleoDir, "coleo.db");
           const db = new Database(dbPath);
           const row = db.query("SELECT value FROM config WHERE key = 'imap_password'").get() as { value: string } | null;
           if (row) {
@@ -57,7 +57,7 @@ export function registerImapCommands(program: Command): void {
       const server = await startImapServer({
         port: parseInt(options.port, 10),
         host: options.host,
-        octopaiDir,
+        octopaiDir: coleoDir,
         username: options.username,
         password,
       });
@@ -79,8 +79,8 @@ export function registerImapCommands(program: Command): void {
     .description("Show or reset the IMAP password")
     .option("-r, --reset", "Generate a new password")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");

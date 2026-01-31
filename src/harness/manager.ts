@@ -32,15 +32,15 @@ export interface ActiveSession {
  */
 export class HarnessManager {
   private sessions = new Map<string, ActiveSession>();
-  private octopaiDir: string;
+  private coleoDir: string;
   private logsDir: string;
   private logCallbacks: Set<LogCallback> = new Set();
   private eventCallbacks: Set<EventCallback> = new Set();
   private deathCallbacks: Set<DeathCallback> = new Set();
 
-  constructor(octopaiDir: string) {
-    this.octopaiDir = octopaiDir;
-    this.logsDir = join(octopaiDir, "logs");
+  constructor(coleoDir: string) {
+    this.coleoDir = coleoDir;
+    this.logsDir = join(coleoDir, "logs");
   }
 
   /**
@@ -98,7 +98,7 @@ export class HarnessManager {
     // Publish to JetStream for persistence (only if initialized)
     if (eventStore.isInitialized()) {
       try {
-        const subject = `octopai.events.arm.${armId}.${event}`;
+        const subject = `coleo.events.arm.${armId}.${event}`;
         await eventStore.publishEvent(subject, {
           type: event,
           armId,
@@ -179,11 +179,11 @@ export class HarnessManager {
     const spawnConfig: SpawnConfig = {
       workdir: options.workdir,
       env: {
-        OCTOPAI_DIR: this.octopaiDir,
-        OCTOPAI_ARM_ID: armId,
+        COLEO_DIR: this.coleoDir,
+        COLEO_ARM_ID: armId,
       },
       headless: true,
-      mcpServers: ["octopai"],
+      mcpServers: ["coleo"],
       provider: options.provider,
       model: options.model,
     };
