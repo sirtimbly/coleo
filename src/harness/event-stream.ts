@@ -112,6 +112,14 @@ export class OpenCodeEventStream {
           console.log(`[event-stream] Connection attempt failed, retrying in 1s... (${retries} retries left)`);
           await new Promise(resolve => setTimeout(resolve, 1000));
         } else {
+          // Connection refused means the server is gone - stop trying
+          const error = err instanceof Error ? err : new Error(String(err));
+          if (error.message.includes("ConnectionRefused") || error.message.includes("Unable to connect")) {
+            console.log(`[event-stream] ${this.armId} server not available (connection refused), stopping event stream`);
+            this.isClosing = true;
+            this.onClose?.();
+            return;
+          }
           throw err;
         }
       }
@@ -135,6 +143,14 @@ export class OpenCodeEventStream {
       
       const err = error instanceof Error ? error : new Error(String(error));
       if (err.name === 'AbortError') return;
+      
+      // Connection refused means the server is gone - stop trying to reconnect
+      if (err.message.includes("ConnectionRefused") || err.message.includes("Unable to connect")) {
+        console.log(`[event-stream] ${this.armId} connection refused, stopping event stream`);
+        this.isClosing = true;
+        this.onClose?.();
+        return;
+      }
       
       console.error(`[event-stream] ${this.armId} connection error:`, err.message);
       this.onError?.(err);

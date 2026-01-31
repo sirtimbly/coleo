@@ -178,13 +178,20 @@ export function registerArmCommands(program: Command): void {
           }),
         });
 
+        // Always read response as text first, then parse
+        const rawResponse = await spawnRes.text();
+        
         if (!spawnRes.ok) {
-          const err = await spawnRes.json().catch(() => ({}));
-          console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
+          try {
+            const err = JSON.parse(rawResponse);
+            console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
+          } catch {
+            console.error(`Failed to spawn arm: ${spawnRes.statusText}`);
+          }
           process.exit(1);
         }
 
-        const result = await spawnRes.json() as { arm: Arm };
+        const result = JSON.parse(rawResponse) as { arm: Arm };
         console.log(`Arm spawned with opencode-tui harness in ${options.terminal}:`);
         console.log(`  ID: ${result.arm.id}`);
         if (result.arm.provider || result.arm.model) {
@@ -281,26 +288,68 @@ export function registerArmCommands(program: Command): void {
         }),
       });
 
+      // Always read response as text first, then parse
+      const rawResponse = await spawnRes.text();
+      
       if (!spawnRes.ok) {
-        const err = await spawnRes.json().catch(() => ({}));
-        console.error(`Failed to spawn arm: ${(err as { error?: string }).error || spawnRes.statusText}`);
+        let errorMessage = spawnRes.statusText;
+        try {
+          const err = JSON.parse(rawResponse);
+          errorMessage = (err as { error?: string }).error || spawnRes.statusText;
+          console.error(`Spawn response error body:`, JSON.stringify(err, null, 2));
+        } catch {
+          console.error(`Spawn response text:`, rawResponse);
+        }
+        console.error(`Failed to spawn arm: ${errorMessage}`);
         process.exit(1);
       }
+      
+      // Debug: Log raw response
+      console.log(`Raw spawn response:`, rawResponse);
 
-      const result = await spawnRes.json() as { sessionId?: string; pid?: number };
+      const result = JSON.parse(rawResponse) as { 
+        spawned: boolean;
+        distributed?: boolean;
+        agentId?: string;
+        host?: string;
+        sessionId?: string; 
+        pid?: number;
+        port?: number;
+      };
 
       console.log(`Arm spawned via API: ${armName}`);
+      console.log(`  Full response:`, JSON.stringify(result, null, 2));
       if (armProvider || armModel) {
         console.log(`  Model: ${armProvider ? armProvider + "/" : ""}${armModel || "default"}`);
       }
-      console.log(`  Session: ${result.sessionId}`);
-      console.log(`  PID: ${result.pid || "unknown"}`);
+      if (result.distributed) {
+        console.log(`  Type: Distributed (via agent ${result.agentId})`);
+        console.log(`  Host: ${result.host}`);
+        console.log(`  Port: ${result.port}`);
+        console.log(`  PID: ${result.pid || "unknown"}`);
+        console.log("  Note: Distributed arms don't have direct session access");
+      } else {
+        console.log(`  Session: ${result.sessionId}`);
+        console.log(`  PID: ${result.pid || "unknown"}`);
+      }
       console.log("");
       console.log("The arm is running in the API server process.");
 
       if (options.watch) {
-        console.log("\n");
-        await watchArm(armName, { history: "0" });
+        const isLocalAgent = !result.agentId || 
+          result.host === "127.0.0.1" || 
+          result.host?.includes("localhost") ||
+          result.host?.includes("Timothys-MacBook");
+        
+        if (result.distributed && !isLocalAgent) {
+          console.log("\n⚠️  Cannot watch distributed arm directly.");
+          console.log(`The arm is running on remote agent ${result.host}:${result.port}`);
+          console.log(`Use: octopai arm tail ${armName}`);
+          console.log(`Or:  octopai arm status ${armName}`);
+        } else {
+          console.log("\n");
+          await watchArm(armName, { history: "0" });
+        }
       } else {
         console.log(`Watch events: octopai arm tail ${armName}`);
         console.log(`View status:  octopai arm status ${armName}`);
@@ -625,16 +674,40 @@ export function registerArmCommands(program: Command): void {
       process.exit(1);
     }
 
-    const armData = (await armRes.json()) as { arm: { port: number | null; status: string } };
+    const armData = (await armRes.json()) as { 
+      arm: { 
+        port: number | null; 
+        status: string;
+        agentId?: string | null;
+        host?: string | null;
+      } 
+    };
+    
+    // For distributed arms, check if we can access them
+    if (armData.arm.agentId && !armData.arm.port) {
+      console.error(`Arm ${name} is running on a remote agent (${armData.arm.agentId})`);
+      console.error(`Remote host: ${armData.arm.host || "unknown"}`);
+      console.error(`Cannot watch remote arms directly. Use: octopai arm tail ${name}`);
+      process.exit(1);
+    }
+    
     if (!armData.arm.port) {
       console.error(`Arm ${name} is not running (no port assigned)`);
       process.exit(1);
     }
 
     const port = armData.arm.port;
-    const opencodeBaseUrl = `http://127.0.0.1:${port}`;
+    const isLocalAgent = !armData.arm.agentId || armData.arm.host === "127.0.0.1" || armData.arm.host?.includes("localhost");
+    const agentHost = isLocalAgent ? "127.0.0.1" : armData.arm.host;
+    const opencodeBaseUrl = `http://${agentHost}:${port}`;
 
     console.log(`Watching arm: ${name} (${armData.arm.status})`);
+    if (armData.arm.agentId) {
+      console.log(`  Type: Distributed (agent: ${armData.arm.agentId})`);
+      console.log(`  Host: ${agentHost}:${port}`);
+    } else {
+      console.log(`  URL: ${opencodeBaseUrl}`);
+    }
     console.log("Press Ctrl+C to stop\n");
 
     if (historyCount > 0) {
@@ -664,8 +737,10 @@ export function registerArmCommands(program: Command): void {
                 }>;
 
                 const recentMessages = messages.slice(-historyCount);
+                console.error(`[DEBUG HISTORY] Loaded ${messages.length} messages, showing ${recentMessages.length}`);
                 for (const msg of recentMessages) {
                   const role = msg.info.role;
+                  console.error(`[DEBUG HISTORY] Message role=${role}, parts=${msg.parts.length}`);
                   const roleLabel =
                     role === "assistant"
                       ? "🤖 Assistant"
@@ -682,11 +757,24 @@ export function registerArmCommands(program: Command): void {
 
                   for (const part of msg.parts) {
                     if (part.type === "text" && part.text) {
-                      const text =
-                        part.text.length > 500
-                          ? part.text.slice(0, 500) + "\n... (truncated, showing last 500 chars)"
-                          : part.text;
-                      console.log(text);
+                      // For long user messages (system prompt + user prompt combo), extract just the user part
+                      if (role === "user" && part.text.length > 1000) {
+                        const systemPromptEnd = part.text.indexOf("\n\n## Additional Instructions");
+                        const systemPromptLength = systemPromptEnd > 0 ? systemPromptEnd : part.text.length;
+                        console.log(`[System prompt: ${systemPromptLength.toLocaleString()} chars]`);
+                        const additionalInstructionsMatch = part.text.match(/## Additional Instructions\n\n([\s\S]+)$/);
+                        if (additionalInstructionsMatch && additionalInstructionsMatch[1]) {
+                          console.log(additionalInstructionsMatch[1].trim());
+                        } else {
+                          console.log("(Initial prompt with system context)");
+                        }
+                      } else {
+                        const text =
+                          part.text.length > 500
+                            ? part.text.slice(0, 500) + "\n... (truncated, showing last 500 chars)"
+                            : part.text;
+                        console.log(text);
+                      }
                     } else if (part.type === "tool-invocation" && showTools) {
                       const toolName = part.toolName || part.name || "unknown";
                       const state = part.state || "completed";
@@ -713,13 +801,17 @@ export function registerArmCommands(program: Command): void {
     let currentRole = "";
     let lastWasNewline = true;
     let currentToolName = "";
+    let isProcessing = false;
 
     const processEvent = (eventStr: string) => {
       const lines = eventStr.split("\n");
+      let eventType = "";
       let data = "";
 
       for (const line of lines) {
-        if (line.startsWith("data:")) {
+        if (line.startsWith("event:")) {
+          eventType = line.slice(6).trim();
+        } else if (line.startsWith("data:")) {
           data = line.slice(5).trim();
         }
       }
@@ -730,9 +822,9 @@ export function registerArmCommands(program: Command): void {
         const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
         const { type, properties: props } = event;
         
-        // Debug: Log ALL events to see what's coming through
-        if (verbose || type === "message.part.updated" || type === "message.part.created") {
-          console.error(`\n[DEBUG] ${type}:`, JSON.stringify(props, null, 2).slice(0, 500));
+        // TEMPORARY: Log all events to debug
+        if (type.includes('message') || type.includes('part')) {
+          console.error(`[DEBUG] Event: ${type}`);
         }
 
         if (type === "message.created" || type === "message.updated") {
@@ -755,6 +847,12 @@ export function registerArmCommands(program: Command): void {
             console.log("");
             currentRole = role;
             lastWasNewline = true;
+
+            // Show processing indicator after user message
+            if (role === "user") {
+              isProcessing = true;
+              process.stdout.write("⏳ Thinking...");
+            }
           }
 
           const error = info?.error as Record<string, unknown> | undefined;
@@ -775,9 +873,19 @@ export function registerArmCommands(program: Command): void {
             const partType = part.type as string;
 
             if (partType === "text") {
-              const textToWrite =
-                delta ?? (type === "message.part.created" ? (part.text as string) : null);
-              if (textToWrite) {
+              // Use delta for streaming updates, fall back to full text when available
+              const textContent = part.text as string | undefined;
+              const textToWrite = delta ?? textContent;
+              
+              // TEMPORARY: Debug text parts
+              console.error(`[DEBUG TEXT] delta=${delta ? 'yes' : 'no'}, textContent=${textContent ? textContent.length : 0} chars, textToWrite=${textToWrite ? textToWrite.length : 0} chars`);
+              
+              if (textToWrite && textToWrite.length > 0) {
+                // Clear processing indicator on first assistant text
+                if (isProcessing && currentRole === "assistant") {
+                  isProcessing = false;
+                  process.stdout.write("\r" + " ".repeat(20) + "\r"); // Clear "Thinking..."
+                }
                 process.stdout.write(textToWrite);
                 lastWasNewline = textToWrite.endsWith("\n");
               }
@@ -886,7 +994,7 @@ export function registerArmCommands(program: Command): void {
         }
 
         const chunk = decoder.decode(value, { stream: true });
-        if (chunk.trim()) {
+        if (verbose && chunk.trim()) {
           console.log(
             `[DEBUG] Received chunk (${chunk.length} bytes): ${chunk.slice(0, 100).replace(/\n/g, "\\n")}...`
           );
@@ -937,13 +1045,19 @@ export function registerArmCommands(program: Command): void {
       }
 
       const todosRes = await fetch(`${apiUrl}/api/arms/${name}/todos`, { headers });
+      const todosRaw = await todosRes.text();
+      
       if (!todosRes.ok) {
-        const err = await todosRes.json().catch(() => ({}));
-        console.error(`Failed to get todos: ${(err as { error?: string }).error || todosRes.statusText}`);
+        try {
+          const err = JSON.parse(todosRaw);
+          console.error(`Failed to get todos: ${(err as { error?: string }).error || todosRes.statusText}`);
+        } catch {
+          console.error(`Failed to get todos: ${todosRes.statusText}`);
+        }
         process.exit(1);
       }
 
-      const data = await todosRes.json() as { todos: Array<{ content: string; status: string; priority?: string }> };
+      const data = JSON.parse(todosRaw) as { todos: Array<{ content: string; status: string; priority?: string }> };
       const todos = data.todos || [];
 
       if (todos.length === 0) {
