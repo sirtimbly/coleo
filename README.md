@@ -1,3 +1,5 @@
+[![Fair Source](https://img.shields.io/badge/license-Fair%20Source-blue.svg)](LICENSE.txt)
+
 # Octopai
 
 AI agent orchestrator using the **Octopus Model** - semi-autonomous AI "arms" coordinated by a central brain, with human-agent communication via mail.
