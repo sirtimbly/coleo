@@ -1,0 +1,190 @@
+@import "tailwindcss";
+
+/* Variables and base styles derived from docs/public/marketing2.html */
+:root {
+  --color-bg: #0a1b2b;
+  --color-bg-deep: #071423;
+  --color-surface: rgba(255, 255, 255, 0.06);
+  --color-border: rgba(255, 255, 255, 0.15);
+  --color-accent: #14b8a6;
+  --color-accent-dark: #0d9488;
+  --reef-rgb: 20, 184, 166; /* default teal; JS can morph to 73,215,175 */
+  --font-display: 'Space Grotesk', system-ui, -apple-system, Segoe UI, Roboto,
+    Ubuntu, Cantarell, Noto Sans, sans-serif;
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+    Ubuntu, Cantarell, Noto Sans, sans-serif;
+}
+
+/* Reset for the marketing homepage container */
+.marketing-root {
+  min-height: 100dvh;
+  position: relative;
+  /* Base tone; rich gradients live on .water-layer for depth control */
+  background: #0a1b2b;
+  color: #fff;
+  font-family: var(--font-sans);
+}
+
+/* Hide VitePress UI chrome only on the homepage */
+body:has(.marketing-root) .VPNavBar,
+body:has(.marketing-root) .VPSidebar,
+body:has(.marketing-root) .VPDoc,
+body:has(.marketing-root) .VPDocFooter,
+body:has(.marketing-root) .VPFooter {
+  display: none !important;
+}
+
+/* Layers for animation */
+.water-layer,
+.rays-layer,
+.sparkles-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Rich aqua/blue background gradient lives on the water layer so the slider can
+   darken/brighten it via CSS filters. Increase teal presence for aquamarine feel. */
+.water-layer {
+  background:
+    /* Taller top aqua glow band for strong reef hue across full viewport */
+    linear-gradient(180deg,
+      rgba(var(--reef-rgb), 0.24) 0,
+      rgba(var(--reef-rgb), 0.16) 50vh,
+      rgba(var(--reef-rgb), 0.00) 100vh
+    ),
+    radial-gradient(1400px 900px at 50% -600px, rgba(var(--reef-rgb), var(--aqua1, 0.35)), transparent 70%),
+    radial-gradient(1100px 700px at 20% -420px, rgba(var(--reef-rgb), var(--aqua2, 0.45)), transparent 75%),
+    radial-gradient(1000px 600px at 80% -350px, rgba(59, 130, 246, var(--blue1, 0.25)), transparent 75%),
+    radial-gradient(900px 500px at 70% -560px, rgba(16, 185, 129, var(--green1, 0.18)), transparent 70%),
+    linear-gradient(180deg, #071423 0%, #0a1b2b 40%, #0a1b2b 100%);
+}
+
+.home-content {
+  position: relative;
+  z-index: 10;
+}
+
+/* Unified glass card styling with depth-aware light/dark flip */
+.ui-box {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+.ui-box a { color: inherit; }
+.marketing-root.light-mode .ui-box {
+  background: rgba(224, 250, 246, 0.85);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #0a1b2b;
+}
+
+/* Navbar mimic */
+.navbar-custom {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 1rem 1.25rem;
+  background:
+    linear-gradient(180deg, rgba(var(--reef-rgb), 0.12), rgba(0, 0, 0, 0.06)),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.06), transparent);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px) saturate(140%);
+}
+
+/* Navbar link and brand coloring with mode flip */
+.navbar-custom .nav-link { color: rgba(255, 255, 255, 0.9); text-decoration: none; }
+.navbar-custom .nav-link:hover { color: #ffffff; }
+.navbar-custom .brand-title { color: #ffffff; }
+
+.marketing-root.light-mode .navbar-custom {
+  background:
+    linear-gradient(180deg, rgba(var(--reef-rgb), 0.10), rgba(255,255,255,0.30)),
+    linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0.40));
+  border-bottom-color: rgba(0,0,0,0.08);
+}
+.marketing-root.light-mode .navbar-custom .nav-link { color: #0a1b2b; }
+.marketing-root.light-mode .navbar-custom .nav-link:hover { color: #000000; }
+.marketing-root.light-mode .navbar-custom .brand-title { color: #0a1b2b; }
+
+.font-display { font-family: var(--font-display); }
+
+/* Sections */
+.hero-section {
+  padding: 6rem 0 4rem;
+}
+
+/* Ensure large hero title size regardless of Tailwind availability */
+.hero-title {
+  font-size: clamp(3rem, 8vw, 5.5rem);
+  line-height: 1.08;
+  font-family: var(--font-display);
+}
+
+.section-glass {
+  padding: 5rem 0;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.08) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.section-glass.light-1 { background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03)); }
+.section-glass.light-2 { background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)); }
+.section-glass.light-3 { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.05)); }
+.section-glass.dark-1 { background: linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.2)); }
+.section-glass.dark-2 { background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.25)); }
+.section-glass.dark-3 { background: linear-gradient(180deg, rgba(0,0,0,0.2), rgba(0,0,0,0.3)); }
+
+/* Containers */
+.container { max-width: 80rem; margin: 0 auto; padding: 0 1rem; }
+
+/* Depth control */
+.depth-control {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9999px;
+  padding: 0.5rem 0.75rem;
+  backdrop-filter: blur(8px);
+  color: #fff;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+.depth-control.dark-mode { background: rgba(0, 0, 0, 0.4); }
+.depth-control label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; cursor: pointer; }
+.depth-control input[type="range"] {
+  accent-color: var(--color-accent);
+  writing-mode: bt-lr; /* Firefox */
+  -webkit-appearance: slider-vertical; /* WebKit */
+  height: 180px;
+  width: 28px;
+}
+
+/* Accent helpers */
+.text-accent { color: var(--color-accent); }
+.bg-accent { background-color: var(--color-accent); }
+.hover-bg-accent-dark:hover { background-color: var(--color-accent-dark); }
+
+/* Light-range primary accents switch to coral */
+.marketing-root.light-mode .bg-accent { background-color: #e85556; }
+.marketing-root.light-mode .hover-bg-accent-dark:hover { background-color: #d64b4b; }
+
+/* Utility tweaks for the marketing page */
+.backdrop-blur-sm { backdrop-filter: blur(6px); }
+.backdrop-blur-md { backdrop-filter: blur(12px); }
+.backdrop-blur-lg { backdrop-filter: blur(20px); }
+
+/* Avoid content width constraints that VitePress might impose */
+body:has(.marketing-root) .container,
+.marketing-root .container { width: 100%; max-width: 80rem; }
