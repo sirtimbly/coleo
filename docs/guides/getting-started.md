@@ -221,7 +221,7 @@ bun run src/cli/index.ts status
 You should see:
 ```
 Coleo Status
-Directory: ~/.octopai
+Directory: ~/.coleo
 
 Brain: not started
 Arms: 0
@@ -234,7 +234,7 @@ Tasks: 0
 After initialization, Coleo creates this structure:
 
 ```
-~/.octopai/
+~/.coleo/
 ├── mail/              # Human-agent communication (Maildir)
 │   ├── inbox/
 │   ├── sent/
@@ -465,10 +465,10 @@ vim .env
 docker compose up -d
 
 # SSH into the container
-ssh -p 2222 octopai@localhost  # password: octopai
+ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside container
-octopai brain run
+coleo brain run
 ```
 
 See the [Docker Setup Guide](./docker) for more details.
@@ -535,7 +535,7 @@ View documentation watcher status:
 
 ```bash
 # Check if docs are being watched
-octopai brain status
+coleo brain status
 
 # Output includes:
 # Documentation: 12 files tracked, last scan: 10:30:00

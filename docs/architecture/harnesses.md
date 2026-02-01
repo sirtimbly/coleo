@@ -38,7 +38,7 @@ Key features:
 - **Event streaming**: Real-time updates for dashboards
 - **Terminal flexibility**: Works with multiple terminal emulators
 
-This harness is automatically selected when using `octopai arm spawn -t <terminal>`.
+This harness is automatically selected when using `coleo arm spawn -t <terminal>`.
 
 ### opencode (Legacy)
 
@@ -95,10 +95,10 @@ Model selection happens at arm spawn time. Configure via:
 **CLI:**
 ```bash
 # Specify model when spawning
-octopai arm spawn --model claude-sonnet-4 --provider opencode
+coleo arm spawn --model claude-sonnet-4 --provider opencode
 
 # Or use combined format
-octopai arm spawn --model opencode/claude-sonnet-4
+coleo arm spawn --model opencode/claude-sonnet-4
 ```
 
 **Database default:**

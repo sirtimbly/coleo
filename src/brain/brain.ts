@@ -33,7 +33,7 @@ import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
 import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor";
-import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
+import type { BrainState, Task, QueueMessage, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
   coleoDir: string;
@@ -381,11 +381,11 @@ export class Brain {
    */
   async init(): Promise<void> {
     // Initialize database
-    const dbPath = join(this.options.octopaiDir, "octopai.db");
+    const dbPath = join(this.options.coleoDir, "coleo.db");
     this.db = await initDatabase(dbPath);
 
     // Initialize doc update tracker
-    this.docTracker = new DocUpdateTracker(this.db, this.options.octopaiDir, process.cwd());
+    this.docTracker = new DocUpdateTracker(this.db, this.options.coleoDir, process.cwd());
 
     // Initialize arm state machine
     this.armStateMachine = new ArmStateMachine(this.db, (effect) => this.handleStateMachineSideEffect(effect));
@@ -1317,7 +1317,7 @@ We'll notify you when we start investigating or have updates.`,
         name: armName,
         agent: 'opencode-tui', // Default agent
         workdir: process.cwd(), // Use current working directory
-        octopaiDir: this.options.octopaiDir,
+        coleoDir: this.options.coleoDir,
         terminal: 'auto'
       };
 
@@ -3826,7 +3826,7 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
     // Try to reconnect database if needed
     if (!this.infrastructureHealth.database.healthy && !this.db) {
       try {
-        const dbPath = join(this.options.octopaiDir, "octopai.db");
+        const dbPath = join(this.options.coleoDir, "coleo.db");
         this.db = await initDatabase(dbPath);
         this.log("Recovered database connection");
         recovered = true;
@@ -3903,9 +3903,9 @@ ${issues.map(i => `- ${i}`).join("\n")}
 - Maildir: ${this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy")}
 
 **Recommendations:**
-1. Check if the API server is running: \`octopai serve\`
-2. Check database integrity: \`sqlite3 ~/.octopai/octopai.db "PRAGMA integrity_check;"\`
-3. Check NATS server: \`nats-server\` or verify OCTOPAI_NATS_URL
+1. Check if the API server is running: \`coleo serve\`
+2. Check database integrity: \`sqlite3 ~/.coleo/coleo.db "PRAGMA integrity_check;"\`
+3. Check NATS server: \`nats-server\` or verify COLEO_NATS_URL
 4. Review brain logs for more details
 
 The brain will continue to retry and recover automatically where possible.`,
@@ -3923,7 +3923,7 @@ The brain will continue to retry and recover automatically where possible.`,
    * Returns cleaned output with TUI artifacts stripped
    */
   private async readArmLogs(armId: string, tailLines = 100): Promise<string> {
-    const logPath = join(this.options.octopaiDir, "logs", `${armId}.log`);
+    const logPath = join(this.options.coleoDir, "logs", `${armId}.log`);
     try {
       const content = await readFile(logPath, "utf-8");
       const lines = content.split("\n");
@@ -5549,7 +5549,7 @@ const arm: Arm = {
   }
 
   private async appendLog(line: string): Promise<void> {
-    const logPath = join(this.options.octopaiDir, "logs", "brain.log");
+    const logPath = join(this.options.coleoDir, "logs", "brain.log");
     const { appendFile } = await import("fs/promises");
     await appendFile(logPath, line + "\n", "utf-8");
   }
@@ -6126,4 +6126,3 @@ Is this arm stuck? If so, what should we do?`;
     };
   }
 }
-

@@ -112,16 +112,16 @@ export class EventStore {
     if (!this.jsm) throw new Error('JetStream manager not initialized');
 
     const streamConfig = {
-      name: 'octopai-events',
+      name: 'coleo-events',
       // Capture all event types
       subjects: [
-        'octopai.events.arm.>',
-        'octopai.events.brain.>',
-        'octopai.events.task.>',
-        'octopai.events.api.>',
-        'octopai.events.mail.>',
-        'octopai.events.mcp.>',
-        'octopai.events.system.>',
+        'coleo.events.arm.>',
+        'coleo.events.brain.>',
+        'coleo.events.task.>',
+        'coleo.events.api.>',
+        'coleo.events.mail.>',
+        'coleo.events.mcp.>',
+        'coleo.events.system.>',
       ],
       retention: RetentionPolicy.Limits,
       max_age: 7 * 24 * 60 * 60 * 1000,  // 7 days
@@ -133,7 +133,7 @@ export class EventStore {
 
     try {
       // Check if stream exists
-      const existingStream = await this.jsm.streams.info('octopai-events');
+      const existingStream = await this.jsm.streams.info('coleo-events');
       
       // Check if subjects need updating (e.g., from old '*.*' pattern to new '>' pattern)
       const existingSubjects = existingStream.config.subjects || [];
@@ -141,16 +141,16 @@ export class EventStore {
       
       if (JSON.stringify(existingSubjects) !== JSON.stringify(expectedSubjects)) {
         console.log(`[EventStore] Updating stream subjects from ${existingSubjects} to ${expectedSubjects}`);
-        await this.jsm.streams.update('octopai-events', {
+        await this.jsm.streams.update('coleo-events', {
           ...existingStream.config,
           subjects: expectedSubjects,
         });
-        console.log('[EventStore] Updated octopai-events stream configuration');
+        console.log('[EventStore] Updated coleo-events stream configuration');
       }
     } catch (error) {
       // Stream doesn't exist, create it
       await this.jsm.streams.add(streamConfig);
-      console.log('[EventStore] Created octopai-events stream');
+      console.log('[EventStore] Created coleo-events stream');
     }
   }
 
@@ -178,10 +178,10 @@ export class EventStore {
     
     try {
       // Determine the filter subject
-      let filterSubject = options.subject ?? 'octopai.events.>';
+      let filterSubject = options.subject ?? 'coleo.events.>';
       
       // Create an ephemeral ordered consumer for querying
-      const consumer = await this.js.consumers.get('octopai-events', {
+      const consumer = await this.js.consumers.get('coleo-events', {
         filterSubjects: [filterSubject],
       });
 
@@ -224,7 +224,7 @@ export class EventStore {
    */
   async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
     return this.queryEvents({
-      subject: `octopai.events.arm.${armId}.>`,
+      subject: `coleo.events.arm.${armId}.>`,
       limit,
     });
   }
@@ -255,7 +255,7 @@ export class EventStore {
   async getStreamMetrics(): Promise<StreamMetrics> {
     if (!this.jsm) throw new Error('JetStream manager not initialized');
 
-    const streamInfo = await this.jsm.streams.info('octopai-events');
+    const streamInfo = await this.jsm.streams.info('coleo-events');
 
     return {
       messages: streamInfo.state.messages,
@@ -296,12 +296,12 @@ export class EventStore {
       durable_name: name,
       deliver_policy: DeliverPolicy.Last,
       ack_policy: AckPolicy.None,
-      filter_subject: 'octopai.events.>',  // Match all event types: arm, brain, task
+      filter_subject: 'coleo.events.>',  // Match all event types: arm, brain, task
       replay_policy: ReplayPolicy.Instant,
       ...config,
     };
 
-    return await this.jsm.consumers.add('octopai-events', defaultConfig as ConsumerConfig);
+    return await this.jsm.consumers.add('coleo-events', defaultConfig as ConsumerConfig);
   }
 
   /**
@@ -311,7 +311,7 @@ export class EventStore {
     if (!this.jsm) throw new Error('JetStream manager not initialized');
 
     try {
-      await this.jsm.consumers.delete('octopai-events', name);
+      await this.jsm.consumers.delete('coleo-events', name);
     } catch (err) {
       console.error(`[EventStore] Failed to delete consumer ${name}:`, err);
     }
@@ -324,7 +324,7 @@ export class EventStore {
     if (!this.jsm) throw new Error('JetStream manager not initialized');
 
     // JetStream handles retention automatically, but we can force cleanup
-    const streamInfo = await this.jsm.streams.info('octopai-events');
+    const streamInfo = await this.jsm.streams.info('coleo-events');
     console.log(`[EventStore] Stream has ${streamInfo.state.messages} messages, ${streamInfo.state.bytes} bytes`);
   }
 
@@ -333,7 +333,7 @@ export class EventStore {
    */
   async reconstructTaskState(taskId: string, options?: StateReconstructionOptions): Promise<TaskState> {
     const events = await this.queryEvents({
-      subject: `octopai.events.task.${taskId}.*`,
+      subject: `coleo.events.task.${taskId}.*`,
       limit: options?.maxEvents || 1000,
     });
 
@@ -391,7 +391,7 @@ export class EventStore {
    */
   async reconstructArmState(armId: string, options?: StateReconstructionOptions): Promise<ArmState> {
     const events = await this.queryEvents({
-      subject: `octopai.events.arm.${armId}.*`,
+      subject: `coleo.events.arm.${armId}.*`,
       limit: options?.maxEvents || 500,
     });
 
@@ -458,7 +458,7 @@ export class EventStore {
     lastActivity: string | null;
   }> {
     const events = await this.queryEvents({
-      subject: `octopai.events.arm.${armId}.*`,
+      subject: `coleo.events.arm.${armId}.*`,
       since,
     });
 

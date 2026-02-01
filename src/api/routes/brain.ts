@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcastBrainEvent } from "../websocket";
-import { getOctopaiDir } from "../../config";
+import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { Maildir } from "../../mail/maildir";
@@ -39,8 +39,8 @@ export function createBrainRoutes() {
   const app = new Hono<BrainContext>();
 
   app.use("*", async (c, next) => {
-    const octopaiDir = getOctopaiDir();
-    c.set("octopaiDir", octopaiDir);
+    const coleoDir = getColeoDir();
+    c.set("coleoDir", coleoDir);
     await next();
   });
 
@@ -149,7 +149,7 @@ export function createBrainRoutes() {
   });
 
   app.get("/config", (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const db = c.get("db");
 
     let config: Record<string, string> = {};
@@ -227,7 +227,7 @@ export function createBrainRoutes() {
    * The brain will parse the message intent and route to appropriate arms.
    */
   app.post("/message", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const body = await c.req.json<{
       message: string;
       priority?: "critical" | "high" | "normal" | "low";

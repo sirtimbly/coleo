@@ -1,15 +1,15 @@
-# Octopai Docker Stack
+# Coleo Docker Stack
 #
-# Run the full Octopai environment in Docker:
-# - Octopai brain + tentacles
+# Run the full Coleo environment in Docker:
+# - Coleo brain + arms
 # - Gitea for git collaboration
 # - NATS for distributed arm management
 # - SSH access for interactive sessions
 #
 # Usage:
 #   docker compose up -d
-#   ssh -p 2222 octopai@localhost  # password: octopai
-#   octopai brain run
+#   ssh -p 2222 coleo@localhost  # password: coleo
+#   coleo brain run
 
 services:
   # ============================================
@@ -17,7 +17,7 @@ services:
   # ============================================
   nats:
     image: nats:2.10-alpine
-    container_name: octopai-nats
+    container_name: coleo-nats
     command: ["--jetstream", "--http_port", "8222"]
     ports:
       # Client connections
@@ -33,28 +33,28 @@ services:
     restart: unless-stopped
 
   # ============================================
-  # Octopai - The brain and tentacle environment
+  # Coleo - The brain and arms environment
   # ============================================
-  octopai:
+  coleo:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: octopai
-    hostname: octopai
+    container_name: coleo
+    hostname: coleo
     environment:
-      - OCTOPAI_DIR=/home/octopai/.octopai
+      - COLEO_DIR=/home/coleo/.coleo
       - GITEA_URL=http://gitea:3000
-      - OCTOPAI_NATS_URL=nats://nats:4222
+      - COLEO_NATS_URL=nats://nats:4222
       # Pass through API keys from host
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     volumes:
       # Persistent state
-      - octopai-data:/home/octopai/.octopai
+      - coleo-data:/home/coleo/.coleo
       # Mount your projects (read-write)
-      - ${PROJECTS_DIR:-./projects}:/home/octopai/projects
+      - ${PROJECTS_DIR:-./projects}:/home/coleo/projects
       # SSH keys for git operations
-      - ${SSH_KEYS_DIR:-~/.ssh}:/home/octopai/.ssh:ro
+      - ${SSH_KEYS_DIR:-~/.ssh}:/home/coleo/.ssh:ro
     ports:
       # SSH access
       - "2222:22"
@@ -73,7 +73,7 @@ services:
   # ============================================
   gitea:
     image: gitea/gitea:latest
-    container_name: octopai-gitea
+    container_name: coleo-gitea
     environment:
       - USER_UID=1000
       - USER_GID=1000
@@ -85,7 +85,7 @@ services:
       - GITEA__database__DB_TYPE=sqlite3
       - GITEA__service__DISABLE_REGISTRATION=false
       - GITEA__service__REQUIRE_SIGNIN_VIEW=false
-      # Allow Octopai container to push
+      # Allow Coleo container to push
       - GITEA__security__INSTALL_LOCK=true
     volumes:
       - gitea-data:/data
@@ -94,7 +94,7 @@ services:
     ports:
       # Web UI
       - "3000:3000"
-      # Git SSH (on different port to avoid conflict with octopai SSH)
+      # Git SSH (on different port to avoid conflict with coleo SSH)
       - "2223:22"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/v1/version"]
@@ -105,11 +105,11 @@ services:
     restart: unless-stopped
 
 volumes:
-  octopai-data:
-    name: octopai-data
+  coleo-data:
+    name: coleo-data
   gitea-data:
-    name: octopai-gitea-data
+    name: coleo-gitea-data
 
 networks:
   default:
-    name: octopai-network
+    name: coleo-network

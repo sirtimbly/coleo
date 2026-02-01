@@ -9,7 +9,7 @@
 
 import { Database } from "bun:sqlite";
 import { join } from "path";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import { eventStore } from "../nats/jetstream";
 
 export type ClaimMode = "strict" | "lazy" | "disabled";
@@ -257,7 +257,7 @@ export function escalateClaimModeForFile(
     
     // Log the escalation to JetStream
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`octopai.events.system.claim_mode_escalated`, {
+      eventStore.publishEvent(`coleo.events.system.claim_mode_escalated`, {
         type: "claim_mode_escalated",
         data: { filePath, reason, mode: "strict" },
         timestamp: now,
@@ -276,7 +276,7 @@ export function escalateClaimModeForFile(
  * Get database connection
  */
 export function getDatabase(readonly = true): Database {
-  const dbPath = join(getOctopaiDir(), "octopai.db");
+  const dbPath = join(getColeoDir(), "coleo.db");
   return new Database(dbPath, { readonly });
 }
 

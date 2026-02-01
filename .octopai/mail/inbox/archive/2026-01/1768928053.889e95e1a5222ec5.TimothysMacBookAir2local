@@ -1,0 +1,28 @@
+From: brain@octopai.local
+To: human@local
+Subject: [octopai] Infrastructure health issues detected
+Date: Tue, 20 Jan 2026 16:54:13 GMT
+Message-ID: <1768928053.7bd97c3ddd483646.TimothysMacBookAir2local@octopai.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+X-Octopai-Type: infrastructure-alert
+Priority: high
+
+The Octopai brain detected infrastructure issues that may prevent it from working properly.
+
+**Issues Detected:**
+- API server not responding at http://localhost:7777
+
+**Component Status:**
+- Database: ✓ Healthy
+- API Server: ✗ API server not responding
+- NATS: ✓ Healthy (optional)
+- Maildir: ✓ Healthy
+
+**Recommendations:**
+1. Check if the API server is running: `octopai serve`
+2. Check database integrity: `sqlite3 ~/.octopai/octopai.db "PRAGMA integrity_check;"`
+3. Check NATS server: `nats-server` or verify OCTOPAI_NATS_URL
+4. Review brain logs for more details
+
+The brain will continue to retry and recover automatically where possible.

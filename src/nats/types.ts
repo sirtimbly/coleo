@@ -229,22 +229,22 @@ export type OctopaiEvent = ArmEvent | AgentEvent;
 
 export const TOPICS = {
   // Agent registration
-  AGENT_REGISTER: 'octopai.agent.register',
-  AGENT_HEARTBEAT: 'octopai.agent.heartbeat',
-  AGENT_DISCONNECT: 'octopai.agent.disconnect',
+  AGENT_REGISTER: 'coleo.agent.register',
+  AGENT_HEARTBEAT: 'coleo.agent.heartbeat',
+  AGENT_DISCONNECT: 'coleo.agent.disconnect',
   
   // Commands to specific agent
-  agentCommand: (agentId: string) => `octopai.agent.${agentId}.command`,
-  agentResponse: (agentId: string, requestId: string) => `octopai.agent.${agentId}.response.${requestId}`,
+  agentCommand: (agentId: string) => `coleo.agent.${agentId}.command`,
+  agentResponse: (agentId: string, requestId: string) => `coleo.agent.${agentId}.response.${requestId}`,
   
   // Events from arms
-  armEvent: (armId: string) => `octopai.arm.${armId}.event`,
+  armEvent: (armId: string) => `coleo.arm.${armId}.event`,
   
   // Brain message queue (arms → brain)
-  BRAIN_MESSAGES: 'octopai.brain.messages',
+  BRAIN_MESSAGES: 'coleo.brain.messages',
   
   // Broadcast channels
-  BROADCAST_AGENTS: 'octopai.broadcast.agents',
-  BROADCAST_ARMS: 'octopai.broadcast.arms',
-  BROADCAST_ALL: 'octopai.broadcast.all',
+  BROADCAST_AGENTS: 'coleo.broadcast.agents',
+  BROADCAST_ARMS: 'coleo.broadcast.arms',
+  BROADCAST_ALL: 'coleo.broadcast.all',
 } as const;

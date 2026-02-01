@@ -25,7 +25,7 @@ title: Coleo — Multi-Agent Development Coordination
   <nav class="navbar-custom">
     <div class="container flex justify-between items-center">
       <div class="flex items-center gap-2 group">
-        <img src="/octopai-logo.png" alt="Coleo Logo" class="brand-logo block" />
+        <img src="/coleo-logo.png" alt="Coleo Logo" class="brand-logo block" />
         <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
       </div>
       <div class="hidden md:flex items-center space-x-8">

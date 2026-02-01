@@ -185,9 +185,9 @@ If you are a source code arm and requirements change:
 - heartbeat - Report that you are still alive
 
 ### Resources
-- octopai://tasks/pending - Available tasks
-- octopai://notes/shared - Knowledge from other arms
-- octopai://status - Current system status
+- coleo://tasks/pending - Available tasks
+- coleo://notes/shared - Knowledge from other arms
+- coleo://status - Current system status
 
 ## Best Practices
 

@@ -1,7 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 
 /**
- * Dev server control tools for Octopai
+ * Dev server control tools for Coleo
  * 
  * These tools help manage the development environment:
  * - API server (port 8080)
@@ -10,7 +10,7 @@ import { tool } from "@opencode-ai/plugin";
  */
 
 export const server_start = tool({
-  description: `Start the Octopai API server on port 8080.
+  description: `Start the Coleo API server on port 8080.
 
 This starts the main API server which provides:
 - REST API for arm management, tasks, mail, etc.
@@ -31,7 +31,7 @@ The server runs in the background. Use dev_server_stop to stop it.`,
     }
 
     // Start the server in background
-    const result = await Bun.$`bun run src/cli/index.ts serve &>/tmp/octopai-server.log &`.text();
+    const result = await Bun.$`bun run src/cli/index.ts serve &>/tmp/coleo-server.log &`.text();
     
     // Wait for server to be ready
     let attempts = 0;
@@ -40,7 +40,7 @@ The server runs in the background. Use dev_server_stop to stop it.`,
       try {
         const check = await Bun.$`curl -s http://localhost:8080/api/health`.text();
         if (check.includes('"status":"ok"')) {
-          return "Server started successfully on port 8080. Logs at /tmp/octopai-server.log";
+          return "Server started successfully on port 8080. Logs at /tmp/coleo-server.log";
         }
       } catch {
         // Not ready yet
@@ -48,14 +48,14 @@ The server runs in the background. Use dev_server_stop to stop it.`,
       attempts++;
     }
     
-    return "Server may have started but health check timed out. Check /tmp/octopai-server.log for details.";
+    return "Server may have started but health check timed out. Check /tmp/coleo-server.log for details.";
   },
 });
 
 export const server_stop = tool({
-  description: `Stop the Octopai API server.
+  description: `Stop the Coleo API server.
 
-Kills any running Octopai server process.`,
+Kills any running Coleo server process.`,
   args: {},
   async execute() {
     const result = await Bun.$`pkill -f "bun.*cli/index.ts.*serve" 2>/dev/null || true`.text();
@@ -76,7 +76,7 @@ Kills any running Octopai server process.`,
 });
 
 export const server_status = tool({
-  description: `Check if the Octopai API server is running.
+  description: `Check if the Coleo API server is running.
 
 Returns the health status if running, or indicates it's not running.`,
   args: {},
@@ -92,7 +92,7 @@ Returns the health status if running, or indicates it's not running.`,
 });
 
 export const web_start = tool({
-  description: `Start the Octopai Web UI development server on port 5173.
+  description: `Start the Coleo Web UI development server on port 5173.
 
 This starts the Vite dev server for the React dashboard.
 The web UI connects to the API server on port 8080.
@@ -111,7 +111,7 @@ Note: The API server should be running first (use dev_server_start).`,
     }
 
     // Start the web dev server in background
-    await Bun.$`cd src/web && bun run dev &>/tmp/octopai-web.log &`.text();
+    await Bun.$`cd src/web && bun run dev &>/tmp/coleo-web.log &`.text();
     
     // Wait for server to be ready
     let attempts = 0;
@@ -120,7 +120,7 @@ Note: The API server should be running first (use dev_server_start).`,
       try {
         const check = await Bun.$`curl -s --max-time 1 http://localhost:5173`.text();
         if (check.length > 100) { // HTML content
-          return "Web UI dev server started on http://localhost:5173. Logs at /tmp/octopai-web.log";
+          return "Web UI dev server started on http://localhost:5173. Logs at /tmp/coleo-web.log";
         }
       } catch {
         // Not ready yet
@@ -128,12 +128,12 @@ Note: The API server should be running first (use dev_server_start).`,
       attempts++;
     }
     
-    return "Web server may have started but health check timed out. Check /tmp/octopai-web.log";
+    return "Web server may have started but health check timed out. Check /tmp/coleo-web.log";
   },
 });
 
 export const web_stop = tool({
-  description: `Stop the Octopai Web UI development server.`,
+  description: `Stop the Coleo Web UI development server.`,
   args: {},
   async execute() {
     await Bun.$`pkill -f "vite.*src/web" 2>/dev/null || true`.text();
@@ -143,7 +143,7 @@ export const web_stop = tool({
 });
 
 export const brain_start = tool({
-  description: `Start the Octopai Brain loop.
+  description: `Start the Coleo Brain loop.
 
 The brain is the central coordinator that:
 - Monitors arm health and activity
@@ -155,7 +155,7 @@ Note: The API server should be running first (use dev_server_start).`,
   args: {},
   async execute() {
     // Start the brain in background
-    await Bun.$`bun run src/cli/index.ts brain run &>/tmp/octopai-brain.log &`.text();
+    await Bun.$`bun run src/cli/index.ts brain run &>/tmp/coleo-brain.log &`.text();
     
     await new Promise(resolve => setTimeout(resolve, 2000));
     
@@ -163,7 +163,7 @@ Note: The API server should be running first (use dev_server_start).`,
     try {
       const status = await Bun.$`curl -s http://localhost:8080/api/status`.text();
       if (status.includes('"brain"')) {
-        return "Brain started. Logs at /tmp/octopai-brain.log";
+        return "Brain started. Logs at /tmp/coleo-brain.log";
       }
     } catch {
       // API not available
@@ -174,7 +174,7 @@ Note: The API server should be running first (use dev_server_start).`,
 });
 
 export const brain_stop = tool({
-  description: `Stop the Octopai Brain loop.`,
+  description: `Stop the Coleo Brain loop.`,
   args: {},
   async execute() {
     await Bun.$`pkill -f "bun.*brain.*run" 2>/dev/null || true`.text();
@@ -183,7 +183,7 @@ export const brain_stop = tool({
 });
 
 export const logs = tool({
-  description: `View recent logs from Octopai services.
+  description: `View recent logs from Coleo services.
 
 Shows the last N lines from server, web, or brain logs.`,
   args: {
@@ -192,9 +192,9 @@ Shows the last N lines from server, web, or brain logs.`,
   },
   async execute(args) {
     const logFiles: Record<string, string> = {
-      server: "/tmp/octopai-server.log",
-      web: "/tmp/octopai-web.log",
-      brain: "/tmp/octopai-brain.log",
+      server: "/tmp/coleo-server.log",
+      web: "/tmp/coleo-web.log",
+      brain: "/tmp/coleo-brain.log",
     };
     
     const logFile = logFiles[args.service];

@@ -42,7 +42,7 @@ CLI, Web, and Email clients all interact with the same core API and Maildir stat
 Multiple arms often work in the same codebase at once. Rather than giving each arm its own worktree or long-lived feature branch, Coleo assumes:
 
 - A **single clone** of the project.
-- A shared integration branch (typically named `octopai`) where arms make changes.
+- A shared integration branch (typically named `coleo`) where arms make changes.
 - A **mostly linear git history**, with humans in control of commits, rebases, and merges.
 
 The design does not forbid more advanced flows (temporary branches, stashes, or branch-per-feature models). Those can be layered on later. The default is “many arms, one garden, one branch,” with coordination handled through tasks, claims, and proposals rather than Git topology.
@@ -55,7 +55,7 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 ├─────────────────────────────────────────────────────────────────────────────────────┤
 │  Web Browser              CLI Terminal                 Mail Client                 │
 │  ┌────────────────────┐   ┌──────────────────────┐    ┌────────────────────────┐  │
-│  │  React Observatory │   │  octopai CLI         │    │  IMAP/SMTP client      │  │
+│  │  React Observatory │   │  coleo CLI           │    │  IMAP/SMTP client      │  │
 │  │  - Timeline view   │   │  - spawn/list/kill   │    │  - Threads with Brain  │  │
 │  │  - Arm activity    │   │  - status            │    │  - Status reports      │  │
 │  │  - Garden (3D)     │   │  - API proxy         │    │  - Decisions & alerts  │  │
@@ -106,7 +106,7 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 
 ## Client Interfaces
 
-- **CLI ↔ API**: The `octopai` CLI treats the API server as its single source of truth for spawning, listing, and managing arms. All mutating commands are proxied through authenticated REST calls.
+- **CLI ↔ API**: The `coleo` CLI treats the API server as its single source of truth for spawning, listing, and managing arms. All mutating commands are proxied through authenticated REST calls.
 - **Web UI ↔ API**: The Observatory React app consumes the same REST and WebSocket endpoints for status dashboards, configuration, and real-time updates.
 - **Mail Client ↔ Email Server**: Humans connect via standard IMAP/SMTP clients to converse with the brain. Messages are persisted in Maildir, surfaced through `/api/mail/*`, and synchronized with a coordination arm routing context between the brain and worker arms.
 

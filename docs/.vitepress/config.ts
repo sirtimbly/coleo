@@ -5,7 +5,7 @@ export default defineConfig({
   ignoreDeadLinks: true,
   themeConfig: {
     // Shown in the default VitePress navbar on documentation pages
-    logo: '/octopai-logo.png'
+    logo: '/coleo-logo.png'
   },
   head: [
     // Fonts to match marketing2.html

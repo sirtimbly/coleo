@@ -8,7 +8,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
-import { loadConfig, getOctopaiDir, getRandomPreferredModel } from "../../config";
+import { loadConfig, getColeoDir, getRandomPreferredModel } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
 import { getArmClient } from "../server";
@@ -83,8 +83,8 @@ export interface ArmTemplate {
  * Searches by filename first, then by name field inside template files
  */
 export async function loadArmTemplate(name: string): Promise<ArmTemplate | null> {
-  const octopaiDir = getOctopaiDir();
-  const armsDir = join(octopaiDir, "arms");
+  const coleoDir = getColeoDir();
+  const armsDir = join(coleoDir, "arms");
 
   // First, try direct filename match
   const directPath = join(armsDir, `${name}.toml`);
@@ -158,8 +158,8 @@ function parseArmTemplate(content: string): ArmTemplate {
  * List available arm templates
  */
 export async function listArmTemplates(): Promise<string[]> {
-  const octopaiDir = getOctopaiDir();
-  const armsDir = join(octopaiDir, "arms");
+  const coleoDir = getColeoDir();
+  const armsDir = join(coleoDir, "arms");
 
   try {
     const { readdir } = await import("fs/promises");

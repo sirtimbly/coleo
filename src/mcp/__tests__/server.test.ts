@@ -17,7 +17,7 @@ describe("MCP Server - sendToBrain (with mocked NATS)", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-mcp-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-mcp-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     
     mockNats = createMockNatsClient();
     await mockNats.connect();
@@ -67,11 +67,11 @@ describe("MCP Server - sendToBrain (with mocked NATS)", () => {
     });
 
     it("filters messages by topic", async () => {
-      await mockNats.publish("octopai.brain.messages", { type: "discovery" });
-      await mockNats.publish("octopai.brain.messages", { type: "heartbeat" });
+      await mockNats.publish("coleo.brain.messages", { type: "discovery" });
+      await mockNats.publish("coleo.brain.messages", { type: "heartbeat" });
       await mockNats.publish("other.topic", { type: "other" });
 
-      const brainMessages = mockNats.getPublishedMessagesByType<{ type: string }>("octopai.brain.messages");
+      const brainMessages = mockNats.getPublishedMessagesByType<{ type: string }>("coleo.brain.messages");
       expect(brainMessages.length).toBe(2);
     });
   });
@@ -80,11 +80,11 @@ describe("MCP Server - sendToBrain (with mocked NATS)", () => {
     it("triggers handlers for matching subscriptions", async () => {
       const received: unknown[] = [];
       
-      mockNats.subscribe("octopai.brain.messages", (data) => {
+      mockNats.subscribe("coleo.brain.messages", (data) => {
         received.push(data);
       });
 
-      await mockNats.triggerMessage("octopai.brain.messages", { test: true });
+      await mockNats.triggerMessage("coleo.brain.messages", { test: true });
       expect(received.length).toBe(1);
       expect(received[0]).toEqual({ test: true });
     });
@@ -150,8 +150,8 @@ describe("MCP Server - File Queue Fallback", () => {
   let octopaiDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-queue-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    octopaiDir = join(testDir, ".octopai");
+    testDir = join("/tmp", `coleo-queue-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    octopaiDir = join(testDir, ".coleo");
     
     await mkdir(join(octopaiDir, "queue", "brain", "pending"), { recursive: true });
   });
@@ -219,7 +219,7 @@ describe("MCP Server - Task Tools Integration", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-task-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-task-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const dbPath = join(testDir, "test.db");
     
     await mkdir(testDir, { recursive: true });
@@ -316,7 +316,7 @@ describe("MCP Server - Discovery Reporting", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-discovery-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-discovery-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     mockNats = createMockNatsClient();
     await mockNats.connect();
   });
@@ -422,7 +422,7 @@ describe("MCP Server - Note Sharing", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-notes-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-notes-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     await mkdir(join(testDir, "notes", "shared"), { recursive: true });
   });
 
@@ -490,7 +490,7 @@ describe("MCP Server - File Claims", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-claims-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-claims-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     const dbPath = join(testDir, "test.db");
     
     await mkdir(testDir, { recursive: true });

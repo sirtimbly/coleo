@@ -1,0 +1,19 @@
+From: brain@octopai.local
+To: human@local
+Subject: [octopai] Arm Corttex needs attention: silent
+Date: Thu, 29 Jan 2026 17:30:03 GMT
+Message-ID: <1769707803.ba38ba9a64921bc1.TimothysMacBookAir2local@octopai.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+The arm "Corttex" requires human attention.
+
+**State:** silent
+**Reason:** No events for Infinitys
+**Confidence:** high
+
+**Metrics:**
+ Events in window: 0
+ Silent for: Infinitys
+ Recent messages: 0
+ Recent file edits: 0

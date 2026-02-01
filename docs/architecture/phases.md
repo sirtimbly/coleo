@@ -340,7 +340,7 @@ These can be tackled between phases or in parallel:
 
 - [ ] Add more arm domain templates
 - [ ] Improve CLI output formatting
-- [ ] Add `octopai gitea` wrapper commands
+- [ ] Add `coleo gitea` wrapper commands
 - [ ] Create Docker images for different agents
 - [ ] Add dark mode to web UI
 - [ ] Improve error messages

@@ -5,9 +5,9 @@ This document describes the proposed file structure for the complete Coleo imple
 ## Current Structure
 
 ```
-octopai/
+coleo/
 ├── bin/
-│   └── octopai.ts              # CLI entrypoint
+│   └── coleo.ts                # CLI entrypoint
 ├── docs/                        # VitePress documentation (new)
 │   ├── .vitepress/
 │   │   └── config.ts
@@ -58,9 +58,9 @@ octopai/
 ## Proposed Structure
 
 ```
-octopai/
+coleo/
 ├── bin/
-│   └── octopai.ts              # CLI entrypoint
+│   └── coleo.ts                # CLI entrypoint
 │
 ├── docs/                        # VitePress documentation
 │   ├── .vitepress/
@@ -189,7 +189,7 @@ octopai/
 │   │   │   ├── useWebSocket.ts # WebSocket hook
 │   │   │   └── usePush.ts      # Push notification hook
 │   │   ├── stores/
-│   │   │   └── octopai.ts      # Zustand store
+│   │   │   └── coleo.ts        # Zustand store
 │   │   ├── lib/
 │   │   │   ├── api.ts          # API client
 │   │   │   └── ws.ts           # WebSocket client
@@ -246,7 +246,7 @@ The project can be structured as a monorepo:
 ```json
 // package.json (root)
 {
-  "name": "octopai",
+  "name": "coleo",
   "workspaces": [
     ".",
     "web"
@@ -282,5 +282,5 @@ dist/
 │   │   └── index-xxx.css
 │   └── ...
 └── cli/                         # CLI bundle
-    └── octopai
+    └── coleo
 ```

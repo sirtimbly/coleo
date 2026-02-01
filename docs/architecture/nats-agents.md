@@ -31,10 +31,10 @@ The arm agent system uses [NATS](https://nats.io) as a lightweight message queue
 │              (Docker: nats:2.10-alpine)                      │
 │                                                              │
 │  Topics:                                                     │
-│  - octopai.agents.register      (agent registration)         │
-│  - octopai.agents.heartbeat     (agent liveness)             │
-│  - octopai.agents.{id}.commands (commands to specific agent) │
-│  - octopai.arms.events          (arm lifecycle events)       │
+│  - coleo.agents.register      (agent registration)         │
+│  - coleo.agents.heartbeat     (agent liveness)             │
+│  - coleo.agents.{id}.commands (commands to specific agent) │
+│  - coleo.arms.events          (arm lifecycle events)       │
 └───────────┬─────────────────────────────────────────────────┘
             │
     ┌───────┴───────┬───────────────────┐
@@ -105,7 +105,7 @@ Located in `src/agent/arm-agent.ts`, the ArmAgent runs as a daemon on each host 
 
 ```bash
 # Start an agent daemon
-octopai agent start --nats-url nats://localhost:4222
+coleo agent start --nats-url nats://localhost:4222
 ```
 
 ## Message Types
@@ -126,7 +126,7 @@ interface AgentInfo {
 }
 ```
 
-Topic: `octopai.agents.register`
+Topic: `coleo.agents.register`
 
 ### Agent Heartbeat
 
@@ -144,7 +144,7 @@ interface AgentHeartbeat {
 }
 ```
 
-Topic: `octopai.agents.heartbeat`
+Topic: `coleo.agents.heartbeat`
 
 ### Commands (Request/Reply)
 
@@ -188,7 +188,7 @@ interface CommandResponse<T = unknown> {
 }
 ```
 
-Topic: `octopai.agents.{agentId}.commands`
+Topic: `coleo.agents.{agentId}.commands`
 
 ### Arm Events (Pub/Sub)
 
@@ -217,7 +217,7 @@ interface ArmStatusChangedEvent {
 }
 ```
 
-Topic: `octopai.arms.events`
+Topic: `coleo.arms.events`
 
 ## Communication Flows
 
@@ -320,7 +320,7 @@ CREATE INDEX idx_arms_agent ON arms(agent_id);
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OCTOPAI_NATS_URL` | `nats://localhost:4222` | NATS server URL |
+| `COLEO_NATS_URL` | `nats://localhost:4222` | NATS server URL |
 
 ### API Server Config
 
@@ -333,7 +333,7 @@ NATS not available - distributed arm management disabled
 ### Agent Config
 
 ```bash
-octopai agent start \
+coleo agent start \
   --nats-url nats://localhost:4222 \  # NATS server URL
   --max-arms 10 \                       # Max concurrent arms
   --heartbeat-interval 30000 \          # Heartbeat interval (ms)
@@ -346,7 +346,7 @@ octopai agent start \
 
 ```bash
 # Just start the server - NATS is optional
-octopai serve
+coleo serve
 ```
 
 ### With Distributed Arms
@@ -356,10 +356,10 @@ octopai serve
 docker compose up -d nats
 
 # Terminal 2: Start API server
-octopai serve
+coleo serve
 
 # Terminal 3: Start agent (same or different host)
-octopai agent start --nats-url nats://localhost:4222
+coleo agent start --nats-url nats://localhost:4222
 ```
 
 ### Multi-Host Setup
@@ -367,13 +367,13 @@ octopai agent start --nats-url nats://localhost:4222
 ```bash
 # On server (192.168.1.100):
 docker compose up -d nats
-octopai serve
+coleo serve
 
 # On laptop:
-octopai agent start --nats-url nats://192.168.1.100:4222
+coleo agent start --nats-url nats://192.168.1.100:4222
 
 # On desktop:
-octopai agent start --nats-url nats://192.168.1.100:4222
+coleo agent start --nats-url nats://192.168.1.100:4222
 ```
 
 ## Monitoring

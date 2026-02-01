@@ -24,7 +24,7 @@ The Docker Compose stack includes:
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `octopai` | 2222 (SSH) | Main Coleo container |
+| `coleo` | 2222 (SSH) | Main Coleo container |
 | `gitea` | 3000 (HTTP), 2223 (SSH) | Git forge for collaboration |
 
 ## Connecting
@@ -32,28 +32,28 @@ The Docker Compose stack includes:
 ### SSH Access
 
 ```bash
-ssh -p 2222 octopai@localhost
-# Password: octopai
+ssh -p 2222 coleo@localhost
+# Password: coleo
 ```
 
 Once connected:
 ```bash
 # Check status
-octopai status
+coleo status
 
 # Start the brain
-octopai brain run
+coleo brain run
 
 # In another SSH session, spawn an arm
-octopai arm spawn -n explorer --agent opencode
+coleo arm spawn -n explorer --agent opencode
 ```
 
 ### Direct Execution
 
 Without SSH:
 ```bash
-docker exec -it octopai octopai status
-docker exec -it octopai octopai brain run
+docker exec -it coleo coleo status
+docker exec -it coleo coleo brain run
 ```
 
 ## Environment Variables
@@ -76,9 +76,9 @@ SSH_KEYS_DIR=~/.ssh
 
 | Volume | Container Path | Purpose |
 |--------|----------------|---------|
-| `octopai-data` | `/home/octopai/.octopai` | Persistent state |
-| `$PROJECTS_DIR` | `/home/octopai/projects` | Your projects |
-| `$SSH_KEYS_DIR` | `/home/octopai/.ssh` | SSH keys (read-only) |
+| `coleo-data` | `/home/coleo/.coleo` | Persistent state |
+| `$PROJECTS_DIR` | `/home/coleo/projects` | Your projects |
+| `$SSH_KEYS_DIR` | `/home/coleo/.ssh` | SSH keys (read-only) |
 
 ## Headless Mode
 
@@ -92,10 +92,10 @@ Inside the container, there's no display. Arms run in headless mode automaticall
 ```bash
 # If using tmux
 tmux list-sessions
-tmux attach -t octopai_explorer
+tmux attach -t coleo_explorer
 
 # If headless (background process)
-tail -f ~/.octopai/logs/octopai_explorer.log
+tail -f ~/.coleo/logs/coleo_explorer.log
 ```
 
 ## Gitea Setup
@@ -112,18 +112,18 @@ Gitea provides a local Git forge for arm collaboration.
 ### Configure Coleo
 
 ```toml
-# ~/.octopai/config.toml
+# ~/.coleo/config.toml
 [gitea]
 url = "http://gitea:3000"
 token = "your-access-token"
-default_org = "octopai"
+default_org = "coleo"
 ```
 
 ### Git SSH
 
 For git operations via SSH:
 ```bash
-git clone ssh://git@localhost:2223/octopai/my-project.git
+git clone ssh://git@localhost:2223/coleo/my-project.git
 ```
 
 ## Custom Docker Build
@@ -131,7 +131,7 @@ git clone ssh://git@localhost:2223/octopai/my-project.git
 ### Building the Image
 
 ```bash
-docker compose build octopai
+docker compose build coleo
 ```
 
 ### Dockerfile Customization
@@ -157,14 +157,14 @@ RUN apt-get update && apt-get install -y \
 
 1. **Change default password:**
 ```dockerfile
-RUN echo 'octopai:your-secure-password' | chpasswd
+RUN echo 'coleo:your-secure-password' | chpasswd
 ```
 
 2. **Use SSH keys instead of password:**
 ```dockerfile
-RUN mkdir -p /home/octopai/.ssh \
-    && echo "your-public-key" >> /home/octopai/.ssh/authorized_keys \
-    && chmod 600 /home/octopai/.ssh/authorized_keys \
+RUN mkdir -p /home/coleo/.ssh \
+    && echo "your-public-key" >> /home/coleo/.ssh/authorized_keys \
+    && chmod 600 /home/coleo/.ssh/authorized_keys \
     && sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config
 ```
 
@@ -178,7 +178,7 @@ openssl rand -base64 32
 ```yaml
 # docker-compose.yml
 services:
-  octopai:
+  coleo:
     deploy:
       resources:
         limits:
@@ -195,7 +195,7 @@ services:
 services:
   octopai:
     healthcheck:
-      test: ["CMD", "octopai", "status"]
+      test: ["CMD", "coleo", "status"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -207,7 +207,7 @@ services:
 
 ```bash
 # Check logs
-docker compose logs octopai
+docker compose logs coleo
 
 # Common issues:
 # - Port 2222 already in use
@@ -219,10 +219,10 @@ docker compose logs octopai
 
 ```bash
 # Check SSH is running
-docker exec octopai ps aux | grep sshd
+docker exec coleo ps aux | grep sshd
 
 # Check port mapping
-docker compose port octopai 22
+docker compose port coleo 22
 ```
 
 ### Gitea Not Healthy
@@ -239,10 +239,10 @@ docker compose logs gitea
 
 ```bash
 # Check if tmux is available
-docker exec octopai which tmux
+docker exec coleo which tmux
 
 # Try explicit headless mode
-docker exec -it octopai octopai arm spawn -n test --headless
+docker exec -it coleo coleo arm spawn -n test --headless
 ```
 
 ## Updating

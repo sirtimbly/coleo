@@ -22,15 +22,15 @@ import type { Task, Discovery, QueueMessage, Note } from "../../types";
 
 // Test environment setup
 const TEST_ARM_ID = "test-arm-001";
-const TEST_PROJECT_ROOT = "/tmp/octopai-test-project";
-const TEST_OCTOPAI_DIR = join(TEST_PROJECT_ROOT, ".octopai");
+const TEST_PROJECT_ROOT = "/tmp/coleo-test-project";
+const TEST_OCTOPAI_DIR = join(TEST_PROJECT_ROOT, ".coleo");
 
 // Setup test environment variables before any imports
-process.env.OCTOPAI_ARM_ID = TEST_ARM_ID;
-process.env.OCTOPAI_PROJECT_ROOT = TEST_PROJECT_ROOT;
-process.env.OCTOPAI_DIR = TEST_OCTOPAI_DIR;
-process.env.OCTOPAI_API_URL = "http://127.0.0.1:8080";
-process.env.OCTOPAI_API_KEY = "test-api-key";
+process.env.COLEO_ARM_ID = TEST_ARM_ID;
+process.env.COLEO_PROJECT_ROOT = TEST_PROJECT_ROOT;
+process.env.COLEO_DIR = TEST_OCTOPAI_DIR;
+process.env.COLEO_API_URL = "http://127.0.0.1:8080";
+process.env.COLEO_API_KEY = "test-api-key";
 
 // Mock NATS client
 class MockNatsClient {
@@ -68,7 +68,7 @@ class MockNatsClient {
   }
 
   async publishBrainMessage(message: unknown): Promise<void> {
-    await this.publish("octopai.brain.messages", message);
+    await this.publish("coleo.brain.messages", message);
   }
 
   getPublishedMessages(): Array<{ topic: string; data: unknown }> {
@@ -77,7 +77,7 @@ class MockNatsClient {
 
   getBrainMessages(): unknown[] {
     return this.messages
-      .filter(m => m.topic === "octopai.brain.messages")
+      .filter(m => m.topic === "coleo.brain.messages")
       .map(m => m.data);
   }
 

@@ -109,7 +109,7 @@ export class Maildir {
     lines.push(`To: ${message.to}`);
     lines.push(`Subject: ${message.subject}`);
     lines.push(`Date: ${message.date.toUTCString()}`);
-    lines.push(`Message-ID: <${this.generateFilename()}@octopai.local>`);
+    lines.push(`Message-ID: <${this.generateFilename()}@coleo.local>`);
     lines.push(`MIME-Version: 1.0`);
     lines.push(`Content-Type: text/plain; charset=utf-8`);
     

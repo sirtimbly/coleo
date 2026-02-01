@@ -20,10 +20,10 @@ openssl rand -base64 32
 **Storing the key:**
 ```bash
 # In .env file (never commit!)
-OCTOPAI_API_KEY=your-generated-key
+COLEO_API_KEY=your-generated-key
 
 # Or in config
-# ~/.octopai/config.toml
+# ~/.coleo/config.toml
 [observatory]
 api_key = "your-generated-key"
 ```
@@ -63,10 +63,10 @@ Arms should be restricted from:
 
 ```dockerfile
 # Arm container with restrictions
-FROM octopai-arm-base:latest
+FROM coleo-arm-base:latest
 
 # Non-root user
-USER octopai
+USER coleo
 
 # Read-only filesystem (except workspace)
 # Mounted at runtime with --read-only
@@ -427,18 +427,18 @@ const ALLOWED_DOMAINS = [
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: octopai-arm-policy
+  name: coleo-arm-policy
 spec:
   podSelector:
     matchLabels:
-      app: octopai-arm
+      app: coleo-arm
   policyTypes:
     - Egress
   egress:
     - to:
         - namespaceSelector:
             matchLabels:
-              name: octopai
+      name: coleo
       ports:
         - port: 8080  # Brain API
     - to:
@@ -487,27 +487,27 @@ version: "3.8"
 
 services:
   brain:
-    image: octopai/brain:latest
+    image: coleo/brain:latest
     deploy:
       replicas: 1
       placement:
         constraints:
           - node.role == manager
     networks:
-      - octopai-net
+      - coleo-net
 
   observatory:
-    image: octopai/observatory:latest
+    image: coleo/observatory:latest
     deploy:
       replicas: 2
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.observatory.rule=Host(`coleo.local`)"
     networks:
-      - octopai-net
+      - coleo-net
 
   arm-pool:
-    image: octopai/arm:latest
+    image: coleo/arm:latest
     deploy:
       replicas: 4
       resources:
@@ -515,10 +515,10 @@ services:
           cpus: '2'
           memory: 4G
     networks:
-      - octopai-net
+      - coleo-net
 
 networks:
-  octopai-net:
+  coleo-net:
     driver: overlay
 ```
 

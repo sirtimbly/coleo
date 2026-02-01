@@ -14,7 +14,7 @@ import { DiscoverySummarizer, formatDiscoverySummary, type DiscoverySummary } fr
 
 export interface PromptContext {
   projectRoot: string;
-  octopaiDir: string;
+  coleoDir: string;
   db: Database;
 }
 

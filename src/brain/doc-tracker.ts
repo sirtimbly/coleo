@@ -22,13 +22,13 @@ interface DocUpdateContext {
 
 export class DocUpdateTracker {
   private db: Database;
-  private octopaiDir: string;
+  private coleoDir: string;
   private projectRoot: string;
   private pollCount: number = 0;
 
-  constructor(db: Database, octopaiDir: string, projectRoot: string) {
+  constructor(db: Database, coleoDir: string, projectRoot: string) {
     this.db = db;
-    this.octopaiDir = octopaiDir;
+    this.coleoDir = coleoDir;
     this.projectRoot = projectRoot;
   }
 

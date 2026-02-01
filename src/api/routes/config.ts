@@ -2,8 +2,8 @@
  * Configuration API Routes
  * 
  * CRUD operations for system configuration.
- * Reads from and writes to ~/.octopai/config.toml
- * Also handles arm config files in ~/.octopai/arms/*.toml
+ * Reads from and writes to ~/.coleo/config.toml
+ * Also handles arm config files in ~/.coleo/arms/*.toml
  */
 
 import { Hono } from "hono";
@@ -15,9 +15,9 @@ import {
   readTomlConfig,
   writeTomlConfig,
   configToToml,
-  getOctopaiDir,
+  getColeoDir,
 } from "../../config";
-import type { OctopaiConfig, ArmConfig, ArmConfigSummary } from "../../types";
+import type { ColeoConfig, ArmConfig, ArmConfigSummary } from "../../types";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { readdir, readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
@@ -54,7 +54,7 @@ export function createConfigRoutes() {
    */
   app.patch("/", async (c) => {
     try {
-      const updates = await c.req.json<Partial<OctopaiConfig>>();
+      const updates = await c.req.json<Partial<ColeoConfig>>();
       const config = await updateConfig(updates);
       return c.json({ config });
     } catch (err) {
@@ -119,8 +119,8 @@ export function createConfigRoutes() {
    */
   app.patch("/defaults", async (c) => {
     try {
-      const updates = await c.req.json<Partial<OctopaiConfig["defaults"]>>();
-      const config = await updateConfig({ defaults: updates as OctopaiConfig["defaults"] });
+      const updates = await c.req.json<Partial<ColeoConfig["defaults"]>>();
+      const config = await updateConfig({ defaults: updates as ColeoConfig["defaults"] });
       return c.json({ defaults: config.defaults });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -148,8 +148,8 @@ export function createConfigRoutes() {
    */
   app.patch("/brain", async (c) => {
     try {
-      const updates = await c.req.json<Partial<OctopaiConfig["brain"]>>();
-      const config = await updateConfig({ brain: updates as OctopaiConfig["brain"] });
+      const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
+      const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
       return c.json({ brain: config.brain });
     } catch (err) {
       if (err instanceof HttpError) throw err;
@@ -166,8 +166,8 @@ export function createConfigRoutes() {
    * Get arms config directory path
    */
   const getArmsConfigDir = async (): Promise<string> => {
-    const octopaiDir = await getOctopaiDir();
-    return join(octopaiDir, "arms");
+    const coleoDir = await getColeoDir();
+    return join(coleoDir, "arms");
   };
 
   /**
