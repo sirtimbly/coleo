@@ -1,6 +1,6 @@
 # Docker Setup
 
-Run Octopai in containers for isolation and reproducibility.
+Run Coleo in containers for isolation and reproducibility.
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ The Docker Compose stack includes:
 
 | Service | Port | Description |
 |---------|------|-------------|
-| `octopai` | 2222 (SSH) | Main Octopai container |
+| `octopai` | 2222 (SSH) | Main Coleo container |
 | `gitea` | 3000 (HTTP), 2223 (SSH) | Git forge for collaboration |
 
 ## Connecting
@@ -109,7 +109,7 @@ Gitea provides a local Git forge for arm collaboration.
 3. Create an admin account
 4. Create a repository for your project
 
-### Configure Octopai
+### Configure Coleo
 
 ```toml
 # ~/.octopai/config.toml

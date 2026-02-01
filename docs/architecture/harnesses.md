@@ -1,6 +1,6 @@
 # Agent Harnesses
 
-Octopai supports multiple harness types for different use cases:
+Coleo supports multiple harness types for different use cases:
 
 1. **`opencode-api`** - Headless HTTP-based harness (default for API usage)
 2. **`opencode-tui`** - Terminal UI harness with visual debugging (default when terminal specified)  
@@ -119,7 +119,7 @@ When falling back to "cheapest model from same provider", the resolver uses know
 
 ### API Endpoint
 
-The resolver fetches available models from the Octopai API:
+The resolver fetches available models from the Coleo API:
 
 ```
 GET /api/opencode/providers
@@ -163,7 +163,7 @@ getAvailableModelsByCost(apiUrl?: string): Promise<Array<{providerId, modelId, c
 
 The rest of this document describes a **future harness architecture** that may be implemented later if PTY and GUI automation concerns are resolved.
 
-Octopai needs to interface with various AI coding agents, each with their own proprietary CLI/TUI. Rather than depending on specific proprietary APIs, we can treat these tools as **interactive terminal applications** and communicate via keystrokes and text parsing.
+Coleo needs to interface with various AI coding agents, each with their own proprietary CLI/TUI. Rather than depending on specific proprietary APIs, we can treat these tools as **interactive terminal applications** and communicate via keystrokes and text parsing.
 
 
 ## The Problem
@@ -185,14 +185,14 @@ Most AI coding agents are distributed as proprietary client applications:
 
 ## Harness Architecture
 
-A harness is an adapter that translates Octopai's commands into agent-specific interactions.
+A harness is an adapter that translates Coleo's commands into agent-specific interactions.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    HARNESS ARCHITECTURE                      │
 ├─────────────────────────────────────────────────────────────┤
 │                                                              │
-│  Octopai Brain                                               │
+│  Coleo Brain                                                 │
 │       │                                                      │
 │       │ Unified Interface                                    │
 │       ▼                                                      │

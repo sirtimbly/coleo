@@ -1,6 +1,6 @@
 # File Structure
 
-This document describes the proposed file structure for the complete Octopai implementation.
+This document describes the proposed file structure for the complete Coleo implementation.
 
 ## Current Structure
 
@@ -205,7 +205,7 @@ octopai/
 │   └── package.json
 │
 ├── docker/                      # Docker configurations
-│   ├── Dockerfile              # Main Octopai image
+│   ├── Dockerfile              # Main Coleo image
 │   ├── Dockerfile.arm          # Arm container image
 │   └── docker-compose.dev.yml  # Development stack
 │

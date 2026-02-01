@@ -1,6 +1,6 @@
 # Project Management
 
-Octopai manages the software project itself through **architect-classified tasks** that coordinate work, update documentation, track progress, and ensure human feedback is properly incorporated.
+Coleo manages the software project itself through **architect-classified tasks** that coordinate work, update documentation, track progress, and ensure human feedback is properly incorporated.
 
 Instead of a permanently specialized "PM arm", **any general-purpose arm** can temporarily execute **project management tasks** when the brain assigns it an `architect` (project-management) classification with the right context and **task configuration template**.
 
@@ -71,7 +71,7 @@ The brain decides which classification to assign based on current needs, and the
 
 ## Task Configuration Templates
 
-Octopai replaces MR-specific templates with **task configuration templates** that are keyed by task classification (and optional subtype). These templates live in code (see `src/types/index.ts`) and describe how different kinds of tasks should behave.
+Coleo replaces MR-specific templates with **task configuration templates** that are keyed by task classification (and optional subtype). These templates live in code (see `src/types/index.ts`) and describe how different kinds of tasks should behave.
 
 ### Template Fields
 
@@ -153,7 +153,7 @@ Quick task input that the brain processes every poll cycle. Items are parsed, de
 # Inbox
 
 ## Add favicon to web app
-Need Octopai branding - octopus icon for the browser tab.
+Need Coleo branding - octopus icon for the browser tab.
 
 - [ ] Update API documentation for new endpoints
 - [ ] Review error handling in arm spawner
@@ -285,7 +285,7 @@ async function draftDailySummary(): Promise<CommunicationDraft> {
   return {
     type: "daily_summary",
     recipient: "human",
-    subject: `Octopai Daily: ${completedCount} done, ${inProgressCount} active`,
+    subject: `Coleo Daily: ${completedCount} done, ${inProgressCount} active`,
     body: formatDailySummary(activity, blockers, decisions),
     urgency: blockers.length > 0 ? "immediate" : "normal",
   };

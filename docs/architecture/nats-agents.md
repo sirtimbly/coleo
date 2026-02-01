@@ -1,6 +1,6 @@
 # NATS-Based Arm Agent System
 
-This document describes the NATS messaging system used for distributed arm management in Octopai. This allows arms to run on multiple hosts while being coordinated by a central API server.
+This document describes the NATS messaging system used for distributed arm management in Coleo. This allows arms to run on multiple hosts while being coordinated by a central API server.
 
 ## Overview
 

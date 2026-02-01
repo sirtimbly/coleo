@@ -477,7 +477,7 @@ interface SecurityIncident {
 
 ## Container Orchestration (Homelab)
 
-For running Octopai on a homelab cluster, Docker Swarm provides a simpler alternative to Kubernetes.
+For running Coleo on a homelab cluster, Docker Swarm provides a simpler alternative to Kubernetes.
 
 ### Docker Swarm Setup
 
@@ -502,7 +502,7 @@ services:
       replicas: 2
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.observatory.rule=Host(`octopai.local`)"
+        - "traefik.http.routers.observatory.rule=Host(`coleo.local`)"
     networks:
       - octopai-net
 
@@ -573,7 +573,7 @@ interface SwarmMCP {
 
 ## Security Checklist
 
-Before deploying Octopai:
+Before deploying Coleo:
 
 - [ ] Generated strong API key
 - [ ] API key stored securely (not in git)

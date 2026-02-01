@@ -16,7 +16,7 @@ Options:
 
 ### init
 
-Initialize Octopai in your home directory.
+Initialize Coleo in your home directory.
 
 ```bash
 octopai init [options]
@@ -60,7 +60,7 @@ vim ~/.octopai/arms/my-arm.toml
 
 ### brain
 
-Manage the Octopai brain.
+Manage the Coleo brain.
 
 #### brain run
 
@@ -295,7 +295,7 @@ octopai mail read abc123
 
 **Output:**
 ```text
-From: explorer@octopai.local
+From: explorer@coleo.local
 To: human@local
 Subject: Task completed: Add dark mode toggle
 Date: 2024-01-15 10:30:00
@@ -318,7 +318,7 @@ Files modified:
 ### imap
 
 
-IMAP server commands for accessing Octopai mail with any email client.
+IMAP server commands for accessing Coleo mail with any email client.
 
 #### imap serve
 
@@ -423,7 +423,7 @@ This command is typically not run directly - it's invoked by arms when they conn
 
 ### status
 
-Show overall Octopai status.
+Show overall Coleo status.
 
 ```bash
 octopai status
@@ -431,7 +431,7 @@ octopai status
 
 **Output:**
 ```
-Octopai Status
+Coleo Status
 Directory: ~/.octopai
 
 Brain: running (last poll: 10:30:00)
@@ -447,7 +447,7 @@ Tasks: 3 pending, 1 in progress
 
 ## config
 
-Manage Octopai configuration, including arm templates and presets.
+Manage Coleo configuration, including arm templates and presets.
 
 #### config presets
 
@@ -515,7 +515,7 @@ Arm Configurations:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OCTOPAI_DIR` | Octopai data directory | `~/.octopai` |
+| `OCTOPAI_DIR` | Coleo data directory | `~/.octopai` |
 | `OCTOPAI_API_KEY` | API key for Observatory | (none) |
 | `ANTHROPIC_API_KEY` | For Claude-based agents | (none) |
 | `OPENAI_API_KEY` | For GPT-based agents | (none) |
@@ -532,7 +532,7 @@ poll_interval_ms = 30000
 max_arms = 10
 
 [mail]
-from_address = "brain@octopai.local"
+from_address = "brain@coleo.local"
 digest_schedule = "daily"
 
 [terminal]

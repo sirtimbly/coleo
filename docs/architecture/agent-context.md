@@ -1,6 +1,6 @@
 # Architectural Context for Arms
 
-This document describes how Octopai provides architectural context and constraints to AI agents (arms) to ensure they follow project conventions and make consistent decisions.
+This document describes how Coleo provides architectural context and constraints to AI agents (arms) to ensure they follow project conventions and make consistent decisions.
 
 ## The Problem
 
@@ -18,7 +18,7 @@ Without this context, agents may:
 
 ## Solution: Three-Layer Context System
 
-Octopai uses three complementary approaches:
+Coleo uses three complementary approaches:
 
 ### 1. Static Context: AGENTS.md
 
@@ -88,7 +88,7 @@ check_architectural_alignment(change: string) → {
 
 ### 3. Review via Architect-Classified Tasks
 
-Instead of a dedicated, permanently specialized "architect arm", Octopai uses **architect-classified tasks**, often guided by the `architect:project-management` task configuration template, to review other work for architectural compliance.
+Instead of a dedicated, permanently specialized "architect arm", Coleo uses **architect-classified tasks**, often guided by the `architect:project-management` task configuration template, to review other work for architectural compliance.
 
 **Classification:** `architect` (with subtype `project-management` when in a PM/review role)
 
@@ -188,5 +188,5 @@ This template defines:
 
 - **Architectural fitness functions** – Automated tests for architectural compliance
 - **Decision history** – Track how architecture evolved over time
-- **Cross-project patterns** – Share architectural patterns across Octopai instances
+- **Cross-project patterns** – Share architectural patterns across Coleo instances
 - **Visualization** – Show architectural boundaries in the Garden view

@@ -1,6 +1,6 @@
 # Deployment Flow
 
-Octopai supports automated deployments with arm consensus and optional human approval.
+Coleo supports automated deployments with arm consensus and optional human approval.
 
 ## Environment Tiers
 

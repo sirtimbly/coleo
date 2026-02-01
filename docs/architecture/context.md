@@ -8,7 +8,7 @@ Every arm operates within a context budget that limits how much information they
 
 ### Budget Configuration (Conceptual)
 
-The exact mechanics of context budgeting and pruning are handled by the harness (`opencode-api`) and the underlying model. Octopai treats these as **conceptual constraints** rather than implementing its own token-level pruning logic.
+The exact mechanics of context budgeting and pruning are handled by the harness (`opencode-api`) and the underlying model. Coleo treats these as **conceptual constraints** rather than implementing its own token-level pruning logic.
 
 We think about budgets in terms of:
 
@@ -36,7 +36,7 @@ interface ContextBudget {
 | **Auto** | Harness/model manage context pruning internally | Default, hands-off |
 | **Manual** | Humans give high-level hints (e.g., "focus only on these dirs") | Advanced, debugging or constrained work |
 
-In practice, **auto** is the default: we trust `opencode-api` and the model to manage token budgets. Octopai focuses on passing **good, focused context** (relevant files, plan excerpts, decisions) rather than micromanaging token counts.
+In practice, **auto** is the default: we trust `opencode-api` and the model to manage token budgets. Coleo focuses on passing **good, focused context** (relevant files, plan excerpts, decisions) rather than micromanaging token counts.
 
 ### Context Snapshot (Conceptual)
 
@@ -171,9 +171,9 @@ When two arms want the same file, the Brain should consider:
 
 ## Context Pruning
 
-Octopai does **not** implement its own token-level pruning algorithm. Instead, it relies on the harness (`opencode-api`) and the underlying model to manage context windows safely.
+Coleo does **not** implement its own token-level pruning algorithm. Instead, it relies on the harness (`opencode-api`) and the underlying model to manage context windows safely.
 
-Octopai's responsibility is to:
+Coleo's responsibility is to:
 
 - Select and pass **relevant** files, plan excerpts, decisions, and status information
 - Avoid flooding arms with unnecessary or low-signal context

@@ -1,5 +1,5 @@
 ---
-title: Octopai Brain Logic - Idle Detection & Arm State Management
+title: Coleo Brain Logic - Idle Detection & Arm State Management
 ---
 
 ## Overview

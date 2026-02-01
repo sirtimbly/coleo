@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Octopai is an AI agent orchestrator that enables multiple general-purpose AI agents ("arms") to collaborate on software projects while a human maintains oversight and control.
+Coleo is an AI agent orchestrator that enables multiple general-purpose AI agents ("arms") to collaborate on software projects while a human maintains oversight and control.
 
 ## System Goals
 
@@ -39,7 +39,7 @@ CLI, Web, and Email clients all interact with the same core API and Maildir stat
 
 ### 6. Linear, Shared Git Workflow
 
-Multiple arms often work in the same codebase at once. Rather than giving each arm its own worktree or long-lived feature branch, Octopai assumes:
+Multiple arms often work in the same codebase at once. Rather than giving each arm its own worktree or long-lived feature branch, Coleo assumes:
 
 - A **single clone** of the project.
 - A shared integration branch (typically named `octopai`) where arms make changes.
@@ -64,7 +64,7 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 │            └───────────────┬─────────┴───────────────┬──────────────┘              │
 │                            ▼                         ▼                             │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
-│                               OCTOPAI SERVER & IMAP GATEWAY                        │
+│                               COLEO SERVER & IMAP GATEWAY                          │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐  │
 │  │  Hono API (REST + WebSocket)                                                │  │
 │  │  - /api/brain/*     - Brain state, control                                 │  │

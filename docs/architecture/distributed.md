@@ -1,6 +1,6 @@
 # Distributed Architecture
 
-Octopai supports distributed deployment where the Brain, API server, and Gardens can run on separate machines. This enables working on the same project from multiple locations (laptop, desktop, cloud server) while maintaining a single coordinated system.
+Coleo supports distributed deployment where the Brain, API server, and Gardens can run on separate machines. This enables working on the same project from multiple locations (laptop, desktop, cloud server) while maintaining a single coordinated system.
 
 ## Architecture Overview
 

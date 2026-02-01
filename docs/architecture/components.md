@@ -1,10 +1,10 @@
 # Components
 
-The Octopai system consists of five major components that work together.
+The Coleo system consists of five major components that work together.
 
 ## Brain (Coordinator)
 
-The Brain is the central nervous system of Octopai.
+The Brain is the central nervous system of Coleo.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
