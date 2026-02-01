@@ -7,14 +7,26 @@ export default {
   Layout,
   enhanceApp({ app, router }) {
     if (typeof window !== 'undefined') {
+      const isHomePath = () => {
+        const p = location.pathname || '/'
+        return p === '/' || p.endsWith('/index.html')
+      }
       const boot = () => {
         setTimeout(async () => {
-          console.log('[theme] boot start', { path: location.pathname, ts: Date.now() })
-          try { await import('./anim.js') } catch (_) {}
-          // Ensure previous loop/listeners are cleared, then attempt init after content renders.
-          (window as any).__homeAnim?.stopHomeAnimation?.()
-          ;(window as any).__homeAnim?.initHomeAnimation?.()
-          console.log('[theme] boot end', { hasAnim: !!(window as any).__homeAnim })
+          const home = isHomePath()
+          console.log('[theme] boot start', { path: location.pathname, home, ts: Date.now() })
+          // Stop both animators before starting the appropriate one
+          ;(window as any).__homeAnim?.stopHomeAnimation?.()
+          ;(window as any).__innerAnim?.stopInnerAnimation?.()
+          if (home) {
+            try { await import('./anim.js') } catch (_) {}
+            ;(window as any).__homeAnim?.initHomeAnimation?.()
+            console.log('[theme] boot end (home)', { hasAnim: !!(window as any).__homeAnim })
+          } else {
+            try { await import('./anim-lite.js') } catch (_) {}
+            ;(window as any).__innerAnim?.initInnerAnimation?.()
+            console.log('[theme] boot end (inner)', { hasAnim: !!(window as any).__innerAnim })
+          }
         }, 0)
       }
       boot()
