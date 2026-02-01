@@ -27,13 +27,23 @@ let animationId = null
 const mouse = ref({ x: 0, y: 0, active: false })
 let nextCursorSparkleAt = 0
 let swirls = []
+let streaks = []
+const ENABLE_BURST = true // toggle big burst on direction change while refining
+const MAX_STREAK_SPEED = 300 // px/s clamp for streak motion
+const STREAK_DRAG_COEFF = 0.02 // quadratic drag dv/dt = -k v^2 (px units)
+const STREAK_FREQ_MIN = 12  // Hz at threshold speed
+const STREAK_FREQ_MAX = 40 // Hz at 500 px/s
 let mouseHistory = [] // { x, y, t }
 let lastDirAngle = 0
 let eddy = null // { cx, cy, vx, vy, created, prevTime, side }
 let eddySide = 1
 let lastEddySpawnAt = 0
 let lastContinuousSpawnAt = 0
+let nextContinuousSpawnAt = 0
 let newDirectionCooldownUntil = 0
+let mass = { x: 0, y: 0, vx: 0, vy: 0 }
+let prevFrameNow = 0
+let lastMoving = null // snapshot of last reliable motion (x,y,angle,speed,t)
 
 function randomCursorSpawnInterval() {
   // ~3–9 per second → 100–333ms
@@ -91,35 +101,39 @@ function angleDiff(a, b) {
 }
 
 function maybeSpawnEddyOnTurn(nowTs = performance.now()) {
-  // Trigger when direction change over last 300ms exceeds ~75 degrees
-  const newAngle = getMouseAngleOver(200, nowTs)
+  // Trigger when direction change over last 200ms exceeds ~50 degrees
+  const newAngle = getMouseAngleOver(300, nowTs)
   if (newAngle == null) return
-  if (!maybeSpawnEddyOnTurn.prevAngle) {
+  const prevAngle = maybeSpawnEddyOnTurn.prevAngle
+  if (!prevAngle) {
     maybeSpawnEddyOnTurn.prevAngle = newAngle
+    maybeSpawnEddyOnTurn.prevSpeed = getMouseSpeedOver(200, nowTs)
     return
   }
-  const delta = ((newAngle - maybeSpawnEddyOnTurn.prevAngle + Math.PI) % (2 * Math.PI)) - Math.PI
+  const delta = ((newAngle - prevAngle + Math.PI) % (2 * Math.PI)) - Math.PI
   maybeSpawnEddyOnTurn.prevAngle = newAngle
-  const threshold = (50 * Math.PI) / 180
-  if (Math.abs(delta) < threshold) return
+  const threshold = (40 * Math.PI) / 180
+  const speedNow = getMouseSpeedOver(64, nowTs)
+  const speedPrev = maybeSpawnEddyOnTurn.prevSpeed ?? speedNow
+  maybeSpawnEddyOnTurn.prevSpeed = speedNow
+  const bigTurn = Math.abs(delta) >= threshold && speedPrev > 120
+  const bigSlowdown = speedPrev > 120 && speedNow < 40
+  if (!bigTurn && !bigSlowdown) return
   // Cooldown to avoid spamming
   if (nowTs - lastEddySpawnAt < 250) return
   lastEddySpawnAt = nowTs
   // Determine side from sign of turn (CCW positive => left)
   eddySide = delta > 0 ? 1 : -1
-  // Initial speed from last 500ms
-  let speed = getMouseSpeedOver(500, nowTs)
-  speed = Math.max(80, Math.min(speed, 600))
-  const cx = mouse.value.x
-  const cy = scrollY.value + mouse.value.y
-  // Initialize eddy at a perpendicular offset so trails don't cross path
-  const perp = newAngle + eddySide * (Math.PI / 2)
-  const offset = 22
-  const eddyCx = cx + Math.cos(perp) * offset
-  const eddyCy = cy + Math.sin(perp) * offset
-  // Also set global eddy for reference visualization (optional) but lines track their own center
-  eddy = { cx: eddyCx, cy: eddyCy, vx: Math.cos(newAngle) * speed, vy: Math.sin(newAngle) * speed, created: nowTs, prevTime: nowTs, side: eddySide }
-  spawnSwirlsAt(eddyCx, eddyCy, newAngle, speed, eddySide)
+  // Use last moving snapshot as eddy center and previous direction
+  const sample = lastMoving
+  if (!sample) return
+  let speed = Math.max(80, Math.min(sample.speed, 600))
+  if (ENABLE_BURST) {
+    const vmag = speed
+    const straightDist = 60 + Math.random() * 40
+    spawnSwirlsAt(sample.x, sample.y, sample.angle, vmag, eddySide, 12, { straightDist })
+  }
+  newDirectionCooldownUntil = nowTs + 500
 }
 
 function spawnSparkleAt(sx, sy, opts = {}) {
@@ -146,11 +160,11 @@ function spawnCursorSparkle() {
   spawnSparkleAt(sx, sy, { fromCursor: true })
 }
 
-function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side) {
+function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side, countOverride, opts = {}) {
   const created = performance.now()
-  const lifetime = 2400 + Math.random() * 900
-  const count = 6
-  const baseAngle = dirAngle ?? getMouseDirectionAngle(created)
+  const lifetime = 1400 + Math.random() * 1200
+  const count = countOverride ?? 3
+  const baseAngle = dirAngle  ?? getMouseDirectionAngle(created)
   const cone = 0.35
   for (let i = 0; i < count; i++) {
     const curlSide = side ?? eddySide
@@ -177,6 +191,7 @@ function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side) {
       cy: centerY,
       cVx: Math.cos(baseAngle) * (initSpeed ?? 200),
       cVy: Math.sin(baseAngle) * (initSpeed ?? 200),
+      baseAngle,
       angle,
       angVel,
       rad: targetRad,
@@ -188,6 +203,12 @@ function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side) {
       oscPhase: Math.random() * Math.PI * 2,
       maxRad: targetRad + 6,
       targetRad,
+      // straight phase before curl (distance-based, used for burst)
+      forwardTarget: opts.straightDist ?? 0,
+      forwardSpeed: initSpeed ?? 200,
+      forwardDist: 0,
+      straightX: centerX,
+      straightY: centerY,
       turned: false,
       turnedAt: 0,
       baseOmega: 0,
@@ -197,6 +218,16 @@ function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side) {
       prevTime: created
     })
   }
+}
+
+function spawnStreak(x, y, angle, speed) {
+  const now = performance.now()
+  // Lifetime directly correlated to speed: 250ms @120 px/s → 900ms @500 px/s (clamped)
+  const minV = 120, maxV = 500
+  const v = Math.min(maxV, Math.max(minV, speed))
+  const t = (v - minV) / (maxV - minV)
+  const lifetime = 250 + t * (900 - 250)
+  streaks.push({ x, y, px: x, py: y, angle, speed, created: now, lifetime })
 }
 
 function spawnBurstAt(cx, cy) {
@@ -322,7 +353,10 @@ function initAnimation() {
 }
 
 function animate() {
-  time.value += 0.016
+  const nowTs = performance.now()
+  const dt = prevFrameNow ? Math.max(0.001, (nowTs - prevFrameNow) / 1000) : 0.016
+  prevFrameNow = nowTs
+  time.value += dt
 
   if (raysCanvas && raysCanvas.getContext) {
     const ctx = raysCanvas.getContext('2d')
@@ -367,23 +401,47 @@ function animate() {
     ctx.globalCompositeOperation = 'source-over'
 
     // Cursor-follow sparkles: spawn at randomized intervals near pointer
-    const now = performance.now()
+    const now = nowTs
 
-    // Detect sudden direction change and spawn eddies if needed
-    maybeSpawnEddyOnTurn(now)
-    // Continuous spawn when moving fast, every 50ms, unless in direction-change cooldown
-    const SPEED_THRESHOLD = 240 // px/s
+    // Update gravitational mass to follow the mouse (spring + damping)
+    if (mouse.value.active) {
+      const k = 8 // spring strength
+      const damp = Math.max(0, 1 - 4 * dt)
+      const mx = mouse.value.x
+      const my = scrollY.value + mouse.value.y
+      const ax = (mx - mass.x) * k
+      const ay = (my - mass.y) * k
+      mass.vx = (mass.vx + ax * dt) * damp
+      mass.vy = (mass.vy + ay * dt) * damp
+      mass.x += mass.vx * dt
+      mass.y += mass.vy * dt
+    }
+
+    // Update last moving snapshot for reliable burst direction
     const speedNow = getMouseSpeedOver(200, now)
-    if (speedNow > SPEED_THRESHOLD && now >= (lastContinuousSpawnAt + 50) && now >= newDirectionCooldownUntil) {
+    const angNow = getMouseAngleOver(200, now) ?? lastDirAngle
+    if (speedNow > 120) {
+      const mx = mouse.value.x
+      const my = scrollY.value + mouse.value.y
+      lastMoving = { x: mx, y: my, angle: angNow, speed: speedNow, t: now }
+    }
+    // Detect sudden direction change and spawn eddies if enabled
+    maybeSpawnEddyOnTurn(now)
+    // Continuous spawn when moving fast: 1 line at 3–6 Hz (>120 px/s), unless cooling down after a turn
+    const SPEED_THRESHOLD = 90 // px/s
+    if (speedNow > SPEED_THRESHOLD && now >= nextContinuousSpawnAt && now >= newDirectionCooldownUntil) {
       const angNow = getMouseAngleOver(200, now) ?? lastDirAngle
       const mx = mouse.value.x
       const my = scrollY.value + mouse.value.y
-      const side = eddySide
-      const perp = angNow + side * (Math.PI / 2)
-      const offset = 22
-      const cX = mx + Math.cos(perp) * offset
-      const cY = my + Math.sin(perp) * offset
-      spawnSwirlsAt(cX, cY, angNow, speedNow, side, 2)
+      // Spawn 1 (occasionally 2) short streaks at the cursor, no curl, fade quickly
+      const streakCount = Math.random() < 0.3 ? 2 : 1
+      for (let i = 0; i < streakCount; i++) spawnStreak(mx, my, angNow, speedNow)
+      // schedule next spawn: frequency scales 6 Hz @120 px/s up to 40 Hz @500 px/s
+      const v = Math.min(500, Math.max(SPEED_THRESHOLD, speedNow))
+      const t = (v - SPEED_THRESHOLD) / (500 - SPEED_THRESHOLD)
+      const freq = STREAK_FREQ_MIN + t * (STREAK_FREQ_MAX - STREAK_FREQ_MIN)
+      const intervalMs = 1000 / freq
+      nextContinuousSpawnAt = now + intervalMs
       lastContinuousSpawnAt = now
     }
     if (mouse.value.active && now >= nextCursorSparkleAt) {
@@ -395,6 +453,35 @@ function animate() {
     }
 
     // Per-swirl center update handled below; global eddy kept for reference only
+
+    // Draw straight streaks (follow mouse while moving fast)
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    const streakAlphaBase = 0.40
+    const streakWidth = 2.25
+    streaks = streaks.filter((s) => {
+      const life = now - s.created
+      const t = life / s.lifetime
+      if (t >= 1) return false
+      s.px = s.x
+      s.py = s.y
+      // Strong quadratic drag so streaks trail and don't overshoot
+      s.speed = Math.max(0, s.speed - STREAK_DRAG_COEFF * s.speed * s.speed * dt)
+      const step = s.speed * dt
+      s.x += Math.cos(s.angle) * step
+      s.y += Math.sin(s.angle) * step
+      const dy1 = s.py - scrollY.value
+      const dy2 = s.y - scrollY.value
+      ctx.beginPath()
+      ctx.moveTo(s.px, dy1)
+      ctx.lineTo(s.x, dy2)
+      ctx.strokeStyle = `rgba(100,255,255,${streakAlphaBase * (0.8 - t * s.speed * dt)})`
+      ctx.lineWidth = streakWidth
+      ctx.lineCap = 'round'
+      ctx.stroke()
+      return true
+    })
+    ctx.restore()
 
     // Draw swirl trails (water current lines)
     ctx.save()
@@ -415,8 +502,8 @@ function animate() {
       s.prevTime = now
       const ramp = Math.min(1, elapsed / 300) // start slower (viscosity)
 
-      // Orbit single eddy center; no straight phase
-      const inStraight = false
+      // For burst lines: straight phase distance before curl
+      const inStraight = !s.turned && (s.forwardTarget || 0) > 0 && (s.forwardDist || 0) < (s.forwardTarget || 0)
       let angFriction = inStraight ? 2.0 : 1.3
       let radFriction = inStraight ? 0.6 : 2.2 // stronger radial damping after turn
 
@@ -432,8 +519,8 @@ function animate() {
         s.turnedAt = now
         s.baseOmega = (3.0 + Math.random() * 2.0) * curlSign // slower multi-orbit
         // Snap center and radius to eddy center and target radius
-        s.cx = (eddy && eddy.cx) ? eddy.cx : (s.eddyCx || s.cx)
-        s.cy = (eddy && eddy.cy) ? eddy.cy : (s.eddyCy || s.cy)
+        s.cx = s.straightX
+        s.cy = s.straightY
         s.rad = s.targetRad || s.rad
         s.turned = true
       }
@@ -467,31 +554,55 @@ function animate() {
       const cf = 2.8
       s.cVx = (s.cVx ?? 0) * Math.max(0, 1 - cf * dt)
       s.cVy = (s.cVy ?? 0) * Math.max(0, 1 - cf * dt)
-      s.cx += (s.cVx ?? 0) * dt
-      s.cy += (s.cVy ?? 0) * dt
+      // During straight phase, advance along base movement; after, center drifts by damped velocity
+      if (inStraight) {
+        const step = (s.forwardSpeed || 200) * dt
+        s.forwardDist = (s.forwardDist || 0) + step
+        s.straightX += Math.cos(s.baseAngle || 0) * step
+        s.straightY += Math.sin(s.baseAngle || 0) * step
+      } else {
+        s.cx += (s.cVx ?? 0) * dt
+        s.cy += (s.cVy ?? 0) * dt
+      }
       s.rad += s.radVel * dt * ramp * radialFactor
       if (s.rad > cap) s.rad = cap
       s.angle += effAng * dt * ramp
-      const px = (s.cx || 0) + Math.cos(s.angle) * s.rad
-      const py = (s.cy || 0) + Math.sin(s.angle) * s.rad
+      const px = inStraight ? s.straightX : (s.cx || 0) + Math.cos(s.angle) * s.rad
+      const py = inStraight ? s.straightY : (s.cy || 0) + Math.sin(s.angle) * s.rad
       s.trail.push({ x: px, y: py, t: lifeT })
       if (s.trail.length > 50) s.trail.shift()
 
-      // Shimmer gradient stroke along the trail
+      // Compute path length and hide the first 20% of the path
+      let totalLen = 0
+      for (let i = 1; i < s.trail.length; i++) {
+        const a = s.trail[i - 1], b = s.trail[i]
+        totalLen += Math.hypot(b.x - a.x, b.y - a.y)
+      }
+      let startIdx = 0, acc = 0
+      const hideFrac = 0.2
+      const hideLen = totalLen * hideFrac
+      for (let i = 1; i < s.trail.length; i++) {
+        const a = s.trail[i - 1], b = s.trail[i]
+        const seg = Math.hypot(b.x - a.x, b.y - a.y)
+        if (acc + seg >= hideLen) { startIdx = i; break }
+        acc += seg
+      }
+      // Draw from startIdx to end only (no harsh start at mouse)
       ctx.beginPath()
-      for (let i = 0; i < s.trail.length; i++) {
+      for (let i = startIdx; i < s.trail.length; i++) {
         const p = s.trail[i]
         const dy = p.y - scrollY.value
-        if (i === 0) ctx.moveTo(p.x, dy)
+        if (i === startIdx) ctx.moveTo(p.x, dy)
         else ctx.lineTo(p.x, dy)
       }
       const head = s.trail[s.trail.length - 1] || { x: px, y: py }
-      const tail = s.trail[0] || { x: px, y: py }
-      const g = ctx.createLinearGradient(tail.x, tail.y - scrollY.value, head.x, head.y - scrollY.value)
-      const baseAlpha = Math.max(0, (0.7 - lifeT) / 0.7) * 0.5 // lower opacity overall
-      g.addColorStop(0, `rgba(255,255,255,${baseAlpha * 0.25})`)
-      g.addColorStop(0.5, `rgba(${reefRGB}, ${baseAlpha})`)
-      g.addColorStop(1, `rgba(255,255,255,${baseAlpha * 0.2})`)
+      const tailStart = s.trail[startIdx] || { x: px, y: py }
+      const g = ctx.createLinearGradient(tailStart.x, tailStart.y - scrollY.value, head.x, head.y - scrollY.value)
+      // Along-path opacity: invisible at start (0%), peak at mid (0.75), fade to 0 at end
+      const peakAlpha = 0.75
+      g.addColorStop(0.0, `rgba(255,255,255,0)`)
+      g.addColorStop(0.5, `rgba(${reefRGB}, ${peakAlpha})`)
+      g.addColorStop(1.0, `rgba(255,255,255,0)`)
       ctx.strokeStyle = g
       ctx.lineWidth = s.width * (1 - lifeT) + 0.5
       ctx.lineCap = 'round'
