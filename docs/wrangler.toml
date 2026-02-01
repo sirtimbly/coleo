@@ -8,5 +8,5 @@ assets = { directory = ".vitepress/dist" }
 # Optional: map a custom domain/route if your zone is on Cloudflare
 # Uncomment and adjust these once your zone is configured:
 # routes = [
-#   { pattern = "docs.example.com/*", zone_name = "example.com" }
+#   { pattern = "coleo.dev/*", zone_name = "coleo.dev" }
 # ]

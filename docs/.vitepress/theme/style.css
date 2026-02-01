@@ -86,12 +86,27 @@ body:has(.marketing-root) .VPFooter {
   position: sticky;
   top: 0;
   z-index: 20;
-  padding: 1rem 1.25rem;
+  /* define and use a consistent navbar height so logo can size to 85% */
+  --nav-height: 64px;
+  min-height: var(--nav-height);
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: center;
   background:
     linear-gradient(180deg, rgba(var(--reef-rgb), 0.12), rgba(0, 0, 0, 0.06)),
     linear-gradient(180deg, rgba(0, 0, 0, 0.06), transparent);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   backdrop-filter: blur(16px) saturate(140%);
+}
+
+/* Brand logo sizing: occupy full navbar height */
+.navbar-custom .brand-logo {
+  height: var(--nav-height);
+  width: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 /* Navbar link and brand coloring with mode flip */
@@ -110,6 +125,12 @@ body:has(.marketing-root) .VPFooter {
 .marketing-root.light-mode .navbar-custom .brand-title { color: #0a1b2b; }
 
 .font-display { font-family: var(--font-display); }
+
+/* VitePress default navbar logo: use full nav height */
+.VPNavBar .logo {
+  height: calc(var(--vp-nav-height, 56px) * 1.0) !important;
+  width: auto !important;
+}
 
 /* Sections */
 .hero-section {

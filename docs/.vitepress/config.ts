@@ -3,6 +3,10 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   ignoreDeadLinks: true,
+  themeConfig: {
+    // Shown in the default VitePress navbar on documentation pages
+    logo: '/octopai-logo.png'
+  },
   head: [
     // Fonts to match marketing2.html
     [

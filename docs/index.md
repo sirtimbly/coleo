@@ -23,13 +23,9 @@ title: Coleo — Multi-Agent Development Coordination
 
 <div class="home-content">
   <nav class="navbar-custom">
-    <div class="max-w-7xl mx-auto flex justify-between items-center">
+    <div class="container flex justify-between items-center">
       <div class="flex items-center gap-2 group">
-        <div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm border border-white/30">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M8 8a4 4 0 118 0 4 4 0 01-8 0z"></path>
-          </svg>
-        </div>
+        <img src="/octopai-logo.png" alt="Coleo Logo" class="brand-logo block" />
         <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
       </div>
       <div class="hidden md:flex items-center space-x-8">
