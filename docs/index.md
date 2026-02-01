@@ -1,3 +1,12 @@
+---
+layout: page
+sidebar: false
+aside: false
+outline: false
+lastUpdated: false
+title: Coleo — Multi-Agent Development Coordination
+---
+
 <script setup>
 import { ref, onMounted } from 'vue'
 
@@ -8,180 +17,228 @@ const docHeight = ref(0)
 const viewportHeight = ref(0)
 const viewportWidth = ref(0)
 
-const DISTORTION = 30
-const SPARKLE_AMOUNT = 0.25
-const SUN_ANGLE = 0.3
+const SPARKLE_COUNT = 40
+const MAX_SPARKLES = 160
 
-let raysCanvas, sparklesCanvas, displacementMap, waterLayer, depthSlider, depthControl, depthIcon
-
+let raysCanvas, sparklesCanvas, waterLayer, depthSlider, depthControl, depthIcon
 let rays = []
 let sparkles = []
-let raysInitialized = false
-let sparklesInitialized = false
 let animationId = null
+const mouse = ref({ x: 0, y: 0, active: false })
+let nextCursorSparkleAt = 0
+let swirls = []
+let mouseHistory = [] // { x, y, t }
+let lastDirAngle = 0
+let eddy = null // { cx, cy, vx, vy, created, prevTime, side }
+let eddySide = 1
+let lastEddySpawnAt = 0
+let lastContinuousSpawnAt = 0
+let newDirectionCooldownUntil = 0
 
-class LightRay {
-  constructor(index, total, vw, vh) {
-    const section = vw / total
-    this.x = (section * index) + (Math.random() - 0.5) * 40
-    this.y = -150 - Math.random() * 200
-    this.angle = SUN_ANGLE
-    this.width = 100 + Math.random() * 100
-    this.length = vh * 1.5
-    this.speed = 0.1 + Math.random() * 0.2
-    this.phase = Math.random() * Math.PI * 2
-    this.opacity = 0.08 + Math.random() * 0.1
+function randomCursorSpawnInterval() {
+  // ~3–9 per second → 100–333ms
+  return 100 + Math.random() * (333 - 100)
+}
+
+function getMouseDirectionAngle(nowTs = performance.now()) {
+  const windowMs = 500
+  const cutoff = nowTs - windowMs
+  const pts = mouseHistory.filter(p => p.t >= cutoff)
+  if (pts.length < 2) return lastDirAngle
+  let dx = 0, dy = 0
+  for (let i = 1; i < pts.length; i++) {
+    dx += pts[i].x - pts[i - 1].x
+    dy += pts[i].y - pts[i - 1].y
   }
+  if (Math.hypot(dx, dy) < 1) return lastDirAngle
+  lastDirAngle = Math.atan2(dy, dx)
+  return lastDirAngle
+}
 
-  draw(ctx, time, brightness, vw, vh) {
-    const sway = Math.sin(time * this.speed + this.phase) * 15
-    const breathing = Math.sin(time * 0.4 + this.phase) * 0.5 + 0.5
-    const alpha = this.opacity * (0.4 + brightness * 0.6) * breathing
+function getMouseAngleOver(windowMs, nowTs = performance.now()) {
+  const cutoff = nowTs - windowMs
+  const pts = mouseHistory.filter(p => p.t >= cutoff)
+  if (pts.length < 2) return null
+  let dx = 0, dy = 0
+  for (let i = 1; i < pts.length; i++) {
+    dx += pts[i].x - pts[i - 1].x
+    dy += pts[i].y - pts[i - 1].y
+  }
+  if (Math.hypot(dx, dy) < 1e-2) return null
+  return Math.atan2(dy, dx)
+}
 
-    if (alpha < 0.01) return
+function getMouseSpeedOver(windowMs, nowTs = performance.now()) {
+  const cutoff = nowTs - windowMs
+  const pts = mouseHistory.filter(p => p.t >= cutoff)
+  if (pts.length < 2) return 0
+  let dist = 0
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i - 1].x
+    const dy = pts[i].y - pts[i - 1].y
+    dist += Math.hypot(dx, dy)
+  }
+  const dt = (pts[pts.length - 1].t - pts[0].t) / 1000
+  if (dt <= 0) return 0
+  return dist / dt // px/s
+}
 
-    const startX = this.x + sway
-    const endX = startX + Math.sin(this.angle) * this.length
-    const endY = this.y + Math.cos(this.angle) * this.length
+function angleDiff(a, b) {
+  let d = a - b
+  while (d > Math.PI) d -= 2 * Math.PI
+  while (d < -Math.PI) d += 2 * Math.PI
+  return Math.abs(d)
+}
 
-    const grad = ctx.createLinearGradient(startX, this.y, endX, endY)
-    grad.addColorStop(0, `rgba(255, 255, 240, ${alpha})`)
-    grad.addColorStop(0.4, `rgba(220, 255, 250, ${alpha * 0.6})`)
-    grad.addColorStop(1, `rgba(150, 240, 255, 0)`)
+function maybeSpawnEddyOnTurn(nowTs = performance.now()) {
+  // Trigger when direction change over last 300ms exceeds ~75 degrees
+  const newAngle = getMouseAngleOver(200, nowTs)
+  if (newAngle == null) return
+  if (!maybeSpawnEddyOnTurn.prevAngle) {
+    maybeSpawnEddyOnTurn.prevAngle = newAngle
+    return
+  }
+  const delta = ((newAngle - maybeSpawnEddyOnTurn.prevAngle + Math.PI) % (2 * Math.PI)) - Math.PI
+  maybeSpawnEddyOnTurn.prevAngle = newAngle
+  const threshold = (50 * Math.PI) / 180
+  if (Math.abs(delta) < threshold) return
+  // Cooldown to avoid spamming
+  if (nowTs - lastEddySpawnAt < 250) return
+  lastEddySpawnAt = nowTs
+  // Determine side from sign of turn (CCW positive => left)
+  eddySide = delta > 0 ? 1 : -1
+  // Initial speed from last 500ms
+  let speed = getMouseSpeedOver(500, nowTs)
+  speed = Math.max(80, Math.min(speed, 600))
+  const cx = mouse.value.x
+  const cy = scrollY.value + mouse.value.y
+  // Initialize eddy at a perpendicular offset so trails don't cross path
+  const perp = newAngle + eddySide * (Math.PI / 2)
+  const offset = 22
+  const eddyCx = cx + Math.cos(perp) * offset
+  const eddyCy = cy + Math.sin(perp) * offset
+  // Also set global eddy for reference visualization (optional) but lines track their own center
+  eddy = { cx: eddyCx, cy: eddyCy, vx: Math.cos(newAngle) * speed, vy: Math.sin(newAngle) * speed, created: nowTs, prevTime: nowTs, side: eddySide }
+  spawnSwirlsAt(eddyCx, eddyCy, newAngle, speed, eddySide)
+}
 
-    ctx.save()
-    ctx.translate(startX, this.y)
-    ctx.rotate(this.angle)
-
-    ctx.beginPath()
-    ctx.moveTo(-this.width/2, 0)
-    ctx.lineTo(this.width/2, 0)
-    ctx.lineTo(this.width/3, this.length)
-    ctx.lineTo(-this.width/3, this.length)
-    ctx.closePath()
-
-    ctx.fillStyle = grad
-    ctx.fill()
-    ctx.restore()
+function spawnSparkleAt(sx, sy, opts = {}) {
+  sparkles.push({
+    x: Math.max(0, Math.min(viewportWidth.value, sx)),
+    y: Math.max(-50, Math.min(docHeight.value + 50, sy)),
+    radius: opts.radius ?? (1.5 + Math.random() * 2.5),
+    speed: opts.speed ?? (0.5 + Math.random() * 1.0),
+    wobble: Math.random() * Math.PI * 2,
+    wobbleSpeed: 0.01 + Math.random() * 0.02,
+    phase: Math.random() * Math.PI * 2,
+    maxOpacity: opts.maxOpacity ?? (0.5 + Math.random() * 0.4),
+    fromCursor: !!opts.fromCursor
+  })
+  if (sparkles.length > MAX_SPARKLES) {
+    sparkles.splice(0, sparkles.length - MAX_SPARKLES)
   }
 }
 
-class Sparkle {
-  constructor(initial, vw, vh, dh) {
-    this.x = Math.random() * vw * 2
-    if (initial && dh > 0) {
-      this.y = Math.random() * dh
-    } else {
-      this.y = dh + 50
-    }
-    this.radius = 2 + Math.random() * 3
-    this.speed = 0.5 + Math.random() * 1.0
-    this.wobble = Math.random() * Math.PI * 2
-    this.wobbleSpeed = 0.01 + Math.random() * 0.02
-    this.phase = Math.random() * Math.PI * 2
-    this.maxOpacity = 0.4 + Math.random() * 0.4
-    this.vw = vw
-    this.dh = dh
-  }
-
-  update(vw, dh) {
-    this.y -= this.speed
-    this.x += Math.sin(this.y * 0.005 + this.wobble) * 0.3
-    this.wobble += this.wobbleSpeed
-
-    if (this.y < -50) {
-      this.y = dh + 50
-      this.x = Math.random() * this.vw
-    }
-  }
-
-  draw(ctx, time, scrollY, viewportH, vw, alphaMult) {
-    if (this.y < scrollY - 100 || this.y > scrollY + viewportH + 100) return
-
-    const twinkle = Math.sin(time * 2 + this.phase) * 0.5 + 0.5
-    const alpha = this.maxOpacity * twinkle * SPARKLE_AMOUNT * alphaMult
-
-    if (alpha < 0.01) return
-
-    const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius * 2)
-    gradient.addColorStop(0, `rgba(255, 255, 230, ${alpha})`)
-    gradient.addColorStop(0.5, `rgba(255, 255, 255, ${alpha * 0.8})`)
-    gradient.addColorStop(1, `rgba(255, 255, 255, 0)`)
-
-    ctx.beginPath()
-    ctx.arc(this.x, this.y, this.radius * 2, 0, Math.PI * 2)
-    ctx.fillStyle = gradient
-    ctx.fill()
-
-    ctx.beginPath()
-    ctx.arc(this.x, this.y, this.radius * 0.6, 0, Math.PI * 2)
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
-    ctx.fill()
-  }
+function spawnCursorSparkle() {
+  const jitter = () => (Math.random() - 0.5) * 100 // ±50px
+  const sx = mouse.value.x + jitter()
+  const sy = scrollY.value + mouse.value.y + jitter()
+  spawnSparkleAt(sx, sy, { fromCursor: true })
 }
 
-function initRays(vw, vh) {
-  if (raysInitialized || vw === 0) return
-  rays = []
-  for (let i = 0; i < 8; i++) {
-    rays.push(new LightRay(i, 8, vw, vh))
-  }
-  raysInitialized = true
-}
-
-function initSparkles(vw, vh, dh) {
-  if (sparklesInitialized || dh === 0) return
-  sparkles = []
-  const count = Math.max(40, Math.floor(dh / 80))
+function spawnSwirlsAt(centerX, centerY, dirAngle, initSpeed, side) {
+  const created = performance.now()
+  const lifetime = 2400 + Math.random() * 900
+  const count = 6
+  const baseAngle = dirAngle ?? getMouseDirectionAngle(created)
+  const cone = 0.35
   for (let i = 0; i < count; i++) {
-    sparkles.push(new Sparkle(true, vw, vh, dh))
+    const curlSide = side ?? eddySide
+    const jitter = (Math.random() - 0.5) * cone
+    const angle = baseAngle + curlSide * 0.18 + jitter * 0.3
+    const angVel = (1.6 + Math.random() * 1.6) * curlSide
+    const radVel = 0
+    // pick a point along the recent path within ~60px behind the center
+    const back = Math.random() * 60
+    const pathX = centerX - Math.cos(baseAngle) * back
+    const pathY = centerY - Math.sin(baseAngle) * back
+    // perpendicular offset within 20px on chosen side
+    const perp = baseAngle + Math.PI / 2
+    const offMag = Math.random() * 20
+    const offX = Math.cos(perp) * offMag * curlSide
+    const offY = Math.sin(perp) * offMag * curlSide
+    const ox = pathX + offX
+    const oy = pathY + offY
+    const targetRad = 18 + Math.random() * 4
+    swirls.push({
+      created,
+      lifetime,
+      cx: centerX,
+      cy: centerY,
+      cVx: Math.cos(baseAngle) * (initSpeed ?? 200),
+      cVy: Math.sin(baseAngle) * (initSpeed ?? 200),
+      angle,
+      angVel,
+      rad: targetRad,
+      radVel,
+      width: 1.5 + Math.random() * 2.5,
+      hue: 190 + Math.random() * 20,
+      curlStrength: 0.35 + Math.random() * 0.35,
+      oscSpeed: 2 + Math.random() * 3,
+      oscPhase: Math.random() * Math.PI * 2,
+      maxRad: targetRad + 6,
+      targetRad,
+      turned: false,
+      turnedAt: 0,
+      baseOmega: 0,
+      swirlBurstMs: 800,
+      dir: curlSide,
+      trail: [{ x: ox, y: oy, t: 0 }],
+      prevTime: created
+    })
   }
-  sparklesInitialized = true
 }
 
-function animate() {
-  time.value += 0.016
-
-  if (raysCanvas && raysCanvas.getContext) {
-    const ctx = raysCanvas.getContext('2d')
-    ctx.clearRect(0, 0, viewportWidth.value, viewportHeight.value)
-    ctx.globalCompositeOperation = 'screen'
-    if (raysInitialized) {
-      rays.forEach((ray) => {
-        ray.draw(ctx, time.value, brightness.value, viewportWidth.value, viewportHeight.value)
-      })
-    }
+function spawnBurstAt(cx, cy) {
+  // Bubble burst: 10–18 sparkles with slightly larger radius
+  const bubbles = 10 + Math.floor(Math.random() * 9)
+  for (let i = 0; i < bubbles; i++) {
+    const jitter = () => (Math.random() - 0.5) * 120
+    spawnSparkleAt(cx + jitter(), cy + jitter(), {
+      radius: 2.5 + Math.random() * 3.5,
+      speed: 0.6 + Math.random() * 1.0,
+      maxOpacity: 0.6 + Math.random() * 0.4,
+      fromCursor: true
+    })
   }
-
-  if (sparklesCanvas && sparklesCanvas.getContext) {
-    const ctx = sparklesCanvas.getContext('2d')
-    ctx.clearRect(0, 0, viewportWidth.value, viewportHeight.value)
-    ctx.globalCompositeOperation = 'source-over'
-    if (sparklesInitialized) {
-      sparkles.forEach((sparkle) => {
-        sparkle.update(viewportWidth.value, docHeight.value)
-        sparkle.draw(ctx, time.value, scrollY.value, viewportHeight.value, viewportWidth.value, 1)
-      })
-    }
+  // Swirl lines emanating from the click (will orbit a moving eddy)
+  // Initialize a single eddy center that moves forward and eases out
+  const dir = getMouseDirectionAngle(performance.now())
+  const centerSpeed = 200 + Math.random() * 80 // px/s initial
+  // Choose curl side once: -1 (left) or +1 (right) of the motion vector
+  eddySide = Math.random() < 0.5 ? -1 : 1
+  // Offset the eddy center perpendicular to motion so orbits stay on one side
+  const perp = dir + eddySide * (Math.PI / 2)
+  const offset = 22
+  eddy = {
+    cx: cx + Math.cos(perp) * offset,
+    cy: cy + Math.sin(perp) * offset,
+    vx: Math.cos(dir) * centerSpeed,
+    vy: Math.sin(dir) * centerSpeed,
+    created: performance.now(),
+    side: eddySide
   }
-
-  animationId = requestAnimationFrame(animate)
+  spawnSwirlsAt(cx, cy)
 }
 
-function updateDepth() {
-  const value = parseInt(depthSlider.value)
-  brightness.value = value / 100
+function initAnimation() {
+  raysCanvas = document.getElementById('raysCanvas')
+  sparklesCanvas = document.getElementById('sparklesCanvas')
+  waterLayer = document.getElementById('waterLayer')
+  depthSlider = document.getElementById('depthSlider')
+  depthControl = document.getElementById('depthControl')
+  depthIcon = document.getElementById('depthIcon')
 
-  depthIcon.textContent = value > 50 ? '☀️' : '🌙'
-  depthControl.classList.toggle('dark-mode', value <= 50)
-
-  const bgBrightness = 0.5 + brightness.value * 0.5
-  if (waterLayer) {
-    waterLayer.style.filter = `url(#water-distortion) brightness(${bgBrightness})`
-  }
-}
-
-function handleResize() {
   viewportWidth.value = window.innerWidth
   viewportHeight.value = window.innerHeight
   docHeight.value = document.documentElement.scrollHeight
@@ -192,74 +249,353 @@ function handleResize() {
   }
   if (sparklesCanvas) {
     sparklesCanvas.width = viewportWidth.value
-    sparklesCanvas.height = docHeight.value
+    // Keep canvas the size of the viewport to avoid scaling squish; we'll translate by scroll
+    sparklesCanvas.height = viewportHeight.value
   }
 
-  raysInitialized = false
-  sparklesInitialized = false
-  initRays(viewportWidth.value, viewportHeight.value)
-  initSparkles(viewportWidth.value, viewportHeight.value, docHeight.value)
+  rays = []
+  for (let i = 0; i < 8; i++) {
+    rays.push({
+      x: (viewportWidth.value / 8) * i + (Math.random() - 0.5) * 40,
+      y: -150 - Math.random() * 200,
+      width: 100 + Math.random() * 100,
+      length: viewportHeight.value * 1.5,
+      speed: 0.1 + Math.random() * 0.2,
+      phase: Math.random() * Math.PI * 2,
+      opacity: 0.08 + Math.random() * 0.1
+    })
+  }
+
+  sparkles = []
+  for (let i = 0; i < SPARKLE_COUNT; i++) {
+    sparkles.push({
+      x: Math.random() * viewportWidth.value * 2,
+      y: Math.random() * docHeight.value,
+      radius: 2 + Math.random() * 3,
+      speed: 0.5 + Math.random() * 1.0,
+      wobble: Math.random() * Math.PI * 2,
+      wobbleSpeed: 0.01 + Math.random() * 0.02,
+      phase: Math.random() * Math.PI * 2,
+      maxOpacity: 0.4 + Math.random() * 0.4
+    })
+  }
+
+  window.addEventListener('resize', () => {
+    viewportWidth.value = window.innerWidth
+    viewportHeight.value = window.innerHeight
+    docHeight.value = document.documentElement.scrollHeight
+    if (raysCanvas) {
+      raysCanvas.width = viewportWidth.value
+      raysCanvas.height = viewportHeight.value
+    }
+    if (sparklesCanvas) {
+      sparklesCanvas.width = viewportWidth.value
+      sparklesCanvas.height = viewportHeight.value
+    }
+  })
+
+  window.addEventListener('mousemove', (e) => {
+    mouse.value.x = e.clientX
+    mouse.value.y = e.clientY
+    mouse.value.active = true
+    const now = performance.now()
+    mouseHistory.push({ x: e.clientX, y: e.clientY, t: now })
+    while (mouseHistory.length && (now - mouseHistory[0].t) > 1000) mouseHistory.shift()
+  })
+  window.addEventListener('mouseleave', () => {
+    mouse.value.active = false
+  })
+  // Remove click-to-burst; we trigger on sudden direction change instead
+
+  window.addEventListener('scroll', () => {
+    scrollY.value = window.scrollY
+    const parallax = -scrollY.value * 0.2
+    if (waterLayer) {
+      waterLayer.style.transform = `translate3d(0, ${parallax}px, 0)`
+    }
+    if (raysCanvas) {
+      raysCanvas.style.transform = `translate3d(0, ${parallax}px, 0)`
+    }
+  })
+
+  animate()
 }
 
-function handleScroll() {
-  scrollY.value = window.scrollY
-  const parallaxOffset = -scrollY.value * 0.2
-  if (waterLayer) {
-    waterLayer.style.transform = `translate3d(0, ${parallaxOffset}px, 0)`
+function animate() {
+  time.value += 0.016
+
+  if (raysCanvas && raysCanvas.getContext) {
+    const ctx = raysCanvas.getContext('2d')
+    ctx.clearRect(0, 0, viewportWidth.value, viewportHeight.value)
+    ctx.globalCompositeOperation = 'screen'
+    
+    rays.forEach((ray) => {
+      const sway = Math.sin(time.value * ray.speed + ray.phase) * 15
+      const breathing = Math.sin(time.value * 0.4 + ray.phase) * 0.5 + 0.5
+      const alpha = ray.opacity * (0.4 + brightness.value * 0.6) * breathing
+      
+      if (alpha > 0.01) {
+        const startX = ray.x + sway
+        const endX = startX + Math.sin(0.3) * ray.length
+        const endY = ray.y + Math.cos(0.3) * ray.length
+        
+        const grad = ctx.createLinearGradient(startX, ray.y, endX, endY)
+        grad.addColorStop(0, `rgba(255, 255, 240, ${alpha})`)
+        grad.addColorStop(0.4, `rgba(220, 255, 250, ${alpha * 0.6})`)
+        grad.addColorStop(1, `rgba(150, 240, 255, 0)`)
+        
+        ctx.save()
+        ctx.translate(startX, ray.y)
+        ctx.rotate(0.3)
+        ctx.beginPath()
+        ctx.moveTo(-ray.width/2, 0)
+        ctx.lineTo(ray.width/2, 0)
+        ctx.lineTo(ray.width/3, ray.length)
+        ctx.lineTo(-ray.width/3, ray.length)
+        ctx.closePath()
+        ctx.fillStyle = grad
+        ctx.fill()
+        ctx.restore()
+      }
+    })
   }
-  if (raysCanvas) {
-    raysCanvas.style.transform = `translate3d(0, ${parallaxOffset}px, 0)`
+
+  if (sparklesCanvas && sparklesCanvas.getContext) {
+    const ctx = sparklesCanvas.getContext('2d')
+    // Clear the entire sparkles canvas to prevent trails across the full document height
+    ctx.clearRect(0, 0, sparklesCanvas.width, sparklesCanvas.height)
+    ctx.globalCompositeOperation = 'source-over'
+
+    // Cursor-follow sparkles: spawn at randomized intervals near pointer
+    const now = performance.now()
+
+    // Detect sudden direction change and spawn eddies if needed
+    maybeSpawnEddyOnTurn(now)
+    // Continuous spawn when moving fast, every 50ms, unless in direction-change cooldown
+    const SPEED_THRESHOLD = 240 // px/s
+    const speedNow = getMouseSpeedOver(200, now)
+    if (speedNow > SPEED_THRESHOLD && now >= (lastContinuousSpawnAt + 50) && now >= newDirectionCooldownUntil) {
+      const angNow = getMouseAngleOver(200, now) ?? lastDirAngle
+      const mx = mouse.value.x
+      const my = scrollY.value + mouse.value.y
+      const side = eddySide
+      const perp = angNow + side * (Math.PI / 2)
+      const offset = 22
+      const cX = mx + Math.cos(perp) * offset
+      const cY = my + Math.sin(perp) * offset
+      spawnSwirlsAt(cX, cY, angNow, speedNow, side, 2)
+      lastContinuousSpawnAt = now
+    }
+    if (mouse.value.active && now >= nextCursorSparkleAt) {
+      let spawns = 1
+      if (Math.random() < 0.40) spawns = 2
+      if (Math.random() < 0.10) spawns = 3
+      for (let i = 0; i < spawns; i++) spawnCursorSparkle()
+      nextCursorSparkleAt = now + randomCursorSpawnInterval()
+    }
+
+    // Per-swirl center update handled below; global eddy kept for reference only
+
+    // Draw swirl trails (water current lines)
+    ctx.save()
+    ctx.globalCompositeOperation = 'screen'
+    // Read current reef color from CSS var to tint lines cohesively
+    let reefRGB = '73, 215, 175'
+    try {
+      const css = getComputedStyle(waterLayer)
+      const v = css.getPropertyValue('--reef-rgb')
+      if (v && v.trim().length > 0) reefRGB = v.trim()
+    } catch {}
+
+    swirls = swirls.filter((s) => {
+      const elapsed = now - s.created
+      const lifeT = elapsed / s.lifetime
+      if (lifeT >= 0.7) return false // slower decay: fade by 70% of lifetime
+      const dt = Math.max(0.001, (now - s.prevTime) / 1000)
+      s.prevTime = now
+      const ramp = Math.min(1, elapsed / 300) // start slower (viscosity)
+
+      // Orbit single eddy center; no straight phase
+      const inStraight = false
+      let angFriction = inStraight ? 2.0 : 1.3
+      let radFriction = inStraight ? 0.6 : 2.2 // stronger radial damping after turn
+
+      // Damping preserving sign
+      s.angVel *= Math.max(0, 1 - angFriction * dt)
+      s.radVel = Math.max(0, s.radVel - radFriction * 120 * dt)
+
+      // On first frame after straight phase, inject a curl impulse and increase damping (sudden slow + curve)
+      if (!inStraight && !s.turned) {
+        const curlSign = (eddy?.side) || s.dir || Math.sign(s.angVel) || (Math.random() < 0.5 ? -1 : 1)
+        s.angVel += curlSign * (s.curlStrength ?? 0.25) * 2.0
+        s.radVel *= 0.2 // stronger immediate slow-down to keep curl tight
+        s.turnedAt = now
+        s.baseOmega = (3.0 + Math.random() * 2.0) * curlSign // slower multi-orbit
+        // Snap center and radius to eddy center and target radius
+        s.cx = (eddy && eddy.cx) ? eddy.cx : (s.eddyCx || s.cx)
+        s.cy = (eddy && eddy.cy) ? eddy.cy : (s.eddyCy || s.cy)
+        s.rad = s.targetRad || s.rad
+        s.turned = true
+      }
+
+      const osc = Math.sin(elapsed / 1000 * s.oscSpeed + s.oscPhase) * 0.06 * (1 - lifeT)
+      let effAng = inStraight ? osc * 0.2 : (s.angVel + osc)
+
+      // During swirl burst window, keep angular speed sufficient for multiple orbits, but slower
+      if (!inStraight && s.turned) {
+        const swirlAge = now - (s.turnedAt || now)
+        if (swirlAge < (s.swirlBurstMs || 800)) {
+          // Low angular damping and enforce minimum angular velocity magnitude
+          angFriction = 0.2
+          const sign = Math.sign(effAng) || Math.sign(s.baseOmega) || 1
+          const minOmega = Math.abs(s.baseOmega || 3.5)
+          const mag = Math.max(Math.abs(effAng), minOmega)
+          effAng = sign * mag
+          // Pull radius toward target tightly
+          const cap = s.maxRad || 26
+          const target = s.targetRad || 20
+          s.rad += (target - s.rad) * Math.min(1, 8 * dt)
+          s.radVel *= Math.max(0, 1 - 6 * dt)
+        }
+      }
+
+      // additional radial damping as radius approaches cap
+      const cap = s.maxRad || 28
+      const approach = Math.min(1, (s.rad / cap))
+      const radialFactor = Math.max(0.2, 1 - approach * 0.8)
+      // Update each swirl's eddy center with strong damping from initial speed
+      const cf = 2.8
+      s.cVx = (s.cVx ?? 0) * Math.max(0, 1 - cf * dt)
+      s.cVy = (s.cVy ?? 0) * Math.max(0, 1 - cf * dt)
+      s.cx += (s.cVx ?? 0) * dt
+      s.cy += (s.cVy ?? 0) * dt
+      s.rad += s.radVel * dt * ramp * radialFactor
+      if (s.rad > cap) s.rad = cap
+      s.angle += effAng * dt * ramp
+      const px = (s.cx || 0) + Math.cos(s.angle) * s.rad
+      const py = (s.cy || 0) + Math.sin(s.angle) * s.rad
+      s.trail.push({ x: px, y: py, t: lifeT })
+      if (s.trail.length > 50) s.trail.shift()
+
+      // Shimmer gradient stroke along the trail
+      ctx.beginPath()
+      for (let i = 0; i < s.trail.length; i++) {
+        const p = s.trail[i]
+        const dy = p.y - scrollY.value
+        if (i === 0) ctx.moveTo(p.x, dy)
+        else ctx.lineTo(p.x, dy)
+      }
+      const head = s.trail[s.trail.length - 1] || { x: px, y: py }
+      const tail = s.trail[0] || { x: px, y: py }
+      const g = ctx.createLinearGradient(tail.x, tail.y - scrollY.value, head.x, head.y - scrollY.value)
+      const baseAlpha = Math.max(0, (0.7 - lifeT) / 0.7) * 0.5 // lower opacity overall
+      g.addColorStop(0, `rgba(255,255,255,${baseAlpha * 0.25})`)
+      g.addColorStop(0.5, `rgba(${reefRGB}, ${baseAlpha})`)
+      g.addColorStop(1, `rgba(255,255,255,${baseAlpha * 0.2})`)
+      ctx.strokeStyle = g
+      ctx.lineWidth = s.width * (1 - lifeT) + 0.5
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.stroke()
+      return true
+    })
+    ctx.restore()
+    
+    sparkles.forEach((sparkle) => {
+      sparkle.y -= sparkle.speed
+      sparkle.x += Math.sin(sparkle.y * 0.005 + sparkle.wobble) * 0.3
+      sparkle.wobble += sparkle.wobbleSpeed
+      
+      if (sparkle.y < -50) {
+        sparkle.y = docHeight.value + 50
+        sparkle.x = Math.random() * viewportWidth.value
+      }
+      
+      if (sparkle.y < scrollY.value - 100 || sparkle.y > scrollY.value + viewportHeight.value + 100) return
+      
+      const twinkle = Math.sin(time.value * 2 + sparkle.phase) * 0.5 + 0.5
+      const alpha = sparkle.maxOpacity * twinkle * 0.25
+      
+      if (alpha > 0.01) {
+        const drawY = sparkle.y - scrollY.value
+        const gradient = ctx.createRadialGradient(sparkle.x, drawY, 0, sparkle.x, drawY, sparkle.radius * 2)
+        gradient.addColorStop(0, `rgba(255, 255, 230, ${alpha})`)
+        gradient.addColorStop(0.5, `rgba(255, 255, 255, ${alpha * 0.8})`)
+        gradient.addColorStop(1, `rgba(255, 255, 255, 0)`)
+        
+        ctx.beginPath()
+        ctx.arc(sparkle.x, drawY, sparkle.radius * 2, 0, Math.PI * 2)
+        ctx.fillStyle = gradient
+        ctx.fill()
+        
+        ctx.beginPath()
+        ctx.arc(sparkle.x, drawY, sparkle.radius * 0.6, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+        ctx.fill()
+      }
+    })
+  }
+
+  animationId = requestAnimationFrame(animate)
+}
+
+function updateDepth() {
+  const value = parseInt(depthSlider.value)
+  brightness.value = value / 100
+  depthIcon.textContent = value > 50 ? '☀️' : '🌙'
+  depthControl.classList.toggle('dark-mode', value <= 50)
+  if (waterLayer) {
+    const bgBrightness = 0.6 + brightness.value * 0.8 // up to 1.4 at lightest
+    const bgSaturation = 1.0 + brightness.value * 0.8 // up to 1.8 at lightest
+    waterLayer.style.filter = `url(#water-distortion) brightness(${bgBrightness}) saturate(${bgSaturation})`
+    // Also strengthen the aqua/blue gradient components as depth gets shallower
+    const aqua1 = Math.min(0.15 + 0.75 * brightness.value, 0.90)
+    const aqua2 = Math.min(0.20 + 0.75 * brightness.value, 0.95)
+    const blue1 = Math.min(0.10 + 0.45 * brightness.value, 0.60)
+    const green1 = Math.min(0.08 + 0.55 * brightness.value, 0.70)
+    waterLayer.style.setProperty('--aqua1', aqua1.toFixed(3))
+    waterLayer.style.setProperty('--aqua2', aqua2.toFixed(3))
+    waterLayer.style.setProperty('--blue1', blue1.toFixed(3))
+    waterLayer.style.setProperty('--green1', green1.toFixed(3))
+    // Morph the primary teal towards tropical reef (#49d7af) at lighter depths
+    const base = { r: 20, g: 184, b: 166 }
+    const reef = { r: 73, g: 215, b: 175 } // #49d7af
+    const t = Math.max(0, Math.min(1, (brightness.value - 0.66) / 0.34))
+    const lerp = (a, b) => Math.round(a + (b - a) * t)
+    const rr = lerp(base.r, reef.r)
+    const rg = lerp(base.g, reef.g)
+    const rb = lerp(base.b, reef.b)
+    waterLayer.style.setProperty('--reef-rgb', `${rr}, ${rg}, ${rb}`)
+  }
+  // Flip UI to light mode when slider is above ~66%
+  const root = document.querySelector('.marketing-root')
+  if (root) {
+    if (brightness.value >= 0.66) root.classList.add('light-mode')
+    else root.classList.remove('light-mode')
   }
 }
 
 onMounted(() => {
-  raysCanvas = document.getElementById('raysCanvas')
-  sparklesCanvas = document.getElementById('sparklesCanvas')
-  displacementMap = document.querySelector('#water-distortion feDisplacementMap')
-  waterLayer = document.getElementById('waterLayer')
-  depthSlider = document.getElementById('depthSlider')
-  depthControl = document.getElementById('depthControl')
-  depthIcon = document.getElementById('depthIcon')
-
-  handleResize()
-  initRays(viewportWidth.value, viewportHeight.value)
-  initSparkles(viewportWidth.value, viewportHeight.value, docHeight.value)
-
-  window.addEventListener('resize', handleResize)
-  window.addEventListener('scroll', handleScroll)
-
-  if (displacementMap) {
-    displacementMap.setAttribute('scale', DISTORTION)
+  initAnimation()
+  if (depthSlider) {
+    depthSlider.addEventListener('input', updateDepth)
   }
-
-  depthSlider.addEventListener('input', updateDepth)
-  animate()
+  if (depthIcon && depthSlider) {
+    depthIcon.addEventListener('click', () => {
+      const target = brightness.value >= 0.66 ? 0 : 100
+      depthSlider.value = String(target)
+      updateDepth()
+    })
+  }
   updateDepth()
 })
 </script>
 
-<svg style="display: none;">
-  <defs>
-    <filter id="water-distortion" x="-20%" y="-20%" width="140%" height="140%">
-      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.006" numOctaves="4" result="noise" seed="0">
-        <animate attributeName="baseFrequency" dur="30s" values="0.008 0.006;0.015 0.01;0.008 0.006" repeatCount="indefinite"/>
-      </feTurbulence>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="30" xChannelSelector="R" yChannelSelector="G"/>
-      <feGaussianBlur stdDeviation="0.4" result="blurred"/>
-      <feComponentTransfer>
-        <feFuncA type="linear" slope="0.9"/>
-      </feComponentTransfer>
-      <feBlend in="SourceGraphic" in2="blurred" mode="multiply"/>
-    </filter>
-  </defs>
-</svg>
-
 <div class="depth-control" id="depthControl">
   <label>
     <span id="depthIcon">☀️</span>
-    <span>Depth</span>
   </label>
-  <input type="range" id="depthSlider" min="20" max="100" value="70">
+  <input type="range" id="depthSlider" min="0" max="100" value="70">
 </div>
 
 <div class="water-layer" id="waterLayer"></div>
@@ -275,14 +611,13 @@ onMounted(() => {
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m0 0l-4-4m4 4l4-4M8 8a4 4 0 118 0 4 4 0 01-8 0z"></path>
           </svg>
         </div>
-        <span class="font-display font-bold text-2xl text-white tracking-tight">Coleo</span>
+        <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
       </div>
-
       <div class="hidden md:flex items-center space-x-8">
-        <a href="#philosophy" class="text-sm font-medium text-white/90 hover:text-white transition-colors">Philosophy</a>
-        <a href="#architecture" class="text-sm font-medium text-white/90 hover:text-white transition-colors">Architecture</a>
-        <a href="#observatory" class="text-sm font-medium text-white/90 hover:text-white transition-colors">Observatory</a>
-        <a href="#license" class="text-sm font-medium text-white/90 hover:text-white transition-colors">License</a>
+        <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
+        <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Architecture</a>
+        <a href="/architecture/components#observatory-web-ui-api" class="nav-link text-sm font-medium transition-colors">Observatory</a>
+        <a href="/licensing" class="nav-link text-sm font-medium transition-colors">License</a>
       </div>
     </div>
   </nav>
@@ -291,14 +626,14 @@ onMounted(() => {
     <div class="container mx-auto px-4 sm:px-6 lg:px-8">
       <div class="lg:grid lg:grid-cols-2 lg:gap-16 items-center">
         <div class="mb-12 lg:mb-0">
-          <h1 class="font-display font-bold text-5xl lg:text-7xl text-white leading-[0.9] tracking-tight mb-6 drop-shadow-lg">
+          <h1 class="hero-title font-display font-bold text-white tracking-tight mb-6 drop-shadow-lg">
             Many Arms.<br>
             <span class="text-white">One Mind.</span>
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
             Distributed agent orchestration inspired by the soft architecture of intelligent cephalopods.
           </p>
-          <div class="flex flex-col sm:flex-row gap-4">
+          <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
               <span>Explore the Architecture</span>
               <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -309,27 +644,24 @@ onMounted(() => {
               <span>View on GitHub</span>
             </a>
           </div>
-          <p class="mt-4 text-xs text-white/70">
-            Open Source under BSL 1.1 • Free for individual use
-          </p>
+          <p class="mt-4 text-xs text-white/70">Open Source under BSL 1.1 • Free for individual use</p>
         </div>
-
         <div class="relative">
-          <div class="relative bg-white/10 backdrop-blur-md rounded-3xl shadow-2xl p-8 border border-white/20">
+          <div class="relative ui-box backdrop-blur-md rounded-3xl shadow-2xl p-8">
             <div class="absolute top-4 right-4 flex gap-2">
               <div class="w-3 h-3 rounded-full bg-red-400/80"></div>
               <div class="w-3 h-3 rounded-full bg-yellow-400/80"></div>
               <div class="w-3 h-3 rounded-full bg-green-400/80"></div>
             </div>
-            <div class="mt-4 font-mono text-xs sm:text-sm space-y-3 text-white/90">
-              <div class="flex items-center gap-2 text-white/60">$ coleo spawn --arms 3 --task "explore"</div>
+            <div class="mt-4 font-mono text-xs sm:text-sm space-y-3 opacity-90">
+              <div class="flex items-center gap-2 opacity-60">$ coleo spawn --arms 3 --task "explore"</div>
               <div class="space-y-2">
                 <div class="flex items-center gap-2">
                   <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
                   <span class="text-accent font-semibold">Brain</span>
-                  <span class="text-white/60">→ Spawning Arms...</span>
+                  <span class="opacity-60">→ Spawning Arms...</span>
                 </div>
-                <div class="pl-4 space-y-1 text-white/80">
+                <div class="pl-4 space-y-1 opacity-80">
                   <div class="flex justify-between"><span>🐙 Arm-One</span><span class="text-green-400">● Active</span></div>
                   <div class="flex justify-between"><span>🐙 Arm-Two</span><span class="text-green-400">● Active</span></div>
                   <div class="flex justify-between"><span>🐙 Arm-Three</span><span class="text-accent">● Proposing</span></div>
@@ -345,14 +677,13 @@ onMounted(() => {
   <section id="philosophy" class="section-glass light-1">
     <div class="container">
       <div class="text-center max-w-3xl mx-auto mb-16">
-        <h2 class="font-display font-bold text-4xl mb-4">Soft Architecture</h2>
+        <h2 class="font-display font-bold text-xl mb-4">Soft Architecture</h2>
         <p class="text-lg opacity-80">
           Most agent frameworks rely on rigid control hierarchies or chaotic autonomy. Coleo occupies the evolutionary niche between: coordinated independence.
         </p>
       </div>
-
       <div class="grid md:grid-cols-3 gap-8">
-        <div class="group p-8 rounded-2xl bg-white/50 hover:bg-white/80 transition-all duration-300 border border-current/10">
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -363,8 +694,7 @@ onMounted(() => {
             Two-thirds of an octopus's neurons are in its arms, not its head. Coleo Arms possess their own memory, tools, and decision capacity.
           </p>
         </div>
-
-        <div class="group p-8 rounded-2xl bg-white/50 hover:bg-white/80 transition-all duration-300 border border-current/10">
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
@@ -375,8 +705,7 @@ onMounted(() => {
             The Brain does not command—it evaluates. Arms submit structured proposals with reasoning and wait for approval.
           </p>
         </div>
-
-        <div class="group p-8 rounded-2xl bg-white/50 hover:bg-white/80 transition-all duration-300 border border-current/10">
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -404,7 +733,6 @@ onMounted(() => {
                 <p class="opacity-70 leading-relaxed">The central coordination point maintaining architectural standards and evaluating proposals.</p>
               </div>
             </div>
-
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
@@ -412,7 +740,6 @@ onMounted(() => {
                 <p class="opacity-70 leading-relaxed">Autonomous workers with specialized capabilities operating within their own context windows.</p>
               </div>
             </div>
-
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🌿</div>
               <div>
@@ -420,7 +747,6 @@ onMounted(() => {
                 <p class="opacity-70 leading-relaxed">Isolated execution contexts providing safe spaces to work without contamination.</p>
               </div>
             </div>
-
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">📡</div>
               <div>
@@ -430,9 +756,8 @@ onMounted(() => {
             </div>
           </div>
         </div>
-
         <div>
-          <div class="bg-white/5 rounded-3xl p-8 border border-white/10">
+          <div class="ui-box rounded-3xl p-8">
             <h3 class="font-display font-bold text-2xl mb-6 text-center">How Coordination Works</h3>
             <div class="space-y-6">
               <div class="flex items-start gap-4">
@@ -478,21 +803,20 @@ onMounted(() => {
           Unlike opaque AI tools, Coleo's Observatory makes visible the normally hidden activity of distributed agent coordination.
         </p>
       </div>
-
       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="bg-white/60 p-6 rounded-xl shadow-sm border border-current/10">
+        <div class="ui-box p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Real-time</div>
           <div class="text-sm opacity-70">WebSocket feeds show activity as it happens.</div>
         </div>
-        <div class="bg-white/60 p-6 rounded-xl shadow-sm border border-current/10">
+        <div class="ui-box p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Persistent</div>
           <div class="text-sm opacity-70">Activity history stored in SQLite or Postgres.</div>
         </div>
-        <div class="bg-white/60 p-6 rounded-xl shadow-sm border border-current/10">
+        <div class="ui-box p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Inspectable</div>
           <div class="text-sm opacity-70">Query past proposals and decisions.</div>
         </div>
-        <div class="bg-white/60 p-6 rounded-xl shadow-sm border border-current/10">
+        <div class="ui-box p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Transparent</div>
           <div class="text-sm opacity-70">See not just what changed, but why.</div>
         </div>
@@ -508,7 +832,6 @@ onMounted(() => {
           Traditional orchestration dictates. Coleo converses. Each interaction is a proposal that can be accepted, rejected, or debated.
         </p>
       </div>
-
       <div class="grid md:grid-cols-3 gap-8">
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">📨</div>
@@ -534,21 +857,21 @@ onMounted(() => {
       <div class="lg:grid lg:grid-cols-2 gap-16 items-center">
         <div class="order-2 lg:order-1">
           <div class="space-y-4">
-            <div class="p-4 rounded-lg bg-white/60 border border-teal-200">
+            <div class="ui-box p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: auth-refactor</span>
                 <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
               </div>
               <div class="text-sm opacity-70 font-mono">Arm: arm-7f3d9 • Files: 12 modified</div>
             </div>
-            <div class="p-4 rounded-lg bg-white/60 border border-teal-200">
+            <div class="ui-box p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: test-coverage</span>
                 <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
               </div>
               <div class="text-sm opacity-70 font-mono">Arm: arm-2a8b1 • Files: 8 modified</div>
             </div>
-            <div class="p-4 rounded-lg bg-white/60 border border-teal-200">
+            <div class="ui-box p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: doc-updates</span>
                 <span class="text-xs bg-accent text-white px-2 py-1 rounded">Proposing</span>
@@ -581,9 +904,8 @@ onMounted(() => {
           Released under Business Source License 1.1—balancing sustainable development with individual access.
         </p>
       </div>
-
       <div class="grid md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
-        <div class="bg-white/10 p-8 rounded-2xl border border-white/10">
+        <div class="ui-box p-8 rounded-2xl">
           <h3 class="font-display font-bold text-2xl mb-4">Individual Use</h3>
           <p class="opacity-70 mb-6">Free for individual developers. Install locally, use commercially, experiment freely.</p>
           <ul class="space-y-2 text-sm opacity-70 mb-6">
@@ -591,12 +913,9 @@ onMounted(() => {
             <li>✓ All core features included</li>
             <li>✓ Commercial use permitted</li>
           </ul>
-          <a href="#" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline">
-            Download
-          </a>
+          <a href="#" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline mt-4">Download</a>
         </div>
-
-        <div class="bg-black/20 p-8 rounded-2xl border border-white/10">
+        <div class="ui-box p-8 rounded-2xl">
           <h3 class="font-display font-bold text-2xl mb-4">Organizational Use</h3>
           <p class="opacity-70 mb-6">For teams and companies. Contact us for commercial licensing options.</p>
           <ul class="space-y-2 text-sm opacity-70 mb-6">
@@ -604,13 +923,10 @@ onMounted(() => {
             <li>✓ Custom deployment support</li>
             <li>✓ Training and consultation</li>
           </ul>
-          <a href="#" class="block w-full py-3 bg-white text-teal-900 rounded-full font-semibold hover:bg-gray-100 transition-all text-center no-underline">
-            Contact for Licensing
-          </a>
+          <a href="#" class="block w-full py-3 rounded-full font-semibold transition-all text-center no-underline bg-white/20 text-white border border-white/30 hover:bg-white/30 mt-4">Contact for Licensing</a>
         </div>
       </div>
-
-      <div class="bg-white/10 p-6 rounded-xl border border-white/10 text-center max-w-2xl mx-auto">
+      <div class="ui-box p-6 rounded-xl text-center max-w-2xl mx-auto">
         <p class="text-sm opacity-80">
           <strong class="text-accent">Business Source License 1.1 (BSL)</strong><br>
           Becomes Apache 2.0 on the Change Date (four years after release).

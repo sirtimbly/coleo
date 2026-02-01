@@ -1,0 +1,12 @@
+# Cloudflare Workers deployment for static docs (VitePress build)
+name = "coleo-docs"
+compatibility_date = "2024-10-01"
+
+# Serve static assets from the VitePress output directory
+assets = { directory = ".vitepress/dist" }
+
+# Optional: map a custom domain/route if your zone is on Cloudflare
+# Uncomment and adjust these once your zone is configured:
+# routes = [
+#   { pattern = "docs.example.com/*", zone_name = "example.com" }
+# ]
