@@ -587,27 +587,37 @@ function animate() {
         if (acc + seg >= hideLen) { startIdx = i; break }
         acc += seg
       }
-      // Draw from startIdx to end only (no harsh start at mouse)
-      ctx.beginPath()
-      for (let i = startIdx; i < s.trail.length; i++) {
-        const p = s.trail[i]
-        const dy = p.y - scrollY.value
-        if (i === startIdx) ctx.moveTo(p.x, dy)
-        else ctx.lineTo(p.x, dy)
+      // Draw sub-segments with their own alpha and slight perpendicular jitter to avoid stacking
+      const visibleLen = Math.max(0, totalLen - hideLen)
+      if (s.trail.length - startIdx >= 2 && visibleLen > 0) {
+        let accVis = 0
+        for (let i = startIdx + 1; i < s.trail.length; i++) {
+          const a = s.trail[i - 1], b = s.trail[i]
+          const segLen = Math.hypot(b.x - a.x, b.y - a.y)
+          accVis += segLen
+          const midFrac = Math.min(1, Math.max(0, (accVis - segLen / 2) / visibleLen))
+          // Envelope: 0 at start, peak at mid, 0 at end (lower peak to reduce additive brightness)
+          const peak = 0.45
+          const env = 1 - Math.abs(2 * midFrac - 1) // triangle 0..1..0
+          const alpha = peak * env
+          // Perpendicular jitter ~2-3 px, deterministic per segment
+          let nx = b.y - a.y, ny = -(b.x - a.x)
+          const nlen = Math.hypot(nx, ny) || 1
+          nx /= nlen; ny /= nlen
+          const seed = Math.sin(i * 12.9898 + s.created * 0.001) * 43758.5453
+          const j = ((seed - Math.floor(seed)) * 2 - 1) * 3.0 // [-3,3] px
+          const ax = a.x + nx * j, ay = a.y + ny * j
+          const bx = b.x + nx * j, by = b.y + ny * j
+          ctx.beginPath()
+          ctx.moveTo(ax, ay - scrollY.value)
+          ctx.lineTo(bx, by - scrollY.value)
+          ctx.strokeStyle = `rgba(${reefRGB}, ${alpha})`
+          ctx.lineWidth = s.width * (1 - lifeT) + 0.5
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          ctx.stroke()
+        }
       }
-      const head = s.trail[s.trail.length - 1] || { x: px, y: py }
-      const tailStart = s.trail[startIdx] || { x: px, y: py }
-      const g = ctx.createLinearGradient(tailStart.x, tailStart.y - scrollY.value, head.x, head.y - scrollY.value)
-      // Along-path opacity: invisible at start (0%), peak at mid (0.75), fade to 0 at end
-      const peakAlpha = 0.75
-      g.addColorStop(0.0, `rgba(255,255,255,0)`)
-      g.addColorStop(0.5, `rgba(${reefRGB}, ${peakAlpha})`)
-      g.addColorStop(1.0, `rgba(255,255,255,0)`)
-      ctx.strokeStyle = g
-      ctx.lineWidth = s.width * (1 - lifeT) + 0.5
-      ctx.lineCap = 'round'
-      ctx.lineJoin = 'round'
-      ctx.stroke()
       return true
     })
     ctx.restore()
