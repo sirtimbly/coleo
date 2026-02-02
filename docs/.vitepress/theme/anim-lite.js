@@ -38,22 +38,26 @@
   function updateDepth(){ if(!state.depthSlider||!state.water||!state.depthCtrl) return
     const value=parseInt(state.depthSlider.value||'70',10); state.brightness=value/100
     if(state.depthIcon) state.depthIcon.textContent=value>50?'☀️':'🌙'
-    state.depthCtrl.classList.toggle('dark-mode', value<=50)
+    const isLight=value>50
+    state.depthCtrl.classList.toggle('dark-mode', !isLight)
+    // Mirror mode globally so navbar/content can restyle
+    document.body.classList.toggle('light-mode', isLight)
+    document.body.classList.toggle('dark-mode', !isLight)
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8
     state.water.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
   }
 
   function initRays(){
     state.rays=[]
-    const vw=state.viewportWidth, vh=state.viewportHeight
+    const vw=state.viewportWidth, vh=(state.raysCanvas?.height||state.viewportHeight)
     for(let i=0;i<8;i++){
-      state.rays.push({ x:(vw/8)*i+(Math.random()-0.5)*40, y:-200-Math.random()*200, width:120+Math.random()*80, length:vh*1.5, speed:0.1+Math.random()*0.2, phase:Math.random()*Math.PI*2, opacity:0.08+Math.random()*0.1 })
+      state.rays.push({ x:(vw/8)*i+(Math.random()-0.5)*40, y:-200-Math.random()*200, width:120+Math.random()*80, length:vh*1.2, speed:0.1+Math.random()*0.2, phase:Math.random()*Math.PI*2, opacity:0.08+Math.random()*0.1 })
     }
   }
 
   function drawRays(dt){
     const ctx=state.raysCanvas.getContext('2d')
-    ctx.clearRect(0,0,state.viewportWidth,state.viewportHeight)
+    ctx.clearRect(0,0,state.raysCanvas.width,state.raysCanvas.height)
     ctx.globalCompositeOperation='screen'
     const t=state.time
     for(let i=0;i<state.rays.length;i++){
@@ -84,11 +88,20 @@
     ensureDom()
     if(!state.water||!state.raysCanvas) return
     state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight
-    state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=state.viewportHeight
+    state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5)
     initRays(); updateDepth()
-    state.resizeHandler=()=>{ state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight; state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=state.viewportHeight; initRays() }
+    state.resizeHandler=()=>{ state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight; state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5); initRays() }
     state.scrollHandler=()=>{ state.scrollY=window.scrollY; const parallax=-state.scrollY*0.2; state.water.style.transform=`translate3d(0,${parallax}px,0)`; state.raysCanvas.style.transform=`translate3d(0,${parallax}px,0)` }
     state.inputHandler=()=>updateDepth()
+    if(state.depthIcon){
+      state.depthIcon.style.cursor='pointer'
+      state.iconClickHandler=()=>{
+        const val=parseInt(state.depthSlider.value||'70',10)
+        state.depthSlider.value = val>50 ? '30' : '80'
+        updateDepth()
+      }
+      state.depthIcon.addEventListener('click', state.iconClickHandler)
+    }
     window.addEventListener('resize', state.resizeHandler)
     window.addEventListener('scroll', state.scrollHandler)
     if(state.depthSlider) state.depthSlider.addEventListener('input', state.inputHandler)
@@ -101,6 +114,7 @@
     if(state.resizeHandler){ window.removeEventListener('resize', state.resizeHandler); state.resizeHandler=null }
     if(state.scrollHandler){ window.removeEventListener('scroll', state.scrollHandler); state.scrollHandler=null }
     if(state.inputHandler && state.depthSlider){ state.depthSlider.removeEventListener('input', state.inputHandler); state.inputHandler=null }
+    if(state.depthIcon && state.iconClickHandler){ state.depthIcon.removeEventListener('click', state.iconClickHandler); state.iconClickHandler=null }
     // remove only elements we created
     const ids=['waterLayerInner','raysCanvasInner','depthControlInner']
     for(const id of ids){ const el=document.getElementById(id); if(el && el.dataset && el.dataset.inner==='1'){ try{ el.remove() }catch(_){} } }
@@ -109,4 +123,3 @@
 
   window.__innerAnim={ initInnerAnimation:initInner, stopInnerAnimation:stopInner }
 })()
-

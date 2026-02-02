@@ -121,8 +121,13 @@
   }
   function updateDepth(){ if(!state.depthSlider||!state.depthControl||!state.waterLayer) return
     const value=parseInt(state.depthSlider.value); state.brightness=value/100
-    if(state.depthIcon) state.depthIcon.textContent=value>50?'☀️':'🌙'
-    state.depthControl.classList.toggle('dark-mode', value<=50)
+    const isLight=value>50
+    if(state.depthIcon) state.depthIcon.textContent=isLight?'☀️':'🌙'
+    state.depthControl.classList.toggle('dark-mode', !isLight)
+    // Toggle mode globally and on marketing root for CSS
+    document.body.classList.toggle('light-mode', isLight)
+    document.body.classList.toggle('dark-mode', !isLight)
+    const mr=document.querySelector('.marketing-root'); if(mr){ mr.classList.toggle('light-mode', isLight) }
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8
     state.waterLayer.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
   }

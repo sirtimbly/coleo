@@ -29,7 +29,7 @@ title: Coleo — Multi-Agent Development Coordination
         <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
       </div>
       <div class="hidden md:flex items-center space-x-8">
-        <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
+        <a href="/philosophy" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
         <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Architecture</a>
         <a href="/architecture/components#observatory-web-ui-api" class="nav-link text-sm font-medium transition-colors">Observatory</a>
         <a href="/licensing" class="nav-link text-sm font-medium transition-colors">License</a>

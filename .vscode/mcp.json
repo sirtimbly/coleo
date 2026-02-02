@@ -3,7 +3,20 @@
     "code-search": {
       "type": "stdio",
       "command": "/Users/timothy.bendt/granular/code-search/.venv/bin/python",
-      "args": ["/Users/timothy.bendt/granular/code-search/mcp_server.py", "--project", "${workspaceFolder}"]
+      "args": [
+        "/Users/timothy.bendt/granular/code-search/mcp_server.py",
+        "--project",
+        "${workspaceFolder}"
+      ]
+    }
+  },
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest"
+      ]
     }
   }
 }

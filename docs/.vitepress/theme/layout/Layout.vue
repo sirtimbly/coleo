@@ -2,6 +2,7 @@
 import DefaultTheme from 'vitepress/theme'
 import { useRoute, Content } from 'vitepress'
 import { computed, watchEffect } from 'vue'
+import SiteNav from '../components/SiteNav.vue'
 
 const route = useRoute()
 const { Layout: DefaultLayout } = DefaultTheme
@@ -27,6 +28,9 @@ watchEffect(() => {
   <div v-if="isHome" class="marketing-root">
     <Content />
   </div>
-  <DefaultLayout v-else />
+  <div v-else>
+    <SiteNav />
+    <DefaultLayout />
+  </div>
   
 </template>

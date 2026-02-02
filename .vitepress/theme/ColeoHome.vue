@@ -182,7 +182,7 @@ function animate() {
 
 function updateDepth() {
   const value = parseInt(depthSlider.value)
-  brightness.value = value / 100
+  brightness.value = (value / 100);
 
   depthIcon.textContent = value > 50 ? '☀️' : '🌙'
   depthControl.classList.toggle('dark-mode', value <= 50)
@@ -288,7 +288,7 @@ onUnmounted(() => {
         <span ref="depthIcon">☀️</span>
         <span>Depth</span>
       </label>
-      <input type="range" ref="depthSlider" min="20" max="100" value="70">
+      <input type="range" ref="depthSlider" min="50" max="150" value="70">
     </div>
 
     <div class="water-layer" ref="waterLayer"></div>

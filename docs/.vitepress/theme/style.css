@@ -2,27 +2,70 @@
 
 /* Variables and base styles derived from docs/public/marketing2.html */
 :root {
-  --color-bg: #0a1b2b;
-  --color-bg-deep: #071423;
-  --color-surface: rgba(255, 255, 255, 0.06);
-  --color-border: rgba(255, 255, 255, 0.15);
-  --color-accent: #14b8a6;
-  --color-accent-dark: #0d9488;
-  --reef-rgb: 20, 184, 166; /* default teal; JS can morph to 73,215,175 */
-  --font-display: 'Space Grotesk', system-ui, -apple-system, Segoe UI, Roboto,
-    Ubuntu, Cantarell, Noto Sans, sans-serif;
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
-    Ubuntu, Cantarell, Noto Sans, sans-serif;
+	--color-bg: #0a1b2b;
+	--color-bg-deep: #071423;
+	--color-surface: rgba(255, 255, 255, 0.06);
+	--color-border: rgba(255, 255, 255, 0.15);
+	--color-accent: #14b8a6;
+	--color-accent-dark: #0d9488;
+	--reef-rgb: 20, 184, 166; /* default teal; JS can morph to 73,215,175 */
+	--font-display:
+		"Space Grotesk", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+		Cantarell, Noto Sans, sans-serif;
+	--font-sans:
+		Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+		Cantarell, Noto Sans, sans-serif;
+
+	/* VitePress theme tokens aligned to homepage palette */
+	--vp-c-bg: #0a1b2b;
+	--vp-c-bg-alt: #071423;
+	--vp-c-bg-soft: #0c2238;
+	--vp-c-surface: rgba(255, 255, 255, 0.08);
+	--vp-c-surface-soft: rgba(255, 255, 255, 0.06);
+	--vp-c-border: rgba(255, 255, 255, 0.12);
+	--vp-c-divider: rgba(255, 255, 255, 0.08);
+	--vp-c-text-1: rgba(255, 255, 255, 0.95);
+	--vp-c-text-2: rgba(255, 255, 255, 0.75);
+	--vp-c-text-3: rgba(255, 255, 255, 0.55);
+	--vp-c-link: #c1fffb;
+	--vp-c-brand: #14b8a6;
+	--vp-c-brand-1: #2ad1bf;
+	--vp-c-brand-2: #14b8a6;
+	--vp-c-brand-3: #0d9488;
+	--vp-c-brand-soft: rgba(20, 184, 166, 0.16);
+	--vp-shadow-1: 0 10px 24px rgba(0, 0, 0, 0.3);
+	--vp-shadow-2: 0 20px 32px rgba(0, 0, 0, 0.35);
+	/* Align VitePress layout with custom navbar height */
+	--vp-nav-height: 64px;
+}
+
+/* Light-mode token flip driven by depth slider */
+body.light-mode {
+	--vp-c-bg: #0a1b2b; /* keep deep ocean backdrop */
+	--vp-c-bg-alt: #0a1b2b;
+	--vp-c-bg-soft: rgba(255, 255, 255, 0.7);
+	--vp-c-surface: rgba(224, 250, 246, 0.85);
+	--vp-c-surface-soft: rgba(224, 250, 246, 0.7);
+	--vp-c-border: rgba(0, 0, 0, 0.12);
+	--vp-c-divider: rgba(0, 0, 0, 0.08);
+	--vp-c-text-1: #0a1b2b;
+	--vp-c-text-2: rgba(10, 27, 43, 0.75);
+	--vp-c-text-3: rgba(10, 27, 43, 0.55);
+	--vp-c-link: #0d9488;
+	--vp-c-brand: #0d9488;
+	--vp-c-brand-1: #2ad1bf;
+	--vp-c-brand-2: #14b8a6;
+	--vp-c-brand-3: #0d9488;
 }
 
 /* Reset for the marketing homepage container */
 .marketing-root {
-  min-height: 100dvh;
-  position: relative;
-  /* Base tone; rich gradients live on .water-layer for depth control */
-  background: #0a1b2b;
-  color: #fff;
-  font-family: var(--font-sans);
+	min-height: 100dvh;
+	position: relative;
+	/* Base tone; rich gradients live on .water-layer for depth control */
+	background: #0a1b2b;
+	color: #fff;
+	font-family: var(--font-sans);
 }
 
 /* Hide VitePress UI chrome only on the homepage */
@@ -31,181 +74,654 @@ body:has(.marketing-root) .VPSidebar,
 body:has(.marketing-root) .VPDoc,
 body:has(.marketing-root) .VPDocFooter,
 body:has(.marketing-root) .VPFooter {
-  display: none !important;
+	display: none !important;
 }
 
 /* Layers for animation */
 .water-layer,
 .rays-layer,
 .sparkles-layer {
-  position: fixed;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 0;
 }
 
 /* Rich aqua/blue background gradient lives on the water layer so the slider can
    darken/brighten it via CSS filters. Increase teal presence for aquamarine feel. */
 .water-layer {
-  background:
-    /* Taller top aqua glow band for strong reef hue across full viewport */
-    linear-gradient(180deg,
-      rgba(var(--reef-rgb), 0.24) 0,
-      rgba(var(--reef-rgb), 0.16) 50vh,
-      rgba(var(--reef-rgb), 0.00) 100vh
-    ),
-    radial-gradient(1400px 900px at 50% -600px, rgba(var(--reef-rgb), var(--aqua1, 0.35)), transparent 70%),
-    radial-gradient(1100px 700px at 20% -420px, rgba(var(--reef-rgb), var(--aqua2, 0.45)), transparent 75%),
-    radial-gradient(1000px 600px at 80% -350px, rgba(59, 130, 246, var(--blue1, 0.25)), transparent 75%),
-    radial-gradient(900px 500px at 70% -560px, rgba(16, 185, 129, var(--green1, 0.18)), transparent 70%),
-    linear-gradient(180deg, #071423 0%, #0a1b2b 40%, #0a1b2b 100%);
+	/* Taller top aqua glow band for strong reef hue across full viewport */
+	background:
+		linear-gradient(
+			180deg,
+			rgba(var(--reef-rgb), 0.24) 0,
+			rgba(var(--reef-rgb), 0.16) 50vh,
+			rgba(var(--reef-rgb), 0) 100vh
+		),
+		radial-gradient(
+			1400px 900px at 50% -600px,
+			rgba(var(--reef-rgb), var(--aqua1, 0.35)),
+			transparent 70%
+		),
+		radial-gradient(
+			1100px 700px at 20% -420px,
+			rgba(var(--reef-rgb), var(--aqua2, 0.45)),
+			transparent 75%
+		),
+		radial-gradient(
+			1000px 600px at 80% -350px,
+			rgba(59, 130, 246, var(--blue1, 0.25)),
+			transparent 75%
+		),
+		radial-gradient(
+			900px 500px at 70% -560px,
+			rgba(16, 185, 129, var(--green1, 0.18)),
+			transparent 70%
+		), linear-gradient(180deg, #63a9c5 0%, #205055 40%, #192938 100%);
 }
 
 .home-content {
-  position: relative;
-  z-index: 10;
+	position: relative;
+	z-index: 10;
+}
+
+/* Inner pages: ensure dark background and correct stacking above layers */
+body:not(:has(.marketing-root)) {
+	background: #0a1b2b;
+}
+body:not(:has(.marketing-root)) .VPApp,
+body:not(:has(.marketing-root)) .VPNavBar,
+body:not(:has(.marketing-root)) .VPSidebar,
+body:not(:has(.marketing-root)) .VPContent,
+body:not(:has(.marketing-root)) .VPDoc,
+body:not(:has(.marketing-root)) .VPDocFooter,
+body:not(:has(.marketing-root)) .VPFooter {
+	position: relative;
+	z-index: 2;
+	background: transparent;
+}
+
+/* Allow VitePress to manage top padding via --vp-nav-height */
+
+/* Content top offset to align with aside's computed top */
+body:not(:has(.marketing-root)) .VPDoc .content {
+	margin-top: 0 !important;
+	padding: 24px !important;
+}
+
+/* Inner layers: extend height to avoid seeing the bottom during parallax */
+.water-layer[data-inner="1"],
+.rays-layer[data-inner="1"] {
+	left: 0;
+	right: 0;
+	top: -25vh;
+	height: 150vh; /* extra height for parallax travel */
 }
 
 /* Unified glass card styling with depth-aware light/dark flip */
 .ui-box {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  color: #ffffff;
+	background: rgba(255, 255, 255, 0.1);
+	border: 1px solid rgba(255, 255, 255, 0.15);
+	color: #ffffff;
 }
-.ui-box a { color: inherit; }
+.ui-box a {
+	color: inherit;
+}
 .marketing-root.light-mode .ui-box {
-  background: rgba(224, 250, 246, 0.85);
-  border-color: rgba(0, 0, 0, 0.08);
-  color: #0a1b2b;
+	background: rgba(224, 250, 246, 0.85);
+	border-color: rgba(0, 0, 0, 0.08);
+	color: #0a1b2b;
 }
 
 /* Navbar mimic */
 .navbar-custom {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  /* define and use a consistent navbar height so logo can size to 85% */
-  --nav-height: 64px;
-  min-height: var(--nav-height);
-  padding: 0 1.25rem;
-  display: flex;
-  align-items: center;
-  background:
-    linear-gradient(180deg, rgba(var(--reef-rgb), 0.12), rgba(0, 0, 0, 0.06)),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.06), transparent);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(16px) saturate(140%);
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	/* define and use a consistent navbar height so logo can size to 85% */
+	--nav-height: 64px;
+	min-height: var(--nav-height);
+	padding: 0 1.25rem;
+	display: flex;
+	align-items: center;
+	background:
+		linear-gradient(180deg, rgba(var(--reef-rgb), 0.12), rgba(0, 0, 0, 0.06)),
+		linear-gradient(180deg, rgba(0, 0, 0, 0.06), transparent);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	backdrop-filter: blur(16px) saturate(140%);
 }
 
 /* Brand logo sizing: occupy full navbar height */
 .navbar-custom .brand-logo {
-  height: var(--nav-height);
-  width: auto;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+	height: var(--nav-height);
+	width: auto;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
 }
 
 /* Navbar link and brand coloring with mode flip */
-.navbar-custom .nav-link { color: rgba(255, 255, 255, 0.9); text-decoration: none; }
-.navbar-custom .nav-link:hover { color: #ffffff; }
-.navbar-custom .brand-title { color: #ffffff; }
+.navbar-custom .nav-link {
+	color: rgba(255, 255, 255, 0.9);
+	text-decoration: none;
+}
+.navbar-custom .nav-link:hover {
+	color: #ffffff;
+}
+.navbar-custom .brand-title {
+	color: #ffffff;
+}
 
 .marketing-root.light-mode .navbar-custom {
-  background:
-    linear-gradient(180deg, rgba(var(--reef-rgb), 0.10), rgba(255,255,255,0.30)),
-    linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0.40));
-  border-bottom-color: rgba(0,0,0,0.08);
+	background:
+		linear-gradient(
+			180deg,
+			rgba(var(--reef-rgb), 0.1),
+			rgba(255, 255, 255, 0.3)
+		),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.4));
+	border-bottom-color: rgba(0, 0, 0, 0.08);
 }
-.marketing-root.light-mode .navbar-custom .nav-link { color: #0a1b2b; }
-.marketing-root.light-mode .navbar-custom .nav-link:hover { color: #000000; }
-.marketing-root.light-mode .navbar-custom .brand-title { color: #0a1b2b; }
+.marketing-root.light-mode .navbar-custom .nav-link {
+	color: #0a1b2b;
+}
+.marketing-root.light-mode .navbar-custom .nav-link:hover {
+	color: #000000;
+}
+.marketing-root.light-mode .navbar-custom .brand-title {
+	color: #0a1b2b;
+}
 
-.font-display { font-family: var(--font-display); }
+/* Inner pages: flip SiteNav in light mode */
+body.light-mode .navbar-custom {
+	background:
+		linear-gradient(
+			180deg,
+			rgba(var(--reef-rgb), 0.1),
+			rgba(255, 255, 255, 0.3)
+		),
+		linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.4));
+	border-bottom-color: rgba(0, 0, 0, 0.08);
+}
+body.light-mode .navbar-custom .nav-link {
+	color: #0a1b2b;
+}
+body.light-mode .navbar-custom .nav-link:hover {
+	color: #000000;
+}
+body.light-mode .navbar-custom .brand-title {
+	color: #0a1b2b;
+}
+
+.font-display {
+	font-family: var(--font-display);
+}
 
 /* VitePress default navbar logo: use full nav height */
 .VPNavBar .logo {
-  height: calc(var(--vp-nav-height, 56px) * 1.0) !important;
-  width: auto !important;
+	height: calc(var(--vp-nav-height, 56px) * 1) !important;
+	width: auto !important;
+}
+
+/* Hide default appearance switch to match homepage */
+.VPSwitchAppearance {
+	display: none !important;
+}
+
+/* Hide VitePress default navbar on inner pages; use SiteNav instead */
+body:not(:has(.marketing-root)) .VPNavBar {
+	display: none !important;
+}
+
+/* Hide default sidebar top logo block to reduce clutter */
+body:not(:has(.marketing-root)) .VPSidebar .top {
+	display: none !important;
+}
+
+/* Sidebar readability */
+body:not(:has(.marketing-root)) .VPSidebar {
+	background: transparent;
+}
+body:not(:has(.marketing-root)) .VPSidebar .group .title {
+	color: rgba(255, 255, 255, 0.92);
+	font-weight: 700;
+	font-size: 1rem;
+}
+body:not(:has(.marketing-root)) .VPSidebar .items .link .text {
+	color: rgba(255, 255, 255, 0.92);
+	font-size: 0.95rem;
+}
+body:not(:has(.marketing-root)) .VPSidebar .items .link.active .text {
+	color: var(--vp-c-brand) !important;
+	font-weight: 600;
+}
+
+/* Layout inner pages using a two-column grid: sidebar + content */
+@media (min-width: 960px) {
+	body:not(:has(.marketing-root)) .Layout {
+		display: grid;
+		grid-template-columns: var(--vp-sidebar-width) minmax(0, 1fr);
+		column-gap: 24px;
+		align-items: start;
+	}
+	body:not(:has(.marketing-root)) .VPSidebar {
+		width: var(--vp-sidebar-width);
+		position: sticky;
+		top: var(--vp-nav-height);
+		height: calc(100dvh - var(--vp-nav-height));
+		overflow: auto;
+		padding-top: 8px;
+	}
+	body:not(:has(.marketing-root)) .VPContent {
+		margin: 0 !important;
+	}
+}
+
+/* Sidebar readability: larger text and higher contrast */
+body:not(:has(.marketing-root)) .VPSidebar {
+	background: transparent;
+}
+body:not(:has(.marketing-root)) .VPSidebar .group .title {
+	color: var(--vp-c-text-1);
+	font-weight: 700;
+	font-size: 1rem;
+}
+body:not(:has(.marketing-root)) .VPSidebar .items .link .text {
+	color: var(--vp-c-text-1);
+	font-size: 0.95rem;
+}
+body:not(:has(.marketing-root)) .VPSidebar .items .link.active .text {
+	color: var(--vp-c-brand) !important;
+	font-weight: 600;
 }
 
 /* Sections */
 .hero-section {
-  padding: 6rem 0 4rem;
+	padding: 6rem 0 4rem;
 }
 
 /* Ensure large hero title size regardless of Tailwind availability */
 .hero-title {
-  font-size: clamp(3rem, 8vw, 5.5rem);
-  line-height: 1.08;
-  font-family: var(--font-display);
+	font-size: clamp(3rem, 8vw, 5.5rem);
+	line-height: 1.08;
+	font-family: var(--font-display);
 }
 
 .section-glass {
-  padding: 5rem 0;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.08) 0%,
-    rgba(255, 255, 255, 0.05) 100%
-  );
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+	padding: 5rem 0;
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.08) 0%,
+		rgba(255, 255, 255, 0.05) 100%
+	);
+	border-top: 1px solid rgba(255, 255, 255, 0.08);
+	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-.section-glass.light-1 { background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03)); }
-.section-glass.light-2 { background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.04)); }
-.section-glass.light-3 { background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.05)); }
-.section-glass.dark-1 { background: linear-gradient(180deg, rgba(0,0,0,0.15), rgba(0,0,0,0.2)); }
-.section-glass.dark-2 { background: linear-gradient(180deg, rgba(0,0,0,0.18), rgba(0,0,0,0.25)); }
-.section-glass.dark-3 { background: linear-gradient(180deg, rgba(0,0,0,0.2), rgba(0,0,0,0.3)); }
+.section-glass.light-1 {
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.06),
+		rgba(255, 255, 255, 0.03)
+	);
+}
+.section-glass.light-2 {
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.07),
+		rgba(255, 255, 255, 0.04)
+	);
+}
+.section-glass.light-3 {
+	background: linear-gradient(
+		180deg,
+		rgba(255, 255, 255, 0.08),
+		rgba(255, 255, 255, 0.05)
+	);
+}
+.section-glass.dark-1 {
+	background: linear-gradient(180deg, rgba(0, 0, 0, 0.15), rgba(0, 0, 0, 0.2));
+}
+.section-glass.dark-2 {
+	background: linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.25));
+}
+.section-glass.dark-3 {
+	background: linear-gradient(180deg, rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.3));
+}
 
 /* Containers */
-.container { max-width: 80rem; margin: 0 auto; padding: 0 1rem; }
+.container {
+	max-width: 80rem;
+	margin: 0 auto;
+	padding: 0 1rem;
+}
 
 /* Depth control */
 .depth-control {
-  position: fixed;
-  right: 1rem;
-  bottom: 1rem;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 9999px;
-  padding: 0.5rem 0.75rem;
-  backdrop-filter: blur(8px);
-  color: #fff;
-  z-index: 30;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+	position: fixed;
+	right: 1rem;
+	bottom: 1rem;
+	background: rgba(0, 0, 0, 0.25);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	border-radius: 9999px;
+	padding: 0.5rem 0.75rem;
+	backdrop-filter: blur(8px);
+	color: #fff;
+	z-index: 30;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.5rem;
 }
-.depth-control.dark-mode { background: rgba(0, 0, 0, 0.4); }
-.depth-control label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; cursor: pointer; }
+.depth-control.dark-mode {
+	background: rgba(0, 0, 0, 0.4);
+}
+.depth-control label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.875rem;
+	cursor: pointer;
+}
 .depth-control input[type="range"] {
-  accent-color: var(--color-accent);
-  writing-mode: bt-lr; /* Firefox */
-  -webkit-appearance: slider-vertical; /* WebKit */
-  height: 180px;
-  width: 28px;
+	accent-color: var(--color-accent);
+	writing-mode: bt-lr; /* Firefox */
+	-webkit-appearance: slider-vertical; /* WebKit */
+	height: 180px;
+	width: 28px;
 }
 
 /* Accent helpers */
-.text-accent { color: var(--color-accent); }
-.bg-accent { background-color: var(--color-accent); }
-.hover-bg-accent-dark:hover { background-color: var(--color-accent-dark); }
+.text-accent {
+	color: var(--color-accent);
+}
+.bg-accent {
+	background-color: var(--color-accent);
+}
+.hover-bg-accent-dark:hover {
+	background-color: var(--color-accent-dark);
+}
 
 /* Light-range primary accents switch to coral */
-.marketing-root.light-mode .bg-accent { background-color: #e85556; }
-.marketing-root.light-mode .hover-bg-accent-dark:hover { background-color: #d64b4b; }
+
+/* Inner pages: glass panels for content and aside */
+body:not(:has(.marketing-root)) .VPDoc .content {
+	background: rgba(255, 255, 255, 0.08);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	backdrop-filter: blur(10px) saturate(140%);
+	border-radius: 12px;
+}
+body:not(:has(.marketing-root)).light-mode .VPDoc .content {
+	background: rgba(224, 250, 246, 0.85);
+	border-color: rgba(0, 0, 0, 0.08);
+	color: #0a1b2b;
+}
+
+/* Doc content theming: code blocks, inline code, tables */
+.vp-doc pre,
+.vp-doc pre code {
+	background: var(--coleo-code-bg, rgba(0, 0, 0, 0.35)) !important;
+}
+body.light-mode .vp-doc pre,
+body.light-mode .vp-doc pre code {
+	--coleo-code-bg: rgba(0, 0, 0, 0.1);
+}
+
+.vp-doc :not(pre) > code {
+	background: rgba(255, 255, 255, 0.1);
+	padding: 0.2em 0.4em;
+	border-radius: 6px;
+}
+body.light-mode .vp-doc :not(pre) > code {
+	background: rgba(0, 0, 0, 0.08);
+}
+
+.vp-doc table tr:nth-child(2n) {
+	background: rgba(255, 255, 255, 0.04);
+}
+body.light-mode .vp-doc table tr:nth-child(2n) {
+	background: rgba(224, 250, 246, 0.5);
+}
+.marketing-root.light-mode .bg-accent {
+	background-color: #e85556;
+}
+.marketing-root.light-mode .hover-bg-accent-dark:hover {
+	background-color: #d64b4b;
+}
 
 /* Utility tweaks for the marketing page */
-.backdrop-blur-sm { backdrop-filter: blur(6px); }
-.backdrop-blur-md { backdrop-filter: blur(12px); }
-.backdrop-blur-lg { backdrop-filter: blur(20px); }
+.backdrop-blur-sm {
+	backdrop-filter: blur(6px);
+}
+.backdrop-blur-md {
+	backdrop-filter: blur(12px);
+}
+.backdrop-blur-lg {
+	backdrop-filter: blur(20px);
+}
 
 /* Avoid content width constraints that VitePress might impose */
 body:has(.marketing-root) .container,
-.marketing-root .container { width: 100%; max-width: 80rem; }
+.marketing-root .container {
+	width: 100%;
+	max-width: 80rem;
+}
+
+/* ==== CUSTOM CSS ==== */
+
+.VPHome {
+	position: relative;
+	overflow: hidden;
+}
+
+.water-layer {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 200vh;
+	z-index: 0;
+	background: linear-gradient(
+		165deg,
+		#7fffd4 0%,
+		#40e0d0 15%,
+		#48d1cc 35%,
+		#20b2aa 60%,
+		#008b8b 75%,
+		#006666 90%,
+		#002020 100%
+	);
+	filter: url(#water-distortion);
+	will-change: transform;
+}
+
+.water-layer::before {
+	content: "";
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background: radial-gradient(
+		ellipse at 30% 20%,
+		rgba(127, 255, 212, 0.4) 0%,
+		transparent 50%
+	);
+	pointer-events: none;
+}
+
+.rays-layer {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100vh;
+	z-index: 1;
+	pointer-events: none;
+	filter: url(#water-distortion);
+	will-change: transform;
+}
+
+.sparkles-layer {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 200vh;
+	z-index: 2;
+	pointer-events: none;
+}
+
+.depth-control {
+	position: fixed;
+	bottom: 10px;
+	right: 20px;
+	z-index: 200;
+	background: rgba(255, 255, 255, 0.95);
+	padding: 12px 16px;
+	border-radius: 30px;
+	box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.depth-control.dark-mode {
+	background: rgba(15, 23, 42, 0.95);
+}
+
+.depth-control label {
+	font-size: 12px;
+	font-weight: 700;
+	color: #555;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.depth-control.dark-mode label {
+	color: #cbd5e1;
+}
+
+.depth-control input[type="range"] {
+	width: 3px;
+	-webkit-appearance: none;
+	background: #e2e8f0;
+	border-radius: 2px;
+	outline: none;
+	writing-mode: vertical-rl;
+	rotate: 180deg;
+}
+
+.depth-control input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #ff6b6b;
+	cursor: pointer;
+	box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.home-content {
+	position: relative;
+	z-index: 10;
+}
+
+.section-glass {
+	position: relative;
+	padding: 6rem 1rem;
+	min-height: 80vh;
+	display: flex;
+	align-items: center;
+}
+
+.section-glass > .container {
+	max-width: 80rem;
+	margin: 0 auto;
+	width: 100%;
+	padding: 3rem;
+	border-radius: 2rem;
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+}
+
+.section-glass.light-1 > .container {
+	background: rgba(255, 255, 255, 0.75);
+	color: #0f172a;
+}
+
+.section-glass.dark-1 > .container {
+	background: rgba(15, 23, 42, 0.8);
+	color: #f1f5f9;
+	border-color: rgba(255, 255, 255, 0.1);
+}
+
+.section-glass.light-2 > .container {
+	background: rgba(254, 252, 232, 0.8);
+	color: #1e293b;
+}
+
+.section-glass.dark-2 > .container {
+	background: rgba(30, 41, 59, 0.85);
+	color: #f8fafc;
+	border-color: rgba(255, 255, 255, 0.08);
+}
+
+.section-glass.light-3 > .container {
+	background: rgba(240, 253, 250, 0.8);
+	color: #134e4a;
+}
+
+.section-glass.dark-3 > .container {
+	background: rgba(19, 78, 74, 0.85);
+	color: #ccfbf1;
+}
+
+.hero-section {
+	position: relative;
+	min-height: 100vh;
+	display: flex;
+	align-items: center;
+	padding: 6rem 1rem;
+	z-index: 10;
+}
+
+.navbar-custom {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 100;
+	padding: 1rem 2rem;
+	transition: all 0.3s ease;
+}
+
+.navbar-custom.scrolled {
+	background: rgba(255, 255, 255, 0.9);
+	backdrop-filter: blur(10px);
+	box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+}
+
+.text-accent {
+	color: #ff6b6b;
+}
+.bg-accent {
+	background-color: #ff6b6b;
+}
+
+@media (max-width: 768px) {
+	.section-glass > .container {
+		padding: 2rem;
+	}
+	.hero-section h1 {
+		font-size: 2.5rem;
+	}
+}

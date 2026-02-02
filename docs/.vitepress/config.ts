@@ -5,7 +5,28 @@ export default defineConfig({
   ignoreDeadLinks: true,
   themeConfig: {
     // Shown in the default VitePress navbar on documentation pages
-    logo: '/coleo-logo.png'
+    logo: '/coleo-logo.png',
+    sidebar: {
+      '/': [
+        { text: 'Getting Started', link: '/guides/getting-started' },
+        {
+          text: 'Guides',
+          items: [
+            { text: 'CLI', link: '/guides/cli' },
+            { text: 'Docker', link: '/guides/docker' }
+          ]
+        },
+        { text: 'Philosophy', link: '/philosophy' },
+        {
+          text: 'Architecture',
+          items: [
+            { text: 'Overview', link: '/architecture/overview' },
+            { text: 'Components', link: '/architecture/components' },
+            { text: 'Security', link: '/architecture/security' }
+          ]
+        }
+      ]
+    }
   },
   head: [
     // Fonts to match marketing2.html
