@@ -1,5 +1,5 @@
 /**
- * Model Resolver for Octopai Harnesses
+ * Model Resolver for Coleo Harnesses
  * 
  * Handles model validation and fallback when the requested model
  * is not available. Resolution order:

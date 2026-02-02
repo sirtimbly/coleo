@@ -196,7 +196,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   let armClient: ArmClient | undefined;
   
   try {
-    const natsUrl = process.env.OCTOPAI_NATS_URL || 'nats://localhost:4222';
+    const natsUrl = process.env.COLEO_NATS_URL || 'nats://localhost:4222';
     log(`Connecting to NATS at ${natsUrl}...`, "verbose");
     
     nats = new NatsManager({ 

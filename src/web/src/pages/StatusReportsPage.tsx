@@ -10,7 +10,7 @@ import { RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, FileText } from 'l
 interface StatusReportsPageProps {}
 
 export function StatusReportsPage({}: StatusReportsPageProps) {
-  document.title = "Octopai Observatory - Status Reports";
+  document.title = "Coleo Observatory - Status Reports";
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

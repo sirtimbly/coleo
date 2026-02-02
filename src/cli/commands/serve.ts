@@ -30,7 +30,7 @@ export function registerServeCommand(program: Command): void {
   serveCmd
     .command("start")
     .description("Start the API server in the background")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await startService("server", {
@@ -51,7 +51,7 @@ export function registerServeCommand(program: Command): void {
     .description("Stop the API server")
     .option("-f, --force", "Force kill if graceful shutdown fails")
     .option("-t, --timeout <ms>", "Timeout for graceful shutdown", "5000")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await stopService("server", {
@@ -77,7 +77,7 @@ export function registerServeCommand(program: Command): void {
     .description("Restart the API server")
     .option("-f, --force", "Force kill if graceful shutdown fails")
     .option("-t, --timeout <ms>", "Timeout for graceful shutdown", "5000")
-    .option("--self-modify", "Require OCTOPAI_SELF_MODIFY env var (for arm access)")
+    .option("--self-modify", "Require COLEO_SELF_MODIFY env var (for arm access)")
     .action(async (options) => {
       try {
         const status = await restartService("server", {

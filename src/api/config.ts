@@ -2,7 +2,7 @@
  * API Configuration
  */
 
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import { join } from "path";
 
 export type LogLevel = "quiet" | "normal" | "verbose";
@@ -21,12 +21,12 @@ export interface ApiConfig {
  */
 export function loadApiConfig(): ApiConfig {
   return {
-    port: parseInt(process.env.OCTOPAI_API_PORT || "8080", 10),
-    host: process.env.OCTOPAI_API_HOST || "0.0.0.0",
-    apiKey: process.env.OCTOPAI_API_KEY || generateDevApiKey(),
-    corsOrigins: (process.env.OCTOPAI_CORS_ORIGINS || "http://localhost:5173,http://localhost:3000").split(","),
-    dbPath: process.env.OCTOPAI_DB_PATH || getDefaultDbPath(),
-    logLevel: (process.env.OCTOPAI_LOG_LEVEL || "quiet") as LogLevel,
+    port: parseInt(process.env.COLEO_API_PORT || "8080", 10),
+    host: process.env.COLEO_API_HOST || "0.0.0.0",
+    apiKey: process.env.COLEO_API_KEY || generateDevApiKey(),
+    corsOrigins: (process.env.COLEO_CORS_ORIGINS || "http://localhost:5173,http://localhost:3000").split(","),
+    dbPath: process.env.COLEO_DB_PATH || getDefaultDbPath(),
+    logLevel: (process.env.COLEO_LOG_LEVEL || "quiet") as LogLevel,
   };
 }
 
@@ -49,5 +49,5 @@ function generateDevApiKey(): string {
  * Get default database path
  */
 function getDefaultDbPath(): string {
-  return join(getOctopaiDir(), "octopai.db");
+  return join(getColeoDir(), "coleo.db");
 }

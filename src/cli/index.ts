@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Octopai CLI
+ * Coleo CLI
  *
  * AI agent orchestrator using the Octopus Model
  */
@@ -26,7 +26,7 @@ await loadEnvFile();
 
 const program = new Command();
 program
-  .name("octopai")
+  .name("coleo")
   .description("AI agent orchestrator using the Octopus Model")
   .version("0.1.0");
 

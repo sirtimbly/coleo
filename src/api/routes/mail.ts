@@ -6,7 +6,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { Maildir } from "../../mail/maildir";
 import { broadcastMailEvent } from "../websocket";
-import { getOctopaiDir } from "../../config";
+import { getColeoDir } from "../../config";
 import { join, basename } from "path";
 import { readdir, stat } from "fs/promises";
 import { HttpError } from "../middleware/error";
@@ -63,8 +63,8 @@ export function createMailRoutes() {
   const app = new Hono<MailContext>();
 
   app.use("*", async (c, next) => {
-    const octopaiDir = getOctopaiDir();
-    c.set("octopaiDir", octopaiDir);
+    const coleoDir = getColeoDir();
+    c.set("coleoDir", coleoDir);
     await next();
   });
 
@@ -74,8 +74,8 @@ export function createMailRoutes() {
    * Get all maildir folders with metadata - for IMAP/SMTP gateways
    */
   app.get("/folders", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-    const mailPath = join(octopaiDir, "mail");
+    const coleoDir = c.get("coleoDir");
+    const mailPath = join(coleoDir, "mail");
     
     try {
       const entries = await readdir(mailPath, { withFileTypes: true });
@@ -118,7 +118,7 @@ export function createMailRoutes() {
    * Optimized for IMAP/POP3 gateways
    */
   app.get("/folders/:folder/messages", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const folder = c.req.param("folder");
     const subfolder = c.req.query("subfolder") || "all"; // "new", "cur", or "all"
     const limit = Math.min(parseInt(c.req.query("limit") || "1000", 10), 1000);
@@ -164,7 +164,7 @@ export function createMailRoutes() {
    * Get raw message content by ID - for efficient gateway access
    */
   app.get("/folders/:folder/messages/:id/raw", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const folder = c.req.param("folder");
     const id = c.req.param("id");
     
@@ -200,7 +200,7 @@ export function createMailRoutes() {
    * POST /api/mail/inbox/:id/read
    */
   app.post("/inbox/:id/read", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const id = c.req.param("id");
 
     const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
@@ -227,7 +227,7 @@ export function createMailRoutes() {
    * POST /api/mail/inbox/:id/archive
    */
   app.post("/inbox/:id/archive", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const id = c.req.param("id");
 
     const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
@@ -293,7 +293,7 @@ export function createMailRoutes() {
     * Update message flags - for IMAP flag synchronization
     */
    app.patch("/folders/:folder/messages/:id/flags", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const folder = c.req.param("folder");
     const id = c.req.param("id");
     
@@ -369,7 +369,7 @@ export function createMailRoutes() {
   
   app.get("/inbox", async (c) => {
     const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
@@ -397,7 +397,7 @@ export function createMailRoutes() {
 
   app.get("/inbox/:id", async (c) => {
     const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
     try {
@@ -442,7 +442,7 @@ export function createMailRoutes() {
 
   app.get("/sent", async (c) => {
     const octopaiDir = c.get("octopaiDir");
-    const sent = new Maildir(join(octopaiDir, "mail", "sent"));
+    const sent = new Maildir(join(coleoDir, "mail", "sent"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
@@ -468,7 +468,7 @@ export function createMailRoutes() {
 
   app.get("/archive", async (c) => {
     const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
@@ -532,7 +532,7 @@ export function createMailRoutes() {
 
   app.delete("/inbox/:id", async (c) => {
     const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
     try {

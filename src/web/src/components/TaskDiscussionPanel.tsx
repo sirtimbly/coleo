@@ -18,12 +18,12 @@ interface TaskDiscussionPanelProps {
 
 // Get current user ID from localStorage or default
 function getCurrentUserId(): string {
-  return localStorage.getItem('octopai_user_email') || 'human@local';
+  return localStorage.getItem('coleo_user_email') || 'human@local';
 }
 
 // Get current user name
 function getCurrentUserName(): string {
-  return localStorage.getItem('octopai_user_name') || 'You';
+  return localStorage.getItem('coleo_user_name') || 'You';
 }
 
 export function TaskDiscussionPanel({

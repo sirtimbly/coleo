@@ -36,23 +36,22 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # Gitea data (local docker volume)
 gitea-data/
 
-# Octopai runtime state (user-specific)
+# Coleo runtime state (user-specific)
 # Uncomment if you want to ignore local state
-# ~/.octopai/
-docs/.vitepress
-.octopai/mail
-.octopai/bin
-.octopai/queue
-.octopai/state
-.octopai/octopai.db
-.octopai/octopai.db-shm
-.octopai/octopai.db-wal
+# ~/.coleo/
+.coleo/mail
+.coleo/bin
+.coleo/queue
+.coleo/state
+.coleo/coleo.db
+.coleo/coleo.db-shm
+.coleo/coleo.db-wal
 .vitepress/cache/deps
-.octopai/regression-results
-.octopai/mcp/*.json
+.coleo/regression-results
+.coleo/mcp/*.json
 
 # Test artifacts
-.test-octopai/
+.test-coleo/
 
 # Debug/repro scripts (temporary)
 repro_*.ts
@@ -60,5 +59,6 @@ debug-*.sh
 mock-*.ts
 test-*.ts
 init-db.js
-.octopai/run
-.octopai/mcp
+.coleo/run
+.coleo/mcp
+docs/.vitepress/cache/deps

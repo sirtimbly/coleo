@@ -7,7 +7,7 @@ import type { Database } from "bun:sqlite";
 export interface ToolContext {
   db: Database;
   projectRoot: string;
-  octopaiDir: string;
+  coleoDir: string;
 }
 
 export interface ToolResult<T = unknown> {

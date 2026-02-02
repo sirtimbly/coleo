@@ -1,7 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 
 /**
- * Test runner tools for Octopai
+ * Test runner tools for Coleo
  * 
  * Wraps the various test commands in package.json scripts.
  */
@@ -89,7 +89,7 @@ Returns any type errors found or confirms success.`,
 });
 
 export const build = tool({
-  description: `Build the Octopai CLI for distribution.
+  description: `Build the Coleo CLI for distribution.
 
 Runs the build script to create the dist/ output.`,
   args: {},

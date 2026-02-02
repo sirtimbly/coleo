@@ -1,17 +1,17 @@
 import { Command } from "commander";
 import { join } from "path";
 import { readFile } from "fs/promises";
-import { getApiConfig, getOctopaiDir, isApiRunning } from "../context";
+import { getApiConfig, getColeoDir, isApiRunning } from "../context";
 import { listArms } from "../../arm";
 import { Maildir } from "../../mail";
 
 export function registerStatusCommand(program: Command): void {
   program
     .command("status")
-    .description("Show overall Octopai status")
+    .description("Show overall Coleo status")
     .option("--json", "Output as JSON")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
+      const coleoDir = getColeoDir();
       const { apiUrl, headers } = getApiConfig();
 
       type EnhancedStatus = {
@@ -64,8 +64,8 @@ export function registerStatusCommand(program: Command): void {
         return;
       }
 
-      console.log(`Octopai Status`);
-      console.log(`Directory: ${octopaiDir}`);
+      console.log(`Coleo Status`);
+      console.log(`Directory: ${coleoDir}`);
       console.log(``);
 
       if (enhancedStatus) {
@@ -128,14 +128,14 @@ export function registerStatusCommand(program: Command): void {
         }
 
         try {
-          const content = await readFile(join(octopaiDir, "state", "brain.json"), "utf-8");
+          const content = await readFile(join(coleoDir, "state", "brain.json"), "utf-8");
           const state = JSON.parse(content);
           console.log(`Brain: ${state.status} (last poll: ${state.lastPollAt || "never"})`);
         } catch {
           console.log(`Brain: not started`);
         }
 
-        const arms = await listArms(octopaiDir);
+        const arms = await listArms(coleoDir);
         const activeArms = arms.filter((a) => a.status !== "stopped");
         const stoppedArms = arms.filter((a) => a.status === "stopped");
         console.log(`Arms: ${activeArms.length} active, ${stoppedArms.length} stopped`);
@@ -143,12 +143,12 @@ export function registerStatusCommand(program: Command): void {
           console.log(`  - ${a.id}: ${a.status}`);
         }
 
-        const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+        const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
         const newCount = await inbox.count("new");
         console.log(`Inbox: ${newCount} unread`);
 
         try {
-          const content = await readFile(join(octopaiDir, "state", "tasks.json"), "utf-8");
+          const content = await readFile(join(coleoDir, "state", "tasks.json"), "utf-8");
           const tasks = JSON.parse(content);
           const pending = tasks.filter((t: { status: string }) => t.status === "pending").length;
           const inProgress = tasks.filter((t: { status: string }) => t.status === "in_progress").length;

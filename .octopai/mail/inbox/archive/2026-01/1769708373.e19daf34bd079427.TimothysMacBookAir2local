@@ -1,0 +1,19 @@
+From: brain@octopai.local
+To: human@local
+Subject: [octopai] Arm Corttex needs attention: idle
+Date: Thu, 29 Jan 2026 17:39:33 GMT
+Message-ID: <1769708373.66a8a42265bc70fc.TimothysMacBookAir2local@octopai.local>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+The arm "Corttex" requires human attention.
+
+**State:** idle
+**Reason:** No productive activity detected
+**Confidence:** medium
+
+**Metrics:**
+ Events in window: 1
+ Silent for: 5s
+ Recent messages: 0
+ Recent file edits: 0

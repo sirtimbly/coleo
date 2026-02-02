@@ -1,5 +1,5 @@
 /**
- * API Client for Octopai Observatory
+ * API Client for Coleo Observatory
  */
 
 const API_BASE = '/api';
@@ -14,19 +14,19 @@ class ApiClient {
 
   setApiKey(key: string) {
     this.apiKey = key;
-    localStorage.setItem('octopai_api_key', key);
+    localStorage.setItem('coleo_api_key', key);
   }
 
   getApiKey(): string | null {
     if (!this.apiKey) {
-      this.apiKey = localStorage.getItem('octopai_api_key');
+      this.apiKey = localStorage.getItem('coleo_api_key');
     }
     return this.apiKey;
   }
 
   clearApiKey() {
     this.apiKey = null;
-    localStorage.removeItem('octopai_api_key');
+    localStorage.removeItem('coleo_api_key');
   }
 
   private async request<T>(
@@ -111,29 +111,29 @@ class ApiClient {
 
   // Full Config API
   async getFullConfig() {
-    return this.request<{ config: OctopaiConfig }>('/config');
+    return this.request<{ config: ColeoConfig }>('/config');
   }
 
-  async updateConfig(data: Partial<OctopaiConfig>) {
-    return this.request<{ config: OctopaiConfig }>('/config', {
+  async updateConfig(data: Partial<ColeoConfig>) {
+    return this.request<{ config: ColeoConfig }>('/config', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
   }
 
   async getDefaults() {
-    return this.request<{ defaults: OctopaiConfig['defaults'] }>('/config/defaults');
+    return this.request<{ defaults: ColeoConfig['defaults'] }>('/config/defaults');
   }
 
-  async updateDefaults(data: Partial<OctopaiConfig['defaults']>) {
-    return this.request<{ defaults: OctopaiConfig['defaults'] }>('/config/defaults', {
+  async updateDefaults(data: Partial<ColeoConfig['defaults']>) {
+    return this.request<{ defaults: ColeoConfig['defaults'] }>('/config/defaults', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
   }
 
-  async updateBrainConfig(data: Partial<OctopaiConfig['brain']>) {
-    return this.request<{ brain: OctopaiConfig['brain'] }>('/config/brain', {
+  async updateBrainConfig(data: Partial<ColeoConfig['brain']>) {
+    return this.request<{ brain: ColeoConfig['brain'] }>('/config/brain', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
@@ -682,7 +682,7 @@ class ApiClient {
 }
 
 // Types
-export interface OctopaiConfig {
+export interface ColeoConfig {
   version: number;
   brain: {
     pollIntervalMs: number;
@@ -703,7 +703,7 @@ export interface OctopaiConfig {
   };
 }
 
-// Arm configuration file structure (from .octopai/arms/*.toml)
+// Arm configuration file structure (from .coleo/arms/*.toml)
 export interface ArmConfig {
   arm: {
     name: string;

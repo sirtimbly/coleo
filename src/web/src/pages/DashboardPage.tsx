@@ -352,7 +352,7 @@ function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, a
           <p className="text-muted-foreground text-sm">
             No arms registered yet. Spawn one with:
             <code className="block mt-2 p-2 bg-secondary rounded text-xs font-mono">
-              octopai arm spawn --name explorer --agent opencode
+              coleo arm spawn --name explorer --agent opencode
             </code>
           </p>
         ) : (
@@ -435,7 +435,7 @@ const formatLastSeen = (timestamp?: string) => {
 };
 
 export function DashboardPage() {
-  document.title = "Octopai Observatory - Dashboard";
+  document.title = "Coleo Observatory - Dashboard";
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);

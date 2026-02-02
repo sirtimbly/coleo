@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 
 export function registerDebugCommands(program: Command): void {
   const debugCmd = program.command("debug").description("Debug and test brain components");
@@ -12,8 +12,8 @@ export function registerDebugCommands(program: Command): void {
     .option("-v, --verbose", "Show full LLM prompt and response")
     .option("--mock-arms <arms>", "Mock available arms (comma-separated name:status pairs)", "")
     .action(async (message: string, options: { subject: string; verbose?: boolean; mockArms: string }) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { MailProcessor } = await import("../../brain/brain");

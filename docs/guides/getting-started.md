@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide will help you set up Octopai and run your first brain + arm session.
+This guide will help you set up Coleo and run your first brain + arm session.
 
 ## Prerequisites
 
@@ -22,7 +22,7 @@ cd octopai
 # Install dependencies
 bun install
 
-# Initialize Octopai (copies arm templates)
+# Initialize Coleo (copies arm templates)
 bun run src/cli/index.ts init
 
 # Or initialize with a preset configuration
@@ -46,7 +46,7 @@ octopai init --preset full-team
 
 ## Quickstart: Existing Codebase (Partial Adoption)
 
-Use this path when you already have a repository and just want Octopai to help inside it.
+Use this path when you already have a repository and just want Coleo to help inside it.
 
 ### 1. Prepare your project
 
@@ -56,7 +56,7 @@ In your project repo:
 git clone git@github.com:you/your-project.git
 cd your-project
 
-# Create a branch that Octopai will use
+# Create a branch that Coleo will use
 git checkout -b octopai
 
 # Make sure it runs / builds in your environment
@@ -66,9 +66,9 @@ npm test           # optional but recommended
 
 This `octopai` branch is where arms will make changes. You can merge or rebase it into your main branch whenever you’re comfortable.
 
-### 2. Initialize Octopai (one-time)
+### 2. Initialize Coleo (one-time)
 
-In the Octopai repo:
+In the Coleo repo:
 
 ```bash
 cd /path/to/octopai
@@ -121,13 +121,13 @@ git status
 git diff
 ```
 
-You decide when to commit, squash, or merge those changes into your main branch. This is “partial adoption”: Octopai helps inside your existing process, without taking it over.
+You decide when to commit, squash, or merge those changes into your main branch. This is “partial adoption”: Coleo helps inside your existing process, without taking it over.
 
 ---
 
 ## Quickstart: New Project (Greenfield)
 
-Use this path when you’re starting from a blank slate and want Octopai involved from the first commit.
+Use this path when you’re starting from a blank slate and want Coleo involved from the first commit.
 
 ### 1. Create a new repo and branch
 
@@ -145,9 +145,9 @@ git commit -m "chore: initial project skeleton"
 
 You can optionally bootstrap a framework here (`bun init`, `npm create vite@latest`, etc.), or let an arm do that in the next step.
 
-### 2. Initialize Octopai
+### 2. Initialize Coleo
 
-In the Octopai repo:
+In the Coleo repo:
 
 ```bash
 cd /path/to/octopai
@@ -199,7 +199,7 @@ When you’re happy, you can push the `octopai` branch to your remote and open a
 
 ### Arm Templates
 
-Octopai includes arm configuration templates in `templates/arms/`. These provide starting points and focus hints; arms remain general-purpose and their behavior is primarily guided by task classification and history.
+Coleo includes arm configuration templates in `templates/arms/`. These provide starting points and focus hints; arms remain general-purpose and their behavior is primarily guided by task classification and history.
 
 | Template | Legacy Domain Hint | Description |
 |----------|--------------------|-------------|
@@ -220,8 +220,8 @@ bun run src/cli/index.ts status
 
 You should see:
 ```
-Octopai Status
-Directory: ~/.octopai
+Coleo Status
+Directory: ~/.coleo
 
 Brain: not started
 Arms: 0
@@ -231,10 +231,10 @@ Tasks: 0
 
 ## Directory Structure
 
-After initialization, Octopai creates this structure:
+After initialization, Coleo creates this structure:
 
 ```
-~/.octopai/
+~/.coleo/
 ├── mail/              # Human-agent communication (Maildir)
 │   ├── inbox/
 │   ├── sent/
@@ -294,7 +294,7 @@ bun run src/cli/index.ts arm spawn \
 This will:
 1. Create MCP configuration for the arm
 2. Open a new terminal window (or tmux session in headless mode)
-3. Start the AI agent with Octopai MCP connected
+3. Start the AI agent with Coleo MCP connected
 
 ## Arm Configurations
 
@@ -342,7 +342,7 @@ In the current design, these domains are hints; the brain primarily matches task
 
 ### Preset Configurations
 
-Octopai includes preset configurations for common setups. Load a preset:
+Coleo includes preset configurations for common setups. Load a preset:
 
 ```bash
 # Single full-stack arm (minimal setup)
@@ -432,7 +432,7 @@ bun run src/cli/index.ts status
 
 Output:
 ```
-Octopai Status
+Coleo Status
 Directory: ~/.octopai
 
 Brain: running (last poll: 10:30:30)
@@ -465,10 +465,10 @@ vim .env
 docker compose up -d
 
 # SSH into the container
-ssh -p 2222 octopai@localhost  # password: octopai
+ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside container
-octopai brain run
+coleo brain run
 ```
 
 See the [Docker Setup Guide](./docker) for more details.
@@ -483,7 +483,7 @@ See the [Docker Setup Guide](./docker) for more details.
 
 ## Documentation Sync
 
-Octopai automatically watches your `docs/` directory and keeps arms informed of changes. This ensures that when you update requirements, plans, or architectural decisions, all arms stay synchronized.
+Coleo automatically watches your `docs/` directory and keeps arms informed of changes. This ensures that when you update requirements, plans, or architectural decisions, all arms stay synchronized.
 
 ### How It Works
 
@@ -535,7 +535,7 @@ View documentation watcher status:
 
 ```bash
 # Check if docs are being watched
-octopai brain status
+coleo brain status
 
 # Output includes:
 # Documentation: 12 files tracked, last scan: 10:30:00
@@ -619,7 +619,7 @@ When monitoring documentation:
 
 ## Documentation Updates from Email
 
-When you reply to emails from Octopai with documentation changes, the brain creates documentation update tasks classified as `documentation`.
+When you reply to emails from Coleo with documentation changes, the brain creates documentation update tasks classified as `documentation`.
 
 ### How It Works
 

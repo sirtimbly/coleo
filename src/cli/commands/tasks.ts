@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 
 export function registerTasksCommands(program: Command): void {
   const tasksCmd = program.command("tasks").description("Manage tasks");
@@ -10,8 +10,8 @@ export function registerTasksCommands(program: Command): void {
     .description("Sync tasks from project plan files (.project/plan.md)")
     .option("-v, --verbose", "Show detailed output", false)
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");
@@ -152,8 +152,8 @@ export function registerTasksCommands(program: Command): void {
     .option("-s, --status <status>", "Filter by status (pending, claimed, completed)")
     .option("-n, --limit <n>", "Limit results", "20")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");
@@ -180,7 +180,7 @@ export function registerTasksCommands(program: Command): void {
 
         if (rows.length === 0) {
           console.log("No tasks found.");
-          console.log("Run 'octopai tasks sync' to import from plan files.");
+          console.log("Run 'coleo tasks sync' to import from plan files.");
           db.close();
           return;
         }
@@ -247,7 +247,7 @@ export function registerTasksCommands(program: Command): void {
         db.close();
       } catch {
         console.log("No task database found.");
-        console.log("Start the API server or run 'octopai tasks sync'.");
+        console.log("Start the API server or run 'coleo tasks sync'.");
         }
       });
 
@@ -255,8 +255,8 @@ export function registerTasksCommands(program: Command): void {
     .command("unclaim")
     .description("Reset claimed or in-progress tasks back to pending for testing")
     .action(async () => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { initDatabase } = await import("../../db");
@@ -279,8 +279,8 @@ export function registerTasksCommands(program: Command): void {
     .description("Clear plan-sourced tasks and reimport from plan.md files")
     .option("-v, --verbose", "Show detailed output", false)
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");
@@ -388,8 +388,8 @@ export function registerTasksCommands(program: Command): void {
     .description("Add a comment to a task discussion")
     .option("-r, --reply-to <commentId>", "Reply to a specific comment")
     .action(async (taskId, message, options) => {
-      const apiUrl = process.env.OCTOPAI_API_URL || `http://localhost:8080`;
-      const apiKey = process.env.OCTOPAI_API_KEY || "";
+      const apiUrl = process.env.COLEO_API_URL || `http://localhost:8080`;
+      const apiKey = process.env.COLEO_API_KEY || "";
 
       // Get author info from git config or env
       let authorId = process.env.USER || "unknown";
@@ -441,8 +441,8 @@ export function registerTasksCommands(program: Command): void {
     .option("-n, --limit <n>", "Number of comments to show", "20")
     .option("--json", "Output as JSON")
     .action(async (taskId, options) => {
-      const apiUrl = process.env.OCTOPAI_API_URL || `http://localhost:8080`;
-      const apiKey = process.env.OCTOPAI_API_KEY || "";
+      const apiUrl = process.env.COLEO_API_URL || `http://localhost:8080`;
+      const apiKey = process.env.COLEO_API_KEY || "";
 
       try {
         const response = await fetch(

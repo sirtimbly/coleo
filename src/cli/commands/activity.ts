@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { getOctopaiDir } from "../context";
+import { getColeoDir } from "../context";
 
 export function registerActivityCommands(program: Command): void {
   const activityCmd = program.command("activity").description("View activity log");
@@ -11,8 +11,8 @@ export function registerActivityCommands(program: Command): void {
     .option("-n, --count <n>", "Number of entries to show", "20")
     .option("-a, --actor <name>", "Filter by actor (arm or component name)")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");
@@ -88,8 +88,8 @@ export function registerActivityCommands(program: Command): void {
     .description("Tail activity log in real-time (Ctrl+C to exit)")
     .option("-n, --count <n>", "Initial entries to show", "10")
     .action(async (options) => {
-      const octopaiDir = getOctopaiDir();
-      const dbPath = join(octopaiDir, "octopai.db");
+      const coleoDir = getColeoDir();
+      const dbPath = join(coleoDir, "coleo.db");
 
       try {
         const { Database } = await import("bun:sqlite");

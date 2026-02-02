@@ -45,7 +45,7 @@ interface MailboxInfo {
 export interface ImapServerConfig {
   port: number;
   host: string;
-  octopaiDir: string;
+  coleoDir: string;
   // Authentication - can be static or callback
   authenticate?: (username: string, password: string) => Promise<boolean>;
   // Static credentials (if authenticate not provided)
@@ -82,11 +82,11 @@ export class ImapServer {
    */
   async init(): Promise<void> {
     // Initialize database for user storage
-    const dbPath = join(this.config.octopaiDir, "octopai.db");
+    const dbPath = join(this.config.coleoDir, "coleo.db");
     this.db = await initDatabase(dbPath);
     
     // Initialize Maildir instances for each folder
-    const mailPath = join(this.config.octopaiDir, "mail");
+    const mailPath = join(this.config.coleoDir, "mail");
     const folders = ["inbox", "sent", "drafts", "archive"];
     
     for (const folder of folders) {
@@ -160,7 +160,7 @@ export class ImapServer {
     console.log(`[imap] New connection: ${connId}`);
     
     // Send greeting
-    this.send(conn, "* OK Octopai IMAP4rev1 Service Ready");
+    this.send(conn, "* OK Coleo IMAP4rev1 Service Ready");
     
     let buffer = "";
     
@@ -323,7 +323,7 @@ export class ImapServer {
    */
   private async handleLogout(conn: ImapConnection, tag: string): Promise<void> {
     conn.state = "logout";
-    this.send(conn, "* BYE Octopai IMAP server logging out");
+    this.send(conn, "* BYE Coleo IMAP server logging out");
     this.send(conn, `${tag} ${OK} LOGOUT completed`);
     conn.socket.end();
   }
@@ -420,7 +420,7 @@ export class ImapServer {
         
         if (row) {
           // Simple comparison - in production, use bcrypt
-          return username === "octopai" && password === row.value;
+          return username === "coleo" && password === row.value;
         }
       } catch {
         // Config table may not exist
@@ -927,7 +927,7 @@ export class ImapServer {
       `To: ${msg.to}`,
       `Subject: ${msg.subject}`,
       `Date: ${msg.date.toUTCString()}`,
-      `Message-ID: <${msg.id}@octopai.local>`,
+      `Message-ID: <${msg.id}@coleo.local>`,
       `MIME-Version: 1.0`,
       `Content-Type: text/plain; charset=utf-8`,
     ];

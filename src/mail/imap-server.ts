@@ -11,7 +11,7 @@ import { join } from 'path';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'crypto';
 import { Maildir, type MailMessage, type MailFlags } from './maildir';
-import { getOctopaiDir } from '../config';
+import { getColeoDir } from '../config';
 
 /**
  * IMAP server states as defined by RFC 3501
@@ -55,7 +55,7 @@ interface IMAPCommand {
 interface IMAPServerConfig {
   port: number;
   hostname: string;
-  octopaiDir: string;
+  coleoDir: string;
 }
 
 /**
@@ -72,7 +72,7 @@ export class IMAPServer extends EventEmitter {
     this.config = {
       port: 1143, // Non-standard port to avoid conflicts
       hostname: '0.0.0.0',
-      octopaiDir: '', // Will be set in start()
+      coleoDir: '', // Will be set in start()
       ...config
     };
 
@@ -83,9 +83,9 @@ export class IMAPServer extends EventEmitter {
    * Start the IMAP server
    */
   async start(): Promise<void> {
-    // Initialize octopaiDir if not provided
-    if (!this.config.octopaiDir) {
-      this.config.octopaiDir = await getOctopaiDir();
+    // Initialize coleoDir if not provided
+    if (!this.config.coleoDir) {
+      this.config.coleoDir = await getColeoDir();
     }
 
     return new Promise((resolve, reject) => {
@@ -140,7 +140,7 @@ export class IMAPServer extends EventEmitter {
     console.log(`[IMAP] New connection: ${sessionId} from ${socket.remoteAddress}`);
 
     // Send greeting
-    this.sendResponse(session, null, 'OK', 'Octopai IMAP4rev1 Server ready');
+    this.sendResponse(session, null, 'OK', 'Coleo IMAP4rev1 Server ready');
 
     // Handle data
     let buffer = '';
@@ -311,7 +311,7 @@ export class IMAPServer extends EventEmitter {
    */
   private async handleLogout(session: IMAPSession, cmd: IMAPCommand): Promise<void> {
     session.state = 'logout';
-    this.sendResponse(session, null, 'BYE', 'Octopai IMAP Server logging out');
+    this.sendResponse(session, null, 'BYE', 'Coleo IMAP Server logging out');
     this.sendResponse(session, cmd.tag, 'OK', 'LOGOUT completed');
     session.socket.destroy();
   }
@@ -349,8 +349,8 @@ export class IMAPServer extends EventEmitter {
    */
   private async authenticateUser(username: string, password: string): Promise<boolean> {
     try {
-      const octopaiDir = await getOctopaiDir();
-      const dbPath = join(octopaiDir, 'octopai.db');
+      const coleoDir = await getColeoDir();
+      const dbPath = join(coleoDir, 'coleo.db');
       const db = new Database(dbPath);
       
       // Get stored IMAP password
@@ -428,7 +428,7 @@ export class IMAPServer extends EventEmitter {
     }
 
     try {
-      const maildir = new Maildir(join(this.config.octopaiDir, 'mail', maildirName));
+      const maildir = new Maildir(join(this.config.coleoDir, 'mail', maildirName));
       const newMessages = await maildir.list('new');
       const curMessages = await maildir.list('cur');
       const allMessages = [...newMessages, ...curMessages];

@@ -1,90 +1,365 @@
 ---
-layout: home
-
-hero:
-  name: Octopai
-  text: AI Agent Orchestrator
-  tagline: Progressive planning with general-purpose AI arms
-  image:
-    src: /centralimage.png
-    alt: Octopai - AI Agent Orchestrator
-  actions:
-    - theme: brand
-      text: Architecture Overview
-      link: /architecture/overview
-    - theme: alt
-      text: Getting Started
-      link: /guides/getting-started
-
-features:
-  - icon: 🐙
-    title: Octopus Model
-    details: Central brain coordinates general-purpose arms whose behavior depends on the task they’re executing
-  - icon: 🧠
-    title: Progressive Planning
-    details: The brain determines the single next task at runtime based on plans, history, and discoveries
-  - icon: 🪴
-    title: The Garden
-    details: 3D visualization of your codebase with ownership tracking and conflict detection
-  - icon: 🔭
-    title: Observatory
-    details: Web UI and CLI over a shared API for monitoring and intervening in arm activity
-  - icon: ✉️
-    title: Email Interface
-    details: Communicate with the system via Maildir-backed mail, with web UI and CLI integrations. IMAP/SMTP gateway is future work.
-  - icon: ⚖️
-    title: Governance
-    details: Proposal and consensus system for higher-risk changes (planned phases)
+layout: page
+sidebar: false
+aside: false
+outline: false
+lastUpdated: false
+title: Coleo — Multi-Agent Development Coordination
 ---
 
-## Quick Start
+<script setup>
+</script>
 
-```bash
-# Clone and install
-git clone https://github.com/your-username/octopai
-cd octopai
-bun install
+<div class="depth-control" id="depthControl">
+  <label>
+    <span id="depthIcon">☀️</span>
+  </label>
+  <input type="range" id="depthSlider" min="0" max="100" value="70">
+</div>
 
-# Run the CLI (dev mode)
-bun run dev
+<div class="water-layer" id="waterLayer"></div>
+<canvas class="rays-layer" id="raysCanvas"></canvas>
+<canvas class="sparkles-layer" id="sparklesCanvas"></canvas>
 
-# Start the brain (coordinates arms)
-bun run brain run
+<div class="home-content">
+  <nav class="navbar-custom">
+    <div class="container flex justify-between items-center">
+      <div class="flex items-center gap-2 group">
+        <img src="/coleo-logo.png" alt="Coleo Logo" class="brand-logo block" />
+        <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
+      </div>
+      <div class="hidden md:flex items-center space-x-8">
+        <a href="/philosophy" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
+        <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Architecture</a>
+        <a href="/architecture/components#observatory-web-ui-api" class="nav-link text-sm font-medium transition-colors">Observatory</a>
+        <a href="/licensing" class="nav-link text-sm font-medium transition-colors">License</a>
+      </div>
+    </div>
+  </nav>
 
-# Start the API + Observatory server
-bun run server
+  <section class="hero-section">
+    <div class="container mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="lg:grid lg:grid-cols-2 lg:gap-16 items-center">
+        <div class="mb-12 lg:mb-0">
+          <h1 class="hero-title font-display font-bold text-white tracking-tight mb-6 drop-shadow-lg">
+            Many Arms.<br>
+            <span class="text-white">One Mind.</span>
+          </h1>
+          <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
+            Distributed agent orchestration inspired by the soft architecture of intelligent cephalopods.
+          </p>
+          <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
+            <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
+              <span>Explore the Architecture</span>
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+              </svg>
+            </a>
+            <a href="https://github.com" class="border-2 border-white/50 hover:border-white text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 backdrop-blur-sm text-center no-underline">
+              <span>View on GitHub</span>
+            </a>
+          </div>
+          <p class="mt-4 text-xs text-white/70">Open Source under BSL 1.1 • Free for individual use</p>
+        </div>
+        <div class="relative">
+          <div class="relative ui-box backdrop-blur-md rounded-3xl shadow-2xl p-8">
+            <div class="absolute top-4 right-4 flex gap-2">
+              <div class="w-3 h-3 rounded-full bg-red-400/80"></div>
+              <div class="w-3 h-3 rounded-full bg-yellow-400/80"></div>
+              <div class="w-3 h-3 rounded-full bg-green-400/80"></div>
+            </div>
+            <div class="mt-4 font-mono text-xs sm:text-sm space-y-3 opacity-90">
+              <div class="flex items-center gap-2 opacity-60">$ coleo spawn --arms 3 --task "explore"</div>
+              <div class="space-y-2">
+                <div class="flex items-center gap-2">
+                  <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
+                  <span class="text-accent font-semibold">Brain</span>
+                  <span class="opacity-60">→ Spawning Arms...</span>
+                </div>
+                <div class="pl-4 space-y-1 opacity-80">
+                  <div class="flex justify-between"><span>🐙 Arm-One</span><span class="text-green-400">● Active</span></div>
+                  <div class="flex justify-between"><span>🐙 Arm-Two</span><span class="text-green-400">● Active</span></div>
+                  <div class="flex justify-between"><span>🐙 Arm-Three</span><span class="text-accent">● Proposing</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-# Spawn an arm (general-purpose)
-bun run src/cli/index.ts arm spawn --name worker-1 --agent opencode
-```
+  <section id="philosophy" class="section-glass light-1">
+    <div class="container">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display font-bold text-xl mb-4">Soft Architecture</h2>
+        <p class="text-lg opacity-80">
+          Most agent frameworks rely on rigid control hierarchies or chaotic autonomy. Coleo occupies the evolutionary niche between: coordinated independence.
+        </p>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+          <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+            </svg>
+          </div>
+          <h3 class="font-display font-bold text-xl mb-3">Decentralized Intelligence</h3>
+          <p class="opacity-70 leading-relaxed">
+            Two-thirds of an octopus's neurons are in its arms, not its head. Coleo Arms possess their own memory, tools, and decision capacity.
+          </p>
+        </div>
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+          <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
+            </svg>
+          </div>
+          <h3 class="font-display font-bold text-xl mb-3">Governance Through Persuasion</h3>
+          <p class="opacity-70 leading-relaxed">
+            The Brain does not command—it evaluates. Arms submit structured proposals with reasoning and wait for approval.
+          </p>
+        </div>
+        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+          <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
+            <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+          </div>
+          <h3 class="font-display font-bold text-xl mb-3">Safe Experimentation</h3>
+          <p class="opacity-70 leading-relaxed">
+            Each Arm operates within its own isolated Garden—an ephemeral environment where work happens safely.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
 
-### Two ways to start using Octopai
+  <section id="architecture" class="section-glass dark-1">
+    <div class="container">
+      <div class="lg:grid lg:grid-cols-2 gap-16 items-center">
+        <div>
+          <h2 class="font-display font-bold text-4xl mb-6">The Architecture</h2>
+          <div class="space-y-8">
+            <div class="flex gap-4">
+              <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🧠</div>
+              <div>
+                <h4 class="font-display font-bold text-xl mb-2">The Brain</h4>
+                <p class="opacity-70 leading-relaxed">The central coordination point maintaining architectural standards and evaluating proposals.</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
+              <div>
+                <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
+                <p class="opacity-70 leading-relaxed">Autonomous workers with specialized capabilities operating within their own context windows.</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🌿</div>
+              <div>
+                <h4 class="font-display font-bold text-xl mb-2">Gardens</h4>
+                <p class="opacity-70 leading-relaxed">Isolated execution contexts providing safe spaces to work without contamination.</p>
+              </div>
+            </div>
+            <div class="flex gap-4">
+              <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">📡</div>
+              <div>
+                <h4 class="font-display font-bold text-xl mb-2">The Observatory</h4>
+                <p class="opacity-70 leading-relaxed">The monitoring interface tracking activity across all Arms and Gardens.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="ui-box rounded-3xl p-8">
+            <h3 class="font-display font-bold text-2xl mb-6 text-center">How Coordination Works</h3>
+            <div class="space-y-6">
+              <div class="flex items-start gap-4">
+                <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">1</div>
+                <div>
+                  <h5 class="font-semibold mb-1">Spawn</h5>
+                  <p class="text-sm opacity-60">The Brain instantiates Arms and assigns them to Gardens.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-4">
+                <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">2</div>
+                <div>
+                  <h5 class="font-semibold mb-1">Execute</h5>
+                  <p class="text-sm opacity-60">Arms work independently within their Gardens.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-4">
+                <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">3</div>
+                <div>
+                  <h5 class="font-semibold mb-1">Propose</h5>
+                  <p class="text-sm opacity-60">Arms submit structured proposals to the Brain.</p>
+                </div>
+              </div>
+              <div class="flex items-start gap-4">
+                <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">4</div>
+                <div>
+                  <h5 class="font-semibold mb-1">Integrate</h5>
+                  <p class="text-sm opacity-60">The Brain evaluates and approves or requests revisions.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-You don’t need to redesign your whole workflow to try Octopai.
+  <section id="observatory" class="section-glass light-2">
+    <div class="container">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display font-bold text-4xl mb-4">Observe the Distributed Mind</h2>
+        <p class="text-lg opacity-80">
+          Unlike opaque AI tools, Coleo's Observatory makes visible the normally hidden activity of distributed agent coordination.
+        </p>
+      </div>
+      <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="ui-box p-6 rounded-xl shadow-sm">
+          <div class="text-3xl font-bold text-accent mb-1">Real-time</div>
+          <div class="text-sm opacity-70">WebSocket feeds show activity as it happens.</div>
+        </div>
+        <div class="ui-box p-6 rounded-xl shadow-sm">
+          <div class="text-3xl font-bold text-accent mb-1">Persistent</div>
+          <div class="text-sm opacity-70">Activity history stored in SQLite or Postgres.</div>
+        </div>
+        <div class="ui-box p-6 rounded-xl shadow-sm">
+          <div class="text-3xl font-bold text-accent mb-1">Inspectable</div>
+          <div class="text-sm opacity-70">Query past proposals and decisions.</div>
+        </div>
+        <div class="ui-box p-6 rounded-xl shadow-sm">
+          <div class="text-3xl font-bold text-accent mb-1">Transparent</div>
+          <div class="text-sm opacity-70">See not just what changed, but why.</div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-- **Point it at an existing repo**  
-  Keep your current stack, CI, and habits. Run the brain locally, spawn a general-purpose arm with `--workdir` pointing at your existing project, and let it help with refactors, tests, and docs. You can start by reviewing its changes on a shared `octopai` branch in your own Git history.
+  <section class="section-glass dark-2">
+    <div class="container">
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="font-display font-bold text-4xl mb-4">Proposals Not Commands</h2>
+        <p class="text-lg opacity-80">
+          Traditional orchestration dictates. Coleo converses. Each interaction is a proposal that can be accepted, rejected, or debated.
+        </p>
+      </div>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="text-center p-6">
+          <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">📨</div>
+          <h3 class="font-display font-bold text-xl mb-2">Structured Messages</h3>
+          <p class="opacity-70">Arms communicate through typed proposals with reasoning, not raw diffs.</p>
+        </div>
+        <div class="text-center p-6">
+          <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">⚖️</div>
+          <h3 class="font-display font-bold text-xl mb-2">Weighted Consensus</h3>
+          <p class="opacity-70">Reputation systems and voting mechanisms resolve conflicts.</p>
+        </div>
+        <div class="text-center p-6">
+          <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">🔍</div>
+          <h3 class="font-display font-bold text-xl mb-2">Human Override</h3>
+          <p class="opacity-70">The Brain can intervene at any point—this is coordination, not autonomy.</p>
+        </div>
+      </div>
+    </div>
+  </section>
 
-- **Start a brand new idea with it**  
-  Create a fresh project directory and git repo, make an `octopai` branch, and spawn an arm into that working tree. Describe the idea in a single task ("scaffold a minimal app that does X"), and let the arm handle the initial structure while you stay in control of commits and reviews.
+  <section class="section-glass light-3">
+    <div class="container">
+      <div class="lg:grid lg:grid-cols-2 gap-16 items-center">
+        <div class="order-2 lg:order-1">
+          <div class="space-y-4">
+            <div class="ui-box p-4 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold">🌿 Garden: auth-refactor</span>
+                <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
+              </div>
+              <div class="text-sm opacity-70 font-mono">Arm: arm-7f3d9 • Files: 12 modified</div>
+            </div>
+            <div class="ui-box p-4 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold">🌿 Garden: test-coverage</span>
+                <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
+              </div>
+              <div class="text-sm opacity-70 font-mono">Arm: arm-2a8b1 • Files: 8 modified</div>
+            </div>
+            <div class="ui-box p-4 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold">🌿 Garden: doc-updates</span>
+                <span class="text-xs bg-accent text-white px-2 py-1 rounded">Proposing</span>
+              </div>
+              <div class="text-sm opacity-70 font-mono">Arm: arm-9c4e2 • Proposal pending</div>
+            </div>
+          </div>
+        </div>
+        <div class="order-1 lg:order-2">
+          <h2 class="font-display font-bold text-4xl mb-6">Ephemeral Gardens</h2>
+          <p class="text-lg opacity-80 mb-6">
+            Each Arm works in isolation. Like an octopus's arm—which can taste and feel independently—Gardens let Arms operate without stepping on each other's work.
+          </p>
+          <ul class="space-y-3 opacity-80">
+            <li class="flex items-center gap-2">✓ Fully isolated file systems</li>
+            <li class="flex items-center gap-2">✓ Independent tool access</li>
+            <li class="flex items-center gap-2">✓ Snapshots and restoration points</li>
+            <li class="flex items-center gap-2">✓ Automatic cleanup after merge</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
 
-From there, the [Getting Started guide](/guides/getting-started) walks through both flows step by step.
+  <section id="license" class="section-glass dark-3">
+    <div class="container">
+      <div class="text-center mb-16">
+        <h2 class="font-display font-bold text-4xl mb-4">Licensing</h2>
+        <p class="text-lg opacity-80">
+          Released under Business Source License 1.1—balancing sustainable development with individual access.
+        </p>
+      </div>
+      <div class="grid md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
+        <div class="ui-box p-8 rounded-2xl">
+          <h3 class="font-display font-bold text-2xl mb-4">Individual Use</h3>
+          <p class="opacity-70 mb-6">Free for individual developers. Install locally, use commercially, experiment freely.</p>
+          <ul class="space-y-2 text-sm opacity-70 mb-6">
+            <li>✓ Unlimited local deployment</li>
+            <li>✓ All core features included</li>
+            <li>✓ Commercial use permitted</li>
+          </ul>
+          <a href="#" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline mt-4">Download</a>
+        </div>
+        <div class="ui-box p-8 rounded-2xl">
+          <h3 class="font-display font-bold text-2xl mb-4">Organizational Use</h3>
+          <p class="opacity-70 mb-6">For teams and companies. Contact us for commercial licensing options.</p>
+          <ul class="space-y-2 text-sm opacity-70 mb-6">
+            <li>✓ Multi-seat coordination</li>
+            <li>✓ Custom deployment support</li>
+            <li>✓ Training and consultation</li>
+          </ul>
+          <a href="#" class="block w-full py-3 rounded-full font-semibold transition-all text-center no-underline bg-white/20 text-white border border-white/30 hover:bg-white/30 mt-4">Contact for Licensing</a>
+        </div>
+      </div>
+      <div class="ui-box p-6 rounded-xl text-center max-w-2xl mx-auto">
+        <p class="text-sm opacity-80">
+          <strong class="text-accent">Business Source License 1.1 (BSL)</strong><br>
+          Becomes Apache 2.0 on the Change Date (four years after release).
+        </p>
+      </div>
+    </div>
+  </section>
 
-## Current Status
-
-**Phase 2** – Task classification & context bundles in progress.
-
-- Brain polling loop and Maildir communication implemented
-- Hono API server, SQLite migrations, and WebSocket in place
-- Basic web Observatory shell and arm list view
-- NATS integration for distributed arms
-- `.project/` directory defines project plan, requirements, and status
-
-The next major focus is **progressive planning** and a **timeline-first task UI** rather than a manual backlog.
-
-## Documentation Sections
-
-| Section | Description |
-|---------|-------------|
-| [Architecture](/architecture/overview) | System design, task model, and component details |
-| [Guides](/guides/getting-started) | How-to guides and CLI/API reference |
+  <footer class="py-12 px-4 relative z-10">
+    <div class="max-w-7xl mx-auto">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-4 text-white/60">
+        <p class="text-sm">© 2025 Coleo. All rights reserved.</p>
+        <div class="flex gap-6 text-sm">
+          <a href="#" class="hover:text-white transition-colors no-underline">Privacy</a>
+          <a href="#" class="hover:text-white transition-colors no-underline">Terms</a>
+          <a href="#" class="hover:text-white transition-colors no-underline">License</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+</div>

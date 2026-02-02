@@ -34,10 +34,10 @@ import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
 import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor";
-import type { BrainState, Task, QueueMessage, OctopaiConfig, Arm, Discovery, MessageType } from "../types";
+import type { BrainState, Task, QueueMessage, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
-  octopaiDir: string;
+  coleoDir: string;
   pollIntervalMs: number;
   verbose: boolean;
   apiBaseUrl?: string;
@@ -342,9 +342,9 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
 
   constructor(options: BrainOptions) {
     this.options = options;
-    this.apiBaseUrl = options.apiBaseUrl || process.env.OCTOPAI_API_URL || "http://localhost:8080";
-    this.apiKey = options.apiKey || process.env.OCTOPAI_API_KEY || "";
-    this.natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
+    this.apiBaseUrl = options.apiBaseUrl || process.env.COLEO_API_URL || "http://localhost:8080";
+    this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
+    this.natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
     this.state = {
       status: "stopped",
       pollIntervalMs: options.pollIntervalMs,
@@ -354,8 +354,8 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
     };
 
     // Set up mail directories
-    this.inbox = new Maildir(join(options.octopaiDir, "mail", "inbox"));
-    this.sent = new Maildir(join(options.octopaiDir, "mail", "sent"));
+    this.inbox = new Maildir(join(options.coleoDir, "mail", "inbox"));
+    this.sent = new Maildir(join(options.coleoDir, "mail", "sent"));
 
     // Initialize mail processor
     this.mailProcessor = new MailProcessor((msg) => this.log(msg), "");
@@ -533,11 +533,11 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
    */
   async init(): Promise<void> {
     // Initialize database
-    const dbPath = join(this.options.octopaiDir, "octopai.db");
+    const dbPath = join(this.options.coleoDir, "coleo.db");
     this.db = await initDatabase(dbPath);
 
     // Initialize doc update tracker
-    this.docTracker = new DocUpdateTracker(this.db, this.options.octopaiDir, process.cwd());
+    this.docTracker = new DocUpdateTracker(this.db, this.options.coleoDir, process.cwd());
 
     // Initialize arm state machine
     this.armStateMachine = new ArmStateMachine(this.db, (effect) => this.handleStateMachineSideEffect(effect));
@@ -606,7 +606,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
     ];
 
     for (const dir of dirs) {
-      await mkdir(join(this.options.octopaiDir, dir), { recursive: true });
+      await mkdir(join(this.options.coleoDir, dir), { recursive: true });
     }
 
     // Ensure template files exist
@@ -1269,7 +1269,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
 
     // Publish to JetStream instead of SQLite
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`octopai.events.arm.${armId}.dependency_discovered`, {
+      eventStore.publishEvent(`coleo.events.arm.${armId}.dependency_discovered`, {
         type: "dependency_discovered",
         armId,
         data: {
@@ -1280,7 +1280,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
           severity: payload.severity,
         },
         timestamp: new Date().toISOString(),
-      }).catch(() => {});
+      }).catch(() ={> {});
     }
 
     // TODO: Store dependency relationships in database for future task planning
@@ -1473,7 +1473,7 @@ We'll notify you when we start investigating or have updates.`,
         name: armName,
         agent: 'opencode-tui', // Default agent
         workdir: process.cwd(), // Use current working directory
-        octopaiDir: this.options.octopaiDir,
+        coleoDir: this.options.coleoDir,
         terminal: 'auto'
       };
 
@@ -3978,7 +3978,7 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
     // Try to reconnect database if needed
     if (!this.infrastructureHealth.database.healthy && !this.db) {
       try {
-        const dbPath = join(this.options.octopaiDir, "octopai.db");
+        const dbPath = join(this.options.coleoDir, "coleo.db");
         this.db = await initDatabase(dbPath);
         this.log("Recovered database connection");
         recovered = true;
@@ -4055,9 +4055,9 @@ ${issues.map(i => `- ${i}`).join("\n")}
 - Maildir: ${this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy")}
 
 **Recommendations:**
-1. Check if the API server is running: \`octopai serve\`
-2. Check database integrity: \`sqlite3 ~/.octopai/octopai.db "PRAGMA integrity_check;"\`
-3. Check NATS server: \`nats-server\` or verify OCTOPAI_NATS_URL
+1. Check if the API server is running: \`coleo serve\`
+2. Check database integrity: \`sqlite3 ~/.coleo/coleo.db "PRAGMA integrity_check;"\`
+3. Check NATS server: \`nats-server\` or verify COLEO_NATS_URL
 4. Review brain logs for more details
 
 The brain will continue to retry and recover automatically where possible.`,
@@ -4075,7 +4075,7 @@ The brain will continue to retry and recover automatically where possible.`,
    * Returns cleaned output with TUI artifacts stripped
    */
   private async readArmLogs(armId: string, tailLines = 100): Promise<string> {
-    const logPath = join(this.options.octopaiDir, "logs", `${armId}.log`);
+    const logPath = join(this.options.coleoDir, "logs", `${armId}.log`);
     try {
       const content = await readFile(logPath, "utf-8");
       const lines = content.split("\n");
@@ -5720,7 +5720,7 @@ const arm: Arm = {
   }
 
   private async appendLog(line: string): Promise<void> {
-    const logPath = join(this.options.octopaiDir, "logs", "brain.log");
+    const logPath = join(this.options.coleoDir, "logs", "brain.log");
     const { appendFile } = await import("fs/promises");
     await appendFile(logPath, line + "\n", "utf-8");
   }
@@ -6249,4 +6249,3 @@ Is this arm stuck? If so, what should we do?`;
     };
   }
 }
-

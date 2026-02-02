@@ -1,5 +1,5 @@
 /**
- * Sci-Fi Alien Name Generator for Octopai Arms
+ * Sci-Fi Alien Name Generator for Coleo Arms
  * 
  * Inspired by Adrian Tchaikovsky's "Children of Time" series:
  * - "Children of Time" - Portia jumping spiders and their evolved civilization

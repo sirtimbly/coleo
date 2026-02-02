@@ -42,7 +42,7 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 };
 
 export function BugsPage() {
-  document.title = "Octopai Observatory - Bugs";
+  document.title = "Coleo Observatory - Bugs";
   const queryClient = useQueryClient();
 	const [filter, setFilter] = useState<{ status?: string; priority?: string; source?: string }>({});
 	const [tagFilter, setTagFilter] = useState<string[]>([]);

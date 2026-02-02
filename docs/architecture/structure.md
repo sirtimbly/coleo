@@ -1,13 +1,13 @@
 # File Structure
 
-This document describes the proposed file structure for the complete Octopai implementation.
+This document describes the proposed file structure for the complete Coleo implementation.
 
 ## Current Structure
 
 ```
-octopai/
+coleo/
 ├── bin/
-│   └── octopai.ts              # CLI entrypoint
+│   └── coleo.ts                # CLI entrypoint
 ├── docs/                        # VitePress documentation (new)
 │   ├── .vitepress/
 │   │   └── config.ts
@@ -58,9 +58,9 @@ octopai/
 ## Proposed Structure
 
 ```
-octopai/
+coleo/
 ├── bin/
-│   └── octopai.ts              # CLI entrypoint
+│   └── coleo.ts                # CLI entrypoint
 │
 ├── docs/                        # VitePress documentation
 │   ├── .vitepress/
@@ -189,7 +189,7 @@ octopai/
 │   │   │   ├── useWebSocket.ts # WebSocket hook
 │   │   │   └── usePush.ts      # Push notification hook
 │   │   ├── stores/
-│   │   │   └── octopai.ts      # Zustand store
+│   │   │   └── coleo.ts        # Zustand store
 │   │   ├── lib/
 │   │   │   ├── api.ts          # API client
 │   │   │   └── ws.ts           # WebSocket client
@@ -205,7 +205,7 @@ octopai/
 │   └── package.json
 │
 ├── docker/                      # Docker configurations
-│   ├── Dockerfile              # Main Octopai image
+│   ├── Dockerfile              # Main Coleo image
 │   ├── Dockerfile.arm          # Arm container image
 │   └── docker-compose.dev.yml  # Development stack
 │
@@ -246,7 +246,7 @@ The project can be structured as a monorepo:
 ```json
 // package.json (root)
 {
-  "name": "octopai",
+  "name": "coleo",
   "workspaces": [
     ".",
     "web"
@@ -282,5 +282,5 @@ dist/
 │   │   └── index-xxx.css
 │   └── ...
 └── cli/                         # CLI bundle
-    └── octopai
+    └── coleo
 ```

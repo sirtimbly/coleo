@@ -27,7 +27,7 @@ const execAsync = promisify(exec);
 export interface ArmAgentOptions {
   agentId?: string;
   natsUrl: string;
-  octopaiDir: string;
+  coleoDir: string;
   maxArms?: number;
   heartbeatIntervalMs?: number;
   debug?: boolean;
@@ -51,7 +51,7 @@ interface ManagedArm {
 export class ArmAgent {
   private agentId: string;
   private natsClient: NatsClient;
-  private octopaiDir: string;
+  private coleoDir: string;
   private maxArms: number;
   private heartbeatIntervalMs: number;
   private debug: boolean;
@@ -63,7 +63,7 @@ export class ArmAgent {
 
   constructor(options: ArmAgentOptions) {
     this.agentId = options.agentId || `agent-${hostname()}-${process.pid}`;
-    this.octopaiDir = options.octopaiDir;
+    this.coleoDir = options.coleoDir;
     this.maxArms = options.maxArms || 10;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs || 30000;
     this.debug = options.debug || false;
@@ -227,8 +227,8 @@ export class ArmAgent {
     const spawnConfig: SpawnConfig = {
       workdir: workDir || process.cwd(),
       env: {
-        OCTOPAI_ARM_ID: armId,
-        OCTOPAI_DIR: this.octopaiDir,
+        COLEO_ARM_ID: armId,
+        COLEO_DIR: this.coleoDir,
       },
       headless: true,
       provider,
@@ -435,7 +435,7 @@ export class ArmAgent {
 
     try {
       // Find running opencode processes
-      // We look for processes with OCTOPAI_ARM_ID environment variable
+      // We look for processes with COLEO_ARM_ID environment variable
       // Using ps eww -A on macOS/Linux to get environment variables
       const command = process.platform === 'darwin' || process.platform === 'linux' 
         ? 'ps eww -A' 
@@ -464,8 +464,8 @@ export class ArmAgent {
         // Skip our own PID
         if (pid === process.pid) continue;
 
-        // Extract OCTOPAI_ARM_ID
-        const armIdMatch = line.match(/OCTOPAI_ARM_ID=([a-zA-Z0-9_-]+)/);
+        // Extract COLEO_ARM_ID
+        const armIdMatch = line.match(/COLEO_ARM_ID=([a-zA-Z0-9_-]+)/);
         if (!armIdMatch || !armIdMatch[1]) continue;
         const armId: string = armIdMatch[1];
 

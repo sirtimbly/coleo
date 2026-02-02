@@ -1,6 +1,6 @@
 # Implementation Phases
 
-This document outlines the phased approach to building Octopai's full architecture.
+This document outlines the phased approach to building Coleo's full architecture.
 
 ## Timeline Overview
 
@@ -330,7 +330,7 @@ Full deployment workflow with arm consensus and human approval.
 
 ### Deliverable
 
-Production-ready Octopai deployment.
+Production-ready Coleo deployment.
 
 ---
 
@@ -340,7 +340,7 @@ These can be tackled between phases or in parallel:
 
 - [ ] Add more arm domain templates
 - [ ] Improve CLI output formatting
-- [ ] Add `octopai gitea` wrapper commands
+- [ ] Add `coleo gitea` wrapper commands
 - [ ] Create Docker images for different agents
 - [ ] Add dark mode to web UI
 - [ ] Improve error messages

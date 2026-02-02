@@ -1,6 +1,6 @@
 # Governance Model
 
-Octopai uses an anarchic governance model where arms persuade each other through reasoned arguments, with the brain acting as a backstop against destructive behavior.
+Coleo uses an anarchic governance model where arms persuade each other through reasoned arguments, with the brain acting as a backstop against destructive behavior.
 
 Arms are **general-purpose**: they do not represent permanent roles like "UI arm" or "API arm". Instead, they take on tasks with specific **classifications** (architect, development, qa, documentation, etc.), and governance flows operate over those tasks and the arms currently working on them.
 

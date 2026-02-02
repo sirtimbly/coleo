@@ -56,7 +56,7 @@ export class MockNatsClient {
   }
 
   async publishBrainMessage(message: BrainMessage): Promise<void> {
-    await this.publish("octopai.brain.messages", message);
+    await this.publish("coleo.brain.messages", message);
   }
 
   subscribe<T>(topic: string, handler: (data: T, msg: unknown) => void | Promise<void>): { unsubscribe: () => void } {
@@ -90,7 +90,7 @@ export class MockNatsClient {
   }
 
   getBrainMessages(): BrainMessage[] {
-    return this.getPublishedMessagesByType<BrainMessage>("octopai.brain.messages");
+    return this.getPublishedMessagesByType<BrainMessage>("coleo.brain.messages");
   }
 
   clearMessages(): void {

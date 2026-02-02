@@ -9,7 +9,7 @@
  * 4. Handles lifecycle events properly
  * 
  * Run with: bun test src/harness/__tests__/opencode-tui.test.ts
- * Or via CLI: octopai harness test opencode-tui
+ * Or via CLI: coleo harness test opencode-tui
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
@@ -18,7 +18,7 @@ import { OpenCodeTuiHarness } from "../opencode-tui";
 // import { HarnessTestFramework, formatScenarioResult } from "../test-framework";
 // import { quickSpawnScenario, healthCheckScenario } from "./scenarios";
 import type { HarnessReportedState } from "../contracts";
-import { getOctopaiDir } from "../../config";
+import { getColeoDir } from "../../config";
 
 // Skip these tests in CI - they require a running OpenCode instance
 const SKIP_INTEGRATION = process.env.CI === "true" || process.env.SKIP_HARNESS_TESTS === "true";
@@ -76,8 +76,8 @@ describe("OpenCodeTuiHarness", () => {
   //     const session = await framework.spawn({
   //       workdir: process.cwd(),
   //       env: {
-  //         OCTOPAI_ARM_ID: `test-tui-${Date.now()}`,
-  //         OCTOPAI_DIR: process.env.OCTOPAI_DIR || getOctopaiDir(),
+  //         COLEO_ARM_ID: `test-tui-${Date.now()}`,
+  //         COLEO_DIR: process.env.COLEO_DIR || getColeoDir(),
   //       },
   //       headless: false,
   //     });
@@ -108,8 +108,8 @@ describe("OpenCodeTuiHarness", () => {
   //     await framework.spawn({
   //       workdir: process.cwd(),
   //       env: {
-  //         OCTOPAI_ARM_ID: `test-tui-prompt-${Date.now()}`,
-  //         OCTOPAI_DIR: process.env.OCTOPAI_DIR || getOctopaiDir(),
+  //         COLEO_ARM_ID: `test-tui-prompt-${Date.now()}`,
+  //         COLEO_DIR: process.env.COLEO_DIR || getColeoDir(),
   //       },
   //       headless: false,
   //     });
@@ -141,8 +141,8 @@ describe("OpenCodeTuiHarness", () => {
   //     await framework.spawn({
   //       workdir: process.cwd(),
   //       env: {
-  //         OCTOPAI_ARM_ID: `test-tui-interrupt-${Date.now()}`,
-  //         OCTOPAI_DIR: process.env.OCTOPAI_DIR || getOctopaiDir(),
+  //         COLEO_ARM_ID: `test-tui-interrupt-${Date.now()}`,
+  //         COLEO_DIR: process.env.COLEO_DIR || getColeoDir(),
   //       },
   //       headless: false,
   //     });

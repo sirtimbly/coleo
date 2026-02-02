@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Play, Square, RefreshCw, Terminal, Save, X, Edit2 } from 'lucide-react';
 import { api } from '@/lib';
-import type { OctopaiConfig, OpenCodeProvider } from '@/lib';
+import type { ColeoConfig, OpenCodeProvider } from '@/lib';
 import { Button, Chip } from '@heroui/react';
 import { Card } from '@heroui/react';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -75,7 +75,7 @@ function BrainStatusCard({ status }: { status: BrainStatus | null }) {
   );
 }
 
-function BrainConfigSection({ config, onUpdate }: { config: OctopaiConfig | null; onUpdate: () => void }) {
+function BrainConfigSection({ config, onUpdate }: { config: ColeoConfig | null; onUpdate: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [pollIntervalMs, setPollIntervalMs] = useState(config?.brain.pollIntervalMs || 30000);
   const [maxArms, setMaxArms] = useState(config?.brain.maxArms || 8);
@@ -164,7 +164,7 @@ function DefaultsSection({
   connectedProviders,
   onUpdate
 }: {
-  config: OctopaiConfig | null;
+  config: ColeoConfig | null;
   openCodeProviders: OpenCodeProvider[];
   connectedProviders: string[];
   onUpdate: () => void;
@@ -333,7 +333,7 @@ function DefaultsSection({
   );
 }
 
-function TerminalSection({ config, onUpdate }: { config: OctopaiConfig | null; onUpdate: () => void }) {
+function TerminalSection({ config, onUpdate }: { config: ColeoConfig | null; onUpdate: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [emulator, setEmulator] = useState(config?.terminal?.emulator || 'auto');
 
@@ -422,9 +422,9 @@ function ActivityCard({ status }: { status: BrainStatus | null }) {
 }
 
 export function BrainPage() {
-  document.title = "Octopai Observatory - Brain";
+  document.title = "Coleo Observatory - Brain";
   const [status, setStatus] = useState<BrainStatus | null>(null);
-  const [config, setConfig] = useState<OctopaiConfig | null>(null);
+  const [config, setConfig] = useState<ColeoConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);

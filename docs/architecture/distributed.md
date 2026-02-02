@@ -1,6 +1,6 @@
 # Distributed Architecture
 
-Octopai supports distributed deployment where the Brain, API server, and Gardens can run on separate machines. This enables working on the same project from multiple locations (laptop, desktop, cloud server) while maintaining a single coordinated system.
+Coleo supports distributed deployment where the Brain, API server, and Gardens can run on separate machines. This enables working on the same project from multiple locations (laptop, desktop, cloud server) while maintaining a single coordinated system.
 
 ## Architecture Overview
 
@@ -118,7 +118,7 @@ cd /path/to/my-project
 
 octopai garden join \
   --token SWMTKN-1-abc123xyz... \
-  --control-plane https://octopai.example.com:8080
+  --control-plane https://coleo.example.com:8080
 
 # Output:
 # Connecting to control plane...
@@ -130,9 +130,9 @@ octopai garden join \
 # This garden is now available for arm deployment.
 # The daemon will start automatically on boot.
 #
-# Status: octopai garden status
-# Logs:   octopai garden logs
-# Leave:  octopai garden leave
+# Status: coleo garden status
+# Logs:   coleo garden logs
+# Leave:  coleo garden leave
 ```
 
 ### 3. What Happens on Join
@@ -199,7 +199,7 @@ interface ArmPlacement {
 ```
 Human (CLI)                Control Plane              Garden Daemon
     │                           │                          │
-    │ octopai arm spawn         │                          │
+    │ coleo arm spawn           │                          │
     │ ─────────────────────────>│                          │
     │                           │                          │
     │                           │ Select garden            │
@@ -280,37 +280,37 @@ When a garden reconnects:
 
 ```bash
 # Token management
-octopai garden token create --name "my-laptop"
-octopai garden token list
-octopai garden token revoke <token-id>
+coleo garden token create --name "my-laptop"
+coleo garden token list
+coleo garden token revoke <token-id>
 
 # Garden management
-octopai garden list                    # List all registered gardens
-octopai garden status <garden-id>      # Detailed garden status
-octopai garden drain <garden-id>       # Stop new arms, wait for existing
-octopai garden remove <garden-id>      # Remove garden from cluster
+coleo garden list                    # List all registered gardens
+coleo garden status <garden-id>      # Detailed garden status
+coleo garden drain <garden-id>       # Stop new arms, wait for existing
+coleo garden remove <garden-id>      # Remove garden from cluster
 
 # Arm placement
-octopai arm spawn --garden home-laptop # Spawn on specific garden
-octopai arm spawn --local              # Spawn on local garden (if running)
+coleo arm spawn --garden home-laptop # Spawn on specific garden
+coleo arm spawn --local              # Spawn on local garden (if running)
 ```
 
 ### Garden Commands (run on garden machine)
 
 ```bash
 # Join/leave
-octopai garden join --token ... --control-plane ...
-octopai garden leave
+coleo garden join --token ... --control-plane ...
+coleo garden leave
 
 # Local management
-octopai garden status                  # Show local daemon status
-octopai garden logs                    # Show daemon logs
-octopai garden restart                 # Restart daemon
+coleo garden status                  # Show local daemon status
+coleo garden logs                    # Show daemon logs
+coleo garden restart                 # Restart daemon
 
 # MCP server management
-octopai garden mcp list                # List available MCP servers
-octopai garden mcp enable <server>     # Enable an MCP server
-octopai garden mcp disable <server>    # Disable an MCP server
+coleo garden mcp list                # List available MCP servers
+coleo garden mcp enable <server>     # Enable an MCP server
+coleo garden mcp disable <server>    # Disable an MCP server
 ```
 
 ## Database Schema
@@ -352,7 +352,7 @@ For existing single-machine setups:
 2. **Opt-in distribution** - Add gardens when ready
 3. **Gradual migration** - Move arms between gardens as needed
 
-The local machine is automatically registered as a garden named "local" when running `octopai serve`.
+The local machine is automatically registered as a garden named "local" when running `coleo serve`.
 
 ## Example Scenarios
 

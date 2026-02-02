@@ -1,11 +1,11 @@
 # CLI Reference
 
-Complete reference for the `octopai` command-line interface.
+Complete reference for the `coleo` command-line interface.
 
 ## Global Options
 
 ```bash
-octopai [command] [options]
+coleo [command] [options]
 
 Options:
   -V, --version  Output version number
@@ -16,58 +16,58 @@ Options:
 
 ### init
 
-Initialize Octopai in your home directory.
+Initialize Coleo in your home directory.
 
 ```bash
-octopai init [options]
+coleo init [options]
 
 Options:
-  -d, --dir &lt;path&gt;  Custom directory (default: ~/.octopai)
+  -d, --dir &lt;path&gt;  Custom directory (default: ~/.coleo)
   --preset &lt;name&gt;   Load a preset configuration (fullstack, split-stack, full-team)
 ```
 
 **Examples:**
 ```bash
 # Default initialization
-octopai init
+coleo init
 
 # With split-stack preset
-octopai init --preset split-stack
+coleo init --preset split-stack
 
 # Custom directory
-octopai init --dir ~/my-octopai
+coleo init --dir ~/my-coleo
 ```
 
 **What happens:**
-1. Creates directory structure (`~/.octopai/`)
-2. Copies arm templates to `~/.octopai/arms/`
+1. Creates directory structure (`~/.coleo/`)
+2. Copies arm templates to `~/.coleo/arms/`
 3. Creates `config.toml`
 4. Initializes maildir directories
 
 **After initialization:**
 ```bash
 # List configured arms
-octopai config arms
+coleo config arms
 
 # Load a different preset
-octopai config load full-team
+coleo config load full-team
 
 # Edit an arm configuration
-vim ~/.octopai/arms/my-arm.toml
+vim ~/.coleo/arms/my-arm.toml
 ```
 
 ---
 
 ### brain
 
-Manage the Octopai brain.
+Manage the Coleo brain.
 
 #### brain run
 
 Run the brain polling loop in the foreground.
 
 ```bash
-octopai brain run [options]
+coleo brain run [options]
 
 Options:
   -i, --interval <ms>  Poll interval in milliseconds (default: 30000)
@@ -78,13 +78,13 @@ Options:
 **Examples:**
 ```bash
 # Normal operation
-octopai brain run
+coleo brain run
 
 # Faster polling for development
-octopai brain run --interval 5000
+coleo brain run --interval 5000
 
 # Single poll for testing
-octopai brain run --once
+coleo brain run --once
 ```
 
 #### brain status
@@ -92,7 +92,7 @@ octopai brain run --once
 Show brain status.
 
 ```bash
-octopai brain status
+coleo brain status
 ```
 
 **Output:**
@@ -117,7 +117,7 @@ Manage arms (AI agents).
 Spawn a new arm. Runs interactively if no arguments provided.
 
 ```bash
-octopai arm spawn [options]
+coleo arm spawn [options]
 
 Options:
   -n, --name <name>       Arm name/ID
@@ -198,17 +198,17 @@ octopai arm kill explorer
 Send a prompt/message to a running arm.
 
 ```bash
-octopai arm prompt &lt;name&gt; &lt;message&gt; [options]
+coleo arm prompt &lt;name&gt; &lt;message&gt; [options]
 ```
 
 
 **Examples:**
 ```bash
 # Send a task to an arm
-octopai arm prompt explorer "Please add error handling to the API routes"
+coleo arm prompt explorer "Please add error handling to the API routes"
 
 # Interrupt current work and send new instructions
-octopai arm prompt explorer "Stop what you're doing and fix the critical bug in auth.ts" --interrupt
+coleo arm prompt explorer "Stop what you're doing and fix the critical bug in auth.ts" --interrupt
 ```
 
 **Notes:**
@@ -221,17 +221,17 @@ octopai arm prompt explorer "Stop what you're doing and fix the critical bug in 
 View recent logs from an arm.
 
 ```bash
-octopai arm logs &lt;name&gt; [options]
+coleo arm logs &lt;name&gt; [options]
 ```
 
 
 **Example:**
 ```bash
 # View last 50 lines
-octopai arm logs explorer
+coleo arm logs explorer
 
 # View last 100 lines
-octopai arm logs explorer -n 100
+coleo arm logs explorer -n 100
 ```
 
 ---
@@ -245,7 +245,7 @@ View and send mail.
 List messages in the inbox.
 
 ```bash
-octopai mail inbox [options]
+coleo mail inbox [options]
 
 Options:
   -n, --count <n>  Number of messages to show (default: 10)
@@ -295,7 +295,7 @@ octopai mail read abc123
 
 **Output:**
 ```text
-From: explorer@octopai.local
+From: explorer@coleo.local
 To: human@local
 Subject: Task completed: Add dark mode toggle
 Date: 2024-01-15 10:30:00
@@ -318,32 +318,32 @@ Files modified:
 ### imap
 
 
-IMAP server commands for accessing Octopai mail with any email client.
+IMAP server commands for accessing Coleo mail with any email client.
 
 #### imap serve
 
 Start the IMAP server.
 
 ```bash
-octopai imap serve [options]
+coleo imap serve [options]
 
 Options:
   -p, --port &lt;port&gt;          IMAP server port (default: 1143)
   -h, --host &lt;host&gt;          IMAP server host (default: 127.0.0.1)
-  -u, --username &lt;username&gt;  IMAP username (default: octopai)
+  -u, --username &lt;username&gt;  IMAP username (default: coleo)
   --password &lt;password&gt;      IMAP password (auto-generated if not provided)
 ```
 
 **Examples:**
 ```bash
 # Start with defaults
-octopai imap serve
+coleo imap serve
 
 # Custom port
-octopai imap serve --port 993
+coleo imap serve --port 993
 
 # Allow external connections (use with caution)
-octopai imap serve --host 0.0.0.0
+coleo imap serve --host 0.0.0.0
 ```
 
 **Output:**
@@ -351,14 +351,14 @@ octopai imap serve --host 0.0.0.0
 Starting IMAP server...
   Host: 127.0.0.1
   Port: 1143
-  Username: octopai
+  Username: coleo
   Password: abc123...
 
 Connect with your email client using:
   Server: 127.0.0.1
   Port: 1143
   Security: None (local only)
-  Username: octopai
+  Username: coleo
   Password: abc123...
 ```
 
@@ -368,13 +368,13 @@ For Apple Mail:
 1. Add new account → Other Mail Account
 2. Server: 127.0.0.1, Port: 1143
 3. Connection Security: None
-4. Username: octopai
+4. Username: coleo
 5. Password: (from output above)
 
 For Thunderbird:
 1. Settings → Account Settings → Account Actions → Add Mail Account
 2. Manual config: IMAP, Server: 127.0.0.1:1143, SSL: None
-3. Username: octopai
+3. Username: coleo
 4. Password: (from output above)
 
 #### imap password
@@ -423,7 +423,7 @@ This command is typically not run directly - it's invoked by arms when they conn
 
 ### status
 
-Show overall Octopai status.
+Show overall Coleo status.
 
 ```bash
 octopai status
@@ -431,7 +431,7 @@ octopai status
 
 **Output:**
 ```
-Octopai Status
+Coleo Status
 Directory: ~/.octopai
 
 Brain: running (last poll: 10:30:00)
@@ -447,7 +447,7 @@ Tasks: 3 pending, 1 in progress
 
 ## config
 
-Manage Octopai configuration, including arm templates and presets.
+Manage Coleo configuration, including arm templates and presets.
 
 #### config presets
 
@@ -515,7 +515,7 @@ Arm Configurations:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OCTOPAI_DIR` | Octopai data directory | `~/.octopai` |
+| `OCTOPAI_DIR` | Coleo data directory | `~/.octopai` |
 | `OCTOPAI_API_KEY` | API key for Observatory | (none) |
 | `ANTHROPIC_API_KEY` | For Claude-based agents | (none) |
 | `OPENAI_API_KEY` | For GPT-based agents | (none) |
@@ -532,7 +532,7 @@ poll_interval_ms = 30000
 max_arms = 10
 
 [mail]
-from_address = "brain@octopai.local"
+from_address = "brain@coleo.local"
 digest_schedule = "daily"
 
 [terminal]

@@ -1,6 +1,6 @@
 # Data Persistence
 
-Octopai uses a database abstraction layer that supports both SQLite (simple, default) and PostgreSQL (scalable).
+Coleo uses a database abstraction layer that supports both SQLite (simple, default) and PostgreSQL (scalable).
 
 ## ORM & Database Libraries for Bun
 
@@ -113,7 +113,7 @@ const arms = await prisma.arm.findMany({
 
 ### Recommendation
 
-For Octopai, we recommend:
+For Coleo, we recommend:
 
 | Use Case | Choice | Reason |
 |----------|--------|--------|

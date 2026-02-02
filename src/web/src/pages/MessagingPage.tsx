@@ -22,7 +22,7 @@ interface UnifiedMessage {
 }
 
 export function MessagingPage() {
-  document.title = "Octopai Observatory - Messaging";
+  document.title = "Coleo Observatory - Messaging";
   const [activeTab, setActiveTab] = useState<MessageType>('all');
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(true);

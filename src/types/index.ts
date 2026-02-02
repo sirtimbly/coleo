@@ -340,9 +340,9 @@ export interface BrainState {
 }
 
 // Config file structure
-export interface OctopaiConfig {
+export interface ColeoConfig {
   version: number;
-  octopaiDir: string;
+  coleoDir: string;
   brain: {
     pollIntervalMs: number;
     maxArms: number;
@@ -370,17 +370,17 @@ export interface OctopaiConfig {
 }
 
 // Default config
-// Note: octopaiDir is set dynamically by loadConfig() based on cwd or OCTOPAI_DIR env var
-export const DEFAULT_CONFIG: OctopaiConfig = {
+// Note: coleoDir is set dynamically by loadConfig() based on cwd or COLEO_DIR env var
+export const DEFAULT_CONFIG: ColeoConfig = {
   version: 1,
-  octopaiDir: ".octopai", // Placeholder - always overwritten by loadConfig()
+  coleoDir: ".coleo", // Placeholder - always overwritten by loadConfig()
   brain: {
     pollIntervalMs: 30000,
     maxArms: 8,
     armGracePeriodMinutes: 5,
   },
   mail: {
-    fromAddress: "brain@octopai.local",
+    fromAddress: "brain@coleo.local",
     digestSchedule: "immediate",
   },
   terminal: {
@@ -394,7 +394,7 @@ export const DEFAULT_CONFIG: OctopaiConfig = {
   },
 };
 
-// Arm configuration file structure (from .octopai/arms/*.toml)
+// Arm configuration file structure (from .coleo/arms/*.toml)
 export interface ArmConfig {
   arm: {
     name: string;

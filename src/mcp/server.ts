@@ -1,5 +1,5 @@
 /**
- * MCP Server for Octopai Brain
+ * MCP Server for Coleo Brain
  *
  * Exposes tools and resources that arms can use to:
  * - Claim and complete tasks
@@ -16,7 +16,7 @@ import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
 import { Database } from "bun:sqlite";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { queueMessage, getPendingMessages, markMessageCompleted, getNotes } from "../db/state";
@@ -38,10 +38,10 @@ import {
   type ServiceType,
 } from "../daemon";
 
-// Get octopai directory from env or default (project-local)
-const OCTOPAI_DIR = getOctopaiDir();
-const ARM_ID = process.env.OCTOPAI_ARM_ID || process.env.OCTOPAI_TENTACLE_ID || "unknown";
-const PROJECT_ROOT = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+// Get coleo directory from env or default (project-local)
+const COLEO_DIR = getColeoDir();
+const ARM_ID = process.env.COLEO_ARM_ID || process.env.COLEO_TENTACLE_ID || "unknown";
+const PROJECT_ROOT = process.env.COLEO_PROJECT_ROOT || process.cwd();
 const OPENCOD_API_URL = process.env.OPENCOD_API_URL || "http://127.0.0.1:19300";
 
 // Database connection (lazy initialization)
@@ -79,13 +79,13 @@ async function getArmSessionId(): Promise<string | null> {
 function getDatabase(readonly = true): Database {
   if (readonly) {
     if (!db) {
-      const dbPath = join(OCTOPAI_DIR, "octopai.db");
+      const dbPath = join(COLEO_DIR, "coleo.db");
       db = new Database(dbPath, { readonly: true });
     }
     return db;
   } else {
     if (!dbWritable) {
-      const dbPath = join(OCTOPAI_DIR, "octopai.db");
+      const dbPath = join(COLEO_DIR, "coleo.db");
       dbWritable = new Database(dbPath);
     }
     return dbWritable;
@@ -98,7 +98,7 @@ function getDatabase(readonly = true): Database {
 async function getNatsClient(): Promise<NatsClient | null> {
   if (natsClient) return natsClient;
   
-  const natsUrl = process.env.OCTOPAI_NATS_URL || "nats://localhost:4222";
+  const natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
   
   try {
     natsClient = new NatsClient({
@@ -123,8 +123,8 @@ async function getNatsClient(): Promise<NatsClient | null> {
 function logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
   if (eventStore.isInitialized()) {
     const subject = target 
-      ? `octopai.events.arm.${target}.${action}`
-      : `octopai.events.mcp.${action}`;
+      ? `coleo.events.arm.${target}.${action}`
+      : `coleo.events.mcp.${action}`;
     
     eventStore.publishEvent(subject, {
       type: action,
@@ -140,7 +140,7 @@ function logActivity(actor: string, action: string, target?: string, details?: R
 /**
  * Ensure the arm is registered in the database.
  * This allows "manual arms" (agents started by the user directly) to auto-register
- * when they first call an MCP tool, without requiring `octopai arm spawn`.
+ * when they first call an MCP tool, without requiring `coleo arm spawn`.
  */
 function ensureArmRegistered(): void {
   try {
@@ -197,7 +197,7 @@ async function sendToBrainFile(message: QueueMessage): Promise<string> {
   
   // Try SQLite first (primary)
   try {
-    const dbPath = join(OCTOPAI_DIR, "octopai.db");
+    const dbPath = join(COLEO_DIR, "coleo.db");
     const db = new Database(dbPath, { readonly: false });
     try {
       queueMessage(db, {
@@ -216,7 +216,7 @@ async function sendToBrainFile(message: QueueMessage): Promise<string> {
   }
   
   // Fallback to file-based queue
-  const queueDir = join(OCTOPAI_DIR, "queue", "brain", "pending");
+  const queueDir = join(COLEO_DIR, "queue", "brain", "pending");
   await mkdir(queueDir, { recursive: true });
 
   const fullMessage: QueueMessage = {
@@ -420,7 +420,7 @@ async function getMyInstructions(): Promise<{ tasks: Task[]; messages: QueueMess
   }
   
   // Also check the queue directory for task assignment messages
-  const queueDir = join(OCTOPAI_DIR, "queue", "arms", ARM_ID);
+  const queueDir = join(COLEO_DIR, "queue", "arms", ARM_ID);
   try {
     const files = await readdir(queueDir);
     for (const file of files.sort()) {
@@ -485,7 +485,7 @@ async function getSharedNotes(tags?: string[]): Promise<Note[]> {
     // Fall back to file-based notes
   }
   
-  const notesDir = join(OCTOPAI_DIR, "state", "notes", "shared");
+  const notesDir = join(COLEO_DIR, "state", "notes", "shared");
   try {
     const files = await readdir(notesDir);
     const notes: Note[] = [];
@@ -514,7 +514,7 @@ async function getSharedNotes(tags?: string[]): Promise<Note[]> {
  */
 export function createMcpServer(): McpServer {
   const server = new McpServer({
-    name: "octopai-brain",
+    name: "coleo-brain",
     version: "0.1.0",
   });
 
@@ -2983,7 +2983,7 @@ export function createMcpServer(): McpServer {
         
         const ctx: PromptContext = {
           projectRoot: PROJECT_ROOT,
-          octopaiDir: OCTOPAI_DIR,
+          coleoDir: COLEO_DIR,
           db: database,
         };
         
@@ -3033,7 +3033,7 @@ export function createMcpServer(): McpServer {
         
         const ctx: PromptContext = {
           projectRoot: PROJECT_ROOT,
-          octopaiDir: OCTOPAI_DIR,
+          coleoDir: COLEO_DIR,
           db: database,
         };
         
@@ -3098,7 +3098,7 @@ export function createMcpServer(): McpServer {
         
         const ctx: PromptContext = {
           projectRoot: PROJECT_ROOT,
-          octopaiDir: OCTOPAI_DIR,
+          coleoDir: COLEO_DIR,
           db: database,
         };
         
@@ -3180,7 +3180,7 @@ export function createMcpServer(): McpServer {
 
       try {
         // Query the main server for stored events
-        const apiUrl = process.env.OCTOPAI_API_URL || "http://127.0.0.1:8080";
+        const apiUrl = process.env.COLEO_API_URL || "http://127.0.0.1:8080";
         const params = new URLSearchParams();
         params.set("limit", Math.min(limit, 100).toString());
         if (since) params.set("since", since);
@@ -3188,7 +3188,7 @@ export function createMcpServer(): McpServer {
 
         const response = await fetch(`${apiUrl}/api/arms/${ARM_ID}/stored-events?${params}`, {
           headers: {
-            "Authorization": `Bearer ${process.env.OCTOPAI_API_KEY || "dev-api-key-12345"}`,
+            "Authorization": `Bearer ${process.env.COLEO_API_KEY || "dev-api-key-12345"}`,
           },
         });
 
@@ -3243,7 +3243,7 @@ export function createMcpServer(): McpServer {
 
   // ============================================
   // SERVICE MANAGEMENT TOOLS
-  // These tools require OCTOPAI_SELF_MODIFY=1 env var
+  // These tools require COLEO_SELF_MODIFY=1 env var
   // Only available to arms working on Octopai itself
   // ============================================
 
@@ -3316,14 +3316,14 @@ export function createMcpServer(): McpServer {
     }
   );
 
-  // Restart a service (requires OCTOPAI_SELF_MODIFY=1)
+  // Restart a service (requires COLEO_SELF_MODIFY=1)
   server.registerTool(
     "service_restart",
     {
       description: 
-        "Restart an Octopai service (server or brain). " +
-        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable. " +
-        "Only use this when working on Octopai code itself and need to apply changes.",
+        "Restart a Coleo service (server or brain). " +
+        "REQUIRES COLEO_SELF_MODIFY=1 environment variable. " +
+        "Only use this when working on Coleo code itself and need to apply changes.",
       inputSchema: {
         service: z.enum(["server", "brain"]).describe("Which service to restart"),
         force: z.boolean().optional().describe("Force kill if graceful shutdown fails"),
@@ -3337,8 +3337,8 @@ export function createMcpServer(): McpServer {
             {
               type: "text" as const,
               text: 
-                "ERROR: Service restart requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
-                "This tool is only available to arms that are working on the Octopai codebase itself. " +
+                "ERROR: Service restart requires COLEO_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Coleo codebase itself. " +
                 "The environment variable acts as a safety guard to prevent accidental service restarts.",
             },
           ],
@@ -3389,13 +3389,13 @@ export function createMcpServer(): McpServer {
     }
   );
 
-  // Stop a service (requires OCTOPAI_SELF_MODIFY=1)
+  // Stop a service (requires COLEO_SELF_MODIFY=1)
   server.registerTool(
     "service_stop",
     {
       description: 
-        "Stop an Octopai service (server or brain). " +
-        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable. " +
+        "Stop a Coleo service (server or brain). " +
+        "REQUIRES COLEO_SELF_MODIFY=1 environment variable. " +
         "Use with caution - stopping the server will disconnect this arm!",
       inputSchema: {
         service: z.enum(["server", "brain"]).describe("Which service to stop"),
@@ -3566,7 +3566,7 @@ export function createMcpServer(): McpServer {
       return {
         contents: [
           {
-            uri: "octopai://notes/shared",
+            uri: "coleo://notes/shared",
             mimeType: "application/json",
             text: JSON.stringify(notes, null, 2),
           },
@@ -3578,10 +3578,10 @@ export function createMcpServer(): McpServer {
   // System status
   server.registerResource(
     "Current system status",
-    "octopai://status",
+    "coleo://status",
     {},
     async () => {
-      const stateFile = join(OCTOPAI_DIR, "state", "brain.json");
+      const stateFile = join(COLEO_DIR, "state", "brain.json");
       let state = { status: "unknown" };
       try {
         const content = await readFile(stateFile, "utf-8");
@@ -3593,7 +3593,7 @@ export function createMcpServer(): McpServer {
       return {
         contents: [
           {
-            uri: "octopai://status",
+            uri: "coleo://status",
             mimeType: "application/json",
             text: JSON.stringify(state, null, 2),
           },
@@ -3606,7 +3606,7 @@ export function createMcpServer(): McpServer {
 }
 
 /**
- * Run the MCP server (called when invoked as `octopai mcp serve`)
+ * Run the MCP server (called when invoked as `coleo mcp serve`)
  */
 export async function runMcpServer(): Promise<void> {
   const server = createMcpServer();
@@ -3614,5 +3614,5 @@ export async function runMcpServer(): Promise<void> {
 
   await server.connect(transport);
 
-   console.error(`[octopai] MCP server started for arm: ${ARM_ID}`);
+   console.error(`[coleo] MCP server started for arm: ${ARM_ID}`);
 }

@@ -2,19 +2,19 @@
  * Daemon/Service Management for Octopai
  * 
  * Provides PID file tracking and process management for:
- * - API Server (octopai serve)
- * - Brain (octopai brain run)
+ * - API Server (coleo serve)
+ * - Brain (coleo brain run)
  * 
- * PID files stored in ~/.octopai/run/
+ * PID files stored in ~/.coleo/run/
  * 
- * Security: Some operations require OCTOPAI_SELF_MODIFY=1 env var,
- * which should only be set for arms working on Octopai itself.
+ * Security: Some operations require COLEO_SELF_MODIFY=1 env var,
+ * which should only be set for arms working on Coleo itself.
  */
 
 import { spawn } from "bun";
 import { mkdir, readFile, writeFile, unlink } from "fs/promises";
 import { join } from "path";
-import { getOctopaiDir } from "../config";
+import { getColeoDir } from "../config";
 
 export type ServiceType = "server" | "brain";
 
@@ -38,7 +38,7 @@ export interface ServiceStatus {
  * Get the run directory for PID files
  */
 export function getRunDir(): string {
-  return join(getOctopaiDir(), "run");
+  return join(getColeoDir(), "run");
 }
 
 /**
@@ -140,10 +140,10 @@ export async function getServiceStatus(service: ServiceType): Promise<ServiceSta
 
 /**
  * Check if self-modification is allowed
- * Only arms with OCTOPAI_SELF_MODIFY=1 can restart services
+ * Only arms with COLEO_SELF_MODIFY=1 can restart services
  */
 export function isSelfModifyAllowed(): boolean {
-  return process.env.OCTOPAI_SELF_MODIFY === "1";
+  return process.env.COLEO_SELF_MODIFY === "1";
 }
 
 /**
@@ -152,8 +152,8 @@ export function isSelfModifyAllowed(): boolean {
 export function requireSelfModify(action: string): void {
   if (!isSelfModifyAllowed()) {
     throw new Error(
-      `Action "${action}" requires OCTOPAI_SELF_MODIFY=1 environment variable. ` +
-      `This is only allowed for arms working on Octopai itself.`
+      `Action "${action}" requires COLEO_SELF_MODIFY=1 environment variable. ` +
+      `This is only allowed for arms working on Coleo itself.`
     );
   }
 }
@@ -162,8 +162,8 @@ export function requireSelfModify(action: string): void {
  * Get the command to start a service
  */
 function getServiceCommand(service: ServiceType): { command: string[]; cwd: string } {
-  // Use the octopai directory as cwd
-  const cwd = process.env.OCTOPAI_PROJECT_DIR || process.cwd();
+  // Use the coleo directory as cwd
+  const cwd = process.env.COLEO_PROJECT_DIR || process.cwd();
   
   switch (service) {
     case "server":
@@ -217,8 +217,8 @@ export async function startService(
     stderr: "ignore",
     env: {
       ...process.env,
-      // Ensure the spawned process doesn't inherit OCTOPAI_SELF_MODIFY
-      OCTOPAI_SELF_MODIFY: undefined,
+      // Ensure the spawned process doesn't inherit COLEO_SELF_MODIFY
+      COLEO_SELF_MODIFY: undefined,
     },
   });
   

@@ -10,7 +10,7 @@ export {
   readTomlConfig,
   writeTomlConfig,
   configToToml,
-  getOctopaiDir,
+  getColeoDir,
   getConfigPath,
 } from "./loader";
 

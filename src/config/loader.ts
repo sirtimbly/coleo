@@ -2,7 +2,7 @@
  * Configuration Loader
  * 
  * Loads configuration from:
- * 1. TOML file (~/.octopai/config.toml)
+ * 1. TOML file (~/.coleo/config.toml)
  * 2. Database (config table)
  * 3. Environment variables
  * 
@@ -13,7 +13,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { parse, stringify } from "smol-toml";
-import type { OctopaiConfig } from "../types";
+import type { ColeoConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
 
 /**
@@ -48,26 +48,26 @@ interface TomlConfig {
 }
 
 /**
- * Get the default octopai directory
- * Uses .octopai/ in the current working directory (project-local config)
- * Can be overridden with OCTOPAI_DIR environment variable
+ * Get the default Coleo directory
+ * Uses .coleo/ in the current working directory (project-local config)
+ * Can be overridden with COLEO_DIR environment variable
  */
-export function getOctopaiDir(): string {
-  return process.env.OCTOPAI_DIR || join(process.cwd(), ".octopai");
+export function getColeoDir(): string {
+  return process.env.COLEO_DIR || join(process.cwd(), ".coleo");
 }
 
 /**
  * Get the path to the config file
  */
-export function getConfigPath(octopaiDir?: string): string {
-  return join(octopaiDir || getOctopaiDir(), "config.toml");
+export function getConfigPath(coleoDir?: string): string {
+  return join(coleoDir || getColeoDir(), "config.toml");
 }
 
 /**
  * Read and parse the TOML config file
  */
-export async function readTomlConfig(octopaiDir?: string): Promise<TomlConfig | null> {
-  const configPath = getConfigPath(octopaiDir);
+export async function readTomlConfig(coleoDir?: string): Promise<TomlConfig | null> {
+  const configPath = getConfigPath(coleoDir);
   try {
     const content = await readFile(configPath, "utf-8");
     return parse(content) as TomlConfig;
@@ -81,10 +81,10 @@ export async function readTomlConfig(octopaiDir?: string): Promise<TomlConfig | 
  */
 export async function writeTomlConfig(
   config: TomlConfig,
-  octopaiDir?: string
+  coleoDir?: string
 ): Promise<void> {
-  const configPath = getConfigPath(octopaiDir);
-  const header = `# Octopai Configuration
+  const configPath = getConfigPath(coleoDir);
+  const header = `# Coleo Configuration
 # Updated: ${new Date().toISOString()}
 
 `;
@@ -93,12 +93,12 @@ export async function writeTomlConfig(
 }
 
 /**
- * Convert TOML config (snake_case) to OctopaiConfig (camelCase)
+ * Convert TOML config (snake_case) to ColeoConfig (camelCase)
  */
-function tomlToConfig(toml: TomlConfig, octopaiDir: string): Partial<OctopaiConfig> {
-  const config: Partial<OctopaiConfig> = {
+function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> {
+  const config: Partial<ColeoConfig> = {
     version: toml.version,
-    octopaiDir,
+    coleoDir,
   };
 
   if (toml.brain) {
@@ -112,7 +112,7 @@ function tomlToConfig(toml: TomlConfig, octopaiDir: string): Partial<OctopaiConf
   if (toml.mail) {
     config.mail = {
       fromAddress: toml.mail.from_address ?? DEFAULT_CONFIG.mail.fromAddress,
-      digestSchedule: (toml.mail.digest_schedule as OctopaiConfig["mail"]["digestSchedule"]) ?? DEFAULT_CONFIG.mail.digestSchedule,
+      digestSchedule: (toml.mail.digest_schedule as ColeoConfig["mail"]["digestSchedule"]) ?? DEFAULT_CONFIG.mail.digestSchedule,
     };
   }
 
@@ -127,7 +127,7 @@ function tomlToConfig(toml: TomlConfig, octopaiDir: string): Partial<OctopaiConf
 
   if (toml.terminal) {
     config.terminal = {
-      emulator: (toml.terminal.emulator as OctopaiConfig["terminal"]["emulator"]) ?? DEFAULT_CONFIG.terminal.emulator,
+      emulator: (toml.terminal.emulator as ColeoConfig["terminal"]["emulator"]) ?? DEFAULT_CONFIG.terminal.emulator,
     };
   }
 
@@ -144,9 +144,9 @@ function tomlToConfig(toml: TomlConfig, octopaiDir: string): Partial<OctopaiConf
 }
 
 /**
- * Convert OctopaiConfig (camelCase) to TOML config (snake_case)
+ * Convert ColeoConfig (camelCase) to TOML config (snake_case)
  */
-export function configToToml(config: Partial<OctopaiConfig>): TomlConfig {
+export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
   const toml: TomlConfig = {
     version: config.version ?? DEFAULT_CONFIG.version,
   };
@@ -195,11 +195,11 @@ export function configToToml(config: Partial<OctopaiConfig>): TomlConfig {
 /**
  * Load full configuration, merging TOML file with defaults
  */
-export async function loadConfig(octopaiDir?: string): Promise<OctopaiConfig> {
-  const dir = octopaiDir || getOctopaiDir();
+export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
+  const dir = coleoDir || getColeoDir();
   
   // Start with defaults
-  const config: OctopaiConfig = { ...DEFAULT_CONFIG, octopaiDir: dir };
+  const config: ColeoConfig = { ...DEFAULT_CONFIG, coleoDir: dir };
 
   // Load TOML file
   const toml = await readTomlConfig(dir);
@@ -225,23 +225,23 @@ export async function loadConfig(octopaiDir?: string): Promise<OctopaiConfig> {
   }
 
   // Override with environment variables
-  if (process.env.OCTOPAI_POLL_INTERVAL_MS) {
-    config.brain.pollIntervalMs = parseInt(process.env.OCTOPAI_POLL_INTERVAL_MS, 10);
+  if (process.env.COLEO_POLL_INTERVAL_MS) {
+    config.brain.pollIntervalMs = parseInt(process.env.COLEO_POLL_INTERVAL_MS, 10);
   }
-  if (process.env.OCTOPAI_MAX_ARMS) {
-    config.brain.maxArms = parseInt(process.env.OCTOPAI_MAX_ARMS, 10);
+  if (process.env.COLEO_MAX_ARMS) {
+    config.brain.maxArms = parseInt(process.env.COLEO_MAX_ARMS, 10);
   }
-  if (process.env.OCTOPAI_ARM_GRACE_PERIOD_MINUTES) {
-    config.brain.armGracePeriodMinutes = parseInt(process.env.OCTOPAI_ARM_GRACE_PERIOD_MINUTES, 10);
+  if (process.env.COLEO_ARM_GRACE_PERIOD_MINUTES) {
+    config.brain.armGracePeriodMinutes = parseInt(process.env.COLEO_ARM_GRACE_PERIOD_MINUTES, 10);
   }
-  if (process.env.OCTOPAI_DEFAULT_HARNESS) {
-    config.defaults.harness = process.env.OCTOPAI_DEFAULT_HARNESS;
+  if (process.env.COLEO_DEFAULT_HARNESS) {
+    config.defaults.harness = process.env.COLEO_DEFAULT_HARNESS;
   }
-  if (process.env.OCTOPAI_DEFAULT_PROVIDER) {
-    config.defaults.provider = process.env.OCTOPAI_DEFAULT_PROVIDER;
+  if (process.env.COLEO_DEFAULT_PROVIDER) {
+    config.defaults.provider = process.env.COLEO_DEFAULT_PROVIDER;
   }
-  if (process.env.OCTOPAI_DEFAULT_MODEL) {
-    config.defaults.model = process.env.OCTOPAI_DEFAULT_MODEL;
+  if (process.env.COLEO_DEFAULT_MODEL) {
+    config.defaults.model = process.env.COLEO_DEFAULT_MODEL;
   }
 
   return config;
@@ -251,16 +251,16 @@ export async function loadConfig(octopaiDir?: string): Promise<OctopaiConfig> {
  * Update configuration in TOML file
  */
 export async function updateConfig(
-  updates: Partial<OctopaiConfig>,
-  octopaiDir?: string
-): Promise<OctopaiConfig> {
-  const dir = octopaiDir || getOctopaiDir();
+  updates: Partial<ColeoConfig>,
+  coleoDir?: string
+): Promise<ColeoConfig> {
+  const dir = coleoDir || getColeoDir();
   
   // Load current config
   const current = await loadConfig(dir);
   
   // Merge updates
-  const updated: OctopaiConfig = {
+  const updated: ColeoConfig = {
     ...current,
     ...updates,
     brain: updates.brain ? { ...current.brain, ...updates.brain } : current.brain,
@@ -270,7 +270,7 @@ export async function updateConfig(
   };
   
   if (updates.gitea) {
-    updated.gitea = { ...current.gitea, ...updates.gitea } as OctopaiConfig["gitea"];
+    updated.gitea = { ...current.gitea, ...updates.gitea } as ColeoConfig["gitea"];
   }
   
   // Write back to TOML
