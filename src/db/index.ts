@@ -8,6 +8,12 @@ import { dirname } from "path";
 /**
  * Initialize the database with WAL mode and run migrations
  */
+const isTestEnv =
+  process.env.NODE_ENV === "test" ||
+  process.env.BUN_ENV === "test" ||
+  process.env.BUN_TEST === "1";
+const shouldLogMigrations = !isTestEnv && process.env.COLEO_LOG_MIGRATIONS !== "false";
+
 export async function initDatabase(dbPath: string): Promise<Database> {
   // Ensure directory exists
   await mkdir(dirname(dbPath), { recursive: true });
@@ -111,7 +117,9 @@ async function runMigrations(db: Database): Promise<void> {
   for (const [name, sql, columnDefs] of migrations) {
     if (applied.has(name)) continue;
 
-    console.log(`Applying migration: ${name}`);
+    if (shouldLogMigrations) {
+      console.log(`Applying migration: ${name}`);
+    }
     
     // First add any columns that need to be added (before running main SQL)
     if (columnDefs) {

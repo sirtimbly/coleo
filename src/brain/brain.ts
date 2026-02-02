@@ -1280,7 +1280,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
           severity: payload.severity,
         },
         timestamp: new Date().toISOString(),
-      }).catch(() ={> {});
+      }).catch(() => {});
     }
 
     // TODO: Store dependency relationships in database for future task planning
