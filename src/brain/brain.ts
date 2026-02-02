@@ -1,5 +1,5 @@
 /**
- * Brain - The central coordinator for Octopai
+ * Brain - The central coordinator for Coleo
  *
  * Runs a polling loop that:
  * 1. Reads human mail from sent/
@@ -69,6 +69,23 @@ export class Brain {
   private healthMonitor: ArmHealthMonitor | null = null;
 
   /**
+   * Load and render a template with optional context
+   */
+  private async renderTemplate(
+    templateName: string,
+    context?: Record<string, unknown>
+  ): Promise<string> {
+    const templatePath = join(this.options.coleoDir, "src", "brain", "templates", templateName);
+    try {
+      const templateContent = await readFile(templatePath, "utf-8");
+      return context ? nunjucks.renderString(templateContent, context) : templateContent;
+    } catch (err) {
+      this.log(`Failed to load template ${templateName}: ${err}`);
+      return `Template missing: ${templateName}`;
+    }
+  }
+
+  /**
    * Load and render the mail processor system prompt template
    */
   private async loadMailProcessorSystemPrompt(context: {
@@ -76,78 +93,19 @@ export class Brain {
     pendingTasks: number;
     recentActivity: string[];
   }): Promise<string> {
-    const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "mail-processor-system-prompt.jinja");
-    try {
-      const templateContent = await readFile(templatePath, "utf-8");
-      const availableArms = context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none";
-      const recentActivity = context.recentActivity.slice(0, 5).join("; ") || "none";
-      return nunjucks.renderString(templateContent, {
-        available_arms: availableArms,
-        pending_tasks: context.pendingTasks,
-        recent_activity: recentActivity,
-      });
-    } catch (err) {
-      this.log(`Failed to load mail processor system prompt template: ${err}`);
-      // Fallback to hardcoded prompt
-      return `You are Octopai Brain, an AI agent orchestrator. Your job is to process messages from a human and determine appropriate action.
-
-## Available Actions (in order of preference)
-
-1. **new_task** - Create a new task for arms to work on. USE THIS for any request that involves:
-   - Adding a feature
-   - Fixing a bug
-   - Making code changes
-   - Updating documentation content
-   - Any work that should be tracked and assigned to an available arm
-   This is the DEFAULT choice for most human requests about work to be done.
-2. **bug_report*
-3. **doc_update**
-4. **approval_response** - Human responded to a previous approval request (look for "approved", "rejected", "yes", "no")
-5. **query** - Human is asking a question about system status
-6. **prompt_arm** - ONLY use this when human EXPLICITLY names a specific arm
-7. **escalate** - Cannot determine what to do, or requires human clarification
-
-For new_task: include subject, body, priority (default: normal)
-For bug_report: include title, description, priority (default: medium)
-For prompt_arm: include armName and instruction (only if arm was explicitly named)
-For query: include query type
-For approval_response: include originalId, approved (boolean), comment`;
-    }
+    const availableArms = context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none";
+    const recentActivity = context.recentActivity.slice(0, 5).join("; ") || "none";
+    return this.renderTemplate("mail-processor-system-prompt.jinja", {
+      available_arms: availableArms,
+      pending_tasks: context.pendingTasks,
+      recent_activity: recentActivity,
+    });
   }
       /**
      * Load the initial arm prompt template
      */
     private async loadInitialArmPrompt(): Promise<string> {
-      const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "initial-arm-prompt.jinja");
-      try {
-        const templateContent = await readFile(templatePath, "utf-8");
-        return templateContent;
-      } catch (err) {
-        this.log(`Failed to load initial arm prompt template: ${err}`);
-        // Fallback to hardcoded prompt
-        return `You are an AI agent arm in the Octopai distributed system.
-
-Your purpose is to execute tasks assigned to you by the central brain coordinator.
-
-## Getting Started
-
-1. Call 'get_full_briefing' to receive your assigned task with full context
-2. Read the task description and evaluate if it's feasible for you to complete
-3. If feasible, call 'claim_task' to claim ownership of the task
-4. Execute the task according to the description
-5. Report your progress regularly using 'submit_status_report'
-6. When complete, call 'complete_task' with a summary of what you did
-
-## Important Guidelines
-
-- Always claim a task before starting work on it
-- If a task seems infeasible, report back immediately rather than struggling silently
-- Keep the brain updated on your progress through status reports
-- If you get stuck, ask for help or clarification
-- Focus on completing one task at a time before moving to the next
-
-Call 'get_full_briefing' now to see what task is waiting for you.`;
-      }
+      return this.renderTemplate("initial-arm-prompt.jinja");
     }
 
         /**
@@ -159,44 +117,29 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
       assignedBy: string;
       reason: string;
     }): Promise<string> {
-      const templatePath = join(this.options.octopaiDir, "src", "brain", "templates", "bug-assignment-prompt.jinja");
-      try {
-        const templateContent = await readFile(templatePath, "utf-8");
-        return nunjucks.renderString(templateContent, {
-          bug_id: context.bugId,
-          bug_title: context.title,
-          assigned_by: context.assignedBy,
-          reason: context.reason,
-        });
-      } catch (err) {
-        this.log(`Failed to load bug assignment prompt template: ${err}`);
-        // Fallback to hardcoded prompt
-        return `You have been assigned to investigate bug "${context.title}" (ID: ${context.bugId}).
-
-**Assignment Details:**
-- Assigned by: ${context.assignedBy}
-- Reason: ${context.reason}
-
-Please investigate this bug and update its status using the update_bug_status MCP tool as you progress through the resolution workflow:
-1. Set status to "investigating" when you start investigation
-2. Set status to "fixing" when you implement a fix
-3. Set status to "verifying" when testing the fix
-4. Set status to "resolved" when the bug is fixed
-5. Set status to "closed" when verification is complete
-
-Use the assign_bug tool if you need to delegate this to another arm.`;
-      }
+      return this.renderTemplate("bug-assignment-prompt.jinja", {
+        bug_id: context.bugId,
+        bug_title: context.title,
+        assigned_by: context.assignedBy,
+        reason: context.reason,
+      });
     }
 
     /**
      * Ensure template files exist, creating them from source if needed
      */
     private async ensureTemplatesExist(): Promise<void> {
-      const templateDir = join(this.options.octopaiDir, "src", "brain", "templates");
+      const templateDir = join(this.options.coleoDir, "src", "brain", "templates");
       const templates = [
         { name: "mail-processor-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "mail-processor-system-prompt.jinja") },
         { name: "initial-arm-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "initial-arm-prompt.jinja") },
         { name: "bug-assignment-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "bug-assignment-prompt.jinja") },
+        { name: "arm-api-restart-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-api-restart-prompt.jinja") },
+        { name: "arm-tasks-available-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-tasks-available-prompt.jinja") },
+        { name: "arm-loop-compact-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-loop-compact-nudge.jinja") },
+        { name: "arm-generic-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-generic-nudge.jinja") },
+        { name: "stuck-analyzer-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-system-prompt.jinja") },
+        { name: "stuck-analyzer-user-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-user-prompt.jinja") },
       ];
 
       for (const template of templates) {
@@ -361,7 +304,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
     this.mailProcessor = new MailProcessor((msg) => this.log(msg), "");
 
     // Initialize stuck arm analyzer
-    this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg));
+    this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg), this.options.coleoDir);
   }
 
   /**
@@ -1000,7 +943,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
                 intent.priority
               );
               await this.sendToHuman({
-                subject: `[octopai] Task queued (${intent.armName} is busy)`,
+                subject: `[coleo] Task queued (${intent.armName} is busy)`,
                 body: `The arm ${intent.armName} is currently ${targetArm.status}. I've created a task instead:\n\nSubject: ${message.subject}\n\nThe task will be assigned when an arm becomes available.`,
               });
             } else {
@@ -1018,7 +961,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
         case "escalate":
           this.log(`Escalating message to human: ${message.subject}`);
           await this.sendToHuman({
-            subject: `[octopai] Cannot process: ${message.subject}`,
+            subject: `[coleo] Cannot process: ${message.subject}`,
             body: `I received this message but couldn't determine the appropriate action:\n\n${message.body}`,
           });
           break;
@@ -1097,8 +1040,8 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
     }
 
     // Also check file queue for legacy/fallback messages
-    const queueDir = join(this.options.octopaiDir, "queue", "brain", "pending");
-    const processedDir = join(this.options.octopaiDir, "queue", "brain", "processed");
+    const queueDir = join(this.options.coleoDir, "queue", "brain", "pending");
+    const processedDir = join(this.options.coleoDir, "queue", "brain", "processed");
 
     let files: string[];
     try {
@@ -1356,7 +1299,7 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
 
     // Send confirmation to human
     await this.sendToHuman({
-      subject: `[octopai] Bug Report Received: ${title}`,
+      subject: `[coleo] Bug Report Received: ${title}`,
       body: `Thank you for reporting this issue. Your bug report has been logged and will be investigated.
 
 **Bug ID:** ${bugPayload.id}
@@ -1364,8 +1307,8 @@ Use the assign_bug tool if you need to delegate this to another arm.`;
 
 We'll notify you when we start investigating or have updates.`,
       headers: {
-        "X-Octopai-Type": "bug-confirmation",
-        "X-Octopai-Bug-Id": bugPayload.id,
+        "X-Coleo-Type": "bug-confirmation",
+        "X-Coleo-Bug-Id": bugPayload.id,
       },
     });
   }
@@ -1691,11 +1634,11 @@ We'll notify you when we start investigating or have updates.`,
 
     // Notify human
     await this.sendToHuman({
-      subject: `[octopai] Task completed: ${taskSubject}`,
+      subject: `[coleo] Task completed: ${taskSubject}`,
       body: `Task "${taskSubject}" has been completed.\n\n## Summary\n${summary}\n\n## Artifacts\n${artifacts.map(a => `- ${a}`).join("\n") || "None"}`,
       headers: {
-        "X-Octopai-Task-Id": taskId,
-        "X-Octopai-Type": "task-complete",
+        "X-Coleo-Task-Id": taskId,
+        "X-Coleo-Type": "task-complete",
       },
     });
 
@@ -2088,11 +2031,11 @@ We'll notify you when we start investigating or have updates.`,
           }
 
           await this.sendToHuman({
-            subject: `[octopai] Task deferred: ${task.subject}`,
+            subject: `[coleo] Task deferred: ${task.subject}`,
             body: `Task "${task.subject}" has been deferred.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Brain Decision\nThe arm could not complete this task. There are other pending tasks, so the arm has been moved to other work. This task will remain blocked until you provide guidance or another arm becomes available.\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
             headers: {
-              "X-Octopai-Task-Id": report.taskId,
-              "X-Octopai-Type": "task-deferred",
+              "X-Coleo-Task-Id": report.taskId,
+              "X-Coleo-Type": "task-deferred",
             },
           });
           this.log(`Task ${task.subject} deferred. Arm ${report.armId} will be assigned to other work.`);
@@ -2102,11 +2045,11 @@ We'll notify you when we start investigating or have updates.`,
           await this.saveTasks();
 
           await this.sendToHuman({
-            subject: `[octopai] Task blocked: ${task.subject}`,
+            subject: `[coleo] Task blocked: ${task.subject}`,
             body: `Task "${task.subject}" is blocked by arm ${report.armId}.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
             headers: {
-              "X-Octopai-Task-Id": report.taskId,
-              "X-Octopai-Type": "task-blocked",
+              "X-Coleo-Task-Id": report.taskId,
+              "X-Coleo-Type": "task-blocked",
             },
           });
           this.log(`Task ${task.subject} blocked. Notified human.`);
@@ -2121,11 +2064,11 @@ We'll notify you when we start investigating or have updates.`,
         // Only notify human if decision says to forward
         if (forwardDecision.shouldForward && report.issues.length > 0) {
           await this.sendToHuman({
-            subject: `[octopai] Issues found: ${task.subject}`,
+            subject: `[coleo] Issues found: ${task.subject}`,
             body: `Arm ${report.armId} found issues while working on "${task.subject}":\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n## Summary\n${report.summary}\n\n## Next Steps\n${report.nextSteps || "Continuing work..."}\n\n---\n_Brain decision: ${forwardDecision.reason}_`,
             headers: {
-              "X-Octopai-Task-Id": report.taskId,
-              "X-Octopai-Type": "issues-found",
+              "X-Coleo-Task-Id": report.taskId,
+              "X-Coleo-Type": "issues-found",
             },
           });
         } else if (!forwardDecision.shouldForward) {
@@ -2138,11 +2081,11 @@ We'll notify you when we start investigating or have updates.`,
         // Task needs human or other arm review - always forward
         this.log(`Task ${task.subject} needs review`);
         await this.sendToHuman({
-          subject: `[octopai] Review needed: ${task.subject}`,
+          subject: `[coleo] Review needed: ${task.subject}`,
           body: `Arm ${report.armId} requests review for "${task.subject}":\n\n## Summary\n${report.summary}\n\n## Files Changed\n${report.filesChanged.map(f => `- ${f}`).join("\n") || "None listed"}\n\n## Tests\n${report.testsStatus || "Not run"}`,
           headers: {
-            "X-Octopai-Task-Id": report.taskId,
-            "X-Octopai-Type": "needs-review",
+            "X-Coleo-Task-Id": report.taskId,
+            "X-Coleo-Type": "needs-review",
           },
         });
         break;
@@ -2266,11 +2209,11 @@ ${originalTask.id}`;
     // Notify human unless explicitly skipped (e.g., when assigning to another arm)
     if (!skipNotification) {
       await this.sendToHuman({
-        subject: `[octopai] Verification needed: ${originalTask.subject}`,
+        subject: `[coleo] Verification needed: ${originalTask.subject}`,
         body: `Task "${originalTask.subject}" completed with issues. Created verification task.\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed"}\n\n## Original Summary\n${report.summary}`,
         headers: {
-          "X-Octopai-Task-Id": taskId,
-          "X-Octopai-Type": "verification-task-created",
+          "X-Coleo-Task-Id": taskId,
+          "X-Coleo-Type": "verification-task-created",
         },
       });
     } else {
@@ -2311,14 +2254,14 @@ ${originalTask.id}`;
 
      // Also notify human for high-severity discoveries
      if (discovery.severity === "error" || discovery.severity === "warning") {
-       await this.sendToHuman({
-         subject: `[octopai] Discovery: ${discovery.title}`,
+        await this.sendToHuman({
+          subject: `[coleo] Discovery: ${discovery.title}`,
          body: `Arm ${armId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
-         headers: {
-           "X-Octopai-Type": "discovery",
-           "X-Octopai-From": armId,
-           "X-Octopai-Severity": discovery.severity || "info",
-         },
+          headers: {
+            "X-Coleo-Type": "discovery",
+            "X-Coleo-From": armId,
+            "X-Coleo-Severity": discovery.severity || "info",
+          },
        });
      }
    }
@@ -2504,12 +2447,12 @@ ${originalTask.id}`;
     const requestId = `approval-${Date.now()}`;
 
     await this.sendToHuman({
-      subject: `[octopai] [${requestId}] Approval needed: ${request.action}`,
+      subject: `[coleo] [${requestId}] Approval needed: ${request.action}`,
       body: `Arm ${armId} needs your approval.\n\n**Action:** ${request.action}\n\n**Context:**\n${request.context}\n\n**Options:** ${request.options.join(" | ")}\n\nReply to this email with your decision.`,
       headers: {
-        "X-Octopai-Type": "approval-request",
-        "X-Octopai-From": armId,
-        "X-Octopai-Request-Id": requestId,
+        "X-Coleo-Type": "approval-request",
+        "X-Coleo-From": armId,
+        "X-Coleo-Request-Id": requestId,
         "Priority": "high",
       },
     });
@@ -2533,10 +2476,10 @@ ${originalTask.id}`;
       const completedToday = this.state.completedToday;
 
       await this.sendToHuman({
-        subject: "[octopai] Status Report",
+        subject: "[coleo] Status Report",
         body: `## Current Status\n\n- **Arms active:** ${this.arms.size}\n- **Pending tasks:** ${pendingTasks.length}\n- **In progress:** ${inProgress.length}\n- **Completed today:** ${completedToday}\n\n## Pending Tasks\n${pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None"}\n\n## In Progress\n${inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None"}`,
         headers: {
-          "X-Octopai-Type": "status",
+          "X-Coleo-Type": "status",
           "In-Reply-To": replyToId,
         },
       });
@@ -2586,10 +2529,10 @@ ${originalTask.id}`;
 
     // Notify human
     await this.sendToHuman({
-      subject: `[octopai] Tool discovered: ${tool.name}`,
+      subject: `[coleo] Tool discovered: ${tool.name}`,
       body: `Arm ${armId} discovered a useful tool:\n\n**Name:** ${tool.name}\n**Command:** \`${tool.command}\`\n**Description:** ${tool.description}`,
       headers: {
-        "X-Octopai-Type": "tool-discovery",
+        "X-Coleo-Type": "tool-discovery",
       },
     });
   }
@@ -2640,11 +2583,11 @@ ${originalTask.id}`;
 
     // Notify human of the update
     await this.sendToHuman({
-      subject: `[octopai] Documentation updated: ${payload.path}`,
+      subject: `[coleo] Documentation updated: ${payload.path}`,
       body: `Arm ${armId} has updated documentation.\n\n**File:** ${payload.path}\n**Reason:** ${payload.reason}`,
       headers: {
-        "X-Octopai-Type": "doc-update",
-        "X-Octopai-Path": payload.path,
+        "X-Coleo-Type": "doc-update",
+        "X-Coleo-Path": payload.path,
       },
     });
 
@@ -2727,7 +2670,7 @@ ${originalTask.id}`;
       // Notify human for critical/high priority bugs
       if (priority === "critical" || priority === "high") {
         await this.sendToHuman({
-          subject: `[octopai] ${priority.toUpperCase()} Priority Bug: ${payload.title}`,
+          subject: `[coleo] ${priority.toUpperCase()} Priority Bug: ${payload.title}`,
           body: `A ${priority} priority bug has been reported.
 
 **Title:** ${payload.title}
@@ -2737,9 +2680,9 @@ ${originalTask.id}`;
 
 Please review and assign if needed.`,
           headers: {
-            "X-Octopai-Type": "bug-report",
-            "X-Octopai-Bug-Id": bugId,
-            "X-Octopai-Priority": priority,
+            "X-Coleo-Type": "bug-report",
+            "X-Coleo-Bug-Id": bugId,
+            "X-Coleo-Priority": priority,
           },
         });
 
@@ -2807,7 +2750,7 @@ Please review and assign if needed.`,
 
             // Notify human about task resumption
             await this.sendToHuman({
-              subject: `[octopai] Task Resumed: ${task.subject}`,
+              subject: `[coleo] Task Resumed: ${task.subject}`,
               body: `Task "${task.subject}" has been resumed after resolution of blocking bug.
 
 **Task Details:**
@@ -2821,9 +2764,9 @@ Please review and assign if needed.`,
 
 The task is now available for assignment.`,
               headers: {
-                "X-Octopai-Type": "task-resumed",
-                "X-Octopai-Task-Id": taskId,
-                "X-Octopai-Bug-Id": bug.id,
+                "X-Coleo-Type": "task-resumed",
+                "X-Coleo-Task-Id": taskId,
+                "X-Coleo-Bug-Id": bug.id,
               },
             });
 
@@ -2873,7 +2816,7 @@ The task is now available for assignment.`,
 
     // Log the escalation for human review
     await this.sendToHuman({
-      subject: `[octopai] Medium Priority Bug Escalation: ${bugPayload.title}`,
+      subject: `[coleo] Medium Priority Bug Escalation: ${bugPayload.title}`,
       body: `A medium priority bug has been reported and escalated for review.
 
 **Bug Details:**
@@ -2884,9 +2827,9 @@ The task is now available for assignment.`,
 
 This bug has been logged for resolution. Tasks may continue but should be monitored for issues.`,
       headers: {
-        "X-Octopai-Type": "bug-escalation",
-        "X-Octopai-Bug-Id": bugId,
-        "X-Octopai-Priority": "medium",
+        "X-Coleo-Type": "bug-escalation",
+        "X-Coleo-Bug-Id": bugId,
+        "X-Coleo-Priority": "medium",
       },
     });
   }
@@ -3051,11 +2994,11 @@ Report findings using bug resolution workflow.`,
     // Notify human of significant changes
     if (payload.impact === "high" || payload.filePath.includes("requirements")) {
       await this.sendToHuman({
-        subject: `[octopai] File change detected: ${payload.filePath}`,
+        subject: `[coleo] File change detected: ${payload.filePath}`,
         body: `Arm ${armId} detected a change:\n\n**File:** ${payload.filePath}\n**Type:** ${payload.changeType}\n**Summary:** ${payload.summary}${payload.impact ? `\n**Impact:** ${payload.impact}` : ""}`,
         headers: {
-          "X-Octopai-Type": "file-change",
-          "X-Octopai-Path": payload.filePath,
+          "X-Coleo-Type": "file-change",
+          "X-Coleo-Path": payload.filePath,
         },
       });
     }
@@ -3256,10 +3199,8 @@ Report findings using bug resolution workflow.`,
               }
 
               // Also prompt the arm to re-register
-              await this.sendPromptToArm(
-                arm.name,
-                "The API server restarted. Please re-register by calling the MCP tool octopai_register_session if available, or confirm you can still receive tasks."
-              );
+              const prompt = await this.renderTemplate("arm-api-restart-prompt.jinja");
+              await this.sendPromptToArm(arm.name, prompt);
               continue;
             }
           } else {
@@ -3379,32 +3320,6 @@ Report findings using bug resolution workflow.`,
       );
     }
   }
-
-    /**
-     * Common initial prompt template for all newly spawned arms
-     */
-    private readonly INITIAL_ARM_PROMPT = `You are an AI agent arm in the Octopai distributed system.
-
-Your purpose is to execute tasks assigned to you by the central brain coordinator.
-
-## Getting Started
-
-1. Call 'get_full_briefing' to receive your assigned task with full context
-2. Read the task description and evaluate if it's feasible for you to complete
-3. If feasible, call 'claim_task' to claim ownership of the task
-4. Execute the task according to the description
-5. Report your progress regularly using 'submit_status_report'
-6. When complete, call 'complete_task' with a summary of what you did
-
-## Important Guidelines
-
-- Always claim a task before starting work on it
-- If a task seems infeasible, report back immediately rather than struggling silently
-- Keep the brain updated on your progress through status reports
-- If you get stuck, ask for help or clarification
-- Focus on completing one task at a time before moving to the next
-
-Call 'get_full_briefing' now to see what task is waiting for you.`;
 
     /**
      * Send initial prompt to newly spawned arms
@@ -3568,12 +3483,13 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
 
         this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available (${domainMatchCount} domain match), prompting to check instructions...`);
 
+        const prompt = await this.renderTemplate("arm-tasks-available-prompt.jinja", {
+          task_count: taskCount,
+        });
+
         const promptSuccess = await this.sendPromptToArm(
           arm.name,
-          `You have ${taskCount} task(s) available. Use the MCP tools to:\n` +
-          `1. Call get_full_briefing to get your assigned task with full context\n` +
-          `2. If you have an active task, continue working on it\n` +
-          `3. When done, call complete_task with your task ID and summary`
+          prompt
         );
 
         if (promptSuccess) {
@@ -3742,15 +3658,15 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
   private stripTerminalArtifacts(text: string): string {
     return text
       // ANSI escape sequences (colors, cursor movement, etc.)
-      .replace(/\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "")
+      .replace(new RegExp("\\u001B(?:[@-Z\\\\-_]|\\[[0-?]*[ -/]*[@-~])", "g"), "")
       // OSC sequences (terminal titles, hyperlinks, etc.)
-      .replace(/\x1B\][^\x07\x1B]*(?:\x07|\x1B\\)/g, "")
+      .replace(new RegExp("\\u001B\\][^\\u0007\\u001B]*(?:\\u0007|\\u001B\\\\)", "g"), "")
       // CSI sequences that might be malformed
-      .replace(/\x1B\[[\d;]*[A-Za-z]/g, "")
+      .replace(new RegExp("\\u001B\\[[\\d;]*[A-Za-z]", "g"), "")
       // Other escape sequences
-      .replace(/\x1B[PX^_].*?\x1B\\/g, "")
+      .replace(new RegExp("\\u001B[PX^_].*?\\u001B\\\\", "g"), "")
       // Control characters (keep \t \n \r)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+      .replace(new RegExp("[\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]", "g"), "")
       // Box-drawing and block characters (TUI borders)
       .replace(/[─━│┃┄┅┆┇┈┉┊┋┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╌╍╎╏═║╒╓╔╕╖╗╘╙╚╛╜╝╞╟╠╡╢╣╤╥╦╧╨╩╪╫╬]/g, "")
       // Block elements (used for progress bars, etc.)
@@ -4042,8 +3958,8 @@ Call 'get_full_briefing' now to see what task is waiting for you.`;
     }
 
     await this.sendToHuman({
-      subject: "[octopai] Infrastructure health issues detected",
-      body: `The Octopai brain detected infrastructure issues that may prevent it from working properly.
+      subject: "[coleo] Infrastructure health issues detected",
+      body: `The Coleo brain detected infrastructure issues that may prevent it from working properly.
 
 **Issues Detected:**
 ${issues.map(i => `- ${i}`).join("\n")}
@@ -4062,7 +3978,7 @@ ${issues.map(i => `- ${i}`).join("\n")}
 
 The brain will continue to retry and recover automatically where possible.`,
       headers: {
-        "X-Octopai-Type": "infrastructure-alert",
+        "X-Coleo-Type": "infrastructure-alert",
         "Priority": "high",
       },
     });
@@ -4265,10 +4181,8 @@ The brain will continue to retry and recover automatically where possible.`,
 
         // Wait a bit then send a nudge to continue
         setTimeout(async () => {
-          await this.sendPromptToArm(
-            arm.name,
-            "You were stuck in a loop. I've compacted your context. Please review the current state and try a different approach to complete your task."
-          );
+          const prompt = await this.renderTemplate("arm-loop-compact-nudge.jinja");
+          await this.sendPromptToArm(arm.name, prompt);
         }, 2000);
 
         this.logActivity("brain", "arm_unstuck", arm.id, {
@@ -4291,10 +4205,10 @@ The brain will continue to retry and recover automatically where possible.`,
         await this.escalateStuckArm(arm, analysis);
         break;
 
-      case "prompt":
+      case "prompt": {
         // Send a generic nudge to continue
-        const nudgeMessage = analysis.suggestedResponse ||
-          "Please continue with your current task. If you're waiting for input, make a reasonable decision and proceed.";
+        const defaultNudge = await this.renderTemplate("arm-generic-nudge.jinja");
+        const nudgeMessage = analysis.suggestedResponse || defaultNudge;
         this.log(`Prompting ${arm.name} to continue: "${nudgeMessage.slice(0, 50)}..."`);
         await this.sendPromptToArm(arm.name, nudgeMessage);
         this.logActivity("brain", "arm_unstuck", arm.id, {
@@ -4302,6 +4216,7 @@ The brain will continue to retry and recover automatically where possible.`,
           response: nudgeMessage.slice(0, 100),
         });
         break;
+      }
 
       case "escalate":
       default:
@@ -4333,7 +4248,7 @@ The brain will continue to retry and recover automatically where possible.`,
       : "unknown";
 
     await this.sendToHuman({
-      subject: `[octopai] Arm ${arm.name} needs help (${analysis.stuckType})`,
+      subject: `[coleo] Arm ${arm.name} needs help (${analysis.stuckType})`,
       body: `The arm "${arm.name}" appears to be stuck and needs human intervention.
 
 **Stuck Type:** ${analysis.stuckType}
@@ -4351,12 +4266,12 @@ ${recentOutput.slice(-2000)}
 
 To help this arm, reply to this email with instructions, or use:
 \`\`\`
-octopai arm prompt ${arm.name} "your message here"
+ coleo arm prompt ${arm.name} "your message here"
 \`\`\``,
       headers: {
-        "X-Octopai-Type": "arm-stuck",
-        "X-Octopai-Arm": arm.name,
-        "X-Octopai-Stuck-Type": analysis.stuckType || "unknown",
+        "X-Coleo-Type": "arm-stuck",
+        "X-Coleo-Arm": arm.name,
+        "X-Coleo-Stuck-Type": analysis.stuckType || "unknown",
         "Priority": "high",
       },
     });
@@ -4584,7 +4499,7 @@ octopai arm prompt ${arm.name} "your message here"
           intervention: "escalate",
         });
         await this.sendToHuman({
-          subject: `[octopai] Arm ${arm.name} stuck in idle loop`,
+          subject: `[coleo] Arm ${arm.name} stuck in idle loop`,
           body: `The arm "${arm.name}" has been stuck in an idle prompt loop for ${stuckMinutes.toFixed(1)} minutes.
 
 **Pattern Detected:**
@@ -4599,7 +4514,7 @@ octopai arm prompt ${arm.name} "your message here"
 
 **Recommended Action:**
 Please check the arm and either:
-- Kill it: octopai arm kill ${arm.name}
+- Kill it: coleo arm kill ${arm.name}
 - Or send a direct response to get it unstuck
 
 Current arm status: ${arm.status}
@@ -4671,7 +4586,7 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
 
       // Notify human
       await this.sendToHuman({
-        subject: `[octopai] Auto-killed zombie arm: ${arm.name}`,
+        subject: `[coleo] Auto-killed zombie arm: ${arm.name}`,
         body: `The arm "${arm.name}" was automatically killed after being unresponsive for 20+ minutes.
 
 **Reason:** Arm received multiple prompts but never performed productive work.
@@ -4681,7 +4596,7 @@ The arm's current task (if any) has been marked as blocked.
 
 You can respawn this arm with:
 \`\`\`
-octopai arm spawn -n ${arm.name}
+ coleo arm spawn -n ${arm.name}
 \`\`\``,
       });
 
@@ -4759,7 +4674,7 @@ octopai arm spawn -n ${arm.name}
 
             if (criticalBugs.length > 0 || highBugs.length > 0) {
               await this.sendToHuman({
-                subject: `[octopai] Task Blocked by ${criticalBugs.length + highBugs.length} Critical/High Priority Bug(s)`,
+                subject: `[coleo] Task Blocked by ${criticalBugs.length + highBugs.length} Critical/High Priority Bug(s)`,
                 body: `Task "${task.subject}" cannot be assigned due to blocking bugs.
 
 **Blocked Task:**
@@ -4771,8 +4686,8 @@ ${blockingBugs.map(b => `- ${b.title} (${b.priority} priority)`).join('\n')}
 
 Please resolve these bugs before the task can proceed.`,
                 headers: {
-                  "X-Octopai-Type": "task-blocked",
-                  "X-Octopai-Task-Id": task.id,
+                  "X-Coleo-Type": "task-blocked",
+                  "X-Coleo-Task-Id": task.id,
                 },
               });
             }
@@ -4906,7 +4821,7 @@ Please resolve these bugs before the task can proceed.`,
     headers?: Record<string, string>;
   }): Promise<void> {
     await this.inbox.write({
-      from: "brain@octopai.local",
+      from: "brain@coleo.local",
       to: "human@local",
       subject: this.stripTerminalArtifacts(message.subject),
       date: new Date(),
@@ -6030,12 +5945,28 @@ export class StuckArmAnalyzer {
   private model: string;
   private baseUrl: string;
   private logger: (message: string) => void;
+  private templateDir: string;
 
-  constructor(logger: (message: string) => void) {
+  constructor(logger: (message: string) => void, coleoDir: string = process.cwd()) {
     this.logger = logger;
     this.apiKey = process.env.OPENAI_API_KEY || "";
     this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
     this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+    this.templateDir = join(coleoDir, "src", "brain", "templates");
+  }
+
+  private async renderTemplate(
+    templateName: string,
+    context: Record<string, unknown>
+  ): Promise<string | null> {
+    const templatePath = join(this.templateDir, templateName);
+    try {
+      const templateContent = await readFile(templatePath, "utf-8");
+      return nunjucks.renderString(templateContent, context);
+    } catch (err) {
+      this.logger(`[stuck-analyzer] Failed to load template ${templateName}: ${err}`);
+      return null;
+    }
   }
 
   /**
@@ -6058,42 +5989,19 @@ export class StuckArmAnalyzer {
       return this.fallbackAnalysis(recentOutput);
     }
 
-    const systemPrompt = `You are analyzing the terminal output of an AI coding agent (arm) to determine if it's stuck and needs help.
+    const systemPrompt = await this.renderTemplate("stuck-analyzer-system-prompt.jinja", {
+      arm_name: armName,
+      arm_domain: armDomain,
+      current_task: currentTask || "unknown",
+    });
 
-## Arm Info
-- Name: ${armName}
-- Domain: ${armDomain}
-- Current Task: ${currentTask || "unknown"}
+    const userMessage = await this.renderTemplate("stuck-analyzer-user-prompt.jinja", {
+      recent_output: recentOutput.slice(-8000),
+    });
 
-## Signs the arm is STUCK:
-1. **asking_question** - Output ends with a question mark or "?" and is waiting for user input
-2. **waiting_approval** - Asking for confirmation/approval (y/n, yes/no, approve)
-3. **looping** - Same error or action repeated 3+ times
-4. **error** - Stuck on an error it can't resolve
-5. **idle_too_long** - No meaningful activity, just waiting
-
-## Signs the arm is NOT stuck:
-- Actively writing/editing code
-- Running tests or builds
-- Making progress on a task
-- Recently completed an action
-
-## Response Format (JSON only, no markdown):
-{
-  "isStuck": boolean,
-  "stuckType": "asking_question" | "waiting_approval" | "looping" | "error" | "idle_too_long" | "unknown" | null,
-  "reasoning": "brief explanation",
-  "suggestedAction": "answer" | "approve" | "restart" | "compact" | "escalate" | "prompt" | null,
-  "suggestedResponse": "what to tell the arm if action is 'answer' or 'prompt'",
-  "confidence": 0.0 to 1.0
-}`;
-
-    const userMessage = `Recent terminal output (last ~100 lines):
-\`\`\`
-${recentOutput.slice(-8000)}
-\`\`\`
-
-Is this arm stuck? If so, what should we do?`;
+    if (!systemPrompt || !userMessage) {
+      return this.fallbackAnalysis(recentOutput);
+    }
 
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {

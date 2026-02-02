@@ -165,8 +165,10 @@ function getFirstAvailableModel(
  */
 export async function fetchProviders(apiUrl: string = "http://localhost:8080"): Promise<ProvidersResponse> {
   try {
+    const apiKey = process.env.COLEO_API_KEY;
     const response = await fetch(`${apiUrl}/api/opencode/providers`, {
       signal: AbortSignal.timeout(5000),
+      headers: apiKey ? { "X-API-Key": apiKey } : undefined,
     });
     
     if (!response.ok) {

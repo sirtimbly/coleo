@@ -1,7 +1,7 @@
 /**
  * Regression Test Types
  * 
- * Types for automated regression testing of Octopai scenarios.
+ * Types for automated regression testing of Coleo scenarios.
  * Tracks timing, quality, and success metrics across different models.
  */
 
@@ -86,8 +86,8 @@ export interface TestScenario {
 export interface TestContext {
   /** Unique run ID */
   runId: string;
-  /** Isolated octopai directory for this test */
-  octopaiDir: string;
+  /** Isolated coleo directory for this test */
+  coleoDir: string;
   /** Working directory for test files */
   workDir: string;
   /** API server port (if running) */

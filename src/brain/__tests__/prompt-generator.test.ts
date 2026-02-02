@@ -68,7 +68,7 @@ function insertTask(db: Database, options: {
 
 describe("prompt-generator dependencies", () => {
   it("extracts dependencies from the current plan section", async () => {
-    const root = await mkdtemp(join(tmpdir(), "octopai-plan-"));
+    const root = await mkdtemp(join(tmpdir(), "coleo-plan-"));
     const projectDir = join(root, ".project");
     await mkdir(projectDir, { recursive: true });
 

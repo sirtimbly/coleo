@@ -147,13 +147,13 @@ describe("MCP Server - sendToBrain (with mocked NATS)", () => {
 
 describe("MCP Server - File Queue Fallback", () => {
   let testDir: string;
-  let octopaiDir: string;
+  let coleoDir: string;
 
   beforeEach(async () => {
     testDir = join("/tmp", `coleo-queue-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    octopaiDir = join(testDir, ".coleo");
+    coleoDir = join(testDir, ".coleo");
     
-    await mkdir(join(octopaiDir, "queue", "brain", "pending"), { recursive: true });
+    await mkdir(join(coleoDir, "queue", "brain", "pending"), { recursive: true });
   });
 
   afterEach(async () => {
@@ -177,7 +177,7 @@ describe("MCP Server - File Queue Fallback", () => {
     };
 
     const filename = `${message.id}-${message.from}-${message.type}.json`;
-    const filepath = join(octopaiDir, "queue", "brain", "pending", filename);
+    const filepath = join(coleoDir, "queue", "brain", "pending", filename);
     
     await writeFile(filepath, JSON.stringify(message, null, 2), "utf-8");
 

@@ -2,7 +2,7 @@
  * Brain Agent System Prompts
  */
 
-export const BRAIN_AGENT_SYSTEM_PROMPT = `You are the Octopai Brain, an intelligent orchestrator of AI arms.
+export const BRAIN_AGENT_SYSTEM_PROMPT = `You are the Coleo Brain, an intelligent orchestrator of AI arms.
 
 ## Your Role
 

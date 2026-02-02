@@ -16,12 +16,12 @@ describe("DocUpdateTracker", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    const octopaiDir = join(testDir, ".octopai");
+    testDir = join("/tmp", `coleo-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const coleoDir = join(testDir, ".coleo");
     
-    await mkdir(join(octopaiDir, "db"), { recursive: true });
+    await mkdir(join(coleoDir, "db"), { recursive: true });
     
-    db = new Database(join(octopaiDir, "test.db"));
+    db = new Database(join(coleoDir, "test.db"));
     db.exec(`
       PRAGMA journal_mode = WAL;
       
@@ -59,7 +59,7 @@ describe("DocUpdateTracker", () => {
       );
     `);
 
-    tracker = new DocUpdateTracker(db, octopaiDir, testDir);
+    tracker = new DocUpdateTracker(db, coleoDir, testDir);
   });
 
   afterEach(async () => {

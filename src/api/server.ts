@@ -1,11 +1,12 @@
 /**
  * Observatory API Server
  * 
- * Hono-based REST API for the Octopai dashboard and external integrations.
+ * Hono-based REST API for the Coleo dashboard and external integrations.
  * Arms communicate via MCP, not this API (to prevent them from affecting each other).
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { dirname } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes } from "./routes";
@@ -247,8 +248,8 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   
   // Initialize harness manager first (needed for session recovery)
   log("Initializing harness manager...", "verbose");
-  const octopaiDir = config.dbPath.replace(/\/octopai\.db$/, "");
-  const harnessManager = new HarnessManager(octopaiDir);
+  const coleoDir = dirname(config.dbPath);
+  const harnessManager = new HarnessManager(coleoDir);
   await harnessManager.init();
   setGlobalHarnessManager(harnessManager);
   
@@ -262,10 +263,15 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     const eventData = JSON.stringify(truncatedData);
 
     try {
-      db.run(
-        "INSERT INTO arm_events (arm_id, session_id, event_type, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
-        [armId, (truncatedData as any)?.sessionId || null, event, eventData, now]
-      );
+      const armExists = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
+      if (!armExists) {
+        console.warn(`[server] Skipping arm event for unknown arm: ${armId}`);
+      } else {
+        db.run(
+          "INSERT INTO arm_events (arm_id, session_id, event_type, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
+          [armId, (truncatedData as any)?.sessionId || null, event, eventData, now]
+        );
+      }
     } catch (err) {
       console.error(`[server] Failed to store arm event: ${err}`);
     }
@@ -330,7 +336,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   const serverUrl = `http://${config.host === "0.0.0.0" ? "localhost" : config.host}:${config.port}`;
   console.log("");
   console.log("=".repeat(60));
-  console.log("  Octopai API Server");
+  console.log("  Coleo API Server");
   console.log("=".repeat(60));
   console.log(`  URL:      ${serverUrl}`);
   console.log(`  Web UI:   cd src/web && bun run dev`);
@@ -344,7 +350,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   // Check if API key was auto-generated - only show in verbose mode
   if (config.apiKey.startsWith("dev-")) {
     log("=".repeat(60), "verbose");
-    log("  DEV API KEY (set OCTOPAI_API_KEY for production):", "verbose");
+    log("  DEV API KEY (set COLEO_API_KEY for production):", "verbose");
     log(`  ${config.apiKey}`, "verbose");
     log("=".repeat(60), "verbose");
   }

@@ -3244,14 +3244,14 @@ export function createMcpServer(): McpServer {
   // ============================================
   // SERVICE MANAGEMENT TOOLS
   // These tools require COLEO_SELF_MODIFY=1 env var
-  // Only available to arms working on Octopai itself
+  // Only available to arms working on Coleo itself
   // ============================================
 
   // Get service status
   server.registerTool(
     "service_status",
     {
-      description: "Get the status of Octopai services (server, brain). Always available.",
+      description: "Get the status of Coleo services (server, brain). Always available.",
       inputSchema: {
         service: z.enum(["server", "brain", "all"]).describe("Which service to check"),
       },
@@ -3410,8 +3410,8 @@ export function createMcpServer(): McpServer {
             {
               type: "text" as const,
               text: 
-                "ERROR: Service stop requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
-                "This tool is only available to arms that are working on the Octopai codebase itself.",
+                "ERROR: Service stop requires COLEO_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Coleo codebase itself.",
             },
           ],
           isError: true,
@@ -3466,13 +3466,13 @@ export function createMcpServer(): McpServer {
     }
   );
 
-  // Start a service (requires OCTOPAI_SELF_MODIFY=1)
+  // Start a service (requires COLEO_SELF_MODIFY=1)
   server.registerTool(
     "service_start",
     {
       description: 
-        "Start an Octopai service (server or brain). " +
-        "REQUIRES OCTOPAI_SELF_MODIFY=1 environment variable.",
+        "Start a Coleo service (server or brain). " +
+        "REQUIRES COLEO_SELF_MODIFY=1 environment variable.",
       inputSchema: {
         service: z.enum(["server", "brain"]).describe("Which service to start"),
       },
@@ -3485,8 +3485,8 @@ export function createMcpServer(): McpServer {
             {
               type: "text" as const,
               text: 
-                "ERROR: Service start requires OCTOPAI_SELF_MODIFY=1 environment variable.\n\n" +
-                "This tool is only available to arms that are working on the Octopai codebase itself.",
+                "ERROR: Service start requires COLEO_SELF_MODIFY=1 environment variable.\n\n" +
+                "This tool is only available to arms that are working on the Coleo codebase itself.",
             },
           ],
           isError: true,

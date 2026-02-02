@@ -32,7 +32,7 @@ describe("ArmStateMachine", () => {
   let emittedSideEffects: SideEffect[];
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-sm-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-sm-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     await mkdir(testDir, { recursive: true });
 
     db = new Database(join(testDir, "test.db"));

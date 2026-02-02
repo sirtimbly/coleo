@@ -117,7 +117,7 @@ export class DiscoverySummarizer {
   }
 
   private buildSystemPrompt(): string {
-    return `You are the Octopai Brain's discovery analyzer. Your job is to summarize discoveries from multiple AI agents (arms) to help the current arm understand context before starting work.
+    return `You are the Coleo Brain's discovery analyzer. Your job is to summarize discoveries from multiple AI agents (arms) to help the current arm understand context before starting work.
 
 ## Discovery Types
 - **exploration phase**: Insights gathered before making changes (missing context, blockers, related code, suggested approaches)

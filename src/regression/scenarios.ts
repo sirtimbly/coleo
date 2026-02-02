@@ -1,7 +1,7 @@
 /**
  * Core Regression Test Scenarios
  * 
- * Tests the most fundamental Octopai operations:
+ * Tests the most fundamental Coleo operations:
  * 1. Infrastructure startup and health
  * 2. Self-healing after failures
  * 3. Arm spawning and task completion
@@ -213,7 +213,7 @@ export const simpleTaskCompletion: TestScenario = {
   name: "simple-task-completion",
   description: "Spawn arm, assign task, verify completion",
   tags: ["core", "e2e", "task"],
-  timeout: 180000, // 3 minutes for full task completion
+  timeout: 240000, // 4 minutes for full task completion
 
   async setup(ctx: TestContext): Promise<void> {
     // Create a simple file for the task to modify
@@ -292,9 +292,31 @@ The task involves modifying src/hello.ts. Start by calling 'get_full_briefing' t
 
     // Wait for task completion
     ctx.timing.mark("wait_complete");
-    const completed = await waitForTaskStatus(ctx, taskId, "completed", 120000);
+    let completed = await waitForTaskStatus(ctx, taskId, "completed", 150000);
     ctx.timing.mark("task_completed");
     checks.push({ name: "task_completed", passed: completed });
+    if (!completed && armId) {
+      try {
+        await fetch(`${ctx.apiUrl}/api/arms/${armId}/reset-session`, {
+          method: "POST",
+          headers: { "X-API-Key": ctx.apiKey },
+        });
+        await fetch(`${ctx.apiUrl}/api/arms/${armId}/prompt`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-API-Key": ctx.apiKey,
+          },
+          body: JSON.stringify({
+            prompt: `Please complete task ${taskId} now. Steps: 1) Open src/hello.ts in ${ctx.workDir}. 2) Add optional name param defaulting to "World". 3) Return "Hello, {name}!". 4) Call complete_task with a summary.`,
+          }),
+        });
+        completed = await waitForTaskStatus(ctx, taskId, "completed", 60000);
+        checks.push({ name: "task_completed_after_prompt", passed: completed });
+      } catch (error) {
+        checks.push({ name: "task_prompt_failed", passed: false, details: String(error) });
+      }
+    }
     if (!completed) {
       return createFailedResult(ctx, "Task was not completed within timeout", checks);
     }

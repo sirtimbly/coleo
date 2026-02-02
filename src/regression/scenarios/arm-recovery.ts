@@ -63,7 +63,9 @@ export const armRecoveryScenario: TestScenario = {
       // We check if the arm status is 'idle' (it should be recovered and set to idle)
       // and importantly, if we can communicate with it.
       
-      const res = await fetch(`${ctx.apiUrl}/api/arms/${armId}`);
+      const res = await fetch(`${ctx.apiUrl}/api/arms/${armId}`, {
+        headers: { "X-API-Key": ctx.apiKey },
+      });
       if (!res.ok) {
         throw new Error(`Failed to fetch arm ${armId} after recovery`);
       }

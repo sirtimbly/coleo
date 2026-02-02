@@ -24,7 +24,7 @@ describe("Status Report Forwarding - Decision Logic", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-status-decision-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-status-decision-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     await mkdir(testDir, { recursive: true });
     
     db = new Database(join(testDir, "test.db"));

@@ -1,0 +1,14 @@
+You have been assigned to investigate bug "{{ bug_title }}" (ID: {{ bug_id }}).
+
+**Assignment Details:**
+- Assigned by: {{ assigned_by }}
+- Reason: {{ reason }}
+
+Please investigate this bug and update its status using the update_bug_status MCP tool as you progress through the resolution workflow:
+1. Set status to "investigating" when you start investigation
+2. Set status to "fixing" when you implement a fix
+3. Set status to "verifying" when testing the fix
+4. Set status to "resolved" when the bug is fixed
+5. Set status to "closed" when verification is complete
+
+Use the assign_bug tool if you need to delegate this to another arm.

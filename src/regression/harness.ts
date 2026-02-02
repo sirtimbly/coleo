@@ -1,7 +1,7 @@
 /**
  * Test Harness
  * 
- * Creates isolated Octopai instances for regression testing.
+ * Creates isolated Coleo instances for regression testing.
  * Each test gets its own database, directories, and ports.
  */
 
@@ -60,8 +60,8 @@ export async function createTestContext(
   options?: { keepAfterTest?: boolean }
 ): Promise<TestContext> {
   const runId = randomUUID().slice(0, 8);
-  const baseDir = join("/tmp", `octopai-regression-${runId}`);
-  const octopaiDir = join(baseDir, ".octopai");
+  const baseDir = join("/tmp", `coleo-regression-${runId}`);
+  const coleoDir = join(baseDir, ".coleo");
   const workDir = join(baseDir, "workspace");
   const apiPort = getNextPort();
   const apiKey = `test-key-${runId}`;
@@ -71,15 +71,15 @@ export async function createTestContext(
   setEventStore(testEventStore);
 
   // Create directories
-  await mkdir(octopaiDir, { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "inbox", "new"), { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "inbox", "cur"), { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "inbox", "tmp"), { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "sent", "new"), { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "sent", "cur"), { recursive: true });
-  await mkdir(join(octopaiDir, "mail", "sent", "tmp"), { recursive: true });
-  await mkdir(join(octopaiDir, "logs"), { recursive: true });
-  await mkdir(join(octopaiDir, "mcp"), { recursive: true });
+  await mkdir(coleoDir, { recursive: true });
+  await mkdir(join(coleoDir, "mail", "inbox", "new"), { recursive: true });
+  await mkdir(join(coleoDir, "mail", "inbox", "cur"), { recursive: true });
+  await mkdir(join(coleoDir, "mail", "inbox", "tmp"), { recursive: true });
+  await mkdir(join(coleoDir, "mail", "sent", "new"), { recursive: true });
+  await mkdir(join(coleoDir, "mail", "sent", "cur"), { recursive: true });
+  await mkdir(join(coleoDir, "mail", "sent", "tmp"), { recursive: true });
+  await mkdir(join(coleoDir, "logs"), { recursive: true });
+  await mkdir(join(coleoDir, "mcp"), { recursive: true });
   await mkdir(workDir, { recursive: true });
 
   // Create config file
@@ -96,12 +96,12 @@ api_key = "${apiKey}"
 provider = "${model.provider}"
 model = "${model.model}"
 `;
-  await writeFile(join(octopaiDir, "config.toml"), config);
+  await writeFile(join(coleoDir, "config.toml"), config);
 
   const logs: string[] = [];
   const ctx: TestContext = {
     runId,
-    octopaiDir,
+    coleoDir,
     workDir,
     apiPort,
     apiUrl: `http://localhost:${apiPort}`,
@@ -125,7 +125,7 @@ model = "${model.model}"
  * Initialize the database for a test context
  */
 export async function initTestDatabase(ctx: TestContext): Promise<void> {
-  const dbPath = join(ctx.octopaiDir, "octopai.db");
+  const dbPath = join(ctx.coleoDir, "coleo.db");
   
   // Import and run database initialization
   const { initDatabase } = await import("../db");
@@ -147,10 +147,10 @@ export async function startApiServer(ctx: TestContext): Promise<void> {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      OCTOPAI_DIR: ctx.octopaiDir,
-      OCTOPAI_API_KEY: ctx.apiKey,
-      OCTOPAI_API_PORT: String(ctx.apiPort),
-      OCTOPAI_DB_PATH: join(ctx.octopaiDir, "octopai.db"),
+      COLEO_DIR: ctx.coleoDir,
+      COLEO_API_KEY: ctx.apiKey,
+      COLEO_API_PORT: String(ctx.apiPort),
+      COLEO_DB_PATH: join(ctx.coleoDir, "coleo.db"),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -226,9 +226,9 @@ export async function startBrain(ctx: TestContext, options?: { once?: boolean })
     cwd: process.cwd(),
     env: {
       ...process.env,
-      OCTOPAI_DIR: ctx.octopaiDir,
-      OCTOPAI_API_URL: ctx.apiUrl,
-      OCTOPAI_API_KEY: ctx.apiKey,
+      COLEO_DIR: ctx.coleoDir,
+      COLEO_API_URL: ctx.apiUrl,
+      COLEO_API_KEY: ctx.apiKey,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -316,11 +316,11 @@ export async function spawnArm(
         const mcpRes = await fetch(mcpUrl);
         if (mcpRes.ok) {
           const mcpStatus = await mcpRes.json() as Record<string, { status: string }>;
-          if (mcpStatus.octopai?.status === "connected") {
+          if (mcpStatus.coleo?.status === "connected") {
             mcpConnected = true;
-            ctx.log(`MCP octopai server connected`);
+            ctx.log("MCP coleo server connected");
           } else {
-            ctx.log(`MCP status: ${JSON.stringify(mcpStatus.octopai)}`);
+            ctx.log(`MCP status: ${JSON.stringify(mcpStatus.coleo)}`);
           }
         }
       } catch {
@@ -332,7 +332,7 @@ export async function spawnArm(
     }
     
     if (!mcpConnected) {
-      ctx.log(`Warning: MCP octopai server did not connect within ${mcpTimeout}ms`);
+      ctx.log(`Warning: MCP coleo server did not connect within ${mcpTimeout}ms`);
     }
   }
   
@@ -588,13 +588,13 @@ export async function cleanupTestContext(ctx: TestContext, options?: { keep?: bo
   // Remove directories unless keeping for debugging
   if (!options?.keep) {
     try {
-      await rm(join(ctx.octopaiDir, ".."), { recursive: true, force: true });
+      await rm(join(ctx.coleoDir, ".."), { recursive: true, force: true });
       ctx.log("Removed test directories");
     } catch {
       // May fail if still in use
     }
   } else {
-    ctx.log(`Keeping test directory: ${ctx.octopaiDir}`);
+    ctx.log(`Keeping test directory: ${ctx.coleoDir}`);
   }
 
   // Reset event store to default (JetStream-backed) for non-test code

@@ -20,9 +20,9 @@ export function generateSystemPrompt(options: ArmPromptOptions): string {
   // const domainInstructions = generateDomainSpecificInstructions(options.domain);
   const timestamp = new Date().toISOString();
 
-  return `# Octopai Arm System Prompt
+  return `# Coleo Arm System Prompt
 
-You are ${options.name}, an AI agent arm of the Octopai distributed system.
+You are ${options.name}, an AI agent arm of the Coleo distributed system.
 
 ## Your Identity
 - ID: ${options.armId}

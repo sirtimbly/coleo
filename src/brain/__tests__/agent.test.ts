@@ -16,12 +16,12 @@ describe("BrainAgent", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-agent-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    const octopaiDir = join(testDir, ".octopai");
+    testDir = join("/tmp", `coleo-agent-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const coleoDir = join(testDir, ".coleo");
     
-    await mkdir(join(octopaiDir, "db"), { recursive: true });
+    await mkdir(join(coleoDir, "db"), { recursive: true });
     
-    db = new Database(join(octopaiDir, "test.db"));
+    db = new Database(join(coleoDir, "test.db"));
     db.exec(`
       PRAGMA journal_mode = WAL;
       
@@ -57,7 +57,7 @@ describe("BrainAgent", () => {
     const context = {
       db,
       projectRoot: testDir,
-      octopaiDir,
+      coleoDir,
     };
 
     agent = new BrainAgent(context);
@@ -118,18 +118,18 @@ describe("BrainAgent - Intent Recognition", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-agent-intent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    const octopaiDir = join(testDir, ".octopai");
+    testDir = join("/tmp", `coleo-agent-intent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const coleoDir = join(testDir, ".coleo");
     
-    await mkdir(join(octopaiDir, "db"), { recursive: true });
+    await mkdir(join(coleoDir, "db"), { recursive: true });
     
-    db = new Database(join(octopaiDir, "test.db"));
+    db = new Database(join(coleoDir, "test.db"));
     db.exec(`PRAGMA journal_mode = WAL;`);
 
     agent = new BrainAgent({
       db,
       projectRoot: testDir,
-      octopaiDir,
+      coleoDir,
     });
   });
 
@@ -223,14 +223,14 @@ describe("BrainAgent - Tool Execution", () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `octopai-agent-tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    const octopaiDir = join(testDir, ".octopai");
+    testDir = join("/tmp", `coleo-agent-tool-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    const coleoDir = join(testDir, ".coleo");
     const projectDir = join(testDir, "project");
     
-    await mkdir(join(octopaiDir, "db"), { recursive: true });
+    await mkdir(join(coleoDir, "db"), { recursive: true });
     await mkdir(join(projectDir, ".project", "plans"), { recursive: true });
     
-    db = new Database(join(octopaiDir, "test.db"));
+    db = new Database(join(coleoDir, "test.db"));
     db.exec(`
       PRAGMA journal_mode = WAL;
       
@@ -285,7 +285,7 @@ describe("BrainAgent - Tool Execution", () => {
     agent = new BrainAgent({
       db,
       projectRoot: projectDir,
-      octopaiDir,
+      coleoDir,
     });
   });
 

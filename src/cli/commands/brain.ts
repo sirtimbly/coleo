@@ -49,7 +49,7 @@ export function registerBrainCommands(program: Command): void {
       }
 
       const brain = new Brain({
-        octopaiDir: coleoDir,
+        coleoDir,
         pollIntervalMs: interval,
         verbose: verbose || true,
       });
@@ -226,7 +226,7 @@ export function registerBrainCommands(program: Command): void {
 
         const result = await generateTaskDetermination({
           projectRoot: process.cwd(),
-          octopaiDir: coleoDir,
+          coleoDir,
           db,
         });
 
@@ -283,7 +283,7 @@ export function registerBrainCommands(program: Command): void {
         const result = await generateContextBundle(
           {
             projectRoot: process.cwd(),
-            octopaiDir: coleoDir,
+            coleoDir,
             db,
           },
           taskSubject,

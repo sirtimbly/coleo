@@ -23,12 +23,12 @@ import type { Task, Discovery, QueueMessage, Note } from "../../types";
 // Test environment setup
 const TEST_ARM_ID = "test-arm-001";
 const TEST_PROJECT_ROOT = "/tmp/coleo-test-project";
-const TEST_OCTOPAI_DIR = join(TEST_PROJECT_ROOT, ".coleo");
+const TEST_COLEO_DIR = join(TEST_PROJECT_ROOT, ".coleo");
 
 // Setup test environment variables before any imports
 process.env.COLEO_ARM_ID = TEST_ARM_ID;
 process.env.COLEO_PROJECT_ROOT = TEST_PROJECT_ROOT;
-process.env.COLEO_DIR = TEST_OCTOPAI_DIR;
+process.env.COLEO_DIR = TEST_COLEO_DIR;
 process.env.COLEO_API_URL = "http://127.0.0.1:8080";
 process.env.COLEO_API_KEY = "test-api-key";
 
@@ -95,9 +95,9 @@ describe("MCP Server - Comprehensive Tool Tests", () => {
 
   beforeAll(async () => {
     // Create test directories
-    await mkdir(join(TEST_OCTOPAI_DIR, "queue", "brain", "pending"), { recursive: true });
-    await mkdir(join(TEST_OCTOPAI_DIR, "state", "notes", "shared"), { recursive: true });
-    await mkdir(join(TEST_OCTOPAI_DIR, "docs"), { recursive: true });
+    await mkdir(join(TEST_COLEO_DIR, "queue", "brain", "pending"), { recursive: true });
+    await mkdir(join(TEST_COLEO_DIR, "state", "notes", "shared"), { recursive: true });
+    await mkdir(join(TEST_COLEO_DIR, "docs"), { recursive: true });
     await mkdir(join(TEST_PROJECT_ROOT, "docs"), { recursive: true });
   });
 
@@ -111,7 +111,7 @@ describe("MCP Server - Comprehensive Tool Tests", () => {
     testCounter++;
     
     // Create fresh database with unique name for each test to avoid conflicts
-    const dbPath = join(TEST_OCTOPAI_DIR, `test-${testCounter}.db`);
+    const dbPath = join(TEST_COLEO_DIR, `test-${testCounter}.db`);
     try {
       await rm(dbPath, { force: true });
     } catch { /* ignore */ }

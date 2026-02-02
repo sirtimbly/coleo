@@ -70,7 +70,7 @@ export async function runTestSuite(config: TestSuiteConfig): Promise<TestSuiteRe
   await cleanupOrphanedProcesses();
 
   console.log(`\n${"=".repeat(60)}`);
-  console.log(`Octopai Regression Test Suite: ${suiteId}`);
+  console.log(`Coleo Regression Test Suite: ${suiteId}`);
   console.log(`${"=".repeat(60)}\n`);
 
   // Determine which scenarios to run
@@ -321,7 +321,7 @@ export async function main(): Promise<void> {
     includeTags: [],
     excludeTags: [],
     iterations: 1,
-    outputDir: join(process.cwd(), ".octopai", "regression-results"),
+    outputDir: join(process.cwd(), ".coleo", "regression-results"),
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -353,7 +353,7 @@ export async function main(): Promise<void> {
       config.includeTags!.push("quick");
     } else if (arg === "--help") {
       console.log(`
-Octopai Regression Test Runner
+ Coleo Regression Test Runner
 
 Usage: bun run src/regression/runner.ts [options]
 

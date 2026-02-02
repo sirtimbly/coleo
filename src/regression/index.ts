@@ -1,7 +1,7 @@
 /**
- * Octopai Regression Test Suite
+ * Coleo Regression Test Suite
  * 
- * Automated testing for core Octopai scenarios:
+ * Automated testing for core Coleo scenarios:
  * - Infrastructure startup and health
  * - Self-healing after failures
  * - Arm spawning and task completion

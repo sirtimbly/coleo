@@ -415,7 +415,7 @@ export class ArmHealthMonitor {
     armId: string,
     analysis: ArmAnalysis
   ): Promise<void> {
-    const subject = `[octopai] Arm ${armId} needs attention: ${analysis.state}`;
+    const subject = `[coleo] Arm ${armId} needs attention: ${analysis.state}`;
     
     let body = `The arm "${armId}" requires human attention.\n\n`;
     body += `**State:** ${analysis.state}\n`;

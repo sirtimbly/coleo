@@ -55,6 +55,7 @@ import type {
  * Extended harness session for API-based control with SDK client
  */
 interface ApiHarnessSession extends HarnessSession {
+  armId: string;
   serverUrl: string;
   serverProcess?: Subprocess;
   sessionId: string;
@@ -158,8 +159,9 @@ export class OpenCodeApiHarness implements AgentHarness {
     
     if (config.provider && config.model) {
       try {
-        // Use Coleo API to check available models (server runs on 8080)
-        const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
+        const apiUrl = process.env.COLEO_API_URL
+          || (process.env.COLEO_API_PORT ? `http://localhost:${process.env.COLEO_API_PORT}` : "http://localhost:8080");
+        const resolved = await resolveModel(config.provider, config.model, apiUrl);
         resolvedProvider = resolved.providerId;
         resolvedModel = resolved.modelId;
         
@@ -352,6 +354,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       harnessName: this.name,
       spawnedAt: new Date(),
       lastHeartbeat: new Date(),
+      armId,
       serverUrl,
       serverProcess,
       sessionId: session.id,
@@ -507,6 +510,7 @@ export class OpenCodeApiHarness implements AgentHarness {
         harnessName: this.name,
         spawnedAt: new Date(),
         lastHeartbeat: new Date(),
+        armId,
         serverUrl,
         serverProcess: undefined, // We don't have a reference to the process
         sessionId: recoveredSession.id,
@@ -626,8 +630,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       apiSession.sessionId = newSession.id;
       apiSession.lastHeartbeat = new Date();
 
-      // Get the actual arm ID (strip the opencode-api- prefix from session ID)
-      const armId = session.id.replace(/^opencode-api-/, "");
+      const armId = apiSession.armId;
 
       // Restart event stream with new session ID
       if (this.eventCallbacks.size > 0) {

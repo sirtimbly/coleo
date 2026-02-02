@@ -253,15 +253,15 @@ export function createBrainRoutes() {
     const subject = firstLine.length > 100 ? firstLine.slice(0, 97) + "..." : firstLine;
     
     const mailMessage = await sent.write({
-      from: "human@octopai.local",
-      to: "brain@octopai.local",
+      from: "human@coleo.local",
+      to: "brain@coleo.local",
       subject,
       date: new Date(),
       body: body.message,
       headers: {
-        "X-Octopai-Type": "human-message",
-        "X-Octopai-Priority": body.priority || "normal",
-        ...(body.domain ? { "X-Octopai-Domain": body.domain } : {}),
+        "X-Coleo-Type": "human-message",
+        "X-Coleo-Priority": body.priority || "normal",
+        ...(body.domain ? { "X-Coleo-Domain": body.domain } : {}),
       },
     });
 
