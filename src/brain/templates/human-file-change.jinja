@@ -1,0 +1,6 @@
+Arm {{ arm_id }} detected a change:
+
+**File:** {{ file_path }}
+**Type:** {{ change_type }}
+**Summary:** {{ summary }}{% if impact_line %}
+{{ impact_line }}{% endif %}

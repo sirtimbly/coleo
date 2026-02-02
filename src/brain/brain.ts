@@ -140,6 +140,29 @@ export class Brain {
         { name: "arm-generic-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-generic-nudge.jinja") },
         { name: "stuck-analyzer-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-system-prompt.jinja") },
         { name: "stuck-analyzer-user-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-user-prompt.jinja") },
+        { name: "human-task-queued-busy.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-queued-busy.jinja") },
+        { name: "human-mail-escalate.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-mail-escalate.jinja") },
+        { name: "human-bug-report-confirmation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-report-confirmation.jinja") },
+        { name: "human-task-completed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-completed.jinja") },
+        { name: "human-task-deferred.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-deferred.jinja") },
+        { name: "human-task-blocked.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked.jinja") },
+        { name: "human-issues-found.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-issues-found.jinja") },
+        { name: "human-review-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-review-needed.jinja") },
+        { name: "human-verification-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-verification-needed.jinja") },
+        { name: "human-discovery.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-discovery.jinja") },
+        { name: "human-approval-request.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-approval-request.jinja") },
+        { name: "human-status-report.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-status-report.jinja") },
+        { name: "human-tool-discovered.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-tool-discovered.jinja") },
+        { name: "human-doc-updated.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-doc-updated.jinja") },
+        { name: "human-bug-high-priority.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-high-priority.jinja") },
+        { name: "human-task-resumed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-resumed.jinja") },
+        { name: "human-bug-medium-escalation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-medium-escalation.jinja") },
+        { name: "human-file-change.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-file-change.jinja") },
+        { name: "human-infra-issues.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-infra-issues.jinja") },
+        { name: "human-arm-stuck.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-stuck.jinja") },
+        { name: "human-arm-idle-loop.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-idle-loop.jinja") },
+        { name: "human-arm-zombie-killed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-zombie-killed.jinja") },
+        { name: "human-task-blocked-by-bugs.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked-by-bugs.jinja") },
       ];
 
       for (const template of templates) {
@@ -921,7 +944,7 @@ export class Brain {
           await this.handleQuery(intent.query || "status", message.id);
           break;
 
-        case "prompt_arm":
+        case "prompt_arm": {
           if (intent.armName && intent.instruction) {
             // Check if arm exists and its status
             const targetArm = this.arms.get(intent.armName);
@@ -942,9 +965,14 @@ export class Brain {
                 message.id,
                 intent.priority
               );
+              const body = await this.renderTemplate("human-task-queued-busy.jinja", {
+                arm_name: intent.armName,
+                arm_status: targetArm.status,
+                subject: message.subject,
+              });
               await this.sendToHuman({
                 subject: `[coleo] Task queued (${intent.armName} is busy)`,
-                body: `The arm ${intent.armName} is currently ${targetArm.status}. I've created a task instead:\n\nSubject: ${message.subject}\n\nThe task will be assigned when an arm becomes available.`,
+                body,
               });
             } else {
               // Arm is idle, can prompt directly
@@ -957,14 +985,20 @@ export class Brain {
             }
           }
           break;
+        }
 
-        case "escalate":
+        case "escalate": {
           this.log(`Escalating message to human: ${message.subject}`);
+          const body = await this.renderTemplate("human-mail-escalate.jinja", {
+            subject: message.subject,
+            body: message.body,
+          });
           await this.sendToHuman({
             subject: `[coleo] Cannot process: ${message.subject}`,
-            body: `I received this message but couldn't determine the appropriate action:\n\n${message.body}`,
+            body,
           });
           break;
+        }
 
         default:
           this.log(`Unknown intent type: ${(intent as { type: string }).type}`);
@@ -1298,14 +1332,13 @@ export class Brain {
     this.logActivity("brain", "bug_created", bugPayload.id, { title, source: "human_reported", mailThreadId });
 
     // Send confirmation to human
+    const body = await this.renderTemplate("human-bug-report-confirmation.jinja", {
+      bug_id: bugPayload.id,
+      title,
+    });
     await this.sendToHuman({
       subject: `[coleo] Bug Report Received: ${title}`,
-      body: `Thank you for reporting this issue. Your bug report has been logged and will be investigated.
-
-**Bug ID:** ${bugPayload.id}
-**Title:** ${title}
-
-We'll notify you when we start investigating or have updates.`,
+      body,
       headers: {
         "X-Coleo-Type": "bug-confirmation",
         "X-Coleo-Bug-Id": bugPayload.id,
@@ -1633,9 +1666,14 @@ We'll notify you when we start investigating or have updates.`,
     await this.unblockDependentTasks(taskId);
 
     // Notify human
+    const body = await this.renderTemplate("human-task-completed.jinja", {
+      subject: taskSubject,
+      summary,
+      artifacts_list: artifacts.map(a => `- ${a}`).join("\n") || "None",
+    });
     await this.sendToHuman({
       subject: `[coleo] Task completed: ${taskSubject}`,
-      body: `Task "${taskSubject}" has been completed.\n\n## Summary\n${summary}\n\n## Artifacts\n${artifacts.map(a => `- ${a}`).join("\n") || "None"}`,
+      body,
       headers: {
         "X-Coleo-Task-Id": taskId,
         "X-Coleo-Type": "task-complete",
@@ -2030,9 +2068,15 @@ We'll notify you when we start investigating or have updates.`,
             `, [new Date().toISOString(), new Date().toISOString(), task.id]);
           }
 
+          const body = await this.renderTemplate("human-task-deferred.jinja", {
+            task_subject: task.subject,
+            summary: report.summary,
+            blockers_list: report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed",
+            next_steps: report.nextSteps || "None specified",
+          });
           await this.sendToHuman({
             subject: `[coleo] Task deferred: ${task.subject}`,
-            body: `Task "${task.subject}" has been deferred.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Brain Decision\nThe arm could not complete this task. There are other pending tasks, so the arm has been moved to other work. This task will remain blocked until you provide guidance or another arm becomes available.\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
+            body,
             headers: {
               "X-Coleo-Task-Id": report.taskId,
               "X-Coleo-Type": "task-deferred",
@@ -2044,9 +2088,16 @@ We'll notify you when we start investigating or have updates.`,
           task.status = "blocked";
           await this.saveTasks();
 
+          const body = await this.renderTemplate("human-task-blocked.jinja", {
+            task_subject: task.subject,
+            arm_id: report.armId,
+            summary: report.summary,
+            blockers_list: report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed",
+            next_steps: report.nextSteps || "None specified",
+          });
           await this.sendToHuman({
             subject: `[coleo] Task blocked: ${task.subject}`,
-            body: `Task "${task.subject}" is blocked by arm ${report.armId}.\n\n## Summary\n${report.summary}\n\n## Blockers\n${report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed"}\n\n## Next Steps Suggested\n${report.nextSteps || "None specified"}`,
+            body,
             headers: {
               "X-Coleo-Task-Id": report.taskId,
               "X-Coleo-Type": "task-blocked",
@@ -2063,9 +2114,17 @@ We'll notify you when we start investigating or have updates.`,
 
         // Only notify human if decision says to forward
         if (forwardDecision.shouldForward && report.issues.length > 0) {
+          const body = await this.renderTemplate("human-issues-found.jinja", {
+            arm_id: report.armId,
+            task_subject: task.subject,
+            issues_list: report.issues.map(i => `- ${i}`).join("\n"),
+            summary: report.summary,
+            next_steps: report.nextSteps || "Continuing work...",
+            forward_reason: forwardDecision.reason,
+          });
           await this.sendToHuman({
             subject: `[coleo] Issues found: ${task.subject}`,
-            body: `Arm ${report.armId} found issues while working on "${task.subject}":\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n")}\n\n## Summary\n${report.summary}\n\n## Next Steps\n${report.nextSteps || "Continuing work..."}\n\n---\n_Brain decision: ${forwardDecision.reason}_`,
+            body,
             headers: {
               "X-Coleo-Task-Id": report.taskId,
               "X-Coleo-Type": "issues-found",
@@ -2080,9 +2139,16 @@ We'll notify you when we start investigating or have updates.`,
       case "needs_review": {
         // Task needs human or other arm review - always forward
         this.log(`Task ${task.subject} needs review`);
+        const body = await this.renderTemplate("human-review-needed.jinja", {
+          arm_id: report.armId,
+          task_subject: task.subject,
+          summary: report.summary,
+          files_list: report.filesChanged.map(f => `- ${f}`).join("\n") || "None listed",
+          tests_status: report.testsStatus || "Not run",
+        });
         await this.sendToHuman({
           subject: `[coleo] Review needed: ${task.subject}`,
-          body: `Arm ${report.armId} requests review for "${task.subject}":\n\n## Summary\n${report.summary}\n\n## Files Changed\n${report.filesChanged.map(f => `- ${f}`).join("\n") || "None listed"}\n\n## Tests\n${report.testsStatus || "Not run"}`,
+          body,
           headers: {
             "X-Coleo-Task-Id": report.taskId,
             "X-Coleo-Type": "needs-review",
@@ -2208,9 +2274,14 @@ ${originalTask.id}`;
 
     // Notify human unless explicitly skipped (e.g., when assigning to another arm)
     if (!skipNotification) {
+      const body = await this.renderTemplate("human-verification-needed.jinja", {
+        task_subject: originalTask.subject,
+        issues_list: report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed",
+        summary: report.summary,
+      });
       await this.sendToHuman({
         subject: `[coleo] Verification needed: ${originalTask.subject}`,
-        body: `Task "${originalTask.subject}" completed with issues. Created verification task.\n\n## Issues\n${report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed"}\n\n## Original Summary\n${report.summary}`,
+        body,
         headers: {
           "X-Coleo-Task-Id": taskId,
           "X-Coleo-Type": "verification-task-created",
@@ -2254,9 +2325,18 @@ ${originalTask.id}`;
 
      // Also notify human for high-severity discoveries
      if (discovery.severity === "error" || discovery.severity === "warning") {
+        const body = await this.renderTemplate("human-discovery.jinja", {
+          arm_id: armId,
+          kind: discovery.kind,
+          severity: discovery.severity || "info",
+          details: discovery.details,
+          file_info: discovery.file
+            ? `**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}`
+            : "",
+        });
         await this.sendToHuman({
           subject: `[coleo] Discovery: ${discovery.title}`,
-         body: `Arm ${armId} found something:\n\n**Type:** ${discovery.kind}\n**Severity:** ${discovery.severity || "info"}\n\n${discovery.details}${discovery.file ? `\n\n**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}` : ""}`,
+         body,
           headers: {
             "X-Coleo-Type": "discovery",
             "X-Coleo-From": armId,
@@ -2446,9 +2526,15 @@ ${originalTask.id}`;
   ): Promise<void> {
     const requestId = `approval-${Date.now()}`;
 
+    const body = await this.renderTemplate("human-approval-request.jinja", {
+      arm_id: armId,
+      action: request.action,
+      context: request.context,
+      options: request.options.join(" | "),
+    });
     await this.sendToHuman({
       subject: `[coleo] [${requestId}] Approval needed: ${request.action}`,
-      body: `Arm ${armId} needs your approval.\n\n**Action:** ${request.action}\n\n**Context:**\n${request.context}\n\n**Options:** ${request.options.join(" | ")}\n\nReply to this email with your decision.`,
+      body,
       headers: {
         "X-Coleo-Type": "approval-request",
         "X-Coleo-From": armId,
@@ -2475,9 +2561,17 @@ ${originalTask.id}`;
       const inProgress = this.tasks.filter(t => t.status === "in_progress");
       const completedToday = this.state.completedToday;
 
+      const body = await this.renderTemplate("human-status-report.jinja", {
+        arms_active: this.arms.size,
+        pending_count: pendingTasks.length,
+        in_progress_count: inProgress.length,
+        completed_today: completedToday,
+        pending_list: pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None",
+        in_progress_list: inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None",
+      });
       await this.sendToHuman({
         subject: "[coleo] Status Report",
-        body: `## Current Status\n\n- **Arms active:** ${this.arms.size}\n- **Pending tasks:** ${pendingTasks.length}\n- **In progress:** ${inProgress.length}\n- **Completed today:** ${completedToday}\n\n## Pending Tasks\n${pendingTasks.map(t => `- ${t.subject}`).join("\n") || "None"}\n\n## In Progress\n${inProgress.map(t => `- ${t.subject} (${t.assignedTo})`).join("\n") || "None"}`,
+        body,
         headers: {
           "X-Coleo-Type": "status",
           "In-Reply-To": replyToId,
@@ -2528,9 +2622,15 @@ ${originalTask.id}`;
     }
 
     // Notify human
+    const body = await this.renderTemplate("human-tool-discovered.jinja", {
+      arm_id: armId,
+      tool_name: tool.name,
+      command: tool.command,
+      description: tool.description,
+    });
     await this.sendToHuman({
       subject: `[coleo] Tool discovered: ${tool.name}`,
-      body: `Arm ${armId} discovered a useful tool:\n\n**Name:** ${tool.name}\n**Command:** \`${tool.command}\`\n**Description:** ${tool.description}`,
+      body,
       headers: {
         "X-Coleo-Type": "tool-discovery",
       },
@@ -2582,9 +2682,14 @@ ${originalTask.id}`;
     this.log(`Documentation updated by ${armId}: ${payload.path}`);
 
     // Notify human of the update
+    const body = await this.renderTemplate("human-doc-updated.jinja", {
+      arm_id: armId,
+      path: payload.path,
+      reason: payload.reason,
+    });
     await this.sendToHuman({
       subject: `[coleo] Documentation updated: ${payload.path}`,
-      body: `Arm ${armId} has updated documentation.\n\n**File:** ${payload.path}\n**Reason:** ${payload.reason}`,
+      body,
       headers: {
         "X-Coleo-Type": "doc-update",
         "X-Coleo-Path": payload.path,
@@ -2669,16 +2774,16 @@ ${originalTask.id}`;
 
       // Notify human for critical/high priority bugs
       if (priority === "critical" || priority === "high") {
+        const body = await this.renderTemplate("human-bug-high-priority.jinja", {
+          priority,
+          title: payload.title,
+          description: payload.description,
+          source: payload.source,
+          reported_by: armId,
+        });
         await this.sendToHuman({
           subject: `[coleo] ${priority.toUpperCase()} Priority Bug: ${payload.title}`,
-          body: `A ${priority} priority bug has been reported.
-
-**Title:** ${payload.title}
-**Description:** ${payload.description}
-**Source:** ${payload.source}
-**Reported by:** ${armId}
-
-Please review and assign if needed.`,
+          body,
           headers: {
             "X-Coleo-Type": "bug-report",
             "X-Coleo-Bug-Id": bugId,
@@ -2749,20 +2854,16 @@ Please review and assign if needed.`,
             `, [new Date().toISOString(), taskId]);
 
             // Notify human about task resumption
+            const body = await this.renderTemplate("human-task-resumed.jinja", {
+              task_id: taskId,
+              task_subject: task.subject,
+              bug_id: bug.id,
+              bug_title: bug.title,
+              resolved_at: bug.resolved_at,
+            });
             await this.sendToHuman({
               subject: `[coleo] Task Resumed: ${task.subject}`,
-              body: `Task "${task.subject}" has been resumed after resolution of blocking bug.
-
-**Task Details:**
-- ID: ${taskId}
-- Subject: ${task.subject}
-
-**Resolved Bug:**
-- ID: ${bug.id}
-- Title: ${bug.title}
-- Resolved: ${bug.resolved_at}
-
-The task is now available for assignment.`,
+              body,
               headers: {
                 "X-Coleo-Type": "task-resumed",
                 "X-Coleo-Task-Id": taskId,
@@ -2815,17 +2916,15 @@ The task is now available for assignment.`,
     }
 
     // Log the escalation for human review
+    const body = await this.renderTemplate("human-bug-medium-escalation.jinja", {
+      title: bugPayload.title,
+      description: bugPayload.description,
+      source: bugPayload.source,
+      bug_id: bugId,
+    });
     await this.sendToHuman({
       subject: `[coleo] Medium Priority Bug Escalation: ${bugPayload.title}`,
-      body: `A medium priority bug has been reported and escalated for review.
-
-**Bug Details:**
-- Title: ${bugPayload.title}
-- Description: ${bugPayload.description}
-- Source: ${bugPayload.source}
-- ID: ${bugId}
-
-This bug has been logged for resolution. Tasks may continue but should be monitored for issues.`,
+      body,
       headers: {
         "X-Coleo-Type": "bug-escalation",
         "X-Coleo-Bug-Id": bugId,
@@ -2993,9 +3092,16 @@ Report findings using bug resolution workflow.`,
 
     // Notify human of significant changes
     if (payload.impact === "high" || payload.filePath.includes("requirements")) {
+      const body = await this.renderTemplate("human-file-change.jinja", {
+        arm_id: armId,
+        file_path: payload.filePath,
+        change_type: payload.changeType,
+        summary: payload.summary,
+        impact_line: payload.impact ? `**Impact:** ${payload.impact}` : "",
+      });
       await this.sendToHuman({
         subject: `[coleo] File change detected: ${payload.filePath}`,
-        body: `Arm ${armId} detected a change:\n\n**File:** ${payload.filePath}\n**Type:** ${payload.changeType}\n**Summary:** ${payload.summary}${payload.impact ? `\n**Impact:** ${payload.impact}` : ""}`,
+        body,
         headers: {
           "X-Coleo-Type": "file-change",
           "X-Coleo-Path": payload.filePath,
@@ -3957,26 +4063,16 @@ Report findings using bug resolution workflow.`,
       this.log(`Created system-detected bug report for infrastructure issues`);
     }
 
+    const body = await this.renderTemplate("human-infra-issues.jinja", {
+      issues_list: issues.map(i => `- ${i}`).join("\n"),
+      db_status: this.infrastructureHealth.database.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.database.error || "Unhealthy"),
+      api_status: this.infrastructureHealth.apiServer.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.apiServer.error || "Unhealthy"),
+      nats_status: this.infrastructureHealth.nats.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.nats.error || "Unhealthy"),
+      maildir_status: this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy"),
+    });
     await this.sendToHuman({
       subject: "[coleo] Infrastructure health issues detected",
-      body: `The Coleo brain detected infrastructure issues that may prevent it from working properly.
-
-**Issues Detected:**
-${issues.map(i => `- ${i}`).join("\n")}
-
-**Component Status:**
-- Database: ${this.infrastructureHealth.database.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.database.error || "Unhealthy")}
-- API Server: ${this.infrastructureHealth.apiServer.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.apiServer.error || "Unhealthy")}
-- NATS: ${this.infrastructureHealth.nats.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.nats.error || "Unhealthy")} (optional)
-- Maildir: ${this.infrastructureHealth.maildir.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.maildir.error || "Unhealthy")}
-
-**Recommendations:**
-1. Check if the API server is running: \`coleo serve\`
-2. Check database integrity: \`sqlite3 ~/.coleo/coleo.db "PRAGMA integrity_check;"\`
-3. Check NATS server: \`nats-server\` or verify COLEO_NATS_URL
-4. Review brain logs for more details
-
-The brain will continue to retry and recover automatically where possible.`,
+      body,
       headers: {
         "X-Coleo-Type": "infrastructure-alert",
         "Priority": "high",
@@ -4247,27 +4343,18 @@ The brain will continue to retry and recover automatically where possible.`,
       ? this.tasks.find(t => t.id === arm.currentTask)?.subject || arm.currentTask
       : "unknown";
 
+    const body = await this.renderTemplate("human-arm-stuck.jinja", {
+      arm_name: arm.name,
+      stuck_type: analysis.stuckType,
+      confidence_percent: Math.round(analysis.confidence * 100),
+      reasoning: analysis.reasoning,
+      task_info: taskInfo,
+      recent_output: recentOutput.slice(-2000),
+      suggested_action: analysis.suggestedAction || "manual intervention",
+    });
     await this.sendToHuman({
       subject: `[coleo] Arm ${arm.name} needs help (${analysis.stuckType})`,
-      body: `The arm "${arm.name}" appears to be stuck and needs human intervention.
-
-**Stuck Type:** ${analysis.stuckType}
-**Confidence:** ${Math.round(analysis.confidence * 100)}%
-**Reasoning:** ${analysis.reasoning}
-
-**Current Task:** ${taskInfo}
-
-**Recent Output:**
-\`\`\`
-${recentOutput.slice(-2000)}
-\`\`\`
-
-**Suggested Action:** ${analysis.suggestedAction || "manual intervention"}
-
-To help this arm, reply to this email with instructions, or use:
-\`\`\`
- coleo arm prompt ${arm.name} "your message here"
-\`\`\``,
+      body,
       headers: {
         "X-Coleo-Type": "arm-stuck",
         "X-Coleo-Arm": arm.name,
@@ -4498,28 +4585,16 @@ To help this arm, reply to this email with instructions, or use:
           promptCount: tracker.promptCount,
           intervention: "escalate",
         });
+        const body = await this.renderTemplate("human-arm-idle-loop.jinja", {
+          arm_name: arm.name,
+          stuck_minutes: stuckMinutes.toFixed(1),
+          prompt_count: tracker.promptCount,
+          arm_status: arm.status,
+          last_productive: tracker.lastProductiveAt?.toISOString() || "never",
+        });
         await this.sendToHuman({
           subject: `[coleo] Arm ${arm.name} stuck in idle loop`,
-          body: `The arm "${arm.name}" has been stuck in an idle prompt loop for ${stuckMinutes.toFixed(1)} minutes.
-
-**Pattern Detected:**
-- Brain sends prompts to check for tasks
-- Arm responds with "idle" but doesn't do productive work
-- ${tracker.promptCount} prompts sent without response
-- No heartbeat, task claims, or real work detected
-
-**Interventions Tried:**
-1. Sent interrupt command
-2. Sent /compact command
-
-**Recommended Action:**
-Please check the arm and either:
-- Kill it: coleo arm kill ${arm.name}
-- Or send a direct response to get it unstuck
-
-Current arm status: ${arm.status}
-Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
-`,
+          body,
         });
         tracker.escalationLevel = 3;
         break;
@@ -4585,19 +4660,12 @@ Last productive activity: ${tracker.lastProductiveAt?.toISOString() || "never"}
       this.lastStuckState.delete(arm.id);
 
       // Notify human
+      const body = await this.renderTemplate("human-arm-zombie-killed.jinja", {
+        arm_name: arm.name,
+      });
       await this.sendToHuman({
         subject: `[coleo] Auto-killed zombie arm: ${arm.name}`,
-        body: `The arm "${arm.name}" was automatically killed after being unresponsive for 20+ minutes.
-
-**Reason:** Arm received multiple prompts but never performed productive work.
-**Interventions tried:** interrupt, compact, human escalation
-
-The arm's current task (if any) has been marked as blocked.
-
-You can respawn this arm with:
-\`\`\`
- coleo arm spawn -n ${arm.name}
-\`\`\``,
+        body,
       });
 
       // Mark any current task as blocked
@@ -4673,18 +4741,14 @@ You can respawn this arm with:
             const highBugs = blockingBugs.filter(b => b.priority === 'high');
 
             if (criticalBugs.length > 0 || highBugs.length > 0) {
+              const body = await this.renderTemplate("human-task-blocked-by-bugs.jinja", {
+                task_id: task.id,
+                task_subject: task.subject,
+                blocking_bugs_list: blockingBugs.map(b => `- ${b.title} (${b.priority} priority)`).join("\n"),
+              });
               await this.sendToHuman({
                 subject: `[coleo] Task Blocked by ${criticalBugs.length + highBugs.length} Critical/High Priority Bug(s)`,
-                body: `Task "${task.subject}" cannot be assigned due to blocking bugs.
-
-**Blocked Task:**
-- ID: ${task.id}
-- Subject: ${task.subject}
-
-**Blocking Bugs:**
-${blockingBugs.map(b => `- ${b.title} (${b.priority} priority)`).join('\n')}
-
-Please resolve these bugs before the task can proceed.`,
+                body,
                 headers: {
                   "X-Coleo-Type": "task-blocked",
                   "X-Coleo-Task-Id": task.id,

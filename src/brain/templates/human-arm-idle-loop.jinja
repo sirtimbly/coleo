@@ -1,0 +1,19 @@
+The arm "{{ arm_name }}" has been stuck in an idle prompt loop for {{ stuck_minutes }} minutes.
+
+**Pattern Detected:**
+- Brain sends prompts to check for tasks
+- Arm responds with "idle" but doesn't do productive work
+- {{ prompt_count }} prompts sent without response
+- No heartbeat, task claims, or real work detected
+
+**Interventions Tried:**
+1. Sent interrupt command
+2. Sent /compact command
+
+**Recommended Action:**
+Please check the arm and either:
+- Kill it: coleo arm kill {{ arm_name }}
+- Or send a direct response to get it unstuck
+
+Current arm status: {{ arm_status }}
+Last productive activity: {{ last_productive }}
