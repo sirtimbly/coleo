@@ -96,18 +96,18 @@ The join flow is inspired by Docker Swarm's simplicity:
 
 ```bash
 # On the machine running the Control Plane
-octopai garden token create --name "home-laptop"
+coleo garden token create --name "home-laptop"
 
 # Output:
 # Garden join token created for "home-laptop"
 # 
 # To join this garden, run on the target machine:
 #
-#   octopai garden join \
+#   coleo garden join \
 #     --token SWMTKN-1-abc123xyz... \
-#     --control-plane https://octopai.example.com:8080
+#     --control-plane https://coleo.example.com:8080
 #
-# Token expires in 24 hours. Run 'octopai garden token refresh' to extend.
+# Token expires in 24 hours. Run 'coleo garden token refresh' to extend.
 ```
 
 ### 2. Join from the Garden Machine
@@ -116,7 +116,7 @@ octopai garden token create --name "home-laptop"
 # On the laptop/desktop/server that will host arms
 cd /path/to/my-project
 
-octopai garden join \
+coleo garden join \
   --token SWMTKN-1-abc123xyz... \
   --control-plane https://coleo.example.com:8080
 

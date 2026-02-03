@@ -1,6 +1,6 @@
 # Data Persistence
 
-Coleo uses a database abstraction layer that supports both SQLite (simple, default) and PostgreSQL (scalable).
+Coleo persists state in SQLite (via `bun:sqlite`). PostgreSQL support: **Not found in repo** (some sections below are design notes / options).
 
 ## ORM & Database Libraries for Bun
 
@@ -13,7 +13,7 @@ Bun's built-in `bun:sqlite` is extremely fast and requires no dependencies:
 ```typescript
 import { Database } from "bun:sqlite";
 
-const db = new Database("octopai.db");
+const db = new Database("coleo.db");
 db.exec("PRAGMA journal_mode = WAL");
 
 // Prepared statements are fast and safe
@@ -44,7 +44,7 @@ const arms = sqliteTable("arms", {
 });
 
 // Usage
-const sqlite = new Database("octopai.db");
+const sqlite = new Database("coleo.db");
 const db = drizzle(sqlite);
 
 const allArms = await db.select().from(arms);
@@ -184,7 +184,7 @@ interface DatabaseConfig {
   type: "sqlite" | "postgres";
   
   // SQLite
-  path?: string;              // Default: ~/.octopai/octopai.db
+  path?: string;              // Default: ~/.coleo/coleo.db
   
   // PostgreSQL
   connectionString?: string;  // postgres://user:pass@host:5432/db
@@ -200,11 +200,11 @@ interface DatabaseConfig {
 ```bash
 # SQLite (default)
 OCTOPAI_DB_TYPE=sqlite
-OCTOPAI_DB_PATH=~/.octopai/octopai.db
+OCTOPAI_DB_PATH=~/.coleo/coleo.db
 
 # PostgreSQL
 OCTOPAI_DB_TYPE=postgres
-OCTOPAI_DB_URL=postgres://octopai:password@localhost:5432/octopai
+OCTOPAI_DB_URL=postgres://coleo:password@localhost:5432/coleo
 ```
 
 ## Schema
@@ -515,7 +515,7 @@ class PostgresDatabase implements Database {
 function createDatabase(config: DatabaseConfig): Database {
   switch (config.type) {
     case "sqlite":
-      return new SQLiteDatabase(config.path || "~/.octopai/octopai.db");
+      return new SQLiteDatabase(config.path || "~/.coleo/coleo.db");
     case "postgres":
       return new PostgresDatabase(config.connectionString!);
     default:
@@ -567,20 +567,20 @@ async function runMigrations(db: Database): Promise<void> {
 
 ```bash
 # Backup
-cp ~/.octopai/octopai.db ~/.octopai/octopai.db.backup
+cp ~/.coleo/coleo.db ~/.coleo/coleo.db.backup
 
 # Or use SQLite's backup command
-sqlite3 ~/.octopai/octopai.db ".backup ~/.octopai/backup.db"
+sqlite3 ~/.coleo/coleo.db ".backup ~/.coleo/backup.db"
 ```
 
 ### PostgreSQL
 
 ```bash
 # Backup
-pg_dump octopai > octopai_backup.sql
+pg_dump coleo > coleo_backup.sql
 
 # Restore
-psql octopai < octopai_backup.sql
+psql coleo < coleo_backup.sql
 ```
 
 ## Performance Considerations

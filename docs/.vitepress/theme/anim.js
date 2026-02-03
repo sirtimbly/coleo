@@ -7,6 +7,7 @@
     raysCanvas: null,
     sparklesCanvas: null,
     waterLayer: null,
+    waterFx: null,
     depthSlider: null,
     depthControl: null,
     depthIcon: null,
@@ -119,7 +120,7 @@
     if(ENABLE_BURST && state.lastMoving){ const sd=60+Math.random()*40; spawnSwirlsAt(state.lastMoving.x,state.lastMoving.y,state.lastMoving.angle,state.lastMoving.speed,side,SWIRL_BURST_COUNT,{straightDist:sd}) }
     state.newDirectionCooldownUntil=nowTs+500
   }
-  function updateDepth(){ if(!state.depthSlider||!state.depthControl||!state.waterLayer) return
+  function updateDepth(){ if(!state.depthSlider||!state.depthControl||!state.waterFx) return
     const value=parseInt(state.depthSlider.value); state.brightness=value/100
     const isLight=value>50
     if(state.depthIcon) state.depthIcon.textContent=isLight?'☀️':'🌙'
@@ -129,7 +130,8 @@
     document.body.classList.toggle('dark-mode', !isLight)
     const mr=document.querySelector('.marketing-root'); if(mr){ mr.classList.toggle('light-mode', isLight) }
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8
-    state.waterLayer.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
+    // Apply brightness/saturation to wrapper to avoid overwriting `.water-layer` filter.
+    state.waterFx.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
   }
   function isHomeDomPresent(){ return !!document.querySelector('.marketing-root') }
   function removeHandlers(){
@@ -152,6 +154,19 @@
     state.raysCanvas=document.getElementById('raysCanvas')
     state.sparklesCanvas=document.getElementById('sparklesCanvas')
     state.waterLayer=document.getElementById('waterLayer')
+    // Create/mount wrapper so we can apply brightness/saturation without clobbering water CSS filters.
+    if(!document.getElementById('waterFxHome')){
+      const wfx=document.createElement('div')
+      wfx.id='waterFxHome'
+      wfx.className='water-fx-layer'
+      document.body.appendChild(wfx)
+    }
+    state.waterFx=document.getElementById('waterFxHome')
+    try {
+      if(state.waterFx && state.waterLayer && state.waterLayer.parentElement !== state.waterFx){
+        state.waterFx.appendChild(state.waterLayer)
+      }
+    } catch(_){}
     state.depthSlider=document.getElementById('depthSlider')
     state.depthControl=document.getElementById('depthControl')
     state.depthIcon=document.getElementById('depthIcon')

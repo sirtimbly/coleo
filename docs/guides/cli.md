@@ -120,12 +120,16 @@ Spawn a new arm. Runs interactively if no arguments provided.
 coleo arm spawn [options]
 
 Options:
-  -n, --name <name>       Arm name/ID
-  -w, --workdir <path>    Working directory
-  -t, --terminal <type>   Terminal: ghostty, iterm2, terminal, tmux, headless
-  -p, --prompt <prompt>   Initial task/prompt for the arm
-  --provider <provider>   AI provider (e.g., anthropic, openai, github-copilot)
-  --model <model>         Model name or provider/model (e.g., anthropic/claude-sonnet-4-20250514)
+  -n, --name <name>       Arm name/ID (auto-generates a sci-fi name if not provided)
+  -w, --workdir <path>    Working directory (default: current directory)
+  -t, --terminal <type>   Terminal emulator: ghostty, iterm2, terminal, tmux (uses opencode-tui)
+  -p, --prompt <prompt>   Initial prompt/task for the agent
+  --harness <harness>     Harness: opencode-api, opencode-tui, opencode
+  --provider <provider>   AI provider (e.g., anthropic, openai, github-copilot, opencode-zen)
+  --model <model>         Model name (e.g., gpt-5.1-codex-mini)
+  --template <name>       Use a template from ~/.coleo/arms/
+  --recover               Attempt to recover an existing OpenCode server
+  --watch                 Watch the arm's conversation in real-time after spawning
 ```
 
 **Interactive Mode (no arguments):**
@@ -133,30 +137,32 @@ Options:
 When run without `--name`, you'll be prompted interactively:
 
 ```bash
-octopai arm spawn
+coleo arm spawn
 
 === Arm Configuration ===
 
 Arm name [Varek-9]:
 Working directory [/Users/user/project]:
-Model (provider/model) [optional]: anthropic/claude-sonnet-4-20250514
+Provider [optional]: anthropic
+Model [optional]: claude-sonnet-4
 
 === Spawning Arm ===
   Name: Varek-9
   Workdir: /Users/user/project
-  Model: anthropic/claude-sonnet-4-20250514
+  Provider: anthropic
+  Model: claude-sonnet-4
 ```
 
 **Examples:**
 ```bash
 # Basic spawn
-octopai arm spawn --name explorer
+coleo arm spawn --name explorer --harness opencode-api
 
 # With provider/model
-octopai arm spawn -n my-arm --model anthropic/claude-opus-4
+coleo arm spawn -n my-arm --provider anthropic --model claude-opus-4
 
 # In terminal window
-octopai arm spawn -n worker --terminal ghostty
+coleo arm spawn -n worker --terminal ghostty
 ```
 
 #### arm list
@@ -164,7 +170,7 @@ octopai arm spawn -n worker --terminal ghostty
 List all registered arms.
 
 ```bash
-octopai arm list
+coleo arm list
 ```
 
 **Output:**
@@ -185,12 +191,12 @@ Status indicators:
 Kill an arm.
 
 ```bash
-octopai arm kill <name>
+coleo arm kill <name>
 ```
 
 **Example:**
 ```bash
-octopai arm kill explorer
+coleo arm kill explorer
 ```
 
 #### arm prompt
@@ -264,7 +270,7 @@ Inbox:
 Send a message to the brain.
 
 ```bash
-octopai mail send <message> [options]
+coleo mail send <message> [options]
 
 Options:
   -s, --subject <subject>  Message subject
@@ -274,10 +280,10 @@ Options:
 **Examples:**
 ```bash
 # Simple task
-octopai mail send "Add user authentication to the API"
+coleo mail send "Add user authentication to the API"
 
 # With custom subject
-octopai mail send "We need OAuth support" -s "Feature: OAuth"
+coleo mail send "We need OAuth support" -s "Feature: OAuth"
 ```
 
 #### mail read
@@ -285,12 +291,12 @@ octopai mail send "We need OAuth support" -s "Feature: OAuth"
 Read a specific message.
 
 ```bash
-octopai mail read &lt;id&gt;
+coleo mail read &lt;id&gt;
 ```
 
 **Example:**
 ```bash
-octopai mail read abc123
+coleo mail read abc123
 ```
 
 **Output:**
@@ -382,7 +388,7 @@ For Thunderbird:
 Show or reset the IMAP password.
 
 ```bash
-octopai imap password [options]
+coleo imap password [options]
 
 Options:
   -r, --reset  Generate a new password
@@ -391,10 +397,10 @@ Options:
 **Examples:**
 ```bash
 # Show current password
-octopai imap password
+coleo imap password
 
 # Reset password
-octopai imap password --reset
+coleo imap password --reset
 ```
 
 **Available Mailboxes:**
@@ -414,7 +420,7 @@ MCP server commands.
 Run the MCP server (used internally by arms).
 
 ```bash
-octopai mcp serve
+coleo mcp serve
 ```
 
 This command is typically not run directly - it's invoked by arms when they connect.
@@ -426,13 +432,13 @@ This command is typically not run directly - it's invoked by arms when they conn
 Show overall Coleo status.
 
 ```bash
-octopai status
+coleo status
 ```
 
 **Output:**
 ```
 Coleo Status
-Directory: ~/.octopai
+Directory: ~/.coleo
 
 Brain: running (last poll: 10:30:00)
 Arms: 3
@@ -454,7 +460,7 @@ Manage Coleo configuration, including arm templates and presets.
 List available arm configuration presets.
 
 ```bash
-octopai config presets
+coleo config presets
 ```
 
 **Output:**
@@ -470,16 +476,16 @@ Available Presets:
   full-team
     Full team: frontend, backend, testing, docs, architect
 
-Usage: octopai init --preset <name>
-       octopai config load <name>
+Usage: coleo init --preset <name>
+       coleo config load <name>
 ```
 
 #### config load &lt;preset&gt;
 
-Load an arm configuration preset into `~/.octopai/arms/`.
+Load an arm configuration preset into `~/.coleo/arms/`.
 
 ```bash
-octopai config load <preset>
+coleo config load <preset>
 ```
 
 **Presets:**
@@ -489,15 +495,15 @@ octopai config load <preset>
 
 **Example:**
 ```bash
-octopai config load split-stack
+coleo config load split-stack
 ```
 
 #### config arms
 
-List configured arms in `~/.octopai/arms/`.
+List configured arms in `~/.coleo/arms/`.
 
 ```bash
-octopai config arms
+coleo config arms
 ```
 
 **Output:**
@@ -515,14 +521,14 @@ Arm Configurations:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `OCTOPAI_DIR` | Coleo data directory | `~/.octopai` |
+| `OCTOPAI_DIR` | Coleo data directory | `~/.coleo` |
 | `OCTOPAI_API_KEY` | API key for Observatory | (none) |
 | `ANTHROPIC_API_KEY` | For Claude-based agents | (none) |
 | `OPENAI_API_KEY` | For GPT-based agents | (none) |
 
 ## Configuration File
 
-Configuration is stored in `~/.octopai/config.toml`:
+Configuration is stored in `~/.coleo/config.toml`:
 
 ```toml
 version = 1
@@ -549,7 +555,7 @@ emulator = "auto"
 Add these to your `.bashrc` or `.zshrc` for convenience:
 
 ```bash
-alias oc="bun run ~/octopai/src/cli/index.ts"
+alias oc="bun run ~/coleo/src/cli/index.ts"
 alias brain="oc brain run"
 alias spawn="oc arm spawn"
 alias arms="oc arm list"
@@ -561,12 +567,12 @@ alias inbox="oc mail inbox"
 
 ## Arm Configuration
 
-Arms can be configured via TOML files in `~/.octopai/arms/`. Each file defines an arm's domain, personality, and context preferences.
+Arms can be configured via TOML files in `~/.coleo/arms/`. Each file defines an arm's domain, personality, and context preferences.
 
 ### Arm Config File Structure
 
 ```toml
-# ~/.octopai/arms/&lt;name&gt;.toml
+# ~/.coleo/arms/&lt;name&gt;.toml
 
 [arm]
 name = "my-arm"
@@ -612,36 +618,36 @@ Load preset arm configurations:
 
 ```bash
 # List available presets
-octopai config presets
+coleo config presets
 
 # Load a preset (creates arm config files)
-octopai config load preset fullstack
-octopai config load preset split-stack
-octopai config load preset full-team
+coleo config load preset fullstack
+coleo config load preset split-stack
+coleo config load preset full-team
 ```
 
 ### Managing Arm Configs
 
 ```bash
 # List configured arms
-octopai config arms
+coleo config arms
 
 # Show arm configuration
-octopai config arms show my-arm
+coleo config arms show my-arm
 
 # Edit arm configuration (opens in editor)
-octopai config arms edit my-arm
+coleo config arms edit my-arm
 
 # Delete an arm configuration
-octopai config arms remove my-arm
+coleo config arms remove my-arm
 ```
 
 ### Spawning with Config
 
 ```bash
 # Spawn using a saved configuration
-octopai arm spawn --name my-arm --config my-arm
+coleo arm spawn --name my-arm --config my-arm
 
 # Override config values at spawn time
-octopai arm spawn -n specialist --domain backend --workdir ~/api
+coleo arm spawn -n specialist --domain backend --workdir ~/api
 ```

@@ -814,7 +814,7 @@ interface PushPayload {
 {
   "title": "Approval Needed",
   "body": "Deploy to production requires your approval",
-  "icon": "/icons/octopai.png",
+  "icon": "/icons/coleo.png",
   "tag": "approval-123",
   "data": {
     "url": "/approvals/123",

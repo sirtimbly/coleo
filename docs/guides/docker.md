@@ -41,11 +41,14 @@ Once connected:
 # Check status
 coleo status
 
+# Start the API server (required for harness-based arms)
+coleo serve
+
 # Start the brain
 coleo brain run
 
 # In another SSH session, spawn an arm
-coleo arm spawn -n explorer --agent opencode
+coleo arm spawn -n explorer --terminal tmux --workdir /home/coleo/projects/your-project
 ```
 
 ### Direct Execution
@@ -53,6 +56,7 @@ coleo arm spawn -n explorer --agent opencode
 Without SSH:
 ```bash
 docker exec -it coleo coleo status
+docker exec -it coleo coleo serve
 docker exec -it coleo coleo brain run
 ```
 
@@ -80,12 +84,12 @@ SSH_KEYS_DIR=~/.ssh
 | `$PROJECTS_DIR` | `/home/coleo/projects` | Your projects |
 | `$SSH_KEYS_DIR` | `/home/coleo/.ssh` | SSH keys (read-only) |
 
-## Headless Mode
+## Harness Modes
 
-Inside the container, there's no display. Arms run in headless mode automatically:
+Inside the container, you can run arms in a visible terminal session (tmux) or headless via the API harness:
 
-- **With tmux:** Arms run in detached tmux sessions
-- **Without tmux:** Arms run as background processes with logging
+- **tmux (opencode-tui):** `coleo arm spawn -n explorer --terminal tmux`
+- **headless (opencode-api):** `coleo arm spawn -n explorer --harness opencode-api`
 
 ### Viewing Arm Output
 
@@ -193,7 +197,7 @@ services:
 
 ```yaml
 services:
-  octopai:
+  coleo:
     healthcheck:
       test: ["CMD", "coleo", "status"]
       interval: 30s

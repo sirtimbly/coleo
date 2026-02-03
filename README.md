@@ -2,7 +2,7 @@
 
 # Coleo
 
-Distributed agent orchestration for software development. Coleo coordinates semi-autonomous AI "Arms" through a central governance system, using a mail-based interface for human-agent communication.
+Distributed agent orchestration for software development. Coleo is a coordination layer that turns existing agent harnesses into a supervised multi-agent system: a central Brain, persistent state, and an Observatory for visibility.
 
 > *Named after Coleoidea, the subclass of intelligent cephalopods that ditched rigid shells for distributed neural architecture.*
 
@@ -15,11 +15,14 @@ bun install
 # Initialize Coleo
 bun run src/cli/index.ts init
 
-# Start the Brain (foreground)
+# Terminal 1: start the API server (required for harness-based arms)
+bun run src/cli/index.ts serve
+
+# Terminal 2: start the Brain (foreground polling loop)
 bun run src/cli/index.ts brain run
 
-# In another terminal, spawn an Arm
-bun run src/cli/index.ts arm spawn --name explorer --harness opencode
+# Terminal 3: spawn an Arm (headless by default via opencode-api)
+bun run src/cli/index.ts arm spawn --name explorer --harness opencode-api --workdir ./your-repo
 
 # Send a task via mail
 bun run src/cli/index.ts mail send "Explore the codebase and identify refactoring opportunities"
@@ -44,8 +47,9 @@ docker compose up -d
 ssh -p 2222 coleo@localhost  # password: coleo
 
 # Inside the container:
+coleo serve                         # Start the API server
 coleo brain run                     # Start the Brain
-coleo arm spawn -n coder --harness opencode  # Spawn in tmux
+coleo arm spawn -n coder --terminal tmux     # Spawn in tmux (uses opencode-tui)
 coleo status                        # Check status
 
 # View Arm logs (headless mode)
@@ -59,7 +63,7 @@ Ports:
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for detailed system documentation.
+See `docs/architecture/overview.md` for detailed system documentation.
 
 ```
 Human (You)
@@ -83,10 +87,11 @@ Arm       Arm       Arm
 
 ```bash
 coleo init                      # Initialize ~/.coleo
+coleo serve                     # Start the API server
 coleo brain run                 # Start Brain (foreground)
 coleo brain run --once          # Single poll cycle
-coleo arm spawn -n NAME         # Spawn an Arm
-coleo arm spawn -n NAME --headless  # Spawn without terminal window
+coleo arm spawn -n NAME         # Spawn an Arm (via API server)
+coleo arm spawn -n NAME --terminal tmux  # Spawn in a visible terminal (opencode-tui)
 coleo arm list                  # List active Arms
 coleo mail inbox                # View inbox
 coleo mail send "task"          # Send task to Brain
@@ -94,17 +99,16 @@ coleo status                    # Overall status
 coleo mcp serve                 # Run MCP server (for Arms)
 ```
 
-## Headless Mode
+## Harness Modes
 
-In environments without a display (Docker, SSH), Arms run in headless mode:
-
-- **tmux**: If available, creates a tmux session (attach with `tmux attach -t arm_name`)
-- **headless**: Runs as background process, logs to `~/.coleo/logs/`
-
-Force headless mode with `--headless` flag:
+Coleo separates “coordination” from “agent UI” via harnesses:
 
 ```bash
-coleo arm spawn -n worker --harness opencode --headless
+# Headless (API-driven) harness
+coleo arm spawn -n worker --harness opencode-api --workdir /path/to/repo
+
+# Visible terminal harness (recommended when you want to watch/debug)
+coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
 ```
 
 ## Local Development
@@ -133,11 +137,11 @@ bun run web:build
 ### Running Locally
 
 ```bash
-# Start the API server (serves both API and web UI)
-bun run server
+# Start the API server
+bun run src/cli/index.ts serve
 
-# Or run the Brain directly (includes API server)
-bun run brain
+# Start the Brain orchestrator
+bun run src/cli/index.ts brain run
 
 # Development mode for web UI (hot reload)
 bun run web:dev
@@ -149,7 +153,6 @@ bun run web:dev
 |--------|-------------|
 | `bun run dev` | Run CLI commands directly |
 | `bun run brain` | Start the Brain orchestrator |
-| `bun run server` | Start the API server |
 | `bun run typecheck` | Run TypeScript type checking |
 | `bun run test` | Run unit tests |
 | `bun run test:watch` | Run unit tests in watch mode |
@@ -169,9 +172,11 @@ ANTHROPIC_API_KEY=your-key-here
 OPENAI_API_KEY=your-key-here      # Optional
 
 # Optional configuration
-COLEO_PORT=7337                   # API server port (default: 7337)
+COLEO_API_PORT=8080               # API server port (default: 8080)
+COLEO_API_HOST=0.0.0.0            # API server host (default: 0.0.0.0)
+COLEO_API_KEY=your-key-here       # Optional API key for the Observatory/API
 COLEO_DB_PATH=~/.coleo/coleo.db   # Database location
-NATS_URL=nats://localhost:4222    # NATS server URL
+COLEO_NATS_URL=nats://localhost:4222  # NATS server URL
 ```
 
 ## Testing
@@ -262,4 +267,3 @@ open http://localhost:3000
 ## License
 
 Business Source License 1.1 (BSL 1.1). Free for individual use. Contact for organizational licensing.
-

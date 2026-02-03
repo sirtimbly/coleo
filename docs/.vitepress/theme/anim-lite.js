@@ -3,7 +3,7 @@
   const DBG = (...args) => { try { console.log('[innerAnim]', ...args) } catch(_){} }
   let state = {
     inited:false, raf:0,
-    water:null, raysCanvas:null,
+    water:null, waterFx:null, raysCanvas:null,
     depthCtrl:null, depthSlider:null, depthIcon:null,
     viewportWidth:0, viewportHeight:0, scrollY:0,
     brightness:0.7, time:0, prevFrameNow:0,
@@ -13,6 +13,9 @@
 
   function ensureDom(){
     // Create only if not already present; tag with data-inner
+    if(!document.getElementById('waterFxInner')){
+      const wfx=document.createElement('div'); wfx.id='waterFxInner'; wfx.className='water-fx-layer'; wfx.dataset.inner='1'; document.body.appendChild(wfx)
+    }
     if(!document.getElementById('waterLayerInner')){
       const w=document.createElement('div'); w.id='waterLayerInner'; w.className='water-layer'; w.dataset.inner='1'; document.body.appendChild(w)
     }
@@ -28,14 +31,21 @@
       d.appendChild(label); d.appendChild(input)
       document.body.appendChild(d)
     }
+    state.waterFx=document.getElementById('waterFxInner')
     state.water=document.getElementById('waterLayerInner')
+    // Move water layer into the wrapper so the wrapper filter affects it.
+    try {
+      if(state.waterFx && state.water && state.water.parentElement !== state.waterFx){
+        state.waterFx.appendChild(state.water)
+      }
+    } catch(_){}
     state.raysCanvas=document.getElementById('raysCanvasInner')
     state.depthCtrl=document.getElementById('depthControlInner')
     state.depthSlider=document.getElementById('depthSliderInner')
     state.depthIcon=document.getElementById('depthIconInner')
   }
 
-  function updateDepth(){ if(!state.depthSlider||!state.water||!state.depthCtrl) return
+  function updateDepth(){ if(!state.depthSlider||!state.waterFx||!state.depthCtrl) return
     const value=parseInt(state.depthSlider.value||'70',10); state.brightness=value/100
     if(state.depthIcon) state.depthIcon.textContent=value>50?'☀️':'🌙'
     const isLight=value>50
@@ -44,7 +54,8 @@
     document.body.classList.toggle('light-mode', isLight)
     document.body.classList.toggle('dark-mode', !isLight)
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8
-    state.water.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
+    // Apply brightness/saturation to wrapper to avoid overwriting `.water-layer` filter.
+    state.waterFx.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
   }
 
   function initRays(){

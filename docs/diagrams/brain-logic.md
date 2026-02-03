@@ -236,7 +236,7 @@ sequenceDiagram
 
 The grace period and other brain settings are configurable via:
 
-1. **TOML config file** (`~/.octopai/config.toml`):
+1. **TOML config file** (`~/.coleo/config.toml`):
 ```toml
 [brain]
 poll_interval_ms = 30000        # Poll cycle interval (ms)

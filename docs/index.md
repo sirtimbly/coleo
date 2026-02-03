@@ -46,7 +46,7 @@ title: Coleo — Multi-Agent Development Coordination
             <span class="text-white">One Mind.</span>
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
-            Distributed agent orchestration inspired by the soft architecture of intelligent cephalopods.
+            An experimental coordination layer that turns your favorite models into a team: many agents, one brain, visible work.
           </p>
           <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
@@ -69,7 +69,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-3 h-3 rounded-full bg-green-400/80"></div>
             </div>
             <div class="mt-4 font-mono text-xs sm:text-sm space-y-3 opacity-90">
-              <div class="flex items-center gap-2 opacity-60">$ coleo spawn --arms 3 --task "explore"</div>
+              <div class="flex items-center gap-2 opacity-60">$ coleo arm spawn -n explorer --harness opencode-api --workdir ./your-repo</div>
               <div class="space-y-2">
                 <div class="flex items-center gap-2">
                   <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
@@ -128,7 +128,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Safe Experimentation</h3>
           <p class="opacity-70 leading-relaxed">
-            Each Arm operates within its own isolated Garden—an ephemeral environment where work happens safely.
+            Coleo is coordination, not blind autonomy: claims, activity, and proposals make multi-agent work inspectable and interruptible.
           </p>
         </div>
       </div>
@@ -152,14 +152,14 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
-                <p class="opacity-70 leading-relaxed">Autonomous workers with specialized capabilities operating within their own context windows.</p>
+                <p class="opacity-70 leading-relaxed">General-purpose agents run through harnesses (headless API or a visible terminal), coordinated by the Brain.</p>
               </div>
             </div>
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🌿</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Gardens</h4>
-                <p class="opacity-70 leading-relaxed">Isolated execution contexts providing safe spaces to work without contamination.</p>
+                <p class="opacity-70 leading-relaxed">A living map of the workspace: file claims, activity, and conflict zones that help arms avoid collisions.</p>
               </div>
             </div>
             <div class="flex gap-4">
@@ -296,15 +296,15 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
         </div>
         <div class="order-1 lg:order-2">
-          <h2 class="font-display font-bold text-4xl mb-6">Ephemeral Gardens</h2>
+          <h2 class="font-display font-bold text-4xl mb-6">Living Gardens</h2>
           <p class="text-lg opacity-80 mb-6">
-            Each Arm works in isolation. Like an octopus's arm—which can taste and feel independently—Gardens let Arms operate without stepping on each other's work.
+            A Garden is your workspace made visible: who is touching what, what they claim, and where conflicts are forming.
           </p>
           <ul class="space-y-3 opacity-80">
-            <li class="flex items-center gap-2">✓ Fully isolated file systems</li>
-            <li class="flex items-center gap-2">✓ Independent tool access</li>
-            <li class="flex items-center gap-2">✓ Snapshots and restoration points</li>
-            <li class="flex items-center gap-2">✓ Automatic cleanup after merge</li>
+            <li class="flex items-center gap-2">✓ File claims (read/write/exclusive) and ownership markers</li>
+            <li class="flex items-center gap-2">✓ Activity trail: who touched what, when</li>
+            <li class="flex items-center gap-2">✓ Conflict zones when multiple arms overlap</li>
+            <li class="flex items-center gap-2">✓ Topology view for coordination in the Observatory</li>
           </ul>
         </div>
       </div>

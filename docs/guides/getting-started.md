@@ -8,7 +8,7 @@ This guide will help you set up Coleo and run your first brain + arm session.
 - Git
 - (Optional) Docker for containerized deployment
 
-> **Git workflow:** The happy path is a single clone and a shared `octopai` branch that multiple arms work in together. You can still use other branches and stashes, but we assume a mostly linear history coordinated by tasks, claims, and proposals rather than one worktree per arm.
+> **Git workflow:** The happy path is a single clone and a shared `coleo` branch that multiple arms work in together. You can still use other branches and stashes, but we assume a mostly linear history coordinated by tasks, claims, and proposals rather than one worktree per arm.
 
 ## Installation
 
@@ -16,8 +16,8 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/octopai
-cd octopai
+git clone https://github.com/your-username/coleo
+cd coleo
 
 # Install dependencies
 bun install
@@ -35,13 +35,13 @@ When initializing, you can specify a preset to pre-configure arms:
 
 ```bash
 # Single full-stack arm (minimal setup)
-octopai init --preset fullstack
+coleo init --preset fullstack
 
 # Frontend + backend split
-octopai init --preset split-stack
+coleo init --preset split-stack
 
 # Full team with specialists
-octopai init --preset full-team
+coleo init --preset full-team
 ```
 
 ## Quickstart: Existing Codebase (Partial Adoption)
@@ -57,45 +57,49 @@ git clone git@github.com:you/your-project.git
 cd your-project
 
 # Create a branch that Coleo will use
-git checkout -b octopai
+git checkout -b coleo
 
 # Make sure it runs / builds in your environment
 npm install        # or bun install / pnpm install / etc.
 npm test           # optional but recommended
 ```
 
-This `octopai` branch is where arms will make changes. You can merge or rebase it into your main branch whenever you’re comfortable.
+This `coleo` branch is where arms will make changes. You can merge or rebase it into your main branch whenever you’re comfortable.
 
 ### 2. Initialize Coleo (one-time)
 
 In the Coleo repo:
 
 ```bash
-cd /path/to/octopai
+cd /path/to/coleo
 bun install
 
-# Set up ~/.octopai (maildir, config, templates, SQLite DB)
+# Set up ~/.coleo (maildir, config, templates, SQLite DB)
 bun run src/cli/index.ts init
 ```
 
-### 3. Start the brain
+### 3. Start the server and brain
 
 ```bash
+# Terminal 1: API server (required for harness-based arms)
+bun run src/cli/index.ts serve
+
+# Terminal 2: Brain polling loop
 bun run src/cli/index.ts brain run
 ```
 
-Leave this running in a terminal; it coordinates arms and tracks tasks.
+Leave these running; the server tracks arms/state and the brain coordinates tasks.
 
 ### 4. Spawn a general-purpose arm on your repo
 
 In another terminal:
 
 ```bash
-cd /path/to/octopai
+cd /path/to/coleo
 
 bun run src/cli/index.ts arm spawn \
   --name dev-arm \
-  --agent opencode \
+  --harness opencode-api \
   --workdir /absolute/path/to/your-project
 ```
 
@@ -113,7 +117,7 @@ bun run src/cli/index.ts arm prompt dev-arm \
   "Add a dark mode toggle to the settings page"
 ```
 
-Then review changes in your repo on the `octopai` branch:
+Then review changes in your repo on the `coleo` branch:
 
 ```bash
 cd /absolute/path/to/your-project
@@ -136,7 +140,7 @@ mkdir ~/projects/my-new-idea
 cd ~/projects/my-new-idea
 
 git init
-git checkout -b octopai
+git checkout -b coleo
 
 echo "# My New Idea" > README.md
 git add README.md
@@ -150,7 +154,7 @@ You can optionally bootstrap a framework here (`bun init`, `npm create vite@late
 In the Coleo repo:
 
 ```bash
-cd /path/to/octopai
+cd /path/to/coleo
 bun install
 bun run src/cli/index.ts init
 ```
@@ -164,15 +168,15 @@ bun run src/cli/index.ts brain run
 ### 4. Spawn a development arm into your new project
 
 ```bash
-cd /path/to/octopai
+cd /path/to/coleo
 
 bun run src/cli/index.ts arm spawn \
   --name greenfield-dev \
-  --agent opencode \
+  --harness opencode-api \
   --workdir ~/projects/my-new-idea
 ```
 
-Both you and the arm now share the same working tree and the same `octopai` branch.
+Both you and the arm now share the same working tree and the same `coleo` branch.
 
 ### 5. Describe the idea and let the arm scaffold
 
@@ -195,7 +199,7 @@ git diff
 git commit -am "feat: initial task tracker UI"
 ```
 
-When you’re happy, you can push the `octopai` branch to your remote and open a PR as usual.
+When you’re happy, you can push the `coleo` branch to your remote and open a PR as usual.
 
 ### Arm Templates
 
@@ -210,7 +214,7 @@ Coleo includes arm configuration templates in `templates/arms/`. These provide s
 | `docs.toml` | docs | Documentation-focused starting point |
 | `architect.toml` | architect | Code review, patterns |
 
-These templates are copied to `~/.octopai/arms/` during initialization and can be edited before spawning arms.
+These templates are copied to `~/.coleo/arms/` during initialization and can be edited before spawning arms.
 
 ### Verify Installation
 
@@ -287,7 +291,7 @@ With the brain running (in another terminal), spawn an arm:
 ```bash
 bun run src/cli/index.ts arm spawn \
   --name explorer \
-  --agent opencode \
+  --harness opencode-api \
   --workdir ~/projects/my-project
 ```
 
@@ -310,7 +314,7 @@ ls templates/arms/
 # fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
 ```
 
-These templates are copied to `~/.octopai/arms/` when you run `octopai init`.
+These templates are copied to `~/.coleo/arms/` when you run `coleo init`.
 
 ### General-Purpose Arms (Default)
 
@@ -318,7 +322,7 @@ By default, arms are general-purpose and can work on any part of your codebase. 
 
 ```bash
 # Spawn a general-purpose arm
-octopai arm spawn --name fullstack-dev
+coleo arm spawn --name fullstack-dev
 ```
 
 A general-purpose arm will handle frontend, backend, QA, and documentation tasks as assigned by the brain.
@@ -329,13 +333,13 @@ For larger projects, you can still run arms with focus hints that tend to work o
 
 ```bash
 # Frontend-leaning arm
-octopai arm spawn --name frontend-arm --domain frontend
+coleo arm spawn --name frontend-arm --domain frontend
 
 # Backend-leaning arm  
-octopai arm spawn --name backend-arm --domain backend
+coleo arm spawn --name backend-arm --domain backend
 
 # Infrastructure-leaning arm
-octopai arm spawn --name infra-arm --domain infrastructure
+coleo arm spawn --name infra-arm --domain infrastructure
 ```
 
 In the current design, these domains are hints; the brain primarily matches tasks using task classifications, recent work, and availability.
@@ -346,21 +350,21 @@ Coleo includes preset configurations for common setups. Load a preset:
 
 ```bash
 # Single full-stack arm (minimal setup)
-octopai config load preset fullstack
+coleo config load preset fullstack
 
 # Multi-arm with frontend/backend split
-octopai config load preset split-stack
+coleo config load preset split-stack
 
 # Full team with specialists
-octopai config load preset full-team
+coleo config load preset full-team
 ```
 
 ### Custom Arm Profiles
 
-Create custom arm profiles in `~/.octopai/arms/` with domain-specific settings:
+Create custom arm profiles in `~/.coleo/arms/` with domain-specific settings:
 
 ```toml
-# ~/.octopai/arms/frontend-specialist.toml
+# ~/.coleo/arms/frontend-specialist.toml
 [arm]
 name = "frontend-specialist"
 domain = "frontend"
@@ -400,10 +404,10 @@ To switch between configurations:
 
 ```bash
 # List available configurations
-octopai config list
+coleo config list
 
 # Load a different configuration set
-octopai config load my-custom-setup
+coleo config load my-custom-setup
 
 # This replaces all arms with the new configuration
 # Existing arm processes continue until manually killed
@@ -433,7 +437,7 @@ bun run src/cli/index.ts status
 Output:
 ```
 Coleo Status
-Directory: ~/.octopai
+Directory: ~/.coleo
 
 Brain: running (last poll: 10:30:30)
 Arms: 1

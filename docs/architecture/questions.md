@@ -108,7 +108,7 @@ This document tracks open questions and decisions that need to be made before or
 | breaking_change | 30 | Major impact |
 | creative_override | 2 | Trust the arm |
 
-- All values configurable in `.octopai/config.toml`
+- All values configurable in `.coleo/config.toml`
 
 **Status:** Resolved - Implemented in migration 005
 
@@ -153,10 +153,10 @@ Configurable via:
 - Some arms must run on machines with desktop env, others can be headless
 
 **Decision:**
-- `octopai-server` - Brain + Observatory + API
-- `octopai-arm-base` - Base image with common tools
-- `octopai-arm-opencode` - OpenCode harness
-- `octopai-arm-desktop` - For arms needing browser (VNC/noVNC)
+- `coleo-server` - Brain + Observatory + API
+- `coleo-arm-base` - Base image with common tools
+- `coleo-arm-opencode` - OpenCode harness
+- `coleo-arm-desktop` - For arms needing browser (VNC/noVNC)
 
 Arms share source code via:
 - NFS mount (production)
