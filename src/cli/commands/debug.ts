@@ -16,7 +16,7 @@ export function registerDebugCommands(program: Command): void {
       const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const { MailProcessor } = await import("../../brain/brain");
+        const { MailProcessor } = await import("../../brain/mail-processor");
         const { initDatabase } = await import("../../db");
 
         console.log("=".repeat(60));
@@ -191,7 +191,7 @@ export function registerDebugCommands(program: Command): void {
       ];
 
       try {
-        const { MailProcessor } = await import("../../brain/brain");
+        const { MailProcessor } = await import("../../brain/mail-processor");
 
         console.log("=".repeat(60));
         console.log("BATCH INTENT PROCESSING TEST");

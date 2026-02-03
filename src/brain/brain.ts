@@ -8,10 +8,9 @@
  * 4. Sends status updates to human inbox
  */
 
-import { readdir, readFile, writeFile, mkdir, rename, unlink } from "fs/promises";
+import { readdir, readFile, mkdir, rename, unlink } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
-import nunjucks from "nunjucks";
 import { Maildir } from "../mail";
 import { initDatabase, Database } from "../db";
 import { updateInfrastructureHealth, assignTaskToArm, updateArmStatusWithActivity } from "../db/transactions";
@@ -34,6 +33,9 @@ import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
 import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor";
+import { BrainTemplateManager } from "./template-manager";
+import { MailProcessor } from "./mail-processor";
+import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import type { BrainState, Task, QueueMessage, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
@@ -62,127 +64,12 @@ export class Brain {
   private apiKey: string;
   private natsUrl!: string;
   private natsClient: NatsClient | null = null;
+  private templates: BrainTemplateManager;
   private mailProcessor: MailProcessor;
   private stuckArmAnalyzer: StuckArmAnalyzer;
   private docTracker: DocUpdateTracker | null = null;
   private armStateMachine: ArmStateMachine | null = null;
   private healthMonitor: ArmHealthMonitor | null = null;
-
-  /**
-   * Load and render a template with optional context
-   */
-  private async renderTemplate(
-    templateName: string,
-    context?: Record<string, unknown>
-  ): Promise<string> {
-    const templatePath = join(this.options.coleoDir, "src", "brain", "templates", templateName);
-    try {
-      const templateContent = await readFile(templatePath, "utf-8");
-      return context ? nunjucks.renderString(templateContent, context) : templateContent;
-    } catch (err) {
-      this.log(`Failed to load template ${templateName}: ${err}`);
-      return `Template missing: ${templateName}`;
-    }
-  }
-
-  /**
-   * Load and render the mail processor system prompt template
-   */
-  private async loadMailProcessorSystemPrompt(context: {
-    availableArms: Array<{ name: string; domain: string; status: string }>;
-    pendingTasks: number;
-    recentActivity: string[];
-  }): Promise<string> {
-    const availableArms = context.availableArms.map(a => `${a.name} (${a.status})`).join(", ") || "none";
-    const recentActivity = context.recentActivity.slice(0, 5).join("; ") || "none";
-    return this.renderTemplate("mail-processor-system-prompt.jinja", {
-      available_arms: availableArms,
-      pending_tasks: context.pendingTasks,
-      recent_activity: recentActivity,
-    });
-  }
-      /**
-     * Load the initial arm prompt template
-     */
-    private async loadInitialArmPrompt(): Promise<string> {
-      return this.renderTemplate("initial-arm-prompt.jinja");
-    }
-
-        /**
-     * Load and render the bug assignment prompt template
-     */
-    private async loadBugAssignmentPrompt(context: {
-      bugId: string;
-      title: string;
-      assignedBy: string;
-      reason: string;
-    }): Promise<string> {
-      return this.renderTemplate("bug-assignment-prompt.jinja", {
-        bug_id: context.bugId,
-        bug_title: context.title,
-        assigned_by: context.assignedBy,
-        reason: context.reason,
-      });
-    }
-
-    /**
-     * Ensure template files exist, creating them from source if needed
-     */
-    private async ensureTemplatesExist(): Promise<void> {
-      const templateDir = join(this.options.coleoDir, "src", "brain", "templates");
-      const templates = [
-        { name: "mail-processor-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "mail-processor-system-prompt.jinja") },
-        { name: "initial-arm-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "initial-arm-prompt.jinja") },
-        { name: "bug-assignment-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "bug-assignment-prompt.jinja") },
-        { name: "arm-api-restart-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-api-restart-prompt.jinja") },
-        { name: "arm-tasks-available-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-tasks-available-prompt.jinja") },
-        { name: "arm-loop-compact-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-loop-compact-nudge.jinja") },
-        { name: "arm-generic-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-generic-nudge.jinja") },
-        { name: "stuck-analyzer-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-system-prompt.jinja") },
-        { name: "stuck-analyzer-user-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-user-prompt.jinja") },
-        { name: "human-task-queued-busy.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-queued-busy.jinja") },
-        { name: "human-mail-escalate.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-mail-escalate.jinja") },
-        { name: "human-bug-report-confirmation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-report-confirmation.jinja") },
-        { name: "human-task-completed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-completed.jinja") },
-        { name: "human-task-deferred.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-deferred.jinja") },
-        { name: "human-task-blocked.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked.jinja") },
-        { name: "human-issues-found.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-issues-found.jinja") },
-        { name: "human-review-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-review-needed.jinja") },
-        { name: "human-verification-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-verification-needed.jinja") },
-        { name: "human-discovery.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-discovery.jinja") },
-        { name: "human-approval-request.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-approval-request.jinja") },
-        { name: "human-status-report.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-status-report.jinja") },
-        { name: "human-tool-discovered.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-tool-discovered.jinja") },
-        { name: "human-doc-updated.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-doc-updated.jinja") },
-        { name: "human-bug-high-priority.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-high-priority.jinja") },
-        { name: "human-task-resumed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-resumed.jinja") },
-        { name: "human-bug-medium-escalation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-medium-escalation.jinja") },
-        { name: "human-file-change.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-file-change.jinja") },
-        { name: "human-infra-issues.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-infra-issues.jinja") },
-        { name: "human-arm-stuck.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-stuck.jinja") },
-        { name: "human-arm-idle-loop.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-idle-loop.jinja") },
-        { name: "human-arm-zombie-killed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-zombie-killed.jinja") },
-        { name: "human-task-blocked-by-bugs.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked-by-bugs.jinja") },
-      ];
-
-      for (const template of templates) {
-        const destPath = join(templateDir, template.name);
-        try {
-          await readFile(destPath, "utf-8");
-          // Template exists, skip
-        } catch {
-          // Template doesn't exist, try to create from source
-          try {
-            const sourceContent = await readFile(template.source, "utf-8");
-            await mkdir(templateDir, { recursive: true });
-            await writeFile(destPath, sourceContent, "utf-8");
-            this.log(`Created template: ${template.name}`);
-          } catch (sourceErr) {
-            this.log(`Could not create template ${template.name}: ${sourceErr}`);
-          }
-        }
-      }
-    }
 
     // Track last stuck state per arm to avoid duplicate escalations
   // DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
@@ -322,6 +209,9 @@ export class Brain {
     // Set up mail directories
     this.inbox = new Maildir(join(options.coleoDir, "mail", "inbox"));
     this.sent = new Maildir(join(options.coleoDir, "mail", "sent"));
+
+    // Initialize template manager
+    this.templates = new BrainTemplateManager(this.options.coleoDir, (msg) => this.log(msg));
 
     // Initialize mail processor
     this.mailProcessor = new MailProcessor((msg) => this.log(msg), "");
@@ -576,7 +466,7 @@ export class Brain {
     }
 
     // Ensure template files exist
-    await this.ensureTemplatesExist();
+    await this.templates.ensureTemplatesExist();
 
     // Initialize maildirs
     await this.inbox.init();
@@ -886,7 +776,7 @@ export class Brain {
         // Fall back to empty if JetStream query fails
       }
     }
-    const systemPrompt = await this.loadMailProcessorSystemPrompt({
+    const systemPrompt = await this.templates.loadMailProcessorSystemPrompt({
       availableArms: armContexts,
       pendingTasks: this.tasks.filter(t => t.status === "pending").length,
       recentActivity,
@@ -965,7 +855,7 @@ export class Brain {
                 message.id,
                 intent.priority
               );
-              const body = await this.renderTemplate("human-task-queued-busy.jinja", {
+              const body = await this.templates.renderTemplate("human-task-queued-busy.jinja", {
                 arm_name: intent.armName,
                 arm_status: targetArm.status,
                 subject: message.subject,
@@ -989,7 +879,7 @@ export class Brain {
 
         case "escalate": {
           this.log(`Escalating message to human: ${message.subject}`);
-          const body = await this.renderTemplate("human-mail-escalate.jinja", {
+          const body = await this.templates.renderTemplate("human-mail-escalate.jinja", {
             subject: message.subject,
             body: message.body,
           });
@@ -1332,7 +1222,7 @@ export class Brain {
     this.logActivity("brain", "bug_created", bugPayload.id, { title, source: "human_reported", mailThreadId });
 
     // Send confirmation to human
-    const body = await this.renderTemplate("human-bug-report-confirmation.jinja", {
+    const body = await this.templates.renderTemplate("human-bug-report-confirmation.jinja", {
       bug_id: bugPayload.id,
       title,
     });
@@ -1666,7 +1556,7 @@ export class Brain {
     await this.unblockDependentTasks(taskId);
 
     // Notify human
-    const body = await this.renderTemplate("human-task-completed.jinja", {
+    const body = await this.templates.renderTemplate("human-task-completed.jinja", {
       subject: taskSubject,
       summary,
       artifacts_list: artifacts.map(a => `- ${a}`).join("\n") || "None",
@@ -2068,7 +1958,7 @@ export class Brain {
             `, [new Date().toISOString(), new Date().toISOString(), task.id]);
           }
 
-          const body = await this.renderTemplate("human-task-deferred.jinja", {
+          const body = await this.templates.renderTemplate("human-task-deferred.jinja", {
             task_subject: task.subject,
             summary: report.summary,
             blockers_list: report.blockers.map(b => `- ${b}`).join("\n") || "No specific blockers listed",
@@ -2088,7 +1978,7 @@ export class Brain {
           task.status = "blocked";
           await this.saveTasks();
 
-          const body = await this.renderTemplate("human-task-blocked.jinja", {
+          const body = await this.templates.renderTemplate("human-task-blocked.jinja", {
             task_subject: task.subject,
             arm_id: report.armId,
             summary: report.summary,
@@ -2114,7 +2004,7 @@ export class Brain {
 
         // Only notify human if decision says to forward
         if (forwardDecision.shouldForward && report.issues.length > 0) {
-          const body = await this.renderTemplate("human-issues-found.jinja", {
+          const body = await this.templates.renderTemplate("human-issues-found.jinja", {
             arm_id: report.armId,
             task_subject: task.subject,
             issues_list: report.issues.map(i => `- ${i}`).join("\n"),
@@ -2139,7 +2029,7 @@ export class Brain {
       case "needs_review": {
         // Task needs human or other arm review - always forward
         this.log(`Task ${task.subject} needs review`);
-        const body = await this.renderTemplate("human-review-needed.jinja", {
+        const body = await this.templates.renderTemplate("human-review-needed.jinja", {
           arm_id: report.armId,
           task_subject: task.subject,
           summary: report.summary,
@@ -2274,7 +2164,7 @@ ${originalTask.id}`;
 
     // Notify human unless explicitly skipped (e.g., when assigning to another arm)
     if (!skipNotification) {
-      const body = await this.renderTemplate("human-verification-needed.jinja", {
+      const body = await this.templates.renderTemplate("human-verification-needed.jinja", {
         task_subject: originalTask.subject,
         issues_list: report.issues.map(i => `- ${i}`).join("\n") || "No specific issues listed",
         summary: report.summary,
@@ -2325,7 +2215,7 @@ ${originalTask.id}`;
 
      // Also notify human for high-severity discoveries
      if (discovery.severity === "error" || discovery.severity === "warning") {
-        const body = await this.renderTemplate("human-discovery.jinja", {
+        const body = await this.templates.renderTemplate("human-discovery.jinja", {
           arm_id: armId,
           kind: discovery.kind,
           severity: discovery.severity || "info",
@@ -2526,7 +2416,7 @@ ${originalTask.id}`;
   ): Promise<void> {
     const requestId = `approval-${Date.now()}`;
 
-    const body = await this.renderTemplate("human-approval-request.jinja", {
+    const body = await this.templates.renderTemplate("human-approval-request.jinja", {
       arm_id: armId,
       action: request.action,
       context: request.context,
@@ -2561,7 +2451,7 @@ ${originalTask.id}`;
       const inProgress = this.tasks.filter(t => t.status === "in_progress");
       const completedToday = this.state.completedToday;
 
-      const body = await this.renderTemplate("human-status-report.jinja", {
+      const body = await this.templates.renderTemplate("human-status-report.jinja", {
         arms_active: this.arms.size,
         pending_count: pendingTasks.length,
         in_progress_count: inProgress.length,
@@ -2622,7 +2512,7 @@ ${originalTask.id}`;
     }
 
     // Notify human
-    const body = await this.renderTemplate("human-tool-discovered.jinja", {
+    const body = await this.templates.renderTemplate("human-tool-discovered.jinja", {
       arm_id: armId,
       tool_name: tool.name,
       command: tool.command,
@@ -2682,7 +2572,7 @@ ${originalTask.id}`;
     this.log(`Documentation updated by ${armId}: ${payload.path}`);
 
     // Notify human of the update
-    const body = await this.renderTemplate("human-doc-updated.jinja", {
+    const body = await this.templates.renderTemplate("human-doc-updated.jinja", {
       arm_id: armId,
       path: payload.path,
       reason: payload.reason,
@@ -2774,7 +2664,7 @@ ${originalTask.id}`;
 
       // Notify human for critical/high priority bugs
       if (priority === "critical" || priority === "high") {
-        const body = await this.renderTemplate("human-bug-high-priority.jinja", {
+        const body = await this.templates.renderTemplate("human-bug-high-priority.jinja", {
           priority,
           title: payload.title,
           description: payload.description,
@@ -2854,7 +2744,7 @@ ${originalTask.id}`;
             `, [new Date().toISOString(), taskId]);
 
             // Notify human about task resumption
-            const body = await this.renderTemplate("human-task-resumed.jinja", {
+            const body = await this.templates.renderTemplate("human-task-resumed.jinja", {
               task_id: taskId,
               task_subject: task.subject,
               bug_id: bug.id,
@@ -2916,7 +2806,7 @@ ${originalTask.id}`;
     }
 
     // Log the escalation for human review
-    const body = await this.renderTemplate("human-bug-medium-escalation.jinja", {
+    const body = await this.templates.renderTemplate("human-bug-medium-escalation.jinja", {
       title: bugPayload.title,
       description: bugPayload.description,
       source: bugPayload.source,
@@ -2946,7 +2836,7 @@ ${originalTask.id}`;
     }
   ): Promise<void> {
     // Load and render the bug assignment prompt template
-    const prompt = await this.loadBugAssignmentPrompt({
+    const prompt = await this.templates.loadBugAssignmentPrompt({
       bugId: payload.bugId,
       title: payload.title,
       assignedBy: payload.assignedBy,
@@ -3092,7 +2982,7 @@ Report findings using bug resolution workflow.`,
 
     // Notify human of significant changes
     if (payload.impact === "high" || payload.filePath.includes("requirements")) {
-      const body = await this.renderTemplate("human-file-change.jinja", {
+      const body = await this.templates.renderTemplate("human-file-change.jinja", {
         arm_id: armId,
         file_path: payload.filePath,
         change_type: payload.changeType,
@@ -3305,7 +3195,7 @@ Report findings using bug resolution workflow.`,
               }
 
               // Also prompt the arm to re-register
-              const prompt = await this.renderTemplate("arm-api-restart-prompt.jinja");
+              const prompt = await this.templates.renderTemplate("arm-api-restart-prompt.jinja");
               await this.sendPromptToArm(arm.name, prompt);
               continue;
             }
@@ -3448,7 +3338,7 @@ Report findings using bug resolution workflow.`,
         }
 
         // Send the common initial prompt to the arm
-        const prompt = await this.loadInitialArmPrompt();
+        const prompt = await this.templates.loadInitialArmPrompt();
         const success = await this.sendPromptToArm(armId, prompt);
 
         if (success) {
@@ -3589,7 +3479,7 @@ Report findings using bug resolution workflow.`,
 
         this.log(`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available (${domainMatchCount} domain match), prompting to check instructions...`);
 
-        const prompt = await this.renderTemplate("arm-tasks-available-prompt.jinja", {
+        const prompt = await this.templates.renderTemplate("arm-tasks-available-prompt.jinja", {
           task_count: taskCount,
         });
 
@@ -4063,7 +3953,7 @@ Report findings using bug resolution workflow.`,
       this.log(`Created system-detected bug report for infrastructure issues`);
     }
 
-    const body = await this.renderTemplate("human-infra-issues.jinja", {
+    const body = await this.templates.renderTemplate("human-infra-issues.jinja", {
       issues_list: issues.map(i => `- ${i}`).join("\n"),
       db_status: this.infrastructureHealth.database.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.database.error || "Unhealthy"),
       api_status: this.infrastructureHealth.apiServer.healthy ? "✓ Healthy" : "✗ " + (this.infrastructureHealth.apiServer.error || "Unhealthy"),
@@ -4277,7 +4167,7 @@ Report findings using bug resolution workflow.`,
 
         // Wait a bit then send a nudge to continue
         setTimeout(async () => {
-          const prompt = await this.renderTemplate("arm-loop-compact-nudge.jinja");
+          const prompt = await this.templates.renderTemplate("arm-loop-compact-nudge.jinja");
           await this.sendPromptToArm(arm.name, prompt);
         }, 2000);
 
@@ -4303,7 +4193,7 @@ Report findings using bug resolution workflow.`,
 
       case "prompt": {
         // Send a generic nudge to continue
-        const defaultNudge = await this.renderTemplate("arm-generic-nudge.jinja");
+        const defaultNudge = await this.templates.renderTemplate("arm-generic-nudge.jinja");
         const nudgeMessage = analysis.suggestedResponse || defaultNudge;
         this.log(`Prompting ${arm.name} to continue: "${nudgeMessage.slice(0, 50)}..."`);
         await this.sendPromptToArm(arm.name, nudgeMessage);
@@ -4343,7 +4233,7 @@ Report findings using bug resolution workflow.`,
       ? this.tasks.find(t => t.id === arm.currentTask)?.subject || arm.currentTask
       : "unknown";
 
-    const body = await this.renderTemplate("human-arm-stuck.jinja", {
+    const body = await this.templates.renderTemplate("human-arm-stuck.jinja", {
       arm_name: arm.name,
       stuck_type: analysis.stuckType,
       confidence_percent: Math.round(analysis.confidence * 100),
@@ -4585,7 +4475,7 @@ Report findings using bug resolution workflow.`,
           promptCount: tracker.promptCount,
           intervention: "escalate",
         });
-        const body = await this.renderTemplate("human-arm-idle-loop.jinja", {
+        const body = await this.templates.renderTemplate("human-arm-idle-loop.jinja", {
           arm_name: arm.name,
           stuck_minutes: stuckMinutes.toFixed(1),
           prompt_count: tracker.promptCount,
@@ -4660,7 +4550,7 @@ Report findings using bug resolution workflow.`,
       this.lastStuckState.delete(arm.id);
 
       // Notify human
-      const body = await this.renderTemplate("human-arm-zombie-killed.jinja", {
+      const body = await this.templates.renderTemplate("human-arm-zombie-killed.jinja", {
         arm_name: arm.name,
       });
       await this.sendToHuman({
@@ -4741,7 +4631,7 @@ Report findings using bug resolution workflow.`,
             const highBugs = blockingBugs.filter(b => b.priority === 'high');
 
             if (criticalBugs.length > 0 || highBugs.length > 0) {
-              const body = await this.renderTemplate("human-task-blocked-by-bugs.jinja", {
+              const body = await this.templates.renderTemplate("human-task-blocked-by-bugs.jinja", {
                 task_id: task.id,
                 task_subject: task.subject,
                 blocking_bugs_list: blockingBugs.map(b => `- ${b.title} (${b.priority} priority)`).join("\n"),
@@ -5837,387 +5727,5 @@ When complete, report:
     }
 
     return desc;
-  }
-}
-
-/**
- * LLM-based Mail Processor
- * Uses OpenAI to understand human messages and determine actions
- */
-
-interface ProcessedIntent {
-  type: "new_task" | "doc_update" | "bug_report" | "approval_response" | "query" | "prompt_arm" | "arm_instruction" | "escalate";
-  subject?: string;
-  body?: string;
-  title?: string;
-  description?: string;
-  targetDoc?: string;
-  originalId?: string;
-  approved?: boolean;
-  comment?: string;
-  query?: string;
-  armName?: string;
-  instruction?: string;
-  priority?: "critical" | "high" | "normal" | "low";
-  domain?: string;
-  reasoning?: string;
-}
-
-export class MailProcessor {
-  private apiKey: string;
-  private model: string;
-  private baseUrl: string;
-  private logger: (message: string) => void;
-  private systemPrompt: string;
-
-  constructor(logger: (message: string) => void, systemPrompt: string) {
-    this.logger = logger;
-    this.systemPrompt = systemPrompt;
-    this.apiKey = process.env.OPENAI_API_KEY || "";
-    this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-    this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-  }
-
-  async processMessage(
-    subject: string,
-    body: string,
-    systemPrompt: string,
-  ): Promise<ProcessedIntent> {
-    if (!this.apiKey) {
-      return this.fallbackParse(subject, body);
-    }
-
-
-
-    const userMessage = `Subject: ${subject}
-
-Body:
-${body}`;
-
-    try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage },
-          ],
-          temperature: 0.3,
-          max_tokens: 500,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        this.logger(`[mail-processor] OpenAI API error: ${err.substring(0, 200)}`);
-        return this.fallbackParse(subject, body);
-      }
-
-      const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-      const content = data.choices[0]?.message?.content || "";
-
-      // Parse JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as ProcessedIntent;
-        result.reasoning = result.reasoning || "LLM parsed intent";
-        this.logger(`[mail-processor] LLM intent: ${result.type} - ${result.reasoning}`);
-        return result;
-      }
-
-      return this.fallbackParse(subject, body);
-    } catch (err) {
-      this.logger(`[mail-processor] LLM processing error: ${err}`);
-      return this.fallbackParse(subject, body);
-    }
-  }
-
-  private fallbackParse(subject: string, body: string): ProcessedIntent {
-    const lowerSubject = subject.toLowerCase();
-    const lowerBody = body.toLowerCase();
-
-    if (lowerSubject.includes("re:") && lowerSubject.includes("approval")) {
-      const approved = lowerBody.includes("approve") || lowerBody.includes("yes") || lowerBody.includes("ok");
-      const originalIdMatch = subject.match(/\[([^\]]+)\]/);
-      return {
-        type: "approval_response",
-        originalId: originalIdMatch?.[1] || "",
-        approved,
-        comment: body,
-        reasoning: "Fallback: detected approval response",
-      };
-    }
-
-    const docPatterns = [/update (?:the )?docs?/i, /update (?:the )?requirements/i, /update (?:the )?plans?/i];
-    for (const pattern of docPatterns) {
-      if (pattern.test(subject) || pattern.test(body)) {
-        const docMatch = body.match(/docs\/([^\s\n]+)/i);
-        return {
-          type: "doc_update",
-          subject: subject.replace(/^(update|revise|change|clarify)\s*(?:the\s*)?/i, "").trim(),
-          body,
-          targetDoc: docMatch?.[1],
-          reasoning: "Fallback: detected doc update request",
-        };
-      }
-    }
-
-    if (lowerSubject.includes("status") || lowerBody.includes("what's happening")) {
-      return { type: "query", query: "status", reasoning: "Fallback: detected status query" };
-    }
-
-    return {
-      type: "new_task",
-      subject: subject.replace(/^(new task:|task:)\s*/i, "").trim() || subject,
-      body,
-      priority: "normal",
-      reasoning: "Fallback: treated as new task",
-    };
-  }
-}
-
-// Types for parsing human intent
-type HumanIntent =
-  | { type: "new_task"; subject: string; body: string }
-  | { type: "doc_update"; subject: string; body: string; targetDoc?: string }
-  | { type: "approval_response"; originalId: string; approved: boolean; comment: string }
-  | { type: "query"; query: string };
-
-/**
- * Stuck Arm Analysis Result
- */
-interface StuckAnalysis {
-  isStuck: boolean;
-  stuckType?: "asking_question" | "waiting_approval" | "looping" | "error" | "idle_too_long" | "unknown";
-  reasoning: string;
-  suggestedAction?: "answer" | "approve" | "restart" | "compact" | "escalate" | "prompt";
-  suggestedResponse?: string;
-  confidence: number; // 0-1
-}
-
-/**
- * LLM-based Stuck Arm Analyzer
- * Analyzes PTY output to determine if an arm is stuck and suggests actions
- */
-export class StuckArmAnalyzer {
-  private apiKey: string;
-  private model: string;
-  private baseUrl: string;
-  private logger: (message: string) => void;
-  private templateDir: string;
-
-  constructor(logger: (message: string) => void, coleoDir: string = process.cwd()) {
-    this.logger = logger;
-    this.apiKey = process.env.OPENAI_API_KEY || "";
-    this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-    this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-    this.templateDir = join(coleoDir, "src", "brain", "templates");
-  }
-
-  private async renderTemplate(
-    templateName: string,
-    context: Record<string, unknown>
-  ): Promise<string | null> {
-    const templatePath = join(this.templateDir, templateName);
-    try {
-      const templateContent = await readFile(templatePath, "utf-8");
-      return nunjucks.renderString(templateContent, context);
-    } catch (err) {
-      this.logger(`[stuck-analyzer] Failed to load template ${templateName}: ${err}`);
-      return null;
-    }
-  }
-
-  /**
-   * Analyze arm output to determine if it's stuck
-   */
-  async analyze(
-    armName: string,
-    armDomain: string,
-    recentOutput: string,
-    currentTask?: string
-  ): Promise<StuckAnalysis> {
-    // Quick heuristics first (avoid LLM calls when possible)
-    const quickResult = this.quickAnalysis(recentOutput);
-    if (quickResult) {
-      return quickResult;
-    }
-
-    // Use LLM for deeper analysis
-    if (!this.apiKey) {
-      return this.fallbackAnalysis(recentOutput);
-    }
-
-    const systemPrompt = await this.renderTemplate("stuck-analyzer-system-prompt.jinja", {
-      arm_name: armName,
-      arm_domain: armDomain,
-      current_task: currentTask || "unknown",
-    });
-
-    const userMessage = await this.renderTemplate("stuck-analyzer-user-prompt.jinja", {
-      recent_output: recentOutput.slice(-8000),
-    });
-
-    if (!systemPrompt || !userMessage) {
-      return this.fallbackAnalysis(recentOutput);
-    }
-
-    try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userMessage },
-          ],
-          temperature: 0.2,
-          max_tokens: 500,
-        }),
-      });
-
-      if (!response.ok) {
-        const err = await response.text();
-        this.logger(`[stuck-analyzer] OpenAI API error: ${err.substring(0, 200)}`);
-        return this.fallbackAnalysis(recentOutput);
-      }
-
-      const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-      const content = data.choices[0]?.message?.content || "";
-
-      // Parse JSON from response
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as StuckAnalysis;
-        this.logger(`[stuck-analyzer] LLM analysis for ${armName}: stuck=${result.isStuck}, type=${result.stuckType}, confidence=${result.confidence}`);
-        return result;
-      }
-
-      return this.fallbackAnalysis(recentOutput);
-    } catch (err) {
-      this.logger(`[stuck-analyzer] LLM analysis error: ${err}`);
-      return this.fallbackAnalysis(recentOutput);
-    }
-  }
-
-  /**
-   * Quick heuristic analysis (avoids LLM call)
-   */
-  private quickAnalysis(output: string): StuckAnalysis | null {
-    const lines = output.trim().split("\n");
-    const lastLines = lines.slice(-20).join("\n").toLowerCase();
-
-    // Check for obvious question patterns
-    // Only match patterns that indicate the arm is truly waiting for input, not just
-    // generating text that happens to contain question-like phrases
-    const questionPatterns = [
-      /\?\s*$/m,  // Line ends with ?
-      /\(y\/n\)\s*$/mi,  // (y/n) at end of line
-      /\[y\/n\]\s*$/mi,  // [y/n] at end of line
-      /yes or no\?/i,
-      /please (choose|select|confirm|specify)\b/i,
-      // Only match "enter:" at the very end of output, preceded by a prompt-like pattern
-      /[>$\#]\s*enter\s*:/i,
-      /^\s*enter\s*:/im,  // "Enter:" at start of a line (after whitespace)
-    ];
-
-    for (const pattern of questionPatterns) {
-      if (pattern.test(lastLines)) {
-        return {
-          isStuck: true,
-          stuckType: "asking_question",
-          reasoning: `Output matches question pattern: ${pattern}`,
-          suggestedAction: "answer",
-          confidence: 0.8,
-        };
-      }
-    }
-
-    // Check for approval patterns
-    const approvalPatterns = [
-      /approve.*\?/i,
-      /proceed.*\?/i,
-      /continue.*\?/i,
-      /confirm.*\?/i,
-    ];
-
-    for (const pattern of approvalPatterns) {
-      if (pattern.test(lastLines)) {
-        return {
-          isStuck: true,
-          stuckType: "waiting_approval",
-          reasoning: `Output matches approval pattern: ${pattern}`,
-          suggestedAction: "approve",
-          suggestedResponse: "Yes, proceed.",
-          confidence: 0.85,
-        };
-      }
-    }
-
-    // Check for repeated errors (looping)
-    const errorCounts = new Map<string, number>();
-    for (const line of lines.slice(-50)) {
-      if (/error|failed|exception/i.test(line)) {
-        const normalized = line.toLowerCase().replace(/\d+/g, "N").trim();
-        errorCounts.set(normalized, (errorCounts.get(normalized) || 0) + 1);
-      }
-    }
-
-    for (const [error, count] of errorCounts) {
-      if (count >= 3) {
-        return {
-          isStuck: true,
-          stuckType: "looping",
-          reasoning: `Same error repeated ${count} times: ${error.slice(0, 50)}...`,
-          suggestedAction: "compact",
-          confidence: 0.75,
-        };
-      }
-    }
-
-    return null; // Need deeper analysis
-  }
-
-  /**
-   * Fallback analysis when LLM is unavailable
-   */
-  private fallbackAnalysis(output: string): StuckAnalysis {
-    const lines = output.trim().split("\n");
-    const lastLine = lines[lines.length - 1] || "";
-
-    // Very basic heuristics
-    if (lastLine.includes("?") || lastLine.toLowerCase().includes("input")) {
-      return {
-        isStuck: true,
-        stuckType: "asking_question",
-        reasoning: "Last line appears to be a question (fallback)",
-        suggestedAction: "escalate",
-        confidence: 0.5,
-      };
-    }
-
-    // If output is very short or empty, might be idle
-    if (output.trim().length < 100) {
-      return {
-        isStuck: false,
-        reasoning: "Output too short to determine (fallback)",
-        confidence: 0.3,
-      };
-    }
-
-    return {
-      isStuck: false,
-      reasoning: "No obvious stuck patterns detected (fallback)",
-      confidence: 0.4,
-    };
   }
 }
