@@ -55,11 +55,11 @@ title: Coleo — Multi-Agent Development Coordination
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
               </svg>
             </a>
-            <a href="https://github.com" class="border-2 border-white/50 hover:border-white text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 backdrop-blur-sm text-center no-underline">
+            <a href="https://github.com/sirtimbly/coleo" class="border-2 border-white/50 hover:border-white text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 flex items-center justify-center gap-2 backdrop-blur-sm text-center no-underline">
               <span>View on GitHub</span>
             </a>
           </div>
-          <p class="mt-4 text-xs text-white/70">Open Source under BSL 1.1 • Free for individual use</p>
+          <p class="mt-4 text-xs text-white/70">BSL 1.1 • Free for individual use</p>
         </div>
         <div class="relative">
           <div class="relative ui-box backdrop-blur-md rounded-3xl shadow-2xl p-8">
@@ -330,7 +330,7 @@ title: Coleo — Multi-Agent Development Coordination
             <li>✓ All core features included</li>
             <li>✓ Commercial use permitted</li>
           </ul>
-          <a href="#" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline mt-4">Download</a>
+          <a href="/guides/getting-started" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline mt-4">Install</a>
         </div>
         <div class="ui-box p-8 rounded-2xl">
           <h3 class="font-display font-bold text-2xl mb-4">Organizational Use</h3>
@@ -355,11 +355,9 @@ title: Coleo — Multi-Agent Development Coordination
   <footer class="py-12 px-4 relative z-10">
     <div class="max-w-7xl mx-auto">
       <div class="flex flex-col md:flex-row justify-between items-center gap-4 text-white/60">
-        <p class="text-sm">© 2025 Coleo. All rights reserved.</p>
+        <p class="text-sm">© Systematic UI LLC. All rights reserved.</p>
         <div class="flex gap-6 text-sm">
-          <a href="#" class="hover:text-white transition-colors no-underline">Privacy</a>
-          <a href="#" class="hover:text-white transition-colors no-underline">Terms</a>
-          <a href="#" class="hover:text-white transition-colors no-underline">License</a>
+          <a href="/licensing" class="hover:text-white transition-colors no-underline">License</a>
         </div>
       </div>
     </div>
