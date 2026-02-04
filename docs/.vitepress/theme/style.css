@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Pathway+Extreme:wght@300;400;500;600;700;800&display=swap");
+
 /* Tailwind v4
  *
  * We intentionally avoid importing Tailwind's preflight reset because it can
@@ -18,7 +20,7 @@
 	--reef-rgb: 20, 184, 166;
 	/* default teal; JS can morph to 73,215,175 */
 	--font-display:
-		"Space Grotesk", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
+		"Pathway Extreme", system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
 		Cantarell, Noto Sans, sans-serif;
 	--font-sans:
 		Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
@@ -33,6 +35,7 @@
 	--vp-c-border: rgba(255, 255, 255, 0.12);
 	--vp-c-divider: rgba(255, 255, 255, 0.08);
 	--vp-c-text-1: rgba(255, 255, 255, 0.95);
+	--vp-c-text-invert: rgba(20, 184, 166, 0.95);
 	--vp-c-text-2: rgba(255, 255, 255, 0.75);
 	--vp-c-text-3: rgba(255, 255, 255, 0.55);
 	--vp-c-link: #c1fffb;
@@ -49,7 +52,7 @@
 
 /* Light-mode token flip driven by depth slider */
 body.light-mode {
-	--vp-c-bg: #0a1b2b;
+	--vp-c-bg: #004f6a;
 	/* keep deep ocean backdrop */
 	--vp-c-bg-alt: #0a1b2b;
 	--vp-c-bg-soft: rgba(255, 255, 255, 0.7);
@@ -58,6 +61,7 @@ body.light-mode {
 	--vp-c-border: rgba(0, 0, 0, 0.12);
 	--vp-c-divider: rgba(0, 0, 0, 0.08);
 	--vp-c-text-1: #0a1b2b;
+	--vp-c-text-invert: rgba(9, 5, 5, 0.95);
 	--vp-c-text-2: rgba(10, 27, 43, 0.75);
 	--vp-c-text-3: rgba(10, 27, 43, 0.55);
 	--vp-c-link: #0d9488;
@@ -84,7 +88,7 @@ body.light-mode {
 	position: fixed;
 	inset: 0;
 	width: 100%;
-	height: 200vh;
+	height: var(--water-layer-height, 200vh);
 	pointer-events: none;
 	z-index: 0;
 }
@@ -93,18 +97,20 @@ body.light-mode {
    override any CSS `filter` set on `.water-layer` itself (e.g., distortion). */
 .water-fx-layer {
 	position: fixed;
-	inset: 0;
+	top: 0;
+	left: 0;
 	width: 100%;
-	height: 100%;
+	height: var(--water-layer-height, 200vh);
 	pointer-events: none;
 	z-index: 0;
 }
 
 .water-fx-layer .water-layer {
 	position: absolute;
-	inset: 0;
+	top: 0;
+	left: 0;
 	width: 100%;
-	height: 100%;
+	height: var(--water-layer-height, 200vh);
 }
 
 /* Rich aqua/blue background gradient lives on the water layer so the slider can
@@ -140,11 +146,21 @@ body:not(.coleo-home) {
 	background: #0a1b2b;
 }
 
-body:not(.coleo-home) .coleo-docs {
+body:not(.coleo-home) .VPApp,
+body:not(.coleo-home) .Layout,
+body:not(.coleo-home) .VPNav,
+body:not(.coleo-home) .VPLocalNav,
+body:not(.coleo-home) .VPSidebar,
+body:not(.coleo-home) .VPContent,
+body:not(.coleo-home) .VPDoc,
+body:not(.coleo-home) .VPDocFooter,
+body:not(.coleo-home) .VPFooter {
 	position: relative;
 	z-index: 2;
 	background: transparent;
 }
+
+
 
 /* Inner layers: extend height to avoid seeing the bottom during parallax */
 .water-layer[data-inner="1"],
@@ -158,9 +174,9 @@ body:not(.coleo-home) .coleo-docs {
 
 /* Unified glass card styling with depth-aware light/dark flip */
 .ui-box {
-	background: rgba(255, 255, 255, 0.1);
+	background: rgba(25, 30, 45, 0.75);
 	border: 1px solid rgba(255, 255, 255, 0.15);
-	color: #ffffff;
+	color: var(--vp-c-text-invert);
 }
 
 .ui-box a {
@@ -170,7 +186,6 @@ body:not(.coleo-home) .coleo-docs {
 .marketing-root.light-mode .ui-box {
 	background: rgba(224, 250, 246, 0.85);
 	border-color: rgba(0, 0, 0, 0.08);
-	color: #0a1b2b;
 }
 
 /* Navbar mimic */
@@ -262,56 +277,46 @@ body.light-mode .navbar-custom .brand-title {
 	font-family: var(--font-display);
 }
 
-/* Docs layout: build a predictable column grid using Tailwind utilities.
-   We neutralize VitePress' fixed-sidebar padding rules at desktop widths and let
-   the grid own the document columns. */
-@layer components {
-	.coleo-docs-grid {
-		@apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8;
-		/* Space below the sticky SiteNav. */
-		padding-top: calc(var(--vp-nav-height) + 32px);
-	}
-
-	@media (min-width: 960px) {
-		.coleo-docs-grid {
-			/* Avoid `@apply` with arbitrary-value utilities: Tailwind can't apply
-			   bracket-syntax classes reliably here (commas/parens confuse parsing). */
-			display: grid;
-			grid-template-columns: 12rem minmax(0, 1fr);
-			gap: 2rem;
-			align-items: start;
-		}
-	}
-}
-
-/* Desktop: sidebar participates in the grid (sticky), and VPContent stops offsetting for a fixed sidebar. */
+/* Desktop: use our custom SiteNav instead of the default VitePress navbar. */
 @media (min-width: 960px) {
-	.coleo-docs .VPSidebar {
-		position: sticky !important;
-		top: calc(var(--vp-nav-height) + 32px) !important;
-		left: auto !important;
-		bottom: auto !important;
-		width: 100% !important;
-		max-width: none !important;
-		height: calc(100dvh - (var(--vp-nav-height) + 32px)) !important;
-		padding: 16px 16px 24px !important;
-		transform: none !important;
-		opacity: 1 !important;
-		box-shadow: none !important;
+	body:not(.coleo-home) {
+		/* Reserve space for the fixed SiteNav: nav height + 32px. */
+		--vp-layout-top-height: calc(var(--vp-nav-height) + 32px);
 	}
 
-	.coleo-docs .VPSidebar .curtain {
+	body:not(.coleo-home) .VPNav,
+	body:not(.coleo-home) .VPLocalNav {
 		display: none !important;
 	}
 
-	.coleo-docs .VPContent {
+	body:not(.coleo-home) .coleo-site-nav {
+		display: block;
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		z-index: var(--vp-z-index-nav, 50);
+	}
+
+	/* VitePress assumes a visible VPNav and compensates using padding-top: var(--vp-nav-height).
+	   Since we hide VPNav on desktop, remove those offsets and rely on --vp-layout-top-height. */
+	body:not(.coleo-home) .VPContent {
 		padding-top: 0 !important;
 	}
 
-	.coleo-docs .VPContent.has-sidebar {
-		margin: 0 !important;
-		padding-left: 0 !important;
-		padding-right: 0 !important;
+	body:not(.coleo-home) .VPSidebar {
+		padding-top: 0 !important;
+	}
+
+	body:not(.coleo-home) .VPSidebar .curtain {
+		display: none !important;
+	}
+}
+
+/* Mobile: use VitePress default navbar + hamburger. */
+@media (max-width: 959px) {
+	body:not(.coleo-home) .coleo-site-nav {
+		display: none;
 	}
 }
 
@@ -320,19 +325,19 @@ body:not(.coleo-home) .VPSidebar {
 	background: transparent;
 }
 
-.coleo-docs .VPSidebarItem.level-1 {
+body:not(.coleo-home) .VPSidebarItem.level-1 {
 	margin-left: 1rem;
 }
 
 /* Active item */
-.coleo-docs .VPSidebarItem.level-1.is-active>.item .link>.text,
-.coleo-docs .VPSidebarItem.level-1.is-active>.item .link>.text:hover {
+body:not(.coleo-home) .VPSidebarItem.level-1.is-active>.item .link>.text,
+body:not(.coleo-home) .VPSidebarItem.level-1.is-active>.item .link>.text:hover {
 	color: var(--vp-c-text-3);
 	font-weight: 700;
 }
 
 /* Indicator bar */
-.coleo-docs .VPSidebarItem.is-active .indicator {
+body:not(.coleo-home) .VPSidebarItem.is-active .indicator {
 	background: var(--vp-c-text-3);
 }
 
@@ -555,7 +560,7 @@ body.coleo-home .container,
 	top: 0;
 	left: 0;
 	width: 100%;
-	height: 200vh;
+	height: var(--water-layer-height, 200vh);
 	z-index: 0;
 
 	filter: url(#water-distortion);
@@ -592,7 +597,7 @@ body.coleo-home .container,
 	top: 0;
 	left: 0;
 	width: 100%;
-	height: 200vh;
+	height: 100vh;
 	z-index: 2;
 	pointer-events: none;
 }

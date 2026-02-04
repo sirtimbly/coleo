@@ -29,9 +29,9 @@ title: Coleo — Multi-Agent Development Coordination
         <span class="brand-title font-display font-bold text-2xl tracking-tight">Coleo</span>
       </div>
       <div class="hidden md:flex items-center space-x-8">
+        <a href="/guides/getting-started" class="nav-link text-sm font-medium transition-colors">Getting Started</a>
         <a href="/philosophy" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
         <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Architecture</a>
-        <a href="/architecture/components#observatory-web-ui-api" class="nav-link text-sm font-medium transition-colors">Observatory</a>
         <a href="/licensing" class="nav-link text-sm font-medium transition-colors">License</a>
       </div>
     </div>
@@ -69,17 +69,17 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-3 h-3 rounded-full bg-green-400/80"></div>
             </div>
             <div class="mt-4 font-mono text-xs sm:text-sm space-y-3 opacity-90">
-              <div class="flex items-center gap-2 opacity-60">$ coleo arm spawn -n explorer --harness opencode-api --workdir ./your-repo</div>
+              <div class="flex items-center gap-2 ">$ coleo arm spawn</div>
               <div class="space-y-2">
                 <div class="flex items-center gap-2">
                   <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
                   <span class="text-accent font-semibold">Brain</span>
-                  <span class="opacity-60">→ Spawning Arms...</span>
+                  <span class="">→ Spawning Arms...</span>
                 </div>
                 <div class="pl-4 space-y-1 opacity-80">
-                  <div class="flex justify-between"><span>🐙 Arm-One</span><span class="text-green-400">● Active</span></div>
-                  <div class="flex justify-between"><span>🐙 Arm-Two</span><span class="text-green-400">● Active</span></div>
-                  <div class="flex justify-between"><span>🐙 Arm-Three</span><span class="text-accent">● Proposing</span></div>
+                  <div class="flex justify-between"><span>🐙 Ixis</span><span class="text-green-400">● Active</span></div>
+                  <div class="flex justify-between"><span>🐙 Argoaia-Zero</span><span class="text-green-400">● Active</span></div>
+                  <div class="flex justify-between"><span>🐙 Viola</span><span class="text-accent">● Stuck</span></div>
                 </div>
               </div>
             </div>
@@ -277,21 +277,23 @@ title: Coleo — Multi-Agent Development Coordination
                 <span class="font-semibold">🌿 Garden: auth-refactor</span>
                 <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
               </div>
-              <div class="text-sm opacity-70 font-mono">Arm: arm-7f3d9 • Files: 12 modified</div>
+              <div class="text-sm opacity-70 font-mono">Arm: Ixis • Files: 12 modified</div>
+            </div>
+            <div class="ui-box p-4 rounded-lg">
+              <div class="flex items-center justify-between mb-2">
+                <span class="font-semibold">🌿 Garden: ui-redesign</span>
+                <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
+              </div>
+              <div class="text-sm opacity-70 font-mono">Arm: Argoaia-Zero • Files: 8 modified</div>
+              <div class="text-sm opacity-70 font-mono">Arm: Verox • Files: 2 modified</div>
             </div>
             <div class="ui-box p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: test-coverage</span>
-                <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
+                <span class="text-xs bg-accent text-white px-2 py-1 rounded">Debating</span>
               </div>
-              <div class="text-sm opacity-70 font-mono">Arm: arm-2a8b1 • Files: 8 modified</div>
-            </div>
-            <div class="ui-box p-4 rounded-lg">
-              <div class="flex items-center justify-between mb-2">
-                <span class="font-semibold">🌿 Garden: doc-updates</span>
-                <span class="text-xs bg-accent text-white px-2 py-1 rounded">Proposing</span>
-              </div>
-              <div class="text-sm opacity-70 font-mono">Arm: arm-9c4e2 • Proposal pending</div>
+              <div class="text-sm opacity-70 font-mono">Arm: Viola • Files: 3 modified</div>
+              <div class="text-sm opacity-70 font-mono">Arm: Pom Pom • Proposal pending</div>
             </div>
           </div>
         </div>

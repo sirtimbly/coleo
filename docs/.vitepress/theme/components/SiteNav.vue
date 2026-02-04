@@ -15,7 +15,7 @@ defineEmits<{
 
       </a>
       <div class="hidden md:flex items-center space-x-8">
-        <a href="/guides/getting-started" class="nav-link text-sm font-medium transition-colors">Get Started</a>
+        <a href="/guides/getting-started" class="nav-link text-sm font-medium transition-colors">Getting Started</a>
         <a href="/philosophy" class="nav-link text-sm font-medium transition-colors">Philosophy</a>
         <a href="/architecture/overview" class="nav-link text-sm font-medium transition-colors">Architecture</a>
         <a href="/licensing" class="nav-link text-sm font-medium transition-colors">License</a>
@@ -30,6 +30,13 @@ defineEmits<{
       </button>
     </div>
   </nav>
+  <div class="depth-control" id="depthControl">
+    <label>
+      <span id="depthIcon">☀️</span>
+    </label>
+    <input type="range" id="depthSlider" min="0" max="100" value="70">
+  </div>
+
 </template>
 
 <style scoped>

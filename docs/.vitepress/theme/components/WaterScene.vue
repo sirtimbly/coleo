@@ -6,6 +6,7 @@
       </label>
       <input type="range" id="depthSlider" min="0" max="100" value="70" />
     </div>
+
   </div>
   <slot />
 </template>
@@ -37,7 +38,7 @@ const mouse = ref({ x: 0, y: 0, active: false });
 let swirls: any[] = [];
 let streaks: any[] = [];
 
-const ENABLE_BURST = true;
+const ENABLE_BURST = false;
 const MAX_STREAK_SPEED = 300;
 const STREAK_DRAG_COEFF = 0.02;
 const STREAK_FREQ_MIN = 12;

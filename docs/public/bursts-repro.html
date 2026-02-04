@@ -1,0 +1,1414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Coleo - Bursts Repro (Canvas)</title>
+    <style>
+      :root {
+        --bg0: #050b18;
+        --bg1: #020712;
+        --panel: rgba(5, 10, 20, 0.82);
+        --border: rgba(120, 220, 255, 0.18);
+        --text: rgba(230, 245, 255, 0.92);
+        --muted: rgba(230, 245, 255, 0.68);
+        --accent: rgb(73, 215, 175);
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          "Courier New", monospace;
+        --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial,
+          "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: radial-gradient(1200px 700px at 20% 20%, var(--bg0), var(--bg1));
+        color: var(--text);
+        font-family: var(--sans);
+        overflow: hidden;
+      }
+      #c {
+        position: fixed;
+        inset: 0;
+        display: block;
+      }
+      .panel {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        width: min(420px, calc(100vw - 24px));
+        max-height: calc(100vh - 24px);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px 12px 10px 12px;
+        backdrop-filter: blur(10px);
+        overflow: auto;
+      }
+      .title {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 0 0 6px 0;
+      }
+      .title h1 {
+        font-size: 14px;
+        line-height: 1.2;
+        margin: 0;
+        letter-spacing: 0.02em;
+      }
+      .title .hint {
+        font-size: 11px;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 10px;
+        margin: 6px 0;
+      }
+      .row label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .row output {
+        font-size: 11px;
+        font-family: var(--mono);
+        color: var(--text);
+      }
+      .row input[type="range"] {
+        grid-column: 1 / -1;
+        width: 100%;
+      }
+      .row select {
+        grid-column: 1 / -1;
+        width: 100%;
+        background: rgba(0, 0, 0, 0.25);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+      .row textarea {
+        grid-column: 1 / -1;
+        width: 100%;
+        min-height: 140px;
+        resize: vertical;
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 11px;
+        font-family: var(--mono);
+      }
+      .buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: rgba(0, 0, 0, 0.25);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 8px 10px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: rgba(73, 215, 175, 0.45);
+        box-shadow: 0 0 0 1px rgba(73, 215, 175, 0.06) inset;
+      }
+      button:active {
+        transform: translateY(1px);
+      }
+      .stats {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        max-width: min(360px, calc(100vw - 24px));
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px 12px;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--muted);
+        line-height: 1.5;
+        backdrop-filter: blur(10px);
+      }
+      .stats strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .settings-status {
+        margin-top: 6px;
+        font-size: 11px;
+        color: var(--muted);
+        font-family: var(--mono);
+      }
+      .settings-status.error {
+        color: #ff9d9d;
+      }
+      .corner {
+        position: fixed;
+        right: 12px;
+        bottom: 12px;
+        color: rgba(230, 245, 255, 0.55);
+        font-family: var(--mono);
+        font-size: 11px;
+        pointer-events: none;
+      }
+      a {
+        color: rgba(73, 215, 175, 0.9);
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+
+    <div class="panel" role="region" aria-label="Bursts Repro Controls">
+      <div class="title">
+        <h1>Bursts Repro (solid strokes, adjustable opacity)</h1>
+        <div class="hint">/bursts-repro.html</div>
+      </div>
+
+      <div class="row">
+        <label for="mode">Draw mode</label>
+        <output id="modeOut"></output>
+        <select id="mode">
+          <option value="singleStroke">Single stroke (1 path, 1 stroke)</option>
+          <option value="bucketed" selected>Bucketed alpha (N buckets, N strokes)</option>
+          <option value="perSegment">Per segment (worst case)</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="renderStyle">Render style</label>
+        <output id="renderStyleOut"></output>
+        <select id="renderStyle">
+          <option value="lines" selected>Lines</option>
+          <option value="dots">Dots</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="swirlCount">Swirls per burst</label>
+        <output id="swirlCountOut"></output>
+        <input id="swirlCount" type="range" min="1" max="72" step="1" value="10" />
+      </div>
+
+      <div class="row">
+        <label for="alpha">Base opacity</label>
+        <output id="alphaOut"></output>
+        <input id="alpha" type="range" min="0.01" max="0.90" step="0.01" value="0.14" />
+      </div>
+
+      <div class="row">
+        <label for="lineWidth">Line width</label>
+        <output id="lineWidthOut"></output>
+        <input id="lineWidth" type="range" min="0.5" max="9.0" step="0.1" value="1.2" />
+      </div>
+
+      <div class="row">
+        <label for="buckets">Alpha buckets (bucketed mode)</label>
+        <output id="bucketsOut"></output>
+        <input id="buckets" type="range" min="2" max="48" step="1" value="8" />
+      </div>
+
+      <div class="row">
+        <label for="burstInterval">Burst interval (ms)</label>
+        <output id="burstIntervalOut"></output>
+        <input id="burstInterval" type="range" min="120" max="6000" step="40" value="420" />
+      </div>
+
+      <div class="row">
+        <label for="burstLifetime">Burst lifetime (ms)</label>
+        <output id="burstLifetimeOut"></output>
+        <input id="burstLifetime" type="range" min="400" max="12000" step="100" value="1800" />
+      </div>
+
+      <div class="row">
+        <label for="burstSpeed">Burst speed (px/s)</label>
+        <output id="burstSpeedOut"></output>
+        <input id="burstSpeed" type="range" min="0" max="3600" step="20" value="320" />
+      </div>
+
+      <div class="row">
+        <label for="burstDirection">Burst direction (deg)</label>
+        <output id="burstDirectionOut"></output>
+        <input id="burstDirection" type="range" min="0" max="360" step="5" value="15" />
+      </div>
+
+      <div class="row">
+        <label for="straightDist">Straight distance (px)</label>
+        <output id="straightDistOut"></output>
+        <input id="straightDist" type="range" min="0" max="600" step="5" value="80" />
+      </div>
+
+      <div class="row">
+        <label for="curveTightness">Curve tightness</label>
+        <output id="curveTightnessOut"></output>
+        <input id="curveTightness" type="range" min="0.4" max="15.0" step="0.1" value="1.0" />
+      </div>
+
+      <div class="row">
+        <label for="turnModel">Turning speed model</label>
+        <output id="turnModelOut"></output>
+        <select id="turnModel">
+          <option value="angular" selected>Angular (current)</option>
+          <option value="arc">Constant arc length</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="turnSpeedScale">Turn speed scale</label>
+        <output id="turnSpeedScaleOut"></output>
+        <input id="turnSpeedScale" type="range" min="0.2" max="6.0" step="0.1" value="1.0" />
+      </div>
+
+      <div class="row">
+        <label for="turnRampScale">Turn ramp scale</label>
+        <output id="turnRampScaleOut"></output>
+        <input id="turnRampScale" type="range" min="0.2" max="2.0" step="0.05" value="1.0" />
+      </div>
+
+      <div class="row">
+        <label for="turnMinRad">Turn min radius</label>
+        <output id="turnMinRadOut"></output>
+        <input id="turnMinRad" type="range" min="2" max="90" step="1" value="12" />
+      </div>
+
+      <div class="row">
+        <label for="turnOmegaMax">Turn omega max</label>
+        <output id="turnOmegaMaxOut"></output>
+        <input id="turnOmegaMax" type="range" min="2" max="40" step="0.5" value="12" />
+      </div>
+
+      <div class="row">
+        <label for="cone">Angle jitter (cone)</label>
+        <output id="coneOut"></output>
+        <input id="cone" type="range" min="0.0" max="3.6" step="0.05" value="0.35" />
+      </div>
+
+      <div class="row">
+        <label for="backMax">Back offset max</label>
+        <output id="backMaxOut"></output>
+        <input id="backMax" type="range" min="0" max="420" step="5" value="60" />
+      </div>
+
+      <div class="row">
+        <label for="offMagMax">Perp offset max</label>
+        <output id="offMagMaxOut"></output>
+        <input id="offMagMax" type="range" min="0" max="240" step="5" value="20" />
+      </div>
+
+      <div class="row">
+        <label for="targetRadMin">Target radius min</label>
+        <output id="targetRadMinOut"></output>
+        <input id="targetRadMin" type="range" min="5" max="240" step="1" value="32" />
+      </div>
+
+      <div class="row">
+        <label for="targetRadMax">Target radius max</label>
+        <output id="targetRadMaxOut"></output>
+        <input id="targetRadMax" type="range" min="10" max="360" step="1" value="42" />
+      </div>
+
+      <div class="row">
+        <label for="maxRadExtra">Max radius extra</label>
+        <output id="maxRadExtraOut"></output>
+        <input id="maxRadExtra" type="range" min="0" max="180" step="1" value="14" />
+      </div>
+
+      <div class="row">
+        <label for="angVelMin">Angular vel min</label>
+        <output id="angVelMinOut"></output>
+        <input id="angVelMin" type="range" min="0.2" max="12.0" step="0.1" value="1.6" />
+      </div>
+
+      <div class="row">
+        <label for="angVelMax">Angular vel max</label>
+        <output id="angVelMaxOut"></output>
+        <input id="angVelMax" type="range" min="0.4" max="18.0" step="0.1" value="3.2" />
+      </div>
+
+      <div class="row">
+        <label for="curlStrengthMin">Curl strength min</label>
+        <output id="curlStrengthMinOut"></output>
+        <input id="curlStrengthMin" type="range" min="0.05" max="3.0" step="0.05" value="0.35" />
+      </div>
+
+      <div class="row">
+        <label for="curlStrengthMax">Curl strength max</label>
+        <output id="curlStrengthMaxOut"></output>
+        <input id="curlStrengthMax" type="range" min="0.1" max="4.8" step="0.05" value="0.7" />
+      </div>
+
+      <div class="row">
+        <label for="omegaMin">Base omega min</label>
+        <output id="omegaMinOut"></output>
+        <input id="omegaMin" type="range" min="0.4" max="15.0" step="0.1" value="2.2" />
+      </div>
+
+      <div class="row">
+        <label for="omegaMax">Base omega max</label>
+        <output id="omegaMaxOut"></output>
+        <input id="omegaMax" type="range" min="0.6" max="21.0" step="0.1" value="3.4" />
+      </div>
+
+      <div class="row">
+        <label for="swirlBurstMs">Swirl burst ms</label>
+        <output id="swirlBurstMsOut"></output>
+        <input id="swirlBurstMs" type="range" min="0" max="2400" step="25" value="250" />
+      </div>
+
+      <div class="row">
+        <label for="hideFraction">Hide fraction (head trim)</label>
+        <output id="hideFractionOut"></output>
+        <input id="hideFraction" type="range" min="0.0" max="0.9" step="0.02" value="0.20" />
+      </div>
+
+      <div class="row">
+        <label for="headFade">Head fade fraction</label>
+        <output id="headFadeOut"></output>
+        <input id="headFade" type="range" min="0.0" max="0.8" step="0.02" value="0.18" />
+      </div>
+
+      <div class="row">
+        <label for="trailLength">Trail length (points)</label>
+        <output id="trailLengthOut"></output>
+        <input id="trailLength" type="range" min="40" max="480" step="10" value="160" />
+      </div>
+
+      <div class="row">
+        <label for="tailFade">Tail fade fraction</label>
+        <output id="tailFadeOut"></output>
+        <input id="tailFade" type="range" min="0.0" max="0.9" step="0.02" value="0.35" />
+      </div>
+
+      <div class="row">
+        <label for="driftDrag">Drift drag coeff</label>
+        <output id="driftDragOut"></output>
+        <input id="driftDrag" type="range" min="0.05" max="3.0" step="0.05" value="0.35" />
+      </div>
+
+      <div class="row">
+        <label for="perpDrift">Perp drift</label>
+        <output id="perpDriftOut"></output>
+        <input id="perpDrift" type="range" min="0" max="180" step="1" value="20" />
+      </div>
+
+      <div class="row">
+        <label for="composite">Composite</label>
+        <output id="compositeOut"></output>
+        <select id="composite">
+          <option value="screen" selected>screen</option>
+          <option value="source-over">source-over</option>
+          <option value="lighter">lighter</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="dpr">Use devicePixelRatio</label>
+        <output id="dprOut"></output>
+        <select id="dpr">
+          <option value="on" selected>on (sharper, slower)</option>
+          <option value="off">off (faster)</option>
+        </select>
+      </div>
+
+      <div class="buttons">
+        <button id="regen" class="primary">Regenerate burst</button>
+        <button id="pause">Pause</button>
+        <button id="step">Step</button>
+        <button id="exportSettings">Export settings</button>
+        <button id="copySettings">Copy settings</button>
+        <button id="applySettings">Apply settings</button>
+      </div>
+
+      <div class="row">
+        <label for="settingsOut">Settings output</label>
+        <textarea id="settingsOut" spellcheck="false"></textarea>
+        <div id="settingsStatus" class="settings-status">Paste JSON here, then Apply.</div>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="corner" id="corner"></div>
+
+    <script>
+      (function () {
+        const canvas = document.getElementById("c");
+        const ctx = canvas.getContext("2d", { alpha: true });
+
+        const ui = {
+          mode: document.getElementById("mode"),
+          renderStyle: document.getElementById("renderStyle"),
+          swirlCount: document.getElementById("swirlCount"),
+          alpha: document.getElementById("alpha"),
+          lineWidth: document.getElementById("lineWidth"),
+          buckets: document.getElementById("buckets"),
+          burstInterval: document.getElementById("burstInterval"),
+          burstLifetime: document.getElementById("burstLifetime"),
+          burstSpeed: document.getElementById("burstSpeed"),
+          burstDirection: document.getElementById("burstDirection"),
+          straightDist: document.getElementById("straightDist"),
+          curveTightness: document.getElementById("curveTightness"),
+          turnModel: document.getElementById("turnModel"),
+          turnSpeedScale: document.getElementById("turnSpeedScale"),
+          turnRampScale: document.getElementById("turnRampScale"),
+          turnMinRad: document.getElementById("turnMinRad"),
+          turnOmegaMax: document.getElementById("turnOmegaMax"),
+          cone: document.getElementById("cone"),
+          backMax: document.getElementById("backMax"),
+          offMagMax: document.getElementById("offMagMax"),
+          targetRadMin: document.getElementById("targetRadMin"),
+          targetRadMax: document.getElementById("targetRadMax"),
+          maxRadExtra: document.getElementById("maxRadExtra"),
+          angVelMin: document.getElementById("angVelMin"),
+          angVelMax: document.getElementById("angVelMax"),
+          curlStrengthMin: document.getElementById("curlStrengthMin"),
+          curlStrengthMax: document.getElementById("curlStrengthMax"),
+          omegaMin: document.getElementById("omegaMin"),
+          omegaMax: document.getElementById("omegaMax"),
+          swirlBurstMs: document.getElementById("swirlBurstMs"),
+          hideFraction: document.getElementById("hideFraction"),
+          headFade: document.getElementById("headFade"),
+          trailLength: document.getElementById("trailLength"),
+          tailFade: document.getElementById("tailFade"),
+          driftDrag: document.getElementById("driftDrag"),
+          perpDrift: document.getElementById("perpDrift"),
+          composite: document.getElementById("composite"),
+          dpr: document.getElementById("dpr"),
+          regen: document.getElementById("regen"),
+          pause: document.getElementById("pause"),
+          step: document.getElementById("step"),
+          exportSettings: document.getElementById("exportSettings"),
+          copySettings: document.getElementById("copySettings"),
+          applySettings: document.getElementById("applySettings"),
+          stats: document.getElementById("stats"),
+          corner: document.getElementById("corner"),
+          settingsOut: document.getElementById("settingsOut"),
+          settingsStatus: document.getElementById("settingsStatus"),
+          out: {
+            mode: document.getElementById("modeOut"),
+            renderStyle: document.getElementById("renderStyleOut"),
+            swirlCount: document.getElementById("swirlCountOut"),
+            alpha: document.getElementById("alphaOut"),
+            lineWidth: document.getElementById("lineWidthOut"),
+            buckets: document.getElementById("bucketsOut"),
+            burstInterval: document.getElementById("burstIntervalOut"),
+            burstLifetime: document.getElementById("burstLifetimeOut"),
+            burstSpeed: document.getElementById("burstSpeedOut"),
+            burstDirection: document.getElementById("burstDirectionOut"),
+            straightDist: document.getElementById("straightDistOut"),
+            curveTightness: document.getElementById("curveTightnessOut"),
+            turnModel: document.getElementById("turnModelOut"),
+            turnSpeedScale: document.getElementById("turnSpeedScaleOut"),
+            turnRampScale: document.getElementById("turnRampScaleOut"),
+            turnMinRad: document.getElementById("turnMinRadOut"),
+            turnOmegaMax: document.getElementById("turnOmegaMaxOut"),
+            cone: document.getElementById("coneOut"),
+            backMax: document.getElementById("backMaxOut"),
+            offMagMax: document.getElementById("offMagMaxOut"),
+            targetRadMin: document.getElementById("targetRadMinOut"),
+            targetRadMax: document.getElementById("targetRadMaxOut"),
+            maxRadExtra: document.getElementById("maxRadExtraOut"),
+            angVelMin: document.getElementById("angVelMinOut"),
+            angVelMax: document.getElementById("angVelMaxOut"),
+            curlStrengthMin: document.getElementById("curlStrengthMinOut"),
+            curlStrengthMax: document.getElementById("curlStrengthMaxOut"),
+            omegaMin: document.getElementById("omegaMinOut"),
+            omegaMax: document.getElementById("omegaMaxOut"),
+            swirlBurstMs: document.getElementById("swirlBurstMsOut"),
+            hideFraction: document.getElementById("hideFractionOut"),
+            headFade: document.getElementById("headFadeOut"),
+            trailLength: document.getElementById("trailLengthOut"),
+            tailFade: document.getElementById("tailFadeOut"),
+            driftDrag: document.getElementById("driftDragOut"),
+            perpDrift: document.getElementById("perpDriftOut"),
+            composite: document.getElementById("compositeOut"),
+            dpr: document.getElementById("dprOut"),
+          },
+        };
+
+        const REEF_RGB = "73, 215, 175";
+        const REEF_STROKE = `rgb(${REEF_RGB})`;
+
+        // Copied from anim.js to match actual swirl behavior.
+        const SWIRL_BURST_COUNT = 3; // number of swirls spawned per burst
+        const SWIRL_MAX_TRAIL_POINTS = 160; // cap stored trail points
+        const SWIRL_HIDE_FRACTION = 0.2; // hide first X% of trail
+        const SWIRL_DRAW_SEGMENTS = 14; // max segments drawn per swirl per frame
+        const DRIFT_DRAG_COEFF = 0.35,
+          PERP_SEG_DRIFT = 20;
+
+        let running = true;
+        let raf = 0;
+        let lastFrame = 0;
+        let lastFrameStamp = 0;
+        let frameCount = 0;
+        let accumDrawMs = 0;
+        let lastStatsAt = 0;
+        const perf = {
+          frameTimes: [],
+          drawTimes: [],
+          lastFrameMs: 16,
+          lastDrawMs: 0,
+          avgFrameMs: 0,
+          p95FrameMs: 0,
+          maxFrameMs: 0,
+          avgDrawMs: 0,
+          p95DrawMs: 0,
+        };
+
+        let lastBurstAt = 0;
+        let burstSide = 1;
+        const state = { swirls: [] };
+
+        function clamp(n, a, b) {
+          return Math.max(a, Math.min(b, n));
+        }
+
+        function updateOutputs() {
+          ui.out.mode.textContent = ui.mode.value;
+          ui.out.renderStyle.textContent = ui.renderStyle.value;
+          ui.out.swirlCount.textContent = `${ui.swirlCount.value}`;
+          ui.out.alpha.textContent = `${Number(ui.alpha.value).toFixed(2)}`;
+          ui.out.lineWidth.textContent = `${Number(ui.lineWidth.value).toFixed(1)}`;
+          ui.out.buckets.textContent = `${ui.buckets.value}`;
+          ui.out.burstInterval.textContent = `${ui.burstInterval.value}`;
+          ui.out.burstLifetime.textContent = `${ui.burstLifetime.value}`;
+          ui.out.burstSpeed.textContent = `${ui.burstSpeed.value}`;
+          ui.out.burstDirection.textContent = `${ui.burstDirection.value}°`;
+          ui.out.straightDist.textContent = `${ui.straightDist.value}`;
+          ui.out.curveTightness.textContent = `${Number(ui.curveTightness.value).toFixed(1)}`;
+          ui.out.turnModel.textContent = ui.turnModel.value;
+          ui.out.turnSpeedScale.textContent = `${Number(ui.turnSpeedScale.value).toFixed(1)}`;
+          ui.out.turnRampScale.textContent = `${Number(ui.turnRampScale.value).toFixed(2)}`;
+          ui.out.turnMinRad.textContent = `${ui.turnMinRad.value}`;
+          ui.out.turnOmegaMax.textContent = `${Number(ui.turnOmegaMax.value).toFixed(1)}`;
+          ui.out.cone.textContent = `${Number(ui.cone.value).toFixed(2)}`;
+          ui.out.backMax.textContent = `${ui.backMax.value}`;
+          ui.out.offMagMax.textContent = `${ui.offMagMax.value}`;
+          ui.out.targetRadMin.textContent = `${ui.targetRadMin.value}`;
+          ui.out.targetRadMax.textContent = `${ui.targetRadMax.value}`;
+          ui.out.maxRadExtra.textContent = `${ui.maxRadExtra.value}`;
+          ui.out.angVelMin.textContent = `${Number(ui.angVelMin.value).toFixed(1)}`;
+          ui.out.angVelMax.textContent = `${Number(ui.angVelMax.value).toFixed(1)}`;
+          ui.out.curlStrengthMin.textContent = `${Number(ui.curlStrengthMin.value).toFixed(2)}`;
+          ui.out.curlStrengthMax.textContent = `${Number(ui.curlStrengthMax.value).toFixed(2)}`;
+          ui.out.omegaMin.textContent = `${Number(ui.omegaMin.value).toFixed(1)}`;
+          ui.out.omegaMax.textContent = `${Number(ui.omegaMax.value).toFixed(1)}`;
+          ui.out.swirlBurstMs.textContent = `${ui.swirlBurstMs.value}`;
+          ui.out.hideFraction.textContent = `${Number(ui.hideFraction.value).toFixed(2)}`;
+          ui.out.headFade.textContent = `${Number(ui.headFade.value).toFixed(2)}`;
+          ui.out.trailLength.textContent = `${ui.trailLength.value}`;
+          ui.out.tailFade.textContent = `${Number(ui.tailFade.value).toFixed(2)}`;
+          ui.out.driftDrag.textContent = `${Number(ui.driftDrag.value).toFixed(2)}`;
+          ui.out.perpDrift.textContent = `${ui.perpDrift.value}`;
+          ui.out.composite.textContent = ui.composite.value;
+          ui.out.dpr.textContent = ui.dpr.value;
+        }
+
+        function getSwirlConfig() {
+          const cone = clamp(parseFloat(ui.cone.value) || 0, 0, 4);
+          const backMax = Math.max(0, parseFloat(ui.backMax.value) || 0);
+          const offMagMax = Math.max(0, parseFloat(ui.offMagMax.value) || 0);
+          const turnModel = ui.turnModel.value;
+          const turnSpeedScale = Math.max(0.05, parseFloat(ui.turnSpeedScale.value) || 1);
+          const turnRampScale = Math.max(0.05, parseFloat(ui.turnRampScale.value) || 1);
+          const turnMinRad = Math.max(1, parseFloat(ui.turnMinRad.value) || 12);
+          const turnOmegaMax = Math.max(1, parseFloat(ui.turnOmegaMax.value) || 12);
+          const hideFraction = clamp(parseFloat(ui.hideFraction.value) || 0, 0, 0.95);
+          const headFade = clamp(parseFloat(ui.headFade.value) || 0, 0, 0.95);
+          const trailLength = Math.max(20, parseFloat(ui.trailLength.value) || 160);
+          const tailFade = clamp(parseFloat(ui.tailFade.value) || 0, 0, 0.95);
+          let targetRadMin = Math.max(0, parseFloat(ui.targetRadMin.value) || 0);
+          let targetRadMax = Math.max(0, parseFloat(ui.targetRadMax.value) || 0);
+          if (targetRadMax < targetRadMin) [targetRadMin, targetRadMax] = [targetRadMax, targetRadMin];
+          const maxRadExtra = Math.max(0, parseFloat(ui.maxRadExtra.value) || 0);
+          let angVelMin = Math.max(0, parseFloat(ui.angVelMin.value) || 0);
+          let angVelMax = Math.max(0, parseFloat(ui.angVelMax.value) || 0);
+          if (angVelMax < angVelMin) [angVelMin, angVelMax] = [angVelMax, angVelMin];
+          let curlStrengthMin = Math.max(0, parseFloat(ui.curlStrengthMin.value) || 0);
+          let curlStrengthMax = Math.max(0, parseFloat(ui.curlStrengthMax.value) || 0);
+          if (curlStrengthMax < curlStrengthMin)
+            [curlStrengthMin, curlStrengthMax] = [curlStrengthMax, curlStrengthMin];
+          let omegaMin = Math.max(0, parseFloat(ui.omegaMin.value) || 0);
+          let omegaMax = Math.max(0, parseFloat(ui.omegaMax.value) || 0);
+          if (omegaMax < omegaMin) [omegaMin, omegaMax] = [omegaMax, omegaMin];
+          const swirlBurstMs = Math.max(0, parseFloat(ui.swirlBurstMs.value) || 0);
+          const driftDrag = clamp(parseFloat(ui.driftDrag.value) || 0, 0, 3);
+          const perpDrift = Math.max(0, parseFloat(ui.perpDrift.value) || 0);
+
+          return {
+            cone,
+            backMax,
+            offMagMax,
+            turnModel,
+            turnSpeedScale,
+            turnRampScale,
+            turnMinRad,
+            turnOmegaMax,
+            hideFraction,
+            headFade,
+            trailLength,
+            tailFade,
+            targetRadMin,
+            targetRadMax,
+            maxRadExtra,
+            angVelMin,
+            angVelMax,
+            curlStrengthMin,
+            curlStrengthMax,
+            omegaMin,
+            omegaMax,
+            swirlBurstMs,
+            driftDrag,
+            perpDrift,
+          };
+        }
+
+        function buildSettingsExport() {
+          const settings = {
+            burst: {
+              intervalMs: parseFloat(ui.burstInterval.value),
+              lifetimeMs: parseFloat(ui.burstLifetime.value),
+              speed: parseFloat(ui.burstSpeed.value),
+              directionDeg: parseFloat(ui.burstDirection.value),
+              straightDist: parseFloat(ui.straightDist.value),
+              swirlCount: parseInt(ui.swirlCount.value, 10),
+            },
+            render: {
+              mode: ui.mode.value,
+              renderStyle: ui.renderStyle.value,
+              alpha: parseFloat(ui.alpha.value),
+              lineWidth: parseFloat(ui.lineWidth.value),
+              buckets: parseInt(ui.buckets.value, 10),
+              composite: ui.composite.value,
+              dpr: ui.dpr.value,
+            },
+            geometry: {
+              curveTightness: parseFloat(ui.curveTightness.value),
+              ...getSwirlConfig(),
+            },
+          };
+          return JSON.stringify(settings, null, 2);
+        }
+
+        function computeStats(arr) {
+          if (!arr.length) return { avg: 0, p95: 0, max: 0 };
+          const sorted = [...arr].sort((a, b) => a - b);
+          const sum = sorted.reduce((a, b) => a + b, 0);
+          const avg = sum / sorted.length;
+          const p95 = sorted[Math.max(0, Math.floor(sorted.length * 0.95) - 1)];
+          const max = sorted[sorted.length - 1];
+          return { avg, p95, max };
+        }
+
+        function exportSettingsToBox() {
+          ui.settingsOut.value = buildSettingsExport();
+          ui.settingsStatus.textContent = "Exported current settings.";
+          ui.settingsStatus.classList.remove("error");
+        }
+
+        async function copySettingsToClipboard() {
+          const text = buildSettingsExport();
+          try {
+            await navigator.clipboard.writeText(text);
+            ui.settingsStatus.textContent = "Copied to clipboard.";
+            ui.settingsStatus.classList.remove("error");
+          } catch (_) {
+            ui.settingsOut.value = text;
+            ui.settingsOut.focus();
+            ui.settingsOut.select();
+            ui.settingsStatus.textContent = "Clipboard blocked; select + copy from box.";
+            ui.settingsStatus.classList.add("error");
+          }
+        }
+
+        function applySettingsFromBox() {
+          const raw = ui.settingsOut.value.trim();
+          if (!raw) {
+            ui.settingsStatus.textContent = "Paste JSON first.";
+            ui.settingsStatus.classList.add("error");
+            return;
+          }
+          let parsed;
+          try {
+            parsed = JSON.parse(raw);
+          } catch (err) {
+            ui.settingsStatus.textContent = "Invalid JSON.";
+            ui.settingsStatus.classList.add("error");
+            return;
+          }
+
+          const burst = parsed.burst ?? {};
+          const render = parsed.render ?? {};
+          const geometry = parsed.geometry ?? {};
+
+          const setIfNumber = (el, value) => {
+            if (el && Number.isFinite(value)) el.value = String(value);
+          };
+          const setIfString = (el, value) => {
+            if (el && typeof value === "string") el.value = value;
+          };
+
+          setIfNumber(ui.burstInterval, burst.intervalMs);
+          setIfNumber(ui.burstLifetime, burst.lifetimeMs);
+          setIfNumber(ui.burstSpeed, burst.speed);
+          setIfNumber(ui.burstDirection, burst.directionDeg);
+          setIfNumber(ui.straightDist, burst.straightDist);
+          setIfNumber(ui.swirlCount, burst.swirlCount);
+
+          setIfString(ui.mode, render.mode);
+          setIfString(ui.renderStyle, render.renderStyle);
+          setIfNumber(ui.alpha, render.alpha);
+          setIfNumber(ui.lineWidth, render.lineWidth);
+          setIfNumber(ui.buckets, render.buckets);
+          setIfString(ui.composite, render.composite);
+          setIfString(ui.dpr, render.dpr);
+
+          setIfNumber(ui.curveTightness, geometry.curveTightness);
+          setIfString(ui.turnModel, geometry.turnModel);
+          setIfNumber(ui.turnSpeedScale, geometry.turnSpeedScale);
+          setIfNumber(ui.turnRampScale, geometry.turnRampScale);
+          setIfNumber(ui.turnMinRad, geometry.turnMinRad);
+          setIfNumber(ui.turnOmegaMax, geometry.turnOmegaMax);
+          setIfNumber(ui.cone, geometry.cone);
+          setIfNumber(ui.backMax, geometry.backMax);
+          setIfNumber(ui.offMagMax, geometry.offMagMax);
+          setIfNumber(ui.targetRadMin, geometry.targetRadMin);
+          setIfNumber(ui.targetRadMax, geometry.targetRadMax);
+          setIfNumber(ui.maxRadExtra, geometry.maxRadExtra);
+          setIfNumber(ui.angVelMin, geometry.angVelMin);
+          setIfNumber(ui.angVelMax, geometry.angVelMax);
+          setIfNumber(ui.curlStrengthMin, geometry.curlStrengthMin);
+          setIfNumber(ui.curlStrengthMax, geometry.curlStrengthMax);
+          setIfNumber(ui.omegaMin, geometry.omegaMin);
+          setIfNumber(ui.omegaMax, geometry.omegaMax);
+          setIfNumber(ui.swirlBurstMs, geometry.swirlBurstMs);
+          setIfNumber(ui.hideFraction, geometry.hideFraction);
+          setIfNumber(ui.headFade, geometry.headFade);
+          setIfNumber(ui.trailLength, geometry.trailLength);
+          setIfNumber(ui.tailFade, geometry.tailFade);
+          setIfNumber(ui.driftDrag, geometry.driftDrag);
+          setIfNumber(ui.perpDrift, geometry.perpDrift);
+
+          updateOutputs();
+          resize();
+          state.swirls.length = 0;
+          lastBurstAt = 0;
+          ui.settingsStatus.textContent = "Applied settings.";
+          ui.settingsStatus.classList.remove("error");
+        }
+
+        let scale = 1;
+        function resize() {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          scale = ui.dpr.value === "on" ? Math.max(1, Math.floor(window.devicePixelRatio || 1)) : 1;
+          canvas.width = Math.floor(w * scale);
+          canvas.height = Math.floor(h * scale);
+          canvas.style.width = `${w}px`;
+          canvas.style.height = `${h}px`;
+          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+          ctx.lineWidth = Number(ui.lineWidth.value);
+        }
+
+        function spawnSwirlsAt(
+          centerX,
+          centerY,
+          dirAngle,
+          initSpeed,
+          side,
+          countOverride,
+          opts = {},
+        ) {
+          const created = performance.now(),
+            lifetime = opts.lifetime ?? 2500;
+          const cfg = opts.config ?? getSwirlConfig();
+          const count = countOverride ?? 10;
+          const baseAngle = dirAngle,
+            cone = cfg.cone;
+          for (let i = 0; i < count; i++) {
+            const curlSide = side;
+            const jitter = (Math.random() - 0.5) * cone;
+            const angle = baseAngle + curlSide * 0.18 + jitter * 0.3;
+            const back = Math.random() * cfg.backMax;
+            const pathX = centerX - Math.cos(baseAngle) * back,
+              pathY = centerY - Math.sin(baseAngle) * back;
+            const perp = baseAngle + Math.PI / 2,
+              offMag = Math.random() * cfg.offMagMax;
+            const offX = Math.cos(perp) * offMag * curlSide,
+              offY = Math.sin(perp) * offMag * curlSide;
+            const ox = pathX + offX,
+              oy = pathY + offY;
+            const targetRad =
+              cfg.targetRadMin +
+              Math.random() * Math.max(0, cfg.targetRadMax - cfg.targetRadMin);
+            state.swirls.push({
+              created,
+              lifetime,
+              cx: centerX,
+              cy: centerY,
+              // Keep trail points in local coordinates and apply a shared offset in draw/update.
+              // This avoids per-frame loops that translate every point (a big perf win).
+              trailOx: 0,
+              trailOy: 0,
+              // Seed used for stable, cheap pseudo-random jitter during rendering.
+              seed: (Math.random() * 0x7fffffff) | 0,
+              cVx: Math.cos(baseAngle) * ((initSpeed ?? 200) * 0.25),
+              cVy: Math.sin(baseAngle) * ((initSpeed ?? 200) * 0.25),
+              baseAngle,
+              angle,
+              angVel:
+                (cfg.angVelMin +
+                  Math.random() * Math.max(0, cfg.angVelMax - cfg.angVelMin)) *
+                curlSide,
+              rad: targetRad,
+              radVel: 0,
+              width: 1.5 + Math.random() * 2.5,
+              hue: 190 + Math.random() * 20,
+              curlStrength:
+                cfg.curlStrengthMin +
+                Math.random() *
+                  Math.max(0, cfg.curlStrengthMax - cfg.curlStrengthMin),
+              oscSpeed: 2 + Math.random() * 3,
+              oscPhase: Math.random() * Math.PI * 2,
+              maxRad: targetRad + cfg.maxRadExtra,
+              targetRad,
+              forwardTarget: opts.straightDist ?? 0,
+              forwardSpeed: initSpeed ?? 200,
+              forwardDist: 0,
+              straightX: centerX,
+              straightY: centerY,
+              curveTightness: opts.curveTightness ?? 1,
+              omegaMin: cfg.omegaMin,
+              omegaMax: cfg.omegaMax,
+              turned: false,
+              turnedAt: 0,
+              baseOmega: 0,
+              swirlBurstMs: cfg.swirlBurstMs,
+              dir: curlSide,
+              trail: [{ x: ox, y: oy, t: 0 }],
+              prevTime: created,
+            });
+          }
+        }
+
+        function draw(now) {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          const drawStart = performance.now();
+
+          ctx.globalCompositeOperation = "source-over";
+          ctx.globalAlpha = 1;
+          // Clear with the correct scale transform so we wipe the whole buffer.
+          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+          ctx.clearRect(0, 0, w, h);
+
+          // Work in a coordinate system centered on the canvas.
+          ctx.translate(w * 0.5, h * 0.5);
+
+          ctx.globalCompositeOperation = ui.composite.value;
+          ctx.strokeStyle = REEF_STROKE;
+          ctx.lineWidth = Number(ui.lineWidth.value);
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = "transparent";
+
+          const mode = ui.mode.value;
+          const renderStyle = ui.renderStyle.value;
+          const baseAlpha = clamp(parseFloat(ui.alpha.value) || 0.12, 0.0, 1.0);
+          const geom = getSwirlConfig();
+          const dotRadius = Math.max(0.4, Number(ui.lineWidth.value) * 0.6);
+
+          // Burst spawning (represents cursor direction/speed at creation).
+          const interval = Math.max(40, parseInt(ui.burstInterval.value, 10) || 420);
+          const lifetime = Math.max(100, parseInt(ui.burstLifetime.value, 10) || 1800);
+          if (!lastBurstAt) lastBurstAt = now - interval;
+          if (now - lastBurstAt >= interval) {
+            lastBurstAt = now;
+            const speed = Math.max(0, parseFloat(ui.burstSpeed.value) || 0);
+            const angle = ((parseFloat(ui.burstDirection.value) || 0) * Math.PI) / 180;
+            const count = clamp(parseInt(ui.swirlCount.value, 10) || 10, 1, 100);
+            const straightDist = Math.max(0, parseFloat(ui.straightDist.value) || 0);
+            const curveTightness = Math.max(0.1, parseFloat(ui.curveTightness.value) || 1);
+            burstSide *= -1;
+            spawnSwirlsAt(0, 0, angle, speed, burstSide, count, {
+              straightDist,
+              curveTightness,
+              lifetime,
+              config: geom,
+            });
+          }
+
+          // Update + draw swirls with the same math as anim.js (no gradients, solid strokes).
+          const dt = lastFrame ? Math.max(0.001, (now - lastFrame) / 1000) : 0.016;
+          const maxStartGlobal = Math.max(0, geom.trailLength - 2);
+          let swWrite = 0;
+          const bucketCount = clamp(parseInt(ui.buckets.value, 10) || 8, 2, 32);
+          const bucketStep = 1 / bucketCount;
+          let straightCount = 0;
+          let turningCount = 0;
+          let curvedCount = 0;
+          let segmentCount = 0;
+
+          for (let si = 0; si < state.swirls.length; si++) {
+            const s = state.swirls[si];
+            const lifeT = (now - s.created) / s.lifetime;
+            if (lifeT >= 1) continue;
+
+            const dtL = Math.max(0.001, (now - (s.prevTime || now)) / 1000);
+            s.prevTime = now;
+            const ramp = Math.min(1, (now - s.created) / 300);
+            const inStraight =
+              !s.turned &&
+              (s.forwardTarget || 0) > 0 &&
+              (s.forwardDist || 0) < (s.forwardTarget || 0);
+            let angFric = inStraight ? 2.0 : 1.3,
+              radFric = inStraight ? 0.6 : 2.2;
+            s.angVel *= Math.max(0, 1 - angFric * dtL);
+            s.radVel = Math.max(0, s.radVel - radFric * 120 * dtL);
+            if (!inStraight && !s.turned) {
+              const curlSign = s.dir || 1;
+              s.angVel += curlSign * (s.curlStrength ?? 0.25) * 1.0;
+              s.radVel *= 0.6;
+              s.turnedAt = now;
+              const omMin = s.omegaMin ?? 2.2;
+              const omMax = s.omegaMax ?? 3.4;
+              const om = omMin + Math.random() * Math.max(0, omMax - omMin);
+              s.baseOmega = om * (s.dir || 1);
+              // Align the swirl center so the first curved point is continuous with the straight path.
+              // Also align angle so the circle tangent matches the straight direction.
+              const alignAngle = (s.baseAngle || 0) - curlSign * (Math.PI / 2);
+              s.angle = alignAngle;
+              const currentX = s.straightX;
+              const currentY = s.straightY;
+              const r0 = s.rad || 0;
+              s.cx = currentX - Math.cos(s.angle) * r0;
+              s.cy = currentY - Math.sin(s.angle) * r0;
+              s.turned = true;
+            }
+            let effAng = inStraight ? 0 : s.angVel;
+            let swirlAge = 0;
+            if (!inStraight && s.turned) {
+              swirlAge = now - (s.turnedAt || now);
+              if (swirlAge < (s.swirlBurstMs || 250)) {
+                angFric = 0.3;
+                const sign = Math.sign(effAng) || Math.sign(s.baseOmega) || 1;
+                const minOm = Math.abs(s.baseOmega || 2.0);
+                const mag = Math.max(Math.abs(effAng), minOm);
+                effAng = sign * mag;
+                const cap = s.maxRad || 38,
+                  target = s.targetRad || 30;
+                s.rad += (target - s.rad) * Math.min(1, 2 * dtL);
+                s.radVel *= Math.max(0, 1 - 3 * dtL);
+              }
+              // Keep a small baseline rotation so the swirl continues orbiting.
+              const minOmega = Math.abs(s.baseOmega || 0) * 0.35;
+              const sign = Math.sign(s.angVel || s.baseOmega || 1);
+              if (Math.abs(s.angVel) < minOmega) s.angVel = sign * minOmega;
+            }
+            if (!inStraight && s.turned && geom.turnModel === "arc") {
+              const speed = Math.max(20, s.forwardSpeed || 200);
+              const minRad = Math.max(1, geom.turnMinRad);
+              const maxOmega = Math.max(1, geom.turnOmegaMax);
+              const targetOmega =
+                Math.min(maxOmega, (speed * geom.turnSpeedScale) / Math.max(s.rad, minRad)) *
+                (s.dir || 1);
+              const blend = Math.min(1, 6 * dtL);
+              s.angVel = s.angVel + (targetOmega - s.angVel) * blend;
+              effAng = s.angVel;
+            }
+            if (inStraight) straightCount++;
+            else if (s.turned) {
+              if (swirlAge < (s.swirlBurstMs || 250)) turningCount++;
+              else curvedCount++;
+            }
+
+            const cap = s.maxRad || 28,
+              approach = Math.min(1, s.rad / cap),
+              radialFactor = Math.max(0.2, 1 - approach * 0.8);
+            const vx0 = s.cVx || 0,
+              vy0 = s.cVy || 0;
+            const v0 = Math.hypot(vx0, vy0);
+            if (v0 > 0) {
+              const v1 = Math.max(0, v0 - geom.driftDrag * v0 * v0 * dtL);
+              const scaleV = v1 / v0;
+              s.cVx = vx0 * scaleV;
+              s.cVy = vy0 * scaleV;
+            }
+
+            const prevCx = s.cx || 0,
+              prevCy = s.cy || 0;
+            if (inStraight) {
+              const step = (s.forwardSpeed || 200) * dtL;
+              s.forwardDist = (s.forwardDist || 0) + step;
+              s.straightX += Math.cos(s.baseAngle || 0) * step;
+              s.straightY += Math.sin(s.baseAngle || 0) * step;
+            } else {
+              s.cx += (s.cVx || 0) * dtL;
+              s.cy += (s.cVy || 0) * dtL;
+              const dtx = (s.cx || 0) - prevCx,
+                dty = (s.cy || 0) - prevCy;
+              const curlSide = s.dir || 1;
+              const perpA = (s.baseAngle || 0) - (curlSide * Math.PI) / 2;
+              const ux = Math.cos(perpA),
+                uy = Math.sin(perpA);
+              const segDrift = geom.perpDrift * dtL;
+              s.trailOx = (s.trailOx || 0) + dtx + ux * segDrift;
+              s.trailOy = (s.trailOy || 0) + dty + uy * segDrift;
+            }
+
+            const tightness = s.curveTightness || 1;
+            const turnRamp = inStraight ? ramp : geom.turnRampScale;
+            s.rad += s.radVel * dtL * turnRamp * radialFactor * (1 / tightness);
+            if (s.rad > cap) s.rad = cap;
+            s.angle += effAng * dtL * turnRamp * tightness;
+
+            const px = inStraight
+              ? s.straightX
+              : (s.cx || 0) + Math.cos(s.angle) * s.rad;
+            const py = inStraight
+              ? s.straightY
+              : (s.cy || 0) + Math.sin(s.angle) * s.rad;
+            const tox = s.trailOx || 0,
+              toy = s.trailOy || 0;
+            s.trail.push({ x: px - tox, y: py - toy, t: lifeT });
+            if (s.trail.length > geom.trailLength) s.trail.shift();
+
+            const maxStart = Math.min(maxStartGlobal, s.trail.length - 2);
+            const startIdxFloat = s.trail.length * geom.hideFraction;
+            const startIdx = Math.min(
+              maxStart,
+              Math.max(0, Math.floor(startIdxFloat)),
+            );
+            const visCount = s.trail.length - startIdx;
+            if (visCount >= 2) {
+              const stepN = Math.max(
+                1,
+                Math.ceil(visCount / SWIRL_DRAW_SEGMENTS),
+              );
+              const seed = (s.seed | 0) || 1;
+              const headFadeSpan = Math.max(
+                1,
+                Math.floor(visCount * Math.max(0, geom.headFade)),
+              );
+              const tailFadeSpan = Math.max(
+                1,
+                Math.floor(visCount * Math.max(0, geom.tailFade)),
+              );
+
+              if (mode === "singleStroke") {
+                ctx.globalAlpha = baseAlpha;
+                ctx.beginPath();
+              }
+
+              for (let i = startIdx + 1; i < s.trail.length; i += stepN) {
+                const a = s.trail[i - 1],
+                  b = s.trail[i];
+                const idxFrac = (i - startIdx) / visCount;
+                const env = 1 - Math.abs(2 * idxFrac - 1);
+                const timeBias = Math.max(0, 1 - lifeT * (0.3 + 0.7 * idxFrac));
+                const globalFade = Math.max(0, 0.5 * (1 + Math.cos(Math.PI * lifeT)));
+                const headFade =
+                  geom.headFade > 0
+                    ? Math.min(
+                        1,
+                        Math.max(0, (i - startIdxFloat) / headFadeSpan),
+                      )
+                    : 1;
+                const tailFade =
+                  geom.tailFade > 0
+                    ? Math.min(
+                        1,
+                        Math.max(0, (s.trail.length - i) / tailFadeSpan),
+                      )
+                    : 1;
+                const alpha = 0.15 * env * timeBias * globalFade * headFade * tailFade;
+                if (alpha <= 0.002) continue;
+
+                const dx = b.x - a.x,
+                  dy = b.y - a.y;
+                const segLen = Math.hypot(dx, dy) || 1;
+                const inv = 1 / segLen;
+                const nx = dy * inv,
+                  ny = -dx * inv;
+                const r = (Math.imul(i + 1, 1664525) + seed) | 0;
+                const j = (((r >>> 0) / 4294967296) * 2 - 1) * 1.2;
+                const ax = a.x + nx * j + tox,
+                  ay = a.y + ny * j + toy;
+                const bx = b.x + nx * j + tox,
+                  by = b.y + ny * j + toy;
+                segmentCount += 1;
+
+                if (mode === "singleStroke") {
+                  if (renderStyle === "dots") {
+                    ctx.moveTo(ax + dotRadius, ay);
+                    ctx.arc(ax, ay, dotRadius, 0, Math.PI * 2);
+                  } else {
+                    ctx.moveTo(ax, ay);
+                    ctx.lineTo(bx, by);
+                  }
+                } else if (mode === "bucketed") {
+                  const bucket = Math.min(
+                    bucketCount - 1,
+                    Math.max(0, Math.floor(alpha / bucketStep)),
+                  );
+                  const quant = Math.max(
+                    0.001,
+                    Math.min(1, bucket * bucketStep + bucketStep * 0.5),
+                  );
+                  ctx.globalAlpha = quant;
+                  ctx.beginPath();
+                  if (renderStyle === "dots") {
+                    ctx.moveTo(ax + dotRadius, ay);
+                    ctx.arc(ax, ay, dotRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = REEF_STROKE;
+                    ctx.fill();
+                  } else {
+                    ctx.moveTo(ax, ay);
+                    ctx.lineTo(bx, by);
+                    ctx.stroke();
+                  }
+                } else {
+                  ctx.globalAlpha = alpha;
+                  ctx.beginPath();
+                  if (renderStyle === "dots") {
+                    ctx.moveTo(ax + dotRadius, ay);
+                    ctx.arc(ax, ay, dotRadius, 0, Math.PI * 2);
+                    ctx.fillStyle = REEF_STROKE;
+                    ctx.fill();
+                  } else {
+                    ctx.moveTo(ax, ay);
+                    ctx.lineTo(bx, by);
+                    ctx.stroke();
+                  }
+                }
+              }
+
+              if (mode === "singleStroke") {
+                if (renderStyle === "dots") {
+                  ctx.fillStyle = REEF_STROKE;
+                  ctx.fill();
+                } else {
+                  ctx.stroke();
+                }
+              }
+              ctx.globalAlpha = 1;
+            }
+
+            state.swirls[swWrite++] = s;
+          }
+          state.swirls.length = swWrite;
+
+          // Reset to avoid affecting any overlay UI if drawn later.
+          ctx.setTransform(scale, 0, 0, scale, 0, 0);
+
+          const drawMs = performance.now() - drawStart;
+          perf.lastDrawMs = drawMs;
+          accumDrawMs += drawMs;
+          frameCount++;
+
+          if (!lastStatsAt) lastStatsAt = now;
+          if (now - lastStatsAt >= 500) {
+            const fps = Math.round((frameCount * 1000) / (now - lastStatsAt));
+            const avg = accumDrawMs / Math.max(1, frameCount);
+            const frameStats = computeStats(perf.frameTimes);
+            const drawStats = computeStats(perf.drawTimes);
+            perf.avgFrameMs = frameStats.avg;
+            perf.p95FrameMs = frameStats.p95;
+            perf.maxFrameMs = frameStats.max;
+            perf.avgDrawMs = drawStats.avg;
+            perf.p95DrawMs = drawStats.p95;
+            ui.stats.innerHTML =
+              `<div><strong>fps</strong>: ${fps} &nbsp; <strong>draw ms</strong>: ${avg.toFixed(2)} (avg over ${frameCount} frames)</div>` +
+              `<div><strong>frame ms</strong>: ${perf.lastFrameMs.toFixed(2)} (avg ${perf.avgFrameMs.toFixed(2)} p95 ${perf.p95FrameMs.toFixed(2)} max ${perf.maxFrameMs.toFixed(2)})</div>` +
+              `<div><strong>draw ms</strong>: ${perf.lastDrawMs.toFixed(2)} (avg ${perf.avgDrawMs.toFixed(2)} p95 ${perf.p95DrawMs.toFixed(2)})</div>` +
+              `<div><strong>swirls</strong>: ${state.swirls.length} &nbsp; <strong>straight</strong>: ${straightCount} &nbsp; <strong>turning</strong>: ${turningCount} &nbsp; <strong>curved</strong>: ${curvedCount}</div>` +
+              `<div><strong>segments</strong>: ${segmentCount} &nbsp; <strong>mode</strong>: ${mode} &nbsp; <strong>style</strong>: ${renderStyle} &nbsp; <strong>composite</strong>: ${ui.composite.value}</div>` +
+              `<div><strong>interval</strong>: ${ui.burstInterval.value}ms &nbsp; <strong>speed</strong>: ${ui.burstSpeed.value}px/s &nbsp; <strong>straight</strong>: ${ui.straightDist.value}px</div>` +
+              `<div><strong>dpr</strong>: ${ui.dpr.value} &nbsp; <strong>line</strong>: ${Number(ui.lineWidth.value).toFixed(1)} &nbsp; <strong>alpha</strong>: ${Number(ui.alpha.value).toFixed(2)}</div>`;
+            ui.corner.textContent = `Canvas ${canvas.width}x${canvas.height} (css ${w}x${h})`;
+            frameCount = 0;
+            accumDrawMs = 0;
+            lastStatsAt = now;
+            perf.frameTimes.length = 0;
+            perf.drawTimes.length = 0;
+          }
+
+          return drawMs;
+        }
+
+        function loop(now) {
+          raf = requestAnimationFrame(loop);
+          if (!running) return;
+          if (lastFrameStamp) {
+            const frameMs = now - lastFrameStamp;
+            perf.lastFrameMs = frameMs;
+            perf.frameTimes.push(frameMs);
+            if (perf.frameTimes.length > 180) perf.frameTimes.shift();
+          }
+          lastFrameStamp = now;
+          // Throttle the stats update to avoid spending too much time in UI updates.
+          const drawMs = draw(now);
+          if (Number.isFinite(drawMs)) {
+            perf.drawTimes.push(drawMs);
+            if (perf.drawTimes.length > 180) perf.drawTimes.shift();
+          }
+          lastFrame = now;
+        }
+
+        function init() {
+          updateOutputs();
+          resize();
+          exportSettingsToBox();
+          cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(loop);
+        }
+
+        function regen() {
+          updateOutputs();
+          resize();
+          state.swirls.length = 0;
+          lastBurstAt = 0;
+        }
+
+        // Wire up events
+        const inputs = [
+          ui.mode,
+          ui.renderStyle,
+          ui.swirlCount,
+          ui.alpha,
+          ui.lineWidth,
+          ui.buckets,
+          ui.burstInterval,
+          ui.burstLifetime,
+          ui.burstSpeed,
+          ui.burstDirection,
+          ui.straightDist,
+          ui.curveTightness,
+          ui.turnModel,
+          ui.turnSpeedScale,
+          ui.turnRampScale,
+          ui.turnMinRad,
+          ui.turnOmegaMax,
+          ui.hideFraction,
+          ui.headFade,
+          ui.trailLength,
+          ui.tailFade,
+          ui.cone,
+          ui.backMax,
+          ui.offMagMax,
+          ui.targetRadMin,
+          ui.targetRadMax,
+          ui.maxRadExtra,
+          ui.angVelMin,
+          ui.angVelMax,
+          ui.curlStrengthMin,
+          ui.curlStrengthMax,
+          ui.omegaMin,
+          ui.omegaMax,
+          ui.swirlBurstMs,
+          ui.driftDrag,
+          ui.perpDrift,
+          ui.composite,
+          ui.dpr,
+        ];
+        for (const el of inputs) {
+          el.addEventListener("input", () => {
+            updateOutputs();
+            if (el === ui.lineWidth || el === ui.composite) {
+              // Pure render settings; don't force regen.
+              return;
+            }
+            if (el === ui.mode || el === ui.dpr) {
+              // Mode + DPR affects how we render; DPR needs resize.
+              resize();
+            }
+            if (
+              el === ui.burstInterval ||
+              el === ui.burstLifetime ||
+              el === ui.burstSpeed ||
+              el === ui.burstDirection ||
+              el === ui.straightDist ||
+              el === ui.swirlCount ||
+              el === ui.buckets ||
+              el === ui.curveTightness ||
+              el === ui.turnModel ||
+              el === ui.turnSpeedScale ||
+              el === ui.turnRampScale ||
+              el === ui.turnMinRad ||
+              el === ui.turnOmegaMax ||
+              el === ui.hideFraction ||
+              el === ui.headFade ||
+              el === ui.trailLength ||
+              el === ui.tailFade ||
+              el === ui.cone ||
+              el === ui.backMax ||
+              el === ui.offMagMax ||
+              el === ui.targetRadMin ||
+              el === ui.targetRadMax ||
+              el === ui.maxRadExtra ||
+              el === ui.angVelMin ||
+              el === ui.angVelMax ||
+              el === ui.curlStrengthMin ||
+              el === ui.curlStrengthMax ||
+              el === ui.omegaMin ||
+              el === ui.omegaMax ||
+              el === ui.swirlBurstMs ||
+              el === ui.driftDrag ||
+              el === ui.perpDrift
+            ) {
+              // Burst settings only affect spawning and motion.
+              return;
+            }
+          });
+        }
+        ui.regen.addEventListener("click", regen);
+        ui.exportSettings.addEventListener("click", exportSettingsToBox);
+        ui.copySettings.addEventListener("click", copySettingsToClipboard);
+        ui.applySettings.addEventListener("click", applySettingsFromBox);
+        ui.pause.addEventListener("click", () => {
+          running = !running;
+          ui.pause.textContent = running ? "Pause" : "Resume";
+          if (running) {
+            // Reset stats so we don't include paused time.
+            frameCount = 0;
+            accumDrawMs = 0;
+            lastStatsAt = 0;
+          }
+        });
+        ui.step.addEventListener("click", () => {
+          // Single draw while paused.
+          if (running) return;
+          const now = performance.now();
+          draw(now);
+        });
+
+        window.addEventListener("resize", () => {
+          resize();
+        });
+
+        init();
+      })();
+    </script>
+  </body>
+</html>
