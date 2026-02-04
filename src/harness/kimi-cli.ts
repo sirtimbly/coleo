@@ -26,6 +26,7 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { getColeoDir } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 import type {
   AgentHarness,
   HarnessSession,
@@ -346,7 +347,7 @@ export class KimiCliHarness implements AgentHarness {
     }
 
     const bunBinary = process.execPath;
-    const cliEntrypoint = join(process.cwd(), "src/cli/index.ts");
+    const cliEntrypoint = getCliEntrypoint();
 
     const kimiConfig: Record<string, unknown> = {
       // MCP configuration for brain communication

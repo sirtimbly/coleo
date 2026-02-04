@@ -15,8 +15,9 @@ import { spawn } from "bun";
 import { mkdir, readFile, writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { getColeoDir } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 
-export type ServiceType = "server" | "brain";
+export type ServiceType = "server" | "brain" | "web";
 
 export interface ServiceInfo {
   type: ServiceType;
@@ -164,18 +165,27 @@ export function requireSelfModify(action: string): void {
 function getServiceCommand(service: ServiceType): { command: string[]; cwd: string } {
   // Use the coleo directory as cwd
   const cwd = process.env.COLEO_PROJECT_DIR || process.cwd();
+  const cliEntrypoint = getCliEntrypoint();
+  const bunBinary = process.execPath;
   
   switch (service) {
     case "server":
       return {
-        command: ["bun", "run", "src/api/server.ts"],
+        command: [bunBinary, cliEntrypoint, "serve"],
         cwd,
       };
     case "brain":
       return {
-        command: ["bun", "run", "src/cli/index.ts", "brain", "run", "--verbose"],
+        command: [bunBinary, cliEntrypoint, "brain", "run", "--verbose"],
         cwd,
       };
+    case "web":
+      return {
+        command: [bunBinary, cliEntrypoint, "web", "serve"],
+        cwd,
+      };
+    default:
+      throw new Error(`Unknown service type: ${service}`);
   }
 }
 
@@ -200,6 +210,7 @@ export async function startService(
   await ensureRunDir();
   
   const { command, cwd } = getServiceCommand(service);
+  const cliEntrypoint = getCliEntrypoint();
   const logFile = getLogFilePath(service);
   
   // Write startup marker to log
@@ -208,7 +219,10 @@ export async function startService(
   
   // Use nohup + shell redirect to fully detach the process
   // This ensures the parent can exit without waiting
-  const shellCmd = `nohup ${command.join(" ")} >> "${logFile}" 2>&1 &`;
+  const shellCommand = command
+    .map((arg) => `"${arg.replace(/"/g, "\\\"")}"`)
+    .join(" ");
+  const shellCmd = `nohup ${shellCommand} >> "${logFile}" 2>&1 &`;
   
   const proc = spawn({
     cmd: ["sh", "-c", shellCmd],
@@ -219,6 +233,7 @@ export async function startService(
       ...process.env,
       // Ensure the spawned process doesn't inherit COLEO_SELF_MODIFY
       COLEO_SELF_MODIFY: undefined,
+      COLEO_CLI_ENTRYPOINT: cliEntrypoint,
     },
   });
   
@@ -379,7 +394,7 @@ export async function restartService(
  * Get status of all services
  */
 export async function getAllServiceStatus(): Promise<ServiceStatus[]> {
-  const services: ServiceType[] = ["server", "brain"];
+  const services: ServiceType[] = ["server", "brain", "web"];
   return Promise.all(services.map(getServiceStatus));
 }
 

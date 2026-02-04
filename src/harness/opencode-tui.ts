@@ -27,6 +27,7 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { getColeoDir } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
@@ -371,7 +372,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     }
 
     const bunBinary = process.execPath;
-    const cliEntrypoint = join(process.cwd(), "src/cli/index.ts");
+    const cliEntrypoint = getCliEntrypoint();
 
     console.log(`[harness-tui] Configuring MCP command: ${bunBinary} ${cliEntrypoint} mcp serve`);
 

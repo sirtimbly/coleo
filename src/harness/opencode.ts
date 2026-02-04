@@ -7,6 +7,7 @@
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getColeoDir } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 import type {
   AgentHarness,
   HarnessSession,
@@ -76,7 +77,8 @@ export class OpenCodeHarness implements AgentHarness {
     await mkdir(mcpDir, { recursive: true });
     
     // Use bun from the system PATH or fall back to ~/.bun/bin/bun
-    const bunPath = join(process.env.HOME || "", ".bun", "bin", "bun");
+    const bunPath = process.execPath;
+    const cliEntrypoint = getCliEntrypoint();
     
     // Build the OpenCode config
     // See: https://opencode.ai/docs/models/#set-a-default
@@ -86,7 +88,7 @@ export class OpenCodeHarness implements AgentHarness {
       mcp: {
         coleo: {
           type: "local",
-          command: [bunPath, "run", join(process.cwd(), "src/cli/index.ts"), "mcp", "serve"],
+          command: [bunPath, cliEntrypoint, "mcp", "serve"],
           environment: {
             COLEO_ARM_ID: armId,
             COLEO_DIR: coleoDir,

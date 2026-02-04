@@ -35,7 +35,7 @@
 	--vp-c-border: rgba(255, 255, 255, 0.12);
 	--vp-c-divider: rgba(255, 255, 255, 0.08);
 	--vp-c-text-1: rgba(255, 255, 255, 0.95);
-	--vp-c-text-invert: rgba(20, 184, 166, 0.95);
+	--vp-c-text-invert: rgba(70, 214, 197, 0.95);
 	--vp-c-text-2: rgba(255, 255, 255, 0.75);
 	--vp-c-text-3: rgba(255, 255, 255, 0.55);
 	--vp-c-link: #c1fffb;
@@ -48,6 +48,7 @@
 	--vp-shadow-2: 0 20px 32px rgba(0, 0, 0, 0.35);
 	/* Align VitePress layout with custom navbar height */
 	--vp-nav-height: 64px;
+	--vp-code-color: #00b5a6;
 }
 
 /* Light-mode token flip driven by depth slider */
@@ -69,6 +70,7 @@ body.light-mode {
 	--vp-c-brand-1: #2ad1bf;
 	--vp-c-brand-2: #14b8a6;
 	--vp-c-brand-3: #0d9488;
+	--vp-code-color: #002724;
 }
 
 /* Reset for the marketing homepage container */
@@ -174,9 +176,15 @@ body:not(.coleo-home) .VPFooter {
 
 /* Unified glass card styling with depth-aware light/dark flip */
 .ui-box {
-	background: rgba(25, 30, 45, 0.75);
+	background: var(--vp-c-surface);
 	border: 1px solid rgba(255, 255, 255, 0.15);
 	color: var(--vp-c-text-invert);
+}
+
+.ui-box.inverted {
+	background: var(--vp-c-bg-soft);
+	color: var(--vp-c-text-1);
+
 }
 
 .ui-box a {
@@ -317,6 +325,98 @@ body.light-mode .navbar-custom .brand-title {
 @media (max-width: 959px) {
 	body:not(.coleo-home) .coleo-site-nav {
 		display: none;
+	}
+}
+
+/* Docs layout: use grid instead of fixed offsets so sidebar/content/aside align */
+@media (min-width: 960px) {
+	body:not(.coleo-home) .Layout {
+		display: grid;
+		grid-template-columns: minmax(0, var(--vp-sidebar-width, 280px)) minmax(0, 1fr);
+		grid-template-rows: auto 1fr auto;
+		align-items: start;
+	}
+
+	body:not(.coleo-home) .VPNav,
+	body:not(.coleo-home) .VPLocalNav,
+	body:not(.coleo-home) .VPFooter {
+		grid-column: 1 / -1;
+	}
+
+	body:not(.coleo-home) .VPSidebar {
+		position: sticky !important;
+		top: var(--vp-layout-top-height, 0px);
+		grid-column: 1;
+		grid-row: 2;
+		width: 100%;
+		height: calc(100dvh - var(--vp-layout-top-height, 0px));
+		overflow: auto;
+		padding-top: 0 !important;
+	}
+
+	body:not(.coleo-home) .VPContent {
+		grid-column: 2;
+		grid-row: 2;
+		margin: 0;
+		padding: 0;
+		width: 100%;
+	}
+
+	body:not(.coleo-home) .VPContent.has-sidebar {
+		margin-top: 80px !important;
+		padding-left: 0 !important;
+		padding-right: 0 !important;
+	}
+
+	body:not(.coleo-home) .VPDoc {
+		padding-top: 32px;
+	}
+}
+
+@media (min-width: 1280px) {
+	body:not(.coleo-home) .VPDoc.has-aside .container {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, var(--vp-aside-width, 240px));
+		gap: 32px;
+		align-items: start;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .content {
+		order: 1;
+		margin: 0;
+		padding: 24px;
+		width: 100%;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .aside {
+		position: sticky;
+		top: calc(var(--vp-layout-top-height, 0px) + 32px);
+		display: block;
+		order: 2;
+		max-width: none;
+		padding-left: 0;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .aside.left-aside {
+		order: 0;
+		padding-right: 0;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .aside-container,
+	body:not(.coleo-home) .VPDoc.has-aside .aside-curtain {
+		position: static;
+		width: auto;
+		height: auto;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .aside-container {
+		padding-top: 0;
+		width: 100%;
+	}
+
+	body:not(.coleo-home) .VPDoc.has-aside .aside-content {
+		min-height: auto;
+		padding-bottom: 0;
 	}
 }
 
@@ -494,12 +594,12 @@ body:not(.coleo-home).light-mode .VPDoc .content {
 /* Doc content theming: code blocks, inline code, tables */
 .vp-doc pre,
 .vp-doc pre code {
-	background: var(--coleo-code-bg, rgba(0, 0, 0, 0.35)) !important;
+	background: var(--coleo-code-bg, rgb(139, 172, 203)) !important;
 }
 
 body.light-mode .vp-doc pre,
 body.light-mode .vp-doc pre code {
-	--coleo-code-bg: rgba(0, 0, 0, 0.1);
+	--coleo-code-bg: rgba(0, 0, 0, 1);
 }
 
 .vp-doc :not(pre)>code {
@@ -512,12 +612,16 @@ body.light-mode .vp-doc :not(pre)>code {
 	background: rgba(0, 0, 0, 0.08);
 }
 
+.vp-doc table tr {
+	background-color: var(--vp-c-surface);
+}
+
 .vp-doc table tr:nth-child(2n) {
 	background: rgba(255, 255, 255, 0.04);
 }
 
 body.light-mode .vp-doc table tr:nth-child(2n) {
-	background: rgba(224, 250, 246, 0.5);
+	background: rgba(224, 250, 246, 1);
 }
 
 .marketing-root.light-mode .bg-accent {
@@ -681,8 +785,8 @@ body.coleo-home .container,
 }
 
 .section-glass.light-1>.container {
-	background: rgba(255, 255, 255, 0.75);
-	color: #0f172a;
+	background: var(--vp-c-surface);
+	color: var(--vp-c-text-1);
 }
 
 .section-glass.dark-1>.container {

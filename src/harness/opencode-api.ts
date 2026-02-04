@@ -13,6 +13,7 @@ import { spawn, type Subprocess } from "bun";
 import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getColeoDir } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
@@ -211,7 +212,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Use /usr/bin/env to find the binary - this works better with OpenCode's spawn mechanism
     // DEBUG: Use absolute path to bun and CLI entrypoint to eliminate PATH issues
     const bunBinary = process.execPath; // Typically the bun binary
-    const cliEntrypoint = join(process.cwd(), "src/cli/index.ts");
+    const cliEntrypoint = getCliEntrypoint();
     
     console.log(`[harness-api] Configuring MCP command: ${bunBinary} run ${cliEntrypoint} mcp serve`);
 

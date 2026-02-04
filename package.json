@@ -4,9 +4,26 @@
 	"description": "AI agent orchestrator using the Octopus Model",
 	"module": "src/cli/index.ts",
 	"type": "module",
-	"private": true,
+	"private": false,
+	"engines": {
+		"bun": ">=1.1.0"
+	},
 	"bin": {
-		"coleo": "./src/cli/index.ts"
+		"coleo": "./dist/index.js"
+	},
+	"files": [
+		"dist/index.js",
+		"README.md",
+		"LICENSE.txt"
+	],
+	"license": "BSL-1.1",
+	"repository": {
+		"url": "https://github.com/sirtimbly/coleo"
+	},
+	"homepage": "https://coleo.dev",
+	"author": {
+		"name": "Tim Bendt",
+		"email": "tim@systematicui.com"
 	},
 	"workspaces": [
 		"src/web"
@@ -15,7 +32,7 @@
 		"dev": "bun run src/cli/index.ts",
 		"brain": "bun run src/cli/index.ts brain run",
 		"server": "bun run src/cli/index.ts server start",
-		"build": "bun build src/cli/index.ts --outdir dist --target node",
+		"build": "bun build src/cli/index.ts --outdir dist --target bun",
 		"typecheck": "tsc --noEmit",
 		"test": "bun test src/**/__tests__/",
 		"test:watch": "bun test --watch src/**/__tests__/",

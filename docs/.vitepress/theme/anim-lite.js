@@ -9,6 +9,16 @@
     brightness:0.7, time:0, prevFrameNow:0,
     rays:[],
     resizeHandler:null, scrollHandler:null, inputHandler:null,
+    colorSchemeQuery:null, colorSchemeHandler:null,
+  }
+
+  function getSystemIsLight(){
+    try{
+      if(window.matchMedia){
+        return window.matchMedia('(prefers-color-scheme: light)').matches
+      }
+    }catch(_){}
+    return true
   }
 
   function ensureDom(){
@@ -58,6 +68,12 @@
     state.waterFx.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
   }
 
+  function applySystemPreference(){
+    if(!state.depthSlider) return
+    state.depthSlider.value = getSystemIsLight() ? '70' : '30'
+    updateDepth()
+  }
+
   function initRays(){
     state.rays=[]
     const vw=state.viewportWidth, vh=(state.raysCanvas?.height||state.viewportHeight)
@@ -100,10 +116,19 @@
     if(!state.water||!state.raysCanvas) return
     state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight
     state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5)
-    initRays(); updateDepth()
+    initRays(); applySystemPreference()
     state.resizeHandler=()=>{ state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight; state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5); initRays() }
     state.scrollHandler=()=>{ state.scrollY=window.scrollY; const parallax=-state.scrollY*0.2; state.water.style.transform=`translate3d(0,${parallax}px,0)`; state.raysCanvas.style.transform=`translate3d(0,${parallax}px,0)` }
     state.inputHandler=()=>updateDepth()
+    if(window.matchMedia){
+      state.colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)')
+      state.colorSchemeHandler = (event)=>{ if(!state.depthSlider) return; state.depthSlider.value = event.matches ? '70' : '30'; updateDepth() }
+      if(state.colorSchemeQuery.addEventListener){
+        state.colorSchemeQuery.addEventListener('change', state.colorSchemeHandler)
+      } else if(state.colorSchemeQuery.addListener){
+        state.colorSchemeQuery.addListener(state.colorSchemeHandler)
+      }
+    }
     if(state.depthIcon){
       state.depthIcon.style.cursor='pointer'
       state.iconClickHandler=()=>{
@@ -126,6 +151,14 @@
     if(state.scrollHandler){ window.removeEventListener('scroll', state.scrollHandler); state.scrollHandler=null }
     if(state.inputHandler && state.depthSlider){ state.depthSlider.removeEventListener('input', state.inputHandler); state.inputHandler=null }
     if(state.depthIcon && state.iconClickHandler){ state.depthIcon.removeEventListener('click', state.iconClickHandler); state.iconClickHandler=null }
+    if(state.colorSchemeQuery && state.colorSchemeHandler){
+      if(state.colorSchemeQuery.removeEventListener){
+        state.colorSchemeQuery.removeEventListener('change', state.colorSchemeHandler)
+      } else if(state.colorSchemeQuery.removeListener){
+        state.colorSchemeQuery.removeListener(state.colorSchemeHandler)
+      }
+      state.colorSchemeQuery=null; state.colorSchemeHandler=null
+    }
     // remove only elements we created
     const ids=['waterLayerInner','raysCanvasInner','depthControlInner']
     for(const id of ids){ const el=document.getElementById(id); if(el && el.dataset && el.dataset.inner==='1'){ try{ el.remove() }catch(_){} } }

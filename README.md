@@ -8,27 +8,29 @@ Distributed agent orchestration for software development. Coleo is a coordinatio
 
 ## Quick Start
 
+Requires the [Bun](https://bun.sh/) runtime (v1.1+).
+
 ```bash
-# Install dependencies
-bun install
+# Install CLI from npm (uses the Bun runtime)
+bun install -g coleo
 
 # Initialize Coleo
-bun run src/cli/index.ts init
+coleo init
 
 # Terminal 1: start the API server (required for harness-based arms)
-bun run src/cli/index.ts serve
+coleo serve
 
 # Terminal 2: start the Brain (foreground polling loop)
-bun run src/cli/index.ts brain run
+coleo brain run
 
 # Terminal 3: spawn an Arm (headless by default via opencode-api)
-bun run src/cli/index.ts arm spawn --name explorer --harness opencode-api --workdir ./your-repo
+coleo arm spawn --name explorer --harness opencode-api --workdir ./your-repo
 
 # Send a task via mail
-bun run src/cli/index.ts mail send "Explore the codebase and identify refactoring opportunities"
+coleo mail send "Explore the codebase and identify refactoring opportunities"
 
 # Check status
-bun run src/cli/index.ts status
+coleo status
 ```
 
 ## Docker Quick Start
@@ -115,9 +117,11 @@ coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) runtime (v1.0+)
+- [Bun](https://bun.sh/) runtime (v1.1+)
 - [NATS Server](https://nats.io/) with JetStream enabled (optional, for event streaming)
 - [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
+
+This section is for contributors running Coleo from source. For regular usage, install the global CLI and run `coleo` commands.
 
 ### Setup
 
@@ -149,18 +153,18 @@ bun run web:dev
 
 ### Available Scripts
 
-| Script | Description |
-|--------|-------------|
-| `bun run dev` | Run CLI commands directly |
-| `bun run brain` | Start the Brain orchestrator |
-| `bun run typecheck` | Run TypeScript type checking |
-| `bun run test` | Run unit tests |
-| `bun run test:watch` | Run unit tests in watch mode |
-| `bun run test:integration` | Run quick integration tests |
-| `bun run test:e2e` | Run full end-to-end regression tests |
-| `bun run web:dev` | Start web UI dev server (hot reload) |
-| `bun run web:build` | Build web UI for production |
-| `bun run docs:dev` | Start documentation dev server |
+| Script                     | Description                          |
+| -------------------------- | ------------------------------------ |
+| `bun run dev`              | Run CLI commands directly            |
+| `bun run brain`            | Start the Brain orchestrator         |
+| `bun run typecheck`        | Run TypeScript type checking         |
+| `bun run test`             | Run unit tests                       |
+| `bun run test:watch`       | Run unit tests in watch mode         |
+| `bun run test:integration` | Run quick integration tests          |
+| `bun run test:e2e`         | Run full end-to-end regression tests |
+| `bun run web:dev`          | Start web UI dev server (hot reload) |
+| `bun run web:build`        | Build web UI for production          |
+| `bun run docs:dev`         | Start documentation dev server       |
 
 ### Environment Variables
 
@@ -238,14 +242,14 @@ Regression test results are saved to `~/.coleo/regression-results/`.
 
 Located in `src/regression/scenarios/`. Scenarios tagged `quick` run with `test:integration`.
 
-| Scenario | Tags | Description |
-|----------|------|-------------|
-| `infrastructure-startup` | quick | Verifies all infrastructure components start correctly |
-| `session-isolation` | quick | Verifies Arms don't share session history |
-| `self-healing-api-restart` | - | Tests API server recovery after restart |
-| `zombie-arm-detection` | - | Tests detection and cleanup of zombie Arms |
-| `simple-task-completion` | - | Tests basic task assignment and completion |
-| `arm-recovery` | - | Tests Arm crash recovery and session restoration |
+| Scenario                   | Tags  | Description                                            |
+| -------------------------- | ----- | ------------------------------------------------------ |
+| `infrastructure-startup`   | quick | Verifies all infrastructure components start correctly |
+| `session-isolation`        | quick | Verifies Arms don't share session history              |
+| `self-healing-api-restart` | -     | Tests API server recovery after restart                |
+| `zombie-arm-detection`     | -     | Tests detection and cleanup of zombie Arms             |
+| `simple-task-completion`   | -     | Tests basic task assignment and completion             |
+| `arm-recovery`             | -     | Tests Arm crash recovery and session restoration       |
 
 ### Writing New Tests
 

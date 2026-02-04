@@ -2,6 +2,15 @@
 
 Complete reference for the `coleo` command-line interface.
 
+## Installation
+
+The CLI is published to npm as `coleo` and runs using the Bun runtime.
+
+```bash
+# Requires Bun v1.1+
+bun install -g coleo
+```
+
 ## Global Options
 
 ```bash
@@ -519,12 +528,12 @@ Arm Configurations:
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `OCTOPAI_DIR` | Coleo data directory | `~/.coleo` |
-| `OCTOPAI_API_KEY` | API key for Observatory | (none) |
-| `ANTHROPIC_API_KEY` | For Claude-based agents | (none) |
-| `OPENAI_API_KEY` | For GPT-based agents | (none) |
+| Variable            | Description             | Default    |
+| ------------------- | ----------------------- | ---------- |
+| `OCTOPAI_DIR`       | Coleo data directory    | `~/.coleo` |
+| `OCTOPAI_API_KEY`   | API key for Observatory | (none)     |
+| `ANTHROPIC_API_KEY` | For Claude-based agents | (none)     |
+| `OPENAI_API_KEY`    | For GPT-based agents    | (none)     |
 
 ## Configuration File
 
@@ -555,12 +564,12 @@ emulator = "auto"
 Add these to your `.bashrc` or `.zshrc` for convenience:
 
 ```bash
-alias oc="bun run ~/coleo/src/cli/index.ts"
-alias brain="oc brain run"
-alias spawn="oc arm spawn"
-alias arms="oc arm list"
-alias status="oc status"
-alias inbox="oc mail inbox"
+alias oc="coleo"
+alias brain="coleo brain run"
+alias spawn="coleo arm spawn"
+alias arms="coleo arm list"
+alias status="coleo status"
+alias inbox="coleo mail inbox"
 ```
 
 ---
@@ -603,14 +612,14 @@ core = [
 
 These domains were used as coarse focus hints for arms. In the current design, arms are general-purpose and behavior is primarily guided by task classification and history.
 
-| Domain | Description |
-|--------|-------------|
-| `general` | Full-stack, handles any task |
-| `frontend` | UI/UX, React, CSS, accessibility |
-| `backend` | APIs, databases, services |
-| `infrastructure` | DevOps, CI/CD, deployment |
-| `testing` | Test infrastructure, QA |
-| `architect` | Code review, patterns, decisions |
+| Domain           | Description                      |
+| ---------------- | -------------------------------- |
+| `general`        | Full-stack, handles any task     |
+| `frontend`       | UI/UX, React, CSS, accessibility |
+| `backend`        | APIs, databases, services        |
+| `infrastructure` | DevOps, CI/CD, deployment        |
+| `testing`        | Test infrastructure, QA          |
+| `architect`      | Code review, patterns, decisions |
 
 ### Preset Configurations (Legacy team shapes)
 

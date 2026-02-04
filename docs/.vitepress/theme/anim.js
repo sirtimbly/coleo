@@ -16,6 +16,8 @@
 		depthSlider: null,
 		depthControl: null,
 		depthIcon: null,
+		colorSchemeQuery: null,
+		colorSchemeHandler: null,
 		time: 0,
 		brightness: 0.7,
 		scrollY: 0,
@@ -54,6 +56,15 @@
 	const INTERACTIVE_CURRENTS = true;
 	const ENABLE_BURST = true,
 		MAX_STREAK_SPEED = 300;
+
+	function getSystemIsLight() {
+		try {
+			if (window.matchMedia) {
+				return window.matchMedia("(prefers-color-scheme: light)").matches;
+			}
+		} catch (_) {}
+		return true;
+	}
 
 	const SWIRL_SETTINGS = {
 		burst: {
@@ -364,6 +375,12 @@
 		// Apply brightness/saturation to wrapper to avoid overwriting `.water-layer` filter.
 		state.waterFx.style.filter = `brightness(${bgBrightness}) saturate(${bgSaturation})`;
 	}
+
+	function applySystemPreference() {
+		if (!state.depthSlider) return;
+		state.depthSlider.value = getSystemIsLight() ? "70" : "30";
+		updateDepth();
+	}
 	function syncLayerHeight() {
 		if (!state.waterLayer && !state.waterFx) return;
 		const minHeight = state.viewportHeight * 2;
@@ -406,6 +423,18 @@
 		if (state.depthInputHandler && state.depthSlider) {
 			state.depthSlider.removeEventListener("input", state.depthInputHandler);
 			state.depthInputHandler = null;
+		}
+		if (state.colorSchemeQuery && state.colorSchemeHandler) {
+			if (state.colorSchemeQuery.removeEventListener) {
+				state.colorSchemeQuery.removeEventListener(
+					"change",
+					state.colorSchemeHandler,
+				);
+			} else if (state.colorSchemeQuery.removeListener) {
+				state.colorSchemeQuery.removeListener(state.colorSchemeHandler);
+			}
+			state.colorSchemeQuery = null;
+			state.colorSchemeHandler = null;
 		}
 		if (state.retryTimer) {
 			clearTimeout(state.retryTimer);
@@ -539,7 +568,20 @@
 			state.depthInputHandler = updateDepth;
 			state.depthSlider.addEventListener("input", state.depthInputHandler);
 		}
-		updateDepth();
+		if (window.matchMedia) {
+			state.colorSchemeQuery = window.matchMedia("(prefers-color-scheme: light)");
+			state.colorSchemeHandler = (event) => {
+				if (!state.depthSlider) return;
+				state.depthSlider.value = event.matches ? "70" : "30";
+				updateDepth();
+			};
+			if (state.colorSchemeQuery.addEventListener) {
+				state.colorSchemeQuery.addEventListener("change", state.colorSchemeHandler);
+			} else if (state.colorSchemeQuery.addListener) {
+				state.colorSchemeQuery.addListener(state.colorSchemeHandler);
+			}
+		}
+		applySystemPreference();
 		state.inited = true;
 		state.loggedAnimateStart = false;
 		DBG("init complete; starting animate loop");

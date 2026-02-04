@@ -6,6 +6,7 @@ import type { ColeoConfig } from "../../types";
 import { DEFAULT_CONFIG } from "../../types";
 import { initMaildir } from "../../mail";
 import { TEMPLATES_DIR } from "../context";
+import { getCliEntrypoint } from "../entrypoint";
 
 export function registerInitCommand(program: Command): void {
   program
@@ -49,9 +50,11 @@ export function registerInitCommand(program: Command): void {
 
       const coleoScriptPath = join(coleoDir, "bin", "coleo");
       await mkdir(join(coleoDir, "bin"), { recursive: true });
+      const cliEntrypoint = getCliEntrypoint();
+      const bunBinary = process.execPath;
       await writeFile(
         coleoScriptPath,
-        `#!/bin/bash\n# Coleo CLI wrapper - runs from source directory\ncd "${process.cwd()}"\nexec bun run src/cli/index.ts "$@"\n`,
+        `#!/bin/bash\n# Coleo CLI wrapper - runs from project directory\ncd "${process.cwd()}"\nexec "${bunBinary}" "${cliEntrypoint}" "$@"\n`,
         "utf-8",
       );
 

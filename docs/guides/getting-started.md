@@ -4,7 +4,7 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) v1.0+ installed
+- [Bun](https://bun.sh/) v1.1+ installed (CLI runtime)
 - Git
 - (Optional) Docker for containerized deployment
 
@@ -12,7 +12,20 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 ## Installation
 
-### From Source
+### Install the CLI (npm)
+
+```bash
+# Install the CLI package (uses the Bun runtime)
+bun install -g coleo
+
+# Initialize Coleo (copies arm templates)
+coleo init
+
+# Or initialize with a preset configuration
+coleo init --preset split-stack
+```
+
+### From Source (contributors)
 
 ```bash
 # Clone the repository
@@ -24,10 +37,9 @@ bun install
 
 # Initialize Coleo (copies arm templates)
 bun run src/cli/index.ts init
-
-# Or initialize with a preset configuration
-bun run src/cli/index.ts init --preset split-stack
 ```
+
+Use `bun run src/cli/index.ts <command>` to run the local CLI while you develop from source.
 
 ### Preset Configurations
 
@@ -68,24 +80,19 @@ This `coleo` branch is where arms will make changes. You can merge or rebase it 
 
 ### 2. Initialize Coleo (one-time)
 
-In the Coleo repo:
-
 ```bash
-cd /path/to/coleo
-bun install
-
 # Set up ~/.coleo (maildir, config, templates, SQLite DB)
-bun run src/cli/index.ts init
+coleo init
 ```
 
 ### 3. Start the server and brain
 
 ```bash
 # Terminal 1: API server (required for harness-based arms)
-bun run src/cli/index.ts serve
+coleo serve
 
 # Terminal 2: Brain polling loop
-bun run src/cli/index.ts brain run
+coleo brain run
 ```
 
 Leave these running; the server tracks arms/state and the brain coordinates tasks.
@@ -95,9 +102,7 @@ Leave these running; the server tracks arms/state and the brain coordinates task
 In another terminal:
 
 ```bash
-cd /path/to/coleo
-
-bun run src/cli/index.ts arm spawn \
+coleo arm spawn \
   --name dev-arm \
   --harness opencode-api \
   --workdir /absolute/path/to/your-project
@@ -109,11 +114,11 @@ This registers an arm in SQLite and starts an `opencode-api` agent pointed at yo
 
 ```bash
 # Send a task via mail
-bun run src/cli/index.ts mail send \
+coleo mail send \
   "Improve error handling in the user signup flow"
 
 # Or prompt the arm directly
-bun run src/cli/index.ts arm prompt dev-arm \
+coleo arm prompt dev-arm \
   "Add a dark mode toggle to the settings page"
 ```
 
@@ -151,26 +156,20 @@ You can optionally bootstrap a framework here (`bun init`, `npm create vite@late
 
 ### 2. Initialize Coleo
 
-In the Coleo repo:
-
 ```bash
-cd /path/to/coleo
-bun install
-bun run src/cli/index.ts init
+coleo init
 ```
 
 ### 3. Start the brain
 
 ```bash
-bun run src/cli/index.ts brain run
+coleo brain run
 ```
 
 ### 4. Spawn a development arm into your new project
 
 ```bash
-cd /path/to/coleo
-
-bun run src/cli/index.ts arm spawn \
+coleo arm spawn \
   --name greenfield-dev \
   --harness opencode-api \
   --workdir ~/projects/my-new-idea
@@ -181,7 +180,7 @@ Both you and the arm now share the same working tree and the same `coleo` branch
 ### 5. Describe the idea and let the arm scaffold
 
 ```bash
-bun run src/cli/index.ts mail send \
+coleo mail send \
   "Create a minimal Bun + React app for a personal task tracker. Start with a single page that lists in-memory tasks and a simple form to add a new task."
 ```
 
@@ -205,21 +204,21 @@ When you’re happy, you can push the `coleo` branch to your remote and open a P
 
 Coleo includes arm configuration templates in `templates/arms/`. These provide starting points and focus hints; arms remain general-purpose and their behavior is primarily guided by task classification and history.
 
-| Template | Legacy Domain Hint | Description |
-|----------|--------------------|-------------|
-| `fullstack.toml` | general | Versatile generalist for any task |
-| `frontend.toml` | frontend | UI/UX, React, accessibility |
-| `backend.toml` | backend | APIs, databases, infrastructure |
-| `testing.toml` | testing | QA, test infrastructure |
-| `docs.toml` | docs | Documentation-focused starting point |
-| `architect.toml` | architect | Code review, patterns |
+| Template         | Legacy Domain Hint | Description                          |
+| ---------------- | ------------------ | ------------------------------------ |
+| `fullstack.toml` | general            | Versatile generalist for any task    |
+| `frontend.toml`  | frontend           | UI/UX, React, accessibility          |
+| `backend.toml`   | backend            | APIs, databases, infrastructure      |
+| `testing.toml`   | testing            | QA, test infrastructure              |
+| `docs.toml`      | docs               | Documentation-focused starting point |
+| `architect.toml` | architect          | Code review, patterns                |
 
 These templates are copied to `~/.coleo/arms/` during initialization and can be edited before spawning arms.
 
 ### Verify Installation
 
 ```bash
-bun run src/cli/index.ts status
+coleo status
 ```
 
 You should see:
@@ -263,7 +262,7 @@ After initialization, Coleo creates this structure:
 The brain is the central coordinator. Run it in the foreground to see what's happening:
 
 ```bash
-bun run src/cli/index.ts brain run
+coleo brain run
 ```
 
 You'll see output like:
@@ -281,7 +280,7 @@ Press Ctrl+C to stop
 For testing, you can run a single poll cycle:
 
 ```bash
-bun run src/cli/index.ts brain run --once
+coleo brain run --once
 ```
 
 ## Spawning an Arm
@@ -289,7 +288,7 @@ bun run src/cli/index.ts brain run --once
 With the brain running (in another terminal), spawn an arm:
 
 ```bash
-bun run src/cli/index.ts arm spawn \
+coleo arm spawn \
   --name explorer \
   --harness opencode-api \
   --workdir ~/projects/my-project
@@ -335,7 +334,7 @@ For larger projects, you can still run arms with focus hints that tend to work o
 # Frontend-leaning arm
 coleo arm spawn --name frontend-arm --domain frontend
 
-# Backend-leaning arm  
+# Backend-leaning arm
 coleo arm spawn --name backend-arm --domain backend
 
 # Infrastructure-leaning arm
@@ -418,7 +417,7 @@ coleo config load my-custom-setup
 Send a task to the brain via the mail interface:
 
 ```bash
-bun run src/cli/index.ts mail send "Add a dark mode toggle to the settings page"
+coleo mail send "Add a dark mode toggle to the settings page"
 ```
 
 The brain will:
@@ -431,7 +430,7 @@ The brain will:
 View the current status:
 
 ```bash
-bun run src/cli/index.ts status
+coleo status
 ```
 
 Output:
@@ -451,7 +450,7 @@ Tasks: 1 pending
 Check messages from arms:
 
 ```bash
-bun run src/cli/index.ts mail inbox
+coleo mail inbox
 ```
 
 ## Docker Deployment
@@ -594,12 +593,12 @@ report_file_change({
 
 ### Notification Types
 
-| Change | Notified Arms | Action |
-|--------|---------------|--------|
-| docs/requirements/* | All arms | Re-evaluate task alignment |
-| docs/plans/* | All arms | Update sprint priorities |
-| docs/architecture/* | Arms running architect or backend-classified tasks | Review consistency |
-| Source code changes | Arms with claims or recent work on affected files | Check for regressions |
+| Change              | Notified Arms                                      | Action                     |
+| ------------------- | -------------------------------------------------- | -------------------------- |
+| docs/requirements/* | All arms                                           | Re-evaluate task alignment |
+| docs/plans/*        | All arms                                           | Update sprint priorities   |
+| docs/architecture/* | Arms running architect or backend-classified tasks | Review consistency         |
+| Source code changes | Arms with claims or recent work on affected files  | Check for regressions      |
 
 ### For Source Code Arms
 

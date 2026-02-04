@@ -21,6 +21,7 @@ import { registerStatusCommand } from "./commands/status";
 import { registerConfigCommands } from "./commands/config";
 import { registerDiscoveriesCommands } from "./commands/discoveries";
 import { registerDebugCommands } from "./commands/debug";
+import { registerWebCommand } from "./commands/web";
 
 await loadEnvFile();
 
@@ -45,5 +46,6 @@ registerStatusCommand(program);
 registerConfigCommands(program);
 registerDiscoveriesCommands(program);
 registerDebugCommands(program);
+registerWebCommand(program);
 
 await program.parseAsync();

@@ -94,11 +94,11 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-xl mb-4">Soft Architecture</h2>
         <p class="text-lg opacity-80">
-          Most agent frameworks rely on rigid control hierarchies or chaotic autonomy. Coleo occupies the evolutionary niche between: coordinated independence.
+          Most agent frameworks rely on rigid control hierarchies or specialized agent instances. Coleo builds upon independent exploration and ad-hoc coordination to get agents to evaluate each other and share their understanding of the world they've been given. Agent sessions are ephemeral generalists that grow through a consistent API for coordination and context sharing.
         </p>
       </div>
       <div class="grid md:grid-cols-3 gap-8">
-        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+        <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -109,7 +109,7 @@ title: Coleo — Multi-Agent Development Coordination
             Two-thirds of an octopus's neurons are in its arms, not its head. Coleo Arms possess their own memory, tools, and decision capacity.
           </p>
         </div>
-        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+        <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z"></path>
@@ -120,7 +120,7 @@ title: Coleo — Multi-Agent Development Coordination
             The Brain does not command—it evaluates. Arms submit structured proposals with reasoning and wait for approval.
           </p>
         </div>
-        <div class="group ui-box p-8 rounded-2xl transition-all duration-300">
+        <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
           <div class="w-12 h-12 bg-accent/10 rounded-xl flex items-center justify-center mb-6">
             <svg class="w-6 h-6 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -152,7 +152,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
-                <p class="opacity-70 leading-relaxed">General-purpose agents run through harnesses (headless API or a visible terminal), coordinated by the Brain.</p>
+                <p class="opacity-70 leading-relaxed">General-purpose agents run through harnesses (headless API or a any TUI), coordinated by the Brain. Adaptors have been developed so Coleo can manage multiple <code>opencode</code> instances, and more are coming.</p>
               </div>
             </div>
             <div class="flex gap-4">
@@ -166,7 +166,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">📡</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">The Observatory</h4>
-                <p class="opacity-70 leading-relaxed">The monitoring interface tracking activity across all Arms and Gardens.</p>
+                <p class="opacity-70 leading-relaxed">A web UI and a CLI is available for tracking activity across all Arms and provides a messaging and task management interface.</p>
               </div>
             </div>
           </div>
@@ -179,28 +179,28 @@ title: Coleo — Multi-Agent Development Coordination
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">1</div>
                 <div>
                   <h5 class="font-semibold mb-1">Spawn</h5>
-                  <p class="text-sm opacity-60">The Brain instantiates Arms and assigns them to Gardens.</p>
+                  <p class="text-sm opacity-60">The Brain instantiates Arms and assigns tasks from a list.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">2</div>
                 <div>
                   <h5 class="font-semibold mb-1">Execute</h5>
-                  <p class="text-sm opacity-60">Arms work independently within their Gardens.</p>
+                  <p class="text-sm opacity-60">Arms work independently and cooperatively within their Gardens.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">3</div>
                 <div>
                   <h5 class="font-semibold mb-1">Propose</h5>
-                  <p class="text-sm opacity-60">Arms submit structured proposals to the Brain.</p>
+                  <p class="text-sm opacity-60">Arms submit structured proposals to the Brain as well as status reports.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">4</div>
                 <div>
                   <h5 class="font-semibold mb-1">Integrate</h5>
-                  <p class="text-sm opacity-60">The Brain evaluates and approves or requests revisions.</p>
+                  <p class="text-sm opacity-60">The Brain assigns tasks multiple times, drives a consensus and keeps the agents busy with new tasks.</p>
                 </div>
               </div>
             </div>
@@ -215,25 +215,25 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-4xl mb-4">Observe the Distributed Mind</h2>
         <p class="text-lg opacity-80">
-          Unlike opaque AI tools, Coleo's Observatory makes visible the normally hidden activity of distributed agent coordination.
+          Manage multiple agents at once by creating a plan and feeding that plan into distributed agent systems with your own rules and prompts.
         </p>
       </div>
       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div class="ui-box p-6 rounded-xl shadow-sm">
+        <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Real-time</div>
-          <div class="text-sm opacity-70">WebSocket feeds show activity as it happens.</div>
+          <div class="text-sm opacity-70">Monitor in the web through WebSocket feeds show activity as it happens. Or watch the TUI app as it is prompted by the brain.</div>
         </div>
-        <div class="ui-box p-6 rounded-xl shadow-sm">
+        <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Persistent</div>
-          <div class="text-sm opacity-70">Activity history stored in SQLite or Postgres.</div>
+          <div class="text-sm opacity-70">Activity goes through central API server and Event streams, stored in SQLite and visible in the CLI or the Web.</div>
         </div>
-        <div class="ui-box p-6 rounded-xl shadow-sm">
+        <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Inspectable</div>
-          <div class="text-sm opacity-70">Query past proposals and decisions.</div>
+          <div class="text-sm opacity-70">View all the inter-agent proposals, tasks, and discoveries in real-time.</div>
         </div>
-        <div class="ui-box p-6 rounded-xl shadow-sm">
+        <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Transparent</div>
-          <div class="text-sm opacity-70">See not just what changed, but why.</div>
+          <div class="text-sm opacity-70">Watch your agents as they work and monitor their usage of tokens.</div>
         </div>
       </div>
     </div>
@@ -251,17 +251,17 @@ title: Coleo — Multi-Agent Development Coordination
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">📨</div>
           <h3 class="font-display font-bold text-xl mb-2">Structured Messages</h3>
-          <p class="opacity-70">Arms communicate through typed proposals with reasoning, not raw diffs.</p>
+          <p class="opacity-70">Arms communicate through typed proposals with reasoning, not raw diffs. They post events on a stream for the brian to deal with.</p>
         </div>
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">⚖️</div>
           <h3 class="font-display font-bold text-xl mb-2">Weighted Consensus</h3>
-          <p class="opacity-70">Reputation systems and voting mechanisms resolve conflicts.</p>
+          <p class="opacity-70">Reputation systems and internal debate resolve conflicts.</p>
         </div>
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">🔍</div>
           <h3 class="font-display font-bold text-xl mb-2">Human Override</h3>
-          <p class="opacity-70">The Brain can intervene at any point—this is coordination, not autonomy.</p>
+          <p class="opacity-70">Humans can observe and correct arms or they can delegate that job to the Brain, which can intervene at any point. Coleo graceully deals with stuck agents and reboots sessions that aren't making progress.</p>
         </div>
       </div>
     </div>
@@ -272,14 +272,14 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="lg:grid lg:grid-cols-2 gap-16 items-center">
         <div class="order-2 lg:order-1">
           <div class="space-y-4">
-            <div class="ui-box p-4 rounded-lg">
+            <div class="ui-box inverted p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: auth-refactor</span>
                 <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
               </div>
               <div class="text-sm opacity-70 font-mono">Arm: Ixis • Files: 12 modified</div>
             </div>
-            <div class="ui-box p-4 rounded-lg">
+            <div class="ui-box inverted p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: ui-redesign</span>
                 <span class="text-xs bg-green-400 text-white px-2 py-1 rounded">Active</span>
@@ -287,7 +287,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="text-sm opacity-70 font-mono">Arm: Argoaia-Zero • Files: 8 modified</div>
               <div class="text-sm opacity-70 font-mono">Arm: Verox • Files: 2 modified</div>
             </div>
-            <div class="ui-box p-4 rounded-lg">
+            <div class="ui-box inverted p-4 rounded-lg">
               <div class="flex items-center justify-between mb-2">
                 <span class="font-semibold">🌿 Garden: test-coverage</span>
                 <span class="text-xs bg-accent text-white px-2 py-1 rounded">Debating</span>
@@ -322,7 +322,7 @@ title: Coleo — Multi-Agent Development Coordination
         </p>
       </div>
       <div class="grid md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
-        <div class="ui-box p-8 rounded-2xl">
+        <div class="p-8 rounded-2xl border-2">
           <h3 class="font-display font-bold text-2xl mb-4">Individual Use</h3>
           <p class="opacity-70 mb-6">Free for individual developers. Install locally, use commercially, experiment freely.</p>
           <ul class="space-y-2 text-sm opacity-70 mb-6">
@@ -332,7 +332,7 @@ title: Coleo — Multi-Agent Development Coordination
           </ul>
           <a href="/guides/getting-started" class="block w-full py-3 bg-accent text-white rounded-full font-semibold hover:opacity-90 transition-all text-center no-underline mt-4">Install</a>
         </div>
-        <div class="ui-box p-8 rounded-2xl">
+        <div class="border-2 p-8 rounded-2xl">
           <h3 class="font-display font-bold text-2xl mb-4">Organizational Use</h3>
           <p class="opacity-70 mb-6">For teams and companies. Contact us for commercial licensing options.</p>
           <ul class="space-y-2 text-sm opacity-70 mb-6">
@@ -363,3 +363,4 @@ title: Coleo — Multi-Agent Development Coordination
     </div>
   </footer>
 </div>
+1
