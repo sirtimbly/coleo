@@ -62,3 +62,6 @@ init-db.js
 .coleo/run
 .coleo/mcp
 docs/.vitepress/cache/deps
+
+# Local Netlify folder
+.netlify
