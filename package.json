@@ -32,6 +32,8 @@
 	"devDependencies": {
 		"@types/bun": "latest",
 		"@types/nunjucks": "^3.2.6",
+		"@tailwindcss/vite": "^4.1.18",
+		"tailwindcss": "^4.1.18",
 		"vitepress": "^1.6.4"
 	},
 	"peerDependencies": {
