@@ -15,7 +15,7 @@ import { eventStore } from "../../nats/jetstream";
 interface MailContext {
   Variables: {
     db: Database;
-    octopaiDir: string;
+    coleoDir: string;
   };
 }
 
@@ -124,7 +124,7 @@ export function createMailRoutes() {
     const limit = Math.min(parseInt(c.req.query("limit") || "1000", 10), 1000);
     const offset = parseInt(c.req.query("offset") || "0", 10);
     
-    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    const maildir = new Maildir(join(coleoDir, "mail", folder));
     
     try {
       let allMessages: MessageMetadata[] = [];
@@ -168,7 +168,7 @@ export function createMailRoutes() {
     const folder = c.req.param("folder");
     const id = c.req.param("id");
     
-    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    const maildir = new Maildir(join(coleoDir, "mail", folder));
     
     try {
       const newMessages = await maildir.list("new");
@@ -203,7 +203,7 @@ export function createMailRoutes() {
     const coleoDir = c.get("coleoDir");
     const id = c.req.param("id");
 
-    const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const maildir = new Maildir(join(coleoDir, "mail", "inbox"));
 
     try {
       // Move message from new/ to cur/ (mark as read)
@@ -230,7 +230,7 @@ export function createMailRoutes() {
     const coleoDir = c.get("coleoDir");
     const id = c.req.param("id");
 
-    const maildir = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const maildir = new Maildir(join(coleoDir, "mail", "inbox"));
 
     try {
       // Move message to archive folder (or mark as archived)
@@ -311,7 +311,7 @@ export function createMailRoutes() {
       throw HttpError.badRequest("flags object is required");
     }
     
-    const maildir = new Maildir(join(octopaiDir, "mail", folder));
+    const maildir = new Maildir(join(coleoDir, "mail", folder));
     
     try {
       // For now, we only support the 'seen' flag (others would require extending Maildir class)
@@ -368,7 +368,7 @@ export function createMailRoutes() {
   // Existing API endpoints (enhanced with proper error handling)
   
   app.get("/inbox", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
@@ -396,7 +396,7 @@ export function createMailRoutes() {
   });
 
   app.get("/inbox/:id", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
@@ -418,8 +418,8 @@ export function createMailRoutes() {
   });
 
   app.post("/inbox/:id/read", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const coleoDir = c.get("coleoDir");
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
     try {
@@ -441,7 +441,7 @@ export function createMailRoutes() {
   });
 
   app.get("/sent", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const sent = new Maildir(join(coleoDir, "mail", "sent"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
@@ -467,7 +467,7 @@ export function createMailRoutes() {
   });
 
   app.get("/archive", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
 
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
@@ -491,8 +491,8 @@ export function createMailRoutes() {
   });
 
   app.post("/send", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-    const sent = new Maildir(join(octopaiDir, "mail", "sent"));
+    const coleoDir = c.get("coleoDir");
+    const sent = new Maildir(join(coleoDir, "mail", "sent"));
 
     const body = await c.req.json<{
       from: string;
@@ -531,7 +531,7 @@ export function createMailRoutes() {
   });
 
   app.delete("/inbox/:id", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
+    const coleoDir = c.get("coleoDir");
     const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
@@ -554,8 +554,8 @@ export function createMailRoutes() {
   });
 
   app.post("/inbox/:id/archive", async (c) => {
-    const octopaiDir = c.get("octopaiDir");
-    const inbox = new Maildir(join(octopaiDir, "mail", "inbox"));
+    const coleoDir = c.get("coleoDir");
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
     const id = c.req.param("id");
 
     try {

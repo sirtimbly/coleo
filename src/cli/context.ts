@@ -1,11 +1,25 @@
 import { file } from "bun";
 import { homedir } from "os";
 import { dirname, join } from "path";
+import { realpathSync } from "fs";
+import { fileURLToPath } from "url";
 
 // Re-export getColeoDir from config to ensure single source of truth
 export { getColeoDir } from "../config";
 
-export const TEMPLATES_DIR = join(dirname(import.meta.filename), "..", "..", "templates");
+const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
+
+export const TEMPLATES_DIR = join(__dirname, "..", "..", "templates");
+
+/**
+ * Get the path to brain templates in the installed package
+ * This resolves relative to the compiled CLI location
+ */
+export function getBrainTemplatesDir(): string {
+  // When running from dist/commands/init.js: __dirname = dist/commands/
+  // Templates are at dist/brain/templates/
+  return join(__dirname, "..", "brain", "templates");
+}
 
 export async function loadEnvFile(): Promise<void> {
   const envPaths = [

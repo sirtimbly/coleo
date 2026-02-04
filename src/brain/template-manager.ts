@@ -1,6 +1,20 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { join, dirname } from "path";
+import { realpathSync } from "fs";
+import { fileURLToPath } from "url";
 import nunjucks from "nunjucks";
+
+const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
+
+/**
+ * Get the path to brain templates in the installed package
+ * This resolves relative to the compiled code location
+ */
+function getPackageTemplatesDir(): string {
+  // When running from dist/index.js: __dirname = dist/
+  // Templates are at dist/brain/templates/
+  return join(__dirname, "brain", "templates");
+}
 
 export class BrainTemplateManager {
   private coleoDir: string;
@@ -18,13 +32,21 @@ export class BrainTemplateManager {
     templateName: string,
     context?: Record<string, unknown>
   ): Promise<string> {
-    const templatePath = join(this.coleoDir, "src", "brain", "templates", templateName);
+    // Try local templates first (in .coleo/)
+    const localTemplatePath = join(this.coleoDir, "src", "brain", "templates", templateName);
     try {
-      const templateContent = await readFile(templatePath, "utf-8");
+      const templateContent = await readFile(localTemplatePath, "utf-8");
       return context ? nunjucks.renderString(templateContent, context) : templateContent;
-    } catch (err) {
-      this.logger(`Failed to load template ${templateName}: ${err}`);
-      return `Template missing: ${templateName}`;
+    } catch {
+      // Local template not found, try package templates
+      const packageTemplatePath = join(getPackageTemplatesDir(), templateName);
+      try {
+        const templateContent = await readFile(packageTemplatePath, "utf-8");
+        return context ? nunjucks.renderString(templateContent, context) : templateContent;
+      } catch (pkgErr) {
+        this.logger(`Failed to load template ${templateName}: ${pkgErr}`);
+        return `Template missing: ${templateName}`;
+      }
     }
   }
 
@@ -74,55 +96,59 @@ export class BrainTemplateManager {
    */
   async ensureTemplatesExist(): Promise<void> {
     const templateDir = join(this.coleoDir, "src", "brain", "templates");
-    const templates = [
-      { name: "mail-processor-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "mail-processor-system-prompt.jinja") },
-      { name: "initial-arm-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "initial-arm-prompt.jinja") },
-      { name: "bug-assignment-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "bug-assignment-prompt.jinja") },
-      { name: "arm-api-restart-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-api-restart-prompt.jinja") },
-      { name: "arm-tasks-available-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-tasks-available-prompt.jinja") },
-      { name: "arm-loop-compact-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-loop-compact-nudge.jinja") },
-      { name: "arm-generic-nudge.jinja", source: join(process.cwd(), "src", "brain", "templates", "arm-generic-nudge.jinja") },
-      { name: "stuck-analyzer-system-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-system-prompt.jinja") },
-      { name: "stuck-analyzer-user-prompt.jinja", source: join(process.cwd(), "src", "brain", "templates", "stuck-analyzer-user-prompt.jinja") },
-      { name: "human-task-queued-busy.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-queued-busy.jinja") },
-      { name: "human-mail-escalate.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-mail-escalate.jinja") },
-      { name: "human-bug-report-confirmation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-report-confirmation.jinja") },
-      { name: "human-task-completed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-completed.jinja") },
-      { name: "human-task-deferred.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-deferred.jinja") },
-      { name: "human-task-blocked.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked.jinja") },
-      { name: "human-issues-found.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-issues-found.jinja") },
-      { name: "human-review-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-review-needed.jinja") },
-      { name: "human-verification-needed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-verification-needed.jinja") },
-      { name: "human-discovery.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-discovery.jinja") },
-      { name: "human-approval-request.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-approval-request.jinja") },
-      { name: "human-status-report.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-status-report.jinja") },
-      { name: "human-tool-discovered.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-tool-discovered.jinja") },
-      { name: "human-doc-updated.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-doc-updated.jinja") },
-      { name: "human-bug-high-priority.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-high-priority.jinja") },
-      { name: "human-task-resumed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-resumed.jinja") },
-      { name: "human-bug-medium-escalation.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-bug-medium-escalation.jinja") },
-      { name: "human-file-change.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-file-change.jinja") },
-      { name: "human-infra-issues.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-infra-issues.jinja") },
-      { name: "human-arm-stuck.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-stuck.jinja") },
-      { name: "human-arm-idle-loop.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-idle-loop.jinja") },
-      { name: "human-arm-zombie-killed.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-arm-zombie-killed.jinja") },
-      { name: "human-task-blocked-by-bugs.jinja", source: join(process.cwd(), "src", "brain", "templates", "human-task-blocked-by-bugs.jinja") },
+    const packageTemplatesDir = getPackageTemplatesDir();
+    
+    // Get list of templates from the package
+    const templateFiles = [
+      "mail-processor-system-prompt.jinja",
+      "initial-arm-prompt.jinja",
+      "bug-assignment-prompt.jinja",
+      "arm-api-restart-prompt.jinja",
+      "arm-tasks-available-prompt.jinja",
+      "arm-loop-compact-nudge.jinja",
+      "arm-generic-nudge.jinja",
+      "stuck-analyzer-system-prompt.jinja",
+      "stuck-analyzer-user-prompt.jinja",
+      "human-task-queued-busy.jinja",
+      "human-mail-escalate.jinja",
+      "human-bug-report-confirmation.jinja",
+      "human-task-completed.jinja",
+      "human-task-deferred.jinja",
+      "human-task-blocked.jinja",
+      "human-issues-found.jinja",
+      "human-review-needed.jinja",
+      "human-verification-needed.jinja",
+      "human-discovery.jinja",
+      "human-approval-request.jinja",
+      "human-status-report.jinja",
+      "human-tool-discovered.jinja",
+      "human-doc-updated.jinja",
+      "human-bug-high-priority.jinja",
+      "human-task-resumed.jinja",
+      "human-bug-medium-escalation.jinja",
+      "human-file-change.jinja",
+      "human-infra-issues.jinja",
+      "human-arm-stuck.jinja",
+      "human-arm-idle-loop.jinja",
+      "human-arm-zombie-killed.jinja",
+      "human-task-blocked-by-bugs.jinja",
     ];
 
-    for (const template of templates) {
-      const destPath = join(templateDir, template.name);
+    for (const templateName of templateFiles) {
+      const destPath = join(templateDir, templateName);
+      const sourcePath = join(packageTemplatesDir, templateName);
       try {
         await readFile(destPath, "utf-8");
         // Template exists, skip
       } catch {
-        // Template doesn't exist, try to create from source
+        // Template doesn't exist, try to create from package
         try {
-          const sourceContent = await readFile(template.source, "utf-8");
+          const sourceContent = await readFile(sourcePath, "utf-8");
           await mkdir(templateDir, { recursive: true });
           await writeFile(destPath, sourceContent, "utf-8");
-          this.logger(`Created template: ${template.name}`);
+          this.logger(`Created template: ${templateName}`);
         } catch (sourceErr) {
-          this.logger(`Could not create template ${template.name}: ${sourceErr}`);
+          this.logger(`Could not create template ${templateName}: ${sourceErr}`);
         }
       }
     }

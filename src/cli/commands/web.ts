@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { serve } from "bun";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { realpathSync } from "fs";
 import {
   startService,
   stopService,
@@ -11,32 +12,77 @@ import {
   formatUptime,
 } from "../../daemon";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// Resolve the actual path (follows symlinks for linked packages)
+const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
+
+/**
+ * Find the web UI dist directory
+ * Works for: installed package, linked package, and development
+ */
+async function findWebDist(): Promise<string | null> {
+  const { existsSync } = await import("fs");
+
+  // Helper to check if path exists and has index.html
+  const isValidWebDist = (path: string): boolean => {
+    return existsSync(path) && existsSync(join(path, "index.html"));
+  };
+
+  // 1. Try relative to the actual file location (resolves symlinks)
+  // When built: dist/commands/web.js -> dist/web/
+  const builtPath = join(dirname(__dirname), "../web");
+  if (isValidWebDist(builtPath)) {
+    return builtPath;
+  }
+
+  // 2. Try the package root (for linked packages)
+  // Resolve the actual package location by looking for package.json
+  try {
+    let currentDir = dirname(__dirname);
+    for (let i = 0; i < 5; i++) { // Look up to 5 levels
+      const pkgJsonPath = join(currentDir, "package.json");
+      const webDistPath = join(currentDir, "dist/web");
+
+      if (existsSync(pkgJsonPath)) {
+        // Check if this is the coleo package and has web dist
+        if (isValidWebDist(webDistPath)) {
+          return webDistPath;
+        }
+        // Also check src/web/dist for development
+        const srcWebPath = join(currentDir, "src/web/dist");
+        if (isValidWebDist(srcWebPath)) {
+          return srcWebPath;
+        }
+      }
+
+      const parentDir = dirname(currentDir);
+      if (parentDir === currentDir) break;
+      currentDir = parentDir;
+    }
+  } catch {
+    // Continue to next method
+  }
+
+  // 3. Development mode: check CWD paths
+  const devPaths = [
+    join(process.cwd(), "src/web/dist"),
+    join(process.cwd(), "dist/web"),
+  ];
+
+  for (const path of devPaths) {
+    if (isValidWebDist(path)) {
+      return path;
+    }
+  }
+
+  return null;
+}
 
 /**
  * Start the web UI server (foreground mode)
  */
 async function startWebServer(options: { port: number; host: string }): Promise<void> {
-  // Find the web dist directory - check multiple locations
-  const possiblePaths = [
-    join(process.cwd(), "src/web/dist"),
-    join(process.cwd(), "dist/web"),
-    join(dirname(__dirname), "../../web/dist"),
-    join(dirname(__dirname), "../../../web/dist"),
-  ];
-
-  let distPath: string | null = null;
-  for (const path of possiblePaths) {
-    try {
-      const { existsSync } = await import("fs");
-      if (existsSync(path)) {
-        distPath = path;
-        break;
-      }
-    } catch {
-      // Continue to next path
-    }
-  }
+  // Find the web dist directory
+  const distPath = await findWebDist();
 
   if (!distPath) {
     console.error("Error: Web UI build not found.");

@@ -18,7 +18,7 @@ import { getBrainState, updateBrainState, type BrainState } from "../../db/state
 interface BrainContext {
   Variables: {
     db: Database;
-    octopaiDir: string;
+    coleoDir: string;
   };
 }
 
@@ -239,7 +239,7 @@ export function createBrainRoutes() {
     }
 
     // Ensure mail directories exist
-    const sentDir = join(octopaiDir, "mail", "sent");
+    const sentDir = join(coleoDir, "mail", "sent");
     await mkdir(sentDir, { recursive: true });
     await mkdir(join(sentDir, "new"), { recursive: true });
     await mkdir(join(sentDir, "cur"), { recursive: true });

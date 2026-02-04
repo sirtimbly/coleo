@@ -1,11 +1,11 @@
 import { Command } from "commander";
 import { join } from "path";
-import { mkdir, writeFile, readFile, copyFile, symlink } from "fs/promises";
+import { mkdir, writeFile, readFile, copyFile, symlink, readdir } from "fs/promises";
 import { homedir } from "os";
 import type { ColeoConfig } from "../../types";
 import { DEFAULT_CONFIG } from "../../types";
 import { initMaildir } from "../../mail";
-import { TEMPLATES_DIR } from "../context";
+import { TEMPLATES_DIR, getBrainTemplatesDir } from "../context";
 import { getCliEntrypoint } from "../entrypoint";
 
 export function registerInitCommand(program: Command): void {
@@ -46,6 +46,7 @@ export function registerInitCommand(program: Command): void {
       };
 
       await writeFile(join(coleoDir, "config.toml"), generateConfigToml(config), "utf-8");
+      await copyBrainTemplates(coleoDir);
       await copyArmTemplates(coleoDir, preset);
 
       const coleoScriptPath = join(coleoDir, "bin", "coleo");
@@ -86,26 +87,27 @@ export function registerInitCommand(program: Command): void {
 
       console.log(`
  Coleo initialized!
-
+ 
  Directory structure created:
-   ${coleoDir}/
-   ├── mail/          # Human-agent communication (Maildir)
-   ├── queue/         # Inter-agent message queue
-   ├── state/         # Persistent state
-   ├── arms/          # Arm configurations
-   ├── mcp/           # MCP configurations
-   └── logs/          # Log files
-
+    ${coleoDir}/
+    ├── mail/          # Human-agent communication (Maildir)
+    ├── queue/         # Inter-agent message queue
+    ├── state/         # Persistent state
+    ├── arms/          # Arm configurations
+    ├── mcp/           # MCP configurations
+    ├── logs/          # Log files
+    └── src/brain/templates/  # Brain prompt templates
+ 
 ${preset ? `Preset "${preset}" arms have been configured in .coleo/arms/` : ""}
 ${scriptInfo}${symlinkInfo}
- Edit or delete arm configs in .coleo/arms/ before spawning.
-
- Next steps:
-    1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b coleo)
-    2. Start the API server: coleo serve
-    3. Configure arms: edit .coleo/arms/*.toml
-    4. Spawn an arm pointed at your project worktree: coleo arm spawn --workdir /path/to/your/project
-  `);
+  Edit or delete arm configs in .coleo/arms/ before spawning.
+ 
+  Next steps:
+     1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b coleo)
+     2. Start the API server: coleo serve
+     3. Configure arms: edit .coleo/arms/*.toml
+     4. Spawn an arm pointed at your project worktree: coleo arm spawn --workdir /path/to/your/project
+   `);
     });
 }
 
@@ -133,6 +135,36 @@ emulator = "${config.terminal.emulator}"
 # default_org = "coleo"
 # default_repo = "workspace"
 `;
+}
+
+async function copyBrainTemplates(coleoDir: string): Promise<void> {
+  const brainTemplatesDir = join(coleoDir, "src", "brain", "templates");
+  const sourceDir = getBrainTemplatesDir();
+  
+  try {
+    const templates = await readdir(sourceDir);
+    let copied = 0;
+    
+    for (const template of templates) {
+      if (template.endsWith('.jinja')) {
+        try {
+          const srcPath = join(sourceDir, template);
+          const destPath = join(brainTemplatesDir, template);
+          await mkdir(brainTemplatesDir, { recursive: true });
+          await copyFile(srcPath, destPath);
+          copied++;
+        } catch (err) {
+          console.warn(`  ⚠ Could not copy template ${template}: ${err}`);
+        }
+      }
+    }
+    
+    if (copied > 0) {
+      console.log(`  ✓ ${copied} brain templates copied to ${brainTemplatesDir}/`);
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Could not copy brain templates: ${err}`);
+  }
 }
 
 async function copyArmTemplates(coleoDir: string, preset: string): Promise<void> {
