@@ -6,6 +6,8 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 - [Bun](https://bun.sh/) v1.1+ installed (CLI runtime)
 - Git
+- [NATS Server](https://nats.io/) with JetStream enabled (for distributed arm management)
+  - Run via Docker: `docker compose up -d nats`
 - (Optional) Docker for containerized deployment
 
 > **Git workflow:** The happy path is a single clone and a shared `coleo` branch that multiple arms work in together. You can still use other branches and stashes, but we assume a mostly linear history coordinated by tasks, claims, and proposals rather than one worktree per arm.
@@ -83,6 +85,13 @@ This `coleo` branch is where arms will make changes. You can merge or rebase it 
 ```bash
 # Set up ~/.coleo (maildir, config, templates, SQLite DB)
 coleo init
+```
+
+**Security Note**: During initialization, you'll be prompted to generate an API token. This token is used to authenticate requests between Coleo components. The token will be saved to `.coleo/.env`. You can also set it manually:
+
+```bash
+export COLEO_API_TOKEN=your-secure-token
+# or add to .coleo/.env
 ```
 
 ### 3. Start the server and brain
@@ -455,16 +464,18 @@ coleo mail inbox
 
 ## Docker Deployment
 
-For a containerized setup with Gitea:
+For a containerized setup with Gitea and NATS:
 
 ```bash
 # Copy environment template
 cp .env.example .env
 
-# Edit with your API keys
+# Edit with your API keys and token
 vim .env
+# Required: ANTHROPIC_API_KEY, OPENAI_API_KEY (depending on your models)
+# Optional: COLEO_API_TOKEN (for component authentication)
 
-# Start the stack
+# Start the stack (includes NATS for distributed arms)
 docker compose up -d
 
 # SSH into the container
@@ -473,6 +484,11 @@ ssh -p 2222 coleo@localhost  # password: coleo
 # Inside container
 coleo brain run
 ```
+
+The docker-compose.yml includes:
+- **NATS** on port 4222 (message queue for distributed arms)
+- **Gitea** on port 3000 (local git forge)
+- **Coleo** on port 2222 (SSH access)
 
 See the [Docker Setup Guide](./docker) for more details.
 

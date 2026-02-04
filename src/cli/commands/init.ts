@@ -1,12 +1,77 @@
 import { Command } from "commander";
 import { join } from "path";
-import { mkdir, writeFile, readFile, copyFile, symlink, readdir } from "fs/promises";
+import { mkdir, writeFile, readFile, copyFile, symlink, readdir, access } from "fs/promises";
 import { homedir } from "os";
+import { randomBytes } from "crypto";
 import type { ColeoConfig } from "../../types";
 import { DEFAULT_CONFIG } from "../../types";
 import { initMaildir } from "../../mail";
 import { TEMPLATES_DIR, getBrainTemplatesDir } from "../context";
 import { getCliEntrypoint } from "../entrypoint";
+import { createInterface } from "readline";
+
+/**
+ * Generate a secure random API token
+ */
+function generateApiToken(): string {
+  return "co_" + randomBytes(32).toString("hex");
+}
+
+/**
+ * Ask the user a yes/no question
+ */
+async function askYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/n) `, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase().startsWith("y"));
+    });
+  });
+}
+
+/**
+ * Generate example arm.toml content
+ */
+function generateExampleArmToml(): string {
+  return `# Example Arm Configuration
+# This is a sample arm configuration file for Coleo
+# Copy this to create your own arm configurations in the .coleo/arms/ directory
+
+name = "example-arm"
+domain = "development"
+
+[harness]
+# Recommended: opencode-api for headless API-driven arms
+# Alternative: opencode-tui for visible terminal sessions
+type = "opencode-api"
+
+[model]
+# Configure your AI model provider
+provider = "openai"  # Options: "openai", "anthropic", "kimi", "groq", "xai"
+model_id = "gpt-5.1-codex-mini"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
+
+# Optional: Custom model configuration
+# [model.config]
+# temperature = 0.7
+# max_tokens = 4096
+# top_p = 0.9
+
+# Optional: Arm-specific settings
+# [settings]
+# auto_spawn = false
+# timeout_minutes = 30
+
+# To spawn this arm, run:
+#   coleo arm spawn --config .coleo/arms/example-arm.toml
+# Or with a specific workdir:
+#   coleo arm spawn --config .coleo/arms/example-arm.toml --workdir ./src
+`;
+}
 
 export function registerInitCommand(program: Command): void {
   program
@@ -49,6 +114,54 @@ export function registerInitCommand(program: Command): void {
       await copyBrainTemplates(coleoDir);
       await copyArmTemplates(coleoDir, preset);
 
+      // Create example arm.toml
+      const armsDir = join(coleoDir, "arms");
+      const exampleArmPath = join(armsDir, "example-arm.toml");
+      await writeFile(exampleArmPath, generateExampleArmToml(), "utf-8");
+      console.log(`  ✓ Example arm config: ${exampleArmPath}`);
+
+      // Handle API token setup
+      const envPath = join(coleoDir, ".env");
+      let apiToken = "";
+      let envCreated = false;
+
+      try {
+        await access(envPath);
+        // .env already exists, skip token generation
+      } catch {
+        // .env doesn't exist, ask user if they want to generate a token
+        console.log("\n🔐 API Security Setup");
+        console.log("Coleo uses an API token for secure communication between components.");
+        
+        const shouldGenerate = await askYesNo("Generate a random API token and save it to .env?");
+        
+        if (shouldGenerate) {
+          apiToken = generateApiToken();
+          const envContent = `# Coleo Environment Configuration
+# Generated on ${new Date().toISOString()}
+
+# API Authentication Token
+# This token is used to authenticate API requests between components
+# Keep it secret and do not commit this file to version control
+COLEO_API_TOKEN=${apiToken}
+
+# Optional: API Configuration
+# COLEO_API_PORT=8080
+# COLEO_API_HOST=localhost
+
+# Optional: NATS Configuration (for distributed mode)
+# COLEO_NATS_URL=nats://localhost:4222
+`;
+          await writeFile(envPath, envContent, "utf-8");
+          envCreated = true;
+          console.log(`  ✓ API token generated and saved to ${envPath}`);
+        } else {
+          console.log("  ℹ You can manually set COLEO_API_TOKEN later by:");
+          console.log("    - Creating .env in .coleo/ directory");
+          console.log("    - Or running: export COLEO_API_TOKEN=your-token-here");
+        }
+      }
+
       const coleoScriptPath = join(coleoDir, "bin", "coleo");
       await mkdir(join(coleoDir, "bin"), { recursive: true });
       const cliEntrypoint = getCliEntrypoint();
@@ -85,29 +198,42 @@ export function registerInitCommand(program: Command): void {
       const symlinkInfo = symlinkPath ? `\n  ✓ Symlink created: ${symlinkPath}` : "";
       const scriptInfo = `\n  ✓ CLI wrapper: ${coleoScriptPath}`;
 
+      const envInfo = envCreated
+        ? `\n  ✓ API token configured in ${join(coleoDir, ".env")}`
+        : "";
+
+      const presetInfo = preset
+        ? `\n  ✓ Preset "${preset}" configured in ${join(coleoDir, "arms/")}`
+        : `
+  ✓ Example arm config: ${join(coleoDir, "arms/example-arm.toml")}`;
+
       console.log(`
- Coleo initialized!
- 
+┌─────────────────────────────────────────────────────────────┐
+│                  Coleo initialized!                         │
+└─────────────────────────────────────────────────────────────┘
+
  Directory structure created:
     ${coleoDir}/
     ├── mail/          # Human-agent communication (Maildir)
     ├── queue/         # Inter-agent message queue
     ├── state/         # Persistent state
     ├── arms/          # Arm configurations
+    │   └── example-arm.toml  # Example arm config${presetInfo}
     ├── mcp/           # MCP configurations
     ├── logs/          # Log files
+    ├── .env           # API token and secrets${envInfo}
     └── src/brain/templates/  # Brain prompt templates
- 
-${preset ? `Preset "${preset}" arms have been configured in .coleo/arms/` : ""}
 ${scriptInfo}${symlinkInfo}
-  Edit or delete arm configs in .coleo/arms/ before spawning.
- 
-  Next steps:
-     1. In your project repo, create a shared branch for arms to work on (for example: git checkout -b coleo)
-     2. Start the API server: coleo serve
-     3. Configure arms: edit .coleo/arms/*.toml
-     4. Spawn an arm pointed at your project worktree: coleo arm spawn --workdir /path/to/your/project
-   `);
+
+ Quick Start:
+   1. Start the API server:  coleo serve start
+   2. Start the web UI:     coleo web start
+   3. View dashboard:       http://localhost:5173
+   4. Configure arms:       edit .coleo/arms/*.toml
+   5. Spawn an arm:         coleo arm spawn --workdir ./src
+
+ Documentation: https://coleo.dev
+    `);
     });
 }
 
