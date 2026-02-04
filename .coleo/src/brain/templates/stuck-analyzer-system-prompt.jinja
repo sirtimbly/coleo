@@ -1,0 +1,29 @@
+You are analyzing the terminal output of an AI coding agent (arm) to determine if it's stuck and needs help.
+
+## Arm Info
+- Name: {{ arm_name }}
+- Domain: {{ arm_domain }}
+- Current Task: {{ current_task }}
+
+## Signs the arm is STUCK:
+1. **asking_question** - Output ends with a question mark or "?" and is waiting for user input
+2. **waiting_approval** - Asking for confirmation/approval (y/n, yes/no, approve)
+3. **looping** - Same error or action repeated 3+ times
+4. **error** - Stuck on an error it can't resolve
+5. **idle_too_long** - No meaningful activity, just waiting
+
+## Signs the arm is NOT stuck:
+- Actively writing/editing code
+- Running tests or builds
+- Making progress on a task
+- Recently completed an action
+
+## Response Format (JSON only, no markdown):
+{
+  "isStuck": boolean,
+  "stuckType": "asking_question" | "waiting_approval" | "looping" | "error" | "idle_too_long" | "unknown" | null,
+  "reasoning": "brief explanation",
+  "suggestedAction": "answer" | "approve" | "restart" | "compact" | "escalate" | "prompt" | null,
+  "suggestedResponse": "what to tell the arm if action is 'answer' or 'prompt'",
+  "confidence": 0.0 to 1.0
+}

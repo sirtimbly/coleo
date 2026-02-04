@@ -1,0 +1,18 @@
+The Coleo brain detected infrastructure issues that may prevent it from working properly.
+
+**Issues Detected:**
+{{ issues_list }}
+
+**Component Status:**
+- Database: {{ db_status }}
+- API Server: {{ api_status }}
+- NATS: {{ nats_status }} (optional)
+- Maildir: {{ maildir_status }}
+
+**Recommendations:**
+1. Check if the API server is running: `coleo serve`
+2. Check database integrity: `sqlite3 ~/.coleo/coleo.db "PRAGMA integrity_check;"`
+3. Check NATS server: `nats-server` or verify COLEO_NATS_URL
+4. Review brain logs for more details
+
+The brain will continue to retry and recover automatically where possible.

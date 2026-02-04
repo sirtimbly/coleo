@@ -32,10 +32,11 @@ import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
-import { ArmHealthMonitor, type HealthMonitorCallbacks } from "./health-monitor";
+import { ArmHealthMonitor, type HealthCheckResult, type HealthMonitorCallbacks } from "./health-monitor";
 import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
+import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import type { BrainState, Task, QueueMessage, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
@@ -70,6 +71,8 @@ export class Brain {
   private docTracker: DocUpdateTracker | null = null;
   private armStateMachine: ArmStateMachine | null = null;
   private healthMonitor: ArmHealthMonitor | null = null;
+  private lastHealthCheck: HealthCheckResult | null = null;
+  private dashboard: TerminalDashboard | null = null;
 
     // Track last stuck state per arm to avoid duplicate escalations
   // DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
@@ -218,6 +221,9 @@ export class Brain {
 
     // Initialize stuck arm analyzer
     this.stuckArmAnalyzer = new StuckArmAnalyzer((msg) => this.log(msg), this.options.coleoDir);
+
+    // Initialize terminal dashboard (TTY only)
+    this.dashboard = new TerminalDashboard({ enabled: process.stdout.isTTY });
   }
 
   /**
@@ -444,6 +450,10 @@ export class Brain {
         eventWindowMs: 10 * 60 * 1000, // 10 minutes
         autoInterventionEnabled: true,
       },
+      onResult: (result) => {
+        this.lastHealthCheck = result;
+        this.refreshDashboard();
+      },
     });
 
     // Create necessary directories
@@ -478,6 +488,7 @@ export class Brain {
 
     await this.loadTasks();
     await this.loadArms();
+    this.refreshDashboard();
     // seenArmIds removed - now derived from database (hasReceivedInitialTasks)
 
     // Start documentation watcher for project docs
@@ -5576,11 +5587,44 @@ const arm: Arm = {
 
   // Utility methods
 
+  private getArmStatusRows(): ArmStatusRow[] {
+    const healthResults = this.lastHealthCheck?.armResults;
+    const rows: ArmStatusRow[] = [];
+
+    for (const arm of this.arms.values()) {
+      const task = this.tasks.find(t => t.id === arm.currentTask);
+      const taskSummary = task?.subject || arm.currentTask || "-";
+      const analysis = healthResults?.get(arm.id);
+      const health = analysis
+        ? `${analysis.state} (${analysis.confidence})${analysis.reason ? `: ${analysis.reason}` : ""}`
+        : "unknown";
+
+      rows.push({
+        name: arm.name || arm.id,
+        status: arm.status || "unknown",
+        task: taskSummary,
+        health,
+      });
+    }
+
+    rows.sort((a, b) => a.name.localeCompare(b.name));
+    return rows;
+  }
+
+  private refreshDashboard(): void {
+    if (!this.dashboard || !this.dashboard.isEnabled()) return;
+    this.dashboard.setArms(this.getArmStatusRows());
+    this.dashboard.render();
+  }
+
   private log(message: string): void {
     const timestamp = new Date().toISOString();
     const line = `[${timestamp}] ${message}`;
 
-    if (this.options.verbose) {
+    if (this.dashboard?.isEnabled()) {
+      this.dashboard.addLogLine(line);
+      this.refreshDashboard();
+    } else if (this.options.verbose) {
       console.log(line);
     }
 

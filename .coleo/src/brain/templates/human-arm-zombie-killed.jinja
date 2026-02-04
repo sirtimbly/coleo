@@ -1,0 +1,11 @@
+The arm "{{ arm_name }}" was automatically killed after being unresponsive for 20+ minutes.
+
+**Reason:** Arm received multiple prompts but never performed productive work.
+**Interventions tried:** interrupt, compact, human escalation
+
+The arm's current task (if any) has been marked as blocked.
+
+You can respawn this arm with:
+```
+ coleo arm spawn -n {{ arm_name }}
+```

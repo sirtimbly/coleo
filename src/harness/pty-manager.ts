@@ -5,25 +5,30 @@
  * Uses bun-pty for Bun-native PTY support.
  */
 
-import { spawn } from "bun-pty";
 import type { IPty } from "bun-pty";
 import type { PTYSession, TerminalKey } from "./types";
 import { KEY_SEQUENCES } from "./types";
+import { createRequire } from "node:module";
 
 /**
  * Strip ANSI escape codes for text analysis
  * Handles CSI sequences, OSC sequences, and other terminal escapes
  */
 export function stripAnsi(text: string): string {
+  const csiRegex = new RegExp("\\u001b\\[[0-9;?]*[a-zA-Z]", "g");
+  const oscRegex = new RegExp("\\u001b\\][^\\u0007\\u001b]*(?:\\u0007|\\u001b\\\\)", "g");
+  const singleRegex = new RegExp("\\u001b[^[\\]]", "g");
+  const controlRegex = new RegExp("[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]", "g");
+
   return text
     // CSI sequences: ESC [ ... letter
-    .replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+    .replace(csiRegex, "")
     // OSC sequences: ESC ] ... BEL or ESC ] ... ST
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    .replace(oscRegex, "")
     // Other single-char escape sequences
-    .replace(/\x1b[^[\]]/g, "")
+    .replace(singleRegex, "")
     // Control characters (keep newlines and tabs)
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, "");
+    .replace(controlRegex, "");
 }
 
 /**
@@ -38,6 +43,43 @@ export function parseTerminalOutput(raw: string): string[] {
  * PTY Manager - handles spawning and interacting with PTY sessions
  */
 export class PTYManager {
+  private require = createRequire(import.meta.url);
+  private spawnPty: ((command: string, args: string[], options: {
+    name: string;
+    cols: number;
+    rows: number;
+    cwd: string;
+    env: Record<string, string>;
+  }) => IPty) | null = null;
+
+  private getSpawn(): (command: string, args: string[], options: {
+    name: string;
+    cols: number;
+    rows: number;
+    cwd: string;
+    env: Record<string, string>;
+  }) => IPty {
+    if (this.spawnPty) {
+      return this.spawnPty;
+    }
+
+    try {
+      const bunPty = this.require("bun-pty") as typeof import("bun-pty");
+      this.spawnPty = bunPty.spawn;
+      return this.spawnPty;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("librust_pty shared library not found")) {
+        throw new Error(
+          "bun-pty native library not found. Install bun-pty and its native library, " +
+            "or set BUN_PTY_LIB to the librust_pty.dylib path before using PTY-based harnesses.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  }
+
   /**
    * Spawn a new PTY session
    */
@@ -46,6 +88,7 @@ export class PTYManager {
     args: string[],
     config: { workdir: string; env: Record<string, string> }
   ): PTYSession {
+    const spawn = this.getSpawn();
     // Merge env, filtering out undefined values (bun-pty is strict about types)
     const mergedEnv: Record<string, string> = {};
     for (const [key, value] of Object.entries(process.env)) {

@@ -1,0 +1,19 @@
+The arm "{{ arm_name }}" appears to be stuck and needs human intervention.
+
+**Stuck Type:** {{ stuck_type }}
+**Confidence:** {{ confidence_percent }}%
+**Reasoning:** {{ reasoning }}
+
+**Current Task:** {{ task_info }}
+
+**Recent Output:**
+```
+{{ recent_output }}
+```
+
+**Suggested Action:** {{ suggested_action }}
+
+To help this arm, reply to this email with instructions, or use:
+```
+ coleo arm prompt {{ arm_name }} "your message here"
+```

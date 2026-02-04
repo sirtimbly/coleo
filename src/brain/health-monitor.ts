@@ -126,6 +126,8 @@ export class ArmHealthMonitor {
   private callbacks: HealthMonitorCallbacks;
   private logFn: (msg: string) => void;
   private db: Database | null = null;
+  private lastResult: HealthCheckResult | null = null;
+  private onResult?: (result: HealthCheckResult) => void;
   
   // Tracking state
   private promptCounts: Map<string, number> = new Map();
@@ -145,6 +147,7 @@ export class ArmHealthMonitor {
       permissionEngine?: PermissionDecisionEngine;
       db?: Database;
       log?: (msg: string) => void;
+      onResult?: (result: HealthCheckResult) => void;
     }
   ) {
     this.config = { ...DEFAULT_CONFIG, ...options?.config };
@@ -154,6 +157,7 @@ export class ArmHealthMonitor {
     this.permissionEngine = options?.permissionEngine ?? new PermissionDecisionEngine();
     this.db = options?.db ?? null;
     this.logFn = options?.log ?? console.log;
+    this.onResult = options?.onResult;
   }
 
   /**
@@ -205,7 +209,10 @@ export class ArmHealthMonitor {
     const armIds = await this.callbacks.getActiveArmIds();
     
     if (armIds.length === 0) {
-      return this.emptyResult(timestamp);
+      const result = this.emptyResult(timestamp);
+      this.lastResult = result;
+      this.onResult?.(result);
+      return result;
     }
     
     // Fetch event windows for all arms
@@ -259,13 +266,16 @@ export class ArmHealthMonitor {
     // Publish health check event
     await this.publishHealthCheckEvent(timestamp, summary, interventions);
     
-    return {
+    const result: HealthCheckResult = {
       timestamp,
       armResults,
       interventions,
       pendingPermissions,
       summary,
     };
+    this.lastResult = result;
+    this.onResult?.(result);
+    return result;
   }
 
   /**
@@ -634,6 +644,13 @@ export class ArmHealthMonitor {
    */
   getConfig(): HealthMonitorConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Get the most recent health check result, if any
+   */
+  getLastResult(): HealthCheckResult | null {
+    return this.lastResult;
   }
 
   /**
