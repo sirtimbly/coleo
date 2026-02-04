@@ -1567,6 +1567,27 @@ interface BudgetPolicy {
 
 ---
 
+## Phase 2.9: Code Graph & Navigable Context (New)
+
+**Goal**: Provide a navigable, queryable graph of the codebase so the brain and arms can recall structure, traverse dependencies, and improve task context payloads.
+
+### Deliverables
+
+- [ ] Tree-sitter based code scanner that regularly indexes the workspace (incremental where possible)
+- [ ] Graph data model stored in SQLite (nodes: files, symbols, definitions; edges: imports, calls, references, containment)
+- [ ] API endpoints to query graph nodes/edges and retrieve code navigation paths
+- [ ] MCP tool for code navigation (e.g., "find definition", "find references", "walk dependency chain")
+- [ ] Brain integration: use graph links when evaluating task progress and enriching task context payloads
+
+### Acceptance Criteria
+
+- [ ] Graph updates automatically on file changes and is queryable within seconds
+- [ ] Agents can navigate from a file to related symbols and dependencies via MCP
+- [ ] Brain can attach graph-derived context snippets to task payloads
+- [ ] Graph data is persisted in SQLite and survives restarts
+
+---
+
 ## Milestones
 
 | Milestone | Target | Description |
@@ -1585,6 +1606,7 @@ interface BudgetPolicy {
 
 | Date | Change |
 |------|--------|
+| 2026-02-04 | Added Phase 2.9: Code Graph & Navigable Context - Tree-sitter scanning, SQLite-backed code graph, API/MCP navigation, and brain context enrichment |
 | 2026-01-25 | Added Phase 1.2: Collaborative Planning & Task Refinement - multi-tabbed grid view for sorting items, progress tracking, and agent-assisted task preparation/discussion |
 | 2026-01-23 | Added Phase 2.8: Global Status History Search - vector DB indexing of all status messages via NATS stream consumer, searchable by users and brain/arms |
 | 2026-01-23 | Reordered phases: Status Reports (now 2.4) moved before Bug Tracking (now 2.5) since status reports are foundational for bug tracking and agentic brain |
