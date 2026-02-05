@@ -3,7 +3,6 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Reply, Edit2, Trash2, MoreHorizontal, User, Bot, Brain } from 'lucide-react';
-// eslint-disable-next-line react/no-array-index-key
 import { Button, Dropdown, Chip } from '@heroui/react';
 import { cn } from '@/lib/utils';
 import type { TaskComment } from '@/lib/api';
@@ -87,55 +86,60 @@ function canEditComment(comment: TaskComment, currentUserId: string): boolean {
  * Supports: **bold**, `code`, and line breaks
  */
 function renderMarkdown(content: string): ReactNode {
-  // Handle line breaks first
   const lines = content.split('\n');
-   if (lines.length > 1) {
-     return (
-       <>
-         {lines.map((line) => (
-           <span key={line}>
-             {renderMarkdownLine(line)}
-             <br />
-           </span>
-         ))}
-       </>
-     );
-  }
-  
-  return renderMarkdownLine(content);
+
+  return (
+    <>
+      {lines.map((line, lineIndex) => (
+        // eslint-disable-next-line
+        <span key={`line-${lineIndex}`}>
+          {renderMarkdownLine(line, lineIndex)}
+          {lineIndex < lines.length - 1 && <br />}
+        </span>
+      ))}
+    </>
+  );
 }
 
-function renderMarkdownLine(content: string): ReactNode {
-  // Split by code blocks first
+function renderMarkdownLine(content: string, lineIndex: number): ReactNode {
   const parts = content.split(/(`[^`]+`)/g);
-  
-   return parts.map((part) => {
+
+  return parts.map((part, partIndex) => {
+    const keyBase = `${lineIndex}-${partIndex}`;
+
     if (part.startsWith('`') && part.endsWith('`')) {
-      // Code
       return (
-        <code key={part} className="px-1.5 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono">
+        <code
+          key={`code-${keyBase}`}
+          className="px-1.5 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono"
+        >
           {part.slice(1, -1)}
         </code>
       );
     }
-    
-    // Process bold (**text**)
+
     const boldParts = part.split(/\*\*([^*]+)\*\*/g);
-     if (boldParts.length > 1) {
-       return (
-         <span key={part}>
-            {boldParts.map((boldPart, idx) => {
-              // Odd indices are the captured groups (bold text)
-              if (idx % 2 === 1 && boldPart) {
-                return <strong key={idx} className="font-semibold">{boldPart}</strong>;
-              }
-              return <span key={idx}>{boldPart}</span>;
-            })}
+    if (boldParts.length > 1) {
+      return (
+        <span key={`bold-${keyBase}`}>
+          {boldParts.map((boldPart, boldIndex) => {
+            const boldKey = `${keyBase}-${boldIndex}`;
+
+            if (boldIndex % 2 === 1 && boldPart) {
+              return (
+                <strong key={`strong-${boldKey}`} className="font-semibold">
+                  {boldPart}
+                </strong>
+              );
+            }
+
+            return <span key={`text-${boldKey}`}>{boldPart}</span>;
+          })}
         </span>
       );
     }
-    
-    return part;
+
+    return <span key={`text-${keyBase}`}>{part}</span>;
   });
 }
 
