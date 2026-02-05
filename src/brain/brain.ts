@@ -1133,6 +1133,24 @@ export class Brain {
         await this.updateTaskStatus(message.from, payload.taskId, payload.status, payload.message);
         break;
       }
+
+      case "task_validation": {
+        // Validator arm reports validation result
+        const payload = message.payload as {
+          taskId: string;
+          approved: boolean;
+          notes: string;
+          screenshot_path?: string;
+        };
+        await this.handleTaskValidation(
+          payload.taskId,
+          message.from,
+          payload.approved,
+          payload.notes,
+          payload.screenshot_path
+        );
+        break;
+      }
     }
   }
 
@@ -1472,8 +1490,309 @@ export class Brain {
     }
   }
 
+/**
+    * Initiate peer validation for a task completion
+    * Find an idle arm to validate the work before marking task as completed
+    */
+  private async initiateTaskValidation(
+    taskId: string,
+    summary: string,
+    artifacts: string[]
+  ): Promise<void> {
+    this.log(`Initiating validation for task ${taskId}...`);
+
+    if (!this.db) {
+      this.log('[initiateTaskValidation] No database available');
+      return;
+    }
+
+    const task = this.tasks.find(t => t.id === taskId);
+    if (!task) {
+      this.log(`[initiateTaskValidation] Task ${taskId} not found`);
+      return;
+    }
+
+    const workerArmId = task.assignedTo;
+    if (!workerArmId) {
+      this.log(`[initiateTaskValidation] Task ${taskId} has no assigned arm, marking completed`);
+      await this.finalizeTaskCompletion(taskId, summary, artifacts);
+      return;
+    }
+
+    // Find an idle arm (different from the worker) to validate
+    const validatorArm = this.findBestValidatorArm(workerArmId, taskId);
+    if (!validatorArm) {
+      this.log(`[initiateTaskValidation] No validator arm available, marking task completed`);
+      await this.finalizeTaskCompletion(taskId, summary, artifacts);
+      return;
+    }
+
+    const now = new Date().toISOString();
+
+    // Update task to 'completing' status and assign validator
+    this.db.run(`
+      UPDATE tasks
+      SET status = 'completing',
+          verification_status = 'pending',
+          verifying_arm_id = ?,
+          verification_requested_at = ?,
+          verification_artifacts = ?,
+          updated_at = ?
+      WHERE id = ?
+    `, [validatorArm.id, now, JSON.stringify(artifacts), now, taskId]);
+
+    // Update in-memory task if found
+    if (task) {
+      task.status = "completing";
+      task.updatedAt = new Date();
+    }
+
+    this.log(`Task ${taskId} set to 'completing', assigned validator arm: ${validatorArm.name}`);
+
+    // Send validation prompt to validator arm
+    const validationPrompt = `# Task Validation Request
+
+**Task ID**: ${taskId}
+**Subject**: ${task.subject}
+**Worker Arm**: ${workerArmId}
+
+**Completion Summary**:
+${summary}
+
+**Artifacts**:
+${artifacts.length > 0 ? artifacts.map(a => `- ${a}`).join('\n') : 'None'}
+
+## Your Task
+
+You have been assigned as the validator for this task completion. Please:
+
+1. **Review the work done** by examining the relevant code changes, files mentioned, and artifacts
+2. **Take screenshots** if helpful to document the current state
+3. **Verify that the work meets acceptance criteria** for this task
+4. **Use the validate_task MCP tool** to report your decision:
+
+   - Call \`validate_task\` with:
+     - \`task_id\`: "${taskId}"
+     - \`approved\`: true if work is complete and correct, false if issues found
+     - \`notes\`: Your validation notes explaining your decision
+     - \`screenshot_path\`: (optional) Path to screenshot showing the work
+
+## Validation Criteria
+
+- Does the implementation match the task description?
+- Are there any code quality issues?
+- Did the worker arm miss any edge cases?
+- Is testing adequate?
+
+When ready, use the \`validate_task\` MCP tool to report your decision.`;
+
+    const promptSuccess = await this.sendPromptToArm(validatorArm.name, validationPrompt);
+    if (!promptSuccess) {
+      this.log(`[initiateTaskValidation] Failed to send validation prompt to ${validatorArm.name}`);
+      // If prompt fails, we can retry on next poll or complete without validation
+    }
+
+    this.logActivity("brain", "validation_requested", taskId, {
+      workerArm: workerArmId,
+      validatorArm: validatorArm.id,
+    });
+  }
+
   /**
-   * Complete a task
+    * Handle task validation result from validator arm
+    */
+  private async handleTaskValidation(
+    taskId: string,
+    validatorArmId: string,
+    approved: boolean,
+    notes: string,
+    screenshotPath?: string
+  ): Promise<void> {
+    this.log(`Task ${taskId} validation result from ${validatorArmId}: ${approved}`);
+
+    if (!this.db) return;
+
+    const task = this.tasks.find(t => t.id === taskId);
+    const taskSubject = task?.subject || taskId;
+    const now = new Date().toISOString();
+
+    if (approved) {
+      // validation succeeded - mark task as completed
+      await this.finalizeTaskCompletion(taskId, notes, []);
+
+      // Add verification record
+      this.db.run(`
+        INSERT INTO task_verifications (task_id, arm_id, status, notes, created_at)
+        VALUES (?, ?, 'approved', ?, ?)
+      `, [taskId, validatorArmId, notes, now]);
+
+      this.log(`Task ${taskSubject} approved and completed`);
+    } else {
+      // validation failed - return task to in_progress with feedback
+      // Get the original worker arm to reassign
+      const originalWorker = this.db.query(`
+        SELECT assigned_to FROM tasks WHERE id = ?
+      `).get(taskId) as { assigned_to: string | null };
+
+      if (originalWorker && originalWorker.assigned_to) {
+        // Reset task to in_progress
+        this.db.run(`
+          UPDATE tasks
+          SET status = 'in_progress',
+              verification_status = 'rejected',
+              verifying_arm_id = NULL,
+              verification_notes = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [notes, now, taskId]);
+
+        // Notify original worker arm to address issues
+        const feedbackPrompt = `# Task Validation Feedback
+
+**Task ID**: ${taskId}
+**Subject**: ${taskSubject}
+
+## Validation Result: REJECTED
+
+**Validator**: ${validatorArmId}
+
+**Feedback**:
+${notes}
+
+${screenshotPath ? `**Screenshot**: ${screenshotPath}` : ''}
+
+## Next Steps
+
+Please address the issues mentioned in the feedback and resubmit for validation.
+
+When you have fixed the issues, call \`complete_task\` again with an updated summary.`;
+
+        await this.sendPromptToArm(originalWorker.assigned_to, feedbackPrompt);
+
+        this.log(`Task ${taskSubject} returned to in_progress for ${originalWorker.assigned_to} to address feedback`);
+      }
+    }
+  }
+
+  /**
+    * Finalize task completion (called after validation or if validation skipped)
+    */
+  private async finalizeTaskCompletion(
+    taskId: string,
+    summary: string,
+    artifacts: string[]
+  ): Promise<void> {
+    const task = this.tasks.find(t => t.id === taskId);
+
+    // Find the arm that was working on this task and transition its state
+    if (task?.assignedTo && this.armStateMachine) {
+      await this.armStateMachine.transition(task.assignedTo, {
+        type: "TASK_COMPLETED",
+        taskId,
+      });
+
+      // Also update the legacy in-memory arm status
+      const arm = this.arms.get(task.assignedTo);
+      if (arm) {
+        arm.status = "idle";
+        arm.currentTask = undefined;
+      }
+    }
+
+    // Always update database
+    if (this.db) {
+      const now = new Date().toISOString();
+      const result = this.db.run(`
+        UPDATE tasks
+        SET status = 'completed',
+            verification_status = 'approved',
+            verified_at = ?,
+            completed_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [now, now, now, taskId]);
+
+      if (result.changes === 0) {
+        this.log(`[finalizeTaskCompletion] WARNING: Task ${taskId} not found in database`);
+      }
+
+      // Update arm status in database
+      const workerArmId = task?.assignedTo;
+      if (workerArmId) {
+        this.db.run(`
+          UPDATE arms
+          SET status = 'idle',
+              current_task_id = NULL,
+              current_task_subject = NULL,
+              last_activity_at = ?,
+              updated_at = ?
+          WHERE id = ?
+        `, [now, now, workerArmId]);
+      }
+    }
+
+    this.state.completedToday++;
+
+    // Update in-memory task if found
+    if (task) {
+      task.status = "completed";
+      task.completedAt = new Date();
+      task.updatedAt = new Date();
+      task.artifacts = artifacts;
+      await this.saveTasks();
+    }
+
+    // Get task info for logging (from memory or database)
+    const taskSubject = task?.subject || await this.getTaskSubjectFromDb(taskId);
+
+    // Log activity
+    this.logActivity("brain", "task_completed", taskId, { subject: taskSubject, artifacts });
+
+    // Check for tasks that were blocked on this task and unblock them
+    await this.unblockDependentTasks(taskId);
+
+    // Notify human
+    const body = await this.templates.renderTemplate("human-task-completed.jinja", {
+      subject: taskSubject,
+      summary,
+      artifacts_list: artifacts.map(a => `- ${a}`).join("\n") || "None",
+    });
+    await this.sendToHuman({
+      subject: `[coleo] Task completed: ${taskSubject}`,
+      body,
+      headers: {
+        "X-Coleo-Task-Id": taskId,
+        "X-Coleo-Type": "task-complete",
+      },
+    });
+
+    this.log(`Completed task: ${taskSubject}`);
+  }
+
+  /**
+    * Find the best arm to validate a task completion
+    * Prefer idle arms different from the worker
+    */
+  private findBestValidatorArm(workerArmId: string, taskId: string): { id: string; name: string } | null {
+    const idleArms = Array.from(this.arms.values()).filter(
+      arm => arm.status === "idle" && arm.id !== workerArmId
+    );
+
+    if (idleArms.length === 0) {
+      return null;
+    }
+
+    // Pick the first idle arm
+    const firstIdle = idleArms[0];
+    if (firstIdle) {
+      return { id: firstIdle.id, name: firstIdle.name };
+    }
+
+    return null;
+  }
+
+  /**
+    * Complete a task
    * Enhanced for progressive planning: checks for status reports with issues
    * and triggers plan re-evaluation to determine next tasks
    */
@@ -1517,71 +1836,9 @@ export class Brain {
       return;
     }
 
-    // Update in-memory task if found
-    if (task) {
-      task.status = "completed";
-      task.completedAt = new Date();
-      task.updatedAt = new Date();
-      task.artifacts = artifacts;
-      await this.saveTasks();
-    }
-
-    // Always update database
-    if (this.db) {
-      const now = new Date().toISOString();
-      const result = this.db.run(`
-        UPDATE tasks
-        SET status = 'completed',
-            completed_at = ?,
-            updated_at = ?
-        WHERE id = ?
-      `, [now, now, taskId]);
-
-      if (result.changes === 0) {
-        this.log(`[completeTask] WARNING: Task ${taskId} not found in database (0 rows updated)`);
-      }
-
-      // Update arm status in database
-      if (task?.assignedTo) {
-        this.db.run(`
-          UPDATE arms
-          SET status = 'idle',
-              current_task_id = NULL,
-              current_task_subject = NULL,
-              last_activity_at = ?,
-              updated_at = ?
-          WHERE id = ?
-        `, [now, now, task.assignedTo]);
-      }
-    }
-
-    this.state.completedToday++;
-
-    // Get task info for logging (from memory or database)
-    const taskSubject = task?.subject || await this.getTaskSubjectFromDb(taskId);
-
-    // Log activity
-    this.logActivity("brain", "task_completed", taskId, { subject: taskSubject, artifacts });
-
-    // Check for tasks that were blocked on this task and unblock them
-    await this.unblockDependentTasks(taskId);
-
-    // Notify human
-    const body = await this.templates.renderTemplate("human-task-completed.jinja", {
-      subject: taskSubject,
-      summary,
-      artifacts_list: artifacts.map(a => `- ${a}`).join("\n") || "None",
-    });
-    await this.sendToHuman({
-      subject: `[coleo] Task completed: ${taskSubject}`,
-      body,
-      headers: {
-        "X-Coleo-Task-Id": taskId,
-        "X-Coleo-Type": "task-complete",
-      },
-    });
-
-    this.log(`Completed task: ${taskSubject}`);
+    // NEW VALIDATION WORKFLOW: Request peer review before completion
+    // Store completion summary and artifacts, then assign validator arm
+    await this.initiateTaskValidation(taskId, summary, artifacts);
   }
 
   /**

@@ -116,7 +116,7 @@ async function runTest(): Promise<void> {
 
   // Track events
   const events: string[] = [];
-  harness.setEventCallback((armId, event, data) => {
+  harness.setEventCallback((armId: string, event: string, data: unknown) => {
     events.push(event);
     console.log(`  [Event] ${event}`);
   });

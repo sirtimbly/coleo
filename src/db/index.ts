@@ -110,6 +110,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["034_task_discussions", MIGRATION_034_TASK_DISCUSSIONS, { table: "tasks", columns: MIGRATION_034_COLUMNS }],
     ["035_fix_sort_order", MIGRATION_035_FIX_SORT_ORDER],
     ["036_bugs_sort_order", MIGRATION_036, { table: "bugs", columns: MIGRATION_036_COLUMNS }],
+    ["037_task_completing_status", MIGRATION_037],
   ];
 
 
@@ -1132,20 +1133,83 @@ const MIGRATION_036_COLUMNS = [
 ];
 
 const MIGRATION_036 = `
--- Create index for ordering bugs by their sort order
-CREATE INDEX IF NOT EXISTS idx_bugs_sort_order ON bugs(sort_order);
+  -- Create index for ordering bugs by their sort order
+  CREATE INDEX IF NOT EXISTS idx_bugs_sort_order ON bugs(sort_order);
 
--- Initialize sort_order for existing bugs based on created_at
-WITH ordered_bugs AS (
-  SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) - 1 as new_sort_order
-  FROM bugs
-)
+  -- Initialize sort_order for existing bugs based on created_at
+  WITH ordered_bugs AS (
+    SELECT id, ROW_NUMBER() OVER (ORDER BY created_at DESC) - 1 as new_sort_order
+    FROM bugs
+  )
 UPDATE bugs
 SET sort_order = (
   SELECT new_sort_order
   FROM ordered_bugs
   WHERE ordered_bugs.id = bugs.id
 );
+`;
+
+// Migration 037: Add 'completing' status to tasks table for peer validation workflow
+const MIGRATION_037 = `
+-- SQLite doesn't support altering CHECK constraints directly
+-- We need to recreate the table to add 'completing' status
+
+CREATE TABLE IF NOT EXISTS tasks_new (
+  id TEXT PRIMARY KEY,
+  subject TEXT NOT NULL,
+  description TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'in_progress', 'completing', 'completed', 'failed', 'blocked', 'cancelled')),
+  priority TEXT NOT NULL DEFAULT 'normal' CHECK (priority IN ('critical', 'high', 'normal', 'low')),
+  source_type TEXT NOT NULL DEFAULT 'manual' CHECK (source_type IN ('manual', 'plan', 'email', 'discovery', 'proposal')),
+  source_ref TEXT,
+  phase TEXT,
+  domain TEXT,
+  assigned_to TEXT,
+  verification_status TEXT DEFAULT 'none',
+  verifying_arm_id TEXT,
+  verified_at TEXT,
+  verification_notes TEXT,
+  verification_artifacts TEXT DEFAULT '[]',
+  verification_requested_at TEXT,
+  plan_line_uid TEXT,
+  tags TEXT DEFAULT '[]',
+  comment_count INTEGER DEFAULT 0,
+  last_comment_at TEXT,
+  sort_order INTEGER DEFAULT 0,
+  classification TEXT,
+  mail_thread_id TEXT,
+  context TEXT DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  completed_at TEXT,
+  claimed_at TEXT,
+  started_at TEXT,
+  due_date TEXT,
+  artifacts TEXT DEFAULT '[]',
+  metadata TEXT DEFAULT '{}'
+);
+
+-- Copy data from old table
+INSERT INTO tasks_new SELECT * FROM tasks;
+
+-- Drop old table and rename new one
+DROP TABLE tasks;
+ALTER TABLE tasks_new RENAME TO tasks;
+
+-- Recreate indexes
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tasks_phase ON tasks(phase);
+CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_verification_status ON tasks(verification_status);
+CREATE INDEX IF NOT EXISTS idx_tasks_verifying_arm ON tasks(verifying_arm_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_plan_line_uid ON tasks(plan_line_uid);
+CREATE INDEX IF NOT EXISTS idx_tasks_classification ON tasks(classification) WHERE classification IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_mail_thread ON tasks(mail_thread_id) WHERE mail_thread_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks(tags);
+CREATE INDEX IF NOT EXISTS idx_tasks_sort_order ON tasks(sort_order);
 `;
 
   /**

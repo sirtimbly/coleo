@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import { realpathSync } from "fs";
 import { fileURLToPath } from "url";
+import { loadEnvFile } from "../config/env";
 
 // Re-export getColeoDir from config to ensure single source of truth
 export { getColeoDir } from "../config";
@@ -21,38 +22,7 @@ export function getBrainTemplatesDir(): string {
   return join(__dirname, "..", "brain", "templates");
 }
 
-export async function loadEnvFile(): Promise<void> {
-  const envPaths = [
-    join(process.cwd(), ".coleo", ".env"),
-    join(process.cwd(), ".env"),
-  ];
-
-  for (const envPath of envPaths) {
-    try {
-      const envFile = file(envPath);
-      if (await envFile.exists()) {
-        const content = await envFile.text();
-        for (const line of content.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith("#")) continue;
-          const eqIndex = trimmed.indexOf("=");
-          if (eqIndex === -1) continue;
-          const key = trimmed.slice(0, eqIndex).trim();
-          let value = trimmed.slice(eqIndex + 1).trim();
-          if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
-            value = value.slice(1, -1);
-          }
-          if (!process.env[key]) {
-            process.env[key] = value;
-          }
-        }
-        break;
-      }
-    } catch {
-      // Ignore errors reading .env
-    }
-  }
-}
+export { loadEnvFile };
 
 export function expandPath(path: string): string {
   if (path.startsWith("~")) {

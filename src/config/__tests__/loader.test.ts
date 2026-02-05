@@ -69,7 +69,7 @@ describe("config loader", () => {
     const toml = configToToml({
       version: 2,
       brain: { pollIntervalMs: 5000, maxArms: 3, armGracePeriodMinutes: 10 },
-      mail: { fromAddress: "bot@example.test", digestSchedule: "weekly" },
+      mail: { fromAddress: "bot@example.test", digestSchedule: "daily" },
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
       defaults: { harness: "opencode", provider: "openai", model: "gpt-4o", contextBudget: 8000 },
@@ -147,7 +147,7 @@ describe("config loader", () => {
       );
 
       expect(updated.brain.maxArms).toBe(5);
-      expect(updated.gitea.url).toBe("https://gitea.test");
+      expect(updated.gitea?.url).toBe("https://gitea.test");
 
       const reloaded = await readTomlConfig(dir);
       expect(reloaded?.brain?.max_arms).toBe(5);

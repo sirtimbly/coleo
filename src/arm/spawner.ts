@@ -12,7 +12,7 @@ import { join } from "path";
 import { initDatabase, Database } from "../db";
 import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
 import { getColeoDir, getRandomPreferredModel } from "../config";
-import type { Arm, OctopaiConfig } from "../types";
+import type { Arm } from "../types";
 
 const execAsync = promisify(exec);
 
@@ -20,7 +20,7 @@ export type AgentType = "opencode" | "opencode-api" | "opencode-tui" | "claude-c
 export type TerminalEmulator = "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "headless" | "tmux" | "harness";
 
 export interface SpawnOptions {
-  octopaiDir: string;
+  coleoDir: string;
   name: string;
   agent: AgentType;
   workdir: string;
@@ -142,32 +142,36 @@ function getTerminalCommand(
 
     case "iterm2":
       // iTerm2 requires AppleScript
-      const script = `
-        tell application "iTerm2"
-          create window with default profile
-          tell current session of current window
-            write text "cd ${workdir} && ${command}"
+      {
+        const script = `
+          tell application "iTerm2"
+            create window with default profile
+            tell current session of current window
+              write text "cd ${workdir} && ${command}"
+            end tell
           end tell
-        end tell
-      `;
-      return {
-        cmd: "osascript",
-        args: ["-e", script],
-      };
+        `;
+        return {
+          cmd: "osascript",
+          args: ["-e", script],
+        };
+      }
 
     case "terminal":
     default:
       // Terminal.app also uses AppleScript
-      const termScript = `
-        tell application "Terminal"
-          do script "cd ${workdir} && ${command}"
-          activate
-        end tell
-      `;
-      return {
-        cmd: "osascript",
-        args: ["-e", termScript],
-      };
+      {
+        const termScript = `
+          tell application "Terminal"
+            do script "cd ${workdir} && ${command}"
+            activate
+          end tell
+        `;
+        return {
+          cmd: "osascript",
+          args: ["-e", termScript],
+        };
+      }
 
     case "tmux":
       // Create a new tmux session for the arm
@@ -184,14 +188,16 @@ function getTerminalCommand(
 
     case "headless":
       // Run directly as a background process, logging to file
-      const logFile = join(process.env.COLEO_DIR || getColeoDir(), "logs", `${title}.log`);
-      return {
-        cmd: "bash",
-        args: [
-          "-c",
-          `mkdir -p "$(dirname "${logFile}")" && cd "${workdir}" && ${command} >> "${logFile}" 2>&1`,
-        ],
-      };
+      {
+        const logFile = join(process.env.COLEO_DIR || getColeoDir(), "logs", `${title}.log`);
+        return {
+          cmd: "bash",
+          args: [
+            "-c",
+            `mkdir -p "$(dirname "${logFile}")" && cd "${workdir}" && ${command} >> "${logFile}" 2>&1`,
+          ],
+        };
+      }
   }
 }
 
@@ -199,7 +205,7 @@ function getTerminalCommand(
  * Generate the agent command based on type
  */
 function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
-  const mcpConfig = join(options.octopaiDir, "mcp", `${options.name}.json`);
+  const mcpConfig = join(options.coleoDir, "mcp", `${options.name}.json`);
   
   // Build model string if provider/model specified
   const modelEnv = options.provider && options.model 
@@ -212,15 +218,15 @@ function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
     case "opencode":
       // OpenCode with MCP config pointing to octopai
       // Use the MCP config file we created for this arm
-      return `${modelEnv}OCTOPAI_ARM_ID=${options.name} OPENCODE_MCP_CONFIG="${mcpConfig}" opencode`;
+      return `${modelEnv}COLEO_ARM_ID=${options.name} OPENCODE_MCP_CONFIG="${mcpConfig}" opencode`;
 
     case "claude-code":
       // Claude Code (assuming similar CLI)
-      return `OCTOPAI_ARM_ID=${options.name} claude`;
+      return `COLEO_ARM_ID=${options.name} claude`;
 
     case "aider":
       // Aider doesn't support MCP natively, but can still be used
-      return `OCTOPAI_ARM_ID=${options.name} aider`;
+      return `COLEO_ARM_ID=${options.name} aider`;
 
     case "custom":
       return options.customCommand || "bash";
@@ -234,7 +240,7 @@ function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
  * Create MCP configuration for the arm
  */
 async function createMcpConfig(options: SpawnOptions): Promise<void> {
-  const mcpDir = join(options.octopaiDir, "mcp");
+  const mcpDir = join(options.coleoDir, "mcp");
   await mkdir(mcpDir, { recursive: true });
 
   // Create an MCP config that tells the agent how to connect to octopai
@@ -244,8 +250,8 @@ async function createMcpConfig(options: SpawnOptions): Promise<void> {
         command: "octopai",
         args: ["mcp", "serve"],
         env: {
-          OCTOPAI_ARM_ID: options.name,
-          OCTOPAI_DIR: options.octopaiDir,
+          COLEO_ARM_ID: options.name,
+          COLEO_DIR: options.coleoDir,
         },
       },
     },
@@ -261,8 +267,8 @@ async function createMcpConfig(options: SpawnOptions): Promise<void> {
 /**
  * Get or create database connection (runs migrations)
  */
-async function getDatabase(octopaiDir: string): Promise<Database> {
-  const dbPath = join(octopaiDir, "octopai.db");
+async function getDatabase(coleoDir: string): Promise<Database> {
+  const dbPath = join(coleoDir, "coleo.db");
   return await initDatabase(dbPath);
 }
 
@@ -281,7 +287,7 @@ async function createArmState(options: SpawnOptions, pid?: number): Promise<Arm>
     model: options.model,
   };
 
-  const db = await getDatabase(options.octopaiDir);
+  const db = await getDatabase(options.coleoDir);
   const now = new Date().toISOString();
 
   try {
@@ -316,7 +322,7 @@ async function createArmState(options: SpawnOptions, pid?: number): Promise<Arm>
   }
 
   // Also create arm's notes directory (still file-based for notes)
-  const notesDir = join(options.octopaiDir, "state", "arms", options.name, "notes");
+  const notesDir = join(options.coleoDir, "state", "arms", options.name, "notes");
   await mkdir(notesDir, { recursive: true });
 
   return arm;
@@ -335,7 +341,7 @@ export async function spawnArmWithHarness(options: SpawnOptions): Promise<Arm> {
   await createMcpConfig(options);
 
   // Create logs directory
-  const logsDir = join(options.octopaiDir, "logs");
+  const logsDir = join(options.coleoDir, "logs");
   await mkdir(logsDir, { recursive: true });
 
   // Check if harness is available for this agent type
@@ -351,8 +357,8 @@ export async function spawnArmWithHarness(options: SpawnOptions): Promise<Arm> {
   const spawnConfig: SpawnConfig = {
     workdir: options.workdir,
     env: {
-      OCTOPAI_DIR: options.octopaiDir,
-      OCTOPAI_ARM_ID: options.name,
+        COLEO_DIR: options.coleoDir,
+        COLEO_ARM_ID: options.name,
     },
     headless: true,
     provider: options.provider,
@@ -372,7 +378,7 @@ export async function spawnArmWithHarness(options: SpawnOptions): Promise<Arm> {
     const arm = await createArmState(options, pid);
 
     // Update status to idle since harness confirms it's ready
-    const db = await getDatabase(options.octopaiDir);
+    const db = await getDatabase(options.coleoDir);
     const now = new Date().toISOString();
     try {
       db.run("UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?", [now, now, options.name]);
@@ -453,7 +459,7 @@ export async function spawnArmInTerminal(options: SpawnOptions): Promise<Arm> {
 
   // Create logs directory for headless mode
   if (terminal === "headless" || terminal === "tmux") {
-    const logsDir = join(options.octopaiDir, "logs");
+    const logsDir = join(options.coleoDir, "logs");
     await mkdir(logsDir, { recursive: true });
   }
 
@@ -548,8 +554,8 @@ interface ArmRow {
 /**
  * List running arms from database (also updates status based on process state)
  */
-export async function listArms(octopaiDir: string): Promise<Arm[]> {
-  const db = await getDatabase(octopaiDir);
+export async function listArms(coleoDir: string): Promise<Arm[]> {
+  const db = await getDatabase(coleoDir);
 
   try {
     const rows = db.query(`
@@ -612,11 +618,11 @@ export async function listArms(octopaiDir: string): Promise<Arm[]> {
  * Update arm status
  */
 export async function updateArmStatus(
-  octopaiDir: string,
+  coleoDir: string,
   armId: string,
   status: Arm["status"]
 ): Promise<void> {
-  const db = await getDatabase(octopaiDir);
+  const db = await getDatabase(coleoDir);
 
   try {
     const now = new Date().toISOString();
@@ -636,8 +642,8 @@ export async function updateArmStatus(
 /**
  * Kill an arm (if we have its PID)
  */
-export async function killArm(octopaiDir: string, armId: string): Promise<boolean> {
-  const db = await getDatabase(octopaiDir);
+export async function killArm(coleoDir: string, armId: string): Promise<boolean> {
+  const db = await getDatabase(coleoDir);
 
   try {
     const row = db.query("SELECT pid FROM arms WHERE id = ?").get(armId) as { pid: number | null } | null;

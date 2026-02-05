@@ -41,7 +41,8 @@ import { KEY_SEQUENCES } from "./types";
 import { PTYManager, stripAnsi } from "./pty-manager";
 
 // Import shared callback types
-import type { ArmEventCallback, ArmDeathCallback } from "./contracts";
+import type { ArmEventCallback } from "./opencode-api";
+import type { ArmDeathCallback } from "./opencode-tui";
 
 /**
  * UI patterns for detecting Kimi CLI state

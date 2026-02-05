@@ -20,7 +20,7 @@ export function registerAgentCommands(program: Command): void {
       const agent = new ArmAgent({
         agentId: options.id,
         natsUrl: options.natsUrl,
-        octopaiDir: coleoDir,
+        coleoDir,
         maxArms: parseInt(options.maxArms, 10),
         heartbeatIntervalMs: parseInt(options.heartbeatInterval, 10),
         debug: options.verbose,

@@ -15,6 +15,7 @@ import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadca
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
+import { loadEnvFile } from "../config/env";
 
 /**
  * Clean up orphaned arms on server startup
@@ -166,6 +167,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   nats?: NatsManager;
   armClient?: ArmClient;
 }> {
+  await loadEnvFile();
   const baseConfig = loadApiConfig();
   // Filter out undefined values from overrides
   const overrides = configOverrides ? 

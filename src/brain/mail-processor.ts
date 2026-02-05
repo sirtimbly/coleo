@@ -2,6 +2,8 @@ interface ProcessedIntent {
   type: "new_task" | "doc_update" | "bug_report" | "approval_response" | "query" | "prompt_arm" | "arm_instruction" | "escalate";
   subject?: string;
   body?: string;
+  title?: string;
+  description?: string;
   targetDoc?: string;
   originalId?: string;
   approved?: boolean;

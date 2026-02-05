@@ -71,7 +71,7 @@ describe("Brain NATS event stream reads", () => {
       verbose: false,
     });
 
-    const result = await (brain as { getRecentArmActivity: (armId: string, minutes: number) => Promise<Array<{timestamp: string; action: string; details: string}> | null> })
+    const result = await (brain as unknown as { getRecentArmActivity: (armId: string, minutes: number) => Promise<Array<{timestamp: string; action: string; details: string}> | null> })
       .getRecentArmActivity("arm-1", 5);
 
     expect(calls).toEqual([{ armId: "arm-1", limit: 100 }]);

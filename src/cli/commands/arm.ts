@@ -209,7 +209,7 @@ export function registerArmCommands(program: Command): void {
 
       if (options.terminal && options.harness === "opencode") {
         const arm = await spawnArm({
-          octopaiDir: coleoDir,
+          coleoDir,
           name: armName,
           agent: armAgent,
           workdir: expandPath(armWorkdir),

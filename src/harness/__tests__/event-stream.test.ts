@@ -11,6 +11,11 @@ const makeEvent = (type: string, properties: Record<string, unknown> = {}) => ({
   properties,
 });
 
+const createFetchMock = (impl: (...args: Parameters<typeof fetch>) => Promise<Response>): typeof fetch => {
+  const mock = Object.assign(impl, { preconnect: () => {} });
+  return mock as typeof fetch;
+};
+
 describe("event-stream utilities", () => {
   it("truncateLargeFields truncates strings and removes internal fields", () => {
     const input = {
@@ -86,9 +91,9 @@ describe("OpenCodeEventStream internals", () => {
     );
 
     expect(events.length).toBe(1);
-    expect(events[0].type).toBe("message.created");
-    expect(events[0].properties.armId).toBe("arm-1");
-    expect(events[0].properties.sessionId).toBe("session-1");
+    expect(events[0]!.type).toBe("message.created");
+    expect(events[0]!.properties.armId).toBe("arm-1");
+    expect(events[0]!.properties.sessionId).toBe("session-1");
   });
 
   it("parseAndEmitEvent wraps non-JSON data", () => {
@@ -105,8 +110,8 @@ describe("OpenCodeEventStream internals", () => {
     );
 
     expect(events.length).toBe(1);
-    expect(events[0].type).toBe("custom");
-    expect(events[0].properties.raw).toBe("not-json");
+    expect(events[0]!.type).toBe("custom");
+    expect(events[0]!.properties.raw).toBe("not-json");
   });
 
   it("connects and processes an SSE stream", async () => {
@@ -132,8 +137,8 @@ describe("OpenCodeEventStream internals", () => {
       },
     });
 
-    globalThis.fetch = async () =>
-      ({ ok: true, status: 200, statusText: "OK", body } as Response);
+    globalThis.fetch = createFetchMock(async () =>
+      ({ ok: true, status: 200, statusText: "OK", body } as Response));
 
     try {
       await (stream as unknown as { connect: () => Promise<void> }).connect();
@@ -143,7 +148,7 @@ describe("OpenCodeEventStream internals", () => {
     }
 
     expect(events.length).toBe(1);
-    expect(events[0].type).toBe("message.created");
+    expect(events[0]!.type).toBe("message.created");
   });
 });
 

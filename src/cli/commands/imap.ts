@@ -57,7 +57,7 @@ export function registerImapCommands(program: Command): void {
       const server = await startImapServer({
         port: parseInt(options.port, 10),
         host: options.host,
-        octopaiDir: coleoDir,
+        coleoDir,
         username: options.username,
         password,
       });

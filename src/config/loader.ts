@@ -250,27 +250,42 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 /**
  * Update configuration in TOML file
  */
+type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea"> & {
+  brain?: Partial<ColeoConfig["brain"]>;
+  mail?: Partial<ColeoConfig["mail"]>;
+  terminal?: Partial<ColeoConfig["terminal"]>;
+  defaults?: Partial<ColeoConfig["defaults"]>;
+  gitea?: Partial<NonNullable<ColeoConfig["gitea"]>>;
+};
+
 export async function updateConfig(
-  updates: Partial<ColeoConfig>,
+  updates: ColeoConfigUpdates,
   coleoDir?: string
 ): Promise<ColeoConfig> {
   const dir = coleoDir || getColeoDir();
   
   // Load current config
   const current = await loadConfig(dir);
+
+  const { gitea, ...rest } = updates;
   
   // Merge updates
   const updated: ColeoConfig = {
     ...current,
-    ...updates,
+    ...rest,
     brain: updates.brain ? { ...current.brain, ...updates.brain } : current.brain,
     mail: updates.mail ? { ...current.mail, ...updates.mail } : current.mail,
     terminal: updates.terminal ? { ...current.terminal, ...updates.terminal } : current.terminal,
     defaults: updates.defaults ? { ...current.defaults, ...updates.defaults } : current.defaults,
   };
-  
-  if (updates.gitea) {
-    updated.gitea = { ...current.gitea, ...updates.gitea } as ColeoConfig["gitea"];
+
+  if (gitea) {
+    updated.gitea = {
+      url: gitea.url ?? current.gitea?.url ?? "",
+      token: gitea.token ?? current.gitea?.token ?? "",
+      defaultOrg: gitea.defaultOrg ?? current.gitea?.defaultOrg ?? "",
+      defaultRepo: gitea.defaultRepo ?? current.gitea?.defaultRepo ?? "",
+    };
   }
   
   // Write back to TOML

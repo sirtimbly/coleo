@@ -38,11 +38,18 @@ class JsonRpcClient {
     this.writer = null;
     this.nodeWritable = null;
     if (this.child.stdin) {
-      const stdin = this.child.stdin as unknown as { getWriter?: () => WritableStreamDefaultWriter<Uint8Array>; write?: (data: string) => void; end?: () => void };
+      const stdin = this.child.stdin as unknown as {
+        getWriter?: () => WritableStreamDefaultWriter<Uint8Array>;
+        write?: (data: string) => void;
+        end?: () => void;
+      };
       if (stdin.getWriter) {
         this.writer = stdin.getWriter();
       } else if (stdin.write) {
-        this.nodeWritable = stdin;
+        this.nodeWritable = {
+          write: stdin.write.bind(stdin),
+          end: stdin.end?.bind(stdin),
+        };
       }
     }
     this.readLoop = this.startReadLoop();
@@ -50,7 +57,7 @@ class JsonRpcClient {
   }
 
   private async startReadLoop(): Promise<void> {
-    if (!this.child.stdout) return;
+    if (!this.child.stdout || typeof this.child.stdout === "number") return;
     const reader = this.child.stdout.getReader();
     while (true) {
       const { value, done } = await reader.read();
@@ -84,8 +91,10 @@ class JsonRpcClient {
     }
   }
 
-  private async startDrain(stream: ReadableStream<Uint8Array> | null): Promise<void> {
-    if (!stream) return;
+  private async startDrain(
+    stream: ReadableStream<Uint8Array> | number | null | undefined
+  ): Promise<void> {
+    if (!stream || typeof stream === "number") return;
     const reader = stream.getReader();
     while (true) {
       const { value, done } = await reader.read();
@@ -259,7 +268,7 @@ describe("MCP Server - Stdio Integration", () => {
     }
   }
 
-  it("handshakes and lists tools", { timeout: testTimeoutMs }, async () => {
+  it("handshakes and lists tools", async () => {
     client = await startServer();
     await initializeHandshake(client);
 
@@ -274,9 +283,9 @@ describe("MCP Server - Stdio Integration", () => {
     expect(toolNames).toContain("claim_file");
     expect(toolNames).toContain("share_note");
     expect(toolNames).toContain("check_conflicts");
-  });
+  }, testTimeoutMs);
 
-  it("sends heartbeat and enqueues message for the brain", { timeout: testTimeoutMs }, async () => {
+  it("sends heartbeat and enqueues message for the brain", async () => {
     client = await startServer();
     await initializeHandshake(client);
 
@@ -306,9 +315,9 @@ describe("MCP Server - Stdio Integration", () => {
     expect(message?.type).toBe("heartbeat");
     expect(message?.from).toBe(armId);
     expect(message?.to).toBe("brain");
-  });
+  }, testTimeoutMs);
 
-  it("returns pending tasks for the arm", { timeout: testTimeoutMs }, async () => {
+  it("returns pending tasks for the arm", async () => {
     const db = new Database(dbPath);
     db.run(
       `INSERT INTO tasks (id, subject, description, status, priority, assigned_to)
@@ -332,9 +341,9 @@ describe("MCP Server - Stdio Integration", () => {
     expect(response.error).toBeUndefined();
     const result = response.result as { content: Array<{ type: string; text: string }> };
     expect(result.content[0]?.text).toContain("Test Task");
-  });
+  }, testTimeoutMs);
 
-  it("claims a file and reports conflicts", { timeout: testTimeoutMs }, async () => {
+  it("claims a file and reports conflicts", async () => {
     client = await startServer();
     await initializeHandshake(client);
 
@@ -380,9 +389,9 @@ describe("MCP Server - Stdio Integration", () => {
     expect(conflictResponse.error).toBeUndefined();
     const conflictResult = conflictResponse.result as { content: Array<{ type: string; text: string }> };
     expect(conflictResult.content[0]?.text).toContain("claimed by you");
-  });
+  }, testTimeoutMs);
 
-  it("shares a note via the brain queue", { timeout: testTimeoutMs }, async () => {
+  it("shares a note via the brain queue", async () => {
     client = await startServer();
     await initializeHandshake(client);
 
@@ -404,5 +413,5 @@ describe("MCP Server - Stdio Integration", () => {
     expect(payload?.title).toBe("Test Note");
     expect(payload?.content).toBe("Hello");
     expect(payload?.tags).toEqual(["mcp", "test"]);
-  });
+  }, testTimeoutMs);
 });

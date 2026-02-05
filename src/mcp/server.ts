@@ -1337,6 +1337,46 @@ export function createMcpServer(): McpServer {
     }
   );
 
+  // Validate task - called by validator arm to report validation result
+  server.registerTool(
+    "validate_task",
+    {
+      description: "Validate a task completion as the assigned validator. Report whether the work is complete and correct.",
+      inputSchema: {
+        task_id: z.string().describe("The ID of the task being validated"),
+        approved: z.boolean().describe("Whether the task completion is approved (true) or rejected (false)"),
+        notes: z.string().describe("Validation notes explaining your decision"),
+        screenshot_path: z.string().optional().describe("(optional) Path to screenshot showing the work"),
+      },
+    },
+    async ({ task_id, approved, notes, screenshot_path }) => {
+      console.error(`[MCP] validate_task called by ${ARM_ID} for task ${task_id}: ${approved}`);
+
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "task_validation",
+        payload: {
+          taskId: task_id,
+          approved,
+          notes,
+          screenshot_path: screenshot_path,
+        },
+      });
+
+      logActivity(ARM_ID, "validate_task", task_id, { messageId, approved });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Validation result for task ${task_id}: ${approved ? 'APPROVED' : 'REJECTED'} (message: ${messageId}).`,
+          },
+        ],
+      };
+    }
+  );
+
   // ============================================
   // CONTEXT COMPRESSION TOOLS - Phase 2.7
   // ============================================

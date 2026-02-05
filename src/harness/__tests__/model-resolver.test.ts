@@ -37,6 +37,11 @@ const createResponse = (body: unknown, ok = true) => {
   } as Response;
 };
 
+const createFetchMock = (impl: (...args: Parameters<typeof fetch>) => Promise<Response>): typeof fetch => {
+  const mock = Object.assign(impl, { preconnect: () => {} });
+  return mock as typeof fetch;
+};
+
 describe("model-resolver", () => {
   const originalFetch = globalThis.fetch;
 
@@ -45,7 +50,7 @@ describe("model-resolver", () => {
   });
 
   it("fetchProviders returns parsed providers", async () => {
-    globalThis.fetch = async () => createResponse(providersFixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(providersFixture));
 
     const result = await fetchProviders("http://example.test");
     expect(result.providers.length).toBe(2);
@@ -53,7 +58,7 @@ describe("model-resolver", () => {
   });
 
   it("fetchProviders returns error payload on non-ok response", async () => {
-    globalThis.fetch = async () => createResponse({}, false);
+    globalThis.fetch = createFetchMock(async () => createResponse({}, false));
 
     const result = await fetchProviders("http://example.test");
     expect(result.providers.length).toBe(0);
@@ -62,7 +67,7 @@ describe("model-resolver", () => {
   });
 
   it("resolveModel returns exact match when available", async () => {
-    globalThis.fetch = async () => createResponse(providersFixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(providersFixture));
 
     const resolved = await resolveModel("openai", "gpt-4o", "http://example.test");
     expect(resolved.fallback).toBe(false);
@@ -72,7 +77,7 @@ describe("model-resolver", () => {
   });
 
   it("resolveModel falls back to cheapest in provider", async () => {
-    globalThis.fetch = async () => createResponse(providersFixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(providersFixture));
 
     const resolved = await resolveModel("openai", "does-not-exist", "http://example.test");
     expect(resolved.fallback).toBe(true);
@@ -90,7 +95,7 @@ describe("model-resolver", () => {
       ],
       connected: ["anthropic"],
     };
-    globalThis.fetch = async () => createResponse(fixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(fixture));
 
     const resolved = await resolveModel("openai", "claude-3-5-sonnet", "http://example.test");
     expect(resolved.fallback).toBe(true);
@@ -109,7 +114,7 @@ describe("model-resolver", () => {
       ],
       connected: [],
     };
-    globalThis.fetch = async () => createResponse(fixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(fixture));
 
     const resolved = await resolveModel("openai", "unknown", "http://example.test");
     expect(resolved.fallback).toBe(true);
@@ -118,7 +123,7 @@ describe("model-resolver", () => {
   });
 
   it("isModelAvailable returns true only when provider and model exist", async () => {
-    globalThis.fetch = async () => createResponse(providersFixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(providersFixture));
 
     await expect(isModelAvailable("openai", "gpt-4o", "http://example.test")).resolves.toBe(true);
     await expect(isModelAvailable("openai", "missing", "http://example.test")).resolves.toBe(false);
@@ -126,7 +131,7 @@ describe("model-resolver", () => {
   });
 
   it("getAvailableModelsByCost sorts models by total cost", async () => {
-    globalThis.fetch = async () => createResponse(providersFixture);
+    globalThis.fetch = createFetchMock(async () => createResponse(providersFixture));
 
     const models = await getAvailableModelsByCost("http://example.test");
     expect(models.length).toBe(4);

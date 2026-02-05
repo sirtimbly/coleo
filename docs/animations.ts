@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import { ref, onMounted, onUnmounted } from 'vue'
 
 const time = ref(0)
@@ -11,22 +12,31 @@ const DISTORTION = 30
 const SPARKLE_AMOUNT = 0.25
 const SUN_ANGLE = 0.3
 
-let raysCanvas = null
-let sparklesCanvas = null
-let displacementMap = null
-let waterLayer = null
-let depthSlider = null
-let depthControl = null
-let depthIcon = null
+let raysCanvas: HTMLCanvasElement | null = null
+let sparklesCanvas: HTMLCanvasElement | null = null
+let displacementMap: SVGFEDisplacementMapElement | null = null
+let waterLayer: HTMLElement | null = null
+let depthSlider: HTMLInputElement | null = null
+let depthControl: HTMLElement | null = null
+let depthIcon: HTMLElement | null = null
 
-let rays = []
-let sparkles = []
+let rays: LightRay[] = []
+let sparkles: Sparkle[] = []
 let raysInitialized = false
 let sparklesInitialized = false
-let animationId = null
+let animationId: number | null = null
 
 class LightRay {
-  constructor(index, total, vw, vh) {
+  x: number
+  y: number
+  angle: number
+  width: number
+  length: number
+  speed: number
+  phase: number
+  opacity: number
+
+  constructor(index: number, total: number, vw: number, vh: number) {
     const section = vw / total
     this.x = (section * index) + (Math.random() - 0.5) * 40
     this.y = -150 - Math.random() * 200
@@ -38,7 +48,7 @@ class LightRay {
     this.opacity = 0.08 + Math.random() * 0.1
   }
 
-  draw(ctx, time, brightness, vw, vh) {
+  draw(ctx: CanvasRenderingContext2D, time: number, brightness: number, vw: number, vh: number) {
     const sway = Math.sin(time * this.speed + this.phase) * 15
     const breathing = Math.sin(time * 0.4 + this.phase) * 0.5 + 0.5
     const alpha = this.opacity * (0.4 + brightness * 0.6) * breathing
@@ -72,7 +82,18 @@ class LightRay {
 }
 
 class Sparkle {
-  constructor(initial = false, vw, vh, dh) {
+  x: number
+  y: number
+  radius: number
+  speed: number
+  wobble: number
+  wobbleSpeed: number
+  phase: number
+  maxOpacity: number
+  vw: number
+  dh: number
+
+  constructor(initial = false, vw: number, vh: number, dh: number) {
     this.x = Math.random() * vw * 2
     if (initial && dh > 0) {
       this.y = Math.random() * dh
@@ -89,7 +110,7 @@ class Sparkle {
     this.dh = dh
   }
 
-  update(vw, dh) {
+  update(vw: number, dh: number) {
     this.y -= this.speed
     this.x += Math.sin(this.y * 0.005 + this.wobble) * 0.3
     this.wobble += this.wobbleSpeed
@@ -100,7 +121,14 @@ class Sparkle {
     }
   }
 
-  draw(ctx, time, scrollY, viewportH, vw, alphaMult) {
+  draw(
+    ctx: CanvasRenderingContext2D,
+    time: number,
+    scrollY: number,
+    viewportH: number,
+    vw: number,
+    alphaMult: number
+  ) {
     if (this.y < scrollY - 100 || this.y > scrollY + viewportH + 100) return
 
     const twinkle = Math.sin(time * 2 + this.phase) * 0.5 + 0.5
@@ -128,7 +156,7 @@ class Sparkle {
   }
 }
 
-function initRays(vw, vh) {
+function initRays(vw: number, vh: number) {
   if (raysInitialized || vw === 0) return
   rays = []
   for (let i = 0; i < 8; i++) {
@@ -137,7 +165,7 @@ function initRays(vw, vh) {
   raysInitialized = true
 }
 
-function initSparkles(vw, vh, dh) {
+function initSparkles(vw: number, vh: number, dh: number) {
   if (sparklesInitialized || dh === 0) return
   sparkles = []
   const count = Math.max(40, Math.floor(dh / 80))
@@ -152,6 +180,7 @@ function animate() {
 
   if (raysCanvas && raysCanvas.getContext) {
     const ctx = raysCanvas.getContext('2d')
+    if (!ctx) return
     ctx.clearRect(0, 0, viewportWidth.value, viewportHeight.value)
     ctx.globalCompositeOperation = 'screen'
     if (raysInitialized) {
@@ -163,6 +192,7 @@ function animate() {
 
   if (sparklesCanvas && sparklesCanvas.getContext) {
     const ctx = sparklesCanvas.getContext('2d')
+    if (!ctx) return
     ctx.clearRect(0, 0, viewportWidth.value, viewportHeight.value)
     ctx.globalCompositeOperation = 'source-over'
     if (sparklesInitialized) {
@@ -177,6 +207,7 @@ function animate() {
 }
 
 function updateDepth() {
+  if (!depthSlider || !depthControl || !depthIcon) return
   const value = parseInt(depthSlider.value)
   brightness.value = value / 100
 
@@ -221,13 +252,13 @@ function handleScroll() {
 }
 
 export function initColeoAnimation() {
-  raysCanvas = document.getElementById('raysCanvas')
-  sparklesCanvas = document.getElementById('sparklesCanvas')
-  displacementMap = document.querySelector('#water-distortion feDisplacementMap')
-  waterLayer = document.getElementById('waterLayer')
-  depthSlider = document.getElementById('depthSlider')
-  depthControl = document.getElementById('depthControl')
-  depthIcon = document.getElementById('depthIcon')
+  raysCanvas = document.getElementById('raysCanvas') as HTMLCanvasElement | null
+  sparklesCanvas = document.getElementById('sparklesCanvas') as HTMLCanvasElement | null
+  displacementMap = document.querySelector<SVGFEDisplacementMapElement>('#water-distortion feDisplacementMap')
+  waterLayer = document.getElementById('waterLayer') as HTMLElement | null
+  depthSlider = document.getElementById('depthSlider') as HTMLInputElement | null
+  depthControl = document.getElementById('depthControl') as HTMLElement | null
+  depthIcon = document.getElementById('depthIcon') as HTMLElement | null
 
   handleResize()
   initRays(viewportWidth.value, viewportHeight.value)
@@ -237,10 +268,10 @@ export function initColeoAnimation() {
   window.addEventListener('scroll', handleScroll)
 
   if (displacementMap) {
-    displacementMap.setAttribute('scale', DISTORTION)
+    displacementMap.setAttribute('scale', String(DISTORTION))
   }
 
-  depthSlider.addEventListener('input', updateDepth)
+  depthSlider?.addEventListener('input', updateDepth)
   animate()
   updateDepth()
 }

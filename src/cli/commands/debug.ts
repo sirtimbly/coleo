@@ -17,6 +17,7 @@ export function registerDebugCommands(program: Command): void {
 
       try {
         const { MailProcessor } = await import("../../brain/mail-processor");
+        const { BrainTemplateManager } = await import("../../brain/template-manager");
         const { initDatabase } = await import("../../db");
 
         console.log("=".repeat(60));
@@ -91,11 +92,22 @@ export function registerDebugCommands(program: Command): void {
         console.log(`  Recent activity: ${recentActivity.slice(0, 3).join(", ") || "none"}`);
         console.log();
 
-        const processor = new MailProcessor((msg) => {
+        const templateManager = new BrainTemplateManager(coleoDir, (msg) => {
           if (options.verbose) {
             console.log(`[DEBUG] ${msg}`);
           }
         });
+        const systemPrompt = await templateManager.loadMailProcessorSystemPrompt({
+          availableArms,
+          pendingTasks,
+          recentActivity,
+        });
+
+        const processor = new MailProcessor((msg) => {
+          if (options.verbose) {
+            console.log(`[DEBUG] ${msg}`);
+          }
+        }, systemPrompt);
 
         console.log("=".repeat(60));
         console.log("PROCESSING...");
@@ -103,11 +115,7 @@ export function registerDebugCommands(program: Command): void {
         console.log();
 
         const startTime = Date.now();
-        const intent = await processor.processMessage(options.subject, message, {
-          availableArms,
-          pendingTasks,
-          recentActivity,
-        });
+        const intent = await processor.processMessage(options.subject, message, systemPrompt);
         const elapsed = Date.now() - startTime;
 
         console.log(`Completed in ${elapsed}ms\n`);
@@ -180,6 +188,7 @@ export function registerDebugCommands(program: Command): void {
     .description("Test multiple messages for intent processing")
     .option("-v, --verbose", "Show detailed output for each message")
     .action(async (options: { verbose?: boolean }) => {
+      const coleoDir = getColeoDir();
       const testMessages = [
         { subject: "Add dark mode", body: "Please add a dark mode toggle to the settings page" },
         { subject: "What's happening?", body: "Can you give me a status update on current work?" },
@@ -192,6 +201,7 @@ export function registerDebugCommands(program: Command): void {
 
       try {
         const { MailProcessor } = await import("../../brain/mail-processor");
+        const { BrainTemplateManager } = await import("../../brain/template-manager");
 
         console.log("=".repeat(60));
         console.log("BATCH INTENT PROCESSING TEST");
@@ -202,11 +212,17 @@ export function registerDebugCommands(program: Command): void {
           console.log("WARNING: OPENAI_API_KEY not set. Using fallback parsing.\n");
         }
 
-        const processor = new MailProcessor((msg) => {
+        const templateManager = new BrainTemplateManager(coleoDir, (msg) => {
           if (options.verbose) {
             console.log(`[DEBUG] ${msg}`);
           }
         });
+
+        const processor = new MailProcessor((msg) => {
+          if (options.verbose) {
+            console.log(`[DEBUG] ${msg}`);
+          }
+        }, "");
 
         const mockContext = {
           availableArms: [
@@ -217,6 +233,8 @@ export function registerDebugCommands(program: Command): void {
           recentActivity: ["brain started", "arm spawned"],
         };
 
+        const systemPrompt = await templateManager.loadMailProcessorSystemPrompt(mockContext);
+
         console.log("Testing with mock context:");
         console.log(`  Arms: ${mockContext.availableArms.map((a) => `${a.name}(${a.status})`).join(", ")}`);
         console.log(`  Pending: ${mockContext.pendingTasks} tasks`);
@@ -226,7 +244,7 @@ export function registerDebugCommands(program: Command): void {
 
         for (const msg of testMessages) {
           const startTime = Date.now();
-          const intent = await processor.processMessage(msg.subject, msg.body, mockContext);
+          const intent = await processor.processMessage(msg.subject, msg.body, systemPrompt);
           const elapsed = Date.now() - startTime;
 
           console.log(`Subject: "${msg.subject}"`);
