@@ -1,13 +1,15 @@
 import { useState, useMemo, useCallback, useId } from 'react';
-import { RefreshCw, Settings, Grid3x3, ListTodo, Search } from 'lucide-react';
+import { RefreshCw, Settings, Grid3x3, ListTodo, Search, Lightbulb } from 'lucide-react';
 import { Button, Tabs, Chip } from '@heroui/react';
 import { TaskGrid } from './TaskGrid';
 import { BugGrid } from './BugGrid';
-import { type Task, type Bug, cn } from '@/lib';
+import { DiscoveryGrid } from './DiscoveryGrid';
+import { type Task, type Bug, type Discovery, cn } from '@/lib';
 import { useTasks } from '@/hooks/useTasks';
 import { useBugs } from '@/hooks/useBugs';
+import { useDiscoveries } from '@/hooks/useDiscoveries';
 
-type TabType = 'tasks' | 'bugs';
+type TabType = 'tasks' | 'bugs' | 'discoveries';
 
 interface UnifiedGridViewProps {
   className?: string;
@@ -16,13 +18,16 @@ interface UnifiedGridViewProps {
 export function UnifiedGridView({ className }: UnifiedGridViewProps) {
   const tasksId = useId();
   const bugsId = useId();
+  const discoveriesId = useId();
   const [activeTab, setActiveTab] = useState<TabType>('tasks');
   const [searchText, setSearchText] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
   const [selectedBugId, setSelectedBugId] = useState<string | undefined>();
+  const [selectedDiscoveryId, setSelectedDiscoveryId] = useState<string | undefined>();
 
   const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = useTasks();
   const { bugs, isLoading: bugsLoading, refetch: refetchBugs } = useBugs();
+  const { discoveries, isLoading: discoveriesLoading, refetch: refetchDiscoveries } = useDiscoveries({ status: 'open' });
 
   const filteredTasks = useMemo(() => {
     if (!searchText.trim()) return tasks;
@@ -43,6 +48,15 @@ export function UnifiedGridView({ className }: UnifiedGridViewProps) {
     );
   }, [bugs, searchText]);
 
+  const filteredDiscoveries = useMemo(() => {
+    if (!searchText.trim()) return discoveries;
+    const search = searchText.toLowerCase();
+    return discoveries.filter(discovery =>
+      discovery.title.toLowerCase().includes(search) ||
+      discovery.details.toLowerCase().includes(search)
+    );
+  }, [discoveries, searchText]);
+
   const handleOpenTaskDetails = useCallback((task: Task) => {
     setSelectedTaskId(task.id);
   }, []);
@@ -51,10 +65,15 @@ export function UnifiedGridView({ className }: UnifiedGridViewProps) {
     setSelectedBugId(bug.id);
   }, []);
 
+  const handleOpenDiscoveryDetails = useCallback((discovery: Discovery) => {
+    setSelectedDiscoveryId(discovery.id);
+  }, []);
+
   const handleRefresh = useCallback(() => {
     if (activeTab === 'tasks') refetchTasks();
     if (activeTab === 'bugs') refetchBugs();
-  }, [activeTab, refetchTasks, refetchBugs]);
+    if (activeTab === 'discoveries') refetchDiscoveries();
+  }, [activeTab, refetchTasks, refetchBugs, refetchDiscoveries]);
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchText(e.target.value);
@@ -120,6 +139,14 @@ export function UnifiedGridView({ className }: UnifiedGridViewProps) {
                   {bugs.length}
                 </Chip>
               </Tabs.Tab>
+              <Tabs.Tab id={discoveriesId} className="flex-1">
+                <Lightbulb className="h-4 w-4" />
+                Discoveries
+                <Tabs.Indicator />
+                <Chip size="sm" variant="soft" className="ml-1">
+                  {discoveries.length}
+                </Chip>
+              </Tabs.Tab>
             </Tabs.List>
           </Tabs.ListContainer>
 
@@ -149,6 +176,21 @@ export function UnifiedGridView({ className }: UnifiedGridViewProps) {
                   totalBugs={bugs.length}
                   selectedBugId={selectedBugId}
                   onOpenDetails={handleOpenBugDetails}
+                  className="h-full"
+                />
+              )}
+            </div>
+          </Tabs.Panel>
+
+          <Tabs.Panel id={discoveriesId} className="flex-1 overflow-hidden p-0">
+            <div className="p-4 h-full overflow-auto">
+              {discoveriesLoading ? (
+                <div className="text-center p-8 text-muted-foreground">Loading discoveries...</div>
+              ) : (
+                <DiscoveryGrid
+                  discoveries={filteredDiscoveries}
+                  selectedDiscoveryId={selectedDiscoveryId}
+                  onOpenDetails={handleOpenDiscoveryDetails}
                   className="h-full"
                 />
               )}

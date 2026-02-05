@@ -459,6 +459,46 @@ class ApiClient {
     });
   }
 
+  // Discoveries
+  async listDiscoveries(params?: {
+    armId?: string;
+    kind?: string;
+    severity?: string;
+    status?: string;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.kind) query.set('kind', params.kind);
+    if (params?.severity) query.set('severity', params.severity);
+    if (params?.status) query.set('status', params.status);
+    if (params?.limit) query.set('limit', params.limit.toString());
+    const queryStr = query.toString();
+    return this.request<{ discoveries: Discovery[] }>(`/discoveries${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getDiscovery(id: string) {
+    return this.request<{ discovery: Discovery }>(`/discoveries/${id}`);
+  }
+
+  async updateDiscovery(id: string, updates: {
+    status: string;
+  }) {
+    return this.request<{ success: boolean }>(`/discoveries/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async getDiscoveryStats() {
+    return this.request<{
+      bySeverity: Record<string, number>;
+      byKind: Record<string, number>;
+      byStatus: Record<string, number>;
+      recent24h: number;
+    }>('/discoveries/stats');
+  }
+
   // Tasks
   async listTasks(params?: {
     status?: string; 
@@ -868,6 +908,21 @@ export interface Bug {
   updatedAt: string;
   resolvedAt?: string;
   humanNotified: boolean;
+}
+
+export interface Discovery {
+  id: string;
+  armId: string;
+  armName: string;
+  kind: string;
+  title: string;
+  details: string;
+  filePath: string | null;
+  lineNumber: number | null;
+  severity: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Task comment/discussion

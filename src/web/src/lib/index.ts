@@ -16,6 +16,7 @@ export {
   type OpenCodeEvent,
   type Task,
   type Bug,
+  type Discovery,
   type ArmActivityState,
   type ArmAnalysis,
   type ArmAnalysisFull,
