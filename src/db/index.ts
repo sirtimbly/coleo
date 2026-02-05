@@ -1154,6 +1154,8 @@ const MIGRATION_037 = `
 -- SQLite doesn't support altering CHECK constraints directly
 -- We need to recreate the table to add 'completing' status
 
+DROP TABLE IF EXISTS tasks_new;
+
 CREATE TABLE IF NOT EXISTS tasks_new (
   id TEXT PRIMARY KEY,
   subject TEXT NOT NULL,
@@ -1171,6 +1173,10 @@ CREATE TABLE IF NOT EXISTS tasks_new (
   verification_notes TEXT,
   verification_artifacts TEXT DEFAULT '[]',
   verification_requested_at TEXT,
+  assigned_arms TEXT DEFAULT '[]',
+  is_watch_mode INTEGER DEFAULT 0,
+  consensus_status TEXT,
+  dependency_blocked INTEGER DEFAULT 0,
   plan_line_uid TEXT,
   tags TEXT DEFAULT '[]',
   comment_count INTEGER DEFAULT 0,
@@ -1190,7 +1196,82 @@ CREATE TABLE IF NOT EXISTS tasks_new (
 );
 
 -- Copy data from old table
-INSERT INTO tasks_new SELECT * FROM tasks;
+INSERT INTO tasks_new (
+  id,
+  subject,
+  description,
+  status,
+  priority,
+  source_type,
+  source_ref,
+  phase,
+  domain,
+  assigned_to,
+  verification_status,
+  verifying_arm_id,
+  verified_at,
+  verification_notes,
+  verification_artifacts,
+  verification_requested_at,
+  assigned_arms,
+  is_watch_mode,
+  consensus_status,
+  dependency_blocked,
+  plan_line_uid,
+  tags,
+  comment_count,
+  last_comment_at,
+  sort_order,
+  classification,
+  mail_thread_id,
+  context,
+  created_at,
+  updated_at,
+  completed_at,
+  claimed_at,
+  started_at,
+  due_date,
+  artifacts,
+  metadata
+)
+SELECT
+  id,
+  subject,
+  description,
+  status,
+  priority,
+  source_type,
+  source_ref,
+  phase,
+  domain,
+  assigned_to,
+  verification_status,
+  verifying_arm_id,
+  verified_at,
+  verification_notes,
+  verification_artifacts,
+  verification_requested_at,
+  assigned_arms,
+  is_watch_mode,
+  consensus_status,
+  dependency_blocked,
+  plan_line_uid,
+  tags,
+  comment_count,
+  last_comment_at,
+  sort_order,
+  classification,
+  mail_thread_id,
+  context,
+  created_at,
+  updated_at,
+  completed_at,
+  claimed_at,
+  started_at,
+  due_date,
+  artifacts,
+  metadata
+FROM tasks;
 
 -- Drop old table and rename new one
 DROP TABLE tasks;
