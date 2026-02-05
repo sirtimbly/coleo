@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Card } from '@heroui/react';
 import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
+import { useWebSocket } from '@/hooks/useWebSocket';
 import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
 type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
@@ -131,6 +132,19 @@ export function MessagingPage() {
   useEffect(() => {
     loadMessages();
   }, [loadMessages]);
+
+  // WebSocket listener for real-time mail updates
+  useWebSocket({
+    channels: ['mail'],
+    onMessage: (message) => {
+      if (message.channel === 'mail') {
+        // Refresh messages when new mail events occur
+        if (message.event === 'mail.sent' || message.event === 'mail.received') {
+          loadMessages();
+        }
+      }
+    },
+  });
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {

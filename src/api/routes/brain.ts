@@ -8,7 +8,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
-import { broadcastBrainEvent } from "../websocket";
+import { broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
@@ -271,6 +271,14 @@ export function createBrainRoutes() {
       subject,
       priority: body.priority || "normal",
       domain: body.domain,
+    });
+
+    // Also broadcast as mail.sent so mail UIs can refresh
+    broadcastMailEvent("sent", {
+      messageId: mailMessage.id,
+      from: "human@coleo.local",
+      to: "brain@coleo.local",
+      subject,
     });
 
     return c.json({ 
