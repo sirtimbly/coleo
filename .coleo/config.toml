@@ -1,0 +1,22 @@
+# Coleo Configuration
+# Generated on 2026-02-05T15:23:25.477Z
+
+version = 1
+
+[brain]
+poll_interval_ms = 30000
+max_arms = 8
+
+[mail]
+from_address = "brain@coleo.local"
+digest_schedule = "immediate"
+
+[terminal]
+emulator = "auto"
+
+# Gitea configuration (optional)
+# [gitea]
+# url = "http://localhost:3000"
+# token = "your-token-here"
+# default_org = "coleo"
+# default_repo = "workspace"

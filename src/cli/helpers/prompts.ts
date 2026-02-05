@@ -44,18 +44,21 @@ export async function loadArmTemplates(armsDir: string): Promise<Array<{ name: s
     for (const file of files) {
       if (!file.endsWith(".toml")) continue;
       const filePath = join(armsDir, file);
+      let name = file.replace(".toml", "");
+      let domain = "general";
+      let description = `${domain} specialist`;
       try {
         const content = await readFile(filePath, "utf-8");
         const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
         const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
         const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
-        const name = nameMatch?.[1] || file.replace(".toml", "");
-        const domain = domainMatch?.[1] || "general";
-        const description = traitsMatch?.[1] || `${domain} specialist`;
-        templates.push({ name, file, domain, description });
+        name = nameMatch?.[1] || name;
+        domain = domainMatch?.[1] || domain;
+        description = traitsMatch?.[1] || `${domain} specialist`;
       } catch {
-        // Ignore unreadable files
+        // Fall back to filename-derived defaults
       }
+      templates.push({ name, file, domain, description });
     }
   } catch {
     // Directory may not exist

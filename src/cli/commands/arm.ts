@@ -12,6 +12,10 @@ import {
 } from "../context";
 import { prompt, promptSelect, promptYN, loadArmTemplates } from "../helpers/prompts";
 
+function normalizeTemplateName(value: string): string {
+  return value.trim().replace(/\.toml$/i, "");
+}
+
 export function registerArmCommands(program: Command): void {
 
   const armCmd = program.command("arm").description("Manage arms (agents)");
@@ -46,6 +50,7 @@ export function registerArmCommands(program: Command): void {
       let armWorkdir = options.workdir || process.cwd();
       let armProvider = options.provider;
       let armModel = options.model;
+      let armTemplate = normalizeTemplateName(options.template || "");
 
       if (!interactive && !armName) {
         armName = generateArmName();
@@ -62,31 +67,21 @@ export function registerArmCommands(program: Command): void {
         if (templates.length > 0) {
           useTemplate = await promptYN("Would you like to use an arm template?", true);
           if (useTemplate) {
-            const templateNames = templates.map((t) => `${t.name} - ${t.description}`);
+            const templateNames = templates.map((t) => `${t.file} - ${t.description}`);
             templateNames.push("Custom arm (no template)");
             const selected = await promptSelect("Select a template:", templateNames);
             const selectedIdx = templateNames.indexOf(selected);
             if (selectedIdx >= 0 && selectedIdx < templates.length) {
               const selectedTemplate = templates[selectedIdx];
               if (selectedTemplate) {
-                armName = selectedTemplate.name;
+                armTemplate = normalizeTemplateName(selectedTemplate.file);
               }
-            } else {
-              const customName = await prompt(`Arm name [${suggestedName}]: `);
-              armName = customName.trim() || suggestedName;
             }
-          } else {
-            const customName = await prompt(`Arm name [${suggestedName}]: `);
-            armName = customName.trim() || suggestedName;
           }
-        } else {
-          const customName = await prompt(`Arm name [${suggestedName}]: `);
-          armName = customName.trim() || suggestedName;
         }
 
-        if (!armName.trim()) {
-          armName = suggestedName;
-        }
+        const customName = await prompt(`Arm name [${suggestedName}]: `);
+        armName = customName.trim() || suggestedName;
 
         const workdir = await prompt(`Working directory [${process.cwd()}]: `);
         if (workdir.trim()) {
@@ -107,6 +102,9 @@ export function registerArmCommands(program: Command): void {
 
         console.log("\n=== Spawning Arm ===");
         console.log(`  Name: ${armName}`);
+        if (armTemplate) {
+          console.log(`  Template: ${armTemplate}.toml`);
+        }
         console.log(`  Workdir: ${armWorkdir}`);
         if (armProvider) {
           console.log(`  Provider: ${armProvider}`);
@@ -144,18 +142,24 @@ export function registerArmCommands(program: Command): void {
           }
           console.log(`Restarting stopped arm: ${armName}`);
         } else {
-          const createRes = await fetch(`${apiUrl}/api/arms`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({
-              name: armName,
-              domain: armDomain,
-              harness: "opencode-tui",
-              status: "starting",
-              provider: armProvider,
-              model: armModel,
-            }),
-          });
+        const createPayload: Record<string, unknown> = {
+          name: armName,
+          status: "starting",
+          provider: armProvider,
+          model: armModel,
+        };
+        if (armTemplate) {
+          createPayload.template = armTemplate;
+        } else {
+          createPayload.domain = armDomain;
+        }
+        createPayload.harness = "opencode-tui";
+
+        const createRes = await fetch(`${apiUrl}/api/arms`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(createPayload),
+        });
 
           if (!createRes.ok) {
             const err = await createRes.json().catch(() => ({}));
@@ -255,18 +259,25 @@ export function registerArmCommands(program: Command): void {
         console.log(`Restarting stopped arm: ${armName}`);
       } else {
         const harnessType = options.harness || "opencode-api";
+        const createPayload: Record<string, unknown> = {
+          name: armName,
+          status: "starting",
+          provider: armProvider,
+          model: armModel,
+        };
+        if (armTemplate) {
+          createPayload.template = armTemplate;
+        } else {
+          createPayload.domain = armDomain;
+        }
+        if (options.harness || !armTemplate) {
+          createPayload.harness = harnessType;
+        }
 
         const createRes = await fetch(`${apiUrl}/api/arms`, {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            name: armName,
-            domain: armDomain,
-            harness: harnessType,
-            status: "starting",
-            provider: armProvider,
-            model: armModel,
-          }),
+          body: JSON.stringify(createPayload),
         });
 
         if (!createRes.ok) {
