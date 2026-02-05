@@ -46,7 +46,7 @@ title: Coleo — Multi-Agent Development Coordination
             <span class="text-white">One Mind.</span>
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
-            An experimental coordination layer that turns your favorite models into a team: many agents, one brain, visible work.
+            An experimental coordination layer that turns your favorite models into a team: many agents, one brain, long-running productivity.
           </p>
           <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
@@ -59,7 +59,6 @@ title: Coleo — Multi-Agent Development Coordination
               <span>View on GitHub</span>
             </a>
           </div>
-          <p class="mt-4 text-xs text-white/70">BSL 1.1 • Free for individual use</p>
         </div>
         <div class="relative">
           <div class="relative ui-box backdrop-blur-md rounded-3xl shadow-2xl p-8">

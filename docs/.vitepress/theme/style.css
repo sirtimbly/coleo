@@ -594,7 +594,7 @@ body:not(.coleo-home).light-mode .VPDoc .content {
 /* Doc content theming: code blocks, inline code, tables */
 .vp-doc pre,
 .vp-doc pre code {
-	background: var(--coleo-code-bg, rgb(139, 172, 203)) !important;
+	background: var(--coleo-code-bg, rgb(27, 37, 48)) !important;
 }
 
 body.light-mode .vp-doc pre,

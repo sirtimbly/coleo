@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DefaultTheme from "vitepress/theme";
 import { useRoute, Content } from "vitepress";
-import { computed, watchEffect } from "vue";
+import { computed, watch, watchEffect, nextTick } from "vue";
 import SiteNav from "../components/SiteNav.vue";
 
 const { Layout: DefaultLayout } = DefaultTheme;
@@ -22,6 +22,36 @@ watchEffect(() => {
   if (typeof document === "undefined") return;
   document.body.classList.toggle("coleo-home", isHome.value);
 });
+
+const bootAnimations = async () => {
+  if (typeof window === "undefined") return;
+  await nextTick();
+  setTimeout(async () => {
+    const home = isHome.value;
+    // Stop both animators before starting the appropriate one
+    (window as any).__homeAnim?.stopHomeAnimation?.();
+    (window as any).__innerAnim?.stopInnerAnimation?.();
+    if (home) {
+      try {
+        await import("../anim.js");
+      } catch (_) {}
+      (window as any).__homeAnim?.initHomeAnimation?.();
+    } else {
+      try {
+        await import("../anim-lite.js");
+      } catch (_) {}
+      (window as any).__innerAnim?.initInnerAnimation?.();
+    }
+  }, 0);
+};
+
+watch(
+  () => route.path,
+  () => {
+    bootAnimations();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>

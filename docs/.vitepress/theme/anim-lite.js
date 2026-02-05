@@ -10,6 +10,7 @@
     rays:[],
     resizeHandler:null, scrollHandler:null, inputHandler:null,
     colorSchemeQuery:null, colorSchemeHandler:null,
+    depthRetry:0, depthRetryTimer:null, depthBound:false, iconClickHandler:null,
   }
 
   function getSystemIsLight(){
@@ -32,15 +33,6 @@
     if(!document.getElementById('raysCanvasInner')){
       const c=document.createElement('canvas'); c.id='raysCanvasInner'; c.className='rays-layer'; c.dataset.inner='1'; document.body.appendChild(c)
     }
-    if(!document.getElementById('depthControlInner')){
-      const d=document.createElement('div'); d.id='depthControlInner'; d.className='depth-control'; d.dataset.inner='1'
-      const label=document.createElement('label')
-      const icon=document.createElement('span'); icon.id='depthIconInner'; icon.textContent='☀️'
-      label.appendChild(icon)
-      const input=document.createElement('input'); input.type='range'; input.id='depthSliderInner'; input.min='0'; input.max='100'; input.value='70'
-      d.appendChild(label); d.appendChild(input)
-      document.body.appendChild(d)
-    }
     state.waterFx=document.getElementById('waterFxInner')
     state.water=document.getElementById('waterLayerInner')
     // Move water layer into the wrapper so the wrapper filter affects it.
@@ -50,9 +42,13 @@
       }
     } catch(_){}
     state.raysCanvas=document.getElementById('raysCanvasInner')
-    state.depthCtrl=document.getElementById('depthControlInner')
-    state.depthSlider=document.getElementById('depthSliderInner')
-    state.depthIcon=document.getElementById('depthIconInner')
+  }
+
+  function resolveDepthControl(){
+    state.depthCtrl=document.getElementById('depthControl')
+    state.depthSlider=document.getElementById('depthSlider')
+    state.depthIcon=document.getElementById('depthIcon')
+    return !!(state.depthCtrl && state.depthSlider)
   }
 
   function updateDepth(){ if(!state.depthSlider||!state.waterFx||!state.depthCtrl) return
@@ -66,6 +62,39 @@
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8
     // Apply brightness/saturation to wrapper to avoid overwriting `.water-layer` filter.
     state.waterFx.style.filter=`brightness(${bgBrightness}) saturate(${bgSaturation})`
+  }
+
+  function bindDepthControl(){
+    if(state.depthBound) return
+    if(!resolveDepthControl()){
+      if(state.depthRetry < 20){
+        state.depthRetry++
+        state.depthRetryTimer=setTimeout(bindDepthControl,50)
+      }
+      return
+    }
+    state.inputHandler=()=>updateDepth()
+    if(state.depthSlider) state.depthSlider.addEventListener('input', state.inputHandler)
+    if(state.depthIcon){
+      state.depthIcon.style.cursor='pointer'
+      state.iconClickHandler=()=>{
+        const val=parseInt(state.depthSlider.value||'70',10)
+        state.depthSlider.value = val>50 ? '30' : '80'
+        updateDepth()
+      }
+      state.depthIcon.addEventListener('click', state.iconClickHandler)
+    }
+    if(window.matchMedia){
+      state.colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)')
+      state.colorSchemeHandler = (event)=>{ if(!state.depthSlider) return; state.depthSlider.value = event.matches ? '70' : '30'; updateDepth() }
+      if(state.colorSchemeQuery.addEventListener){
+        state.colorSchemeQuery.addEventListener('change', state.colorSchemeHandler)
+      } else if(state.colorSchemeQuery.addListener){
+        state.colorSchemeQuery.addListener(state.colorSchemeHandler)
+      }
+    }
+    applySystemPreference()
+    state.depthBound=true
   }
 
   function applySystemPreference(){
@@ -116,31 +145,11 @@
     if(!state.water||!state.raysCanvas) return
     state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight
     state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5)
-    initRays(); applySystemPreference()
+    initRays(); bindDepthControl()
     state.resizeHandler=()=>{ state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight; state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5); initRays() }
     state.scrollHandler=()=>{ state.scrollY=window.scrollY; const parallax=-state.scrollY*0.2; state.water.style.transform=`translate3d(0,${parallax}px,0)`; state.raysCanvas.style.transform=`translate3d(0,${parallax}px,0)` }
-    state.inputHandler=()=>updateDepth()
-    if(window.matchMedia){
-      state.colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)')
-      state.colorSchemeHandler = (event)=>{ if(!state.depthSlider) return; state.depthSlider.value = event.matches ? '70' : '30'; updateDepth() }
-      if(state.colorSchemeQuery.addEventListener){
-        state.colorSchemeQuery.addEventListener('change', state.colorSchemeHandler)
-      } else if(state.colorSchemeQuery.addListener){
-        state.colorSchemeQuery.addListener(state.colorSchemeHandler)
-      }
-    }
-    if(state.depthIcon){
-      state.depthIcon.style.cursor='pointer'
-      state.iconClickHandler=()=>{
-        const val=parseInt(state.depthSlider.value||'70',10)
-        state.depthSlider.value = val>50 ? '30' : '80'
-        updateDepth()
-      }
-      state.depthIcon.addEventListener('click', state.iconClickHandler)
-    }
     window.addEventListener('resize', state.resizeHandler)
     window.addEventListener('scroll', state.scrollHandler)
-    if(state.depthSlider) state.depthSlider.addEventListener('input', state.inputHandler)
     state.inited=true; DBG('initInner complete')
     animate()
   }
@@ -159,8 +168,10 @@
       }
       state.colorSchemeQuery=null; state.colorSchemeHandler=null
     }
+    if(state.depthRetryTimer){ clearTimeout(state.depthRetryTimer); state.depthRetryTimer=null }
+    state.depthRetry=0; state.depthBound=false
     // remove only elements we created
-    const ids=['waterLayerInner','raysCanvasInner','depthControlInner']
+    const ids=['waterLayerInner','raysCanvasInner']
     for(const id of ids){ const el=document.getElementById(id); if(el && el.dataset && el.dataset.inner==='1'){ try{ el.remove() }catch(_){} } }
     state.inited=false; state.rays=[]; state.water=null; state.raysCanvas=null; state.depthCtrl=null; state.depthSlider=null; state.depthIcon=null
   }

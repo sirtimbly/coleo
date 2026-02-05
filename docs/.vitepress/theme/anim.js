@@ -18,6 +18,7 @@
 		depthIcon: null,
 		colorSchemeQuery: null,
 		colorSchemeHandler: null,
+		iconClickHandler: null,
 		time: 0,
 		brightness: 0.7,
 		scrollY: 0,
@@ -424,6 +425,10 @@
 			state.depthSlider.removeEventListener("input", state.depthInputHandler);
 			state.depthInputHandler = null;
 		}
+		if (state.depthIcon && state.iconClickHandler) {
+			state.depthIcon.removeEventListener("click", state.iconClickHandler);
+			state.iconClickHandler = null;
+		}
 		if (state.colorSchemeQuery && state.colorSchemeHandler) {
 			if (state.colorSchemeQuery.removeEventListener) {
 				state.colorSchemeQuery.removeEventListener(
@@ -567,6 +572,15 @@
 		if (state.depthSlider) {
 			state.depthInputHandler = updateDepth;
 			state.depthSlider.addEventListener("input", state.depthInputHandler);
+		}
+		if (state.depthIcon) {
+			state.depthIcon.style.cursor = "pointer";
+			state.iconClickHandler = () => {
+				const val = parseInt(state.depthSlider?.value || "70", 10);
+				state.depthSlider.value = val > 50 ? "30" : "80";
+				updateDepth();
+			};
+			state.depthIcon.addEventListener("click", state.iconClickHandler);
 		}
 		if (window.matchMedia) {
 			state.colorSchemeQuery = window.matchMedia("(prefers-color-scheme: light)");
