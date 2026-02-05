@@ -295,7 +295,7 @@ class ApiClient {
     }>('/brain/config');
   }
 
-  async sendBrainMessage(data: { message: string; priority?: 'critical' | 'high' | 'normal' | 'low'; domain?: string }) {
+  async sendBrainMessage(data: { message: string; priority?: 'critical' | 'high' | 'normal' | 'low'; domain?: string; inReplyTo?: string; subject?: string }) {
     return this.request<{ sent: boolean; messageId: string; subject: string }>('/brain/message', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -939,6 +939,7 @@ export interface TaskComment {
   deleted: boolean;
   createdAt: string;
   updatedAt: string;
+  screenshotPath?: string;
   replies?: TaskComment[]; // For threaded view
 }
 

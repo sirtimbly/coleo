@@ -13,6 +13,7 @@ import {
   BugsPage,
   MessagingPage,
   UnifiedGridPage,
+  MailPage,
 } from '@/pages';
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
               <Route path="bugs" element={<BugsPage />} />
               <Route path="garden" element={<GardenPage />} />
               <Route path="messaging" element={<MessagingPage />} />
+              <Route path="mail" element={<MailPage />} />
               <Route path="activity" element={<ActivityPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="grid" element={<UnifiedGridPage />} />

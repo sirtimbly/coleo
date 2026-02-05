@@ -39,6 +39,8 @@ export interface Task {
    * prefer `classification` + task configuration templates.
    */
   domain?: string;
+  /** Manual sort order for task prioritization (lower = higher priority) */
+  sortOrder?: number;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;

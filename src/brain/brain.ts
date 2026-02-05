@@ -23,7 +23,9 @@ import {
   markMessageFailed,
   cleanupOldMessages,
   upsertTool,
-  createNote
+  createNote,
+  createTaskComment,
+  updateTaskCommentStats
 } from "../db/state";
 import { DocWatcher, getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import { parsePlanFile, findPlanFiles, tasksToDatabaseFormat, type PlanParseResult } from "./plan-parser";
@@ -31,6 +33,7 @@ import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
+import { broadcast } from "../api/websocket";
 import { ArmStateMachine, type ArmState, type ArmEvent, type SideEffect, stateToLegacyStatus } from "./arm-state-machine";
 import { ArmHealthMonitor, type HealthCheckResult, type HealthMonitorCallbacks } from "./health-monitor";
 import { BrainTemplateManager } from "./template-manager";
@@ -806,26 +809,45 @@ export class Brain {
 
       // Handle the intent
       switch (intent.type) {
-        case "new_task":
-          await this.createTask(
+        case "new_task": {
+          const task = await this.createTask(
             intent.subject || message.subject,
             intent.body || message.body,
             message.id,
             intent.priority,
             intent.domain
           );
+          // Send confirmation reply
+          await this.sendToHuman({
+            subject: `Re: ${message.subject}`,
+            body: `I've received your message and created a new task.\n\n**Task:** ${task.subject}\n**Priority:** ${task.priority}\n**Status:** ${task.status}\n\nI'll assign this to an appropriate arm and keep you updated on progress.`,
+            headers: {
+              "In-Reply-To": message.id,
+            },
+          });
           break;
+        }
 
-        case "doc_update":
-          await this.createDocUpdateTask(
+        case "doc_update": {
+          const docTask = await this.createDocUpdateTask(
             intent.subject || message.subject,
             intent.body || message.body,
             intent.targetDoc,
             message.id
           );
+          // Send confirmation reply
+          await this.sendToHuman({
+            subject: `Re: ${message.subject}`,
+            body: `I've received your documentation update request.\n\n**Target:** ${intent.targetDoc || 'documentation'}\n**Task:** ${docTask.subject}\n**Priority:** ${docTask.priority}\n\nI'll have an arm update the documentation and notify you when complete.`,
+            headers: {
+              "In-Reply-To": message.id,
+            },
+          });
           break;
+        }
 
         case "bug_report":
+          // Note: createHumanBugReport already sends a confirmation email
           await this.createHumanBugReport(
             intent.title || message.subject,
             intent.description || message.body,
@@ -833,13 +855,22 @@ export class Brain {
           );
           break;
 
-        case "approval_response":
+        case "approval_response": {
           await this.handleApprovalResponse(
             intent.originalId || "",
             intent.approved || false,
             intent.comment || message.body
           );
+          // Send confirmation reply
+          await this.sendToHuman({
+            subject: `Re: ${message.subject}`,
+            body: `I've received your ${intent.approved ? 'approval' : 'rejection'}${intent.comment ? ' with comment' : ''}.\n\nThe appropriate arm has been notified and will proceed accordingly.`,
+            headers: {
+              "In-Reply-To": message.id,
+            },
+          });
           break;
+        }
 
         case "query":
           await this.handleQuery(intent.query || "status", message.id);
@@ -882,6 +913,14 @@ export class Brain {
               this.logActivity("brain", "arm_prompted", intent.armName, {
                 reason: "human_mail",
                 instruction: intent.instruction.slice(0, 100),
+              });
+              // Send confirmation reply
+              await this.sendToHuman({
+                subject: `Re: ${message.subject}`,
+                body: `I've received your request and prompted **${intent.armName}** directly.\n\nThe arm is working on:\n\n${intent.instruction.slice(0, 200)}${intent.instruction.length > 200 ? '...' : ''}\n\nYou'll receive updates as the arm progresses.`,
+                headers: {
+                  "In-Reply-To": message.id,
+                },
               });
             }
           }
@@ -1485,15 +1524,66 @@ export class Brain {
 
       this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message });
       this.log(`Task ${taskId} status updated to ${dbStatus} by arm ${armId}`);
+
+      if (dbStatus === "in_progress") {
+        const armLabel = this.getArmDisplayName(armId);
+        const notes = message?.trim();
+        const parts: Array<string | null> = [
+          `Arm ${armLabel} started working on this task.`,
+          notes ? `Notes:\n${notes}` : null,
+        ];
+        const content = parts.filter((part): part is string => Boolean(part)).join("\n\n");
+        await this.appendTaskComment(taskId, content);
+      }
     } catch (err) {
       this.log(`Error updating task ${taskId} status: ${err}`);
     }
+}
+
+  /**
+   * Add a task comment when an arm provides status or validation
+   */
+  private async appendTaskComment(taskId: string, content: string, options?: {
+    armId?: string;
+    armName?: string;
+    screenshotPath?: string;
+    authorType?: 'arm' | 'brain';
+  }): Promise<void> {
+    if (!this.db) {
+      this.log('Database not initialized, cannot append comment');
+      return;
+    }
+
+    const getWritableDb = () => {
+      if (!this.db) return null;
+      return this.db;
+    };
+
+    const db = getWritableDb();
+    if (!db) return;
+
+    const armId = options?.armId || 'brain';
+    const armName = options?.armName || (options?.armId ? this.getArmDisplayName(options.armId) : 'Brain');
+    const authorType = options?.authorType || (options?.armId ? 'arm' : 'brain');
+
+    createTaskComment(db, {
+      id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      taskId,
+      content,
+      authorType,
+      authorId: armId,
+      authorName: armName,
+      client: 'mcp',
+      screenshotPath: options?.screenshotPath,
+    });
+
+    updateTaskCommentStats(db, taskId);
   }
 
-/**
-    * Initiate peer validation for a task completion
-    * Find an idle arm to validate the work before marking task as completed
-    */
+ /**
+     * Initiate peer validation for a task completion
+     * Find an idle arm to validate the work before marking task as completed
+     */
   private async initiateTaskValidation(
     taskId: string,
     summary: string,
@@ -2191,6 +2281,36 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
       issueCount: report.issues.length,
       blockerCount: report.blockers.length,
     });
+
+    const armLabel = this.getArmDisplayName(report.armId);
+    const statusLabel = this.humanizeStatus(report.status);
+    const trimmedSummary = report.summary?.trim();
+    const testsLabel = report.testsStatus ? this.humanizeStatus(report.testsStatus) : null;
+
+    const formatList = (title: string, items: string[]) => {
+      if (items.length === 0) return null;
+      const preview = items.slice(0, 5).map((item) => `- ${item}`).join("\n");
+      const more = items.length > 5 ? `\n- ...and ${items.length - 5} more` : "";
+      return `${title}\n${preview}${more}`;
+    };
+
+    const filesSection = formatList("Files changed:", report.filesChanged);
+    const issuesSection = formatList("Issues:", report.issues);
+    const blockersSection = formatList("Blockers:", report.blockers);
+    const nextSteps = report.nextSteps?.trim();
+
+    const statusParts: Array<string | null> = [
+      `Status report (${statusLabel}) from ${armLabel}`,
+      trimmedSummary || null,
+      testsLabel ? `Tests status: ${testsLabel}` : null,
+      filesSection,
+      issuesSection,
+      blockersSection,
+      nextSteps ? `Next steps:\n${nextSteps}` : null,
+    ];
+
+    const statusContent = statusParts.filter((part): part is string => Boolean(part)).join("\n\n");
+    await this.appendTaskComment(report.taskId, statusContent);
 
     // Determine if we should forward this status report to the user
     const forwardDecision = await this.shouldForwardStatusReportToUser(report, task);
@@ -4876,7 +4996,10 @@ Report findings using bug resolution workflow.`,
     * Considers task domain preferences when assigning
     */
     private async assignTasks(): Promise<void> {
-      const pendingTasks = this.tasks.filter(t => t.status === "pending");
+      // Get pending tasks sorted by sortOrder (lower = higher priority)
+      const pendingTasks = this.tasks
+        .filter(t => t.status === "pending")
+        .sort((a, b) => (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER));
       let idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
 
      // Filter out arms that don't exist in the database (prevents foreign key constraint failures)
@@ -5144,9 +5267,10 @@ Report findings using bug resolution workflow.`,
       const dbTasks = this.db.query(`
         SELECT id, subject, description, status, priority, domain, classification,
                assigned_to, created_at, updated_at, completed_at, artifacts,
-               mail_thread_id, context
+               mail_thread_id, context, sort_order
         FROM tasks
         WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
+        ORDER BY sort_order ASC, created_at DESC
       `).all() as Array<{
         id: string;
         subject: string;
@@ -5162,6 +5286,7 @@ Report findings using bug resolution workflow.`,
         artifacts: string | null;
         mail_thread_id: string | null;
         context: string | null;
+        sort_order: number | null;
       }>;
 
       this.tasks = dbTasks.map(dbTask => ({
@@ -5173,6 +5298,7 @@ Report findings using bug resolution workflow.`,
         domain: dbTask.domain || undefined,
         classification: dbTask.classification || undefined,
         assignedTo: dbTask.assigned_to || undefined,
+        sortOrder: dbTask.sort_order ?? undefined,
         createdAt: new Date(dbTask.created_at),
         updatedAt: new Date(dbTask.updated_at),
         completedAt: dbTask.completed_at ? new Date(dbTask.completed_at) : undefined,

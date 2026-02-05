@@ -81,7 +81,7 @@ export class DiscoverySummarizer {
             { role: "user", content: userMessage },
           ],
           temperature: 0.2,
-          max_tokens: options.maxTokens || 1000,
+          max_completion_tokens: options.maxTokens || 1000,
         }),
       });
 

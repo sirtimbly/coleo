@@ -111,6 +111,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["035_fix_sort_order", MIGRATION_035_FIX_SORT_ORDER],
     ["036_bugs_sort_order", MIGRATION_036, { table: "bugs", columns: MIGRATION_036_COLUMNS }],
     ["037_task_completing_status", MIGRATION_037],
+    ["038_discovery_kind_constraint", MIGRATION_038],
+    ["039_task_comment_screenshot", MIGRATION_039, { table: "task_comments", columns: MIGRATION_039_COLUMNS }],
   ];
 
 
@@ -1060,7 +1062,8 @@ CREATE TABLE IF NOT EXISTS task_comments (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
   parent_id TEXT REFERENCES task_comments(id) ON DELETE CASCADE,
-  content TEXT NOT NULL,
+   content TEXT NOT NULL,
+  screenshot_path TEXT,
   author_type TEXT NOT NULL CHECK (author_type IN ('human', 'arm', 'brain')),
   author_id TEXT NOT NULL,
   author_name TEXT,
@@ -1106,6 +1109,17 @@ CREATE TABLE IF NOT EXISTS mail_thread_map (
 
 CREATE INDEX IF NOT EXISTS idx_mail_thread_map_mail ON mail_thread_map(mail_message_id);
 CREATE INDEX IF NOT EXISTS idx_mail_thread_map_task ON mail_thread_map(task_id);
+`;
+
+// Migration 039: Add screenshot_path to task_comments for screenshot support
+const MIGRATION_039_COLUMNS = [
+  { name: 'screenshot_path', sql: "ALTER TABLE task_comments ADD COLUMN screenshot_path TEXT" },
+];
+
+const MIGRATION_039 = `
+-- Add screenshot_path column to task_comments
+-- Column is added via MIGRATION_039_COLUMNS
+SELECT 1;
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
@@ -1291,6 +1305,75 @@ CREATE INDEX IF NOT EXISTS idx_tasks_classification ON tasks(classification) WHE
 CREATE INDEX IF NOT EXISTS idx_tasks_mail_thread ON tasks(mail_thread_id) WHERE mail_thread_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_tags ON tasks(tags);
 CREATE INDEX IF NOT EXISTS idx_tasks_sort_order ON tasks(sort_order);
+`;
+
+// Migration 038: Fix discoveries table CHECK constraint to include exploration kinds
+const MIGRATION_038 = `
+-- SQLite doesn't support altering CHECK constraints directly
+-- We need to recreate the table to add exploration discovery kinds
+
+DROP TABLE IF EXISTS discoveries_new;
+
+CREATE TABLE IF NOT EXISTS discoveries_new (
+  id TEXT PRIMARY KEY,
+  arm_id TEXT NOT NULL,
+  arm_name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('test_failure', 'unused_code', 'security_issue', 'performance', 'pattern', 'missing_context', 'ambiguous_requirement', 'potential_blocker', 'related_code', 'suggested_approach', 'other')),
+  title TEXT NOT NULL,
+  details TEXT NOT NULL,
+  file_path TEXT,
+  line_number INTEGER,
+  severity TEXT DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'error')),
+  status TEXT DEFAULT 'open' CHECK (status IN ('open', 'acknowledged', 'resolved', 'dismissed')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  metadata TEXT DEFAULT '{}'
+);
+
+-- Copy data from old table
+INSERT INTO discoveries_new (
+  id, arm_id, arm_name, kind, title, details, file_path, line_number,
+  severity, status, created_at, updated_at, metadata
+)
+SELECT
+  id, arm_id, arm_name, kind, title, details, file_path, line_number,
+  severity, status, created_at, updated_at, metadata
+FROM discoveries;
+
+-- Drop old table and rename new one
+DROP TABLE discoveries;
+ALTER TABLE discoveries_new RENAME TO discoveries;
+
+-- Recreate the FTS5 virtual table
+DROP TABLE IF EXISTS discoveries_fts;
+CREATE VIRTUAL TABLE IF NOT EXISTS discoveries_fts USING fts5(
+  title,
+  details,
+  content='discoveries',
+  content_rowid='rowid'
+);
+
+-- Recreate triggers
+CREATE TRIGGER IF NOT EXISTS discoveries_ai AFTER INSERT ON discoveries BEGIN
+  INSERT INTO discoveries_fts(rowid, title, details) VALUES (new.rowid, new.title, new.details);
+END;
+
+CREATE TRIGGER IF NOT EXISTS discoveries_ad AFTER DELETE ON discoveries BEGIN
+  INSERT INTO discoveries_fts(discoveries_fts, rowid, title, details) VALUES('delete', old.rowid, old.title, old.details);
+END;
+
+CREATE TRIGGER IF NOT EXISTS discoveries_au AFTER UPDATE ON discoveries BEGIN
+  INSERT INTO discoveries_fts(discoveries_fts, rowid, title, details) VALUES('delete', old.rowid, old.title, old.details);
+  INSERT INTO discoveries_fts(rowid, title, details) VALUES (new.rowid, new.title, new.details);
+END;
+
+-- Recreate indexes
+CREATE INDEX IF NOT EXISTS idx_discoveries_arm ON discoveries(arm_id);
+CREATE INDEX IF NOT EXISTS idx_discoveries_kind ON discoveries(kind);
+CREATE INDEX IF NOT EXISTS idx_discoveries_severity ON discoveries(severity);
+CREATE INDEX IF NOT EXISTS idx_discoveries_status ON discoveries(status);
+CREATE INDEX IF NOT EXISTS idx_discoveries_file ON discoveries(file_path);
+CREATE INDEX IF NOT EXISTS idx_discoveries_created ON discoveries(created_at DESC);
 `;
 
   /**

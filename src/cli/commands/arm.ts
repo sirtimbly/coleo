@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import { join } from "path";
-import type { Arm } from "../../types";
 import { spawnArm, listArms, killArm } from "../../arm";
 import { generateArmName, generateArmNames, getNameGeneratorStats } from "../arm-names";
 import {
@@ -195,16 +194,26 @@ export function registerArmCommands(program: Command): void {
           process.exit(1);
         }
 
-        const result = JSON.parse(rawResponse) as { arm: Arm };
+        const result = JSON.parse(rawResponse) as { 
+          spawned: boolean;
+          distributed?: boolean;
+          sessionId?: string;
+          pid?: number;
+          port?: number;
+          provider?: string;
+          model?: string;
+        };
         console.log(`Arm spawned with opencode-tui harness in ${options.terminal}:`);
-        console.log(`  ID: ${result.arm.id}`);
-        if (result.arm.provider || result.arm.model) {
+        console.log(`  ID: ${armName}`);
+        const resolvedProvider = result.provider || armProvider;
+        const resolvedModel = result.model || armModel;
+        if (resolvedProvider || resolvedModel) {
           console.log(
-            `  Model: ${result.arm.provider ? result.arm.provider + "/" : ""}${result.arm.model || "default"}`,
+            `  Model: ${resolvedProvider ? resolvedProvider + "/" : ""}${resolvedModel || "default"}`,
           );
         }
-        console.log(`  Status: ${result.arm.status}`);
-        console.log(`  PID: ${result.arm.pid || "unknown"}`);
+        console.log(`  Status: ${result.spawned ? "idle" : "unknown"}`);
+        console.log(`  PID: ${result.pid || "unknown"}`);
         console.log("");
         console.log("The arm is now running in a visible terminal window.");
         console.log("You can interact with it directly or via the API.");
@@ -326,12 +335,16 @@ export function registerArmCommands(program: Command): void {
         sessionId?: string; 
         pid?: number;
         port?: number;
+        provider?: string;
+        model?: string;
       };
 
       console.log(`Arm spawned via API: ${armName}`);
       console.log(`  Full response:`, JSON.stringify(result, null, 2));
-      if (armProvider || armModel) {
-        console.log(`  Model: ${armProvider ? armProvider + "/" : ""}${armModel || "default"}`);
+      const resolvedProvider = result.provider || armProvider;
+      const resolvedModel = result.model || armModel;
+      if (resolvedProvider || resolvedModel) {
+        console.log(`  Model: ${resolvedProvider ? resolvedProvider + "/" : ""}${resolvedModel || "default"}`);
       }
       if (result.distributed) {
         console.log(`  Type: Distributed (via agent ${result.agentId})`);

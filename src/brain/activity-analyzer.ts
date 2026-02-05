@@ -630,7 +630,7 @@ export class StuckArmAnalyzer {
             { role: "user", content: userMessage },
           ],
           temperature: 0.2,
-          max_tokens: 500,
+          max_completion_tokens: 500,
         }),
       });
 

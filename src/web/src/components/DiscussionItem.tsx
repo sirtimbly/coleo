@@ -3,6 +3,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { Reply, Edit2, Trash2, MoreHorizontal, User, Bot, Brain } from 'lucide-react';
+// eslint-disable-next-line react/no-array-index-key
 import { Button, Dropdown, Chip } from '@heroui/react';
 import { cn } from '@/lib/utils';
 import type { TaskComment } from '@/lib/api';
@@ -88,17 +89,17 @@ function canEditComment(comment: TaskComment, currentUserId: string): boolean {
 function renderMarkdown(content: string): ReactNode {
   // Handle line breaks first
   const lines = content.split('\n');
-  if (lines.length > 1) {
-    return (
-      <>
-        {lines.map((line, lineIdx) => (
-          <span key={`line-${lineIdx}-${line.slice(0, 10)}`}>
-            {renderMarkdownLine(line)}
-            {lineIdx < lines.length - 1 && <br />}
-          </span>
-        ))}
-      </>
-    );
+   if (lines.length > 1) {
+     return (
+       <>
+         {lines.map((line) => (
+           <span key={line}>
+             {renderMarkdownLine(line)}
+             <br />
+           </span>
+         ))}
+       </>
+     );
   }
   
   return renderMarkdownLine(content);
@@ -108,11 +109,11 @@ function renderMarkdownLine(content: string): ReactNode {
   // Split by code blocks first
   const parts = content.split(/(`[^`]+`)/g);
   
-  return parts.map((part, partIdx) => {
+   return parts.map((part) => {
     if (part.startsWith('`') && part.endsWith('`')) {
       // Code
       return (
-        <code key={`code-${partIdx}-${part.slice(0, 10)}`} className="px-1.5 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono">
+        <code key={part} className="px-1.5 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono">
           {part.slice(1, -1)}
         </code>
       );
@@ -120,16 +121,16 @@ function renderMarkdownLine(content: string): ReactNode {
     
     // Process bold (**text**)
     const boldParts = part.split(/\*\*([^*]+)\*\*/g);
-    if (boldParts.length > 1) {
-      return (
-        <span key={`text-${partIdx}`}>
-          {boldParts.map((boldPart, boldIdx) => {
-            // Odd indices are the captured groups (bold text)
-            if (boldIdx % 2 === 1) {
-              return <strong key={`bold-${partIdx}-${boldIdx}`} className="font-semibold">{boldPart}</strong>;
-            }
-            return boldPart;
-          })}
+     if (boldParts.length > 1) {
+       return (
+         <span key={part}>
+            {boldParts.map((boldPart, idx) => {
+              // Odd indices are the captured groups (bold text)
+              if (idx % 2 === 1 && boldPart) {
+                return <strong key={idx} className="font-semibold">{boldPart}</strong>;
+              }
+              return <span key={idx}>{boldPart}</span>;
+            })}
         </span>
       );
     }
@@ -260,6 +261,16 @@ export function DiscussionItem({
         <div className="text-foreground text-sm leading-relaxed whitespace-pre-wrap break-words pl-10">
           {renderMarkdown(comment.content)}
         </div>
+        {/* Screenshot (if provided) */}
+        {comment.screenshotPath && (
+          <div className="pl-10 mt-2">
+            <img
+              src={comment.screenshotPath}
+              alt="Screenshot"
+              className="rounded border max-w-full"
+            />
+          </div>
+        )}
       </article>
       
       {/* Replies (recursive) */}

@@ -11,6 +11,7 @@ import { broadcast } from "../websocket";
 import { loadConfig, getColeoDir, getRandomPreferredModel } from "../../config";
 import { join } from "path";
 import { readFile } from "fs/promises";
+import { parse as parseToml } from "smol-toml";
 import { getArmClient } from "../server";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
@@ -130,26 +131,57 @@ function parseArmTemplate(content: string): ArmTemplate {
     config: {},
   };
 
-  // Extract values using regex
-  const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
-  const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
-  const harnessMatch = content.match(/harness\s*=\s*"([^"]*)"/);
-  const budgetMatch = content.match(/budget\s*=\s*(\d+)/);
-  const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
-  const convictionsMatch = content.match(/core\s*=\s*\[([^\]]*)\]/);
-  const providerMatch = content.match(/provider\s*=\s*"([^"]*)"/);
-  const modelMatch = content.match(/model\s*=\s*"([^"]*)"/);
+  try {
+    const parsed = parseToml(content) as Record<string, unknown>;
+    const arm = parsed.arm as Record<string, unknown> | undefined;
+    const model = parsed.model as Record<string, unknown> | undefined;
+    const context = parsed.context as Record<string, unknown> | undefined;
+    const personality = parsed.personality as Record<string, unknown> | undefined;
+    const convictions = parsed.convictions as Record<string, unknown> | undefined;
 
-  if (nameMatch && nameMatch[1]) result.name = nameMatch[1];
-  if (domainMatch && domainMatch[1]) result.domain = domainMatch[1];
-  if (harnessMatch && harnessMatch[1]) result.harness = harnessMatch[1];
-  if (budgetMatch && budgetMatch[1]) result.contextBudget = parseInt(budgetMatch[1], 10);
-  if (traitsMatch && traitsMatch[1]) result.personality = traitsMatch[1];
-  if (convictionsMatch && convictionsMatch[1]) {
-    result.convictions = convictionsMatch[1].split(",").map((s) => s.trim().replace(/"/g, ""));
+    const name = (arm?.name ?? parsed.name) as string | undefined;
+    const domain = (arm?.domain ?? parsed.domain) as string | undefined;
+    const harness = (arm?.harness ?? parsed.harness) as string | undefined;
+    const provider = (model?.provider ?? parsed.provider) as string | undefined;
+    const modelName = (model?.model ?? parsed.model) as string | undefined;
+    const budget = (context?.budget ?? parsed.budget) as number | undefined;
+    const traits = (personality?.traits ?? parsed.traits) as string | undefined;
+    const core = (convictions?.core ?? parsed.core) as string[] | undefined;
+
+    if (name) result.name = name;
+    if (domain) result.domain = domain;
+    if (harness) result.harness = harness;
+    if (typeof budget === "number") result.contextBudget = budget;
+    if (traits) result.personality = traits;
+    if (Array.isArray(core)) result.convictions = core;
+    if (provider) result.provider = provider;
+    if (modelName) result.model = modelName;
+  } catch {
+    // Fall back to regex parsing below
   }
-  if (providerMatch && providerMatch[1]) result.provider = providerMatch[1];
-  if (modelMatch && modelMatch[1]) result.model = modelMatch[1];
+
+  // Fill any missing fields via regex for backwards compatibility
+  const nameMatch = content.match(/name\s*=\s*["']([^"']*)["']/);
+  const domainMatch = content.match(/domain\s*=\s*["']([^"']*)["']/);
+  const harnessMatch = content.match(/harness\s*=\s*["']([^"']*)["']/);
+  const budgetMatch = content.match(/budget\s*=\s*(\d+)/);
+  const traitsMatch = content.match(/traits\s*=\s*["']([^"']*)["']/);
+  const convictionsMatch = content.match(/core\s*=\s*\[([^\]]*)\]/);
+  const providerMatch = content.match(/provider\s*=\s*["']([^"']*)["']/);
+  const modelMatch = content.match(/model\s*=\s*["']([^"']*)["']/);
+
+  if (!result.name && nameMatch?.[1]) result.name = nameMatch[1];
+  if (result.domain === "general" && domainMatch?.[1]) result.domain = domainMatch[1];
+  if (result.harness === "opencode-api" && harnessMatch?.[1]) result.harness = harnessMatch[1];
+  if (result.contextBudget === 100000 && budgetMatch?.[1]) {
+    result.contextBudget = parseInt(budgetMatch[1], 10);
+  }
+  if (!result.personality && traitsMatch?.[1]) result.personality = traitsMatch[1];
+  if (!result.convictions && convictionsMatch?.[1]) {
+    result.convictions = convictionsMatch[1].split(",").map((s) => s.trim().replace(/["']/g, ""));
+  }
+  if (!result.provider && providerMatch?.[1]) result.provider = providerMatch[1];
+  if (!result.model && modelMatch?.[1]) result.model = modelMatch[1];
 
   return result;
 }
@@ -605,8 +637,8 @@ export function createArmsRoutes() {
           // Update database with agent info
           const now = new Date().toISOString();
           db.run(
-            "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-            [agentId, agent.hostname, response.data?.pid ?? null, response.data?.port ?? null, now, now, id]
+            "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+            [agentId, agent.hostname, response.data?.pid ?? null, response.data?.port ?? null, provider, model, now, now, id]
           );
           
           // Log activity
@@ -638,6 +670,8 @@ export function createArmsRoutes() {
             host: agent.hostname,
             pid: response.data?.pid,
             port: response.data?.port,
+            provider,
+            model,
           });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -672,8 +706,8 @@ export function createArmsRoutes() {
         const now = new Date().toISOString();
         const recoveredSessionId = manager.getSession(id)?.session.id;
         db.run(
-          "UPDATE arms SET status = 'idle', session_id = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-          [recoveredSessionId ?? null, now, now, id]
+          "UPDATE arms SET status = 'idle', session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [recoveredSessionId ?? null, provider, model, now, now, id]
         );
         
         // Log activity
@@ -688,6 +722,8 @@ export function createArmsRoutes() {
           sessionId: manager.getSession(id)?.session.id,
           pid: row.pid,
           port: row.port,
+          provider,
+          model,
         });
       }
       // Recovery failed, continue with fresh spawn
@@ -724,8 +760,8 @@ export function createArmsRoutes() {
       const pid = manager.getPid(id);
       const port = manager.getPort(id);
       db.run(
-        "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-        [pid ?? null, port ?? null, session.session.id, now, now, id]
+        "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [pid ?? null, port ?? null, session.session.id, provider, model, now, now, id]
       );
 
       // Log activity
@@ -740,6 +776,8 @@ export function createArmsRoutes() {
         sessionId: session.session.id,
         pid,
         port,
+        provider,
+        model,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

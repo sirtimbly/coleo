@@ -594,7 +594,7 @@ export function createMcpServer(): McpServer {
     }
   );
 
-  // Submit a status report for a task
+// Submit a status report for a task
   server.registerTool(
     "submit_status_report",
     {
@@ -609,9 +609,10 @@ export function createMcpServer(): McpServer {
         next_steps: z.string().optional().describe("Suggested next steps if issues were found"),
         files_changed: z.array(z.string()).optional().describe("List of files modified"),
         tests_status: z.enum(["passing", "failing", "not_run"]).optional().describe("Status of tests if run"),
+        screenshot_path: z.string().optional().describe("(optional) Path to screenshot showing the work"),
       },
-    },
-    async ({ task_id, status, summary, issues, blockers, next_steps, files_changed, tests_status }) => {
+      },
+    async ({ task_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, screenshot_path }) => {
       const reportId = `sr-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
       
       const messageId = await sendToBrain({
@@ -629,6 +630,7 @@ export function createMcpServer(): McpServer {
           nextSteps: next_steps,
           filesChanged: files_changed || [],
           testsStatus: tests_status,
+          screenshot_path,
         },
       });
 
@@ -637,7 +639,8 @@ export function createMcpServer(): McpServer {
         reportId, 
         status, 
         issueCount: (issues || []).length,
-        blockerCount: (blockers || []).length 
+        blockerCount: (blockers || []).length,
+        hasScreenshot: !!screenshot_path
       });
 
       let responseText = `Status report submitted (${reportId}). Brain will review`;
@@ -1269,9 +1272,10 @@ export function createMcpServer(): McpServer {
       description: "Acknowledge that you've received and started working on a task",
       inputSchema: {
         task_id: z.string().describe("The ID of the task"),
+        screenshot_path: z.string().optional().describe("(optional) Path to screenshot showing the work"),
       },
       },
-    async ({ task_id }) => {
+    async ({ task_id, screenshot_path }) => {
       // Auto-register manual arms
       ensureArmRegistered();
       
@@ -1283,6 +1287,7 @@ export function createMcpServer(): McpServer {
           taskId: task_id,
           status: "in_progress",
           message: "Task acknowledged and work started",
+          screenshot_path,
         },
       });
 

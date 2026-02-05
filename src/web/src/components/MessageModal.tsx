@@ -125,7 +125,11 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
     try {
       if (mode === 'brain') {
         // Send to brain via dedicated endpoint
-        await api.sendBrainMessage({ message });
+        await api.sendBrainMessage({ 
+          message,
+          inReplyTo: isReply && replyTo ? replyTo.messageId : undefined,
+          subject: isReply && replyTo ? `Re: ${replyTo.subject}` : undefined
+        });
       } else {
         // Send directly to arm
         if (!selectedArmId) {

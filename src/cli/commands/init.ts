@@ -42,18 +42,17 @@ function generateExampleArmToml(): string {
 # This is a sample arm configuration file for Coleo
 # Copy this to create your own arm configurations in the .coleo/arms/ directory
 
+[arm]
 name = "example-arm"
 domain = "development"
-
-[harness]
 # Recommended: opencode-api for headless API-driven arms
 # Alternative: opencode-tui for visible terminal sessions
-type = "opencode-api"
+harness = "opencode-api"
 
 [model]
 # Configure your AI model provider
-provider = "openai"  # Options: "openai", "anthropic", "kimi", "groq", "xai"
-model_id = "gpt-5.1-codex-mini"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
+provider = "openai"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
+model = "gpt-5.1-codex-mini"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
 
 # Optional: Custom model configuration
 # [model.config]

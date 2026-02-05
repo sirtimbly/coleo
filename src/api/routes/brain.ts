@@ -232,6 +232,8 @@ export function createBrainRoutes() {
       message: string;
       priority?: "critical" | "high" | "normal" | "low";
       domain?: string;
+      inReplyTo?: string;
+      subject?: string;
     }>();
 
     if (!body.message?.trim()) {
@@ -248,9 +250,29 @@ export function createBrainRoutes() {
     // Write to sent maildir (brain reads from here)
     const sent = new Maildir(sentDir);
     
-    // Extract subject from first line or first 100 chars
-    const firstLine = body.message.split("\n")[0]?.trim() || body.message.slice(0, 100).trim();
-    const subject = firstLine.length > 100 ? firstLine.slice(0, 97) + "..." : firstLine;
+    // Use provided subject or extract from first line
+    let subject: string;
+    if (body.subject) {
+      subject = body.subject;
+    } else {
+      // Extract subject from first line or first 100 chars
+      const firstLine = body.message.split("\n")[0]?.trim() || body.message.slice(0, 100).trim();
+      subject = firstLine.length > 100 ? firstLine.slice(0, 97) + "..." : firstLine;
+    }
+    
+    // Build headers including threading info
+    const headers: Record<string, string> = {
+      "X-Coleo-Type": "human-message",
+      "X-Coleo-Priority": body.priority || "normal",
+      ...(body.domain ? { "X-Coleo-Domain": body.domain } : {}),
+    };
+    
+    // Add In-Reply-To header if this is a reply
+    if (body.inReplyTo) {
+      headers["In-Reply-To"] = body.inReplyTo;
+      // Also add References header
+      headers["References"] = body.inReplyTo;
+    }
     
     const mailMessage = await sent.write({
       from: "human@coleo.local",
@@ -258,11 +280,7 @@ export function createBrainRoutes() {
       subject,
       date: new Date(),
       body: body.message,
-      headers: {
-        "X-Coleo-Type": "human-message",
-        "X-Coleo-Priority": body.priority || "normal",
-        ...(body.domain ? { "X-Coleo-Domain": body.domain } : {}),
-      },
+      headers,
     });
 
     // Broadcast that a new message was sent to brain

@@ -474,6 +474,7 @@ export interface TaskCommentRow {
   author_type: "human" | "arm" | "brain";
   author_id: string;
   author_name: string | null;
+  screenshot_path: string | null;
   client: "web" | "mail" | "mcp" | "cli";
   edited: number;
   deleted: number;
@@ -490,6 +491,7 @@ export interface TaskComment {
   authorId: string;
   authorName?: string;
   client: "web" | "mail" | "mcp" | "cli";
+  screenshotPath?: string;
   edited: boolean;
   deleted: boolean;
   createdAt: string;
@@ -510,17 +512,19 @@ export function createTaskComment(
     authorId: string;
     authorName?: string;
     client: "web" | "mail" | "mcp" | "cli";
+    screenshotPath?: string;
   }
 ): void {
   const now = new Date().toISOString();
   db.run(
-    `INSERT INTO task_comments (id, task_id, parent_id, content, author_type, author_id, author_name, client, edited, deleted, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+    `INSERT INTO task_comments (id, task_id, parent_id, content, screenshot_path, author_type, author_id, author_name, client, edited, deleted, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
     [
       comment.id,
       comment.taskId,
       comment.parentId || null,
       comment.content,
+      comment.screenshotPath || null,
       comment.authorType,
       comment.authorId,
       comment.authorName || null,
@@ -689,6 +693,7 @@ function rowToTaskComment(row: TaskCommentRow): TaskComment {
     taskId: row.task_id,
     parentId: row.parent_id || undefined,
     content: row.content,
+    screenshotPath: row.screenshot_path || undefined,
     authorType: row.author_type,
     authorId: row.author_id,
     authorName: row.author_name || undefined,

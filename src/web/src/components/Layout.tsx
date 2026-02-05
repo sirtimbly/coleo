@@ -27,7 +27,7 @@ const getNavItems = (unreadCount: number) => [
   { to: '/tasks', icon: ListTodo, label: 'Tasks' },
   { to: '/bugs', icon: Bug, label: 'Bugs' },
   { to: '/garden', icon: Flower2, label: 'Garden' },
-  { to: '/messaging', icon: Mail, label: 'Messaging', badge: unreadCount },
+  { to: '/mail', icon: Mail, label: 'Mail', badge: unreadCount },
   { to: '/proposals', icon: Vote, label: 'Proposals' },
   { to: '/activity', icon: Activity, label: 'Activity' },
   { to: '/settings', icon: Settings, label: 'Settings' },

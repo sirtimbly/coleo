@@ -40,6 +40,7 @@ interface TaskCommentResponse {
   authorType: "human" | "arm" | "brain";
   authorId: string;
   authorName?: string;
+  screenshotPath?: string;
   client: "web" | "mail" | "mcp" | "cli";
   edited: boolean;
   deleted: boolean;
@@ -56,6 +57,7 @@ function toCommentResponse(row: {
   task_id: string;
   parent_id: string | null;
   content: string;
+  screenshot_path?: string | null;
   author_type: "human" | "arm" | "brain";
   author_id: string;
   author_name: string | null;
@@ -73,7 +75,8 @@ function toCommentResponse(row: {
     authorType: row.author_type,
     authorId: row.author_id,
     authorName: row.author_name || undefined,
-    client: row.client,
+  screenshotPath: row.screenshot_path || undefined,
+  client: row.client,
     edited: row.edited === 1,
     deleted: row.deleted === 1,
     createdAt: row.created_at,
