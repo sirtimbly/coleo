@@ -530,7 +530,7 @@ export class ArmHealthMonitor {
     }
     
     try {
-      await eventStore.publishEvent("octopai.events.brain.health_check", {
+      await eventStore.publishEvent("coleo.events.brain.health_check", {
         type: "health_check",
         data: {
           ...summary,
@@ -559,7 +559,7 @@ export class ArmHealthMonitor {
     
     try {
       await eventStore.publishEvent(
-        `octopai.events.arm.${intervention.armId}.intervention`,
+        `coleo.events.arm.${intervention.armId}.intervention`,
         {
           type: "intervention",
           armId: intervention.armId,

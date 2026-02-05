@@ -1,6 +1,7 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect } from 'react';
 import { Plus, Clock, CheckCircle2, XCircle, AlertTriangle, Pause, RefreshCw, ChevronUp, ChevronDown, Sparkles, Tag, X, Search, FileText, MessageSquare } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
+import { useSearchParams } from 'react-router-dom';
 import { type Task, cn } from '@/lib';
 import { TaskModal, TaskDiscussionPanel } from '@/components';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -113,8 +114,34 @@ function TaskPriorityBadge({ priority, taskId, onPriorityChange }: {
 export function TasksPage() {
   document.title = "Coleo Observatory - Tasks";
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState<{ status?: string; priority?: string }>({});
   const [tagFilter, setTagFilter] = useState<string[]>([]);
+
+  // Rehydrate filter from localStorage and URL on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('task-filter');
+    const initialFilter = saved ? JSON.parse(saved) : {};
+    
+    // Check URL params and merge with localStorage
+    const statusFromUrl = searchParams.get('status');
+    if (statusFromUrl) {
+      initialFilter.status = statusFromUrl;
+    }
+    
+    setFilter(initialFilter);
+  }, [searchParams]);
+
+  // Save filter to localStorage and URL when it changes
+  useEffect(() => {
+    localStorage.setItem('task-filter', JSON.stringify(filter));
+    
+    if (filter.status) {
+      setSearchParams({ status: filter.status });
+    } else {
+      setSearchParams({});
+    }
+  }, [filter, setSearchParams]);
   const [searchText, setSearchText] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);

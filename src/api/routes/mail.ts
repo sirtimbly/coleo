@@ -270,7 +270,7 @@ export function createMailRoutes() {
     try {
       // Log the message processing outcome to JetStream
       if (eventStore.isInitialized()) {
-        await eventStore.publishEvent(`octopai.events.mail.${id}.processed`, {
+        await eventStore.publishEvent(`coleo.events.mail.${id}.processed`, {
           type: "message_processed",
           data: {
             actor: "brain",

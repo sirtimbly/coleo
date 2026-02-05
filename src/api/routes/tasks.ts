@@ -105,8 +105,8 @@ function parseTaskRow(row: TaskRow): Task {
 function logActivity(_db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
   if (eventStore.isInitialized()) {
     const subject = target 
-      ? `octopai.events.task.${target}.${action}`
-      : `octopai.events.api.${action}`;
+      ? `coleo.events.task.${target}.${action}`
+      : `coleo.events.api.${action}`;
     
     eventStore.publishEvent(subject, {
       type: action,
@@ -589,6 +589,49 @@ export function createTasksRoutes() {
       LEFT JOIN arms a ON t.assigned_to = a.id
       WHERE t.id = ?
     `).get(id) as TaskRow;
+
+    // Mirror key task status changes into task + arm event streams
+    if (body.status && body.status !== existing.status && eventStore.isInitialized()) {
+      const statusToEventType: Record<Task["status"], string | undefined> = {
+        pending: undefined,
+        claimed: "task.claimed",
+        in_progress: undefined,
+        completed: "task.completed",
+        failed: "task.failed",
+        blocked: "task.blocked",
+        cancelled: undefined,
+      };
+      const eventType = statusToEventType[body.status];
+      if (eventType) {
+        const timestamp = new Date().toISOString();
+        const data = {
+          actor: "api",
+          taskId: id,
+          status: body.status,
+          previousStatus: existing.status,
+        };
+
+        eventStore.publishEvent(`coleo.events.task.${id}.${eventType}`, {
+          type: eventType,
+          armId: row.assigned_to || undefined,
+          data,
+          timestamp,
+        }).catch(() => {
+          // Best-effort
+        });
+
+        if (row.assigned_to) {
+          eventStore.publishEvent(`coleo.events.arm.${row.assigned_to}.${eventType}`, {
+            type: eventType,
+            armId: row.assigned_to,
+            data,
+            timestamp,
+          }).catch(() => {
+            // Best-effort
+          });
+        }
+      }
+    }
 
     return c.json({ task: parseTaskRow(row) });
   });

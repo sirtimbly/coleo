@@ -587,6 +587,16 @@ export function shouldPersistEvent(event: OpenCodeEvent): PersistenceCheckResult
       fileChanges: file ? [file] : undefined,
     };
   }
+
+  // -------------------------------------------------------------------------
+  // PERSIST: File reads (activity signal)
+  // -------------------------------------------------------------------------
+  if (type === 'file.read' || type === 'file.reads') {
+    return { 
+      shouldPersist: true, 
+      reason: 'file read',
+    };
+  }
   
   // -------------------------------------------------------------------------
   // DON'T PERSIST: File watcher updates (too noisy)

@@ -120,17 +120,57 @@ async function getNatsClient(): Promise<NatsClient | null> {
 /**
  * Log an activity to JetStream
  */
+const TASK_ACTION_EVENT_TYPES: Record<string, string> = {
+  claim_task: "task.claimed",
+  complete_task: "task.completed",
+  acknowledge_task: "task.claimed",
+  submit_status_report: "task.status_reported",
+  validate_task: "task.validated",
+  report_dependency: "task.dependency_reported",
+  report_discovery: "task.discovery_reported",
+  context_compression: "task.context_compressed",
+  get_task_determination: "task.determination_requested",
+  get_context_bundle: "task.context_bundle_requested",
+  get_full_briefing: "task.briefing_requested",
+};
+
 function logActivity(actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
-  if (eventStore.isInitialized()) {
-    const subject = target 
-      ? `coleo.events.arm.${target}.${action}`
-      : `coleo.events.mcp.${action}`;
-    
-    eventStore.publishEvent(subject, {
+  if (!eventStore.isInitialized()) return;
+
+  const now = new Date().toISOString();
+  const eventType = TASK_ACTION_EVENT_TYPES[action] ?? action;
+  const data = { actor, action, target, ...details };
+
+  // Always publish to the arm stream for the actor (correct arm attribution)
+  eventStore.publishEvent(`coleo.events.arm.${actor}.${eventType}`, {
+    type: eventType,
+    armId: actor,
+    data,
+    timestamp: now,
+  }).catch(() => {
+    // Activity logging is best-effort
+  });
+
+  // If this is a task-related action with a target, also publish to task stream
+  if (target && TASK_ACTION_EVENT_TYPES[action]) {
+    eventStore.publishEvent(`coleo.events.task.${target}.${eventType}`, {
+      type: eventType,
+      armId: actor,
+      data,
+      timestamp: now,
+    }).catch(() => {
+      // Activity logging is best-effort
+    });
+    return;
+  }
+
+  // Otherwise, also publish to the MCP stream for general visibility
+  if (!target) {
+    eventStore.publishEvent(`coleo.events.mcp.${action}`, {
       type: action,
-      armId: target,
-      data: { actor, ...details },
-      timestamp: new Date().toISOString(),
+      armId: actor,
+      data,
+      timestamp: now,
     }).catch(() => {
       // Activity logging is best-effort
     });
@@ -551,6 +591,41 @@ export function createMcpServer(): McpServer {
           {
             type: "text" as const,
             text: `Task ${task_id} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+          },
+        ],
+      };
+    }
+  );
+
+  // Claim a bug to work on
+  server.registerTool(
+    "claim_bug",
+    {
+      description: "Claim a pending bug to work on",
+      inputSchema: {
+        bug_id: z.string().describe("The ID of the bug to claim"),
+      },
+    },
+    async ({ bug_id }) => {
+      console.error(`[MCP] claim_bug called by ${ARM_ID} for bug ${bug_id}`);
+      const messageId = await sendToBrain({
+        from: ARM_ID,
+        to: "brain",
+        type: "bug_assignment",
+        payload: {
+          action: "claim",
+          bugId: bug_id,
+        },
+      });
+
+      logActivity(ARM_ID, "claim_bug", bug_id, { messageId });
+      console.error(`[MCP] claim_bug completed, messageId: ${messageId}`);
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Bug ${bug_id} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
           },
         ],
       };

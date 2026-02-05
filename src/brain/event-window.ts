@@ -32,6 +32,8 @@ export const KNOWN_EVENT_TYPES = new Set([
 
   // File events
   "file.edited",
+  "file.read",
+  "file.reads",
   "file.watcher.updated",
 
   // Command events

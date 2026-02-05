@@ -809,6 +809,8 @@ export interface Arm {
   totalTokens?: number;
   totalCost?: number;
   currentTaskSubject?: string;
+  currentBugId?: string;
+  currentBugTitle?: string;
   provider?: string;
   model?: string;
 }

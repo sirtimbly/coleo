@@ -120,8 +120,8 @@ export class Brain {
     // Publish to JetStream if initialized
     if (eventStore.isInitialized()) {
       const subject = target
-        ? `octopai.events.arm.${target}.${action}`
-        : `octopai.events.brain.${action}`;
+        ? `coleo.events.arm.${target}.${action}`
+        : `coleo.events.brain.${action}`;
 
       eventStore.publishEvent(subject, {
         type: action,
@@ -1139,8 +1139,12 @@ export class Brain {
           nextSteps?: string;
           filesChanged: string[];
           testsStatus?: "passing" | "failing" | "not_run";
+          screenshot_path?: string;
         };
-        await this.handleStatusReport(payload);
+        await this.handleStatusReport({
+          ...payload,
+          screenshotPath: payload.screenshot_path,
+        });
         break;
       }
 
@@ -1149,6 +1153,15 @@ export class Brain {
         const payload = message.payload as { action: string; taskId: string };
         if (payload.action === "claim") {
           await this.claimTaskForArm(message.from, payload.taskId);
+        }
+        break;
+      }
+
+      case "bug_assignment": {
+        // Arm is claiming a bug
+        const payload = message.payload as { action: string; bugId: string };
+        if (payload.action === "claim") {
+          await this.claimBugForArm(message.from, payload.bugId);
         }
         break;
       }
@@ -1168,8 +1181,19 @@ export class Brain {
 
       case "status_update": {
         // Arm is updating their status on a task (e.g., acknowledging it)
-        const payload = message.payload as { taskId: string; status: string; message?: string };
-        await this.updateTaskStatus(message.from, payload.taskId, payload.status, payload.message);
+        const payload = message.payload as {
+          taskId: string;
+          status: string;
+          message?: string;
+          screenshot_path?: string;
+        };
+        await this.updateTaskStatus(
+          message.from,
+          payload.taskId,
+          payload.status,
+          payload.message,
+          payload.screenshot_path
+        );
         break;
       }
 
@@ -1385,6 +1409,46 @@ export class Brain {
   }
 
   /**
+   * Handle an arm claiming a bug
+   * Updates the database to assign the bug to the arm
+   */
+  private async claimBugForArm(armId: string, bugId: string): Promise<void> {
+    this.log(`Arm ${armId} claiming bug ${bugId}`);
+
+    try {
+      if (!this.db) {
+        this.log(`Database not initialized, cannot claim bug`);
+        return;
+      }
+
+      // Ensure the arm exists in the database
+      this.ensureArmExists(armId);
+
+      // Update arm with current bug info
+      this.db.run(`
+        UPDATE arms 
+        SET current_bug_id = ?, current_bug_title = (
+          SELECT title FROM bugs WHERE id = ?
+        ), updated_at = ?
+        WHERE id = ?
+      `, [bugId, bugId, new Date().toISOString(), armId]);
+
+      // Update bug with assignee
+      this.db.run(`
+        UPDATE bugs 
+        SET assignee_arm_id = ?, assignee_arm_name = (
+          SELECT name FROM arms WHERE id = ?
+        ), status = 'investigating', updated_at = ?
+        WHERE id = ?
+      `, [armId, armId, new Date().toISOString(), bugId]);
+
+      this.log(`Bug ${bugId} claimed by arm ${armId}`);
+    } catch (err) {
+      this.log(`Error claiming bug ${bugId} for arm ${armId}: ${err}`);
+    }
+  }
+
+  /**
    * Spawn an additional arm to act as a watcher for a task when no other arms are available
    */
   private async spawnWatcherArmForTask(taskId: string, primaryArmId: string): Promise<void> {
@@ -1467,7 +1531,13 @@ export class Brain {
   /**
    * Handle an arm updating their status on a task (e.g., acknowledging work started)
    */
-  private async updateTaskStatus(armId: string, taskId: string, status: string, message?: string): Promise<void> {
+  private async updateTaskStatus(
+    armId: string,
+    taskId: string,
+    status: string,
+    message?: string,
+    screenshotPath?: string
+  ): Promise<void> {
     this.log(`Arm ${armId} updating task ${taskId} status to ${status}`);
 
     try {
@@ -1525,16 +1595,16 @@ export class Brain {
       this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message });
       this.log(`Task ${taskId} status updated to ${dbStatus} by arm ${armId}`);
 
-      if (dbStatus === "in_progress") {
-        const armLabel = this.getArmDisplayName(armId);
-        const notes = message?.trim();
-        const parts: Array<string | null> = [
-          `Arm ${armLabel} started working on this task.`,
-          notes ? `Notes:\n${notes}` : null,
-        ];
-        const content = parts.filter((part): part is string => Boolean(part)).join("\n\n");
-        await this.appendTaskComment(taskId, content);
-      }
+      const armLabel = this.getArmDisplayName(armId);
+      const notes = message?.trim();
+      const statusLabel = this.humanizeStatus(status);
+      const parts: Array<string | null> = [
+        `Status update from ${armLabel}: ${statusLabel}.`,
+        dbStatus === "in_progress" ? `Arm ${armLabel} started working on this task.` : null,
+        notes ? `Notes:\n${notes}` : null,
+      ];
+      const content = parts.filter((part): part is string => Boolean(part)).join("\n\n");
+      await this.appendTaskComment(taskId, content, { armId, screenshotPath });
     } catch (err) {
       this.log(`Error updating task ${taskId} status: ${err}`);
     }
@@ -1578,6 +1648,19 @@ export class Brain {
     });
 
     updateTaskCommentStats(db, taskId);
+  }
+
+  private getArmDisplayName(armId: string): string {
+    const arm = this.arms.get(armId);
+    if (arm?.name) return arm.name;
+    return armId;
+  }
+
+  private humanizeStatus(value: string): string {
+    return value
+      .split("_")
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
   }
 
  /**
@@ -1716,6 +1799,15 @@ When ready, use the \`validate_task\` MCP tool to report your decision.`;
         VALUES (?, ?, 'approved', ?, ?)
       `, [taskId, validatorArmId, notes, now]);
 
+      // Add comment about approval
+      const armLabel = this.getArmDisplayName(validatorArmId);
+      const parts: Array<string | null> = [
+        `Task validated and approved by ${armLabel}`,
+        notes ? `Notes:\n${notes}` : null,
+      ];
+      const content = parts.filter((part): part is string => Boolean(part)).join("\n\n");
+      await this.appendTaskComment(taskId, content, { armId: validatorArmId, screenshotPath });
+
       this.log(`Task ${taskSubject} approved and completed`);
     } else {
       // validation failed - return task to in_progress with feedback
@@ -1735,6 +1827,15 @@ When ready, use the \`validate_task\` MCP tool to report your decision.`;
               updated_at = ?
           WHERE id = ?
         `, [notes, now, taskId]);
+
+        // Add comment about rejection
+        const armLabel = this.getArmDisplayName(validatorArmId);
+        const parts: Array<string | null> = [
+          `Validation rejected by ${armLabel}`,
+          notes ? `Feedback:\n${notes}` : null,
+        ];
+        const content = parts.filter((part): part is string => Boolean(part)).join("\n\n");
+        await this.appendTaskComment(taskId, content, { armId: validatorArmId, screenshotPath });
 
         // Notify original worker arm to address issues
         const feedbackPrompt = `# Task Validation Feedback
@@ -1837,6 +1938,33 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
     // Log activity
     this.logActivity("brain", "task_completed", taskId, { subject: taskSubject, artifacts });
+
+    // Mirror task completion into task + arm event streams for activity analysis
+    if (eventStore.isInitialized()) {
+      const now = new Date().toISOString();
+      const workerArmId = task?.assignedTo;
+      const data = { actor: "brain", taskId, subject: taskSubject, artifacts };
+
+      eventStore.publishEvent(`coleo.events.task.${taskId}.task.completed`, {
+        type: "task.completed",
+        armId: workerArmId,
+        data,
+        timestamp: now,
+      }).catch(() => {
+        // Best-effort
+      });
+
+      if (workerArmId) {
+        eventStore.publishEvent(`coleo.events.arm.${workerArmId}.task.completed`, {
+          type: "task.completed",
+          armId: workerArmId,
+          data,
+          timestamp: now,
+        }).catch(() => {
+          // Best-effort
+        });
+      }
+    }
 
     // Check for tasks that were blocked on this task and unblock them
     await this.unblockDependentTasks(taskId);
@@ -2227,6 +2355,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
     nextSteps?: string;
     filesChanged: string[];
     testsStatus?: "passing" | "failing" | "not_run";
+    screenshotPath?: string;
   }): Promise<void> {
     const task = this.tasks.find(t => t.id === report.taskId);
     if (!task) {
@@ -2310,7 +2439,10 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
     ];
 
     const statusContent = statusParts.filter((part): part is string => Boolean(part)).join("\n\n");
-    await this.appendTaskComment(report.taskId, statusContent);
+    await this.appendTaskComment(report.taskId, statusContent, {
+      armId: report.armId,
+      screenshotPath: report.screenshotPath,
+    });
 
     // Determine if we should forward this status report to the user
     const forwardDecision = await this.shouldForwardStatusReportToUser(report, task);
@@ -4856,65 +4988,41 @@ Report findings using bug resolution workflow.`,
     stuckMinutes: number
   ): Promise<void> {
     // Determine intervention level based on escalation level
-    switch (tracker.escalationLevel) {
-      case 0: // First detection - send interrupt + different prompt
-        this.log(`Arm ${arm.id} appears stuck (${stuckMinutes.toFixed(1)}m, ${tracker.promptCount} prompts). Sending interrupt...`);
-        this.logActivity("brain", "idle_arm_stuck", arm.id, {
-          stuckMinutes: stuckMinutes.toFixed(1),
+    if (tracker.escalationLevel === 0) {
+      this.log(`Arm ${arm.id} appears stuck (${stuckMinutes.toFixed(1)}m, ${tracker.promptCount} prompts). Sending interrupt...`);
+      this.logActivity("brain", "idle_arm_stuck", arm.id, {
+        stuckMinutes: stuckMinutes.toFixed(1),
+        promptCount: tracker.promptCount,
+        intervention: "interrupt",
+      });
+      await this.sendPromptToArm(arm.name, "/interrupt", { interrupt: true });
+      tracker.escalationLevel = 1;
+      tracker.promptCount = 0; // Reset after intervention
+    } else if (tracker.escalationLevel === 1) {
+      this.log(`Arm ${arm.id} still stuck after interrupt. Sending /compact...`);
+      this.logActivity("brain", "idle_arm_stuck", arm.id, {
+        stuckMinutes: stuckMinutes.toFixed(1),
+        promptCount: tracker.promptCount,
+        intervention: "compact",
+      });
+      await this.sendPromptToArm(arm.name, "/compact");
+      tracker.escalationLevel = 2;
+      tracker.promptCount = 0;
+    } else if (tracker.escalationLevel === 2) {
+      await this.escalateIdleArmToHuman(arm, tracker, stuckMinutes);
+      tracker.escalationLevel = 3;
+    } else if (tracker.escalationLevel === 3) {
+      if (stuckMinutes >= 20) {
+        this.log(`Arm ${arm.id} stuck for 20+ minutes after escalation. Auto-killing zombie arm...`);
+        this.logActivity("brain", "arm_zombie_killed", arm.id, {
+          stuckMinutes,
           promptCount: tracker.promptCount,
-          intervention: "interrupt",
+          action: "auto_kill",
         });
-        await this.sendPromptToArm(arm.name, "/interrupt", { interrupt: true });
-        tracker.escalationLevel = 1;
-        tracker.promptCount = 0; // Reset after intervention
-        break;
-
-      case 1: // Second detection - send /compact
-        this.log(`Arm ${arm.id} still stuck after interrupt. Sending /compact...`);
-        this.logActivity("brain", "idle_arm_stuck", arm.id, {
-          stuckMinutes: stuckMinutes.toFixed(1),
-          promptCount: tracker.promptCount,
-          intervention: "compact",
-        });
-        await this.sendPromptToArm(arm.name, "/compact");
-        tracker.escalationLevel = 2;
-        tracker.promptCount = 0;
-        break;
-
-      case 2: // Third detection - escalate to human
-        this.log(`Arm ${arm.id} still stuck after compact. Escalating to human...`);
-        this.logActivity("brain", "idle_arm_stuck", arm.id, {
-          stuckMinutes: stuckMinutes.toFixed(1),
-          promptCount: tracker.promptCount,
-          intervention: "escalate",
-        });
-        const body = await this.templates.renderTemplate("human-arm-idle-loop.jinja", {
-          arm_name: arm.name,
-          stuck_minutes: stuckMinutes.toFixed(1),
-          prompt_count: tracker.promptCount,
-          arm_status: arm.status,
-          last_productive: tracker.lastProductiveAt?.toISOString() || "never",
-        });
-        await this.sendToHuman({
-          subject: `[coleo] Arm ${arm.name} stuck in idle loop`,
-          body,
-        });
-        tracker.escalationLevel = 3;
-        break;
-
-      case 3: // Already escalated - auto-kill after 20+ minutes
-        if (stuckMinutes >= 20) {
-          this.log(`Arm ${arm.id} stuck for 20+ minutes after escalation. Auto-killing zombie arm...`);
-          this.logActivity("brain", "arm_zombie_killed", arm.id, {
-            stuckMinutes,
-            promptCount: tracker.promptCount,
-            action: "auto_kill",
-          });
-          await this.killZombieArm(arm);
-        } else if (stuckMinutes >= 15) {
-          this.log(`Arm ${arm.id} stuck for 15+ minutes. Will auto-kill at 20 minutes.`);
-        }
-        break;
+        await this.killZombieArm(arm);
+      } else if (stuckMinutes >= 15) {
+        this.log(`Arm ${arm.id} stuck for 15+ minutes. Will auto-kill at 20 minutes.`);
+      }
     }
 
     // Reset prompt count after any intervention (we'll re-detect if still stuck)
@@ -4925,6 +5033,29 @@ Report findings using bug resolution workflow.`,
    * Kill a zombie arm that has been unresponsive for too long
    * Terminates the process and cleans up database state
    */
+  private async escalateIdleArmToHuman(
+    arm: Arm,
+    tracker: { promptCount: number; lastPromptAt: Date; lastProductiveAt: Date | null; escalationLevel: number },
+    stuckMinutes: number
+  ): Promise<void> {
+    this.log(`Arm ${arm.id} still stuck after compact. Escalating to human...`);
+    this.logActivity("brain", "idle_arm_stuck", arm.id, {
+      stuckMinutes: stuckMinutes.toFixed(1),
+      promptCount: tracker.promptCount,
+      intervention: "escalate",
+    });
+    await this.sendToHuman({
+      subject: `[coleo] Arm ${arm.name} stuck in idle loop`,
+      body: await this.templates.renderTemplate("human-arm-idle-loop.jinja", {
+        arm_name: arm.name,
+        stuck_minutes: stuckMinutes.toFixed(1),
+        prompt_count: tracker.promptCount,
+        arm_status: arm.status,
+        last_productive: tracker.lastProductiveAt?.toISOString() || "never",
+      }),
+    });
+  }
+
   private async killZombieArm(arm: Arm): Promise<void> {
     try {
       // First try to kill via API (graceful shutdown)

@@ -215,13 +215,13 @@ export function ArmsPage() {
 										</div>
 									)}
 
-									{arm.currentTaskSubject && (
+									{(arm.currentTaskSubject || arm.currentBugTitle) && (
 										<div className="p-2 bg-default-100 rounded">
 											<div className="text-xs text-muted-foreground mb-1">
-												Current task
+												{arm.currentBugTitle ? '🐛 Current bug' : '📋 Current task'}
 											</div>
 											<div className="text-sm truncate">
-												{arm.currentTaskSubject}
+												{arm.currentBugTitle || arm.currentTaskSubject}
 											</div>
 										</div>
 									)}

@@ -578,7 +578,7 @@ export class InMemoryEventStore implements IEventStore {
    */
   async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
     return this.queryEvents({
-      subject: `octopai.events.arm.${armId}.>`,
+      subject: `coleo.events.arm.${armId}.>`,
       limit,
     });
   }

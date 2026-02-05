@@ -646,13 +646,28 @@ export function ArmViewerPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <div className="border-b border-border px-4 py-3 bg-muted/10">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <h1 className="text-lg font-semibold flex items-center gap-2">
-                {selectedArm ? selectedArm.name : '🐙'}
-                {selectedArm && <StatusBadge status={selectedArm.status} />}
-              </h1>
-              {selectedArm && (selectedArm.provider || selectedArm.model) && (
+<div className="flex items-center justify-between">
+             <div className="flex items-center space-x-2">
+               <h1 className="text-lg font-semibold flex items-center gap-2">
+                 {selectedArm ? selectedArm.name : '🐙'}
+                 {selectedArm && <StatusBadge status={selectedArm.status} />}
+               </h1>
+               {selectedArm && (selectedArm.currentTaskSubject || selectedArm.currentBugTitle) && (
+                 <div className="text-sm text-muted-foreground max-w-md truncate">
+                   {selectedArm.currentBugTitle ? (
+                     <span className="flex items-center gap-1">
+                       <span>🐛</span>
+                       {selectedArm.currentBugTitle}
+                     </span>
+                   ) : (
+                     <span className="flex items-center gap-1">
+                       <span>📋</span>
+                       {selectedArm.currentTaskSubject}
+                     </span>
+                   )}
+                 </div>
+               )}
+               {selectedArm && (selectedArm.provider || selectedArm.model) && (
                 <div className="flex items-center space-x-2 text-sm text-muted-foreground">
                   {selectedArm.provider && <span className="text-blue-600">{selectedArm.provider}</span>}
                   {selectedArm.provider && selectedArm.model && <span>·</span>}

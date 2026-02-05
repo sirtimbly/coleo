@@ -86,7 +86,7 @@ export class ReportDependencyTool extends BrainTool {
 
       // Log the dependency report to JetStream
       if (eventStore.isInitialized()) {
-        eventStore.publishEvent(`octopai.events.brain.dependency_reported`, {
+        eventStore.publishEvent(`coleo.events.brain.dependency_reported`, {
           type: "dependency_reported",
           armId: "brain",
           data: {

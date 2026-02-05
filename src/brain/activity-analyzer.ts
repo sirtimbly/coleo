@@ -118,6 +118,8 @@ const ACTIVE_EVENT_TYPES = new Set([
   "session.updated",
   "message.part.updated",
   "arm.heartbeat",
+  "file.read",
+  "file.reads",
 ]);
 
 /**

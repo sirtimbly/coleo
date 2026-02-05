@@ -165,7 +165,7 @@ export function autoClaimFile(
     
     // Log the activity to JetStream
     if (eventStore.isInitialized()) {
-      eventStore.publishEvent(`octopai.events.arm.${armId}.auto_claim_file`, {
+      eventStore.publishEvent(`coleo.events.arm.${armId}.auto_claim_file`, {
         type: "auto_claim_file",
         armId,
         data: { filePath, claim_type: claimType },

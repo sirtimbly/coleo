@@ -520,7 +520,7 @@ export class PermissionDecisionEngine {
     
     try {
       await eventStore.publishEvent(
-        `octopai.events.arm.${request.armId}.permission_decision`,
+        `coleo.events.arm.${request.armId}.permission_decision`,
         {
           type: "permission_decision",
           armId: request.armId,

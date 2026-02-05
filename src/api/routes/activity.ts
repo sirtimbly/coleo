@@ -143,8 +143,8 @@ export function createActivityRoutes() {
 
     const now = new Date().toISOString();
     const subject = body.target 
-      ? `octopai.events.arm.${body.target}.${body.action}`
-      : `octopai.events.api.${body.action}`;
+      ? `coleo.events.arm.${body.target}.${body.action}`
+      : `coleo.events.api.${body.action}`;
 
     try {
       await eventStore.publishEvent(subject, {

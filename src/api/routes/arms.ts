@@ -30,8 +30,8 @@ function logActivity(_db: Database, actor: string, action: string, target?: stri
   // Publish to JetStream if initialized
   if (eventStore.isInitialized()) {
     const subject = target 
-      ? `octopai.events.arm.${target}.${action}`
-      : `octopai.events.api.${action}`;
+      ? `coleo.events.arm.${target}.${action}`
+      : `coleo.events.api.${action}`;
     
     eventStore.publishEvent(subject, {
       type: action,
@@ -63,6 +63,8 @@ export interface ArmProfile {
   totalTokens?: number;
   totalCost?: number;
   currentTaskSubject?: string;
+  currentBugId?: string;
+  currentBugTitle?: string;
   agentId?: string;
   host?: string;
 }
@@ -225,6 +227,8 @@ export function createArmsRoutes() {
           total_tokens as totalTokens,
           total_cost as totalCost,
           current_task_subject as currentTaskSubject,
+          current_bug_id as currentBugId,
+          current_bug_title as currentBugTitle,
           agent_id as agentId,
           host,
           config
@@ -260,6 +264,8 @@ export function createArmsRoutes() {
         total_tokens as totalTokens,
         total_cost as totalCost,
         current_task_subject as currentTaskSubject,
+        current_bug_id as currentBugId,
+        current_bug_title as currentBugTitle,
         agent_id as agentId,
         host,
         config
@@ -1430,6 +1436,8 @@ interface ArmRow {
   totalTokens: number | null;
   totalCost: number | null;
   currentTaskSubject: string | null;
+  currentBugId: string | null;
+  currentBugTitle: string | null;
   agentId: string | null;
   host: string | null;
   config: string;
@@ -1446,6 +1454,8 @@ function parseArmRow(row: ArmRow): ArmProfile {
     totalTokens: row.totalTokens ?? 0,
     totalCost: row.totalCost ?? 0,
     currentTaskSubject: row.currentTaskSubject ?? undefined,
+    currentBugId: row.currentBugId ?? undefined,
+    currentBugTitle: row.currentBugTitle ?? undefined,
     agentId: row.agentId ?? undefined,
     host: row.host ?? undefined,
     config: JSON.parse(row.config || "{}"),

@@ -50,8 +50,9 @@ export class DetermineNextTaskTool extends BrainTool {
 
   async execute(input: DetermineNextTaskInput): Promise<ToolResult<NextTaskResult>> {
     try {
-      // Step 1: Get pending and in-progress tasks
+      // Step 1: Get pending tasks and bugs
       const pendingTasks = await this.getPendingTasks();
+      const pendingBugs = await this.getPendingBugs();
       const inProgressTasks = await this.getInProgressTasks();
       
       // Step 2: Check for tasks needing verification (completed with issues)
@@ -124,8 +125,28 @@ export class DetermineNextTaskTool extends BrainTool {
       //   }
       // }
       
-      // Step 6: Return any pending task
-      if (pendingTasks.length > 0) {
+      // Step 6: Distribute bugs and tasks equally
+      // Return either the next pending bug or task based on equal distribution
+      if (pendingBugs.length > 0 && (Math.random() < 0.5 || pendingTasks.length === 0)) {
+        const bug = pendingBugs[0]!;
+        return {
+          success: true,
+          data: {
+            task: {
+              subject: bug.title,
+              description: bug.description,
+              classification: "bug_fix",
+              domain: undefined,
+              priority: bug.priority,
+            },
+            context: {
+              history: await this.getRecentHistory(3),
+              ...bug.errorDetails ? { errorDetails: bug.errorDetails } : {},
+            },
+            reasoning: `Assigning pending bug for quick resolution. ${pendingTasks.length} tasks also available.`,
+          },
+        };
+      } else if (pendingTasks.length > 0) {
         const task = pendingTasks[0]!;
         return {
           success: true,
@@ -202,6 +223,42 @@ export class DetermineNextTaskTool extends BrainTool {
       classification: r.classification || undefined,
       domain: r.domain || undefined,
       priority: r.priority || undefined,
+    }));
+  }
+
+  /**
+   * Get pending bugs from database
+   */
+  private async getPendingBugs(): Promise<Array<{
+    id: string;
+    title: string;
+    description: string;
+    priority: string;
+    errorDetails?: string;
+  }>> {
+    const rows = this.context.db.query(`
+      SELECT id, title, description, priority, error_details
+      FROM bugs
+      WHERE status IN ('open', 'investigating')
+        AND assignee_arm_id IS NULL
+      ORDER BY 
+        CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
+        created_at ASC
+      LIMIT 10
+    `).all() as Array<{
+      id: string;
+      title: string;
+      description: string;
+      priority: string;
+      error_details: string | null;
+    }>;
+
+    return rows.map(r => ({
+      id: r.id,
+      title: r.title,
+      description: r.description,
+      priority: r.priority,
+      errorDetails: r.error_details || undefined,
     }));
   }
 
