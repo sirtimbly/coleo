@@ -9,3 +9,4 @@ export { DiscussionItem } from './DiscussionItem';
 export { DiscussionComposer } from './DiscussionComposer';
 export { BugGrid } from './BugGrid';
 export { BugGridRow } from './BugGridRow';
+export { UnifiedGridView } from './UnifiedGridView';

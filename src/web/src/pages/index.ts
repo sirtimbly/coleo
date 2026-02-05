@@ -11,3 +11,4 @@ export { TasksPage } from './TasksPage';
 export { StatusReportsPage } from './StatusReportsPage';
 export { BugsPage } from './BugsPage';
 export { MessagingPage } from './MessagingPage';
+export { UnifiedGridPage } from './UnifiedGridPage';

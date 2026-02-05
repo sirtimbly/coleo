@@ -26,7 +26,7 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked";
+  status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked";
   priority: "critical" | "high" | "normal" | "low";
   assignedTo?: string; // arm id
   /**
@@ -232,6 +232,7 @@ export interface QueueMessage {
 export type MessageType =
   | "task_assignment"
   | "task_complete"
+  | "task_validation"
   | "task_failed"
   | "discovery"
   | "dependency_discovery"
@@ -359,7 +360,7 @@ export interface ColeoConfig {
     defaultRepo: string;
   };
   terminal: {
-    emulator: "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm";
+    emulator: "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "tmux" | "headless" | "harness";
   };
   defaults: {
     harness: string;
