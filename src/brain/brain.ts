@@ -2144,6 +2144,19 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
       return;
     }
 
+    // Update last activity for the arm
+    if (this.db) {
+      const now = new Date().toISOString();
+      this.db.run(
+        "UPDATE arms SET last_activity_at = ?, updated_at = ? WHERE id = ?",
+        [now, now, report.armId]
+      );
+    }
+    const reportingArm = this.arms.get(report.armId);
+    if (reportingArm) {
+      reportingArm.lastActivity = new Date();
+    }
+
     // Store status report in database
     if (this.db) {
       const now = new Date().toISOString();
@@ -2214,6 +2227,9 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
           // Defer the task and notify user - arm will move to other work
           task.status = "blocked";
           await this.saveTasks();
+
+          // Clear the reporting arm so it can be reassigned
+          this.clearArmTaskAssignment(report.armId);
 
           // Update database to mark task as deferred
           if (this.db) {
@@ -2805,10 +2821,18 @@ ${originalTask.id}`;
     if (!this.db) return;
 
     const now = new Date().toISOString();
-    this.db.run(
-      "UPDATE arms SET last_heartbeat = ?, last_activity_at = ?, updated_at = ? WHERE id = ?",
-      [now, now, now, armId]
-    );
+    const status = payload.status === "busy" || payload.currentTask ? "busy" : "idle";
+    if (status === "idle" && !payload.currentTask) {
+      this.db.run(
+        "UPDATE arms SET status = ?, last_heartbeat = ?, last_activity_at = ?, updated_at = ?, current_task_id = NULL, current_task_subject = NULL WHERE id = ?",
+        [status, now, now, now, armId]
+      );
+    } else {
+      this.db.run(
+        "UPDATE arms SET status = ?, last_heartbeat = ?, last_activity_at = ?, updated_at = ?, current_task_subject = COALESCE(?, current_task_subject) WHERE id = ?",
+        [status, now, now, now, payload.currentTask ?? null, armId]
+      );
+    }
 
     // Update state machine with heartbeat event
     if (this.armStateMachine) {
@@ -2819,11 +2843,12 @@ ${originalTask.id}`;
     const arm = this.arms.get(armId);
     if (arm) {
       arm.lastActivity = new Date();
-      if (payload.status === "busy" || payload.currentTask) {
+      if (status === "busy") {
         arm.status = "busy";
         arm.currentTask = payload.currentTask;
       } else {
         arm.status = "idle";
+        arm.currentTask = undefined;
       }
     }
 
@@ -5872,6 +5897,23 @@ const arm: Arm = {
     if (!this.dashboard || !this.dashboard.isEnabled()) return;
     this.dashboard.setArms(this.getArmStatusRows());
     this.dashboard.render();
+  }
+
+  private clearArmTaskAssignment(armId: string): void {
+    const now = new Date().toISOString();
+    if (this.db) {
+      this.db.run(
+        "UPDATE arms SET status = 'idle', current_task_id = NULL, current_task_subject = NULL, last_activity_at = ?, updated_at = ? WHERE id = ?",
+        [now, now, armId]
+      );
+    }
+
+    const arm = this.arms.get(armId);
+    if (arm) {
+      arm.status = "idle";
+      arm.currentTask = undefined;
+      arm.lastActivity = new Date();
+    }
   }
 
   private log(message: string): void {
