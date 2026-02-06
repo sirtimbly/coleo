@@ -100,6 +100,9 @@ export interface AgentHarness {
   getState(session: HarnessSession): Promise<AgentState>;
   isProcessing(session: HarnessSession): Promise<boolean>;
 
+  // Session data (if supported by the harness)
+  getMessages?(session: HarnessSession, options?: { limit?: number }): Promise<unknown[]>;
+
   // Special actions
   interrupt(session: HarnessSession): Promise<void>;
   compact?(session: HarnessSession): Promise<void>;

@@ -1104,6 +1104,57 @@ export function createArmsRoutes() {
   });
 
   /**
+   * Get arm's session messages (text logs for viewer)
+   * GET /api/arms/:id/messages
+   */
+  app.get("/:id/messages", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const parsedLimit = Number.parseInt(c.req.query("limit") || "100", 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 100;
+
+    const row = db.query("SELECT id, status FROM arms WHERE id = ?").get(id) as {
+      id: string;
+      status: string;
+    } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    if (row.status === "stopped") {
+      return c.json({ messages: [], error: "Arm not running" });
+    }
+
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    if (!manager.hasSession(id)) {
+      return c.json({ messages: [], error: "Arm has no active harness session" });
+    }
+
+    try {
+      const messages = await manager.getMessages(id, { limit });
+      const sessionId = manager.getSession(id)?.session.id;
+
+      return c.json({
+        messages,
+        sessionId,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const sessionId = manager.getSession(id)?.session.id;
+      return c.json({
+        messages: [],
+        sessionId,
+        error: `Failed to fetch messages: ${message}`,
+      });
+    }
+  });
+
+  /**
    * Get arm's activity log from JetStream
    * GET /api/arms/:id/activity
    */

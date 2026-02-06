@@ -848,6 +848,7 @@ export interface MailMessage {
 export interface ArmMessagePart {
   type: string;
   text?: string;
+  tool?: string;
   toolName?: string;
   name?: string;
   state?: string;

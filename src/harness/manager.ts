@@ -370,6 +370,22 @@ export class HarnessManager {
   }
 
   /**
+   * Get structured session messages for an arm (if the harness supports it)
+   */
+  async getMessages(armId: string, options?: { limit?: number }): Promise<unknown[]> {
+    const active = this.sessions.get(armId);
+    if (!active) {
+      throw new Error(`No active session for arm ${armId}`);
+    }
+
+    if (!active.harness.getMessages) {
+      return [];
+    }
+
+    return active.harness.getMessages(active.session, options);
+  }
+
+  /**
    * Check if an arm has an active session
    */
   hasSession(armId: string): boolean {

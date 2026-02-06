@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { StatusBadge } from './StatusBadge';
+import { Link } from 'react-router-dom';
 import { api, type ArmAnalysisFull } from '@/lib/api';
 import { armsKeys } from '@/lib/queryKeys';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -92,8 +92,9 @@ export function ArmStatusBar() {
           const state = arm.analysis?.analysis.state;
           
           return (
-            <div
+            <Link
               key={arm.id}
+              to={`/viewer?arm=${encodeURIComponent(arm.id)}`}
               className="flex items-center gap-2 shrink-0 bg-white/70 dark:bg-zinc-800/70 border border-border/40 rounded-xl px-3 py-2 hover:bg-white dark:hover:bg-zinc-800 transition-all shadow-sm"
               title={arm.harness}
             >
@@ -138,7 +139,7 @@ export function ArmStatusBar() {
               {arm.provider && (
                 <span className="text-xs text-muted-foreground/60">{arm.provider}</span>
               )}
-            </div>
+            </Link>
           );
         })}
       </div>

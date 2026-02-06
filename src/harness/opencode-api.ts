@@ -762,6 +762,31 @@ export class OpenCodeApiHarness implements AgentHarness {
   }
 
   /**
+   * Get session messages from OpenCode via SDK
+   */
+  async getMessages(
+    session: HarnessSession,
+    options?: { limit?: number }
+  ): Promise<{ info: Message; parts: Part[] }[]> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    const response = await apiSession.client.session.messages({
+      path: { id: apiSession.sessionId },
+    });
+
+    const messages = response.data || [];
+    const limit = options?.limit;
+    if (limit && limit > 0) {
+      return messages.slice(-limit);
+    }
+
+    return messages;
+  }
+
+  /**
    * Wait for OpenCode to become idle
    */
   async waitForIdle(session: HarnessSession, timeout: number = 60000): Promise<void> {

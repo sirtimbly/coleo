@@ -1057,7 +1057,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       const state = await this.getState(session);
       if (state === "idle") {
         // Get the last message
-        const messages = await this.getMessages(tuiSession);
+        const messages = await this.getMessages(session);
         if (messages.length > 0) {
           const lastMessage = messages[messages.length - 1];
           if (lastMessage && lastMessage.info.role === "assistant") {
@@ -1157,11 +1157,26 @@ export class OpenCodeTuiHarness implements AgentHarness {
   /**
    * Get messages from a session using SDK
    */
-  private async getMessages(tuiSession: TuiHarnessSession): Promise<{ info: Message; parts: Part[] }[]> {
+  async getMessages(
+    session: HarnessSession,
+    options?: { limit?: number }
+  ): Promise<{ info: Message; parts: Part[] }[]> {
+    const tuiSession = this.sessions.get(session.id);
+    if (!tuiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
     const response = await tuiSession.client.session.messages({
       path: { id: tuiSession.sessionId },
     });
-    return response.data || [];
+
+    const messages = response.data || [];
+    const limit = options?.limit;
+    if (limit && limit > 0) {
+      return messages.slice(-limit);
+    }
+
+    return messages;
   }
 
   /**

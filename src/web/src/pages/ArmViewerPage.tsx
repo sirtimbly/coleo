@@ -8,7 +8,7 @@ import {
   RefreshCw, Maximize2, Minimize2, ShieldQuestion, TrendingUp,
   TrendingDown, Minus, CircleDashed, Play, Pause, AlertOctagon
 } from 'lucide-react';
-import { api, type Arm, type ArmTodo, type OpenCodeEvent, type ArmAnalysisFull, type ArmActivityState } from '@/lib';
+import { api, type Arm, type ArmTodo, type OpenCodeEvent, type ArmAnalysisFull, type ArmActivityState, type ArmMessage } from '@/lib';
 import { StatusBadge } from '@/components';
 import { useArmEvents, useWebSocket } from '@/hooks';
 
@@ -44,6 +44,8 @@ interface ArmHistoryState {
   sessionStatus: string;
   lastUpdated: number;
 }
+
+type ViewerTab = 'events' | 'logs';
 
 const MAX_HISTORY_ITEMS = 200;
 const STORAGE_PREFIX = 'coleo-arm-history-';
@@ -145,9 +147,14 @@ export function ArmViewerPage() {
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [armAnalysis, setArmAnalysis] = useState<ArmAnalysisFull | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<ViewerTab>('events');
+  const [messages, setMessages] = useState<ArmMessage[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
   
   const activityEndRef = useRef<HTMLDivElement>(null);
   const activityIdCounter = useRef(0);
+  const lastLogsRefreshAt = useRef(0);
 
   // Generate unique activity ID
   const genId = () => `act-${++activityIdCounter.current}-${Date.now()}`;
@@ -211,6 +218,32 @@ export function ArmViewerPage() {
     }
   };
 
+  const loadMessages = useCallback(async (armId: string, silent = false) => {
+    if (!silent) {
+      setLogsLoading(true);
+    }
+    try {
+      const res = await api.getArmMessages(armId, 200);
+      setMessages(res.messages || []);
+      setLogsError(res.error || null);
+    } catch (err) {
+      setLogsError(err instanceof Error ? err.message : 'Failed to load message logs');
+    } finally {
+      if (!silent) {
+        setLogsLoading(false);
+      }
+    }
+  }, []);
+
+  const refreshMessagesThrottled = useCallback((armId: string) => {
+    const now = Date.now();
+    if (now - lastLogsRefreshAt.current < 1000) {
+      return;
+    }
+    lastLogsRefreshAt.current = now;
+    void loadMessages(armId, true);
+  }, [loadMessages]);
+
   // Handle SSE events from arm
   const handleArmEvent = useCallback((event: OpenCodeEvent) => {
     const { type, properties: props } = event;
@@ -227,6 +260,9 @@ export function ArmViewerPage() {
           status: 'running',
           details: { role, messageId: info.id },
         });
+      }
+      if (selectedArmId && activeTab === 'logs') {
+        refreshMessagesThrottled(selectedArmId);
       }
     }
 
@@ -361,6 +397,7 @@ export function ArmViewerPage() {
           // Refresh todos
           if (selectedArmId) {
             loadTodos(selectedArmId);
+            refreshMessagesThrottled(selectedArmId);
           }
         } else if (status.type === 'busy') {
           upsertActivity('session-busy', {
@@ -456,7 +493,7 @@ export function ArmViewerPage() {
         });
       }
     }
-  }, [selectedArmId, upsertActivity]);
+  }, [activeTab, refreshMessagesThrottled, selectedArmId, upsertActivity]);
 
   // Subscribe to arm events
   const { connected } = useArmEvents({
@@ -508,11 +545,27 @@ export function ArmViewerPage() {
       // Always fetch fresh todos and analysis
       loadTodos(selectedArmId);
       loadAnalysis(selectedArmId);
+      void loadMessages(selectedArmId);
     } else {
       // Clear analysis when no arm selected
       setArmAnalysis(null);
+      setMessages([]);
+      setLogsError(null);
     }
-  }, [selectedArmId]);
+  }, [loadMessages, selectedArmId]);
+
+  // Refresh text logs while viewing the Logs tab
+  useEffect(() => {
+    if (!selectedArmId || activeTab !== 'logs') {
+      return;
+    }
+
+    const interval = setInterval(() => {
+      void loadMessages(selectedArmId, true);
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [activeTab, loadMessages, selectedArmId]);
 
   // Handle panel resizing
   useEffect(() => {
@@ -542,7 +595,7 @@ export function ArmViewerPage() {
   // Auto-scroll to bottom
   useEffect(() => {
     activityEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activities]);
+  }, [activeTab, activities, currentText, messages]);
 
   const selectArm = (armId: string) => {
     setSearchParams({ arm: armId });
@@ -680,7 +733,16 @@ export function ArmViewerPage() {
               <div className="flex items-center gap-4">
                 <Button
                   variant="secondary"
-                  onPress={loadArms}
+                  onPress={() => {
+                    loadArms();
+                    if (selectedArmId) {
+                      loadTodos(selectedArmId);
+                      loadAnalysis(selectedArmId);
+                      if (activeTab === 'logs') {
+                        void loadMessages(selectedArmId);
+                      }
+                    }
+                  }}
                   isDisabled={loading}
                   isIconOnly
                 >
@@ -688,7 +750,7 @@ export function ArmViewerPage() {
                 </Button>
 
                 {/* Clear history button */}
-                {activities.length > 0 && (
+                {activeTab === 'events' && activities.length > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -753,6 +815,28 @@ export function ArmViewerPage() {
           />
         )}
 
+        {/* Tabs */}
+        {selectedArmId && (
+          <div className="border-b border-border px-4 py-2 bg-muted/5">
+            <div className="inline-flex items-center rounded-lg border border-border p-1 gap-1">
+              <Button
+                size="sm"
+                variant={activeTab === 'events' ? 'primary' : 'ghost'}
+                onPress={() => setActiveTab('events')}
+              >
+                Events
+              </Button>
+              <Button
+                size="sm"
+                variant={activeTab === 'logs' ? 'primary' : 'ghost'}
+                onPress={() => setActiveTab('logs')}
+              >
+                Logs
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Content area */}
         {!selectedArmId ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -763,38 +847,75 @@ export function ArmViewerPage() {
           </div>
         ) : (
           <div className="flex-1 flex overflow-hidden">
-            {/* Activity log */}
-            <div className="flex-1 overflow-auto p-4 space-y-2">
-              {/* Current text output */}
-              {currentText && (
-                <div className="bg-secondary/30 rounded-lg p-4 mb-4 border border-border">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                    <Bot className="h-3 w-3" />
-                    <span>Assistant is typing...</span>
-                    <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+            {activeTab === 'events' ? (
+              <div className="flex-1 overflow-auto p-4 space-y-2">
+                {/* Current text output */}
+                {currentText && (
+                  <div className="bg-secondary/30 rounded-lg p-4 mb-4 border border-border">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                      <Bot className="h-3 w-3" />
+                      <span>Assistant is typing...</span>
+                      <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+                    </div>
+                    <div className="text-sm whitespace-pre-wrap max-h-48 overflow-auto">
+                      {currentText.slice(-1500)}
+                    </div>
                   </div>
-                  <div className="text-sm whitespace-pre-wrap max-h-48 overflow-auto">
-                    {currentText.slice(-1500)}
-                  </div>
-                </div>
-              )}
+                )}
 
-              {/* Activity items */}
-              {activities.length === 0 && !currentText ? (
-                <div className="text-center text-muted-foreground py-8">
-                  <p>No activity yet. Send a prompt to start.</p>
-                </div>
-              ) : (
-                activities.map(activity => (
-                  <ActivityItemComponent
-                    key={activity.id}
-                    activity={activity}
-                    onToggle={() => toggleActivity(activity.id)}
-                  />
-                ))
-              )}
-              <div ref={activityEndRef} />
-            </div>
+                {/* Activity items */}
+                {activities.length === 0 && !currentText ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <p>No activity yet. Send a prompt to start.</p>
+                  </div>
+                ) : (
+                  activities.map(activity => (
+                    <ActivityItemComponent
+                      key={activity.id}
+                      activity={activity}
+                      onToggle={() => toggleActivity(activity.id)}
+                    />
+                  ))
+                )}
+                <div ref={activityEndRef} />
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto p-4 space-y-4">
+                {logsError && (
+                  <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {logsError}
+                  </div>
+                )}
+
+                {logsLoading && messages.length === 0 ? (
+                  <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Loading logs...</span>
+                  </div>
+                ) : null}
+
+                {messages.length === 0 && !currentText && !logsLoading ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    <p>No message logs yet.</p>
+                  </div>
+                ) : (
+                  messages.map((message) => (
+                    <MessageLogItem key={message.info.id} message={message} />
+                  ))
+                )}
+
+                {currentText && (
+                  <div className="rounded-lg border border-border bg-secondary/20 p-3">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <span>Assistant (live)</span>
+                    </div>
+                    <pre className="text-sm whitespace-pre-wrap font-mono overflow-auto">{currentText}</pre>
+                  </div>
+                )}
+                <div ref={activityEndRef} />
+              </div>
+            )}
 
             {/* Todos sidebar */}
             <aside className="w-72 border-l border-border bg-card overflow-auto">
@@ -907,6 +1028,53 @@ function TodoItem({ todo }: { todo: ArmTodo }) {
         }`}>
           {todo.content}
         </span>
+      </div>
+    </div>
+  );
+}
+
+function MessageLogItem({ message }: { message: ArmMessage }) {
+  const role = message.info.role;
+  const roleLabel = role === 'assistant' ? 'Assistant' : role === 'user' ? 'User' : 'System';
+  const roleColor =
+    role === 'assistant'
+      ? 'text-blue-600'
+      : role === 'user'
+        ? 'text-emerald-600'
+        : 'text-amber-600';
+  const timestamp = message.info.time ? new Date(message.info.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-3">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className={`text-xs uppercase tracking-wide font-semibold ${roleColor}`}>
+          {roleLabel}
+        </div>
+        {timestamp && <div className="text-xs text-muted-foreground">{timestamp}</div>}
+      </div>
+
+      <div className="space-y-2">
+        {message.parts.map((part, index) => {
+          if (part.type === 'text' && part.text) {
+            return (
+              <pre key={`${message.info.id}-text-${index}`} className="text-sm whitespace-pre-wrap font-mono">
+                {part.text}
+              </pre>
+            );
+          }
+
+          if ((part.type === 'tool-invocation' || part.type === 'tool') && (part.toolName || part.tool || part.name)) {
+            const tool = part.toolName || part.tool || part.name || 'unknown';
+            const state = part.state ? ` [${part.state}]` : '';
+            return (
+              <div key={`${message.info.id}-tool-${index}`} className="text-xs text-muted-foreground font-mono">
+                {`Tool: ${tool}${state}`}
+              </div>
+            );
+          }
+
+          return null;
+        })}
       </div>
     </div>
   );
