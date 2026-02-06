@@ -86,6 +86,7 @@ export type ArmEventType =
   | "task_completed"       // Finished a task
   | "task_failed"          // Task failed
   | "task_blocked"         // Task is blocked on something
+  | "status_report"        // Status report for a task
   
   // Session events (from OpenCode SSE)
   | "session.created"      // New session created
@@ -202,6 +203,21 @@ export interface HeartbeatEventData {
   sessionId?: string;
   currentTask?: string;
   uptimeSeconds?: number;
+}
+
+/**
+ * Payload for status_report event
+ */
+export interface StatusReportEventData {
+  taskId: string;
+  status: 'on_track' | 'blocked' | 'issues_found' | 'needs_review' | 'completed_with_issues';
+  summary: string;
+  issues?: string[];
+  blockers?: string[];
+  nextSteps?: string;
+  filesChanged?: string[];
+  testsStatus?: 'passing' | 'failing' | 'not_run';
+  timestamp?: string;
 }
 
 /**

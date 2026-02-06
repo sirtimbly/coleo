@@ -538,6 +538,7 @@ class ApiClient {
     sourceType?: Task['sourceType'];
     sourceRef?: string;
     dueDate?: string;
+    progress?: number;
     metadata?: Record<string, unknown>;
   }) {
     return this.request<{ task: Task }>('/tasks', {
@@ -555,6 +556,7 @@ class ApiClient {
     phase: string;
     assignedTo: string | null;
     dueDate: string | null;
+    progress: number;
     artifacts: string[];
     metadata: Record<string, unknown>;
   }>) {
@@ -960,6 +962,7 @@ export interface Task {
   assignedArmName?: string;
   planLineUid?: string | null;
   sortOrder?: number | null;
+  progress?: number;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;

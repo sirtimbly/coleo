@@ -281,7 +281,7 @@ export function TaskGrid({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_160px_48px_48px_48px] items-center gap-3 p-3 text-xs font-semibold text-muted-foreground border-b border-border bg-muted/50">
+        <div className="grid grid-cols-[48px_24px_minmax(0,1fr)_96px_120px_110px_160px_120px] items-center gap-3 p-3 text-xs font-semibold text-muted-foreground border-b border-border bg-muted/50">
           <div className="text-right pr-1">Order</div>
           <div className="flex items-center justify-end">
             <Button
@@ -297,6 +297,7 @@ export function TaskGrid({
           </div>
           <div>Subject</div>
           <div>Status</div>
+          <div>Progress</div>
           <div>Priority</div>
           <div>Tags</div>
           <div className="text-right">Actions</div>

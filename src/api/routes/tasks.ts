@@ -33,6 +33,7 @@ export interface Task {
   sortOrder?: number | null;
   commentCount?: number;
   lastCommentAt?: string | null;
+  progress?: number;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -60,6 +61,7 @@ interface TaskRow {
   sort_order: number | null;
   comment_count: number | null;
   last_comment_at: string | null;
+  progress: number | null;
   created_at: string;
   updated_at: string;
   completed_at: string | null;
@@ -88,6 +90,7 @@ function parseTaskRow(row: TaskRow): Task {
     sortOrder: row.sort_order,
     commentCount: row.comment_count ?? 0,
     lastCommentAt: row.last_comment_at,
+    progress: row.progress ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     completedAt: row.completed_at,
@@ -252,6 +255,7 @@ export function createTasksRoutes() {
         t.assigned_to, a.name as assigned_arm_name,
         t.consensus_status, t.sort_order,
         t.comment_count, t.last_comment_at,
+        t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -326,6 +330,7 @@ export function createTasksRoutes() {
         t.assigned_to, a.name as assigned_arm_name,
         t.consensus_status,
         t.comment_count, t.last_comment_at,
+        t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata
@@ -390,23 +395,24 @@ export function createTasksRoutes() {
     return c.json(response);
   });
 
-  /**
-   * Create a new task
-   * POST /api/tasks
-   */
-  app.post("/", async (c) => {
-    const db = c.get("db");
-    const body = await c.req.json<{
-      subject: string;
-      description: string;
-      priority?: Task["priority"];
-      domain?: string;
-      phase?: string;
-      sourceType?: Task["sourceType"];
-      sourceRef?: string;
-      dueDate?: string;
-      metadata?: Record<string, unknown>;
-    }>();
+/**
+ * Create a new task
+ * POST /api/tasks
+ */
+app.post("/", async (c) => {
+  const db = c.get("db");
+  const body = await c.req.json<{
+    subject: string;
+    description: string;
+    priority?: Task["priority"];
+    domain?: string;
+    phase?: string;
+    sourceType?: Task["sourceType"];
+    sourceRef?: string;
+    dueDate?: string;
+    progress?: number;
+    metadata?: Record<string, unknown>;
+  }>();
 
     if (!body.subject?.trim()) {
       throw HttpError.badRequest("subject is required");
@@ -428,7 +434,7 @@ export function createTasksRoutes() {
     const now = new Date().toISOString();
 
     db.run(`
-      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, sort_order, metadata, created_at, updated_at)
+      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, sort_order, progress, metadata, created_at, updated_at)
       VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
@@ -441,6 +447,7 @@ export function createTasksRoutes() {
       body.domain || null,
       body.dueDate || null,
       newSortOrder, // Place at the end of the list
+      Math.min(Math.max(body.progress ?? 0, 0), 100), // Clamp between 0-100
       JSON.stringify(body.metadata || {}),
       now,
       now,
@@ -468,25 +475,26 @@ export function createTasksRoutes() {
     return c.json({ task: parseTaskRow(row) }, 201);
   });
 
-  /**
-   * Update a task
-   * PATCH /api/tasks/:id
-   */
-  app.patch("/:id", async (c) => {
-    const db = c.get("db");
-    const id = c.req.param("id");
-    const body = await c.req.json<{
-      subject?: string;
-      description?: string;
-      status?: Task["status"];
-      priority?: Task["priority"];
-      domain?: string;
-      phase?: string;
-      assignedTo?: string | null;
-      dueDate?: string | null;
-      artifacts?: string[];
-      metadata?: Record<string, unknown>;
-    }>();
+/**
+ * Update a task
+ * PATCH /api/tasks/:id
+ */
+app.patch("/:id", async (c) => {
+  const db = c.get("db");
+  const id = c.req.param("id");
+  const body = await c.req.json<{
+    subject?: string;
+    description?: string;
+    status?: Task["status"];
+    priority?: Task["priority"];
+    domain?: string;
+    phase?: string;
+    assignedTo?: string | null;
+    dueDate?: string | null;
+    progress?: number;
+    artifacts?: string[];
+    metadata?: Record<string, unknown>;
+  }>();
 
     // Check task exists
     const existing = db.query("SELECT id, status, domain FROM tasks WHERE id = ?").get(id) as { id: string; status: string; domain: string | null } | null;
@@ -550,6 +558,11 @@ export function createTasksRoutes() {
       values.push(body.dueDate);
     }
 
+    if (body.progress !== undefined) {
+      updates.push("progress = ?");
+      values.push(Math.min(Math.max(body.progress, 0), 100));
+    }
+
     if (body.artifacts !== undefined) {
       updates.push("artifacts = ?");
       values.push(JSON.stringify(body.artifacts));
@@ -577,11 +590,12 @@ export function createTasksRoutes() {
 
     // Fetch updated task
     const row = db.query(`
-      SELECT 
+      SELECT
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain,
         t.assigned_to, a.name as assigned_arm_name,
         t.consensus_status,
+        t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
         t.artifacts, t.metadata

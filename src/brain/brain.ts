@@ -566,6 +566,9 @@ export class Brain {
       // Step 3: Check arm health and detect new arms
       await this.checkArms();
 
+      // Refresh tasks from database before assignment
+      await this.loadTasks();
+
       // Step 4: Use unified health monitor for stuck detection
       // This replaces checkStuckArms() and checkIdleArmStuckLoops()
       if (this.healthMonitor) {
@@ -5227,7 +5230,7 @@ Report findings using bug resolution workflow.`,
     private async assignTasks(): Promise<void> {
       // Get pending tasks sorted by sortOrder (lower = higher priority)
       const pendingTasks = this.tasks
-        .filter(t => t.status === "pending")
+        .filter(t => t.status === "pending" && !t.assignedTo && !t.dependencyBlocked)
         .sort((a, b) => (a.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.sortOrder ?? Number.MAX_SAFE_INTEGER));
       let idleArms = Array.from(this.arms.values()).filter(t => t.status === "idle");
 
@@ -5296,27 +5299,33 @@ Report findings using bug resolution workflow.`,
         }
 
         // Find best matching arm based on task domain preference
-        let bestArm = idleArms.shift();
-       const armDomain = bestArm ? ((bestArm as Arm & { domain?: string }).domain || "general") : "general";
+        let bestArm: Arm | undefined;
 
-       if (task.domain) {
-         // Look for an arm with matching domain
-         const matchingArm = idleArms.find(arm => {
-           const aDomain = (arm as Arm & { domain?: string }).domain || "general";
-           return aDomain === task.domain || aDomain === "general";
-         });
+        if (task.domain) {
+          const exactMatch = idleArms.find(arm => {
+            const aDomain = (arm as Arm & { domain?: string }).domain || "general";
+            return aDomain === task.domain;
+          });
 
-         if (matchingArm) {
-           // Remove matching arm from idleArms and use it
-           const index = idleArms.indexOf(matchingArm);
-           if (index > -1) {
-             idleArms.splice(index, 1);
-           }
-           bestArm = matchingArm;
-         }
-       }
+          const generalMatch = exactMatch ? undefined : idleArms.find(arm => {
+            const aDomain = (arm as Arm & { domain?: string }).domain || "general";
+            return aDomain === "general";
+          });
 
-       if (!bestArm) break;
+          bestArm = exactMatch || generalMatch;
+
+          if (bestArm) {
+            idleArms = idleArms.filter(arm => arm.id !== bestArm!.id);
+          }
+        }
+
+        if (!bestArm) {
+          bestArm = idleArms.shift();
+        }
+
+        if (!bestArm) break;
+
+        const armDomain = (bestArm as Arm & { domain?: string }).domain || "general";
 
        // Reset the arm's OpenCode session to clear stale context before assigning new task
        // This prevents the arm from trying to work on old task IDs from previous sessions
@@ -5495,7 +5504,7 @@ Report findings using bug resolution workflow.`,
     try {
       const dbTasks = this.db.query(`
         SELECT id, subject, description, status, priority, domain, classification,
-               assigned_to, created_at, updated_at, completed_at, artifacts,
+               assigned_to, dependency_blocked, created_at, updated_at, completed_at, artifacts,
                mail_thread_id, context, sort_order
         FROM tasks
         WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
@@ -5509,6 +5518,7 @@ Report findings using bug resolution workflow.`,
         domain: string | null;
         classification: string | null;
         assigned_to: string | null;
+        dependency_blocked: number | null;
         created_at: string;
         updated_at: string;
         completed_at: string | null;
@@ -5527,6 +5537,7 @@ Report findings using bug resolution workflow.`,
         domain: dbTask.domain || undefined,
         classification: dbTask.classification || undefined,
         assignedTo: dbTask.assigned_to || undefined,
+        dependencyBlocked: dbTask.dependency_blocked === 1,
         sortOrder: dbTask.sort_order ?? undefined,
         createdAt: new Date(dbTask.created_at),
         updatedAt: new Date(dbTask.updated_at),

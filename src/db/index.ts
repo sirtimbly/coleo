@@ -114,6 +114,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["038_discovery_kind_constraint", MIGRATION_038],
     ["039_task_comment_screenshot", MIGRATION_039, { table: "task_comments", columns: MIGRATION_039_COLUMNS }],
     ["040_arm_bug_tracking", MIGRATION_040, { table: "arms", columns: MIGRATION_040_COLUMNS }],
+    ["041_task_progress", MIGRATION_041, { table: "tasks", columns: MIGRATION_041_COLUMNS }],
   ];
 
 
@@ -1132,6 +1133,16 @@ const MIGRATION_040_COLUMNS = [
 const MIGRATION_040 = `
   -- Add index for bug lookups
   CREATE INDEX IF NOT EXISTS idx_arms_current_bug ON arms(current_bug_id);
+`;
+
+// Migration 041: Add progress column to tasks table for progress visualization
+const MIGRATION_041_COLUMNS = [
+  { name: 'progress', sql: "ALTER TABLE tasks ADD COLUMN progress INTEGER DEFAULT 0" },
+];
+
+const MIGRATION_041 = `
+  -- Add index for progress queries
+  CREATE INDEX IF NOT EXISTS idx_tasks_progress ON tasks(progress);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

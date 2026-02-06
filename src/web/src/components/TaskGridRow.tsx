@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
 import { type Task } from "@/lib/api";
+import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib";
 
 export interface TaskUiMeta {
@@ -30,6 +31,7 @@ export type TaskUpdate = Partial<{
 	phase: string;
 	assignedTo: string | null;
 	dueDate: string | null;
+	progress: number;
 	artifacts: string[];
 	metadata: Record<string, unknown>;
 }>;
@@ -158,6 +160,8 @@ export const TaskGridRow = memo(function TaskGridRow({
 
 	const priorityClasses = PRIORITY_STYLES[task.priority];
 
+	const progress = task.progress ?? 0;
+
 	const handleSubjectBlur = () => {
 		const next = subjectValue.trim();
 		if (next && next !== task.subject) {
@@ -225,7 +229,7 @@ export const TaskGridRow = memo(function TaskGridRow({
   return (
     <li
       className={cn(
-        "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_120px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
         "rounded-md ",
         // Base color from row color setting
         !isDragging &&
@@ -330,6 +334,9 @@ export const TaskGridRow = memo(function TaskGridRow({
 					)}
 				</div>
 			</div>
+
+			{/* Progress bar */}
+			<ProgressBar percent={progress} showLabel={false} size="sm" className="min-w-[120px]" />
 
 			{/* Priority dropdown */}
 			<Dropdown>

@@ -29,6 +29,8 @@ export interface Task {
   status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked";
   priority: "critical" | "high" | "normal" | "low";
   assignedTo?: string; // arm id
+  /** True when task is blocked by unmet dependencies. */
+  dependencyBlocked?: boolean;
   /**
    * Logical classification of the work to be done
    * (architect, development, qa, documentation, etc.).

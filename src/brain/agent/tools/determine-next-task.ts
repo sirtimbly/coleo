@@ -202,7 +202,9 @@ export class DetermineNextTaskTool extends BrainTool {
     const rows = this.context.db.query(`
       SELECT id, subject, description, classification, domain, priority
       FROM tasks
-      WHERE status = 'pending' AND dependency_blocked = 0
+      WHERE status = 'pending'
+        AND dependency_blocked = 0
+        AND assigned_to IS NULL
       ORDER BY 
         CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
         created_at ASC
@@ -432,6 +434,7 @@ ${taskWithIssues.id}`,
       FROM tasks
       WHERE status = 'pending' 
         AND dependency_blocked = 0
+        AND assigned_to IS NULL
         AND plan_order IS NOT NULL
       ORDER BY plan_order ASC
       LIMIT 1
