@@ -1,0 +1,31 @@
+# Example Arm Configuration
+# This is a sample arm configuration file for Coleo
+# Copy this to create your own arm configurations in the .coleo/arms/ directory
+
+[arm]
+name = "codex"
+domain = "development"
+# Recommended: opencode-api for headless API-driven arms
+# Alternative: opencode-tui for visible terminal sessions
+harness = "opencode-api"
+
+[model]
+# Configure your AI model provider
+provider = "openai"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
+model = "gpt-5.2-codex"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
+
+# Optional: Custom model configuration
+# [model.config]
+# temperature = 0.7
+# max_tokens = 4096
+# top_p = 0.9
+
+# Optional: Arm-specific settings
+# [settings]
+# auto_spawn = false
+# timeout_minutes = 30
+
+# To spawn this arm, run:
+#   coleo arm spawn --config .coleo/arms/example-arm.toml
+# Or with a specific workdir:
+#   coleo arm spawn --config .coleo/arms/example-arm.toml --workdir ./src

@@ -245,6 +245,7 @@ export function createSystemRoutes() {
     return c.json({
       status: overallHealth ? "ok" : "degraded",
       version: "0.1.0",
+      cwd: process.cwd(),
       uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       brain: brainStatus,
       arms: {

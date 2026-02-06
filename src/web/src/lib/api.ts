@@ -68,6 +68,7 @@ class ApiClient {
     return this.request<{
       status: string;
       version: string;
+      cwd: string;
       uptime: number;
       brain: {
         running: boolean;

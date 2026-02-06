@@ -161,6 +161,8 @@ export const TaskGridRow = memo(function TaskGridRow({
 	const priorityClasses = PRIORITY_STYLES[task.priority];
 
 	const progress = task.progress ?? 0;
+	const moveTopId = `move-top-${task.id}`;
+	const moveBottomId = `move-bottom-${task.id}`;
 
 	const handleSubjectBlur = () => {
 		const next = subjectValue.trim();
@@ -356,17 +358,24 @@ export const TaskGridRow = memo(function TaskGridRow({
 					</div>
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
-					<Dropdown.Menu
-						onAction={(key) =>
-							onUpdateTask?.(task.id, { priority: key as Task["priority"] })
-						}
-					>
-						{PRIORITY_OPTIONS.map((priority) => (
-							<Dropdown.Item key={priority}>{priority}</Dropdown.Item>
-						))}
-					</Dropdown.Menu>
-				</Dropdown.Popover>
-			</Dropdown>
+				<Dropdown.Menu
+					onAction={(key) =>
+						onUpdateTask?.(task.id, { priority: key as Task["priority"] })
+					}
+				>
+					{PRIORITY_OPTIONS.map((priority) => (
+						<Dropdown.Item
+							key={priority}
+							id={priority}
+							textValue={priority}
+							className="capitalize"
+						>
+							{priority}
+						</Dropdown.Item>
+					))}
+				</Dropdown.Menu>
+			</Dropdown.Popover>
+		</Dropdown>
 
 			{/* Tags dropdown */}
 			<Dropdown onOpenChange={setIsTagDropdownOpen}>
@@ -538,19 +547,23 @@ export const TaskGridRow = memo(function TaskGridRow({
           </Dropdown.Trigger>
           <Dropdown.Popover>
             <div className="p-2 min-w-[200px]">
-              <Dropdown.Menu
-                onAction={(key) => {
-                  const currentSortOrder = task.sortOrder ?? index;
-                  if (key === "top") {
-                    onReorderToSortOrder?.(task.id, currentSortOrder, 0);
-                  } else if (key === "bottom") {
-                    onReorderToSortOrder?.(task.id, currentSortOrder, -1);
-                  }
-                }}
-              >
-                <Dropdown.Item id="top" textValue="Move to Top">Move to Top</Dropdown.Item>
-                <Dropdown.Item id="bottom" textValue="Move to Bottom">Move to Bottom</Dropdown.Item>
-              </Dropdown.Menu>
+				<Dropdown.Menu
+					onAction={(key) => {
+						const currentSortOrder = task.sortOrder ?? index;
+						if (key === moveTopId) {
+							onReorderToSortOrder?.(task.id, currentSortOrder, 0);
+						} else if (key === moveBottomId) {
+							onReorderToSortOrder?.(task.id, currentSortOrder, -1);
+						}
+					}}
+				>
+					<Dropdown.Item id={moveTopId} textValue="Move to Top">
+						Move to Top
+					</Dropdown.Item>
+					<Dropdown.Item id={moveBottomId} textValue="Move to Bottom">
+						Move to Bottom
+					</Dropdown.Item>
+				</Dropdown.Menu>
               <div className="mt-3 pt-2 border-t border-default-200">
                 <form 
                   className="flex items-center gap-2"

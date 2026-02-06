@@ -5,8 +5,8 @@
  * Supports the plan format used in Octopai.
  */
 
-import { readFile } from "fs/promises";
-import { join } from "path";
+import { readFile, stat } from "fs/promises";
+import { dirname, join, resolve, sep } from "path";
 import { createHash } from "crypto";
 
 export interface ParsedTask {
@@ -203,22 +203,78 @@ function extractTags(phase: string, content: string): string[] {
 /**
  * Find all plan files in a directory
  */
-export async function findPlanFiles(
-  projectRoot: string,
-  patterns: string[] = [".project/plan.md", "**/*.plan.md", "**/plans/*.md"]
-): Promise<string[]> {
-  const { glob } = await import("fast-glob");
-  
-  const files: string[] = [];
-  for (const pattern of patterns) {
-    const matches = await glob(pattern, { 
-      cwd: projectRoot,
-      absolute: true,
-    });
-    files.push(...matches);
+export async function findPlanFiles(projectRoot: string): Promise<string[]> {
+  const mainPlanPath = join(projectRoot, ".project", "plan.md");
+  const files = new Set<string>();
+
+  let mainPlanContent: string | null = null;
+  try {
+    mainPlanContent = await readFile(mainPlanPath, "utf-8");
+    files.add(mainPlanPath);
+  } catch {
+    mainPlanContent = null;
   }
-  
-  return [...new Set(files)];
+
+  if (mainPlanContent) {
+    const referenced = await collectReferencedPlanFiles(
+      mainPlanContent,
+      mainPlanPath,
+      projectRoot,
+    );
+    referenced.forEach((filePath) => files.add(filePath));
+    return [...files];
+  }
+
+  // Fallback: only look inside .project/plans if plan.md is missing
+  const { glob } = await import("fast-glob");
+  const matches = await glob(".project/plans/*.md", {
+    cwd: projectRoot,
+    absolute: true,
+  });
+  matches.forEach((filePath) => files.add(filePath));
+
+  return [...files];
+}
+
+async function collectReferencedPlanFiles(
+  content: string,
+  mainPlanPath: string,
+  projectRoot: string,
+): Promise<string[]> {
+  const results: string[] = [];
+  const planDir = dirname(mainPlanPath);
+  const projectDir = resolve(projectRoot, ".project") + sep;
+  const matches = content.matchAll(/\[[^\]]+\]\(([^)]+)\)/g);
+
+  for (const match of matches) {
+    const rawPath = match[1]?.trim();
+    if (!rawPath) {
+      continue;
+    }
+
+    if (/^[a-z]+:/i.test(rawPath)) {
+      continue;
+    }
+
+    const cleanedPath = rawPath.split("#")[0]?.split("?")[0]?.trim();
+    if (!cleanedPath || !cleanedPath.endsWith(".md")) {
+      continue;
+    }
+
+    const resolvedPath = resolve(planDir, cleanedPath);
+    if (!resolvedPath.startsWith(projectDir)) {
+      continue;
+    }
+
+    try {
+      await stat(resolvedPath);
+      results.push(resolvedPath);
+    } catch {
+      continue;
+    }
+  }
+
+  return results;
 }
 
 /**

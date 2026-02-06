@@ -1,7 +1,7 @@
 import { file } from "bun";
 import { homedir } from "os";
-import { dirname, join } from "path";
-import { realpathSync } from "fs";
+import { dirname, join, resolve } from "path";
+import { existsSync, realpathSync } from "fs";
 import { fileURLToPath } from "url";
 import { loadEnvFile } from "../config/env";
 
@@ -10,16 +10,48 @@ export { getColeoDir } from "../config";
 
 const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
 
-export const TEMPLATES_DIR = join(__dirname, "..", "..", "templates");
+function getBaseDirs(): string[] {
+  const dirs: string[] = [__dirname];
+  if (process.argv[1]) {
+    dirs.push(dirname(resolve(process.argv[1])));
+  }
+  return Array.from(new Set(dirs));
+}
+
+function resolveExistingDir(candidates: string[], requiredRelative?: string): string {
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) {
+      continue;
+    }
+    if (!requiredRelative || existsSync(join(candidate, requiredRelative))) {
+      return candidate;
+    }
+  }
+  return candidates[0] ?? "";
+}
+
+export function resolveTemplatesDir(): string {
+  const candidates: string[] = [];
+  for (const baseDir of getBaseDirs()) {
+    candidates.push(join(baseDir, "..", "templates"));
+    candidates.push(join(baseDir, "..", "..", "templates"));
+  }
+  return resolveExistingDir(candidates, join("arms", "default.toml"));
+}
+
+export const TEMPLATES_DIR = resolveTemplatesDir();
 
 /**
  * Get the path to brain templates in the installed package
  * This resolves relative to the compiled CLI location
  */
 export function getBrainTemplatesDir(): string {
-  // When running from dist/commands/init.js: __dirname = dist/commands/
-  // Templates are at dist/brain/templates/
-  return join(__dirname, "..", "brain", "templates");
+  const candidates: string[] = [];
+  for (const baseDir of getBaseDirs()) {
+    candidates.push(join(baseDir, "..", "brain", "templates"));
+    candidates.push(join(baseDir, "..", "src", "brain", "templates"));
+  }
+  return resolveExistingDir(candidates, "initial-arm-prompt.jinja");
 }
 
 export { loadEnvFile };

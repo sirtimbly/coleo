@@ -5,4 +5,9 @@ A {{ priority }} priority bug has been reported.
 **Source:** {{ source }}
 **Reported by:** {{ reported_by }}
 
+{% if blocking_tasks_count > 0 %}
+This bug is blocking {{ blocking_tasks_count }} task(s):
+{{ blocked_tasks_list }}
+
+{% endif %}
 Please review and assign if needed.

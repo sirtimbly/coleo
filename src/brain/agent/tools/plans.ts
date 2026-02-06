@@ -11,7 +11,7 @@ import type { PlanDocument } from "../types";
 
 export class ReadPlanTool extends BrainTool {
   name = "readPlan";
-  description = "Read plan documents from .project/plan.md (main plan) or .project/plans/ directory";
+  description = "Read plan documents from .project/plan.md (main project plan only)";
 
   inputSchema = {
     type: "object",

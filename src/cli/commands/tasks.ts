@@ -31,7 +31,7 @@ export function registerTasksCommands(program: Command): void {
 
         if (planFiles.length === 0) {
           console.log("No plan files found.");
-          console.log("Expected: .project/plan.md or **/*.plan.md");
+          console.log("Expected: .project/plan.md (and any .project links it references)");
           db.close();
           return;
         }

@@ -105,6 +105,32 @@ interface PhaseInfo {
 	header: string;
 }
 
+/**
+ * Build phase info from tasks in the database (not from reading plan files).
+ * Returns the most common phase value from pending/in-progress tasks.
+ */
+function buildPhaseInfoFromDatabase(db: BrainDb): PhaseInfo {
+	// Get phase information from tasks in the database
+	const phases = db
+		.query(`
+    SELECT phase
+    FROM tasks
+    WHERE phase IS NOT NULL AND phase != ''
+    GROUP BY phase
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+  `)
+		.all() as Array<{ phase: string }> | null;
+
+	if (phases && phases.length > 0 && phases[0]) {
+		const phase = phases[0].phase;
+		return { label: phase, header: phase };
+	}
+
+	// Default fallback when no phase info in database
+	return { label: "", header: "" };
+}
+
 interface StatusSnapshot {
 	completed: string[];
 	discoveries: string[];
@@ -869,34 +895,20 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 	currentPhase: string;
 	dependencies: string[];
 }> {
+	const mainPlanPath = join(projectRoot, ".project", "plan.md");
+
 	let content = "";
 	const goals: string[] = [];
 	const bullets: string[] = [];
 	let currentPhase = "";
 
-	// Always prioritize .project/plan.md (main project plan) first
-	const mainPlanPath = join(projectRoot, ".project", "plan.md");
+	// Only read .project/plan.md (main project plan)
+	// Never fallback to .project/plans/ directory or other plan files
+	// Task determination should use the tasks API, not scan plans
 	try {
 		content = await readFile(mainPlanPath, "utf-8");
-	} catch {
-		// Fall back to .project/plans/ directory only if plan.md doesn't exist
-		const plansDir = join(projectRoot, ".project", "plans");
-		let planFiles: string[] = [];
-		try {
-			planFiles = await fg("*.md", { cwd: plansDir });
-		} catch {
-			// Directory might not exist
-		}
-
-		if (planFiles.length > 0) {
-			planFiles.sort();
-			const latestPlan = planFiles[planFiles.length - 1];
-			if (latestPlan) {
-				content = await readFile(join(plansDir, latestPlan), "utf-8");
-			}
-		} else {
-			content = "# No plan found\n\nNo plan document exists yet.";
-		}
+	} catch (err) {
+		content = "# Plan not found\n\nThe main project plan (.project/plan.md) could not be read.\n\nTask determination requires the database tasks API for accurate information.";
 	}
 
 	// Extract current phase (the first incomplete phase)

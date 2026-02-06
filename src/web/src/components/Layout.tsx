@@ -11,7 +11,6 @@ import {
 	Vote,
 	Activity,
 	Settings,
-	Octagon,
 	MessageSquarePlus,
 	ListTodo,
 	Bug,
@@ -36,6 +35,7 @@ const getNavItems = (unreadCount: number) => [
 
 export function Layout() {
 	const [unreadCount, setUnreadCount] = useState(0);
+	const [cwd, setCwd] = useState<string>('/');
 	const { showToast } = useToast();
 	const {
 		isMessageModalOpen,
@@ -43,6 +43,15 @@ export function Layout() {
 		openNewMessage,
 		closeMessageModal,
 	} = useMessage();
+
+const fetchStatus = async () => {
+		try {
+			const status = await api.status();
+			setCwd(status.cwd);
+		} catch (error) {
+			console.error('Failed to fetch status:', error);
+		}
+	};
 
 	// Fetch unread message counts
 	const fetchUnreadCount = async () => {
@@ -55,6 +64,11 @@ export function Layout() {
 			console.error("Failed to fetch unread count:", error);
 		}
 	};
+
+	// Fetch status on mount
+	useEffect(() => {
+		fetchStatus();
+	}, []);
 
 	// WebSocket connection for real-time updates
 	useEffect(() => {
@@ -147,7 +161,7 @@ export function Layout() {
 				<div className="p-4 border-b border-border">
 					<div className="flex items-start gap-1">
 						<img
-							src="public/favicon.svg"
+							src="favicon.svg"
 							width="20"
 							height="20"
 							className="pt-1"
@@ -155,7 +169,7 @@ export function Layout() {
 						/>
 						<div>
 							<h1 className="font-bold text-lg">Coleo</h1>
-							<p className="text-xs text-muted-foreground">Observatory</p>
+							<p className="text-xs text-muted-foreground">{cwd}</p>
 						</div>
 					</div>
 				</div>
