@@ -611,7 +611,7 @@ export function createMcpServer(): McpServer {
       const messageId = await sendToBrain({
         from: ARM_ID,
         to: "brain",
-        type: "bug_assignment",
+        type: "bug_claim",
         payload: {
           action: "claim",
           bugId: bug_id,
@@ -715,7 +715,8 @@ export function createMcpServer(): McpServer {
         status, 
         issueCount: (issues || []).length,
         blockerCount: (blockers || []).length,
-        hasScreenshot: !!screenshot_path
+        hasScreenshot: !!screenshot_path,
+        screenshotPath: screenshot_path || null
       });
 
       let responseText = `Status report submitted (${reportId}). Brain will review`;

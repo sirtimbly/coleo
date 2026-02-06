@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn, api, useToast, useMessage } from '@/lib';
 import { MessageModal } from './MessageModal';
+import { ArmStatusBar } from './ArmStatusBar';
 
 const getNavItems = (unreadCount: number) => [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
@@ -182,7 +183,8 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 overflow-auto flex flex-col">
+        <ArmStatusBar />
         <Outlet />
       </main>
 

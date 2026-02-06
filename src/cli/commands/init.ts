@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { mkdir, writeFile, readFile, copyFile, symlink, readdir, access } from "fs/promises";
+import { mkdir, writeFile, copyFile, symlink, readdir, access } from "fs/promises";
 import { homedir } from "os";
 import { randomBytes } from "crypto";
 import type { ColeoConfig } from "../../types";
@@ -34,53 +34,13 @@ async function askYesNo(question: string): Promise<boolean> {
   });
 }
 
-/**
- * Generate example arm.toml content
- */
-function generateExampleArmToml(): string {
-  return `# Example Arm Configuration
-# This is a sample arm configuration file for Coleo
-# Copy this to create your own arm configurations in the .coleo/arms/ directory
-
-[arm]
-name = "example-arm"
-domain = "development"
-# Recommended: opencode-api for headless API-driven arms
-# Alternative: opencode-tui for visible terminal sessions
-harness = "opencode-api"
-
-[model]
-# Configure your AI model provider
-provider = "openai"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
-model = "gpt-5.1-codex-mini"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
-
-# Optional: Custom model configuration
-# [model.config]
-# temperature = 0.7
-# max_tokens = 4096
-# top_p = 0.9
-
-# Optional: Arm-specific settings
-# [settings]
-# auto_spawn = false
-# timeout_minutes = 30
-
-# To spawn this arm, run:
-#   coleo arm spawn --config .coleo/arms/example-arm.toml
-# Or with a specific workdir:
-#   coleo arm spawn --config .coleo/arms/example-arm.toml --workdir ./src
-`;
-}
-
 export function registerInitCommand(program: Command): void {
   program
     .command("init")
     .description("Initialize Coleo in the current project (.coleo/)")
     .option("-d, --dir <path>", "Custom directory", ".coleo")
-    .option("--preset <name>", "Preset configuration (fullstack, split-stack, full-team)", "")
     .action(async (options) => {
       const coleoDir = options.dir.startsWith("/") ? options.dir : join(process.cwd(), options.dir);
-      const preset = options.preset;
       console.log(`Initializing Coleo in ${coleoDir}...`);
 
       const dirs = [
@@ -111,13 +71,8 @@ export function registerInitCommand(program: Command): void {
 
       await writeFile(join(coleoDir, "config.toml"), generateConfigToml(config), "utf-8");
       await copyBrainTemplates(coleoDir);
-      await copyArmTemplates(coleoDir, preset);
-
-      // Create example arm.toml
-      const armsDir = join(coleoDir, "arms");
-      const exampleArmPath = join(armsDir, "example-arm.toml");
-      await writeFile(exampleArmPath, generateExampleArmToml(), "utf-8");
-      console.log(`  ✓ Example arm config: ${exampleArmPath}`);
+      const defaultArmPath = await copyDefaultArmTemplate(coleoDir);
+      console.log(`  ✓ Default arm config: ${defaultArmPath}`);
 
       // Handle API token setup
       const envPath = join(coleoDir, ".env");
@@ -201,11 +156,6 @@ COLEO_API_TOKEN=${apiToken}
         ? `\n  ✓ API token configured in ${join(coleoDir, ".env")}`
         : "";
 
-      const presetInfo = preset
-        ? `\n  ✓ Preset "${preset}" configured in ${join(coleoDir, "arms/")}`
-        : `
-  ✓ Example arm config: ${join(coleoDir, "arms/example-arm.toml")}`;
-
       console.log(`
 ┌─────────────────────────────────────────────────────────────┐
 │                  Coleo initialized!                         │
@@ -217,7 +167,7 @@ COLEO_API_TOKEN=${apiToken}
     ├── queue/         # Inter-agent message queue
     ├── state/         # Persistent state
     ├── arms/          # Arm configurations
-    │   └── example-arm.toml  # Example arm config${presetInfo}
+    │   └── default.toml  # Default arm config
     ├── mcp/           # MCP configurations
     ├── logs/          # Log files
     ├── .env           # API token and secrets${envInfo}
@@ -228,7 +178,7 @@ ${scriptInfo}${symlinkInfo}
    1. Start the API server:  coleo serve start
    2. Start the web UI:     coleo web start
    3. View dashboard:       http://localhost:5173
-   4. Configure arms:       edit .coleo/arms/*.toml
+   4. Configure arms:       edit .coleo/arms/default.toml
    5. Spawn an arm:         coleo arm spawn --workdir ./src
 
  Documentation: https://coleo.dev
@@ -292,54 +242,10 @@ async function copyBrainTemplates(coleoDir: string): Promise<void> {
   }
 }
 
-async function copyArmTemplates(coleoDir: string, preset: string): Promise<void> {
+async function copyDefaultArmTemplate(coleoDir: string): Promise<string> {
   const armsDir = join(coleoDir, "arms");
-
-  if (preset) {
-    const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
-    try {
-      const presetContent = await readFile(presetPath, "utf-8");
-      const presetData = JSON.parse(presetContent);
-
-      console.log(`\nLoading preset: ${presetData.name}`);
-      console.log(`Description: ${presetData.description}`);
-
-      for (const armConfig of presetData.arms) {
-        const templatePath = join(TEMPLATES_DIR, "arms", armConfig.template);
-        let content = await readFile(templatePath, "utf-8");
-        content = content.replace(/name = "[^"]*"/, `name = "${armConfig.name}"`);
-        const destPath = join(armsDir, `${armConfig.name}.toml`);
-        await writeFile(destPath, content, "utf-8");
-        console.log(`  ✓ ${armConfig.name} (${armConfig.template})`);
-      }
-
-      console.log(`\n${presetData.arms.length} arm configuration(s) copied to ${armsDir}/`);
-      return;
-    } catch (err) {
-      console.log(`\nWarning: Could not load preset "${preset}"`);
-      console.log("Falling back to default templates...\n");
-    }
-  }
-
-  await copyDefaultTemplates(armsDir);
-}
-
-async function copyDefaultTemplates(armsDir: string): Promise<void> {
-  console.log("\nCopying default arm templates...");
-
-  const templates = ["fullstack.toml", "frontend.toml", "backend.toml", "testing.toml", "docs.toml", "architect.toml"];
-  for (const template of templates) {
-    try {
-      const srcPath = join(TEMPLATES_DIR, "arms", template);
-      const destPath = join(armsDir, template);
-      await copyFile(srcPath, destPath);
-      console.log(`  ✓ ${template}`);
-    } catch {
-      // Ignore missing templates
-    }
-  }
-
-  console.log(`\nArm templates copied to ${armsDir}/`);
-  console.log("Edit or delete these files before spawning arms.");
-  console.log("Run 'coleo arm spawn' to interactively spawn an arm.");
+  const srcPath = join(TEMPLATES_DIR, "arms", "default.toml");
+  const destPath = join(armsDir, "default.toml");
+  await copyFile(srcPath, destPath);
+  return destPath;
 }

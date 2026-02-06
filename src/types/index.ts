@@ -253,7 +253,8 @@ export type MessageType =
   | "context_compression"
   | "status_report"
   | "bug_report"
-  | "bug_assignment";
+  | "bug_assignment"
+  | "bug_claim";
 
 // Discovery report from an arm
 export interface Discovery {
@@ -459,6 +460,7 @@ export interface TaskComment {
   authorId: string;
   authorName?: string;
   client: "web" | "mail" | "mcp" | "cli";
+  screenshotPath?: string;
   edited: boolean;
   deleted: boolean;
   createdAt: string;

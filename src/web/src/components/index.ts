@@ -12,3 +12,4 @@ export { BugGridRow } from './BugGridRow';
 export { UnifiedGridView } from './UnifiedGridView';
 export { DiscoveryGrid, DiscoveryGridHeader } from './DiscoveryGrid';
 export { DiscoveryGridRow } from './DiscoveryGridRow';
+export { ArmStatusBar } from './ArmStatusBar';

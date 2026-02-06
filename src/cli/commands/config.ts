@@ -1,73 +1,11 @@
 import { Command } from "commander";
 import { join } from "path";
-import { mkdir, readFile, readdir, writeFile } from "fs/promises";
-import { getColeoDir, TEMPLATES_DIR } from "../context";
+import { readFile, readdir } from "fs/promises";
+import { getColeoDir } from "../context";
 
 export function registerConfigCommands(program: Command): void {
-  const configCmd = program.command("config").description("Manage Coleo configuration");
-
-  configCmd
-    .command("presets")
-    .description("List available arm configuration presets")
-    .action(async () => {
-      const presetsDir = join(TEMPLATES_DIR, "presets");
-      try {
-        const files = await readdir(presetsDir);
-        const presets = files.filter((f) => f.endsWith(".json")).map((f) => f.replace(".json", ""));
-
-        console.log("Available Presets:\n");
-
-        const presetInfo: Record<string, string> = {
-          fullstack: "Single generalist arm for small projects",
-          "split-stack": "Frontend + backend specialist arms",
-          "full-team": "Full team: frontend, backend, testing, docs, architect",
-        };
-
-        for (const preset of presets) {
-          console.log(`  ${preset}`);
-          console.log(`    ${presetInfo[preset] || "No description"}\n`);
-        }
-
-        console.log("Usage: coleo init --preset <name>");
-        console.log("       coleo config load <name>");
-      } catch {
-        console.log("No presets found.");
-      }
-    });
-
-  configCmd
-    .command("load <preset>")
-    .description("Load an arm configuration preset")
-    .action(async (preset) => {
-      const coleoDir = getColeoDir();
-      const armsDir = join(coleoDir, "arms");
-      await mkdir(armsDir, { recursive: true });
-
-      const presetPath = join(TEMPLATES_DIR, "presets", `${preset}.json`);
-      try {
-        const presetContent = await readFile(presetPath, "utf-8");
-        const presetData = JSON.parse(presetContent);
-
-        console.log(`Loading preset: ${presetData.name}`);
-        console.log(`Description: ${presetData.description}\n`);
-
-        for (const armConfig of presetData.arms) {
-          const templatePath = join(TEMPLATES_DIR, "arms", armConfig.template);
-          let content = await readFile(templatePath, "utf-8");
-
-          content = content.replace(/name = "[^"]*"/, `name = "${armConfig.name}"`);
-
-          const destPath = join(armsDir, `${armConfig.name}.toml`);
-          await writeFile(destPath, content, "utf-8");
-          console.log(`  ✓ ${armConfig.name}.toml`);
-        }
-
-        console.log(`\n${presetData.arms.length} arm configuration(s) written to ${armsDir}/`);
-      } catch (err) {
-        console.error(`Failed to load preset "${preset}": ${err}`);
-        process.exit(1);
-      }
-    });
+  const configCmd = program.command("config").description("Manage Coleo arm configuration");
+  // Preset subcommands are intentionally disabled for now.
 
   configCmd
     .command("arms")

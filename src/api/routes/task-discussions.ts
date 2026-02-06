@@ -29,6 +29,7 @@ interface CreateDiscussionRequest {
   authorType: "human" | "arm" | "brain";
   authorId: string;
   authorName?: string;
+  screenshotPath?: string;
   client: "web" | "mail" | "mcp" | "cli";
 }
 
@@ -237,6 +238,7 @@ export function createTaskDiscussionsRoutes() {
       authorId: body.authorId,
       authorName: body.authorName,
       client: body.client,
+      screenshotPath: body.screenshotPath,
     });
 
     // Update task stats

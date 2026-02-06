@@ -1157,7 +1157,7 @@ export class Brain {
         break;
       }
 
-      case "bug_assignment": {
+      case "bug_claim": {
         // Arm is claiming a bug
         const payload = message.payload as { action: string; bugId: string };
         if (payload.action === "claim") {
@@ -1402,6 +1402,32 @@ export class Brain {
         task.updatedAt = new Date();
       }
 
+      // Update arm state in database for UI visibility
+      let taskSubject = task?.subject;
+      if (!taskSubject) {
+        const row = this.db.query("SELECT subject FROM tasks WHERE id = ?").get(taskId) as { subject: string } | null;
+        taskSubject = row?.subject;
+      }
+      if (!taskSubject) taskSubject = taskId;
+      const now = new Date().toISOString();
+      this.db.run(`
+        UPDATE arms
+        SET status = 'busy',
+            current_task_id = ?,
+            current_task_subject = ?,
+            last_activity_at = ?,
+            updated_at = ?
+        WHERE id = ?
+      `, [taskId, taskSubject, now, now, armId]);
+
+      // Update in-memory arm state
+      const arm = this.arms.get(armId);
+      if (arm) {
+        arm.status = "busy";
+        arm.currentTask = taskId;
+        arm.lastActivity = new Date();
+      }
+
       this.log(`Task ${taskId} claimed by arm ${armId}`);
     } catch (err) {
       this.log(`Error claiming task ${taskId} for arm ${armId}: ${err}`);
@@ -1592,7 +1618,7 @@ export class Brain {
         task.updatedAt = new Date();
       }
 
-      this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message });
+      this.logActivity("brain", "task_status_update", taskId, { armId, status: dbStatus, message, screenshotPath });
       this.log(`Task ${taskId} status updated to ${dbStatus} by arm ${armId}`);
 
       const armLabel = this.getArmDisplayName(armId);
@@ -1619,25 +1645,42 @@ export class Brain {
     screenshotPath?: string;
     authorType?: 'arm' | 'brain';
   }): Promise<void> {
+    const armId = options?.armId || 'brain';
+    const armName = options?.armName || (options?.armId ? this.getArmDisplayName(options.armId) : 'Brain');
+    const authorType = options?.authorType || (options?.armId ? 'arm' : 'brain');
+
+    // Try to use API first
+    const response = await this.apiRequest<{ comment: { id: string } }>(
+      `/api/tasks/${taskId}/discussions`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          content,
+          authorType,
+          authorId: armId,
+          authorName: armName,
+          client: 'mcp' as const,
+          screenshotPath: options?.screenshotPath,
+        }),
+      }
+    );
+
+    // If API call succeeded, we're done (the API handles broadcasting)
+    if (response) {
+      return;
+    }
+
+    // Fall back to direct database access if API is unavailable
+    this.log('API unavailable, using direct database access for task comment');
     if (!this.db) {
       this.log('Database not initialized, cannot append comment');
       return;
     }
 
-    const getWritableDb = () => {
-      if (!this.db) return null;
-      return this.db;
-    };
+    const commentId = `comment-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    const db = getWritableDb();
-    if (!db) return;
-
-    const armId = options?.armId || 'brain';
-    const armName = options?.armName || (options?.armId ? this.getArmDisplayName(options.armId) : 'Brain');
-    const authorType = options?.authorType || (options?.armId ? 'arm' : 'brain');
-
-    createTaskComment(db, {
-      id: `comment-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    createTaskComment(this.db, {
+      id: commentId,
       taskId,
       content,
       authorType,
@@ -1647,7 +1690,15 @@ export class Brain {
       screenshotPath: options?.screenshotPath,
     });
 
-    updateTaskCommentStats(db, taskId);
+    updateTaskCommentStats(this.db, taskId);
+
+    // Broadcast to WebSocket for real-time updates in web UI
+    broadcast("tasks", "discussion.created", {
+      taskId,
+      commentId,
+      authorType,
+      authorId: armId,
+    });
   }
 
   private getArmDisplayName(armId: string): string {
@@ -3081,7 +3132,16 @@ ${originalTask.id}`;
       );
     } else {
       this.db.run(
-        "UPDATE arms SET status = ?, last_heartbeat = ?, last_activity_at = ?, updated_at = ?, current_task_subject = COALESCE(?, current_task_subject) WHERE id = ?",
+        `UPDATE arms 
+         SET status = ?, 
+             last_heartbeat = ?, 
+             last_activity_at = ?, 
+             updated_at = ?, 
+             current_task_subject = CASE 
+               WHEN current_task_id IS NULL THEN COALESCE(?, current_task_subject)
+               ELSE current_task_subject
+             END
+         WHERE id = ?`,
         [status, now, now, now, payload.currentTask ?? null, armId]
       );
     }
@@ -3097,7 +3157,13 @@ ${originalTask.id}`;
       arm.lastActivity = new Date();
       if (status === "busy") {
         arm.status = "busy";
-        arm.currentTask = payload.currentTask;
+        // Only overwrite currentTask if payload references a known task ID
+        if (payload.currentTask) {
+          const knownTask = this.tasks.find(t => t.id === payload.currentTask);
+          if (knownTask) {
+            arm.currentTask = payload.currentTask;
+          }
+        }
       } else {
         arm.status = "idle";
         arm.currentTask = undefined;
