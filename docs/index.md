@@ -80,8 +80,9 @@ title: Coleo — Multi-Agent Development Coordination
                   <span class="">→ Spawned Arms...</span>
                 </div>
                 <div class="pl-4 space-y-1 opacity-80">
-                🐙 Ethidae  19m  📈 silent                                      ● Stuck 🐙 Neuras  10m  📈 looping          ● Stuck
-🐙 Vuldex  16s  HM starting/high: Arm is in startup grace period                               ● Busy
+                <div class="flex justify-between"><span>🐙 Ethidae  19m  📈 waiting</span><span class="text-green-400">● Busy</span></div>
+                <div class="flex justify-between"><span>🐙 Neuras  10m  📈 looping</span><span class="text-red-400">● Stuck</span></div>
+<div class="flex justify-between"><span>🐙 Vuldex  16s  📈 starting</span><span class="text-green-400">● Busy</span></div>
                   <div class="flex justify-between"><span>🐙 Ixis 📈 silent</span><span class="text-green-400">● Busy</span></div>
                   <div class="flex justify-between"><span>🐙 Argoaia-Zero 📈 silent</span><span class="text-green-400">● Busy</span></div>
                   <div class="flex justify-between"><span>🐙 Viola 📈 looping</span><span class="text-accent">● Stuck</span></div>
