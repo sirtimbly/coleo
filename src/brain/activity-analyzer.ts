@@ -669,8 +669,7 @@ export class StuckArmAnalyzer {
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: userMessage },
 					],
-					temperature: 0.2,
-					max_completion_tokens: 500,
+					max_completion_tokens: userMessage.length + 2500,
 				}),
 			});
 
