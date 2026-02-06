@@ -23,6 +23,7 @@ function createTestDb(): Database {
       sort_order INTEGER DEFAULT 0,
       comment_count INTEGER DEFAULT 0,
       last_comment_at TEXT,
+      progress INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       completed_at TEXT,
