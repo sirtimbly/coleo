@@ -152,7 +152,6 @@ body:not(.coleo-home) .VPApp,
 body:not(.coleo-home) .Layout,
 body:not(.coleo-home) .VPNav,
 body:not(.coleo-home) .VPLocalNav,
-body:not(.coleo-home) .VPSidebar,
 body:not(.coleo-home) .VPContent,
 body:not(.coleo-home) .VPDoc,
 body:not(.coleo-home) .VPDocFooter,
@@ -326,6 +325,76 @@ body.light-mode .navbar-custom .brand-title {
 	body:not(.coleo-home) .coleo-site-nav {
 		display: none;
 	}
+
+	/* Keep the mobile nav screen and its appearance row above animated layers. */
+	body:not(.coleo-home) .VPNav {
+		z-index: 80;
+	}
+
+	body:not(.coleo-home) .VPNavScreen {
+		z-index: 82;
+	}
+
+	body:not(.coleo-home) .VPNavScreenAppearance,
+	body:not(.coleo-home) .VPNavScreen .appearance {
+		position: relative;
+		z-index: 83;
+	}
+
+	/* Replace the extra mobile hamburger with a settings-style icon. */
+	body:not(.coleo-home) .VPNavBarHamburger .top,
+	body:not(.coleo-home) .VPNavBarHamburger .middle,
+	body:not(.coleo-home) .VPNavBarHamburger .bottom {
+		display: none;
+	}
+
+	body:not(.coleo-home) .VPNavBarHamburger .container {
+		display: grid;
+		place-items: center;
+		width: 18px;
+		height: 18px;
+		overflow: visible;
+	}
+
+	body:not(.coleo-home) .VPNavBarHamburger .container::before {
+		content: "\2699";
+		font-size: 17px;
+		line-height: 1;
+		color: var(--vp-c-text-1);
+		transition: color 0.2s ease, transform 0.2s ease;
+	}
+
+	body:not(.coleo-home) .VPNavBarHamburger.active .container::before {
+		content: "\00d7";
+		font-size: 22px;
+	}
+
+	/* Keep mobile sidebar as an overlay panel, not in normal document flow. */
+	body:not(.coleo-home) .VPSidebar {
+		position: fixed !important;
+		top: var(--vp-layout-top-height, 0px) !important;
+		bottom: 0;
+		left: 0;
+	}
+
+	/* Add a little mobile gutter without touching VitePress vertical offsets. */
+	body:not(.coleo-home) .VPDoc .container {
+		padding-left: 12px;
+		padding-right: 12px;
+	}
+
+	body:not(.coleo-home) .vp-doc div[class*="language-"],
+	body:not(.coleo-home) .vp-doc .vp-code-group,
+	body:not(.coleo-home) .vp-doc .vp-code-group .blocks {
+		max-width: 100%;
+		margin-left: 0 !important;
+		margin-right: 0 !important;
+	}
+
+	body:not(.coleo-home) .vp-doc pre {
+		max-width: 100%;
+		overflow-x: auto;
+	}
 }
 
 /* Docs layout: use grid instead of fixed offsets so sidebar/content/aside align */
@@ -422,7 +491,7 @@ body.light-mode .navbar-custom .brand-title {
 
 /* Sidebar readability: larger text and higher contrast */
 body:not(.coleo-home) .VPSidebar {
-	background: transparent;
+	background-color: color-mix(in srgb, var(--vp-c-bg-alt) 88%, transparent);
 }
 
 body:not(.coleo-home) .VPSidebarItem.level-1 {
@@ -579,6 +648,8 @@ body:not(.coleo-home) .VPSidebar .items .link.active .text {
 body:not(.coleo-home) .VPDoc .content {
 	padding-top: 24px;
 	padding-bottom: 24px;
+	padding-left: 12px;
+	padding-right: 12px;
 	background: rgba(255, 255, 255, 0.08);
 	border: 1px solid rgba(255, 255, 255, 0.12);
 	backdrop-filter: blur(10px) saturate(140%);

@@ -32,7 +32,7 @@ defineEmits<{
   </nav>
   <div class="depth-control" id="depthControl">
     <label>
-      <span id="depthIcon">☀️</span>
+      <span id="depthIcon">💡</span>
     </label>
     <input type="range" id="depthSlider" min="0" max="100" value="70">
   </div>

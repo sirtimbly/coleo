@@ -362,7 +362,7 @@
 		const value = parseInt(state.depthSlider.value);
 		state.brightness = value / 100;
 		const isLight = value > 50;
-		if (state.depthIcon) state.depthIcon.textContent = isLight ? "☀️" : "🌙";
+		if (state.depthIcon) state.depthIcon.textContent = "💡";
 		state.depthControl.classList.toggle("dark-mode", !isLight);
 		// Toggle mode globally and on marketing root for CSS
 		document.body.classList.toggle("light-mode", isLight);

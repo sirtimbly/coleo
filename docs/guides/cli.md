@@ -32,7 +32,6 @@ coleo init [options]
 
 Options:
   -d, --dir &lt;path&gt;  Custom directory (default: ~/.coleo)
-  --preset &lt;name&gt;   Load a preset configuration (fullstack, split-stack, full-team)
 ```
 
 **Examples:**
@@ -40,16 +39,13 @@ Options:
 # Default initialization
 coleo init
 
-# With split-stack preset
-coleo init --preset split-stack
-
 # Custom directory
 coleo init --dir ~/my-coleo
 ```
 
 **What happens:**
 1. Creates directory structure (`~/.coleo/`)
-2. Copies arm templates to `~/.coleo/arms/`
+2. Copies `default.toml` to `~/.coleo/arms/`
 3. Creates `config.toml`
 4. Initializes maildir directories
 
@@ -58,11 +54,8 @@ coleo init --dir ~/my-coleo
 # List configured arms
 coleo config arms
 
-# Load a different preset
-coleo config load full-team
-
 # Edit an arm configuration
-vim ~/.coleo/arms/my-arm.toml
+vim ~/.coleo/arms/default.toml
 ```
 
 ---
@@ -462,50 +455,7 @@ Tasks: 3 pending, 1 in progress
 
 ## config
 
-Manage Coleo configuration, including arm templates and presets.
-
-#### config presets
-
-List available arm configuration presets.
-
-```bash
-coleo config presets
-```
-
-**Output:**
-```
-Available Presets:
-
-  fullstack
-    Single generalist arm for small projects
-
-  split-stack
-    Frontend + backend specialist arms
-
-  full-team
-    Full team: frontend, backend, testing, docs, architect
-
-Usage: coleo init --preset <name>
-       coleo config load <name>
-```
-
-#### config load &lt;preset&gt;
-
-Load an arm configuration preset into `~/.coleo/arms/`.
-
-```bash
-coleo config load <preset>
-```
-
-**Presets:**
-- `fullstack` - Single generalist arm
-- `split-stack` - Frontend + backend
-- `full-team` - All specialists
-
-**Example:**
-```bash
-coleo config load split-stack
-```
+Manage Coleo arm configuration files in `~/.coleo/arms/`.
 
 #### config arms
 
@@ -519,9 +469,7 @@ coleo config arms
 ```
 Arm Configurations:
 
-  fullstack-dev [general]
-  frontend-dev [frontend]
-  backend-dev [backend]
+  default-arm [general]
 ```
 
 ---
@@ -621,18 +569,12 @@ These domains were used as coarse focus hints for arms. In the current design, a
 | `testing`        | Test infrastructure, QA          |
 | `architect`      | Code review, patterns, decisions |
 
-### Preset Configurations (Legacy team shapes)
+### Default Arm Configuration
 
-Load preset arm configurations:
+Initialization writes a single starter config:
 
 ```bash
-# List available presets
-coleo config presets
-
-# Load a preset (creates arm config files)
-coleo config load preset fullstack
-coleo config load preset split-stack
-coleo config load preset full-team
+~/.coleo/arms/default.toml
 ```
 
 ### Managing Arm Configs

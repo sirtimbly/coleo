@@ -12,7 +12,7 @@ title: Coleo — Multi-Agent Development Coordination
 
 <div class="depth-control" id="depthControl">
   <label>
-    <span id="depthIcon">☀️</span>
+    <span id="depthIcon">💡</span>
   </label>
   <input type="range" id="depthSlider" min="0" max="100" value="70">
 </div>
@@ -46,7 +46,8 @@ title: Coleo — Multi-Agent Development Coordination
             <span class="text-white">One Mind.</span>
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
-            An experimental coordination layer that turns your favorite models into a team: many agents, one brain, long-running productivity.
+            A self-hosted orchestration layer for coding agents that runs on your own machine or hardware, not a cloud subscription.
+            Build one plan, route work through harnesses, and coordinate many agent sessions under one brain.
           </p>
           <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
@@ -59,6 +60,10 @@ title: Coleo — Multi-Agent Development Coordination
               <span>View on GitHub</span>
             </a>
           </div>
+          <p class="text-sm text-white/75 leading-relaxed max-w-xl">
+            Current status: production harness support is available for <code>opencode</code>. Target state: plug in any CLI coding agent
+            (for example Codex CLI, Claude Code, Gemini CLI, Kimi, and future tools) through harness adapters.
+          </p>
         </div>
         <div class="relative">
           <div class="relative ui-box backdrop-blur-md rounded-3xl shadow-2xl p-8">
@@ -151,7 +156,10 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
-                <p class="opacity-70 leading-relaxed">General-purpose agents run through harnesses (headless API or a any TUI), coordinated by the Brain. Adaptors have been developed so Coleo can manage multiple <code>opencode</code> instances, and more are coming.</p>
+                <p class="opacity-70 leading-relaxed">Arms are general-purpose agent sessions managed through harnesses. Today, Coleo can run multiple <code>opencode</code> sessions; the architecture is designed to add any CLI coding agent as new harnesses are implemented.</p>
+                <p class="opacity-70 leading-relaxed mt-2">
+                  Read the <a href="/architecture/harness-contract">Harness Contract</a> for the adapter interface and event model that makes this possible.
+                </p>
               </div>
             </div>
             <div class="flex gap-4">
@@ -165,7 +173,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">📡</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">The Observatory</h4>
-                <p class="opacity-70 leading-relaxed">A web UI and a CLI is available for tracking activity across all Arms and provides a messaging and task management interface.</p>
+                <p class="opacity-70 leading-relaxed">A clean web UI and a CLI provide two ways to observe, direct, and improve your agent workflows: choose visual oversight, terminal speed, or both.</p>
               </div>
             </div>
           </div>
@@ -214,26 +222,32 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-4xl mb-4">Observe the Distributed Mind</h2>
         <p class="text-lg opacity-80">
-          Manage multiple agents at once by creating a plan and feeding that plan into distributed agent systems with your own rules and prompts.
+          Plan in one place, execute across many agents, and inspect outcomes through either the web UI or CLI without losing control of prompts, plans, or runtime state.
         </p>
       </div>
       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Real-time</div>
-          <div class="text-sm opacity-70">Monitor in the web through WebSocket feeds show activity as it happens. Or watch the TUI app as it is prompted by the brain.</div>
+          <div class="text-sm opacity-70">Watch live activity in the web UI via WebSocket feeds, or monitor directly from CLI/TUI sessions.</div>
         </div>
         <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Persistent</div>
-          <div class="text-sm opacity-70">Activity goes through central API server and Event streams, stored in SQLite and visible in the CLI or the Web.</div>
+          <div class="text-sm opacity-70">Activity flows through the API and event stream, then persists to SQLite for durable local state.</div>
         </div>
         <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Inspectable</div>
-          <div class="text-sm opacity-70">View all the inter-agent proposals, tasks, and discoveries in real-time.</div>
+          <div class="text-sm opacity-70">Inspect proposals, tasks, and discoveries across all arms as work is happening.</div>
         </div>
         <div class=" p-6 rounded-xl shadow-sm">
           <div class="text-3xl font-bold text-accent mb-1">Transparent</div>
-          <div class="text-sm opacity-70">Watch your agents as they work and monitor their usage of tokens.</div>
+          <div class="text-sm opacity-70">Track progress and token usage with clear visibility into what each arm is doing.</div>
         </div>
+      </div>
+      <div class="mt-8 ui-box inverted p-5 rounded-xl text-sm opacity-90">
+        Harness confidence note: contract-adjacent harness behavior is covered by tests in
+        <code>src/harness/__tests__/opencode-tui.test.ts</code>,
+        <code>src/harness/__tests__/event-stream.test.ts</code>, and
+        <code>src/harness/__tests__/model-resolver.test.ts</code>.
       </div>
     </div>
   </section>
@@ -362,4 +376,3 @@ title: Coleo — Multi-Agent Development Coordination
     </div>
   </footer>
 </div>
-1

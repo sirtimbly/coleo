@@ -88,7 +88,7 @@ A working web UI at `http://localhost:3001` showing:
   - Define task classification keys and default patterns (e.g. architect:project-management, development:default, qa:default, documentation:default)
   - Create task configuration templates (in code) and align arm profile configuration templates (`templates/arms/*.toml`) with them
   - Update task assignment and arm spawning to respect classifications and templates
-  - Add preset configurations (`templates/presets/*.json`) that describe default task mixes rather than fixed specialist identities (e.g. a single generalist arm, a mix of development + qa + documentation tasks)
+  - Keep a single default starter profile (`templates/arms/default.toml`) and treat additional profiles as optional user-defined copies
 
 - [ ] **2.2** Context budget tracking
   - Implement `ContextBudget` type

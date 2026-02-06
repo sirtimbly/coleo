@@ -22,6 +22,10 @@ export default defineConfig({
 					items: [
 						{ text: "Overview", link: "/architecture/overview" },
 						{ text: "Components", link: "/architecture/components" },
+						{
+							text: "Harness Contract",
+							link: "/architecture/harness-contract",
+						},
 						{ text: "Security", link: "/architecture/security" },
 					],
 				},

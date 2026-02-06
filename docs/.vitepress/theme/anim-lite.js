@@ -53,7 +53,7 @@
 
   function updateDepth(){ if(!state.depthSlider||!state.waterFx||!state.depthCtrl) return
     const value=parseInt(state.depthSlider.value||'70',10); state.brightness=value/100
-    if(state.depthIcon) state.depthIcon.textContent=value>50?'☀️':'🌙'
+    if(state.depthIcon) state.depthIcon.textContent='💡'
     const isLight=value>50
     state.depthCtrl.classList.toggle('dark-mode', !isLight)
     // Mirror mode globally so navbar/content can restyle

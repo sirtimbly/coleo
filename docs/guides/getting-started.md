@@ -20,11 +20,8 @@ This guide will help you set up Coleo and run your first brain + arm session.
 # Install the CLI package (uses the Bun runtime)
 bun install -g coleo
 
-# Initialize Coleo (copies arm templates)
+# Initialize Coleo (copies default.toml)
 coleo init
-
-# Or initialize with a preset configuration
-coleo init --preset split-stack
 ```
 
 ### From Source (contributors)
@@ -37,26 +34,11 @@ cd coleo
 # Install dependencies
 bun install
 
-# Initialize Coleo (copies arm templates)
+# Initialize Coleo (copies default.toml)
 bun run src/cli/index.ts init
 ```
 
 Use `bun run src/cli/index.ts <command>` to run the local CLI while you develop from source.
-
-### Preset Configurations
-
-When initializing, you can specify a preset to pre-configure arms:
-
-```bash
-# Single full-stack arm (minimal setup)
-coleo init --preset fullstack
-
-# Frontend + backend split
-coleo init --preset split-stack
-
-# Full team with specialists
-coleo init --preset full-team
-```
 
 ## Quickstart: Existing Codebase (Partial Adoption)
 
@@ -130,6 +112,10 @@ coleo mail send \
 coleo arm prompt dev-arm \
   "Add a dark mode toggle to the settings page"
 ```
+
+You can do the same thing from the web interface at `http://localhost:5173/mail`:
+
+![Coleo mail interface screenshot](/mail-ui.png)
 
 Then review changes in your repo on the `coleo` branch:
 
@@ -209,20 +195,13 @@ git commit -am "feat: initial task tracker UI"
 
 When you’re happy, you can push the `coleo` branch to your remote and open a PR as usual.
 
-### Arm Templates
+### Arm Configuration
 
-Coleo includes arm configuration templates in `templates/arms/`. These provide starting points and focus hints; arms remain general-purpose and their behavior is primarily guided by task classification and history.
+Coleo initialization writes a single starter arm config:
 
-| Template         | Legacy Domain Hint | Description                          |
-| ---------------- | ------------------ | ------------------------------------ |
-| `fullstack.toml` | general            | Versatile generalist for any task    |
-| `frontend.toml`  | frontend           | UI/UX, React, accessibility          |
-| `backend.toml`   | backend            | APIs, databases, infrastructure      |
-| `testing.toml`   | testing            | QA, test infrastructure              |
-| `docs.toml`      | docs               | Documentation-focused starting point |
-| `architect.toml` | architect          | Code review, patterns                |
+- `~/.coleo/arms/default.toml`
 
-These templates are copied to `~/.coleo/arms/` during initialization and can be edited before spawning arms.
+Edit this file before spawning arms, or copy it to create additional arm profiles.
 
 ### Verify Installation
 
@@ -319,10 +298,10 @@ Arm configuration templates are included in the project at `templates/arms/`:
 ```bash
 # List available templates
 ls templates/arms/
-# fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
+# default.toml  fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
 ```
 
-These templates are copied to `~/.coleo/arms/` when you run `coleo init`.
+Only `default.toml` is copied to `~/.coleo/arms/` when you run `coleo init`.
 
 ### General-Purpose Arms (Default)
 
@@ -330,12 +309,12 @@ By default, arms are general-purpose and can work on any part of your codebase. 
 
 ```bash
 # Spawn a general-purpose arm
-coleo arm spawn --name fullstack-dev
+coleo arm spawn --name default-arm
 ```
 
 A general-purpose arm will handle frontend, backend, QA, and documentation tasks as assigned by the brain.
 
-### Split-Stack Configuration (Legacy style)
+### Layer-Focused Configuration (Legacy style)
 
 For larger projects, you can still run arms with focus hints that tend to work on specific layers:
 
@@ -351,21 +330,6 @@ coleo arm spawn --name infra-arm --domain infrastructure
 ```
 
 In the current design, these domains are hints; the brain primarily matches tasks using task classifications, recent work, and availability.
-
-### Preset Configurations
-
-Coleo includes preset configurations for common setups. Load a preset:
-
-```bash
-# Single full-stack arm (minimal setup)
-coleo config load preset fullstack
-
-# Multi-arm with frontend/backend split
-coleo config load preset split-stack
-
-# Full team with specialists
-coleo config load preset full-team
-```
 
 ### Custom Arm Profiles
 
@@ -412,13 +376,13 @@ To switch between configurations:
 
 ```bash
 # List available configurations
-coleo config list
+ls ~/.coleo/arms/
 
-# Load a different configuration set
-coleo config load my-custom-setup
+# Edit the default profile
+$EDITOR ~/.coleo/arms/default.toml
 
-# This replaces all arms with the new configuration
-# Existing arm processes continue until manually killed
+# Or create an additional profile
+cp ~/.coleo/arms/default.toml ~/.coleo/arms/reviewer.toml
 ```
 
 ## Sending a Task

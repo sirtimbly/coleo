@@ -62,7 +62,9 @@ watch(
 
   <div v-else>
     <!-- Desktop navigation (mobile uses VitePress default navbar + hamburger) -->
-    <SiteNav class="coleo-site-nav" />
+    <div class="coleo-site-nav">
+      <SiteNav />
+    </div>
     <DefaultLayout />
   </div>
 </template>

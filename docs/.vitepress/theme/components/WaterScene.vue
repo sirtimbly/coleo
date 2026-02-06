@@ -2,7 +2,7 @@
   <div>
     <div class="depth-control" id="depthControl">
       <label>
-        <span id="depthIcon">☀️</span>
+        <span id="depthIcon">💡</span>
       </label>
       <input type="range" id="depthSlider" min="0" max="100" value="70" />
     </div>
@@ -202,7 +202,7 @@ function updateDepth() {
 	if (!depthSlider || !depthControl || !waterLayer) return;
 	const value = parseInt(depthSlider.value);
 	brightness.value = value / 100;
-	if (depthIcon) depthIcon.textContent = value > 50 ? "☀️" : "🌙";
+	if (depthIcon) depthIcon.textContent = "💡";
 	depthControl.classList.toggle("dark-mode", value <= 50);
 	const bgBrightness = 0.6 + brightness.value * 0.8;
 	const bgSaturation = 1.0 + brightness.value * 0.8;
@@ -606,4 +606,3 @@ onUnmounted(() => {
 
 <style scoped>
 </style>
-
