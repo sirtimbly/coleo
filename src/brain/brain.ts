@@ -12,8 +12,6 @@ import { readdir, readFile, mkdir, rename, unlink } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
-import { initDatabase, Database } from "../db";
-import { updateInfrastructureHealth, assignTaskToArm, updateArmStatusWithActivity } from "../db/transactions";
 import { spawnArm, type SpawnOptions } from "../arm/spawner";
 import {
   queueMessage,
@@ -40,6 +38,8 @@ import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
+import { createApiDatabase } from "./api-db";
+import type { BrainDb } from "./db-client";
 import type { BrainState, Task, QueueMessage, Arm, Discovery, MessageType } from "../types";
 
 export interface BrainOptions {
@@ -63,7 +63,7 @@ export class Brain {
   private running = false;
   private shuttingDown = false;
   private abortController: AbortController | null = null;
-  private db: Database | null = null;
+  private db: BrainDb | null = null;
   private apiBaseUrl: string;
   private apiKey: string;
   private natsUrl!: string;
@@ -106,6 +106,9 @@ export class Brain {
     maildir: { healthy: false, lastCheck: null },
   };
   private lastInfraFailureNotification: Date | null = null;
+
+  // Track completed task count for refactoring cycle (every 5 tasks)
+  private completedTaskCount = 0;
 
   /**
    * Log an activity entry to JetStream
@@ -388,7 +391,7 @@ export class Brain {
       if ((err as Error).name === "AbortError") {
         // Request timed out - API not available
       }
-      // API not available, will fall back to direct DB access
+      // API not available
       return null;
     }
   }
@@ -397,9 +400,9 @@ export class Brain {
    * Initialize brain state and directories
    */
   async init(): Promise<void> {
-    // Initialize database
-    const dbPath = join(this.options.coleoDir, "coleo.db");
-    this.db = await initDatabase(dbPath);
+    // Initialize API-backed database adapter (API server owns SQLite access)
+    this.db = createApiDatabase(this.apiBaseUrl, this.apiKey);
+    this.db.query("SELECT 1").get();
 
     // Initialize doc update tracker
     this.docTracker = new DocUpdateTracker(this.db, this.options.coleoDir, process.cwd());
@@ -598,7 +601,7 @@ export class Brain {
       this.log("API server unavailable - skipping arm operations");
     }
 
-    // Step 8: Sync tasks from plan files (database only, no API needed)
+    // Step 8: Sync tasks from plan files via API-backed state adapter
     await this.syncPlanTasks();
 
     // Step 8a: Process inbox items (convert to tasks, clear inbox)
@@ -754,9 +757,9 @@ export class Brain {
      // Disconnect from NATS (with timeout to avoid hanging)
      await this.stopNats();
 
-     // Now safe to close the database
+     // Now safe to close the database adapter
      if (this.db) {
-       this.db.close();
+       this.db.close?.();
        this.db = null;
      }
 
@@ -989,10 +992,11 @@ export class Brain {
   private async processArmQueue(): Promise<void> {
     // Process messages from SQLite (primary)
     if (this.db) {
-      const messages = getPendingBrainMessages(this.db);
+      const stateDb = this.db as Parameters<typeof getPendingBrainMessages>[0];
+      const messages = getPendingBrainMessages(stateDb);
       for (const message of messages) {
         try {
-          markMessageProcessing(this.db, message.id);
+          markMessageProcessing(stateDb, message.id);
 
           await this.handleArmMessage({
             id: message.id,
@@ -1003,16 +1007,16 @@ export class Brain {
             timestamp: message.createdAt,
           });
 
-          markMessageCompleted(this.db, message.id);
+          markMessageCompleted(stateDb, message.id);
         } catch (err) {
           this.log(`Error processing queue message ${message.id}: ${err}`);
-          markMessageFailed(this.db, message.id, String(err));
+          markMessageFailed(stateDb, message.id, String(err));
         }
       }
 
       // Periodically cleanup old messages (once per hour via modulo check)
       if (Date.now() % 3600000 < this.options.pollIntervalMs) {
-        cleanupOldMessages(this.db, 7);
+        cleanupOldMessages(stateDb, 7);
       }
     }
 
@@ -1380,16 +1384,25 @@ export class Brain {
       // Ensure the arm exists in the database (prevents FK constraint failure)
       this.ensureArmExists(armId);
 
-      // Use transaction for task assignment
-      const result = await assignTaskToArm(this.db, taskId, armId, 'primary', true);
+      const assignmentResponse = await this.apiRequest<{
+        result: { success: boolean; data?: { needsMoreArms?: boolean }; error?: string };
+      }>("/api/brain/internal/assign-task", {
+        method: "POST",
+        body: JSON.stringify({
+          taskId,
+          armId,
+          role: "primary",
+          isClaim: true,
+        }),
+      });
 
-      if (!result.success) {
-        this.log(`Error claiming task ${taskId} for arm ${armId}: ${result.error}`);
+      if (!assignmentResponse?.result?.success) {
+        this.log(`Error claiming task ${taskId} for arm ${armId}: ${assignmentResponse?.result?.error || "assignment API unavailable"}`);
         return;
       }
 
       // Check if we need to spawn additional arms for watchers
-      if (result.success && result.data && result.data.needsMoreArms) {
+      if (assignmentResponse.result.data?.needsMoreArms) {
         // Only spawn if there's only 1 non-stopped arm total (the primary one)
         const nonStoppedArms = Array.from(this.arms.values()).filter(arm => arm.status !== 'stopped');
         if (nonStoppedArms.length === 1) {
@@ -1544,9 +1557,19 @@ export class Brain {
       this.log(`Watcher arm ${newArm.id} is now idle, assigning to task ${taskId}`);
 
       // Assign the new arm as a watcher to the task
-      const result = await assignTaskToArm(this.db!, taskId, newArm.id, 'watcher');
-      if (!result.success) {
-        this.log(`Failed to assign spawned arm ${newArm.id} as watcher: ${result.error}`);
+      const assignmentResponse = await this.apiRequest<{
+        result: { success: boolean; error?: string };
+      }>("/api/brain/internal/assign-task", {
+        method: "POST",
+        body: JSON.stringify({
+          taskId,
+          armId: newArm.id,
+          role: "watcher",
+          isClaim: false,
+        }),
+      });
+      if (!assignmentResponse?.result?.success) {
+        this.log(`Failed to assign spawned arm ${newArm.id} as watcher: ${assignmentResponse?.result?.error || "assignment API unavailable"}`);
         return;
       }
 
@@ -1673,16 +1696,17 @@ export class Brain {
       return;
     }
 
-    // Fall back to direct database access if API is unavailable
-    this.log('API unavailable, using direct database access for task comment');
+    // Fall back to API-backed SQL endpoint when task discussion route is unavailable
+    this.log('Task discussion API unavailable, falling back to internal state adapter');
     if (!this.db) {
       this.log('Database not initialized, cannot append comment');
       return;
     }
 
     const commentId = `comment-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const stateDb = this.db as Parameters<typeof createTaskComment>[0];
 
-    createTaskComment(this.db, {
+    createTaskComment(stateDb, {
       id: commentId,
       taskId,
       content,
@@ -1693,7 +1717,7 @@ export class Brain {
       screenshotPath: options?.screenshotPath,
     });
 
-    updateTaskCommentStats(this.db, taskId);
+    updateTaskCommentStats(stateDb, taskId);
 
     // Broadcast to WebSocket for real-time updates in web UI
     broadcast("tasks", "discussion.created", {
@@ -2017,6 +2041,14 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
         }).catch(() => {
           // Best-effort
         });
+      }
+    }
+
+    this.completedTaskCount++;
+    if (this.completedTaskCount % 5 === 0) {
+      const largeFiles = await this.findLargeFiles(400);
+      if (largeFiles.length > 0) {
+        await this.createRefactoringTask(largeFiles);
       }
     }
 
@@ -3069,9 +3101,10 @@ ${originalTask.id}`;
   ): Promise<void> {
     const noteId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-    // Save to SQLite notes table
+    // Persist note via API-backed state adapter
     if (this.db) {
-      createNote(this.db, {
+      const stateDb = this.db as Parameters<typeof createNote>[0];
+      createNote(stateDb, {
         id: noteId,
         author,
         title: note.title,
@@ -3091,9 +3124,10 @@ ${originalTask.id}`;
     armId: string,
     tool: { name: string; command: string; description: string }
   ): Promise<void> {
-    // Save to SQLite tools table
+    // Persist tool via API-backed state adapter
     if (this.db) {
-      upsertTool(this.db, {
+      const stateDb = this.db as Parameters<typeof upsertTool>[0];
+      upsertTool(stateDb, {
         name: tool.name,
         command: tool.command,
         description: tool.description,
@@ -4509,9 +4543,14 @@ Report findings using bug resolution workflow.`,
           },
         ];
 
-        const result = await updateInfrastructureHealth(this.db, components);
-        if (!result.success) {
-          this.log(`Failed to persist infrastructure health: ${result.error}`);
+        const persistResponse = await this.apiRequest<{
+          result: { success: boolean; error?: string };
+        }>("/api/brain/internal/infrastructure-health", {
+          method: "POST",
+          body: JSON.stringify({ components }),
+        });
+        if (!persistResponse?.result?.success) {
+          this.log(`Failed to persist infrastructure health: ${persistResponse?.result?.error || "API unavailable"}`);
         }
       } catch (err) {
         this.log(`Failed to persist infrastructure health: ${err}`);
@@ -4533,11 +4572,11 @@ Report findings using bug resolution workflow.`,
   private async attemptInfrastructureRecovery(): Promise<boolean> {
     let recovered = false;
 
-    // Try to reconnect database if needed
-    if (!this.infrastructureHealth.database.healthy && !this.db) {
+    // Try to reconnect API-backed database adapter if needed
+    if (!this.infrastructureHealth.database.healthy) {
       try {
-        const dbPath = join(this.options.coleoDir, "coleo.db");
-        this.db = await initDatabase(dbPath);
+        this.db = createApiDatabase(this.apiBaseUrl, this.apiKey);
+        this.db.query("SELECT 1").get();
         this.log("Recovered database connection");
         recovered = true;
       } catch (err) {
@@ -5354,7 +5393,22 @@ Report findings using bug resolution workflow.`,
 
         // Assign task to arm in database
         if (this.db) {
-          const result = await assignTaskToArm(this.db, task.id, bestArm.id, 'primary', false);
+          const assignmentResponse = await this.apiRequest<{
+            result: { success: boolean; error?: string };
+          }>("/api/brain/internal/assign-task", {
+            method: "POST",
+            body: JSON.stringify({
+              taskId: task.id,
+              armId: bestArm.id,
+              role: "primary",
+              isClaim: false,
+            }),
+          });
+
+          if (!assignmentResponse?.result?.success) {
+            this.log(`Failed to assign task ${task.id} to ${bestArm.id}: ${assignmentResponse?.result?.error || "assignment API unavailable"}`);
+            continue;
+          }
 
           // Update arm status in database
           const now = new Date().toISOString();
@@ -5411,7 +5465,8 @@ Report findings using bug resolution workflow.`,
     }
 
     const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    queueMessage(this.db, {
+    const stateDb = this.db as Parameters<typeof queueMessage>[0];
+    queueMessage(stateDb, {
       id: messageId,
       from: "brain",
       to: armId,
@@ -5494,7 +5549,7 @@ Report findings using bug resolution workflow.`,
   }
 
   private async loadTasks(): Promise<void> {
-    // Load tasks from SQLite only (single source of truth)
+    // Load tasks from API-backed state adapter (single source of truth)
     if (!this.db) {
       this.log("Cannot load tasks: database not initialized");
       this.tasks = [];
@@ -6086,7 +6141,7 @@ const arm: Arm = {
       return;
     }
 
-    // Fallback to direct database access
+    // Fallback to API-backed state adapter
     if (!this.db) return;
 
     try {
@@ -6193,7 +6248,7 @@ const arm: Arm = {
 
       if (apiResult) continue; // Success via API
 
-      // Fallback to direct database access
+      // Fallback to API-backed state adapter
       if (this.db) {
         this.db.run(
           `UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`,
@@ -6436,5 +6491,146 @@ When complete, report:
     }
 
     return desc;
+  }
+
+  /**
+   * Find files larger than specified threshold
+   */
+  private async findLargeFiles(threshold: number): Promise<Array<{ path: string; lines: number }>> {
+    try {
+      const { execSync } = await import("child_process");
+
+      const cwd = process.cwd();
+
+      const output = execSync(
+        `find "${cwd}/src" -type f \\( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \\) ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" -exec wc -l {} + 2>/dev/null | sort -rn`,
+        { encoding: "utf-8" }
+      );
+
+      const lines = output.trim().split("\n");
+      const largeFiles: Array<{ path: string; lines: number }> = [];
+
+      for (const line of lines) {
+        const match = line.match(/^\s*(\d+)\s+(.+)$/);
+        if (match && match[1] && match[2]) {
+          const lineCount = parseInt(match[1], 10);
+          const filePath = match[2].trim();
+
+          if (lineCount > threshold) {
+            largeFiles.push({ path: filePath, lines: lineCount });
+          }
+        }
+      }
+
+      return largeFiles;
+    } catch (err) {
+      this.log(`Error finding large files: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Build refactoring task description
+   */
+  private buildRefactoringDescription(files: Array<{ path: string; lines: number }>): string {
+    const tableRows = files
+      .map(f => {
+        const relPath = f.path.replace(process.cwd() + "/", "");
+        let priority = "normal";
+        if (f.lines > 600) priority = "high";
+        if (f.lines > 800) priority = "critical";
+        return `| \`${relPath}\` | ${f.lines} | **${priority}** |`;
+      })
+      .join("\n");
+
+    const hasCriticalFiles = files.some(f => f.lines > 800);
+    const hasHighPriorityFiles = files.some(f => f.lines > 600 && f.lines <= 800);
+    const hasMediumFiles = files.some(f => f.lines > 400 && f.lines <= 600);
+
+    return `## Refactoring Task
+
+### Prerequisites (VERIFY FIRST)
+- [ ] Run \`git status\` - confirm target files have no uncommitted changes
+- [ ] Confirm files are checked in before making changes
+- [ ] Check no other arms have active claims on these files
+
+### Files to Refactor
+
+| File | Lines | Priority |
+|------|-------|----------|
+${tableRows}
+
+### File Size Rules
+
+| Threshold | Action |
+|-----------|--------|
+| >400 lines | Flag for refactoring |
+| >600 lines | High priority refactoring |
+| >800 lines | Critical - block new work on file until refactored |
+
+${hasCriticalFiles ? "⚠️ **CRITICAL**: Files >800 lines detected. These files are too large for effective LLM processing. Refactor with highest priority.**" : ""}
+${hasHighPriorityFiles ? "💡 **High Priority**: Files >600 lines should be refactored soon to maintain code quality.**" : ""}
+${hasMediumFiles ? "📋 **Medium Priority**: Files >400 lines should be refactored when convenient.**" : ""}
+
+### Guidelines
+
+When refactoring large files:
+
+1. **Extract functions/classes**: Break down monolithic functions into smaller, focused units
+2. **Separate concerns**: Move distinct functionality to separate modules or files
+3. **Maintain tests**: Ensure all existing tests pass after refactoring
+4. **Document rationale**: Add comments explaining the refactoring choices
+
+### Escalation Rules
+
+- If an arm attempts to edit a file >800 lines, the Brain will block the edit and require refactoring first
+- Files >600 lines will trigger high-priority refactoring tasks automatically
+- Files between 400-600 lines will be flagged during the regular refactoring cycle (every 5 completed tasks)`;
+  }
+
+  /**
+   * Create a refactoring task for large files
+   */
+  private async createRefactoringTask(files: Array<{ path: string; lines: number }>): Promise<void> {
+    if (!this.db) return;
+
+    try {
+      const taskId = `refactor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+      const maxLines = Math.max(...files.map(f => f.lines));
+      let priority: "critical" | "high" | "normal" | "low" = "normal";
+      if (maxLines > 800) priority = "critical";
+      else if (maxLines > 600) priority = "high";
+      else if (maxLines > 400) priority = "normal";
+
+      const description = this.buildRefactoringDescription(files);
+
+      this.db.run(
+        `INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+        [taskId, `Refactor large files (${files.length} files)`, description, "pending", priority, "system", "refactoring-cycle"]
+      );
+
+      this.tasks.push({
+        id: taskId,
+        subject: `Refactor large files (${files.length} files)`,
+        description,
+        status: "pending",
+        priority,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await this.saveTasks();
+
+      this.log(`Created refactoring task: ${taskId} (count: ${files.length}, priority: ${priority})`);
+      this.logActivity("brain", "refactoring_task_created", taskId, {
+        fileCount: files.length,
+        priority,
+        maxLines
+      });
+    } catch (err) {
+      this.log(`Error creating refactoring task: ${err}`);
+    }
   }
 }

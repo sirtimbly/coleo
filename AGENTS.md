@@ -61,6 +61,8 @@ src/
 
 **Database:** Migrations in `src/db/index.ts`. Parameterized queries only. `snake_case` columns, `camelCase` TypeScript.
 
+**Brain/DB separation:** `src/brain/**` must not import `bun:sqlite` or open SQLite connections directly. The brain process reads/writes persistent state through HTTP API calls to `src/api/routes/**`, and the API server is the only layer that talks to SQLite.
+
 **API:** Routes in `src/api/routes/*.ts`. Use `HttpError` middleware. Return `{ arm: ... }` or `{ arms: [...] }`.
 
 **TypeScript:** Run `bun run typecheck`. Avoid `any`.

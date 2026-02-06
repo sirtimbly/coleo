@@ -2,10 +2,10 @@
  * Brain Agent Tool Base
  */
 
-import type { Database } from "bun:sqlite";
+import type { BrainDb } from "../../db-client";
 
 export interface ToolContext {
-  db: Database;
+  db: BrainDb;
   projectRoot: string;
   coleoDir: string;
 }

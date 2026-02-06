@@ -847,20 +847,24 @@ export interface MailMessage {
 // Arm message from OpenCode session
 export interface ArmMessagePart {
   type: string;
+  id?: string;
   text?: string;
   tool?: string;
   toolName?: string;
   name?: string;
-  state?: string;
+  state?: unknown;
+  input?: unknown;
+  output?: unknown;
+  time?: unknown;
   result?: unknown;
-  error?: string;
+  error?: unknown;
 }
 
 export interface ArmMessage {
   info: {
     id: string;
     role: 'user' | 'assistant' | 'system';
-    time?: number;
+    time?: unknown;
     error?: { name: string; data?: { message: string } };
   };
   parts: ArmMessagePart[];

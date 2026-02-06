@@ -115,6 +115,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["039_task_comment_screenshot", MIGRATION_039, { table: "task_comments", columns: MIGRATION_039_COLUMNS }],
     ["040_arm_bug_tracking", MIGRATION_040, { table: "arms", columns: MIGRATION_040_COLUMNS }],
     ["041_task_progress", MIGRATION_041, { table: "tasks", columns: MIGRATION_041_COLUMNS }],
+    ["042_task_preparation", MIGRATION_042, { table: "tasks", columns: MIGRATION_042_COLUMNS }],
   ];
 
 
@@ -1143,6 +1144,20 @@ const MIGRATION_041_COLUMNS = [
 const MIGRATION_041 = `
   -- Add index for progress queries
   CREATE INDEX IF NOT EXISTS idx_tasks_progress ON tasks(progress);
+`;
+
+// Migration 042: Add task preparation fields for Phase 1.2 Collaborative Planning
+const MIGRATION_042_COLUMNS = [
+  { name: 'prepared_by_arm_id', sql: "ALTER TABLE tasks ADD COLUMN prepared_by_arm_id TEXT" },
+  { name: 'prepared_at', sql: "ALTER TABLE tasks ADD COLUMN prepared_at TEXT" },
+];
+
+const MIGRATION_042 = `
+  -- Add index for prepared task queries
+  CREATE INDEX IF NOT EXISTS idx_tasks_prepared_by ON tasks(prepared_by_arm_id);
+  
+  -- Add index for prepared tasks (not null = prepared)
+  CREATE INDEX IF NOT EXISTS idx_tasks_prepared_at ON tasks(prepared_at);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

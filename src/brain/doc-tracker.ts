@@ -8,7 +8,7 @@
  * - Record doc update attempts for history
  */
 
-import { Database } from "bun:sqlite";
+import type { BrainDb } from "./db-client";
 import { join } from "path";
 import { readdir, readFile } from "fs/promises";
 import fg from "fast-glob";
@@ -21,12 +21,12 @@ interface DocUpdateContext {
 }
 
 export class DocUpdateTracker {
-  private db: Database;
+  private db: BrainDb;
   private coleoDir: string;
   private projectRoot: string;
   private pollCount: number = 0;
 
-  constructor(db: Database, coleoDir: string, projectRoot: string) {
+  constructor(db: BrainDb, coleoDir: string, projectRoot: string) {
     this.db = db;
     this.coleoDir = coleoDir;
     this.projectRoot = projectRoot;

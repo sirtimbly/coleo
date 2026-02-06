@@ -47,7 +47,7 @@ title: Coleo — Multi-Agent Development Coordination
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
             A self-hosted orchestration layer for coding agents that runs on your own machine or hardware, not a cloud subscription.
-            Build one plan, route work through harnesses, and coordinate many agent sessions under one brain.
+            Markdown files are a good starting place, but Coleo provides rich task management and collaboration tools to the agents and yourself.
           </p>
           <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
@@ -61,8 +61,7 @@ title: Coleo — Multi-Agent Development Coordination
             </a>
           </div>
           <p class="text-sm text-white/75 leading-relaxed max-w-xl">
-            Current status: production harness support is available for <code>opencode</code>. Target state: plug in any CLI coding agent
-            (for example Codex CLI, Claude Code, Gemini CLI, Kimi, and future tools) through harness adapters.
+            Current status: works great with <code>opencode</code>, but we are actively developing additional harnesses (for example Codex CLI, Claude Code, Gemini CLI, Kimi, and future tools).
           </p>
         </div>
         <div class="relative">
@@ -77,13 +76,15 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="space-y-2">
                 <div class="flex items-center gap-2">
                   <div class="w-2 h-2 rounded-full bg-accent animate-pulse"></div>
-                  <span class="text-accent font-semibold">Brain</span>
-                  <span class="">→ Spawning Arms...</span>
+                  <span class="text-accent font-semibold">Coleo</span>
+                  <span class="">→ Spawned Arms...</span>
                 </div>
                 <div class="pl-4 space-y-1 opacity-80">
-                  <div class="flex justify-between"><span>🐙 Ixis</span><span class="text-green-400">● Active</span></div>
-                  <div class="flex justify-between"><span>🐙 Argoaia-Zero</span><span class="text-green-400">● Active</span></div>
-                  <div class="flex justify-between"><span>🐙 Viola</span><span class="text-accent">● Stuck</span></div>
+                🐙 Ethidae  19m  📈 silent                                      ● Stuck 🐙 Neuras  10m  📈 looping          ● Stuck
+🐙 Vuldex  16s  HM starting/high: Arm is in startup grace period                               ● Busy
+                  <div class="flex justify-between"><span>🐙 Ixis 📈 silent</span><span class="text-green-400">● Busy</span></div>
+                  <div class="flex justify-between"><span>🐙 Argoaia-Zero 📈 silent</span><span class="text-green-400">● Busy</span></div>
+                  <div class="flex justify-between"><span>🐙 Viola 📈 looping</span><span class="text-accent">● Stuck</span></div>
                 </div>
               </div>
             </div>
@@ -98,7 +99,7 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-xl mb-4">Soft Architecture</h2>
         <p class="text-lg opacity-80">
-          Most agent frameworks rely on rigid control hierarchies or specialized agent instances. Coleo builds upon independent exploration and ad-hoc coordination to get agents to evaluate each other and share their understanding of the world they've been given. Agent sessions are ephemeral generalists that grow through a consistent API for coordination and context sharing.
+          Most agent frameworks rely on rigid control hierarchies or specialized agent instances. Coleo builds upon independent exploration and ad-hoc coordination to get agents to evaluate each other and share their understanding of the world they've been given. Agent sessions are ephemeral generalists that grow and repeatedly solve problems in concert.
         </p>
       </div>
       <div class="grid md:grid-cols-3 gap-8">
@@ -121,7 +122,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Governance Through Persuasion</h3>
           <p class="opacity-70 leading-relaxed">
-            The Brain does not command—it evaluates. Arms submit structured proposals with reasoning and wait for approval.
+            The Brain does not command &emdash; it evaluates. Arms submit structured proposals log discoveries and query the brain for clarification.
           </p>
         </div>
         <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
@@ -132,7 +133,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Safe Experimentation</h3>
           <p class="opacity-70 leading-relaxed">
-            Coleo is coordination, not blind autonomy: claims, activity, and proposals make multi-agent work inspectable and interruptible.
+            Coleo is coordination, not blind autonomy: file claims, security rules, and proposals make multi-agent work inspectable and safe while offering surprising velocity.
           </p>
         </div>
       </div>
@@ -149,14 +150,14 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🧠</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">The Brain</h4>
-                <p class="opacity-70 leading-relaxed">The central coordination point maintaining architectural standards and evaluating proposals.</p>
+                <p class="opacity-70 leading-relaxed">The central coordination point prompting all agents, evaluating proposals, offering tasks to consider and sharing status updates with you.</p>
               </div>
             </div>
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
-                <p class="opacity-70 leading-relaxed">Arms are general-purpose agent sessions managed through harnesses. Today, Coleo can run multiple <code>opencode</code> sessions; the architecture is designed to add any CLI coding agent as new harnesses are implemented.</p>
+                <p class="opacity-70 leading-relaxed">Arms are general-purpose agent sessions in any of the popular CLI coding tools. Arms are managed through harnesses. Today, Coleo can run multiple <code>opencode</code> sessions; the architecture is designed to support any CLI coding agent as new harnesses are implemented.</p>
                 <p class="opacity-70 leading-relaxed mt-2">
                   Read the <a href="/architecture/harness-contract">Harness Contract</a> for the adapter interface and event model that makes this possible.
                 </p>
@@ -166,7 +167,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🌿</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Gardens</h4>
-                <p class="opacity-70 leading-relaxed">A living map of the workspace: file claims, activity, and conflict zones that help arms avoid collisions.</p>
+                <p class="opacity-70 leading-relaxed">A living map of the workspace: file claims, activity, and conflict zones that help arms avoid collisions. <em>Coming Soon</em></p>
               </div>
             </div>
             <div class="flex gap-4">
@@ -186,21 +187,21 @@ title: Coleo — Multi-Agent Development Coordination
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">1</div>
                 <div>
                   <h5 class="font-semibold mb-1">Spawn</h5>
-                  <p class="text-sm opacity-60">The Brain instantiates Arms and assigns tasks from a list.</p>
+                  <p class="text-sm opacity-60">The Human instantiates Arms and he brain assigns tasks from a database list. The database is synced with Markdown files in your repo.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">2</div>
                 <div>
                   <h5 class="font-semibold mb-1">Execute</h5>
-                  <p class="text-sm opacity-60">Arms work independently and cooperatively within their Gardens.</p>
+                  <p class="text-sm opacity-60">Arms work independently and cooperatively within their Gardens. Humans can observe their activity through the CLI or the web.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">3</div>
                 <div>
-                  <h5 class="font-semibold mb-1">Propose</h5>
-                  <p class="text-sm opacity-60">Arms submit structured proposals to the Brain as well as status reports.</p>
+                  <h5 class="font-semibold mb-1">Feedback</h5>
+                  <p class="text-sm opacity-60">Arms submit structured proposals, discoveries, and complaints to the Brain as well as regular status reports.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">

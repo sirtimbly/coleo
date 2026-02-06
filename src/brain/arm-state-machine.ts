@@ -5,7 +5,7 @@
  * Survives process restarts and handles network disconnects gracefully.
  */
 
-import type { Database } from "bun:sqlite";
+import type { BrainDb } from "./db-client";
 
 // ============================================================================
 // State Definitions
@@ -546,11 +546,11 @@ const TRANSITIONS: Record<ArmState, Partial<Record<ArmEvent["type"], TransitionH
 // ============================================================================
 
 export class ArmStateMachine {
-  private db: Database;
+  private db: BrainDb;
   private pendingTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private onSideEffect?: (effect: SideEffect) => void | Promise<void>;
 
-  constructor(db: Database, onSideEffect?: (effect: SideEffect) => void | Promise<void>) {
+  constructor(db: BrainDb, onSideEffect?: (effect: SideEffect) => void | Promise<void>) {
     this.db = db;
     this.onSideEffect = onSideEffect;
   }

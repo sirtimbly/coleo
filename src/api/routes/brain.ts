@@ -5,8 +5,8 @@
  * 
  * NOTE: Brain state is now stored in SQLite (brain_state table), not JSON files.
  */
-import { Hono } from "hono";
-import type { Database } from "bun:sqlite";
+import { Hono, type Context } from "hono";
+import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
@@ -14,12 +14,34 @@ import { join } from "path";
 import { mkdir } from "fs/promises";
 import { Maildir } from "../../mail/maildir";
 import { getBrainState, updateBrainState, type BrainState } from "../../db/state";
+import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
 
 interface BrainContext {
   Variables: {
     db: Database;
     coleoDir: string;
   };
+}
+
+interface SqlRequestBody {
+  sql: string;
+  params: SQLQueryBindings[];
+}
+
+interface AssignTaskRequestBody {
+  taskId: string;
+  armId: string;
+  role?: "primary" | "watcher";
+  isClaim?: boolean;
+}
+
+interface InfrastructureHealthRequestBody {
+  components: Array<{
+    component: string;
+    healthy: boolean;
+    optional: boolean;
+    error?: string;
+  }>;
 }
 
 export interface BrainStatus {
@@ -37,6 +59,17 @@ export type { BrainState } from "../../db/state";
 
 export function createBrainRoutes() {
   const app = new Hono<BrainContext>();
+
+  const parseSqlRequest = async (c: Context<BrainContext>): Promise<SqlRequestBody> => {
+    const body = await c.req.json<{ sql?: unknown; params?: unknown }>();
+    if (!body?.sql || typeof body.sql !== "string") {
+      throw HttpError.badRequest("sql must be a non-empty string");
+    }
+    if (body.params !== undefined && !Array.isArray(body.params)) {
+      throw HttpError.badRequest("params must be an array");
+    }
+    return { sql: body.sql, params: (body.params || []) as SQLQueryBindings[] };
+  };
 
   app.use("*", async (c, next) => {
     const coleoDir = getColeoDir();
@@ -304,6 +337,84 @@ export function createBrainRoutes() {
       messageId: mailMessage.id,
       subject,
     }, 201);
+  });
+
+  /**
+   * Internal SQL proxy endpoints used by the brain process.
+   * SQLite access stays in the API server; brain calls these over HTTP.
+   */
+  app.post("/internal/sql/run", async (c) => {
+    const db = c.get("db");
+    const { sql, params } = await parseSqlRequest(c);
+
+    try {
+      const result = db.run(sql, params);
+      return c.json({
+        data: {
+          changes: result.changes,
+          lastInsertRowid: typeof result.lastInsertRowid === "bigint"
+            ? Number(result.lastInsertRowid)
+            : result.lastInsertRowid ?? null,
+        },
+      });
+    } catch (err) {
+      throw HttpError.badRequest(`SQL run failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.post("/internal/sql/get", async (c) => {
+    const db = c.get("db");
+    const { sql, params } = await parseSqlRequest(c);
+
+    try {
+      const row = db.query(sql).get(...params);
+      return c.json({ data: row ?? null });
+    } catch (err) {
+      throw HttpError.badRequest(`SQL get failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.post("/internal/sql/all", async (c) => {
+    const db = c.get("db");
+    const { sql, params } = await parseSqlRequest(c);
+
+    try {
+      const rows = db.query(sql).all(...params);
+      return c.json({ data: rows });
+    } catch (err) {
+      throw HttpError.badRequest(`SQL all failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  app.post("/internal/assign-task", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<AssignTaskRequestBody>();
+
+    if (!body.taskId || !body.armId) {
+      throw HttpError.badRequest("taskId and armId are required");
+    }
+
+    const result = await assignTaskToArm(
+      db,
+      body.taskId,
+      body.armId,
+      body.role || "primary",
+      body.isClaim === true
+    );
+
+    return c.json({ result });
+  });
+
+  app.post("/internal/infrastructure-health", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<InfrastructureHealthRequestBody>();
+
+    if (!Array.isArray(body.components)) {
+      throw HttpError.badRequest("components must be an array");
+    }
+
+    const result = await updateInfrastructureHealth(db, body.components);
+    return c.json({ result });
   });
 
   return app;

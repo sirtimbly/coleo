@@ -1,6 +1,8 @@
 import { Command } from "commander";
 import { join } from "path";
+import { clearLine, cursorTo, moveCursor } from "node:readline";
 import { spawnArm, listArms, killArm } from "../../arm";
+import type { Arm } from "../../types";
 import { generateArmName, generateArmNames, getNameGeneratorStats } from "../arm-names";
 import {
   expandPath,
@@ -13,6 +15,219 @@ import { prompt, promptSelect, promptYN, loadArmTemplates } from "../helpers/pro
 
 function normalizeTemplateName(value: string): string {
   return value.trim().replace(/\.toml$/i, "");
+}
+
+type ArmAnalysisSummary = {
+  state: string;
+};
+
+type ArmDisplayState = "Idle" | "Busy" | "Stuck";
+const TERMINAL_WIDTH_SAFETY = 2;
+
+function stripAnsi(value: string): string {
+  return value.replace(/\u001b\[[0-9;]*m/g, "");
+}
+
+function displayWidth(value: string): number {
+  return Array.from(value).length;
+}
+
+function truncateToWidth(value: string, max: number): string {
+  if (max <= 0) return "";
+  const chars = Array.from(value);
+  if (chars.length <= max) return value;
+  if (max <= 1) return chars.slice(0, max).join("");
+  return `${chars.slice(0, max - 1).join("")}…`;
+}
+
+function padToWidth(value: string, width: number): string {
+  if (width <= 0) return "";
+  const len = displayWidth(value);
+  if (len >= width) return truncateToWidth(value, width);
+  return value + " ".repeat(width - len);
+}
+
+function fitToWidth(value: string, columns: number): string {
+  const safeColumns = Math.max(0, columns - TERMINAL_WIDTH_SAFETY);
+  if (safeColumns <= 0) return "";
+  const plain = stripAnsi(value);
+  if (displayWidth(plain) <= safeColumns) return value;
+  return truncateToWidth(plain, safeColumns);
+}
+
+function formatDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs)) return "n/a";
+  const safeMs = Math.max(0, durationMs);
+  const totalSeconds = Math.floor(safeMs / 1000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 24) return `${hours}h ${minutes}m`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  return `${days}d ${remainingHours}h`;
+}
+
+function classifyArmDisplayState(armStatus: string, monitorState?: string): ArmDisplayState {
+  const status = armStatus.toLowerCase();
+  const hm = (monitorState || "").toLowerCase();
+
+  if (status === "error" || hm === "looping" || hm === "silent" || hm === "error") {
+    return "Stuck";
+  }
+
+  if (
+    status === "busy" ||
+    status === "running" ||
+    status === "starting" ||
+    hm === "productive" ||
+    hm === "waiting_permission" ||
+    hm === "starting"
+  ) {
+    return "Busy";
+  }
+
+  return "Idle";
+}
+
+function formatStatusIndicator(state: ArmDisplayState, color: boolean): string {
+  const text = `● ${state}`;
+  if (!color) return text;
+
+  if (state === "Idle") return `\u001b[32m${text}\u001b[0m`;
+  if (state === "Busy") return `\u001b[33m${text}\u001b[0m`;
+  return `\u001b[31m${text}\u001b[0m`;
+}
+
+type RowInput = {
+  name: string;
+  lifetime: string;
+  health: string;
+  task: string;
+  statusIndicator: string;
+};
+
+function buildAlignedArmLines(rows: RowInput[], columns: number): string[] {
+  const safeColumns = Math.max(20, columns - TERMINAL_WIDTH_SAFETY);
+  const statusWidth = Math.max(...rows.map((row) => displayWidth(stripAnsi(row.statusIndicator))), 0);
+
+  let nameWidth = Math.min(
+    28,
+    Math.max(10, ...rows.map((row) => displayWidth(row.name)))
+  );
+  let lifetimeWidth = Math.min(
+    10,
+    Math.max(4, ...rows.map((row) => displayWidth(row.lifetime)))
+  );
+  let healthWidth = Math.min(
+    20,
+    Math.max(8, ...rows.map((row) => displayWidth(row.health)))
+  );
+
+  const minTaskWidth = 10;
+  let taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+
+  while (taskWidth < minTaskWidth && nameWidth > 10) {
+    nameWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+  }
+  while (taskWidth < minTaskWidth && healthWidth > 8) {
+    healthWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+  }
+  while (taskWidth < minTaskWidth && lifetimeWidth > 4) {
+    lifetimeWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+  }
+
+  taskWidth = Math.max(0, taskWidth);
+
+  return rows.map((row) => {
+    const nameCell = padToWidth(truncateToWidth(row.name, nameWidth), nameWidth);
+    const lifetimeCell = padToWidth(truncateToWidth(row.lifetime, lifetimeWidth), lifetimeWidth);
+    const healthCell = padToWidth(truncateToWidth(row.health, healthWidth), healthWidth);
+    const taskCell = padToWidth(truncateToWidth(row.task, taskWidth), taskWidth);
+    return `${nameCell} ${lifetimeCell} ${healthCell} ${taskCell} ${row.statusIndicator}`;
+  });
+}
+
+function renderLines(lines: string[], previousLineCount: number): number {
+  if (!process.stdout.isTTY) {
+    for (const line of lines) {
+      console.log(stripAnsi(line));
+    }
+    return lines.length;
+  }
+
+  if (previousLineCount > 0) {
+    moveCursor(process.stdout, 0, -previousLineCount);
+  }
+
+  const totalLines = Math.max(lines.length, previousLineCount);
+  for (let i = 0; i < totalLines; i++) {
+    clearLine(process.stdout, 0);
+    cursorTo(process.stdout, 0);
+    process.stdout.write(fitToWidth(lines[i] ?? "", process.stdout.columns ?? 120));
+    process.stdout.write("\n");
+  }
+
+  return lines.length;
+}
+
+async function fetchHealthAnalysis(apiUrl: string, headers: Record<string, string>): Promise<Map<string, ArmAnalysisSummary>> {
+  const healthByArm = new Map<string, ArmAnalysisSummary>();
+
+  try {
+    const res = await fetch(`${apiUrl}/api/events/analysis`, { headers });
+    if (!res.ok) return healthByArm;
+
+    const payload = await res.json() as {
+      arms?: Array<{
+        armId: string;
+        state: string;
+      }>;
+    };
+
+    for (const entry of payload.arms || []) {
+      healthByArm.set(entry.armId, {
+        state: entry.state,
+      });
+    }
+  } catch {
+    return healthByArm;
+  }
+
+  return healthByArm;
+}
+
+async function fetchArmTasks(apiUrl: string, headers: Record<string, string>): Promise<Map<string, string>> {
+  const tasksByArm = new Map<string, string>();
+
+  try {
+    const res = await fetch(`${apiUrl}/api/arms`, { headers });
+    if (!res.ok) return tasksByArm;
+
+    const payload = await res.json() as {
+      arms?: Array<{
+        id: string;
+        currentTaskSubject?: string | null;
+        currentTask?: string | null;
+      }>;
+    };
+
+    for (const entry of payload.arms || []) {
+      const task = entry.currentTaskSubject || entry.currentTask || "";
+      if (task) {
+        tasksByArm.set(entry.id, task);
+      }
+    }
+  } catch {
+    return tasksByArm;
+  }
+
+  return tasksByArm;
 }
 
 export function registerArmCommands(program: Command): void {
@@ -415,44 +630,77 @@ export function registerArmCommands(program: Command): void {
     .command("list")
     .description("List all arms")
     .option("--all", "Include stopped arms (hidden by default)")
-    .action(async (options) => {
+    .option("--once", "Print one snapshot and exit (disable live updates)")
+    .option("-i, --interval <ms>", "Refresh interval for live mode", "2000")
+    .action(async (options: { all?: boolean; once?: boolean; interval?: string }) => {
       const coleoDir = getColeoDir();
-      let arms = await listArms(coleoDir);
+      const { apiUrl, headers } = getApiConfig();
+      const refreshInterval = Math.max(250, parseInt(options.interval || "2000", 10) || 2000);
+      const liveMode = process.stdout.isTTY && !options.once;
+      const useColor = Boolean(process.stdout.isTTY);
 
-      if (!options.all) {
-        const activeArms = arms.filter((a) => a.status !== "stopped");
-        if (activeArms.length === 0 && arms.length > 0) {
-          console.log("No active arms. Use --all to see stopped arms.");
-          console.log(`(${arms.length} stopped arm(s) hidden)`);
-          return;
+      const renderSnapshot = async (): Promise<string[]> => {
+        let arms = await listArms(coleoDir);
+        if (!options.all) {
+          arms = arms.filter((a) => a.status !== "stopped");
         }
-        arms = activeArms;
+
+        if (arms.length === 0) {
+          return [options.all ? "No arms registered." : "No active arms."];
+        }
+
+        const [healthByArm, tasksByArm] = await Promise.all([
+          fetchHealthAnalysis(apiUrl, headers),
+          fetchArmTasks(apiUrl, headers),
+        ]);
+
+        const rows: RowInput[] = arms.map((arm) => {
+          const analysis = healthByArm.get(arm.id);
+          const displayState = classifyArmDisplayState(arm.status, analysis?.state);
+          const statusIndicator = formatStatusIndicator(displayState, useColor);
+          const healthLabel = (analysis?.state || "unknown").toLowerCase();
+          const taskText = tasksByArm.get(arm.id) || arm.currentTask || "-";
+          return {
+            name: `🐙 ${arm.name || arm.id}`,
+            lifetime: formatDuration(Date.now() - arm.startedAt.getTime()),
+            health: `📈 ${healthLabel}`,
+            task: `☑️ ${taskText}`,
+            statusIndicator,
+          };
+        });
+
+        return buildAlignedArmLines(rows, process.stdout.columns ?? 120);
+      };
+
+      let lastRenderedLines = 0;
+      let keepRunning = true;
+      const stopLiveMode = () => {
+        keepRunning = false;
+      };
+
+      if (liveMode) {
+        process.once("SIGINT", stopLiveMode);
+        process.once("SIGTERM", stopLiveMode);
       }
 
-      if (arms.length === 0) {
-        console.log("No arms registered.");
-        console.log("Spawn one with: coleo arm spawn --name <name> --agent opencode");
-        return;
-      }
+      try {
+        do {
+          const lines = await renderSnapshot();
+          if (liveMode) {
+            lastRenderedLines = renderLines(lines, lastRenderedLines);
+          } else {
+            for (const line of lines) {
+              console.log(process.stdout.isTTY ? line : stripAnsi(line));
+            }
+          }
 
-      console.log("Arms:");
-      for (const a of arms) {
-        const status = a.status === "running" || a.status === "idle"
-          ? "●"
-          : a.status === "busy"
-            ? "◐"
-            : a.status === "stopped"
-              ? "○"
-              : "◌";
-        const domain = (a as { domain?: string }).domain ? ` [${(a as { domain?: string }).domain}]` : "";
-        console.log(`  ${status} ${a.id} (${a.agent})${domain} - ${a.status}${a.currentTask ? ` → ${a.currentTask}` : ""}`);
-      }
-
-      if (options.all) {
-        const stoppedCount = arms.filter((a) => a.status === "stopped").length;
-        if (stoppedCount > 0) {
-          console.log("");
-          console.log(`Tip: Run 'coleo arm cleanup' to remove ${stoppedCount} stopped arm(s).`);
+          if (!liveMode) break;
+          if (!keepRunning) break;
+          await new Promise((resolve) => setTimeout(resolve, refreshInterval));
+        } while (keepRunning);
+      } finally {
+        if (liveMode) {
+          process.stdout.write("\n");
         }
       }
     });

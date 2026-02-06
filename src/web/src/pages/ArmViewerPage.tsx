@@ -147,14 +147,36 @@ export function ArmViewerPage() {
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [armAnalysis, setArmAnalysis] = useState<ArmAnalysisFull | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<ViewerTab>('events');
+  const [activeTab, setActiveTab] = useState<ViewerTab>('logs');
   const [messages, setMessages] = useState<ArmMessage[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
   
-  const activityEndRef = useRef<HTMLDivElement>(null);
+  const feedContainerRef = useRef<HTMLDivElement>(null);
+  const autoScrollEnabledRef = useRef(true);
   const activityIdCounter = useRef(0);
   const lastLogsRefreshAt = useRef(0);
+
+  const isAtBottom = useCallback((container: HTMLDivElement) => {
+    const bottomOffset = container.scrollHeight - container.scrollTop - container.clientHeight;
+    return bottomOffset <= 24;
+  }, []);
+
+  const handleFeedScroll = useCallback(() => {
+    const container = feedContainerRef.current;
+    if (!container) {
+      return;
+    }
+    autoScrollEnabledRef.current = isAtBottom(container);
+  }, [isAtBottom]);
+
+  const scrollFeedToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const container = feedContainerRef.current;
+    if (!container) {
+      return;
+    }
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  }, []);
 
   // Generate unique activity ID
   const genId = () => `act-${++activityIdCounter.current}-${Date.now()}`;
@@ -364,6 +386,10 @@ export function ArmViewerPage() {
             status: 'info',
           });
         }
+
+        if (selectedArmId && activeTab === 'logs') {
+          refreshMessagesThrottled(selectedArmId);
+        }
       }
     }
 
@@ -521,6 +547,7 @@ export function ArmViewerPage() {
   // Reset or restore state when arm changes
   useEffect(() => {
     if (selectedArmId) {
+      autoScrollEnabledRef.current = true;
       // Try to restore from localStorage first
       const saved = loadArmHistory(selectedArmId);
       if (saved) {
@@ -560,6 +587,8 @@ export function ArmViewerPage() {
       return;
     }
 
+    void loadMessages(selectedArmId, true);
+
     const interval = setInterval(() => {
       void loadMessages(selectedArmId, true);
     }, 3000);
@@ -592,10 +621,27 @@ export function ArmViewerPage() {
     };
   }, [isResizing]);
 
-  // Auto-scroll to bottom
+  // Auto-scroll while the user remains at the bottom of the viewport
   useEffect(() => {
-    activityEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [activeTab, activities, currentText, messages]);
+    if (!autoScrollEnabledRef.current) {
+      return;
+    }
+    scrollFeedToBottom('auto');
+  }, [activeTab, activities, currentText, messages, scrollFeedToBottom]);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const container = feedContainerRef.current;
+      if (!container) {
+        return;
+      }
+      autoScrollEnabledRef.current = isAtBottom(container);
+      if (autoScrollEnabledRef.current) {
+        scrollFeedToBottom('auto');
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeTab, isAtBottom, scrollFeedToBottom]);
 
   const selectArm = (armId: string) => {
     setSearchParams({ arm: armId });
@@ -821,17 +867,17 @@ export function ArmViewerPage() {
             <div className="inline-flex items-center rounded-lg border border-border p-1 gap-1">
               <Button
                 size="sm"
-                variant={activeTab === 'events' ? 'primary' : 'ghost'}
-                onPress={() => setActiveTab('events')}
-              >
-                Events
-              </Button>
-              <Button
-                size="sm"
                 variant={activeTab === 'logs' ? 'primary' : 'ghost'}
                 onPress={() => setActiveTab('logs')}
               >
                 Logs
+              </Button>
+              <Button
+                size="sm"
+                variant={activeTab === 'events' ? 'primary' : 'ghost'}
+                onPress={() => setActiveTab('events')}
+              >
+                Events
               </Button>
             </div>
           </div>
@@ -848,7 +894,11 @@ export function ArmViewerPage() {
         ) : (
           <div className="flex-1 flex overflow-hidden">
             {activeTab === 'events' ? (
-              <div className="flex-1 overflow-auto p-4 space-y-2">
+              <div
+                ref={feedContainerRef}
+                onScroll={handleFeedScroll}
+                className="flex-1 overflow-auto p-4 space-y-2"
+              >
                 {/* Current text output */}
                 {currentText && (
                   <div className="bg-secondary/30 rounded-lg p-4 mb-4 border border-border">
@@ -877,10 +927,13 @@ export function ArmViewerPage() {
                     />
                   ))
                 )}
-                <div ref={activityEndRef} />
               </div>
             ) : (
-              <div className="flex-1 overflow-auto p-4 space-y-4">
+              <div
+                ref={feedContainerRef}
+                onScroll={handleFeedScroll}
+                className="flex-1 overflow-auto p-4 space-y-4"
+              >
                 {logsError && (
                   <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                     {logsError}
@@ -894,7 +947,7 @@ export function ArmViewerPage() {
                   </div>
                 ) : null}
 
-                {messages.length === 0 && !currentText && !logsLoading ? (
+                {messages.length === 0 && !logsLoading ? (
                   <div className="text-center text-muted-foreground py-8">
                     <p>No message logs yet.</p>
                   </div>
@@ -903,17 +956,6 @@ export function ArmViewerPage() {
                     <MessageLogItem key={message.info.id} message={message} />
                   ))
                 )}
-
-                {currentText && (
-                  <div className="rounded-lg border border-border bg-secondary/20 p-3">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                      <span>Assistant (live)</span>
-                    </div>
-                    <pre className="text-sm whitespace-pre-wrap font-mono overflow-auto">{currentText}</pre>
-                  </div>
-                )}
-                <div ref={activityEndRef} />
               </div>
             )}
 
@@ -1042,7 +1084,7 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
       : role === 'user'
         ? 'text-emerald-600'
         : 'text-amber-600';
-  const timestamp = message.info.time ? new Date(message.info.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null;
+  const timestamp = formatMessageTime(message.info.time);
 
   return (
     <div className="rounded-lg border border-border bg-card p-3">
@@ -1065,10 +1107,33 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 
           if ((part.type === 'tool-invocation' || part.type === 'tool') && (part.toolName || part.tool || part.name)) {
             const tool = part.toolName || part.tool || part.name || 'unknown';
-            const state = part.state ? ` [${part.state}]` : '';
+            const details = extractToolDetails(part);
+            const state = details.status ? ` [${details.status}]` : '';
             return (
-              <div key={`${message.info.id}-tool-${index}`} className="text-xs text-muted-foreground font-mono">
-                {`Tool: ${tool}${state}`}
+              <div key={`${message.info.id}-tool-${index}`} className="rounded border border-border/60 bg-muted/20 px-2 py-1">
+                <div className="text-xs text-muted-foreground font-mono">
+                  {`Tool: ${tool}${state}`}
+                </div>
+                {details.input !== undefined && details.input !== null && (
+                  <div className="text-[11px] text-muted-foreground font-mono">
+                    {`input: ${summarizeToolValue(details.input)}`}
+                  </div>
+                )}
+                {details.output !== undefined && details.output !== null && (
+                  <div className="text-[11px] text-muted-foreground font-mono">
+                    {`output: ${summarizeToolValue(details.output)}`}
+                  </div>
+                )}
+                {details.error !== undefined && details.error !== null && (
+                  <div className="text-[11px] text-destructive font-mono">
+                    {`error: ${summarizeToolValue(details.error)}`}
+                  </div>
+                )}
+                {details.durationMs !== undefined && (
+                  <div className="text-[11px] text-muted-foreground font-mono">
+                    {`duration: ${details.durationMs}ms`}
+                  </div>
+                )}
               </div>
             );
           }
@@ -1078,6 +1143,111 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
       </div>
     </div>
   );
+}
+
+function formatMessageTime(timeValue: unknown): string | null {
+  if (timeValue === undefined || timeValue === null) {
+    return null;
+  }
+
+  let raw: unknown = timeValue;
+  if (typeof timeValue === 'object') {
+    const timeObj = timeValue as Record<string, unknown>;
+    raw = timeObj.completed ?? timeObj.created ?? timeObj.updated ?? timeObj.end ?? timeObj.start;
+  }
+
+  let date: Date | null = null;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    const ms = raw < 1_000_000_000_000 ? raw * 1000 : raw;
+    date = new Date(ms);
+  } else if (typeof raw === 'string') {
+    if (/^\d+$/.test(raw)) {
+      const parsed = Number.parseInt(raw, 10);
+      const ms = parsed < 1_000_000_000_000 ? parsed * 1000 : parsed;
+      date = new Date(ms);
+    } else {
+      date = new Date(raw);
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function extractToolDetails(part: ArmMessage['parts'][number]): {
+  status?: string;
+  input?: unknown;
+  output?: unknown;
+  error?: unknown;
+  durationMs?: number;
+} {
+  const details: {
+    status?: string;
+    input?: unknown;
+    output?: unknown;
+    error?: unknown;
+    durationMs?: number;
+  } = {};
+
+  if (typeof part.state === 'string') {
+    details.status = part.state;
+  } else if (part.state && typeof part.state === 'object') {
+    const stateObj = part.state as Record<string, unknown>;
+    if (typeof stateObj.status === 'string') {
+      details.status = stateObj.status;
+    }
+    if (stateObj.input !== undefined) {
+      details.input = stateObj.input;
+    }
+    if (stateObj.output !== undefined) {
+      details.output = stateObj.output;
+    }
+    if (stateObj.error !== undefined) {
+      details.error = stateObj.error;
+    }
+    if (stateObj.time && typeof stateObj.time === 'object') {
+      const timeObj = stateObj.time as Record<string, unknown>;
+      const start = typeof timeObj.start === 'number' ? timeObj.start : undefined;
+      const end = typeof timeObj.end === 'number' ? timeObj.end : undefined;
+      if (start !== undefined && end !== undefined && end >= start) {
+        details.durationMs = end - start;
+      }
+    }
+  }
+
+  if (details.input === undefined && part.input !== undefined) {
+    details.input = part.input;
+  }
+  if (details.output === undefined && part.output !== undefined) {
+    details.output = part.output;
+  }
+  if (details.output === undefined && part.result !== undefined) {
+    details.output = part.result;
+  }
+  if (details.error === undefined && part.error !== undefined) {
+    details.error = part.error;
+  }
+
+  return details;
+}
+
+function summarizeToolValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.length > 220 ? `${value.slice(0, 220)}...` : value;
+  }
+
+  try {
+    const serialized = JSON.stringify(value);
+    if (!serialized) {
+      return String(value);
+    }
+    return serialized.length > 220 ? `${serialized.slice(0, 220)}...` : serialized;
+  } catch {
+    return String(value);
+  }
 }
 
 // State colors and icons for arm analysis
