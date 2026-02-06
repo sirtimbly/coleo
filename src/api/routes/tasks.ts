@@ -435,7 +435,7 @@ app.post("/", async (c) => {
 
     db.run(`
       INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, sort_order, progress, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       body.subject.trim(),
