@@ -15,7 +15,6 @@ import type { Task, Discovery, Note, QueueMessage } from "../types";
 import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
-import { Database } from "bun:sqlite";
 import { getColeoDir } from "../config";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
@@ -25,6 +24,7 @@ import {
 	markMessageCompleted,
 	getNotes,
 } from "../db/state";
+import { createApiDatabase } from "./api-db";
 import { broadcast } from "../api/websocket";
 import {
 	generateTaskDetermination,
@@ -48,10 +48,13 @@ const COLEO_DIR = getColeoDir();
 const ARM_ID =
 	process.env.COLEO_ARM_ID || process.env.COLEO_TENTACLE_ID || "unknown";
 const PROJECT_ROOT = process.env.COLEO_PROJECT_ROOT || process.cwd();
+const API_BASE_URL = process.env.COLEO_API_URL || "http://127.0.0.1:8080";
+const API_KEY = process.env.COLEO_API_KEY || "dev-api-key-12345";
 
-// Database connection (lazy initialization)
-let db: Database | null = null;
-let dbWritable: Database | null = null;
+type StateDb = Parameters<typeof queueMessage>[0];
+
+// API-backed database proxy connection (lazy initialization)
+let dbClient: StateDb | null = null;
 
 // NATS client (lazy initialization)
 let natsClient: NatsClient | null = null;
@@ -83,20 +86,11 @@ async function getArmSessionId(): Promise<string | null> {
 // REMOVED: OpenCode event listener moved to harness system
 // The harness now forwards events to the main server via callbacks
 
-function getDatabase(readonly = true): Database {
-	if (readonly) {
-		if (!db) {
-			const dbPath = join(COLEO_DIR, "coleo.db");
-			db = new Database(dbPath, { readonly: true });
-		}
-		return db;
-	} else {
-		if (!dbWritable) {
-			const dbPath = join(COLEO_DIR, "coleo.db");
-			dbWritable = new Database(dbPath);
-		}
-		return dbWritable;
+function getDatabase(_readonly = true): StateDb {
+	if (!dbClient) {
+		dbClient = createApiDatabase(API_BASE_URL, API_KEY) as unknown as StateDb;
 	}
+	return dbClient;
 }
 
 /**
@@ -253,30 +247,25 @@ function ensureArmRegistered(): void {
 }
 
 /**
- * Write a message to the brain's queue (SQLite-based with file fallback)
+ * Write a message to the brain's queue (API-backed with file fallback)
  */
 async function sendToBrainFile(message: QueueMessage): Promise<string> {
 	const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 
-	// Try SQLite first (primary)
+	// Try API-backed DB first (primary)
 	try {
-		const dbPath = join(COLEO_DIR, "coleo.db");
-		const db = new Database(dbPath, { readonly: false });
-		try {
-			queueMessage(db, {
-				id,
-				from: message.from,
-				to: "brain",
-				type: message.type,
-				payload: message.payload,
-			});
-			return id;
-		} finally {
-			db.close();
-		}
+		const database = getDatabase(false);
+		queueMessage(database, {
+			id,
+			from: message.from,
+			to: "brain",
+			type: message.type,
+			payload: message.payload,
+		});
+		return id;
 	} catch (err) {
 		console.error(
-			`[MCP] Failed to queue message to SQLite, falling back to file: ${err}`,
+			`[MCP] Failed to queue message via API DB, falling back to file: ${err}`,
 		);
 	}
 
@@ -2454,12 +2443,10 @@ export function createMcpServer(): McpServer {
 		async ({ file_path, operation, estimated_duration }) => {
 			try {
 				// Import the enforcement functions
-				const {
-					canWriteToFile,
-					autoClaimFile,
-					getDatabase: getClaimDatabase,
-				} = await import("../arm/claim-enforcement");
-				const database = getClaimDatabase(false);
+				const { canWriteToFile, autoClaimFile } = await import(
+					"../arm/claim-enforcement"
+				);
+				const database = getDatabase(false);
 
 				// Check if operation is allowed
 				if (
@@ -2572,9 +2559,10 @@ export function createMcpServer(): McpServer {
 		async ({ file_path, operation, success, changes_summary }) => {
 			try {
 				// Import the enforcement functions
-				const { checkAndEscalateIfThrashing, getDatabase: getClaimDatabase } =
-					await import("../arm/claim-enforcement");
-				const database = getClaimDatabase(false);
+				const { checkAndEscalateIfThrashing } = await import(
+					"../arm/claim-enforcement"
+				);
+				const database = getDatabase(false);
 
 				// Log the activity for thrashing detection
 				logActivity(ARM_ID, `file_${operation}`, file_path, {
@@ -2587,8 +2575,6 @@ export function createMcpServer(): McpServer {
 				if ((operation === "write" || operation === "create") && success) {
 					await checkAndEscalateIfThrashing(database, file_path);
 				}
-
-				database.close();
 
 				return {
 					content: [
@@ -2622,15 +2608,12 @@ export function createMcpServer(): McpServer {
 		},
 		async () => {
 			try {
-				const {
-					getClaimMode,
-					getClaimEnforcementConfig,
-					getDatabase: getClaimDatabase,
-				} = await import("../arm/claim-enforcement");
-				const database = getClaimDatabase();
+				const { getClaimMode, getClaimEnforcementConfig } = await import(
+					"../arm/claim-enforcement"
+				);
+				const database = getDatabase();
 				const mode = getClaimMode(database);
 				const config = getClaimEnforcementConfig(database);
-				database.close();
 
 				const modeDescriptions = {
 					strict: "Must claim files before writing. Conflicts are blocked.",
@@ -4001,17 +3984,16 @@ export function createMcpServer(): McpServer {
 
 			try {
 				// Query the main server for stored events
-				const apiUrl = process.env.COLEO_API_URL || "http://127.0.0.1:8080";
 				const params = new URLSearchParams();
 				params.set("limit", Math.min(limit, 100).toString());
 				if (since) params.set("since", since);
 				if (event_type) params.set("type", event_type);
 
 				const response = await fetch(
-					`${apiUrl}/api/arms/${ARM_ID}/stored-events?${params}`,
+					`${API_BASE_URL}/api/arms/${ARM_ID}/stored-events?${params}`,
 					{
 						headers: {
-							Authorization: `Bearer ${process.env.COLEO_API_KEY || "dev-api-key-12345"}`,
+							"X-API-Key": API_KEY,
 						},
 					},
 				);

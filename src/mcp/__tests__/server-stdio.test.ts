@@ -211,6 +211,7 @@ describe("MCP Server - Stdio Integration", () => {
           COLEO_ARM_ID: armId,
           COLEO_PROJECT_ROOT: testDir,
           COLEO_NATS_URL: "nats://127.0.0.1:65535",
+          COLEO_MCP_SQLITE_FALLBACK: "1",
         },
       }
     );
