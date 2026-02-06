@@ -491,7 +491,7 @@ body.light-mode .navbar-custom .brand-title {
 
 /* Sidebar readability: larger text and higher contrast */
 body:not(.coleo-home) .VPSidebar {
-	background-color: color-mix(in srgb, var(--vp-c-bg-alt) 88%, transparent);
+	background-color: color-mix(in srgb, var(--vp-c-bg-alt) 22%, transparent);
 }
 
 body:not(.coleo-home) .VPSidebarItem.level-1 {
@@ -674,7 +674,8 @@ body.light-mode .vp-doc pre code {
 }
 
 .vp-doc :not(pre)>code {
-	background: rgba(255, 255, 255, 0.1);
+	background: rgba(255, 255, 255, 0.9);
+	font-weight: bold;
 	padding: 0.2em 0.4em;
 	border-radius: 6px;
 }

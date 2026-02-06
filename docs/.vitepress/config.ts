@@ -37,6 +37,15 @@ export default defineConfig({
 		},
 	},
 	head: [
+		[
+			"link",
+			{
+				rel: "icon",
+				type: "image/png",
+				href: "/favicon.png",
+				sizes: "32x32",
+			},
+		],
 		["meta", { property: "og:type", content: "website" }],
 		["meta", { property: "og:site_name", content: "Coleo" }],
 		["meta", { property: "og:title", content: "Coleo" }],

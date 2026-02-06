@@ -5,12 +5,45 @@
     inited:false, raf:0,
     water:null, waterFx:null, raysCanvas:null,
     depthCtrl:null, depthSlider:null, depthIcon:null,
-    viewportWidth:0, viewportHeight:0, scrollY:0,
+    viewportWidth:0, viewportHeight:0, scrollY:0, docHeight:0,
     brightness:0.7, time:0, prevFrameNow:0,
     rays:[],
     resizeHandler:null, scrollHandler:null, inputHandler:null,
     colorSchemeQuery:null, colorSchemeHandler:null,
     depthRetry:0, depthRetryTimer:null, depthBound:false, iconClickHandler:null,
+  }
+
+  function getDocumentHeight(){
+    const de=document.documentElement
+    const body=document.body
+    return Math.max(
+      de ? de.scrollHeight : 0,
+      de ? de.offsetHeight : 0,
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0,
+    )
+  }
+
+  function syncInnerLayerSizing(){
+    if(!state.water || !state.raysCanvas) return
+    state.docHeight=getDocumentHeight()
+    const maxScroll=Math.max(0, state.docHeight-state.viewportHeight)
+    const parallaxTravel=Math.ceil(maxScroll*0.2)
+    const overscanTop=Math.ceil(state.viewportHeight*0.25)
+    const layerHeight=Math.ceil(state.viewportHeight+overscanTop+parallaxTravel+64)
+    const top=`-${overscanTop}px`
+    const height=`${layerHeight}px`
+
+    if(state.waterFx){
+      state.waterFx.style.top=top
+      state.waterFx.style.height=height
+    }
+    state.water.style.top=top
+    state.water.style.height=height
+    state.raysCanvas.style.top=top
+    state.raysCanvas.style.height=height
+    state.raysCanvas.width=state.viewportWidth
+    state.raysCanvas.height=layerHeight
   }
 
   function getSystemIsLight(){
@@ -144,10 +177,25 @@
     ensureDom()
     if(!state.water||!state.raysCanvas) return
     state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight
-    state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5)
+    syncInnerLayerSizing()
     initRays(); bindDepthControl()
-    state.resizeHandler=()=>{ state.viewportWidth=window.innerWidth; state.viewportHeight=window.innerHeight; state.raysCanvas.width=state.viewportWidth; state.raysCanvas.height=Math.floor(state.viewportHeight*1.5); initRays() }
-    state.scrollHandler=()=>{ state.scrollY=window.scrollY; const parallax=-state.scrollY*0.2; state.water.style.transform=`translate3d(0,${parallax}px,0)`; state.raysCanvas.style.transform=`translate3d(0,${parallax}px,0)` }
+    state.resizeHandler=()=>{
+      state.viewportWidth=window.innerWidth
+      state.viewportHeight=window.innerHeight
+      syncInnerLayerSizing()
+      initRays()
+    }
+    state.scrollHandler=()=>{
+      state.scrollY=window.scrollY
+      const latestDocHeight=getDocumentHeight()
+      if(Math.abs(latestDocHeight-state.docHeight)>4){
+        syncInnerLayerSizing()
+        initRays()
+      }
+      const parallax=-state.scrollY*0.2
+      state.water.style.transform=`translate3d(0,${parallax}px,0)`
+      state.raysCanvas.style.transform=`translate3d(0,${parallax}px,0)`
+    }
     window.addEventListener('resize', state.resizeHandler)
     window.addEventListener('scroll', state.scrollHandler)
     state.inited=true; DBG('initInner complete')
