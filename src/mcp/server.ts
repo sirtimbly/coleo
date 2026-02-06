@@ -957,16 +957,17 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         title: z.string().describe("Brief title describing the bug"),
         description: z.string().describe("Detailed description of the bug, including steps to reproduce and error messages"),
+        source: z.enum(["arm_reported", "human_reported", "system_detected"]).optional().default("arm_reported").describe("Who reported this bug: arm_reported (default), human_reported (from human email), or system_detected (automated detection)"),
         source_task_id: z.string().optional().describe("ID of the task where the bug was encountered"),
         error_details: z.string().optional().describe("JSON string with additional error details like stack traces"),
       },
     },
-    async ({ title, description, source_task_id, error_details }) => {
+    async ({ title, description, source = "arm_reported", source_task_id, error_details }) => {
       const bugPayload = {
         id: `bug-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         title,
         description,
-        source: "arm_reported" as const,
+        source: source as "arm_reported" | "human_reported" | "system_detected",
         sourceTaskId: source_task_id,
         errorDetails: error_details,
       };
@@ -1046,6 +1047,8 @@ export function createMcpServer(): McpServer {
         if (status === "resolved" || status === "closed") {
           updates.push("resolved_at = ?");
           params.push(now);
+          // Reset human_notified flag so resolution notification can be sent
+          updates.push("human_notified = 0");
         }
 
         updates.push("updated_at = ?");
@@ -1064,11 +1067,13 @@ export function createMcpServer(): McpServer {
               assignee: assignee_arm_id,
             });
 
+            const text = `Bug ${bug_id} updated: status=${status}${resolution ? `, resolution provided` : ''}${assignee_arm_id ? `, assigned to ${assignee_arm_id}` : ''}`;
+
             return {
               content: [
                 {
                   type: "text" as const,
-                  text: `Bug ${bug_id} updated: status=${status}${resolution ? `, resolution provided` : ''}${assignee_arm_id ? `, assigned to ${assignee_arm_id}` : ''}`,
+                  text,
                 },
               ],
             };

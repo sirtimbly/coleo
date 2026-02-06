@@ -3328,13 +3328,13 @@ ${originalTask.id}`;
     try {
       // Find bugs that were resolved/closed since last check
       const recentlyResolvedBugs = this.db.query(`
-        SELECT id, title, blockers, resolved_at
+        SELECT id, title, description, priority, resolution, status, blockers, resolved_at
         FROM bugs
         WHERE status IN ('resolved', 'closed')
           AND resolved_at IS NOT NULL
           AND resolved_at > datetime('now', '-1 hour')  -- Check last hour
           AND json_array_length(blockers) > 0
-      `).all() as Array<{ id: string; title: string; blockers: string; resolved_at: string }>;
+      `).all() as Array<{ id: string; title: string; description: string; priority: string; resolution: string; status: string; blockers: string; resolved_at: string }>;
 
       for (const bug of recentlyResolvedBugs) {
         const blockedTaskIds = JSON.parse(bug.blockers) as string[];
@@ -3378,6 +3378,38 @@ ${originalTask.id}`;
               bugId: bug.id,
             });
           }
+        }
+
+        // Check if this bug has already been notified about (using human_notified flag)
+        const bugNotified = this.db.query("SELECT human_notified FROM bugs WHERE id = ?").get(bug.id) as { human_notified: number } | undefined;
+
+        // Send bug resolution notification if priority is high or critical and not yet notified
+        if ((bug.priority === 'critical' || bug.priority === 'high') && bugNotified?.human_notified !== 1) {
+          const blockedTasks = this.tasks.filter(t => blockedTaskIds.includes(t.id));
+          const body = await this.templates.renderTemplate("human-bug-resolved.jinja", {
+            bug_id: bug.id,
+            title: bug.title,
+            priority: bug.priority,
+            resolution: bug.resolution || "No details provided",
+            status: bug.status,
+            blocking_tasks_count: blockedTasks.length,
+            blocked_tasks_list: blockedTasks.length > 0
+              ? blockedTasks.map(t => `- ${t.subject} (${t.id})`).join("\n")
+              : "None",
+          });
+          await this.sendToHuman({
+            subject: `[coleo] Bug Resolved: ${bug.title}`,
+            body,
+            headers: {
+              "X-Coleo-Type": "bug-resolved",
+              "X-Coleo-Bug-Id": bug.id,
+            },
+          });
+
+          this.log(`Sent bug resolution notification for ${bug.id}`);
+
+          // Mark bug as human notified
+          this.db.run(`UPDATE bugs SET human_notified = TRUE WHERE id = ?`, [bug.id]);
         }
       }
     } catch (err) {
