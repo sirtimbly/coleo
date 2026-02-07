@@ -20,19 +20,22 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked" | "cancelled";
+  status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked" | "cancelled";
   priority: "critical" | "high" | "normal" | "low";
-  sourceType: "manual" | "plan" | "email" | "discovery" | "proposal";
+  sourceType: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
   sourceRef: string | null;
   phase: string | null;
   domain: string | null;
+  classification: string | null;
   assignedTo: string | null;
+  dependencyBlocked: boolean;
   assignedArmName?: string;
   consensusStatus?: "pending" | "in_progress" | "reached" | "failed";
   planLineUid?: string | null;
   sortOrder?: number | null;
   commentCount?: number;
   lastCommentAt?: string | null;
+  mailThreadId?: string | null;
   progress?: number;
   createdAt: string;
   updatedAt: string;
@@ -41,6 +44,7 @@ export interface Task {
   startedAt: string | null;
   dueDate: string | null;
   artifacts: string[];
+  context: Record<string, unknown>;
   metadata: Record<string, unknown>;
 }
 
@@ -54,13 +58,16 @@ interface TaskRow {
   source_ref: string | null;
   phase: string | null;
   domain: string | null;
+  classification: string | null;
   assigned_to: string | null;
+  dependency_blocked: number | null;
   assigned_arm_name: string | null;
   consensus_status: string | null;
   plan_line_uid: string | undefined;
   sort_order: number | null;
   comment_count: number | null;
   last_comment_at: string | null;
+  mail_thread_id: string | null;
   progress: number | null;
   created_at: string;
   updated_at: string;
@@ -69,6 +76,7 @@ interface TaskRow {
   started_at: string | null;
   due_date: string | null;
   artifacts: string;
+  context: string | null;
   metadata: string;
 }
 
@@ -83,13 +91,16 @@ function parseTaskRow(row: TaskRow): Task {
     sourceRef: row.source_ref,
     phase: row.phase,
     domain: row.domain,
+    classification: row.classification,
     assignedTo: row.assigned_to,
+    dependencyBlocked: row.dependency_blocked === 1,
     assignedArmName: row.assigned_arm_name || undefined,
     consensusStatus: (row.consensus_status as Task["consensusStatus"]) || undefined,
     planLineUid: row.plan_line_uid,
     sortOrder: row.sort_order,
     commentCount: row.comment_count ?? 0,
     lastCommentAt: row.last_comment_at,
+    mailThreadId: row.mail_thread_id,
     progress: row.progress ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -98,6 +109,7 @@ function parseTaskRow(row: TaskRow): Task {
     startedAt: row.started_at,
     dueDate: row.due_date,
     artifacts: JSON.parse(row.artifacts || "[]"),
+    context: JSON.parse(row.context || "{}"),
     metadata: JSON.parse(row.metadata || "{}"),
   };
 }
@@ -251,14 +263,14 @@ export function createTasksRoutes() {
     const rows = db.query(`
       SELECT
         t.id, t.subject, t.description, t.status, t.priority,
-        t.source_type, t.source_ref, t.phase, t.domain,
+        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.consensus_status, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
         t.comment_count, t.last_comment_at,
-        t.progress,
+        t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
-        t.artifacts, t.metadata
+        t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
@@ -266,12 +278,13 @@ export function createTasksRoutes() {
         t.sort_order ASC,
         CASE t.status
           WHEN 'in_progress' THEN 1
-          WHEN 'claimed' THEN 2
-          WHEN 'pending' THEN 3
-          WHEN 'blocked' THEN 4
-          WHEN 'completed' THEN 5
-          WHEN 'failed' THEN 6
-          WHEN 'cancelled' THEN 7
+          WHEN 'completing' THEN 2
+          WHEN 'claimed' THEN 3
+          WHEN 'pending' THEN 4
+          WHEN 'blocked' THEN 5
+          WHEN 'completed' THEN 6
+          WHEN 'failed' THEN 7
+          WHEN 'cancelled' THEN 8
         END,
         CASE t.priority
           WHEN 'critical' THEN 1
@@ -326,14 +339,14 @@ export function createTasksRoutes() {
     const row = db.query(`
       SELECT
         t.id, t.subject, t.description, t.status, t.priority,
-        t.source_type, t.source_ref, t.phase, t.domain,
+        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.consensus_status,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
         t.comment_count, t.last_comment_at,
-        t.progress,
+        t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
-        t.artifacts, t.metadata
+        t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
       WHERE t.id = ?
@@ -402,13 +415,19 @@ export function createTasksRoutes() {
 app.post("/", async (c) => {
   const db = c.get("db");
   const body = await c.req.json<{
+    id?: string;
     subject: string;
     description: string;
+    status?: Task["status"];
     priority?: Task["priority"];
     domain?: string;
+    classification?: string;
     phase?: string;
     sourceType?: Task["sourceType"];
     sourceRef?: string;
+    mailThreadId?: string;
+    context?: Record<string, unknown>;
+    sortOrder?: number;
     dueDate?: string;
     progress?: number;
     metadata?: Record<string, unknown>;
@@ -422,29 +441,39 @@ app.post("/", async (c) => {
       throw HttpError.badRequest("description is required");
     }
 
-    // Generate sequential task ID
-    const maxIdResult = db.query("SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER)) as max_num FROM tasks WHERE id LIKE 'task-%'").get() as { max_num: number | null };
-    const nextNum = (maxIdResult?.max_num ?? 0) + 1;
-    const id = `task-${nextNum}`;
+    const providedId = body.id?.trim();
+    let id: string;
+    if (providedId) {
+      id = providedId;
+    } else {
+      // Generate sequential task ID
+      const maxIdResult = db.query("SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER)) as max_num FROM tasks WHERE id LIKE 'task-%'").get() as { max_num: number | null };
+      const nextNum = (maxIdResult?.max_num ?? 0) + 1;
+      id = `task-${nextNum}`;
+    }
     
     // Get current max sort_order to place new task at the end
     const maxSortOrder = db.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM tasks").get() as { max_sort: number };
-    const newSortOrder = (maxSortOrder?.max_sort ?? -1) + 1;
+    const newSortOrder = body.sortOrder ?? ((maxSortOrder?.max_sort ?? -1) + 1);
     
     const now = new Date().toISOString();
 
     db.run(`
-      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, due_date, sort_order, progress, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, sort_order, progress, metadata, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       body.subject.trim(),
       body.description.trim(),
+      body.status || "pending",
       body.priority || "normal",
       body.sourceType || "manual",
       body.sourceRef || null,
       body.phase || null,
       body.domain || null,
+      body.classification || null,
+      body.mailThreadId || null,
+      JSON.stringify(body.context || {}),
       body.dueDate || null,
       newSortOrder, // Place at the end of the list
       Math.min(Math.max(body.progress ?? 0, 0), 100), // Clamp between 0-100
@@ -461,13 +490,13 @@ app.post("/", async (c) => {
     const row = db.query(`
       SELECT 
         t.id, t.subject, t.description, t.status, t.priority,
-        t.source_type, t.source_ref, t.phase, t.domain,
+        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, NULL as assigned_arm_name,
-        t.consensus_status, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
         t.comment_count, t.last_comment_at,
-        t.created_at, t.updated_at, t.completed_at,
+        t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
-        t.artifacts, t.metadata
+        t.artifacts, t.context, t.metadata
       FROM tasks t
       WHERE t.id = ?
     `).get(id) as TaskRow;
@@ -488,8 +517,13 @@ app.patch("/:id", async (c) => {
     status?: Task["status"];
     priority?: Task["priority"];
     domain?: string;
+    classification?: string | null;
     phase?: string;
     assignedTo?: string | null;
+    dependencyBlocked?: boolean;
+    mailThreadId?: string | null;
+    context?: Record<string, unknown>;
+    sortOrder?: number | null;
     dueDate?: string | null;
     progress?: number;
     artifacts?: string[];
@@ -543,6 +577,11 @@ app.patch("/:id", async (c) => {
       values.push(body.domain);
     }
 
+    if (body.classification !== undefined) {
+      updates.push("classification = ?");
+      values.push(body.classification);
+    }
+
     if (body.phase !== undefined) {
       updates.push("phase = ?");
       values.push(body.phase);
@@ -551,6 +590,26 @@ app.patch("/:id", async (c) => {
     if (body.assignedTo !== undefined) {
       updates.push("assigned_to = ?");
       values.push(body.assignedTo);
+    }
+
+    if (body.dependencyBlocked !== undefined) {
+      updates.push("dependency_blocked = ?");
+      values.push(body.dependencyBlocked ? 1 : 0);
+    }
+
+    if (body.mailThreadId !== undefined) {
+      updates.push("mail_thread_id = ?");
+      values.push(body.mailThreadId);
+    }
+
+    if (body.context !== undefined) {
+      updates.push("context = ?");
+      values.push(JSON.stringify(body.context));
+    }
+
+    if (body.sortOrder !== undefined) {
+      updates.push("sort_order = ?");
+      values.push(body.sortOrder);
     }
 
     if (body.dueDate !== undefined) {
@@ -592,13 +651,14 @@ app.patch("/:id", async (c) => {
     const row = db.query(`
       SELECT
         t.id, t.subject, t.description, t.status, t.priority,
-        t.source_type, t.source_ref, t.phase, t.domain,
+        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.consensus_status,
-        t.progress,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.comment_count, t.last_comment_at,
+        t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
-        t.artifacts, t.metadata
+        t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
       WHERE t.id = ?
@@ -610,6 +670,7 @@ app.patch("/:id", async (c) => {
         pending: undefined,
         claimed: "task.claimed",
         in_progress: undefined,
+        completing: undefined,
         completed: "task.completed",
         failed: "task.failed",
         blocked: "task.blocked",

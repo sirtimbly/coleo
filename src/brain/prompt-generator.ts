@@ -55,43 +55,48 @@ export interface ContextBundleResult {
 
 /**
  * Generate task determination output showing what the brain would decide
+ * IMPORTANT: Task determination should only use the tasks API (database), not read plan files.
+ * Plan file reading happens in the plan sync process to populate the database, not here.
  */
 export async function generateTaskDetermination(
 	ctx: PromptContext,
 ): Promise<TaskDeterminationResult> {
-	const { db, projectRoot } = ctx;
-	const now = new Date().toISOString();
-
-	const plan = await readCurrentPlan(projectRoot);
-	const planExcerpt = plan.currentPhase || plan.content;
-	const phaseInfo = buildPhaseInfo(plan.currentPhase);
+	const { db } = ctx;
 	const snapshot = await buildStatusSnapshot(db);
+
+	// Determine phase from tasks in database, not from reading plan files
+	const phaseInfo = buildPhaseInfoFromDatabase(db);
 
 	const finalize = (
 		step: DeterminationStepResult,
 	): TaskDeterminationResult => ({
 		task: step.task,
 		reasoning: step.reasoning,
-		planExcerpt,
+		planExcerpt: "", // No plan excerpt - task determination relies on task context only
 		completedTasks: snapshot.completed,
 		openDiscoveries: snapshot.discoveries,
 	});
 
+	// Step 1: Look for existing active/claimed tasks
 	const activeTask = pickExistingActiveTask(db, phaseInfo.label);
 	if (activeTask) {
 		return finalize(activeTask);
 	}
 
+	// Step 2: Check for tasks that can be unblocked
 	const unblockedTask = tryUnblockDependencies(db, phaseInfo.label);
 	if (unblockedTask) {
 		return finalize(unblockedTask);
 	}
 
-	const newPlanTask = createPlanTaskDeliverable(db, plan, phaseInfo.label, now);
-	if (newPlanTask) {
-		return finalize(newPlanTask);
+	// Step 3: Return next pending task from database
+	// Don't create tasks from plan here - that's the sync process's job
+	const pendingTask = getNextPendingTask(db, phaseInfo.label);
+	if (pendingTask) {
+		return finalize(pendingTask);
 	}
 
+	// No tasks available
 	return finalize(buildNoTaskResult(phaseInfo));
 }
 
@@ -162,10 +167,19 @@ function pickExistingActiveTask(
 		.query(`
     SELECT id, subject, description, status, priority, domain, assigned_arms, consensus_status
     FROM tasks
-    WHERE status IN ('pending', 'claimed', 'in_progress', 'verification_pending')
+    WHERE status IN ('claimed', 'in_progress', 'completing', 'verification_pending')
       AND (consensus_status IS NULL OR consensus_status != 'reached')
       AND (phase = ? OR phase = '' OR phase IS NULL)
-    ORDER BY created_at ASC
+    ORDER BY
+      CASE status
+        WHEN 'in_progress' THEN 1
+        WHEN 'completing' THEN 2
+        WHEN 'claimed' THEN 3
+        WHEN 'verification_pending' THEN 4
+        ELSE 5
+      END,
+      updated_at DESC,
+      created_at ASC
   `)
 		.all(phaseValue) as Array<{
 		id: string;
@@ -194,7 +208,7 @@ function pickExistingActiveTask(
 			priority: task.priority,
 			domain: task.domain || undefined,
 		},
-		reasoning: `Active task with ${assignedArms.length} arm(s) assigned${task.consensus_status ? `, consensus: ${task.consensus_status}` : ""}`,
+		reasoning: `Active ${task.status} task with ${assignedArms.length} arm(s) assigned${task.consensus_status ? `, consensus: ${task.consensus_status}` : ""}`,
 	};
 }
 
@@ -266,6 +280,48 @@ function tryUnblockDependencies(
 	}
 
 	return null;
+}
+
+/**
+ * Get the next pending task from the database
+ * This replaces createPlanTaskDeliverable - task creation is done by the sync process
+ */
+function getNextPendingTask(
+	db: BrainDb,
+	phaseLabel: string,
+): DeterminationStepResult | null {
+	const phaseValue = phaseLabel || "";
+	const task = db
+		.query(`
+    SELECT id, subject, description, priority, domain
+    FROM tasks
+    WHERE status = 'pending'
+      AND dependency_blocked = 0
+      AND (phase = ? OR phase = '' OR phase IS NULL)
+    ORDER BY 
+      CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
+      created_at ASC
+    LIMIT 1
+  `)
+		.get(phaseValue) as
+		| { id: string; subject: string; description: string; priority: string; domain: string | null }
+		| undefined;
+
+	if (!task) {
+		return null;
+	}
+
+	return {
+		task: {
+			id: task.id,
+			subject: task.subject,
+			description: task.description,
+			classification: task.domain || "development",
+			priority: task.priority,
+			domain: task.domain || undefined,
+		},
+		reasoning: `Returning next pending task from database: ${task.subject}`,
+	};
 }
 
 function createPlanTaskDeliverable(
@@ -455,9 +511,9 @@ function collectDependenciesForTask(
 			`Plan references "${dep}" but no matching tasks were found in SQLite.`,
 		);
 	});
-	keywordResult.missingReasons.forEach((reason) =>
-		planUpdateReasons.add(reason),
-	);
+	keywordResult.missingReasons.forEach((reason) => {
+		planUpdateReasons.add(reason);
+	});
 
 	return {
 		dependencies: Array.from(dependencyMap.values()),
@@ -1305,48 +1361,46 @@ Good luck!`;
 
 /**
  * Format task determination as plain text for CLI output
+ * Note: No PLAN STATUS section is included - task determination relies on tasks API only
  */
 export function formatTaskDetermination(
 	result: TaskDeterminationResult,
 ): string {
 	let output = `=== OCTOPAI TASK DETERMINATION ===
-Generated: ${new Date().toISOString()}
-
-## REASONING
-${result.reasoning}
-
-`;
+ Generated: ${new Date().toISOString()}
+ 
+ ## REASONING
+ ${result.reasoning}
+ 
+ `;
 
 	if (result.task) {
 		output += `## RECOMMENDED TASK
-ID: ${result.task.id || "(synthetic - not in database)"}
-Subject: ${result.task.subject}
-Classification: ${result.task.classification}
-Priority: ${result.task.priority}
-${result.task.domain ? `Domain: ${result.task.domain}` : ""}
-
-Description:
-${result.task.description}
-`;
+ ID: ${result.task.id || "(synthetic - not in database)"}
+ Subject: ${result.task.subject}
+ Classification: ${result.task.classification}
+ Priority: ${result.task.priority}
+ ${result.task.domain ? `Domain: ${result.task.domain}` : ""}
+ 
+ Description:
+ ${result.task.description}
+ `;
 	} else {
 		output += `## NO TASK DETERMINED
-Unable to determine next task. See reasoning above.
-`;
+ Unable to determine next task. See reasoning above.
+ `;
 	}
 
 	output += `
-
-## PLAN STATUS
-${result.planExcerpt.slice(0, 1000)}
-
-## COMPLETED TASKS (${result.completedTasks.length})
-${result.completedTasks.length > 0 ? result.completedTasks.join("\n") : "None recorded"}
-
-## OPEN DISCOVERIES (${result.openDiscoveries.length})
-${result.openDiscoveries.length > 0 ? result.openDiscoveries.join("\n") : "None recorded"}
-
-=== END TASK DETERMINATION ===
-`;
+ 
+ ## COMPLETED TASKS (${result.completedTasks.length})
+ ${result.completedTasks.length > 0 ? result.completedTasks.join("\n") : "None recorded"}
+ 
+ ## OPEN DISCOVERIES (${result.openDiscoveries.length})
+ ${result.openDiscoveries.length > 0 ? result.openDiscoveries.join("\n") : "None recorded"}
+ 
+ === END TASK DETERMINATION ===
+ `;
 	return output;
 }
 

@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { __promptTestables } from "../prompt-generator";
+import { __promptTestables, generateTaskDetermination } from "../prompt-generator";
 
 const NOW = new Date("2026-01-16T00:00:00Z").toISOString();
 
@@ -171,6 +171,36 @@ describe("prompt-generator dependencies", () => {
     expect(planUpdateTask).toBeDefined();
     expect(planUpdateTask!.subject).toBe("Update plan dependencies for Phase 9");
     expect(planUpdateTask!.description).toContain("Missing tracked dependency");
+
+    db.close();
+  });
+
+  it("treats unassigned pending work as next pending task, not active task", async () => {
+    const db = createTestDb();
+
+    insertTask(db, {
+      id: "pending-normal",
+      subject: "Normal pending work",
+      status: "pending",
+      priority: "normal",
+      phase: "Phase 1",
+    });
+    insertTask(db, {
+      id: "pending-high",
+      subject: "High priority pending work",
+      status: "pending",
+      priority: "high",
+      phase: "Phase 1",
+    });
+
+    const result = await generateTaskDetermination({
+      projectRoot: process.cwd(),
+      coleoDir: process.cwd(),
+      db,
+    });
+
+    expect(result.task?.id).toBe("pending-high");
+    expect(result.reasoning).toContain("Returning next pending task from database");
 
     db.close();
   });
