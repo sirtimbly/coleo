@@ -781,15 +781,10 @@ export function registerArmCommands(program: Command): void {
     .option("-f, --filter <types>", "Filter event types (comma-separated, e.g. 'status,tool')")
     .action(async (name?: string, options?: { all?: boolean; filter?: string }) => {
       const { apiUrl, headers } = getApiConfig();
-      const apiKey = process.env.COLEO_API_KEY;
+      const apiKey = headers["X-API-Key"] || "";
 
       if (!await isApiRunning()) {
         console.error("API server is not running. Start it with: coleo serve");
-        process.exit(1);
-      }
-
-      if (!apiKey) {
-        console.error("COLEO_API_KEY environment variable is required for WebSocket connection");
         process.exit(1);
       }
 
@@ -924,7 +919,7 @@ export function registerArmCommands(program: Command): void {
     options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }
   ): Promise<void> {
     const { apiUrl, headers } = getApiConfig();
-    const apiKey = process.env.COLEO_API_KEY;
+    const apiKey = headers["X-API-Key"] || "";
     const showTools = options?.tools !== false;
     const showSystem = options?.system !== false;
     const historyCount = parseInt(options?.history || "2", 10);
@@ -932,11 +927,6 @@ export function registerArmCommands(program: Command): void {
 
     if (!(await isApiRunning())) {
       console.error("API server is not running. Start it with: coleo serve");
-      process.exit(1);
-    }
-
-    if (!apiKey) {
-      console.error("COLEO_API_KEY environment variable is required for WebSocket connection");
       process.exit(1);
     }
 
@@ -982,6 +972,8 @@ export function registerArmCommands(program: Command): void {
     }
     console.log("Press Ctrl+C to stop\n");
 
+    let activeSessionId: string | undefined;
+
     if (historyCount > 0) {
       try {
         const sessionsRes = await fetch(`${opencodeBaseUrl}/session`);
@@ -990,6 +982,7 @@ export function registerArmCommands(program: Command): void {
           if (sessions.length > 0) {
             const currentSession = sessions[sessions.length - 1];
             if (currentSession) {
+              activeSessionId = currentSession.id;
               console.log(`Session: ${currentSession.title || currentSession.id}`);
               console.log("─".repeat(60));
 
@@ -1009,10 +1002,8 @@ export function registerArmCommands(program: Command): void {
                 }>;
 
                 const recentMessages = messages.slice(-historyCount);
-                console.error(`[DEBUG HISTORY] Loaded ${messages.length} messages, showing ${recentMessages.length}`);
                 for (const msg of recentMessages) {
                   const role = msg.info.role;
-                  console.error(`[DEBUG HISTORY] Message role=${role}, parts=${msg.parts.length}`);
                   const roleLabel =
                     role === "assistant"
                       ? "🤖 Assistant"
@@ -1074,56 +1065,125 @@ export function registerArmCommands(program: Command): void {
     let lastWasNewline = true;
     let currentToolName = "";
     let isProcessing = false;
+    const messageRoles = new Map<string, string>();
+    const renderedTextByPartId = new Map<string, string>();
+    const renderedAssistantMessageIds = new Set<string>();
 
-    const processEvent = (eventStr: string) => {
+    const normalizeRole = (value: unknown): string | undefined => {
+      if (typeof value !== "string" || value.length === 0) return undefined;
+      if (value === "assistant" || value === "user" || value === "system") return value;
+      return value;
+    };
+
+    const printRoleHeader = (role: string): void => {
+      if (role === currentRole) return;
+      if (!lastWasNewline) {
+        process.stdout.write("\n");
+      }
+      console.log("─".repeat(60));
+      const roleLabel =
+        role === "assistant"
+          ? "🤖 Assistant"
+          : role === "user"
+            ? "👤 User"
+            : role === "system"
+              ? "⚙️ System"
+              : role;
+      console.log(roleLabel);
+      console.log("");
+      currentRole = role;
+      lastWasNewline = true;
+    };
+
+    const clearProcessingIndicator = (role: string): void => {
+      if (isProcessing && role === "assistant") {
+        isProcessing = false;
+        process.stdout.write("\r" + " ".repeat(20) + "\r");
+      }
+    };
+
+    const renderCompletedAssistantMessages = async (): Promise<void> => {
+      if (!activeSessionId) return;
+      try {
+        const msgsRes = await fetch(`${opencodeBaseUrl}/session/${activeSessionId}/message?limit=${Math.max(10, historyCount * 2)}`);
+        if (!msgsRes.ok) return;
+        const messages = (await msgsRes.json()) as Array<{
+          info?: { id?: string; role?: string };
+          parts?: Array<{ type?: string; text?: string }>;
+        }>;
+
+        for (const msg of messages) {
+          const role = normalizeRole(msg.info?.role);
+          if (role !== "assistant") continue;
+          const messageId = msg.info?.id;
+          if (messageId && renderedAssistantMessageIds.has(messageId)) continue;
+
+          const textParts = (msg.parts || [])
+            .filter((part) => part.type === "text" && typeof part.text === "string" && part.text.length > 0)
+            .map((part) => part.text as string);
+
+          if (textParts.length === 0) continue;
+          printRoleHeader("assistant");
+          clearProcessingIndicator("assistant");
+
+          for (const text of textParts) {
+            process.stdout.write(text);
+            lastWasNewline = text.endsWith("\n");
+          }
+
+          if (messageId) {
+            renderedAssistantMessageIds.add(messageId);
+          }
+        }
+      } catch {
+        // Best-effort fallback only
+      }
+    };
+
+    const processEvent = async (eventStr: string) => {
       const lines = eventStr.split("\n");
-      let eventType = "";
-      let data = "";
+      const dataLines: string[] = [];
 
       for (const line of lines) {
-        if (line.startsWith("event:")) {
-          eventType = line.slice(6).trim();
-        } else if (line.startsWith("data:")) {
-          data = line.slice(5).trim();
+        if (line.startsWith("data:")) {
+          dataLines.push(line.slice(5).trimStart());
         }
       }
 
-      if (!data) return;
+      if (dataLines.length === 0) return;
+      const data = dataLines.join("\n");
+      if (!data.trim()) return;
 
       try {
         const event = JSON.parse(data) as { type: string; properties: Record<string, unknown> };
         const { type, properties: props } = event;
-        
-        // TEMPORARY: Log all events to debug
-        if (type.includes('message') || type.includes('part')) {
-          console.error(`[DEBUG] Event: ${type}`);
+
+        const sessionIdCandidate = props.sessionID ?? props.sessionId;
+        if (typeof sessionIdCandidate === "string" && sessionIdCandidate.length > 0) {
+          activeSessionId = sessionIdCandidate;
         }
 
         if (type === "message.created" || type === "message.updated") {
           const info = props.info as Record<string, unknown> | undefined;
-          const role = info?.role as string;
-          if (role && role !== currentRole) {
-            if (!lastWasNewline) {
-              process.stdout.write("\n");
-            }
-            console.log("─".repeat(60));
-            const roleLabel =
-              role === "assistant"
-                ? "🤖 Assistant"
-                : role === "user"
-                  ? "👤 User"
-                  : role === "system"
-                    ? "⚙️ System"
-                    : role;
-            console.log(roleLabel);
-            console.log("");
-            currentRole = role;
-            lastWasNewline = true;
+          const role = normalizeRole(info?.role);
+          const messageId = typeof info?.id === "string" ? info.id : undefined;
+          if (messageId && role) {
+            messageRoles.set(messageId, role);
+          }
+          const infoSessionId = info?.sessionID ?? info?.sessionId;
+          if (typeof infoSessionId === "string" && infoSessionId.length > 0) {
+            activeSessionId = infoSessionId;
+          }
+
+          if (role) {
+            printRoleHeader(role);
 
             // Show processing indicator after user message
             if (role === "user") {
               isProcessing = true;
               process.stdout.write("⏳ Thinking...");
+            } else if (role === "assistant") {
+              clearProcessingIndicator(role);
             }
           }
 
@@ -1139,27 +1199,48 @@ export function registerArmCommands(program: Command): void {
 
         if (type === "message.part.updated" || type === "message.part.created") {
           const part = props.part as Record<string, unknown> | undefined;
-          const delta = props.delta as string | undefined;
+          const delta = typeof props.delta === "string" ? props.delta : undefined;
 
           if (part) {
             const partType = part.type as string;
+            const partId = typeof part.id === "string" ? part.id : undefined;
+            const messageId = (typeof part.messageID === "string" ? part.messageID : undefined)
+              || (typeof part.messageId === "string" ? part.messageId : undefined)
+              || (typeof props.messageID === "string" ? props.messageID : undefined)
+              || (typeof props.messageId === "string" ? props.messageId : undefined);
+            const role = normalizeRole(part.role)
+              || normalizeRole(props.role)
+              || (messageId ? messageRoles.get(messageId) : undefined)
+              || (isProcessing ? "assistant" : undefined);
 
             if (partType === "text") {
               // Use delta for streaming updates, fall back to full text when available
-              const textContent = part.text as string | undefined;
-              const textToWrite = delta ?? textContent;
-              
-              // TEMPORARY: Debug text parts
-              console.error(`[DEBUG TEXT] delta=${delta ? 'yes' : 'no'}, textContent=${textContent ? textContent.length : 0} chars, textToWrite=${textToWrite ? textToWrite.length : 0} chars`);
-              
+              const textContent = typeof part.text === "string" ? part.text : undefined;
+              let textToWrite = delta;
+
+              if (!textToWrite && textContent) {
+                if (partId) {
+                  const previous = renderedTextByPartId.get(partId) || "";
+                  textToWrite = textContent.startsWith(previous)
+                    ? textContent.slice(previous.length)
+                    : textContent;
+                  renderedTextByPartId.set(partId, textContent);
+                } else {
+                  textToWrite = textContent;
+                }
+              }
+
               if (textToWrite && textToWrite.length > 0) {
                 // Clear processing indicator on first assistant text
-                if (isProcessing && currentRole === "assistant") {
-                  isProcessing = false;
-                  process.stdout.write("\r" + " ".repeat(20) + "\r"); // Clear "Thinking..."
+                if (role) {
+                  printRoleHeader(role);
                 }
+                clearProcessingIndicator(role || currentRole);
                 process.stdout.write(textToWrite);
                 lastWasNewline = textToWrite.endsWith("\n");
+                if ((role || currentRole) === "assistant" && messageId) {
+                  renderedAssistantMessageIds.add(messageId);
+                }
               }
             }
 
@@ -1194,7 +1275,18 @@ export function registerArmCommands(program: Command): void {
         if (type === "session.status") {
           const status = props.status as Record<string, unknown> | undefined;
           const statusType = status?.type as string;
+          if (!activeSessionId) {
+            const statusSessionId = status?.sessionID ?? status?.sessionId ?? props.sessionID ?? props.sessionId;
+            if (typeof statusSessionId === "string" && statusSessionId.length > 0) {
+              activeSessionId = statusSessionId;
+            }
+          }
           if (statusType === "idle") {
+            if (isProcessing) {
+              isProcessing = false;
+              process.stdout.write("\r" + " ".repeat(20) + "\r");
+            }
+            await renderCompletedAssistantMessages();
             if (!lastWasNewline) process.stdout.write("\n");
             console.log("\n" + "─".repeat(60));
             console.log("✓ Response complete");
@@ -1278,7 +1370,7 @@ export function registerArmCommands(program: Command): void {
 
         for (const eventStr of events) {
           if (eventStr.trim()) {
-            processEvent(eventStr);
+            await processEvent(eventStr);
           }
         }
       }

@@ -16,6 +16,10 @@ import { mkdir, readFile, writeFile, unlink } from "fs/promises";
 import { join } from "path";
 import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
+import { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime } from "./utils";
+
+// Re-export utility functions for backward compatibility
+export { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime } from "./utils";
 
 export type ServiceType = "server" | "brain" | "web";
 
@@ -61,18 +65,6 @@ export function getLogFilePath(service: ServiceType): string {
  */
 async function ensureRunDir(): Promise<void> {
   await mkdir(getRunDir(), { recursive: true });
-}
-
-/**
- * Check if a process is running by PID
- */
-export function isProcessRunning(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -137,26 +129,6 @@ export async function getServiceStatus(service: ServiceType): Promise<ServiceSta
     startedAt: info.startedAt,
     uptime,
   };
-}
-
-/**
- * Check if self-modification is allowed
- * Only arms with COLEO_SELF_MODIFY=1 can restart services
- */
-export function isSelfModifyAllowed(): boolean {
-  return process.env.COLEO_SELF_MODIFY === "1";
-}
-
-/**
- * Guard function that throws if self-modification is not allowed
- */
-export function requireSelfModify(action: string): void {
-  if (!isSelfModifyAllowed()) {
-    throw new Error(
-      `Action "${action}" requires COLEO_SELF_MODIFY=1 environment variable. ` +
-      `This is only allowed for arms working on Coleo itself.`
-    );
-  }
 }
 
 /**
@@ -414,21 +386,4 @@ export async function getServiceLogs(
   } catch {
     return [];
   }
-}
-
-/**
- * Format uptime in human-readable format
- */
-export function formatUptime(seconds: number): string {
-  if (seconds < 60) {
-    return `${seconds}s`;
-  }
-  if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
-  }
-  const hours = Math.floor(seconds / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  return `${hours}h ${mins}m`;
 }

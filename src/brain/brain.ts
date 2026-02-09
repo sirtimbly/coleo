@@ -688,6 +688,8 @@ export class Brain {
 			config: {
 				checkIntervalMs: 30 * 1000, // 30 seconds
 				eventWindowMs: 10 * 60 * 1000, // 10 minutes
+				idlePromptDelayMs: 12 * 60 * 1000, // 12 minutes
+				startupGracePeriodMs: 5 * 60 * 1000, // 5 minutes
 				autoInterventionEnabled: true,
 			},
 			onResult: (result) => {
@@ -2176,6 +2178,13 @@ export class Brain {
 			| "system";
 		sourceRef?: string;
 	}): Promise<Task | null> {
+		// DB currently rejects source_type="system" via CHECK constraint.
+		// Normalize to a supported source type to avoid task creation failures.
+		const normalizedInput =
+			input.sourceType === "system"
+				? { ...input, sourceType: "manual" as const }
+				: input;
+
 		const response = await this.apiRequest<{
 			task: {
 				id: string;
@@ -2197,7 +2206,7 @@ export class Brain {
 			};
 		}>("/api/tasks", {
 			method: "POST",
-			body: JSON.stringify(input),
+			body: JSON.stringify(normalizedInput),
 		});
 
 		if (!response?.task) {
@@ -2732,7 +2741,13 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			return;
 		}
 
-		await this.initiateTaskValidation(taskId, summary, artifacts, task);
+		// Skip validation for validation tasks to prevent infinite loops
+		if (task.subject?.startsWith("Validate completion:")) {
+			this.log(`Skipping validation for validation task ${taskId} to prevent infinite loop`);
+			await this.finalizeTaskCompletion(taskId, summary, artifacts);
+		} else {
+			await this.initiateTaskValidation(taskId, summary, artifacts, task);
+		}
 	}
 
 	/**
@@ -5187,19 +5202,40 @@ Report findings using bug resolution workflow.`;
 		const issues: string[] = [];
 
 		// 1. Check Database (CRITICAL - required for everything)
-		// Database health is read from API status to keep brain decoupled from SQL.
+		// Use dedicated infrastructure-health endpoint first because /api/status can be slow.
 		try {
-			const systemStatus = await this.apiRequest<{
-				infrastructure?: {
-					database?: { healthy: boolean; error?: string };
-				};
-			}>("/api/status");
-			const dbHealth = systemStatus?.infrastructure?.database;
+			let dbHealth:
+				| { healthy: boolean; error?: string }
+				| undefined
+				| null = null;
+
+			const infrastructure = await this.apiRequest<{
+				components?: Array<{
+					component: string;
+					healthy: boolean;
+					error?: string;
+				}>;
+			}>("/api/brain/internal/infrastructure-health");
+			dbHealth = infrastructure?.components?.find(
+				(component) => component.component === "database",
+			);
+
+			// Backward-compatible fallback for older API versions.
+			if (!dbHealth) {
+				const systemStatus = await this.apiRequest<{
+					infrastructure?: {
+						database?: { healthy: boolean; error?: string };
+					};
+				}>("/api/status");
+				dbHealth = systemStatus?.infrastructure?.database;
+			}
+
 			if (!dbHealth) {
 				this.infrastructureHealth.database = {
 					healthy: false,
 					lastCheck: now,
-					error: "Database health unavailable from API",
+					error:
+						"Database health unavailable from API (/api/brain/internal/infrastructure-health, /api/status)",
 				};
 				issues.push("Database health unavailable from API");
 			} else if (dbHealth.healthy) {

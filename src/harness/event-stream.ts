@@ -333,7 +333,8 @@ export function filterEvent(event: OpenCodeEvent): { shouldBroadcast: boolean; e
 
   // Message events
   if (type.startsWith('message.')) {
-    const role = (props.role as string) || 'unknown';
+    const info = props.info as Record<string, unknown> | undefined;
+    const role = (info?.role as string) || (props.role as string) || 'unknown';
     return {
       shouldBroadcast: true,
       eventName: type.replace('message.', 'message-'),

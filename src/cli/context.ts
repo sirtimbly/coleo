@@ -88,7 +88,7 @@ export interface ApiConfig {
 export function getApiConfig(): ApiConfig {
   const apiPort = process.env.COLEO_API_PORT || "8080";
   const apiHost = process.env.COLEO_API_HOST || "localhost";
-  const apiKey = process.env.COLEO_API_KEY;
+  const apiKey = process.env.COLEO_API_KEY || process.env.COLEO_API_TOKEN;
   const apiUrl = `http://${apiHost}:${apiPort}`;
 
   const headers: Record<string, string> = {

@@ -2,6 +2,32 @@
 
 Octopai is an AI agent orchestrator - a central brain coordinates semi-autonomous "arms" (AI agents).
 
+## Build, Test & Lint Commands
+
+```bash
+# Type checking (ALWAYS run after changes)
+bun run typecheck
+
+# Tests
+bun test src/**/__tests__/                    # Run all tests
+bun test src/api/__tests__/tasks.test.ts     # Run single test file
+bun test --watch src/**/__tests__/           # Watch mode
+
+# Integration & E2E
+bun run test:integration   # Quick regression tests
+bun run test:e2e          # Full regression suite
+
+# Build
+bun run build             # Build CLI + web
+bun run web:build         # Build web only
+
+# Dev servers
+bun run dev               # CLI dev
+bun run server            # API server
+bun run web:dev           # Vite dev server
+bun run brain             # Brain process
+```
+
 ## System of Record
 
 **SQLite is the system of record.** Don't create JSON files for state.
@@ -16,37 +42,11 @@ Octopai is an AI agent orchestrator - a central brain coordinates semi-autonomou
 
 Bun, TypeScript (strict), Hono, SQLite (bun:sqlite), React + Vite + TailwindCSS + shadcn/ui, MCP, Maildir
 
-## Technology Selection Principles
-
-### 1. Production-First Selection
-
-**Don't "start simple and migrate later"** when migration cost exceeds setup cost. Octopai is distributed (NATS, containers, multiple arms) - adding a container fits the architecture.
-
-**Choose production-grade when:** system is distributed, feature is core, long-running operation expected, migration would rewrite integration.
-
-### 2. Distributed & Recoverable by Default
-
-- Multiple arms run concurrently - no singleton assumptions
-- Arms can die anytime - state must be recoverable
-- Brain restarts are normal - derive state from persistent sources
-
-### 3. Data Persistence Hierarchy
-
-| Use Case | Technology |
-|----------|------------|
-| Structured state | SQLite |
-| Event streams | NATS JetStream |
-| Vector search | Qdrant |
-| Human communication | Maildir |
-| Configuration | TOML files |
-
-See [ADR-011](.project/decisions/011-production-first-technology-selection.md) for full rationale.
-
 ## Code Organization
 
 ```
 src/
-├── api/     # Hono API server
+├── api/     # Hono API server (routes in src/api/routes/*.ts)
 ├── arm/     # Arm spawning/management
 ├── brain/   # Central coordinator
 ├── cli/     # CLI commands
@@ -54,36 +54,70 @@ src/
 ├── mail/    # Maildir implementation
 ├── mcp/     # MCP server
 ├── types/   # Shared types
-└── web/     # React frontend
+└── web/     # React frontend (separate package.json)
 ```
 
-## Conventions
+## Code Style Guidelines
 
-**Database:** Migrations in `src/db/index.ts`. Parameterized queries only. `snake_case` columns, `camelCase` TypeScript.
+### TypeScript
+- **Strict mode enabled** - avoid `any`, use `unknown` with type guards
+- **Explicit return types** on exported functions
+- Use `interface` for object shapes, `type` for unions/aliases
+- Prefer `const` assertions for literal types
 
-**Brain/DB separation:** `src/brain/**` must not import `bun:sqlite` or open SQLite connections directly. The brain process reads/writes persistent state through HTTP API calls to `src/api/routes/**`, and the API server is the only layer that talks to SQLite.
+### Naming Conventions
+- **Files**: kebab-case (e.g., `task-manager.ts`)
+- **Functions/Variables**: camelCase
+- **Classes/Interfaces**: PascalCase
+- **Constants**: UPPER_SNAKE_CASE for true constants
+- **Database columns**: snake_case
+- **TypeScript properties**: camelCase
+- **Terminology**: "arm" not "tentacle", "harness" = agent type, "domain" = expertise area
 
-**API:** Routes in `src/api/routes/*.ts`. Use `HttpError` middleware. Return `{ arm: ... }` or `{ arms: [...] }`.
+### Imports
+- Group: external deps → internal modules → types
+- Use `import type { Foo }` for type-only imports
+- Prefer absolute imports for cross-module references
+- Use `bun:sqlite` not `node:sqlite`
 
-**TypeScript:** Run `bun run typecheck`. Avoid `any`.
+### Error Handling
+- Use `HttpError` middleware in API routes (`src/api/middleware/error.ts`)
+- Always return `{ error: string }` for errors
+- Status codes: 400 (bad request), 401 (unauthorized), 403 (forbidden), 404 (not found), 500 (server error)
+- Log unexpected errors with context
 
-**Naming:** "arm" not "tentacle", "harness" = agent type, "domain" = expertise area.
+### API Routes
+- Create routes in `src/api/routes/*.ts`
+- Return `{ arm: ... }` or `{ arms: [...] }` for single/plural resources
+- Use parameterized queries only (SQL injection prevention)
+- Apply `HttpError` for consistent error responses
+
+### Database
+- Migrations in `src/db/index.ts`
+- **Brain/DB separation**: `src/brain/**` must NOT import `bun:sqlite`
+- Brain reads/writes through HTTP API calls
+- API server is the only layer that talks to SQLite
+- Use WAL mode, foreign keys ON
+
+### Testing
+- Use `bun:test` (describe, it, expect, beforeEach, afterEach)
+- Create in-memory SQLite DB for tests
+- Clean up resources in `afterEach`
+- Test file naming: `*.test.ts`
 
 ## Multi-Agent Contention
 
 1. Run `git status` before committing - check for unexpected changes
-2. Don't commit files you didn't change - report via `report_contention` MCP tool
+2. Don't commit files you didn't change
 3. Check `claims` table before editing, use `claim_file` for major edits
 
 Signs: unexpected modified files, files changing between reads, merge conflicts, TypeScript errors in untouched files.
 
-## Search Tools
+## Semantic Search Tools
 
-### `search_code` - Semantic Code Search
+Use `search_code` for conceptual queries instead of grep:
 
-Use for conceptual queries instead of `grep`/`glob`:
-
-```
+```typescript
 search_code(
   query="how errors are handled",
   include_extensions=".ts,.tsx",
@@ -92,34 +126,16 @@ search_code(
 )
 ```
 
-### `search_docs` - Documentation
-
-| Source | Content |
-|--------|---------|
-| `gds` | GDS Design System |
-| `eng_portal` | ADRs, guides, RFCs |
-| `api` | API specs |
-
-```
-search_docs(query="Button component", sources="gds")
-```
-
-### `search_api` - API Endpoints
-
-```
-search_api(query="create field", service="fields-svc", method="POST")
-```
+Use `search_docs` for GDS components, ADRs, guides.
+Use `search_api` for API endpoint discovery.
 
 ## External SDK Integration
 
-Prefer official SDKs over raw fetch for type safety:
+Prefer official SDKs over raw fetch:
 
 ```typescript
 import { createOpencodeClient } from "@opencode-ai/sdk";
 const client = createOpencodeClient({ baseUrl: "http://localhost:4096" });
-const session = await client.session.create({ body: { title: "Session" } });
 ```
 
 Note: OpenCode SDK uses object format for models: `{ providerID: "opencode", modelID: "grok-code" }`
-
-If no SDK exists: generate from OpenAPI spec, or create typed wrappers with interfaces.

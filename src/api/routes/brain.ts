@@ -917,6 +917,66 @@ export function createBrainRoutes() {
     return c.json({ result });
   });
 
+  app.get("/internal/infrastructure-health", (c) => {
+    const db = c.get("db");
+
+    const components = new Map<string, {
+      component: string;
+      healthy: boolean;
+      optional: boolean;
+      error?: string;
+      lastCheck?: string;
+    }>();
+
+    try {
+      const rows = db.query(`
+        SELECT component, healthy, optional, error, last_check
+        FROM infrastructure_health
+      `).all() as Array<{
+        component: string;
+        healthy: number;
+        optional: number;
+        error: string | null;
+        last_check: string;
+      }>;
+
+      for (const row of rows) {
+        components.set(row.component, {
+          component: row.component,
+          healthy: row.healthy === 1,
+          optional: row.optional === 1,
+          error: row.error || undefined,
+          lastCheck: row.last_check,
+        });
+      }
+    } catch {
+      // Table may not exist yet; we still return a live DB check below.
+    }
+
+    try {
+      db.query("SELECT 1").get();
+      components.set("database", {
+        component: "database",
+        healthy: true,
+        optional: false,
+        error: undefined,
+        lastCheck: new Date().toISOString(),
+      });
+    } catch (err) {
+      components.set("database", {
+        component: "database",
+        healthy: false,
+        optional: false,
+        error: err instanceof Error ? err.message : "Connection failed",
+        lastCheck: new Date().toISOString(),
+      });
+    }
+
+    return c.json({
+      components: Array.from(components.values()),
+    });
+  });
+
   app.post("/internal/infrastructure-health", async (c) => {
     const db = c.get("db");
     const body = await c.req.json<InfrastructureHealthRequestBody>();

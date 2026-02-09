@@ -345,12 +345,16 @@ export class OpenCodeTuiHarness implements AgentHarness {
       try {
         // Use Coleo API to check available models (server runs on 8080)
         const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
-        resolvedProvider = resolved.providerId;
-        resolvedModel = resolved.modelId;
-        
         if (resolved.fallback) {
-          console.log(`[harness-tui] Model fallback: ${config.provider}/${config.model} -> ${resolved.providerId}/${resolved.modelId}`);
-          console.log(`[harness-tui] Reason: ${resolved.fallbackReason}`);
+          // Keep explicit user choice; API-side provider discovery can be stale.
+          console.log(
+            `[harness-tui] Keeping explicit model ${config.provider}/${config.model} ` +
+            `(resolver suggested fallback ${resolved.providerId}/${resolved.modelId})`
+          );
+          console.log(`[harness-tui] Fallback reason: ${resolved.fallbackReason}`);
+        } else {
+          resolvedProvider = resolved.providerId;
+          resolvedModel = resolved.modelId;
         }
       } catch (err) {
         console.log(`[harness-tui] Model resolution failed, using original: ${err}`);
@@ -475,7 +479,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
           body: {
             modelID: resolvedModel,
             providerID: resolvedProvider,
-            messageID: `init_${Date.now()}`,
+            messageID: `msg_${Date.now()}`,
           },
         });
         console.log(`[harness-tui] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);

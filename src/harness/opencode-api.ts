@@ -163,12 +163,16 @@ export class OpenCodeApiHarness implements AgentHarness {
         const apiUrl = process.env.COLEO_API_URL
           || (process.env.COLEO_API_PORT ? `http://localhost:${process.env.COLEO_API_PORT}` : "http://localhost:8080");
         const resolved = await resolveModel(config.provider, config.model, apiUrl);
-        resolvedProvider = resolved.providerId;
-        resolvedModel = resolved.modelId;
-        
         if (resolved.fallback) {
-          console.log(`[harness-api] Model fallback: ${config.provider}/${config.model} -> ${resolved.providerId}/${resolved.modelId}`);
-          console.log(`[harness-api] Reason: ${resolved.fallbackReason}`);
+          // Keep explicit user choice; API-side provider discovery can be stale.
+          console.log(
+            `[harness-api] Keeping explicit model ${config.provider}/${config.model} ` +
+            `(resolver suggested fallback ${resolved.providerId}/${resolved.modelId})`
+          );
+          console.log(`[harness-api] Fallback reason: ${resolved.fallbackReason}`);
+        } else {
+          resolvedProvider = resolved.providerId;
+          resolvedModel = resolved.modelId;
         }
       } catch (err) {
         console.log(`[harness-api] Model resolution failed, using original: ${err}`);
@@ -332,7 +336,7 @@ export class OpenCodeApiHarness implements AgentHarness {
           body: {
             modelID: resolvedModel,
             providerID: resolvedProvider,
-            messageID: `init_${Date.now()}`,
+            messageID: `msg_${Date.now()}`,
           },
         });
         console.log(`[harness-api] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
@@ -680,11 +684,24 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
+    const modelOverride = this.resolvePromptModel(apiSession, options?.model);
+    const body: {
+      parts: Array<{ type: "text"; text: string }>;
+      noReply: boolean;
+      model?: { providerID: string; modelID: string };
+    } = {
+      parts: [{ type: "text", text: prompt }],
+      noReply: false,
+    };
+
+    if (modelOverride) {
+      body.model = modelOverride;
+      console.log(`[harness-api] Using model: ${modelOverride.providerID}/${modelOverride.modelID}`);
+    }
+
     // Use SDK's async prompt endpoint
     const response = await apiSession.client.session.promptAsync({
-      body: {
-        parts: [{ type: "text", text: prompt }],
-      },
+      body,
       path: { id: apiSession.sessionId },
     });
 
@@ -707,10 +724,23 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending sync prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
+    const modelOverride = this.resolvePromptModel(apiSession);
+    const body: {
+      parts: Array<{ type: "text"; text: string }>;
+      noReply: boolean;
+      model?: { providerID: string; modelID: string };
+    } = {
+      parts: [{ type: "text", text: prompt }],
+      noReply: false,
+    };
+
+    if (modelOverride) {
+      body.model = modelOverride;
+      console.log(`[harness-api] Using model: ${modelOverride.providerID}/${modelOverride.modelID}`);
+    }
+
     const response = await apiSession.client.session.prompt({
-      body: {
-        parts: [{ type: "text", text: prompt }],
-      },
+      body,
       path: { id: apiSession.sessionId },
     });
 
@@ -839,6 +869,31 @@ export class OpenCodeApiHarness implements AgentHarness {
       // Server might be down
       return "dead";
     }
+  }
+
+  /**
+   * Resolve model override for prompt requests.
+   * Supports explicit `provider/model` override or session defaults from spawn.
+   */
+  private resolvePromptModel(
+    apiSession: ApiHarnessSession,
+    requestedModel?: string
+  ): { providerID: string; modelID: string } | undefined {
+    if (requestedModel && requestedModel.includes("/")) {
+      const [providerID, modelID] = requestedModel.split("/", 2);
+      if (providerID && modelID) {
+        return { providerID, modelID };
+      }
+    }
+
+    if (apiSession.provider && apiSession.model) {
+      return {
+        providerID: apiSession.provider,
+        modelID: apiSession.model,
+      };
+    }
+
+    return undefined;
   }
 
   /**

@@ -1,6 +1,6 @@
 {
 	"name": "coleo",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"description": "AI agent orchestrator using the Octopus Model",
 	"module": "src/cli/index.ts",
 	"type": "module",

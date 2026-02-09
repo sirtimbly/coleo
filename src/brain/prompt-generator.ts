@@ -15,6 +15,7 @@ import {
 	formatDiscoverySummary,
 	type DiscoverySummary,
 } from "./discovery-summarizer";
+import { findPlanFiles } from "./plan-parser";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -298,6 +299,7 @@ function getNextPendingTask(
     WHERE status = 'pending'
       AND dependency_blocked = 0
       AND (phase = ? OR phase = '' OR phase IS NULL)
+      AND subject NOT LIKE 'Validate completion:%'
     ORDER BY 
       CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
       created_at ASC
@@ -951,24 +953,34 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 	currentPhase: string;
 	dependencies: string[];
 }> {
-	const mainPlanPath = join(projectRoot, ".project", "plan.md");
-
-	let content = "";
+	// Find all plan files (main plan + linked plans)
+	const planFiles = await findPlanFiles(projectRoot);
+	
+	let allContent = "";
 	const goals: string[] = [];
 	const bullets: string[] = [];
 	let currentPhase = "";
-
-	// Only read .project/plan.md (main project plan)
-	// Never fallback to .project/plans/ directory or other plan files
-	// Task determination should use the tasks API, not scan plans
-	try {
-		content = await readFile(mainPlanPath, "utf-8");
-	} catch (err) {
-		content = "# Plan not found\n\nThe main project plan (.project/plan.md) could not be read.\n\nTask determination requires the database tasks API for accurate information.";
+	
+	// Read all plan files and concatenate their content
+	for (const planPath of planFiles) {
+		try {
+			const fileContent = await readFile(planPath, "utf-8");
+			// Add file header to distinguish between plans
+			const relativePath = planPath.replace(projectRoot, "").replace(/^\//, "");
+			allContent += `\n\n<!-- Plan file: ${relativePath} -->\n\n${fileContent}`;
+		} catch (err) {
+			// Skip files that can't be read
+			console.warn(`Could not read plan file ${planPath}: ${err}`);
+		}
+	}
+	
+	// If no plan files found, return fallback message
+	if (!allContent) {
+		allContent = "# Plan not found\n\nNo project plan files could be read.\n\nTask determination requires the database tasks API for accurate information.";
 	}
 
 	// Extract current phase (the first incomplete phase)
-	const lines = content.split("\n");
+	const lines = allContent.split("\n");
 	let inCurrentPhase = false;
 	let phaseContent: string[] = [];
 	let foundIncomplete = false;
@@ -1031,7 +1043,7 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 		}
 	}
 
-	return { content, goals, bullets, currentPhase, dependencies };
+	return { content: allContent, goals, bullets, currentPhase, dependencies };
 }
 
 function extractDependenciesFromPhase(phaseContent: string): string[] {

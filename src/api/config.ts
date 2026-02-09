@@ -20,10 +20,11 @@ export interface ApiConfig {
  * Load configuration from environment variables
  */
 export function loadApiConfig(): ApiConfig {
+  const apiKey = process.env.COLEO_API_KEY || process.env.COLEO_API_TOKEN;
   return {
     port: parseInt(process.env.COLEO_API_PORT || "8080", 10),
     host: process.env.COLEO_API_HOST || "0.0.0.0",
-    apiKey: process.env.COLEO_API_KEY || generateDevApiKey(),
+    apiKey: apiKey || generateDevApiKey(),
     corsOrigins: (process.env.COLEO_CORS_ORIGINS || "http://localhost:5173,http://localhost:3000").split(","),
     dbPath: process.env.COLEO_DB_PATH || getDefaultDbPath(),
     logLevel: (process.env.COLEO_LOG_LEVEL || "quiet") as LogLevel,

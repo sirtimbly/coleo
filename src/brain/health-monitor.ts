@@ -91,10 +91,10 @@ export interface HealthMonitorConfig {
 const DEFAULT_CONFIG: HealthMonitorConfig = {
 	checkIntervalMs: 30 * 1000, // 30 seconds
 	eventWindowMs: 10 * 60 * 1000, // 10 minutes
-	idlePromptDelayMs: 3 * 60 * 1000, // 2 minutes
+	idlePromptDelayMs: 12 * 60 * 1000, // 12 minutes
 	stuckEscalationDelayMs: 5 * 60 * 1000, // 5 minutes
 	maxPromptsBeforeEscalation: 3,
-	startupGracePeriodMs: 60 * 1000, // 1 minute
+	startupGracePeriodMs: 5 * 60 * 1000, // 5 minutes
 	autoInterventionEnabled: true,
 };
 
@@ -144,6 +144,7 @@ export class ArmHealthMonitor {
 	private onResult?: (result: HealthCheckResult) => void;
 
 	// Tracking state
+	private armFirstSeen: Map<string, Date> = new Map();
 	private promptCounts: Map<string, number> = new Map();
 	private lastPromptTime: Map<string, Date> = new Map();
 	private lastInterventions: Map<string, Intervention> = new Map();
@@ -220,6 +221,11 @@ export class ArmHealthMonitor {
 	async runHealthCheck(): Promise<HealthCheckResult> {
 		const timestamp = new Date();
 		const armIds = await this.callbacks.getActiveArmIds();
+		for (const armId of armIds) {
+			if (!this.armFirstSeen.has(armId)) {
+				this.armFirstSeen.set(armId, timestamp);
+			}
+		}
 
 		if (armIds.length === 0) {
 			const result = this.emptyResult(timestamp);
@@ -399,17 +405,35 @@ export class ArmHealthMonitor {
 		armId: string,
 		analysis: ArmAnalysis,
 	): Promise<string | null> {
-		if (analysis.state !== "idle") {
+		if (analysis.state !== "idle" && analysis.state !== "silent") {
 			return null;
 		}
 
 		const { metrics } = analysis;
 
-		// Respect configured idle delay before nudging.
-		if (metrics.lastEventAt) {
+		// For newly seen arms with no event history, wait out startup grace period.
+		if (!metrics.lastEventAt) {
+			const firstSeen = this.armFirstSeen.get(armId);
+			if (firstSeen) {
+				const ageMs = Date.now() - firstSeen.getTime();
+				if (ageMs < this.config.startupGracePeriodMs) {
+					return `startup grace (${Math.round(ageMs / 1000)}s since first seen)`;
+				}
+			}
+		} else {
+			// Respect configured idle delay before nudging.
 			const sinceLastEventMs = Date.now() - metrics.lastEventAt.getTime();
 			if (sinceLastEventMs < this.config.idlePromptDelayMs) {
 				return `recent event ${Math.round(sinceLastEventMs / 1000)}s ago`;
+			}
+		}
+
+		// Avoid repeatedly nudging quiet arms too often.
+		const lastPromptAt = this.lastPromptTime.get(armId);
+		if (lastPromptAt) {
+			const sincePromptMs = Date.now() - lastPromptAt.getTime();
+			if (sincePromptMs < this.config.idlePromptDelayMs) {
+				return `prompted ${Math.round(sincePromptMs / 1000)}s ago`;
 			}
 		}
 
@@ -480,10 +504,10 @@ export class ArmHealthMonitor {
 	): string {
 		switch (analysis.state) {
 			case "idle":
-				return `You appear to be idle. Do you have work to do? If you're blocked, please let me know what's blocking you using the Coleo MCP tools.`;
+				return `Quick check-in: if you're ready for work, please call get_full_briefing via Coleo MCP. If you're blocked, share a short status update.`;
 
 			case "silent":
-				return `I haven't seen any activity from you in a while. Are you still working? Please request a new task using the coleo MCP tools if you are ready to start work.`;
+				return `Checking in when you have a moment. If you're ready for the next task, call get_full_briefing with Coleo MCP.`;
 
 			case "looping":
 				return (
@@ -715,6 +739,7 @@ export class ArmHealthMonitor {
 	 * Reset tracking for an arm (e.g., when arm is killed/restarted)
 	 */
 	resetArm(armId: string): void {
+		this.armFirstSeen.delete(armId);
 		this.promptCounts.delete(armId);
 		this.lastPromptTime.delete(armId);
 		this.lastInterventions.delete(armId);
