@@ -13,6 +13,30 @@
 
 services:
   # ============================================
+  # Qdrant - Vector database for embeddings
+  # ============================================
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: coleo-qdrant
+    ports:
+      # REST API
+      - "6333:6333"
+      # gRPC (for high-performance clients)
+      - "6334:6334"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ============================================
   # NATS - Message queue for distributed arms
   # ============================================
   nats:
@@ -45,6 +69,7 @@ services:
       - COLEO_DIR=/home/coleo/.coleo
       - GITEA_URL=http://gitea:3000
       - COLEO_NATS_URL=nats://nats:4222
+      - COLEO_QDRANT_URL=http://qdrant:6333
       # Pass through API keys from host
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -62,6 +87,8 @@ services:
       nats:
         condition: service_healthy
       gitea:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
     restart: unless-stopped
     # Keep container running for SSH access
@@ -109,6 +136,8 @@ volumes:
     name: coleo-data
   gitea-data:
     name: coleo-gitea-data
+  qdrant-data:
+    name: coleo-qdrant-data
 
 networks:
   default:
