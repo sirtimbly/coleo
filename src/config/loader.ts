@@ -39,6 +39,11 @@ interface TomlConfig {
   terminal?: {
     emulator?: string;
   };
+  docs?: {
+    update_file_threshold?: number;
+    update_poll_interval?: number;
+    update_enabled?: boolean;
+  };
   defaults?: {
     harness?: string;
     provider?: string;
@@ -131,6 +136,16 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.docs) {
+    config.docs = {
+      updateFileThreshold:
+        toml.docs.update_file_threshold ?? DEFAULT_CONFIG.docs.updateFileThreshold,
+      updatePollInterval:
+        toml.docs.update_poll_interval ?? DEFAULT_CONFIG.docs.updatePollInterval,
+      updateEnabled: toml.docs.update_enabled ?? DEFAULT_CONFIG.docs.updateEnabled,
+    };
+  }
+
   if (toml.defaults) {
     config.defaults = {
       harness: toml.defaults.harness ?? DEFAULT_CONFIG.defaults.harness,
@@ -180,6 +195,14 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
     };
   }
 
+  if (config.docs) {
+    toml.docs = {
+      update_file_threshold: config.docs.updateFileThreshold,
+      update_poll_interval: config.docs.updatePollInterval,
+      update_enabled: config.docs.updateEnabled,
+    };
+  }
+
   if (config.defaults) {
     toml.defaults = {
       harness: config.defaults.harness,
@@ -219,6 +242,9 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
     if (tomlConfig.terminal) {
       config.terminal = { ...config.terminal, ...tomlConfig.terminal };
     }
+    if (tomlConfig.docs) {
+      config.docs = { ...config.docs, ...tomlConfig.docs };
+    }
     if (tomlConfig.defaults) {
       config.defaults = { ...config.defaults, ...tomlConfig.defaults };
     }
@@ -254,6 +280,7 @@ type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "termina
   brain?: Partial<ColeoConfig["brain"]>;
   mail?: Partial<ColeoConfig["mail"]>;
   terminal?: Partial<ColeoConfig["terminal"]>;
+  docs?: Partial<ColeoConfig["docs"]>;
   defaults?: Partial<ColeoConfig["defaults"]>;
   gitea?: Partial<NonNullable<ColeoConfig["gitea"]>>;
 };
@@ -276,6 +303,7 @@ export async function updateConfig(
     brain: updates.brain ? { ...current.brain, ...updates.brain } : current.brain,
     mail: updates.mail ? { ...current.mail, ...updates.mail } : current.mail,
     terminal: updates.terminal ? { ...current.terminal, ...updates.terminal } : current.terminal,
+    docs: updates.docs ? { ...current.docs, ...updates.docs } : current.docs,
     defaults: updates.defaults ? { ...current.defaults, ...updates.defaults } : current.defaults,
   };
 

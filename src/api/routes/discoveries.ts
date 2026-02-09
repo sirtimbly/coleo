@@ -45,6 +45,73 @@ interface DiscoveryRow {
 
 export function createDiscoveriesRoutes() {
   const app = new Hono<DiscoveriesContext>();
+
+  // Create a discovery
+  app.post("/", async (c) => {
+    const db = c.var.db;
+    const body = await c.req.json<{
+      id?: string;
+      armId: string;
+      armName?: string;
+      kind: string;
+      title: string;
+      details: string;
+      filePath?: string | null;
+      lineNumber?: number | null;
+      severity?: string;
+      status?: string;
+    }>();
+
+    if (!body.armId || !body.kind || !body.title || !body.details) {
+      throw HttpError.badRequest("armId, kind, title, and details are required");
+    }
+
+    const now = new Date().toISOString();
+    const id = body.id || `disc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    try {
+      db.run(
+        `
+        INSERT INTO discoveries (
+          id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
+          id,
+          body.armId,
+          body.armName || body.armId,
+          body.kind,
+          body.title,
+          body.details,
+          body.filePath || null,
+          body.lineNumber || null,
+          body.severity || "info",
+          body.status || "open",
+          now,
+          now,
+        ],
+      );
+
+      return c.json({
+        discovery: {
+          id,
+          armId: body.armId,
+          armName: body.armName || body.armId,
+          kind: body.kind,
+          title: body.title,
+          details: body.details,
+          filePath: body.filePath || null,
+          lineNumber: body.lineNumber || null,
+          severity: body.severity || "info",
+          status: body.status || "open",
+          createdAt: now,
+          updatedAt: now,
+        },
+      }, 201);
+    } catch {
+      throw HttpError.internal("Failed to create discovery");
+    }
+  });
   
   // List discoveries with filtering
   app.get("/", async (c) => {

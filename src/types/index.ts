@@ -367,6 +367,11 @@ export interface ColeoConfig {
   terminal: {
     emulator: "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "tmux" | "headless" | "harness";
   };
+  docs: {
+    updateFileThreshold: number;
+    updatePollInterval: number;
+    updateEnabled: boolean;
+  };
   defaults: {
     harness: string;
     provider: string;
@@ -391,6 +396,11 @@ export const DEFAULT_CONFIG: ColeoConfig = {
   },
   terminal: {
     emulator: "auto",
+  },
+  docs: {
+    updateFileThreshold: 10,
+    updatePollInterval: 10,
+    updateEnabled: true,
   },
   defaults: {
     harness: "opencode-api",

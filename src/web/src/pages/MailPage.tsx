@@ -48,7 +48,7 @@ export function MailPage() {
 	const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(
 		new Set(),
 	);
-	const { openReply } = useMessage();
+	const { openReply, openNewMessage } = useMessage();
 	const threadListRef = useRef<HTMLDivElement>(null);
 	const unreadMessageRef = useRef<HTMLDivElement>(null);
 
@@ -106,19 +106,9 @@ export function MailPage() {
 	const handleMarkRead = async (id: string) => {
 		try {
 			await api.markMailRead(id);
-			loadMail();
+			await loadMail();
 		} catch (err) {
 			console.error("Failed to mark as read:", err);
-		}
-	};
-
-	const handleArchive = async (id: string) => {
-		try {
-			await api.archiveMail(id);
-			setSelectedThreadId(null);
-			loadMail();
-		} catch (err) {
-			console.error("Failed to archive:", err);
 		}
 	};
 
@@ -269,6 +259,190 @@ export function MailPage() {
 		? selectedThread.messages.findIndex((m) => !m.message.flags.seen)
 		: -1;
 
+	const selectedInboxUnreadMessageIds = useMemo(() => {
+		if (!selectedThread || activeTab !== "inbox") return [];
+
+		const inboxMessageIds = new Set(
+			(inbox?.messages ?? []).map((message) => message.id),
+		);
+
+		return selectedThread.messages
+			.map((threadMessage) => threadMessage.message)
+			.filter((message) => !message.flags.seen && inboxMessageIds.has(message.id))
+			.map((message) => message.id);
+	}, [activeTab, inbox?.messages, selectedThread]);
+	const selectedInboxUnreadMessageIdsKey = selectedInboxUnreadMessageIds.join(",");
+
+	const markThreadRead = useCallback(
+		async (messageIds: string[]) => {
+			if (messageIds.length === 0) return;
+
+			try {
+				await Promise.all(messageIds.map((messageId) => api.markMailRead(messageId)));
+				await loadMail();
+			} catch (err) {
+				console.error("Failed to mark thread as read:", err);
+			}
+		},
+		[loadMail],
+	);
+
+	// Auto-mark a viewed thread as read after 4 seconds, unless the user switches threads.
+	useEffect(() => {
+		if (!selectedThreadId || selectedInboxUnreadMessageIds.length === 0) return;
+
+		const timer = window.setTimeout(() => {
+			void markThreadRead(selectedInboxUnreadMessageIds);
+		}, 4000);
+
+		return () => window.clearTimeout(timer);
+	}, [markThreadRead, selectedInboxUnreadMessageIdsKey, selectedThreadId]);
+
+	const handleArchive = async (id: string) => {
+		const selectedThreadBeforeArchive = selectedThreadId
+			? threads.find((thread) => thread.id === selectedThreadId)
+			: null;
+		const archivedSelectedThread =
+			selectedThreadBeforeArchive?.messages.some(
+				(threadMessage) => threadMessage.message.id === id,
+			) ?? false;
+		const removesSelectedThread =
+			archivedSelectedThread &&
+			(selectedThreadBeforeArchive?.messages.length ?? 0) === 1;
+		const selectedThreadIndex = selectedThreadBeforeArchive
+			? threads.findIndex((thread) => thread.id === selectedThreadBeforeArchive.id)
+			: -1;
+		const fallbackThreadId =
+			selectedThreadIndex >= 0
+				? (threads[selectedThreadIndex + 1]?.id ??
+					threads[selectedThreadIndex - 1]?.id ??
+					null)
+				: null;
+
+		try {
+			await api.archiveMail(id);
+			await loadMail();
+
+			if (removesSelectedThread) {
+				setSelectedThreadId(fallbackThreadId);
+			}
+		} catch (err) {
+			console.error("Failed to archive:", err);
+		}
+	};
+
+	const replyToThread = useCallback(
+		(thread: Thread) => {
+			const lastMessage = thread.messages[thread.messages.length - 1];
+			if (!lastMessage) return;
+
+			openReply({
+				messageId: lastMessage.message.id,
+				from: lastMessage.message.from,
+				subject: thread.subject,
+				body: lastMessage.message.body,
+			});
+		},
+		[openReply],
+	);
+
+	const archiveThread = useCallback(
+		async (thread: Thread) => {
+			const threadIndex = threads.findIndex(
+				(candidateThread) => candidateThread.id === thread.id,
+			);
+			const fallbackThreadId =
+				threadIndex >= 0
+					? (threads[threadIndex + 1]?.id ??
+						threads[threadIndex - 1]?.id ??
+						null)
+					: null;
+
+			try {
+				await Promise.all(
+					thread.messages.map((message) => api.archiveMail(message.message.id)),
+				);
+				await loadMail();
+				setSelectedThreadId(fallbackThreadId);
+			} catch (err) {
+				console.error("Failed to archive thread:", err);
+			}
+		},
+		[loadMail, threads],
+	);
+
+	// Gmail-style keyboard shortcuts (mail page only):
+	// c = compose, r = reply, j/k = next/previous thread, e = archive.
+	useEffect(() => {
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.defaultPrevented) return;
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+			const target = event.target as HTMLElement | null;
+			if (
+				target &&
+				(target.tagName === "INPUT" ||
+					target.tagName === "TEXTAREA" ||
+					target.isContentEditable)
+			) {
+				return;
+			}
+
+			const key = event.key.toLowerCase();
+			const currentIndex = selectedThreadId
+				? threads.findIndex((thread) => thread.id === selectedThreadId)
+				: -1;
+
+			if (key === "c") {
+				event.preventDefault();
+				openNewMessage();
+				return;
+			}
+
+			if (key === "r" && selectedThread) {
+				event.preventDefault();
+				replyToThread(selectedThread);
+				return;
+			}
+
+			if (key === "j" && threads.length > 0) {
+				event.preventDefault();
+				const nextIndex =
+					currentIndex === -1
+						? 0
+						: Math.min(currentIndex + 1, threads.length - 1);
+				setSelectedThreadId(threads[nextIndex]?.id ?? null);
+				return;
+			}
+
+			if (key === "k" && threads.length > 0) {
+				event.preventDefault();
+				const previousIndex =
+					currentIndex === -1
+						? threads.length - 1
+						: Math.max(currentIndex - 1, 0);
+				setSelectedThreadId(threads[previousIndex]?.id ?? null);
+				return;
+			}
+
+			if (key === "e" && selectedThread && activeTab !== "archive") {
+				event.preventDefault();
+				void archiveThread(selectedThread);
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [
+		activeTab,
+		archiveThread,
+		openNewMessage,
+		replyToThread,
+		selectedThread,
+		selectedThreadId,
+		threads,
+	]);
+
 	if (loading) {
 		return (
 			<div className="p-8">
@@ -353,10 +527,15 @@ export function MailPage() {
 											role="button"
 											tabIndex={0}
 											className={`w-full py-2 px-3 cursor-pointer hover:bg-accent/5 transition-colors rounded-none ${
-												selectedThreadId === thread.id
-													? "bg-accent/10 border-l-4 border-accent"
+												thread.unreadCount > 0 &&
+												selectedThreadId !== thread.id
+													? "bg-accent/5"
 													: ""
-											} ${thread.unreadCount > 0 ? "bg-accent/5" : ""}`}
+											} ${
+												selectedThreadId === thread.id
+													? "bg-accent/15 border-l-4 border-accent"
+													: ""
+											}`}
 											onClick={() => setSelectedThreadId(thread.id)}
 											onKeyDown={(e) => {
 												if (e.key === "Enter" || e.key === " ") {
@@ -414,42 +593,22 @@ export function MailPage() {
 											</p>
 										</div>
 										<div className="flex gap-2">
-											{/* Reply button - replies to last message in thread */}
-											{(() => {
-												const lastMessage =
-													selectedThread.messages[
-														selectedThread.messages.length - 1
-													];
-												return (
-													<Button
-														variant="primary"
-														size="sm"
-														onPress={() =>
-															openReply({
-																messageId: lastMessage.message.id,
-																from: lastMessage.message.from,
-																subject: selectedThread.subject,
-																body: lastMessage.message.body,
-															})
-														}
-													>
-														<Reply className="h-4 w-4 mr-2" />
-														Reply
-													</Button>
-												);
-											})()}
+											<Button
+												variant="primary"
+												size="sm"
+												onPress={() => replyToThread(selectedThread)}
+											>
+												<Reply className="h-4 w-4 mr-2" />
+												Reply
+											</Button>
 											{activeTab === "inbox" &&
 												selectedThread.unreadCount > 0 && (
 													<Button
 														variant="secondary"
 														size="sm"
-														onPress={() => {
-															selectedThread.messages.forEach((m) => {
-																if (!m.message.flags.seen) {
-																	handleMarkRead(m.message.id);
-																}
-															});
-														}}
+														onPress={() =>
+															void markThreadRead(selectedInboxUnreadMessageIds)
+														}
 													>
 														<Eye className="h-4 w-4 mr-2" />
 														Mark All Read
@@ -459,11 +618,7 @@ export function MailPage() {
 												<Button
 													variant="secondary"
 													size="sm"
-													onPress={() => {
-														selectedThread.messages.forEach((m) => {
-															handleArchive(m.message.id);
-														});
-													}}
+													onPress={() => void archiveThread(selectedThread)}
 												>
 													<Archive className="h-4 w-4 mr-2" />
 													Archive

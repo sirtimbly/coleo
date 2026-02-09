@@ -13,7 +13,19 @@ import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { Maildir } from "../../mail/maildir";
-import { getBrainState, updateBrainState, type BrainState } from "../../db/state";
+import {
+  getBrainState,
+  updateBrainState,
+  queueMessage,
+  getPendingMessages,
+  markMessageProcessing,
+  markMessageCompleted,
+  markMessageFailed,
+  cleanupOldMessages,
+  createNote,
+  upsertTool,
+  type BrainState,
+} from "../../db/state";
 import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
 
 interface BrainContext {
@@ -103,6 +115,14 @@ export function createBrainRoutes() {
 
   app.get("/state", (c) => {
     const db = c.get("db");
+    const state = getBrainState(db);
+    return c.json({ state });
+  });
+
+  app.patch("/state", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<Partial<BrainState>>();
+    updateBrainState(db, body);
     const state = getBrainState(db);
     return c.json({ state });
   });
@@ -201,6 +221,20 @@ export function createBrainRoutes() {
         maxArms: parseInt(config.brain_max_arms || "8", 10),
         heartbeatTimeoutSeconds: parseInt(config.arm_heartbeat_timeout_seconds || "120", 10),
       },
+    });
+  });
+
+  app.get("/config/:key", (c) => {
+    const db = c.get("db");
+    const key = c.req.param("key");
+    if (!key) {
+      throw HttpError.badRequest("config key is required");
+    }
+
+    const row = db.query("SELECT value FROM config WHERE key = ?").get(key) as { value: string } | null;
+    return c.json({
+      key,
+      value: row?.value ?? null,
     });
   });
 
@@ -339,6 +373,484 @@ export function createBrainRoutes() {
     }, 201);
   });
 
+  app.post("/internal/messages/queue", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      id: string;
+      from: string;
+      to: string;
+      type: string;
+      payload: unknown;
+    }>();
+
+    if (!body.id || !body.from || !body.to || !body.type) {
+      throw HttpError.badRequest("id, from, to, and type are required");
+    }
+
+    queueMessage(db, {
+      id: body.id,
+      from: body.from,
+      to: body.to,
+      type: body.type,
+      payload: body.payload,
+    });
+
+    return c.json({ queued: true, id: body.id });
+  });
+
+  app.get("/internal/messages/pending", (c) => {
+    const db = c.get("db");
+    const to = c.req.query("to") || "brain";
+    const limit = Math.min(parseInt(c.req.query("limit") || "500", 10), 1000);
+
+    const rows = getPendingMessages(db, to)
+      .slice(0, limit)
+      .map((message) => ({
+        id: message.id,
+        from: message.from,
+        to: message.to,
+        type: message.type,
+        payload: message.payload,
+        createdAt: message.createdAt.toISOString(),
+      }));
+
+    return c.json({ messages: rows });
+  });
+
+  app.post("/internal/messages/:id/status", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      status: "processing" | "completed" | "failed";
+      error?: string;
+    }>();
+
+    if (!id) {
+      throw HttpError.badRequest("message id is required");
+    }
+
+    if (!body.status) {
+      throw HttpError.badRequest("status is required");
+    }
+
+    if (body.status === "processing") {
+      markMessageProcessing(db, id);
+    } else if (body.status === "completed") {
+      markMessageCompleted(db, id);
+    } else if (body.status === "failed") {
+      markMessageFailed(db, id, body.error || "Unknown error");
+    } else {
+      throw HttpError.badRequest("invalid status");
+    }
+
+    return c.json({ success: true });
+  });
+
+  app.post("/internal/messages/cleanup", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{ olderThanDays?: number }>();
+    const olderThanDays = Math.max(1, body.olderThanDays ?? 7);
+    const deleted = cleanupOldMessages(db, olderThanDays);
+    return c.json({ deleted });
+  });
+
+  app.post("/internal/notes", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      id: string;
+      author: string;
+      title: string;
+      content: string;
+      category?: string;
+      tags?: string[];
+    }>();
+
+    if (!body.id || !body.author || !body.title || !body.content) {
+      throw HttpError.badRequest("id, author, title, and content are required");
+    }
+
+    createNote(db, {
+      id: body.id,
+      author: body.author,
+      title: body.title,
+      content: body.content,
+      category: body.category,
+      tags: body.tags || [],
+    });
+
+    return c.json({ created: true, id: body.id });
+  });
+
+  app.post("/internal/tools/upsert", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      name: string;
+      command: string;
+      description: string;
+      discoveredBy: string;
+      metadata?: Record<string, unknown>;
+    }>();
+
+    if (!body.name || !body.command || !body.description || !body.discoveredBy) {
+      throw HttpError.badRequest("name, command, description, and discoveredBy are required");
+    }
+
+    upsertTool(db, {
+      name: body.name,
+      command: body.command,
+      description: body.description,
+      discoveredBy: body.discoveredBy,
+      metadata: body.metadata,
+    });
+
+    return c.json({ upserted: true, name: body.name });
+  });
+
+  app.post("/internal/file-changes", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      filePath: string;
+      changeType?: string;
+      contentHash?: string;
+      changedAt?: string;
+      detectedByArmId?: string;
+    }>();
+
+    if (!body.filePath) {
+      throw HttpError.badRequest("filePath is required");
+    }
+
+    db.run(
+      `INSERT INTO file_changes (file_path, change_type, content_hash, changed_at, detected_by_arm_id)
+       VALUES (?, ?, ?, ?, ?)`,
+      [
+        body.filePath,
+        body.changeType || "modified",
+        body.contentHash || null,
+        body.changedAt || new Date().toISOString(),
+        body.detectedByArmId || null,
+      ],
+    );
+
+    return c.json({ recorded: true });
+  });
+
+  app.get("/internal/file-changes/count", (c) => {
+    const db = c.get("db");
+    const since = c.req.query("since");
+    if (!since) {
+      throw HttpError.badRequest("since is required");
+    }
+
+    const row = db
+      .query("SELECT COUNT(*) as count FROM file_changes WHERE changed_at > ?")
+      .get(since) as { count: number } | null;
+    return c.json({ count: row?.count ?? 0 });
+  });
+
+  app.get("/internal/file-changes/since", (c) => {
+    const db = c.get("db");
+    const since = c.req.query("since");
+    const limit = Math.min(parseInt(c.req.query("limit") || "1000", 10), 5000);
+    if (!since) {
+      throw HttpError.badRequest("since is required");
+    }
+
+    const rows = db
+      .query(
+        `SELECT DISTINCT file_path
+         FROM file_changes
+         WHERE changed_at > ?
+         ORDER BY changed_at DESC
+         LIMIT ?`,
+      )
+      .all(since, limit) as Array<{ file_path: string }>;
+
+    return c.json({ files: rows.map((row) => row.file_path) });
+  });
+
+  app.get("/internal/doc-updates/last-completed", (c) => {
+    const db = c.get("db");
+    const row = db
+      .query(
+        `SELECT completed_at
+         FROM doc_updates
+         WHERE status = 'completed'
+         ORDER BY completed_at DESC
+         LIMIT 1`,
+      )
+      .get() as { completed_at: string | null } | null;
+    return c.json({ completedAt: row?.completed_at || null });
+  });
+
+  app.post("/internal/doc-updates", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      id: string;
+      taskId: string;
+      triggerType: "phase_complete" | "threshold" | "human_request" | "periodic";
+    }>();
+    if (!body.id || !body.triggerType) {
+      throw HttpError.badRequest("id and triggerType are required");
+    }
+
+    db.run(
+      `INSERT INTO doc_updates (id, task_id, trigger_type)
+       VALUES (?, ?, ?)`,
+      [body.id, body.taskId || null, body.triggerType],
+    );
+
+    return c.json({ created: true, id: body.id });
+  });
+
+  app.post("/internal/doc-updates/:id/start", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    if (!id) {
+      throw HttpError.badRequest("doc update id is required");
+    }
+
+    db.run(`UPDATE doc_updates SET status = 'in_progress' WHERE id = ?`, [id]);
+    return c.json({ success: true });
+  });
+
+  app.post("/internal/doc-updates/:id/complete", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      filesReviewed: number;
+      docsUpdated: number;
+      futureWorkNotesAdded: number;
+    }>();
+    if (!id) {
+      throw HttpError.badRequest("doc update id is required");
+    }
+
+    db.run(
+      `UPDATE doc_updates SET
+         status = 'completed',
+         completed_at = ?,
+         files_reviewed = ?,
+         docs_updated = ?,
+         future_work_notes_added = ?
+       WHERE id = ?`,
+      [
+        new Date().toISOString(),
+        body.filesReviewed ?? 0,
+        body.docsUpdated ?? 0,
+        body.futureWorkNotesAdded ?? 0,
+        id,
+      ],
+    );
+
+    return c.json({ success: true });
+  });
+
+  app.post("/internal/doc-updates/:id/fail", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{ error?: string }>();
+    if (!id) {
+      throw HttpError.badRequest("doc update id is required");
+    }
+
+    db.run(
+      `UPDATE doc_updates SET
+         status = 'failed',
+         completed_at = ?,
+         metadata = ?
+       WHERE id = ?`,
+      [
+        new Date().toISOString(),
+        JSON.stringify({ error: body.error || "Unknown error" }),
+        id,
+      ],
+    );
+
+    return c.json({ success: true });
+  });
+
+  app.get("/internal/doc-updates/recent", (c) => {
+    const db = c.get("db");
+    const limit = Math.min(parseInt(c.req.query("limit") || "10", 10), 100);
+
+    const rows = db
+      .query(
+        `SELECT id, trigger_type, status, started_at, completed_at
+         FROM doc_updates
+         ORDER BY started_at DESC
+         LIMIT ?`,
+      )
+      .all(limit) as Array<{
+      id: string;
+      trigger_type: string;
+      status: string;
+      started_at: string;
+      completed_at: string | null;
+    }>;
+
+    return c.json({
+      updates: rows.map((row) => ({
+        id: row.id,
+        triggerType: row.trigger_type,
+        status: row.status,
+        startedAt: row.started_at,
+        completedAt: row.completed_at || undefined,
+      })),
+    });
+  });
+
+  app.get("/internal/arm-state/:armId", (c) => {
+    const db = c.get("db");
+    const armId = c.req.param("armId");
+    if (!armId) {
+      throw HttpError.badRequest("armId is required");
+    }
+
+    const row = db
+      .query(
+        `SELECT
+           arm_id,
+           state,
+           previous_state,
+           current_task_id,
+           current_task_subject,
+           last_event_type,
+           last_event_at,
+           state_entered_at,
+           task_assigned_at,
+           disconnected_at,
+           last_error,
+           error_count,
+           last_heartbeat,
+           consecutive_missed_heartbeats
+         FROM arm_state_machine
+         WHERE arm_id = ?`,
+      )
+      .get(armId);
+
+    return c.json({ state: row ?? null });
+  });
+
+  app.get("/internal/arm-state", (c) => {
+    const db = c.get("db");
+    const state = c.req.query("state");
+    if (!state) {
+      throw HttpError.badRequest("state is required");
+    }
+
+    const rows = db
+      .query(
+        `SELECT
+           arm_id,
+           state,
+           previous_state,
+           current_task_id,
+           current_task_subject,
+           last_event_type,
+           last_event_at,
+           state_entered_at,
+           task_assigned_at,
+           disconnected_at,
+           last_error,
+           error_count,
+           last_heartbeat,
+           consecutive_missed_heartbeats
+         FROM arm_state_machine
+         WHERE state = ?`,
+      )
+      .all(state);
+
+    return c.json({ states: rows });
+  });
+
+  app.put("/internal/arm-state/:armId", async (c) => {
+    const db = c.get("db");
+    const armId = c.req.param("armId");
+    if (!armId) {
+      throw HttpError.badRequest("armId is required");
+    }
+
+    const body = await c.req.json<{
+      state?: string;
+      previousState?: string | null;
+      currentTaskId?: string | null;
+      currentTaskSubject?: string | null;
+      lastEventType?: string | null;
+      lastEventAt?: string;
+      stateEnteredAt?: string;
+      taskAssignedAt?: string | null;
+      disconnectedAt?: string | null;
+      lastError?: string | null;
+      errorCount?: number;
+      lastHeartbeat?: string | null;
+      consecutiveMissedHeartbeats?: number;
+    }>();
+
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arm_state_machine (
+         arm_id,
+         state,
+         previous_state,
+         current_task_id,
+         current_task_subject,
+         last_event_type,
+         last_event_at,
+         state_entered_at,
+         task_assigned_at,
+         disconnected_at,
+         last_error,
+         error_count,
+         last_heartbeat,
+         consecutive_missed_heartbeats
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(arm_id) DO UPDATE SET
+         state = excluded.state,
+         previous_state = excluded.previous_state,
+         current_task_id = excluded.current_task_id,
+         current_task_subject = excluded.current_task_subject,
+         last_event_type = excluded.last_event_type,
+         last_event_at = excluded.last_event_at,
+         state_entered_at = excluded.state_entered_at,
+         task_assigned_at = excluded.task_assigned_at,
+         disconnected_at = excluded.disconnected_at,
+         last_error = excluded.last_error,
+         error_count = excluded.error_count,
+         last_heartbeat = excluded.last_heartbeat,
+         consecutive_missed_heartbeats = excluded.consecutive_missed_heartbeats`,
+      [
+        armId,
+        body.state || "spawning",
+        body.previousState ?? null,
+        body.currentTaskId ?? null,
+        body.currentTaskSubject ?? null,
+        body.lastEventType ?? null,
+        body.lastEventAt || now,
+        body.stateEnteredAt || now,
+        body.taskAssignedAt ?? null,
+        body.disconnectedAt ?? null,
+        body.lastError ?? null,
+        body.errorCount ?? 0,
+        body.lastHeartbeat ?? null,
+        body.consecutiveMissedHeartbeats ?? 0,
+      ],
+    );
+
+    return c.json({ stored: true });
+  });
+
+  app.delete("/internal/arm-state/:armId", (c) => {
+    const db = c.get("db");
+    const armId = c.req.param("armId");
+    if (!armId) {
+      throw HttpError.badRequest("armId is required");
+    }
+
+    db.run("DELETE FROM arm_state_machine WHERE arm_id = ?", [armId]);
+    return c.json({ deleted: true });
+  });
+
   /**
    * Internal SQL proxy endpoints used by the brain process.
    * SQLite access stays in the API server; brain calls these over HTTP.
@@ -415,6 +927,49 @@ export function createBrainRoutes() {
 
     const result = await updateInfrastructureHealth(db, body.components);
     return c.json({ result });
+  });
+
+  app.post("/internal/dependencies/unblock-for-completed", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{ completedTaskId: string }>();
+    if (!body.completedTaskId) {
+      throw HttpError.badRequest("completedTaskId is required");
+    }
+
+    const dependentRows = db.query(`
+      SELECT td.task_id as taskId, t.subject
+      FROM task_dependencies td
+      JOIN tasks t ON td.task_id = t.id
+      WHERE td.depends_on_task_id = ?
+      AND t.status IN ('pending', 'blocked')
+    `).all(body.completedTaskId) as Array<{ taskId: string; subject: string }>;
+
+    const unblocked: Array<{ taskId: string; subject: string }> = [];
+    const now = new Date().toISOString();
+
+    for (const row of dependentRows) {
+      const unmetDeps = db.query(`
+        SELECT COUNT(*) as count
+        FROM task_dependencies td
+        WHERE td.task_id = ?
+        AND td.depends_on_task_id != ?
+        AND NOT EXISTS (
+          SELECT 1 FROM tasks t
+          WHERE t.id = td.depends_on_task_id
+          AND t.status = 'completed'
+        )
+      `).get(row.taskId, body.completedTaskId) as { count: number };
+
+      if ((unmetDeps?.count || 0) === 0) {
+        db.run(
+          "UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ? WHERE id = ?",
+          [now, row.taskId],
+        );
+        unblocked.push({ taskId: row.taskId, subject: row.subject });
+      }
+    }
+
+    return c.json({ unblocked });
   });
 
   return app;

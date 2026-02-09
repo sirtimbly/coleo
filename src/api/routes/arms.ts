@@ -55,6 +55,7 @@ export interface ArmProfile {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
+  lastHeartbeat?: string | null;
   config: Record<string, unknown>;
   pid?: number;
   port?: number;
@@ -62,6 +63,7 @@ export interface ArmProfile {
   model?: string;
   totalTokens?: number;
   totalCost?: number;
+  currentTaskId?: string;
   currentTaskSubject?: string;
   currentBugId?: string;
   currentBugTitle?: string;
@@ -213,6 +215,7 @@ export function createArmsRoutes() {
    */
   app.get("/", (c) => {
     const db = c.get("db");
+    const includeAll = c.req.query("includeAll") === "true";
     
     try {
       const rows = db.query(`
@@ -223,6 +226,8 @@ export function createArmsRoutes() {
           created_at as createdAt,
           updated_at as updatedAt,
           last_activity_at as lastActivityAt,
+          last_heartbeat as lastHeartbeat,
+          current_task_id as currentTaskId,
           pid, port, provider, model,
           total_tokens as totalTokens,
           total_cost as totalCost,
@@ -233,7 +238,7 @@ export function createArmsRoutes() {
           host,
           config
         FROM arms
-        WHERE NOT (harness = 'manual' AND status = 'idle' AND current_task_subject IS NULL)
+        ${includeAll ? "" : "WHERE NOT (harness = 'manual' AND status = 'idle' AND current_task_subject IS NULL)"}
         ORDER BY name
       `).all() as ArmRow[];
 
@@ -260,6 +265,8 @@ export function createArmsRoutes() {
         created_at as createdAt,
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
+        last_heartbeat as lastHeartbeat,
+        current_task_id as currentTaskId,
         pid, port, provider, model,
         total_tokens as totalTokens,
         total_cost as totalCost,
@@ -429,6 +436,30 @@ export function createArmsRoutes() {
       updates.push("config = ?");
       values.push(JSON.stringify(body.config));
     }
+    if (body.lastActivityAt !== undefined) {
+      updates.push("last_activity_at = ?");
+      values.push(body.lastActivityAt);
+    }
+    if (body.lastHeartbeat !== undefined) {
+      updates.push("last_heartbeat = ?");
+      values.push(body.lastHeartbeat);
+    }
+    if (body.currentTaskId !== undefined) {
+      updates.push("current_task_id = ?");
+      values.push(body.currentTaskId);
+    }
+    if (body.currentTaskSubject !== undefined) {
+      updates.push("current_task_subject = ?");
+      values.push(body.currentTaskSubject);
+    }
+    if (body.currentBugId !== undefined) {
+      updates.push("current_bug_id = ?");
+      values.push(body.currentBugId);
+    }
+    if (body.currentBugTitle !== undefined) {
+      updates.push("current_bug_title = ?");
+      values.push(body.currentBugTitle);
+    }
 
     if (updates.length === 0) {
       throw HttpError.badRequest("No fields to update");
@@ -449,7 +480,12 @@ export function createArmsRoutes() {
         created_at as createdAt,
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
+        last_heartbeat as lastHeartbeat,
+        current_task_id as currentTaskId,
         pid, provider, model,
+        current_task_subject as currentTaskSubject,
+        current_bug_id as currentBugId,
+        current_bug_title as currentBugTitle,
         config
       FROM arms
       WHERE id = ?
@@ -936,6 +972,7 @@ export function createArmsRoutes() {
       tokens?: { input?: number; output?: number };
       cost?: number;
       currentTask?: { id: string; subject: string } | null;
+      currentBug?: { id: string; title: string } | null;
     }>();
 
     // Check if arm exists
@@ -969,6 +1006,13 @@ export function createArmsRoutes() {
       params.push(body.currentTask?.id || null);
       updates.push("current_task_subject = ?");
       params.push(body.currentTask?.subject || null);
+    }
+
+    if (body.currentBug !== undefined) {
+      updates.push("current_bug_id = ?");
+      params.push(body.currentBug?.id || null);
+      updates.push("current_bug_title = ?");
+      params.push(body.currentBug?.title || null);
     }
 
     params.push(id);
@@ -1480,6 +1524,8 @@ interface ArmRow {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
+  lastHeartbeat: string | null;
+  currentTaskId: string | null;
   pid: number | null;
   port: number | null;
   provider: string | null;
@@ -1504,6 +1550,7 @@ function parseArmRow(row: ArmRow): ArmProfile {
     model: row.model ?? undefined,
     totalTokens: row.totalTokens ?? 0,
     totalCost: row.totalCost ?? 0,
+    currentTaskId: row.currentTaskId ?? undefined,
     currentTaskSubject: row.currentTaskSubject ?? undefined,
     currentBugId: row.currentBugId ?? undefined,
     currentBugTitle: row.currentBugTitle ?? undefined,

@@ -20,7 +20,6 @@ import {
 	type PermissionRequest,
 } from "./permission-engine";
 import { eventStore } from "../nats/jetstream";
-import type { BrainDb } from "./db-client";
 
 /**
  * Intervention types the monitor can take
@@ -141,7 +140,6 @@ export class ArmHealthMonitor {
 	private permissionEngine: PermissionDecisionEngine;
 	private callbacks: HealthMonitorCallbacks;
 	private logFn: (msg: string) => void;
-	private db: BrainDb | null = null;
 	private lastResult: HealthCheckResult | null = null;
 	private onResult?: (result: HealthCheckResult) => void;
 
@@ -161,7 +159,6 @@ export class ArmHealthMonitor {
 			eventWindow?: BrainEventWindow;
 			analyzer?: ArmActivityAnalyzer;
 			permissionEngine?: PermissionDecisionEngine;
-			db?: BrainDb;
 			log?: (msg: string) => void;
 			onResult?: (result: HealthCheckResult) => void;
 		},
@@ -172,7 +169,6 @@ export class ArmHealthMonitor {
 		this.analyzer = options?.analyzer ?? new ArmActivityAnalyzer();
 		this.permissionEngine =
 			options?.permissionEngine ?? new PermissionDecisionEngine();
-		this.db = options?.db ?? null;
 		this.logFn = options?.log ?? console.log;
 		this.onResult = options?.onResult;
 	}

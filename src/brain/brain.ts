@@ -13,16 +13,6 @@ import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
 import { spawnArm, type SpawnOptions } from "../arm/spawner";
-import {
-	queueMessage,
-	getPendingBrainMessages,
-	markMessageProcessing,
-	markMessageCompleted,
-	markMessageFailed,
-	cleanupOldMessages,
-	upsertTool,
-	createNote,
-} from "../db/state";
 import { getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import {
 	parsePlanFile,
@@ -48,7 +38,7 @@ import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
-import { createApiDatabase } from "./api-db";
+import { createArmStateApiDatabase } from "./arm-state-api-db";
 import type { BrainDb } from "./db-client";
 import type {
 	BrainState,
@@ -78,7 +68,7 @@ export class Brain {
 	private running = false;
 	private shuttingDown = false;
 	private abortController: AbortController | null = null;
-	private db: BrainDb | null = null;
+	private armStateDb: BrainDb | null = null;
 	private apiBaseUrl: string;
 	private apiKey: string;
 	private natsUrl!: string;
@@ -113,6 +103,10 @@ export class Brain {
 	private armDetectionTimes: Map<string, Date> = new Map();
 	// Track recent activity from event stream (for real-time busy detection)
 	private lastArmEventTime: Map<string, Date> = new Map();
+	// In-memory file subscriptions keyed by arm ID
+	private fileSubscriptions: Map<string, Set<string>> = new Map();
+	// Plan hash cache to avoid reprocessing unchanged plan files
+	private planFileHashes: Map<string, string> = new Map();
 
 	// Infrastructure health tracking
 	private infrastructureHealth: {
@@ -212,12 +206,11 @@ export class Brain {
 				break;
 
 			case "MARK_ARM_STOPPED":
-				if (this.db && !this.shuttingDown) {
-					const now = new Date().toISOString();
-					this.db.run(
-						"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-						[now, effect.armId],
-					);
+				if (!this.shuttingDown) {
+					await this.patchArmViaApi(effect.armId, {
+						status: "stopped",
+						lastActivityAt: new Date().toISOString(),
+					});
 					this.arms.delete(effect.armId);
 					this.idleArmPromptTracker.delete(effect.armId);
 				}
@@ -340,7 +333,7 @@ export class Brain {
 		properties: Record<string, unknown>,
 	): Promise<void> {
 		// Skip event handling during shutdown
-		if (!this.db || this.shuttingDown) return;
+		if (this.shuttingDown) return;
 
 		// Update arm status based on session status events
 		if (eventType === "session.status") {
@@ -363,10 +356,10 @@ export class Brain {
 
 				try {
 					const now = new Date().toISOString();
-					this.db.run(
-						"UPDATE arms SET status = ?, updated_at = ?, last_activity_at = ? WHERE id = ?",
-						[dbStatus, now, now, armId],
-					);
+					await this.patchArmViaApi(armId, {
+						status: dbStatus,
+						lastActivityAt: now,
+					});
 
 					this.log(
 						`Updated arm ${armId} status to ${dbStatus} based on session.status event`,
@@ -450,34 +443,217 @@ export class Brain {
 		}
 	}
 
+	private async getArmFromApi(armId: string): Promise<{
+		id: string;
+		name: string;
+		domain: string;
+		harness: string;
+		status: string;
+		pid?: number;
+		lastActivityAt?: string | null;
+		lastHeartbeat?: string | null;
+		currentTaskId?: string | null;
+		currentTaskSubject?: string | null;
+		currentBugId?: string | null;
+		currentBugTitle?: string | null;
+	} | null> {
+		const response = await this.apiRequest<{
+			arm: {
+				id: string;
+				name: string;
+				domain: string;
+				harness: string;
+				status: string;
+				pid?: number;
+				lastActivityAt?: string | null;
+				lastHeartbeat?: string | null;
+				currentTaskId?: string | null;
+				currentTaskSubject?: string | null;
+				currentBugId?: string | null;
+				currentBugTitle?: string | null;
+			};
+		}>(`/api/arms/${encodeURIComponent(armId)}`);
+		return response?.arm || null;
+	}
+
+	private async listArmsFromApi(includeAll = false): Promise<
+		Array<{
+			id: string;
+			name: string;
+			domain: string;
+			harness: string;
+			status: string;
+			pid?: number;
+			lastActivityAt?: string | null;
+			lastHeartbeat?: string | null;
+			currentTaskId?: string | null;
+			currentTaskSubject?: string | null;
+			currentBugId?: string | null;
+			currentBugTitle?: string | null;
+			createdAt?: string;
+			provider?: string;
+			model?: string;
+		}>
+	> {
+		const suffix = includeAll ? "?includeAll=true" : "";
+		const response = await this.apiRequest<{
+			arms: Array<{
+				id: string;
+				name: string;
+				domain: string;
+				harness: string;
+				status: string;
+				pid?: number;
+				lastActivityAt?: string | null;
+				lastHeartbeat?: string | null;
+				currentTaskId?: string | null;
+				currentTaskSubject?: string | null;
+				currentBugId?: string | null;
+				currentBugTitle?: string | null;
+				createdAt?: string;
+				provider?: string;
+				model?: string;
+			}>;
+		}>(`/api/arms${suffix}`);
+		return response?.arms || [];
+	}
+
+	private async patchArmViaApi(
+		armId: string,
+		patch: {
+			status?: string;
+			lastActivityAt?: string | null;
+			lastHeartbeat?: string | null;
+			currentTaskId?: string | null;
+			currentTaskSubject?: string | null;
+			currentBugId?: string | null;
+			currentBugTitle?: string | null;
+		},
+	): Promise<boolean> {
+		const response = await this.apiRequest<{ arm?: { id: string } }>(
+			`/api/arms/${encodeURIComponent(armId)}`,
+			{
+				method: "PATCH",
+				body: JSON.stringify(patch),
+			},
+		);
+		return !!response?.arm;
+	}
+
+	private async queueMessageViaApi(input: {
+		id: string;
+		from: string;
+		to: string;
+		type: string;
+		payload: unknown;
+	}): Promise<boolean> {
+		const response = await this.apiRequest<{ queued?: boolean }>(
+			"/api/brain/internal/messages/queue",
+			{
+				method: "POST",
+				body: JSON.stringify(input),
+			},
+		);
+		return response?.queued === true;
+	}
+
+	private async listPendingMessagesViaApi(
+		to: string,
+		limit = 500,
+	): Promise<
+		Array<{
+			id: string;
+			from: string;
+			to: string;
+			type: string;
+			payload: unknown;
+			createdAt: string;
+		}>
+	> {
+		const params = new URLSearchParams({
+			to,
+			limit: String(limit),
+		});
+		const response = await this.apiRequest<{
+			messages?: Array<{
+				id: string;
+				from: string;
+				to: string;
+				type: string;
+				payload: unknown;
+				createdAt: string;
+			}>;
+		}>(`/api/brain/internal/messages/pending?${params.toString()}`);
+		return response?.messages || [];
+	}
+
+	private async markMessageStatusViaApi(
+		messageId: string,
+		status: "processing" | "completed" | "failed",
+		error?: string,
+	): Promise<void> {
+		await this.apiRequest<{ success?: boolean }>(
+			`/api/brain/internal/messages/${encodeURIComponent(messageId)}/status`,
+			{
+				method: "POST",
+				body: JSON.stringify({ status, error }),
+			},
+		);
+	}
+
+	private async cleanupMessagesViaApi(olderThanDays = 7): Promise<void> {
+		await this.apiRequest<{ deleted?: number }>(
+			"/api/brain/internal/messages/cleanup",
+			{
+				method: "POST",
+				body: JSON.stringify({ olderThanDays }),
+			},
+		);
+	}
+
+	private async recordFileChangeViaApi(input: {
+		filePath: string;
+		changeType: string;
+		detectedByArmId?: string;
+		contentHash?: string;
+		changedAt?: string;
+	}): Promise<void> {
+		await this.apiRequest<{ recorded?: boolean }>(
+			"/api/brain/internal/file-changes",
+			{
+				method: "POST",
+				body: JSON.stringify(input),
+			},
+		);
+	}
+
 	/**
 	 * Initialize brain state and directories
 	 */
 	async init(): Promise<void> {
-		// Initialize API-backed database adapter (API server owns SQLite access)
-		this.db = createApiDatabase(this.apiBaseUrl, this.apiKey);
-		this.db.query("SELECT 1").get();
+		// Initialize API-backed arm state persistence.
+		this.armStateDb = createArmStateApiDatabase(this.apiBaseUrl, this.apiKey);
 
 		// Initialize doc update tracker
 		this.docTracker = new DocUpdateTracker(
-			this.db,
+			this.apiBaseUrl,
+			this.apiKey,
 			this.options.coleoDir,
 			process.cwd(),
 		);
 
 		// Initialize arm state machine
-		this.armStateMachine = new ArmStateMachine(this.db, (effect) =>
+		this.armStateMachine = new ArmStateMachine(this.armStateDb, (effect) =>
 			this.handleStateMachineSideEffect(effect),
 		);
 
 		// Initialize health monitor with callbacks
 		const healthCallbacks: HealthMonitorCallbacks = {
 			getActiveArmIds: async () => {
-				if (!this.db) return [];
-				const rows = this.db
-					.query("SELECT id FROM arms WHERE status NOT IN ('stopped', 'error')")
-					.all() as Array<{ id: string }>;
-				return rows.map((r) => r.id);
+				const arms = await this.listArmsFromApi(true);
+				return arms
+					.filter((arm) => arm.status !== "stopped" && arm.status !== "error")
+					.map((arm) => arm.id);
 			},
 			sendPromptToArm: async (armId, message) => {
 				await this.sendPromptToArm(armId, message);
@@ -488,14 +664,10 @@ export class Brain {
 			},
 			killArm: async (armId, reason) => {
 				this.log(`Health monitor requested kill for arm ${armId}: ${reason}`);
-				// Mark arm as stopped in database
-				if (this.db) {
-					const now = new Date().toISOString();
-					this.db.run(
-						"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-						[now, armId],
-					);
-				}
+				await this.patchArmViaApi(armId, {
+					status: "stopped",
+					lastActivityAt: new Date().toISOString(),
+				});
 				this.arms.delete(armId);
 				this.logActivity("brain", "arm_killed", armId, {
 					reason,
@@ -512,7 +684,6 @@ export class Brain {
 		};
 
 		this.healthMonitor = new ArmHealthMonitor(healthCallbacks, {
-			db: this.db,
 			log: (msg) => this.log(msg),
 			config: {
 				checkIntervalMs: 30 * 1000, // 30 seconds
@@ -837,10 +1008,10 @@ export class Brain {
 		// Disconnect from NATS (with timeout to avoid hanging)
 		await this.stopNats();
 
-		// Now safe to close the database adapter
-		if (this.db) {
-			this.db.close?.();
-			this.db = null;
+		// Close arm state adapter
+		if (this.armStateDb) {
+			this.armStateDb.close?.();
+			this.armStateDb = null;
 		}
 
 		// Clear abort controller
@@ -1099,37 +1270,38 @@ export class Brain {
 	}
 
 	/**
-	 * Process messages from arms (SQLite-based with file fallback)
+	 * Process messages from arms (API queue with file fallback)
 	 */
 	private async processArmQueue(): Promise<void> {
-		// Process messages from SQLite (primary)
-		if (this.db) {
-			const stateDb = this.db as Parameters<typeof getPendingBrainMessages>[0];
-			const messages = getPendingBrainMessages(stateDb);
-			for (const message of messages) {
-				try {
-					markMessageProcessing(stateDb, message.id);
+		// Process messages from API queue (primary)
+		const messages = await this.listPendingMessagesViaApi("brain", 500);
+		for (const message of messages) {
+			try {
+				await this.markMessageStatusViaApi(message.id, "processing");
 
-					await this.handleArmMessage({
-						id: message.id,
-						from: message.from,
-						to: message.to,
-						type: message.type as MessageType,
-						payload: message.payload,
-						timestamp: message.createdAt,
-					});
+				await this.handleArmMessage({
+					id: message.id,
+					from: message.from,
+					to: message.to,
+					type: message.type as MessageType,
+					payload: message.payload,
+					timestamp: new Date(message.createdAt),
+				});
 
-					markMessageCompleted(stateDb, message.id);
-				} catch (err) {
-					this.log(`Error processing queue message ${message.id}: ${err}`);
-					markMessageFailed(stateDb, message.id, String(err));
-				}
+				await this.markMessageStatusViaApi(message.id, "completed");
+			} catch (err) {
+				this.log(`Error processing queue message ${message.id}: ${err}`);
+				await this.markMessageStatusViaApi(
+					message.id,
+					"failed",
+					String(err),
+				);
 			}
+		}
 
-			// Periodically cleanup old messages (once per hour via modulo check)
-			if (Date.now() % 3600000 < this.options.pollIntervalMs) {
-				cleanupOldMessages(stateDb, 7);
-			}
+		// Periodically cleanup old messages (once per hour via modulo check)
+		if (Date.now() % 3600000 < this.options.pollIntervalMs) {
+			await this.cleanupMessagesViaApi(7);
 		}
 
 		// Also check file queue for legacy/fallback messages
@@ -1484,11 +1656,6 @@ export class Brain {
 		description: string,
 		mailThreadId?: string,
 	): Promise<void> {
-		if (!this.db) {
-			this.log(`Cannot create human bug report: database not available`);
-			return;
-		}
-
 		const bugPayload = {
 			id: `bug-human-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
 			title,
@@ -1625,37 +1792,28 @@ export class Brain {
 		this.log(`Arm ${armId} claiming bug ${bugId}`);
 
 		try {
-			if (!this.db) {
-				this.log(`Database not initialized, cannot claim bug`);
-				return;
-			}
-
 			// Ensure the arm exists
 			await this.ensureArmExists(armId);
 
-			// Update arm with current bug info
-			this.db.run(
-				`
-        UPDATE arms
-        SET current_bug_id = ?, current_bug_title = (
-          SELECT title FROM bugs WHERE id = ?
-        ), updated_at = ?
-        WHERE id = ?
-      `,
-				[bugId, bugId, new Date().toISOString(), armId],
-			);
+			const bugResponse = await this.apiRequest<{
+				bug?: { title?: string };
+			}>(`/api/bugs/${encodeURIComponent(bugId)}`);
+			const bugTitle = bugResponse?.bug?.title || bugId;
 
-			// Update bug with assignee
-			this.db.run(
-				`
-        UPDATE bugs
-        SET assignee_arm_id = ?, assignee_arm_name = (
-          SELECT name FROM arms WHERE id = ?
-        ), status = 'investigating', updated_at = ?
-        WHERE id = ?
-      `,
-				[armId, armId, new Date().toISOString(), bugId],
-			);
+			await this.apiRequest(`/api/bugs/${encodeURIComponent(bugId)}`, {
+				method: "PATCH",
+				body: JSON.stringify({
+					assigneeArmId: armId,
+					status: "investigating",
+				}),
+			});
+
+			await this.apiRequest(`/api/arms/${encodeURIComponent(armId)}/metrics`, {
+				method: "POST",
+				body: JSON.stringify({
+					currentBug: { id: bugId, title: bugTitle },
+				}),
+			});
 
 			this.log(`Bug ${bugId} claimed by arm ${armId}`);
 		} catch (err) {
@@ -1771,7 +1929,9 @@ export class Brain {
 			return;
 		}
 
-		this.log(`Task discussion API unavailable for ${taskId}; comment not persisted`);
+		this.log(
+			`Task discussion API unavailable for ${taskId}; comment not persisted`,
+		);
 	}
 
 	private getArmDisplayName(armId: string): string {
@@ -1905,15 +2065,68 @@ export class Brain {
 		return response.tasks.map((task) => this.mapApiTask(task));
 	}
 
-	private async listBugsFromApi(limit: number = 200): Promise<
+	private async listBugsFromApi(
+		limit: number = 200,
+		options?: { statuses?: string[] },
+	): Promise<
 		Array<{
 			id: string;
 			title: string;
 			status: string;
 			priority: string;
 			blockers: string[];
+			resolution?: string;
+			resolvedAt?: string;
+			humanNotified: boolean;
 		}>
 	> {
+		const statuses = options?.statuses;
+		const bugs: Array<{
+			id: string;
+			title: string;
+			status: string;
+			priority: string;
+			blockers: string[];
+			resolution?: string;
+			resolvedAt?: string;
+			humanNotified: boolean;
+		}> = [];
+		const seen = new Set<string>();
+
+		if (statuses && statuses.length > 0) {
+			for (const status of statuses) {
+				const response = await this.apiRequest<{
+					bugs: Array<{
+						id: string;
+						title: string;
+						status: string;
+						priority: string;
+						blockers?: string[];
+						resolution?: string;
+						resolvedAt?: string;
+						humanNotified?: boolean;
+					}>;
+				}>(
+					`/api/bugs?status=${encodeURIComponent(status)}&limit=${encodeURIComponent(String(limit))}`,
+				);
+				for (const bug of response?.bugs || []) {
+					if (seen.has(bug.id)) continue;
+					seen.add(bug.id);
+					bugs.push({
+						id: bug.id,
+						title: bug.title,
+						status: bug.status,
+						priority: bug.priority,
+						blockers: bug.blockers || [],
+						resolution: bug.resolution,
+						resolvedAt: bug.resolvedAt,
+						humanNotified: bug.humanNotified === true,
+					});
+				}
+			}
+			return bugs;
+		}
+
 		const response = await this.apiRequest<{
 			bugs: Array<{
 				id: string;
@@ -1921,14 +2134,13 @@ export class Brain {
 				status: string;
 				priority: string;
 				blockers?: string[];
+				resolution?: string;
+				resolvedAt?: string;
+				humanNotified?: boolean;
 			}>;
-		}>(`/api/bugs?limit=${limit}`);
+		}>(`/api/bugs?limit=${encodeURIComponent(String(limit))}`);
 
-		if (!response?.bugs) {
-			return [];
-		}
-
-		return response.bugs
+		return (response?.bugs || [])
 			.filter((bug) => bug.status !== "resolved" && bug.status !== "closed")
 			.map((bug) => ({
 				id: bug.id,
@@ -1936,6 +2148,9 @@ export class Brain {
 				status: bug.status,
 				priority: bug.priority,
 				blockers: bug.blockers || [],
+				resolution: bug.resolution,
+				resolvedAt: bug.resolvedAt,
+				humanNotified: bug.humanNotified === true,
 			}));
 	}
 
@@ -1947,9 +2162,18 @@ export class Brain {
 		priority?: Task["priority"];
 		domain?: string;
 		classification?: string;
+		phase?: string;
 		mailThreadId?: string;
 		context?: Task["context"];
-		sourceType?: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
+		metadata?: Record<string, unknown>;
+		sortOrder?: number;
+		sourceType?:
+			| "manual"
+			| "plan"
+			| "email"
+			| "discovery"
+			| "proposal"
+			| "system";
 		sourceRef?: string;
 	}): Promise<Task | null> {
 		const response = await this.apiRequest<{
@@ -2054,6 +2278,130 @@ export class Brain {
 		return this.mapApiTask(response.task);
 	}
 
+	private async getTaskDependenciesFromApi(taskId: string): Promise<string[]> {
+		const response = await this.apiRequest<{
+			task: {
+				id: string;
+			};
+			dependencies?: string[];
+		}>(`/api/tasks/${encodeURIComponent(taskId)}`);
+		return response?.dependencies || [];
+	}
+
+	private async listStatusReportsFromApi(options?: {
+		taskId?: string;
+		armId?: string;
+		limit?: number;
+	}): Promise<
+		Array<{
+			id: string;
+			taskId: string;
+			armId: string;
+			status:
+				| "on_track"
+				| "blocked"
+				| "issues_found"
+				| "needs_review"
+				| "completed_with_issues";
+			summary: string;
+			issues?: string[];
+			blockers?: string[];
+			nextSteps?: string;
+			filesChanged?: string[];
+			testsStatus?: "passing" | "failing" | "not_run";
+			createdAt: string;
+		}>
+	> {
+		const limit = Math.max(1, options?.limit ?? 100);
+		const pageSize = 100;
+		const reports: Array<{
+			id: string;
+			taskId: string;
+			armId: string;
+			status:
+				| "on_track"
+				| "blocked"
+				| "issues_found"
+				| "needs_review"
+				| "completed_with_issues";
+			summary: string;
+			issues?: string[];
+			blockers?: string[];
+			nextSteps?: string;
+			filesChanged?: string[];
+			testsStatus?: "passing" | "failing" | "not_run";
+			createdAt: string;
+		}> = [];
+
+		let offset = 0;
+		while (reports.length < limit) {
+			const currentPageSize = Math.min(pageSize, limit - reports.length);
+			const params = new URLSearchParams({
+				limit: String(currentPageSize),
+				offset: String(offset),
+			});
+			if (options?.taskId) params.set("taskId", options.taskId);
+			if (options?.armId) params.set("armId", options.armId);
+
+			const response = await this.apiRequest<{
+				reports: Array<{
+					id: string;
+					taskId: string;
+					armId: string;
+					status:
+						| "on_track"
+						| "blocked"
+						| "issues_found"
+						| "needs_review"
+						| "completed_with_issues";
+					summary: string;
+					issues?: string[];
+					blockers?: string[];
+					nextSteps?: string;
+					filesChanged?: string[];
+					testsStatus?: "passing" | "failing" | "not_run";
+					createdAt: string;
+				}>;
+				pagination?: {
+					total: number;
+				};
+			}>(`/api/status-reports?${params.toString()}`);
+
+			const batch = response?.reports || [];
+			reports.push(...batch);
+
+			if (batch.length < currentPageSize) {
+				break;
+			}
+			const total = response?.pagination?.total;
+			offset += batch.length;
+			if (typeof total === "number" && offset >= total) {
+				break;
+			}
+		}
+
+		return reports;
+	}
+
+	private async getTaskDiscussionText(taskId: string): Promise<string> {
+		const response = await this.apiRequest<{
+			discussions?: Array<{
+				content?: string;
+			}>;
+		}>(
+			`/api/tasks/${encodeURIComponent(taskId)}/discussions?limit=100&offset=0`,
+		);
+		if (!response?.discussions || response.discussions.length === 0) {
+			return "";
+		}
+		return response.discussions
+			.map((comment) =>
+				typeof comment.content === "string" ? comment.content : "",
+			)
+			.filter((content) => content.length > 0)
+			.join(" ");
+	}
+
 	private async moveTaskToTop(taskId: string): Promise<boolean> {
 		const response = await this.apiRequest<{ success?: boolean }>(
 			"/api/tasks/reorder",
@@ -2099,7 +2447,9 @@ export class Brain {
 			summary || "(no summary provided)",
 			"",
 			"Artifacts:",
-			artifacts.length > 0 ? artifacts.map((a) => `- ${a}`).join("\n") : "- None",
+			artifacts.length > 0
+				? artifacts.map((a) => `- ${a}`).join("\n")
+				: "- None",
 		].join("\n");
 
 		const validationTask = await this.createTaskViaApi({
@@ -2267,7 +2617,8 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		this.state.completedToday++;
 
-		const taskSubject = task?.subject || (await this.getTaskSubjectFromApi(taskId));
+		const taskSubject =
+			task?.subject || (await this.getTaskSubjectFromApi(taskId));
 
 		// Log activity
 		this.logActivity("brain", "task_completed", taskId, {
@@ -2449,54 +2800,21 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 	 * Part of progressive planning - re-evaluates which tasks can now proceed
 	 */
 	private async unblockDependentTasks(completedTaskId: string): Promise<void> {
-		if (!this.db) return;
-
 		try {
-			// Find tasks that depend on the completed task
-			const dependentRows = this.db
-				.query(`
-        SELECT td.task_id, t.subject, t.dependency_blocked
-        FROM task_dependencies td
-        JOIN tasks t ON td.task_id = t.id
-        WHERE td.depends_on_task_id = ?
-        AND t.status IN ('pending', 'blocked')
-      `)
-				.all(completedTaskId) as Array<{
-				task_id: string;
-				subject: string;
-				dependency_blocked: number;
-			}>;
-
-			for (const row of dependentRows) {
-				// Check if this task has any other unmet dependencies
-				const unmetDeps = this.db
-					.query(`
-          SELECT COUNT(*) as count
-          FROM task_dependencies td
-          WHERE td.task_id = ?
-          AND td.depends_on_task_id != ?
-          AND NOT EXISTS (
-            SELECT 1 FROM tasks t
-            WHERE t.id = td.depends_on_task_id
-            AND t.status = 'completed'
-          )
-        `)
-					.get(row.task_id, completedTaskId) as { count: number };
-
-				if (unmetDeps.count === 0) {
-					await this.patchTaskViaApi(row.task_id, {
-						dependencyBlocked: false,
-						status: "pending",
-					});
-
-					this.log(
-						`Unblocked task: ${row.subject} (was waiting on ${completedTaskId})`,
-					);
-					this.logActivity("brain", "task_unblocked", row.task_id, {
-						completedDependency: completedTaskId,
-						subject: row.subject,
-					});
-				}
+			const response = await this.apiRequest<{
+				unblocked: Array<{ taskId: string; subject: string }>;
+			}>("/api/brain/internal/dependencies/unblock-for-completed", {
+				method: "POST",
+				body: JSON.stringify({ completedTaskId }),
+			});
+			for (const row of response?.unblocked || []) {
+				this.log(
+					`Unblocked task: ${row.subject} (was waiting on ${completedTaskId})`,
+				);
+				this.logActivity("brain", "task_unblocked", row.taskId, {
+					completedDependency: completedTaskId,
+					subject: row.subject,
+				});
 			}
 		} catch (err) {
 			this.log(`Error unblocking dependent tasks: ${err}`);
@@ -2618,35 +2936,31 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		}
 
 		// Update last activity for the arm
-		if (this.db) {
-			const now = new Date().toISOString();
-			this.db.run(
-				"UPDATE arms SET last_activity_at = ?, updated_at = ? WHERE id = ?",
-				[now, now, report.armId],
-			);
-		}
+		const now = new Date().toISOString();
+		await this.patchArmViaApi(report.armId, {
+			lastActivityAt: now,
+		});
 		const reportingArm = this.arms.get(report.armId);
 		if (reportingArm) {
 			reportingArm.lastActivity = new Date();
 		}
 
-		const statusReportResponse = await this.apiRequest<{ report?: { id: string } }>(
-			"/api/status-reports",
-			{
-				method: "POST",
-				body: JSON.stringify({
-					taskId: report.taskId,
-					armId: report.armId,
-					status: report.status,
-					summary: report.summary,
-					issues: report.issues,
-					blockers: report.blockers,
-					nextSteps: report.nextSteps,
-					filesChanged: report.filesChanged,
-					testsStatus: report.testsStatus,
-				}),
-			},
-		);
+		const statusReportResponse = await this.apiRequest<{
+			report?: { id: string };
+		}>("/api/status-reports", {
+			method: "POST",
+			body: JSON.stringify({
+				taskId: report.taskId,
+				armId: report.armId,
+				status: report.status,
+				summary: report.summary,
+				issues: report.issues,
+				blockers: report.blockers,
+				nextSteps: report.nextSteps,
+				filesChanged: report.filesChanged,
+				testsStatus: report.testsStatus,
+			}),
+		});
 		if (statusReportResponse?.report?.id) {
 			this.log(`Stored status report: ${statusReportResponse.report.id}`);
 		} else {
@@ -2725,7 +3039,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 				if (forwardDecision.action === "defer_task") {
 					// Defer the task and notify user - arm will move to other work
 					// Clear the reporting arm so it can pull other work
-					this.clearArmTaskAssignment(report.armId);
+					await this.clearArmTaskAssignment(report.armId);
 
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
@@ -2847,7 +3161,11 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 			case "completed_with_issues": {
 				// Create a verification task for follow-up
-				await this.createVerificationTask(task, report, !forwardDecision.shouldForward);
+				await this.createVerificationTask(
+					task,
+					report,
+					!forwardDecision.shouldForward,
+				);
 				break;
 			}
 
@@ -2968,9 +3286,7 @@ ${originalTask.id}`;
 				},
 			});
 		} else {
-			this.log(
-				`Skipping human notification for verification task ${taskId}`,
-			);
+			this.log(`Skipping human notification for verification task ${taskId}`);
 		}
 
 		return verifyTask;
@@ -2984,32 +3300,22 @@ ${originalTask.id}`;
 		discovery: Discovery,
 	): Promise<void> {
 		const discoveryId = `disc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-		// Store in database
-		if (this.db) {
-			const now = new Date().toISOString();
-			this.db.run(
-				`
-         INSERT INTO discoveries (id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, ?)
-       `,
-				[
-					discoveryId,
-					armId,
-					armId, // arm_name is the same as arm_id for now
-					discovery.kind,
-					discovery.title,
-					discovery.details,
-					discovery.file || null,
-					discovery.line || null,
-					discovery.severity || "info",
-					now,
-					now,
-				],
-			);
-
-			this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
-		}
+		await this.apiRequest("/api/discoveries", {
+			method: "POST",
+			body: JSON.stringify({
+				id: discoveryId,
+				armId,
+				armName: armId,
+				kind: discovery.kind,
+				title: discovery.title,
+				details: discovery.details,
+				filePath: discovery.file || null,
+				lineNumber: discovery.line || null,
+				severity: discovery.severity || "info",
+				status: "open",
+			}),
+		});
+		this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
 
 		// Also notify human for high-severity discoveries
 		if (discovery.severity === "error" || discovery.severity === "warning") {
@@ -3061,64 +3367,44 @@ ${originalTask.id}`;
 			createdAt: string;
 		}>
 	> {
-		if (!this.db) return [];
-
 		const limit = options?.limit || 20;
-		let query = `
-       SELECT id, kind, title, details, file_path, line_number, severity, status, created_at
-       FROM discoveries
-       WHERE status = 'open'
-     `;
-
-		const params: (string | number)[] = [];
-
-		// Filter by severity if specified
-		if (options?.severity && options.severity.length > 0) {
-			query += ` AND severity IN (${options.severity.map(() => "?").join(",")})`;
-			params.push(...options.severity);
-		}
-
-		// Filter by file pattern if specified
-		if (options?.filePattern) {
-			query += ` AND (file_path LIKE ? OR file_path GLOB ?)`;
-			params.push(`%${options.filePattern}%`, `*${options.filePattern}*`);
-		}
-
-		query += ` ORDER BY
-          CASE severity
-            WHEN 'error' THEN 1
-            WHEN 'warning' THEN 2
-            WHEN 'info' THEN 3
-          END,
-          created_at DESC
-        LIMIT ?`;
-		params.push(limit);
-
 		try {
-			const stmt = this.db.query(query);
-			const rows = (
-				params.length > 0 ? stmt.all(...params) : stmt.all()
-			) as Array<{
-				id: string;
-				kind: string;
-				title: string;
-				details: string;
-				file_path: string | null;
-				line_number: number | null;
-				severity: string;
-				status: string;
-				created_at: string;
-			}>;
+			const response = await this.apiRequest<{
+				discoveries: Array<{
+					id: string;
+					kind: string;
+					title: string;
+					details: string;
+					filePath: string | null;
+					lineNumber: number | null;
+					severity: string;
+					status: string;
+					createdAt: string;
+				}>;
+			}>(
+				`/api/discoveries?status=open&limit=${limit}${options?.severity?.[0] ? `&severity=${encodeURIComponent(options.severity[0])}` : ""}`,
+			);
+			const discoveries = response?.discoveries || [];
+			const filtered = discoveries.filter((d) => {
+				if (options?.severity && options.severity.length > 0) {
+					if (!options.severity.includes(d.severity)) return false;
+				}
+				if (options?.filePattern) {
+					if (!d.filePath) return false;
+					return d.filePath.includes(options.filePattern);
+				}
+				return true;
+			});
 
-			return rows.map((row) => ({
+			return filtered.map((row) => ({
 				id: row.id,
 				kind: row.kind,
 				title: row.title,
 				details: row.details,
-				filePath: row.file_path || undefined,
-				lineNumber: row.line_number || undefined,
+				filePath: row.filePath || undefined,
+				lineNumber: row.lineNumber || undefined,
 				severity: row.severity,
-				createdAt: row.created_at,
+				createdAt: row.createdAt,
 			}));
 		} catch (err) {
 			this.log(`Error querying discoveries: ${err}`);
@@ -3145,47 +3431,36 @@ ${originalTask.id}`;
 			createdAt: string;
 		}>
 	> {
-		if (!this.db) return [];
-
 		const limit = options?.limit || 20;
 
 		try {
-			// Build FTS query with parameters
-			const ftsQuery = `
-          SELECT d.id, d.kind, d.title, d.details, d.severity, d.created_at
-          FROM discoveries d
-          JOIN discoveries_fts fts ON d.rowid = fts.rowid
-          WHERE discoveries_fts MATCH ?
-          ${options?.severity ? `AND d.severity IN (${options.severity.map(() => "?").join(",")})` : ""}
-          ORDER BY d.created_at DESC
-          LIMIT ?
-        `;
+			const response = await this.apiRequest<{
+				discoveries: Array<{
+					id: string;
+					kind: string;
+					title: string;
+					details: string;
+					severity: string;
+					createdAt: string;
+				}>;
+			}>(
+				`/api/discoveries/search?q=${encodeURIComponent(query)}&limit=${limit}${options?.severity?.[0] ? `&severity=${encodeURIComponent(options.severity[0])}` : ""}`,
+			);
 
-			const ftsParams: (string | number)[] = [query];
-			if (options?.severity) {
-				ftsParams.push(...options.severity);
-			}
-			ftsParams.push(limit);
-
-			const stmt = this.db.query(ftsQuery);
-			const rows = ftsParams.length > 0 ? stmt.all(...ftsParams) : stmt.all();
-			const typedRows = rows as Array<{
-				id: string;
-				kind: string;
-				title: string;
-				details: string;
-				severity: string;
-				created_at: string;
-			}>;
-
-			return typedRows.map((row) => ({
-				id: row.id,
-				kind: row.kind,
-				title: row.title,
-				details: row.details,
-				severity: row.severity,
-				createdAt: row.created_at,
-			}));
+			return (response?.discoveries || [])
+				.filter((row) =>
+					options?.severity?.length
+						? options.severity.includes(row.severity)
+						: true,
+				)
+				.map((row) => ({
+					id: row.id,
+					kind: row.kind,
+					title: row.title,
+					details: row.details,
+					severity: row.severity,
+					createdAt: row.createdAt,
+				}));
 		} catch (err) {
 			// FTS might not be available, fall back to LIKE search
 			this.log(`FTS search failed, falling back to LIKE: ${err}`);
@@ -3319,39 +3594,45 @@ ${originalTask.id}`;
 	): Promise<void> {
 		const noteId = `note-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-		// Persist note via API-backed state adapter
-		if (this.db) {
-			const stateDb = this.db as Parameters<typeof createNote>[0];
-			createNote(stateDb, {
-				id: noteId,
-				author,
-				title: note.title,
-				content: note.content,
-				category: "shared",
-				tags: note.tags,
-			});
-		}
+		// Persist note via API
+		await this.apiRequest<{ created?: boolean }>(
+			"/api/brain/internal/notes",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					id: noteId,
+					author,
+					title: note.title,
+					content: note.content,
+					category: "shared",
+					tags: note.tags,
+				}),
+			},
+		);
 
 		this.log(`Saved shared note: ${note.title} from ${author}`);
 	}
 
 	/**
-	 * Handle a tool discovery (stored in SQLite tools table)
+	 * Handle a tool discovery and persist it through the API server.
 	 */
 	private async handleToolDiscovery(
 		armId: string,
 		tool: { name: string; command: string; description: string },
 	): Promise<void> {
-		// Persist tool via API-backed state adapter
-		if (this.db) {
-			const stateDb = this.db as Parameters<typeof upsertTool>[0];
-			upsertTool(stateDb, {
-				name: tool.name,
-				command: tool.command,
-				description: tool.description,
-				discoveredBy: armId,
-			});
-		}
+		// Persist tool via API
+		await this.apiRequest<{ upserted?: boolean }>(
+			"/api/brain/internal/tools/upsert",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					name: tool.name,
+					command: tool.command,
+					description: tool.description,
+					discoveredBy: armId,
+				}),
+			},
+		);
 
 		// Notify human
 		const body = await this.templates.renderTemplate(
@@ -3379,30 +3660,33 @@ ${originalTask.id}`;
 		armId: string,
 		payload: { status?: string; currentTask?: string; timestamp: string },
 	): Promise<void> {
-		if (!this.db) return;
-
 		const now = new Date().toISOString();
 		const status =
 			payload.status === "busy" || payload.currentTask ? "busy" : "idle";
-		if (status === "idle" && !payload.currentTask) {
-			this.db.run(
-				"UPDATE arms SET status = ?, last_heartbeat = ?, last_activity_at = ?, updated_at = ?, current_task_id = NULL, current_task_subject = NULL WHERE id = ?",
-				[status, now, now, now, armId],
-			);
-		} else {
-			this.db.run(
-				`UPDATE arms
-         SET status = ?,
-             last_heartbeat = ?,
-             last_activity_at = ?,
-             updated_at = ?,
-             current_task_subject = CASE
-               WHEN current_task_id IS NULL THEN COALESCE(?, current_task_subject)
-               ELSE current_task_subject
-             END
-         WHERE id = ?`,
-				[status, now, now, now, payload.currentTask ?? null, armId],
-			);
+		await this.patchArmViaApi(armId, {
+			status,
+			lastHeartbeat: now,
+			lastActivityAt: now,
+			currentTaskId: status === "idle" ? null : undefined,
+			currentTaskSubject:
+				status === "idle" ? null : (payload.currentTask ?? undefined),
+		});
+
+		if (status === "idle") {
+			await this.apiRequest(`/api/arms/${encodeURIComponent(armId)}/metrics`, {
+				method: "POST",
+				body: JSON.stringify({ currentTask: null }),
+			});
+		} else if (payload.currentTask) {
+			await this.apiRequest(`/api/arms/${encodeURIComponent(armId)}/metrics`, {
+				method: "POST",
+				body: JSON.stringify({
+					currentTask: {
+						id: payload.currentTask,
+						subject: payload.currentTask,
+					},
+				}),
+			});
 		}
 
 		// Update state machine with heartbeat event
@@ -3448,6 +3732,12 @@ ${originalTask.id}`;
 	): Promise<void> {
 		this.log(`Documentation updated by ${armId}: ${payload.path}`);
 
+		await this.recordFileChangeViaApi({
+			filePath: payload.path,
+			changeType: "modified",
+			detectedByArmId: armId,
+		});
+
 		// Notify human of the update
 		const body = await this.templates.renderTemplate(
 			"human-doc-updated.jinja",
@@ -3466,25 +3756,7 @@ ${originalTask.id}`;
 			},
 		});
 
-		// Log file change for subscribed arms
-		if (this.db) {
-			this.db.run(
-				`
-        INSERT INTO file_changes (file_path, change_type, content_hash, detected_by_arm_id)
-        VALUES (?, 'modified', ?, ?)
-      `,
-				[
-					payload.path,
-					payload.newContent
-						? createHash("sha256")
-								.update(payload.newContent)
-								.digest("hex")
-								.slice(0, 16)
-						: null,
-					armId,
-				],
-			);
-		}
+		// Track file changes in-memory; subscribed arms are notified via handleFileChange
 	}
 
 	/**
@@ -3501,13 +3773,6 @@ ${originalTask.id}`;
 			errorDetails?: string;
 		},
 	): Promise<void> {
-		if (!this.db) {
-			this.log(
-				`Bug report received but database not available: ${payload.title}`,
-			);
-			return;
-		}
-
 		try {
 			const now = new Date().toISOString();
 			const bugId =
@@ -3546,41 +3811,34 @@ ${originalTask.id}`;
 			// Set blockers array if this bug is blocking a task
 			const blockersList = payload.sourceTaskId ? [payload.sourceTaskId] : [];
 
-			// Insert bug report
-			this.db.run(
-				`
-        INSERT OR REPLACE INTO bugs (
-          id, title, description, source, source_arm_id, source_task_id,
-          status, priority, error_details, blockers, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?)
-      `,
-				[
-					bugId,
-					payload.title,
-					payload.description,
-					payload.source,
-					payload.source === "arm_reported" ? armId : null,
-					payload.sourceTaskId || null,
+			await this.apiRequest("/api/bugs", {
+				method: "POST",
+				body: JSON.stringify({
+					id: bugId,
+					title: payload.title,
+					description: payload.description,
+					source: payload.source,
+					sourceArmId: payload.source === "arm_reported" ? armId : undefined,
+					sourceTaskId: payload.sourceTaskId,
 					priority,
-					payload.errorDetails || null,
-					JSON.stringify(blockersList),
-					now,
-					now,
-				],
-			);
+					errorDetails: payload.errorDetails || null,
+					blockers: blockersList,
+					metadata: { reportedAt: now },
+				}),
+			});
 
 			this.log(
 				`Bug reported: ${payload.title} (${priority} priority) by ${payload.source}`,
 			);
 
-				// Query blocked tasks for notification
-				const blockedTasks: Task[] = [];
-				for (const blockedTaskId of blockersList) {
-					const blockedTask = await this.getTaskFromApi(blockedTaskId);
-					if (blockedTask) {
-						blockedTasks.push(blockedTask);
-					}
+			// Query blocked tasks for notification
+			const blockedTasks: Task[] = [];
+			for (const blockedTaskId of blockersList) {
+				const blockedTask = await this.getTaskFromApi(blockedTaskId);
+				if (blockedTask) {
+					blockedTasks.push(blockedTask);
 				}
+			}
 
 			// Notify human for critical/high priority bugs
 			if (priority === "critical" || priority === "high") {
@@ -3610,9 +3868,10 @@ ${originalTask.id}`;
 				});
 
 				// Mark as human notified
-				this.db.run(`UPDATE bugs SET human_notified = TRUE WHERE id = ?`, [
-					bugId,
-				]);
+				await this.apiRequest(`/api/bugs/${encodeURIComponent(bugId)}`, {
+					method: "PATCH",
+					body: JSON.stringify({ humanNotified: true }),
+				});
 			}
 
 			// Handle escalation based on priority and impact
@@ -3625,13 +3884,13 @@ ${originalTask.id}`;
 			}
 
 			// If bug blocks a task, try to assign an arm to investigate
-				if (payload.sourceTaskId) {
-					const task = await this.getTaskFromApi(payload.sourceTaskId);
-					if (task && task.status !== "completed" && task.status !== "failed") {
-						// Create investigation task
-						await this.createBugInvestigationTask(bugId, payload);
-					}
+			if (payload.sourceTaskId) {
+				const task = await this.getTaskFromApi(payload.sourceTaskId);
+				if (task && task.status !== "completed" && task.status !== "failed") {
+					// Create investigation task
+					await this.createBugInvestigationTask(bugId, payload);
 				}
+			}
 		} catch (err) {
 			this.log(`Error handling bug report: ${err}`);
 		}
@@ -3641,51 +3900,37 @@ ${originalTask.id}`;
 	 * Check for recently resolved bugs and resume any tasks they were blocking
 	 */
 	private async checkResolvedBugsAndResumeTasks(): Promise<void> {
-		if (!this.db) return;
-
 		try {
-			// Find bugs that were resolved/closed since last check
-			const recentlyResolvedBugs = this.db
-				.query(`
-        SELECT id, title, description, priority, resolution, status, blockers, resolved_at
-        FROM bugs
-        WHERE status IN ('resolved', 'closed')
-          AND resolved_at IS NOT NULL
-          AND resolved_at > datetime('now', '-1 hour')  -- Check last hour
-          AND json_array_length(blockers) > 0
-      `)
-				.all() as Array<{
-				id: string;
-				title: string;
-				description: string;
-				priority: string;
-				resolution: string;
-				status: string;
-				blockers: string;
-				resolved_at: string;
-			}>;
+			const oneHourAgo = Date.now() - 60 * 60 * 1000;
+			const resolvedBugs = await this.listBugsFromApi(500, {
+				statuses: ["resolved", "closed"],
+			});
+			const recentlyResolvedBugs = resolvedBugs.filter((bug) => {
+				if (!bug.resolvedAt) return false;
+				if (new Date(bug.resolvedAt).getTime() <= oneHourAgo) return false;
+				return bug.blockers.length > 0;
+			});
 
-				for (const bug of recentlyResolvedBugs) {
-					const blockedTaskIds = JSON.parse(bug.blockers) as string[];
+			for (const bug of recentlyResolvedBugs) {
+				const blockedTaskIds = bug.blockers;
 
-					for (const taskId of blockedTaskIds) {
-						const task = await this.getTaskFromApi(taskId);
-						if (task && task.status === "blocked") {
-							await this.patchTaskViaApi(taskId, { status: "pending" });
+				for (const taskId of blockedTaskIds) {
+					const task = await this.getTaskFromApi(taskId);
+					if (task && task.status === "blocked") {
+						await this.patchTaskViaApi(taskId, { status: "pending" });
 
-							this.log(
-								`Resuming blocked task ${taskId} after bug ${bug.id} resolution`,
-							);
+						this.log(
+							`Resuming blocked task ${taskId} after bug ${bug.id} resolution`,
+						);
 
-							// Notify human about task resumption
-							const body = await this.templates.renderTemplate(
+						const body = await this.templates.renderTemplate(
 							"human-task-resumed.jinja",
 							{
 								task_id: taskId,
 								task_subject: task.subject,
 								bug_id: bug.id,
 								bug_title: bug.title,
-								resolved_at: bug.resolved_at,
+								resolved_at: bug.resolvedAt || new Date().toISOString(),
 							},
 						);
 						await this.sendToHuman({
@@ -3698,7 +3943,6 @@ ${originalTask.id}`;
 							},
 						});
 
-						// Log activity
 						this.logActivity("brain", "task_resumed", taskId, {
 							reason: "blocking_bug_resolved",
 							bugId: bug.id,
@@ -3706,15 +3950,9 @@ ${originalTask.id}`;
 					}
 				}
 
-				// Check if this bug has already been notified about (using human_notified flag)
-				const bugNotified = this.db
-					.query("SELECT human_notified FROM bugs WHERE id = ?")
-					.get(bug.id) as { human_notified: number } | undefined;
-
-				// Send bug resolution notification if priority is high or critical and not yet notified
 				if (
 					(bug.priority === "critical" || bug.priority === "high") &&
-					bugNotified?.human_notified !== 1
+					!bug.humanNotified
 				) {
 					const blockedTasks = this.tasks.filter((t) =>
 						blockedTaskIds.includes(t.id),
@@ -3746,11 +3984,10 @@ ${originalTask.id}`;
 					});
 
 					this.log(`Sent bug resolution notification for ${bug.id}`);
-
-					// Mark bug as human notified
-					this.db.run(`UPDATE bugs SET human_notified = TRUE WHERE id = ?`, [
-						bug.id,
-					]);
+					await this.apiRequest(`/api/bugs/${encodeURIComponent(bug.id)}`, {
+						method: "PATCH",
+						body: JSON.stringify({ humanNotified: true }),
+					});
 				}
 			}
 		} catch (err) {
@@ -3784,9 +4021,7 @@ ${originalTask.id}`;
 					(a) => a.id === task.assignedTo,
 				);
 				if (assignedArm) {
-					this.log(
-						`Task ${task.id} may need follow-up due to bug ${bugId}`,
-					);
+					this.log(`Task ${task.id} may need follow-up due to bug ${bugId}`);
 				}
 			}
 		}
@@ -3902,39 +4137,19 @@ Report findings using bug resolution workflow.`;
 			category?: string;
 		},
 	): Promise<void> {
-		if (!this.db) return;
-
 		if (payload.action === "subscribe") {
-			// Check if subscription already exists
-			const existing = this.db
-				.query(`
-        SELECT id FROM file_subscriptions WHERE arm_id = ? AND file_pattern = ?
-      `)
-				.get(armId, payload.pattern);
-
-			if (!existing) {
-				this.db.run(
-					`
-          INSERT INTO file_subscriptions (arm_id, file_pattern, category, subscribed_at)
-          VALUES (?, ?, ?, ?)
-        `,
-					[
-						armId,
-						payload.pattern,
-						payload.category || null,
-						new Date().toISOString(),
-					],
-				);
+			const existing = this.fileSubscriptions.get(armId) || new Set<string>();
+			if (!existing.has(payload.pattern)) {
+				existing.add(payload.pattern);
+				this.fileSubscriptions.set(armId, existing);
 				this.log(`Arm ${armId} subscribed to: ${payload.pattern}`);
 			}
 		} else {
-			// Unsubscribe
-			this.db.run(
-				`
-        DELETE FROM file_subscriptions WHERE arm_id = ? AND file_pattern = ?
-      `,
-				[armId, payload.pattern],
-			);
+			const existing = this.fileSubscriptions.get(armId);
+			existing?.delete(payload.pattern);
+			if (existing && existing.size === 0) {
+				this.fileSubscriptions.delete(armId);
+			}
 			this.log(`Arm ${armId} unsubscribed from: ${payload.pattern}`);
 		}
 	}
@@ -3956,58 +4171,43 @@ Report findings using bug resolution workflow.`;
 			`File change detected by ${armId}: ${payload.filePath} (${payload.changeType})`,
 		);
 
-		// Record the change
-		if (this.db) {
-			this.db.run(
-				`
-        INSERT INTO file_changes (file_path, change_type, content_hash, detected_by_arm_id)
-        VALUES (?, ?, ?, ?)
-      `,
-				[payload.filePath, payload.changeType, null, armId],
+		await this.recordFileChangeViaApi({
+			filePath: payload.filePath,
+			changeType: payload.changeType,
+			detectedByArmId: armId,
+			changedAt: payload.detectedAt,
+		});
+
+		// Notify subscribed arms
+		for (const [subArmId, patterns] of this.fileSubscriptions.entries()) {
+			if (subArmId === armId) continue;
+			const matches = Array.from(patterns).some((pattern) =>
+				this.pathMatchesPattern(payload.filePath, pattern),
 			);
+			if (!matches) continue;
 
-			// Get all arms subscribed to this file pattern
-			const subscriptions = this.db
-				.query(`
-        SELECT DISTINCT arm_id, file_pattern FROM file_subscriptions
-        WHERE ? LIKE file_pattern
-      `)
-				.all(payload.filePath) as Array<{
-				arm_id: string;
-				file_pattern: string;
-			}>;
+			await this.sendToArm(subArmId, {
+				type: "file_change_notification",
+				payload: {
+					filePath: payload.filePath,
+					changeType: payload.changeType,
+					summary: payload.summary,
+					impact: payload.impact,
+					detectedBy: armId,
+					detectedAt: payload.detectedAt,
+				},
+			});
+			this.log(`Notified arm ${subArmId} of file change: ${payload.filePath}`);
+		}
 
-			// Notify subscribed arms
-			for (const sub of subscriptions) {
-				if (sub.arm_id !== armId) {
-					// Queue notification to subscribed arm
-					await this.sendToArm(sub.arm_id, {
-						type: "file_change_notification",
-						payload: {
-							filePath: payload.filePath,
-							changeType: payload.changeType,
-							summary: payload.summary,
-							impact: payload.impact,
-							detectedBy: armId,
-							detectedAt: payload.detectedAt,
-						},
-					});
-					this.log(
-						`Notified arm ${sub.arm_id} of file change: ${payload.filePath}`,
-					);
-				}
-			}
-
-			// If requirements or plans changed, re-evaluate pending tasks
-			if (
-				payload.filePath.includes("requirements") ||
-				payload.filePath.includes("plans")
-			) {
-				this.log(
-					`Requirements/plans changed: ${payload.filePath}. Re-evaluating tasks.`,
-				);
-				// Tasks will be re-prioritized in next poll cycle
-			}
+		// If requirements or plans changed, re-evaluate pending tasks
+		if (
+			payload.filePath.includes("requirements") ||
+			payload.filePath.includes("plans")
+		) {
+			this.log(
+				`Requirements/plans changed: ${payload.filePath}. Re-evaluating tasks.`,
+			);
 		}
 
 		// Notify human of significant changes
@@ -4036,6 +4236,31 @@ Report findings using bug resolution workflow.`;
 		}
 	}
 
+	private pathMatchesPattern(filePath: string, pattern: string): boolean {
+		const normalizedPath = filePath.replaceAll("\\", "/");
+		const normalizedPattern = pattern.replaceAll("\\", "/");
+
+		if (normalizedPattern === "**" || normalizedPattern === "*") {
+			return true;
+		}
+
+		if (!normalizedPattern.includes("*")) {
+			return normalizedPath.includes(normalizedPattern);
+		}
+
+		const tokenDouble = "__DOUBLE_STAR__";
+		const tokenSingle = "__SINGLE_STAR__";
+		const escaped = normalizedPattern
+			.replaceAll("**", tokenDouble)
+			.replaceAll("*", tokenSingle)
+			.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+			.replaceAll(tokenDouble, ".*")
+			.replaceAll(tokenSingle, "[^/]*");
+
+		const regex = new RegExp(`^${escaped}$`);
+		return regex.test(normalizedPath);
+	}
+
 	/**
 	 * Check arm health and mark stale arms as stopped
 	 */
@@ -4058,28 +4283,17 @@ Report findings using bug resolution workflow.`;
 	 * sessions were lost due to API server restart
 	 */
 	private async scanForRunningArms(): Promise<void> {
-		if (!this.db) {
-			this.log("scanForRunningArms: no database");
-			return;
-		}
-
-		// Get all known arms from database (including stopped ones)
-		const knownArms = this.db
-			.query(`
-      SELECT id, name, pid, status, domain, harness
-      FROM arms
-    `)
-			.all() as Array<{
-			id: string;
-			name: string;
-			pid: number | null;
-			status: string;
-			domain: string;
-			harness: string;
-		}>;
+		const knownArms = (await this.listArmsFromApi(true)).map((arm) => ({
+			id: arm.id,
+			name: arm.name,
+			pid: arm.pid ?? null,
+			status: arm.status,
+			domain: arm.domain,
+			harness: arm.harness,
+		}));
 
 		this.log(
-			`scanForRunningArms: found ${knownArms.length} known arms in database`,
+			`scanForRunningArms: found ${knownArms.length} known arms via API`,
 		);
 
 		for (const arm of knownArms) {
@@ -4125,12 +4339,12 @@ Report findings using bug resolution workflow.`;
 				// Process is alive and usable! Add to tracked arms
 				this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
 
-				// Update database
 				const now = new Date().toISOString();
-				this.db.run(
-					"UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?",
-					[now, now, arm.id],
-				);
+				await this.patchArmViaApi(arm.id, {
+					status: "idle",
+					lastHeartbeat: now,
+					lastActivityAt: now,
+				});
 
 				// Initialize state machine for this arm
 				if (this.armStateMachine) {
@@ -4191,10 +4405,10 @@ Report findings using bug resolution workflow.`;
 							reason: "process_dead_on_scan",
 						});
 					} else {
-						this.db.run(
-							"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-							[new Date().toISOString(), arm.id],
-						);
+						await this.patchArmViaApi(arm.id, {
+							status: "stopped",
+							lastActivityAt: new Date().toISOString(),
+						});
 					}
 				} else {
 					this.log(
@@ -4323,13 +4537,10 @@ Report findings using bug resolution workflow.`;
 							reason: "process_dead",
 						});
 					} else {
-						// Fallback if state machine not initialized
-						if (this.db) {
-							this.db.run(
-								"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-								[new Date().toISOString(), armId],
-							);
-						}
+						await this.patchArmViaApi(armId, {
+							status: "stopped",
+							lastActivityAt: new Date().toISOString(),
+						});
 					}
 					this.arms.delete(armId);
 					this.idleArmPromptTracker.delete(armId);
@@ -4364,46 +4575,29 @@ Report findings using bug resolution workflow.`;
 			}
 		}
 
-		// Also check DB for stale arms (heartbeat timeout)
-		if (!this.db) return;
-
-		// Get timeout from config (default 300 seconds = 5 minutes)
-		let timeoutSeconds = 300;
-		try {
-			const row = this.db
-				.query("SELECT value FROM config WHERE key = ?")
-				.get("arm_heartbeat_timeout_seconds") as { value: string } | null;
-			if (row) {
-				timeoutSeconds = parseInt(row.value, 10);
-			}
-		} catch {
-			// Use default
-		}
+		// Also check API-known arms not currently in the in-memory map
+		const timeoutSeconds = await this.getBrainConfigNumber(
+			"arm_heartbeat_timeout_seconds",
+			300,
+		);
 
 		const cutoffTime = new Date(
 			Date.now() - timeoutSeconds * 1000,
 		).toISOString();
 
-		// Find arms that haven't heartbeated recently and are not already in our in-memory list
 		const armIds = Array.from(this.arms.keys());
-		let staleQuery = `
-      SELECT id, name, pid, last_heartbeat, status, harness
-      FROM arms
-      WHERE status NOT IN ('stopped', 'starting')
-    `;
-
-		if (armIds.length > 0) {
-			staleQuery += ` AND id NOT IN (${armIds.map(() => "?").join(",")})`;
-		}
-
-		const staleArms = this.db.query(staleQuery).all(...armIds) as Array<{
-			id: string;
-			name: string;
-			pid: number | null;
-			last_heartbeat: string | null;
-			status: string;
-			harness: string;
-		}>;
+		const allArms = await this.listArmsFromApi(true);
+		const staleArms = allArms
+			.filter((arm) => !armIds.includes(arm.id))
+			.filter((arm) => arm.status !== "stopped" && arm.status !== "starting")
+			.map((arm) => ({
+				id: arm.id,
+				name: arm.name,
+				pid: arm.pid ?? null,
+				last_heartbeat: arm.lastHeartbeat || null,
+				status: arm.status,
+				harness: arm.harness,
+			}));
 
 		for (const arm of staleArms) {
 			// For API harness arms, skip if API server is unavailable
@@ -4427,10 +4621,10 @@ Report findings using bug resolution workflow.`;
 					this.log(
 						`Arm ${arm.id} has running process (PID: ${arm.pid}) but not tracked, marking as idle`,
 					);
-					this.db.run(
-						"UPDATE arms SET status = 'idle', updated_at = ? WHERE id = ?",
-						[new Date().toISOString(), arm.id],
-					);
+					await this.patchArmViaApi(arm.id, {
+						status: "idle",
+						lastActivityAt: new Date().toISOString(),
+					});
 					continue;
 				} catch {
 					// Process dead - mark as stopped
@@ -4449,10 +4643,10 @@ Report findings using bug resolution workflow.`;
 			this.log(
 				`Arm ${arm.id} is stale (last heartbeat: ${arm.last_heartbeat || "never"}), marking as stopped`,
 			);
-			this.db.run(
-				"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-				[new Date().toISOString(), arm.id],
-			);
+			await this.patchArmViaApi(arm.id, {
+				status: "stopped",
+				lastActivityAt: new Date().toISOString(),
+			});
 		}
 	}
 
@@ -4467,17 +4661,11 @@ Report findings using bug resolution workflow.`;
 			// Skip if arm is not idle
 			if (arm.status !== "idle") continue;
 
-			// Verify arm exists in database before proceeding (foreign key constraint)
-			if (this.db) {
-				const armExists = this.db
-					.query("SELECT 1 FROM arms WHERE id = ?")
-					.get(armId);
-				if (!armExists) {
-					this.log(
-						`Arm ${armId} not found in database, skipping initial prompt`,
-					);
-					continue;
-				}
+			// Verify arm exists via API before proceeding
+			const armExists = await this.getArmFromApi(armId);
+			if (!armExists) {
+				this.log(`Arm ${armId} not found via API, skipping initial prompt`);
+				continue;
 			}
 
 			// Send the common initial prompt to the arm
@@ -4799,25 +4987,37 @@ Report findings using bug resolution workflow.`;
 		}
 	}
 
+	private async getBrainConfigValue(key: string): Promise<string | null> {
+		const response = await this.apiRequest<{
+			key: string;
+			value: string | null;
+		}>(`/api/brain/config/${encodeURIComponent(key)}`);
+		if (!response || typeof response.value !== "string") {
+			return null;
+		}
+		return response.value;
+	}
+
 	/**
-	 * Get a numeric config value from the database config table
+	 * Get a numeric config value from the API server config table
 	 */
 	private async getBrainConfigNumber(
 		key: string,
 		defaultValue: number,
 	): Promise<number> {
-		if (!this.db) return defaultValue;
-		try {
-			const row = this.db
-				.query("SELECT value FROM config WHERE key = ?")
-				.get(key) as { value: string } | null;
-			if (row) {
-				return parseInt(row.value, 10);
-			}
-			return defaultValue;
-		} catch {
-			return defaultValue;
-		}
+		const value = await this.getBrainConfigValue(key);
+		if (value === null) return defaultValue;
+		const parsed = Number.parseInt(value, 10);
+		return Number.isFinite(parsed) ? parsed : defaultValue;
+	}
+
+	private async getBrainConfigBoolean(
+		key: string,
+		defaultValue: boolean,
+	): Promise<boolean> {
+		const value = await this.getBrainConfigValue(key);
+		if (value === null) return defaultValue;
+		return value.toLowerCase() === "true";
 	}
 
 	/**
@@ -4838,20 +5038,10 @@ Report findings using bug resolution workflow.`;
 			}
 		}
 
-		// Update database
-		if (this.db) {
-			const now = new Date().toISOString();
-			this.db.run("UPDATE arms SET status = ?, updated_at = ? WHERE id = ?", [
-				status,
-				now,
-				armId,
-			]);
-		}
-
-		// Update via API (for broadcast)
-		await this.apiRequest(`/api/arms/${armId}`, {
-			method: "PATCH",
-			body: JSON.stringify({ status }),
+		// Update via API
+		await this.patchArmViaApi(armId, {
+			status,
+			lastActivityAt: new Date().toISOString(),
 		});
 
 		this.log(`Synced arm ${armId} status to: ${status}`);
@@ -4933,15 +5123,8 @@ Report findings using bug resolution workflow.`;
 	 * API harnesses don't have PTY output, so log analysis is unreliable
 	 */
 	private async isApiHarness(armId: string): Promise<boolean> {
-		if (!this.db) return false;
-		try {
-			const row = this.db
-				.query("SELECT harness FROM arms WHERE id = ?")
-				.get(armId) as { harness: string } | null;
-			return row?.harness === "opencode-api";
-		} catch {
-			return false;
-		}
+		const arm = await this.getArmFromApi(armId);
+		return arm?.harness === "opencode-api";
 	}
 
 	/**
@@ -4952,20 +5135,13 @@ Report findings using bug resolution workflow.`;
 		armId: string,
 		maxAgeSeconds = 60,
 	): Promise<boolean> {
-		if (!this.db) return false;
-		try {
-			const row = this.db
-				.query("SELECT last_heartbeat FROM arms WHERE id = ?")
-				.get(armId) as { last_heartbeat: string } | null;
-			if (!row?.last_heartbeat) return false;
-			const lastHeartbeat = new Date(row.last_heartbeat);
-			const now = new Date();
-			const secondsSinceHeartbeat =
-				(now.getTime() - lastHeartbeat.getTime()) / 1000;
-			return secondsSinceHeartbeat < maxAgeSeconds;
-		} catch {
-			return false;
-		}
+		const arm = await this.getArmFromApi(armId);
+		if (!arm?.lastHeartbeat) return false;
+		const lastHeartbeat = new Date(arm.lastHeartbeat);
+		const now = new Date();
+		const secondsSinceHeartbeat =
+			(now.getTime() - lastHeartbeat.getTime()) / 1000;
+		return secondsSinceHeartbeat < maxAgeSeconds;
 	}
 
 	/**
@@ -5011,18 +5187,32 @@ Report findings using bug resolution workflow.`;
 		const issues: string[] = [];
 
 		// 1. Check Database (CRITICAL - required for everything)
+		// Database health is read from API status to keep brain decoupled from SQL.
 		try {
-			if (!this.db) {
+			const systemStatus = await this.apiRequest<{
+				infrastructure?: {
+					database?: { healthy: boolean; error?: string };
+				};
+			}>("/api/status");
+			const dbHealth = systemStatus?.infrastructure?.database;
+			if (!dbHealth) {
 				this.infrastructureHealth.database = {
 					healthy: false,
 					lastCheck: now,
-					error: "Database not initialized",
+					error: "Database health unavailable from API",
 				};
-				issues.push("Database not initialized");
-			} else {
-				// Try a simple query to verify connection
-				this.db.query("SELECT 1").get();
+				issues.push("Database health unavailable from API");
+			} else if (dbHealth.healthy) {
 				this.infrastructureHealth.database = { healthy: true, lastCheck: now };
+			} else {
+				this.infrastructureHealth.database = {
+					healthy: false,
+					lastCheck: now,
+					error: dbHealth.error || "Database unhealthy",
+				};
+				issues.push(
+					`Database error: ${dbHealth.error || "Database reported unhealthy"}`,
+				);
 			}
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : String(err);
@@ -5128,50 +5318,48 @@ Report findings using bug resolution workflow.`;
 			}
 		}
 
-		// Persist infrastructure health to database for API server to read
-		if (this.db) {
-			try {
-				const components = [
-					{
-						component: "database",
-						healthy: this.infrastructureHealth.database.healthy,
-						optional: false,
-						error: this.infrastructureHealth.database.error,
-					},
-					{
-						component: "nats",
-						healthy: this.infrastructureHealth.nats.healthy,
-						optional: true,
-						error: this.infrastructureHealth.nats.error,
-					},
-					{
-						component: "maildir",
-						healthy: this.infrastructureHealth.maildir.healthy,
-						optional: false,
-						error: this.infrastructureHealth.maildir.error,
-					},
-					{
-						component: "api_server",
-						healthy: this.infrastructureHealth.apiServer.healthy,
-						optional: false,
-						error: this.infrastructureHealth.apiServer.error,
-					},
-				];
+		// Persist infrastructure health to API server
+		try {
+			const components = [
+				{
+					component: "database",
+					healthy: this.infrastructureHealth.database.healthy,
+					optional: false,
+					error: this.infrastructureHealth.database.error,
+				},
+				{
+					component: "nats",
+					healthy: this.infrastructureHealth.nats.healthy,
+					optional: true,
+					error: this.infrastructureHealth.nats.error,
+				},
+				{
+					component: "maildir",
+					healthy: this.infrastructureHealth.maildir.healthy,
+					optional: false,
+					error: this.infrastructureHealth.maildir.error,
+				},
+				{
+					component: "api_server",
+					healthy: this.infrastructureHealth.apiServer.healthy,
+					optional: false,
+					error: this.infrastructureHealth.apiServer.error,
+				},
+			];
 
-				const persistResponse = await this.apiRequest<{
-					result: { success: boolean; error?: string };
-				}>("/api/brain/internal/infrastructure-health", {
-					method: "POST",
-					body: JSON.stringify({ components }),
-				});
-				if (!persistResponse?.result?.success) {
-					this.log(
-						`Failed to persist infrastructure health: ${persistResponse?.result?.error || "API unavailable"}`,
-					);
-				}
-			} catch (err) {
-				this.log(`Failed to persist infrastructure health: ${err}`);
+			const persistResponse = await this.apiRequest<{
+				result: { success: boolean; error?: string };
+			}>("/api/brain/internal/infrastructure-health", {
+				method: "POST",
+				body: JSON.stringify({ components }),
+			});
+			if (!persistResponse?.result?.success) {
+				this.log(
+					`Failed to persist infrastructure health: ${persistResponse?.result?.error || "API unavailable"}`,
+				);
 			}
+		} catch (err) {
+			this.log(`Failed to persist infrastructure health: ${err}`);
 		}
 
 		return {
@@ -5189,13 +5377,14 @@ Report findings using bug resolution workflow.`;
 	private async attemptInfrastructureRecovery(): Promise<boolean> {
 		let recovered = false;
 
-		// Try to reconnect API-backed database adapter if needed
+		// Check API health for database/API recovery.
 		if (!this.infrastructureHealth.database.healthy) {
 			try {
-				this.db = createApiDatabase(this.apiBaseUrl, this.apiKey);
-				this.db.query("SELECT 1").get();
-				this.log("Recovered database connection");
-				recovered = true;
+				const status = await this.apiRequest<{ status: string }>("/api/health");
+				if (status?.status === "ok") {
+					this.log("Recovered database/API connection");
+					recovered = true;
+				}
 			} catch (err) {
 				this.log(`Failed to recover database: ${err}`);
 			}
@@ -5538,16 +5727,16 @@ Report findings using bug resolution workflow.`;
 				});
 				break;
 
-				case "restart":
-					// Arm has unrecoverable error - mark task as blocked
-					this.log(`Arm ${arm.name} needs restart due to error`);
-					if (arm.currentTask) {
-						await this.patchTaskViaApi(arm.currentTask, {
-							status: "blocked",
-						});
-					}
-					await this.escalateStuckArm(arm, analysis);
-					break;
+			case "restart":
+				// Arm has unrecoverable error - mark task as blocked
+				this.log(`Arm ${arm.name} needs restart due to error`);
+				if (arm.currentTask) {
+					await this.patchTaskViaApi(arm.currentTask, {
+						status: "blocked",
+					});
+				}
+				await this.escalateStuckArm(arm, analysis);
+				break;
 
 			case "prompt": {
 				// Send a generic nudge to continue
@@ -5641,8 +5830,6 @@ Report findings using bug resolution workflow.`;
 	 * 4. Repeats indefinitely
 	 */
 	private async checkIdleArmStuckLoops(): Promise<void> {
-		if (!this.db) return;
-
 		const idleArms = Array.from(this.arms.values()).filter(
 			(arm) => arm.status === "idle",
 		);
@@ -5947,14 +6134,11 @@ Report findings using bug resolution workflow.`;
 				}
 			}
 
-			// Update database status
-			if (this.db) {
-				const now = new Date().toISOString();
-				this.db.run(
-					"UPDATE arms SET status = 'stopped', updated_at = ? WHERE id = ?",
-					[now, arm.id],
-				);
-			}
+			// Update arm status via API
+			await this.patchArmViaApi(arm.id, {
+				status: "stopped",
+				lastActivityAt: new Date().toISOString(),
+			});
 
 			// Remove from in-memory tracking
 			this.arms.delete(arm.id);
@@ -6030,7 +6214,9 @@ Report findings using bug resolution workflow.`;
 				status: "blocked",
 			});
 
-			const criticalBugs = blockingBugs.filter((b) => b.priority === "critical");
+			const criticalBugs = blockingBugs.filter(
+				(b) => b.priority === "critical",
+			);
 			const highBugs = blockingBugs.filter((b) => b.priority === "high");
 
 			if (criticalBugs.length > 0 || highBugs.length > 0) {
@@ -6057,26 +6243,23 @@ Report findings using bug resolution workflow.`;
 	}
 
 	/**
-	 * Send a message to an arm's queue (SQLite-based)
+	 * Send a message to an arm's queue via API-backed state adapter
 	 */
 	private async sendToArm(
 		armId: string,
 		message: { type: string; payload: unknown },
 	): Promise<void> {
-		if (!this.db) {
-			this.log(`Cannot send to arm ${armId}: database not initialized`);
-			return;
-		}
-
 		const messageId = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-		const stateDb = this.db as Parameters<typeof queueMessage>[0];
-		queueMessage(stateDb, {
+		const queued = await this.queueMessageViaApi({
 			id: messageId,
 			from: "brain",
 			to: armId,
 			type: message.type,
 			payload: message.payload,
 		});
+		if (!queued) {
+			this.log(`Failed to queue message ${messageId} for arm ${armId}`);
+		}
 	}
 
 	/**
@@ -6097,63 +6280,52 @@ Report findings using bug resolution workflow.`;
 		});
 	}
 
-	// State persistence methods - use SQLite instead of file storage
+	// State persistence methods via API server
 
 	private async loadState(): Promise<void> {
-		if (!this.db) return;
-
 		try {
-			const row = this.db
-				.query("SELECT * FROM brain_state WHERE id = 1")
-				.get() as {
-				status: string;
-				poll_interval_ms: number;
-				started_at: string | null;
-				last_poll_at: string | null;
-				pending_tasks: number;
-				completed_today: number;
-			} | null;
-
-			if (row) {
-				this.state = {
-					status: row.status as BrainState["status"],
-					pollIntervalMs: row.poll_interval_ms,
-					activeArms: [],
-					startedAt: row.started_at || undefined,
-					lastPollAt: row.last_poll_at || undefined,
-					pendingTasks: row.pending_tasks,
-					completedToday: row.completed_today,
+			const response = await this.apiRequest<{
+				state?: {
+					status: BrainState["status"];
+					pollIntervalMs: number;
+					startedAt?: string;
+					lastPollAt?: string;
+					pendingTasks: number;
+					completedToday: number;
 				};
-			}
+			}>("/api/brain/state");
+
+			if (!response?.state) return;
+
+			this.state = {
+				status: response.state.status,
+				pollIntervalMs: response.state.pollIntervalMs,
+				activeArms: [],
+				startedAt: response.state.startedAt,
+				lastPollAt: response.state.lastPollAt,
+				pendingTasks: response.state.pendingTasks,
+				completedToday: response.state.completedToday,
+			};
 		} catch (err) {
-			// Table might not exist yet
-			console.error(`Failed to load brain state from database: ${err}`);
+			console.error(`Failed to load brain state via API: ${err}`);
 		}
 	}
 
 	private async saveState(): Promise<void> {
-		if (!this.db) return;
-
 		try {
-			this.db.run(
-				`
-        INSERT OR REPLACE INTO brain_state (
-          id, status, poll_interval_ms, started_at, last_poll_at, pending_tasks, completed_today, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-				[
-					1,
-					this.state.status,
-					this.state.pollIntervalMs,
-					this.state.startedAt || null,
-					this.state.lastPollAt || null,
-					this.state.pendingTasks,
-					this.state.completedToday,
-					new Date().toISOString(),
-				],
-			);
+			await this.apiRequest<{ state?: unknown }>("/api/brain/state", {
+				method: "PATCH",
+				body: JSON.stringify({
+					status: this.state.status,
+					pollIntervalMs: this.state.pollIntervalMs,
+					startedAt: this.state.startedAt,
+					lastPollAt: this.state.lastPollAt,
+					pendingTasks: this.state.pendingTasks,
+					completedToday: this.state.completedToday,
+				}),
+			});
 		} catch (err) {
-			console.error(`Failed to save brain state to database: ${err}`);
+			console.error(`Failed to save brain state via API: ${err}`);
 		}
 	}
 
@@ -6176,24 +6348,19 @@ Report findings using bug resolution workflow.`;
 	}
 
 	/**
-	 * Sync tasks from project plan files into the database
+	 * Sync tasks from project plan files into the task API
 	 */
 	private async syncPlanTasks(): Promise<void> {
-		if (!this.db) {
-			this.log("Cannot sync tasks: database not initialized");
-			return;
-		}
-
 		try {
 			// Get project root (current working directory or configured)
 			const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
 
 			// Check if task auto-discover is enabled
-			const autoDiscover = this.db
-				.query("SELECT value FROM config WHERE key = ?")
-				.get("task_auto_discover") as { value: string } | undefined;
-
-			if (autoDiscover?.value !== "true") {
+			const autoDiscover = await this.getBrainConfigBoolean(
+				"task_auto_discover",
+				true,
+			);
+			if (!autoDiscover) {
 				return; // Task sync disabled
 			}
 
@@ -6217,12 +6384,9 @@ Report findings using bug resolution workflow.`;
 					continue;
 				}
 
-				// Check if we should update this file
-				const existingFile = this.db
-					.query("SELECT id, last_hash FROM plan_files WHERE file_path = ?")
-					.get(filePath) as { id: number; last_hash: string } | undefined;
-
-				if (existingFile?.last_hash === result.fileHash) {
+				// Skip unchanged files based on in-memory hash cache.
+				const lastHash = this.planFileHashes.get(filePath);
+				if (lastHash === result.fileHash) {
 					// File hasn't changed, skip
 					continue;
 				}
@@ -6231,63 +6395,51 @@ Report findings using bug resolution workflow.`;
 				const dbTasks = tasksToDatabaseFormat(result.tasks);
 
 				for (const task of dbTasks) {
-					// Check if task exists
-					const existing = this.db
-						.query("SELECT id, status FROM tasks WHERE id = ?")
-						.get(task.id) as { id: string; status: string } | undefined;
+					const existing = await this.getTaskFromApi(task.id);
 
 					if (!existing) {
-						// Insert new task
-						this.db.run(
-							`
-              INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, metadata)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `,
-							[
-								task.id,
-								task.subject,
-								task.description,
-								task.status,
-								task.priority,
-								task.source_type,
-								task.source_ref,
-								task.phase,
-								task.metadata,
-							],
-						);
-						newTasksCount++;
+						const created = await this.createTaskViaApi({
+							id: task.id,
+							subject: task.subject,
+							description: task.description,
+							status: task.status as Task["status"],
+							priority: task.priority as Task["priority"],
+							sourceType: task.source_type as
+								| "manual"
+								| "plan"
+								| "email"
+								| "discovery"
+								| "proposal"
+								| "system",
+							sourceRef: task.source_ref,
+							phase: task.phase,
+							metadata: task.metadata
+								? (JSON.parse(task.metadata) as Record<string, unknown>)
+								: undefined,
+						});
+						if (created) {
+							newTasksCount++;
+						}
 					} else if (
 						existing.status === "pending" &&
 						task.status === "completed"
 					) {
-						// Only update if not already worked on
-						this.db.run(
-							`
-              UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?
-            `,
-							[task.status, new Date().toISOString(), task.id],
-						);
-						updatedTasksCount++;
+						const updated = await this.patchTaskViaApi(task.id, {
+							status: "completed",
+						});
+						if (updated) {
+							updatedTasksCount++;
+						}
 					}
 				}
 
-				// Update plan file tracking
-				const now = new Date().toISOString();
-				if (existingFile) {
-					this.db.run(
-						`
-            UPDATE plan_files SET last_parsed_at = ?, last_hash = ?, updated_at = ? WHERE id = ?
-          `,
-						[now, result.fileHash, now, existingFile.id],
-					);
-				} else {
-					this.db.run(
-						`
-            INSERT INTO plan_files (file_path, last_parsed_at, last_hash, updated_at)
-            VALUES (?, ?, ?, ?)
-          `,
-						[filePath, now, result.fileHash, now],
-					);
+				this.planFileHashes.set(filePath, result.fileHash);
+			}
+
+			// Remove stale hashes for plan files that no longer exist.
+			for (const knownPath of Array.from(this.planFileHashes.keys())) {
+				if (!planFiles.includes(knownPath)) {
+					this.planFileHashes.delete(knownPath);
 				}
 			}
 
@@ -6312,8 +6464,6 @@ Report findings using bug resolution workflow.`;
 	 * Items are deduplicated against existing tasks.
 	 */
 	private async processInbox(): Promise<void> {
-		if (!this.db) return;
-
 		try {
 			const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
 
@@ -6329,32 +6479,20 @@ Report findings using bug resolution workflow.`;
 				return;
 			}
 
-			// Get existing tasks with their comments for deduplication
-			// Join task_comments to get all text associated with each task
-			const existingTasks = this.db
-				.query(`
-        SELECT
-          t.id,
-          t.subject,
-          t.description,
-          GROUP_CONCAT(tc.content, ' ') as comments_text
-        FROM tasks t
-        LEFT JOIN task_comments tc ON t.id = tc.task_id
-        WHERE t.status IN ('pending', 'claimed', 'in_progress', 'blocked')
-        GROUP BY t.id, t.subject, t.description
-      `)
-				.all() as Array<{
-				id: string;
-				subject: string;
-				description: string;
-				comments_text: string | null;
-			}>;
+			const existingTasks = await this.listTasksFromApi({
+				status: ["pending", "claimed", "in_progress", "blocked"],
+				limit: 500,
+			});
 
-			// Map to format expected by deduplicateItems, combining all text
-			const tasksForDeduplication = existingTasks.map((task) => ({
-				subject: task.subject,
-				description: `${task.description} ${task.comments_text || ""}`.trim(),
-			}));
+			const tasksForDeduplication = await Promise.all(
+				existingTasks.map(async (task) => {
+					const discussionText = await this.getTaskDiscussionText(task.id);
+					return {
+						subject: task.subject,
+						description: `${task.description} ${discussionText}`.trim(),
+					};
+				}),
+			);
 
 			// Deduplicate
 			const newItems = deduplicateItems(result.items, tasksForDeduplication);
@@ -6372,16 +6510,18 @@ Report findings using bug resolution workflow.`;
 			let created = 0;
 			for (const item of newItems) {
 				const taskId = `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
-				this.db.run(
-					`
-          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, created_at, updated_at)
-          VALUES (?, ?, ?, 'pending', ?, 'inbox', '.project/inbox.md', datetime('now'), datetime('now'))
-        `,
-					[taskId, item.subject, item.description, item.priority],
-				);
-
-				created++;
+				const createdTask = await this.createTaskViaApi({
+					id: taskId,
+					subject: item.subject,
+					description: item.description,
+					status: "pending",
+					priority: item.priority as Task["priority"],
+					sourceType: "system",
+					sourceRef: ".project/inbox.md",
+				});
+				if (createdTask) {
+					created++;
+				}
 			}
 
 			// Clear the inbox
@@ -6410,128 +6550,131 @@ Report findings using bug resolution workflow.`;
 	 * Called periodically during the poll cycle.
 	 */
 	private async reEvaluatePlanProgress(): Promise<void> {
-		if (!this.db) return;
-
 		try {
-			// Step 1: Find recently completed tasks that have status reports with issues
-			// but don't yet have verification tasks created
-			const tasksNeedingVerification = this.db
-				.query(`
-        SELECT DISTINCT
-          t.id,
-          t.subject,
-          t.classification,
-          t.domain,
-          t.priority,
-          sr.id as report_id,
-          sr.summary,
-          sr.issues,
-          sr.tests_status
-        FROM tasks t
-        INNER JOIN status_reports sr ON t.id = sr.task_id
-        LEFT JOIN tasks vt ON vt.subject LIKE 'Verify & Polish: ' || t.subject
-        WHERE t.status = 'completed'
-          AND sr.status IN ('issues_found', 'completed_with_issues', 'needs_review')
-          AND vt.id IS NULL
-          AND sr.created_at > datetime('now', '-24 hours')
-        ORDER BY sr.created_at DESC
-        LIMIT 5
-      `)
-				.all() as Array<{
-				id: string;
-				subject: string;
-				classification: string | null;
-				domain: string | null;
-				priority: string | null;
-				report_id: string;
-				summary: string;
-				issues: string;
-				tests_status: string | null;
-			}>;
+			const nowMs = Date.now();
+			const oneDayAgoMs = nowMs - 24 * 60 * 60 * 1000;
+
+			const completedTasks = await this.listTasksFromApi({
+				status: ["completed"],
+				limit: 500,
+			});
+			const allReports = await this.listStatusReportsFromApi({ limit: 500 });
+			const activeTasks = await this.listTasksFromApi({ limit: 500 });
+			const verifySubjects = new Set(
+				activeTasks
+					.filter((t) => t.subject.startsWith("Verify & Polish: "))
+					.map((t) => t.subject),
+			);
 
 			let verificationTasksCreated = 0;
+			const reportsByTask = new Map<
+				string,
+				Array<{
+					id: string;
+					summary: string;
+					issues?: string[];
+					testsStatus?: "passing" | "failing" | "not_run";
+					createdAt: string;
+				}>
+			>();
 
-			for (const row of tasksNeedingVerification) {
-				const issues = JSON.parse(row.issues || "[]") as string[];
+			for (const report of allReports) {
+				if (
+					!["issues_found", "completed_with_issues", "needs_review"].includes(
+						report.status,
+					)
+				) {
+					continue;
+				}
+				const createdAtMs = new Date(report.createdAt).getTime();
+				if (!Number.isFinite(createdAtMs) || createdAtMs <= oneDayAgoMs) {
+					continue;
+				}
+				const existing = reportsByTask.get(report.taskId) || [];
+				existing.push({
+					id: report.id,
+					summary: report.summary,
+					issues: report.issues,
+					testsStatus: report.testsStatus,
+					createdAt: report.createdAt,
+				});
+				reportsByTask.set(report.taskId, existing);
+			}
 
-				// Create a verify & polish task
+			for (const task of completedTasks) {
+				const verifySubject = `Verify & Polish: ${task.subject}`;
+				if (verifySubjects.has(verifySubject)) {
+					continue;
+				}
+				const taskReports = reportsByTask.get(task.id);
+				if (!taskReports || taskReports.length === 0) {
+					continue;
+				}
+				taskReports.sort(
+					(a, b) =>
+						new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+				);
+				const latest = taskReports[0]!;
 				const verifyTask = await this.createVerificationTaskFromReEval(
 					{
-						id: row.id,
-						subject: row.subject,
-						classification: row.classification || "development",
-						domain: row.domain || undefined,
-						priority: row.priority || "normal",
+						id: task.id,
+						subject: task.subject,
+						classification: task.classification || "development",
+						domain: task.domain,
+						priority: task.priority,
 					},
 					{
-						id: row.report_id,
-						summary: row.summary,
-						issues,
-						testsStatus: row.tests_status as
-							| "passing"
-							| "failing"
-							| "not_run"
-							| undefined,
+						id: latest.id,
+						summary: latest.summary,
+						issues: latest.issues || [],
+						testsStatus: latest.testsStatus,
 					},
 				);
-
 				if (verifyTask) {
 					verificationTasksCreated++;
+					verifySubjects.add(verifySubject);
 					this.log(
-						`Re-evaluation: Created verification task for "${row.subject}"`,
+						`Re-evaluation: Created verification task for "${task.subject}"`,
 					);
 				}
 			}
 
-			// Step 2: Check for blocked tasks whose dependencies are now complete
-			const unblockedTasks = this.db
-				.query(`
-        SELECT t.id, t.subject
-        FROM tasks t
-        WHERE (t.status = 'blocked' OR t.dependency_blocked = 1)
-          AND NOT EXISTS (
-            SELECT 1
-            FROM task_dependencies td
-            WHERE td.task_id = t.id
-              AND NOT EXISTS (
-                SELECT 1 FROM tasks dep
-                WHERE dep.id = td.depends_on_task_id
-                  AND dep.status = 'completed'
-              )
-          )
-        LIMIT 10
-      `)
-				.all() as Array<{ id: string; subject: string }>;
+			const allTasks = await this.listTasksFromApi({ limit: 500 });
+			const taskStatusById = new Map(
+				allTasks.map((task) => [task.id, task.status] as const),
+			);
+			const candidates = allTasks
+				.filter((task) => task.status === "blocked" || task.dependencyBlocked)
+				.slice(0, 10);
 
 			let unblockedCount = 0;
-			const now = new Date().toISOString();
-
-			for (const row of unblockedTasks) {
-				// Unblock the task
-				this.db.run(
-					`
-          UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ?
-          WHERE id = ?
-        `,
-					[now, row.id],
+			for (const task of candidates) {
+				const dependencies = await this.getTaskDependenciesFromApi(task.id);
+				const ready = dependencies.every(
+					(depId) => taskStatusById.get(depId) === "completed",
 				);
+				if (!ready) continue;
 
-				// Update in-memory task list
-				const task = this.tasks.find((t) => t.id === row.id);
-				if (task) {
-					task.status = "pending";
-					task.updatedAt = new Date();
+				const updated = await this.patchTaskViaApi(task.id, {
+					dependencyBlocked: false,
+					status: "pending",
+				});
+				if (!updated) continue;
+
+				const inMemoryTask = this.tasks.find((t) => t.id === task.id);
+				if (inMemoryTask) {
+					inMemoryTask.status = "pending";
+					inMemoryTask.updatedAt = new Date();
 				}
 
 				unblockedCount++;
-				this.log(`Re-evaluation: Unblocked task "${row.subject}"`);
-				this.logActivity("brain", "task_unblocked", row.id, {
+				this.log(`Re-evaluation: Unblocked task "${task.subject}"`);
+				this.logActivity("brain", "task_unblocked", task.id, {
 					reason: "dependencies_satisfied",
-					subject: row.subject,
+					subject: task.subject,
 				});
 			}
 
-			// Log summary if any actions were taken
 			if (verificationTasksCreated > 0 || unblockedCount > 0) {
 				this.logActivity("brain", "plan_reevaluated", undefined, {
 					verificationTasksCreated,
@@ -6625,172 +6768,55 @@ ${originalTask.id}`;
 	}
 
 	private async loadArms(): Promise<void> {
-		// Try API first (preferred - harness-aware)
-		interface ApiArm {
-			id: string;
-			name: string;
-			domain: string;
-			harness: string;
-			status: string;
-			pid?: number;
-			provider?: string;
-			model?: string;
-			createdAt: string;
-			lastActivityAt?: string;
+		const armsFromApi = await this.listArmsFromApi(true);
+
+		if (armsFromApi.length === 0) {
+			const apiAvailable = await this.isApiServerAvailable();
+			if (!apiAvailable) {
+				this.log("Failed to load arms from API");
+				return;
+			}
 		}
 
-		const apiResult = await this.apiRequest<{ arms: ApiArm[] }>("/api/arms");
+		this.arms.clear();
+		for (const row of armsFromApi) {
+			if (row.status === "stopped") continue;
 
-		if (apiResult) {
-			// API is available - use it
-			this.arms.clear();
-			for (const row of apiResult.arms) {
-				if (row.status === "stopped") continue;
+			const arm: Arm = {
+				id: row.id,
+				name: row.name,
+				agent: row.harness,
+				status: row.status as Arm["status"],
+				pid: row.pid,
+				provider: row.provider,
+				model: row.model,
+				currentTask: row.currentTaskId || undefined,
+				startedAt: new Date(row.createdAt || new Date().toISOString()),
+				lastActivity: row.lastActivityAt
+					? new Date(row.lastActivityAt)
+					: undefined,
+			};
+			(arm as Arm & { domain?: string }).domain = row.domain;
+			this.arms.set(arm.id, arm);
 
-				const arm: Arm = {
-					id: row.id,
-					name: row.name,
-					agent: row.harness,
-					status: row.status as Arm["status"],
-					pid: row.pid,
-					provider: row.provider,
-					model: row.model,
-					startedAt: new Date(row.createdAt),
-					lastActivity: row.lastActivityAt
-						? new Date(row.lastActivityAt)
-						: undefined,
-				};
-				(arm as Arm & { domain?: string }).domain = row.domain;
-				this.arms.set(arm.id, arm);
-
-				// Ensure arm has state machine entry
-				if (this.armStateMachine) {
-					const ctx = this.armStateMachine.getContext(arm.id);
-					if (!ctx) {
-						// Initialize state based on current arm status
-						const initialState =
-							row.status === "busy"
-								? "working"
-								: row.status === "idle"
-									? "idle"
-									: row.status === "starting"
-										? "starting"
-										: "idle";
-						this.armStateMachine.initializeArm(
-							arm.id,
-							initialState as ArmState,
-						);
-					}
+			// Ensure arm has state machine entry
+			if (this.armStateMachine) {
+				const ctx = this.armStateMachine.getContext(arm.id);
+				if (!ctx) {
+					// Initialize state based on current arm status
+					const initialState =
+						row.status === "busy"
+							? "working"
+							: row.status === "idle"
+								? "idle"
+								: row.status === "starting"
+									? "starting"
+									: "idle";
+					this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
 				}
 			}
-			this.log(`Loaded ${this.arms.size} active arms from API`);
-			return;
 		}
-
-		// Fallback to API-backed state adapter
-		if (!this.db) return;
-
-		try {
-			const rows = this.db
-				.query(`
-        SELECT id, name, domain, harness, status, pid, provider, model,
-               created_at, last_activity_at
-        FROM arms
-        WHERE status != 'stopped'
-      `)
-				.all() as Array<{
-				id: string;
-				name: string;
-				domain: string;
-				harness: string;
-				status: string;
-				pid: number | null;
-				provider: string | null;
-				model: string | null;
-				created_at: string;
-				last_activity_at: string | null;
-			}>;
-
-			for (const row of rows) {
-				// Check if process is still running
-				let status = row.status as Arm["status"];
-				if (row.pid && status !== "stopped") {
-					try {
-						process.kill(row.pid, 0);
-						// Process is alive
-						if (status === "starting") {
-							status = "idle";
-						}
-					} catch {
-						// Process is dead
-						status = "stopped";
-					}
-
-					// Update status in database if changed
-					if (status !== row.status) {
-						this.db.run(
-							"UPDATE arms SET status = ?, updated_at = ? WHERE id = ?",
-							[status, new Date().toISOString(), row.id],
-						);
-					}
-				}
-
-				if (status !== "stopped") {
-					// For API harness arms, skip if API server is unavailable
-					// We can't communicate with them without the API server
-					if (row.harness === "opencode-api") {
-						const apiAvailable = await this.isApiServerAvailable();
-						if (!apiAvailable) {
-							this.log(
-								`  ${row.name}: API harness, API server unavailable - skipping`,
-							);
-							continue;
-						}
-					}
-
-					const arm: Arm = {
-						id: row.id,
-						name: row.name,
-						agent: row.harness,
-						status,
-						pid: row.pid ?? undefined,
-						provider: row.provider ?? undefined,
-						model: row.model ?? undefined,
-						startedAt: new Date(row.created_at),
-						lastActivity: row.last_activity_at
-							? new Date(row.last_activity_at)
-							: undefined,
-					};
-					// Store domain in a way we can access it
-					(arm as Arm & { domain?: string }).domain = row.domain;
-					this.arms.set(arm.id, arm);
-
-					// Ensure arm has state machine entry
-					if (this.armStateMachine) {
-						const ctx = this.armStateMachine.getContext(arm.id);
-						if (!ctx) {
-							// Initialize state based on current arm status
-							const initialState =
-								status === "busy"
-									? "working"
-									: status === "idle"
-										? "idle"
-										: status === "starting"
-											? "starting"
-											: "idle";
-							this.armStateMachine.initializeArm(
-								arm.id,
-								initialState as ArmState,
-							);
-						}
-					}
-				}
-			}
-
-			this.log(`Loaded ${this.arms.size} active arms from database`);
-		} catch (err) {
-			this.log(`Error loading arms: ${err}`);
-		}
+		this.log(`Loaded ${this.arms.size} active arms from API`);
 	}
 
 	private async saveArms(): Promise<void> {
@@ -6809,14 +6835,8 @@ ${originalTask.id}`;
 				},
 			);
 
-			if (apiResult) continue; // Success via API
-
-			// Fallback to API-backed state adapter
-			if (this.db) {
-				this.db.run(
-					`UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?`,
-					[arm.status, arm.lastActivity?.toISOString() || now, now, arm.id],
-				);
+			if (!apiResult) {
+				this.log(`Failed to persist arm state via API for ${arm.id}`);
 			}
 		}
 	}
@@ -6883,14 +6903,14 @@ ${originalTask.id}`;
 		this.dashboard.render();
 	}
 
-	private clearArmTaskAssignment(armId: string): void {
+	private async clearArmTaskAssignment(armId: string): Promise<void> {
 		const now = new Date().toISOString();
-		if (this.db) {
-			this.db.run(
-				"UPDATE arms SET status = 'idle', current_task_id = NULL, current_task_subject = NULL, last_activity_at = ?, updated_at = ? WHERE id = ?",
-				[now, now, armId],
-			);
-		}
+		await this.patchArmViaApi(armId, {
+			status: "idle",
+			currentTaskId: null,
+			currentTaskSubject: null,
+			lastActivityAt: now,
+		});
 
 		const arm = this.arms.get(armId);
 		if (arm) {
@@ -7001,7 +7021,7 @@ ${originalTask.id}`;
 
 		// Create doc update record
 		const docUpdateId = await this.docTracker.createDocUpdate(taskId, trigger);
-		this.docTracker.startDocUpdate(docUpdateId);
+		await this.docTracker.startDocUpdate(docUpdateId);
 
 		this.log(`Created doc update task: ${taskId} (trigger: ${trigger})`);
 		this.logActivity("brain", "doc_update_task_created", taskId, {

@@ -8,10 +8,10 @@
  * - Record doc update attempts for history
  */
 
-import type { BrainDb } from "./db-client";
 import { join } from "path";
 import { readdir, readFile } from "fs/promises";
 import fg from "fast-glob";
+import { loadConfig } from "../config";
 
 interface DocUpdateContext {
   filesChanged: string[];
@@ -21,80 +21,83 @@ interface DocUpdateContext {
 }
 
 export class DocUpdateTracker {
-  private db: BrainDb;
+  private apiBaseUrl: string;
+  private apiKey: string;
   private coleoDir: string;
   private projectRoot: string;
   private pollCount: number = 0;
 
-  constructor(db: BrainDb, coleoDir: string, projectRoot: string) {
-    this.db = db;
+  constructor(
+    apiBaseUrl: string,
+    apiKey: string,
+    coleoDir: string,
+    projectRoot: string,
+  ) {
+    this.apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
+    this.apiKey = apiKey;
     this.coleoDir = coleoDir;
     this.projectRoot = projectRoot;
+  }
+
+  private async apiRequest<T>(path: string, options: RequestInit = {}): Promise<T | null> {
+    try {
+      const response = await fetch(`${this.apiBaseUrl}${path}`, {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": this.apiKey,
+          ...options.headers,
+        },
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as T;
+    } catch {
+      return null;
+    }
   }
 
   /**
    * Get configuration for doc updates
    */
-  private getConfig(): { fileThreshold: number; pollInterval: number; enabled: boolean } {
-    const fileThreshold = this.db.query("SELECT value FROM config WHERE key = 'doc_update_file_threshold'").get() as { value: string } | undefined;
-    const pollInterval = this.db.query("SELECT value FROM config WHERE key = 'doc_update_poll_interval'").get() as { value: string } | undefined;
-    const enabled = this.db.query("SELECT value FROM config WHERE key = 'doc_update_enabled'").get() as { value: string } | undefined;
-
+  private async getConfig(): Promise<{ fileThreshold: number; pollInterval: number; enabled: boolean }> {
+    const config = await loadConfig(this.coleoDir);
     return {
-      fileThreshold: fileThreshold ? parseInt(fileThreshold.value, 10) : 10,
-      pollInterval: pollInterval ? parseInt(pollInterval.value, 10) : 10,
-      enabled: enabled ? enabled.value === "true" : true,
+      fileThreshold: config.docs.updateFileThreshold,
+      pollInterval: config.docs.updatePollInterval,
+      enabled: config.docs.updateEnabled,
     };
   }
 
   /**
    * Get the timestamp of the last completed doc update
-   * Uses config cache for performance, falls back to table query
    */
   async getLastDocUpdateTime(): Promise<Date | null> {
-    // Try config first for fast access
-    const configResult = this.db.query(`
-      SELECT value FROM config WHERE key = 'last_doc_update'
-    `).get() as { value: string } | undefined;
-
-    if (configResult && configResult.value) {
-      return new Date(configResult.value);
-    }
-
-    // Fallback to table query for backward compatibility
-    const result = this.db.query(`
-      SELECT completed_at FROM doc_updates
-      WHERE status = 'completed'
-      ORDER BY completed_at DESC
-      LIMIT 1
-    `).get() as { completed_at: string } | undefined;
-
-    return result ? new Date(result.completed_at) : null;
+    const response = await this.apiRequest<{ completedAt?: string | null }>(
+      "/api/brain/internal/doc-updates/last-completed",
+    );
+    return response?.completedAt ? new Date(response.completedAt) : null;
   }
 
   /**
    * Count files changed since last doc update
    */
   async countChangedFilesSince(lastUpdateTime: Date): Promise<number> {
-    const result = this.db.query(`
-      SELECT COUNT(*) as count FROM file_changes
-      WHERE changed_at > ?
-    `).get(lastUpdateTime.toISOString()) as { count: number };
-
-    return result.count;
+    const params = new URLSearchParams({ since: lastUpdateTime.toISOString() });
+    const response = await this.apiRequest<{ count?: number }>(
+      `/api/brain/internal/file-changes/count?${params.toString()}`,
+    );
+    return response?.count ?? 0;
   }
 
   /**
    * Get files changed since last doc update
    */
   async getChangedFilesSince(lastUpdateTime: Date): Promise<string[]> {
-    const results = this.db.query(`
-      SELECT DISTINCT file_path FROM file_changes
-      WHERE changed_at > ?
-      ORDER BY changed_at DESC
-    `).all(lastUpdateTime.toISOString()) as Array<{ file_path: string }>;
-
-    return results.map(r => r.file_path);
+    const params = new URLSearchParams({ since: lastUpdateTime.toISOString() });
+    const response = await this.apiRequest<{ files?: string[] }>(
+      `/api/brain/internal/file-changes/since?${params.toString()}`,
+    );
+    return response?.files || [];
   }
 
   /**
@@ -124,12 +127,12 @@ export class DocUpdateTracker {
    * Returns the trigger reason if triggered, null otherwise
    */
   async checkDocUpdateTrigger(): Promise<{ trigger: "threshold" | "periodic"; reason: string } | null> {
-    if (!this.getConfig().enabled) {
+    const config = await this.getConfig();
+    if (!config.enabled) {
       return null;
     }
 
     const lastUpdateTime = await this.getLastDocUpdateTime();
-    const config = this.getConfig();
 
     // Check periodic trigger
     this.pollCount++;
@@ -208,94 +211,79 @@ export class DocUpdateTracker {
     triggerType: "phase_complete" | "threshold" | "human_request" | "periodic"
   ): Promise<string> {
     const id = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    
-    this.db.run(`
-      INSERT INTO doc_updates (id, task_id, trigger_type)
-      VALUES (?, ?, ?)
-    `, [id, taskId, triggerType]);
 
+    await this.apiRequest<{ created?: boolean }>(
+      "/api/brain/internal/doc-updates",
+      {
+        method: "POST",
+        body: JSON.stringify({ id, taskId, triggerType }),
+      },
+    );
     return id;
   }
 
   /**
    * Mark doc update as started
    */
-  startDocUpdate(id: string): void {
-    this.db.run(`
-      UPDATE doc_updates SET status = 'in_progress' WHERE id = ?
-    `, [id]);
+  async startDocUpdate(id: string): Promise<void> {
+    await this.apiRequest<{ success?: boolean }>(
+      `/api/brain/internal/doc-updates/${encodeURIComponent(id)}/start`,
+      { method: "POST" },
+    );
   }
 
   /**
    * Mark doc update as completed
    */
-  completeDocUpdate(
+  async completeDocUpdate(
     id: string,
     filesReviewed: number,
     docsUpdated: number,
     futureWorkNotesAdded: number
-  ): void {
-    const now = new Date().toISOString();
-    this.db.run(`
-      UPDATE doc_updates SET
-        status = 'completed',
-        completed_at = ?,
-        files_reviewed = ?,
-        docs_updated = ?,
-        future_work_notes_added = ?
-      WHERE id = ?
-    `, [now, filesReviewed, docsUpdated, futureWorkNotesAdded, id]);
-
-    // Update last_doc_update config for fast access
-    this.db.run(`
-      INSERT OR REPLACE INTO config (key, value, updated_at)
-      VALUES ('last_doc_update', ?, ?)
-    `, [now, now]);
+  ): Promise<void> {
+    await this.apiRequest<{ success?: boolean }>(
+      `/api/brain/internal/doc-updates/${encodeURIComponent(id)}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ filesReviewed, docsUpdated, futureWorkNotesAdded }),
+      },
+    );
   }
 
   /**
    * Mark doc update as failed
    */
-  failDocUpdate(id: string, error: string): void {
-    this.db.run(`
-      UPDATE doc_updates SET 
-        status = 'failed',
-        completed_at = datetime('now'),
-        metadata = ?
-      WHERE id = ?
-    `, [JSON.stringify({ error }), id]);
+  async failDocUpdate(id: string, error: string): Promise<void> {
+    await this.apiRequest<{ success?: boolean }>(
+      `/api/brain/internal/doc-updates/${encodeURIComponent(id)}/fail`,
+      {
+        method: "POST",
+        body: JSON.stringify({ error }),
+      },
+    );
   }
 
   /**
    * Get recent doc update history
    */
-  getRecentDocUpdates(limit: number = 10): Array<{
+  async getRecentDocUpdates(limit: number = 10): Promise<Array<{
     id: string;
     triggerType: string;
     status: string;
     startedAt: string;
     completedAt?: string;
-  }> {
-    const results = this.db.query(`
-      SELECT id, trigger_type, status, started_at, completed_at
-      FROM doc_updates
-      ORDER BY started_at DESC
-      LIMIT ?
-    `).all(limit) as Array<{
-      id: string;
-      trigger_type: string;
-      status: string;
-      started_at: string;
-      completed_at?: string;
-    }>;
-
-    return results.map(r => ({
-      id: r.id,
-      triggerType: r.trigger_type,
-      status: r.status,
-      startedAt: r.started_at,
-      completedAt: r.completed_at,
-    }));
+  }>> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    const response = await this.apiRequest<{
+      updates?: Array<{
+        id: string;
+        triggerType: string;
+        status: string;
+        startedAt: string;
+        completedAt?: string;
+      }>;
+    }>(`/api/brain/internal/doc-updates/recent?${params.toString()}`);
+    return response?.updates || [];
   }
 
   /**
