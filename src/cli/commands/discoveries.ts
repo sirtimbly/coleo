@@ -1,6 +1,18 @@
 import { Command } from "commander";
 import { join } from "path";
 import { getColeoDir } from "../context";
+import {
+  getOpenDiscoveries,
+  getTaskDiscoveries,
+  getDiscoveriesByPhase,
+  getResolvedDiscoveries,
+  findDiscoveryByTitle,
+  resolveDiscovery,
+  formatDiscovery,
+  getResolutionReason,
+  toDiscovery,
+  type DiscoveryRow,
+} from "./discoveries-db";
 
 export function registerDiscoveriesCommands(program: Command): void {
   const discoveriesCmd = program.command("discoveries").description("Discovery analysis tools");
@@ -20,26 +32,7 @@ export function registerDiscoveriesCommands(program: Command): void {
 
         const db = await initDatabase(dbPath);
 
-        const globalDiscoveries = db
-          .query(
-            `
-          SELECT kind, title, details, file_path, line_number, severity, task_id, phase
-          FROM discoveries
-          WHERE status = 'open'
-          ORDER BY created_at DESC
-          LIMIT 50
-        `,
-          )
-          .all() as Array<{
-          kind: string;
-          title: string;
-          details: string;
-          file_path: string | null;
-          line_number: number | null;
-          severity: string;
-          task_id: string | null;
-          phase: string | null;
-        }>;
+        const globalDiscoveries = getOpenDiscoveries(db, 50);
 
         console.log(`Found ${globalDiscoveries.length} global discoveries\n`);
 
@@ -121,42 +114,9 @@ export function registerDiscoveriesCommands(program: Command): void {
           }
         }
 
-        const taskDiscoveries = db
-          .query(
-            `
-          SELECT kind, title, details, file_path, line_number, severity, task_id, phase
-          FROM discoveries
-          WHERE task_id = ? AND status = 'open'
-          ORDER BY created_at DESC
-        `,
-          )
-          .all(task.id) as typeof globalDiscoveries;
+        const taskDiscoveries = getTaskDiscoveries(db, task.id);
 
         console.log(`Found ${taskDiscoveries.length} task-specific discoveries\n`);
-
-        type DiscoveryKind =
-          | "test_failure"
-          | "unused_code"
-          | "security_issue"
-          | "performance"
-          | "pattern"
-          | "missing_context"
-          | "ambiguous_requirement"
-          | "potential_blocker"
-          | "related_code"
-          | "suggested_approach"
-          | "other";
-
-        const toDiscovery = (row: (typeof globalDiscoveries)[0]) => ({
-          kind: (row.kind as DiscoveryKind) || "other",
-          title: row.title,
-          details: row.details,
-          file: row.file_path || undefined,
-          line: row.line_number || undefined,
-          severity: (row.severity || "info") as "info" | "warning" | "error",
-          taskId: row.task_id || undefined,
-          phase: (row.phase || "implementation") as "exploration" | "implementation" | "verification",
-        });
 
         const globalDisc = globalDiscoveries.map(toDiscovery);
         const taskDisc = taskDiscoveries.map(toDiscovery);
@@ -229,31 +189,9 @@ export function registerDiscoveriesCommands(program: Command): void {
         const { initDatabase } = await import("../../db");
         const db = await initDatabase(dbPath);
 
-        let query = `
-          SELECT kind, title, details, file_path, severity, phase, task_id, created_at
-          FROM discoveries
-          WHERE status = 'open'
-        `;
-        const params: (string | number)[] = [];
-
-        if (options.phase) {
-          query += ` AND phase = ?`;
-          params.push(options.phase);
-        }
-
-        query += ` ORDER BY created_at DESC LIMIT ?`;
-        params.push(parseInt(options.limit, 10));
-
-        const discoveries = db.query(query).all(...params) as Array<{
-          kind: string;
-          title: string;
-          details: string;
-          file_path: string | null;
-          severity: string;
-          phase: string | null;
-          task_id: string | null;
-          created_at: string;
-        }>;
+        const discoveries = options.phase
+          ? getDiscoveriesByPhase(db, options.phase, parseInt(options.limit, 10))
+          : getOpenDiscoveries(db, parseInt(options.limit, 10));
 
         if (discoveries.length === 0) {
           console.log("No open discoveries found.");
@@ -264,13 +202,7 @@ export function registerDiscoveriesCommands(program: Command): void {
         console.log(`Open Discoveries (${discoveries.length}):\n`);
 
         for (const d of discoveries) {
-          const phase = d.phase ? `[${d.phase.toUpperCase()}]` : "";
-          const severity = `[${(d.severity || "info").toUpperCase()}]`;
-          const file = d.file_path ? ` @ ${d.file_path}` : "";
-          const taskRef = d.task_id ? ` (task: ${d.task_id.substring(0, 20)}...)` : "";
-
-          console.log(`${phase} ${severity} ${d.kind}: ${d.title}${file}${taskRef}`);
-          console.log(`  ${d.details.substring(0, 100)}${d.details.length > 100 ? "..." : ""}`);
+          console.log(formatDiscovery(d));
           console.log();
         }
 
@@ -294,23 +226,7 @@ export function registerDiscoveriesCommands(program: Command): void {
         const { initDatabase } = await import("../../db");
         const db = await initDatabase(dbPath);
 
-        const discovery = db
-          .query(
-            `
-          SELECT id, title, kind, severity, details
-          FROM discoveries
-          WHERE status = 'open' AND title LIKE ?
-          ORDER BY created_at DESC
-          LIMIT 1
-        `,
-          )
-          .get(`%${title}%`) as {
-          id: string;
-          title: string;
-          kind: string;
-          severity: string;
-          details: string;
-        } | null;
+        const discovery = findDiscoveryByTitle(db, title);
 
         if (!discovery) {
           console.log(`No open discovery found matching: "${title}"`);
@@ -326,18 +242,8 @@ export function registerDiscoveriesCommands(program: Command): void {
         console.log();
 
         const resolution = options.resolution === "dismissed" ? "dismissed" : "resolved";
-        const now = new Date().toISOString();
-
-        db.run(
-          `
-          UPDATE discoveries 
-          SET status = ?, 
-              updated_at = ?,
-              metadata = json_set(COALESCE(metadata, '{}'), '$.resolution_reason', ?, '$.resolved_by', ?, '$.resolved_at', ?)
-          WHERE id = ?
-        `,
-          [resolution, now, options.reason, "cli", now, discovery.id],
-        );
+        
+        resolveDiscovery(db, discovery.id, resolution, options.reason, "cli");
 
         console.log(`Discovery marked as ${resolution}.`);
         console.log(`Reason: ${options.reason}`);
@@ -361,25 +267,7 @@ export function registerDiscoveriesCommands(program: Command): void {
         const { initDatabase } = await import("../../db");
         const db = await initDatabase(dbPath);
 
-        const discoveries = db
-          .query(
-            `
-          SELECT id, kind, title, status, severity, updated_at, metadata
-          FROM discoveries
-          WHERE status IN ('resolved', 'dismissed')
-          ORDER BY updated_at DESC
-          LIMIT ?
-        `,
-          )
-          .all(parseInt(options.limit, 10)) as Array<{
-          id: string;
-          kind: string;
-          title: string;
-          status: string;
-          severity: string;
-          updated_at: string;
-          metadata: string;
-        }>;
+        const discoveries = getResolvedDiscoveries(db, parseInt(options.limit, 10));
 
         if (discoveries.length === 0) {
           console.log("No resolved or dismissed discoveries found.");
@@ -392,18 +280,10 @@ export function registerDiscoveriesCommands(program: Command): void {
         for (const d of discoveries) {
           const status = d.status === "resolved" ? "[RESOLVED]" : "[DISMISSED]";
           const severity = `[${(d.severity || "info").toUpperCase()}]`;
-          let reason = "";
-          try {
-            const meta = JSON.parse(d.metadata || "{}");
-            if (meta.resolution_reason) {
-              reason = `\n  Reason: ${meta.resolution_reason}`;
-            }
-          } catch {
-            // ignore parse errors
-          }
+          const reason = getResolutionReason(d.metadata);
 
           console.log(`${status} ${severity} ${d.kind}: ${d.title}`);
-          console.log(`  Updated: ${d.updated_at}${reason}`);
+          console.log(`  Updated: ${d.updated_at}${reason ? `\n  Reason: ${reason}` : ""}`);
           console.log();
         }
 
