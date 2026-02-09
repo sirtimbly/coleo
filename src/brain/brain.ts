@@ -2609,6 +2609,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			status: "completed",
 			artifacts,
 			assignedTo: null,
+			dependencyBlocked: false,
 		});
 		if (workerArmId) {
 			await this.apiRequest(`/api/arms/${encodeURIComponent(workerArmId)}`, {
@@ -2718,6 +2719,20 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			return;
 		}
 
+		const isFollowUpTask =
+			task.subject?.startsWith("Validate completion:") ||
+			task.subject?.startsWith("Verify & Polish:");
+
+		// Follow-up QA tasks are terminal. Do not recursively generate
+		// additional verification/validation work from them.
+		if (isFollowUpTask) {
+			this.log(
+				`Skipping recursive follow-up generation for ${taskId} (${task.subject})`,
+			);
+			await this.finalizeTaskCompletion(taskId, summary, artifacts);
+			return;
+		}
+
 		// Check for status reports with issues for this task
 		const statusReportsWithIssues =
 			await this.getStatusReportsWithIssues(taskId);
@@ -2741,13 +2756,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			return;
 		}
 
-		// Skip validation for validation tasks to prevent infinite loops
-		if (task.subject?.startsWith("Validate completion:")) {
-			this.log(`Skipping validation for validation task ${taskId} to prevent infinite loop`);
-			await this.finalizeTaskCompletion(taskId, summary, artifacts);
-		} else {
-			await this.initiateTaskValidation(taskId, summary, artifacts, task);
-		}
+		await this.initiateTaskValidation(taskId, summary, artifacts, task);
 	}
 
 	/**
@@ -3058,6 +3067,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
+						dependencyBlocked: false,
 					});
 
 					const body = await this.templates.renderTemplate(
@@ -3086,6 +3096,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 					// Standard blocked handling - notify user immediately
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
+						dependencyBlocked: false,
 					});
 
 					const body = await this.templates.renderTemplate(
@@ -3267,6 +3278,7 @@ ${originalTask.id}`;
 		await this.patchTaskViaApi(originalTask.id, {
 			status: "completed",
 			assignedTo: null,
+			dependencyBlocked: false,
 		});
 
 		this.state.completedToday++;
@@ -6638,6 +6650,13 @@ Report findings using bug resolution workflow.`;
 			}
 
 			for (const task of completedTasks) {
+				if (
+					task.subject.startsWith("Validate completion:") ||
+					task.subject.startsWith("Verify & Polish:")
+				) {
+					continue;
+				}
+
 				const verifySubject = `Verify & Polish: ${task.subject}`;
 				if (verifySubjects.has(verifySubject)) {
 					continue;
@@ -6680,7 +6699,11 @@ Report findings using bug resolution workflow.`;
 				allTasks.map((task) => [task.id, task.status] as const),
 			);
 			const candidates = allTasks
-				.filter((task) => task.status === "blocked" || task.dependencyBlocked)
+				.filter(
+					(task) =>
+						task.dependencyBlocked &&
+						(task.status === "pending" || task.status === "blocked"),
+				)
 				.slice(0, 10);
 
 			let unblockedCount = 0;

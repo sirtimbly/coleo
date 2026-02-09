@@ -780,4 +780,62 @@ describe("Brain coverage boost", () => {
     expect(verification).toBeDefined();
     expect(verification?.status).toBe("pending");
   });
+
+  it("re-evaluation only unblocks tasks marked dependency_blocked", async () => {
+    const now = nowIso();
+    db.run(
+      `INSERT INTO tasks (
+        id, subject, description, status, priority, dependency_blocked, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "task-blocked-non-dependency",
+        "Blocked without dependency",
+        "should remain blocked",
+        "blocked",
+        "normal",
+        0,
+        now,
+        now,
+      ],
+    );
+    db.run(
+      `INSERT INTO tasks (
+        id, subject, description, status, priority, dependency_blocked, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "task-blocked-dependency",
+        "Blocked with dependency flag",
+        "should be unblocked",
+        "blocked",
+        "normal",
+        1,
+        now,
+        now,
+      ],
+    );
+
+    await (brain as any).reEvaluatePlanProgress();
+
+    const nonDependency = db
+      .query(
+        "SELECT status, dependency_blocked FROM tasks WHERE id = ?",
+      )
+      .get("task-blocked-non-dependency") as {
+      status: string;
+      dependency_blocked: number;
+    };
+    expect(nonDependency.status).toBe("blocked");
+    expect(nonDependency.dependency_blocked).toBe(0);
+
+    const dependencyBlocked = db
+      .query(
+        "SELECT status, dependency_blocked FROM tasks WHERE id = ?",
+      )
+      .get("task-blocked-dependency") as {
+      status: string;
+      dependency_blocked: number;
+    };
+    expect(dependencyBlocked.status).toBe("pending");
+    expect(dependencyBlocked.dependency_blocked).toBe(0);
+  });
 });
