@@ -528,8 +528,8 @@ export function createEventsRoutes() {
    * GET /api/events/types
    */
   app.get("/types", async (c) => {
-    // Import the known types from event-window
-    const { KNOWN_EVENT_TYPES } = await import("../../brain/event-window");
+    // Import the known types from event-window-constants
+    const { KNOWN_EVENT_TYPES } = await import("../../brain/event-window-constants");
 
     return c.json({
       knownTypes: Array.from(KNOWN_EVENT_TYPES).sort(),

@@ -7,62 +7,7 @@
  */
 
 import { eventStore, type EventData, type IEventStore } from "../nats/jetstream";
-
-// Known event types that the analyzer understands
-export const KNOWN_EVENT_TYPES = new Set([
-  // Session events
-  "session.status",
-  "session.idle",
-  "session.error",
-  "session.updated",
-  "session.diff",
-
-  // Message events
-  "message.updated",
-  "message.removed",
-  "message.part.updated",
-  "message.part.removed",
-
-  // Permission events
-  "permission.asked",
-  "permission.replied",
-
-  // Todo events
-  "todo.updated",
-
-  // File events
-  "file.edited",
-  "file.read",
-  "file.reads",
-  "file.watcher.updated",
-
-  // Command events
-  "command.executed",
-
-  // Arm lifecycle events
-  "arm.spawned",
-  "arm.status_changed",
-  "arm.heartbeat",
-  "arm.killed",
-  "arm.stopped",
-
-  // Task events
-  "task.created",
-  "task.assigned",
-  "task.claimed",
-  "task.completed",
-  "task.blocked",
-  "task.failed",
-
-  // Brain events
-  "arm_prompted",
-  "event-status",
-  "event-message-created",
-  "event-message-updated",
-  "event-part-step-finish",
-  "started",
-  "stopped",
-]);
+import { KNOWN_EVENT_TYPES, NOISE_EVENT_TYPES } from "./event-window-constants";
 
 export interface EventWindowOptions {
   /** How far back to look for events (in milliseconds) */
@@ -416,17 +361,12 @@ export class BrainEventWindow {
     return { detected: false };
   }
 
-  /**
-   * Get events that should be persisted/forwarded (filtering noise)
-   */
-  getSignificantEvents(window: ArmEventWindow): EventData[] {
-    const noiseTypes = new Set([
-      "file.watcher.updated",
-      "server.connected",
-    ]);
-
-    return window.events.filter((e) => !noiseTypes.has(e.type));
-  }
+	/**
+	 * Get events that should be persisted/forwarded (filtering noise)
+	 */
+	getSignificantEvents(window: ArmEventWindow): EventData[] {
+		return window.events.filter((e) => !NOISE_EVENT_TYPES.has(e.type));
+	}
 
   /**
    * Reset the warned unknown types cache (for testing)
