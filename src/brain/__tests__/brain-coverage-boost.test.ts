@@ -78,6 +78,23 @@ describe("Brain coverage boost", () => {
         context: row.context ? JSON.parse(row.context) : {},
       });
 
+      if (path === "/api/status") {
+        return {
+          infrastructure: {
+            database: { healthy: true },
+          },
+        } as T;
+      }
+
+      if (
+        path === "/api/brain/internal/infrastructure-health" &&
+        options.method === "POST"
+      ) {
+        return {
+          result: { success: true },
+        } as T;
+      }
+
       if (path.startsWith("/api/tasks?")) {
         const query = path.split("?")[1] || "";
         const params = new URLSearchParams(query);

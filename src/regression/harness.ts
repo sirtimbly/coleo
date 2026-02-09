@@ -10,6 +10,7 @@ import { join } from "path";
 import { spawn, type Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
+import { createServer } from "node:net";
 import type { TestContext, TimingHelper, TestResult, TestScenario } from "./types";
 import { eventStore, setEventStore, resetEventStore, createTestEventStore, type InMemoryEventStore } from "../nats/jetstream";
 
@@ -19,8 +20,52 @@ let portCounter = 0;
 /**
  * Get a unique port for this test
  */
-function getNextPort(): number {
-  return BASE_PORT + (portCounter++ % 1000);
+async function getNextPort(): Promise<number> {
+  const maxAttempts = 2000;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const port = BASE_PORT + (portCounter++ % 10000);
+    const available = await isPortAvailable(port);
+    if (available) return port;
+  }
+
+  // Fallback: ask OS for any free port
+  return await new Promise<number>((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port =
+        typeof address === "object" && address ? address.port : undefined;
+      server.close((closeErr) => {
+        if (closeErr) {
+          reject(closeErr);
+          return;
+        }
+        if (!port) {
+          reject(new Error("Failed to allocate dynamic port"));
+          return;
+        }
+        resolve(port);
+      });
+    });
+  });
+}
+
+function isPortAvailable(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const server = createServer();
+
+    server.once("error", () => {
+      resolve(false);
+    });
+
+    server.once("listening", () => {
+      server.close(() => resolve(true));
+    });
+
+    server.listen(port, "127.0.0.1");
+  });
 }
 
 /**
@@ -63,7 +108,7 @@ export async function createTestContext(
   const baseDir = join("/tmp", `coleo-regression-${runId}`);
   const coleoDir = join(baseDir, ".coleo");
   const workDir = join(baseDir, "workspace");
-  const apiPort = getNextPort();
+  const apiPort = await getNextPort();
   const apiKey = `test-key-${runId}`;
 
   // Set up in-memory event store for isolated testing

@@ -18,11 +18,15 @@ function createTestDb(): Database {
       source_ref TEXT,
       phase TEXT,
       domain TEXT,
+      classification TEXT,
       assigned_to TEXT,
+      dependency_blocked INTEGER DEFAULT 0,
       consensus_status TEXT DEFAULT 'pending',
+      plan_line_uid TEXT,
       sort_order INTEGER DEFAULT 0,
       comment_count INTEGER DEFAULT 0,
       last_comment_at TEXT,
+      mail_thread_id TEXT,
       progress INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -31,6 +35,7 @@ function createTestDb(): Database {
       started_at TEXT,
       due_date TEXT,
       artifacts TEXT DEFAULT '[]',
+      context TEXT DEFAULT '{}',
       metadata TEXT DEFAULT '{}'
     );
 
