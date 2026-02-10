@@ -1174,12 +1174,6 @@ const MIGRATION_043 = `
     updated_at,
     tokenize='porter'
   );
-  
-  -- Index for type filtering
-  CREATE INDEX IF NOT EXISTS idx_search_type ON search_index(type);
-  
-  -- Index for date range queries
-  CREATE INDEX IF NOT EXISTS idx_search_created ON search_index(created_at);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
