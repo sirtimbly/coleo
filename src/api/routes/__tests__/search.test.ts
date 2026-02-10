@@ -7,9 +7,15 @@ import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { createSearchRoutes } from "../search";
 
+interface TestContext {
+	Variables: {
+		db: Database;
+	};
+}
+
 describe("Search API", () => {
 	let db: Database;
-	let app: Hono;
+	let app: Hono<TestContext>;
 
 	beforeEach(async () => {
 		// Create in-memory database
@@ -38,7 +44,7 @@ describe("Search API", () => {
 		`);
 
 		// Create app with database context
-		app = new Hono();
+		app = new Hono<TestContext>();
 		app.use("*", async (c, next) => {
 			c.set("db", db);
 			await next();
