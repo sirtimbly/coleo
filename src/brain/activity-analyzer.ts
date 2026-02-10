@@ -8,124 +8,32 @@
  * - looping: stuck in a repetitive pattern
  * - silent: no events for an extended period
  * - error: encountered an error state
+ * 
+ * @module brain/activity-analyzer
  */
 
-import { readFile } from "fs/promises";
-import { join } from "path";
-import nunjucks from "nunjucks";
 import type { ArmEventWindow } from "./event-window";
 import type { EventData } from "../nats/jetstream";
+import {
+	type ArmActivityState,
+	type ArmAnalysis,
+	type AnalyzerConfig,
+	DEFAULT_CONFIG,
+	PRODUCTIVE_EVENT_TYPES,
+	ACTIVE_EVENT_TYPES,
+	ERROR_EVENT_TYPES,
+	resolveLogFn,
+	getLatestEvent,
+	arraysEqual,
+} from "./activity-types";
 
-/**
- * Classification of arm activity state
- */
-export type ArmActivityState =
-	| "productive"
-	| "idle"
-	| "waiting_permission"
-	| "looping"
-	| "silent"
-	| "error"
-	| "starting";
-
-/**
- * Detailed analysis result for an arm
- */
-export interface ArmAnalysis {
-	armId: string;
-	state: ArmActivityState;
-	confidence: "high" | "medium" | "low";
-	reason: string;
-
-	/** Metrics used in the analysis */
-	metrics: {
-		eventCount: number;
-		silentDurationMs: number;
-		lastEventAt: Date | null;
-		recentMessageCount: number;
-		recentToolCount: number;
-		recentFileEditCount: number;
-	};
-
-	/** If waiting for permission, details about the request */
-	pendingPermission?: {
-		requestedAt: Date;
-		action: string;
-		context?: string;
-	};
-
-	/** If looping, details about the pattern */
-	loopPattern?: {
-		pattern: string[];
-		repetitions: number;
-	};
-
-	/** Recommended action for the brain */
-	recommendedAction?: "none" | "prompt" | "interrupt" | "kill" | "escalate";
-
-	/** Unknown event types encountered */
-	unknownEventTypes: string[];
-}
-
-/**
- * Configuration for the analyzer
- */
-export interface AnalyzerConfig {
-	/** How long without events before arm is considered silent (ms) */
-	silentThresholdMs: number;
-
-	/** Minimum events to consider arm productive */
-	productiveEventThreshold: number;
-
-	/** How many repetitions before considering arm looping */
-	loopRepetitionThreshold: number;
-
-	/** How long to wait before escalating permission requests (ms) */
-	permissionEscalationMs: number;
-
-	/** Grace period for newly started arms (ms) */
-	startupGracePeriodMs: number;
-}
-
-const DEFAULT_CONFIG: AnalyzerConfig = {
-	silentThresholdMs: 5 * 60 * 1000, // 5 minutes
-	productiveEventThreshold: 3,
-	loopRepetitionThreshold: 4,
-	permissionEscalationMs: 2 * 60 * 1000, // 2 minutes
-	startupGracePeriodMs: 60 * 1000, // 1 minute
-};
-
-const resolveLogFn = (log?: (msg: string) => void) => log ?? console.log;
-
-/**
- * Event types that indicate productive work
- */
-const PRODUCTIVE_EVENT_TYPES = new Set([
-	"file.edited",
-	"message.updated",
-	"command.executed",
-	"todo.updated",
-	"task.claimed",
-	"task.completed",
-	"session.diff",
-]);
-
-/**
- * Event types that indicate the arm is actively working (but may not have output yet)
- */
-const ACTIVE_EVENT_TYPES = new Set([
-	"session.status",
-	"session.updated",
-	"message.part.updated",
-	"arm.heartbeat",
-	"file.read",
-	"file.reads",
-]);
-
-/**
- * Event types that indicate errors
- */
-const ERROR_EVENT_TYPES = new Set(["session.error", "task.failed"]);
+export {
+	type ArmActivityState,
+	type ArmAnalysis,
+	type AnalyzerConfig,
+	type StuckAnalysis,
+} from "./activity-types";
+export { StuckArmAnalyzer } from "./stuck-arm-analyzer";
 
 /**
  * ArmActivityAnalyzer classifies arm states based on event windows
@@ -367,8 +275,8 @@ export class ArmActivityAnalyzer {
 		}
 
 		// Get the most recent of each
-		const latestAsked = this.getLatestEvent(askedEvents);
-		const latestReplied = this.getLatestEvent(repliedEvents);
+		const latestAsked = getLatestEvent(askedEvents);
+		const latestReplied = getLatestEvent(repliedEvents);
 
 		if (!latestAsked) {
 			return { pending: false };
@@ -428,7 +336,7 @@ export class ArmActivityAnalyzer {
 				i -= patternLength
 			) {
 				const slice = recentTypes.slice(i, i + patternLength);
-				if (this.arraysEqual(slice, pattern)) {
+				if (arraysEqual(slice, pattern)) {
 					repetitions++;
 				} else {
 					break;
@@ -448,32 +356,6 @@ export class ArmActivityAnalyzer {
 		}
 
 		return { detected: false, confidence: "low" };
-	}
-
-	/**
-	 * Get the latest event from an array
-	 */
-	private getLatestEvent(events: EventData[]): EventData | null {
-		if (events.length === 0) return null;
-
-		let latest = events[0]!;
-		for (const event of events) {
-			if (new Date(event.timestamp) > new Date(latest.timestamp)) {
-				latest = event;
-			}
-		}
-		return latest;
-	}
-
-	/**
-	 * Check if two arrays are equal
-	 */
-	private arraysEqual(a: string[], b: string[]): boolean {
-		if (a.length !== b.length) return false;
-		for (let i = 0; i < a.length; i++) {
-			if (a[i] !== b[i]) return false;
-		}
-		return true;
 	}
 
 	/**
@@ -551,268 +433,6 @@ export class ArmActivityAnalyzer {
 	 */
 	getConfig(): AnalyzerConfig {
 		return { ...this.config };
-	}
-}
-
-/**
- * Stuck Arm Analysis Result
- */
-export interface StuckAnalysis {
-	isStuck: boolean;
-	stuckType?:
-		| "asking_question"
-		| "waiting_approval"
-		| "looping"
-		| "error"
-		| "idle_too_long"
-		| "unknown";
-	reasoning: string;
-	suggestedAction?:
-		| "answer"
-		| "approve"
-		| "restart"
-		| "compact"
-		| "escalate"
-		| "prompt";
-	suggestedResponse?: string;
-	confidence: number; // 0-1
-}
-
-/**
- * LLM-based Stuck Arm Analyzer
- * Analyzes PTY output to determine if an arm is stuck and suggests actions
- */
-export class StuckArmAnalyzer {
-	private apiKey: string;
-	private model: string;
-	private baseUrl: string;
-	private logger: (message: string) => void;
-	private templateDir: string;
-
-	constructor(
-		logger: (message: string) => void,
-		coleoDir: string = process.cwd(),
-	) {
-		this.logger = resolveLogFn(logger);
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
-		this.templateDir = join(coleoDir, "src", "brain", "templates");
-	}
-
-	private async renderTemplate(
-		templateName: string,
-		context: Record<string, unknown>,
-	): Promise<string | null> {
-		const templatePath = join(this.templateDir, templateName);
-		try {
-			const templateContent = await readFile(templatePath, "utf-8");
-			return nunjucks.renderString(templateContent, context);
-		} catch (err) {
-			this.logger(
-				`[stuck-analyzer] Failed to load template ${templateName}: ${err}`,
-			);
-			return null;
-		}
-	}
-
-	/**
-	 * Analyze arm output to determine if it's stuck
-	 */
-	async analyze(
-		armName: string,
-		armDomain: string,
-		recentOutput: string,
-		currentTask?: string,
-	): Promise<StuckAnalysis> {
-		// Quick heuristics first (avoid LLM calls when possible)
-		const quickResult = this.quickAnalysis(recentOutput);
-		if (quickResult) {
-			return quickResult;
-		}
-
-		// Use LLM for deeper analysis
-		if (!this.apiKey) {
-			return this.fallbackAnalysis(recentOutput);
-		}
-
-		const systemPrompt = await this.renderTemplate(
-			"stuck-analyzer-system-prompt.jinja",
-			{
-				arm_name: armName,
-				arm_domain: armDomain,
-				current_task: currentTask || "unknown",
-			},
-		);
-
-		const userMessage = await this.renderTemplate(
-			"stuck-analyzer-user-prompt.jinja",
-			{
-				recent_output: recentOutput.slice(-8000),
-			},
-		);
-
-		if (!systemPrompt || !userMessage) {
-			return this.fallbackAnalysis(recentOutput);
-		}
-
-		try {
-			const response = await fetch(`${this.baseUrl}/chat/completions`, {
-				method: "POST",
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.apiKey}`,
-				},
-				body: JSON.stringify({
-					model: this.model,
-					messages: [
-						{ role: "system", content: systemPrompt },
-						{ role: "user", content: userMessage },
-					],
-					max_completion_tokens: userMessage.length + 2500,
-				}),
-			});
-
-			if (!response.ok) {
-				const err = await response.text();
-				this.logger(
-					`[stuck-analyzer] OpenAI API error: ${err.substring(0, 200)}`,
-				);
-				return this.fallbackAnalysis(recentOutput);
-			}
-
-			const data = (await response.json()) as {
-				choices: Array<{ message: { content: string } }>;
-			};
-			const content = data.choices[0]?.message?.content || "";
-
-			// Parse JSON from response
-			const jsonMatch = content.match(/\{[\s\S]*\}/);
-			if (jsonMatch) {
-				const result = JSON.parse(jsonMatch[0]) as StuckAnalysis;
-				this.logger(
-					`[stuck-analyzer] LLM analysis for ${armName}: stuck=${result.isStuck}, type=${result.stuckType}, confidence=${result.confidence}`,
-				);
-				return result;
-			}
-
-			return this.fallbackAnalysis(recentOutput);
-		} catch (err) {
-			this.logger(`[stuck-analyzer] LLM analysis error: ${err}`);
-			return this.fallbackAnalysis(recentOutput);
-		}
-	}
-
-	/**
-	 * Quick heuristic analysis (avoids LLM call)
-	 */
-	private quickAnalysis(output: string): StuckAnalysis | null {
-		const lines = output.trim().split("\n");
-		const lastLines = lines.slice(-20).join("\n").toLowerCase();
-
-		// Check for obvious question patterns
-		// Only match patterns that indicate the arm is truly waiting for input, not just
-		// generating text that happens to contain question-like phrases
-		const questionPatterns = [
-			/\?\s*$/m, // Line ends with ?
-			/\(y\/n\)\s*$/im, // (y/n) at end of line
-			/\[y\/n\]\s*$/im, // [y/n] at end of line
-			/yes or no\?/i,
-			/please (choose|select|confirm|specify)\b/i,
-			// Only match "enter:" at the very end of output, preceded by a prompt-like pattern
-			/[>$\#]\s*enter\s*:/i,
-			/^\s*enter\s*:/im, // "Enter:" at start of a line (after whitespace)
-		];
-
-		for (const pattern of questionPatterns) {
-			if (pattern.test(lastLines)) {
-				return {
-					isStuck: true,
-					stuckType: "asking_question",
-					reasoning: `Output matches question pattern: ${pattern}`,
-					suggestedAction: "answer",
-					confidence: 0.8,
-				};
-			}
-		}
-
-		// Check for approval patterns
-		const approvalPatterns = [
-			/approve.*\?/i,
-			/proceed.*\?/i,
-			/continue.*\?/i,
-			/confirm.*\?/i,
-		];
-
-		for (const pattern of approvalPatterns) {
-			if (pattern.test(lastLines)) {
-				return {
-					isStuck: true,
-					stuckType: "waiting_approval",
-					reasoning: `Output matches approval pattern: ${pattern}`,
-					suggestedAction: "approve",
-					suggestedResponse: "Yes, proceed.",
-					confidence: 0.85,
-				};
-			}
-		}
-
-		// Check for repeated errors (looping)
-		const errorCounts = new Map<string, number>();
-		for (const line of lines.slice(-50)) {
-			if (/error|failed|exception/i.test(line)) {
-				const normalized = line.toLowerCase().replace(/\d+/g, "N").trim();
-				errorCounts.set(normalized, (errorCounts.get(normalized) || 0) + 1);
-			}
-		}
-
-		for (const [error, count] of errorCounts) {
-			if (count >= 3) {
-				return {
-					isStuck: true,
-					stuckType: "looping",
-					reasoning: `Same error repeated ${count} times: ${error.slice(0, 50)}...`,
-					suggestedAction: "compact",
-					confidence: 0.75,
-				};
-			}
-		}
-
-		return null; // Need deeper analysis
-	}
-
-	/**
-	 * Fallback analysis when LLM is unavailable
-	 */
-	private fallbackAnalysis(output: string): StuckAnalysis {
-		const lines = output.trim().split("\n");
-		const lastLine = lines[lines.length - 1] || "";
-
-		// Very basic heuristics
-		if (lastLine.includes("?") || lastLine.toLowerCase().includes("input")) {
-			return {
-				isStuck: true,
-				stuckType: "asking_question",
-				reasoning: "Last line appears to be a question (fallback)",
-				suggestedAction: "escalate",
-				confidence: 0.5,
-			};
-		}
-
-		// If output is very short or empty, might be idle
-		if (output.trim().length < 100) {
-			return {
-				isStuck: false,
-				reasoning: "Output too short to determine (fallback)",
-				confidence: 0.3,
-			};
-		}
-
-		return {
-			isStuck: false,
-			reasoning: "No obvious stuck patterns detected (fallback)",
-			confidence: 0.4,
-		};
 	}
 }
 
