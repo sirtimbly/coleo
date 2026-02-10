@@ -14,3 +14,4 @@ export { createAgentsRoutes } from "./agents";
 export { createDiscoveriesRoutes } from "./discoveries";
 export { createBugsRoutes } from "./bugs";
 export { createEventsRoutes } from "./events";
+export { createSearchRoutes } from "./search";

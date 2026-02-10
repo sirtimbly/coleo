@@ -116,6 +116,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["040_arm_bug_tracking", MIGRATION_040, { table: "arms", columns: MIGRATION_040_COLUMNS }],
     ["041_task_progress", MIGRATION_041, { table: "tasks", columns: MIGRATION_041_COLUMNS }],
     ["042_task_preparation", MIGRATION_042, { table: "tasks", columns: MIGRATION_042_COLUMNS }],
+    ["043_search_index", MIGRATION_043],
   ];
 
 
@@ -1158,6 +1159,27 @@ const MIGRATION_042 = `
   
   -- Add index for prepared tasks (not null = prepared)
   CREATE INDEX IF NOT EXISTS idx_tasks_prepared_at ON tasks(prepared_at);
+`;
+
+// Migration 043: Search index for hybrid search
+const MIGRATION_043 = `
+  -- Search index table for keyword search
+  CREATE VIRTUAL TABLE IF NOT EXISTS search_index USING fts5(
+    id,
+    type,
+    title,
+    content,
+    metadata,
+    created_at,
+    updated_at,
+    tokenize='porter'
+  );
+  
+  -- Index for type filtering
+  CREATE INDEX IF NOT EXISTS idx_search_type ON search_index(type);
+  
+  -- Index for date range queries
+  CREATE INDEX IF NOT EXISTS idx_search_created ON search_index(created_at);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
