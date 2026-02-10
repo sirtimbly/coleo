@@ -28,3 +28,4 @@ export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';
 export { queryClient, persister, isLocalhost } from './queryClient';
 export * from './queryKeys';
+export { ThemeProvider, useTheme } from './theme';

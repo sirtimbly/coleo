@@ -8,10 +8,10 @@ Octopai is an AI agent orchestrator - a central brain coordinates semi-autonomou
 # Type checking (ALWAYS run after changes)
 bun run typecheck
 
-# Tests
+# Tests (bun:test)
 bun test src/**/__tests__/                    # Run all tests
 bun test src/api/__tests__/tasks.test.ts     # Run single test file
-bun test --watch src/**/__tests__/           # Watch mode
+bun run test:watch                           # Watch mode
 
 # Integration & E2E
 bun run test:integration   # Quick regression tests
@@ -19,7 +19,10 @@ bun run test:e2e          # Full regression suite
 
 # Build
 bun run build             # Build CLI + web
-bun run web:build         # Build web only
+bun run web:build         # Build web only (workspace)
+
+# Lint (web workspace)
+bun run --cwd src/web lint
 
 # Dev servers
 bun run dev               # CLI dev
@@ -80,6 +83,10 @@ src/
 - Prefer absolute imports for cross-module references
 - Use `bun:sqlite` not `node:sqlite`
 
+### Formatting
+- Follow existing file style (tabs vs spaces, quotes, trailing commas)
+- No repo-wide formatter; web code is linted via ESLint (`src/web/eslint.config.js`)
+
 ### Error Handling
 - Use `HttpError` middleware in API routes (`src/api/middleware/error.ts`)
 - Always return `{ error: string }` for errors
@@ -128,6 +135,18 @@ search_code(
 
 Use `search_docs` for GDS components, ADRs, guides.
 Use `search_api` for API endpoint discovery.
+
+## Copilot Instructions (Required)
+
+From `.github/copilot-instructions.md`:
+- ALWAYS use `search_code` for conceptual code search (implementation details, related logic, patterns).
+- Use file search or grep only for regex matching or exact filename/pattern lookups.
+- `search_code` supports filtering: `include_extensions`, `exclude_patterns`, `must_contain`.
+- Use `search_docs` for internal docs (GDS, ADRs, guides) and `search_api` for API specs.
+
+## Cursor Rules
+
+No `.cursorrules` or `.cursor/rules/` found in this repo.
 
 ## External SDK Integration
 

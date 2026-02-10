@@ -722,6 +722,23 @@ class ApiClient {
     if (options?.types?.length) params.set('types', options.types.join(','));
     return `${API_BASE}/events/stream?${params.toString()}`;
   }
+
+  // User Preferences
+  async getUserPreferences() {
+    return this.request<{
+      preferences: Record<string, string>;
+    }>('/user/preferences');
+  }
+
+  async updateUserPreference(key: string, value: string) {
+    return this.request<{
+      success: boolean;
+      preferences: Record<string, string>;
+    }>('/user/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify({ [key]: value }),
+    });
+  }
 }
 
 // Types

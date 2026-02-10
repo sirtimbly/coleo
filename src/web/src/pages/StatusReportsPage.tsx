@@ -2,42 +2,92 @@
  * Status Reports Page
  * Displays status reports from arms and allows tracking message processing
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, type StatusReport } from '@/lib/api';
 import { Button } from '@heroui/react';
-import { RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, FileText } from 'lucide-react';
+import { RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, FileText, Search, FilterX } from 'lucide-react';
 
-interface StatusReportsPageProps {}
-
-export function StatusReportsPage({}: StatusReportsPageProps) {
-  document.title = "Coleo Observatory - Status Reports";
+export function StatusReportsPage() {
+  document.title = "Coleo Observatory - Status History";
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
+  const [pagination, setPagination] = useState({ limit: 50, offset: 0, total: 0 });
+  const [searchText, setSearchText] = useState('');
+  const [taskIdFilter, setTaskIdFilter] = useState('');
+  const [armIdFilter, setArmIdFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusReport['status'] | 'all'>('all');
 
-  const loadReports = async () => {
+  const loadReports = useCallback(async (offset = 0) => {
     try {
       setLoading(true);
       setError(null);
 
       const [reportsResponse, statsResponse] = await Promise.all([
-        api.listStatusReports({ limit: 50 }),
+        api.listStatusReports({
+          limit: pagination.limit,
+          offset,
+          taskId: taskIdFilter.trim() || undefined,
+          armId: armIdFilter.trim() || undefined,
+        }),
         api.getStatusReportStats(),
       ]);
 
       setReports(reportsResponse.reports);
       setStats(statsResponse);
+      setPagination(reportsResponse.pagination);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load status reports');
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.limit, taskIdFilter, armIdFilter]);
 
   useEffect(() => {
     loadReports();
-  }, []);
+  }, [loadReports]);
+
+  const filteredReports = useMemo(() => {
+    let result = reports;
+
+    if (statusFilter !== 'all') {
+      result = result.filter((report) => report.status === statusFilter);
+    }
+
+    if (searchText.trim()) {
+      const query = searchText.toLowerCase();
+      result = result.filter((report) => {
+        const issues = report.issues?.join(' ').toLowerCase() || '';
+        const blockers = report.blockers?.join(' ').toLowerCase() || '';
+        const nextSteps = report.nextSteps?.toLowerCase() || '';
+        return (
+          report.summary.toLowerCase().includes(query) ||
+          report.armId.toLowerCase().includes(query) ||
+          report.taskId.toLowerCase().includes(query) ||
+          issues.includes(query) ||
+          blockers.includes(query) ||
+          nextSteps.includes(query)
+        );
+      });
+    }
+
+    return result;
+  }, [reports, searchText, statusFilter]);
+
+  const handleApplyFilters = useCallback(() => {
+    setPagination((prev) => ({ ...prev, offset: 0 }));
+    loadReports(0);
+  }, [loadReports]);
+
+  const handleClearFilters = useCallback(() => {
+    setTaskIdFilter('');
+    setArmIdFilter('');
+    setStatusFilter('all');
+    setSearchText('');
+    setPagination((prev) => ({ ...prev, offset: 0 }));
+    loadReports(0);
+  }, [loadReports]);
 
 
 
@@ -64,15 +114,15 @@ export function StatusReportsPage({}: StatusReportsPageProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="p-8 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Status Reports</h1>
+          <h1 className="text-2xl font-bold text-gradient-heading">Status History</h1>
           <p className="text-muted-foreground">
-            Monitor arm progress and track task status updates
+            Search historical status reports from arms across tasks
           </p>
         </div>
-        <Button variant="primary" onPress={loadReports} isDisabled={loading} className="inline-flex">
+        <Button variant="primary" onPress={() => loadReports(pagination.offset)} isDisabled={loading} className="inline-flex">
           <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
@@ -138,31 +188,89 @@ export function StatusReportsPage({}: StatusReportsPageProps) {
         </div>
       )}
 
-      {/* Filter Tabs */}
+      {/* Search and Filters */}
+      <div className="bg-white rounded-lg border p-4 space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
+            <input
+              type="text"
+              placeholder="Search summaries, arm IDs, task IDs..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-72"
+            />
+          </div>
+          <div className="h-4 w-px bg-divider" />
+          <input
+            type="text"
+            placeholder="Filter by task ID"
+            value={taskIdFilter}
+            onChange={(e) => setTaskIdFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-48"
+          />
+          <input
+            type="text"
+            placeholder="Filter by arm ID"
+            value={armIdFilter}
+            onChange={(e) => setArmIdFilter(e.target.value)}
+            className="px-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-48"
+          />
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusReport['status'] | 'all')}
+            className="px-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent"
+          >
+            <option value="all">All statuses</option>
+            <option value="on_track">On track</option>
+            <option value="blocked">Blocked</option>
+            <option value="issues_found">Issues found</option>
+            <option value="needs_review">Needs review</option>
+            <option value="completed_with_issues">Completed with issues</option>
+          </select>
+          <Button variant="secondary" onPress={handleApplyFilters} isDisabled={loading}>
+            Apply
+          </Button>
+          <Button variant="ghost" onPress={handleClearFilters} isDisabled={loading}>
+            <FilterX className="h-4 w-4 mr-2" />
+            Clear
+          </Button>
+          <div className="ml-auto text-sm text-muted-foreground">
+            Showing {filteredReports.length} of {pagination.total}
+          </div>
+        </div>
+      </div>
+
+      {/* Reports List */}
       <div className="bg-white rounded-lg border">
-        <div className="border-b">
-          <nav className="flex">
-            <Button variant="ghost" onPress={() => setReports(reports)} className="px-4 py-2 text-sm font-medium border-b-2 border-blue-500 text-blue-600">
-              All Reports
-            </Button>
-            <Button variant="ghost" onPress={() => setReports(reports.filter(r => r.status === 'blocked'))} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-              Blocked
-            </Button>
-            <Button variant="ghost" onPress={() => setReports(reports.filter(r => r.status === 'issues_found' || r.status === 'completed_with_issues'))} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-              Issues
-            </Button>
-            <Button variant="ghost" onPress={() => {
-                const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-                setReports(reports.filter(r => new Date(r.createdAt) > oneDayAgo));
-              }} className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700">
-              Recent
-            </Button>
-          </nav>
+        <div className="p-4">
+          <StatusReportsList reports={filteredReports} />
         </div>
 
-        <div className="p-4">
-          <StatusReportsList reports={reports} />
-        </div>
+        {/* Pagination */}
+        {pagination.total > pagination.limit && (
+          <div className="flex justify-center gap-2 px-4 pb-4">
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => loadReports(Math.max(0, pagination.offset - pagination.limit))}
+              isDisabled={pagination.offset === 0 || loading}
+            >
+              Previous
+            </Button>
+            <span className="px-3 py-1 text-sm text-muted-foreground">
+              {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} of {pagination.total}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => loadReports(pagination.offset + pagination.limit)}
+              isDisabled={pagination.offset + pagination.limit >= pagination.total || loading}
+            >
+              Next
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -264,8 +372,8 @@ function StatusReportsList({ reports }: StatusReportsListProps) {
                   <div className="mb-3">
                     <p className="text-sm font-medium">Issues:</p>
                     <ul className="text-sm text-gray-600 list-disc list-inside">
-                      {report.issues.map((issue: string, index: number) => (
-                        <li key={index}>{issue}</li>
+                      {report.issues.map((issue: string) => (
+                        <li key={`${report.id}-issue-${issue}`}>{issue}</li>
                       ))}
                     </ul>
                   </div>
@@ -275,8 +383,8 @@ function StatusReportsList({ reports }: StatusReportsListProps) {
                   <div className="mb-3">
                     <p className="text-sm font-medium">Blockers:</p>
                     <ul className="text-sm text-gray-600 list-disc list-inside">
-                      {report.blockers.map((blocker: string, index: number) => (
-                        <li key={index}>{blocker}</li>
+                      {report.blockers.map((blocker: string) => (
+                        <li key={`${report.id}-blocker-${blocker}`}>{blocker}</li>
                       ))}
                     </ul>
                   </div>
@@ -286,8 +394,8 @@ function StatusReportsList({ reports }: StatusReportsListProps) {
                   <div className="mb-3">
                     <p className="text-sm font-medium">Files Changed:</p>
                     <div className="flex flex-wrap gap-1">
-                      {report.filesChanged.map((file: string, index: number) => (
-                        <span key={index} className="px-2 py-1 text-xs bg-gray-100 rounded">
+                      {report.filesChanged.map((file: string) => (
+                        <span key={`${report.id}-file-${file}`} className="px-2 py-1 text-xs bg-gray-100 rounded">
                           {file}
                         </span>
                       ))}

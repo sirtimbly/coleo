@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button, Chip } from "@heroui/react";
 import { NavLink, Outlet } from "react-router-dom";
 import {
@@ -10,6 +10,7 @@ import {
 	Mail,
 	Vote,
 	Activity,
+	FileText,
 	Settings,
 	MessageSquarePlus,
 	ListTodo,
@@ -25,6 +26,7 @@ const getNavItems = (unreadCount: number) => [
 	{ to: "/arms", icon: Bot, label: "Arms" },
 	{ to: "/viewer", icon: Eye, label: "Viewer" },
 	{ to: "/tasks", icon: ListTodo, label: "Tasks" },
+	{ to: "/status-reports", icon: FileText, label: "Status History" },
 	{ to: "/bugs", icon: Bug, label: "Bugs" },
 	{ to: "/garden", icon: Flower2, label: "Garden" },
 	{ to: "/mail", icon: Mail, label: "Mail", badge: unreadCount },
@@ -44,17 +46,17 @@ export function Layout() {
 		closeMessageModal,
 	} = useMessage();
 
-const fetchStatus = async () => {
+const fetchStatus = useCallback(async () => {
 		try {
 			const status = await api.status();
 			setCwd(status.cwd);
 		} catch (error) {
 			console.error('Failed to fetch status:', error);
 		}
-	};
+	}, []);
 
 	// Fetch unread message counts
-	const fetchUnreadCount = async () => {
+	const fetchUnreadCount = useCallback(async () => {
 		try {
 			const [inboxResult] = await Promise.all([
 				api.listInbox({ limit: 1 }), // Get pagination info with unread count
@@ -63,12 +65,12 @@ const fetchStatus = async () => {
 		} catch (error) {
 			console.error("Failed to fetch unread count:", error);
 		}
-	};
+	}, []);
 
 	// Fetch status on mount
 	useEffect(() => {
 		fetchStatus();
-	}, []);
+	}, [fetchStatus]);
 
 	// WebSocket connection for real-time updates
 	useEffect(() => {
@@ -120,14 +122,14 @@ const fetchStatus = async () => {
 		return () => {
 			ws.close();
 		};
-	}, [showToast]);
+	}, [showToast, fetchUnreadCount]);
 
 	// Fetch unread counts on mount and every 30 seconds
 	useEffect(() => {
 		fetchUnreadCount();
 		const interval = setInterval(fetchUnreadCount, 30000);
 		return () => clearInterval(interval);
-	}, []);
+	}, [fetchUnreadCount]);
 
 	// Global keyboard shortcut: 'N' to open message modal
 	useEffect(() => {
