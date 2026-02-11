@@ -12,6 +12,7 @@ import { join } from "path";
 import { initDatabase, Database } from "../db";
 import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
 import { getColeoDir, getRandomPreferredModel } from "../config";
+import { getCliEntrypoint } from "../cli/entrypoint";
 import type { Arm } from "../types";
 
 const execAsync = promisify(exec);
@@ -204,7 +205,7 @@ function getTerminalCommand(
 /**
  * Generate the agent command based on type
  */
-function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
+export function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
   const mcpConfig = join(options.coleoDir, "mcp", `${options.name}.json`);
   
   // Build model string if provider/model specified
@@ -216,9 +217,8 @@ function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
   
   switch (agent) {
     case "opencode":
-      // OpenCode with MCP config pointing to octopai
-      // Use the MCP config file we created for this arm
-      return `${modelEnv}COLEO_ARM_ID=${options.name} OPENCODE_MCP_CONFIG="${mcpConfig}" opencode`;
+      // OpenCode reads config from OPENCODE_CONFIG
+      return `${modelEnv}COLEO_ARM_ID=${options.name} OPENCODE_CONFIG="${mcpConfig}" opencode`;
 
     case "claude-code":
       // Claude Code (assuming similar CLI)
@@ -239,20 +239,25 @@ function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
 /**
  * Create MCP configuration for the arm
  */
-async function createMcpConfig(options: SpawnOptions): Promise<void> {
+export async function createMcpConfig(options: SpawnOptions): Promise<void> {
   const mcpDir = join(options.coleoDir, "mcp");
   await mkdir(mcpDir, { recursive: true });
 
-  // Create an MCP config that tells the agent how to connect to octopai
+  const bunBinary = process.execPath;
+  const cliEntrypoint = getCliEntrypoint();
+
+  // OpenCode v1.1+ expects MCP servers under `mcp` in OPENCODE_CONFIG.
   const mcpConfig = {
-    mcpServers: {
-      octopai: {
-        command: "octopai",
-        args: ["mcp", "serve"],
-        env: {
+    $schema: "https://opencode.ai/config.json",
+    mcp: {
+      coleo: {
+        type: "local",
+        command: [bunBinary, cliEntrypoint, "mcp", "serve"],
+        environment: {
           COLEO_ARM_ID: options.name,
           COLEO_DIR: options.coleoDir,
         },
+        enabled: true,
       },
     },
   };
@@ -476,7 +481,7 @@ export async function spawnArmInTerminal(options: SpawnOptions): Promise<Arm> {
 
   // Generate a unique session ID for this spawn (helps identify windows during testing)
   const sessionId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const windowTitle = `octopai:${options.name}:${sessionId}`;
+  const windowTitle = `coleo:${options.name}:${sessionId}`;
 
   // Get terminal launch command
   const { cmd, args } = getTerminalCommand(
