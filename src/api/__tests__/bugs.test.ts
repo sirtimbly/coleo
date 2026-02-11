@@ -26,7 +26,8 @@ function createTestDb(): Database {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       resolved_at TEXT,
-      human_notified INTEGER DEFAULT 0
+      human_notified INTEGER DEFAULT 0,
+      archived INTEGER DEFAULT 0
     );
 
     CREATE TABLE arms (

@@ -121,6 +121,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["045_brain_completed_task_count", MIGRATION_045],
 		["046_arm_grace_default_2m", MIGRATION_046],
 		["047_task_order_key", MIGRATION_047, { table: "tasks", columns: MIGRATION_047_COLUMNS }],
+		["048_bugs_archived", MIGRATION_048, { table: "bugs", columns: MIGRATION_048_COLUMNS }],
 	];
 
 
@@ -1272,6 +1273,23 @@ WHERE status = 'completed' AND order_key IS NULL;
 UPDATE tasks
 SET order_key = 'zz' || hex(created_at)
 WHERE order_key IS NULL;
+`;
+
+// Migration 048: Add archived flag to bugs table for filtering resolved bugs
+const MIGRATION_048_COLUMNS = [
+  { name: 'archived', sql: "ALTER TABLE bugs ADD COLUMN archived INTEGER DEFAULT 0" },
+];
+
+const MIGRATION_048 = `
+-- Create index for filtering archived bugs
+CREATE INDEX IF NOT EXISTS idx_bugs_archived ON bugs(archived);
+
+-- Backfill: mark resolved/closed bugs as archived if they're older than 30 days
+UPDATE bugs
+SET archived = 1
+WHERE status IN ('resolved', 'closed')
+  AND resolved_at IS NOT NULL
+  AND resolved_at < datetime('now', '-30 days');
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

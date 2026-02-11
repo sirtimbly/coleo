@@ -28,6 +28,7 @@ export interface Bug {
   updatedAt: string;
   resolvedAt?: string;
   humanNotified: boolean;
+  archived: boolean;
 }
 
 interface BugRow {
@@ -50,6 +51,7 @@ interface BugRow {
   updated_at: string;
   resolved_at: string | null;
   human_notified: number;
+  archived: number;
 }
 
 interface BugsContext {
@@ -68,6 +70,7 @@ export function createBugsRoutes() {
     const status = c.req.query("status");
     const priority = c.req.query("priority");
     const assignee = c.req.query("assignee");
+    const archived = c.req.query("archived");
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
 
     let query = `
@@ -101,6 +104,13 @@ export function createBugsRoutes() {
       params.push(assignee);
     }
 
+    // Filter by archived status (default: show only non-archived)
+    if (archived === "true") {
+      query += " AND b.archived = 1";
+    } else if (archived === "false" || archived === undefined) {
+      query += " AND b.archived = 0";
+    }
+
     query += " ORDER BY b.sort_order ASC, b.created_at DESC LIMIT ?";
     params.push(limit);
 
@@ -129,6 +139,7 @@ export function createBugsRoutes() {
         updatedAt: row.updated_at,
         resolvedAt: row.resolved_at || undefined,
         humanNotified: row.human_notified === 1,
+        archived: row.archived === 1,
       }));
 
       return c.json({ bugs });
@@ -175,6 +186,7 @@ export function createBugsRoutes() {
       updatedAt: row.updated_at,
       resolvedAt: row.resolved_at || undefined,
       humanNotified: row.human_notified === 1,
+      archived: row.archived === 1,
     };
 
     return c.json({ bug });
@@ -453,6 +465,57 @@ export function createBugsRoutes() {
     broadcast("bugs", "bug.updated", { bugId, changes: { sort_order: updatedBug?.sort_order } });
 
     return c.json({ success: true });
+  });
+
+  /**
+   * Archive a resolved bug
+   * POST /api/bugs/:id/archive
+   */
+  app.post("/:id/archive", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if bug exists and is resolved
+    const bug = db.query("SELECT id, status FROM bugs WHERE id = ?").get(id) as { id: string; status: string } | null;
+    if (!bug) {
+      throw HttpError.notFound("Bug not found");
+    }
+
+    // Only allow archiving resolved or closed bugs
+    if (!["resolved", "closed"].includes(bug.status)) {
+      throw HttpError.badRequest("Only resolved or closed bugs can be archived");
+    }
+
+    // Archive the bug
+    db.run("UPDATE bugs SET archived = 1, updated_at = datetime('now') WHERE id = ?", [id]);
+
+    // Broadcast bug updated
+    broadcast("bugs", "bug.updated", { bugId: id, changes: { archived: true } });
+
+    return c.json({ success: true, archived: true });
+  });
+
+  /**
+   * Unarchive a bug
+   * POST /api/bugs/:id/unarchive
+   */
+  app.post("/:id/unarchive", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    // Check if bug exists
+    const bug = db.query("SELECT id FROM bugs WHERE id = ?").get(id) as { id: string } | null;
+    if (!bug) {
+      throw HttpError.notFound("Bug not found");
+    }
+
+    // Unarchive the bug
+    db.run("UPDATE bugs SET archived = 0, updated_at = datetime('now') WHERE id = ?", [id]);
+
+    // Broadcast bug updated
+    broadcast("bugs", "bug.updated", { bugId: id, changes: { archived: false } });
+
+    return c.json({ success: true, archived: false });
   });
 
   return app;
