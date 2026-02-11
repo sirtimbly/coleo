@@ -56,6 +56,8 @@ import type {
 } from "../types";
 import { BrainStateManager } from "./modules/state-manager";
 import type { StateManagerOptions } from "./modules/state-types";
+import { BrainMessageHandler } from "./modules/message-handler";
+import type { MessageHandlerCallbacks } from "./modules/message-handler";
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -97,6 +99,10 @@ export class Brain {
 	// State manager - extracted from this class to reduce complexity
 	// This will gradually replace the individual state properties above
 	private stateManager: BrainStateManager | null = null;
+
+	// Message handler - extracted from this class to reduce complexity
+	// Handles NATS connections and message routing
+	private messageHandler: BrainMessageHandler | null = null;
 
 	// Track last stuck state per arm to avoid duplicate escalations
 	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
@@ -298,27 +304,15 @@ export class Brain {
 	 */
 	async startNats(): Promise<void> {
 		try {
-			this.natsClient = new NatsClient({
-				serverUrl: this.natsUrl,
-				clientId: `brain-${process.pid}`,
-				debug: this.options.verbose,
-			});
-
-			await this.natsClient.connect();
-			this.log(`Connected to NATS at ${this.natsUrl}`);
-
-			// Subscribe to brain messages from arms
-			this.natsClient.subscribe<BrainMessage>(
-				TOPICS.BRAIN_MESSAGES,
-				async (message) => {
+			// Initialize message handler (new modular approach)
+			const callbacks: MessageHandlerCallbacks = {
+				onBrainMessage: async (message) => {
 					await this.handleBrainMessage(message);
 				},
-			);
-
-			// Subscribe to arm events for real-time activity tracking
-			this.natsClient.subscribe<{ armId: string; type: string }>(
-				TOPICS.BROADCAST_ARMS,
-				async (event) => {
+				onArmEvent: async (armId, eventType, properties) => {
+					await this.handleArmEvent(armId, eventType, properties);
+				},
+				onArmBroadcast: (event) => {
 					if (event.armId) {
 						this.lastArmEventTime.set(event.armId, new Date());
 						// Log to JetStream for history
@@ -330,21 +324,30 @@ export class Brain {
 						);
 					}
 				},
+			};
+
+			this.messageHandler = new BrainMessageHandler(
+				{
+					natsUrl: this.natsUrl,
+					clientId: `brain-${process.pid}`,
+					debug: this.options.verbose,
+				},
+				callbacks,
 			);
 
-			// Subscribe to individual arm events to update status based on session changes
-			this.natsClient.subscribe<{
-				armId: string;
-				type: string;
-				properties: Record<string, unknown>;
-			}>(`arm.>`, async (event) => {
-				await this.handleArmEvent(event.armId, event.type, event.properties);
-			});
-
-			this.log("Subscribed to brain messages and arm events on NATS");
+			const connected = await this.messageHandler.connect();
+			if (connected) {
+				this.natsClient = this.messageHandler.getNatsClient();
+				this.log(`Connected to NATS at ${this.natsUrl}`);
+				this.log("Subscribed to brain messages and arm events on NATS");
+			} else {
+				this.log("NATS not available");
+				this.messageHandler = null;
+			}
 		} catch (err) {
 			this.log(`NATS not available: ${err}`);
 			this.natsClient = null;
+			this.messageHandler = null;
 		}
 	}
 
@@ -352,7 +355,13 @@ export class Brain {
 	 * Disconnect from NATS
 	 */
 	async stopNats(): Promise<void> {
-		if (this.natsClient) {
+		if (this.messageHandler) {
+			await this.messageHandler.disconnect();
+			this.messageHandler = null;
+			this.natsClient = null;
+			this.log("Disconnected from NATS");
+		} else if (this.natsClient) {
+			// Fallback for legacy code paths
 			await this.natsClient.disconnect();
 			this.natsClient = null;
 			this.log("Disconnected from NATS");
