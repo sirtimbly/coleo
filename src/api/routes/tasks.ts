@@ -123,6 +123,31 @@ function parseTaskRow(row: TaskRow): Task {
 	};
 }
 
+function getTaskRowById(db: Database, id: string): TaskRow | null {
+	return db
+		.query(`
+      SELECT
+        t.id, t.subject, t.description, t.status, t.priority,
+        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
+        t.assigned_to, NULL as assigned_arm_name,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.comment_count, t.last_comment_at,
+        t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
+        t.claimed_at, t.started_at, t.due_date,
+        t.artifacts, t.context, t.metadata
+      FROM tasks t
+      WHERE t.id = ?
+    `)
+		.get(id) as TaskRow | null;
+}
+
+function isTaskIdUniqueConstraintError(err: unknown): boolean {
+	if (!(err instanceof Error)) {
+		return false;
+	}
+	return /UNIQUE constraint failed:\s*tasks\.id/i.test(err.message);
+}
+
 /**
  * Log an activity entry to JetStream
  */
@@ -627,62 +652,112 @@ export function createTasksRoutes() {
 		}
 
 		const providedId = body.id?.trim();
-		let id: string;
-		if (providedId) {
-			id = providedId;
-		} else {
-			// Generate sequential task ID
+		const normalizedSubject = body.subject.trim();
+		const normalizedDescription = body.description.trim();
+		const normalizedProgress = Math.min(Math.max(body.progress ?? 0, 0), 100);
+		const insertTask = (taskId: string): void => {
+			const now = new Date().toISOString();
+			const transaction = db.transaction(() => {
+				// Get current max sort_order to place new task at the end
+				const maxSortOrder = db
+					.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM tasks")
+					.get() as { max_sort: number };
+				const newSortOrder =
+					body.sortOrder ?? (maxSortOrder?.max_sort ?? -1) + 1;
+
+				// If inserting at a specific position, shift existing tasks to make room.
+				if (body.sortOrder !== undefined && body.sortOrder >= 0) {
+					db.run(
+						`UPDATE tasks SET sort_order = sort_order + 1 WHERE sort_order >= ?`,
+						[body.sortOrder],
+					);
+				}
+
+				db.run(
+					`
+	          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, sort_order, progress, metadata, created_at, updated_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	        `,
+					[
+						taskId,
+						normalizedSubject,
+						normalizedDescription,
+						body.status || "pending",
+						body.priority || "normal",
+						body.sourceType || "manual",
+						body.sourceRef || null,
+						body.phase || null,
+						body.domain || null,
+						body.classification || null,
+						body.mailThreadId || null,
+						JSON.stringify(body.context || {}),
+						body.dueDate || null,
+						newSortOrder,
+						normalizedProgress,
+						JSON.stringify(body.metadata || {}),
+						now,
+						now,
+					],
+				);
+			});
+
+			transaction();
+		};
+
+		const generateSequentialTaskId = (): string => {
 			const maxIdResult = db
 				.query(
 					"SELECT MAX(CAST(SUBSTR(id, 6) AS INTEGER)) as max_num FROM tasks WHERE id LIKE 'task-%'",
 				)
 				.get() as { max_num: number | null };
 			const nextNum = (maxIdResult?.max_num ?? 0) + 1;
-			id = `task-${nextNum}`;
+			return `task-${nextNum}`;
+		};
+
+		let id = providedId || generateSequentialTaskId();
+		if (providedId) {
+			try {
+				insertTask(id);
+			} catch (err) {
+				if (isTaskIdUniqueConstraintError(err)) {
+					const existingRow = getTaskRowById(db, id);
+					if (!existingRow) {
+						throw HttpError.internal(
+							`Task ${id} already exists but could not be retrieved`,
+						);
+					}
+					return c.json({ task: parseTaskRow(existingRow) });
+				}
+				throw err;
+			}
+		} else {
+			const maxAttempts = 5;
+			let inserted = false;
+			let lastError: unknown;
+
+			for (let attempt = 0; attempt < maxAttempts; attempt++) {
+				try {
+					insertTask(id);
+					inserted = true;
+					break;
+				} catch (err) {
+					if (isTaskIdUniqueConstraintError(err)) {
+						id = generateSequentialTaskId();
+						lastError = err;
+						continue;
+					}
+					throw err;
+				}
+			}
+
+			if (!inserted) {
+				throw HttpError.internal(
+					`Failed to create task after ${maxAttempts} attempts: ${
+						lastError instanceof Error ? lastError.message : "ID collision"
+					}`,
+				);
+			}
 		}
-
-		// Get current max sort_order to place new task at the end
-		const maxSortOrder = db
-			.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM tasks")
-			.get() as { max_sort: number };
-		const newSortOrder = body.sortOrder ?? (maxSortOrder?.max_sort ?? -1) + 1;
-
-		// If inserting at a specific position, shift existing tasks to make room
-		if (body.sortOrder !== undefined && body.sortOrder >= 0) {
-			db.run(
-				`UPDATE tasks SET sort_order = sort_order + 1 WHERE sort_order >= ?`,
-				[body.sortOrder]
-			);
-		}
-
-		const now = new Date().toISOString();
-
-		db.run(
-			`
-      INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, sort_order, progress, metadata, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-			[
-				id,
-				body.subject.trim(),
-				body.description.trim(),
-				body.status || "pending",
-				body.priority || "normal",
-				body.sourceType || "manual",
-				body.sourceRef || null,
-				body.phase || null,
-				body.domain || null,
-				body.classification || null,
-				body.mailThreadId || null,
-				JSON.stringify(body.context || {}),
-				body.dueDate || null,
-				newSortOrder, // Place at the end of the list
-				Math.min(Math.max(body.progress ?? 0, 0), 100), // Clamp between 0-100
-				JSON.stringify(body.metadata || {}),
-				now,
-				now,
-			],
-		);
 
 		logActivity(db, "api", "task_created", id, {
 			subject: body.subject,
@@ -693,21 +768,10 @@ export function createTasksRoutes() {
 		// Broadcast task created
 		broadcast("tasks", "task.created", { taskId: id, subject: body.subject });
 
-		const row = db
-			.query(`
-      SELECT
-        t.id, t.subject, t.description, t.status, t.priority,
-        t.source_type, t.source_ref, t.phase, t.domain, t.classification,
-        t.assigned_to, NULL as assigned_arm_name,
-        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
-        t.comment_count, t.last_comment_at,
-        t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
-        t.artifacts, t.context, t.metadata
-      FROM tasks t
-      WHERE t.id = ?
-    `)
-			.get(id) as TaskRow;
+		const row = getTaskRowById(db, id);
+		if (!row) {
+			throw HttpError.internal(`Failed to load task after creation: ${id}`);
+		}
 
 		return c.json({ task: parseTaskRow(row) }, 201);
 	});

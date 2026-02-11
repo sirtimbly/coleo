@@ -62,10 +62,10 @@ const PRIORITY_OPTIONS: Task["priority"][] = [
 ];
 
 const PRIORITY_STYLES: Record<Task["priority"], string> = {
-	low: "bg-emerald-50 text-emerald-700 border-emerald-100",
-	normal: "bg-sky-50 text-sky-700 border-sky-100",
-	high: "bg-amber-50 text-amber-700 border-amber-100",
-	critical: "bg-rose-50 text-rose-700 border-rose-100",
+	low: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900",
+	normal: "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-900",
+	high: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900",
+	critical: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900",
 };
 
 const COLOR_OPTIONS = ["slate", "blue", "emerald", "amber", "rose"] as const;
@@ -77,28 +77,28 @@ const COLOR_CLASSES: Record<
 > = {
 	slate: {
 		dot: "bg-slate-400",
-		row: "bg-slate-50 border-slate-200 border-l-slate-400",
-		rowBold: "bg-slate-100 border-slate-400 border-l-slate-600 border-2",
+		row: "bg-slate-50 border-slate-200 border-l-slate-400 dark:bg-slate-950/30 dark:border-slate-800 dark:border-l-slate-600",
+		rowBold: "bg-slate-100 border-slate-400 border-l-slate-600 border-2 dark:bg-slate-900/50 dark:border-slate-600 dark:border-l-slate-400",
 	},
 	blue: {
 		dot: "bg-blue-400",
-		row: "bg-blue-50 border-blue-200 border-l-blue-400",
-		rowBold: "bg-blue-100 border-blue-400 border-l-blue-600 border-2",
+		row: "bg-blue-50 border-blue-200 border-l-blue-400 dark:bg-blue-950/30 dark:border-blue-800 dark:border-l-blue-600",
+		rowBold: "bg-blue-100 border-blue-400 border-l-blue-600 border-2 dark:bg-blue-900/50 dark:border-blue-600 dark:border-l-blue-400",
 	},
 	emerald: {
 		dot: "bg-emerald-400",
-		row: "bg-emerald-50 border-emerald-200 border-l-emerald-400",
-		rowBold: "bg-emerald-100 border-emerald-400 border-l-emerald-600 border-2",
+		row: "bg-emerald-50 border-emerald-200 border-l-emerald-400 dark:bg-emerald-950/30 dark:border-emerald-800 dark:border-l-emerald-600",
+		rowBold: "bg-emerald-100 border-emerald-400 border-l-emerald-600 border-2 dark:bg-emerald-900/50 dark:border-emerald-600 dark:border-l-emerald-400",
 	},
 	amber: {
 		dot: "bg-amber-400",
-		row: "bg-amber-50 border-amber-200 border-l-amber-400",
-		rowBold: "bg-amber-100 border-amber-400 border-l-amber-600 border-2",
+		row: "bg-amber-50 border-amber-200 border-l-amber-400 dark:bg-amber-950/30 dark:border-amber-800 dark:border-l-amber-600",
+		rowBold: "bg-amber-100 border-amber-400 border-l-amber-600 border-2 dark:bg-amber-900/50 dark:border-amber-600 dark:border-l-amber-400",
 	},
 	rose: {
 		dot: "bg-rose-400",
-		row: "bg-rose-50 border-rose-200 border-l-rose-400",
-		rowBold: "bg-rose-100 border-rose-400 border-l-rose-600 border-2",
+		row: "bg-rose-50 border-rose-200 border-l-rose-400 dark:bg-rose-950/30 dark:border-rose-800 dark:border-l-rose-600",
+		rowBold: "bg-rose-100 border-rose-400 border-l-rose-600 border-2 dark:bg-rose-900/50 dark:border-rose-600 dark:border-l-rose-400",
 	},
 };
 

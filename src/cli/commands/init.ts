@@ -195,6 +195,7 @@ version = ${config.version}
 [brain]
 poll_interval_ms = ${config.brain.pollIntervalMs}
 max_arms = ${config.brain.maxArms}
+arm_grace_period_minutes = ${config.brain.armGracePeriodMinutes}
 
 [mail]
 from_address = "${config.mail.fromAddress}"

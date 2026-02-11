@@ -191,31 +191,6 @@ export function createStatusReportsRoutes() {
   });
 
   /**
-   * Get a single status report
-   * GET /api/status-reports/:id
-   */
-  app.get("/:id", (c) => {
-    const db = c.get("db");
-    const id = c.req.param("id");
-
-    const row = db.query(`
-      SELECT
-        id, task_id as taskId, arm_id as armId, status, summary,
-        issues, blockers, next_steps as nextSteps,
-        files_changed as filesChanged, tests_status as testsStatus,
-        created_at as createdAt
-      FROM status_reports
-      WHERE id = ?
-    `).get(id) as StatusReportRow | null;
-
-    if (!row) {
-      throw HttpError.notFound(`Status report not found: ${id}`);
-    }
-
-    return c.json({ report: parseStatusReportRow(row) });
-  });
-
-  /**
    * Get status report statistics
    * GET /api/status-reports/stats
    */
@@ -259,6 +234,31 @@ export function createStatusReportsRoutes() {
         reportsByArm: [],
       });
     }
+  });
+
+  /**
+   * Get a single status report
+   * GET /api/status-reports/:id
+   */
+  app.get("/:id", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+
+    const row = db.query(`
+      SELECT
+        id, task_id as taskId, arm_id as armId, status, summary,
+        issues, blockers, next_steps as nextSteps,
+        files_changed as filesChanged, tests_status as testsStatus,
+        created_at as createdAt
+      FROM status_reports
+      WHERE id = ?
+    `).get(id) as StatusReportRow | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Status report not found: ${id}`);
+    }
+
+    return c.json({ report: parseStatusReportRow(row) });
   });
 
   return app;

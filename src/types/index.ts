@@ -393,7 +393,7 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 	brain: {
 		pollIntervalMs: 30000,
 		maxArms: 8,
-		armGracePeriodMinutes: 5,
+		armGracePeriodMinutes: 2,
 	},
   mail: {
     fromAddress: "brain@coleo.local",

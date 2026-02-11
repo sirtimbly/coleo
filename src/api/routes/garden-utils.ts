@@ -7,6 +7,7 @@
 
 import type { Database } from "bun:sqlite";
 import { eventStore } from "../../nats/jetstream";
+import { releaseClaimsForInactiveArms } from "../claim-cleanup";
 import type { FileClaim } from "./garden";
 
 /**
@@ -14,6 +15,7 @@ import type { FileClaim } from "./garden";
  */
 export function getActiveClaims(db: Database): FileClaim[] {
 	try {
+		releaseClaimsForInactiveArms(db);
 		return db
 			.query(
 				`SELECT id, arm_id as armId, file_path as filePath, claim_type as claimType,

@@ -8,6 +8,7 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
+import { releaseClaimsForInactiveArms } from "../claim-cleanup";
 import { eventStore } from "../../nats/jetstream";
 import { getActiveClaims, getRecentActivity, generateCoords } from "./garden-utils";
 
@@ -148,6 +149,10 @@ export function createGardenRoutes() {
     const db = c.get("db");
     const armId = c.req.query("arm");
     const filePath = c.req.query("file");
+
+    if (armId || filePath) {
+      releaseClaimsForInactiveArms(db);
+    }
 
     let claims: FileClaim[];
 

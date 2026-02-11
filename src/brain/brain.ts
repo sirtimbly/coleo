@@ -713,7 +713,7 @@ export class Brain {
 				checkIntervalMs: 30 * 1000, // 30 seconds
 				eventWindowMs: 10 * 60 * 1000, // 10 minutes
 				idlePromptDelayMs: 12 * 60 * 1000, // 12 minutes
-				startupGracePeriodMs: 5 * 60 * 1000, // 5 minutes
+				startupGracePeriodMs: 2 * 60 * 1000, // 2 minutes
 				autoInterventionEnabled: true,
 			},
 			onResult: (result) => {
@@ -4882,7 +4882,7 @@ Report findings using bug resolution workflow.`;
 			if (detectionTime) {
 				const gracePeriod = await this.getBrainConfigNumber(
 					"brain_arm_grace_period_minutes",
-					5,
+					2,
 				);
 				const detectedMinutesAgo =
 					(Date.now() - detectionTime.getTime()) / 1000 / 60;
@@ -5305,6 +5305,28 @@ Report findings using bug resolution workflow.`;
 		};
 	}
 
+	private isArmInStartupGracePeriod(
+		armId: string,
+		nowMs: number,
+		startupGraceMs: number,
+	): { inGrace: boolean; ageMs: number } {
+		if (startupGraceMs <= 0) {
+			return { inGrace: false, ageMs: Number.POSITIVE_INFINITY };
+		}
+
+		const detectionTime = this.armDetectionTimes.get(armId);
+		if (!detectionTime) {
+			return { inGrace: false, ageMs: Number.POSITIVE_INFINITY };
+		}
+
+		const ageMs = nowMs - detectionTime.getTime();
+		if (ageMs < startupGraceMs) {
+			return { inGrace: true, ageMs };
+		}
+
+		return { inGrace: false, ageMs };
+	}
+
 	private normalizeTaskPriority(
 		value: string | undefined,
 	): Task["priority"] | undefined {
@@ -5549,6 +5571,11 @@ Report findings using bug resolution workflow.`;
 		if (activeArms.length === 0) {
 			return;
 		}
+		const startupGraceMinutes = await this.getBrainConfigNumber(
+			"brain_arm_grace_period_minutes",
+			2,
+		);
+		const startupGraceMs = Math.max(0, startupGraceMinutes) * 60 * 1000;
 
 		const taskSnapshot = this.tasks
 			.slice(0, 30)
@@ -5561,6 +5588,21 @@ Report findings using bug resolution workflow.`;
 					arm.id,
 					20,
 				);
+				const graceState = this.isArmInStartupGracePeriod(
+					arm.id,
+					Date.now(),
+					startupGraceMs,
+				);
+				if (graceState.inGrace) {
+					// Drop startup chatter so it doesn't get replayed when grace expires.
+					for (const message of assistantSnapshot.messages) {
+						this.markArmOutputMessageProcessed(arm.id, message.id);
+					}
+					this.log(
+						`Arm ${arm.id}: skipping assistant-output processing during startup grace (${Math.round(graceState.ageMs / 1000)}s/${Math.round(startupGraceMs / 1000)}s)`,
+					);
+					continue;
+				}
 				// Avoid racing active tool-use turns: only process when the newest
 				// assistant message is textual (not a tool/reasoning-only turn).
 				if (!assistantSnapshot.latestAssistantHasText) {
@@ -7719,9 +7761,12 @@ ${originalTask.id}`;
 			}
 		}
 
+		const previouslyTracked = new Set(this.arms.keys());
+		const activeArmIds = new Set<string>();
 		this.arms.clear();
 		for (const row of armsFromApi) {
 			if (row.status === "stopped") continue;
+			activeArmIds.add(row.id);
 
 			const arm: Arm = {
 				id: row.id,
@@ -7739,6 +7784,9 @@ ${originalTask.id}`;
 			};
 			(arm as Arm & { domain?: string }).domain = row.domain;
 			this.arms.set(arm.id, arm);
+			if (!previouslyTracked.has(arm.id)) {
+				this.armDetectionTimes.set(arm.id, new Date());
+			}
 
 			// Ensure arm has state machine entry
 			if (this.armStateMachine) {
@@ -7755,6 +7803,11 @@ ${originalTask.id}`;
 									: "idle";
 					this.armStateMachine.initializeArm(arm.id, initialState as ArmState);
 				}
+			}
+		}
+		for (const trackedArmId of Array.from(this.armDetectionTimes.keys())) {
+			if (!activeArmIds.has(trackedArmId)) {
+				this.armDetectionTimes.delete(trackedArmId);
 			}
 		}
 		this.log(`Loaded ${this.arms.size} active arms from API`);

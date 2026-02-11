@@ -15,6 +15,7 @@ import { parse as parseToml } from "smol-toml";
 import { getArmClient } from "../server";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
+import { releaseClaimsForArm } from "../claim-cleanup";
 
 interface ArmsContext {
   Variables: {
@@ -465,11 +466,19 @@ export function createArmsRoutes() {
       throw HttpError.badRequest("No fields to update");
     }
 
+    const updatedAt = new Date().toISOString();
     updates.push("updated_at = ?");
-    values.push(new Date().toISOString());
+    values.push(updatedAt);
     values.push(id);
 
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, values as (string | number | null)[]);
+
+    if (body.status === "stopped") {
+      const releasedClaims = releaseClaimsForArm(db, id, updatedAt);
+      if (releasedClaims > 0) {
+        logActivity(db, id, "claims_released", undefined, { releasedClaims });
+      }
+    }
 
     // Fetch updated arm
     const row = db.query(`
@@ -854,9 +863,10 @@ export function createArmsRoutes() {
           // Update database
           const now = new Date().toISOString();
           db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          const releasedClaims = releaseClaimsForArm(db, id, now);
 
           // Log activity
-          logActivity(db, id, "killed", undefined, { distributed: true, agentId: row.agent_id });
+          logActivity(db, id, "killed", undefined, { distributed: true, agentId: row.agent_id, releasedClaims });
 
           // Broadcast arm killed
           broadcast("arms", "arm.killed", { id, status: "stopped", distributed: true });
@@ -867,6 +877,7 @@ export function createArmsRoutes() {
           // Still try to clean up DB state even if agent kill fails
           const now = new Date().toISOString();
           db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          releaseClaimsForArm(db, id, now);
           console.log(`[kill] Agent kill failed, cleaned up DB state: ${message}`);
         }
       }
@@ -884,9 +895,10 @@ export function createArmsRoutes() {
     // Update database
     const now = new Date().toISOString();
     db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?", [now, id]);
+    const releasedClaims = releaseClaimsForArm(db, id, now);
 
     // Log activity
-    logActivity(db, id, "killed");
+    logActivity(db, id, "killed", undefined, { releasedClaims });
 
     // Broadcast arm killed
     broadcast("arms", "arm.killed", { id, status: "stopped" });
@@ -1454,10 +1466,13 @@ export function createArmsRoutes() {
     }
 
     // Check if arm exists
-    const row = db.query("SELECT id, status, agent_id FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, agent_id, harness, pid, port FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
       agent_id: string | null;
+      harness: string;
+      pid: number | null;
+      port: number | null;
     } | null;
 
     if (!row) {
@@ -1478,28 +1493,18 @@ export function createArmsRoutes() {
     if (row.agent_id) {
       const armClient = getArmClient();
       if (!armClient) {
-        const now = new Date().toISOString();
-        db.run(
-          "UPDATE arms SET status = 'stopped', agent_id = NULL, host = NULL, pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
-          [now, id],
-        );
         return c.json(
-          { error: `Arm ${id} is assigned to agent ${row.agent_id}, but distributed arm management is unavailable. Spawn it first.` },
-          400,
+          { error: `Arm ${id} is assigned to agent ${row.agent_id}, but distributed arm management is currently unavailable. Retry shortly.` },
+          503,
         );
       }
 
       try {
         const response = await armClient.sendPrompt(id, body.prompt);
         if (!response.success) {
-          const now = new Date().toISOString();
-          db.run(
-            "UPDATE arms SET status = 'stopped', agent_id = NULL, host = NULL, pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
-            [now, id],
-          );
           return c.json(
-            { error: `Arm ${id} has no active distributed session. The arm may have crashed or the agent disconnected. Spawn it first.` },
-            400,
+            { error: `Arm ${id} is currently unreachable on distributed agent ${row.agent_id}. Retry shortly.` },
+            503,
           );
         }
 
@@ -1529,16 +1534,67 @@ export function createArmsRoutes() {
 
     // Check if arm has an active session
     if (!manager.hasSession(id)) {
-      const now = new Date().toISOString();
-      db.run(
-        "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
-        [now, id],
-      );
-      console.warn(`[prompt] Arm ${id} status is '${row.status}' but no active session found in manager; marking as stopped`);
-      return c.json(
-        { error: `Arm ${id} has no active session. The arm may have crashed or the server restarted. Spawn it first.` },
-        400,
-      );
+      // Best-effort auto-recovery after API restart for OpenCode harnesses.
+      if (
+        (row.harness === "opencode-api" || row.harness === "opencode-tui") &&
+        row.port !== null &&
+        row.pid !== null
+      ) {
+        try {
+          const recovered = await manager.recover(
+            id,
+            row.harness,
+            row.port,
+            row.pid,
+          );
+          if (recovered) {
+            const now = new Date().toISOString();
+            const recoveredSessionId = manager.getSession(id)?.session.id ?? null;
+            db.run(
+              "UPDATE arms SET session_id = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [recoveredSessionId, now, now, id],
+            );
+          }
+        } catch (err) {
+          console.warn(`[prompt] Auto-recovery attempt failed for ${id}: ${err}`);
+        }
+      }
+
+      if (!manager.hasSession(id)) {
+        let isAlive = false;
+        if (typeof row.pid === "number") {
+          try {
+            process.kill(row.pid, 0);
+            isAlive = true;
+          } catch {
+            isAlive = false;
+          }
+        }
+
+        if (!isAlive) {
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+            [now, id],
+          );
+          releaseClaimsForArm(db, id, now);
+          console.warn(
+            `[prompt] Arm ${id} has no active session and PID is not alive; marking as stopped`,
+          );
+          return c.json(
+            { error: `Arm ${id} is no longer running. Spawn it first.` },
+            400,
+          );
+        }
+
+        console.warn(
+          `[prompt] Arm ${id} process appears alive but session is not attached yet; keeping status '${row.status}'`,
+        );
+        return c.json(
+          { error: `Arm ${id} is still reconnecting after server restart. Retry shortly.` },
+          503,
+        );
+      }
     }
 
     try {

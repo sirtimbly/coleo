@@ -119,6 +119,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["043_search_index", MIGRATION_043],
 		["044_restore_discoveries_task_phase", MIGRATION_044, { table: "discoveries", columns: MIGRATION_044_COLUMNS }],
 		["045_brain_completed_task_count", MIGRATION_045],
+		["046_arm_grace_default_2m", MIGRATION_046],
 	];
 
 
@@ -181,7 +182,7 @@ CREATE TABLE IF NOT EXISTS config (
 INSERT OR IGNORE INTO config (key, value) VALUES
   ('brain_poll_interval_ms', '30000'),
   ('brain_max_arms', '8'),
-  ('brain_arm_grace_period_minutes', '5'),
+  ('brain_arm_grace_period_minutes', '2'),
   ('context_claim_mode', 'lazy');
 `;
 
@@ -1198,6 +1199,19 @@ const MIGRATION_044 = `
 // Migration 045: Track total completed task count in brain_state
 const MIGRATION_045 = `
   ALTER TABLE brain_state ADD COLUMN completed_task_count INTEGER NOT NULL DEFAULT 0;
+`;
+
+// Migration 046: Reduce default arm grace period from 5m to 2m.
+// Only updates installations that still use the legacy default value.
+const MIGRATION_046 = `
+  INSERT OR IGNORE INTO config (key, value) VALUES
+    ('brain_arm_grace_period_minutes', '2');
+
+  UPDATE config
+  SET value = '2',
+      updated_at = datetime('now')
+  WHERE key = 'brain_arm_grace_period_minutes'
+    AND value = '5';
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

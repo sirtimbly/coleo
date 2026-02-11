@@ -4,9 +4,12 @@
  * Shared utilities for MCP tool implementations.
  */
 
+import { randomBytes } from "crypto";
+import { mkdir, writeFile } from "fs/promises";
+import { join } from "path";
 import { getColeoDir } from "../../config";
 import { createApiDatabase } from "../api-db";
-import type { Task } from "../../types";
+import type { MessageType, QueueMessage, Task } from "../../types";
 
 // Get coleo directory from env or default (project-local)
 export const COLEO_DIR = getColeoDir();
@@ -37,13 +40,60 @@ export function getDatabase(_readonly = true): StateDb {
 export async function sendToBrain(message: {
 	from: string;
 	to: string;
-	type: string;
-	payload: Record<string, unknown>;
+	type: MessageType;
+	payload: unknown;
 }): Promise<string> {
-	// Implementation would go here - for now, stub
-	const messageId = `msg-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-	console.error(`[MCP] Sending message to brain: ${message.type}`);
+	const messageId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
+	try {
+		const response = await fetch(`${API_BASE_URL}/api/brain/internal/messages/queue`, {
+			method: "POST",
+			headers: {
+				"Content-Type": "application/json",
+				"X-API-Key": API_KEY,
+			},
+			body: JSON.stringify({
+				id: messageId,
+				from: message.from,
+				to: message.to,
+				type: message.type,
+				payload: message.payload,
+			}),
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(
+				`API queue failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+			);
+		}
+
+		return messageId;
+	} catch (err) {
+		console.error(`[MCP] Failed to queue message via API, falling back to file: ${err}`);
+	}
+
+	await sendToBrainFile({
+		id: messageId,
+		from: message.from,
+		to: message.to,
+		type: message.type,
+		payload: message.payload,
+		timestamp: new Date(),
+	});
+
 	return messageId;
+}
+
+async function sendToBrainFile(message: QueueMessage): Promise<void> {
+	const queueDir = join(COLEO_DIR, "queue", "brain", "pending");
+	await mkdir(queueDir, { recursive: true });
+
+	const filename = `${message.id}-${message.from}-${message.type}.json`;
+	await writeFile(
+		join(queueDir, filename),
+		JSON.stringify(message, null, 2),
+		"utf-8",
+	);
 }
 
 /**

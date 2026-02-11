@@ -6,6 +6,7 @@ version = 1
 [brain]
 poll_interval_ms = 30000
 max_arms = 8
+arm_grace_period_minutes = 2
 
 [mail]
 from_address = "brain@coleo.local"

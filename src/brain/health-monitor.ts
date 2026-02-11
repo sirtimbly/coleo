@@ -94,7 +94,7 @@ const DEFAULT_CONFIG: HealthMonitorConfig = {
 	idlePromptDelayMs: 12 * 60 * 1000, // 12 minutes
 	stuckEscalationDelayMs: 5 * 60 * 1000, // 5 minutes
 	maxPromptsBeforeEscalation: 3,
-	startupGracePeriodMs: 5 * 60 * 1000, // 5 minutes
+	startupGracePeriodMs: 2 * 60 * 1000, // 2 minutes
 	autoInterventionEnabled: true,
 };
 

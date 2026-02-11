@@ -308,6 +308,43 @@ describe("tasks API", () => {
       expect(body.task.createdAt >= before).toBe(true);
       expect(body.task.createdAt <= after).toBe(true);
     });
+
+    it("should treat duplicate provided task IDs as idempotent", async () => {
+      const first = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "task-fixed-id",
+          subject: "Original Subject",
+          description: "Original Description",
+          priority: "high",
+        }),
+      });
+      expect(first.status).toBe(201);
+
+      const second = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: "task-fixed-id",
+          subject: "Different Subject",
+          description: "Different Description",
+          priority: "low",
+        }),
+      });
+
+      expect(second.status).toBe(200);
+      const secondBody = await second.json() as { task: Task };
+      expect(secondBody.task.id).toBe("task-fixed-id");
+      expect(secondBody.task.subject).toBe("Original Subject");
+      expect(secondBody.task.description).toBe("Original Description");
+      expect(secondBody.task.priority).toBe("high");
+
+      const rowCount = db
+        .query("SELECT COUNT(*) as count FROM tasks WHERE id = ?")
+        .get("task-fixed-id") as { count: number } | null;
+      expect(rowCount?.count).toBe(1);
+    });
   });
 
   describe("GET /api/tasks (list)", () => {

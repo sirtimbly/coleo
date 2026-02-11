@@ -6,6 +6,7 @@
 
 import type { Database } from "../db";
 import type { HarnessManager } from "../harness";
+import { releaseClaimsForArm } from "./claim-cleanup";
 
 /**
  * Clean up orphaned arms on server startup
@@ -14,7 +15,8 @@ import type { HarnessManager } from "../harness";
  * are lost (the sessions were tied to the old server process).
  * This function detects such orphaned arms and either:
  * - Recovers them if the process is still running and has a recoverable session endpoint
- * - Marks them as stopped if the process is dead or cannot be recovered
+ * - Preserves running state when the process is alive but recovery is not yet possible
+ * - Marks them as stopped only when the process is confirmed dead
  */
 export async function cleanupOrphanedArms(
 	db: Database,
@@ -26,7 +28,7 @@ export async function cleanupOrphanedArms(
 	const runningArms = db
 		.query(
 			`
-		SELECT id, name, pid, port, harness, status
+		SELECT id, name, pid, port, harness, status, agent_id
 		FROM arms
 		WHERE status IN ('idle', 'busy', 'running', 'starting')
 	`,
@@ -38,12 +40,24 @@ export async function cleanupOrphanedArms(
 		port: number | null;
 		harness: string;
 		status: string;
+		agent_id: string | null;
 	}>;
 
 	let orphanedCount = 0;
 	let recoveredCount = 0;
+	let preservedCount = 0;
 
 	for (const arm of runningArms) {
+		// Distributed arms run on remote agents. Their PID is not local to this process,
+		// so process.kill(pid, 0) is not a valid liveness check after API restart.
+		if (arm.agent_id) {
+			console.log(
+				`[cleanup] Preserving distributed arm state: ${arm.name} (${arm.id}) on agent ${arm.agent_id}`,
+			);
+			preservedCount++;
+			continue;
+		}
+
 		let isAlive = false;
 
 		if (arm.pid) {
@@ -63,6 +77,12 @@ export async function cleanupOrphanedArms(
 				"UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
 				[now, arm.id],
 			);
+			const releasedClaims = releaseClaimsForArm(db, arm.id, now);
+			if (releasedClaims > 0) {
+				console.log(
+					`[cleanup] Released ${releasedClaims} stale file claim(s) for stopped arm: ${arm.name}`,
+				);
+			}
 			orphanedCount++;
 		} else if (
 			harnessManager &&
@@ -84,26 +104,17 @@ export async function cleanupOrphanedArms(
 				console.log(`[cleanup] Successfully recovered arm: ${arm.name}`);
 			} else {
 				console.log(
-					`[cleanup] Failed to recover arm: ${arm.name}, marking as stopped`,
+					`[cleanup] Failed to recover arm: ${arm.name}, preserving state for retry`,
 				);
-				db.run(
-					"UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
-					[now, arm.id],
-				);
-				orphanedCount++;
+				preservedCount++;
 			}
 		} else if (isAlive) {
 			// Process is alive but session cannot be recovered by this server process.
-			// Keep database state consistent so brain/api don't repeatedly prompt an arm
-			// that has no active harness session.
+			// Preserve state so components can retry recovery instead of forcing a stop.
 			console.log(
-				`[cleanup] Arm ${arm.name} has running process (PID ${arm.pid}) but no recoverable session, marking as stopped`,
+				`[cleanup] Arm ${arm.name} has running process (PID ${arm.pid}) but no recoverable session, preserving state`,
 			);
-			db.run(
-				"UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
-				[now, arm.id],
-			);
-			orphanedCount++;
+			preservedCount++;
 		}
 	}
 
@@ -112,5 +123,10 @@ export async function cleanupOrphanedArms(
 	}
 	if (recoveredCount > 0) {
 		console.log(`[cleanup] Recovered ${recoveredCount} arm session(s)`);
+	}
+	if (preservedCount > 0) {
+		console.log(
+			`[cleanup] Preserved ${preservedCount} running arm(s) without forcing stop`,
+		);
 	}
 }
