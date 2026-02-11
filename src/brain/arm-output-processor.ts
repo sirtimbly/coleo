@@ -132,6 +132,25 @@ export class ArmOutputProcessor {
 
 	private fallbackParse(outputText: string): ArmOutputDecision {
 		const lower = outputText.toLowerCase();
+		const appearsWaitingForInput =
+			lower.includes("waiting for user input") ||
+			lower.includes("awaiting user input") ||
+			lower.includes("waiting on user input") ||
+			lower.includes("need user input") ||
+			lower.includes("requires user input") ||
+			lower.includes("waiting for approval") ||
+			lower.includes("what should i do next") ||
+			lower.includes("can't proceed without");
+
+		if (appearsWaitingForInput) {
+			return {
+				action: "no_action",
+				reasoning: "Fallback keyword match: arm appears blocked waiting for user input",
+				confidence: 0.5,
+				armPrompt:
+					"Do not wait for user input. If your current task is complete, call complete_task and then get_full_briefing for the next task. Otherwise continue iterating on your current task with the next concrete implementation step and report progress.",
+			};
+		}
 
 		if (
 			lower.includes("log a bug") ||

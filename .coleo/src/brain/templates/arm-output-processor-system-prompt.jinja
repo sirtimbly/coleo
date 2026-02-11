@@ -22,10 +22,6 @@ Rules:
 - Do not invent task IDs. If update_task is chosen, taskId must be present and must match an existing ID in the snapshot when possible.
 - Keep generated text concise and operational.
 - If action is not no_action, include armPrompt with the next step message to send back to the same arm.
-- If the assistant appears stuck waiting for user input/approval/next-step confirmation, use action=no_action and include armPrompt that tells the arm to either:
-  1) complete its current task and call get_full_briefing for the next task, or
-  2) continue iterating on the current task with concrete next steps.
-  In this case, do not ask the arm to wait for user input.
 
 Output JSON only, no prose:
 {
@@ -57,5 +53,4 @@ Output JSON only, no prose:
 
 For no_action:
 - Return action=no_action, with reasoning and confidence.
-- Usually omit task/bug/update/armPrompt or leave them empty.
-- Exception: include armPrompt when the assistant output indicates it is blocked on user input/approval/what-next style waiting.
+- Omit task/bug/update/armPrompt or leave them empty.

@@ -208,4 +208,105 @@ describe("Brain arm output event scan", () => {
 		).processArmAssistantOutputs();
 		expect(processCalls).toBe(1);
 	});
+
+	it("sends a follow-up prompt when classifier returns no_action with armPrompt", async () => {
+		const brain = new Brain({
+			coleoDir: "/tmp",
+			pollIntervalMs: 1000,
+			verbose: false,
+		});
+
+		const arm: Arm = {
+			id: "arm-alpha",
+			name: "arm-alpha",
+			agent: "opencode-api",
+			status: "idle",
+			startedAt: new Date(),
+		};
+
+		(brain as unknown as { arms: Map<string, Arm> }).arms = new Map([
+			[arm.id, arm],
+		]);
+		(brain as unknown as { tasks: Array<{ id: string; status: string; subject: string }> }).tasks = [];
+		(brain as unknown as { state: { pendingTasks: number } }).state.pendingTasks =
+			0;
+
+		(
+			brain as unknown as {
+				templates: {
+					loadArmOutputProcessorSystemPrompt: () => Promise<string>;
+				};
+			}
+		).templates = {
+			loadArmOutputProcessorSystemPrompt: async () =>
+				"arm-output-system-prompt",
+		};
+
+		let promptedArmName = "";
+		let promptedText = "";
+		(
+			brain as unknown as {
+				sendPromptToArm: (armName: string, message: string) => Promise<boolean>;
+			}
+		).sendPromptToArm = async (armName, message) => {
+			promptedArmName = armName;
+			promptedText = message;
+			return true;
+		};
+
+		(
+			brain as unknown as {
+				armOutputProcessor: {
+					processOutput: () => Promise<{
+						action: "no_action";
+						reasoning: string;
+						confidence: number;
+						armPrompt: string;
+					}>;
+				};
+			}
+		).armOutputProcessor = {
+			processOutput: async () => ({
+				action: "no_action",
+				reasoning: "Arm appears to be waiting for input",
+				confidence: 0.8,
+				armPrompt:
+					"Do not wait for user input. Complete current task or continue iterating.",
+			}),
+		};
+
+		(
+			brain as unknown as {
+				apiRequest: <T>(path: string) => Promise<T>;
+			}
+		).apiRequest = async <T>(path: string) => {
+			if (path === "/api/arms/arm-alpha/messages?limit=20") {
+				return {
+					messages: [
+						{
+							info: {
+								id: "msg-awaiting-input-1",
+								role: "assistant",
+								time: { created: 1770841191872, completed: 1770841192872 },
+							},
+							parts: [
+								{
+									type: "text",
+									text: "I am waiting for user input before I can continue.",
+								},
+							],
+						},
+					],
+				} as T;
+			}
+			throw new Error(`Unexpected apiRequest path in test: ${path}`);
+		};
+
+		await (
+			brain as unknown as { processArmAssistantOutputs: () => Promise<void> }
+		).processArmAssistantOutputs();
+
+		expect(promptedArmName).toBe("arm-alpha");
+		expect(promptedText).toContain("Do not wait for user input");
+	});
 });

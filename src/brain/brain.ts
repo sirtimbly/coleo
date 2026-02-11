@@ -5309,12 +5309,32 @@ Report findings using bug resolution workflow.`;
 		sourceMessages: Array<{ id: string; timestampMs: number; text: string }>,
 	): Promise<void> {
 		const action = decision.action;
+		const promptText = decision.armPrompt?.trim();
 		if (action === "no_action") {
+			if (!promptText) {
+				return;
+			}
+			const armTarget = arm.name || arm.id;
+			const prompted = await this.sendPromptToArm(armTarget, promptText);
+			if (!prompted) {
+				this.log(
+					`Arm output follow-up prompt failed for ${armTarget} after action ${action}`,
+				);
+				return;
+			}
+			this.log(
+				`Arm output action no_action_with_prompt: prompted ${armTarget} to continue without waiting`,
+			);
+			this.logActivity("brain", "arm_output_action", arm.id, {
+				action: "no_action_with_prompt",
+				confidence: decision.confidence,
+				messageIds: sourceMessages.map((m) => m.id),
+			});
 			return;
 		}
 
 		const fallbackPrompt = "Acknowledged. Continue with the next relevant step and report progress.";
-		let followupPrompt = decision.armPrompt?.trim() || fallbackPrompt;
+		let followupPrompt = promptText || fallbackPrompt;
 
 		if (action === "create_task") {
 			const taskSubject =
@@ -5359,7 +5379,7 @@ Report findings using bug resolution workflow.`;
 				confidence: decision.confidence,
 			});
 			followupPrompt =
-				decision.armPrompt?.trim() ||
+				promptText ||
 				`I created task ${task.id}: ${task.subject}. Continue with the next concrete step and report status updates.`;
 		} else if (action === "log_bug") {
 			const sourceText =
@@ -5406,7 +5426,7 @@ Report findings using bug resolution workflow.`;
 				confidence: decision.confidence,
 			});
 			followupPrompt =
-				decision.armPrompt?.trim() ||
+				promptText ||
 				`I logged bug ${bugCreate.bugId}: ${bugTitle}. Continue investigating or proceed with the next task-safe step.`;
 		} else if (action === "update_task") {
 			const taskId = decision.update?.taskId?.trim();
@@ -5473,7 +5493,7 @@ Report findings using bug resolution workflow.`;
 				confidence: decision.confidence,
 			});
 			followupPrompt =
-				decision.armPrompt?.trim() ||
+				promptText ||
 				`I updated task ${task.id} (${task.status}). Continue with the next concrete step and report progress.`;
 		}
 

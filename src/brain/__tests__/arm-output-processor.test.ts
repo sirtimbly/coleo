@@ -113,4 +113,20 @@ describe("ArmOutputProcessor", () => {
 		expect(decision.action).toBe("no_action");
 		expect(decision.confidence).toBe(1);
 	});
+
+	it("returns no_action with armPrompt when assistant appears to wait for user input", async () => {
+		delete process.env.OPENAI_API_KEY;
+
+		const processor = new ArmOutputProcessor(() => {});
+		const decision = await processor.processOutput(
+			"arm-4",
+			"arm-4",
+			"I am waiting for user input before I can continue this task.",
+			"System prompt",
+		);
+
+		expect(decision.action).toBe("no_action");
+		expect(decision.armPrompt).toContain("Do not wait for user input");
+		expect(decision.confidence).toBeGreaterThan(0.4);
+	});
 });
