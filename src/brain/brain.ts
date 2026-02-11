@@ -37,6 +37,10 @@ import {
 } from "./health-monitor";
 import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
+import {
+	ArmOutputProcessor,
+	type ArmOutputDecision,
+} from "./arm-output-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
@@ -80,6 +84,7 @@ export class Brain {
 	private natsClient: NatsClient | null = null;
 	private templates: BrainTemplateManager;
 	private mailProcessor: MailProcessor;
+	private armOutputProcessor: ArmOutputProcessor;
 	private stuckArmAnalyzer: StuckArmAnalyzer;
 	private docTracker: DocUpdateTracker | null = null;
 	private armStateMachine: ArmStateMachine | null = null;
@@ -108,6 +113,8 @@ export class Brain {
 	private armDetectionTimes: Map<string, Date> = new Map();
 	// Track recent activity from event stream (for real-time busy detection)
 	private lastArmEventTime: Map<string, Date> = new Map();
+	// Track which assistant session messages have already been interpreted
+	private processedArmOutputMessageIds: Map<string, Set<string>> = new Map();
 	// In-memory file subscriptions keyed by arm ID
 	private fileSubscriptions: Map<string, Set<string>> = new Map();
 	// Plan hash cache to avoid reprocessing unchanged plan files
@@ -253,6 +260,7 @@ export class Brain {
 
 		// Initialize mail processor
 		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "");
+		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg));
 
 		// Initialize stuck arm analyzer
 		this.stuckArmAnalyzer = new StuckArmAnalyzer(
@@ -826,6 +834,13 @@ export class Brain {
 			await this.checkArms();
 
 			// Refresh tasks from database before assignment
+			await this.loadTasks();
+
+			// Step 3.5: Interpret recent assistant output from arms for
+			// brain-side follow-up actions (task/bug/task-update) and reply prompts.
+			await this.processArmAssistantOutputs();
+
+			// Refresh tasks in case assistant-output processing changed task state.
 			await this.loadTasks();
 
 			// Step 4: Use unified health monitor for stuck detection
@@ -2267,7 +2282,10 @@ export class Brain {
 	private async patchTaskViaApi(
 		taskId: string,
 		patch: {
+			subject?: string;
+			description?: string;
 			status?: Task["status"];
+			priority?: Task["priority"];
 			assignedTo?: string | null;
 			dependencyBlocked?: boolean;
 			metadata?: Record<string, unknown>;
@@ -5135,6 +5153,402 @@ Report findings using bug resolution workflow.`;
 		}
 
 		return { recent: false };
+	}
+
+	private extractSessionMessageId(
+		message: Record<string, unknown>,
+	): string | null {
+		const info = message.info;
+		if (!info || typeof info !== "object") {
+			return null;
+		}
+		const id = (info as Record<string, unknown>).id;
+		return typeof id === "string" && id.trim() ? id : null;
+	}
+
+	private extractSessionMessageRole(
+		message: Record<string, unknown>,
+	): string | null {
+		const info = message.info;
+		if (!info || typeof info !== "object") {
+			return null;
+		}
+		const role = (info as Record<string, unknown>).role;
+		return typeof role === "string" && role.trim() ? role : null;
+	}
+
+	private extractSessionMessageText(
+		message: Record<string, unknown>,
+	): string | null {
+		const parts = message.parts;
+		if (!Array.isArray(parts)) {
+			return null;
+		}
+
+		const textParts: string[] = [];
+		for (const part of parts) {
+			if (!part || typeof part !== "object") {
+				continue;
+			}
+			const partObj = part as Record<string, unknown>;
+			if (partObj.type !== "text") {
+				continue;
+			}
+			const text = partObj.text;
+			if (typeof text === "string" && text.trim()) {
+				textParts.push(text.trim());
+			}
+		}
+
+		if (textParts.length === 0) {
+			return null;
+		}
+		return textParts.join("\n\n");
+	}
+
+	private hasProcessedArmOutputMessage(armId: string, messageId: string): boolean {
+		const processed = this.processedArmOutputMessageIds.get(armId);
+		return processed?.has(messageId) === true;
+	}
+
+	private markArmOutputMessageProcessed(armId: string, messageId: string): void {
+		let processed = this.processedArmOutputMessageIds.get(armId);
+		if (!processed) {
+			processed = new Set<string>();
+			this.processedArmOutputMessageIds.set(armId, processed);
+		}
+		processed.add(messageId);
+
+		// Cap per-arm history to avoid unbounded growth.
+		while (processed.size > 200) {
+			const oldest = processed.values().next().value;
+			if (!oldest) break;
+			processed.delete(oldest);
+		}
+	}
+
+	private async getRecentAssistantTextMessages(
+		armId: string,
+		limit = 20,
+	): Promise<Array<{ id: string; timestampMs: number; text: string }>> {
+		const response = await this.apiRequest<{ messages?: unknown[] }>(
+			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
+			{},
+			1500,
+		);
+		const messages = response?.messages;
+		if (!messages || messages.length === 0) {
+			return [];
+		}
+
+		const parsed: Array<{ id: string; timestampMs: number; text: string }> = [];
+		for (const message of messages) {
+			if (!message || typeof message !== "object") {
+				continue;
+			}
+			const messageObj = message as Record<string, unknown>;
+			const role = this.extractSessionMessageRole(messageObj);
+			if (role !== "assistant") {
+				continue;
+			}
+			const messageId = this.extractSessionMessageId(messageObj);
+			if (!messageId) {
+				continue;
+			}
+			const text = this.extractSessionMessageText(messageObj);
+			if (!text) {
+				continue;
+			}
+			const timestampMs = this.extractMessageTimestampMs(messageObj);
+			if (timestampMs === null) {
+				continue;
+			}
+			parsed.push({ id: messageId, timestampMs, text });
+		}
+
+		return parsed.sort((a, b) => a.timestampMs - b.timestampMs);
+	}
+
+	private normalizeTaskPriority(
+		value: string | undefined,
+	): Task["priority"] | undefined {
+		if (!value) return undefined;
+		switch (value) {
+			case "critical":
+			case "high":
+			case "normal":
+			case "low":
+				return value;
+			case "medium":
+				return "normal";
+			default:
+				return undefined;
+		}
+	}
+
+	private normalizeBugPriority(
+		value: string | undefined,
+	): "low" | "medium" | "high" | "critical" | undefined {
+		if (!value) return undefined;
+		switch (value) {
+			case "low":
+			case "medium":
+			case "high":
+			case "critical":
+				return value;
+			case "normal":
+				return "medium";
+			default:
+				return undefined;
+		}
+	}
+
+	private async applyArmOutputDecision(
+		arm: Arm,
+		decision: ArmOutputDecision,
+		sourceMessages: Array<{ id: string; timestampMs: number; text: string }>,
+	): Promise<void> {
+		const action = decision.action;
+		if (action === "no_action") {
+			return;
+		}
+
+		const fallbackPrompt = "Acknowledged. Continue with the next relevant step and report progress.";
+		let followupPrompt = decision.armPrompt?.trim() || fallbackPrompt;
+
+		if (action === "create_task") {
+			const taskSubject =
+				decision.task?.subject?.trim() ||
+				`Follow-up from ${arm.name || arm.id}`;
+			const sourceText =
+				sourceMessages[sourceMessages.length - 1]?.text ||
+				"Follow-up requested by arm output.";
+			const taskDescription =
+				decision.task?.description?.trim() || sourceText.slice(0, 2000);
+			const priority =
+				this.normalizeTaskPriority(decision.task?.priority) || "normal";
+
+			const task = await this.createTaskViaApi({
+				subject: taskSubject,
+				description: taskDescription,
+				priority,
+				domain: decision.task?.domain || undefined,
+				classification: decision.task?.classification || undefined,
+				sourceType: "system",
+				sourceRef: `arm-output:${arm.id}`,
+				metadata: {
+					origin: "arm_output_processor",
+					armId: arm.id,
+					messageIds: sourceMessages.map((m) => m.id),
+				},
+			});
+
+			if (!task) {
+				this.log(
+					`Arm output action create_task failed for ${arm.id}: task creation returned null`,
+				);
+				return;
+			}
+
+			this.log(
+				`Arm output action create_task: created ${task.id} from assistant output on ${arm.id}`,
+			);
+			this.logActivity("brain", "arm_output_action", arm.id, {
+				action,
+				taskId: task.id,
+				confidence: decision.confidence,
+			});
+			followupPrompt =
+				decision.armPrompt?.trim() ||
+				`I created task ${task.id}: ${task.subject}. Continue with the next concrete step and report status updates.`;
+		} else if (action === "log_bug") {
+			const sourceText =
+				sourceMessages[sourceMessages.length - 1]?.text ||
+				"Bug reported by arm assistant output.";
+			const priority =
+				this.normalizeBugPriority(decision.bug?.priority) || "medium";
+			const bugTitle =
+				decision.bug?.title?.trim() || `Bug report from ${arm.name || arm.id}`;
+			const bugDescription =
+				decision.bug?.description?.trim() || sourceText.slice(0, 2000);
+			const bugCreate = await this.apiRequest<{ bugId?: string }>(
+				"/api/bugs",
+				{
+					method: "POST",
+					body: JSON.stringify({
+						title: bugTitle,
+						description: bugDescription,
+						source: "arm_reported",
+						sourceArmId: arm.id,
+						sourceTaskId: decision.bug?.sourceTaskId,
+						priority,
+						metadata: {
+							origin: "arm_output_processor",
+							messageIds: sourceMessages.map((m) => m.id),
+						},
+					}),
+				},
+			);
+
+			if (!bugCreate?.bugId) {
+				this.log(
+					`Arm output action log_bug failed for ${arm.id}: bug creation returned no bugId`,
+				);
+				return;
+			}
+
+			this.log(
+				`Arm output action log_bug: created ${bugCreate.bugId} from assistant output on ${arm.id}`,
+			);
+			this.logActivity("brain", "arm_output_action", arm.id, {
+				action,
+				bugId: bugCreate.bugId,
+				confidence: decision.confidence,
+			});
+			followupPrompt =
+				decision.armPrompt?.trim() ||
+				`I logged bug ${bugCreate.bugId}: ${bugTitle}. Continue investigating or proceed with the next task-safe step.`;
+		} else if (action === "update_task") {
+			const taskId = decision.update?.taskId?.trim();
+			if (!taskId) {
+				this.log(
+					`Arm output action update_task ignored for ${arm.id}: missing taskId`,
+				);
+				return;
+			}
+
+			const taskPatch: {
+				subject?: string;
+				description?: string;
+				status?: Task["status"];
+				priority?: Task["priority"];
+				metadata?: Record<string, unknown>;
+			} = {
+				metadata: {
+					origin: "arm_output_processor",
+					armId: arm.id,
+					messageIds: sourceMessages.map((m) => m.id),
+				},
+			};
+			if (decision.update?.subject?.trim()) {
+				taskPatch.subject = decision.update.subject.trim();
+			}
+			if (decision.update?.description?.trim()) {
+				taskPatch.description = decision.update.description.trim();
+			}
+			if (decision.update?.status) {
+				taskPatch.status = decision.update.status;
+			}
+			const updatePriority = this.normalizeTaskPriority(decision.update?.priority);
+			if (updatePriority) {
+				taskPatch.priority = updatePriority;
+			}
+
+			if (
+				!taskPatch.subject &&
+				!taskPatch.description &&
+				!taskPatch.status &&
+				!taskPatch.priority
+			) {
+				this.log(
+					`Arm output action update_task ignored for ${arm.id}: no update fields`,
+				);
+				return;
+			}
+
+			const task = await this.patchTaskViaApi(taskId, taskPatch);
+			if (!task) {
+				this.log(
+					`Arm output action update_task failed for ${arm.id}: task ${taskId} not updated`,
+				);
+				return;
+			}
+
+			this.log(
+				`Arm output action update_task: updated ${task.id} from assistant output on ${arm.id}`,
+			);
+			this.logActivity("brain", "arm_output_action", arm.id, {
+				action,
+				taskId: task.id,
+				confidence: decision.confidence,
+			});
+			followupPrompt =
+				decision.armPrompt?.trim() ||
+				`I updated task ${task.id} (${task.status}). Continue with the next concrete step and report progress.`;
+		}
+
+		const armTarget = arm.name || arm.id;
+		const prompted = await this.sendPromptToArm(armTarget, followupPrompt);
+		if (!prompted) {
+			this.log(
+				`Arm output follow-up prompt failed for ${armTarget} after action ${action}`,
+			);
+		}
+	}
+
+	private async processArmAssistantOutputs(): Promise<void> {
+		const activeArms = Array.from(this.arms.values()).filter(
+			(arm) => arm.status !== "stopped" && arm.status !== "error",
+		);
+		if (activeArms.length === 0) {
+			return;
+		}
+
+		const taskSnapshot = this.tasks
+			.slice(0, 30)
+			.map((task) => `${task.id} [${task.status}] ${task.subject}`)
+			.join("\n");
+
+		for (const arm of activeArms) {
+			try {
+				const assistantMessages = await this.getRecentAssistantTextMessages(
+					arm.id,
+					20,
+				);
+				if (assistantMessages.length === 0) {
+					continue;
+				}
+
+				const unprocessed = assistantMessages.filter(
+					(message) => !this.hasProcessedArmOutputMessage(arm.id, message.id),
+				);
+				if (unprocessed.length === 0) {
+					continue;
+				}
+
+				const recent = unprocessed.slice(-2);
+				for (const message of recent) {
+					this.markArmOutputMessageProcessed(arm.id, message.id);
+				}
+
+				const outputText = recent
+					.map(
+						(message, idx) =>
+							`Assistant message ${idx + 1} (${new Date(message.timestampMs).toISOString()}):\n${message.text}`,
+					)
+					.join("\n\n---\n\n");
+
+				const armDomain =
+					(arm as Arm & { domain?: string }).domain || "general";
+				const systemPrompt =
+					await this.templates.loadArmOutputProcessorSystemPrompt({
+						armName: arm.name,
+						armDomain,
+						pendingTasks: this.state.pendingTasks,
+						taskSnapshot: taskSnapshot || "none",
+					});
+				const decision = await this.armOutputProcessor.processOutput(
+					arm.id,
+					arm.name,
+					outputText,
+					systemPrompt,
+				);
+
+				await this.applyArmOutputDecision(arm, decision, recent);
+			} catch (err) {
+				this.log(`Failed to process assistant output for arm ${arm.id}: ${err}`);
+			}
+		}
 	}
 
 	/**

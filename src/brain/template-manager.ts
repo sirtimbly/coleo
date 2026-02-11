@@ -83,6 +83,23 @@ export class BrainTemplateManager {
   }
 
   /**
+   * Load and render the arm output processor system prompt template
+   */
+  async loadArmOutputProcessorSystemPrompt(context: {
+    armName: string;
+    armDomain: string;
+    pendingTasks: number;
+    taskSnapshot: string;
+  }): Promise<string> {
+    return this.renderTemplate("arm-output-processor-system-prompt.jinja", {
+      arm_name: context.armName,
+      arm_domain: context.armDomain,
+      pending_tasks: context.pendingTasks,
+      task_snapshot: context.taskSnapshot,
+    });
+  }
+
+  /**
    * Load the initial arm prompt template
    */
   async loadInitialArmPrompt(): Promise<string> {
@@ -116,6 +133,7 @@ export class BrainTemplateManager {
     // Get list of templates from the package
     const templateFiles = [
       "mail-processor-system-prompt.jinja",
+      "arm-output-processor-system-prompt.jinja",
       "initial-arm-prompt.jinja",
       "bug-assignment-prompt.jinja",
       "arm-api-restart-prompt.jinja",

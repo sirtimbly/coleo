@@ -72,6 +72,7 @@ describe("config loader", () => {
       mail: { fromAddress: "bot@example.test", digestSchedule: "daily" },
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
+      refactoring: { fileSizeThreshold: 500, enabled: true },
       defaults: { harness: "opencode", provider: "openai", model: "gpt-4o", contextBudget: 8000 },
     });
 
@@ -80,6 +81,7 @@ describe("config loader", () => {
     expect(toml.mail?.from_address).toBe("bot@example.test");
     expect(toml.gitea?.default_org).toBe("org");
     expect(toml.terminal?.emulator).toBe("tmux");
+    expect(toml.refactoring?.file_size_threshold).toBe(500);
     expect(toml.defaults?.context_budget).toBe(8000);
   });
 
