@@ -13,8 +13,8 @@ import type { HarnessManager } from "../harness";
  * When the server restarts, any arms that were running via harness manager
  * are lost (the sessions were tied to the old server process).
  * This function detects such orphaned arms and either:
- * - Recovers them if the process is still running and has a known port
- * - Marks them as stopped if the process is dead
+ * - Recovers them if the process is still running and has a recoverable session endpoint
+ * - Marks them as stopped if the process is dead or cannot be recovered
  */
 export async function cleanupOrphanedArms(
 	db: Database,
@@ -93,10 +93,17 @@ export async function cleanupOrphanedArms(
 				orphanedCount++;
 			}
 		} else if (isAlive) {
-			// Process is alive but can't recover - just log it
+			// Process is alive but session cannot be recovered by this server process.
+			// Keep database state consistent so brain/api don't repeatedly prompt an arm
+			// that has no active harness session.
 			console.log(
-				`[cleanup] Arm ${arm.name} has running process (PID ${arm.pid}) but cannot recover session`,
+				`[cleanup] Arm ${arm.name} has running process (PID ${arm.pid}) but no recoverable session, marking as stopped`,
 			);
+			db.run(
+				"UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+				[now, arm.id],
+			);
+			orphanedCount++;
 		}
 	}
 

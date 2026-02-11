@@ -350,11 +350,12 @@ export interface BrainState {
 export interface ColeoConfig {
   version: number;
   coleoDir: string;
-  brain: {
-    pollIntervalMs: number;
-    maxArms: number;
-    armGracePeriodMinutes: number;
-  };
+	brain: {
+		pollIntervalMs: number;
+		maxArms: number;
+		armGracePeriodMinutes: number;
+		refactorFileThresholdLines: number;
+	};
   mail: {
     fromAddress: string;
     digestSchedule: "immediate" | "hourly" | "daily";
@@ -373,6 +374,10 @@ export interface ColeoConfig {
     updatePollInterval: number;
     updateEnabled: boolean;
   };
+  refactoring: {
+    fileSizeThreshold: number;
+    enabled: boolean;
+  };
   defaults: {
     harness: string;
     provider: string;
@@ -386,11 +391,12 @@ export interface ColeoConfig {
 export const DEFAULT_CONFIG: ColeoConfig = {
   version: 1,
   coleoDir: ".coleo", // Placeholder - always overwritten by loadConfig()
-  brain: {
-    pollIntervalMs: 30000,
-    maxArms: 8,
-    armGracePeriodMinutes: 5,
-  },
+	brain: {
+		pollIntervalMs: 30000,
+		maxArms: 8,
+		armGracePeriodMinutes: 5,
+		refactorFileThresholdLines: 400,
+	},
   mail: {
     fromAddress: "brain@coleo.local",
     digestSchedule: "immediate",
@@ -402,6 +408,10 @@ export const DEFAULT_CONFIG: ColeoConfig = {
     updateFileThreshold: 10,
     updatePollInterval: 10,
     updateEnabled: true,
+  },
+  refactoring: {
+    fileSizeThreshold: 400,
+    enabled: true,
   },
   defaults: {
     harness: "opencode-api",

@@ -541,6 +541,7 @@ class ApiClient {
     dueDate?: string;
     progress?: number;
     metadata?: Record<string, unknown>;
+    sortOrder?: number;
   }) {
     return this.request<{ task: Task }>('/tasks', {
       method: 'POST',

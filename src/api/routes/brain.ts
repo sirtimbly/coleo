@@ -348,7 +348,7 @@ export function createBrainRoutes() {
       date: new Date(),
       body: body.message,
       headers,
-    });
+    }, { seen: true });
 
     // Broadcast that a new message was sent to brain
     broadcastBrainEvent("message_received", {

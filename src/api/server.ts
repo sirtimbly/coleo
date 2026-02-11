@@ -9,7 +9,8 @@ import { cors } from "hono/cors";
 import { dirname } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { cleanupOldArmEvents } from "../db/state";
-import { logger, createAuthMiddleware, errorHandler } from "./middleware";
+import { logger, createAuthMiddleware } from "./middleware";
+import { formatErrorResponse } from "./middleware/error";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
@@ -74,8 +75,10 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
     await next();
   });
 
+  // Global error handler (Hono-native path for route exceptions)
+  app.onError((err, c) => formatErrorResponse(c, err));
+
   // Global middleware
-  app.use("*", errorHandler);
   app.use("*", logger);
   app.use("*", cors({
     origin: config.corsOrigins,

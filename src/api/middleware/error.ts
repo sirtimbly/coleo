@@ -7,24 +7,29 @@ export async function errorHandler(c: Context, next: Next): Promise<void | Respo
   try {
     await next();
   } catch (err) {
-    const status = err instanceof HttpError ? err.status : 500;
-    // Don't log 404s for GET requests - they're expected when checking if resources exist
-    if (!(status === 404 && c.req.method === "GET")) {
-      console.error("Unhandled error:", err);
-    }
-
-    const message = err instanceof Error ? err.message : "Internal server error";
-
-    return c.json(
-      {
-        error: status === 500 ? "Internal server error" : message,
-        ...(process.env.NODE_ENV === "development" && {
-          stack: err instanceof Error ? err.stack : undefined,
-        }),
-      },
-      status as 400 | 401 | 403 | 404 | 500
-    );
+    return formatErrorResponse(c, err);
   }
+}
+
+export function formatErrorResponse(c: Context, err: unknown): Response {
+  const status = err instanceof HttpError ? err.status : 500;
+  // Log only unexpected server-side errors to avoid noisy expected 4xx traces.
+  if (!(err instanceof HttpError) || status >= 500) {
+    console.error("Unhandled error:", err);
+  }
+
+  const message = err instanceof Error ? err.message : "Internal server error";
+  const includeStack = process.env.NODE_ENV === "development" && status >= 500;
+
+  return c.json(
+    {
+      error: status === 500 ? "Internal server error" : message,
+      ...(includeStack && {
+        stack: err instanceof Error ? err.stack : undefined,
+      }),
+    },
+    status as 400 | 401 | 403 | 404 | 500
+  );
 }
 
 /**

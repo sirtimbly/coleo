@@ -511,6 +511,232 @@ async function getMyInstructions(): Promise<{
 	return { tasks, messages };
 }
 
+interface TaskReferenceRow {
+	id: string;
+	subject: string;
+	assigned_to: string | null;
+	updated_at: string;
+}
+
+interface BugReferenceRow {
+	id: string;
+	title: string;
+	updated_at: string;
+}
+
+function normalizeReference(reference: string): string {
+	return reference.trim();
+}
+
+function findTaskByReference(taskReference: string): TaskReferenceRow | null {
+	const normalized = normalizeReference(taskReference);
+	if (!normalized) {
+		return null;
+	}
+
+	try {
+		const database = getDatabase();
+		const byId = database
+			.query(
+				`SELECT id, subject, assigned_to, updated_at FROM tasks WHERE id = ? LIMIT 1`,
+			)
+			.get(normalized) as TaskReferenceRow | null;
+		if (byId) {
+			return byId;
+		}
+
+		const byExactSubject = database
+			.query(
+				`SELECT id, subject, assigned_to, updated_at
+				 FROM tasks
+				 WHERE lower(trim(subject)) = lower(?)
+				 ORDER BY updated_at DESC
+				 LIMIT 1`,
+			)
+			.get(normalized) as TaskReferenceRow | null;
+		if (byExactSubject) {
+			return byExactSubject;
+		}
+
+		if (/\s/.test(normalized) || normalized.length >= 16) {
+			const byContains = database
+				.query(
+					`SELECT id, subject, assigned_to, updated_at
+					 FROM tasks
+					 WHERE lower(subject) LIKE ?
+					 ORDER BY
+					   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
+					   updated_at DESC
+					 LIMIT 1`,
+				)
+				.get(`%${normalized.toLowerCase()}%`, ARM_ID) as TaskReferenceRow | null;
+			if (byContains) {
+				return byContains;
+			}
+		}
+	} catch {
+		// Best-effort lookup. Callers handle null and return user guidance.
+	}
+
+	return null;
+}
+
+function findBugByReference(bugReference: string): BugReferenceRow | null {
+	const normalized = normalizeReference(bugReference);
+	if (!normalized) {
+		return null;
+	}
+
+	try {
+		const database = getDatabase();
+		const byId = database
+			.query(`SELECT id, title, updated_at FROM bugs WHERE id = ? LIMIT 1`)
+			.get(normalized) as BugReferenceRow | null;
+		if (byId) {
+			return byId;
+		}
+
+		const byExactTitle = database
+			.query(
+				`SELECT id, title, updated_at
+				 FROM bugs
+				 WHERE lower(trim(title)) = lower(?)
+				 ORDER BY updated_at DESC
+				 LIMIT 1`,
+			)
+			.get(normalized) as BugReferenceRow | null;
+		if (byExactTitle) {
+			return byExactTitle;
+		}
+
+		if (/\s/.test(normalized) || normalized.length >= 16) {
+			const byContains = database
+				.query(
+					`SELECT id, title, updated_at
+					 FROM bugs
+					 WHERE lower(title) LIKE ?
+					 ORDER BY updated_at DESC
+					 LIMIT 1`,
+				)
+				.get(`%${normalized.toLowerCase()}%`) as BugReferenceRow | null;
+			if (byContains) {
+				return byContains;
+			}
+		}
+	} catch {
+		// Best-effort lookup. Callers handle null and return user guidance.
+	}
+
+	return null;
+}
+
+function getTaskReferenceHint(): string {
+	try {
+		const database = getDatabase();
+		const rows = database
+			.query(
+				`SELECT id
+				 FROM tasks
+				 WHERE status IN ('pending', 'claimed', 'in_progress')
+				 AND (assigned_to = ? OR assigned_to IS NULL)
+				 ORDER BY
+				   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
+				   updated_at DESC
+				 LIMIT 3`,
+			)
+			.all(ARM_ID, ARM_ID) as Array<{ id: string }>;
+
+		if (rows.length === 0) {
+			return "Use get_full_briefing to fetch your current task ID first.";
+		}
+
+		return `Use a valid task ID (examples: ${rows.map((row) => row.id).join(", ")}).`;
+	} catch {
+		return "Use get_full_briefing to fetch your current task ID first.";
+	}
+}
+
+function getBugReferenceHint(): string {
+	try {
+		const database = getDatabase();
+		const rows = database
+			.query(
+				`SELECT id
+				 FROM bugs
+				 WHERE status NOT IN ('resolved', 'closed')
+				 ORDER BY updated_at DESC
+				 LIMIT 3`,
+			)
+			.all() as Array<{ id: string }>;
+
+		if (rows.length === 0) {
+			return "Use report_bug to create a bug first if one does not exist.";
+		}
+
+		return `Use a valid bug ID (examples: ${rows.map((row) => row.id).join(", ")}).`;
+	} catch {
+		return "Use report_bug to create a bug first if one does not exist.";
+	}
+}
+
+function resolveTaskReferenceForTool(
+	taskReference: string,
+): { taskId: string; note?: string } | { error: string } {
+	const normalized = normalizeReference(taskReference);
+	if (!normalized) {
+		return { error: "task_id is required." };
+	}
+
+	const task = findTaskByReference(normalized);
+	if (task) {
+		const note =
+			task.id !== normalized
+				? `Resolved "${taskReference}" to task ID ${task.id}.`
+				: undefined;
+		return { taskId: task.id, note };
+	}
+
+	const bug = findBugByReference(normalized);
+	if (bug) {
+		return {
+			error: `"${taskReference}" matches bug ${bug.id}. Use claim_bug or update_bug_status instead of task tools.`,
+		};
+	}
+
+	return {
+		error: `Task not found: ${taskReference}. ${getTaskReferenceHint()}`,
+	};
+}
+
+function resolveBugReferenceForTool(
+	bugReference: string,
+): { bugId: string; note?: string } | { error: string } {
+	const normalized = normalizeReference(bugReference);
+	if (!normalized) {
+		return { error: "bug_id is required." };
+	}
+
+	const bug = findBugByReference(normalized);
+	if (bug) {
+		const note =
+			bug.id !== normalized
+				? `Resolved "${bugReference}" to bug ID ${bug.id}.`
+				: undefined;
+		return { bugId: bug.id, note };
+	}
+
+	const task = findTaskByReference(normalized);
+	if (task) {
+		return {
+			error: `"${bugReference}" matches task ${task.id}. Use task tools (claim_task / complete_task / submit_status_report) instead.`,
+		};
+	}
+
+	return {
+		error: `Bug not found: ${bugReference}. ${getBugReferenceHint()}`,
+	};
+}
+
 /**
  * Read shared notes (from SQLite with file fallback)
  */
@@ -595,25 +821,40 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ task_id }) => {
-			console.error(`[MCP] claim_task called by ${ARM_ID} for task ${task_id}`);
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
+			console.error(
+				`[MCP] claim_task called by ${ARM_ID} for task ${resolvedTaskId}`,
+			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "task_assignment",
 				payload: {
 					action: "claim",
-					taskId: task_id,
+					taskId: resolvedTaskId,
 				},
 			});
 
-			logActivity(ARM_ID, "claim_task", task_id, { messageId });
+			logActivity(ARM_ID, "claim_task", resolvedTaskId, { messageId });
 			console.error(`[MCP] claim_task completed, messageId: ${messageId}`);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
 					},
 				],
 			};
@@ -630,25 +871,38 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ bug_id }) => {
-			console.error(`[MCP] claim_bug called by ${ARM_ID} for bug ${bug_id}`);
+			const resolution = resolveBugReferenceForTool(bug_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedBugId = resolution.bugId;
+			console.error(`[MCP] claim_bug called by ${ARM_ID} for bug ${resolvedBugId}`);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "bug_claim",
 				payload: {
 					action: "claim",
-					bugId: bug_id,
+					bugId: resolvedBugId,
 				},
 			});
 
-			logActivity(ARM_ID, "claim_bug", bug_id, { messageId });
+			logActivity(ARM_ID, "claim_bug", resolvedBugId, { messageId });
 			console.error(`[MCP] claim_bug completed, messageId: ${messageId}`);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Bug ${bug_id} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Bug ${resolvedBugId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
 					},
 				],
 			};
@@ -670,21 +924,33 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ task_id, summary, artifacts }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+			const resolvedTaskId = resolution.taskId;
 			console.error(
-				`[MCP] complete_task called by ${ARM_ID} for task ${task_id}`,
+				`[MCP] complete_task called by ${ARM_ID} for task ${resolvedTaskId}`,
 			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "task_complete",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					summary,
 					artifacts: artifacts || [],
 				},
 			});
 
-			logActivity(ARM_ID, "complete_task", task_id, {
+			logActivity(ARM_ID, "complete_task", resolvedTaskId, {
 				messageId,
 				artifactCount: (artifacts || []).length,
 			});
@@ -693,7 +959,7 @@ export function createMcpServer(): McpServer {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} marked complete. Summary sent to brain (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} marked complete. Summary sent to brain (message: ${messageId}).`,
 					},
 				],
 			};
@@ -759,6 +1025,19 @@ export function createMcpServer(): McpServer {
 			tests_status,
 			screenshot_path,
 		}) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
 			const reportId = `sr-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
 			const messageId = await sendToBrain({
@@ -767,7 +1046,7 @@ export function createMcpServer(): McpServer {
 				type: "status_report",
 				payload: {
 					id: reportId,
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					armId: ARM_ID,
 					status,
 					summary,
@@ -780,7 +1059,7 @@ export function createMcpServer(): McpServer {
 				},
 			});
 
-			logActivity(ARM_ID, "submit_status_report", task_id, {
+			logActivity(ARM_ID, "submit_status_report", resolvedTaskId, {
 				messageId,
 				reportId,
 				status,
@@ -804,7 +1083,7 @@ export function createMcpServer(): McpServer {
 				content: [
 					{
 						type: "text" as const,
-						text: responseText,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}${responseText}`,
 					},
 				],
 			};
@@ -1057,8 +1336,21 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ task_id, depends_on, dependency_type, description, severity }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
 			const dependency = {
-				taskId: task_id,
+				taskId: resolvedTaskId,
 				dependsOn: depends_on,
 				type: dependency_type,
 				description,
@@ -1072,7 +1364,7 @@ export function createMcpServer(): McpServer {
 				payload: dependency,
 			});
 
-			logActivity(ARM_ID, "report_dependency", task_id, {
+			logActivity(ARM_ID, "report_dependency", resolvedTaskId, {
 				messageId,
 				dependsOn: depends_on,
 				type: dependency_type,
@@ -1083,7 +1375,7 @@ export function createMcpServer(): McpServer {
 				content: [
 					{
 						type: "text" as const,
-						text: `Dependency reported: ${depends_on} (${dependency_type}) for task ${task_id} (message: ${messageId}). Brain will track this relationship.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Dependency reported: ${depends_on} (${dependency_type}) for task ${resolvedTaskId} (message: ${messageId}). Brain will track this relationship.`,
 					},
 				],
 			};
@@ -1577,6 +1869,19 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ task_id, screenshot_path }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
 			// Auto-register manual arms
 			ensureArmRegistered();
 
@@ -1585,14 +1890,14 @@ export function createMcpServer(): McpServer {
 				to: "brain",
 				type: "status_update",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					status: "in_progress",
 					message: "Task acknowledged and work started",
 					screenshot_path,
 				},
 			});
 
-			logActivity(ARM_ID, "acknowledge_task", task_id, {
+			logActivity(ARM_ID, "acknowledge_task", resolvedTaskId, {
 				messageId,
 				status: "in_progress",
 			});
@@ -1601,7 +1906,7 @@ export function createMcpServer(): McpServer {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} acknowledged. Brain has been notified that you're working on it.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} acknowledged. Brain has been notified that you're working on it.`,
 					},
 				],
 			};
@@ -1678,8 +1983,21 @@ export function createMcpServer(): McpServer {
 			},
 		},
 		async ({ task_id, approved, notes, screenshot_path }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
 			console.error(
-				`[MCP] validate_task called by ${ARM_ID} for task ${task_id}: ${approved}`,
+				`[MCP] validate_task called by ${ARM_ID} for task ${resolvedTaskId}: ${approved}`,
 			);
 
 			const messageId = await sendToBrain({
@@ -1687,20 +2005,23 @@ export function createMcpServer(): McpServer {
 				to: "brain",
 				type: "task_validation",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					approved,
 					notes,
 					screenshot_path: screenshot_path,
 				},
 			});
 
-			logActivity(ARM_ID, "validate_task", task_id, { messageId, approved });
+			logActivity(ARM_ID, "validate_task", resolvedTaskId, {
+				messageId,
+				approved,
+			});
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Validation result for task ${task_id}: ${approved ? "APPROVED" : "REJECTED"} (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Validation result for task ${resolvedTaskId}: ${approved ? "APPROVED" : "REJECTED"} (message: ${messageId}).`,
 					},
 				],
 			};
@@ -4032,9 +4353,11 @@ export function createMcpServer(): McpServer {
 				}
 
 				// Step 2: Get context bundle for the determined task
+				const contextLookupTarget =
+					determination.task.id || determination.task.subject;
 				const contextBundle = await generateContextBundle(
 					ctx,
-					determination.task.subject,
+					contextLookupTarget,
 				);
 
 				let fullBriefing = determinationFormatted;

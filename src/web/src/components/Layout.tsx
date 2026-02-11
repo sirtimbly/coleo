@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button, Chip } from "@heroui/react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import {
 	LayoutDashboard,
 	Bot,
@@ -36,6 +36,7 @@ const getNavItems = (unreadCount: number) => [
 ];
 
 export function Layout() {
+	const location = useLocation();
 	const [unreadCount, setUnreadCount] = useState(0);
 	const [cwd, setCwd] = useState<string>('/');
 	const { showToast } = useToast();
@@ -45,6 +46,7 @@ export function Layout() {
 		openNewMessage,
 		closeMessageModal,
 	} = useMessage();
+	const showArmStatusBar = location.pathname !== "/viewer";
 
 const fetchStatus = useCallback(async () => {
 		try {
@@ -232,7 +234,7 @@ const fetchStatus = useCallback(async () => {
 
 			{/* Main content */}
 			<main className="flex-1 overflow-auto flex flex-col">
-				<ArmStatusBar />
+				{showArmStatusBar && <ArmStatusBar />}
 				<Outlet />
 			</main>
 

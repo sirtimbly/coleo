@@ -21,11 +21,12 @@ import { DEFAULT_CONFIG } from "../types";
  */
 interface TomlConfig {
   version?: number;
-  brain?: {
-    poll_interval_ms?: number;
-    max_arms?: number;
-    arm_grace_period_minutes?: number;
-  };
+	brain?: {
+		poll_interval_ms?: number;
+		max_arms?: number;
+		arm_grace_period_minutes?: number;
+		refactor_file_threshold_lines?: number;
+	};
   mail?: {
     from_address?: string;
     digest_schedule?: string;
@@ -43,6 +44,10 @@ interface TomlConfig {
     update_file_threshold?: number;
     update_poll_interval?: number;
     update_enabled?: boolean;
+  };
+  refactoring?: {
+    file_size_threshold?: number;
+    enabled?: boolean;
   };
   defaults?: {
     harness?: string;
@@ -106,13 +111,16 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     coleoDir,
   };
 
-  if (toml.brain) {
-    config.brain = {
-      pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
-      maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
-      armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
-    };
-  }
+	if (toml.brain) {
+		config.brain = {
+			pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
+			maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
+			armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
+			refactorFileThresholdLines:
+				toml.brain.refactor_file_threshold_lines ??
+				DEFAULT_CONFIG.brain.refactorFileThresholdLines,
+		};
+	}
 
   if (toml.mail) {
     config.mail = {
@@ -166,12 +174,14 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
     version: config.version ?? DEFAULT_CONFIG.version,
   };
 
-  if (config.brain) {
-    toml.brain = {
-      poll_interval_ms: config.brain.pollIntervalMs,
-      max_arms: config.brain.maxArms,
-    };
-  }
+	if (config.brain) {
+		toml.brain = {
+			poll_interval_ms: config.brain.pollIntervalMs,
+			max_arms: config.brain.maxArms,
+			arm_grace_period_minutes: config.brain.armGracePeriodMinutes,
+			refactor_file_threshold_lines: config.brain.refactorFileThresholdLines,
+		};
+	}
 
   if (config.mail) {
     toml.mail = {
@@ -257,9 +267,15 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
   if (process.env.COLEO_MAX_ARMS) {
     config.brain.maxArms = parseInt(process.env.COLEO_MAX_ARMS, 10);
   }
-  if (process.env.COLEO_ARM_GRACE_PERIOD_MINUTES) {
-    config.brain.armGracePeriodMinutes = parseInt(process.env.COLEO_ARM_GRACE_PERIOD_MINUTES, 10);
-  }
+	if (process.env.COLEO_ARM_GRACE_PERIOD_MINUTES) {
+		config.brain.armGracePeriodMinutes = parseInt(process.env.COLEO_ARM_GRACE_PERIOD_MINUTES, 10);
+	}
+	if (process.env.COLEO_REFACTOR_FILE_THRESHOLD_LINES) {
+		config.brain.refactorFileThresholdLines = parseInt(
+			process.env.COLEO_REFACTOR_FILE_THRESHOLD_LINES,
+			10,
+		);
+	}
   if (process.env.COLEO_DEFAULT_HARNESS) {
     config.defaults.harness = process.env.COLEO_DEFAULT_HARNESS;
   }

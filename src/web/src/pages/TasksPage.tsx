@@ -268,7 +268,7 @@ export function TasksPage() {
     }
   }, [deleteConfirm, deleteTask]);
 
-  const handleCreateTaskAt = useCallback(async (_index: number, subject: string) => {
+  const handleCreateTaskAt = useCallback(async (index: number, subject: string) => {
     const now = new Date().toISOString();
     const llmMeta: TaskLlmMeta = {
       originalPrompt: subject,
@@ -284,6 +284,7 @@ export function TasksPage() {
         description: llmMeta.generatedDescription ?? subject,
         priority: 'normal',
         metadata: { ui: { tags: [], bold: false, color: 'slate', llm: llmMeta } },
+        sortOrder: index,
       });
       // Set the new task ID to trigger scroll
       if (result?.id) {

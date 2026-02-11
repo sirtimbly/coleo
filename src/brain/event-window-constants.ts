@@ -58,10 +58,12 @@ export const KNOWN_EVENT_TYPES = new Set([
 	"event-part-step-finish",
 	"started",
 	"stopped",
+	"lsp-client-diagnostics",
 ]);
 
 // Event types that are considered noise and should be filtered out
 export const NOISE_EVENT_TYPES = new Set([
 	"file.watcher.updated",
 	"server.connected",
+	"lsp-client-diagnostics",
 ]);

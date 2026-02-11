@@ -647,6 +647,14 @@ export function createTasksRoutes() {
 			.get() as { max_sort: number };
 		const newSortOrder = body.sortOrder ?? (maxSortOrder?.max_sort ?? -1) + 1;
 
+		// If inserting at a specific position, shift existing tasks to make room
+		if (body.sortOrder !== undefined && body.sortOrder >= 0) {
+			db.run(
+				`UPDATE tasks SET sort_order = sort_order + 1 WHERE sort_order >= ?`,
+				[body.sortOrder]
+			);
+		}
+
 		const now = new Date().toISOString();
 
 		db.run(

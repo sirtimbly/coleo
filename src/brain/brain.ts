@@ -24,6 +24,7 @@ import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { NatsClient, TOPICS, type BrainMessage } from "../nats";
 import { eventStore } from "../nats/jetstream";
+import { loadConfig } from "../config";
 import {
 	ArmStateMachine,
 	type ArmState,
@@ -39,6 +40,7 @@ import { MailProcessor } from "./mail-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
+import { findLargeFiles as findLargeFilesUtil } from "./utils/find-large-files";
 import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
@@ -74,6 +76,7 @@ export class Brain {
 	private apiBaseUrl: string;
 	private apiKey: string;
 	private natsUrl!: string;
+	private refactorFileThresholdLines = 400;
 	private natsClient: NatsClient | null = null;
 	private templates: BrainTemplateManager;
 	private mailProcessor: MailProcessor;
@@ -634,6 +637,10 @@ export class Brain {
 	 * Initialize brain state and directories
 	 */
 	async init(): Promise<void> {
+		const config = await loadConfig(this.options.coleoDir);
+		this.refactorFileThresholdLines =
+			config.brain.refactorFileThresholdLines ?? 400;
+
 		// Initialize API-backed arm state persistence.
 		this.armStateDb = createArmStateApiDatabase(this.apiBaseUrl, this.apiKey);
 
@@ -2710,7 +2717,12 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		this.completedTaskCount = this.state.completedTaskCount;
 		if (this.completedTaskCount % 5 === 0) {
-			const largeFiles = await this.findLargeFiles(400);
+			const largeFiles = await findLargeFilesUtil({
+				rootDir: process.cwd(),
+				minLines: this.refactorFileThresholdLines,
+				thresholds: { normal: this.refactorFileThresholdLines },
+				includeGitStatus: true,
+			});
 			if (largeFiles.length > 0) {
 				await this.createRefactoringTask(largeFiles);
 			}
@@ -7382,15 +7394,32 @@ When complete, report:
 	 * Build refactoring task description
 	 */
 	private buildRefactoringDescription(
-		files: Array<{ path: string; lines: number }>,
+		files: Array<{
+			path: string;
+			lines: number;
+			gitStatus?: { staged: boolean; modified: boolean; untracked: boolean };
+		}>,
 	): string {
+		const formatGitStatus = (status?: {
+			staged: boolean;
+			modified: boolean;
+			untracked: boolean;
+		}): string => {
+			if (!status) return "unknown";
+			const flags: string[] = [];
+			if (status.staged) flags.push("staged");
+			if (status.modified) flags.push("modified");
+			if (status.untracked) flags.push("untracked");
+			return flags.length > 0 ? flags.join(", ") : "clean";
+		};
+
 		const tableRows = files
 			.map((f) => {
 				const relPath = f.path.replace(process.cwd() + "/", "");
 				let priority = "normal";
 				if (f.lines > 600) priority = "high";
 				if (f.lines > 800) priority = "critical";
-				return `| \`${relPath}\` | ${f.lines} | **${priority}** |`;
+				return `| \`${relPath}\` | ${f.lines} | **${priority}** | ${formatGitStatus(f.gitStatus)} |`;
 			})
 			.join("\n");
 
@@ -7403,14 +7432,15 @@ When complete, report:
 		return `## Refactoring Task
 
 ### Prerequisites (VERIFY FIRST)
-- [ ] Run \`git status\` - confirm target files have no uncommitted changes
+- [ ] Run \`git status --porcelain\` and confirm target files are clean (no modified/staged/untracked)
+- [ ] Confirm the API server and brain are running (health checks pass)
 - [ ] Confirm files are checked in before making changes
 - [ ] Check no other arms have active claims on these files
 
 ### Files to Refactor
 
-| File | Lines | Priority |
-|------|-------|----------|
+| File | Lines | Priority | Git status |
+|------|-------|----------|------------|
 ${tableRows}
 
 ### File Size Rules
@@ -7445,7 +7475,11 @@ When refactoring large files:
 	 * Create a refactoring task for large files
 	 */
 	private async createRefactoringTask(
-		files: Array<{ path: string; lines: number }>,
+		files: Array<{
+			path: string;
+			lines: number;
+			gitStatus?: { staged: boolean; modified: boolean; untracked: boolean };
+		}>,
 	): Promise<void> {
 		try {
 			const taskId = `refactor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -7464,7 +7498,8 @@ When refactoring large files:
 				description,
 				status: "pending",
 				priority,
-				classification: "development",
+				classification: "refactoring",
+				domain: "refactoring",
 				sourceType: "system",
 				sourceRef: "refactoring-cycle",
 			});

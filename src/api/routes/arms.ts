@@ -1439,8 +1439,7 @@ export function createArmsRoutes() {
    * Send a prompt to an arm
    * POST /api/arms/:id/prompt
    *
-   * Sends a prompt to a running arm via the harness manager.
-   * The arm must have an active session.
+   * Sends a prompt to a running arm (local harness or distributed agent).
    */
   app.post("/:id/prompt", async (c) => {
     const db = c.get("db");
@@ -1467,12 +1466,59 @@ export function createArmsRoutes() {
 
     // Check if arm is running
     if (row.status === "stopped") {
-      throw HttpError.badRequest(`Arm ${id} is stopped. Spawn it first.`);
+      return c.json({ error: `Arm ${id} is stopped. Spawn it first.` }, 400);
     }
 
     // Check if arm is still starting up
     if (row.status === "starting") {
-      throw HttpError.badRequest(`Arm ${id} is still starting up. Wait for it to finish spawning.`);
+      return c.json({ error: `Arm ${id} is still starting up. Wait for it to finish spawning.` }, 400);
+    }
+
+    // Distributed arm prompt via agent
+    if (row.agent_id) {
+      const armClient = getArmClient();
+      if (!armClient) {
+        const now = new Date().toISOString();
+        db.run(
+          "UPDATE arms SET status = 'stopped', agent_id = NULL, host = NULL, pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+          [now, id],
+        );
+        return c.json(
+          { error: `Arm ${id} is assigned to agent ${row.agent_id}, but distributed arm management is unavailable. Spawn it first.` },
+          400,
+        );
+      }
+
+      try {
+        const response = await armClient.sendPrompt(id, body.prompt);
+        if (!response.success) {
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = 'stopped', agent_id = NULL, host = NULL, pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+            [now, id],
+          );
+          return c.json(
+            { error: `Arm ${id} has no active distributed session. The arm may have crashed or the agent disconnected. Spawn it first.` },
+            400,
+          );
+        }
+
+        logActivity(db, id, "prompt_sent", undefined, {
+          promptLength: body.prompt.length,
+          interrupt: body.interrupt,
+          distributed: true,
+          agentId: row.agent_id,
+        });
+
+        return c.json({
+          success: true,
+          message: `Prompt sent to arm ${id}`,
+          distributed: true,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({ error: `Failed to send prompt: ${message}` }, 500);
+      }
     }
 
     // Get the harness manager
@@ -1483,8 +1529,16 @@ export function createArmsRoutes() {
 
     // Check if arm has an active session
     if (!manager.hasSession(id)) {
-      console.error(`[prompt] Arm ${id} status is '${row.status}' but no active session found in manager`);
-      throw HttpError.badRequest(`Arm ${id} has no active session. The arm may have crashed or the server restarted. Spawn it first.`);
+      const now = new Date().toISOString();
+      db.run(
+        "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?",
+        [now, id],
+      );
+      console.warn(`[prompt] Arm ${id} status is '${row.status}' but no active session found in manager; marking as stopped`);
+      return c.json(
+        { error: `Arm ${id} has no active session. The arm may have crashed or the server restarted. Spawn it first.` },
+        400,
+      );
     }
 
     try {

@@ -788,6 +788,13 @@ export function ArmViewerPage() {
 	};
 
 	const selectedArm = arms.find((a) => a.id === selectedArmId);
+	const selectedWorkItem =
+		selectedArm?.currentBugTitle ?? selectedArm?.currentTaskSubject ?? null;
+	const workItemType = selectedArm?.currentBugTitle
+		? "bug"
+		: selectedArm?.currentTaskSubject
+			? "task"
+			: null;
 
 	if (loading) {
 		return (
@@ -877,47 +884,56 @@ export function ArmViewerPage() {
 			{/* Right Panel - Activity viewer */}
 			<div className="flex-1 flex flex-col overflow-hidden">
 				{/* Header */}
-				<div className="border-b border-border px-4 py-3 bg-muted/10">
-					<div className="flex items-center justify-between">
-						<div className="flex items-center space-x-2">
-							<h1 className="text-lg font-semibold flex items-center gap-2">
-								{selectedArm ? selectedArm.name : "🐙"}
+				<div className="border-b border-border px-4 py-3 bg-gradient-to-r from-muted/15 via-background to-muted/10">
+					<div className="flex flex-wrap items-start justify-between gap-3">
+						<div className="min-w-0 flex-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<div className="h-8 w-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center">
+									<Bot className="h-4 w-4" />
+								</div>
+								<h1 className="text-lg font-semibold tracking-tight truncate">
+									{selectedArm ? selectedArm.name : "Arm Viewer"}
+								</h1>
 								{selectedArm && <StatusBadge status={selectedArm.status} />}
-							</h1>
-							{selectedArm &&
-								(selectedArm.currentTaskSubject ||
-									selectedArm.currentBugTitle) && (
-									<div className="text-sm text-muted-foreground max-w-md truncate">
-										{selectedArm.currentBugTitle ? (
-											<span className="flex items-center gap-1">
-												<span>🐛</span>
-												{selectedArm.currentBugTitle}
-											</span>
-										) : (
-											<span className="flex items-center gap-1">
-												<span>📋</span>
-												{selectedArm.currentTaskSubject}
-											</span>
-										)}
+								{selectedArm?.harness && (
+									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+										{selectedArm.harness}
+									</span>
+								)}
+							</div>
+							<div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+								{selectedWorkItem ? (
+									<div className="w-full min-w-0 rounded-md border border-border/70 bg-background/70 px-2.5 py-1.5">
+										<span className="flex items-center gap-1.5 text-foreground/90">
+											{workItemType === "bug" ? (
+												<AlertOctagon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
+											) : (
+												<ListTodo className="h-3.5 w-3.5 shrink-0 text-accent" />
+											)}
+											<span className="truncate min-w-0">{selectedWorkItem}</span>
+										</span>
+									</div>
+								) : (
+									<div className="inline-flex items-center gap-1.5 text-muted-foreground">
+										<Minus className="h-3.5 w-3.5" />
+										<span>No active task or bug</span>
 									</div>
 								)}
-							{selectedArm && (selectedArm.provider || selectedArm.model) && (
-								<div className="flex items-center space-x-2 text-sm text-muted-foreground">
-									{selectedArm.provider && (
-										<span className="text-blue-600">
-											{selectedArm.provider}
-										</span>
-									)}
-									{selectedArm.provider && selectedArm.model && <span>·</span>}
-									{selectedArm.model && (
-										<span className="text-green-600">{selectedArm.model}</span>
-									)}
-								</div>
-							)}
+								{selectedArm?.provider && (
+									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
+										{selectedArm.provider}
+									</span>
+								)}
+								{selectedArm?.model && (
+									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
+										{selectedArm.model}
+									</span>
+								)}
+							</div>
 						</div>
 
 						{selectedArmId && (
-							<div className="flex items-center gap-4">
+							<div className="flex items-center gap-3 flex-wrap justify-end">
 								<Button
 									variant="secondary"
 									onPress={() => {

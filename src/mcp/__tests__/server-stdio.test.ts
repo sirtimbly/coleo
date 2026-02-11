@@ -416,4 +416,88 @@ describe("MCP Server - Stdio Integration", () => {
     expect(payload?.content).toBe("Hello");
     expect(payload?.tags).toEqual(["mcp", "test"]);
   }, testTimeoutMs);
+
+  it("rejects task tools when task_id references a bug", async () => {
+    const db = new Database(dbPath);
+    db.run(
+      `INSERT INTO bugs (id, title, description, source, status, priority)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        "bug-stdio-1",
+        "CLI API key mismatch",
+        "Tail command fails because COLEO_API_KEY is wrong",
+        "arm_reported",
+        "open",
+        "high",
+      ],
+    );
+    db.close();
+
+    client = await startServer();
+    await initializeHandshake(client);
+
+    const response = await client.request(
+      "tools/call",
+      {
+        name: "complete_task",
+        arguments: {
+          task_id: "bug-stdio-1",
+          summary: "Tried to complete via task tool",
+          artifacts: [],
+        },
+      },
+      { timeoutMs: 8000 },
+    );
+
+    expect(response.error).toBeUndefined();
+    const result = response.result as { content: Array<{ type: string; text: string }> };
+    expect(result.content[0]?.text).toContain("matches bug bug-stdio-1");
+
+    const message = await getLatestBrainMessage();
+    expect(message).toBeNull();
+  }, testTimeoutMs);
+
+  it("resolves task subject text to a task ID before queueing", async () => {
+    const db = new Database(dbPath);
+    db.run(
+      `INSERT INTO tasks (id, subject, description, status, priority, assigned_to)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        "task-stdio-subject",
+        "User can't tail an arm with the CLI because it complains about having the wrong COLEO_API_KEY",
+        "Fix auth/key mismatch for CLI tailing",
+        "in_progress",
+        "high",
+        armId,
+      ],
+    );
+    db.close();
+
+    client = await startServer();
+    await initializeHandshake(client);
+
+    const response = await client.request(
+      "tools/call",
+      {
+        name: "complete_task",
+        arguments: {
+          task_id:
+            "User can't tail an arm with the CLI because it complains about having the wrong COLEO_API_KEY",
+          summary: "Updated API key handoff and confirmed tail works",
+          artifacts: [],
+        },
+      },
+      { timeoutMs: 8000 },
+    );
+
+    expect(response.error).toBeUndefined();
+    const result = response.result as { content: Array<{ type: string; text: string }> };
+    expect(result.content[0]?.text).toContain('Resolved "User can\'t tail an arm');
+    expect(result.content[0]?.text).toContain("task-stdio-subject");
+
+    const message = await getLatestBrainMessage();
+    expect(message?.type).toBe("task_complete");
+    const payload = message?.payload as { taskId?: string } | undefined;
+    expect(payload?.taskId).toBe("task-stdio-subject");
+  }, testTimeoutMs);
 });

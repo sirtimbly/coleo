@@ -301,6 +301,9 @@ export class ArmActivityAnalyzer {
 
 	/**
 	 * Detect stuck loops in event patterns
+	 *
+	 * A "loop" is only a problem if the arm is not making productive progress.
+	 * Productive work (file edits, task completions, etc.) breaks the loop.
 	 */
 	private detectLoop(window: ArmEventWindow): {
 		detected: boolean;
@@ -312,11 +315,27 @@ export class ArmActivityAnalyzer {
 			return { detected: false, confidence: "low" };
 		}
 
-		// Look at recent event types
+		// Count productive events in the window - if there's productive work,
+		// the arm is not "stuck" even if patterns repeat
+		const productiveEventCount = window.events.filter((e) =>
+			PRODUCTIVE_EVENT_TYPES.has(e.type),
+		).length;
+
+		// If arm has made productive progress, it's not looping
+		// Productive work naturally involves repetitive thinking patterns
+		if (productiveEventCount >= 2) {
+			return { detected: false, confidence: "low" };
+		}
+
+		// Look at recent event types, filtering out benign diagnostic events
 		const recentTypes = window.events
 			.slice(-30)
 			.map((e) => e.type)
-			.filter((x) => x !== "lsp-client-diagnostics");
+			.filter((x) =>
+				!x.startsWith("lsp-") &&
+				x !== "session.updated" &&
+				x !== "arm.heartbeat"
+			);
 
 		// Try to find repeating patterns of length 1-5
 		for (let patternLength = 1; patternLength <= 5; patternLength++) {
@@ -344,8 +363,16 @@ export class ArmActivityAnalyzer {
 			}
 
 			if (repetitions >= this.config.loopRepetitionThreshold) {
-				const confidence =
-					repetitions >= 6 ? "high" : repetitions >= 4 ? "medium" : "low";
+				// Require more repetitions for higher confidence
+				// Also consider if there are ANY productive events at all
+				const baseConfidence =
+					repetitions >= 8 ? "high" : repetitions >= 6 ? "medium" : "low";
+
+				// If there are some productive events (but less than 2), reduce confidence
+				const confidence = productiveEventCount > 0
+					? (baseConfidence === "high" ? "medium" : "low")
+					: baseConfidence;
+
 				return {
 					detected: true,
 					confidence,

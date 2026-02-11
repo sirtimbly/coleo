@@ -882,7 +882,9 @@ function createNextTaskFromPlan(
 			// Determine domain/classification based on keywords
 			let domain: string | undefined;
 			const subjectLower = subject.toLowerCase();
-			if (subjectLower.includes("test") || subjectLower.includes("qa")) {
+			if (subjectLower.includes("refactor") || subjectLower.includes("refactoring")) {
+				domain = "refactoring";
+			} else if (subjectLower.includes("test") || subjectLower.includes("qa")) {
 				domain = "testing";
 			} else if (
 				subjectLower.includes("doc") ||
@@ -1264,10 +1266,21 @@ async function getTaskBySubject(
 	subject: string,
 ): Promise<Task | null> {
 	try {
-		const result = db.getTask(subject) || db.listTasks({
-			includeSubject: subject,
-			limit: 1,
-		})[0];
+		const normalized = subject.trim();
+		if (!normalized) {
+			return null;
+		}
+		const normalizedLower = normalized.toLowerCase();
+		const tasks = db.listTasks({
+			excludeStatuses: ["cancelled"],
+			limit: 500,
+		});
+		const result =
+			tasks.find((task) => task.id === normalized) ||
+			tasks.find((task) => task.subject.trim().toLowerCase() === normalizedLower) ||
+			tasks.find((task) =>
+				task.subject.toLowerCase().includes(normalizedLower),
+			);
 
 		if (result) {
 			return {
@@ -1318,10 +1331,16 @@ async function getBugBySubject(
 	errorDetails?: string;
 } | null> {
 	try {
-		const result = db.getBug(subject) || db.listBugs({
-			includeTitle: subject,
-			limit: 1,
-		})[0];
+		const normalized = subject.trim();
+		if (!normalized) {
+			return null;
+		}
+		const normalizedLower = normalized.toLowerCase();
+		const bugs = db.listBugs({ limit: 200 });
+		const result =
+			bugs.find((bug) => bug.id === normalized) ||
+			bugs.find((bug) => bug.title.trim().toLowerCase() === normalizedLower) ||
+			bugs.find((bug) => bug.title.toLowerCase().includes(normalizedLower));
 
 		if (!result) {
 			return null;
@@ -1356,6 +1375,13 @@ function mapBugStatusToTaskStatus(status: string): Task["status"] {
 }
 
 function generateInstructions(task: Task): string {
+	const domain = task.domain?.toLowerCase() || "";
+	const subject = task.subject.toLowerCase();
+	const isBugTask =
+		domain === "bug_fix" ||
+		task.id.startsWith("bug-") ||
+		subject.includes("bug");
+
 	let baseInstructions = `## Your Task: ${task.subject}
 
 ${task.description}
@@ -1366,7 +1392,11 @@ ${task.description}
 - Use the MCP tools you have available to explore, modify, and analyze the codebase.
 - If you are uncertain about if a task is really done, search the codebase for references to the feature that was changed and analyze each location to see if it matches the purpose outlined in the task.
 - Report discoveries as you find them using report_discovery
-- Complete the task when done using complete_task
+- ${
+		isBugTask
+			? "For bug work, track progress with update_bug_status (not complete_task)."
+			: "Complete the task when done using complete_task"
+	}
 - If you need clarification, ask for it
 
 ## Process
@@ -1375,10 +1405,25 @@ ${task.description}
 2. Explore the codebase as needed
 3. Make changes to implement or fix the issue
 4. Report any discoveries (bugs, patterns, issues)
-5. Complete the task with a summary`;
+5. ${
+		isBugTask
+			? "Use update_bug_status to report investigation/fix/verification progress."
+			: "Complete the task with a summary"
+	}`;
 
-	const domain = task.domain?.toLowerCase() || "";
-	const subject = task.subject.toLowerCase();
+	if (isBugTask) {
+		return (
+			baseInstructions +
+			`
+
+## Bug-Fix Specific
+
+- Use \`claim_bug\` if this bug is not already assigned.
+- Use \`update_bug_status\` as you move through investigating -> fixing -> verifying -> resolved.
+- Include a concrete \`resolution\` when marking a bug resolved.
+- Do not use \`complete_task\` with bug IDs.`
+		);
+	}
 
 	if (domain === "docs" || subject.includes("doc")) {
 		return (
@@ -1423,6 +1468,18 @@ function buildContextBundle(
 ): string {
 	// Format the LLM-summarized discoveries
 	const discoverySection = formatDiscoverySummary(context.discoverySummary);
+	const isBugTask =
+		(task.domain?.toLowerCase() || "") === "bug_fix" ||
+		task.id.startsWith("bug-");
+	const completionGuidance = isBugTask
+		? `For bug workflows, use update_bug_status:
+- bug_id: "${task.id}"
+- status: one of investigating | fixing | verifying | resolved | closed
+- resolution: required when marking as resolved`
+		: `When you complete the task, use the complete_task MCP tool with:
+- task_id: "${task.id}"
+- summary: What you accomplished
+- artifacts: Any files changed or created`;
 
 	return `=== OCTOPAI TASK ASSIGNMENT ===
 
@@ -1461,10 +1518,7 @@ ${context.planExcerpt.length > 600 ? "\n[... more in .project/plan.md ...]" : ""
 
 === END CONTEXT BUNDLE ===
 
-When you complete the task, use the complete_task MCP tool with:
-- task_id: "${task.id}"
-- summary: What you accomplished
-- artifacts: Any files changed or created
+${completionGuidance}
 
 Good luck!`;
 }

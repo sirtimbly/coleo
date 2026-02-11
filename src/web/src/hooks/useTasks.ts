@@ -44,6 +44,7 @@ interface CreateTaskVariables {
   sourceRef?: string;
   dueDate?: string;
   metadata?: Record<string, unknown>;
+  sortOrder?: number;
 }
 
 const PAGE_SIZE = 100;

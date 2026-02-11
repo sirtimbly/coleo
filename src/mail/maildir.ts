@@ -72,29 +72,34 @@ export class Maildir {
   /**
    * Write a new message to the mailbox
    */
-  async write(message: Omit<MailMessage, "id" | "flags" | "filePath">): Promise<MailMessage> {
+  async write(message: Omit<MailMessage, "id" | "flags" | "filePath">, options?: { seen?: boolean }): Promise<MailMessage> {
     const filename = this.generateFilename();
     const tmpPath = join(this.basePath, "tmp", filename);
-    const newPath = join(this.basePath, "new", filename);
+    
+    // If seen=true, write directly to cur/ with S flag, otherwise to new/
+    const isSeen = options?.seen ?? false;
+    const targetPath = isSeen 
+      ? join(this.basePath, "cur", `${filename}:2,S`)
+      : join(this.basePath, "new", filename);
 
     // Format as RFC 5322 email
     const eml = this.formatMessage(message);
 
-    // Atomic write: write to tmp/, then move to new/
+    // Atomic write: write to tmp/, then move to target
     await writeFile(tmpPath, eml, "utf-8");
-    await rename(tmpPath, newPath);
+    await rename(tmpPath, targetPath);
 
     return {
       id: filename,
       ...message,
       flags: {
-        seen: false,
+        seen: isSeen,
         replied: false,
         flagged: false,
         draft: false,
         trashed: false,
       },
-      filePath: newPath,
+      filePath: targetPath,
     };
   }
 
