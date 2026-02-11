@@ -342,6 +342,7 @@ export interface BrainState {
   activeArms: string[];
   pendingTasks: number;
   completedToday: number;
+  completedTaskCount: number;
   startedAt?: string;
 }
 

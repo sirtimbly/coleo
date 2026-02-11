@@ -102,6 +102,8 @@ export function createStatusReportsRoutes() {
     const db = c.get("db");
     const taskId = c.req.query("taskId");
     const armId = c.req.query("armId");
+    const status = c.req.query("status");
+    const since = c.req.query("since");
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     const offset = parseInt(c.req.query("offset") || "0", 10);
 
@@ -115,16 +117,26 @@ export function createStatusReportsRoutes() {
     `;
     const params: unknown[] = [];
 
-    if (taskId || armId) {
+    if (taskId || armId || status || since) {
       query += " WHERE";
       if (taskId) {
         query += " task_id = ?";
         params.push(taskId);
       }
       if (armId) {
-        if (taskId) query += " AND";
+        if (params.length > 0) query += " AND";
         query += " arm_id = ?";
         params.push(armId);
+      }
+      if (status) {
+        if (params.length > 0) query += " AND";
+        query += " status = ?";
+        params.push(status);
+      }
+      if (since) {
+        if (params.length > 0) query += " AND";
+        query += " created_at > ?";
+        params.push(since);
       }
     }
 
@@ -139,16 +151,26 @@ export function createStatusReportsRoutes() {
       // Get total count
       let countQuery = "SELECT COUNT(*) as count FROM status_reports";
       const countParams: any[] = [];
-      if (taskId || armId) {
+      if (taskId || armId || status || since) {
         countQuery += " WHERE";
         if (taskId) {
           countQuery += " task_id = ?";
           countParams.push(taskId);
         }
         if (armId) {
-          if (taskId) countQuery += " AND";
+          if (countParams.length > 0) countQuery += " AND";
           countQuery += " arm_id = ?";
           countParams.push(armId);
+        }
+        if (status) {
+          if (countParams.length > 0) countQuery += " AND";
+          countQuery += " status = ?";
+          countParams.push(status);
+        }
+        if (since) {
+          if (countParams.length > 0) countQuery += " AND";
+          countQuery += " created_at > ?";
+          countParams.push(since);
         }
       }
 

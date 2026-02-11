@@ -5,7 +5,7 @@
  * Survives process restarts and handles network disconnects gracefully.
  */
 
-import type { BrainDb } from "./db-client";
+import type { ArmStateStore } from "./db-client";
 
 // ============================================================================
 // State Definitions
@@ -546,11 +546,11 @@ const TRANSITIONS: Record<ArmState, Partial<Record<ArmEvent["type"], TransitionH
 // ============================================================================
 
 export class ArmStateMachine {
-  private db: BrainDb;
+  private db: ArmStateStore;
   private pendingTimeouts: Map<string, ReturnType<typeof setTimeout>> = new Map();
   private onSideEffect?: (effect: SideEffect) => void | Promise<void>;
 
-  constructor(db: BrainDb, onSideEffect?: (effect: SideEffect) => void | Promise<void>) {
+  constructor(db: ArmStateStore, onSideEffect?: (effect: SideEffect) => void | Promise<void>) {
     this.db = db;
     this.onSideEffect = onSideEffect;
   }
@@ -559,30 +559,13 @@ export class ArmStateMachine {
    * Get the current state context for an arm
    */
   getContext(armId: string): ArmStateContext | null {
-    const row = this.db.query(`
-      SELECT * FROM arm_state_machine WHERE arm_id = ?
-    `).get(armId) as {
-      arm_id: string;
-      state: ArmState;
-      previous_state: string | null;
-      current_task_id: string | null;
-      current_task_subject: string | null;
-      last_event_type: string | null;
-      last_event_at: string;
-      state_entered_at: string;
-      task_assigned_at: string | null;
-      disconnected_at: string | null;
-      last_error: string | null;
-      error_count: number;
-      last_heartbeat: string | null;
-      consecutive_missed_heartbeats: number;
-    } | null;
+    const row = this.db.getArmState(armId);
 
     if (!row) return null;
 
     return {
       armId: row.arm_id,
-      state: row.state,
+      state: row.state as ArmState,
       previousState: row.previous_state as ArmState | undefined,
       currentTaskId: row.current_task_id ?? undefined,
       currentTaskSubject: row.current_task_subject ?? undefined,
@@ -612,20 +595,16 @@ export class ArmStateMachine {
       consecutiveMissedHeartbeats: 0,
     };
 
-    this.db.run(`
-      INSERT INTO arm_state_machine (
-        arm_id, state, last_event_at, state_entered_at, error_count, consecutive_missed_heartbeats
-      ) VALUES (?, ?, ?, ?, 0, 0)
-      ON CONFLICT(arm_id) DO UPDATE SET
-        state = excluded.state,
-        last_event_at = excluded.last_event_at,
-        state_entered_at = excluded.state_entered_at,
-        error_count = 0,
-        consecutive_missed_heartbeats = 0,
-        current_task_id = NULL,
-        current_task_subject = NULL,
-        last_error = NULL
-    `, [armId, initialState, now, now]);
+    this.db.upsertArmState(armId, {
+      state: initialState,
+      lastEventAt: now,
+      stateEnteredAt: now,
+      errorCount: 0,
+      consecutiveMissedHeartbeats: 0,
+      currentTaskId: null,
+      currentTaskSubject: null,
+      lastError: null,
+    });
 
     return ctx;
   }
@@ -711,38 +690,21 @@ export class ArmStateMachine {
    * Persist context to database
    */
   private persistContext(ctx: ArmStateContext): void {
-    this.db.run(`
-      UPDATE arm_state_machine SET
-        state = ?,
-        previous_state = ?,
-        current_task_id = ?,
-        current_task_subject = ?,
-        last_event_type = ?,
-        last_event_at = ?,
-        state_entered_at = ?,
-        task_assigned_at = ?,
-        disconnected_at = ?,
-        last_error = ?,
-        error_count = ?,
-        last_heartbeat = ?,
-        consecutive_missed_heartbeats = ?
-      WHERE arm_id = ?
-    `, [
-      ctx.state,
-      ctx.previousState ?? null,
-      ctx.currentTaskId ?? null,
-      ctx.currentTaskSubject ?? null,
-      ctx.lastEventType ?? null,
-      ctx.lastEventAt,
-      ctx.stateEnteredAt,
-      ctx.taskAssignedAt ?? null,
-      ctx.disconnectedAt ?? null,
-      ctx.lastError ?? null,
-      ctx.errorCount,
-      ctx.lastHeartbeat ?? null,
-      ctx.consecutiveMissedHeartbeats,
-      ctx.armId,
-    ]);
+    this.db.upsertArmState(ctx.armId, {
+      state: ctx.state,
+      previousState: ctx.previousState ?? null,
+      currentTaskId: ctx.currentTaskId ?? null,
+      currentTaskSubject: ctx.currentTaskSubject ?? null,
+      lastEventType: ctx.lastEventType ?? null,
+      lastEventAt: ctx.lastEventAt,
+      stateEnteredAt: ctx.stateEnteredAt,
+      taskAssignedAt: ctx.taskAssignedAt ?? null,
+      disconnectedAt: ctx.disconnectedAt ?? null,
+      lastError: ctx.lastError ?? null,
+      errorCount: ctx.errorCount,
+      lastHeartbeat: ctx.lastHeartbeat ?? null,
+      consecutiveMissedHeartbeats: ctx.consecutiveMissedHeartbeats,
+    });
   }
 
   /**
@@ -790,28 +752,11 @@ export class ArmStateMachine {
    * Get all arms in a specific state
    */
   getArmsInState(state: ArmState): ArmStateContext[] {
-    const rows = this.db.query(`
-      SELECT * FROM arm_state_machine WHERE state = ?
-    `).all(state) as Array<{
-      arm_id: string;
-      state: ArmState;
-      previous_state: string | null;
-      current_task_id: string | null;
-      current_task_subject: string | null;
-      last_event_type: string | null;
-      last_event_at: string;
-      state_entered_at: string;
-      task_assigned_at: string | null;
-      disconnected_at: string | null;
-      last_error: string | null;
-      error_count: number;
-      last_heartbeat: string | null;
-      consecutive_missed_heartbeats: number;
-    }>;
+    const rows = this.db.listArmStatesByState(state);
 
     return rows.map(row => ({
       armId: row.arm_id,
-      state: row.state,
+      state: row.state as ArmState,
       previousState: row.previous_state as ArmState | undefined,
       currentTaskId: row.current_task_id ?? undefined,
       currentTaskSubject: row.current_task_subject ?? undefined,
@@ -883,7 +828,7 @@ export class ArmStateMachine {
     this.cancelTimeout(`${armId}:startup`);
     this.cancelTimeout(`${armId}:task_ack`);
     this.cancelTimeout(`${armId}:reconnect`);
-    this.db.run("DELETE FROM arm_state_machine WHERE arm_id = ?", [armId]);
+    this.db.deleteArmState(armId);
   }
 }
 

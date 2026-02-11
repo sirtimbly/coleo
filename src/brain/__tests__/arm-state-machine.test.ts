@@ -24,6 +24,7 @@ import {
   legacyStatusToState,
   stateToLegacyStatus,
 } from "../arm-state-machine";
+import { createSqliteArmStateStore } from "../../db/brain-db-adapter";
 
 describe("ArmStateMachine", () => {
   let db: Database;
@@ -71,7 +72,7 @@ describe("ArmStateMachine", () => {
     `);
 
     emittedSideEffects = [];
-    stateMachine = new ArmStateMachine(db, (effect) => {
+    stateMachine = new ArmStateMachine(createSqliteArmStateStore(db), (effect) => {
       emittedSideEffects.push(effect);
     });
   });
@@ -795,7 +796,7 @@ describe("ArmStateMachine", () => {
 
       // Create new state machine instance (simulating restart)
       stateMachine.shutdown();
-      const newStateMachine = new ArmStateMachine(db);
+      const newStateMachine = new ArmStateMachine(createSqliteArmStateStore(db));
 
       const ctx = newStateMachine.getContext("arm-survive");
       expect(ctx?.state).toBe("task_assigned");

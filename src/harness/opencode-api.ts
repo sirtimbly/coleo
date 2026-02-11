@@ -90,6 +90,32 @@ export class OpenCodeApiHarness implements AgentHarness {
   private sessions = new Map<string, ApiHarnessSession>();
   private nextPort = 19300; // Start port for OpenCode servers
   private eventCallbacks: Set<ArmEventCallback> = new Set();
+  private static readonly SESSION_CREATE_TIMEOUT_MS = 15000;
+  private static readonly SESSION_INIT_TIMEOUT_MS = 12000;
+
+  /**
+   * Race an async SDK call with a timeout so spawn never hangs indefinitely.
+   */
+  private async withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<T> {
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<T>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  }
 
   /**
    * Add a callback to receive arm events for broadcasting
@@ -318,27 +344,38 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Create SDK client for type-safe API calls
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
+    console.log(`[harness-api] Creating OpenCode session for ${armId} on ${serverUrl}...`);
     // Create a new session using SDK (access .data to get the actual session)
-    const sessionResponse = await client.session.create({
-      body: { title: "Coleo Arm Session" },
-    });
+    const sessionResponse = await this.withTimeout(
+      client.session.create({
+        body: { title: "Coleo Arm Session" },
+      }),
+      OpenCodeApiHarness.SESSION_CREATE_TIMEOUT_MS,
+      `OpenCode session.create for ${armId}`,
+    );
     const session = sessionResponse.data;
 
     if (!session?.id) {
       throw new Error("Failed to create session: no session ID returned");
     }
+    console.log(`[harness-api] Created OpenCode session ${session.id} for ${armId}`);
 
     // Initialize session with model if specified (use resolved model)
     if (resolvedProvider && resolvedModel) {
       try {
-        await client.session.init({
-          path: { id: session.id },
-          body: {
-            modelID: resolvedModel,
-            providerID: resolvedProvider,
-            messageID: `msg_${Date.now()}`,
-          },
-        });
+        console.log(`[harness-api] Initializing session ${session.id} with model ${resolvedProvider}/${resolvedModel}...`);
+        await this.withTimeout(
+          client.session.init({
+            path: { id: session.id },
+            body: {
+              modelID: resolvedModel,
+              providerID: resolvedProvider,
+              messageID: `msg_${Date.now()}`,
+            },
+          }),
+          OpenCodeApiHarness.SESSION_INIT_TIMEOUT_MS,
+          `OpenCode session.init for ${armId}`,
+        );
         console.log(`[harness-api] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
       } catch (initError) {
         console.log(`[harness-api] Session init warning: ${initError}`);

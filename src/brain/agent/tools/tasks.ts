@@ -23,35 +23,18 @@ export class GetTaskHistoryTool extends BrainTool {
   async execute(input: { planId?: string; limit?: number; status?: string }): Promise<ToolResult<TaskHistoryItem[]>> {
     try {
       const limit = input.limit ?? 20;
-      let query = `
-        SELECT id, subject, status, completed_at, domain
-        FROM tasks
-        WHERE 1=1
-      `;
-      
-      const params: string[] = [];
-      
-      if (input.status) {
-        query += " AND status = ?";
-        params.push(input.status);
-      }
-      
-      query += ` ORDER BY created_at DESC LIMIT ?`;
-      params.push(limit.toString());
-      
-      const results = this.context.db.query(query).all(...params) as Array<{
-        id: string;
-        subject: string;
-        status: string;
-        completed_at: string;
-        domain: string | null;
-      }>;
-      
-      const tasks: TaskHistoryItem[] = results.map(r => ({
+
+      const results = this.context.db.listTasks({
+        statuses: input.status ? [input.status] : undefined,
+        limit,
+        sort: "created_desc",
+      });
+
+      const tasks: TaskHistoryItem[] = results.map((r) => ({
         id: r.id,
         subject: r.subject,
         status: r.status,
-        completedAt: r.completed_at || undefined,
+        completedAt: r.completedAt || undefined,
         domain: r.domain || undefined,
       }));
       

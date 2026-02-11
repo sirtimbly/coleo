@@ -24,6 +24,8 @@ export interface Discovery {
   lineNumber: number | null;
   severity: string;
   status: string;
+  taskId?: string | null;
+  phase?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,6 +41,8 @@ interface DiscoveryRow {
   line_number: number | null;
   severity: string;
   status: string;
+  task_id: string | null;
+  phase: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,7 +127,7 @@ export function createDiscoveriesRoutes() {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     
     let query = `
-      SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at
+      SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
       FROM discoveries
       WHERE status = ?
     `;
@@ -164,6 +168,8 @@ export function createDiscoveriesRoutes() {
         lineNumber: row.line_number,
         severity: row.severity,
         status: row.status,
+        taskId: row.task_id,
+        phase: row.phase,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));
@@ -180,7 +186,7 @@ export function createDiscoveriesRoutes() {
     const id = c.req.param("id");
     
     const row = db.query(
-      "SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at FROM discoveries WHERE id = ?"
+      "SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at FROM discoveries WHERE id = ?"
     ).get(id) as DiscoveryRow | null;
     
     if (!row) {
@@ -198,6 +204,8 @@ export function createDiscoveriesRoutes() {
       lineNumber: row.line_number,
       severity: row.severity,
       status: row.status,
+      taskId: row.task_id,
+      phase: row.phase,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

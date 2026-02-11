@@ -19,6 +19,7 @@ export interface BrainStateRow {
   last_poll_at: string | null;
   pending_tasks: number;
   completed_today: number;
+  completed_task_count: number;
   updated_at: string;
 }
 
@@ -29,6 +30,7 @@ export interface BrainState {
   lastPollAt?: string;
   pendingTasks: number;
   completedToday: number;
+  completedTaskCount: number;
 }
 
 /**
@@ -45,6 +47,7 @@ export function getBrainState(db: Database): BrainState {
       pollIntervalMs: 30000,
       pendingTasks: 0,
       completedToday: 0,
+      completedTaskCount: 0,
     };
   }
   
@@ -55,6 +58,7 @@ export function getBrainState(db: Database): BrainState {
     lastPollAt: row.last_poll_at || undefined,
     pendingTasks: row.pending_tasks,
     completedToday: row.completed_today,
+    completedTaskCount: row.completed_task_count ?? 0,
   };
 }
 
@@ -89,6 +93,10 @@ export function updateBrainState(db: Database, updates: Partial<BrainState>): vo
   if (updates.completedToday !== undefined) {
     setClauses.push("completed_today = ?");
     values.push(updates.completedToday);
+  }
+  if (updates.completedTaskCount !== undefined) {
+    setClauses.push("completed_task_count = ?");
+    values.push(updates.completedTaskCount);
   }
   
   values.push(1); // id = 1
@@ -202,6 +210,18 @@ export function cleanupOldMessages(db: Database, olderThanDays: number = 7): num
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
   const result = db.run(
     "DELETE FROM messages WHERE status IN ('completed', 'failed') AND created_at < ?",
+    [cutoff]
+  );
+  return result.changes;
+}
+
+/**
+ * Clean up old arm events (retention policy)
+ */
+export function cleanupOldArmEvents(db: Database, olderThanDays: number = 7): number {
+  const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
+  const result = db.run(
+    "DELETE FROM arm_events WHERE timestamp < ?",
     [cutoff]
   );
   return result.changes;

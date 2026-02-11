@@ -199,27 +199,16 @@ export class DetermineNextTaskTool extends BrainTool {
     domain?: string;
     priority?: string;
   }>> {
-    const rows = this.context.db.query(`
-      SELECT id, subject, description, classification, domain, priority
-      FROM tasks
-      WHERE status = 'pending'
-        AND dependency_blocked = 0
-        AND assigned_to IS NULL
-        AND subject NOT LIKE 'Validate completion:%'
-      ORDER BY 
-        CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
-        created_at ASC
-      LIMIT 20
-    `).all() as Array<{
-      id: string;
-      subject: string;
-      description: string;
-      classification: string | null;
-      domain: string | null;
-      priority: string | null;
-    }>;
-    
-    return rows.map(r => ({
+    const rows = this.context.db.listTasks({
+      statuses: ["pending"],
+      dependencyBlocked: false,
+      unassignedOnly: true,
+      excludeSubjectPrefix: "Validate completion:",
+      sort: "priority_then_created_asc",
+      limit: 20,
+    });
+
+    return rows.map((r) => ({
       id: r.id,
       subject: r.subject,
       description: r.description,
@@ -239,29 +228,39 @@ export class DetermineNextTaskTool extends BrainTool {
     priority: string;
     errorDetails?: string;
   }>> {
-    const rows = this.context.db.query(`
-      SELECT id, title, description, priority, error_details
-      FROM bugs
-      WHERE status IN ('open', 'investigating')
-        AND assignee_arm_id IS NULL
-      ORDER BY 
-        CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END,
-        created_at ASC
-      LIMIT 10
-    `).all() as Array<{
-      id: string;
-      title: string;
-      description: string;
-      priority: string;
-      error_details: string | null;
-    }>;
+    const rows = this.context.db
+      .listBugs({
+        statuses: ["open", "investigating"],
+        unassignedOnly: true,
+        limit: 50,
+      })
+      .sort((a, b) => {
+        const rank = (priority: string): number => {
+          switch (priority) {
+            case "critical":
+              return 1;
+            case "high":
+              return 2;
+            case "medium":
+              return 3;
+            default:
+              return 4;
+          }
+        };
+        const diff = rank(a.priority) - rank(b.priority);
+        if (diff !== 0) {
+          return diff;
+        }
+        return a.createdAt.localeCompare(b.createdAt);
+      })
+      .slice(0, 10);
 
-    return rows.map(r => ({
+    return rows.map((r) => ({
       id: r.id,
       title: r.title,
       description: r.description,
       priority: r.priority,
-      errorDetails: r.error_details || undefined,
+      errorDetails: r.errorDetails || undefined,
     }));
   }
 
@@ -269,14 +268,12 @@ export class DetermineNextTaskTool extends BrainTool {
    * Get in-progress tasks
    */
   private async getInProgressTasks(): Promise<Array<{ id: string; subject: string }>> {
-    const rows = this.context.db.query(`
-      SELECT id, subject
-      FROM tasks
-      WHERE status IN ('in_progress', 'claimed')
-      LIMIT 20
-    `).all() as Array<{ id: string; subject: string }>;
-    
-    return rows;
+    return this.context.db
+      .listTasks({
+        statuses: ["in_progress", "claimed"],
+        limit: 20,
+      })
+      .map((task) => ({ id: task.id, subject: task.subject }));
   }
 
   /**
@@ -292,46 +289,64 @@ export class DetermineNextTaskTool extends BrainTool {
     issues: string[];
     testsStatus?: string;
   }>> {
-    // Find tasks that:
-    // 1. Are completed (or recently completed)
-    // 2. Have status reports with issues_found, completed_with_issues, or needs_review
-    // 3. Don't already have a verification task created for them
-    const rows = this.context.db.query(`
-      SELECT 
-        t.id,
-        t.subject,
-        t.status,
-        sr.id as status_report_id,
-        sr.summary,
-        sr.issues,
-        sr.tests_status
-      FROM tasks t
-      INNER JOIN status_reports sr ON t.id = sr.task_id
-      LEFT JOIN tasks vt ON vt.subject LIKE '%Verify%' || t.subject || '%'
-      WHERE t.status = 'completed'
-        AND sr.status IN ('issues_found', 'completed_with_issues', 'needs_review')
-        AND vt.id IS NULL
-      ORDER BY sr.created_at DESC
-      LIMIT 5
-    `).all() as Array<{
+    const completedTasks = this.context.db.listTasks({
+      statuses: ["completed"],
+      limit: 200,
+    });
+    const reports = this.context.db.listStatusReports({
+      limit: 500,
+    });
+    const verificationReports = reports.filter((report) =>
+      ["issues_found", "completed_with_issues", "needs_review"].includes(
+        report.status,
+      ),
+    );
+    const taskMap = new Map(completedTasks.map((task) => [task.id, task]));
+    const existingVerifyTasks = this.context.db.listTasks({
+      includeSubject: "Verify",
+      excludeStatuses: ["completed", "failed", "cancelled"],
+      limit: 500,
+    });
+
+    const hasVerificationTask = (subject: string): boolean =>
+      existingVerifyTasks.some((task) => task.subject.includes(subject));
+
+    const candidates: Array<{
       id: string;
       subject: string;
       status: string;
-      status_report_id: string;
+      statusReportId: string;
       summary: string;
-      issues: string;
-      tests_status: string | null;
-    }>;
-    
-    return rows.map(r => ({
-      id: r.id,
-      subject: r.subject,
-      status: r.status,
-      statusReportId: r.status_report_id,
-      summary: r.summary,
-      issues: JSON.parse(r.issues || "[]") as string[],
-      testsStatus: r.tests_status || undefined,
-    }));
+      issues: string[];
+      testsStatus?: "passing" | "failing" | "not_run";
+      reportCreatedAt: string;
+    }> = [];
+
+    for (const report of verificationReports) {
+      const task = taskMap.get(report.taskId);
+      if (!task) {
+        continue;
+      }
+      if (hasVerificationTask(task.subject)) {
+        continue;
+      }
+
+      candidates.push({
+        id: task.id,
+        subject: task.subject,
+        status: task.status,
+        statusReportId: report.id,
+        summary: report.summary,
+        issues: report.issues,
+        testsStatus: report.testsStatus || undefined,
+        reportCreatedAt: report.createdAt,
+      });
+    }
+
+    return candidates
+      .sort((a, b) => b.reportCreatedAt.localeCompare(a.reportCreatedAt))
+      .map(({ reportCreatedAt: _reportCreatedAt, ...rest }) => rest)
+      .slice(0, 5);
   }
 
   /**
@@ -388,69 +403,60 @@ ${taskWithIssues.id}`,
     domain?: string;
     priority?: string;
   }>> {
-    // Find tasks that are marked as blocked or dependency_blocked
-    // but whose dependencies are now completed
-    const rows = this.context.db.query(`
-      SELECT t.id, t.subject, t.description, t.classification, t.domain, t.priority
-      FROM tasks t
-      WHERE (t.status = 'blocked' OR t.dependency_blocked = 1)
-        AND NOT EXISTS (
-          SELECT 1 
-          FROM task_dependencies td
-          WHERE td.task_id = t.id
-            AND NOT EXISTS (
-              SELECT 1 FROM tasks dep 
-              WHERE dep.id = td.depends_on_task_id 
-                AND dep.status = 'completed'
-            )
-        )
-      LIMIT 5
-    `).all() as Array<{
+    const blockedTasks = this.context.db.listTasks({
+      limit: 500,
+    }).filter((task) => task.status === "blocked" || task.dependencyBlocked);
+
+    const result: Array<{
       id: string;
       subject: string;
       description: string;
-      classification: string | null;
-      domain: string | null;
-      priority: string | null;
-    }>;
-    
-    return rows.map(r => ({
-      id: r.id,
-      subject: r.subject,
-      description: r.description,
-      classification: r.classification || undefined,
-      domain: r.domain || undefined,
-      priority: r.priority || undefined,
-    }));
+      classification?: string;
+      domain?: string;
+      priority?: string;
+    }> = [];
+
+    for (const task of blockedTasks) {
+      const deps = this.context.db.listTaskDependencies(task.id);
+      const hasUnmetDependency = deps.some((dep) => {
+        const dependencyTask = this.context.db.getTask(dep.dependsOnTaskId);
+        return !dependencyTask || dependencyTask.status !== "completed";
+      });
+
+      if (!hasUnmetDependency) {
+        result.push({
+          id: task.id,
+          subject: task.subject,
+          description: task.description,
+          classification: task.classification || undefined,
+          domain: task.domain || undefined,
+          priority: task.priority || undefined,
+        });
+      }
+    }
+
+    return result.slice(0, 5);
   }
 
   /**
    * Get the next task from the plan based on order and dependencies
    */
   private async getNextPlanTask(planId?: string): Promise<NextTaskResult | null> {
-    // Get plan bullets that have tasks and check their status
-    // For now, just return the next pending task with plan-like ordering
-    const row = this.context.db.query(`
-      SELECT id, subject, description, classification, domain, priority, plan_order
-      FROM tasks
-      WHERE status = 'pending' 
-        AND dependency_blocked = 0
-        AND assigned_to IS NULL
-        AND plan_order IS NOT NULL
-        AND subject NOT LIKE 'Validate completion:%'
-      ORDER BY plan_order ASC
-      LIMIT 1
-    `).get() as {
-      id: string;
-      subject: string;
-      description: string;
-      classification: string | null;
-      domain: string | null;
-      priority: string | null;
-      plan_order: number | null;
-    } | null;
-    
-    if (!row) return null;
+    void planId;
+
+    const row = this.context.db
+      .listTasks({
+        statuses: ["pending"],
+        dependencyBlocked: false,
+        unassignedOnly: true,
+        excludeSubjectPrefix: "Validate completion:",
+        sort: "sort_order_asc",
+        limit: 1,
+      })[0];
+
+    if (!row) {
+      return null;
+    }
     
     return {
       task: {
@@ -461,10 +467,10 @@ ${taskWithIssues.id}`,
         priority: row.priority || "normal",
       },
       context: {
-        planExcerpt: `Plan step ${row.plan_order}`,
+        planExcerpt: `Plan step ${row.sortOrder ?? "?"}`,
         history: await this.getRecentHistory(3),
       },
-      reasoning: `Next task from plan (step ${row.plan_order}).`,
+      reasoning: `Next task from plan (step ${row.sortOrder ?? "?"}).`,
     };
   }
 
@@ -472,26 +478,14 @@ ${taskWithIssues.id}`,
    * Get recent completed task history for context
    */
   private async getRecentHistory(limit: number): Promise<string[]> {
-    const rows = this.context.db.query(`
-      SELECT subject, completed_at
-      FROM tasks
-      WHERE status = 'completed'
-      ORDER BY completed_at DESC
-      LIMIT ?
-    `).all(limit) as Array<{ subject: string; completed_at: string }>;
-    
-    return rows.map(r => `✓ ${r.subject}`);
+    return this.context.db
+      .listTasks({
+        statuses: ["completed"],
+        sort: "completed_desc",
+        limit,
+      })
+      .map((row) => `✓ ${row.subject}`);
   }
 
-  // NOTE: Domain-based arm matching is disabled for now
-  // /**
-  //  * Get domain preference for an arm
-  //  */
-  // private async getArmDomain(armId: string): Promise<string> {
-  //   const row = this.context.db.query(`
-  //     SELECT domain FROM arms WHERE id = ?
-  //   `).get(armId) as { domain: string | null } | null;
-  //   
-  //   return row?.domain || "general";
-  // }
+  // NOTE: Domain-based arm matching is disabled for now.
 }

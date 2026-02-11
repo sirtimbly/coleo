@@ -11,6 +11,7 @@ import {
   getServiceLogs,
   formatUptime,
 } from "../../daemon";
+import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 
 export function registerBrainCommands(program: Command): void {
   const brainCmd = program.command("brain").description("Manage the Coleo brain");
@@ -222,12 +223,13 @@ export function registerBrainCommands(program: Command): void {
 
       try {
         const db = new Database(dbPath);
+        const brainDb = createSqliteBrainDb(db);
         const { generateTaskDetermination, formatTaskDetermination } = await import("../../brain/prompt-generator");
 
         const result = await generateTaskDetermination({
           projectRoot: process.cwd(),
           coleoDir,
-          db,
+          db: brainDb,
         });
 
         console.log(formatTaskDetermination(result));
@@ -249,6 +251,7 @@ export function registerBrainCommands(program: Command): void {
 
       try {
         const db = new Database(dbPath);
+        const brainDb = createSqliteBrainDb(db);
         const { generateContextBundle, formatContextBundle } = await import("../../brain/prompt-generator");
 
         const taskInput = taskIdOrSubject || "next";
@@ -284,7 +287,7 @@ export function registerBrainCommands(program: Command): void {
           {
             projectRoot: process.cwd(),
             coleoDir,
-            db,
+            db: brainDb,
           },
           taskSubject,
         );

@@ -116,8 +116,10 @@ async function runMigrations(db: Database): Promise<void> {
     ["040_arm_bug_tracking", MIGRATION_040, { table: "arms", columns: MIGRATION_040_COLUMNS }],
     ["041_task_progress", MIGRATION_041, { table: "tasks", columns: MIGRATION_041_COLUMNS }],
     ["042_task_preparation", MIGRATION_042, { table: "tasks", columns: MIGRATION_042_COLUMNS }],
-    ["043_search_index", MIGRATION_043],
-  ];
+		["043_search_index", MIGRATION_043],
+		["044_restore_discoveries_task_phase", MIGRATION_044, { table: "discoveries", columns: MIGRATION_044_COLUMNS }],
+		["045_brain_completed_task_count", MIGRATION_045],
+	];
 
 
   // Apply pending migrations
@@ -1176,6 +1178,28 @@ const MIGRATION_043 = `
   );
 `;
 
+// Migration 044: Restore discovery task/phase columns lost by migration 038 table recreation
+const MIGRATION_044_COLUMNS = [
+  { name: "task_id", sql: "ALTER TABLE discoveries ADD COLUMN task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL" },
+  { name: "phase", sql: "ALTER TABLE discoveries ADD COLUMN phase TEXT DEFAULT 'implementation' CHECK (phase IN ('exploration', 'implementation', 'verification'))" },
+];
+
+const MIGRATION_044 = `
+  -- Ensure discovery rows have a valid phase
+  UPDATE discoveries
+  SET phase = 'implementation'
+  WHERE phase IS NULL OR phase = '';
+
+  -- Restore indexes used by task-scoped discovery lookups
+  CREATE INDEX IF NOT EXISTS idx_discoveries_task ON discoveries(task_id);
+  CREATE INDEX IF NOT EXISTS idx_discoveries_phase ON discoveries(phase);
+`;
+
+// Migration 045: Track total completed task count in brain_state
+const MIGRATION_045 = `
+  ALTER TABLE brain_state ADD COLUMN completed_task_count INTEGER NOT NULL DEFAULT 0;
+`;
+
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
 // Previously used descending order where higher values appeared first
 const MIGRATION_035_FIX_SORT_ORDER = `
@@ -1378,6 +1402,8 @@ CREATE TABLE IF NOT EXISTS discoveries_new (
   file_path TEXT,
   line_number INTEGER,
   severity TEXT DEFAULT 'info' CHECK (severity IN ('info', 'warning', 'error')),
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  phase TEXT DEFAULT 'implementation' CHECK (phase IN ('exploration', 'implementation', 'verification')),
   status TEXT DEFAULT 'open' CHECK (status IN ('open', 'acknowledged', 'resolved', 'dismissed')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -1387,11 +1413,11 @@ CREATE TABLE IF NOT EXISTS discoveries_new (
 -- Copy data from old table
 INSERT INTO discoveries_new (
   id, arm_id, arm_name, kind, title, details, file_path, line_number,
-  severity, status, created_at, updated_at, metadata
+  severity, task_id, phase, status, created_at, updated_at, metadata
 )
 SELECT
   id, arm_id, arm_name, kind, title, details, file_path, line_number,
-  severity, status, created_at, updated_at, metadata
+  severity, task_id, phase, status, created_at, updated_at, metadata
 FROM discoveries;
 
 -- Drop old table and rename new one
@@ -1428,6 +1454,8 @@ CREATE INDEX IF NOT EXISTS idx_discoveries_severity ON discoveries(severity);
 CREATE INDEX IF NOT EXISTS idx_discoveries_status ON discoveries(status);
 CREATE INDEX IF NOT EXISTS idx_discoveries_file ON discoveries(file_path);
 CREATE INDEX IF NOT EXISTS idx_discoveries_created ON discoveries(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_discoveries_task ON discoveries(task_id);
+CREATE INDEX IF NOT EXISTS idx_discoveries_phase ON discoveries(phase);
 `;
 
   /**

@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
 import { __promptTestables, generateTaskDetermination } from "../prompt-generator";
+import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 
 const NOW = new Date("2026-01-16T00:00:00Z").toISOString();
 
@@ -86,6 +87,7 @@ describe("prompt-generator dependencies", () => {
 
   it("merges plan and keyword-based dependencies", () => {
     const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
     insertTask(db, {
       id: "phase1-db",
       subject: "Phase 1 Database Schema",
@@ -93,7 +95,7 @@ describe("prompt-generator dependencies", () => {
       phase: "Phase 1",
     });
 
-    const result = __promptTestables.collectDependenciesForTask(db, {
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
       taskId: "phase2-api",
       subject: "Build API endpoints",
       phaseLabel: "Phase 2",
@@ -114,6 +116,7 @@ describe("prompt-generator dependencies", () => {
 
   it("blocks new tasks and records task_dependencies when prerequisites exist", () => {
     const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
     insertTask(db, {
       id: "phase1-db",
       subject: "Phase 1 Database",
@@ -123,7 +126,7 @@ describe("prompt-generator dependencies", () => {
 
     const planSection = `## Phase 2: Progressive Planning\n- [ ] Build API server\n\n### Dependencies\n- Phase 1 Database\n`;
     const result = __promptTestables.createPlanTaskDeliverable(
-      db,
+      brainDb,
       {
         currentPhase: planSection,
         bullets: [],
@@ -151,10 +154,11 @@ describe("prompt-generator dependencies", () => {
 
   it("creates plan-update tasks when dependencies cannot be resolved", () => {
     const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
 
     const planSection = `## Phase 9: Observability\n- [ ] Implement WebSocket watchers\n`;
     __promptTestables.createPlanTaskDeliverable(
-      db,
+      brainDb,
       {
         currentPhase: planSection,
         bullets: [],
@@ -177,6 +181,7 @@ describe("prompt-generator dependencies", () => {
 
   it("treats unassigned pending work as next pending task, not active task", async () => {
     const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
 
     insertTask(db, {
       id: "pending-normal",
@@ -196,7 +201,7 @@ describe("prompt-generator dependencies", () => {
     const result = await generateTaskDetermination({
       projectRoot: process.cwd(),
       coleoDir: process.cwd(),
-      db,
+      db: brainDb,
     });
 
     expect(result.task?.id).toBe("pending-high");

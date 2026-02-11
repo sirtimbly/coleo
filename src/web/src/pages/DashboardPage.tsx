@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare } from 'lucide-react';
-import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState } from '@/lib';
+import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type RecentEventsResponse } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket } from '@/hooks';
@@ -51,6 +51,92 @@ const stateColorMap: Record<ArmActivityState, "success" | "warning" | "danger" |
   silent: "default",
   error: "danger",
   starting: "warning",
+};
+
+type RecentEvent = RecentEventsResponse['events'][number];
+
+const NOTABLE_TASK_EVENTS = new Set([
+  'task.completed',
+  'task.failed',
+  'task.blocked',
+  'task.validated',
+  'task.status_reported',
+  'task.discovery_reported',
+  'task.dependency_reported',
+  'task.context_compressed',
+]);
+
+const NOTABLE_OTHER_EVENTS = new Set([
+  'arm.status_changed',
+  'system.status',
+  'session.error',
+]);
+
+const EVENT_LABELS: Record<string, string> = {
+  'task.completed': 'Task completed',
+  'task.failed': 'Task failed',
+  'task.blocked': 'Task blocked',
+  'task.validated': 'Task validated',
+  'task.status_reported': 'Status report submitted',
+  'task.discovery_reported': 'Discovery reported',
+  'task.dependency_reported': 'Dependency reported',
+  'task.context_compressed': 'Context compressed',
+  'arm.status_changed': 'Arm status changed',
+  'system.status': 'System status update',
+  'session.error': 'Session error',
+};
+
+const getDataString = (data: Record<string, unknown> | undefined, keys: string[]) => {
+  if (!data) return undefined;
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+};
+
+const isNotableEvent = (event: RecentEvent) =>
+  NOTABLE_TASK_EVENTS.has(event.type) || NOTABLE_OTHER_EVENTS.has(event.type);
+
+const humanizeEventType = (type: string) =>
+  type.replace(/\./g, ' ').replace(/_/g, ' ');
+
+const formatEventTitle = (event: RecentEvent) => {
+  const label = EVENT_LABELS[event.type] ?? humanizeEventType(event.type);
+  const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
+  const bugId = getDataString(event.data, ['bugId', 'bug_id']);
+  const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
+
+  if (event.type === 'arm.status_changed' && armId) {
+    const newStatus = getDataString(event.data, ['to', 'newStatus', 'status']);
+    return newStatus ? `Arm ${armId} is ${newStatus}` : `${label}: ${armId}`;
+  }
+
+  const subject = taskId ? `Task ${taskId}` : bugId ? `Bug ${bugId}` : armId ? `Arm ${armId}` : null;
+  return subject ? `${label}: ${subject}` : label;
+};
+
+const formatEventMeta = (event: RecentEvent) => {
+  const parts: string[] = [];
+  const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
+  const bugId = getDataString(event.data, ['bugId', 'bug_id']);
+  const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
+  const status = getDataString(event.data, ['status', 'newStatus', 'to']);
+
+  if (taskId) parts.push(`Task ${taskId}`);
+  if (bugId) parts.push(`Bug ${bugId}`);
+  if (armId && event.type !== 'arm.status_changed') parts.push(`Arm ${armId}`);
+  if (status) parts.push(`Status ${status}`);
+
+  return parts;
+};
+
+const getEventDotClass = (event: RecentEvent) => {
+  const type = event.type;
+  if (type.includes('failed') || type.includes('error')) return 'bg-danger';
+  if (type.includes('blocked')) return 'bg-warning';
+  if (type.includes('completed') || type.includes('validated')) return 'bg-success';
+  return 'bg-accent';
 };
 
 function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: SystemStatus['infrastructure'], isLoading: boolean }) {
@@ -423,6 +509,56 @@ function ActivitySection({ activity, isLoading }: { activity: ActivityEntry[], i
   );
 }
 
+function NotableEventsSection({ events, isLoading, error }: { events: RecentEvent[], isLoading: boolean, error: string | null }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Notable Events</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-start gap-3">
+                <Skeleton className="h-2 w-2 rounded-full mt-1.5" />
+                <div className="flex-1">
+                  <Skeleton className="h-4 w-full rounded mb-1" />
+                  <Skeleton className="h-3 w-32 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error ? (
+          <div>
+            <p className="text-sm text-danger">{error}</p>
+            <p className="text-xs text-muted-foreground mt-1">Event stream may be unavailable.</p>
+          </div>
+        ) : events.length === 0 ? (
+          <p className="text-muted-foreground text-sm">No notable events yet</p>
+        ) : (
+          <div className="space-y-3">
+            {events.map((event, index) => {
+              const meta = formatEventMeta(event);
+              return (
+                <div key={`${event.type}-${event.timestamp}-${index}`} className="flex items-start gap-3 text-sm">
+                  <div className={`h-2 w-2 rounded-full mt-1.5 ${getEventDotClass(event)}`} />
+                  <div className="flex-1">
+                    <p className="font-medium">{formatEventTitle(event)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {meta.length > 0 ? `${meta.join(' • ')} • ` : ''}
+                      {new Date(event.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const formatLastSeen = (timestamp?: string) => {
   if (!timestamp) return 'Never';
   const ms = Date.now() - new Date(timestamp).getTime();
@@ -439,10 +575,13 @@ export function DashboardPage() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [notableEvents, setNotableEvents] = useState<RecentEvent[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   const loadCriticalData = useCallback(async () => {
     try {
@@ -481,19 +620,36 @@ export function DashboardPage() {
     }
   }, []);
 
+  const loadNotableEvents = useCallback(async () => {
+    setEventsLoading(true);
+    try {
+      const eventsRes = await api.getRecentEvents({ limit: 60, sinceMs: 1000 * 60 * 60 * 24 });
+      const filtered = eventsRes.events.filter(isNotableEvent).slice(0, 6);
+      setNotableEvents(filtered);
+      setEventsError(null);
+    } catch (err) {
+      setEventsError(err instanceof Error ? err.message : 'Failed to load events');
+    } finally {
+      setEventsLoading(false);
+    }
+  }, []);
+
   const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
     if (msg.channel === 'arms') {
       api.listArms().then((res) => setArms(res.arms)).catch(console.error);
     } else if (msg.channel === 'activity') {
       api.listActivity({ limit: 5 }).then((res) => setActivity(res.activity)).catch(console.error);
     }
+    if (msg.channel === 'arm-events') {
+      loadNotableEvents();
+    }
     if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
       api.status().then((res) => setStatus(res)).catch(console.error);
     }
-  }, []);
+  }, [loadNotableEvents]);
 
   const { connected, authenticated } = useWebSocket({
-    channels: ['arms', 'activity', 'brain'],
+    channels: ['arms', 'activity', 'brain', 'arm-events'],
     onMessage: handleWSMessage,
     autoConnect: true,
   });
@@ -502,13 +658,15 @@ export function DashboardPage() {
     loadCriticalData();
     loadDetails();
     loadAnalysis();
+    loadNotableEvents();
 
     const interval = setInterval(() => {
       loadCriticalData();
       loadDetails();
+      loadNotableEvents();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadCriticalData, loadDetails, loadAnalysis]);
+  }, [loadCriticalData, loadDetails, loadAnalysis, loadNotableEvents]);
 
   if (error && !status) {
     return (
@@ -557,8 +715,9 @@ export function DashboardPage() {
 
       <ArmAnalysisSection analysis={armsAnalysis ?? undefined} isLoading={detailsLoading} />
 
-      <div className="grid grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} />
+        <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} />
         <ActivitySection activity={activity} isLoading={detailsLoading} />
       </div>
     </div>

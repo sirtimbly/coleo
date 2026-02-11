@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
-import { realpathSync } from "fs";
+import { existsSync, realpathSync } from "fs";
 import { fileURLToPath } from "url";
 import nunjucks from "nunjucks";
 
@@ -11,9 +11,24 @@ const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
  * This resolves relative to the compiled code location
  */
 function getPackageTemplatesDir(): string {
-  // When running from dist/index.js: __dirname = dist/
-  // Templates are at dist/brain/templates/
-  return join(__dirname, "brain", "templates");
+  const candidates = [
+    // Source layout: src/brain/template-manager.ts -> src/brain/templates
+    join(__dirname, "templates"),
+    // Dist layout fallback in case file is bundled differently
+    join(__dirname, "brain", "templates"),
+    join(__dirname, "..", "templates"),
+    join(__dirname, "..", "brain", "templates"),
+  ];
+
+  const marker = "initial-arm-prompt.jinja";
+  for (const dir of candidates) {
+    if (existsSync(join(dir, marker))) {
+      return dir;
+    }
+  }
+
+  // Default to the most common runtime location.
+  return join(__dirname, "templates");
 }
 
 export class BrainTemplateManager {

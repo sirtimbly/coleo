@@ -8,6 +8,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { dirname } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
+import { cleanupOldArmEvents } from "../db/state";
 import { logger, createAuthMiddleware, errorHandler } from "./middleware";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
@@ -34,6 +35,29 @@ export function getArmClient(): ArmClient | null {
 
 export function setArmClient(client: ArmClient): void {
   globalArmClient = client;
+}
+
+function getRetentionDays(db: Database, key: string, fallback: number): number {
+  const row = db.query("SELECT value FROM config WHERE key = ?").get(key) as { value: string } | null;
+  const parsed = row ? Number.parseInt(row.value, 10) : NaN;
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function scheduleArmEventRetention(db: Database, log: (msg: string, level?: LogLevel) => void): void {
+  const run = () => {
+    const retentionDays = getRetentionDays(db, "arm_events_retention_days", 7);
+    if (retentionDays === 0) return;
+    const deleted = cleanupOldArmEvents(db, retentionDays);
+    if (deleted > 0) {
+      log(`[retention] Deleted ${deleted} arm_events older than ${retentionDays} days`, "verbose");
+    }
+  };
+
+  run();
+  setInterval(run, 60 * 60 * 1000);
 }
 
 /**
@@ -263,6 +287,8 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   
   log("Creating app...", "verbose");
   const app = createApp(db, config);
+
+  scheduleArmEventRetention(db, log);
 
   log(`Starting server on ${config.host}:${config.port}...`, "normal");
 

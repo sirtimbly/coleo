@@ -455,6 +455,145 @@ export function createTasksRoutes() {
 	});
 
 	/**
+	 * List task dependencies with metadata
+	 * GET /api/tasks/:id/dependencies
+	 */
+	app.get("/:id/dependencies", (c) => {
+		const db = c.get("db");
+		const id = c.req.param("id");
+
+		const task = db.query("SELECT id FROM tasks WHERE id = ?").get(id) as {
+			id: string;
+		} | null;
+		if (!task) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		const rows = db
+			.query(
+				`SELECT task_id, depends_on_task_id, dependency_type, auto_detected, reason
+         FROM task_dependencies
+         WHERE task_id = ?
+         ORDER BY created_at ASC`,
+			)
+			.all(id) as Array<{
+			task_id: string;
+			depends_on_task_id: string;
+			dependency_type:
+				| "finish_to_start"
+				| "start_to_start"
+				| "finish_to_finish"
+				| "start_to_finish";
+			auto_detected: number;
+			reason: string | null;
+		}>;
+
+		return c.json({
+			dependencies: rows.map((row) => ({
+				taskId: row.task_id,
+				dependsOnTaskId: row.depends_on_task_id,
+				dependencyType: row.dependency_type,
+				autoDetected: row.auto_detected === 1,
+				reason: row.reason,
+			})),
+		});
+	});
+
+	/**
+	 * Upsert a dependency between two tasks
+	 * PUT /api/tasks/:id/dependencies/:dependsOnTaskId
+	 */
+	app.put("/:id/dependencies/:dependsOnTaskId", async (c) => {
+		const db = c.get("db");
+		const id = c.req.param("id");
+		const dependsOnTaskId = c.req.param("dependsOnTaskId");
+		const body = await c.req.json<{
+			dependencyType?:
+				| "finish_to_start"
+				| "start_to_start"
+				| "finish_to_finish"
+				| "start_to_finish";
+			autoDetected?: boolean;
+			reason?: string | null;
+		}>();
+
+		if (!id || !dependsOnTaskId) {
+			throw HttpError.badRequest("id and dependsOnTaskId are required");
+		}
+
+		const dependencyType = body.dependencyType || "finish_to_start";
+		const validDependencyTypes = new Set([
+			"finish_to_start",
+			"start_to_start",
+			"finish_to_finish",
+			"start_to_finish",
+		]);
+		if (!validDependencyTypes.has(dependencyType)) {
+			throw HttpError.badRequest("Invalid dependencyType");
+		}
+
+		const task = db.query("SELECT id FROM tasks WHERE id = ?").get(id) as {
+			id: string;
+		} | null;
+		if (!task) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		const dependsOnTask = db
+			.query("SELECT id FROM tasks WHERE id = ?")
+			.get(dependsOnTaskId) as { id: string } | null;
+		if (!dependsOnTask) {
+			throw HttpError.notFound(`Task not found: ${dependsOnTaskId}`);
+		}
+
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO task_dependencies (task_id, depends_on_task_id, dependency_type, auto_detected, reason, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(task_id, depends_on_task_id) DO UPDATE SET
+         dependency_type = excluded.dependency_type,
+         auto_detected = excluded.auto_detected,
+         reason = excluded.reason`,
+			[
+				id,
+				dependsOnTaskId,
+				dependencyType,
+				body.autoDetected === false ? 0 : 1,
+				body.reason || null,
+				now,
+			],
+		);
+
+		const row = db
+			.query(
+				`SELECT task_id, depends_on_task_id, dependency_type, auto_detected, reason
+         FROM task_dependencies
+         WHERE task_id = ? AND depends_on_task_id = ?`,
+			)
+			.get(id, dependsOnTaskId) as {
+			task_id: string;
+			depends_on_task_id: string;
+			dependency_type:
+				| "finish_to_start"
+				| "start_to_start"
+				| "finish_to_finish"
+				| "start_to_finish";
+			auto_detected: number;
+			reason: string | null;
+		};
+
+		return c.json({
+			dependency: {
+				taskId: row.task_id,
+				dependsOnTaskId: row.depends_on_task_id,
+				dependencyType: row.dependency_type,
+				autoDetected: row.auto_detected === 1,
+				reason: row.reason,
+			},
+		});
+	});
+
+	/**
 	 * Create a new task
 	 * POST /api/tasks
 	 */

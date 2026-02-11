@@ -3150,6 +3150,131 @@ export function createMcpServer(): McpServer {
 	);
 
 	// ============================================
+	// SEARCH TOOLS - Brain/arm search access
+	// ============================================
+
+	// Search across indexed brain/arm data
+	server.registerTool(
+		"search",
+		{
+			description:
+				"Search across indexed brain/arm data (tasks, arms, discoveries, etc.).",
+			inputSchema: {
+				query: z.string().describe("Search query"),
+				types: z
+					.array(z.string())
+					.optional()
+					.describe("Search types to include (default: all)"),
+				limit: z
+					.number()
+					.optional()
+					.describe("Maximum results to return (default: 20)"),
+				offset: z
+					.number()
+					.optional()
+					.describe("Offset for pagination (default: 0)"),
+				min_score: z
+					.number()
+					.optional()
+					.describe("Minimum score threshold (default: 0.1)"),
+				keyword_weight: z
+					.number()
+					.optional()
+					.describe("Weight for keyword search (0-1, default: 0.5)"),
+				semantic_weight: z
+					.number()
+					.optional()
+					.describe("Weight for semantic search (0-1, default: 0.5)"),
+				filters: z
+					.record(z.string(), z.unknown())
+					.optional()
+					.describe("Filter by metadata"),
+			},
+		},
+		async ({
+			query,
+			types,
+			limit,
+			offset,
+			min_score,
+			keyword_weight,
+			semantic_weight,
+			filters,
+		}) => {
+			if (!query || query.trim().length === 0) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "Query is required.",
+						},
+					],
+				};
+			}
+
+			try {
+				const payload: Record<string, unknown> = { query };
+				if (types && types.length > 0) payload.types = types;
+				if (limit !== undefined) payload.limit = limit;
+				if (offset !== undefined) payload.offset = offset;
+				if (min_score !== undefined) payload.minScore = min_score;
+				if (keyword_weight !== undefined) {
+					payload.keywordWeight = keyword_weight;
+				}
+				if (semantic_weight !== undefined) {
+					payload.semanticWeight = semantic_weight;
+				}
+				if (filters) payload.filters = filters;
+
+				const response = await fetch(`${API_BASE_URL}/api/search`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": API_KEY,
+					},
+					body: JSON.stringify(payload),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Search API request failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					results: Array<Record<string, unknown>>;
+					total: number;
+					query: string;
+					semanticUsed: boolean;
+					took: number;
+				};
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Search results for "${data.query}" (total: ${data.total}, returned: ${data.results.length}, semanticUsed: ${data.semanticUsed}, took: ${data.took}ms)\n\n` +
+								JSON.stringify(data, null, 2),
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Search failed: ${errorMsg}`,
+						},
+					],
+				};
+			}
+		},
+	);
+
+	// ============================================
 	// DEV SERVER MANAGEMENT TOOLS
 	// ============================================
 
@@ -3762,7 +3887,7 @@ export function createMcpServer(): McpServer {
 				const ctx: PromptContext = {
 					projectRoot: PROJECT_ROOT,
 					coleoDir: COLEO_DIR,
-					db: database,
+					db: database as unknown as PromptContext["db"],
 				};
 
 				const result = await generateTaskDetermination(ctx);
@@ -3815,7 +3940,7 @@ export function createMcpServer(): McpServer {
 				const ctx: PromptContext = {
 					projectRoot: PROJECT_ROOT,
 					coleoDir: COLEO_DIR,
-					db: database,
+					db: database as unknown as PromptContext["db"],
 				};
 
 				const result = await generateContextBundle(ctx, task_subject);
@@ -3881,7 +4006,7 @@ export function createMcpServer(): McpServer {
 				const ctx: PromptContext = {
 					projectRoot: PROJECT_ROOT,
 					coleoDir: COLEO_DIR,
-					db: database,
+					db: database as unknown as PromptContext["db"],
 				};
 
 				// Step 1: Get task determination

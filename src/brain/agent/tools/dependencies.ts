@@ -41,48 +41,23 @@ export class ReportDependencyTool extends BrainTool {
   }): Promise<ToolResult<DependencyReport>> {
     try {
       // Validate that both tasks exist
-      const taskExists = this.context.db.query("SELECT 1 FROM tasks WHERE id = ?").get(input.taskId);
+      const taskExists = this.context.db.getTask(input.taskId);
       if (!taskExists) {
         return { success: false, error: `Task ${input.taskId} not found` };
       }
 
-      const dependsOnExists = this.context.db.query("SELECT 1 FROM tasks WHERE id = ?").get(input.dependsOnTaskId);
+      const dependsOnExists = this.context.db.getTask(input.dependsOnTaskId);
       if (!dependsOnExists) {
         return { success: false, error: `Dependency task ${input.dependsOnTaskId} not found` };
       }
 
-      // Check if dependency already exists
-      const existing = this.context.db.query(
-        "SELECT id FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ?"
-      ).get(input.taskId, input.dependsOnTaskId);
-
-      if (existing) {
-        // Update existing dependency
-        this.context.db.run(
-          `UPDATE task_dependencies SET
-           dependency_type = ?, reason = ?, auto_detected = 0
-           WHERE task_id = ? AND depends_on_task_id = ?`,
-          [
-            input.dependencyType || 'finish_to_start',
-            input.reason,
-            input.taskId,
-            input.dependsOnTaskId
-          ]
-        );
-      } else {
-        // Insert new dependency
-        this.context.db.run(
-          `INSERT INTO task_dependencies
-           (task_id, depends_on_task_id, dependency_type, auto_detected, reason)
-           VALUES (?, ?, ?, 0, ?)`,
-          [
-            input.taskId,
-            input.dependsOnTaskId,
-            input.dependencyType || 'finish_to_start',
-            input.reason
-          ]
-        );
-      }
+      this.context.db.upsertTaskDependency({
+        taskId: input.taskId,
+        dependsOnTaskId: input.dependsOnTaskId,
+        dependencyType: input.dependencyType || "finish_to_start",
+        autoDetected: false,
+        reason: input.reason,
+      });
 
       // Log the dependency report to JetStream
       if (eventStore.isInitialized()) {

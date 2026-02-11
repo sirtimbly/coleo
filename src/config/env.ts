@@ -1,9 +1,30 @@
 import { file } from "bun";
-import { join } from "path";
+import { dirname, join } from "path";
+
+async function findColeoDir(startDir: string): Promise<string | null> {
+	let current = startDir;
+	while (true) {
+		const candidate = join(current, ".coleo");
+		try {
+			if (await file(candidate).exists()) {
+				return candidate;
+			}
+		} catch {
+			// Ignore filesystem errors while searching
+		}
+		const parent = dirname(current);
+		if (parent === current) {
+			return null;
+		}
+		current = parent;
+	}
+}
 
 export async function loadEnvFile(): Promise<void> {
 	const projectDir = process.env.COLEO_PROJECT_DIR || process.cwd();
-	const coleoDir = process.env.COLEO_DIR || join(projectDir, ".coleo");
+	const explicitColeoDir = process.env.COLEO_DIR;
+	const discoveredColeoDir = explicitColeoDir ? null : await findColeoDir(projectDir);
+	const coleoDir = explicitColeoDir || discoveredColeoDir || join(projectDir, ".coleo");
 	const envPaths = [
 		join(coleoDir, ".env"),
 		join(projectDir, ".env"),

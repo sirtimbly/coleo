@@ -39,7 +39,7 @@ import { MailProcessor } from "./mail-processor";
 import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
-import type { BrainDb } from "./db-client";
+import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
 	Task,
@@ -65,10 +65,12 @@ export class Brain {
 	private tasks: Task[] = [];
 	private arms: Map<string, Arm> = new Map();
 	// seenArmIds removed - now derived from database via hasReceivedInitialTasks()
+	private initializedArmIds: Set<string> = new Set();
+	private initializedArmIdsLoaded = false;
 	private running = false;
 	private shuttingDown = false;
 	private abortController: AbortController | null = null;
-	private armStateDb: BrainDb | null = null;
+	private armStateDb: ArmStateStore | null = null;
 	private apiBaseUrl: string;
 	private apiKey: string;
 	private natsUrl!: string;
@@ -234,6 +236,7 @@ export class Brain {
 			activeArms: [],
 			pendingTasks: 0,
 			completedToday: 0,
+			completedTaskCount: 0,
 		};
 
 		// Set up mail directories
@@ -680,6 +683,9 @@ export class Brain {
 			replyToPermission: async (armId, _requestId, approved) => {
 				const response = approved ? "Yes, proceed." : "No, do not proceed.";
 				await this.sendPromptToArm(armId, response);
+			},
+			getArmRuntimeState: async (armId) => {
+				return await this.getArmHarnessState(armId);
 			},
 		};
 
@@ -1276,34 +1282,44 @@ export class Brain {
 	 */
 	private async processArmQueue(): Promise<void> {
 		// Process messages from API queue (primary)
-		const messages = await this.listPendingMessagesViaApi("brain", 500);
-		for (const message of messages) {
-			try {
-				await this.markMessageStatusViaApi(message.id, "processing");
+		try {
+			const messages = await this.listPendingMessagesViaApi("brain", 500);
+			for (const message of messages) {
+				try {
+					await this.markMessageStatusViaApi(message.id, "processing");
 
-				await this.handleArmMessage({
-					id: message.id,
-					from: message.from,
-					to: message.to,
-					type: message.type as MessageType,
-					payload: message.payload,
-					timestamp: new Date(message.createdAt),
-				});
+					await this.handleArmMessage({
+						id: message.id,
+						from: message.from,
+						to: message.to,
+						type: message.type as MessageType,
+						payload: message.payload,
+						timestamp: new Date(message.createdAt),
+					});
 
-				await this.markMessageStatusViaApi(message.id, "completed");
-			} catch (err) {
-				this.log(`Error processing queue message ${message.id}: ${err}`);
-				await this.markMessageStatusViaApi(
-					message.id,
-					"failed",
-					String(err),
-				);
+					await this.markMessageStatusViaApi(message.id, "completed");
+				} catch (err) {
+					this.log(`Error processing queue message ${message.id}: ${err}`);
+					try {
+						await this.markMessageStatusViaApi(
+							message.id,
+							"failed",
+							String(err),
+						);
+					} catch (markErr) {
+						this.log(
+							`Failed to mark queue message ${message.id} as failed: ${markErr}`,
+						);
+					}
+				}
 			}
-		}
 
-		// Periodically cleanup old messages (once per hour via modulo check)
-		if (Date.now() % 3600000 < this.options.pollIntervalMs) {
-			await this.cleanupMessagesViaApi(7);
+			// Periodically cleanup old messages (once per hour via modulo check)
+			if (Date.now() % 3600000 < this.options.pollIntervalMs) {
+				await this.cleanupMessagesViaApi(7);
+			}
+		} catch (err) {
+			this.log(`Error listing API queue messages: ${err}`);
 		}
 
 		// Also check file queue for legacy/fallback messages
@@ -1862,6 +1878,31 @@ export class Brain {
 				status: dbStatus as Task["status"],
 				assignedTo: armId,
 			});
+
+			const now = new Date().toISOString();
+			const armPatch: {
+				lastActivityAt: string;
+				status?: string;
+				currentTaskId?: string;
+				currentTaskSubject?: string;
+			} = {
+				lastActivityAt: now,
+			};
+			if (dbStatus === "in_progress") {
+				armPatch.status = "busy";
+				armPatch.currentTaskId = taskId;
+				armPatch.currentTaskSubject = taskId;
+			}
+			await this.patchArmViaApi(armId, armPatch);
+
+			const trackedArm = this.arms.get(armId);
+			if (trackedArm) {
+				trackedArm.lastActivity = new Date();
+				if (dbStatus === "in_progress") {
+					trackedArm.status = "busy";
+					trackedArm.currentTask = taskId;
+				}
+			}
 
 			this.logActivity("brain", "task_status_update", taskId, {
 				armId,
@@ -2626,6 +2667,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		}
 
 		this.state.completedToday++;
+		this.state.completedTaskCount++;
 
 		const taskSubject =
 			task?.subject || (await this.getTaskSubjectFromApi(taskId));
@@ -2666,7 +2708,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			}
 		}
 
-		this.completedTaskCount++;
+		this.completedTaskCount = this.state.completedTaskCount;
 		if (this.completedTaskCount % 5 === 0) {
 			const largeFiles = await this.findLargeFiles(400);
 			if (largeFiles.length > 0) {
@@ -2961,12 +3003,15 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		// Update last activity for the arm
 		const now = new Date().toISOString();
+		const reportedArmStatus = report.status === "blocked" ? "idle" : "busy";
 		await this.patchArmViaApi(report.armId, {
 			lastActivityAt: now,
+			status: reportedArmStatus,
 		});
 		const reportingArm = this.arms.get(report.armId);
 		if (reportingArm) {
 			reportingArm.lastActivity = new Date();
+			reportingArm.status = reportedArmStatus;
 		}
 
 		const statusReportResponse = await this.apiRequest<{
@@ -4704,21 +4749,21 @@ Report findings using bug resolution workflow.`;
 				this.logActivity("brain", "arm_initialized", armId, {
 					source: "initial_prompt_sent",
 				});
+				this.initializedArmIds.add(armId);
+
+				// Create a placeholder task record so hasReceivedInitialTasks persists across restarts.
+				await this.createTaskViaApi({
+					id: `init-${armId}`,
+					subject: `Arm ${armId} initialized`,
+					description: "Initial prompt sent to arm",
+					status: "completed",
+					priority: "normal",
+					sourceType: "system",
+					sourceRef: "arm-init",
+				});
 			} else {
 				this.log(`Failed to send initial prompt to ${armId}`);
 			}
-
-			// Create a placeholder task record so hasReceivedInitialTasks returns true next time
-			// This prevents sending the prompt multiple times
-			await this.createTaskViaApi({
-				id: `init-${armId}`,
-				subject: `Arm ${armId} initialized`,
-				description: "Initial prompt sent to arm",
-				status: "completed",
-				priority: "normal",
-				sourceType: "system",
-				sourceRef: "arm-init",
-			});
 		}
 	}
 
@@ -4726,9 +4771,22 @@ Report findings using bug resolution workflow.`;
 	 * Check if an arm has already received the initial prompt (derived from database)
 	 */
 	private async hasReceivedInitialTasks(armId: string): Promise<boolean> {
-		// Check if the initialization placeholder task exists
-		const result = await this.getTaskFromApi(`init-${armId}`);
-		return !!result;
+		if (!this.initializedArmIdsLoaded) {
+			const completedTasks = await this.listTasksFromApi({
+				status: ["completed"],
+				limit: 5000,
+			});
+			for (const task of completedTasks) {
+				if (!task.id.startsWith("init-")) continue;
+				const markerArmId = task.id.slice("init-".length);
+				if (markerArmId) {
+					this.initializedArmIds.add(markerArmId);
+				}
+			}
+			this.initializedArmIdsLoaded = true;
+		}
+
+		return this.initializedArmIds.has(armId);
 	}
 
 	/**
@@ -4809,6 +4867,15 @@ Report findings using bug resolution workflow.`;
 					await this.syncArmStatus(arm.id, "stopped");
 					continue;
 				}
+				if (this.isActiveHarnessState(harnessState.state)) {
+					this.log(
+						`Arm ${arm.id} [${armDomain}]: harness state is "${harnessState.state}", skipping idle prompt`,
+					);
+					if (arm.status !== "busy") {
+						await this.syncArmStatus(arm.id, "busy");
+					}
+					continue;
+				}
 			}
 
 			// Double-check state machine - don't prompt if it knows the arm has work
@@ -4825,17 +4892,16 @@ Report findings using bug resolution workflow.`;
 				}
 			}
 
-			// Check for recent event stream activity - arms emit events when actively working
-			const lastEventTime = this.lastArmEventTime.get(arm.id);
-			if (lastEventTime) {
-				const secondsSinceEvent = (Date.now() - lastEventTime.getTime()) / 1000;
-				if (secondsSinceEvent < 160) {
-					// Arm had activity in the last 160 seconds - it's likely processing
-					this.log(
-						`Arm ${arm.id} [${armDomain}]: recent event ${secondsSinceEvent.toFixed(1)}s ago, skipping prompt`,
-					);
-					continue;
-				}
+			// Check recent activity across all known signal sources before nudging.
+			const recentSignal = await this.getRecentArmActivitySignal(
+				arm.id,
+				160 * 1000,
+			);
+			if (recentSignal.recent) {
+				this.log(
+					`Arm ${arm.id} [${armDomain}]: ${recentSignal.reason || "recent activity"}, skipping prompt`,
+				);
+				continue;
 			}
 
 			// Get all unassigned pending tasks - any idle arm should be able to work on them
@@ -4931,6 +4997,132 @@ Report findings using bug resolution workflow.`;
 		};
 
 		return patterns[domain] ?? patterns["general"] ?? [];
+	}
+
+	private isActiveHarnessState(state: string): boolean {
+		return (
+			state === "initializing" ||
+			state === "processing" ||
+			state === "executing" ||
+			state === "waiting_approval" ||
+			state === "busy"
+		);
+	}
+
+	private toEpochMs(value: unknown): number | null {
+		if (typeof value !== "number" || !Number.isFinite(value)) {
+			return null;
+		}
+		// OpenCode message times may be seconds while JS dates are milliseconds.
+		return value < 1_000_000_000_000 ? value * 1000 : value;
+	}
+
+	private extractMessageTimestampMs(message: Record<string, unknown>): number | null {
+		const info = message.info;
+		if (!info || typeof info !== "object") {
+			return null;
+		}
+		const time = (info as Record<string, unknown>).time;
+		if (!time || typeof time !== "object") {
+			return null;
+		}
+		const timeObj = time as Record<string, unknown>;
+		return (
+			this.toEpochMs(timeObj.completed) ??
+			this.toEpochMs(timeObj.created) ??
+			null
+		);
+	}
+
+	private async getRecentArmMessageTimestampMs(
+		armId: string,
+		limit = 20,
+	): Promise<number | null> {
+		const response = await this.apiRequest<{ messages?: unknown[] }>(
+			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
+			{},
+			1500,
+		);
+		const messages = response?.messages;
+		if (!messages || messages.length === 0) {
+			return null;
+		}
+
+		let latestMs: number | null = null;
+		for (const message of messages) {
+			if (!message || typeof message !== "object") {
+				continue;
+			}
+			const timestampMs = this.extractMessageTimestampMs(
+				message as Record<string, unknown>,
+			);
+			if (
+				timestampMs !== null &&
+				(latestMs === null || timestampMs > latestMs)
+			) {
+				latestMs = timestampMs;
+			}
+		}
+
+		return latestMs;
+	}
+
+	private async getRecentArmActivitySignal(
+		armId: string,
+		thresholdMs: number,
+	): Promise<{ recent: boolean; reason?: string }> {
+		const nowMs = Date.now();
+
+		const lastNatsEvent = this.lastArmEventTime.get(armId);
+		if (lastNatsEvent) {
+			const ageMs = nowMs - lastNatsEvent.getTime();
+			if (ageMs < thresholdMs) {
+				return {
+					recent: true,
+					reason: `recent NATS arm event ${Math.round(ageMs / 1000)}s ago`,
+				};
+			}
+		}
+
+		if (eventStore.isInitialized()) {
+			try {
+				const recentArmEvents = await eventStore.getArmEvents(armId, 25);
+				let latestJetStreamMs: number | null = null;
+				for (const event of recentArmEvents) {
+					const timestampMs = new Date(event.timestamp).getTime();
+					if (
+						Number.isFinite(timestampMs) &&
+						(latestJetStreamMs === null || timestampMs > latestJetStreamMs)
+					) {
+						latestJetStreamMs = timestampMs;
+					}
+				}
+				if (latestJetStreamMs !== null) {
+					const ageMs = nowMs - latestJetStreamMs;
+					if (ageMs < thresholdMs) {
+						return {
+							recent: true,
+							reason: `recent JetStream arm event ${Math.round(ageMs / 1000)}s ago`,
+						};
+					}
+				}
+			} catch {
+				// Best effort only.
+			}
+		}
+
+		const latestMessageMs = await this.getRecentArmMessageTimestampMs(armId, 20);
+		if (latestMessageMs !== null) {
+			const ageMs = nowMs - latestMessageMs;
+			if (ageMs >= 0 && ageMs < thresholdMs) {
+				return {
+					recent: true,
+					reason: `recent session message ${Math.round(ageMs / 1000)}s ago`,
+				};
+			}
+		}
+
+		return { recent: false };
 	}
 
 	/**
@@ -5591,18 +5783,16 @@ Report findings using bug resolution workflow.`;
 						}
 					}
 					// No state machine or state machine agrees it's idle - sync them
-					// But first check if arm has recent event activity (might be processing)
-					const lastEventTime = this.lastArmEventTime.get(arm.id);
-					if (lastEventTime) {
-						const secondsSinceEvent =
-							(Date.now() - lastEventTime.getTime()) / 1000;
-						if (secondsSinceEvent < 60) {
-							// Arm had activity in the last 60 seconds - don't sync to idle yet
-							this.log(
-								`Arm ${arm.name}: recent event ${secondsSinceEvent.toFixed(1)}s ago, keeping busy`,
-							);
-							continue;
-						}
+					// But first check if any fresh activity signal says it's still active.
+					const recentSignal = await this.getRecentArmActivitySignal(
+						arm.id,
+						60 * 1000,
+					);
+					if (recentSignal.recent) {
+						this.log(
+							`Arm ${arm.name}: ${recentSignal.reason || "recent activity"}, keeping busy`,
+						);
+						continue;
 					}
 					this.log(
 						`Arm ${arm.name}: harness state is "idle" but DB says "busy", syncing...`,
@@ -6340,6 +6530,7 @@ Report findings using bug resolution workflow.`;
 					lastPollAt?: string;
 					pendingTasks: number;
 					completedToday: number;
+					completedTaskCount: number;
 				};
 			}>("/api/brain/state");
 
@@ -6353,7 +6544,9 @@ Report findings using bug resolution workflow.`;
 				lastPollAt: response.state.lastPollAt,
 				pendingTasks: response.state.pendingTasks,
 				completedToday: response.state.completedToday,
+				completedTaskCount: response.state.completedTaskCount ?? 0,
 			};
+			this.completedTaskCount = this.state.completedTaskCount;
 		} catch (err) {
 			console.error(`Failed to load brain state via API: ${err}`);
 		}
@@ -6370,6 +6563,7 @@ Report findings using bug resolution workflow.`;
 					lastPollAt: this.state.lastPollAt,
 					pendingTasks: this.state.pendingTasks,
 					completedToday: this.state.completedToday,
+					completedTaskCount: this.state.completedTaskCount,
 				}),
 			});
 		} catch (err) {
@@ -6421,6 +6615,8 @@ Report findings using bug resolution workflow.`;
 
 			let newTasksCount = 0;
 			let updatedTasksCount = 0;
+			const existingTasks = await this.listTasksFromApi({ limit: 5000 });
+			const existingById = new Map(existingTasks.map((task) => [task.id, task]));
 
 			for (const filePath of planFiles) {
 				const result = await parsePlanFile(filePath);
@@ -6443,7 +6639,7 @@ Report findings using bug resolution workflow.`;
 				const dbTasks = tasksToDatabaseFormat(result.tasks);
 
 				for (const task of dbTasks) {
-					const existing = await this.getTaskFromApi(task.id);
+					const existing = existingById.get(task.id) || null;
 
 					if (!existing) {
 						const created = await this.createTaskViaApi({
@@ -6467,6 +6663,7 @@ Report findings using bug resolution workflow.`;
 						});
 						if (created) {
 							newTasksCount++;
+							existingById.set(created.id, created);
 						}
 					} else if (
 						existing.status === "pending" &&
@@ -6477,6 +6674,7 @@ Report findings using bug resolution workflow.`;
 						});
 						if (updated) {
 							updatedTasksCount++;
+							existingById.set(updated.id, updated);
 						}
 					}
 				}

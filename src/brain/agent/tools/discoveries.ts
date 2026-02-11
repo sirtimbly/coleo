@@ -23,39 +23,24 @@ export class GetDiscoveriesTool extends BrainTool {
   async execute(input: { filePattern?: string; severity?: string[]; limit?: number }): Promise<ToolResult<DiscoveryItem[]>> {
     try {
       const limit = input.limit ?? 50;
-      
-      let query = `
-        SELECT id, kind, title, details, severity, file_path
-        FROM discoveries
-        WHERE status = 'open'
-      `;
-      
-      const params: string[] = [];
-      
-      if (input.severity && input.severity.length > 0) {
-        query += ` AND severity IN (${input.severity.map(() => "?").join(",")})`;
-        params.push(...input.severity);
-      }
-      
-      query += ` ORDER BY created_at DESC LIMIT ?`;
-      params.push(limit.toString());
-      
-      const results = this.context.db.query(query).all(...params) as Array<{
-        id: string;
-        kind: string;
-        title: string;
-        details: string;
-        severity: string;
-        file_path: string | null;
-      }>;
-      
-      const discoveries: DiscoveryItem[] = results.map(r => ({
+
+      const results = this.context.db.listDiscoveries({
+        status: "open",
+        severities: input.severity,
+        limit,
+      });
+
+      const filtered = input.filePattern
+        ? results.filter((r) => (r.filePath || "").includes(input.filePattern!))
+        : results;
+
+      const discoveries: DiscoveryItem[] = filtered.map(r => ({
         id: r.id,
         kind: r.kind,
         title: r.title,
         details: r.details,
         severity: r.severity,
-        filePath: r.file_path || undefined,
+        filePath: r.filePath || undefined,
       }));
       
       return { success: true, data: discoveries };

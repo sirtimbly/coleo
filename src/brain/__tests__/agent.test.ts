@@ -9,6 +9,7 @@ import { BrainAgent } from "../agent";
 import { Database } from "bun:sqlite";
 import { mkdir, rm } from "fs/promises";
 import { join } from "path";
+import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 
 describe("BrainAgent", () => {
   let db: Database;
@@ -55,7 +56,7 @@ describe("BrainAgent", () => {
     `);
 
     const context = {
-      db,
+      db: createSqliteBrainDb(db),
       projectRoot: testDir,
       coleoDir,
     };
@@ -127,7 +128,7 @@ describe("BrainAgent - Intent Recognition", () => {
     db.exec(`PRAGMA journal_mode = WAL;`);
 
     agent = new BrainAgent({
-      db,
+      db: createSqliteBrainDb(db),
       projectRoot: testDir,
       coleoDir,
     });
@@ -283,7 +284,7 @@ describe("BrainAgent - Tool Execution", () => {
     `);
 
     agent = new BrainAgent({
-      db,
+      db: createSqliteBrainDb(db),
       projectRoot: projectDir,
       coleoDir,
     });

@@ -38,78 +38,39 @@ export class GetStatusReportsTool extends BrainTool {
   }): Promise<ToolResult<StatusReportItem[]>> {
     try {
       const limit = input.limit ?? 20;
-      let query = `
-        SELECT 
-          sr.id,
-          sr.task_id,
-          sr.arm_id,
-          sr.status,
-          sr.summary,
-          sr.issues,
-          sr.blockers,
-          sr.next_steps,
-          sr.files_changed,
-          sr.tests_status,
-          sr.created_at,
-          t.subject as task_subject
-        FROM status_reports sr
-        LEFT JOIN tasks t ON sr.task_id = t.id
-        WHERE 1=1
-      `;
-      
-      const params: string[] = [];
-      
-      if (input.taskId) {
-        query += " AND sr.task_id = ?";
-        params.push(input.taskId);
+
+      const results = this.context.db.listStatusReports({
+        taskId: input.taskId,
+        armId: input.armId,
+        status: input.status,
+        since: input.since,
+        limit,
+      });
+
+      const taskSubjectById = new Map<string, string>();
+      if (results.some((r) => !!r.taskId)) {
+        const taskIds = Array.from(new Set(results.map((r) => r.taskId)));
+        for (const taskId of taskIds) {
+          const task = this.context.db.getTask(taskId);
+          if (task) {
+            taskSubjectById.set(task.id, task.subject);
+          }
+        }
       }
-      
-      if (input.armId) {
-        query += " AND sr.arm_id = ?";
-        params.push(input.armId);
-      }
-      
-      if (input.status) {
-        query += " AND sr.status = ?";
-        params.push(input.status);
-      }
-      
-      if (input.since) {
-        query += " AND sr.created_at > ?";
-        params.push(input.since);
-      }
-      
-      query += ` ORDER BY sr.created_at DESC LIMIT ?`;
-      params.push(limit.toString());
-      
-      const results = this.context.db.query(query).all(...params) as Array<{
-        id: string;
-        task_id: string;
-        arm_id: string;
-        status: string;
-        summary: string;
-        issues: string;
-        blockers: string;
-        next_steps: string | null;
-        files_changed: string;
-        tests_status: string | null;
-        created_at: string;
-        task_subject: string | null;
-      }>;
-      
-      const reports: StatusReportItem[] = results.map(r => ({
+
+      const reports: StatusReportItem[] = results.map((r) => ({
         id: r.id,
-        taskId: r.task_id,
-        taskSubject: r.task_subject || undefined,
-        armId: r.arm_id,
+        taskId: r.taskId,
+        taskSubject: taskSubjectById.get(r.taskId),
+        armId: r.armId,
         status: r.status as StatusReportItem["status"],
         summary: r.summary,
-        issues: JSON.parse(r.issues || "[]") as string[],
-        blockers: JSON.parse(r.blockers || "[]") as string[],
-        nextSteps: r.next_steps || undefined,
-        filesChanged: JSON.parse(r.files_changed || "[]") as string[],
-        testsStatus: r.tests_status as "passing" | "failing" | "not_run" | undefined,
-        createdAt: r.created_at,
+        issues: r.issues,
+        blockers: r.blockers,
+        nextSteps: r.nextSteps || undefined,
+        filesChanged: r.filesChanged,
+        testsStatus: r.testsStatus as "passing" | "failing" | "not_run" | undefined,
+        createdAt: r.createdAt,
       }));
       
       return { success: true, data: reports };

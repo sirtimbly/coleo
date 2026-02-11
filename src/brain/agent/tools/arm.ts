@@ -20,35 +20,19 @@ export class GetArmStatusTool extends BrainTool {
 
   async execute(input: { armId?: string }): Promise<ToolResult<ArmStatusItem[]>> {
     try {
-      let query = `
-        SELECT id, name, status, current_task_subject, last_activity_at
-        FROM arms
-        WHERE status != 'stopped'
-      `;
-      
-      const params: string[] = [];
-      
-      if (input.armId) {
-        query += " AND id = ?";
-        params.push(input.armId);
-      }
-      
-      query += " ORDER BY last_activity_at DESC";
-      
-      const results = this.context.db.query(query).all(...params) as Array<{
-        id: string;
-        name: string;
-        status: string;
-        current_task_subject: string | null;
-        last_activity_at: string | null;
-      }>;
-      
-      const arms: ArmStatusItem[] = results.map(r => ({
+      const results = this.context.db.listArms({
+        armId: input.armId,
+        includeStopped: false,
+      });
+
+      const arms: ArmStatusItem[] = results
+        .sort((a, b) => (b.lastActivityAt || "").localeCompare(a.lastActivityAt || ""))
+        .map((r) => ({
         id: r.id,
         name: r.name,
         status: r.status,
-        currentTask: r.current_task_subject || undefined,
-        lastActivity: r.last_activity_at || undefined,
+        currentTask: r.currentTaskSubject || undefined,
+        lastActivity: r.lastActivityAt || undefined,
       }));
       
       return { success: true, data: arms };

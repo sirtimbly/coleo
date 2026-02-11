@@ -93,8 +93,30 @@ export async function generateTaskDetermination(
 	// Step 3: Return next pending task from database
 	// Don't create tasks from plan here - that's the sync process's job
 	const pendingTask = getNextPendingTask(db, phaseInfo.label);
-	if (pendingTask) {
-		return finalize(pendingTask);
+	const pendingBug = getNextPendingBug(db);
+	if (pendingTask || pendingBug) {
+		const shouldPickBug =
+			!!pendingBug &&
+			(!pendingTask || Math.random() < 0.5);
+		if (shouldPickBug && pendingBug) {
+			return finalize({
+				task: {
+					id: pendingBug.id,
+					subject: pendingBug.title,
+					description: pendingBug.description,
+					classification: "bug_fix",
+					priority: mapBugPriority(pendingBug.priority),
+					domain: "bug_fix",
+				},
+				reasoning: `Returning next pending bug from database: ${pendingBug.title}${pendingTask ? " (task queue also available)" : ""}`,
+			});
+		}
+		if (pendingTask) {
+			return finalize({
+				...pendingTask,
+				reasoning: `${pendingTask.reasoning}${pendingBug ? " (bug queue also available)" : ""}`,
+			});
+		}
 	}
 
 	// No tasks available
@@ -116,20 +138,20 @@ interface PhaseInfo {
  * Returns the most common phase value from pending/in-progress tasks.
  */
 function buildPhaseInfoFromDatabase(db: BrainDb): PhaseInfo {
-	// Get phase information from tasks in the database
-	const phases = db
-		.query(`
-    SELECT phase
-    FROM tasks
-    WHERE phase IS NOT NULL AND phase != ''
-    GROUP BY phase
-    ORDER BY COUNT(*) DESC
-    LIMIT 1
-  `)
-		.all() as Array<{ phase: string }> | null;
+	const phaseCounts = new Map<string, number>();
+	const rows = db.listTasks({ limit: 500 });
 
-	if (phases && phases.length > 0 && phases[0]) {
-		const phase = phases[0].phase;
+	for (const row of rows) {
+		const phase = (row.phase || "").trim();
+		if (!phase) {
+			continue;
+		}
+		phaseCounts.set(phase, (phaseCounts.get(phase) || 0) + 1);
+	}
+
+	const dominant = Array.from(phaseCounts.entries()).sort((a, b) => b[1] - a[1])[0];
+	if (dominant?.[0]) {
+		const phase = dominant[0];
 		return { label: phase, header: phase };
 	}
 
@@ -165,40 +187,41 @@ function pickExistingActiveTask(
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
 	const activeTasks = db
-		.query(`
-    SELECT id, subject, description, status, priority, domain, assigned_arms, consensus_status
-    FROM tasks
-    WHERE status IN ('claimed', 'in_progress', 'completing', 'verification_pending')
-      AND (consensus_status IS NULL OR consensus_status != 'reached')
-      AND (phase = ? OR phase = '' OR phase IS NULL)
-    ORDER BY
-      CASE status
-        WHEN 'in_progress' THEN 1
-        WHEN 'completing' THEN 2
-        WHEN 'claimed' THEN 3
-        WHEN 'verification_pending' THEN 4
-        ELSE 5
-      END,
-      updated_at DESC,
-      created_at ASC
-  `)
-		.all(phaseValue) as Array<{
-		id: string;
-		subject: string;
-		description: string;
-		status: string;
-		priority: string;
-		domain: string | null;
-		assigned_arms: string | null;
-		consensus_status: string | null;
-	}>;
+		.listTasks({
+			statuses: ["claimed", "in_progress", "completing", "verification_pending"],
+			phase: phaseValue || undefined,
+			sort: "updated_desc",
+			limit: 200,
+		})
+		.filter((task) => !task.consensusStatus || task.consensusStatus !== "reached")
+		.sort((a, b) => {
+			const rank = (status: string): number => {
+				switch (status) {
+					case "in_progress":
+						return 1;
+					case "completing":
+						return 2;
+					case "claimed":
+						return 3;
+					case "verification_pending":
+						return 4;
+					default:
+						return 5;
+				}
+			};
+			const diff = rank(a.status) - rank(b.status);
+			if (diff !== 0) {
+				return diff;
+			}
+			return a.createdAt.localeCompare(b.createdAt);
+		});
 
 	if (activeTasks.length === 0) {
 		return null;
 	}
 
 	const task = activeTasks[0]!;
-	const assignedArms = parseArmsFromJson(task.assigned_arms || "[]");
+	const assignedArms = [] as string[];
 
 	return {
 		task: {
@@ -209,7 +232,7 @@ function pickExistingActiveTask(
 			priority: task.priority,
 			domain: task.domain || undefined,
 		},
-		reasoning: `Active ${task.status} task with ${assignedArms.length} arm(s) assigned${task.consensus_status ? `, consensus: ${task.consensus_status}` : ""}`,
+		reasoning: `Active ${task.status} task with ${assignedArms.length} arm(s) assigned${task.consensusStatus ? `, consensus: ${task.consensusStatus}` : ""}`,
 	};
 }
 
@@ -218,53 +241,31 @@ function tryUnblockDependencies(
 	phaseLabel: string,
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
-	const blockedTasks = db
-		.query(`
-    SELECT id, subject, description, priority, domain
-    FROM tasks
-    WHERE status = 'pending'
-      AND dependency_blocked = 1
-      AND (phase = ? OR phase = '' OR phase IS NULL)
-    ORDER BY created_at ASC
-  `)
-		.all(phaseValue) as Array<{
-		id: string;
-		subject: string;
-		description: string;
-		priority: string;
-		domain: string | null;
-	}>;
+	const blockedTasks = db.listTasks({
+		statuses: ["pending"],
+		dependencyBlocked: true,
+		phase: phaseValue || undefined,
+		sort: "created_asc",
+		limit: 200,
+	});
 
 	for (const blockedTask of blockedTasks) {
-		const dependencies = db
-			.query(`
-      SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?
-    `)
-			.all(blockedTask.id) as Array<{ depends_on_task_id: string }>;
+		const dependencies = db.listTaskDependencies(blockedTask.id);
 
 		const unmetDeps: string[] = [];
 		for (const dep of dependencies) {
-			const depTask = db
-				.query(`
-        SELECT status, consensus_status FROM tasks WHERE id = ?
-      `)
-				.get(dep.depends_on_task_id) as
-				| { status: string; consensus_status: string | null }
-				| undefined;
+			const depTask = db.getTask(dep.dependsOnTaskId);
 
 			if (
 				!depTask ||
-				(depTask.status !== "completed" &&
-					depTask.consensus_status !== "reached")
+				(depTask.status !== "completed" && depTask.consensusStatus !== "reached")
 			) {
-				unmetDeps.push(dep.depends_on_task_id);
+				unmetDeps.push(dep.dependsOnTaskId);
 			}
 		}
 
 		if (unmetDeps.length === 0) {
-			db.run(`UPDATE tasks SET dependency_blocked = 0 WHERE id = ?`, [
-				blockedTask.id,
-			]);
+			db.updateTask(blockedTask.id, { dependencyBlocked: false });
 
 			return {
 				task: {
@@ -292,22 +293,14 @@ function getNextPendingTask(
 	phaseLabel: string,
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
-	const task = db
-		.query(`
-    SELECT id, subject, description, priority, domain
-    FROM tasks
-    WHERE status = 'pending'
-      AND dependency_blocked = 0
-      AND (phase = ? OR phase = '' OR phase IS NULL)
-      AND subject NOT LIKE 'Validate completion:%'
-    ORDER BY 
-      CASE priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END,
-      created_at ASC
-    LIMIT 1
-  `)
-		.get(phaseValue) as
-		| { id: string; subject: string; description: string; priority: string; domain: string | null }
-		| undefined;
+	const task = db.listTasks({
+		statuses: ["pending"],
+		dependencyBlocked: false,
+		phase: phaseValue || undefined,
+		excludeSubjectPrefix: "Validate completion:",
+		sort: "priority_then_created_asc",
+		limit: 1,
+	})[0];
 
 	if (!task) {
 		return null;
@@ -324,6 +317,64 @@ function getNextPendingTask(
 		},
 		reasoning: `Returning next pending task from database: ${task.subject}`,
 	};
+}
+
+function getNextPendingBug(db: BrainDb): {
+	id: string;
+	title: string;
+	description: string;
+	priority: string;
+	errorDetails?: string;
+} | null {
+	const bug = db
+		.listBugs({
+			statuses: ["open", "investigating"],
+			unassignedOnly: true,
+			limit: 50,
+		})
+		.sort((a, b) => {
+			const rank = (priority: string): number => {
+				switch (priority) {
+					case "critical":
+						return 1;
+					case "high":
+						return 2;
+					case "medium":
+						return 3;
+					default:
+						return 4;
+				}
+			};
+			const diff = rank(a.priority) - rank(b.priority);
+			if (diff !== 0) {
+				return diff;
+			}
+			return a.createdAt.localeCompare(b.createdAt);
+		})[0];
+
+	if (!bug) {
+		return null;
+	}
+
+	return {
+		id: bug.id,
+		title: bug.title,
+		description: bug.description,
+		priority: bug.priority,
+		errorDetails: bug.errorDetails || undefined,
+	};
+}
+
+function mapBugPriority(priority: string): Task["priority"] {
+	switch (priority) {
+		case "critical":
+		case "high":
+		case "low":
+			return priority;
+		case "medium":
+		default:
+			return "normal";
+	}
 }
 
 function createPlanTaskDeliverable(
@@ -352,38 +403,30 @@ function createPlanTaskDeliverable(
 	const sourceRef =
 		plan.currentPhase.split("\n")[0]?.substring(0, 100) || phaseLabel || "plan";
 
-	db.run(
-		`
-    INSERT INTO tasks (id, subject, description, status, priority, domain, phase, source_type, source_ref, created_at, updated_at)
-    VALUES (?, ?, ?, 'pending', ?, ?, ?, 'plan', ?, ?, ?)
-  `,
-		[
-			nextTask.id,
-			nextTask.subject,
-			nextTask.description,
-			nextTask.priority,
-			nextTask.domain || null,
-			phaseLabel || "Unknown Phase",
-			sourceRef,
-			now,
-			now,
-		],
-	);
+	db.createTask({
+		id: nextTask.id,
+		subject: nextTask.subject,
+		description: nextTask.description,
+		status: "pending",
+		priority: nextTask.priority,
+		domain: nextTask.domain || null,
+		phase: phaseLabel || "Unknown Phase",
+		sourceType: "plan",
+		sourceRef,
+	});
 
 	for (const dep of dependencies) {
-		db.run(
-			`
-      INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_task_id, dependency_type, auto_detected, reason)
-      VALUES (?, ?, 'finish_to_start', 1, ?)
-    `,
-			[nextTask.id, dep.taskId, dep.reason],
-		);
+		db.upsertTaskDependency({
+			taskId: nextTask.id,
+			dependsOnTaskId: dep.taskId,
+			dependencyType: "finish_to_start",
+			autoDetected: true,
+			reason: dep.reason,
+		});
 	}
 
 	if (dependencies.some((dep) => dep.blocking)) {
-		db.run(`UPDATE tasks SET dependency_blocked = 1 WHERE id = ?`, [
-			nextTask.id,
-		]);
+		db.updateTask(nextTask.id, { dependencyBlocked: true });
 	}
 
 	if (dependencyInfo.planUpdateReasons.length > 0) {
@@ -462,7 +505,7 @@ type TaskRow = {
 	id: string;
 	subject: string;
 	status: string;
-	consensus_status: string | null;
+	consensusStatus: string | null;
 	phase?: string | null;
 };
 
@@ -550,7 +593,7 @@ function resolvePlanDependencies(
 				taskId: task.id,
 				reason: `Plan dependency "${trimmed}"`,
 				blocking:
-					task.status !== "completed" && task.consensus_status !== "reached",
+					task.status !== "completed" && task.consensusStatus !== "reached",
 			});
 		});
 	}
@@ -574,18 +617,23 @@ function findTasksMatchingDependency(
 	}
 
 	const matches = new Map<string, TaskRow>();
+	const tasks = db.listTasks({
+		excludeStatuses: ["cancelled"],
+		limit: 500,
+	});
 	for (const pattern of patterns) {
-		const rows = db
-			.query(`
-      SELECT id, subject, status, consensus_status, phase
-      FROM tasks
-      WHERE status != 'cancelled'
-        AND (
-          LOWER(subject) LIKE LOWER(?)
-          OR LOWER(IFNULL(phase, '')) LIKE LOWER(?)
-        )
-    `)
-			.all(pattern, pattern) as TaskRow[];
+		const normalizedPattern = pattern.replace(/%/g, "").toLowerCase();
+		const rows = tasks.filter((task) => {
+			const subjectMatch = task.subject.toLowerCase().includes(normalizedPattern);
+			const phaseMatch = (task.phase || "").toLowerCase().includes(normalizedPattern);
+			return subjectMatch || phaseMatch;
+		}).map((task) => ({
+			id: task.id,
+			subject: task.subject,
+			status: task.status,
+			consensusStatus: task.consensusStatus,
+			phase: task.phase,
+		}));
 
 		for (const row of rows) {
 			if (!matches.has(row.id)) {
@@ -648,17 +696,17 @@ function detectKeywordDependencies(
 	];
 
 	const existingTasks = db
-		.query(`
-    SELECT id, subject, status, consensus_status FROM tasks
-    WHERE id != ?
-      AND status != 'cancelled'
-  `)
-		.all(taskId) as Array<{
-		id: string;
-		subject: string;
-		status: string;
-		consensus_status: string | null;
-	}>;
+		.listTasks({
+			excludeStatuses: ["cancelled"],
+			limit: 500,
+		})
+		.filter((task) => task.id !== taskId)
+		.map((task) => ({
+			id: task.id,
+			subject: task.subject,
+			status: task.status,
+			consensus_status: task.consensusStatus,
+		}));
 
 	for (const rule of dependencyRules) {
 		if (!rule.keywords.some((keyword) => subjectLower.includes(keyword))) {
@@ -702,13 +750,11 @@ function ensurePlanDependencyTask(
 
 	const label = options.phaseLabel || "Current Phase";
 	const subject = `Update plan dependencies for ${label}`;
-	const existing = db
-		.query(`
-    SELECT id FROM tasks
-    WHERE subject = ?
-      AND status NOT IN ('completed', 'failed', 'cancelled')
-  `)
-		.get(subject) as { id: string } | undefined;
+	const existing = db.listTasks({
+		includeSubject: subject,
+		excludeStatuses: ["completed", "failed", "cancelled"],
+		limit: 50,
+	}).find((task) => task.subject === subject);
 
 	if (existing) {
 		return;
@@ -724,21 +770,17 @@ function ensurePlanDependencyTask(
 		"Update the ### Dependencies section so the brain can schedule work confidently.",
 	].join("\n");
 
-	db.run(
-		`
-    INSERT INTO tasks (id, subject, description, status, priority, domain, phase, source_type, source_ref, created_at, updated_at)
-    VALUES (?, ?, ?, 'pending', 'normal', 'architect', ?, 'manual', ?, ?, ?)
-  `,
-		[
-			taskId,
-			subject,
-			description,
-			label,
-			`dependency:${label}`,
-			options.now,
-			options.now,
-		],
-	);
+	db.createTask({
+		id: taskId,
+		subject,
+		description,
+		status: "pending",
+		priority: "normal",
+		domain: "architect",
+		phase: label,
+		sourceType: "manual",
+		sourceRef: `dependency:${label}`,
+	});
 }
 
 function slugify(value: string): string {
@@ -773,12 +815,12 @@ function createNextTaskFromPlan(
 	phaseName: string,
 	now: string,
 ): PlanTask | null {
+	void now;
 	// Get already-created tasks for this phase
-	const existingTasks = db
-		.query(`
-    SELECT subject FROM tasks WHERE phase = ?
-  `)
-		.all(phaseName) as Array<{ subject: string }>;
+	const existingTasks = db.listTasks({
+		phase: phaseName,
+		limit: 500,
+	}).map((task) => ({ subject: task.subject }));
 
 	const existingSubjects = new Set(
 		existingTasks.map((t) => t.subject.toLowerCase()),
@@ -1092,24 +1134,16 @@ async function getCompletedTasks(
 	db: BrainDb,
 ): Promise<Array<{ subject: string; status: string; completedAt?: string }>> {
 	try {
-		const results = db
-			.query(`
-      SELECT subject, status, completed_at
-      FROM tasks
-      WHERE status = 'completed'
-      ORDER BY completed_at DESC
-      LIMIT 10
-    `)
-			.all() as Array<{
-			subject: string;
-			status: string;
-			completed_at: string | null;
-		}>;
+		const results = db.listTasks({
+			statuses: ["completed"],
+			sort: "completed_desc",
+			limit: 10,
+		});
 
 		return results.map((r) => ({
 			subject: r.subject,
 			status: r.status,
-			completedAt: r.completed_at || undefined,
+			completedAt: r.completedAt || undefined,
 		}));
 	} catch {
 		return [];
@@ -1119,38 +1153,38 @@ async function getCompletedTasks(
 async function getOpenDiscoveries(db: BrainDb): Promise<Discovery[]> {
 	try {
 		const results = db
-			.query(`
-      SELECT kind, title, details, file_path, line_number, severity, task_id, phase
-      FROM discoveries
-      WHERE status = 'open'
-      ORDER BY
-        CASE severity
-          WHEN 'error' THEN 1
-          WHEN 'warning' THEN 2
-          WHEN 'info' THEN 3
-        END,
-        created_at DESC
-      LIMIT 20
-    `)
-			.all() as Array<{
-			kind: string;
-			title: string;
-			details: string;
-			file_path: string | null;
-			line_number: number | null;
-			severity: string;
-			task_id: string | null;
-			phase: string | null;
-		}>;
+			.listDiscoveries({
+				status: "open",
+				limit: 100,
+			})
+			.sort((a, b) => {
+				const rank = (severity: string): number => {
+					switch (severity) {
+						case "error":
+							return 1;
+						case "warning":
+							return 2;
+						case "info":
+						default:
+							return 3;
+					}
+				};
+				const diff = rank(a.severity) - rank(b.severity);
+				if (diff !== 0) {
+					return diff;
+				}
+				return b.createdAt.localeCompare(a.createdAt);
+			})
+			.slice(0, 20);
 
 		return results.map((r) => ({
 			kind: r.kind as Discovery["kind"],
 			title: r.title,
 			details: r.details,
-			file: r.file_path || undefined,
-			line: r.line_number || undefined,
+			file: r.filePath || undefined,
+			line: r.lineNumber || undefined,
 			severity: (r.severity || "info") as Discovery["severity"],
-			taskId: r.task_id || undefined,
+			taskId: r.taskId || undefined,
 			phase: (r.phase || "implementation") as Discovery["phase"],
 		}));
 	} catch {
@@ -1169,45 +1203,55 @@ async function getTaskRelatedDiscoveries(
 ): Promise<Discovery[]> {
 	try {
 		const results = db
-			.query(`
-      SELECT kind, title, details, file_path, line_number, severity, task_id, phase, arm_id
-      FROM discoveries
-      WHERE task_id = ?
-        AND status = 'open'
-      ORDER BY
-        CASE phase
-          WHEN 'exploration' THEN 1
-          WHEN 'implementation' THEN 2
-          WHEN 'verification' THEN 3
-        END,
-        CASE severity
-          WHEN 'error' THEN 1
-          WHEN 'warning' THEN 2
-          WHEN 'info' THEN 3
-        END,
-        created_at DESC
-      LIMIT 30
-    `)
-			.all(taskId) as Array<{
-			kind: string;
-			title: string;
-			details: string;
-			file_path: string | null;
-			line_number: number | null;
-			severity: string;
-			task_id: string | null;
-			phase: string | null;
-			arm_id: string;
-		}>;
+			.listDiscoveries({
+				status: "open",
+				taskId,
+				limit: 200,
+			})
+			.sort((a, b) => {
+				const phaseRank = (phase: string | null | undefined): number => {
+					switch (phase) {
+						case "exploration":
+							return 1;
+						case "implementation":
+							return 2;
+						case "verification":
+							return 3;
+						default:
+							return 4;
+					}
+				};
+				const severityRank = (severity: string): number => {
+					switch (severity) {
+						case "error":
+							return 1;
+						case "warning":
+							return 2;
+						case "info":
+						default:
+							return 3;
+					}
+				};
+				const phaseDiff = phaseRank(a.phase) - phaseRank(b.phase);
+				if (phaseDiff !== 0) {
+					return phaseDiff;
+				}
+				const severityDiff = severityRank(a.severity) - severityRank(b.severity);
+				if (severityDiff !== 0) {
+					return severityDiff;
+				}
+				return b.createdAt.localeCompare(a.createdAt);
+			})
+			.slice(0, 30);
 
 		return results.map((r) => ({
 			kind: r.kind as Discovery["kind"],
 			title: r.title,
 			details: r.details,
-			file: r.file_path || undefined,
-			line: r.line_number || undefined,
+			file: r.filePath || undefined,
+			line: r.lineNumber || undefined,
 			severity: (r.severity || "info") as Discovery["severity"],
-			taskId: r.task_id || undefined,
+			taskId: r.taskId || undefined,
 			phase: (r.phase || "implementation") as Discovery["phase"],
 		}));
 	} catch {
@@ -1220,40 +1264,94 @@ async function getTaskBySubject(
 	subject: string,
 ): Promise<Task | null> {
 	try {
-		const result = db
-			.query(`
-      SELECT id, subject, description, status, priority, domain, metadata
-      FROM tasks
-      WHERE subject LIKE ? OR id = ?
-      LIMIT 1
-    `)
-			.get(`%${subject}%`, subject) as
-			| {
-					id: string;
-					subject: string;
-					description: string;
-					status: string;
-					priority: string;
-					domain: string | null;
-					metadata: string;
-			  }
-			| undefined;
+		const result = db.getTask(subject) || db.listTasks({
+			includeSubject: subject,
+			limit: 1,
+		})[0];
 
-		if (!result) return null;
+		if (result) {
+			return {
+				id: result.id,
+				subject: result.subject,
+				description: result.description,
+				status: result.status as Task["status"],
+				priority: result.priority as Task["priority"],
+				domain: result.domain || undefined,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+				context: undefined,
+			};
+		}
+	} catch {
+		// fall through to bug lookup
+	}
+
+	const bug = await getBugBySubject(db, subject);
+	if (!bug) {
+		return null;
+	}
+
+	return {
+		id: bug.id,
+		subject: bug.title,
+		description: bug.description,
+		status: mapBugStatusToTaskStatus(bug.status),
+		priority: mapBugPriority(bug.priority),
+		domain: "bug_fix",
+		createdAt: new Date(),
+		updatedAt: new Date(),
+		context: bug.errorDetails
+			? { notes: `Bug error details: ${bug.errorDetails}` }
+			: undefined,
+	};
+}
+
+async function getBugBySubject(
+	db: BrainDb,
+	subject: string,
+): Promise<{
+	id: string;
+	title: string;
+	description: string;
+	priority: string;
+	status: string;
+	errorDetails?: string;
+} | null> {
+	try {
+		const result = db.getBug(subject) || db.listBugs({
+			includeTitle: subject,
+			limit: 1,
+		})[0];
+
+		if (!result) {
+			return null;
+		}
 
 		return {
 			id: result.id,
-			subject: result.subject,
+			title: result.title,
 			description: result.description,
-			status: result.status as Task["status"],
-			priority: result.priority as Task["priority"],
-			domain: result.domain || undefined,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-			context: result.metadata ? { notes: result.metadata } : undefined,
+			priority: result.priority,
+			status: result.status,
+			errorDetails: result.errorDetails || undefined,
 		};
 	} catch {
 		return null;
+	}
+}
+
+function mapBugStatusToTaskStatus(status: string): Task["status"] {
+	switch (status) {
+		case "fixing":
+		case "verifying":
+			return "in_progress";
+		case "resolved":
+		case "closed":
+			return "completed";
+		case "open":
+		case "investigating":
+		default:
+			return "pending";
 	}
 }
 
