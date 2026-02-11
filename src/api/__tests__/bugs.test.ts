@@ -370,4 +370,138 @@ describe("bugs API", () => {
       expect(body.error).toContain("Bug not found");
     });
   });
+
+  describe("POST /api/bugs/:id/archive", () => {
+    it("should archive a resolved bug", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES ('bug-resolved', 'Resolved Bug', 'Description', 'arm_reported', 'resolved', 'medium', 0, ?, ?, 0)
+      `, [now, now]);
+
+      const response = await app.request("/api/bugs/bug-resolved/archive", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean; archived: boolean };
+      expect(body.success).toBe(true);
+      expect(body.archived).toBe(true);
+
+      // Verify bug is archived in DB
+      const row = db.query("SELECT archived FROM bugs WHERE id = ?").get("bug-resolved") as { archived: number };
+      expect(row.archived).toBe(1);
+    });
+
+    it("should not archive an open bug", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES ('bug-open', 'Open Bug', 'Description', 'arm_reported', 'open', 'medium', 0, ?, ?, 0)
+      `, [now, now]);
+
+      const response = await app.request("/api/bugs/bug-open/archive", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("Only resolved or closed bugs can be archived");
+    });
+
+    it("should return 404 for non-existent bug", async () => {
+      const response = await app.request("/api/bugs/bug-999/archive", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe("POST /api/bugs/:id/unarchive", () => {
+    it("should unarchive an archived bug", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES ('bug-archived', 'Archived Bug', 'Description', 'arm_reported', 'resolved', 'medium', 0, ?, ?, 1)
+      `, [now, now]);
+
+      const response = await app.request("/api/bugs/bug-archived/unarchive", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean; archived: boolean };
+      expect(body.success).toBe(true);
+      expect(body.archived).toBe(false);
+
+      // Verify bug is unarchived in DB
+      const row = db.query("SELECT archived FROM bugs WHERE id = ?").get("bug-archived") as { archived: number };
+      expect(row.archived).toBe(0);
+    });
+
+    it("should return 404 for non-existent bug", async () => {
+      const response = await app.request("/api/bugs/bug-999/unarchive", {
+        method: "POST",
+      });
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  describe("GET /api/bugs with archived filter", () => {
+    it("should filter out archived bugs by default", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES 
+          ('bug-active', 'Active Bug', 'Description', 'arm_reported', 'open', 'medium', 0, ?, ?, 0),
+          ('bug-archived-filter', 'Archived Bug', 'Description', 'arm_reported', 'resolved', 'medium', 1, ?, ?, 1)
+      `, [now, now, now, now]);
+
+      const response = await app.request("/api/bugs");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[] };
+      const bugIds = body.bugs.map(b => b.id);
+      expect(bugIds).toContain("bug-active");
+      expect(bugIds).not.toContain("bug-archived-filter");
+    });
+
+    it("should show archived bugs when archived=true", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES 
+          ('bug-active-2', 'Active Bug 2', 'Description', 'arm_reported', 'open', 'medium', 0, ?, ?, 0),
+          ('bug-archived-filter-2', 'Archived Bug 2', 'Description', 'arm_reported', 'resolved', 'medium', 1, ?, ?, 1)
+      `, [now, now, now, now]);
+
+      const response = await app.request("/api/bugs?archived=true");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[] };
+      const bugIds = body.bugs.map(b => b.id);
+      expect(bugIds).not.toContain("bug-active-2");
+      expect(bugIds).toContain("bug-archived-filter-2");
+    });
+
+    it("should show non-archived bugs when archived=false", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES 
+          ('bug-active-3', 'Active Bug 3', 'Description', 'arm_reported', 'open', 'medium', 0, ?, ?, 0),
+          ('bug-archived-filter-3', 'Archived Bug 3', 'Description', 'arm_reported', 'resolved', 'medium', 1, ?, ?, 1)
+      `, [now, now, now, now]);
+
+      const response = await app.request("/api/bugs?archived=false");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[] };
+      const bugIds = body.bugs.map(b => b.id);
+      expect(bugIds).toContain("bug-active-3");
+      expect(bugIds).not.toContain("bug-archived-filter-3");
+    });
+  });
 });
