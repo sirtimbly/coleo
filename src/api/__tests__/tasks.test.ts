@@ -24,6 +24,7 @@ function createTestDb(): Database {
       consensus_status TEXT DEFAULT 'pending',
       plan_line_uid TEXT,
       sort_order INTEGER DEFAULT 0,
+      order_key TEXT,
       comment_count INTEGER DEFAULT 0,
       last_comment_at TEXT,
       mail_thread_id TEXT,
@@ -146,7 +147,7 @@ describe("tasks API", () => {
       expect(body3.task.id).toBe("task-3");
     });
 
-    it("should assign incremental sort_order (0, 1, 2)", async () => {
+    it("should assign order_key for fractional indexing", async () => {
       // Create first task
       await app.request("/api/tasks", {
         method: "POST",
@@ -161,7 +162,8 @@ describe("tasks API", () => {
         body: JSON.stringify({ subject: "Task 2", description: "Desc 2" }),
       });
       const body2 = await res2.json() as { task: Task };
-      expect(body2.task.sortOrder).toBe(1);
+      expect(body2.task.orderKey).toBeDefined();
+      expect(body2.task.orderKey).toBe("b");
 
       // Create third task
       const res3 = await app.request("/api/tasks", {
@@ -170,7 +172,8 @@ describe("tasks API", () => {
         body: JSON.stringify({ subject: "Task 3", description: "Desc 3" }),
       });
       const body3 = await res3.json() as { task: Task };
-      expect(body3.task.sortOrder).toBe(2);
+      expect(body3.task.orderKey).toBeDefined();
+      expect(body3.task.orderKey).toBe("c");
     });
 
     it("should reject missing subject", async () => {
@@ -349,14 +352,14 @@ describe("tasks API", () => {
 
   describe("GET /api/tasks (list)", () => {
     beforeEach(async () => {
-      // Create some test tasks
+      // Create some test tasks with order_key for fractional indexing
       const now = new Date().toISOString();
       db.run(`
-        INSERT INTO tasks (id, subject, description, status, priority, source_type, sort_order, created_at, updated_at)
+        INSERT INTO tasks (id, subject, description, status, priority, source_type, order_key, created_at, updated_at)
         VALUES 
-          ('task-1', 'First Task', 'Description 1', 'pending', 'normal', 'manual', 0, ?, ?),
-          ('task-2', 'Second Task', 'Description 2', 'in_progress', 'high', 'manual', 1, ?, ?),
-          ('task-3', 'Third Task', 'Description 3', 'completed', 'low', 'manual', 2, ?, ?)
+          ('task-1', 'First Task', 'Description 1', 'pending', 'normal', 'manual', 'a', ?, ?),
+          ('task-2', 'Second Task', 'Description 2', 'in_progress', 'high', 'manual', 'b', ?, ?),
+          ('task-3', 'Third Task', 'Description 3', 'completed', 'low', 'manual', 'c', ?, ?)
       `, [now, now, now, now, now, now]);
     });
 
@@ -417,7 +420,7 @@ describe("tasks API", () => {
       expect(body.pagination.total).toBe(3);
     });
 
-    it("should sort by sort_order ascending", async () => {
+    it("should sort by order_key ascending", async () => {
       const response = await app.request("/api/tasks");
       expect(response.status).toBe(200);
       
@@ -611,30 +614,52 @@ describe("tasks API", () => {
     beforeEach(async () => {
       const now = new Date().toISOString();
       db.run(`
-        INSERT INTO tasks (id, subject, description, status, priority, source_type, sort_order, created_at, updated_at)
+        INSERT INTO tasks (id, subject, description, status, priority, source_type, order_key, created_at, updated_at)
         VALUES 
-          ('task-a', 'Task A', 'First', 'pending', 'normal', 'manual', 0, ?, ?),
-          ('task-b', 'Task B', 'Second', 'pending', 'normal', 'manual', 1, ?, ?),
-          ('task-c', 'Task C', 'Third', 'pending', 'normal', 'manual', 2, ?, ?),
-          ('task-d', 'Task D', 'Fourth', 'pending', 'normal', 'manual', 3, ?, ?)
+          ('task-a', 'Task A', 'First', 'pending', 'normal', 'manual', 'a', ?, ?),
+          ('task-b', 'Task B', 'Second', 'pending', 'normal', 'manual', 'b', ?, ?),
+          ('task-c', 'Task C', 'Third', 'pending', 'normal', 'manual', 'c', ?, ?),
+          ('task-d', 'Task D', 'Fourth', 'pending', 'normal', 'manual', 'd', ?, ?)
       `, [now, now, now, now, now, now, now, now]);
     });
 
-    it("should move task to specified position", async () => {
+    it("should move task to specified position using toIndex", async () => {
       const response = await app.request("/api/tasks/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: "task-d", toSortOrder: 0 }),
+        body: JSON.stringify({ taskId: "task-d", toIndex: 0 }),
       });
 
       expect(response.status).toBe(200);
-      const body = await response.json() as { success: boolean };
+      const body = await response.json() as { success: boolean; orderKey: string };
       expect(body.success).toBe(true);
+      expect(body.orderKey).toBeDefined();
 
       // Verify order changed in database
-      const rows = db.query("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC").all() as Array<{ id: string; sort_order: number }>;
+      const rows = db.query("SELECT id, order_key FROM tasks ORDER BY order_key ASC").all() as Array<{ id: string; order_key: string }>;
       expect(rows[0]?.id).toBe("task-d"); // Moved to position 0
       expect(rows[1]?.id).toBe("task-a"); // Shifted down
+      expect(rows[2]?.id).toBe("task-b");
+      expect(rows[3]?.id).toBe("task-c");
+    });
+
+    it("should move task using prevTaskId and nextTaskId", async () => {
+      // Move task-d between task-a and task-b
+      const response = await app.request("/api/tasks/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ taskId: "task-d", prevTaskId: "task-a", nextTaskId: "task-b" }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean; orderKey: string };
+      expect(body.success).toBe(true);
+      expect(body.orderKey).toBeDefined();
+
+      // Verify order changed in database
+      const rows = db.query("SELECT id, order_key FROM tasks ORDER BY order_key ASC").all() as Array<{ id: string; order_key: string }>;
+      expect(rows[0]?.id).toBe("task-a");
+      expect(rows[1]?.id).toBe("task-d"); // Moved between a and b
       expect(rows[2]?.id).toBe("task-b");
       expect(rows[3]?.id).toBe("task-c");
     });
@@ -643,13 +668,13 @@ describe("tasks API", () => {
       const response = await app.request("/api/tasks/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: "task-a", toSortOrder: -1 }),
+        body: JSON.stringify({ taskId: "task-a", toIndex: -1 }),
       });
 
       expect(response.status).toBe(200);
 
       // Verify order
-      const rows = db.query("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC").all() as Array<{ id: string; sort_order: number }>;
+      const rows = db.query("SELECT id, order_key FROM tasks ORDER BY order_key ASC").all() as Array<{ id: string; order_key: string }>;
       expect(rows[0]?.id).toBe("task-b");
       expect(rows[1]?.id).toBe("task-c");
       expect(rows[2]?.id).toBe("task-d");
@@ -660,7 +685,7 @@ describe("tasks API", () => {
       const response = await app.request("/api/tasks/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: "task-999", toSortOrder: 0 }),
+        body: JSON.stringify({ taskId: "task-999", toIndex: 0 }),
       });
 
       expect(response.status).toBe(404);

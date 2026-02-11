@@ -120,6 +120,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["044_restore_discoveries_task_phase", MIGRATION_044, { table: "discoveries", columns: MIGRATION_044_COLUMNS }],
 		["045_brain_completed_task_count", MIGRATION_045],
 		["046_arm_grace_default_2m", MIGRATION_046],
+		["047_task_order_key", MIGRATION_047, { table: "tasks", columns: MIGRATION_047_COLUMNS }],
 	];
 
 
@@ -1212,6 +1213,65 @@ const MIGRATION_046 = `
       updated_at = datetime('now')
   WHERE key = 'brain_arm_grace_period_minutes'
     AND value = '5';
+`;
+
+// Migration 047: Add order_key for robust fractional indexing-based task ordering
+// This replaces the integer sort_order with lexicographic keys for efficient drag-and-drop
+const MIGRATION_047_COLUMNS = [
+  { name: 'order_key', sql: "ALTER TABLE tasks ADD COLUMN order_key TEXT" },
+];
+
+const MIGRATION_047 = `
+-- Create index for ordering tasks by their order_key
+CREATE INDEX IF NOT EXISTS idx_tasks_order_key ON tasks(order_key);
+
+-- Backfill order_key from existing sort_order using fractional indexing
+-- Generate base62 keys: a, b, c, ... za, zb, zc, etc.
+WITH ordered_tasks AS (
+  SELECT 
+    id,
+    ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num,
+    COUNT(*) OVER () as total_count
+  FROM tasks
+  WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
+),
+-- Generate fractional keys for each position
+-- Using a simple base62 encoding: position 1 -> 'a', 2 -> 'b', etc.
+-- For positions > 62, we use two characters: 'aa', 'ab', etc.
+key_mapping AS (
+  SELECT 
+    id,
+    CASE 
+      WHEN row_num <= 62 THEN 
+        -- Single character: a-z (26), A-Z (26), 0-9 (10) = 62 total
+        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', row_num, 1)
+      ELSE
+        -- Two characters for larger lists
+        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 
+               ((row_num - 1) / 62) + 1, 1) ||
+        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 
+               ((row_num - 1) % 62) + 1, 1)
+    END as new_order_key
+  FROM ordered_tasks
+)
+UPDATE tasks
+SET order_key = (
+  SELECT new_order_key
+  FROM key_mapping
+  WHERE key_mapping.id = tasks.id
+)
+WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked');
+
+-- Set order_key for completed tasks based on completed_at timestamp
+-- These will be ordered by completed_at, not by order_key
+UPDATE tasks
+SET order_key = 'z' || hex(completed_at)
+WHERE status = 'completed' AND order_key IS NULL;
+
+-- Set order_key for any remaining tasks (failed, cancelled)
+UPDATE tasks
+SET order_key = 'zz' || hex(created_at)
+WHERE order_key IS NULL;
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

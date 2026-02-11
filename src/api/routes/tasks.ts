@@ -9,6 +9,7 @@ import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
 import { eventStore } from "../../nats/jetstream";
+import { generateKeyBetween } from "../../lib/fractional-indexing";
 
 interface TasksContext {
 	Variables: {
@@ -41,6 +42,7 @@ export interface Task {
 	consensusStatus?: "pending" | "in_progress" | "reached" | "failed";
 	planLineUid?: string | null;
 	sortOrder?: number | null;
+	orderKey?: string | null;
 	commentCount?: number;
 	lastCommentAt?: string | null;
 	mailThreadId?: string | null;
@@ -73,6 +75,7 @@ interface TaskRow {
 	consensus_status: string | null;
 	plan_line_uid: string | undefined;
 	sort_order: number | null;
+	order_key: string | null;
 	comment_count: number | null;
 	last_comment_at: string | null;
 	mail_thread_id: string | null;
@@ -107,6 +110,7 @@ function parseTaskRow(row: TaskRow): Task {
 			(row.consensus_status as Task["consensusStatus"]) || undefined,
 		planLineUid: row.plan_line_uid,
 		sortOrder: row.sort_order,
+		orderKey: row.order_key,
 		commentCount: row.comment_count ?? 0,
 		lastCommentAt: row.last_comment_at,
 		mailThreadId: row.mail_thread_id,
@@ -130,7 +134,7 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, NULL as assigned_arm_name,
-        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
         t.claimed_at, t.started_at, t.due_date,
@@ -323,7 +327,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
@@ -333,7 +337,7 @@ export function createTasksRoutes() {
       LEFT JOIN arms a ON t.assigned_to = a.id
       ${whereClause}
       ORDER BY
-        t.sort_order ASC,
+        t.order_key ASC,
         CASE t.status
           WHEN 'in_progress' THEN 1
           WHEN 'completing' THEN 2
@@ -407,7 +411,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
@@ -658,24 +662,20 @@ export function createTasksRoutes() {
 		const insertTask = (taskId: string): void => {
 			const now = new Date().toISOString();
 			const transaction = db.transaction(() => {
-				// Get current max sort_order to place new task at the end
-				const maxSortOrder = db
-					.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM tasks")
-					.get() as { max_sort: number };
-				const newSortOrder =
-					body.sortOrder ?? (maxSortOrder?.max_sort ?? -1) + 1;
-
-				// If inserting at a specific position, shift existing tasks to make room.
-				if (body.sortOrder !== undefined && body.sortOrder >= 0) {
-					db.run(
-						`UPDATE tasks SET sort_order = sort_order + 1 WHERE sort_order >= ?`,
-						[body.sortOrder],
-					);
-				}
+				// Get the max order_key to place new task at the end
+				// Using fractional indexing, we generate a key after the current max
+				const maxOrderKeyRow = db
+					.query("SELECT MAX(order_key) as max_key FROM tasks WHERE order_key IS NOT NULL")
+					.get() as { max_key: string | null };
+				const maxOrderKey = maxOrderKeyRow?.max_key ?? null;
+				
+				// Generate new order_key after the current max
+				// If no tasks exist, start with "a"
+				const newOrderKey = generateKeyBetween(maxOrderKey, null);
 
 				db.run(
 					`
-	          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, sort_order, progress, metadata, created_at, updated_at)
+	          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, order_key, progress, metadata, created_at, updated_at)
 	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	        `,
 					[
@@ -692,7 +692,7 @@ export function createTasksRoutes() {
 						body.mailThreadId || null,
 						JSON.stringify(body.context || {}),
 						body.dueDate || null,
-						newSortOrder,
+						newOrderKey,
 						normalizedProgress,
 						JSON.stringify(body.metadata || {}),
 						now,
@@ -795,7 +795,7 @@ export function createTasksRoutes() {
 			dependencyBlocked?: boolean;
 			mailThreadId?: string | null;
 			context?: Record<string, unknown>;
-			sortOrder?: number | null;
+			orderKey?: string | null;
 			dueDate?: string | null;
 			progress?: number;
 			artifacts?: string[];
@@ -888,9 +888,9 @@ export function createTasksRoutes() {
 			values.push(JSON.stringify(body.context));
 		}
 
-		if (body.sortOrder !== undefined) {
-			updates.push("sort_order = ?");
-			values.push(body.sortOrder);
+		if (body.orderKey !== undefined) {
+			updates.push("order_key = ?");
+			values.push(body.orderKey);
 		}
 
 		if (body.dueDate !== undefined) {
@@ -938,7 +938,7 @@ export function createTasksRoutes() {
         t.id, t.subject, t.description, t.status, t.priority,
         t.source_type, t.source_ref, t.phase, t.domain, t.classification,
         t.assigned_to, a.name as assigned_arm_name,
-        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order,
+        t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
@@ -1236,70 +1236,106 @@ export function createTasksRoutes() {
 	});
 
 	/**
-	 * Reorder a task to a specific position
+	 * Reorder a task to a specific position using fractional indexing
 	 * POST /api/tasks/reorder
-	 * Body: { taskId: string, toSortOrder: number }
-	 * toSortOrder: 0-based position in the full task list (0 = top, -1 = bottom)
+	 * Body: { taskId: string, toIndex: number, prevTaskId?: string, nextTaskId?: string }
+	 * 
+	 * Supports two modes:
+	 * 1. Legacy: { taskId, toIndex } - moves to 0-based position
+	 * 2. Drag-and-drop: { taskId, prevTaskId?, nextTaskId? } - moves between neighbors
 	 */
 	app.post("/reorder", async (c) => {
 		const db = c.get("db");
-		const body = await c.req.json<{ taskId: string; toSortOrder: number }>();
-		const { taskId, toSortOrder } = body;
+		const body = await c.req.json<{
+			taskId: string;
+			toIndex?: number;
+			prevTaskId?: string | null;
+			nextTaskId?: string | null;
+		}>();
+		const { taskId, toIndex, prevTaskId, nextTaskId } = body;
 
-		// Get current task order (sort_order ASC means lower values appear first)
-		const tasks = db
-			.query(
-				"SELECT id, sort_order FROM tasks ORDER BY sort_order ASC, created_at DESC",
-			)
-			.all() as Array<{ id: string; sort_order: number | null }>;
-
-		// Find the task in the list
-		const taskIndex = tasks.findIndex((t) => t.id === taskId);
-		if (taskIndex === -1) {
+		// Check if task exists
+		const taskExists = db
+			.query("SELECT 1 FROM tasks WHERE id = ?")
+			.get(taskId) as { "1": number } | null;
+		if (!taskExists) {
 			throw HttpError.notFound(`Task not found: ${taskId}`);
 		}
 
-		// Remove task from current position
-		const movedTask = tasks.splice(taskIndex, 1)[0];
-		if (!movedTask) {
-			throw HttpError.notFound(`Task not found: ${taskId}`);
-		}
+		let prevKey: string | null = null;
+		let nextKey: string | null = null;
 
-		// Insert at new position (handle -1 for "move to bottom")
-		const finalIndex =
-			toSortOrder < 0 ? tasks.length : Math.min(toSortOrder, tasks.length);
-		tasks.splice(finalIndex, 0, movedTask);
+		// Mode 1: Drag-and-drop with neighbor IDs
+		if (prevTaskId !== undefined || nextTaskId !== undefined) {
+			// Get order_key of previous task
+			if (prevTaskId) {
+				const prevRow = db
+					.query("SELECT order_key FROM tasks WHERE id = ?")
+					.get(prevTaskId) as { order_key: string | null } | null;
+				if (!prevRow) {
+					throw HttpError.notFound(`Previous task not found: ${prevTaskId}`);
+				}
+				prevKey = prevRow.order_key;
+			}
 
-		console.log(
-			`[REORDER] Moving task ${taskId} from index ${taskIndex} to index ${finalIndex}, total tasks: ${tasks.length}`,
-		);
-
-		// Update sort_order for all affected tasks
-		// Index 0 (top) = sort_order 0, Index 1 = sort_order 1, etc.
-		for (let i = 0; i < tasks.length; i++) {
-			const sortOrder = i; // Lower sort_order = appears first
-			const taskIdAtIndex = tasks[i]?.id;
-			if (taskIdAtIndex) {
-				console.log(
-					`[REORDER] Updating task ${taskIdAtIndex} to sort_order ${sortOrder}`,
-				);
-				db.run("UPDATE tasks SET sort_order = ? WHERE id = ?", [
-					sortOrder,
-					taskIdAtIndex,
-				]);
+			// Get order_key of next task
+			if (nextTaskId) {
+				const nextRow = db
+					.query("SELECT order_key FROM tasks WHERE id = ?")
+					.get(nextTaskId) as { order_key: string | null } | null;
+				if (!nextRow) {
+					throw HttpError.notFound(`Next task not found: ${nextTaskId}`);
+				}
+				nextKey = nextRow.order_key;
 			}
 		}
+		// Mode 2: Legacy index-based reordering
+		else if (toIndex !== undefined) {
+			// Get tasks ordered by order_key
+			const tasks = db
+				.query(
+					"SELECT id, order_key FROM tasks WHERE id != ? ORDER BY order_key ASC NULLS LAST, created_at DESC",
+				)
+				.all(taskId) as Array<{ id: string; order_key: string | null }>;
 
-		logActivity(db, "api", "task_reordered", taskId, { toSortOrder });
+			const targetIndex = toIndex < 0 ? tasks.length : Math.min(toIndex, tasks.length);
 
-		// Broadcast task updated
-		const updatedTask = tasks.find((t) => t.id === taskId);
-		broadcast("tasks", "task.updated", {
-			taskId,
-			changes: { sort_order: updatedTask?.sort_order },
+			// Get keys of neighbors at target position
+			if (targetIndex > 0) {
+				prevKey = tasks[targetIndex - 1]?.order_key ?? null;
+			}
+			if (targetIndex < tasks.length) {
+				nextKey = tasks[targetIndex]?.order_key ?? null;
+			}
+		}
+		else {
+			throw HttpError.badRequest("Either toIndex or prevTaskId/nextTaskId must be provided");
+		}
+
+		// Generate new order_key between neighbors
+		const newOrderKey = generateKeyBetween(prevKey, nextKey);
+
+		console.log(
+			`[REORDER] Moving task ${taskId} between keys: prev=${prevKey}, next=${nextKey}, new=${newOrderKey}`,
+		);
+
+		// Update only the moved task's order_key (single-row update!)
+		db.run("UPDATE tasks SET order_key = ? WHERE id = ?", [newOrderKey, taskId]);
+
+		logActivity(db, "api", "task_reordered", taskId, { 
+			newOrderKey,
+			prevTaskId,
+			nextTaskId,
+			toIndex 
 		});
 
-		return c.json({ success: true });
+		// Broadcast task updated
+		broadcast("tasks", "task.updated", {
+			taskId,
+			changes: { order_key: newOrderKey },
+		});
+
+		return c.json({ success: true, orderKey: newOrderKey });
 	});
 
 	return app;
