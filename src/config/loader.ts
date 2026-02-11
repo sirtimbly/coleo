@@ -116,9 +116,6 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
 			pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
 			maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
 			armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
-			refactorFileThresholdLines:
-				toml.brain.refactor_file_threshold_lines ??
-				DEFAULT_CONFIG.brain.refactorFileThresholdLines,
 		};
 	}
 
@@ -154,6 +151,14 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.refactoring) {
+    config.refactoring = {
+      fileSizeThreshold:
+        toml.refactoring.file_size_threshold ?? DEFAULT_CONFIG.refactoring.fileSizeThreshold,
+      enabled: toml.refactoring.enabled ?? DEFAULT_CONFIG.refactoring.enabled,
+    };
+  }
+
   if (toml.defaults) {
     config.defaults = {
       harness: toml.defaults.harness ?? DEFAULT_CONFIG.defaults.harness,
@@ -179,7 +184,13 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 			poll_interval_ms: config.brain.pollIntervalMs,
 			max_arms: config.brain.maxArms,
 			arm_grace_period_minutes: config.brain.armGracePeriodMinutes,
-			refactor_file_threshold_lines: config.brain.refactorFileThresholdLines,
+		};
+	}
+
+	if (config.refactoring) {
+		toml.refactoring = {
+			file_size_threshold: config.refactoring.fileSizeThreshold,
+			enabled: config.refactoring.enabled,
 		};
 	}
 
@@ -270,11 +281,8 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 	if (process.env.COLEO_ARM_GRACE_PERIOD_MINUTES) {
 		config.brain.armGracePeriodMinutes = parseInt(process.env.COLEO_ARM_GRACE_PERIOD_MINUTES, 10);
 	}
-	if (process.env.COLEO_REFACTOR_FILE_THRESHOLD_LINES) {
-		config.brain.refactorFileThresholdLines = parseInt(
-			process.env.COLEO_REFACTOR_FILE_THRESHOLD_LINES,
-			10,
-		);
+	if (process.env.COLEO_FILE_SIZE_THRESHOLD) {
+		config.refactoring.fileSizeThreshold = parseInt(process.env.COLEO_FILE_SIZE_THRESHOLD, 10);
 	}
   if (process.env.COLEO_DEFAULT_HARNESS) {
     config.defaults.harness = process.env.COLEO_DEFAULT_HARNESS;

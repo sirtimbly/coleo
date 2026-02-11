@@ -639,7 +639,7 @@ export class Brain {
 	async init(): Promise<void> {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
-			config.brain.refactorFileThresholdLines ?? 400;
+			config.refactoring.fileSizeThreshold ?? 400;
 
 		// Initialize API-backed arm state persistence.
 		this.armStateDb = createArmStateApiDatabase(this.apiBaseUrl, this.apiKey);

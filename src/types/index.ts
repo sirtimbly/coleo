@@ -354,7 +354,6 @@ export interface ColeoConfig {
 		pollIntervalMs: number;
 		maxArms: number;
 		armGracePeriodMinutes: number;
-		refactorFileThresholdLines: number;
 	};
   mail: {
     fromAddress: string;
@@ -395,7 +394,6 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		pollIntervalMs: 30000,
 		maxArms: 8,
 		armGracePeriodMinutes: 5,
-		refactorFileThresholdLines: 400,
 	},
   mail: {
     fromAddress: "brain@coleo.local",
