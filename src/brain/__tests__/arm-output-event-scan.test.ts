@@ -309,4 +309,104 @@ describe("Brain arm output event scan", () => {
 		expect(promptedArmName).toBe("arm-alpha");
 		expect(promptedText).toContain("Do not wait for user input");
 	});
+
+	it("does not process arm output when latest assistant message is a tool call", async () => {
+		const brain = new Brain({
+			coleoDir: "/tmp",
+			pollIntervalMs: 1000,
+			verbose: false,
+		});
+
+		const arm: Arm = {
+			id: "arm-alpha",
+			name: "arm-alpha",
+			agent: "opencode-api",
+			status: "idle",
+			startedAt: new Date(),
+		};
+
+		(brain as unknown as { arms: Map<string, Arm> }).arms = new Map([
+			[arm.id, arm],
+		]);
+		(brain as unknown as { tasks: Array<{ id: string; status: string; subject: string }> }).tasks = [];
+		(brain as unknown as { state: { pendingTasks: number } }).state.pendingTasks =
+			0;
+
+		let templateCalls = 0;
+		(
+			brain as unknown as {
+				templates: {
+					loadArmOutputProcessorSystemPrompt: () => Promise<string>;
+				};
+			}
+		).templates = {
+			loadArmOutputProcessorSystemPrompt: async () => {
+				templateCalls += 1;
+				return "arm-output-system-prompt";
+			},
+		};
+
+		let processCalls = 0;
+		(
+			brain as unknown as {
+				armOutputProcessor: {
+					processOutput: () => Promise<{
+						action: "no_action";
+						reasoning: string;
+						confidence: number;
+					}>;
+				};
+			}
+		).armOutputProcessor = {
+			processOutput: async () => {
+				processCalls += 1;
+				return {
+					action: "no_action",
+					reasoning: "No follow-up needed",
+					confidence: 0.9,
+				};
+			},
+		};
+
+		(
+			brain as unknown as {
+				apiRequest: <T>(path: string) => Promise<T>;
+			}
+		).apiRequest = async <T>(path: string) => {
+			if (path === "/api/arms/arm-alpha/messages?limit=20") {
+				return {
+					messages: [
+						{
+							info: {
+								id: "msg-assistant-text-old",
+								role: "assistant",
+								time: { created: 1770841098886, completed: 1770841104146 },
+							},
+							parts: [{ type: "text", text: "Older assistant text message" }],
+						},
+						{
+							info: {
+								id: "msg-assistant-tool-latest",
+								role: "assistant",
+								time: { created: 1770841198886, completed: 1770841200146 },
+							},
+							parts: [
+								{ type: "step-start" },
+								{ type: "tool", tool: "coleo_get_full_briefing" },
+								{ type: "step-finish" },
+							],
+						},
+					],
+				} as T;
+			}
+			throw new Error(`Unexpected apiRequest path in test: ${path}`);
+		};
+
+		await (
+			brain as unknown as { processArmAssistantOutputs: () => Promise<void> }
+		).processArmAssistantOutputs();
+
+		expect(templateCalls).toBe(0);
+		expect(processCalls).toBe(0);
+	});
 });

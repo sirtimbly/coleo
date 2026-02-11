@@ -19,6 +19,7 @@ import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
 import { loadEnvFile } from "../config/env";
 import { cleanupOrphanedArms } from "./arm-cleanup";
+import { qdrantStore } from "../qdrant";
 
 export interface ServerContext {
   Variables: {
@@ -151,6 +152,15 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     }
   } catch {
     // Tables don't exist yet, seed will run after migrations
+  }
+
+  // Connect to Qdrant (if available)
+  try {
+    await qdrantStore.initialize();
+    log("Qdrant connected - semantic search enabled", "normal");
+  } catch (err) {
+    log(`Warning: Failed to connect to Qdrant: ${err}`, "normal");
+    log("Semantic search will fall back to keyword-only until Qdrant is available", "normal");
   }
   
   // Connect to NATS server (if available)

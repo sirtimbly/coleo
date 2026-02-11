@@ -142,6 +142,9 @@ export class Brain {
 	// Track completed task count for refactoring cycle (every 5 tasks)
 	private completedTaskCount = 0;
 
+	// Claims system integration config
+	private resolveClaimsActive = false; // Config flag for active claim resolution (default: false)
+
 	/**
 	 * Log an activity entry to JetStream
 	 * This replaces the old SQLite activity table - JetStream is now the single source of truth
@@ -828,7 +831,7 @@ export class Brain {
 		// Step 2.5: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
 
-		// Steps 3-7 require API server for arm communication
+		// Steps 3-6 require API server for arm communication
 		if (infraHealth.canWorkWithArms) {
 			// Step 3: Check arm health and detect new arms
 			await this.checkArms();
@@ -865,9 +868,6 @@ export class Brain {
 
 			// Step 6: Assign initial tasks to arms that are still idle
 			await this.assignInitialTasks();
-
-			// Step 7: Prompt idle arms to check for work or file changes
-			await this.promptIdleArms();
 		} else {
 			this.log("API server unavailable - skipping arm operations");
 		}
@@ -885,10 +885,16 @@ export class Brain {
 		// Creates verification tasks for completed work with issues
 		await this.reEvaluatePlanProgress();
 
-		// Step 9: Save state
+		// Step 9: Prompt idle arms at the end of the cycle.
+		// This avoids racing with task/status updates handled earlier in the same poll.
+		if (infraHealth.canWorkWithArms) {
+			await this.promptIdleArms();
+		}
+
+		// Step 10: Save state
 		await this.saveState();
 
-		// Step 10: Notify Observatory of poll completion
+		// Step 11: Notify Observatory of poll completion
 		await this.notifyObservatory("poll");
 
 		this.log(
@@ -2734,15 +2740,29 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		}
 
 		this.completedTaskCount = this.state.completedTaskCount;
-		if (this.completedTaskCount % 5 === 0) {
-			const largeFiles = await findLargeFilesUtil({
+
+		// Priority escalation: Check for high/critical priority files (>600 lines) immediately
+		// Normal priority files (400-600 lines) are checked every 5 completed tasks
+		const highPriorityFiles = await findLargeFilesUtil({
+			rootDir: process.cwd(),
+			minLines: 600,
+			thresholds: { normal: 400, high: 600, critical: 800 },
+			includeGitStatus: true,
+		});
+
+		if (highPriorityFiles.length > 0) {
+			// Immediate escalation for high/critical priority files
+			await this.createRefactoringTask(highPriorityFiles);
+		} else if (this.completedTaskCount % 5 === 0) {
+			// Regular cycle for normal priority files (400-600 lines)
+			const normalPriorityFiles = await findLargeFilesUtil({
 				rootDir: process.cwd(),
 				minLines: this.refactorFileThresholdLines,
 				thresholds: { normal: this.refactorFileThresholdLines },
 				includeGitStatus: true,
 			});
-			if (largeFiles.length > 0) {
-				await this.createRefactoringTask(largeFiles);
+			if (normalPriorityFiles.length > 0) {
+				await this.createRefactoringTask(normalPriorityFiles);
 			}
 		}
 
@@ -5230,7 +5250,10 @@ Report findings using bug resolution workflow.`;
 	private async getRecentAssistantTextMessages(
 		armId: string,
 		limit = 20,
-	): Promise<Array<{ id: string; timestampMs: number; text: string }>> {
+	): Promise<{
+		messages: Array<{ id: string; timestampMs: number; text: string }>;
+		latestAssistantHasText: boolean;
+	}> {
 		const response = await this.apiRequest<{ messages?: unknown[] }>(
 			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
 			{},
@@ -5238,10 +5261,12 @@ Report findings using bug resolution workflow.`;
 		);
 		const messages = response?.messages;
 		if (!messages || messages.length === 0) {
-			return [];
+			return { messages: [], latestAssistantHasText: false };
 		}
 
 		const parsed: Array<{ id: string; timestampMs: number; text: string }> = [];
+		let latestAssistant: { timestampMs: number; hasText: boolean } | null = null;
+		let sawAssistant = false;
 		for (const message of messages) {
 			if (!message || typeof message !== "object") {
 				continue;
@@ -5251,22 +5276,33 @@ Report findings using bug resolution workflow.`;
 			if (role !== "assistant") {
 				continue;
 			}
+			sawAssistant = true;
+
+			const text = this.extractSessionMessageText(messageObj);
+			const timestampMs = this.extractMessageTimestampMs(messageObj);
+			if (timestampMs !== null) {
+				if (!latestAssistant || timestampMs > latestAssistant.timestampMs) {
+					latestAssistant = { timestampMs, hasText: Boolean(text) };
+				}
+			}
+
 			const messageId = this.extractSessionMessageId(messageObj);
 			if (!messageId) {
 				continue;
 			}
-			const text = this.extractSessionMessageText(messageObj);
 			if (!text) {
 				continue;
 			}
-			const timestampMs = this.extractMessageTimestampMs(messageObj);
 			if (timestampMs === null) {
 				continue;
 			}
 			parsed.push({ id: messageId, timestampMs, text });
 		}
 
-		return parsed.sort((a, b) => a.timestampMs - b.timestampMs);
+		return {
+			messages: parsed.sort((a, b) => a.timestampMs - b.timestampMs),
+			latestAssistantHasText: latestAssistant?.hasText === true && sawAssistant,
+		};
 	}
 
 	private normalizeTaskPriority(
@@ -5521,10 +5557,16 @@ Report findings using bug resolution workflow.`;
 
 		for (const arm of activeArms) {
 			try {
-				const assistantMessages = await this.getRecentAssistantTextMessages(
+				const assistantSnapshot = await this.getRecentAssistantTextMessages(
 					arm.id,
 					20,
 				);
+				// Avoid racing active tool-use turns: only process when the newest
+				// assistant message is textual (not a tool/reasoning-only turn).
+				if (!assistantSnapshot.latestAssistantHasText) {
+					continue;
+				}
+				const assistantMessages = assistantSnapshot.messages;
 				if (assistantMessages.length === 0) {
 					continue;
 				}
@@ -6881,6 +6923,10 @@ Report findings using bug resolution workflow.`;
 					(a.sortOrder ?? Number.MAX_SAFE_INTEGER) -
 					(b.sortOrder ?? Number.MAX_SAFE_INTEGER),
 			);
+
+		// Check for file claim conflicts before bug blocking
+		await this.checkAndBlockTasksForClaimConflicts(pendingTasks);
+
 		const unresolvedBugs = await this.listBugsFromApi(500);
 		for (const task of pendingTasks) {
 			const blockingBugs = unresolvedBugs.filter((bug) =>
@@ -6924,6 +6970,198 @@ Report findings using bug resolution workflow.`;
 				});
 			}
 		}
+	}
+
+	/**
+	 * Check tasks for file claim conflicts and block them if found.
+	 * This prevents multiple arms from working on files claimed by others.
+	 */
+	private async checkAndBlockTasksForClaimConflicts(
+		tasks: Task[],
+	): Promise<void> {
+		try {
+			// Get all active file claims from the database
+			const activeClaims = await this.getActiveFileClaims();
+			if (activeClaims.length === 0) {
+				return; // No active claims, nothing to check
+			}
+
+			for (const task of tasks) {
+				// Extract file paths from task (from artifacts, description, or context)
+				const taskFiles = this.extractFilePathsFromTask(task);
+				if (taskFiles.length === 0) {
+					continue; // No files associated with this task
+				}
+
+				// Check for conflicts with active claims
+				const conflicts = this.findClaimConflicts(taskFiles, activeClaims);
+				if (conflicts.length > 0) {
+					this.log(
+						`Task ${task.id} blocked due to ${conflicts.length} file claim conflict(s)`,
+					);
+
+					// Mark task as blocked
+					await this.patchTaskViaApi(task.id, {
+						status: "blocked",
+					});
+
+					// Notify human about the conflict
+					await this.notifyHumanOfClaimConflict(task, conflicts);
+
+					// If active resolution is enabled, attempt to resolve
+					if (this.resolveClaimsActive) {
+						await this.attemptClaimConflictResolution(task, conflicts);
+					}
+				}
+			}
+		} catch (err) {
+			this.log(`Error checking file claim conflicts: ${err}`);
+		}
+	}
+
+	/**
+	 * Get all active file claims from the database
+	 */
+	private async getActiveFileClaims(): Promise<
+		Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>
+	> {
+		try {
+			const response = await this.apiRequest<{
+				claims?: Array<{
+					armId: string;
+					filePath: string;
+					claimType: string;
+					claimedAt: string;
+				}>;
+			}>("/api/garden/claims");
+
+			return response?.claims || [];
+		} catch (err) {
+			this.log(`Failed to get active file claims: ${err}`);
+			return [];
+		}
+	}
+
+	/**
+	 * Extract file paths associated with a task
+	 */
+	private extractFilePathsFromTask(task: Task): string[] {
+		const files: string[] = [];
+
+		// Add files from artifacts
+		if (task.artifacts) {
+			for (const artifact of task.artifacts) {
+				// Check if artifact looks like a file path
+				if (artifact.includes("/") || artifact.includes(".")) {
+					files.push(artifact);
+				}
+			}
+		}
+
+		// Add files from discoveries in context
+		if (task.context?.discoveries) {
+			for (const discovery of task.context.discoveries) {
+				if (discovery.filePath) {
+					files.push(discovery.filePath);
+				}
+			}
+		}
+
+		// Parse description for file paths (simple heuristic)
+		const filePathRegex = /(?:src\/|\.\/|\/)?[\w\/\-]+\.(?:ts|tsx|js|jsx|json|md)/g;
+		const descriptionFiles = task.description.match(filePathRegex) || [];
+		files.push(...descriptionFiles);
+
+		// Remove duplicates
+		return [...new Set(files)];
+	}
+
+	/**
+	 * Find conflicts between task files and active claims
+	 */
+	private findClaimConflicts(
+		taskFiles: string[],
+		activeClaims: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>,
+	): Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }> {
+		const conflicts: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }> = [];
+
+		for (const taskFile of taskFiles) {
+			// Normalize the task file path
+			const normalizedTaskFile = taskFile.replace(/^\.\//, "").replace(/^\//, "");
+
+			for (const claim of activeClaims) {
+				// Check for exact match or if task file is within claimed directory
+				const normalizedClaimFile = claim.filePath.replace(/^\.\//, "").replace(/^\//, "");
+
+				if (
+					normalizedTaskFile === normalizedClaimFile ||
+					normalizedTaskFile.startsWith(normalizedClaimFile + "/") ||
+					normalizedClaimFile.startsWith(normalizedTaskFile + "/")
+				) {
+					conflicts.push(claim);
+				}
+			}
+		}
+
+		return conflicts;
+	}
+
+	/**
+	 * Notify human about a claim conflict
+	 */
+	private async notifyHumanOfClaimConflict(
+		task: Task,
+		conflicts: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>,
+	): Promise<void> {
+		const conflictList = conflicts
+			.map((c) => `- \`${c.filePath}\` claimed by ${c.armId} (${c.claimType}) since ${c.claimedAt}`)
+			.join("\n");
+
+		const body = `## Task Blocked: File Claim Conflict
+
+**Task:** ${task.subject} (${task.id})
+
+This task cannot proceed because the following files are already claimed by other arms:
+
+${conflictList}
+
+### Next Steps
+
+1. **Wait for claims to be released** - The blocking arms will release their claims when done
+2. **Coordinate with blocking arms** - Contact them to negotiate file access
+3. **Enable auto-resolution** - Set \`brain.resolve_claims_active=true\` to allow automatic conflict resolution
+
+---
+*This is a conservative conflict prevention mechanism. Tasks remain blocked until conflicts are resolved.*`;
+
+		await this.sendToHuman({
+			subject: `[coleo] Task Blocked: File Claim Conflict - ${task.subject}`,
+			body,
+			headers: {
+				"X-Coleo-Type": "task-blocked-claim-conflict",
+				"X-Coleo-Task-Id": task.id,
+			},
+		});
+	}
+
+	/**
+	 * Attempt to resolve claim conflicts (placeholder for future active resolution)
+	 */
+	private async attemptClaimConflictResolution(
+		task: Task,
+		conflicts: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>,
+	): Promise<void> {
+		// This is a placeholder for future active resolution logic
+		// For now, just log that we would attempt resolution
+		this.log(
+			`Active claim resolution enabled but not yet implemented. Task ${task.id} has ${conflicts.length} conflict(s).`,
+		);
+
+		// Future implementation could:
+		// 1. Transfer claims from idle arms to active arms
+		// 2. Coordinate work between arms on the same file
+		// 3. Split tasks based on file boundaries
+		// 4. Prioritize tasks based on urgency/importance
 	}
 
 	/**
