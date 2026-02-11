@@ -237,6 +237,8 @@ export type MessageType =
   | "task_assignment"
   | "task_complete"
   | "task_validation"
+  | "task_acknowledge"
+  | "task_validate"
   | "task_failed"
   | "discovery"
   | "dependency_discovery"
