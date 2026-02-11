@@ -49,10 +49,11 @@ function insertTask(db: Database, options: {
   domain?: string | null;
   phase?: string | null;
   consensus_status?: string | null;
+  source_ref?: string | null;
 }) {
   db.run(
     `INSERT INTO tasks (id, subject, description, status, priority, domain, phase, assigned_arms, consensus_status, dependency_blocked, source_type, source_ref, created_at, updated_at)
-     VALUES (?, ?, 'desc', ?, ?, ?, ?, '[]', ?, 0, 'plan', 'test', ?, ?)`,
+     VALUES (?, ?, 'desc', ?, ?, ?, ?, '[]', ?, 0, 'plan', ?, ?, ?)`,
     [
       options.id,
       options.subject,
@@ -61,6 +62,7 @@ function insertTask(db: Database, options: {
       options.domain ?? null,
       options.phase ?? null,
       options.consensus_status ?? null,
+      options.source_ref ?? "test",
       NOW,
       NOW,
     ]
@@ -205,6 +207,54 @@ describe("prompt-generator dependencies", () => {
     });
 
     expect(result.task?.id).toBe("pending-high");
+    expect(result.reasoning).toContain("Returning next pending task from database");
+
+    db.close();
+  });
+
+  it("skips the just-completed task and its verify follow-up when excluded", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    // Simulate race window: completed task still appears claimed in DB.
+    insertTask(db, {
+      id: "task-old",
+      subject: "Implement API endpoint",
+      status: "claimed",
+      priority: "high",
+      phase: "Phase 1",
+    });
+    // Follow-up verification task that references the original task.
+    insertTask(db, {
+      id: "verify-race1",
+      subject: "Verify & Polish: Implement API endpoint",
+      status: "pending",
+      priority: "high",
+      phase: "Phase 1",
+      source_ref: "task-old",
+    });
+    // Alternative next task that should be selected instead.
+    insertTask(db, {
+      id: "task-next",
+      subject: "Update API docs",
+      status: "pending",
+      priority: "normal",
+      phase: "Phase 1",
+    });
+
+    const result = await generateTaskDetermination(
+      {
+        projectRoot: process.cwd(),
+        coleoDir: process.cwd(),
+        db: brainDb,
+      },
+      {
+        excludeTaskIds: ["task-old"],
+        excludeVerificationForTaskIds: ["task-old"],
+      },
+    );
+
+    expect(result.task?.id).toBe("task-next");
     expect(result.reasoning).toContain("Returning next pending task from database");
 
     db.close();

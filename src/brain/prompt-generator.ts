@@ -5,7 +5,7 @@
  * These can be copied and pasted into interactive agent text areas.
  */
 
-import type { BrainDb } from "./db-client";
+import type { BrainDb, BrainTaskRecord } from "./db-client";
 import { join } from "path";
 import { readFile } from "fs/promises";
 import fg from "fast-glob";
@@ -38,6 +38,11 @@ export interface TaskDeterminationResult {
 	openDiscoveries: string[];
 }
 
+export interface TaskDeterminationOptions {
+	excludeTaskIds?: string[];
+	excludeVerificationForTaskIds?: string[];
+}
+
 export interface ContextBundleResult {
 	task: {
 		subject: string;
@@ -61,9 +66,11 @@ export interface ContextBundleResult {
  */
 export async function generateTaskDetermination(
 	ctx: PromptContext,
+	options: TaskDeterminationOptions = {},
 ): Promise<TaskDeterminationResult> {
 	const { db } = ctx;
 	const snapshot = await buildStatusSnapshot(db);
+	const determinationOptions = normalizeTaskDeterminationOptions(options);
 
 	// Determine phase from tasks in database, not from reading plan files
 	const phaseInfo = buildPhaseInfoFromDatabase(db);
@@ -79,20 +86,32 @@ export async function generateTaskDetermination(
 	});
 
 	// Step 1: Look for existing active/claimed tasks
-	const activeTask = pickExistingActiveTask(db, phaseInfo.label);
+	const activeTask = pickExistingActiveTask(
+		db,
+		phaseInfo.label,
+		determinationOptions,
+	);
 	if (activeTask) {
 		return finalize(activeTask);
 	}
 
 	// Step 2: Check for tasks that can be unblocked
-	const unblockedTask = tryUnblockDependencies(db, phaseInfo.label);
+	const unblockedTask = tryUnblockDependencies(
+		db,
+		phaseInfo.label,
+		determinationOptions,
+	);
 	if (unblockedTask) {
 		return finalize(unblockedTask);
 	}
 
 	// Step 3: Return next pending task from database
 	// Don't create tasks from plan here - that's the sync process's job
-	const pendingTask = getNextPendingTask(db, phaseInfo.label);
+	const pendingTask = getNextPendingTask(
+		db,
+		phaseInfo.label,
+		determinationOptions,
+	);
 	const pendingBug = getNextPendingBug(db);
 	if (pendingTask || pendingBug) {
 		const shouldPickBug =
@@ -126,6 +145,11 @@ export async function generateTaskDetermination(
 interface DeterminationStepResult {
 	task: TaskDeterminationResult["task"];
 	reasoning: string;
+}
+
+interface NormalizedTaskDeterminationOptions {
+	excludedTaskIds: Set<string>;
+	excludeVerificationForTaskIds: Set<string>;
 }
 
 interface PhaseInfo {
@@ -184,6 +208,7 @@ function buildPhaseInfo(phaseSection: string): PhaseInfo {
 function pickExistingActiveTask(
 	db: BrainDb,
 	phaseLabel: string,
+	options: NormalizedTaskDeterminationOptions,
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
 	const activeTasks = db
@@ -194,6 +219,7 @@ function pickExistingActiveTask(
 			limit: 200,
 		})
 		.filter((task) => !task.consensusStatus || task.consensusStatus !== "reached")
+		.filter((task) => !shouldExcludeTask(task, options))
 		.sort((a, b) => {
 			const rank = (status: string): number => {
 				switch (status) {
@@ -239,6 +265,7 @@ function pickExistingActiveTask(
 function tryUnblockDependencies(
 	db: BrainDb,
 	phaseLabel: string,
+	options: NormalizedTaskDeterminationOptions,
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
 	const blockedTasks = db.listTasks({
@@ -250,6 +277,9 @@ function tryUnblockDependencies(
 	});
 
 	for (const blockedTask of blockedTasks) {
+		if (shouldExcludeTask(blockedTask, options)) {
+			continue;
+		}
 		const dependencies = db.listTaskDependencies(blockedTask.id);
 
 		const unmetDeps: string[] = [];
@@ -291,16 +321,19 @@ function tryUnblockDependencies(
 function getNextPendingTask(
 	db: BrainDb,
 	phaseLabel: string,
+	options: NormalizedTaskDeterminationOptions,
 ): DeterminationStepResult | null {
 	const phaseValue = phaseLabel || "";
-	const task = db.listTasks({
-		statuses: ["pending"],
-		dependencyBlocked: false,
-		phase: phaseValue || undefined,
-		excludeSubjectPrefix: "Validate completion:",
-		sort: "priority_then_created_asc",
-		limit: 1,
-	})[0];
+	const task = db
+		.listTasks({
+			statuses: ["pending"],
+			dependencyBlocked: false,
+			phase: phaseValue || undefined,
+			excludeSubjectPrefix: "Validate completion:",
+			sort: "priority_then_created_asc",
+			limit: 200,
+		})
+		.find((candidate) => !shouldExcludeTask(candidate, options));
 
 	if (!task) {
 		return null;
@@ -466,6 +499,48 @@ Review the plan and decide what to work on next:
 		},
 		reasoning: `No deliverables found in ${label}. Plan may be complete or needs updating.`,
 	};
+}
+
+function normalizeTaskDeterminationOptions(
+	options: TaskDeterminationOptions,
+): NormalizedTaskDeterminationOptions {
+	const excludedTaskIds = new Set(
+		(options.excludeTaskIds || [])
+			.map((id) => id.trim())
+			.filter((id) => id.length > 0),
+	);
+	const excludeVerificationForTaskIds = new Set(
+		(options.excludeVerificationForTaskIds || [])
+			.map((id) => id.trim())
+			.filter((id) => id.length > 0),
+	);
+	return { excludedTaskIds, excludeVerificationForTaskIds };
+}
+
+function shouldExcludeTask(
+	task: BrainTaskRecord,
+	options: NormalizedTaskDeterminationOptions,
+): boolean {
+	if (options.excludedTaskIds.has(task.id)) {
+		return true;
+	}
+
+	if (
+		task.sourceRef &&
+		options.excludeVerificationForTaskIds.has(task.sourceRef) &&
+		isVerificationFollowupTask(task)
+	) {
+		return true;
+	}
+
+	return false;
+}
+
+function isVerificationFollowupTask(task: BrainTaskRecord): boolean {
+	if (task.id.startsWith("verify-")) return true;
+	if (task.subject.startsWith("Verify & Polish:")) return true;
+	if (task.classification === "qa") return true;
+	return false;
 }
 
 async function buildStatusSnapshot(db: BrainDb): Promise<StatusSnapshot> {

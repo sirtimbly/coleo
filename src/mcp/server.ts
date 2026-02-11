@@ -32,6 +32,8 @@ import {
 	formatTaskDetermination,
 	formatContextBundle,
 	type PromptContext,
+	type TaskDeterminationOptions,
+	type TaskDeterminationResult,
 } from "../brain/prompt-generator";
 import {
 	getServiceStatus,
@@ -61,6 +63,57 @@ let natsClient: NatsClient | null = null;
 
 // Cache for arm's session ID to avoid repeated DB queries
 let cachedSessionId: string | null = null;
+const POST_COMPLETION_EXCLUSION_TTL_MS = 30 * 60 * 1000;
+let recentCompletedTaskExclusion: { taskId: string; recordedAtMs: number } | null =
+	null;
+
+function rememberRecentlyCompletedTask(taskId: string): void {
+	const trimmed = taskId.trim();
+	if (!trimmed) return;
+	recentCompletedTaskExclusion = {
+		taskId: trimmed,
+		recordedAtMs: Date.now(),
+	};
+}
+
+function getRecentCompletedTaskIdForExclusion(): string | null {
+	const current = recentCompletedTaskExclusion;
+	if (!current) return null;
+	if (Date.now() - current.recordedAtMs > POST_COMPLETION_EXCLUSION_TTL_MS) {
+		recentCompletedTaskExclusion = null;
+		return null;
+	}
+	return current.taskId;
+}
+
+function clearRecentCompletedTaskExclusion(): void {
+	recentCompletedTaskExclusion = null;
+}
+
+function buildTaskDeterminationOptionsForArm(): TaskDeterminationOptions {
+	const recentlyCompletedTaskId = getRecentCompletedTaskIdForExclusion();
+	if (!recentlyCompletedTaskId) {
+		return {};
+	}
+	return {
+		excludeTaskIds: [recentlyCompletedTaskId],
+		excludeVerificationForTaskIds: [recentlyCompletedTaskId],
+	};
+}
+
+function updateCompletionExclusionAfterDetermination(
+	result: TaskDeterminationResult,
+): void {
+	const recentlyCompletedTaskId = getRecentCompletedTaskIdForExclusion();
+	if (!recentlyCompletedTaskId) {
+		return;
+	}
+	const determinedTaskId = result.task?.id;
+	// Once the arm is routed to a different task (or bug), stop excluding.
+	if (determinedTaskId && determinedTaskId !== recentlyCompletedTaskId) {
+		clearRecentCompletedTaskExclusion();
+	}
+}
 
 /**
  * Get the session ID for this arm from the database
@@ -846,6 +899,7 @@ export function createMcpServer(): McpServer {
 					taskId: resolvedTaskId,
 				},
 			});
+			clearRecentCompletedTaskExclusion();
 
 			logActivity(ARM_ID, "claim_task", resolvedTaskId, { messageId });
 			console.error(`[MCP] claim_task completed, messageId: ${messageId}`);
@@ -885,15 +939,16 @@ export function createMcpServer(): McpServer {
 
 			const resolvedBugId = resolution.bugId;
 			console.error(`[MCP] claim_bug called by ${ARM_ID} for bug ${resolvedBugId}`);
-			const messageId = await sendToBrain({
-				from: ARM_ID,
-				to: "brain",
-				type: "bug_claim",
-				payload: {
-					action: "claim",
-					bugId: resolvedBugId,
-				},
-			});
+				const messageId = await sendToBrain({
+					from: ARM_ID,
+					to: "brain",
+					type: "bug_claim",
+					payload: {
+						action: "claim",
+						bugId: resolvedBugId,
+					},
+				});
+				clearRecentCompletedTaskExclusion();
 
 			logActivity(ARM_ID, "claim_bug", resolvedBugId, { messageId });
 			console.error(`[MCP] claim_bug completed, messageId: ${messageId}`);
@@ -949,6 +1004,9 @@ export function createMcpServer(): McpServer {
 					artifacts: artifacts || [],
 				},
 			});
+			// Guard against queue-processing races: the immediate next briefing should
+			// not return the same task (or its verify follow-up) to this same arm.
+			rememberRecentlyCompletedTask(resolvedTaskId);
 
 			logActivity(ARM_ID, "complete_task", resolvedTaskId, {
 				messageId,
@@ -4211,7 +4269,11 @@ export function createMcpServer(): McpServer {
 					db: database as unknown as PromptContext["db"],
 				};
 
-				const result = await generateTaskDetermination(ctx);
+				const result = await generateTaskDetermination(
+					ctx,
+					buildTaskDeterminationOptionsForArm(),
+				);
+				updateCompletionExclusionAfterDetermination(result);
 				const formatted = formatTaskDetermination(result);
 
 				logActivity(ARM_ID, "get_task_determination", result.task?.id, {
@@ -4331,7 +4393,11 @@ export function createMcpServer(): McpServer {
 				};
 
 				// Step 1: Get task determination
-				const determination = await generateTaskDetermination(ctx);
+				const determination = await generateTaskDetermination(
+					ctx,
+					buildTaskDeterminationOptionsForArm(),
+				);
+				updateCompletionExclusionAfterDetermination(determination);
 				const determinationFormatted = formatTaskDetermination(determination);
 
 				if (!determination.task) {
