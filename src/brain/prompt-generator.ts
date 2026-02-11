@@ -138,6 +138,46 @@ export async function generateTaskDetermination(
 		}
 	}
 
+	// Fallback: if dominant phase has no assignable work, broaden search to all phases.
+	// This avoids returning "Determine Next Work" while real pending tasks exist elsewhere.
+	if (phaseInfo.label) {
+		const crossPhaseActiveTask = pickExistingActiveTask(
+			db,
+			"",
+			determinationOptions,
+		);
+		if (crossPhaseActiveTask) {
+			return finalize({
+				...crossPhaseActiveTask,
+				reasoning: `${crossPhaseActiveTask.reasoning} (outside dominant phase ${phaseInfo.label})`,
+			});
+		}
+
+		const crossPhaseUnblockedTask = tryUnblockDependencies(
+			db,
+			"",
+			determinationOptions,
+		);
+		if (crossPhaseUnblockedTask) {
+			return finalize({
+				...crossPhaseUnblockedTask,
+				reasoning: `${crossPhaseUnblockedTask.reasoning} (outside dominant phase ${phaseInfo.label})`,
+			});
+		}
+
+		const crossPhasePendingTask = getNextPendingTask(
+			db,
+			"",
+			determinationOptions,
+		);
+		if (crossPhasePendingTask) {
+			return finalize({
+				...crossPhasePendingTask,
+				reasoning: `${crossPhasePendingTask.reasoning}${pendingBug ? " (bug queue also available)" : ""} (outside dominant phase ${phaseInfo.label})`,
+			});
+		}
+	}
+
 	// No tasks available
 	return finalize(buildNoTaskResult(phaseInfo));
 }

@@ -212,6 +212,54 @@ describe("prompt-generator dependencies", () => {
     db.close();
   });
 
+  it("falls back across phases when dominant phase has no assignable work", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    // Dominant phase by count, but only completed work.
+    insertTask(db, {
+      id: "phase-stale-1",
+      subject: "Completed stale 1",
+      status: "completed",
+      priority: "normal",
+      phase: "Phase stale",
+    });
+    insertTask(db, {
+      id: "phase-stale-2",
+      subject: "Completed stale 2",
+      status: "completed",
+      priority: "normal",
+      phase: "Phase stale",
+    });
+    insertTask(db, {
+      id: "phase-stale-3",
+      subject: "Completed stale 3",
+      status: "completed",
+      priority: "normal",
+      phase: "Phase stale",
+    });
+
+    // Real work exists in another phase.
+    insertTask(db, {
+      id: "phase-fresh-pending",
+      subject: "Fresh pending work",
+      status: "pending",
+      priority: "high",
+      phase: "Phase fresh",
+    });
+
+    const result = await generateTaskDetermination({
+      projectRoot: process.cwd(),
+      coleoDir: process.cwd(),
+      db: brainDb,
+    });
+
+    expect(result.task?.id).toBe("phase-fresh-pending");
+    expect(result.reasoning).toContain("outside dominant phase Phase stale");
+
+    db.close();
+  });
+
   it("skips the just-completed task and its verify follow-up when excluded", async () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
