@@ -54,6 +54,8 @@ import type {
 	Discovery,
 	MessageType,
 } from "../types";
+import { BrainStateManager } from "./modules/state-manager";
+import type { StateManagerOptions } from "./modules/state-types";
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -91,6 +93,10 @@ export class Brain {
 	private healthMonitor: ArmHealthMonitor | null = null;
 	private lastHealthCheck: HealthCheckResult | null = null;
 	private dashboard: TerminalDashboard | null = null;
+
+	// State manager - extracted from this class to reduce complexity
+	// This will gradually replace the individual state properties above
+	private stateManager: BrainStateManager | null = null;
 
 	// Track last stuck state per arm to avoid duplicate escalations
 	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
@@ -243,6 +249,18 @@ export class Brain {
 			"http://localhost:8080";
 		this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
 		this.natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+		
+		// Initialize state manager (new modular approach)
+		const stateManagerOptions: StateManagerOptions = {
+			coleoDir: options.coleoDir,
+			pollIntervalMs: options.pollIntervalMs,
+			verbose: options.verbose,
+			apiBaseUrl: this.apiBaseUrl,
+			apiKey: this.apiKey,
+		};
+		this.stateManager = new BrainStateManager(stateManagerOptions);
+		
+		// Legacy state initialization (will be migrated to stateManager)
 		this.state = {
 			status: "stopped",
 			pollIntervalMs: options.pollIntervalMs,
