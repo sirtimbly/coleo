@@ -10,7 +10,7 @@ import { join } from "path";
 import { spawn, type Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
-import { createServer } from "node:net";
+import { createServer, type Server } from "node:net";
 import type { TestContext, TimingHelper, TestResult, TestScenario } from "./types";
 import { eventStore, setEventStore, resetEventStore, createTestEventStore, type InMemoryEventStore } from "../nats/jetstream";
 
@@ -31,8 +31,8 @@ async function getNextPort(): Promise<number> {
 
   // Fallback: ask OS for any free port
   return await new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
+    const server: Server = createServer();
+    server.on("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       const port =
@@ -54,13 +54,13 @@ async function getNextPort(): Promise<number> {
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const server = createServer();
+    const server: Server = createServer();
 
-    server.once("error", () => {
+    server.on("error", () => {
       resolve(false);
     });
 
-    server.once("listening", () => {
+    server.on("listening", () => {
       server.close(() => resolve(true));
     });
 

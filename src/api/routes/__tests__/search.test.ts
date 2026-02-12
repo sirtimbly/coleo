@@ -84,7 +84,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(400);
-			const body = await res.json();
+			const body = (await res.json()) as { error: string };
 			expect(body.error).toBe("Query is required");
 		});
 
@@ -109,7 +109,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: unknown[]; query: string; semanticUsed: boolean; took: number };
 			expect(body.results).toBeDefined();
 			expect(body.query).toBe("search API");
 			expect(body.semanticUsed).toBe(false);
@@ -128,8 +128,8 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
-			expect(body.results.every((r: { type: string }) => r.type === "task")).toBe(true);
+			const body = (await res.json()) as { results: { type: string }[] };
+			expect(body.results.every((r) => r.type === "task")).toBe(true);
 		});
 
 		it("should support pagination", async () => {
@@ -145,7 +145,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: unknown[] };
 			expect(body.results.length).toBeLessThanOrEqual(1);
 		});
 	});
@@ -153,14 +153,14 @@ describe("Search API", () => {
 	describe("GET /suggestions", () => {
 		it("should return empty array for short query", async () => {
 			const res = await app.request("/suggestions?q=a");
-			const body = await res.json();
+			const body = (await res.json()) as { suggestions: unknown[] };
 			expect(body.suggestions).toEqual([]);
 		});
 
 		it("should return suggestions for valid query", async () => {
 			const res = await app.request("/suggestions?q=search");
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { suggestions: unknown[] };
 			expect(Array.isArray(body.suggestions)).toBe(true);
 		});
 	});
@@ -179,7 +179,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { success: boolean };
 			expect(body.success).toBe(true);
 		});
 	});

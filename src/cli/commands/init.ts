@@ -128,7 +128,7 @@ COLEO_API_TOKEN=${apiToken}
 
       const { spawn } = await import("node:child_process");
       await new Promise<void>((resolve, reject) => {
-        spawn("chmod", ["+x", coleoScriptPath]).on("close", (code) => {
+        spawn("chmod", ["+x", coleoScriptPath]).on("close", (code: number | null) => {
           if (code === 0) resolve();
           else reject(new Error(`chmod failed with code ${code}`));
         });
