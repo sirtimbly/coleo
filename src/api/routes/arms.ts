@@ -1417,9 +1417,10 @@ export function createArmsRoutes() {
       });
 
       // Pipe the upstream response through the transform
-      const transformedStream = upstreamResponse.body.pipeThrough(transformStream);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transformedStream = (upstreamResponse.body as any).pipeThrough(transformStream);
 
-      return new Response(transformedStream, {
+      return new Response(transformedStream as ReadableStream<Uint8Array>, {
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",

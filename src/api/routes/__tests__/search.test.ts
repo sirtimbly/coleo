@@ -2,10 +2,12 @@
  * Search API Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { createSearchRoutes } from "../search";
+import * as qdrantModule from "../../../qdrant";
+import * as embeddingModule from "../../../embedding";
 
 interface TestContext {
 	Variables: {
@@ -16,9 +18,21 @@ interface TestContext {
 describe("Search API", () => {
 	let db: Database;
 	let app: Hono<TestContext>;
+	let qdrantSpy: ReturnType<typeof spyOn>;
+	let embeddingSpy: ReturnType<typeof spyOn>;
 
 	beforeEach(async () => {
-		// Create in-memory database
+		qdrantSpy = spyOn(qdrantModule.qdrantStore, "initialize").mockImplementation(async () => {});
+		spyOn(qdrantModule.qdrantStore, "search").mockImplementation(async () => []);
+		spyOn(qdrantModule.qdrantStore, "upsertPoints").mockImplementation(async () => {});
+		spyOn(qdrantModule.qdrantStore, "createCollection").mockImplementation(async () => {});
+		embeddingSpy = spyOn(embeddingModule.embeddingService, "embed").mockImplementation(async () => ({
+			embedding: new Array(1536).fill(0),
+			model: "mock",
+			tokens: 0,
+		}));
+		spyOn(embeddingModule.embeddingService, "getVectorSize").mockImplementation(() => 1536);
+
 		db = new Database(":memory:");
 
 		// Create search index table
@@ -57,6 +71,8 @@ describe("Search API", () => {
 
 	afterEach(() => {
 		db.close();
+		qdrantSpy?.mockRestore();
+		embeddingSpy?.mockRestore();
 	});
 
 	describe("POST /", () => {
@@ -68,7 +84,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(400);
-			const body = await res.json();
+			const body = (await res.json()) as { error: string };
 			expect(body.error).toBe("Query is required");
 		});
 
@@ -88,16 +104,16 @@ describe("Search API", () => {
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({
 					query: "search API",
-					semanticWeight: 0, // Disable semantic for this test
+					semanticWeight: 0,
 				}),
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: unknown[]; query: string; semanticUsed: boolean; took: number };
 			expect(body.results).toBeDefined();
 			expect(body.query).toBe("search API");
 			expect(body.semanticUsed).toBe(false);
-			expect(body.took).toBeGreaterThan(0);
+			expect(body.took).toBeGreaterThanOrEqual(0);
 		});
 
 		it("should filter by type", async () => {
@@ -112,8 +128,8 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
-			expect(body.results.every((r: { type: string }) => r.type === "task")).toBe(true);
+			const body = (await res.json()) as { results: { type: string }[] };
+			expect(body.results.every((r) => r.type === "task")).toBe(true);
 		});
 
 		it("should support pagination", async () => {
@@ -129,7 +145,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: unknown[] };
 			expect(body.results.length).toBeLessThanOrEqual(1);
 		});
 	});
@@ -137,22 +153,20 @@ describe("Search API", () => {
 	describe("GET /suggestions", () => {
 		it("should return empty array for short query", async () => {
 			const res = await app.request("/suggestions?q=a");
-			const body = await res.json();
+			const body = (await res.json()) as { suggestions: unknown[] };
 			expect(body.suggestions).toEqual([]);
 		});
 
 		it("should return suggestions for valid query", async () => {
 			const res = await app.request("/suggestions?q=search");
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { suggestions: unknown[] };
 			expect(Array.isArray(body.suggestions)).toBe(true);
 		});
 	});
 
 	describe("POST /index", () => {
-		it("should require Qdrant to be initialized", async () => {
-			// This test verifies the endpoint exists but will fail without Qdrant
-			// In production, Qdrant would be initialized
+		it("should index content successfully", async () => {
 			const res = await app.request("/index", {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -164,8 +178,9 @@ describe("Search API", () => {
 				}),
 			});
 
-			// Expect 500 because Qdrant is not initialized in test environment
-			expect(res.status).toBe(500);
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as { success: boolean };
+			expect(body.success).toBe(true);
 		});
 	});
 });

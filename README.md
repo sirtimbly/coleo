@@ -97,6 +97,8 @@ coleo arm spawn -n NAME --terminal tmux  # Spawn in a visible terminal (opencode
 coleo arm list                  # List active Arms
 coleo mail inbox                # View inbox
 coleo mail send "task"          # Send task to Brain
+coleo imap serve                # Start IMAP gateway for mail clients
+coleo imap password             # Show/reset IMAP password
 coleo status                    # Overall status
 coleo mcp serve                 # Run MCP server (for Arms)
 ```

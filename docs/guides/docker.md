@@ -18,6 +18,16 @@ docker compose up -d
 docker compose ps
 ```
 
+## IMAP-only gateway stack
+
+If you only want a Maildir-backed IMAP endpoint for iOS Mail over Tailscale/tunnels, use:
+
+```bash
+docker compose -f docker-compose.imap-gateway.yml up -d --build
+```
+
+Then follow the dedicated setup guide: [`/guides/imap-gateway`](/guides/imap-gateway).
+
 ## Services
 
 The Docker Compose stack includes:

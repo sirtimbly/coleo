@@ -11,6 +11,7 @@ import { spawn, type Subprocess } from "bun";
 import { Database } from "bun:sqlite";
 import { randomUUID } from "crypto";
 import { createServer } from "node:net";
+import type { EventEmitter } from "node:events";
 import type { TestContext, TimingHelper, TestResult, TestScenario } from "./types";
 import { eventStore, setEventStore, resetEventStore, createTestEventStore, type InMemoryEventStore } from "../nats/jetstream";
 
@@ -31,13 +32,13 @@ async function getNextPort(): Promise<number> {
 
   // Fallback: ask OS for any free port
   return await new Promise<number>((resolve, reject) => {
-    const server = createServer();
+    const server = createServer() as unknown as EventEmitter & { listen(port: number, host: string, cb: () => void): void; address(): { port: number } | string; close(cb: (err?: Error) => void): void };
     server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       const port =
         typeof address === "object" && address ? address.port : undefined;
-      server.close((closeErr) => {
+      server.close((closeErr?: Error) => {
         if (closeErr) {
           reject(closeErr);
           return;
@@ -54,7 +55,7 @@ async function getNextPort(): Promise<number> {
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise((resolve) => {
-    const server = createServer();
+    const server = createServer() as unknown as EventEmitter & { listen(port: number, host: string): void; close(cb: () => void): void };
 
     server.once("error", () => {
       resolve(false);

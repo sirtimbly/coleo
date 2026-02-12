@@ -1,0 +1,25 @@
+services:
+  coleo-imap:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: coleo-imap
+    hostname: coleo-imap
+    environment:
+      - COLEO_DIR=/home/coleo/.coleo
+    volumes:
+      - coleo-imap-data:/home/coleo/.coleo
+    ports:
+      - "1143:1143"
+    command:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+        coleo init
+        coleo imap serve --host 0.0.0.0 --port 1143 --username coleo
+    restart: unless-stopped
+
+volumes:
+  coleo-imap-data:
+    name: coleo-imap-data
