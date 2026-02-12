@@ -58,6 +58,8 @@ import { BrainStateManager } from "./modules/state-manager";
 import type { StateManagerOptions } from "./modules/state-types";
 import { BrainMessageHandler } from "./modules/message-handler";
 import type { MessageHandlerCallbacks } from "./modules/message-handler";
+import { ClaimConflictDetector } from "./modules/claim-conflict-detector";
+import type { ClaimConflictDetectorOptions, ClaimConflictDetectorCallbacks } from "./modules/claim-conflict-detector";
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -103,6 +105,10 @@ export class Brain {
 	// Message handler - extracted from this class to reduce complexity
 	// Handles NATS connections and message routing
 	private messageHandler: BrainMessageHandler | null = null;
+
+	// Claim conflict detector - extracted from this class to reduce complexity
+	// Handles file claim conflict detection and resolution
+	private claimConflictDetector: ClaimConflictDetector | null = null;
 
 	// Track last stuck state per arm to avoid duplicate escalations
 	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
@@ -297,6 +303,25 @@ export class Brain {
 
 		// Initialize terminal dashboard (TTY only)
 		this.dashboard = new TerminalDashboard({ enabled: process.stdout.isTTY });
+
+		// Initialize claim conflict detector (new modular approach)
+		const claimConflictCallbacks: ClaimConflictDetectorCallbacks = {
+			log: (msg: string) => this.log(msg),
+			getActiveFileClaims: async () => this.getActiveFileClaims(),
+			patchTaskStatus: async (taskId: string, status: string) => {
+				await this.patchTaskViaApi(taskId, { status: status as Task["status"] });
+			},
+			notifyHumanOfConflict: async (task, conflicts) => {
+				await this.notifyHumanOfClaimConflict(task, conflicts);
+			},
+			attemptConflictResolution: async (task, conflicts) => {
+				await this.attemptClaimConflictResolution(task, conflicts);
+			},
+		};
+		this.claimConflictDetector = new ClaimConflictDetector(
+			{ resolveClaimsActive: this.resolveClaimsActive },
+			claimConflictCallbacks,
+		);
 	}
 
 	/**
@@ -7044,47 +7069,13 @@ Report findings using bug resolution workflow.`;
 	/**
 	 * Check tasks for file claim conflicts and block them if found.
 	 * This prevents multiple arms from working on files claimed by others.
+	 * Delegates to ClaimConflictDetector for actual logic.
 	 */
 	private async checkAndBlockTasksForClaimConflicts(
 		tasks: Task[],
 	): Promise<void> {
-		try {
-			// Get all active file claims from the database
-			const activeClaims = await this.getActiveFileClaims();
-			if (activeClaims.length === 0) {
-				return; // No active claims, nothing to check
-			}
-
-			for (const task of tasks) {
-				// Extract file paths from task (from artifacts, description, or context)
-				const taskFiles = this.extractFilePathsFromTask(task);
-				if (taskFiles.length === 0) {
-					continue; // No files associated with this task
-				}
-
-				// Check for conflicts with active claims
-				const conflicts = this.findClaimConflicts(taskFiles, activeClaims);
-				if (conflicts.length > 0) {
-					this.log(
-						`Task ${task.id} blocked due to ${conflicts.length} file claim conflict(s)`,
-					);
-
-					// Mark task as blocked
-					await this.patchTaskViaApi(task.id, {
-						status: "blocked",
-					});
-
-					// Notify human about the conflict
-					await this.notifyHumanOfClaimConflict(task, conflicts);
-
-					// If active resolution is enabled, attempt to resolve
-					if (this.resolveClaimsActive) {
-						await this.attemptClaimConflictResolution(task, conflicts);
-					}
-				}
-			}
-		} catch (err) {
-			this.log(`Error checking file claim conflicts: ${err}`);
+		if (this.claimConflictDetector) {
+			await this.claimConflictDetector.checkAndBlockTasks(tasks);
 		}
 	}
 
