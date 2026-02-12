@@ -18,6 +18,7 @@ export default defineConfig({
 						{ text: "Getting Started", link: "/guides/getting-started" },
 						{ text: "CLI", link: "/guides/cli" },
 						{ text: "Docker", link: "/guides/docker" },
+						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },
 					],
 				},
 				{ text: "Philosophy", link: "/philosophy" },
