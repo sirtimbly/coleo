@@ -115,7 +115,6 @@ If you want fully API-driven messaging without running local IMAP/SMTP, you can 
 
 ```bash
 export COLEO_POSTMARK_SERVER_TOKEN=postmark-server-token
-export COLEO_POSTMARK_FROM=brain@your-domain.com
 # Optional inbound protection token
 export COLEO_POSTMARK_INBOUND_TOKEN=shared-secret
 ```
@@ -135,6 +134,7 @@ POST /api/mail/gateway/postmark/send
 Content-Type: application/json
 
 {
+  "from": "brain@your-domain.com",
   "to": "peer@example.com",
   "subject": "Task update",
   "body": "Completed the migration work.",

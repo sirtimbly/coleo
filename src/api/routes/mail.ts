@@ -592,11 +592,11 @@ export function createMailRoutes() {
       replyTo?: string;
     }>();
 
-    if (!body.to || !body.subject || !body.body) {
-      throw HttpError.badRequest("to, subject, and body are required");
+    if (!body.from || !body.to || !body.subject || !body.body) {
+      throw HttpError.badRequest("from, to, subject, and body are required");
     }
 
-    const from = body.from || process.env.COLEO_POSTMARK_FROM || "brain@coleo.local";
+    const from = body.from;
 
     try {
       const sendResult = await sendPostmarkMessage({
