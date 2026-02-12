@@ -562,7 +562,7 @@ export function createMailRoutes() {
         headers: inboundMessage.headers,
       });
 
-      broadcastMailEvent("new", {
+      broadcastMailEvent("received", {
         messageId: message.id,
         from: message.from,
         to: message.to,
