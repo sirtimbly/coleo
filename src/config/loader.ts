@@ -49,6 +49,19 @@ interface TomlConfig {
     file_size_threshold?: number;
     enabled?: boolean;
   };
+  compression?: {
+    enabled?: boolean;
+    thresholds?: {
+      warning?: number;
+      soft_limit?: number;
+      hard_limit?: number;
+    };
+    strategy?: "aggressive" | "balanced" | "conservative";
+    removal_priority?: Array<"history" | "artifacts" | "notes" | "tools" | "context">;
+    min_tokens_after_compression?: number;
+    auto_compress?: boolean;
+    notify_on_compression?: boolean;
+  };
   defaults?: {
     harness?: string;
     provider?: string;
@@ -159,6 +172,22 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.compression) {
+    config.compression = {
+      enabled: toml.compression.enabled ?? DEFAULT_CONFIG.compression.enabled,
+      thresholds: {
+        warning: toml.compression.thresholds?.warning ?? DEFAULT_CONFIG.compression.thresholds.warning,
+        softLimit: toml.compression.thresholds?.soft_limit ?? DEFAULT_CONFIG.compression.thresholds.softLimit,
+        hardLimit: toml.compression.thresholds?.hard_limit ?? DEFAULT_CONFIG.compression.thresholds.hardLimit,
+      },
+      strategy: toml.compression.strategy ?? DEFAULT_CONFIG.compression.strategy,
+      removalPriority: toml.compression.removal_priority ?? DEFAULT_CONFIG.compression.removalPriority,
+      minTokensAfterCompression: toml.compression.min_tokens_after_compression ?? DEFAULT_CONFIG.compression.minTokensAfterCompression,
+      autoCompress: toml.compression.auto_compress ?? DEFAULT_CONFIG.compression.autoCompress,
+      notifyOnCompression: toml.compression.notify_on_compression ?? DEFAULT_CONFIG.compression.notifyOnCompression,
+    };
+  }
+
   if (toml.defaults) {
     config.defaults = {
       harness: toml.defaults.harness ?? DEFAULT_CONFIG.defaults.harness,
@@ -191,6 +220,22 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 		toml.refactoring = {
 			file_size_threshold: config.refactoring.fileSizeThreshold,
 			enabled: config.refactoring.enabled,
+		};
+	}
+
+	if (config.compression) {
+		toml.compression = {
+			enabled: config.compression.enabled,
+			thresholds: {
+				warning: config.compression.thresholds.warning,
+				soft_limit: config.compression.thresholds.softLimit,
+				hard_limit: config.compression.thresholds.hardLimit,
+			},
+			strategy: config.compression.strategy,
+			removal_priority: config.compression.removalPriority,
+			min_tokens_after_compression: config.compression.minTokensAfterCompression,
+			auto_compress: config.compression.autoCompress,
+			notify_on_compression: config.compression.notifyOnCompression,
 		};
 	}
 
