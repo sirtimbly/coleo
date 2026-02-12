@@ -379,6 +379,19 @@ export interface ColeoConfig {
     fileSizeThreshold: number;
     enabled: boolean;
   };
+  compression: {
+    enabled: boolean;
+    thresholds: {
+      warning: number;
+      softLimit: number;
+      hardLimit: number;
+    };
+    strategy: "aggressive" | "balanced" | "conservative";
+    removalPriority: Array<"history" | "artifacts" | "notes" | "tools" | "context">;
+    minTokensAfterCompression: number;
+    autoCompress: boolean;
+    notifyOnCompression: boolean;
+  };
   defaults: {
     harness: string;
     provider: string;
@@ -412,6 +425,19 @@ export const DEFAULT_CONFIG: ColeoConfig = {
   refactoring: {
     fileSizeThreshold: 400,
     enabled: true,
+  },
+  compression: {
+    enabled: true,
+    thresholds: {
+      warning: 0.80,
+      softLimit: 0.95,
+      hardLimit: 1.00,
+    },
+    strategy: "balanced",
+    removalPriority: ["history", "artifacts", "notes", "tools", "context"],
+    minTokensAfterCompression: 10000,
+    autoCompress: true,
+    notifyOnCompression: true,
   },
   defaults: {
     harness: "opencode-api",
