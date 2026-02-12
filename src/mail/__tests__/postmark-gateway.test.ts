@@ -36,6 +36,30 @@ describe("normalizePostmarkInbound", () => {
     expect(message.headers["x-test"]).toBe("true");
   });
 
+  it("falls back when email fields are malformed", () => {
+    const message = normalizePostmarkInbound({
+      From: "not-an-email",
+      To: " ",
+      Subject: "   ",
+      TextBody: 1234,
+      HtmlBody: "   ",
+      MessageID: "   ",
+      Headers: [
+        { Name: "  ", Value: "hello" },
+        { Name: "X-Valid", Value: " ok " },
+        { Name: "X-Invalid", Value: 42 },
+      ],
+    });
+
+    expect(message.from).toBe("unknown@postmark.local");
+    expect(message.to).toBe("brain@coleo.local");
+    expect(message.subject).toBe("(no subject)");
+    expect(message.body).toBe("");
+    expect(message.headers["x-postmark-message-id"]).toBeUndefined();
+    expect(message.headers["x-valid"]).toBe("ok");
+    expect(message.headers["x-invalid"]).toBeUndefined();
+  });
+
   it("throws for non-object payload", () => {
     expect(() => normalizePostmarkInbound("invalid")).toThrow("Inbound payload must be an object");
   });

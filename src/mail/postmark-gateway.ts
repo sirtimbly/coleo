@@ -46,29 +46,73 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function asNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function isLikelyEmail(value: string): boolean {
+  // Keep validation intentionally permissive to support common mailbox forms.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function resolveEmail(primary: unknown, secondary?: unknown): string | undefined {
+  const candidates = [primary, secondary];
+
+  for (const candidate of candidates) {
+    const normalized = asNonEmptyString(candidate);
+    if (normalized && isLikelyEmail(normalized)) {
+      return normalized;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveBody(textBody: unknown, htmlBody: unknown): string {
+  const normalizedText = asNonEmptyString(textBody);
+  if (normalizedText) {
+    return normalizedText;
+  }
+
+  const normalizedHtml = asNonEmptyString(htmlBody);
+  if (normalizedHtml) {
+    return normalizedHtml;
+  }
+
+  return "";
+}
+
 export function normalizePostmarkInbound(payload: unknown): NormalizedInboundMessage {
   if (!isRecord(payload)) {
     throw new Error("Inbound payload must be an object");
   }
 
   const typedPayload = payload as PostmarkInboundPayload;
-  const from = typedPayload.From ?? typedPayload.FromFull?.Email ?? "unknown@postmark.local";
-  const to = typedPayload.To ?? typedPayload.ToFull?.[0]?.Email ?? "brain@coleo.local";
-  const subject = typedPayload.Subject ?? "(no subject)";
-  const body = typedPayload.TextBody ?? typedPayload.HtmlBody ?? "";
+  const from = resolveEmail(typedPayload.From, typedPayload.FromFull?.Email) ?? "unknown@postmark.local";
+  const to = resolveEmail(typedPayload.To, typedPayload.ToFull?.[0]?.Email) ?? "brain@coleo.local";
+  const subject = asNonEmptyString(typedPayload.Subject) ?? "(no subject)";
+  const body = resolveBody(typedPayload.TextBody, typedPayload.HtmlBody);
 
   const headers: Record<string, string> = {
     "x-mail-provider": "postmark",
   };
 
-  if (typedPayload.MessageID) {
-    headers["x-postmark-message-id"] = typedPayload.MessageID;
+  const messageId = asNonEmptyString(typedPayload.MessageID);
+  if (messageId) {
+    headers["x-postmark-message-id"] = messageId;
   }
 
   if (Array.isArray(typedPayload.Headers)) {
     for (const header of typedPayload.Headers) {
-      if (header?.Name && header.Value) {
-        headers[header.Name.toLowerCase()] = header.Value;
+      const headerName = asNonEmptyString(header?.Name);
+      const headerValue = asNonEmptyString(header?.Value);
+      if (headerName && headerValue) {
+        headers[headerName.toLowerCase()] = headerValue;
       }
     }
   }
