@@ -2,12 +2,10 @@
  * Search API Tests
  */
 
-import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { createSearchRoutes } from "../search";
-import * as qdrantModule from "../../../qdrant";
-import * as embeddingModule from "../../../embedding";
 
 interface TestContext {
 	Variables: {
@@ -77,8 +75,6 @@ describe("Search API", () => {
 
 	afterEach(() => {
 		db.close();
-		qdrantSpy?.mockRestore();
-		embeddingSpy?.mockRestore();
 	});
 
 	describe("POST /", () => {
@@ -118,10 +114,9 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: { type: string }[] };
 			expect(body.results).toBeDefined();
-			// Should only return tasks
-			expect(body.results.every((r: { type: string }) => r.type === "task")).toBe(true);
+			expect(body.results.every((r) => r.type === "task")).toBe(true);
 		});
 
 		it("should return empty results for no match", async () => {
@@ -135,7 +130,7 @@ describe("Search API", () => {
 			});
 
 			expect(res.status).toBe(200);
-			const body = await res.json();
+			const body = (await res.json()) as { results: unknown[] };
 			expect(body.results).toHaveLength(0);
 		});
 

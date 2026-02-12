@@ -44,6 +44,13 @@ import {
 	formatUptime,
 	type ServiceType,
 } from "../daemon";
+import {
+	getCompressionConfig,
+	getThresholdStatus,
+	getCompressionThresholds,
+	isCompressionEnabled,
+	getCompressionStrategy,
+} from "../compression/config";
 
 // Get coleo directory from env or default (project-local)
 const COLEO_DIR = getColeoDir();
@@ -2268,9 +2275,10 @@ export function createMcpServer(): McpServer {
 							).toFixed(1)
 						: "N/A";
 
-				let statusEmoji = "✅";
-				if (usagePercent > 80) statusEmoji = "⚠️";
-				if (usagePercent > 95) statusEmoji = "🔥";
+				// Get compression config for dynamic thresholds
+				const thresholds = await getCompressionThresholds();
+				const strategy = await getCompressionStrategy();
+				const thresholdStatus = await getThresholdStatus(usagePercent);
 
 				return {
 					content: [
@@ -2278,16 +2286,17 @@ export function createMcpServer(): McpServer {
 							type: "text" as const,
 							text:
 								`# Context Budget Status\n\n` +
-								`${statusEmoji} **${ARM_ID}**\n\n` +
+								`${thresholdStatus.emoji} **${ARM_ID}**\n\n` +
 								`**Budget:** ${(armBudget.context_budget_total / 1000).toFixed(0)}K tokens\n` +
 								`**Used:** ${(armBudget.context_budget_used / 1000).toFixed(1)}K tokens (${usagePercent.toFixed(1)}%)\n` +
 								`**Remaining:** ${(remaining / 1000).toFixed(1)}K tokens\n\n` +
 								`**Recent compressions (1h):** ${compressionCount}\n` +
-								`**Avg compression:** ${avgCompression}%\n\n` +
+								`**Avg compression:** ${avgCompression}%\n` +
+								`**Strategy:** ${strategy}\n\n` +
 								`**Thresholds:**\n` +
-								`- 80%: Warning - consider completing or compressing\n` +
-								`- 95%: Hard limit - compression will trigger\n` +
-								`- 100%: Maximum - forced compression or task handoff${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
+								`- ${(thresholds.warning * 100).toFixed(0)}%: Warning - consider completing or compressing\n` +
+								`- ${(thresholds.softLimit * 100).toFixed(0)}%: Soft limit - compression recommended\n` +
+								`- ${(thresholds.hardLimit * 100).toFixed(0)}%: Hard limit - compression required${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
 						},
 					],
 				};
