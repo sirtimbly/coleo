@@ -106,6 +106,44 @@ Body: What's everyone working on? Any blockers?
 
 The Brain compiles real-time information about all arms, their tasks, and recent activity.
 
+
+## API-Managed Mailbox (Postmark Gateway)
+
+If you want fully API-driven messaging without running local IMAP/SMTP, you can use Postmark as a gateway.
+
+1. Configure environment variables on the API server:
+
+```bash
+export COLEO_POSTMARK_SERVER_TOKEN=postmark-server-token
+# Optional inbound protection token
+export COLEO_POSTMARK_INBOUND_TOKEN=shared-secret
+```
+
+2. Point Postmark inbound webhook to:
+
+```
+POST /api/mail/gateway/postmark/inbound
+```
+
+Send header `x-coleo-webhook-token` when `COLEO_POSTMARK_INBOUND_TOKEN` is set.
+
+3. Send outbound mail through Coleo:
+
+```
+POST /api/mail/gateway/postmark/send
+Content-Type: application/json
+
+{
+  "from": "brain@your-domain.com",
+  "to": "peer@example.com",
+  "subject": "Task update",
+  "body": "Completed the migration work.",
+  "replyTo": "brain@your-domain.com"
+}
+```
+
+Inbound messages are written to `mail/inbox`, outbound messages are persisted to `mail/sent`, and both remain manageable through the existing `/api/mail/*` endpoints.
+
 ## Best Practices
 
 ### Be Specific

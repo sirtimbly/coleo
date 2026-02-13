@@ -11,6 +11,7 @@ import { join, basename } from "path";
 import { readdir, stat } from "fs/promises";
 import { HttpError } from "../middleware/error";
 import { eventStore } from "../../nats/jetstream";
+import { normalizePostmarkInbound, sendPostmarkMessage } from "../../mail/postmark-gateway";
 
 interface MailContext {
   Variables: {
@@ -527,6 +528,108 @@ export function createMailRoutes() {
       return c.json({ message }, 201);
     } catch (err) {
       throw HttpError.internal(`Failed to send message: ${err}`);
+    }
+  });
+
+  app.post("/gateway/postmark/inbound", async (c) => {
+    const coleoDir = c.get("coleoDir");
+    const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
+    const webhookToken = process.env.COLEO_POSTMARK_INBOUND_TOKEN;
+
+    if (webhookToken) {
+      const incomingToken = c.req.header("x-coleo-webhook-token");
+      if (!incomingToken || incomingToken !== webhookToken) {
+        throw HttpError.unauthorized("Invalid webhook token");
+      }
+    }
+
+    const payload = await c.req.json<unknown>();
+
+    let inboundMessage;
+    try {
+      inboundMessage = normalizePostmarkInbound(payload);
+    } catch (err) {
+      throw HttpError.badRequest(`Invalid Postmark inbound payload: ${err}`);
+    }
+
+    try {
+      const message = await inbox.write({
+        from: inboundMessage.from,
+        to: inboundMessage.to,
+        subject: inboundMessage.subject,
+        date: new Date(),
+        body: inboundMessage.body,
+        headers: inboundMessage.headers,
+      });
+
+      broadcastMailEvent("received", {
+        messageId: message.id,
+        from: message.from,
+        to: message.to,
+        subject: message.subject,
+      });
+
+      return c.json({ message }, 201);
+    } catch (err) {
+      throw HttpError.internal(`Failed to persist Postmark inbound message: ${err}`);
+    }
+  });
+
+  app.post("/gateway/postmark/send", async (c) => {
+    const coleoDir = c.get("coleoDir");
+    const sent = new Maildir(join(coleoDir, "mail", "sent"));
+    const apiToken = process.env.COLEO_POSTMARK_SERVER_TOKEN;
+
+    if (!apiToken) {
+      throw HttpError.badRequest("COLEO_POSTMARK_SERVER_TOKEN is not configured");
+    }
+
+    const body = await c.req.json<{
+      to: string;
+      subject: string;
+      body: string;
+      from?: string;
+      replyTo?: string;
+    }>();
+
+    if (!body.from || !body.to || !body.subject || !body.body) {
+      throw HttpError.badRequest("from, to, subject, and body are required");
+    }
+
+    const from = body.from;
+
+    try {
+      const sendResult = await sendPostmarkMessage({
+        apiToken,
+        from,
+        to: body.to,
+        subject: body.subject,
+        textBody: body.body,
+        replyTo: body.replyTo,
+      });
+
+      const message = await sent.write({
+        from,
+        to: body.to,
+        subject: body.subject,
+        date: new Date(),
+        body: body.body,
+        headers: {
+          "x-mail-provider": "postmark",
+          "x-postmark-message-id": sendResult.messageId,
+        },
+      });
+
+      broadcastMailEvent("sent", {
+        messageId: message.id,
+        from,
+        to: body.to,
+        subject: body.subject,
+      });
+
+      return c.json({ message, provider: sendResult }, 202);
+    } catch (err) {
+      throw HttpError.internal(`Failed to send message via Postmark: ${err}`);
     }
   });
 
