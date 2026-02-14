@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare } from 'lucide-react';
-import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type RecentEventsResponse } from '@/lib';
+import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket } from '@/hooks';
@@ -32,6 +32,8 @@ interface SystemStatus {
     database: { healthy: boolean; error?: string };
     nats: { healthy: boolean; optional: boolean; error?: string };
     maildir: { healthy: boolean; error?: string };
+    qdrant: { healthy: boolean; optional: boolean; error?: string };
+    indexer: { healthy: boolean; optional: boolean; running: boolean; error?: string };
   };
 }
 
@@ -51,6 +53,14 @@ const stateColorMap: Record<ArmActivityState, "success" | "warning" | "danger" |
   silent: "default",
   error: "danger",
   starting: "warning",
+};
+
+const indexerColorMap: Record<TranscriptIndexerHealth["status"], "success" | "warning" | "danger" | "default"> = {
+  healthy: "success",
+  lagging: "warning",
+  stale: "danger",
+  unavailable: "default",
+  error: "danger",
 };
 
 type RecentEvent = RecentEventsResponse['events'][number];
@@ -140,6 +150,18 @@ const getEventDotClass = (event: RecentEvent) => {
 };
 
 function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: SystemStatus['infrastructure'], isLoading: boolean }) {
+  const qdrant = infrastructure?.qdrant ?? {
+    healthy: false,
+    optional: true,
+    error: "Status unavailable",
+  };
+  const indexer = infrastructure?.indexer ?? {
+    healthy: false,
+    optional: true,
+    running: false,
+    error: "Status unavailable",
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -147,8 +169,8 @@ function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: Sy
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="grid grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+            {[1, 2, 3, 4, 5].map((i) => (
               <div key={i} className="flex items-center gap-3">
                 <Skeleton className="h-5 w-5 rounded" />
                 <div className="flex-1">
@@ -159,7 +181,7 @@ function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: Sy
             ))}
           </div>
         ) : !infrastructure ? null : (
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
             <div className="flex items-center gap-3">
               <Database className="h-5 w-5 text-muted-foreground" />
               <div className="flex-1">
@@ -217,6 +239,107 @@ function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: Sy
                 )}
               </div>
             </div>
+
+            <div className="flex items-center gap-3">
+              <Database className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Qdrant</span>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={qdrant.healthy ? "success" : qdrant.optional ? "warning" : "danger"}
+                  >
+                    {qdrant.healthy ? "Healthy" : qdrant.optional ? "Optional" : "Error"}
+                  </Chip>
+                  {qdrant.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
+                </div>
+                {qdrant.error && (
+                  <p className="text-xs text-warning mt-1">{qdrant.error}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Bot className="h-5 w-5 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium">Indexer</span>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    color={indexer.running ? "success" : indexer.optional ? "warning" : "danger"}
+                  >
+                    {indexer.running ? "Running" : indexer.optional ? "Optional" : "Error"}
+                  </Chip>
+                  {indexer.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
+                </div>
+                {indexer.error && (
+                  <p className="text-xs text-warning mt-1">{indexer.error}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TranscriptIndexerCard({
+  health,
+  isLoading,
+}: {
+  health?: TranscriptIndexerHealth | null;
+  isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Transcript Indexer</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-32 rounded" />
+            <Skeleton className="h-4 w-48 rounded" />
+            <Skeleton className="h-4 w-40 rounded" />
+          </div>
+        ) : !health ? (
+          <p className="text-sm text-muted-foreground">No indexer data available</p>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="font-medium">Status</div>
+              <Chip size="sm" variant="soft" color={indexerColorMap[health.status]}>
+                {health.status}
+              </Chip>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              <div>Stream: <span className="font-mono">{health.stream}</span></div>
+              <div>Durable: <span className="font-mono">{health.durable}</span></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <div>
+                <p className="text-muted-foreground">Lag</p>
+                <p className="font-semibold">{health.lagMessages ?? "-"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Ack Pending</p>
+                <p className="font-semibold">{health.ackPending ?? "-"}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Last Active</p>
+                <p className="font-semibold">{formatLastSeen(health.lastActive || undefined)}</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Consumer Seq</p>
+                <p className="font-semibold">{health.consumerSeq ?? "-"}</p>
+              </div>
+            </div>
+            {health.message && (
+              <p className="text-xs text-warning">{health.message}</p>
+            )}
           </div>
         )}
       </CardContent>
@@ -577,10 +700,12 @@ export function DashboardPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [notableEvents, setNotableEvents] = useState<RecentEvent[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
+  const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [indexerLoading, setIndexerLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
 
   const loadCriticalData = useCallback(async () => {
@@ -592,6 +717,32 @@ export function DashboardPage() {
       setError(err instanceof Error ? err.message : 'Failed to load status');
     } finally {
       setStatusLoading(false);
+    }
+  }, []);
+
+  const loadIndexerHealth = useCallback(async () => {
+    setIndexerLoading(true);
+    try {
+      const healthRes = await api.getTranscriptIndexerHealth();
+      setIndexerHealth(healthRes);
+    } catch {
+      setIndexerHealth({
+        status: "error",
+        stream: "coleo-events",
+        durable: "transcript-indexer-v1",
+        consumerFound: false,
+        lagMessages: null,
+        ackPending: null,
+        streamLastSeq: null,
+        consumerStreamSeq: null,
+        consumerSeq: null,
+        lastActive: null,
+        staleThresholdMs: 120000,
+        updatedAt: new Date().toISOString(),
+        message: "Failed to load indexer health",
+      });
+    } finally {
+      setIndexerLoading(false);
     }
   }, []);
 
@@ -642,11 +793,12 @@ export function DashboardPage() {
     }
     if (msg.channel === 'arm-events') {
       loadNotableEvents();
+      loadIndexerHealth();
     }
     if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
       api.status().then((res) => setStatus(res)).catch(console.error);
     }
-  }, [loadNotableEvents]);
+  }, [loadIndexerHealth, loadNotableEvents]);
 
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain', 'arm-events'],
@@ -659,14 +811,16 @@ export function DashboardPage() {
     loadDetails();
     loadAnalysis();
     loadNotableEvents();
+    loadIndexerHealth();
 
     const interval = setInterval(() => {
       loadCriticalData();
       loadDetails();
       loadNotableEvents();
+      loadIndexerHealth();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadCriticalData, loadDetails, loadAnalysis, loadNotableEvents]);
+  }, [loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents]);
 
   if (error && !status) {
     return (
@@ -710,6 +864,8 @@ export function DashboardPage() {
       </div>
 
       <InfrastructureCard infrastructure={status?.infrastructure} isLoading={statusLoading} />
+
+      <TranscriptIndexerCard health={indexerHealth} isLoading={indexerLoading} />
 
       <StatsGrid status={status ?? undefined} isLoading={statusLoading} />
 

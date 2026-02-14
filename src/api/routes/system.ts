@@ -3,7 +3,13 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
+import { join } from "path";
 import { eventStore } from "../../nats/jetstream";
+import { getServiceStatus } from "../../daemon";
+import { getNatsManager } from "../../nats/server";
+import { qdrantStore } from "../../qdrant";
+import { Maildir } from "../../mail";
+import { getColeoDir } from "../../config";
 
 interface SystemContext {
   Variables: {
@@ -158,6 +164,13 @@ export function createSystemRoutes() {
       database: { healthy: true, error: undefined as string | undefined },
       nats: { healthy: false, optional: true, error: undefined as string | undefined },
       maildir: { healthy: true, error: undefined as string | undefined },
+      qdrant: { healthy: false, optional: true, error: undefined as string | undefined },
+      indexer: {
+        healthy: false,
+        optional: true,
+        running: false,
+        error: undefined as string | undefined,
+      },
     };
 
     // Read infrastructure health from database
@@ -209,6 +222,54 @@ export function createSystemRoutes() {
     } catch (err) {
       infrastructure.database.healthy = false;
       infrastructure.database.error = err instanceof Error ? err.message : "Connection failed";
+    }
+
+    // Live NATS connectivity check from API process state
+    try {
+      const natsManager = getNatsManager();
+      if (natsManager?.ready()) {
+        infrastructure.nats.healthy = true;
+        infrastructure.nats.error = undefined;
+      } else {
+        infrastructure.nats.healthy = false;
+        infrastructure.nats.error = infrastructure.nats.error || "API is not connected to NATS";
+      }
+    } catch (err) {
+      infrastructure.nats.healthy = false;
+      infrastructure.nats.error = err instanceof Error ? err.message : "NATS status check failed";
+    }
+
+    // Live Maildir accessibility check (inbox path)
+    try {
+      const inbox = new Maildir(join(getColeoDir(), "mail", "inbox"));
+      await inbox.list("new");
+      infrastructure.maildir.healthy = true;
+      infrastructure.maildir.error = undefined;
+    } catch (err) {
+      infrastructure.maildir.healthy = false;
+      infrastructure.maildir.error = err instanceof Error ? err.message : "Maildir status check failed";
+    }
+
+    // Live Qdrant connectivity check
+    try {
+      await qdrantStore.listCollections();
+      infrastructure.qdrant.healthy = true;
+      infrastructure.qdrant.error = undefined;
+    } catch (err) {
+      infrastructure.qdrant.healthy = false;
+      infrastructure.qdrant.error = err instanceof Error ? err.message : "Qdrant status check failed";
+    }
+
+    // Check transcript indexer service status (daemon-managed background process)
+    try {
+      const indexerStatus = await getServiceStatus("indexer");
+      infrastructure.indexer.running = indexerStatus.running;
+      infrastructure.indexer.healthy = indexerStatus.running;
+      infrastructure.indexer.error = indexerStatus.running ? undefined : "Not running";
+    } catch (err) {
+      infrastructure.indexer.running = false;
+      infrastructure.indexer.healthy = false;
+      infrastructure.indexer.error = err instanceof Error ? err.message : "Status check failed";
     }
 
     // Check brain status from infrastructure health table

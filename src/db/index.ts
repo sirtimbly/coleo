@@ -122,6 +122,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["046_arm_grace_default_2m", MIGRATION_046],
 		["047_task_order_key", MIGRATION_047, { table: "tasks", columns: MIGRATION_047_COLUMNS }],
 		["048_bugs_archived", MIGRATION_048, { table: "bugs", columns: MIGRATION_048_COLUMNS }],
+		["049_remove_arm_events_table", MIGRATION_049],
 	];
 
 
@@ -1290,6 +1291,13 @@ SET archived = 1
 WHERE status IN ('resolved', 'closed')
   AND resolved_at IS NOT NULL
   AND resolved_at < datetime('now', '-30 days');
+`;
+
+// Migration 049: Remove legacy SQLite arm_events mirror table.
+// JetStream is now the canonical event store for arm transcript/history.
+const MIGRATION_049 = `
+DROP TABLE IF EXISTS arm_events;
+DELETE FROM config WHERE key = 'arm_events_retention_days';
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

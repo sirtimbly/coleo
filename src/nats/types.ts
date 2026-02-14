@@ -25,6 +25,7 @@ export interface AgentHeartbeat {
   agentId: string;
   timestamp: string;
   activeArms: string[];
+  info?: AgentInfo;
   load: {
     cpu: number;
     memory: number;
@@ -71,6 +72,7 @@ export interface SpawnArmCommand {
   personality?: string;
   convictions?: string[];
   workDir?: string;
+  initialPrompt?: string;
 }
 
 export interface KillArmCommand {

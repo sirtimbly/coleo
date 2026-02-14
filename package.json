@@ -40,6 +40,8 @@
 		"test:watch": "bun test --watch src/**/__tests__/",
 		"test:integration": "bun run src/regression/runner.ts --quick",
 		"test:e2e": "bun run src/regression/runner.ts",
+		"test:distributed-observability": "bun run src/scripts/distributed-observability-smoke.ts",
+		"index:transcripts": "bun run src/scripts/jetstream-transcript-indexer.ts",
 		"simulate:arm-output": "bun run src/scripts/simulate-arm-output-processor.ts",
 		"web:dev": "bun run --cwd src/web dev",
 		"web:build": "bun run --cwd src/web build",

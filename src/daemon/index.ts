@@ -4,6 +4,7 @@
  * Provides PID file tracking and process management for:
  * - API Server (coleo serve)
  * - Brain (coleo brain run)
+ * - Transcript Indexer (JetStream -> Qdrant)
  * 
  * PID files stored in ~/.coleo/run/
  * 
@@ -21,7 +22,7 @@ import { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime 
 // Re-export utility functions for backward compatibility
 export { isProcessRunning, isSelfModifyAllowed, requireSelfModify, formatUptime } from "./utils";
 
-export type ServiceType = "server" | "brain" | "web";
+export type ServiceType = "server" | "brain" | "web" | "indexer";
 
 export interface ServiceInfo {
   type: ServiceType;
@@ -154,6 +155,11 @@ function getServiceCommand(service: ServiceType): { command: string[]; cwd: stri
     case "web":
       return {
         command: [bunBinary, cliEntrypoint, "web", "serve"],
+        cwd,
+      };
+    case "indexer":
+      return {
+        command: [bunBinary, "src/scripts/jetstream-transcript-indexer.ts"],
         cwd,
       };
     default:
@@ -366,7 +372,7 @@ export async function restartService(
  * Get status of all services
  */
 export async function getAllServiceStatus(): Promise<ServiceStatus[]> {
-  const services: ServiceType[] = ["server", "brain", "web"];
+  const services: ServiceType[] = ["server", "brain", "web", "indexer"];
   return Promise.all(services.map(getServiceStatus));
 }
 

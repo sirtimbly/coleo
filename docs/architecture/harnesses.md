@@ -8,6 +8,16 @@ Coleo supports multiple harness types for different use cases:
 
 ---
 
+## Lifecycle Policy
+
+For restart resilience, API-driven arm spawning uses a daemon-first policy:
+
+- `opencode-api` and `opencode` are **daemon-managed harnesses** and should be launched through `ArmAgent` (`coleo agent start`) so they survive API restarts.
+- `opencode-tui` may run locally without daemon management when an operator wants a visible terminal session.
+- Local fallback for daemon-managed harnesses is available only as an explicit override for debugging/recovery scenarios.
+
+---
+
 ## Current Harnesses
 
 ### opencode-api (Headless)

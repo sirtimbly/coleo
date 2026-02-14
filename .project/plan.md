@@ -1303,45 +1303,43 @@ async function createRefactoringTask(files: string[]) {
 
 ## Phase 6: Agent Harnesses
 
-**Goal**: Support multiple AI agents via pluggable harnesses.
+**Goal**: Support multiple AI agents via pluggable harnesses with restart-resilient lifecycle management.
 
-### Current Status: Focus on opencode-api only
+### Current Status
 
-**Decision**: PTY-based harnesses are complex and unreliable. We will focus on the `opencode-api` harness which works reliably via HTTP. Other harnesses are deferred to Phase 7+.
+Harnesses currently implemented:
 
-### Current Harness: opencode-api ✅
+- `opencode-api` (HTTP)
+- `opencode` (PTY)
+- `opencode-tui` (visual terminal + API)
 
-The `opencode-api` harness works reliably:
-- HTTP-based communication (no PTY required)
-- Simple MCP integration
-- No terminal/PTY complications
-- Works consistently across environments
+Lifecycle policy:
 
-### Deferred Harnesses (Phase 7+)
+- `opencode-api` and `opencode` are **daemon-managed** and should be launched through `ArmAgent` so sessions survive API restarts.
+- `opencode-tui` can remain a local/operator mode where persistence across API restarts is less critical.
 
-| Harness | Status | Reason |
-|---------|--------|--------|
-| Claude Code | Deferred | Requires PTY, complex session management |
-| Aider | Deferred | Requires PTY, session management issues |
-| Custom PTY harness | Deferred | PTY complexity, cross-platform issues |
+### Phase 6.1: Daemon-First Harness Routing
 
-### What Was Tried
+- [ ] Add regression tests for API restart scenarios (arm survives, prompt still routes, claims remain valid)
 
-- OpenCode with PTY (native terminal) - Unreliable
-- Claude Code with PTY - Complex session handling
-- Aider with PTY - Same PTY issues
+### Phase 6.2: ACP Integration (Upcoming)
 
-### What Works
+**Goal**: Add an ACP adapter layer so Coleo can interoperate with external clients (for example Claude Code and Codex CLI) without hard-coding each harness.
 
-- opencode-api harness via HTTP - Reliable, simple, consistent
+- [ ] Implement ACP handshake flow (`initialize`) and version/capability negotiation
+- [ ] Map core ACP methods to harness actions: `session/new`, `session/load`, `session/prompt`, `session/cancel`, `session/set-mode`
+- [ ] Support ACP authorization callback flow for `acp/fs/read-text-file` and `acp/fs/write-text-file`
+- [ ] Start with ACP `stdio` transport for local adapters, then add `Streamable HTTP`/SSE for remote agents
+- [ ] Define `AcpHarnessAdapter` interface mapped to Coleo harness primitives (`spawn`, `prompt`, `interrupt`, `state`)
+- [ ] Support session attach/resume semantics for long-running agents
+- [ ] Add compatibility matrix for ACP-capable clients and unsupported features
+- [ ] Add conformance tests with recorded ACP transcripts
 
 ### Future Work (Phase 7+)
 
-If PTY issues are resolved:
-- [ ] Re-evaluate PTY-based harnesses
-- [ ] Implement harness abstraction layer
-- [ ] Add PTY session management (if needed)
-- [ ] Support for other agents
+- [ ] Add more harnesses/protocol adapters beyond OpenCode
+- [ ] Improve PTY/TUI session re-attachment and persistence
+- [ ] Add placement policies (capabilities, load, affinity) for multi-agent scheduling
 
 ---
 
@@ -1598,7 +1596,7 @@ interface BudgetPolicy {
 | M4: Agentic | End of Phase 2.6 | Brain uses agentic decision making |
 | M5: Production | End of Phase 7 | Ready for real use |
 
-**Note**: M4 "Multi-Agent" (multiple harness types) is removed. We use opencode-api only for reliability.
+**Note**: Harness strategy is now daemon-first (for resilient lifecycles), with protocol adapters (ACP) planned for broader client interoperability.
 
 ---
 
@@ -1606,6 +1604,7 @@ interface BudgetPolicy {
 
 | Date | Change |
 |------|--------|
+| 2026-02-13 | Updated Phase 6 to daemon-first harness lifecycle (`opencode-api`/`opencode` via ArmAgent), kept `opencode-tui` as local-optional mode, and added ACP integration roadmap |
 | 2026-02-04 | Added Phase 2.9: Code Graph & Navigable Context - Tree-sitter scanning, SQLite-backed code graph, API/MCP navigation, and brain context enrichment |
 | 2026-01-25 | Added Phase 1.2: Collaborative Planning & Task Refinement - multi-tabbed grid view for sorting items, progress tracking, and agent-assisted task preparation/discussion |
 | 2026-01-23 | Added Phase 2.8: Global Status History Search - vector DB indexing of all status messages via NATS stream consumer, searchable by users and brain/arms |

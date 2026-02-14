@@ -3,6 +3,7 @@ export {
   api,
   type Arm,
   type ActivityEntry,
+  type TranscriptIndexerHealth,
   type ColeoConfig,
   type ArmConfig,
   type ArmConfigSummary,

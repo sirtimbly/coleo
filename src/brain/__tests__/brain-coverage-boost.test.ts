@@ -82,6 +82,8 @@ describe("Brain coverage boost", () => {
         return {
           infrastructure: {
             database: { healthy: true },
+            nats: { healthy: true, optional: true },
+            maildir: { healthy: true },
           },
         } as T;
       }

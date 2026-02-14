@@ -814,18 +814,24 @@ export class Brain {
 			}
 		}
 
+		// API is required for this tick. Wait for next poll when unavailable.
+		if (!infraHealth.components.apiServer.healthy) {
+			this.log("CRITICAL: API server unhealthy, skipping poll cycle");
+			return;
+		}
+
 		// If database is down, we can't do anything meaningful
 		if (!infraHealth.components.database.healthy) {
 			this.log("CRITICAL: Database unhealthy, skipping poll cycle");
 			return;
 		}
 
-		// Step 1: Check for new human messages (works even if API is down)
+		// Step 1: Check for new human messages
 		if (infraHealth.components.maildir.healthy) {
 			await this.processHumanMail();
 		}
 
-		// Step 2: Process arm messages (works even if API is down - uses queue files)
+		// Step 2: Process arm messages
 		await this.processArmQueue();
 
 		// Step 2.5: Check for resolved bugs and resume blocked tasks
@@ -5934,42 +5940,50 @@ Report findings using bug resolution workflow.`;
 	}> {
 		const now = new Date();
 		const issues: string[] = [];
+		const systemStatus = await this.apiRequest<{
+			status?: string;
+			infrastructure?: {
+				database?: { healthy: boolean; error?: string };
+				nats?: { healthy: boolean; optional?: boolean; error?: string };
+				maildir?: { healthy: boolean; error?: string };
+			};
+		}>("/api/status");
+		const infrastructureFromApi = systemStatus?.infrastructure;
 
-		// 1. Check Database (CRITICAL - required for everything)
-		// Use dedicated infrastructure-health endpoint first because /api/status can be slow.
-		try {
-			let dbHealth:
-				| { healthy: boolean; error?: string }
-				| undefined
-				| null = null;
+		// API server is the source for infrastructure health.
+		if (!systemStatus || !infrastructureFromApi) {
+			this.infrastructureHealth.apiServer = {
+				healthy: false,
+				lastCheck: now,
+				error: "API status unavailable",
+			};
+			this.infrastructureHealth.database = {
+				healthy: false,
+				lastCheck: now,
+				error: "API status unavailable",
+			};
+			this.infrastructureHealth.nats = {
+				healthy: false,
+				lastCheck: now,
+				error: "API status unavailable",
+				optional: true,
+			};
+			this.infrastructureHealth.maildir = {
+				healthy: false,
+				lastCheck: now,
+				error: "API status unavailable",
+			};
 
-			const infrastructure = await this.apiRequest<{
-				components?: Array<{
-					component: string;
-					healthy: boolean;
-					error?: string;
-				}>;
-			}>("/api/brain/internal/infrastructure-health");
-			dbHealth = infrastructure?.components?.find(
-				(component) => component.component === "database",
-			);
+			issues.push(`API server unavailable at ${this.apiBaseUrl} (status endpoint)`);
+		} else {
+			this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
 
-			// Backward-compatible fallback for older API versions.
-			if (!dbHealth) {
-				const systemStatus = await this.apiRequest<{
-					infrastructure?: {
-						database?: { healthy: boolean; error?: string };
-					};
-				}>("/api/status");
-				dbHealth = systemStatus?.infrastructure?.database;
-			}
-
+			const dbHealth = infrastructureFromApi.database;
 			if (!dbHealth) {
 				this.infrastructureHealth.database = {
 					healthy: false,
 					lastCheck: now,
-					error:
-						"Database health unavailable from API (/api/brain/internal/infrastructure-health, /api/status)",
+					error: "Database health unavailable from /api/status",
 				};
 				issues.push("Database health unavailable from API");
 			} else if (dbHealth.healthy) {
@@ -5984,89 +5998,26 @@ Report findings using bug resolution workflow.`;
 					`Database error: ${dbHealth.error || "Database reported unhealthy"}`,
 				);
 			}
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
-			this.infrastructureHealth.database = {
-				healthy: false,
-				lastCheck: now,
-				error: errorMsg,
-			};
-			issues.push(`Database error: ${errorMsg}`);
-		}
 
-		// 2. Check API Server (CRITICAL for arm communication)
-		try {
-			const apiHealthy = await this.isApiServerAvailable();
-			if (apiHealthy) {
-				this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
-			} else {
-				this.infrastructureHealth.apiServer = {
-					healthy: false,
-					lastCheck: now,
-					error: "API server not responding",
-				};
-				issues.push("API server not responding at " + this.apiBaseUrl);
-			}
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
-			this.infrastructureHealth.apiServer = {
-				healthy: false,
-				lastCheck: now,
-				error: errorMsg,
-			};
-			issues.push(`API server error: ${errorMsg}`);
-		}
-
-		// 3. Check NATS (OPTIONAL - degrades functionality but not critical)
-		try {
-			if (this.natsClient) {
-				const connected = this.natsClient.connected();
-				if (connected) {
-					this.infrastructureHealth.nats = {
-						healthy: true,
-						lastCheck: now,
-						optional: true,
-					};
-				} else {
-					this.infrastructureHealth.nats = {
-						healthy: false,
-						lastCheck: now,
-						error: "NATS disconnected",
-						optional: true,
-					};
-					// Not a critical issue - we can work without NATS
-				}
-			} else {
-				this.infrastructureHealth.nats = {
-					healthy: false,
-					lastCheck: now,
-					error: "NATS client not initialized",
-					optional: true,
-				};
-			}
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
+			const natsHealth = infrastructureFromApi.nats;
 			this.infrastructureHealth.nats = {
-				healthy: false,
+				healthy: natsHealth?.healthy === true,
 				lastCheck: now,
-				error: errorMsg,
-				optional: true,
+				error: natsHealth?.error,
+				optional: natsHealth?.optional ?? true,
 			};
-		}
 
-		// 4. Check Maildir (IMPORTANT for human communication but not blocking)
-		try {
-			// Try to list inbox to verify maildir is accessible
-			await this.inbox.list("new");
-			this.infrastructureHealth.maildir = { healthy: true, lastCheck: now };
-		} catch (err) {
-			const errorMsg = err instanceof Error ? err.message : String(err);
+			const maildirHealth = infrastructureFromApi.maildir;
 			this.infrastructureHealth.maildir = {
-				healthy: false,
+				healthy: maildirHealth?.healthy === true,
 				lastCheck: now,
-				error: errorMsg,
+				error: maildirHealth?.error || (maildirHealth ? undefined : "Maildir health unavailable from /api/status"),
 			};
-			issues.push(`Maildir error: ${errorMsg}`);
+			if (!this.infrastructureHealth.maildir.healthy) {
+				issues.push(
+					`Maildir error: ${this.infrastructureHealth.maildir.error || "Maildir unhealthy"}`,
+				);
+			}
 		}
 
 		// Determine overall health
@@ -6088,8 +6039,9 @@ Report findings using bug resolution workflow.`;
 			}
 		}
 
-		// Persist infrastructure health to API server
-		try {
+		// Persist infrastructure health to API server (only when API is reachable)
+		if (this.infrastructureHealth.apiServer.healthy) {
+			try {
 			const components = [
 				{
 					component: "database",
@@ -6117,19 +6069,20 @@ Report findings using bug resolution workflow.`;
 				},
 			];
 
-			const persistResponse = await this.apiRequest<{
-				result: { success: boolean; error?: string };
-			}>("/api/brain/internal/infrastructure-health", {
-				method: "POST",
-				body: JSON.stringify({ components }),
-			});
-			if (!persistResponse?.result?.success) {
-				this.log(
-					`Failed to persist infrastructure health: ${persistResponse?.result?.error || "API unavailable"}`,
-				);
+				const persistResponse = await this.apiRequest<{
+					result: { success: boolean; error?: string };
+				}>("/api/brain/internal/infrastructure-health", {
+					method: "POST",
+					body: JSON.stringify({ components }),
+				});
+				if (!persistResponse?.result?.success) {
+					this.log(
+						`Failed to persist infrastructure health: ${persistResponse?.result?.error || "API unavailable"}`,
+					);
+				}
+			} catch (err) {
+				this.log(`Failed to persist infrastructure health: ${err}`);
 			}
-		} catch (err) {
-			this.log(`Failed to persist infrastructure health: ${err}`);
 		}
 
 		return {
@@ -6147,20 +6100,22 @@ Report findings using bug resolution workflow.`;
 	private async attemptInfrastructureRecovery(): Promise<boolean> {
 		let recovered = false;
 
-		// Check API health for database/API recovery.
-		if (!this.infrastructureHealth.database.healthy) {
+		// API server is required for all recovery decisions.
+		// If API is down, skip local fallback recovery work for this tick.
+		if (!this.infrastructureHealth.apiServer.healthy) {
 			try {
 				const status = await this.apiRequest<{ status: string }>("/api/health");
 				if (status?.status === "ok") {
-					this.log("Recovered database/API connection");
+					this.log("Recovered API connection");
 					recovered = true;
 				}
 			} catch (err) {
-				this.log(`Failed to recover database: ${err}`);
+				this.log(`Failed to recover API connection: ${err}`);
 			}
+			return recovered;
 		}
 
-		// Try to reconnect NATS if needed
+		// Try to reconnect NATS if needed (API is healthy, NATS remains optional)
 		if (!this.infrastructureHealth.nats.healthy && !this.natsClient) {
 			try {
 				this.natsClient = new NatsClient({

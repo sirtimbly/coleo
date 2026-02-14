@@ -38,11 +38,17 @@ describe("Phase 1 Acceptance – API Health", () => {
       status: string; 
       arms: { total: number };
       activity: { last24h: number };
+      infrastructure?: { indexer?: { running: boolean }; qdrant?: { healthy: boolean } };
     };
     expect(body.status).toBe("ok");
     expect(body).toHaveProperty("arms");
     expect(typeof body.arms.total).toBe("number");
     expect(body).toHaveProperty("activity");
+    expect(body.infrastructure).toBeDefined();
+    expect(body.infrastructure?.indexer).toBeDefined();
+    expect(typeof body.infrastructure?.indexer?.running).toBe("boolean");
+    expect(body.infrastructure?.qdrant).toBeDefined();
+    expect(typeof body.infrastructure?.qdrant?.healthy).toBe("boolean");
   });
 });
 

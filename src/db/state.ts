@@ -220,11 +220,16 @@ export function cleanupOldMessages(db: Database, olderThanDays: number = 7): num
  */
 export function cleanupOldArmEvents(db: Database, olderThanDays: number = 7): number {
   const cutoff = new Date(Date.now() - olderThanDays * 24 * 60 * 60 * 1000).toISOString();
-  const result = db.run(
-    "DELETE FROM arm_events WHERE timestamp < ?",
-    [cutoff]
-  );
-  return result.changes;
+  try {
+    const result = db.run(
+      "DELETE FROM arm_events WHERE timestamp < ?",
+      [cutoff]
+    );
+    return result.changes;
+  } catch {
+    // Legacy table may be absent on newer schemas.
+    return 0;
+  }
 }
 
 function rowToMessage(row: MessageRow): Message {

@@ -1,201 +1,151 @@
 # Agent Guidelines
 
-This file is for coding agents working in this repo. Keep changes minimal and follow existing patterns.
+This document orients agentic contributors. Respect existing patterns, document every non-trivial change, and treat this repo as the single source of truth.
 
 ## Build, Lint, Test
 
-```bash
-# Root dev/servers
-bun run dev
-bun run server
-bun run brain
-
-# Web dev (src/web)
-bun run web:dev
-bun run web:build
-bun run web:preview
-
-# Type checking
-bun run typecheck
-
-# Unit tests
-bun test
-bun run test:watch
-
-# Run a single test file
-bun test src/api/__tests__/tasks.test.ts
-
-# Run tests matching a title
-bun test -t "task creates"
-
-# Integration and E2E tests
-bun run test:integration
-bun run test:e2e
-
-# Build outputs (CLI + web + templates)
-bun run build
-
-# Web lint (only web package has ESLint)
-bun run --cwd src/web lint
-
-# Docs
-bun run docs:dev
-bun run docs:build
-bun run docs:preview
-```
-
-Notes:
-- The root `build` script runs Vite for `src/web` and then Bun build for CLI.
-- Unit tests live under `src/**/__tests__/` and use Bun's test runner.
+- **Root services**
+  - `bun run dev` (launch CLI + web dev servers)
+  - `bun run server`, `bun run brain` (start standalone API/brain stacks)
+- **Web workspace (`src/web`)**
+  - `bun run web:dev`, `bun run web:build`, `bun run web:preview`
+- **Type checking & lint**
+  - `bun run typecheck`
+  - `bun run --cwd src/web lint` (ESLint lives inside the web package)
+- **Testing**
+  - `bun test` (runs `src/**/__tests__/*.test.ts` via Bun)
+  - `bun run test:watch`
+  - `bun test src/api/__tests__/tasks.test.ts` (single file)
+  - `bun test -t "task creates"` (title match; Bun `-t` filters)
+  - `bun run test:integration` and `bun run test:e2e`
+- **Build artifacts**
+  - `bun run build` (Vite + Bun CLI build path)
+- **Docs**
+  - `bun run docs:dev`, `bun run docs:build`, `bun run docs:preview`
 
 ## Code Style Guidelines
 
 ### TypeScript
-- Repo uses `strict` TypeScript. Avoid `any`; use `unknown` with type guards.
-- Add explicit return types for exported functions.
-- Prefer `interface` for object shapes and `type` for unions/aliases.
-- Use `as const` for literal types when needed.
-- Use `satisfies` operator for type-safe object literals.
-
-### Naming Conventions
-- Files: kebab-case (example: `task-manager.ts`).
-- Functions/variables: camelCase.
-- Classes/interfaces/types: PascalCase.
-- Constants: UPPER_SNAKE_CASE.
-- Database columns: snake_case.
-- Terminology: use "arm" (not "tentacle"); "harness" means agent type.
+- The repo uses `strict` mode; avoid `any`. Prefer `unknown` with guards if you must defer typing.
+- Exported functions and hooks need explicit return types; internal helpers may infer.
+- Use `interface` for data shapes and `type` for unions/aliases or recursive definitions.
+- Favor `as const` when fixing literal values and `satisfies` when validating structure.
+- Keep files limited in scope (single responsibility) and break large files into folders under `src/*`.
+- Keep mutation localized: prefer `const`, `readonly`, and immutable helpers when possible.
+- Separate helpers from UI components; extract business logic into plain functions or hooks.
 
 ### Imports
-- Order: external packages, internal modules, then type-only imports.
-- Use `import type { Foo }` for type-only usage.
-- Prefer absolute imports across modules; relative imports within a module.
-- Use `bun:sqlite` (not `node:sqlite`).
+- Order imports: external packages first, then internal modules, then type-only statements.
+- Use `import type { Foo }` for pure types and keep them at the bottom of the block.
+- Prefer absolute paths for cross-module imports (e.g., `src/api/...`); keep relatives for same folder logic.
+- Use Bun-specific shims (`bun:sqlite`, `bun:test`) for platform integrations.
+
+### Naming
+- Files and folders: kebab-case (e.g., `task-manager.ts`).
+- Functions/variables: camelCase.
+- Types/interfaces/classes: PascalCase.
+- Constants/hard-coded enums: UPPER_SNAKE_CASE.
+- Domain-specific terms: refer to `arm` (never `tentacle`), `harness` for agent kinds, `proposal` for queued work.
 
 ### Formatting
-- Follow the existing file's style (tabs/spaces, quotes, trailing commas).
-- No repo-wide formatter in root; `src/web` uses ESLint.
+- Mirror existing delimiter choices (quotes, commas, trailing) within each file.
+- Apply Bun/Vite defaults instead of adding another formatter; run `bun fmt` if introduced to repo.
+- Keep lines reasonably short (~120 cols). Wrap long chains or template helpers onto multiple lines.
+
+### Observability
+- Include request ids, route names, and relevant params/ids in logs coming from the server.
+- When instrumenting ops use Bun-compatible loggers; keep log volume reasonable during normal runs.
+- Prefer structured logging over ad-hoc `console.log` whenever you need to correlate events.
+
+### Frontend & UX
+- When updating UI, aim for expressive typography, deliberate color palettes, and purposeful layouts rather than default stacks.
+- Prefer gradients, patterns, or subtle atmospherics over flat, single-color backgrounds; avoid purple-on-white or dark-mode bias unless the design system already uses it.
+- Introduce meaningful motion (page-load, staggered reveals) and ensure components feel intentional on desktop and mobile.
+- If you work inside an existing design system, preserve its visual language and spacing rather than inventing a new theme.
 
 ### Error Handling
-- API routes should use `HttpError` middleware (`src/api/middleware/error.ts`).
-- API error payload shape is `{ error: string }`.
-- Common status codes: 400, 401, 403, 404, 500.
-- Log unexpected errors with context for debugging.
-- Use `HttpError` for expected errors; let unexpected errors bubble up to be caught by middleware.
+- API routes should throw or pass through instances of `HttpError` from `src/api/middleware/error.ts` for expected failures.
+- Unexpected issues should bubble up; middleware captures/logs them and returns `{ error: string }`.
+- Prefer explicit status codes: 400 (validation), 401/403 (authz), 404 (missing), 500 (server).
+- Log contextual information (request id, route, params) when handling unexpected errors.
 
 ### API Routes
-- Routes live in `src/api/routes/*.ts`.
-- Response shapes: `{ arm: ... }` or `{ arms: [...] }` when applicable.
-- Use parameterized SQL queries only.
-- Apply `HttpError` for consistent responses.
+- Routes live in `src/api/routes/*.ts`; each route exports handlers with strict typings.
+- Responses follow normalized shapes such as `{ arm: ... }`, `{ arms: [...] }`, `{ error: string }`.
+- Always use parameterized SQL or prepared statements; never interpolate raw strings into queries.
+- Apply `HttpError` before sending to ensure consistent payloads.
 
-### Database
-- Migrations in `src/db/index.ts`.
-- `src/brain/**` must not import `bun:sqlite`.
-- Brain interacts with the DB via HTTP API only.
-- Use WAL mode and enforce foreign keys.
+### Database & Persistence
+- Migrations/code in `src/db/index.ts`; keep schema changes backward-compatible when possible.
+- Use SQLite with WAL mode and foreign key enforcement; treat `~/.octopai/octopai.db` as the system of record.
+- `brain` packages must not `import bun:sqlite`; interact with the DB exclusively through HTTP APIs.
+- Do not add JSON state files; rely on the database or existing config locations.
 
-### Testing
-- Use `bun:test` APIs (`describe`, `it`, `expect`, `beforeEach`, `afterEach`).
-- Prefer in-memory SQLite for tests and clean up in `afterEach`.
-- Test files: `*.test.ts` under `src/**/__tests__/`.
+### Testing Practices
+- Tests live in `src/**/__tests__/*.test.ts` and use Bun's `describe/it/expect` semantics.
+- Prefer in-memory SQLite and clean state in `afterEach`; avoid hitting production DB files.
+- Mock external services and use real HTTP endpoints sparingly.
+- Keep each test fast and focused; split large suites into smaller files if execution slows down.
 
-## System of Record
-SQLite is the system of record. Do not add JSON state files.
+## System & Tooling Notes
 
-| Data | Location |
-| --- | --- |
-| Arms, Proposals, Activity, Config, Claims | `~/.octopai/octopai.db` |
-| MCP configs | `~/.octopai/mcp/*.json` (generated) |
-| Mail | `~/.octopai/mail/` (Maildir) |
+### System of Record
+- Database states (arms, proposals, activity, claims) live in `~/.octopai/octopai.db`.
+- Generated MCP configs: `~/.octopai/mcp/*.json`.
+- Maildir: `~/.octopai/mail/` (Maildir format).
 
-## Technology Stack
-Bun, TypeScript (strict), Hono, SQLite (`bun:sqlite`), React, Vite, TailwindCSS, shadcn/ui, MCP, Maildir.
+### Technology Stack
+- Bun + TypeScript (strict), Hono (API server), SQLite (`bun:sqlite`).
+- React + Vite + TailwindCSS + shadcn/ui powering `src/web`.
+- Custom MCP/brain orchestrations run alongside Maildir handling.
 
-## Code Organization
+### Code Organization
 ```
 src/
-├── api/       # Hono API server (routes in src/api/routes/*.ts)
-├── arm/       # Arm spawning/management
-├── brain/     # Central coordinator
-├── cli/       # CLI commands
-├── db/        # Database/migrations
+├── api/       # Hono routes and middleware
+├── arm/       # Agent orchestration
+├── brain/     # Central coordinator logic
+├── cli/       # CLI commands and helpers
+├── db/        # Schema + migrations
 ├── mail/      # Maildir implementation
-├── mcp/       # MCP server
-├── types/     # Shared types
-└── web/       # React frontend (separate package.json)
+├── mcp/       # MCP server code
+├── types/     # Shared type declarations
+└── web/       # React frontend package
 ```
 
-## Copilot Instructions (from .github/copilot-instructions.md)
+### Search & Tooling Guidance
+- Prefer `search_code` whenever you need conceptual matches, usage examples, or semantics rather than exact strings.
+- Use `search_docs` for internal docs (GDS, ADRs, guides); specify sources when needed.
+- `search_api` uncovers endpoint definitions/formats when working on services.
+- Reserve glob/grep for filename queries, regex matches, or performance-sensitive lookups.
+- Advanced `search_code` filters: `include_extensions`, `exclude_patterns`, `must_contain`, `must_contain_all`.
+- Use `codesearch`/`docs`/`api` tools before opening files to avoid unnecessary context switching.
 
-### Semantic Code Search
-Use `search_code` for conceptual or related code discovery.
+### Copilot Instructions (`.github/copilot-instructions.md`)
+- Use `search_code` for related logic discovery and prefer it over raw file search when looking for implementations.
+- Use `search_docs`/`search_api` for architecture or endpoint detail hunts.
+- Avoid scattering search methods; pair each question with the most appropriate helper.
 
-Always use `search_code` when:
-- Looking for how something is implemented.
-- Finding where logic lives.
-- Searching for code patterns or related functionality.
-- The query is conceptual rather than an exact string match.
-- Finding files that contain specific functions together.
+### Cursor Rules
+- There are currently no `.cursorrules` or `.cursor/rules/` entries in this repository.
 
-Only use file search/grep when:
-- You need regex matching or counting.
-- You are searching for files by name pattern.
+### Multi-Agent Collaboration
+- Always run `git status` before making commits and ensure you only stage files you modified.
+- Check claims (via `claim_file`) before editing shared artifacts and release or transfer claims when done.
+- Treat `bun run dev` as a quick smoke test when you touch server/web bridges.
 
-Advanced filters supported by `search_code`:
-- `query` (natural language)
-- `include_extensions` (example: `.ts,.tsx`)
-- `exclude_patterns` (example: `node_modules,test,.spec`)
-- `must_contain` (comma-separated exact terms)
-- `must_contain_all` (`true` or `false`)
+### Documentation & Planning
+- Read docs under `docs/` before touching large systems; files describe plans, requirements, and architecture decisions.
+- Update documentation whenever you introduce new public-facing behavior, APIs, or persistent procedures.
+- Keep documentation changes self-contained; link to plan IDs in code comments if the brain issues follow-up tasks.
 
-Examples:
-```bash
-search_code(query="React hooks", include_extensions=".ts,.tsx")
-search_code(query="authentication", exclude_patterns="test,.spec,__tests__")
-search_code(
-  query="business operations handling",
-  must_contain="useBusinessOperations,isMultiOp"
-)
-```
+### External SDK Guidance
+- Prefer official SDKs (e.g., `@opencode-ai/sdk`) over manual HTTP when integrating with external services.
+- Example pattern:
+  ```ts
+  import { createOpencodeClient } from "@opencode-ai/sdk";
 
-### Documentation Search
-Use `search_docs` for internal documentation (GDS, ADRs, guides, RFCs).
-
-```bash
-search_docs(query="Button component variants and props")
-search_docs(query="authentication architecture", sources="eng_portal")
-```
-
-### API Search
-Use `search_api` to find endpoints and request/response formats.
-
-```bash
-search_api(query="create field")
-search_api(query="authentication", service="auth-svc", method="POST")
-```
-
-### Tool Choice Summary
-| Need | Tool |
-| --- | --- |
-| Find code in this project | `search_code` |
-| Find GDS component usage | `search_docs` (sources="gds") |
-| Find architecture decisions | `search_docs` (sources="eng_portal") |
-| Find API endpoints | `search_api` |
-
-## Cursor Rules
-No `.cursorrules` or `.cursor/rules/` found in this repo.
-
-## Multi-Agent Contention
-- Run `git status` before committing; check for unexpected changes.
-- Do not commit files you did not change.
-- Check the claims table before editing; use `claim_file` for major edits.
-
-## External SDK Integration
-Prefer official SDKs over raw fetch when available:
-```typescript
-import { createOpencodeClient } from "@opencode-ai/sdk";
-
-const client = createOpencodeClient({ baseUrl: "http://localhost:4096" });
-```
-
-OpenCode SDK uses object format: `{ providerID: "opencode", modelID: "grok-code" }`.
+  const client = createOpencodeClient({ baseUrl: "http://localhost:4096" });
+  ```
+- When instantiating OpenCode SDK objects, follow the `{ providerID: "opencode", modelID: "grok-code" }` shape.
+- Cache SDK clients per arm/lifecycle where it reduces jitter; reuse objects when safe.

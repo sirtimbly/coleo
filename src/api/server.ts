@@ -8,7 +8,6 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { dirname } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
-import { cleanupOldArmEvents } from "../db/state";
 import { logger, createAuthMiddleware } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes } from "./routes";
@@ -17,9 +16,11 @@ import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadca
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
+import { eventStore } from "../nats/jetstream";
 import { loadEnvFile } from "../config/env";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { qdrantStore } from "../qdrant";
+import { getServiceStatus, startService } from "../daemon";
 
 export interface ServerContext {
   Variables: {
@@ -30,6 +31,7 @@ export interface ServerContext {
 
 // Global ArmClient for distributed arm management
 let globalArmClient: ArmClient | null = null;
+const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
 export function getArmClient(): ArmClient | null {
   return globalArmClient;
@@ -39,27 +41,76 @@ export function setArmClient(client: ArmClient): void {
   globalArmClient = client;
 }
 
-function getRetentionDays(db: Database, key: string, fallback: number): number {
-  const row = db.query("SELECT value FROM config WHERE key = ?").get(key) as { value: string } | null;
-  const parsed = row ? Number.parseInt(row.value, 10) : NaN;
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    return fallback;
+function shouldAutostartTranscriptIndexer(): boolean {
+  const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
+  if (nodeEnv === "test") {
+    return false;
   }
-  return parsed;
+
+  const raw = process.env[INDEXER_AUTOSTART_ENV];
+  if (!raw) {
+    return true;
+  }
+
+  const value = raw.trim().toLowerCase();
+  return !["0", "false", "no", "off", "disabled"].includes(value);
 }
 
-function scheduleArmEventRetention(db: Database, log: (msg: string, level?: LogLevel) => void): void {
-  const run = () => {
-    const retentionDays = getRetentionDays(db, "arm_events_retention_days", 7);
-    if (retentionDays === 0) return;
-    const deleted = cleanupOldArmEvents(db, retentionDays);
-    if (deleted > 0) {
-      log(`[retention] Deleted ${deleted} arm_events older than ${retentionDays} days`, "verbose");
-    }
-  };
+async function maybeStartTranscriptIndexer(
+  log: (msg: string, level?: LogLevel) => void,
+  options: {
+    natsReady: boolean;
+    jetstreamReady: boolean;
+    qdrantReady: boolean;
+    quietSkips?: boolean;
+  },
+): Promise<void> {
+  const quietSkips = options.quietSkips === true;
 
-  run();
-  setInterval(run, 60 * 60 * 1000);
+  if (!shouldAutostartTranscriptIndexer()) {
+    if (!quietSkips) {
+      log(
+        `[startup] Transcript indexer autostart disabled (${INDEXER_AUTOSTART_ENV})`,
+        "verbose",
+      );
+    }
+    return;
+  }
+
+  if (!options.natsReady) {
+    if (!quietSkips) {
+      log("[startup] Skipping transcript indexer autostart: NATS is unavailable", "normal");
+    }
+    return;
+  }
+
+  if (!options.jetstreamReady) {
+    if (!quietSkips) {
+      log("[startup] Skipping transcript indexer autostart: JetStream EventStore is unavailable", "normal");
+    }
+    return;
+  }
+
+  if (!options.qdrantReady) {
+    if (!quietSkips) {
+      log("[startup] Skipping transcript indexer autostart: Qdrant is unavailable", "normal");
+    }
+    return;
+  }
+
+  try {
+    const current = await getServiceStatus("indexer");
+    if (current.running) {
+      return;
+    }
+
+    const status = await startService("indexer");
+    if (status.running) {
+      log(`[startup] Transcript indexer running (PID: ${status.pid ?? "unknown"})`, "normal");
+    }
+  } catch (err) {
+    log(`[startup] Warning: failed to start transcript indexer: ${err}`, "normal");
+  }
 }
 
 /**
@@ -197,9 +248,114 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           broadcast("agents", "agent.disconnected", { agentId });
         },
         onArmEvent: (event) => {
-          // Forward NATS arm events to WebSocket
-          if ('armId' in event) {
-            broadcastArmEvent(event.armId, event.type, event);
+          if (!("armId" in event)) {
+            return;
+          }
+
+          const armId = event.armId;
+          broadcastArmEvent(armId, event.type, event);
+          const agentHost = armClient?.getAgent(event.agentId)?.hostname ?? null;
+
+          const now = new Date().toISOString();
+          const armExists = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
+          if (!armExists) {
+            return;
+          }
+
+          const persistDistributedEvent = (eventType: string, payload: unknown): void => {
+            const truncatedData = truncateLargeFields(payload) as Record<string, unknown>;
+
+            if (eventStore.isInitialized()) {
+              eventStore
+                .publishEvent(`coleo.events.arm.${armId}.${eventType}`, {
+                  type: eventType,
+                  armId,
+                  data: truncatedData,
+                  timestamp: now,
+                })
+                .catch((err) => {
+                  console.error(`[server] Failed to publish distributed activity event: ${err}`);
+                });
+            }
+          };
+
+          if (event.type === "arm.status_changed") {
+            db.run(
+              "UPDATE arms SET status = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [event.newStatus, event.agentId, agentHost, now, now, armId],
+            );
+            persistDistributedEvent("arm.status_changed", {
+              from: event.oldStatus,
+              to: event.newStatus,
+              error: event.error,
+              agentId: event.agentId,
+              source: "distributed",
+            });
+            return;
+          }
+
+          if (event.type === "arm.killed") {
+            db.run(
+              "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [now, now, armId],
+            );
+            persistDistributedEvent("arm.killed", {
+              agentId: event.agentId,
+              source: "distributed",
+            });
+            return;
+          }
+
+          if (event.type === "arm.spawned") {
+            const state = event.state;
+            db.run(
+              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [state.status, state.pid, state.port, state.sessionId, event.agentId, agentHost, now, now, armId],
+            );
+            persistDistributedEvent("arm.spawned", {
+              agentId: event.agentId,
+              state,
+              source: "distributed",
+            });
+            return;
+          }
+
+          if (event.type === "arm.recovered") {
+            const state = event.state;
+            db.run(
+              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [state.status, state.pid, state.port, state.sessionId, event.agentId, agentHost, now, now, armId],
+            );
+            persistDistributedEvent("arm.recovered", {
+              agentId: event.agentId,
+              state,
+              source: "distributed",
+            });
+            return;
+          }
+
+          if (event.type === "arm.log") {
+            persistDistributedEvent("arm.log", {
+              level: event.level,
+              message: event.message,
+              data: event.data,
+              agentId: event.agentId,
+              source: "distributed",
+            });
+            return;
+          }
+
+          if (event.type === "arm.activity") {
+            const rawType = typeof event.activity?.type === "string" ? event.activity.type : "activity";
+            const activityData =
+              event.activity && typeof event.activity.data === "object" && event.activity.data !== null
+                ? event.activity.data as Record<string, unknown>
+                : { value: event.activity?.data };
+            persistDistributedEvent(rawType, {
+              ...activityData,
+              agentId: event.agentId,
+              source: "distributed",
+            });
           }
         },
       });
@@ -216,6 +372,27 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     log("Distributed arm management will not be available", "normal");
     nats = undefined;
   }
+
+  await maybeStartTranscriptIndexer(log, {
+    natsReady: Boolean(nats?.ready()),
+    jetstreamReady: eventStore.isInitialized(),
+    qdrantReady: qdrantStore.isInitialized(),
+  });
+
+  const reconcileIntervalMs = Number.parseInt(
+    process.env.COLEO_TRANSCRIPT_INDEXER_RECONCILE_MS || "30000",
+    10,
+  );
+  if (Number.isFinite(reconcileIntervalMs) && reconcileIntervalMs > 0) {
+    setInterval(() => {
+      void maybeStartTranscriptIndexer(log, {
+        natsReady: Boolean(nats?.ready()),
+        jetstreamReady: eventStore.isInitialized(),
+        qdrantReady: qdrantStore.isInitialized(),
+        quietSkips: true,
+      });
+    }, reconcileIntervalMs);
+  }
   
   // Initialize harness manager first (needed for session recovery)
   log("Initializing harness manager...", "verbose");
@@ -229,22 +406,21 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
     const truncatedData = truncateLargeFields(data) as Record<string, unknown>;
     
-    // Store the event in the database
     const now = new Date().toISOString();
-    const eventData = JSON.stringify(truncatedData);
-
-    try {
-      const armExists = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
-      if (!armExists) {
-        console.warn(`[server] Skipping arm event for unknown arm: ${armId}`);
-      } else {
-        db.run(
-          "INSERT INTO arm_events (arm_id, session_id, event_type, event_data, timestamp) VALUES (?, ?, ?, ?, ?)",
-          [armId, (truncatedData as any)?.sessionId || null, event, eventData, now]
-        );
-      }
-    } catch (err) {
-      console.error(`[server] Failed to store arm event: ${err}`);
+    const armExists = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
+    if (!armExists) {
+      console.warn(`[server] Skipping arm event for unknown arm: ${armId}`);
+    } else if (eventStore.isInitialized()) {
+      eventStore
+        .publishEvent(`coleo.events.arm.${armId}.${event}`, {
+          type: event,
+          armId,
+          data: truncatedData,
+          timestamp: now,
+        })
+        .catch((err) => {
+          console.error(`[server] Failed to publish local arm event: ${err}`);
+        });
     }
 
     // Broadcast the event via WebSocket
@@ -300,8 +476,6 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   
   log("Creating app...", "verbose");
   const app = createApp(db, config);
-
-  scheduleArmEventRetention(db, log);
 
   log(`Starting server on ${config.host}:${config.port}...`, "normal");
 

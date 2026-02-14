@@ -13,7 +13,11 @@ describe("claim-cleanup", () => {
 		db.exec(`
       CREATE TABLE arms (
         id TEXT PRIMARY KEY,
-        status TEXT NOT NULL
+        status TEXT NOT NULL,
+        pid INTEGER,
+        port INTEGER,
+        agent_id TEXT,
+        updated_at TEXT
       );
 
       CREATE TABLE claims (
@@ -88,5 +92,51 @@ describe("claim-cleanup", () => {
 		expect(idleClaim?.released_at).toBeNull();
 		expect(stoppedClaim?.released_at).not.toBeNull();
 		expect(missingClaim?.released_at).not.toBeNull();
+	});
+
+	it("releases claims held by local arms whose PID is no longer alive", () => {
+		const now = new Date().toISOString();
+		db.run(
+			"INSERT INTO arms (id, status, pid, updated_at) VALUES (?, ?, ?, ?)",
+			["arm-dead", "idle", 999999, now],
+		);
+		db.run(
+			"INSERT INTO claims (arm_id, file_path, claim_type, claimed_at) VALUES (?, ?, ?, ?)",
+			["arm-dead", "src/dead.ts", "write", now],
+		);
+
+		const released = releaseClaimsForInactiveArms(db, now);
+		expect(released).toBe(1);
+
+		const claim = db
+			.query("SELECT released_at FROM claims WHERE arm_id = ?")
+			.get("arm-dead") as { released_at: string | null } | null;
+		const arm = db
+			.query("SELECT status, pid FROM arms WHERE id = ?")
+			.get("arm-dead") as { status: string; pid: number | null } | null;
+
+		expect(claim?.released_at).not.toBeNull();
+		expect(arm?.status).toBe("stopped");
+		expect(arm?.pid).toBeNull();
+	});
+
+	it("keeps claims for distributed arms even if local PID check would fail", () => {
+		const now = new Date().toISOString();
+		db.run(
+			"INSERT INTO arms (id, status, pid, agent_id, updated_at) VALUES (?, ?, ?, ?, ?)",
+			["arm-remote", "idle", 999999, "agent-1", now],
+		);
+		db.run(
+			"INSERT INTO claims (arm_id, file_path, claim_type, claimed_at) VALUES (?, ?, ?, ?)",
+			["arm-remote", "src/remote.ts", "write", now],
+		);
+
+		const released = releaseClaimsForInactiveArms(db, now);
+		expect(released).toBe(0);
+
+		const claim = db
+			.query("SELECT released_at FROM claims WHERE arm_id = ?")
+			.get("arm-remote") as { released_at: string | null } | null;
+		expect(claim?.released_at).toBeNull();
 	});
 });

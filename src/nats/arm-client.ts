@@ -173,6 +173,7 @@ export class ArmClient {
       personality?: string;
       convictions?: string[];
       workDir?: string;
+      initialPrompt?: string;
     },
     timeoutMs = 60000
   ): Promise<CommandResponse<SpawnResponse>> {
@@ -303,10 +304,24 @@ export class ArmClient {
    * List all arms on an agent
    */
   async listArmsOnAgent(agentId: string, timeoutMs = 10000): Promise<CommandResponse<ListArmsResponse>> {
-    return this.natsClient.sendCommand<ListArmsResponse>(agentId, {
+    const response = await this.natsClient.sendCommand<ListArmsResponse>(agentId, {
       type: 'list_arms',
       requestId: generateRequestId(),
     }, timeoutMs);
+
+    if (response.success && response.data?.arms) {
+      const agent = this.agents.get(agentId);
+      const trackedArmIds: string[] = [];
+      for (const arm of response.data.arms) {
+        this.armToAgent.set(arm.armId, agentId);
+        trackedArmIds.push(arm.armId);
+      }
+      if (agent) {
+        agent.arms = trackedArmIds;
+      }
+    }
+
+    return response;
   }
 
   // ============================================
@@ -326,15 +341,29 @@ export class ArmClient {
   }
 
   private handleAgentHeartbeat(heartbeat: AgentHeartbeat): void {
-    const agent = this.agents.get(heartbeat.agentId);
-    
+    let agent = this.agents.get(heartbeat.agentId);
+
+    if (!agent && heartbeat.info) {
+      this.log(`Discovered agent from heartbeat: ${heartbeat.agentId}`, 'debug');
+      this.agents.set(heartbeat.agentId, {
+        info: heartbeat.info,
+        lastHeartbeat: new Date(),
+        arms: [...heartbeat.activeArms],
+      });
+      this.onAgentConnected?.(heartbeat.info);
+      agent = this.agents.get(heartbeat.agentId);
+    }
+
     if (!agent) {
-      // Unknown agent - request registration
-      this.log(`Unknown agent heartbeat: ${heartbeat.agentId}`, 'debug');
+      this.log(`Unknown agent heartbeat without registration info: ${heartbeat.agentId}`, 'debug');
+      this.onAgentHeartbeat?.(heartbeat);
       return;
     }
 
     agent.lastHeartbeat = new Date();
+    if (heartbeat.info) {
+      agent.info = heartbeat.info;
+    }
     agent.arms = heartbeat.activeArms;
 
     // Update arm -> agent mappings

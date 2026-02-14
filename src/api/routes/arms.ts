@@ -10,12 +10,15 @@ import { getGlobalHarnessManager } from "../../harness";
 import { broadcast } from "../websocket";
 import { loadConfig, getColeoDir, getRandomPreferredModel } from "../../config";
 import { join } from "path";
-import { readFile } from "fs/promises";
+import { execSync } from "node:child_process";
+import { readFile, mkdir, writeFile, unlink } from "fs/promises";
 import { parse as parseToml } from "smol-toml";
 import { getArmClient } from "../server";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
 import { releaseClaimsForArm } from "../claim-cleanup";
+import { getCliEntrypoint } from "../../cli/entrypoint";
+import { hostname } from "os";
 
 interface ArmsContext {
   Variables: {
@@ -23,20 +26,262 @@ interface ArmsContext {
   };
 }
 
+const AUTO_AGENT_ID = `agent-${hostname()}-autostart`;
+const AUTO_AGENT_WAIT_MS_DEFAULT = 8000;
+let autoStartAgentPromise: Promise<void> | null = null;
+
+interface ArmClientLookup {
+  findBestAgent: (harness: string) => unknown;
+  listArmsOnAgent?: (agentId: string, timeoutMs?: number) => Promise<{ success: boolean }>;
+}
+
+interface DistributedRuntimeSnapshot {
+  status: string;
+  pid: number | null;
+  port: number | null;
+  sessionId: string | null;
+}
+
+function resolveDistributedAgentId(armId: string, persistedAgentId: string | null): string | null {
+  const armClient = getArmClient();
+  if (!armClient) {
+    return persistedAgentId;
+  }
+  return persistedAgentId || armClient.getAgentForArm(armId) || null;
+}
+
+function mapDistributedStatusToHarnessState(status: string): string {
+  switch (status) {
+    case "busy":
+    case "running":
+      return "processing";
+    case "starting":
+      return "initializing";
+    case "error":
+      return "error";
+    case "stopped":
+      return "stopped";
+    case "idle":
+      return "idle";
+    default:
+      return "unknown";
+  }
+}
+
+async function refreshDistributedRuntimeFromAgent(
+  db: Database,
+  armId: string,
+  agentId: string | null,
+  current: DistributedRuntimeSnapshot,
+): Promise<DistributedRuntimeSnapshot> {
+  const armClient = getArmClient();
+  if (!armClient) {
+    return current;
+  }
+
+  let remoteState:
+    | {
+        status?: string | null;
+        pid?: number | null;
+        port?: number | null;
+        sessionId?: string | null;
+      }
+    | undefined;
+
+  try {
+    const response = await armClient.getArmState(armId);
+    if (response.success && response.data) {
+      remoteState = response.data;
+    } else if (agentId) {
+      const listResponse = await armClient.listArmsOnAgent(agentId);
+      if (listResponse.success && listResponse.data?.arms) {
+        remoteState = listResponse.data.arms.find((arm) => arm.armId === armId);
+      }
+    }
+  } catch {
+    return current;
+  }
+
+  if (!remoteState) {
+    return current;
+  }
+
+  const next: DistributedRuntimeSnapshot = {
+    status: remoteState.status || current.status,
+    pid:
+      typeof remoteState.pid === "number" || remoteState.pid === null
+        ? remoteState.pid
+        : current.pid,
+    port:
+      typeof remoteState.port === "number" || remoteState.port === null
+        ? remoteState.port
+        : current.port,
+    sessionId:
+      typeof remoteState.sessionId === "string" || remoteState.sessionId === null
+        ? remoteState.sessionId
+        : current.sessionId,
+  };
+
+  const now = new Date().toISOString();
+  const resolvedHost = agentId ? armClient.getAgent(agentId)?.hostname ?? null : null;
+  db.run(
+    "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+    [next.status, next.pid, next.port, next.sessionId, agentId, resolvedHost, now, now, armId],
+  );
+
+  return next;
+}
+
+function isProcessAlive(pid: number): boolean {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    return code === "EPERM";
+  }
+}
+
+function shellQuote(value: string): string {
+  return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+async function startLocalArmAgentDaemonIfNeeded(): Promise<void> {
+  if (process.env.COLEO_AUTO_START_AGENT === "0") {
+    return;
+  }
+
+  const coleoDir = getColeoDir();
+  const runDir = join(coleoDir, "run");
+  const pidFile = join(runDir, "agent-autostart.pid");
+  const logFile = join(runDir, "agent-autostart.log");
+  await mkdir(runDir, { recursive: true });
+
+  try {
+    const existing = JSON.parse(await readFile(pidFile, "utf-8")) as {
+      pid?: number;
+    };
+    if (typeof existing.pid === "number" && isProcessAlive(existing.pid)) {
+      return;
+    }
+    await unlink(pidFile).catch(() => undefined);
+  } catch {
+    // No existing PID file
+  }
+
+  const natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+  const command = [
+    process.execPath,
+    getCliEntrypoint(),
+    "agent",
+    "start",
+    "--nats-url",
+    natsUrl,
+    "--id",
+    AUTO_AGENT_ID,
+  ];
+
+  const shellCommand = command.map(shellQuote).join(" ");
+  const launchCommand = `nohup ${shellCommand} >> ${shellQuote(logFile)} 2>&1 & echo $!`;
+  const pidOutput = execSync(launchCommand, {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      COLEO_SELF_MODIFY: undefined,
+    },
+    encoding: "utf-8",
+  }).trim();
+
+  const pid = Number.parseInt(pidOutput, 10);
+  if (!Number.isFinite(pid)) {
+    throw new Error(`Unable to parse autostart agent PID: ${pidOutput}`);
+  }
+
+  await writeFile(
+    pidFile,
+    JSON.stringify(
+      {
+        pid,
+        id: AUTO_AGENT_ID,
+        startedAt: new Date().toISOString(),
+        natsUrl,
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+
+  console.log(`[arms-api] Auto-started local arm agent: ${AUTO_AGENT_ID} (pid ${pid})`);
+}
+
+async function ensureDaemonAgentAvailable(
+  armClient: ArmClientLookup,
+  harness: string,
+): Promise<void> {
+  if (armClient.findBestAgent(harness)) {
+    return;
+  }
+
+  if (!autoStartAgentPromise) {
+    autoStartAgentPromise = startLocalArmAgentDaemonIfNeeded().catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[arms-api] Failed to auto-start arm agent: ${msg}`);
+    });
+  }
+
+  try {
+    await autoStartAgentPromise;
+  } finally {
+    autoStartAgentPromise = null;
+  }
+
+  const configuredWait = Number.parseInt(
+    process.env.COLEO_AUTO_START_AGENT_WAIT_MS || "",
+    10,
+  );
+  const waitMs =
+    Number.isFinite(configuredWait) && configuredWait > 0
+      ? configuredWait
+      : AUTO_AGENT_WAIT_MS_DEFAULT;
+  const deadline = Date.now() + waitMs;
+
+  while (Date.now() < deadline) {
+    if (armClient.findBestAgent(harness)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  if (armClient.listArmsOnAgent) {
+    try {
+      const probe = await armClient.listArmsOnAgent(AUTO_AGENT_ID, 2000);
+      if (probe.success) {
+        return;
+      }
+    } catch {
+      // Fall through to caller error path.
+    }
+  }
+}
+
 /**
  * Log an activity entry to JetStream
  * This replaces the old SQLite activity table - JetStream is now the single source of truth
  */
 function logActivity(_db: Database, actor: string, action: string, target?: string, details?: Record<string, unknown>): void {
+  const resolvedTarget = target || (actor !== "api" ? actor : undefined);
+
   // Publish to JetStream if initialized
   if (eventStore.isInitialized()) {
-    const subject = target 
-      ? `coleo.events.arm.${target}.${action}`
+    const subject = resolvedTarget 
+      ? `coleo.events.arm.${resolvedTarget}.${action}`
       : `coleo.events.api.${action}`;
     
     eventStore.publishEvent(subject, {
       type: action,
-      armId: target,
+      armId: resolvedTarget,
       data: { actor, ...details },
       timestamp: new Date().toISOString(),
     }).catch(err => {
@@ -531,11 +776,11 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Spawn an arm via harness (local) or agent (distributed)
+   * Spawn an arm via agent daemon (distributed) or local harness fallback
    * POST /api/arms/:id/spawn
    * 
-   * When an agent is available with the required capabilities, the arm is spawned
-   * on that agent via NATS. Otherwise, falls back to local harness spawning.
+   * Daemon-managed harnesses (`opencode-api`, `opencode`) require an arm agent
+   * by default so sessions survive API restarts.
    */
   app.post("/:id/spawn", async (c) => {
     const db = c.get("db");
@@ -549,6 +794,7 @@ export function createArmsRoutes() {
       preferAgent?: boolean; // Explicitly request agent spawning
       agentId?: string; // Spawn on a specific agent
       recover?: boolean; // Enable recovery of existing OpenCode server (default: false)
+      allowLocalFallback?: boolean; // Allow local fallback for daemon-managed harnesses
     }>();
 
     // Check if arm exists (include port and pid for potential recovery)
@@ -643,97 +889,142 @@ export function createArmsRoutes() {
     // Fall back to config defaults if still not set
     provider = provider || defaults.provider;
     model = model || defaults.model;
+    const workdir = body.workdir || process.cwd();
+    const systemPrompt = generateSystemPrompt({
+      armId: id,
+      name: row.name,
+      domain: row.domain,
+      harness: row.harness,
+      workdir,
+      provider,
+      model,
+    });
+    const fullInitialPrompt = body.initialPrompt
+      ? `${systemPrompt}\n\n---\n\n## Additional Instructions\n\n${body.initialPrompt}`
+      : systemPrompt;
+
+    const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
+    const localFallbackEnabled =
+      body.allowLocalFallback === true ||
+      process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
+      process.env.NODE_ENV === "test";
 
     // Try distributed spawning via ArmClient if available
     const armClient = getArmClient();
+    if (armClient && daemonManagedHarness && !localFallbackEnabled) {
+      await ensureDaemonAgentAvailable(armClient, row.harness);
+    }
+
     if (armClient) {
-      // Find an agent to spawn on
-      let agentId = body.agentId;
-      
-      if (!agentId) {
-        // Find the best available agent for this harness
-        const bestAgent = armClient.findBestAgent(row.harness);
-        if (bestAgent) {
-          agentId = bestAgent.agentId;
-        }
-      }
-      
-      if (agentId || body.preferAgent) {
+      const shouldUseAgent = daemonManagedHarness || body.preferAgent || !!body.agentId;
+
+      if (shouldUseAgent) {
+        // Find an agent to spawn on
+        let agentId = body.agentId;
+
         if (!agentId) {
-          throw HttpError.badRequest(`No agent available for harness: ${row.harness}`);
-        }
-        
-        // Verify agent exists
-        const agent = armClient.getAgent(agentId);
-        if (!agent) {
-          throw HttpError.badRequest(`Agent not found: ${agentId}`);
-        }
-        
-        // Spawn via agent
-        try {
-          const response = await armClient.spawnArm(agentId, id, {
-            name: row.name,
-            domain: row.domain,
-            harness: row.harness,
-            provider,
-            model,
-            contextBudget: row.context_budget,
-            workDir: body.workdir || process.cwd(),
-          });
-          
-          if (!response.success) {
-            throw new Error(response.error || "Agent spawn failed");
+          // Find the best available agent for this harness
+          const bestAgent = armClient.findBestAgent(row.harness);
+          if (bestAgent) {
+            agentId = bestAgent.agentId;
+          } else if (daemonManagedHarness) {
+            // Fallback to the known local daemon agent ID for bootstrap after API restarts.
+            agentId = AUTO_AGENT_ID;
           }
-          
-          // Update database with agent info
-          const now = new Date().toISOString();
-          db.run(
-            "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-            [agentId, agent.hostname, response.data?.pid ?? null, response.data?.port ?? null, provider, model, now, now, id]
-          );
-          
-          // Log activity
-          logActivity(db, id, "spawned", undefined, { 
-            agentId, 
-            host: agent.hostname,
-            pid: response.data?.pid,
-            port: response.data?.port,
-            provider, 
-            model,
-            distributed: true,
-          });
-          
-          // Broadcast arm spawned
-          broadcast("arms", "arm.spawned", { 
-            id, 
-            agentId,
-            host: agent.hostname,
-            pid: response.data?.pid,
-            port: response.data?.port,
-            status: "idle",
-            distributed: true,
-          });
-          
-          return c.json({
-            spawned: true,
-            distributed: true,
-            agentId,
-            host: agent.hostname,
-            pid: response.data?.pid,
-            port: response.data?.port,
-            provider,
-            model,
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          // If explicitly requested agent spawn, fail
-          if (body.preferAgent || body.agentId) {
-            throw HttpError.internal(`Failed to spawn arm on agent: ${message}`);
+        }
+
+        if (agentId || body.preferAgent) {
+          if (!agentId) {
+            throw HttpError.badRequest(`No agent available for harness: ${row.harness}`);
           }
-          // Otherwise fall back to local spawn
-          console.log(`[spawn] Agent spawn failed, falling back to local: ${message}`);
+
+          const agent = armClient.getAgent(agentId);
+          const agentHost = agent?.hostname || row.host || hostname();
+
+          // Spawn via agent
+          try {
+            const response = await armClient.spawnArm(agentId, id, {
+              name: row.name,
+              domain: row.domain,
+              harness: row.harness,
+              provider,
+              model,
+              contextBudget: row.context_budget,
+              workDir: workdir,
+              initialPrompt: fullInitialPrompt,
+            });
+
+            if (!response.success) {
+              throw new Error(response.error || "Agent spawn failed");
+            }
+
+            // Update database with agent info
+            const now = new Date().toISOString();
+            db.run(
+              "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [agentId, agentHost, response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, now, now, id]
+            );
+
+            // Log activity
+            logActivity(db, id, "spawned", undefined, {
+              agentId,
+              host: agentHost,
+              pid: response.data?.pid,
+              port: response.data?.port,
+              provider,
+              model,
+              distributed: true,
+            });
+
+            // Broadcast arm spawned
+            broadcast("arms", "arm.spawned", {
+              id,
+              agentId,
+              host: agentHost,
+              pid: response.data?.pid,
+              port: response.data?.port,
+              sessionId: response.data?.sessionId,
+              status: "idle",
+              distributed: true,
+            });
+
+            return c.json({
+              spawned: true,
+              distributed: true,
+              agentId,
+              host: agentHost,
+              pid: response.data?.pid,
+              port: response.data?.port,
+              sessionId: response.data?.sessionId,
+              provider,
+              model,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            // If this harness should be daemon-managed, fail by default unless explicitly overridden
+            if (daemonManagedHarness && !localFallbackEnabled) {
+              throw HttpError.internal(`Failed to spawn ${row.harness} arm on daemon agent: ${message}`);
+            }
+            // If explicitly requested agent spawn, fail
+            if (body.preferAgent || body.agentId) {
+              throw HttpError.internal(`Failed to spawn arm on agent: ${message}`);
+            }
+            // Otherwise fall back to local spawn
+            console.log(`[spawn] Agent spawn failed, falling back to local: ${message}`);
+          }
         }
       }
+    }
+
+    if (daemonManagedHarness && !localFallbackEnabled) {
+      if (!armClient) {
+        throw HttpError.internal(
+          `Harness '${row.harness}' requires the arm agent daemon. Distributed arm management is unavailable.`,
+        );
+      }
+      throw HttpError.badRequest(
+        `No agent available for harness '${row.harness}'. Start an arm agent daemon with 'coleo agent start'.`,
+      );
     }
 
     // Fall back to local harness spawning
@@ -779,23 +1070,6 @@ export function createArmsRoutes() {
       }
       // Recovery failed, continue with fresh spawn
     }
-
-    // Generate system prompt for the arm
-    const workdir = body.workdir || process.cwd();
-    const systemPrompt = generateSystemPrompt({
-      armId: id,
-      name: row.name,
-      domain: row.domain,
-      harness: row.harness,
-      workdir,
-      provider,
-      model,
-    });
-
-    // Combine system prompt with any user-provided initial prompt
-    const fullInitialPrompt = body.initialPrompt 
-      ? `${systemPrompt}\n\n---\n\n## Additional Instructions\n\n${body.initialPrompt}`
-      : systemPrompt;
 
     try {
       // Spawn via harness
@@ -862,7 +1136,7 @@ export function createArmsRoutes() {
           
           // Update database
           const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
           const releasedClaims = releaseClaimsForArm(db, id, now);
 
           // Log activity
@@ -876,7 +1150,7 @@ export function createArmsRoutes() {
           const message = err instanceof Error ? err.message : String(err);
           // Still try to clean up DB state even if agent kill fails
           const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
           releaseClaimsForArm(db, id, now);
           console.log(`[kill] Agent kill failed, cleaned up DB state: ${message}`);
         }
@@ -1042,9 +1316,41 @@ export function createArmsRoutes() {
     const id = c.req.param("id");
 
     // Check if arm exists
-    const row = db.query("SELECT id FROM arms WHERE id = ?").get(id) as { id: string } | null;
+    const row = db.query(
+      "SELECT id, status, pid, port, session_id, agent_id FROM arms WHERE id = ?",
+    ).get(id) as {
+      id: string;
+      status: string;
+      pid: number | null;
+      port: number | null;
+      session_id: string | null;
+      agent_id: string | null;
+    } | null;
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    if (distributedAgentId) {
+      const snapshot = await refreshDistributedRuntimeFromAgent(
+        db,
+        id,
+        distributedAgentId,
+        {
+          status: row.status,
+          pid: row.pid,
+          port: row.port,
+          sessionId: row.session_id,
+        },
+      );
+      const hasSession = !!(snapshot.sessionId || snapshot.port);
+
+      return c.json({
+        state: mapDistributedStatusToHarnessState(snapshot.status),
+        hasSession,
+        distributed: true,
+        agentId: distributedAgentId,
+      });
     }
 
     // Get the harness manager to check session state
@@ -1169,16 +1475,20 @@ export function createArmsRoutes() {
     const parsedLimit = Number.parseInt(c.req.query("limit") || "100", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 100;
 
-    const row = db.query("SELECT id, status FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, port, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
+      port: number | null;
+      session_id: string | null;
+      agent_id: string | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    if (row.status === "stopped") {
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    if (row.status === "stopped" && !distributedAgentId) {
       return c.json({ messages: [], error: "Arm not running" });
     }
 
@@ -1188,7 +1498,57 @@ export function createArmsRoutes() {
     }
 
     if (!manager.hasSession(id)) {
-      return c.json({ messages: [], error: "Arm has no active harness session" });
+      if (!distributedAgentId) {
+        return c.json({ messages: [], error: "Arm has no active harness session" });
+      }
+
+      const snapshot = await refreshDistributedRuntimeFromAgent(
+        db,
+        id,
+        distributedAgentId,
+        {
+          status: row.status,
+          pid: null,
+          port: row.port,
+          sessionId: row.session_id,
+        },
+      );
+
+      if (!snapshot.port || !snapshot.sessionId) {
+        return c.json({ messages: [], error: "Arm has no active distributed session" });
+      }
+
+      try {
+        const response = await fetch(
+          `http://127.0.0.1:${snapshot.port}/session/${snapshot.sessionId}/message`,
+          { signal: AbortSignal.timeout(5000) },
+        );
+
+        if (!response.ok) {
+          return c.json({
+            messages: [],
+            sessionId: snapshot.sessionId,
+            error: `OpenCode returned ${response.status}`,
+          });
+        }
+
+        const payload = await response.json() as unknown[] | { messages?: unknown[] };
+        const allMessages = Array.isArray(payload) ? payload : payload.messages || [];
+        const messages = limit > 0 ? allMessages.slice(-limit) : allMessages;
+
+        return c.json({
+          messages,
+          sessionId: snapshot.sessionId,
+          distributed: true,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({
+          messages: [],
+          sessionId: snapshot.sessionId,
+          error: `Failed to fetch distributed messages: ${message}`,
+        });
+      }
     }
 
     try {
@@ -1269,28 +1629,53 @@ export function createArmsRoutes() {
     const id = c.req.param("id");
 
     // Get arm with port and session info
-    const row = db.query("SELECT id, port, status, session_id FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, port, status, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
       id: string;
       port: number | null;
       status: string;
       session_id: string | null;
+      agent_id: string | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    if (!row.port || row.status === "stopped") {
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    let sessionId = row.session_id;
+    let port: number | null = row.port;
+    let status = row.status;
+    if (distributedAgentId && (!sessionId || !port || status === "stopped")) {
+      const snapshot = await refreshDistributedRuntimeFromAgent(
+        db,
+        id,
+        distributedAgentId,
+        {
+          status: row.status,
+          pid: null,
+          port: row.port,
+          sessionId: row.session_id,
+        },
+      );
+      sessionId = snapshot.sessionId;
+      port = snapshot.port;
+      status = snapshot.status;
+    }
+
+    if ((!port || status === "stopped") && !distributedAgentId) {
       return c.json({ todos: [], message: "Arm not running" });
     }
 
-    if (!row.session_id) {
+    if (!sessionId) {
       return c.json({ todos: [], message: "No session ID available" });
+    }
+    if (!port) {
+      return c.json({ todos: [], message: "No arm port available" });
     }
 
     // Fetch todos from OpenCode server using session-specific endpoint
     try {
-      const response = await fetch(`http://127.0.0.1:${row.port}/session/${row.session_id}/todo`, {
+      const response = await fetch(`http://127.0.0.1:${port}/session/${sessionId}/todo`, {
         signal: AbortSignal.timeout(5000),
       });
 
@@ -1320,18 +1705,40 @@ export function createArmsRoutes() {
     const db = c.get("db");
     const id = c.req.param("id");
 
-    // Get arm with port info
-    const row = db.query("SELECT id, port, status FROM arms WHERE id = ?").get(id) as {
+    // Get arm with runtime info
+    const row = db.query("SELECT id, port, status, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
       id: string;
       port: number | null;
       status: string;
+      session_id: string | null;
+      agent_id: string | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    if (!row.port || row.status === "stopped") {
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    let port: number | null = row.port;
+    let status = row.status;
+
+    if (distributedAgentId && (!port || status === "stopped")) {
+      const snapshot = await refreshDistributedRuntimeFromAgent(
+        db,
+        id,
+        distributedAgentId,
+        {
+          status: row.status,
+          pid: null,
+          port: row.port,
+          sessionId: row.session_id,
+        },
+      );
+      port = snapshot.port;
+      status = snapshot.status;
+    }
+
+    if (!port || status === "stopped") {
       // Return an SSE stream that immediately sends an error and closes
       return new Response(
         new ReadableStream({
@@ -1352,7 +1759,7 @@ export function createArmsRoutes() {
     }
 
     // Proxy the OpenCode server's event stream
-    const openCodeUrl = `http://127.0.0.1:${row.port}/event`;
+    const openCodeUrl = `http://127.0.0.1:${port}/event`;
 
     try {
       const upstreamResponse = await fetch(openCodeUrl, {
@@ -1480,8 +1887,10 @@ export function createArmsRoutes() {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+
     // Check if arm is running
-    if (row.status === "stopped") {
+    if (row.status === "stopped" && !distributedAgentId) {
       return c.json({ error: `Arm ${id} is stopped. Spawn it first.` }, 400);
     }
 
@@ -1491,29 +1900,47 @@ export function createArmsRoutes() {
     }
 
     // Distributed arm prompt via agent
-    if (row.agent_id) {
+    if (distributedAgentId) {
       const armClient = getArmClient();
       if (!armClient) {
         return c.json(
-          { error: `Arm ${id} is assigned to agent ${row.agent_id}, but distributed arm management is currently unavailable. Retry shortly.` },
+          { error: `Arm ${id} is assigned to agent ${distributedAgentId}, but distributed arm management is currently unavailable. Retry shortly.` },
           503,
         );
       }
+
+      await refreshDistributedRuntimeFromAgent(
+        db,
+        id,
+        distributedAgentId,
+        {
+          status: row.status,
+          pid: row.pid,
+          port: row.port,
+          sessionId: null,
+        },
+      );
 
       try {
         const response = await armClient.sendPrompt(id, body.prompt);
         if (!response.success) {
           return c.json(
-            { error: `Arm ${id} is currently unreachable on distributed agent ${row.agent_id}. Retry shortly.` },
+            { error: `Arm ${id} is currently unreachable on distributed agent ${distributedAgentId}. Retry shortly.` },
             503,
           );
         }
+
+        const now = new Date().toISOString();
+        db.run(
+          "UPDATE arms SET status = 'busy', last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [now, now, id],
+        );
 
         logActivity(db, id, "prompt_sent", undefined, {
           promptLength: body.prompt.length,
           interrupt: body.interrupt,
           distributed: true,
-          agentId: row.agent_id,
+          agentId: distributedAgentId,
         });
 
         return c.json({

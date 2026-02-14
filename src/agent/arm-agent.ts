@@ -10,7 +10,6 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { 
   NatsClient, 
-  generateRequestId,
   type AgentInfo, 
   type AgentHeartbeat,
   type AgentCommand,
@@ -20,7 +19,15 @@ import {
   type SpawnResponse,
   type ListArmsResponse,
 } from '../nats';
-import { harnessRegistry, type AgentHarness, type HarnessSession, type SpawnConfig, OpenCodeApiHarness } from '../harness';
+import {
+  harnessRegistry,
+  type AgentHarness,
+  type HarnessSession,
+  type SpawnConfig,
+  type OpenCodeApiHarness,
+  type OpenCodeTuiHarness,
+  type ArmEventCallback,
+} from '../harness';
 
 const execAsync = promisify(exec);
 
@@ -58,6 +65,7 @@ export class ArmAgent {
   
   private managedArms: Map<string, ManagedArm> = new Map();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private harnessCallbacksRegistered: Set<string> = new Set();
   private isRunning = false;
   private startedAt: string;
 
@@ -95,6 +103,8 @@ export class ArmAgent {
 
     // Start heartbeat
     this.startHeartbeat();
+
+    this.registerHarnessEventCallbacks();
 
     // Recover any existing arms that are still running
     await this.recoverExistingArms();
@@ -192,7 +202,7 @@ export class ArmAgent {
   }
 
   private async handleSpawn(command: AgentCommand & { type: 'spawn' }): Promise<CommandResponse<SpawnResponse>> {
-    const { armId, name, domain, harness, provider, model, contextBudget, personality, convictions, workDir } = command;
+    const { armId, name, domain, harness, provider, model, contextBudget, personality, convictions, workDir, initialPrompt } = command;
 
     // Check if arm already exists
     if (this.managedArms.has(armId)) {
@@ -222,6 +232,7 @@ export class ArmAgent {
     }
 
     const harnessInstance = harnessRegistry.get(harness);
+    this.registerHarnessEventCallbacks();
 
     // Spawn the arm
     const spawnConfig: SpawnConfig = {
@@ -259,6 +270,28 @@ export class ArmAgent {
     };
 
     this.managedArms.set(armId, managedArm);
+
+    if (initialPrompt) {
+      try {
+        await managedArm.harness.sendPrompt(managedArm.session, initialPrompt);
+        const oldStatus = managedArm.status;
+        managedArm.status = 'busy';
+        managedArm.lastActivityAt = new Date().toISOString();
+
+        await this.natsClient.publishArmEvent(armId, {
+          type: 'arm.status_changed',
+          armId,
+          agentId: this.agentId,
+          oldStatus,
+          newStatus: 'busy',
+        });
+      } catch (err) {
+        this.log(
+          `Initial prompt failed for ${armId}: ${err instanceof Error ? err.message : String(err)}`,
+          'warn',
+        );
+      }
+    }
 
     // Publish spawned event
     await this.natsClient.publishArmEvent(armId, {
@@ -410,16 +443,109 @@ export class ArmAgent {
   // Helper Methods
   // ============================================
 
+  private registerHarnessEventCallbacks(): void {
+    const callback: ArmEventCallback = (armId, event, data) => {
+      void this.handleHarnessEvent(armId, event, data);
+    };
+
+    if (!this.harnessCallbacksRegistered.has('opencode-api') && harnessRegistry.has('opencode-api')) {
+      (harnessRegistry.get('opencode-api') as OpenCodeApiHarness).setEventCallback(callback);
+      this.harnessCallbacksRegistered.add('opencode-api');
+    }
+
+    if (!this.harnessCallbacksRegistered.has('opencode-tui') && harnessRegistry.has('opencode-tui')) {
+      (harnessRegistry.get('opencode-tui') as OpenCodeTuiHarness).setEventCallback(callback);
+      this.harnessCallbacksRegistered.add('opencode-tui');
+    }
+  }
+
+  private mapEventStatus(event: string, data: unknown): ArmStatus | null {
+    if (event === 'session.idle') {
+      return 'idle';
+    }
+
+    if (event === 'session.error') {
+      return 'error';
+    }
+
+    if (event === 'process.died') {
+      return 'stopped';
+    }
+
+    if (event === 'session.status' || event === 'session.updated') {
+      const status = (data as { status?: unknown } | null)?.status;
+      if (typeof status === 'string') {
+        const normalized = status.toLowerCase();
+        if (normalized === 'idle') return 'idle';
+        if (normalized === 'busy' || normalized === 'processing' || normalized === 'executing' || normalized === 'running' || normalized === 'retry') {
+          return 'busy';
+        }
+        if (normalized === 'error' || normalized === 'failed') return 'error';
+      }
+    }
+
+    return null;
+  }
+
+  private async handleHarnessEvent(armId: string, event: string, data: unknown): Promise<void> {
+    const managedArm = this.managedArms.get(armId);
+    if (!managedArm) {
+      return;
+    }
+
+    managedArm.lastActivityAt = new Date().toISOString();
+
+    try {
+      await this.natsClient.publishArmEvent(armId, {
+        type: 'arm.activity',
+        armId,
+        agentId: this.agentId,
+        activity: {
+          type: event,
+          data,
+        },
+      });
+    } catch (err) {
+      this.log(
+        `Failed to publish activity event for ${armId}: ${err instanceof Error ? err.message : String(err)}`,
+        'warn',
+      );
+    }
+
+    const nextStatus = this.mapEventStatus(event, data);
+    if (!nextStatus || nextStatus === managedArm.status) {
+      return;
+    }
+
+    const oldStatus = managedArm.status;
+    managedArm.status = nextStatus;
+    try {
+      await this.natsClient.publishArmEvent(armId, {
+        type: 'arm.status_changed',
+        armId,
+        agentId: this.agentId,
+        oldStatus,
+        newStatus: nextStatus,
+      });
+    } catch (err) {
+      this.log(
+        `Failed to publish status change for ${armId}: ${err instanceof Error ? err.message : String(err)}`,
+        'warn',
+      );
+    }
+  }
+
   private async registerAgent(): Promise<void> {
     await this.natsClient.registerAgent(this.getInfo());
   }
 
   private startHeartbeat(): void {
-    this.heartbeatTimer = setInterval(async () => {
+    const sendHeartbeat = async () => {
       const heartbeat: AgentHeartbeat = {
         agentId: this.agentId,
         timestamp: new Date().toISOString(),
         activeArms: Array.from(this.managedArms.keys()),
+        info: this.getInfo(),
         load: {
           cpu: 0, // TODO: Implement actual CPU monitoring
           memory: process.memoryUsage().heapUsed / process.memoryUsage().heapTotal,
@@ -427,6 +553,22 @@ export class ArmAgent {
       };
 
       await this.natsClient.sendHeartbeat(heartbeat);
+    };
+
+    void sendHeartbeat().catch((err) => {
+      this.log(
+        `Failed to send heartbeat: ${err instanceof Error ? err.message : String(err)}`,
+        'warn',
+      );
+    });
+
+    this.heartbeatTimer = setInterval(() => {
+      void sendHeartbeat().catch((err) => {
+        this.log(
+          `Failed to send heartbeat: ${err instanceof Error ? err.message : String(err)}`,
+          'warn',
+        );
+      });
     }, this.heartbeatIntervalMs);
   }
 

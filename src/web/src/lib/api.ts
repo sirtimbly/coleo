@@ -98,6 +98,8 @@ class ApiClient {
         database: { healthy: boolean; error?: string };
         nats: { healthy: boolean; optional: boolean; error?: string };
         maildir: { healthy: boolean; error?: string };
+        qdrant: { healthy: boolean; optional: boolean; error?: string };
+        indexer: { healthy: boolean; optional: boolean; running: boolean; error?: string };
       };
       timestamp: string;
     }>('/status');
@@ -257,6 +259,17 @@ class ApiClient {
       activity: ActivityEntry[];
       pagination: { limit: number; offset: number; total: number };
     }>(`/activity${queryStr ? `?${queryStr}` : ''}`);
+  }
+
+  async getTranscriptIndexerHealth(params?: { stream?: string; durable?: string; staleMs?: number }) {
+    const query = new URLSearchParams();
+    if (params?.stream) query.set('stream', params.stream);
+    if (params?.durable) query.set('durable', params.durable);
+    if (params?.staleMs) query.set('staleMs', params.staleMs.toString());
+    const queryStr = query.toString();
+    return this.request<TranscriptIndexerHealth>(
+      `/activity/indexer-health${queryStr ? `?${queryStr}` : ''}`
+    );
   }
 
   // Brain
@@ -843,6 +856,23 @@ export interface ActivityEntry {
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+export interface TranscriptIndexerHealth {
+  status: "healthy" | "lagging" | "stale" | "unavailable" | "error";
+  stream: string;
+  durable: string;
+  consumerFound: boolean;
+  lagMessages: number | null;
+  ackPending: number | null;
+  streamLastSeq: number | null;
+  streamMessages?: number;
+  consumerStreamSeq: number | null;
+  consumerSeq: number | null;
+  lastActive: string | null;
+  staleThresholdMs: number;
+  updatedAt: string;
+  message?: string;
 }
 
 export interface MailMessage {

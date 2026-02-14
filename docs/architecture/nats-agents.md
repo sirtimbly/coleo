@@ -324,7 +324,10 @@ CREATE INDEX idx_arms_agent ON arms(agent_id);
 
 ### API Server Config
 
-NATS connection is optional. If NATS is not available, the server falls back to local-only arm management:
+NATS connection is optional for core API endpoints. For arm spawning:
+
+- `opencode-api` and `opencode` are daemon-managed and require at least one connected `ArmAgent`
+- `opencode-tui` can still be spawned locally for operator-visible sessions
 
 ```
 NATS not available - distributed arm management disabled
@@ -456,9 +459,12 @@ curl http://localhost:8222/connz
 
 ### Arms Not Appearing After Agent Restart
 
-The agent doesn't persist arm state. If an agent restarts, running OpenCode processes become orphaned.
+`ArmAgent` performs best-effort process recovery on startup:
 
-**Solution**: Kill orphaned processes manually, or implement arm recovery (future enhancement).
+- `opencode-api`: recoverable when process + port are still available
+- PTY/TUI harnesses: re-attachment is limited and may require manual restart
+
+If recovery fails, restart the affected arm from the API/CLI.
 
 ## Future Enhancements
 
