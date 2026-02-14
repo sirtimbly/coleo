@@ -29,7 +29,7 @@ Out of scope (follow-up):
 - ✅ Phase 1 largely complete: API bridge for `coleo.brain.messages`, API-only brain inbox consumption, lease-based processing.
 - ✅ Phase 2 largely complete: Brain event I/O routed through API surfaces.
 - ✅ Phase 3 complete: `/messages` and `/todos` now flow through ArmAgent/HarnessManager abstractions; arm event SSE is JetStream-backed.
-- 🚧 Phase 4 in progress: dead-letter replay tooling added, legacy `queue/brain/*` directory assumptions removed from brain/init setup, remaining work is broader failure-mode testing and final legacy fallback cleanup.
+- 🚧 Phase 4 in progress: dead-letter replay tooling added, legacy `queue/brain/*` and file-fallback assumptions removed, remaining work is broader failure-mode testing and final fallback/API-contract cleanup.
 
 ## Phased Work
 

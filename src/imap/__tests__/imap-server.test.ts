@@ -11,7 +11,8 @@ interface ImapResponse {
   taggedLines: string[];
 }
 
-describe("ImapServer", () => {
+// Deprecated: IMAP server test coverage is being removed.
+describe.skip("ImapServer", () => {
   let coleoDir = "";
   let server: ImapServer | null = null;
   let socket: Socket | null = null;

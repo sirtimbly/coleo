@@ -78,4 +78,4 @@ If immediate wake-up behavior is needed, use API-mediated signaling (for example
 ## Remaining Hardening
 
 1. Add contract tests for API event/message schemas across services.
-2. Continue consolidating remaining legacy message fallback paths (for example MCP file-queue fallback) under the same API/NATS-first contract.
+2. Continue consolidating remaining legacy message fallback paths (for example MCP direct SQLite inbox fallback) under the same API/NATS-first contract.
