@@ -1698,24 +1698,11 @@ export function createMcpServer(): McpServer {
 						reason,
 					});
 
-					// Send notification to assigned arm
-					await sendToBrain({
-						from: ARM_ID,
-						to: assignee_arm_id,
-						type: "bug_assignment",
-						payload: {
-							bugId: bug_id,
-							title: bug.title,
-							assignedBy: ARM_ID,
-							reason: reason || "Bug investigation required",
-						},
-					});
-
 					return {
 						content: [
 							{
 								type: "text" as const,
-								text: `Bug "${bug.title}" assigned to arm ${assignee_arm_id}.`,
+								text: `Bug "${bug.title}" assigned to arm ${assignee_arm_id}. The arm should request its next assignment from the brain to pick this up.`,
 							},
 						],
 					};

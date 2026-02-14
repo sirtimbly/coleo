@@ -46,8 +46,8 @@ title: Coleo — Multi-Agent Development Coordination
             <span class="text-white">One Mind.</span>
           </h1>
           <p class="text-xl text-white/90 mb-8 leading-relaxed max-w-lg drop-shadow-md">
-            A self-hosted orchestration layer for coding agents that runs on your own machine or hardware, not a cloud subscription.
-            Markdown files are a good starting place, but Coleo provides rich task management and collaboration tools to the agents and yourself.
+            A self-hosted orchestration layer for coding agents that runs on your own machine or hardware, without a cloud subscription.
+            Markdown files are a useful starting point, but Coleo adds task management and collaboration tools for both agents and humans.
           </p>
           <div class="flex flex-col sm:flex-row gap-4 mt-6 mb-4">
             <a href="/architecture/overview" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg flex items-center justify-center gap-2 text-center no-underline">
@@ -61,7 +61,7 @@ title: Coleo — Multi-Agent Development Coordination
             </a>
           </div>
           <p class="text-sm text-white/75 leading-relaxed max-w-xl">
-            Current status: works great with <code>opencode</code>, but we are actively developing additional harnesses (for example Codex CLI, Claude Code, Gemini CLI, Kimi, and future tools).
+            Current status: works great with <code>opencode</code>. Additional harnesses are in active development (for example, Codex CLI, Claude Code, Gemini CLI, Kimi, and future tools).
           </p>
         </div>
         <div class="relative">
@@ -100,7 +100,7 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-xl mb-4">Soft Architecture</h2>
         <p class="text-lg opacity-80">
-          Most agent frameworks rely on rigid control hierarchies or specialized agent instances. Coleo builds upon independent exploration and ad-hoc coordination to get agents to evaluate each other and share their understanding of the world they've been given. Agent sessions are ephemeral generalists that grow and repeatedly solve problems in concert.
+          Most agent frameworks rely on rigid control hierarchies or specialized agent instances. Coleo emphasizes independent exploration and ad hoc coordination so agents can evaluate each other and share what they learn. Agent sessions are ephemeral generalists that learn quickly and repeatedly solve problems in concert.
         </p>
       </div>
       <div class="grid md:grid-cols-3 gap-8">
@@ -112,7 +112,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Decentralized Intelligence</h3>
           <p class="opacity-70 leading-relaxed">
-            Two-thirds of an octopus's neurons are in its arms, not its head. Coleo Arms possess their own memory, tools, and decision capacity.
+            Two-thirds of an octopus's neurons are in its arms, not its head. Coleo arms have their own memory, tools, and decision capacity.
           </p>
         </div>
         <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
@@ -123,7 +123,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Governance Through Persuasion</h3>
           <p class="opacity-70 leading-relaxed">
-            The Brain does not command &emdash; it evaluates. Arms submit structured proposals log discoveries and query the brain for clarification.
+            The Brain does not command &mdash; it evaluates. Arms submit structured proposals, log discoveries, and query the Brain for clarification.
           </p>
         </div>
         <div class="group ui-box inverted p-8 rounded-2xl transition-all duration-300">
@@ -134,7 +134,7 @@ title: Coleo — Multi-Agent Development Coordination
           </div>
           <h3 class="font-display font-bold text-xl mb-3">Safe Experimentation</h3>
           <p class="opacity-70 leading-relaxed">
-            Coleo is coordination, not blind autonomy: file claims, security rules, and proposals make multi-agent work inspectable and safe while offering surprising velocity.
+            Coleo is coordination, not blind autonomy: file claims, security rules, and proposals keep multi-agent work inspectable and safe while offering surprising velocity.
           </p>
         </div>
       </div>
@@ -151,14 +151,14 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🧠</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">The Brain</h4>
-                <p class="opacity-70 leading-relaxed">The central coordination point prompting all agents, evaluating proposals, offering tasks to consider and sharing status updates with you.</p>
+                <p class="opacity-70 leading-relaxed">The central coordination point that prompts all agents, evaluates proposals, offers tasks to consider, and shares status updates with you.</p>
               </div>
             </div>
             <div class="flex gap-4">
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🐙</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Arms</h4>
-                <p class="opacity-70 leading-relaxed">Arms are general-purpose agent sessions in any of the popular CLI coding tools. Arms are managed through harnesses. Today, Coleo can run multiple <code>opencode</code> sessions; the architecture is designed to support any CLI coding agent as new harnesses are implemented.</p>
+                <p class="opacity-70 leading-relaxed">Arms are general-purpose agent sessions that run in popular CLI coding tools. Arms are managed through harnesses. Today, Coleo can run multiple <code>opencode</code> sessions; the architecture is designed to support any CLI coding agent as new harnesses are implemented.</p>
                 <p class="opacity-70 leading-relaxed mt-2">
                   Read the <a href="/architecture/harness-contract">Harness Contract</a> for the adapter interface and event model that makes this possible.
                 </p>
@@ -168,7 +168,7 @@ title: Coleo — Multi-Agent Development Coordination
               <div class="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center flex-shrink-0">🌿</div>
               <div>
                 <h4 class="font-display font-bold text-xl mb-2">Gardens</h4>
-                <p class="opacity-70 leading-relaxed">A living map of the workspace: file claims, activity, and conflict zones that help arms avoid collisions. <em>Coming Soon</em></p>
+                <p class="opacity-70 leading-relaxed">A living map of the workspace: file claims, activity, and conflict zones that help arms avoid collisions. <em>Coming soon</em></p>
               </div>
             </div>
             <div class="flex gap-4">
@@ -188,14 +188,14 @@ title: Coleo — Multi-Agent Development Coordination
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">1</div>
                 <div>
                   <h5 class="font-semibold mb-1">Spawn</h5>
-                  <p class="text-sm opacity-60">The Human instantiates Arms and he brain assigns tasks from a database list. The database is synced with Markdown files in your repo.</p>
+                  <p class="text-sm opacity-60">You instantiate arms, and the Brain assigns tasks from the database. The database syncs with Markdown files in your repo.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">2</div>
                 <div>
                   <h5 class="font-semibold mb-1">Execute</h5>
-                  <p class="text-sm opacity-60">Arms work independently and cooperatively within their Gardens. Humans can observe their activity through the CLI or the web.</p>
+                  <p class="text-sm opacity-60">Arms work independently and cooperatively within their Gardens. Humans can observe activity through the CLI or web UI.</p>
                 </div>
               </div>
               <div class="flex items-start gap-4">
@@ -209,7 +209,7 @@ title: Coleo — Multi-Agent Development Coordination
                 <div class="w-8 h-8 rounded-full bg-accent flex items-center justify-center flex-shrink-0 text-sm font-bold">4</div>
                 <div>
                   <h5 class="font-semibold mb-1">Integrate</h5>
-                  <p class="text-sm opacity-60">The Brain assigns tasks multiple times, drives a consensus and keeps the agents busy with new tasks.</p>
+                  <p class="text-sm opacity-60">The Brain continuously assigns tasks, drives consensus, and keeps agents busy with new work.</p>
                 </div>
               </div>
             </div>
@@ -224,7 +224,7 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center max-w-3xl mx-auto mb-16">
         <h2 class="font-display font-bold text-4xl mb-4">Observe the Distributed Mind</h2>
         <p class="text-lg opacity-80">
-          Plan in one place, execute across many agents, and inspect outcomes through either the web UI or CLI without losing control of prompts, plans, or runtime state.
+          Plan in one place, execute across many agents, and inspect outcomes in either the web UI or CLI without losing control of prompts, plans, or runtime state.
         </p>
       </div>
       <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -246,7 +246,7 @@ title: Coleo — Multi-Agent Development Coordination
         </div>
       </div>
       <div class="mt-8 ui-box inverted p-5 rounded-xl text-sm opacity-90">
-        Harness confidence note: contract-adjacent harness behavior is covered by tests in
+        Harness confidence: contract-adjacent behavior is covered by tests in
         <code>src/harness/__tests__/opencode-tui.test.ts</code>,
         <code>src/harness/__tests__/event-stream.test.ts</code>, and
         <code>src/harness/__tests__/model-resolver.test.ts</code>.
@@ -266,17 +266,17 @@ title: Coleo — Multi-Agent Development Coordination
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">📨</div>
           <h3 class="font-display font-bold text-xl mb-2">Structured Messages</h3>
-          <p class="opacity-70">Arms communicate through typed proposals with reasoning, not raw diffs. They post events on a stream for the brian to deal with.</p>
+          <p class="opacity-70">Arms communicate through typed proposals with reasoning, not raw diffs. They post events to a stream for the Brain to process.</p>
         </div>
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">⚖️</div>
           <h3 class="font-display font-bold text-xl mb-2">Weighted Consensus</h3>
-          <p class="opacity-70">Reputation systems and internal debate resolve conflicts.</p>
+          <p class="opacity-70">Reputation systems and internal debate resolve disagreements.</p>
         </div>
         <div class="text-center p-6">
           <div class="w-20 h-20 mx-auto mb-4 rounded-full bg-accent/20 flex items-center justify-center text-3xl">🔍</div>
           <h3 class="font-display font-bold text-xl mb-2">Human Override</h3>
-          <p class="opacity-70">Humans can observe and correct arms or they can delegate that job to the Brain, which can intervene at any point. Coleo graceully deals with stuck agents and reboots sessions that aren't making progress.</p>
+          <p class="opacity-70">Humans can observe and correct arms, or delegate oversight to the Brain, which can intervene at any point. Coleo gracefully handles stuck agents and reboots sessions that are not making progress.</p>
         </div>
       </div>
     </div>
@@ -333,7 +333,7 @@ title: Coleo — Multi-Agent Development Coordination
       <div class="text-center mb-16">
         <h2 class="font-display font-bold text-4xl mb-4">Licensing</h2>
         <p class="text-lg opacity-80">
-          Released under Business Source License 1.1—balancing sustainable development with individual access.
+          Released under Business Source License 1.1, balancing sustainable development with individual access.
         </p>
       </div>
       <div class="grid md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">

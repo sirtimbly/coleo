@@ -88,6 +88,59 @@ export function createEventsRoutes() {
   const app = new Hono<EventsContext>();
 
   /**
+   * Publish an event into JetStream through API auth/type boundaries.
+   * POST /api/events/internal/publish
+   */
+  app.post("/internal/publish", async (c) => {
+    const body = await c.req.json<{
+      subject?: unknown;
+      type?: unknown;
+      armId?: unknown;
+      data?: unknown;
+      timestamp?: unknown;
+    }>();
+
+    if (typeof body.subject !== "string" || body.subject.trim().length === 0) {
+      throw HttpError.badRequest("subject is required");
+    }
+    if (!body.subject.startsWith("coleo.events.")) {
+      throw HttpError.badRequest("subject must start with coleo.events.");
+    }
+    if (typeof body.type !== "string" || body.type.trim().length === 0) {
+      throw HttpError.badRequest("type is required");
+    }
+    if (!body.data || typeof body.data !== "object" || Array.isArray(body.data)) {
+      throw HttpError.badRequest("data must be an object");
+    }
+    if (body.armId !== undefined && typeof body.armId !== "string") {
+      throw HttpError.badRequest("armId must be a string when provided");
+    }
+    if (
+      body.timestamp !== undefined &&
+      (typeof body.timestamp !== "string" ||
+        Number.isNaN(new Date(body.timestamp).getTime()))
+    ) {
+      throw HttpError.badRequest("timestamp must be an ISO date string when provided");
+    }
+
+    if (!eventStore.isInitialized()) {
+      return c.json({ error: "Event store not available" }, 503);
+    }
+
+    await eventStore.publishEvent(body.subject, {
+      type: body.type,
+      armId: typeof body.armId === "string" ? body.armId : undefined,
+      data: body.data as Record<string, unknown>,
+      timestamp:
+        typeof body.timestamp === "string"
+          ? new Date(body.timestamp).toISOString()
+          : new Date().toISOString(),
+    });
+
+    return c.json({ published: true });
+  });
+
+  /**
    * Get event window for a specific arm
    * GET /api/events/arms/:armId/window
    *

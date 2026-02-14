@@ -28,6 +28,10 @@ export default defineConfig({
 						{ text: "Overview", link: "/architecture/overview" },
 						{ text: "Components", link: "/architecture/components" },
 						{
+							text: "Brain/API Boundary",
+							link: "/architecture/brain-api-boundary",
+						},
+						{
 							text: "Harness Contract",
 							link: "/architecture/harness-contract",
 						},

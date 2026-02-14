@@ -13,6 +13,7 @@ import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { Maildir } from "../../mail/maildir";
+import { isBrainInboxMessageType } from "../../types/brain-inbox";
 import {
   getBrainState,
   updateBrainState,
@@ -385,6 +386,9 @@ export function createBrainRoutes() {
 
     if (!body.id || !body.from || !body.to || !body.type) {
       throw HttpError.badRequest("id, from, to, and type are required");
+    }
+    if (body.to === "brain" && !isBrainInboxMessageType(body.type)) {
+      throw HttpError.badRequest(`unsupported brain message type: ${body.type}`);
     }
 
     queueMessage(db, {

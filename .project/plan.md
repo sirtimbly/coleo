@@ -26,6 +26,19 @@ To keep humans, the brain, and arms aligned we now standardize three primary com
 
 ---
 
+## Active Refactor: Brain/API Boundary
+
+We are executing a boundary cleanup where:
+- Brain becomes an API-first orchestrator with no direct NATS/JetStream/harness calls.
+- API server becomes the typed/authenticated integration boundary.
+- ArmAgent owns harness/OpenCode traffic and publishes arm events/messages through NATS.
+
+Execution details and phased rollout:
+- `.project/plans/brain-api-boundary-execution-plan.md`
+- `docs/architecture/brain-api-boundary.md`
+
+---
+
 ## Phase 0: Core Infrastructure
 
 **Goal**: Basic brain/arm lifecycle and communication

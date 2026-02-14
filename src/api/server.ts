@@ -19,6 +19,7 @@ import { NatsManager, setNatsManager, ArmClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { loadEnvFile } from "../config/env";
 import { cleanupOrphanedArms } from "./arm-cleanup";
+import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
 import { getServiceStatus, startService } from "../daemon";
 
@@ -234,6 +235,15 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     if (connected) {
       setNatsManager(nats);
       log(`NATS connected at ${natsUrl}`, "normal");
+
+      const connection = nats.getConnection();
+      if (connection) {
+        startBrainMessageBridge({
+          connection,
+          db,
+          log: (message) => log(message, "verbose"),
+        });
+      }
       
       // Initialize ArmClient
       armClient = new ArmClient({

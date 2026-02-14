@@ -3,7 +3,6 @@ import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { Brain } from "../brain";
 import { BrainTemplateManager } from "../template-manager";
-import { EventStore, setEventStore, type EventData } from "../../nats/jetstream";
 
 describe("Brain template rendering", () => {
   let testDir: string;
@@ -31,50 +30,69 @@ describe("Brain template rendering", () => {
   });
 });
 
-describe("Brain NATS event stream reads", () => {
+describe("Brain activity reads", () => {
   let testDir: string;
-  let calls: Array<{ armId: string; limit: number }> = [];
+  let calls: Array<{ actor: string; limit: number }> = [];
+  const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     testDir = join("/tmp", `coleo-brain-nats-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
     calls = [];
+
+    globalThis.fetch = (async (input: Parameters<typeof fetch>[0], _init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const parsed = new URL(url);
+      if (parsed.pathname === "/api/activity") {
+        const actor = parsed.searchParams.get("actor") || "";
+        const limit = Number(parsed.searchParams.get("limit") || "0");
+        calls.push({ actor, limit });
+
+        const now = Date.now();
+        return new Response(JSON.stringify({
+          activity: [
+            {
+              timestamp: new Date(now - 2 * 60 * 1000).toISOString(),
+              actor,
+              action: "heartbeat",
+              details: { ok: true },
+            },
+            {
+              timestamp: new Date(now - 30 * 1000).toISOString(),
+              actor,
+              action: "tool_call",
+              details: { tool: "rg" },
+            },
+            {
+              timestamp: new Date(now - 90 * 1000).toISOString(),
+              actor,
+              action: "file_changed",
+              details: { path: "src/a.ts" },
+            },
+          ],
+        }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+
+      return new Response("not found", { status: 404 });
+    }) as typeof fetch;
   });
 
   afterEach(() => {
-    // Restore the real event store to avoid leaking mocks
-    setEventStore(new EventStore());
+    globalThis.fetch = originalFetch;
   });
 
-  it("reads recent arm events from the event store and transforms them", async () => {
-    const now = Date.now();
-    const events: EventData[] = [
-      { type: "heartbeat", armId: "arm-1", data: { ok: true }, timestamp: new Date(now - 2 * 60 * 1000).toISOString() },
-      { type: "tool_call", armId: "arm-1", data: { tool: "rg" }, timestamp: new Date(now - 30 * 1000).toISOString() },
-      { type: "file_changed", armId: "arm-1", data: { path: "src/a.ts" }, timestamp: new Date(now - 90 * 1000).toISOString() },
-    ];
-
-    setEventStore({
-      publishEvent: async () => {},
-      queryEvents: async () => [],
-      getArmEvents: async (armId: string, limit: number = 50) => {
-        calls.push({ armId, limit });
-        return events;
-      },
-      getEventsByType: async () => [],
-      getRecentEvents: async () => [],
-      isInitialized: () => true,
-    });
-
+  it("reads recent arm events from the API and transforms them", async () => {
     const brain = new Brain({
       coleoDir: testDir,
       pollIntervalMs: 1000,
       verbose: false,
+      apiBaseUrl: "http://localhost:8080",
+      apiKey: "test-key",
     });
 
     const result = await (brain as unknown as { getRecentArmActivity: (armId: string, minutes: number) => Promise<Array<{timestamp: string; action: string; details: string}> | null> })
       .getRecentArmActivity("arm-1", 5);
 
-    expect(calls).toEqual([{ armId: "arm-1", limit: 100 }]);
+    expect(calls).toEqual([{ actor: "arm-1", limit: 100 }]);
     expect(result).toBeTruthy();
     expect(result!.length).toBe(3);
 

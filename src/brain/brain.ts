@@ -3,16 +3,15 @@
  *
  * Runs a polling loop that:
  * 1. Reads human mail from sent/
- * 2. Processes arm messages from queue/ and NATS
+ * 2. Processes arm messages from API queue
  * 3. Assigns tasks to arms
  * 4. Sends status updates to human inbox
  */
 
-import { readdir, readFile, mkdir, rename } from "fs/promises";
+import { readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
 import { Maildir } from "../mail";
-import { spawnArm, type SpawnOptions } from "../arm/spawner";
 import { getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import {
 	parsePlanFile,
@@ -22,8 +21,6 @@ import {
 } from "./plan-parser";
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
-import { NatsClient, TOPICS, type BrainMessage } from "../nats";
-import { eventStore } from "../nats/jetstream";
 import { loadConfig } from "../config";
 import {
 	ArmStateMachine,
@@ -54,6 +51,7 @@ import type {
 	Discovery,
 	MessageType,
 } from "../types";
+import { isBrainInboxMessageType } from "../types/brain-inbox";
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -79,9 +77,7 @@ export class Brain {
 	private armStateDb: ArmStateStore | null = null;
 	private apiBaseUrl: string;
 	private apiKey: string;
-	private natsUrl!: string;
 	private refactorFileThresholdLines = 400;
-	private natsClient: NatsClient | null = null;
 	private templates: BrainTemplateManager;
 	private mailProcessor: MailProcessor;
 	private armOutputProcessor: ArmOutputProcessor;
@@ -111,8 +107,6 @@ export class Brain {
 	> = new Map();
 	// Track when each arm was first detected (for grace period)
 	private armDetectionTimes: Map<string, Date> = new Map();
-	// Track recent activity from event stream (for real-time busy detection)
-	private lastArmEventTime: Map<string, Date> = new Map();
 	// Track which assistant session messages have already been interpreted
 	private processedArmOutputMessageIds: Map<string, Set<string>> = new Map();
 	// In-memory file subscriptions keyed by arm ID
@@ -146,8 +140,7 @@ export class Brain {
 	private resolveClaimsActive = false; // Config flag for active claim resolution (default: false)
 
 	/**
-	 * Log an activity entry to JetStream
-	 * This replaces the old SQLite activity table - JetStream is now the single source of truth
+	 * Log an activity entry via API (API handles JetStream persistence).
 	 */
 	private logActivity(
 		actor: string,
@@ -160,26 +153,19 @@ export class Brain {
 			return;
 		}
 
-		// Publish to JetStream if initialized
-		if (eventStore.isInitialized()) {
-			const subject = target
-				? `coleo.events.arm.${target}.${action}`
-				: `coleo.events.brain.${action}`;
-
-			eventStore
-				.publishEvent(subject, {
-					type: action,
-					armId: target,
-					data: { actor, ...details },
-					timestamp: new Date().toISOString(),
-				})
-				.catch((err) => {
-					// Only log if not shutting down
-					if (!this.shuttingDown) {
-						console.error(`[brain] Failed to publish activity event: ${err}`);
-					}
-				});
-		}
+		void this.apiRequest<{ entry?: unknown }>(
+			"/api/activity",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					actor,
+					action,
+					target,
+					details: details || {},
+				}),
+			},
+			1500,
+		);
 	}
 
 	/**
@@ -242,7 +228,6 @@ export class Brain {
 			process.env.COLEO_API_URL ||
 			"http://localhost:8080";
 		this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
-		this.natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
 		this.state = {
 			status: "stopped",
 			pollIntervalMs: options.pollIntervalMs,
@@ -273,151 +258,6 @@ export class Brain {
 
 		// Initialize terminal dashboard (TTY only)
 		this.dashboard = new TerminalDashboard({ enabled: process.stdout.isTTY });
-	}
-
-	/**
-	 * Connect to NATS and subscribe to brain messages
-	 */
-	async startNats(): Promise<void> {
-		try {
-			this.natsClient = new NatsClient({
-				serverUrl: this.natsUrl,
-				clientId: `brain-${process.pid}`,
-				debug: this.options.verbose,
-			});
-
-			await this.natsClient.connect();
-			this.log(`Connected to NATS at ${this.natsUrl}`);
-
-			// Subscribe to brain messages from arms
-			this.natsClient.subscribe<BrainMessage>(
-				TOPICS.BRAIN_MESSAGES,
-				async (message) => {
-					await this.handleBrainMessage(message);
-				},
-			);
-
-			// Subscribe to arm events for real-time activity tracking
-			this.natsClient.subscribe<{ armId: string; type: string }>(
-				TOPICS.BROADCAST_ARMS,
-				async (event) => {
-					if (event.armId) {
-						this.lastArmEventTime.set(event.armId, new Date());
-						// Log to JetStream for history
-						this.logActivity(
-							"brain",
-							`event-${event.type}`,
-							event.armId,
-							event as unknown as Record<string, unknown>,
-						);
-					}
-				},
-			);
-
-			// Subscribe to individual arm events to update status based on session changes
-			this.natsClient.subscribe<{
-				armId: string;
-				type: string;
-				properties: Record<string, unknown>;
-			}>(`arm.>`, async (event) => {
-				await this.handleArmEvent(event.armId, event.type, event.properties);
-			});
-
-			this.log("Subscribed to brain messages and arm events on NATS");
-		} catch (err) {
-			this.log(`NATS not available: ${err}`);
-			this.natsClient = null;
-		}
-	}
-
-	/**
-	 * Disconnect from NATS
-	 */
-	async stopNats(): Promise<void> {
-		if (this.natsClient) {
-			await this.natsClient.disconnect();
-			this.natsClient = null;
-			this.log("Disconnected from NATS");
-		}
-	}
-
-	/**
-	 * Handle individual arm events to update status
-	 */
-	private async handleArmEvent(
-		armId: string,
-		eventType: string,
-		properties: Record<string, unknown>,
-	): Promise<void> {
-		// Skip event handling during shutdown
-		if (this.shuttingDown) return;
-
-		// Update arm status based on session status events
-		if (eventType === "session.status") {
-			const status = properties.status as { type: string } | undefined;
-			if (status?.type) {
-				let dbStatus: string;
-				switch (status.type) {
-					case "busy":
-						dbStatus = "busy";
-						break;
-					case "idle":
-						dbStatus = "idle";
-						break;
-					case "error":
-						dbStatus = "error";
-						break;
-					default:
-						return; // Don't update for unknown statuses
-				}
-
-				try {
-					const now = new Date().toISOString();
-					await this.patchArmViaApi(armId, {
-						status: dbStatus,
-						lastActivityAt: now,
-					});
-
-					this.log(
-						`Updated arm ${armId} status to ${dbStatus} based on session.status event`,
-					);
-
-					// Broadcast status change to API/WebSocket
-					if (this.natsClient) {
-						await this.natsClient.publish(TOPICS.BROADCAST_ARMS, {
-							armId,
-							type: "arm.status_changed",
-							status: dbStatus,
-							source: "session_event",
-						});
-					}
-				} catch (err) {
-					this.log(`Failed to update arm status: ${err}`);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Handle brain messages from arms
-	 */
-	private async handleBrainMessage(message: BrainMessage): Promise<void> {
-		// Skip message handling during shutdown
-		if (this.shuttingDown) return;
-
-		this.log(`NATS: Received ${message.type} from ${message.from}`);
-
-		// Convert NATS message to QueueMessage format and handle
-		const queueMessage: QueueMessage = {
-			id: `nats-${Date.now()}`,
-			from: message.from,
-			to: message.to,
-			type: message.type as MessageType,
-			payload: message.payload,
-			timestamp: new Date(message.timestamp),
-		};
-
-		await this.handleArmMessage(queueMessage);
 	}
 
 	/**
@@ -458,6 +298,43 @@ export class Brain {
 			// API not available
 			return null;
 		}
+	}
+
+	private async listRecentActivitySummary(limit: number): Promise<string[]> {
+		const response = await this.apiRequest<{
+			activity?: Array<{
+				actor?: string;
+				action?: string;
+				target?: string | null;
+			}>;
+		}>(`/api/activity?limit=${Math.max(1, limit)}`, {}, 1500);
+		const activity = response?.activity || [];
+		return activity
+			.filter((entry) => typeof entry.action === "string" && entry.action.trim())
+			.map((entry) => {
+				const actor = entry.actor || entry.target || "unknown";
+				return `${actor} ${entry.action}`;
+			});
+	}
+
+	private async publishEventViaApi(event: {
+		subject: string;
+		type: string;
+		armId?: string;
+		data: Record<string, unknown>;
+		timestamp?: string;
+	}): Promise<void> {
+		await this.apiRequest<{ published?: boolean }>(
+			"/api/events/internal/publish",
+			{
+				method: "POST",
+				body: JSON.stringify({
+					...event,
+					timestamp: event.timestamp || new Date().toISOString(),
+				}),
+			},
+			1500,
+		);
 	}
 
 	private async getArmFromApi(armId: string): Promise<{
@@ -961,9 +838,6 @@ export class Brain {
 			pollIntervalMs: this.options.pollIntervalMs,
 		});
 
-		// Connect to NATS
-		await this.startNats();
-
 		// Notify Observatory that brain is starting
 		await this.notifyObservatory("started");
 
@@ -977,9 +851,6 @@ export class Brain {
 				await this.poll();
 			}
 		}
-
-		// Disconnect from NATS
-		await this.stopNats();
 
 		this.state.status = "stopped";
 		await this.saveState();
@@ -995,14 +866,8 @@ export class Brain {
 		this.state.status = "running";
 		this.state.startedAt = this.state.startedAt || new Date().toISOString();
 
-		// Connect to NATS (optional)
-		await this.startNats();
-
 		await this.notifyObservatory("started");
 		await this.poll();
-
-		// Disconnect from NATS
-		await this.stopNats();
 
 		this.state.status = "stopped";
 		await this.saveState();
@@ -1047,9 +912,6 @@ export class Brain {
 			this.armStateMachine = null;
 		}
 
-		// Disconnect from NATS (with timeout to avoid hanging)
-		await this.stopNats();
-
 		// Close arm state adapter
 		if (this.armStateDb) {
 			this.armStateDb.close?.();
@@ -1079,18 +941,7 @@ export class Brain {
 			status: arm.status,
 		}));
 
-		// Get recent activity from JetStream for LLM context
-		let recentActivity: string[] = [];
-		if (eventStore.isInitialized()) {
-			try {
-				const events = await eventStore.getRecentEvents(5);
-				recentActivity = events.map(
-					(e) => `${e.data.actor || e.armId || "brain"} ${e.type}`,
-				);
-			} catch {
-				// Fall back to empty if JetStream query fails
-			}
-		}
+		const recentActivity = await this.listRecentActivitySummary(5);
 		const systemPrompt = await this.templates.loadMailProcessorSystemPrompt({
 			availableArms: armContexts,
 			pendingTasks: this.state.pendingTasks,
@@ -1312,10 +1163,10 @@ export class Brain {
 	}
 
 	/**
-	 * Process messages from arms (API queue with file fallback)
+	 * Process messages from arms (API queue is the single ingress channel)
 	 */
 	private async processArmQueue(): Promise<void> {
-		// Process messages from API queue (primary)
+		// Process messages from API queue
 		try {
 			const messages = await this.listPendingMessagesViaApi("brain", 500);
 			for (const message of messages) {
@@ -1355,44 +1206,17 @@ export class Brain {
 		} catch (err) {
 			this.log(`Error listing API queue messages: ${err}`);
 		}
-
-		// Also check file queue for legacy/fallback messages
-		const queueDir = join(this.options.coleoDir, "queue", "brain", "pending");
-		const processedDir = join(
-			this.options.coleoDir,
-			"queue",
-			"brain",
-			"processed",
-		);
-
-		let files: string[];
-		try {
-			files = await readdir(queueDir);
-		} catch {
-			return; // Queue doesn't exist yet
-		}
-
-		for (const file of files) {
-			if (!file.endsWith(".json")) continue;
-
-			try {
-				const content = await readFile(join(queueDir, file), "utf-8");
-				const message: QueueMessage = JSON.parse(content);
-
-				await this.handleArmMessage(message);
-
-				// Move to processed
-				await rename(join(queueDir, file), join(processedDir, file));
-			} catch (err) {
-				this.log(`Error processing queue message ${file}: ${err}`);
-			}
-		}
 	}
 
 	/**
 	 * Handle a message from an arm
 	 */
 	private async handleArmMessage(message: QueueMessage): Promise<void> {
+		if (!isBrainInboxMessageType(message.type)) {
+			this.log(`Ignoring unsupported brain inbox message type: ${message.type}`);
+			return;
+		}
+
 		switch (message.type) {
 			case "task_complete": {
 				const payload = message.payload as {
@@ -1500,17 +1324,6 @@ export class Brain {
 				break;
 			}
 
-			case "bug_assignment": {
-				const payload = message.payload as {
-					bugId: string;
-					title: string;
-					assignedBy: string;
-					reason: string;
-				};
-				await this.handleBugAssignment(message.to, payload);
-				break;
-			}
-
 			case "status_report": {
 				const payload = message.payload as {
 					id: string;
@@ -1586,6 +1399,22 @@ export class Brain {
 				break;
 			}
 
+			case "task_acknowledge": {
+				const payload = message.payload as {
+					taskId: string;
+					screenshotPath?: string;
+					screenshot_path?: string;
+				};
+				await this.updateTaskStatus(
+					message.from,
+					payload.taskId,
+					"in_progress",
+					undefined,
+					payload.screenshot_path || payload.screenshotPath,
+				);
+				break;
+			}
+
 			case "task_validation": {
 				// Validator arm reports validation result
 				const payload = message.payload as {
@@ -1600,6 +1429,24 @@ export class Brain {
 					payload.approved,
 					payload.notes,
 					payload.screenshot_path,
+				);
+				break;
+			}
+
+			case "task_validate": {
+				const payload = message.payload as {
+					taskId: string;
+					approved: boolean;
+					notes: string;
+					screenshotPath?: string;
+					screenshot_path?: string;
+				};
+				await this.handleTaskValidation(
+					payload.taskId,
+					message.from,
+					payload.approved,
+					payload.notes,
+					payload.screenshot_path || payload.screenshotPath,
 				);
 				break;
 			}
@@ -1623,23 +1470,18 @@ export class Brain {
 			`Arm ${armId} discovered dependency: ${payload.dependsOn} (${payload.type}) for task ${payload.taskId}`,
 		);
 
-		// Publish to JetStream instead of SQLite
-		if (eventStore.isInitialized()) {
-			eventStore
-				.publishEvent(`coleo.events.arm.${armId}.dependency_discovered`, {
-					type: "dependency_discovered",
-					armId,
-					data: {
-						taskId: payload.taskId,
-						dependsOn: payload.dependsOn,
-						dependencyType: payload.type,
-						description: payload.description,
-						severity: payload.severity,
-					},
-					timestamp: new Date().toISOString(),
-				})
-				.catch(() => {});
-		}
+		await this.publishEventViaApi({
+			subject: `coleo.events.arm.${armId}.dependency_discovered`,
+			type: "dependency_discovered",
+			armId,
+			data: {
+				taskId: payload.taskId,
+				dependsOn: payload.dependsOn,
+				dependencyType: payload.type,
+				description: payload.description,
+				severity: payload.severity,
+			},
+		});
 
 		// TODO: Store dependency relationships in database for future task planning
 		// For now, just log it
@@ -2715,34 +2557,25 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			artifacts,
 		});
 
-		// Mirror task completion into task + arm event streams for activity analysis
-		if (eventStore.isInitialized()) {
-			const now = new Date().toISOString();
-			const data = { actor: "brain", taskId, subject: taskSubject, artifacts };
-
-			eventStore
-				.publishEvent(`coleo.events.task.${taskId}.task.completed`, {
-					type: "task.completed",
-					armId: workerArmId,
-					data,
-					timestamp: now,
-				})
-				.catch(() => {
-					// Best-effort
-				});
-
-			if (workerArmId) {
-				eventStore
-					.publishEvent(`coleo.events.arm.${workerArmId}.task.completed`, {
-						type: "task.completed",
-						armId: workerArmId,
-						data,
-						timestamp: now,
-					})
-					.catch(() => {
-						// Best-effort
-					});
-			}
+		const mirroredEventData = {
+			actor: "brain",
+			taskId,
+			subject: taskSubject,
+			artifacts,
+		};
+		await this.publishEventViaApi({
+			subject: `coleo.events.task.${taskId}.task.completed`,
+			type: "task.completed",
+			armId: workerArmId,
+			data: mirroredEventData,
+		});
+		if (workerArmId) {
+			await this.publishEventViaApi({
+				subject: `coleo.events.arm.${workerArmId}.task.completed`,
+				type: "task.completed",
+				armId: workerArmId,
+				data: mirroredEventData,
+			});
 		}
 
 		this.completedTaskCount = this.state.completedTaskCount;
@@ -4176,34 +4009,6 @@ ${originalTask.id}`;
 	}
 
 	/**
-	 * Handle bug assignment notification to an arm
-	 */
-	private async handleBugAssignment(
-		armId: string,
-		payload: {
-			bugId: string;
-			title: string;
-			assignedBy: string;
-			reason: string;
-		},
-	): Promise<void> {
-		// Load and render the bug assignment prompt template
-		const prompt = await this.templates.loadBugAssignmentPrompt({
-			bugId: payload.bugId,
-			title: payload.title,
-			assignedBy: payload.assignedBy,
-			reason: payload.reason,
-		});
-
-		// Send notification to the assigned arm via their MCP session
-		await this.sendPromptToArm(armId, prompt);
-
-		this.log(
-			`Bug ${payload.bugId} assigned to arm ${armId} by ${payload.assignedBy}`,
-		);
-	}
-
-	/**
 	 * Create a task to investigate a bug
 	 */
 	private async createBugInvestigationTask(
@@ -5123,47 +4928,53 @@ Report findings using bug resolution workflow.`;
 		return latestMs;
 	}
 
+	private async getRecentArmEventTimestampMs(
+		armId: string,
+		limit = 25,
+	): Promise<number | null> {
+		const params = new URLSearchParams({
+			actor: armId,
+			limit: String(limit),
+		});
+		const response = await this.apiRequest<{
+			activity?: Array<{ timestamp?: string }>;
+		}>(`/api/activity?${params.toString()}`, {}, 1500);
+		const activity = response?.activity;
+		if (!activity || activity.length === 0) {
+			return null;
+		}
+
+		let latestMs: number | null = null;
+		for (const entry of activity) {
+			if (!entry?.timestamp) {
+				continue;
+			}
+			const timestampMs = new Date(entry.timestamp).getTime();
+			if (!Number.isFinite(timestampMs)) {
+				continue;
+			}
+			if (latestMs === null || timestampMs > latestMs) {
+				latestMs = timestampMs;
+			}
+		}
+
+		return latestMs;
+	}
+
 	private async getRecentArmActivitySignal(
 		armId: string,
 		thresholdMs: number,
 	): Promise<{ recent: boolean; reason?: string }> {
 		const nowMs = Date.now();
 
-		const lastNatsEvent = this.lastArmEventTime.get(armId);
-		if (lastNatsEvent) {
-			const ageMs = nowMs - lastNatsEvent.getTime();
-			if (ageMs < thresholdMs) {
+		const latestActivityMs = await this.getRecentArmEventTimestampMs(armId, 25);
+		if (latestActivityMs !== null) {
+			const ageMs = nowMs - latestActivityMs;
+			if (ageMs >= 0 && ageMs < thresholdMs) {
 				return {
 					recent: true,
-					reason: `recent NATS arm event ${Math.round(ageMs / 1000)}s ago`,
+					reason: `recent API arm event ${Math.round(ageMs / 1000)}s ago`,
 				};
-			}
-		}
-
-		if (eventStore.isInitialized()) {
-			try {
-				const recentArmEvents = await eventStore.getArmEvents(armId, 25);
-				let latestJetStreamMs: number | null = null;
-				for (const event of recentArmEvents) {
-					const timestampMs = new Date(event.timestamp).getTime();
-					if (
-						Number.isFinite(timestampMs) &&
-						(latestJetStreamMs === null || timestampMs > latestJetStreamMs)
-					) {
-						latestJetStreamMs = timestampMs;
-					}
-				}
-				if (latestJetStreamMs !== null) {
-					const ageMs = nowMs - latestJetStreamMs;
-					if (ageMs < thresholdMs) {
-						return {
-							recent: true,
-							reason: `recent JetStream arm event ${Math.round(ageMs / 1000)}s ago`,
-						};
-					}
-				}
-			} catch {
-				// Best effort only.
 			}
 		}
 
@@ -6115,21 +5926,6 @@ Report findings using bug resolution workflow.`;
 			return recovered;
 		}
 
-		// Try to reconnect NATS if needed (API is healthy, NATS remains optional)
-		if (!this.infrastructureHealth.nats.healthy && !this.natsClient) {
-			try {
-				this.natsClient = new NatsClient({
-					serverUrl: this.natsUrl,
-					clientId: `brain-${process.pid}`,
-				});
-				await this.natsClient.connect();
-				this.log("Recovered NATS connection");
-				recovered = true;
-			} catch {
-				// NATS is optional, don't log as error
-			}
-		}
-
 		return recovered;
 	}
 
@@ -6659,7 +6455,7 @@ Report findings using bug resolution workflow.`;
 
 	/**
 	 * Analyze recent activity to detect prompt-response patterns
-	 * Now reads from JetStream instead of SQLite
+	 * Reads activity via API (API uses JetStream as source of truth).
 	 */
 	private async getRecentArmActivity(
 		armId: string,
@@ -6669,19 +6465,28 @@ Report findings using bug resolution workflow.`;
 		action: string;
 		details: string;
 	}> | null> {
-		if (!eventStore.isInitialized()) return null;
-
 		const since = new Date(Date.now() - minutes * 60 * 1000);
 		try {
-			const events = await eventStore.getArmEvents(armId, 100);
+			const params = new URLSearchParams({
+				actor: armId,
+				limit: "100",
+			});
+			const response = await this.apiRequest<{
+				activity?: Array<{
+					timestamp: string;
+					action: string;
+					details?: Record<string, unknown>;
+				}>;
+			}>(`/api/activity?${params.toString()}`, {}, 1500);
+			const events = response?.activity || [];
 
 			// Filter to events within the time window and transform to expected format
 			return events
-				.filter((e) => new Date(e.timestamp) > since)
+				.filter((e) => new Date(e.timestamp).getTime() > since.getTime())
 				.map((e) => ({
 					timestamp: e.timestamp,
-					action: e.type,
-					details: JSON.stringify(e.data),
+					action: e.action,
+					details: JSON.stringify(e.details || {}),
 				}))
 				.sort(
 					(a, b) =>
