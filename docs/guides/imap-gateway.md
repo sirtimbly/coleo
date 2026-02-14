@@ -1,5 +1,9 @@
 # IMAP Gateway (Phase 1: Tailscale/Tunnel)
 
+> Legacy/local workflow only: production email flows now require an email gateway integration (Postmark recommended) with a fixed sender and receiver address pair.
+>
+> For the required gateway setup, see [`/guides/communicate-with-brain#required-email-gateway-postmark-example`](/guides/communicate-with-brain#required-email-gateway-postmark-example).
+
 This guide configures Coleo as a **local IMAP gateway** for Maildir-backed project mailboxes.
 
 Phase 1 is intentionally simple:

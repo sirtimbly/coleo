@@ -18,6 +18,8 @@ import {
   type ArmStatus,
   type SpawnResponse,
   type ListArmsResponse,
+  type GetMessagesResponse,
+  type GetTodosResponse,
 } from '../nats';
 import {
   harnessRegistry,
@@ -185,6 +187,10 @@ export class ArmAgent {
           return await this.handleListArms(command);
         case 'abort':
           return await this.handleAbort(command);
+        case 'get_messages':
+          return await this.handleGetMessages(command);
+        case 'get_todos':
+          return await this.handleGetTodos(command);
         default:
           return {
             requestId: (command as AgentCommand).requestId,
@@ -436,6 +442,70 @@ export class ArmAgent {
     return {
       requestId: command.requestId,
       success: true,
+    };
+  }
+
+  private async handleGetMessages(
+    command: AgentCommand & { type: 'get_messages' },
+  ): Promise<CommandResponse<GetMessagesResponse>> {
+    const { armId, limit } = command;
+    const managedArm = this.managedArms.get(armId);
+    if (!managedArm) {
+      return {
+        requestId: command.requestId,
+        success: false,
+        error: `Arm ${armId} not found on this agent`,
+      };
+    }
+
+    if (!managedArm.harness.getMessages) {
+      return {
+        requestId: command.requestId,
+        success: false,
+        error: `Harness ${managedArm.harnessName} does not support messages`,
+      };
+    }
+
+    const messages = await managedArm.harness.getMessages(managedArm.session, {
+      limit,
+    });
+    const state = this.armToState(managedArm);
+    return {
+      requestId: command.requestId,
+      success: true,
+      data: {
+        messages,
+        sessionId: state.sessionId,
+      },
+    };
+  }
+
+  private async handleGetTodos(
+    command: AgentCommand & { type: 'get_todos' },
+  ): Promise<CommandResponse<GetTodosResponse>> {
+    const { armId } = command;
+    const managedArm = this.managedArms.get(armId);
+    if (!managedArm) {
+      return {
+        requestId: command.requestId,
+        success: false,
+        error: `Arm ${armId} not found on this agent`,
+      };
+    }
+
+    if (!managedArm.harness.getTodos) {
+      return {
+        requestId: command.requestId,
+        success: false,
+        error: `Harness ${managedArm.harnessName} does not support todos`,
+      };
+    }
+
+    const todos = await managedArm.harness.getTodos(managedArm.session);
+    return {
+      requestId: command.requestId,
+      success: true,
+      data: { todos },
     };
   }
 

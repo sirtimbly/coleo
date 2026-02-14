@@ -22,6 +22,7 @@ describe("Brain poll order", () => {
 					issues: string[];
 					canWorkWithArms: boolean;
 					components: {
+						apiServer: { healthy: boolean };
 						database: { healthy: boolean };
 						maildir: { healthy: boolean };
 					};
@@ -34,6 +35,7 @@ describe("Brain poll order", () => {
 				issues: [],
 				canWorkWithArms: true,
 				components: {
+					apiServer: { healthy: true },
 					database: { healthy: true },
 					maildir: { healthy: true },
 				},

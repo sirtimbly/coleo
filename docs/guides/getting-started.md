@@ -234,14 +234,13 @@ After initialization, Coleo creates this structure:
 ├── coleo.db           # SQLite system of record (tasks, arms, message inbox, etc.)
 ├── run/               # Daemon pid/status files
 ├── state/             # Legacy compatibility files (not canonical)
-├── queue/             # Legacy compatibility directories (not canonical)
 ├── arms/              # Arm templates/configs
 ├── mcp/               # MCP configurations
 ├── logs/              # Log files
 └── config.toml        # Configuration
 ```
 
-`queue/` and `state/` may still exist for compatibility, but the canonical brain inbox is the API-backed `messages` table in `coleo.db` (fed from NATS by the API bridge).
+The canonical brain inbox is the API-backed `messages` table in `coleo.db` (fed from NATS by the API bridge).
 
 ## Running the Brain
 
@@ -602,9 +601,13 @@ When monitoring documentation:
 
 When you reply to emails from Coleo with documentation changes, the brain creates documentation update tasks classified as `documentation`.
 
+Email-triggered workflows require a configured email gateway (Postmark recommended) and a fixed sender/receiver pair:
+- **Sender** (Brain mailbox), for example: `brain@your-domain.com`
+- **Receiver** (human mailbox), for example: `you@your-domain.com`
+
 ### How It Works
 
-1. **You send an email** with instructions like:
+1. **You send an email** from the configured receiver mailbox to the configured sender mailbox with instructions like:
    - "Update the requirements for auth flow"
    - "Update docs to clarify the deployment process"
    - "Revise the API documentation"

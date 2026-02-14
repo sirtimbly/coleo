@@ -102,6 +102,7 @@ export interface AgentHarness {
 
   // Session data (if supported by the harness)
   getMessages?(session: HarnessSession, options?: { limit?: number }): Promise<unknown[]>;
+  getTodos?(session: HarnessSession): Promise<unknown[]>;
 
   // Special actions
   interrupt(session: HarnessSession): Promise<void>;

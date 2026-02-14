@@ -48,8 +48,6 @@ export function registerInitCommand(program: Command): void {
         "mail/sent",
         "mail/drafts",
         "mail/archive",
-        "queue/brain/pending",
-        "queue/brain/processed",
         "state",
         "state/arms",
         "state/notes/shared",
@@ -164,7 +162,7 @@ COLEO_API_TOKEN=${apiToken}
  Directory structure created:
     ${coleoDir}/
     ├── mail/          # Human-agent communication (Maildir)
-    ├── queue/         # Inter-agent message queue
+    ├── coleo.db       # SQLite system of record (created on first server start)
     ├── state/         # Persistent state
     ├── arms/          # Arm configurations
     │   └── default.toml  # Default arm config

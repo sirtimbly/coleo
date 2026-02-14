@@ -1492,17 +1492,8 @@ export function createArmsRoutes() {
       return c.json({ messages: [], error: "Arm not running" });
     }
 
-    const manager = getGlobalHarnessManager();
-    if (!manager) {
-      throw HttpError.internal("Harness manager not initialized");
-    }
-
-    if (!manager.hasSession(id)) {
-      if (!distributedAgentId) {
-        return c.json({ messages: [], error: "Arm has no active harness session" });
-      }
-
-      const snapshot = await refreshDistributedRuntimeFromAgent(
+    if (distributedAgentId) {
+      await refreshDistributedRuntimeFromAgent(
         db,
         id,
         distributedAgentId,
@@ -1514,41 +1505,38 @@ export function createArmsRoutes() {
         },
       );
 
-      if (!snapshot.port || !snapshot.sessionId) {
-        return c.json({ messages: [], error: "Arm has no active distributed session" });
-      }
-
-      try {
-        const response = await fetch(
-          `http://127.0.0.1:${snapshot.port}/session/${snapshot.sessionId}/message`,
-          { signal: AbortSignal.timeout(5000) },
-        );
-
-        if (!response.ok) {
-          return c.json({
-            messages: [],
-            sessionId: snapshot.sessionId,
-            error: `OpenCode returned ${response.status}`,
-          });
-        }
-
-        const payload = await response.json() as unknown[] | { messages?: unknown[] };
-        const allMessages = Array.isArray(payload) ? payload : payload.messages || [];
-        const messages = limit > 0 ? allMessages.slice(-limit) : allMessages;
-
-        return c.json({
-          messages,
-          sessionId: snapshot.sessionId,
-          distributed: true,
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      const armClient = getArmClient();
+      if (!armClient) {
         return c.json({
           messages: [],
-          sessionId: snapshot.sessionId,
-          error: `Failed to fetch distributed messages: ${message}`,
+          sessionId: row.session_id,
+          error: "Arm agent client not available",
         });
       }
+
+      const response = await armClient.getMessages(id, { limit }, 10000);
+      if (!response.success) {
+        return c.json({
+          messages: [],
+          sessionId: row.session_id,
+          error: response.error || "Failed to fetch distributed messages",
+        });
+      }
+
+      return c.json({
+        messages: response.data?.messages || [],
+        sessionId: response.data?.sessionId || row.session_id,
+        distributed: true,
+      });
+    }
+
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    if (!manager.hasSession(id)) {
+      return c.json({ messages: [], error: "Arm has no active harness session" });
     }
 
     try {
@@ -1621,7 +1609,7 @@ export function createArmsRoutes() {
   });
 
   /**
-   * Get arm's todos from OpenCode session
+   * Get arm's todos via ArmAgent (distributed) or HarnessManager (local)
    * GET /api/arms/:id/todos
    */
   app.get("/:id/todos", async (c) => {
@@ -1642,11 +1630,8 @@ export function createArmsRoutes() {
     }
 
     const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
-    let sessionId = row.session_id;
-    let port: number | null = row.port;
-    let status = row.status;
-    if (distributedAgentId && (!sessionId || !port || status === "stopped")) {
-      const snapshot = await refreshDistributedRuntimeFromAgent(
+    if (distributedAgentId) {
+      await refreshDistributedRuntimeFromAgent(
         db,
         id,
         distributedAgentId,
@@ -1657,37 +1642,42 @@ export function createArmsRoutes() {
           sessionId: row.session_id,
         },
       );
-      sessionId = snapshot.sessionId;
-      port = snapshot.port;
-      status = snapshot.status;
+
+      const armClient = getArmClient();
+      if (!armClient) {
+        return c.json({ todos: [], message: "Arm agent client not available" });
+      }
+
+      const response = await armClient.getTodos(id, 10000);
+      if (!response.success) {
+        return c.json({
+          todos: [],
+          message: response.error || "Failed to fetch distributed todos",
+        });
+      }
+
+      return c.json({
+        todos: response.data?.todos || [],
+        distributed: true,
+      });
     }
 
-    if ((!port || status === "stopped") && !distributedAgentId) {
+    if (row.status === "stopped") {
       return c.json({ todos: [], message: "Arm not running" });
     }
 
-    if (!sessionId) {
-      return c.json({ todos: [], message: "No session ID available" });
-    }
-    if (!port) {
-      return c.json({ todos: [], message: "No arm port available" });
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
     }
 
-    // Fetch todos from OpenCode server using session-specific endpoint
+    if (!manager.hasSession(id)) {
+      return c.json({ todos: [], message: "Arm has no active harness session" });
+    }
+
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/session/${sessionId}/todo`, {
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) {
-        return c.json({ todos: [], message: `OpenCode returned ${response.status}` });
-      }
-
-      const data = await response.json() as { todos?: unknown[] } | unknown[];
-      if (Array.isArray(data)) {
-        return c.json({ todos: data });
-      }
-      return c.json({ todos: data.todos || [] });
+      const todos = await manager.getTodos(id);
+      return c.json({ todos });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return c.json({ todos: [], message: `Failed to fetch todos: ${message}` });
@@ -1695,56 +1685,31 @@ export function createArmsRoutes() {
   });
 
   /**
-   * SSE stream for arm events from OpenCode
+   * SSE stream for arm events from JetStream
    * GET /api/arms/:id/events
-   * 
-   * This proxies the OpenCode server's /event SSE endpoint to the web client,
-   * allowing real-time updates in the dashboard.
    */
   app.get("/:id/events", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
 
-    // Get arm with runtime info
-    const row = db.query("SELECT id, port, status, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
-      id: string;
-      port: number | null;
-      status: string;
-      session_id: string | null;
-      agent_id: string | null;
-    } | null;
-
-    if (!row) {
+    const exists = db.query("SELECT id FROM arms WHERE id = ?").get(id);
+    if (!exists) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
-    let port: number | null = row.port;
-    let status = row.status;
-
-    if (distributedAgentId && (!port || status === "stopped")) {
-      const snapshot = await refreshDistributedRuntimeFromAgent(
-        db,
-        id,
-        distributedAgentId,
-        {
-          status: row.status,
-          pid: null,
-          port: row.port,
-          sessionId: row.session_id,
-        },
-      );
-      port = snapshot.port;
-      status = snapshot.status;
-    }
-
-    if (!port || status === "stopped") {
-      // Return an SSE stream that immediately sends an error and closes
+    if (!eventStore.isInitialized()) {
       return new Response(
         new ReadableStream({
           start(controller) {
             const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: "Arm not running" } })}\n\n`));
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  type: "error",
+                  properties: { error: "JetStream not available" },
+                })}\n\n`,
+              ),
+            );
             controller.close();
           },
         }),
@@ -1758,101 +1723,81 @@ export function createArmsRoutes() {
       );
     }
 
-    // Proxy the OpenCode server's event stream
-    const openCodeUrl = `http://127.0.0.1:${port}/event`;
+    let closed = false;
+    const requestSignal = c.req.raw.signal;
 
-    try {
-      const upstreamResponse = await fetch(openCodeUrl, {
-        headers: {
-          "Accept": "text/event-stream",
-          "Cache-Control": "no-cache",
-        },
-      });
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        let lastPollTime = new Date(Date.now() - 2_000);
 
-      if (!upstreamResponse.ok || !upstreamResponse.body) {
-        return new Response(
-          new ReadableStream({
-            start(controller) {
-              const encoder = new TextEncoder();
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: `OpenCode returned ${upstreamResponse.status}` } })}\n\n`));
-              controller.close();
-            },
-          }),
-          {
-            headers: {
-              "Content-Type": "text/event-stream",
-              "Cache-Control": "no-cache",
-              "Connection": "keep-alive",
-            },
-          }
-        );
-      }
+        const writeEvent = (eventName: string, data: unknown): void => {
+          controller.enqueue(
+            encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`),
+          );
+        };
 
-      // Create a transform stream that enriches events with armId
-      const transformStream = new TransformStream({
-        transform(chunk, controller) {
-          const decoder = new TextDecoder();
-          const encoder = new TextEncoder();
-          const text = decoder.decode(chunk);
-
-          // Parse SSE events and add armId context
-          const lines = text.split("\n");
-          let outputText = "";
-
-          for (const line of lines) {
-            if (line.startsWith("data:")) {
-              try {
-                const data = JSON.parse(line.slice(5).trim());
-                // Enrich with armId
-                if (data.properties) {
-                  data.properties.armId = id;
-                } else {
-                  data.armId = id;
-                }
-                outputText += `data: ${JSON.stringify(data)}\n`;
-              } catch {
-                // Pass through unparseable data as-is
-                outputText += line + "\n";
-              }
-            } else {
-              outputText += line + "\n";
-            }
+        const poll = async (): Promise<void> => {
+          if (closed) {
+            return;
           }
 
-          controller.enqueue(encoder.encode(outputText));
-        },
-      });
+          try {
+            const events = await eventStore.queryEvents({
+              subject: `coleo.events.arm.${id}.>`,
+              since: lastPollTime,
+              limit: 100,
+            });
+            lastPollTime = new Date();
 
-      // Pipe the upstream response through the transform
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const transformedStream = (upstreamResponse.body as any).pipeThrough(transformStream);
+            events
+              .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
+              .forEach((event) => {
+                writeEvent(event.type, {
+                  ...event,
+                  armId: event.armId || id,
+                });
+              });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            writeEvent("error", { error: message });
+          }
+        };
 
-      return new Response(transformedStream as ReadableStream<Uint8Array>, {
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-        },
-      });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", properties: { error: message } })}\n\n`));
+        const interval = setInterval(() => {
+          void poll();
+        }, 1000);
+
+        writeEvent("connected", { armId: id });
+        void poll();
+
+        const closeStream = (): void => {
+          if (closed) {
+            return;
+          }
+          closed = true;
+          clearInterval(interval);
+          try {
             controller.close();
-          },
-        }),
-        {
-          headers: {
-            "Content-Type": "text/event-stream",
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-          },
-        }
-      );
-    }
+          } catch {
+            // noop
+          }
+        };
+
+        requestSignal?.addEventListener("abort", closeStream, { once: true });
+      },
+      cancel() {
+        closed = true;
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+      },
+    });
   });
 
   /**

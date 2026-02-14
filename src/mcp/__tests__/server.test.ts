@@ -10,7 +10,7 @@ import { MockNatsClient, createMockNatsClient } from "../../nats/__mocks__/clien
 import { Database } from "bun:sqlite";
 import { mkdir, rm, writeFile, readFile, readdir } from "fs/promises";
 import { join } from "path";
-import type { Discovery, QueueMessage } from "../../types";
+import type { Discovery } from "../../types";
 
 describe("MCP Server - sendToBrain (with mocked NATS)", () => {
   let mockNats: MockNatsClient;
@@ -142,75 +142,6 @@ describe("MCP Server - sendToBrain (with mocked NATS)", () => {
       await expect(failClient.connect()).rejects.toThrow("Mock connect failed");
       expect(failClient.isConnected()).toBe(false);
     });
-  });
-});
-
-describe("MCP Server - File Queue Fallback", () => {
-  let testDir: string;
-  let coleoDir: string;
-
-  beforeEach(async () => {
-    testDir = join("/tmp", `coleo-queue-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    coleoDir = join(testDir, ".coleo");
-    
-    await mkdir(join(coleoDir, "queue", "brain", "pending"), { recursive: true });
-  });
-
-  afterEach(async () => {
-    try {
-      await rm(testDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
-  });
-
-  it("writes messages to file queue", async () => {
-    const message: QueueMessage = {
-      id: "test-msg-1",
-      from: "arm-test",
-      to: "brain",
-      type: "discovery",
-      payload: {
-        kind: "test_failure",
-        title: "Test discovery",
-        details: "Details here",
-      },
-      timestamp: new Date(),
-    };
-
-    const filename = `${message.id}-${message.from}-${message.type}.json`;
-    const filepath = join(coleoDir, "queue", "brain", "pending", filename);
-    
-    await writeFile(filepath, JSON.stringify(message, null, 2), "utf-8");
-
-    const content = await readFile(filepath, "utf-8");
-    const parsed = JSON.parse(content);
-    
-    expect(parsed.id).toBe("test-msg-1");
-    expect(parsed.from).toBe("arm-test");
-    expect(parsed.type).toBe("discovery");
-  });
-
-  it("creates queue directory if missing", async () => {
-    const newDir = join(testDir, "new-queue", "brain", "pending");
-    
-    await mkdir(newDir, { recursive: true });
-    
-    const message: QueueMessage = {
-      id: "test-msg-2",
-      from: "arm-test",
-      to: "brain",
-      type: "heartbeat",
-      payload: { status: "idle" },
-      timestamp: new Date(),
-    };
-
-    await writeFile(
-      join(newDir, `${message.id}.json`),
-      JSON.stringify(message),
-      "utf-8"
-    );
-
-    const files = await readdir(newDir);
-    expect(files.length).toBe(1);
   });
 });
 

@@ -71,9 +71,11 @@ If immediate wake-up behavior is needed, use API-mediated signaling (for example
 3. Inbox admission is allowlisted and payload-validated at API boundaries.
 4. Invalid/unsupported ingress is captured as dead-letter records (`brain.deadletter`).
 5. Processing uses lease semantics (`processing` acquisition with stale-lease recovery).
+6. API exposes dead-letter inspection/requeue endpoints for controlled replay.
+7. Arm message/todo reads are routed through ArmAgent (distributed) or HarnessManager abstractions (local), not route-level OpenCode proxy calls.
+8. Arm event SSE endpoint is backed by JetStream query polling, not OpenCode event proxying.
 
 ## Remaining Hardening
 
-1. Add replay tooling for dead-lettered messages.
-2. Add contract tests for API event/message schemas across services.
-3. Continue consolidating distributed harness/OpenCode operations under ArmAgent ownership.
+1. Add contract tests for API event/message schemas across services.
+2. Continue consolidating remaining legacy message fallback paths (for example MCP file-queue fallback) under the same API/NATS-first contract.

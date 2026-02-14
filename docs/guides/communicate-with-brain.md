@@ -8,7 +8,8 @@ When you send a message to the Brain, it moves through API-managed channels:
 
 ### 1. Message Ingestion
 
-- Human messages enter via Maildir (`mail/sent`) and `/api/brain/message`.
+- Human email enters through a gateway webhook (Postmark example: `POST /api/mail/gateway/postmark/inbound`) and is persisted into Coleo mail state.
+- Direct API messages can still be sent via `/api/brain/message` for local automation and testing.
 - Arm-to-brain operational messages enter through NATS and are bridged by the API into the brain inbox queue.
 - The Brain polls inbox messages from API endpoints (`/api/brain/internal/messages/*`), not from NATS directly.
 
@@ -107,9 +108,9 @@ Body: What's everyone working on? Any blockers?
 The Brain compiles real-time information about all arms, their tasks, and recent activity.
 
 
-## API-Managed Mailbox (Postmark Gateway)
+## Required Email Gateway (Postmark Example)
 
-If you want fully API-driven messaging without running local IMAP/SMTP, you can use Postmark as a gateway.
+Coleo email workflows now require a managed email gateway. Postmark is the recommended setup.
 
 1. Configure environment variables on the API server:
 
@@ -119,7 +120,16 @@ export COLEO_POSTMARK_SERVER_TOKEN=postmark-server-token
 export COLEO_POSTMARK_INBOUND_TOKEN=shared-secret
 ```
 
-2. Point Postmark inbound webhook to:
+2. Choose one fixed sender and one fixed receiver email address for the deployment.
+
+- **Sender** (Brain mailbox / Coleo identity), for example: `brain@your-domain.com`
+- **Receiver** (human mailbox), for example: `you@your-domain.com`
+
+Use these same addresses consistently:
+- Outbound: `from=sender`, `to=receiver`
+- Inbound replies: `from=receiver`, `to=sender`
+
+3. Point Postmark inbound webhook to:
 
 ```
 POST /api/mail/gateway/postmark/inbound
@@ -127,7 +137,7 @@ POST /api/mail/gateway/postmark/inbound
 
 Send header `x-coleo-webhook-token` when `COLEO_POSTMARK_INBOUND_TOKEN` is set.
 
-3. Send outbound mail through Coleo:
+4. Send outbound mail through Coleo, using the fixed sender and receiver addresses:
 
 ```
 POST /api/mail/gateway/postmark/send
@@ -135,7 +145,7 @@ Content-Type: application/json
 
 {
   "from": "brain@your-domain.com",
-  "to": "peer@example.com",
+  "to": "you@your-domain.com",
   "subject": "Task update",
   "body": "Completed the migration work.",
   "replyTo": "brain@your-domain.com"
@@ -168,6 +178,7 @@ Priority: critical
 ### Thread Your Conversations
 
 Reply to existing emails to maintain context. The Brain tracks conversation threads and includes relevant history when assigning follow-up work.
+Use the same configured receiver mailbox when replying so thread routing remains stable.
 
 ### Use Clear Subject Lines
 
@@ -191,7 +202,9 @@ The entire cycle typically completes in under a second from message receipt to t
 
 ### Message Not Processed
 
-- Check that your message is in the `mail/sent/` directory
+- Check Postmark webhook delivery logs for `POST /api/mail/gateway/postmark/inbound`
+- Confirm inbound replies are addressed to your configured sender address and originate from your configured receiver address
+- Confirm outbound messages use your fixed sender/receiver pair
 - Ensure the Brain is running (`coleo brain start`)
 - Check Brain logs for errors
 

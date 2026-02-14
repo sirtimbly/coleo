@@ -189,6 +189,8 @@ These are internal API endpoints used by the Brain worker and API bridge:
 ```http
 POST /api/brain/internal/messages/queue
 GET /api/brain/internal/messages/pending?to=brain
+GET /api/brain/internal/messages/deadletter
+POST /api/brain/internal/messages/deadletter/:id/requeue
 POST /api/brain/internal/messages/:id/status
 POST /api/brain/internal/messages/cleanup
 ```

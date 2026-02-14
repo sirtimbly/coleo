@@ -276,6 +276,66 @@ export function recordDeadLetterMessage(db: Database, input: DeadLetterMessageIn
 }
 
 /**
+ * List dead-letter messages for the brain inbox pipeline.
+ */
+export function getDeadLetterMessages(db: Database, limit = 100): Message[] {
+  const safeLimit = Math.max(1, Math.min(limit, 500));
+  const rows = db.query(
+    `SELECT *
+     FROM messages
+     WHERE to_id = 'brain.deadletter'
+     ORDER BY created_at DESC
+     LIMIT ?`,
+  ).all(safeLimit) as MessageRow[];
+  return rows.map(rowToMessage);
+}
+
+/**
+ * Requeue a dead-letter message back into the brain inbox.
+ * Returns false when the source dead-letter row is missing.
+ */
+export function requeueDeadLetterMessage(
+  db: Database,
+  deadLetterId: string,
+  queuedId: string,
+  toId = "brain",
+): boolean {
+  const row = db.query(
+    `SELECT *
+     FROM messages
+     WHERE id = ?
+       AND to_id = 'brain.deadletter'
+     LIMIT 1`,
+  ).get(deadLetterId) as MessageRow | null;
+  if (!row) {
+    return false;
+  }
+
+  let parsedPayload: unknown;
+  try {
+    parsedPayload = JSON.parse(row.payload);
+  } catch {
+    parsedPayload = row.payload;
+  }
+
+  const originalPayload =
+    typeof parsedPayload === "object" &&
+    parsedPayload !== null &&
+    "payload" in (parsedPayload as Record<string, unknown>)
+      ? (parsedPayload as Record<string, unknown>).payload
+      : parsedPayload;
+
+  queueMessage(db, {
+    id: queuedId,
+    from: row.from_id,
+    to: toId,
+    type: row.message_type,
+    payload: originalPayload,
+  });
+  return true;
+}
+
+/**
  * Clean up old completed/failed messages (retention policy)
  */
 export function cleanupOldMessages(db: Database, olderThanDays: number = 7): number {

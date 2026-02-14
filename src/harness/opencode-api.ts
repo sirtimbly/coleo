@@ -16,7 +16,7 @@ import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
 import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
-import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part } from "@opencode-ai/sdk";
+import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 
 /**
@@ -851,6 +851,22 @@ export class OpenCodeApiHarness implements AgentHarness {
     }
 
     return messages;
+  }
+
+  /**
+   * Get session todo list from OpenCode via SDK.
+   */
+  async getTodos(session: HarnessSession): Promise<Todo[]> {
+    const apiSession = this.sessions.get(session.id);
+    if (!apiSession) {
+      throw new Error(`Session ${session.id} not found`);
+    }
+
+    const response = await apiSession.client.session.todo({
+      path: { id: apiSession.sessionId },
+    });
+
+    return response.data || [];
   }
 
   /**

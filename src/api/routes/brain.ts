@@ -23,6 +23,8 @@ import {
   markMessageCompleted,
   markMessageFailed,
   cleanupOldMessages,
+  getDeadLetterMessages,
+  requeueDeadLetterMessage,
   createNote,
   upsertTool,
   recordDeadLetterMessage,
@@ -447,6 +449,77 @@ export function createBrainRoutes() {
       }));
 
     return c.json({ messages: rows });
+  });
+
+  app.get("/internal/messages/deadletter", (c) => {
+    const db = c.get("db");
+    const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 500);
+    const rows = getDeadLetterMessages(db, limit).map((message) => {
+      const envelope =
+        typeof message.payload === "object" &&
+        message.payload !== null
+          ? (message.payload as Record<string, unknown>)
+          : null;
+      return {
+        id: message.id,
+        from: message.from,
+        type: message.type,
+        source: typeof envelope?.source === "string" ? envelope.source : undefined,
+        reason: typeof envelope?.reason === "string" ? envelope.reason : message.error,
+        payload: envelope && "payload" in envelope ? envelope.payload : message.payload,
+        createdAt: message.createdAt.toISOString(),
+        processedAt: message.processedAt?.toISOString(),
+      };
+    });
+    return c.json({ messages: rows });
+  });
+
+  app.post("/internal/messages/deadletter/:id/requeue", async (c) => {
+    const db = c.get("db");
+    const deadLetterId = c.req.param("id");
+    const body = await c
+      .req
+      .json<{ id?: string }>()
+      .catch(() => ({ id: undefined } as { id?: string }));
+    if (!deadLetterId) {
+      throw HttpError.badRequest("dead-letter id is required");
+    }
+
+    const row = db.query(
+      `SELECT message_type, payload
+       FROM messages
+       WHERE id = ?
+         AND to_id = 'brain.deadletter'
+       LIMIT 1`,
+    ).get(deadLetterId) as { message_type: string; payload: string } | null;
+    if (!row) {
+      throw HttpError.notFound(`Dead-letter message not found: ${deadLetterId}`);
+    }
+
+    if (!isBrainInboxMessageType(row.message_type)) {
+      throw HttpError.badRequest(
+        `cannot requeue unsupported brain message type: ${row.message_type}`,
+      );
+    }
+
+    const parsed = JSON.parse(row.payload) as Record<string, unknown>;
+    const payload = parsed && "payload" in parsed ? parsed.payload : parsed;
+    const payloadError = validateBrainInboxPayload(row.message_type, payload);
+    if (payloadError) {
+      throw HttpError.badRequest(`cannot requeue invalid payload: ${payloadError}`);
+    }
+
+    const queuedId = body.id || `requeue-${randomUUID()}`;
+    const queued = requeueDeadLetterMessage(db, deadLetterId, queuedId, "brain");
+    if (!queued) {
+      throw HttpError.notFound(`Dead-letter message not found: ${deadLetterId}`);
+    }
+
+    return c.json({
+      queued: true,
+      id: queuedId,
+      sourceDeadLetterId: deadLetterId,
+    });
   });
 
   app.post("/internal/messages/:id/status", async (c) => {

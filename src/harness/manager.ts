@@ -386,6 +386,22 @@ export class HarnessManager {
   }
 
   /**
+   * Get structured todo items for an arm (if the harness supports it)
+   */
+  async getTodos(armId: string): Promise<unknown[]> {
+    const active = this.sessions.get(armId);
+    if (!active) {
+      throw new Error(`No active session for arm ${armId}`);
+    }
+
+    if (!active.harness.getTodos) {
+      return [];
+    }
+
+    return active.harness.getTodos(active.session);
+  }
+
+  /**
    * Check if an arm has an active session
    */
   hasSession(armId: string): boolean {

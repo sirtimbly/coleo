@@ -19,6 +19,8 @@ import {
   type CommandResponse,
   type SpawnResponse,
   type ListArmsResponse,
+  type GetMessagesResponse,
+  type GetTodosResponse,
 } from '../nats';
 
 export interface ArmClientOptions {
@@ -278,6 +280,62 @@ export class ArmClient {
     };
 
     return this.natsClient.sendCommand(agentId, command, timeoutMs);
+  }
+
+  /**
+   * Get recent messages for an arm from the hosting agent.
+   */
+  async getMessages(
+    armId: string,
+    options?: { limit?: number },
+    timeoutMs = 10000,
+  ): Promise<CommandResponse<GetMessagesResponse>> {
+    const agentId = this.armToAgent.get(armId);
+    if (!agentId) {
+      return {
+        requestId: generateRequestId(),
+        success: false,
+        error: `No agent found for arm ${armId}`,
+      };
+    }
+
+    return this.natsClient.sendCommand<GetMessagesResponse>(
+      agentId,
+      {
+        type: 'get_messages',
+        requestId: generateRequestId(),
+        armId,
+        limit: options?.limit,
+      },
+      timeoutMs,
+    );
+  }
+
+  /**
+   * Get todos for an arm from the hosting agent.
+   */
+  async getTodos(
+    armId: string,
+    timeoutMs = 10000,
+  ): Promise<CommandResponse<GetTodosResponse>> {
+    const agentId = this.armToAgent.get(armId);
+    if (!agentId) {
+      return {
+        requestId: generateRequestId(),
+        success: false,
+        error: `No agent found for arm ${armId}`,
+      };
+    }
+
+    return this.natsClient.sendCommand<GetTodosResponse>(
+      agentId,
+      {
+        type: 'get_todos',
+        requestId: generateRequestId(),
+        armId,
+      },
+      timeoutMs,
+    );
   }
 
   /**

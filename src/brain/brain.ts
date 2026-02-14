@@ -606,8 +606,6 @@ export class Brain {
 			"mail/sent",
 			"mail/drafts",
 			"mail/archive",
-			"queue/brain/pending",
-			"queue/brain/processed",
 			"state",
 			"state/arms",
 			"state/notes/shared",

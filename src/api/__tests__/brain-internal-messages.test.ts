@@ -256,4 +256,104 @@ describe("brain internal messages API", () => {
     const idsAfterLease = pendingAfterLease.messages.map((message) => message.id);
     expect(idsAfterLease).not.toContain("msg-stale");
   });
+
+  it("lists dead-letter messages and can requeue a valid dead-letter", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at, processed_at, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "deadletter-1",
+        "arm-dl",
+        "brain.deadletter",
+        "status_update",
+        JSON.stringify({
+          payload: { taskId: "task-dl", status: "blocked", message: "waiting" },
+          source: "api_queue",
+          reason: "test",
+        }),
+        "failed",
+        now,
+        now,
+        "test",
+      ],
+    );
+
+    const deadLetterResponse = await app.request("/api/brain/internal/messages/deadletter?limit=10");
+    expect(deadLetterResponse.status).toBe(200);
+    const deadLetterBody = await deadLetterResponse.json() as {
+      messages: Array<{ id: string; reason?: string; payload: unknown }>;
+    };
+    expect(deadLetterBody.messages).toHaveLength(1);
+    expect(deadLetterBody.messages[0]?.id).toBe("deadletter-1");
+    expect(deadLetterBody.messages[0]?.reason).toBe("test");
+
+    const requeueResponse = await app.request(
+      "/api/brain/internal/messages/deadletter/deadletter-1/requeue",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "msg-requeued" }),
+      },
+    );
+    expect(requeueResponse.status).toBe(200);
+    expect(await requeueResponse.json()).toEqual({
+      queued: true,
+      id: "msg-requeued",
+      sourceDeadLetterId: "deadletter-1",
+    });
+
+    const queued = db.query(
+      "SELECT to_id, message_type, payload, status FROM messages WHERE id = ?",
+    ).get("msg-requeued") as
+      | { to_id: string; message_type: string; payload: string; status: string }
+      | null;
+    expect(queued).toBeTruthy();
+    expect(queued?.to_id).toBe("brain");
+    expect(queued?.message_type).toBe("status_update");
+    expect(queued?.status).toBe("pending");
+    expect(JSON.parse(queued?.payload || "{}")).toEqual({
+      taskId: "task-dl",
+      status: "blocked",
+      message: "waiting",
+    });
+  });
+
+  it("rejects dead-letter requeue when payload no longer matches inbox schema", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at, processed_at, error)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "deadletter-invalid",
+        "arm-dl",
+        "brain.deadletter",
+        "status_update",
+        JSON.stringify({
+          payload: { taskId: "task-invalid" },
+          source: "api_queue",
+          reason: "bad payload",
+        }),
+        "failed",
+        now,
+        now,
+        "bad payload",
+      ],
+    );
+
+    const requeueResponse = await app.request(
+      "/api/brain/internal/messages/deadletter/deadletter-invalid/requeue",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: "msg-should-not-exist" }),
+      },
+    );
+    expect(requeueResponse.status).toBe(400);
+    const body = await requeueResponse.json() as { error: string };
+    expect(body.error).toContain("cannot requeue invalid payload");
+
+    const missing = db.query("SELECT id FROM messages WHERE id = ?").get("msg-should-not-exist");
+    expect(missing).toBeNull();
+  });
 });

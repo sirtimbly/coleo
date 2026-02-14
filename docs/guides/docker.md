@@ -18,15 +18,25 @@ docker compose up -d
 docker compose ps
 ```
 
-## IMAP-only gateway stack
+## Email Gateway (Required for Human Email)
 
-If you only want a Maildir-backed IMAP endpoint for iOS Mail over Tailscale/tunnels, use:
+Human email workflows require a managed gateway (Postmark recommended) and a fixed sender/receiver address pair:
+- **Sender** (Brain mailbox), for example: `brain@your-domain.com`
+- **Receiver** (human mailbox), for example: `you@your-domain.com`
 
-```bash
-docker compose -f docker-compose.imap-gateway.yml up -d --build
-```
+Set gateway secrets for the API service in your deployment environment:
+- `COLEO_POSTMARK_SERVER_TOKEN`
+- `COLEO_POSTMARK_INBOUND_TOKEN` (recommended)
 
-Then follow the dedicated setup guide: [`/guides/imap-gateway`](/guides/imap-gateway).
+Then configure Postmark inbound webhook delivery to:
+- `POST /api/mail/gateway/postmark/inbound`
+
+Send outbound mail through:
+- `POST /api/mail/gateway/postmark/send`
+
+For details, see [`/guides/communicate-with-brain#required-email-gateway-postmark-example`](/guides/communicate-with-brain#required-email-gateway-postmark-example).
+
+If you still need local IMAP for private/testing workflows, use the legacy guide: [`/guides/imap-gateway`](/guides/imap-gateway).
 
 ## Services
 

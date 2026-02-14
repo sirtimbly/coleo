@@ -105,13 +105,28 @@ export interface AbortCommand {
   armId: string;
 }
 
+export interface GetMessagesCommand {
+  type: 'get_messages';
+  requestId: string;
+  armId: string;
+  limit?: number;
+}
+
+export interface GetTodosCommand {
+  type: 'get_todos';
+  requestId: string;
+  armId: string;
+}
+
 export type AgentCommand = 
   | SpawnArmCommand 
   | KillArmCommand 
   | SendPromptCommand 
   | GetStateCommand 
   | ListArmsCommand
-  | AbortCommand;
+  | AbortCommand
+  | GetMessagesCommand
+  | GetTodosCommand;
 
 // ============================================
 // Responses (Agent -> API Server)
@@ -133,6 +148,15 @@ export interface SpawnResponse {
 
 export interface ListArmsResponse {
   arms: ArmState[];
+}
+
+export interface GetMessagesResponse {
+  messages: unknown[];
+  sessionId: string | null;
+}
+
+export interface GetTodosResponse {
+  todos: unknown[];
 }
 
 // ============================================

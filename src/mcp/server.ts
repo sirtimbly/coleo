@@ -300,50 +300,24 @@ function ensureArmRegistered(): void {
 }
 
 /**
- * Write a message to the brain's queue (API-backed with file fallback)
+ * Write a message to the brain's SQLite inbox table when NATS is unavailable.
  */
-async function sendToBrainFile(message: QueueMessage): Promise<string> {
+async function sendToBrainInbox(message: QueueMessage): Promise<string> {
 	const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
 
-	// Try API-backed DB first (primary)
-	try {
-		const database = getDatabase(false);
-		queueMessage(database, {
-			id,
-			from: message.from,
-			to: "brain",
-			type: message.type,
-			payload: message.payload,
-		});
-		return id;
-	} catch (err) {
-		console.error(
-			`[MCP] Failed to queue message via API DB, falling back to file: ${err}`,
-		);
-	}
-
-	// Fallback to file-based queue
-	const queueDir = join(COLEO_DIR, "queue", "brain", "pending");
-	await mkdir(queueDir, { recursive: true });
-
-	const fullMessage: QueueMessage = {
-		...message,
+	const database = getDatabase(false);
+	queueMessage(database, {
 		id,
-		timestamp: new Date(),
-	};
-
-	const filename = `${id}-${message.from}-${message.type}.json`;
-	await writeFile(
-		join(queueDir, filename),
-		JSON.stringify(fullMessage, null, 2),
-		"utf-8",
-	);
-
+		from: message.from,
+		to: "brain",
+		type: message.type,
+		payload: message.payload,
+	});
 	return id;
 }
 
 /**
- * Send a message to the brain via NATS (preferred) or file queue (fallback)
+ * Send a message to the brain via NATS (preferred) or SQLite inbox fallback.
  */
 async function sendToBrain(
 	message: Omit<QueueMessage, "id" | "timestamp">,
@@ -365,8 +339,8 @@ async function sendToBrain(
 		return `nats-${Date.now()}`;
 	}
 
-	// Fall back to file queue
-	return sendToBrainFile(message as QueueMessage);
+	// Fall back to SQLite inbox table when NATS is unavailable.
+	return sendToBrainInbox(message as QueueMessage);
 }
 
 // TODO : The arms need a way of recognizing when they're in conflict with each other, when one is attempting to make changes to the same file that the other one is. So when it notices that a file is changed since the agent last worked on it unexpectedly, then it should be able to send that information up to the brain and the brain can distribute that information to the rest of the arms so that they know that whoever's working on this file, this other arm is reporting that things are changing out from underneath it. And then the brain should help resolve conflict. So if two arms claim a certain file that they're working on currently, then the brain needs to either allow them to work together because they're not going to conflict because they're working on different parts of the code and the brain should say okay arm one split the code into these files arm two you can do this in this file and this in the other file. So it should resolve conflicts and it should grant priority to whichever one is most important or looks like it's most likely to succeed or is doing the most important work on that file and then it should notify when those locks are released

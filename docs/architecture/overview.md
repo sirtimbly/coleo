@@ -35,7 +35,7 @@ All activity is logged and visualizable.
 Humans provide requirements and decisions; arms execute and report. Critical decisions can still require explicit human approval.
 
 ### 5. Client Agnostic
-CLI, Web, and Email clients all interact with the same core API and Maildir state.
+CLI, Web, and gateway-backed email workflows all interact with the same core API and Maildir state.
 
 ### 6. Linear, Shared Git Workflow
 
@@ -53,18 +53,18 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 ┌─────────────────────────────────────────────────────────────────────────────────────┐
 │                                   CLIENT LAYER                                     │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
-│  Web Browser              CLI Terminal                 Mail Client                 │
+│  Web Browser              CLI Terminal                 Email Gateway              │
 │  ┌────────────────────┐   ┌──────────────────────┐    ┌────────────────────────┐  │
-│  │  React Observatory │   │  coleo CLI           │    │  IMAP/SMTP client      │  │
-│  │  - Timeline view   │   │  - spawn/list/kill   │    │  - Threads with Brain  │  │
-│  │  - Arm activity    │   │  - status            │    │  - Status reports      │  │
-│  │  - Garden (3D)     │   │  - API proxy         │    │  - Decisions & alerts  │  │
+│  │  React Observatory │   │  coleo CLI           │    │  Postmark (example)    │  │
+│  │  - Timeline view   │   │  - spawn/list/kill   │    │  - Inbound webhook     │  │
+│  │  - Arm activity    │   │  - status            │    │  - Outbound delivery   │  │
+│  │  - Garden (3D)     │   │  - API proxy         │    │  - Fixed from/to pair  │  │
 │  └─────────┬──────────┘   └──────────┬───────────┘    └─────────────┬───────────┘  │
 │            │                         │                            │              │
 │            └───────────────┬─────────┴───────────────┬──────────────┘              │
 │                            ▼                         ▼                             │
 ├─────────────────────────────────────────────────────────────────────────────────────┤
-│                               COLEO SERVER & IMAP GATEWAY                          │
+│                               COLEO SERVER & EMAIL GATEWAY                         │
 │  ┌───────────────────────────────────────────────────────────────────────────────┐  │
 │  │  Hono API (REST + WebSocket)                                                │  │
 │  │  - /api/brain/*     - Brain state, control                                 │  │
@@ -84,7 +84,7 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 │  │  - Reads .project/ plans, status, decisions                                  │  │
 │  │  - Progressive task assignment (single next task per arm)                   │  │
 │  │  - Builds context bundles (requirements, docs, decisions, discoveries)      │  │
-│  │  - Mirrors human ↔ arm email threads via Maildir                            │  │
+│  │  - Mirrors human ↔ arm email threads via gateway-backed Maildir             │  │
 │  └───────────────────────────────────────────────────────────────────────────────┘  │
 │        │                     │                        │                           │
 │        ▼                     ▼                        ▼                           │
@@ -108,7 +108,7 @@ The design does not forbid more advanced flows (temporary branches, stashes, or 
 
 - **CLI ↔ API**: The `coleo` CLI treats the API server as its single source of truth for spawning, listing, and managing arms. All mutating commands are proxied through authenticated REST calls.
 - **Web UI ↔ API**: The Observatory React app consumes the same REST and WebSocket endpoints for status dashboards, configuration, and real-time updates.
-- **Mail Client ↔ Email Server**: Humans connect via standard IMAP/SMTP clients to converse with the brain. Messages are persisted in Maildir, surfaced through `/api/mail/*`, and synchronized with a coordination arm routing context between the brain and worker arms.
+- **Email Gateway ↔ API**: External email is handled through a gateway integration (Postmark recommended) with fixed sender/receiver addresses. Messages are persisted in Maildir, surfaced through `/api/mail/*`, and synchronized with brain/arm coordination context.
 
 ## Next Steps
 

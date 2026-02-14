@@ -174,6 +174,9 @@ describe("Brain arm output event scan", () => {
 			if (path === "/api/arms/arm-alpha/messages?limit=20") {
 				return { messages: SESSION_MESSAGES_SAMPLE } as T;
 			}
+			if (path === "/api/activity") {
+				return {} as T;
+			}
 			throw new Error(`Unexpected apiRequest path in test: ${path}`);
 		};
 
@@ -305,6 +308,9 @@ describe("Brain arm output event scan", () => {
 					],
 				} as T;
 			}
+			if (path === "/api/activity") {
+				return {} as T;
+			}
 			throw new Error(`Unexpected apiRequest path in test: ${path}`);
 		};
 
@@ -395,6 +401,9 @@ describe("Brain arm output event scan", () => {
 						},
 					],
 				} as T;
+			}
+			if (path === "/api/activity") {
+				return {} as T;
 			}
 			throw new Error(`Unexpected apiRequest path in test: ${path}`);
 		};
@@ -505,6 +514,9 @@ describe("Brain arm output event scan", () => {
 						},
 					],
 				} as T;
+			}
+			if (path === "/api/activity") {
+				return {} as T;
 			}
 			throw new Error(`Unexpected apiRequest path in test: ${path}`);
 		};

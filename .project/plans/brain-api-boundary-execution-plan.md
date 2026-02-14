@@ -24,6 +24,13 @@ Out of scope (follow-up):
 - Full ArmAgent command surface expansion for every arm introspection endpoint.
 - Long-term stream retention and replay policy tuning.
 
+## Status (2026-02-14)
+
+- ✅ Phase 1 largely complete: API bridge for `coleo.brain.messages`, API-only brain inbox consumption, lease-based processing.
+- ✅ Phase 2 largely complete: Brain event I/O routed through API surfaces.
+- ✅ Phase 3 complete: `/messages` and `/todos` now flow through ArmAgent/HarnessManager abstractions; arm event SSE is JetStream-backed.
+- 🚧 Phase 4 in progress: dead-letter replay tooling added, legacy `queue/brain/*` directory assumptions removed from brain/init setup, remaining work is broader failure-mode testing and final legacy fallback cleanup.
+
 ## Phased Work
 
 ### Phase 1 - Brain ingress via API queue (Now)

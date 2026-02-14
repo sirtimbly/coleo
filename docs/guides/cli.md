@@ -327,6 +327,7 @@ Files modified:
 
 
 IMAP server commands for accessing Coleo mail with any email client.
+This is a legacy/local workflow. For production human email, use the required Postmark-style gateway flow with fixed sender/receiver addresses.
 
 #### imap serve
 

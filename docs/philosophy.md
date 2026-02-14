@@ -44,7 +44,7 @@ All activity is logged and visualizable across clients. The Observatory makes ag
 Humans provide requirements and decisions; arms execute and report. Critical decisions can require explicit human approval.
 
 ### 5. Client Agnostic
-CLI, Web, and Email clients all interact with the same core API and Maildir state.
+CLI, Web, and gateway-backed email workflows all interact with the same core API and Maildir state.
 
 ### 6. Linear, Shared Git Workflow
 Many arms, one garden, one branch. Maintain a mostly linear git history with humans in control of commits, rebases, and merges. Advanced flows (temporary branches, stashes) can be layered on, but coordination is handled through tasks, claims, and proposals rather than Git topology.
@@ -54,4 +54,3 @@ Many arms, one garden, one branch. Maintain a mostly linear git history with hum
 - [Architecture Overview](/architecture/overview)
 - [Components](/architecture/components)
 - [Observatory](/architecture/components#observatory-web-ui-api)
-
