@@ -93,7 +93,7 @@ describe("brain-message-bridge", () => {
 				from: "arm-1",
 				to: "brain",
 				type: "status_update",
-				payload: { taskId: "task-1" },
+				payload: { taskId: "task-1", status: "in_progress" },
 				timestamp: new Date().toISOString(),
 			}),
 		} as Msg);
@@ -115,13 +115,16 @@ describe("brain-message-bridge", () => {
 		expect(row?.from_id).toBe("arm-1");
 		expect(row?.to_id).toBe("brain");
 		expect(row?.message_type).toBe("status_update");
-		expect(JSON.parse(row?.payload || "{}")).toEqual({ taskId: "task-1" });
+		expect(JSON.parse(row?.payload || "{}")).toEqual({
+			taskId: "task-1",
+			status: "in_progress",
+		});
 
 		bridge.close();
 		db.close();
 	});
 
-	it("ignores invalid payloads", async () => {
+	it("dead-letters invalid envelope payloads", async () => {
 		const db = new Database(":memory:");
 		setupMessagesTable(db);
 		const connection = new MockNatsConnection();
@@ -139,16 +142,27 @@ describe("brain-message-bridge", () => {
 
 		await Bun.sleep(20);
 
-		const row = db.query("SELECT COUNT(*) AS count FROM messages").get() as {
-			count: number;
-		};
-		expect(row.count).toBe(0);
+		const row = db
+			.query("SELECT to_id, message_type, status, error FROM messages LIMIT 1")
+			.get() as
+			| {
+					to_id: string;
+					message_type: string;
+					status: string;
+					error: string | null;
+			  }
+			| null;
+		expect(row).toBeTruthy();
+		expect(row?.to_id).toBe("brain.deadletter");
+		expect(row?.message_type).toBe("invalid_brain_message");
+		expect(row?.status).toBe("failed");
+		expect(row?.error).toContain("invalid brain message envelope");
 
 		bridge.close();
 		db.close();
 	});
 
-	it("ignores unsupported brain message types", async () => {
+	it("dead-letters unsupported brain message types", async () => {
 		const db = new Database(":memory:");
 		setupMessagesTable(db);
 		const connection = new MockNatsConnection();
@@ -172,10 +186,21 @@ describe("brain-message-bridge", () => {
 
 		await Bun.sleep(20);
 
-		const row = db.query("SELECT COUNT(*) AS count FROM messages").get() as {
-			count: number;
-		};
-		expect(row.count).toBe(0);
+		const row = db
+			.query("SELECT to_id, message_type, status, error FROM messages LIMIT 1")
+			.get() as
+			| {
+					to_id: string;
+					message_type: string;
+					status: string;
+					error: string | null;
+			  }
+			| null;
+		expect(row).toBeTruthy();
+		expect(row?.to_id).toBe("brain.deadletter");
+		expect(row?.message_type).toBe("claim_transfer");
+		expect(row?.status).toBe("failed");
+		expect(row?.error).toContain("unsupported brain message type");
 
 		bridge.close();
 		db.close();

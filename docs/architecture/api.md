@@ -182,6 +182,22 @@ POST /api/brain/stop
 ```
 Stop the brain gracefully.
 
+#### Brain inbox/message endpoints
+
+These are internal API endpoints used by the Brain worker and API bridge:
+
+```http
+POST /api/brain/internal/messages/queue
+GET /api/brain/internal/messages/pending?to=brain
+POST /api/brain/internal/messages/:id/status
+POST /api/brain/internal/messages/cleanup
+```
+
+Notes:
+- Only allowlisted brain message types are accepted for `to=brain`.
+- Invalid/unsupported messages are dead-lettered (`to_id = brain.deadletter`) instead of silently dropped.
+- Brain workers acquire processing leases (`success: true|false`) before handling messages.
+
 ---
 
 ### Arms
@@ -244,6 +260,15 @@ Get arm's current context (files, tokens).
 GET /api/arms/:id/activity
 ```
 Get arm's activity log.
+
+### Activity endpoint semantics
+
+The API has two different "activity" surfaces:
+
+- `/api/arms/:id/activity`: arm-scoped activity history (single arm timeline).
+- `/api/activity/*`: cross-arm/system activity and transcript views from JetStream.
+
+Use arm-scoped activity for per-arm debugging and `/api/activity` for global analysis dashboards.
 
 ```http
 POST /api/arms/:id/pause

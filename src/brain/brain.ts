@@ -485,14 +485,15 @@ export class Brain {
 		messageId: string,
 		status: "processing" | "completed" | "failed",
 		error?: string,
-	): Promise<void> {
-		await this.apiRequest<{ success?: boolean }>(
+	): Promise<boolean> {
+		const response = await this.apiRequest<{ success?: boolean }>(
 			`/api/brain/internal/messages/${encodeURIComponent(messageId)}/status`,
 			{
 				method: "POST",
 				body: JSON.stringify({ status, error }),
 			},
 		);
+		return response?.success === true;
 	}
 
 	private async cleanupMessagesViaApi(olderThanDays = 7): Promise<void> {
@@ -1171,7 +1172,13 @@ export class Brain {
 			const messages = await this.listPendingMessagesViaApi("brain", 500);
 			for (const message of messages) {
 				try {
-					await this.markMessageStatusViaApi(message.id, "processing");
+					const leased = await this.markMessageStatusViaApi(
+						message.id,
+						"processing",
+					);
+					if (!leased) {
+						continue;
+					}
 
 					await this.handleArmMessage({
 						id: message.id,

@@ -1,9 +1,12 @@
 import { randomUUID } from "crypto";
 import type { Database } from "bun:sqlite";
 import { JSONCodec, type NatsConnection, type Subscription } from "nats";
-import { queueMessage } from "../db/state";
+import { queueMessage, recordDeadLetterMessage } from "../db/state";
 import { TOPICS, type BrainMessage } from "../nats";
-import { isBrainInboxMessageType } from "../types/brain-inbox";
+import {
+	isBrainInboxMessageType,
+	validateBrainInboxPayload,
+} from "../types/brain-inbox";
 
 interface BridgeOptions {
 	connection: NatsConnection;
@@ -39,16 +42,48 @@ export function startBrainMessageBridge(options: BridgeOptions): BridgeHandle {
 
 	(async () => {
 		for await (const msg of subscription) {
+			let decoded: BrainMessage | null = null;
 			try {
-				const decoded = codec.decode(msg.data);
+				decoded = codec.decode(msg.data);
 				if (!isBrainMessage(decoded)) {
 					log?.("[brain-message-bridge] Ignored invalid brain message payload");
+					recordDeadLetterMessage(db, {
+						id: `deadletter-${randomUUID()}`,
+						from: "unknown",
+						type: "invalid_brain_message",
+						payload: decoded,
+						reason: "invalid brain message envelope",
+						source: "nats_bridge",
+					});
 					continue;
 				}
 				if (!isBrainInboxMessageType(decoded.type)) {
 					log?.(
 						`[brain-message-bridge] Ignored unsupported brain message type: ${decoded.type}`,
 					);
+					recordDeadLetterMessage(db, {
+						id: `deadletter-${randomUUID()}`,
+						from: decoded.from,
+						type: decoded.type,
+						payload: decoded.payload,
+						reason: `unsupported brain message type: ${decoded.type}`,
+						source: "nats_bridge",
+					});
+					continue;
+				}
+				const payloadError = validateBrainInboxPayload(decoded.type, decoded.payload);
+				if (payloadError) {
+					log?.(
+						`[brain-message-bridge] Ignored invalid payload for ${decoded.type}: ${payloadError}`,
+					);
+					recordDeadLetterMessage(db, {
+						id: `deadletter-${randomUUID()}`,
+						from: decoded.from,
+						type: decoded.type,
+						payload: decoded.payload,
+						reason: payloadError,
+						source: "nats_bridge",
+					});
 					continue;
 				}
 
@@ -62,6 +97,14 @@ export function startBrainMessageBridge(options: BridgeOptions): BridgeHandle {
 				});
 			} catch (err) {
 				log?.(`[brain-message-bridge] Failed to queue brain message: ${err}`);
+				recordDeadLetterMessage(db, {
+					id: `deadletter-${randomUUID()}`,
+					from: decoded?.from || "unknown",
+					type: decoded?.type || "decode_error",
+					payload: decoded?.payload || {},
+					reason: String(err),
+					source: "nats_bridge",
+				});
 			}
 		}
 	})();

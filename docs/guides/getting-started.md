@@ -226,24 +226,22 @@ After initialization, Coleo creates this structure:
 
 ```
 ~/.coleo/
-├── mail/              # Human-agent communication (Maildir)
+├── mail/              # Human <-> brain mailbox (Maildir)
 │   ├── inbox/
 │   ├── sent/
 │   ├── drafts/
 │   └── archive/
-├── queue/             # Inter-agent message queue
-│   └── brain/
-│       ├── pending/
-│       └── processed/
-├── state/             # Persistent state
-│   ├── brain.json
-│   ├── tasks.json
-│   ├── arms/
-│   └── notes/
+├── coleo.db           # SQLite system of record (tasks, arms, message inbox, etc.)
+├── run/               # Daemon pid/status files
+├── state/             # Legacy compatibility files (not canonical)
+├── queue/             # Legacy compatibility directories (not canonical)
+├── arms/              # Arm templates/configs
 ├── mcp/               # MCP configurations
 ├── logs/              # Log files
 └── config.toml        # Configuration
 ```
+
+`queue/` and `state/` may still exist for compatibility, but the canonical brain inbox is the API-backed `messages` table in `coleo.db` (fed from NATS by the API bridge).
 
 ## Running the Brain
 

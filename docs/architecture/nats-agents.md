@@ -31,10 +31,11 @@ The arm agent system uses [NATS](https://nats.io) as a lightweight message queue
 │              (Docker: nats:2.10-alpine)                      │
 │                                                              │
 │  Topics:                                                     │
-│  - coleo.agents.register      (agent registration)         │
-│  - coleo.agents.heartbeat     (agent liveness)             │
-│  - coleo.agents.{id}.commands (commands to specific agent) │
-│  - coleo.arms.events          (arm lifecycle events)       │
+│  - coleo.agent.register       (agent registration)         │
+│  - coleo.agent.heartbeat      (agent liveness)             │
+│  - coleo.agent.{id}.command   (commands to specific agent) │
+│  - coleo.brain.messages       (arm -> brain ingress)       │
+│  - coleo.events.*             (JetStream event history)    │
 └───────────┬─────────────────────────────────────────────────┘
             │
     ┌───────┴───────┬───────────────────┐
@@ -74,7 +75,7 @@ services:
 NATS provides:
 - **Pub/Sub**: For broadcasting events to all subscribers
 - **Request/Reply**: For sending commands and waiting for responses
-- **JetStream** (optional): For persistent message queues
+- **JetStream**: Durable event and message persistence for replay/recovery
 
 ### ArmClient (API Server Side)
 
@@ -126,7 +127,7 @@ interface AgentInfo {
 }
 ```
 
-Topic: `coleo.agents.register`
+Topic: `coleo.agent.register`
 
 ### Agent Heartbeat
 
@@ -144,7 +145,7 @@ interface AgentHeartbeat {
 }
 ```
 
-Topic: `coleo.agents.heartbeat`
+Topic: `coleo.agent.heartbeat`
 
 ### Commands (Request/Reply)
 
@@ -188,9 +189,9 @@ interface CommandResponse<T = unknown> {
 }
 ```
 
-Topic: `coleo.agents.{agentId}.commands`
+Topic: `coleo.agent.{agentId}.command`
 
-### Arm Events (Pub/Sub)
+### Arm Events + Brain Ingress
 
 Agents publish arm lifecycle events:
 
@@ -217,7 +218,10 @@ interface ArmStatusChangedEvent {
 }
 ```
 
-Topic: `coleo.arms.events`
+Topics:
+- `coleo.arm.{armId}.event` (lifecycle/log style per-arm events)
+- `coleo.brain.messages` (validated arm-to-brain operational messages)
+- `coleo.events.*` (JetStream-backed event history)
 
 ## Communication Flows
 
@@ -324,14 +328,12 @@ CREATE INDEX idx_arms_agent ON arms(agent_id);
 
 ### API Server Config
 
-NATS connection is optional for core API endpoints. For arm spawning:
+For distributed arm orchestration and brain message ingress, NATS + JetStream are required:
 
 - `opencode-api` and `opencode` are daemon-managed and require at least one connected `ArmAgent`
 - `opencode-tui` can still be spawned locally for operator-visible sessions
 
-```
-NATS not available - distributed arm management disabled
-```
+If NATS is unavailable, distributed arm management and stream-backed activity/history are unavailable.
 
 ### Agent Config
 
@@ -345,10 +347,13 @@ coleo agent start \
 
 ## Running the System
 
-### Local Development (No Distribution)
+### Local Development (Single Host)
 
 ```bash
-# Just start the server - NATS is optional
+# Start NATS first for stream-backed messaging
+docker compose up -d nats
+
+# Start the API server
 coleo serve
 ```
 
@@ -418,7 +423,7 @@ This NATS-based system is a simpler precursor to the full "Garden" concept descr
 | Scope | Arm management only | Full environment |
 | Auth | Simple API key | Token-based join flow |
 | Features | Spawn, kill, prompt | + MCP servers, env vars |
-| Persistence | None (stateless) | Local state file |
+| Persistence | JetStream-backed events/messages | Local state file |
 | Offline mode | No | Yes (buffered) |
 
 The NATS system provides the foundation for distributed arms. The Garden concept builds on top of this to provide a complete remote development environment.

@@ -131,6 +131,16 @@ export interface Message {
   error?: string;
 }
 
+export interface DeadLetterMessageInput {
+  id: string;
+  from: string;
+  to?: string;
+  type: string;
+  payload: unknown;
+  reason: string;
+  source: "nats_bridge" | "api_queue";
+}
+
 /**
  * Queue a message for delivery
  */
@@ -162,9 +172,23 @@ export function queueMessage(
  * Get pending messages for a recipient
  */
 export function getPendingMessages(db: Database, toId: string): Message[] {
+  const staleThresholdMs = 5 * 60 * 1000;
+  const staleCutoffIso = new Date(Date.now() - staleThresholdMs).toISOString();
+
   const rows = db.query(
-    `SELECT * FROM messages WHERE to_id = ? AND status = 'pending' ORDER BY created_at ASC`
-  ).all(toId) as MessageRow[];
+    `SELECT *
+     FROM messages
+     WHERE to_id = ?
+       AND (
+         status = 'pending'
+         OR (
+           status = 'processing'
+           AND processed_at IS NOT NULL
+           AND processed_at < ?
+         )
+       )
+     ORDER BY created_at ASC`
+  ).all(toId, staleCutoffIso) as MessageRow[];
   
   return rows.map(rowToMessage);
 }
@@ -180,7 +204,30 @@ export function getPendingBrainMessages(db: Database): Message[] {
  * Mark a message as processing
  */
 export function markMessageProcessing(db: Database, id: string): void {
-  db.run("UPDATE messages SET status = 'processing' WHERE id = ?", [id]);
+  db.run(
+    "UPDATE messages SET status = 'processing', processed_at = ?, error = NULL WHERE id = ?",
+    [new Date().toISOString(), id],
+  );
+}
+
+/**
+ * Acquire a processing lease for a message.
+ * Returns false if another worker already owns an active lease.
+ */
+export function acquireMessageLease(db: Database, id: string, staleThresholdMs = 5 * 60 * 1000): boolean {
+  const nowIso = new Date().toISOString();
+  const staleCutoffIso = new Date(Date.now() - staleThresholdMs).toISOString();
+  const result = db.run(
+    `UPDATE messages
+     SET status = 'processing', processed_at = ?, error = NULL
+     WHERE id = ?
+       AND (
+         status = 'pending'
+         OR (status = 'processing' AND processed_at IS NOT NULL AND processed_at < ?)
+       )`,
+    [nowIso, id, staleCutoffIso],
+  );
+  return result.changes > 0;
 }
 
 /**
@@ -200,6 +247,31 @@ export function markMessageFailed(db: Database, id: string, error: string): void
   db.run(
     "UPDATE messages SET status = 'failed', processed_at = ?, error = ? WHERE id = ?",
     [new Date().toISOString(), error, id]
+  );
+}
+
+/**
+ * Record a rejected/dropped message in dead-letter form for debugging and replay analysis.
+ */
+export function recordDeadLetterMessage(db: Database, input: DeadLetterMessageInput): void {
+  const nowIso = new Date().toISOString();
+  db.run(
+    `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at, processed_at, error)
+     VALUES (?, ?, ?, ?, ?, 'failed', ?, ?, ?)`,
+    [
+      input.id,
+      input.from,
+      input.to || "brain.deadletter",
+      input.type,
+      JSON.stringify({
+        payload: input.payload,
+        source: input.source,
+        reason: input.reason,
+      }),
+      nowIso,
+      nowIso,
+      input.reason,
+    ],
   );
 }
 

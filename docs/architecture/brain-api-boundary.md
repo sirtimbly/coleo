@@ -64,18 +64,16 @@ Direct Brain pub/sub is low-latency, but it creates duplicate transport logic in
 
 If immediate wake-up behavior is needed, use API-mediated signaling (for example a lightweight notify endpoint or WebSocket trigger), while keeping message payload retrieval through API queue/event endpoints.
 
-## Refactor Phases
+## Current State
 
-1. **Phase 1: Brain ingress boundary**
-   - API subscribes to `coleo.brain.messages`.
-   - API writes messages into Brain queue table.
-   - Brain consumes queue via API only.
-2. **Phase 2: Brain event boundary**
-   - Replace direct Brain JetStream writes/reads with API routes.
-   - Remove Brain direct NATS/JetStream dependencies.
-3. **Phase 3: ArmAgent ownership**
-   - Remove API direct harness/OpenCode reads for distributed arms.
-   - Route distributed arm procedures through ArmAgent command/event contracts.
-4. **Phase 4: Hardening**
-   - Add replay/recovery tests across process restart/network partition scenarios.
-   - Add contract tests for API event/message schemas.
+1. API subscribes to `coleo.brain.messages` and bridges ingress into the DB-backed inbox queue.
+2. Brain consumes queue messages exclusively via API (`/api/brain/internal/messages/*`).
+3. Inbox admission is allowlisted and payload-validated at API boundaries.
+4. Invalid/unsupported ingress is captured as dead-letter records (`brain.deadletter`).
+5. Processing uses lease semantics (`processing` acquisition with stale-lease recovery).
+
+## Remaining Hardening
+
+1. Add replay tooling for dead-lettered messages.
+2. Add contract tests for API event/message schemas across services.
+3. Continue consolidating distributed harness/OpenCode operations under ArmAgent ownership.

@@ -12,21 +12,26 @@ import { broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
+import { randomUUID } from "crypto";
 import { Maildir } from "../../mail/maildir";
-import { isBrainInboxMessageType } from "../../types/brain-inbox";
 import {
   getBrainState,
   updateBrainState,
   queueMessage,
   getPendingMessages,
-  markMessageProcessing,
+  acquireMessageLease,
   markMessageCompleted,
   markMessageFailed,
   cleanupOldMessages,
   createNote,
   upsertTool,
+  recordDeadLetterMessage,
   type BrainState,
 } from "../../db/state";
+import {
+  isBrainInboxMessageType,
+  validateBrainInboxPayload,
+} from "../../types/brain-inbox";
 import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
 
 interface BrainContext {
@@ -387,10 +392,33 @@ export function createBrainRoutes() {
     if (!body.id || !body.from || !body.to || !body.type) {
       throw HttpError.badRequest("id, from, to, and type are required");
     }
-    if (body.to === "brain" && !isBrainInboxMessageType(body.type)) {
-      throw HttpError.badRequest(`unsupported brain message type: ${body.type}`);
-    }
 
+    if (body.to === "brain") {
+      if (!isBrainInboxMessageType(body.type)) {
+        recordDeadLetterMessage(db, {
+          id: `deadletter-${randomUUID()}`,
+          from: body.from,
+          type: body.type,
+          payload: body.payload,
+          reason: `unsupported brain message type: ${body.type}`,
+          source: "api_queue",
+        });
+        throw HttpError.badRequest(`unsupported brain message type: ${body.type}`);
+      }
+
+      const payloadError = validateBrainInboxPayload(body.type, body.payload);
+      if (payloadError) {
+        recordDeadLetterMessage(db, {
+          id: `deadletter-${randomUUID()}`,
+          from: body.from,
+          type: body.type,
+          payload: body.payload,
+          reason: payloadError,
+          source: "api_queue",
+        });
+        throw HttpError.badRequest(payloadError);
+      }
+    }
     queueMessage(db, {
       id: body.id,
       from: body.from,
@@ -438,7 +466,8 @@ export function createBrainRoutes() {
     }
 
     if (body.status === "processing") {
-      markMessageProcessing(db, id);
+      const leased = acquireMessageLease(db, id);
+      return c.json({ success: leased });
     } else if (body.status === "completed") {
       markMessageCompleted(db, id);
     } else if (body.status === "failed") {

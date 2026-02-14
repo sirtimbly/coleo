@@ -750,60 +750,56 @@ async function getAvailableModelsByCost(
  
 ## Nerve System (Communication Layer)
 
-All communication flows through the Nerve System using NATS for distributed messaging and an internal queue for brain↔arm messages.
+All control-plane communication flows through NATS + API boundaries:
+- ArmAgent publishes arm events and arm-to-brain messages into NATS/JetStream.
+- API server is the typed/authenticated boundary that bridges brain messages into the DB-backed inbox queue.
+- Brain consumes inbox/events via API endpoints only.
 
 ### Message Flow
 
 ```
-Human ◄──────► Observatory ◄──────► Brain ◄──────► Arms
-         │                    │              │
-         │ WebSocket          │ NATS         │ NATS/Queue
-         │ Push Notifications │ JetStream    │ MCP Tools
-         │ REST API           │              │
+Human ◄──────► Observatory/UI ◄──────► API Server ◄──────► Brain
+                                         │                  │
+                                         │ NATS/JetStream   │ API polling
+                                         │ + DB inbox       │ + status acks
+                                         ▼                  │
+                                      ArmAgent ◄────────────┘
+                                         │
+                                         ▼
+                                        Arms
 ```
 
-### NATS Event Types (Arm Lifecycle)
+### NATS/JetStream Responsibilities
 
-Events published via NATS for distributed arm management:
+- Durable arm activity/control events for replay and recovery.
+- Arm-to-brain message ingress subject (`coleo.brain.messages`).
+- Broadcast/lifecycle events for connected system components.
 
-| Event Type | Direction | Description |
-|------------|-----------|-------------|
-| `arm.spawned` | Agent → All | Arm process started |
-| `arm.killed` | Agent → All | Arm process terminated |
-| `arm.recovered` | Agent → All | Arm recovered from error |
-| `arm.status_changed` | Agent → All | Arm status transition (idle→busy, etc.) |
-| `arm.activity` | Agent → Brain | Arm performed an action |
-| `arm.log` | Agent → Brain | Log message from arm |
-| `agent.connected` | Agent → All | Agent host came online |
-| `agent.disconnected` | Agent → All | Agent host went offline |
+### Brain Inbox Message Types (API Queue)
 
-### Queue Message Types (Brain ↔ Arm)
-
-Messages passed through the brain's message queue:
+Only validated, brain-relevant message types are admitted to the inbox queue:
 
 | Message Type | Direction | Description |
 |--------------|-----------|-------------|
 | `task_assignment` | Brain → Arm | Assign task to arm |
 | `task_complete` | Arm → Brain | Task finished successfully |
-| `task_failed` | Arm → Brain | Task failed with error |
+| `task_validation` / `task_validate` | Arm → Brain | Validation result for a task |
+| `task_acknowledge` | Arm → Brain | Arm acknowledged assignment |
 | `discovery` | Arm → Brain | Arm found something noteworthy |
 | `dependency_discovery` | Arm → Brain | Arm found a dependency |
 | `status_report` | Arm → Brain | Progress report on current task |
 | `status_update` | Arm → Brain | General status update |
 | `heartbeat` | Arm → Brain | Arm is alive and working |
 | `approval_request` | Arm → Brain | Arm needs approval for action |
-| `approval_response` | Brain → Arm | Approval granted/denied |
-| `human_message` | Human → Brain | Message from human |
-| `share_note` | Arm → All | Note shared between arms |
+| `share_note` | Arm → Brain | Note shared with coordination context |
 | `tool_discovery` | Arm → Brain | Arm found useful tool |
-| `doc_update` | Brain → Arm | Documentation needs updating |
+| `doc_update` | Arm → Brain | Documentation signal/update |
 | `file_subscription` | Arm → Brain | Arm watching a file |
-| `file_change` | Brain → Arm | Watched file changed |
-| `claim_transfer` | Brain → Arm | File claim transferred |
+| `file_change` | Arm → Brain | Watched file changed |
 | `bug_report` | Arm → Brain | Bug discovered |
-| `bug_assignment` | Brain → Arm | Bug assigned for fixing |
-| `context_compression` | Arm → Brain | Context was compressed |
-| `dev_server_restart_request` | Arm → Brain | Request to restart dev server |
+| `bug_claim` | Arm → Brain | Claim/release bug ownership |
+
+Messages outside this contract are rejected and captured in dead-letter records for observability/replay.
 
 ### Activity Event Types (JetStream)
 

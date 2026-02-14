@@ -4,11 +4,13 @@ The Brain is Coleo's central coordinator that receives your messages and orchest
 
 ## How Message Processing Works
 
-When you send a message to the Brain, it goes through a sophisticated pipeline that transforms your natural language into concrete actions:
+When you send a message to the Brain, it moves through API-managed channels:
 
 ### 1. Message Ingestion
 
-The Brain runs a continuous polling loop, checking for new messages every few seconds. When you send a message, it appears as a mail file that the Brain picks up immediately.
+- Human messages enter via Maildir (`mail/sent`) and `/api/brain/message`.
+- Arm-to-brain operational messages enter through NATS and are bridged by the API into the brain inbox queue.
+- The Brain polls inbox messages from API endpoints (`/api/brain/internal/messages/*`), not from NATS directly.
 
 ### 2. Intent Recognition
 
@@ -17,14 +19,12 @@ The Brain uses an LLM (Language Model) to understand what you're asking for. It 
 - **new_task** - Create a new work item
 - **doc_update** - Update documentation  
 - **bug_report** - Report an issue
-- **approval_response** - Approve or reject a pending request
 - **query** - Ask for status or information
-- **prompt_arm** - Send instruction directly to a specific arm
 - **escalate** - Hand off to manual processing
 
 ### 3. Action Execution
 
-Based on the recognized intent, the Brain takes appropriate action.
+Based on intent and queue events, the Brain creates tasks/bugs, updates status, and routes assignments through API + ArmAgent boundaries.
 
 ## What You Can Do
 
@@ -142,7 +142,7 @@ Content-Type: application/json
 }
 ```
 
-Inbound messages are written to `mail/inbox`, outbound messages are persisted to `mail/sent`, and both remain manageable through the existing `/api/mail/*` endpoints.
+Inbound external email is persisted through the API mail pipeline and remains manageable via `/api/mail/*` endpoints.
 
 ## Best Practices
 
@@ -181,7 +181,7 @@ The subject helps the Brain categorize and route your request appropriately:
 After you send a message:
 
 1. **Immediate acknowledgment** - The Brain sends a confirmation that your message was received
-2. **Task assignment** - Within seconds, an idle arm claims the task or the Brain assigns it
+2. **Task assignment** - An arm requests next assignment; the Brain responds with the next task/bug
 3. **Progress updates** - Arms report status as they work
 4. **Completion notification** - You receive a summary when the work is done
 
