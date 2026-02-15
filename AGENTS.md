@@ -113,18 +113,48 @@ src/
 └── web/       # React frontend package
 ```
 
-### Search & Tooling Guidance
-- Prefer `search_code` whenever you need conceptual matches, usage examples, or semantics rather than exact strings.
-- Use `search_docs` for internal docs (GDS, ADRs, guides); specify sources when needed.
-- `search_api` uncovers endpoint definitions/formats when working on services.
-- Reserve glob/grep for filename queries, regex matches, or performance-sensitive lookups.
-- Advanced `search_code` filters: `include_extensions`, `exclude_patterns`, `must_contain`, `must_contain_all`.
-- Use `codesearch`/`docs`/`api` tools before opening files to avoid unnecessary context switching.
+### Lint
+- `bun run --cwd src/web lint` - Run ESLint on the web workspace
 
-### Copilot Instructions (`.github/copilot-instructions.md`)
-- Use `search_code` for related logic discovery and prefer it over raw file search when looking for implementations.
-- Use `search_docs`/`search_api` for architecture or endpoint detail hunts.
-- Avoid scattering search methods; pair each question with the most appropriate helper.
+### Search & Tooling Guidance
+
+**Semantic Code Search (`search_code`)**
+- Use for conceptual matches, usage examples, or semantics rather than exact strings
+- **When to use:** Looking for how something is implemented, finding where logic lives, searching for code patterns, understanding related functionality
+- **When NOT to use:** Regex pattern matching, counting occurrences, looking for exact filenames
+- **Advanced filters:** `include_extensions` (e.g., ".ts,.tsx"), `exclude_patterns` (e.g., "node_modules,test"), `must_contain` (exact terms), `must_contain_all` (true=ALL terms)
+
+**Examples:**
+```
+search_code(query="React hooks", include_extensions=".ts,.tsx")
+search_code(query="authentication", exclude_patterns="test,.spec,__tests__")
+search_code(query="business operations", must_contain="useBusinessOperations,isMultiOp")
+```
+
+**Documentation Search (`search_docs`)**
+- Sources: `gds` (GDS Design System), `eng_portal` (ADRs, guides, RFCs), `api` (API specifications)
+- Leave `sources` empty to search all documentation
+
+**API Search (`search_api`)**
+- Find endpoints for specific capabilities
+- Filter by `service` name or `method` (HTTP method)
+
+**Examples:**
+```
+search_api(query="create field")
+search_api(query="authentication", service="auth-svc", method="POST")
+```
+
+**When to Use Which Tool**
+| Need | Tool |
+|------|------|
+| Find code in this project | `search_code` |
+| Find GDS component usage | `search_docs` (sources="gds") |
+| Find architecture decisions | `search_docs` (sources="eng_portal") |
+| Find API endpoints | `search_api` |
+
+**Reserve glob/grep for:** filename queries, regex matches, or performance-sensitive lookups.
+Use semantic search tools before opening files to avoid unnecessary context switching.
 
 ### Cursor Rules
 - There are currently no `.cursorrules` or `.cursor/rules/` entries in this repository.

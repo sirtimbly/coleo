@@ -50,10 +50,28 @@ export class NatsClient {
       this.connection = await connect({
         servers: this.serverUrl,
         name: this.clientId,
+        timeout: 5000,
+        reconnect: true,
+        maxReconnectAttempts: -1,
+        reconnectTimeWait: 1000,
       });
 
       this.isConnected = true;
       this.log('Connected to NATS server');
+
+      // Track transient disconnect/reconnect state for callers relying on connected().
+      (async () => {
+        if (!this.connection) return;
+        for await (const status of this.connection.status()) {
+          if (status.type === "disconnect" || status.type === "error") {
+            this.isConnected = false;
+            this.log(`NATS status: ${status.type}`, "debug");
+          } else if (status.type === "reconnect") {
+            this.isConnected = true;
+            this.log("NATS status: reconnect", "debug");
+          }
+        }
+      })();
 
       // Initialize JetStream EventStore
       try {
@@ -167,21 +185,48 @@ export class NatsClient {
     this.log(`Sent command ${command.type} to agent ${agentId}`, 'debug');
 
     // Wait for response with timeout
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
-      for await (const msg of sub) {
-        const response = jc.decode(msg.data) as CommandResponse<T>;
-        return response;
-      }
-      throw new Error('No response received');
+      const responsePromise = (async (): Promise<CommandResponse<T>> => {
+        const iterator = sub[Symbol.asyncIterator]();
+        const result = await iterator.next();
+        if (result.done || !result.value) {
+          return {
+            requestId: command.requestId,
+            success: false,
+            error: "No response received",
+          };
+        }
+        return jc.decode(result.value.data) as CommandResponse<T>;
+      })();
+
+      const timeoutPromise = new Promise<CommandResponse<T>>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          resolve({
+            requestId: command.requestId,
+            success: false,
+            error: `Command timed out after ${timeoutMs}ms`,
+          });
+        }, timeoutMs);
+      });
+
+      return await Promise.race([responsePromise, timeoutPromise]);
     } catch (err) {
-      if ((err as Error).message.includes('timeout')) {
-        return {
-          requestId: command.requestId,
-          success: false,
-          error: `Command timed out after ${timeoutMs}ms`,
-        };
+      const message = err instanceof Error ? err.message : String(err);
+      return {
+        requestId: command.requestId,
+        success: false,
+        error: `Command failed: ${message}`,
+      };
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
       }
-      throw err;
+      try {
+        sub.unsubscribe();
+      } catch {
+        // Ignore cleanup errors.
+      }
     }
   }
 

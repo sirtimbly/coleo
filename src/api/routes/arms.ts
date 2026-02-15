@@ -42,12 +42,40 @@ interface DistributedRuntimeSnapshot {
   sessionId: string | null;
 }
 
-function resolveDistributedAgentId(armId: string, persistedAgentId: string | null): string | null {
+function resolveDistributedAgentId(
+  armId: string,
+  persistedAgentId: string | null,
+  options?: { harness?: string | null; host?: string | null },
+): string | null {
   const armClient = getArmClient();
   if (!armClient) {
     return persistedAgentId;
   }
-  return persistedAgentId || armClient.getAgentForArm(armId) || null;
+
+  const mapped = armClient.getAgentForArm(armId);
+  if (persistedAgentId || mapped) {
+    return persistedAgentId || mapped || null;
+  }
+
+  const daemonManagedHarness =
+    options?.harness === "opencode-api" || options?.harness === "opencode";
+  if (!daemonManagedHarness) {
+    return null;
+  }
+
+  if (options?.host) {
+    const matchingAgent = armClient.getAgents().find((agent) => agent.hostname === options.host);
+    if (matchingAgent) {
+      return matchingAgent.agentId;
+    }
+  }
+
+  // Local daemon fallback for bootstrap/restart windows before heartbeats populate mappings.
+  if (armClient.getAgent(AUTO_AGENT_ID)) {
+    return AUTO_AGENT_ID;
+  }
+
+  return null;
 }
 
 function mapDistributedStatusToHarnessState(status: string): string {
@@ -145,6 +173,81 @@ function isProcessAlive(pid: number): boolean {
 
 function shellQuote(value: string): string {
   return `"${value.replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function readAutostartPidFilePath(): string {
+  const coleoDir = getColeoDir();
+  return join(coleoDir, "run", "agent-autostart.pid");
+}
+
+function processLooksLikeAutostartAgent(pid: number): boolean {
+  try {
+    const command = execSync(`ps -p ${pid} -o command=`, {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (!command) return false;
+    return (
+      command.includes(getCliEntrypoint()) &&
+      command.includes("agent") &&
+      command.includes("start") &&
+      command.includes(AUTO_AGENT_ID)
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function restartLocalAutostartAgentIfStale(): Promise<boolean> {
+  const pidFile = readAutostartPidFilePath();
+  let existingPid: number | null = null;
+
+  try {
+    const parsed = JSON.parse(await readFile(pidFile, "utf-8")) as { pid?: number };
+    if (typeof parsed.pid === "number" && Number.isInteger(parsed.pid) && parsed.pid > 0) {
+      existingPid = parsed.pid;
+    }
+  } catch {
+    return false;
+  }
+
+  if (!existingPid || !isProcessAlive(existingPid)) {
+    await unlink(pidFile).catch(() => undefined);
+    return false;
+  }
+
+  if (!processLooksLikeAutostartAgent(existingPid)) {
+    console.warn(
+      `[arms-api] Autostart PID ${existingPid} is alive but does not match agent command; skipping forced restart`,
+    );
+    return false;
+  }
+
+  try {
+    process.kill(existingPid, "SIGTERM");
+  } catch {
+    // Fall through and try best-effort cleanup/start.
+  }
+
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (!isProcessAlive(existingPid)) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  if (isProcessAlive(existingPid)) {
+    try {
+      process.kill(existingPid, "SIGKILL");
+    } catch {
+      // Ignore - start path below will still try.
+    }
+  }
+
+  await unlink(pidFile).catch(() => undefined);
+  await startLocalArmAgentDaemonIfNeeded();
+  return true;
 }
 
 async function startLocalArmAgentDaemonIfNeeded(): Promise<void> {
@@ -252,6 +355,24 @@ async function ensureDaemonAgentAvailable(
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  // If the local autostart agent process is stale (alive but disconnected from NATS),
+  // force-restart it once and wait again for discovery.
+  try {
+    const restarted = await restartLocalAutostartAgentIfStale();
+    if (restarted) {
+      const restartDeadline = Date.now() + waitMs;
+      while (Date.now() < restartDeadline) {
+        if (armClient.findBestAgent(harness)) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[arms-api] Failed to restart stale autostart agent: ${msg}`);
   }
 
   if (armClient.listArmsOnAgent) {
@@ -928,8 +1049,20 @@ export function createArmsRoutes() {
           if (bestAgent) {
             agentId = bestAgent.agentId;
           } else if (daemonManagedHarness) {
-            // Fallback to the known local daemon agent ID for bootstrap after API restarts.
-            agentId = AUTO_AGENT_ID;
+            // Fallback to the known local daemon agent ID only if it is reachable.
+            const localDaemonKnown = !!armClient.getAgent(AUTO_AGENT_ID);
+            if (localDaemonKnown) {
+              agentId = AUTO_AGENT_ID;
+            } else {
+              try {
+                const probe = await armClient.listArmsOnAgent(AUTO_AGENT_ID, 2000);
+                if (probe.success) {
+                  agentId = AUTO_AGENT_ID;
+                }
+              } catch {
+                // No reachable local daemon yet.
+              }
+            }
           }
         }
 
@@ -1317,7 +1450,7 @@ export function createArmsRoutes() {
 
     // Check if arm exists
     const row = db.query(
-      "SELECT id, status, pid, port, session_id, agent_id FROM arms WHERE id = ?",
+      "SELECT id, status, pid, port, session_id, agent_id, harness, host FROM arms WHERE id = ?",
     ).get(id) as {
       id: string;
       status: string;
@@ -1325,12 +1458,17 @@ export function createArmsRoutes() {
       port: number | null;
       session_id: string | null;
       agent_id: string | null;
+      harness: string | null;
+      host: string | null;
     } | null;
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id, {
+      harness: row.harness,
+      host: row.host,
+    });
     if (distributedAgentId) {
       const snapshot = await refreshDistributedRuntimeFromAgent(
         db,
@@ -1475,19 +1613,24 @@ export function createArmsRoutes() {
     const parsedLimit = Number.parseInt(c.req.query("limit") || "100", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 100;
 
-    const row = db.query("SELECT id, status, port, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, port, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
       port: number | null;
       session_id: string | null;
       agent_id: string | null;
+      harness: string | null;
+      host: string | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id, {
+      harness: row.harness,
+      host: row.host,
+    });
     if (row.status === "stopped" && !distributedAgentId) {
       return c.json({ messages: [], error: "Arm not running" });
     }
@@ -1514,7 +1657,18 @@ export function createArmsRoutes() {
         });
       }
 
-      const response = await armClient.getMessages(id, { limit }, 10000);
+      let response;
+      try {
+        response = await armClient.getMessages(id, { limit }, 10000);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({
+          messages: [],
+          sessionId: row.session_id,
+          error: `Distributed message fetch unavailable: ${message}`,
+        });
+      }
+
       if (!response.success) {
         return c.json({
           messages: [],
@@ -1532,7 +1686,11 @@ export function createArmsRoutes() {
 
     const manager = getGlobalHarnessManager();
     if (!manager) {
-      throw HttpError.internal("Harness manager not initialized");
+      return c.json({
+        messages: [],
+        sessionId: row.session_id,
+        error: "Harness manager not initialized",
+      });
     }
 
     if (!manager.hasSession(id)) {
@@ -1617,19 +1775,24 @@ export function createArmsRoutes() {
     const id = c.req.param("id");
 
     // Get arm with port and session info
-    const row = db.query("SELECT id, port, status, session_id, agent_id FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, port, status, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
       id: string;
       port: number | null;
       status: string;
       session_id: string | null;
       agent_id: string | null;
+      harness: string | null;
+      host: string | null;
     } | null;
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id, {
+      harness: row.harness,
+      host: row.host,
+    });
     if (distributedAgentId) {
       await refreshDistributedRuntimeFromAgent(
         db,
@@ -1648,7 +1811,17 @@ export function createArmsRoutes() {
         return c.json({ todos: [], message: "Arm agent client not available" });
       }
 
-      const response = await armClient.getTodos(id, 10000);
+      let response;
+      try {
+        response = await armClient.getTodos(id, 10000);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return c.json({
+          todos: [],
+          message: `Distributed todo fetch unavailable: ${message}`,
+        });
+      }
+
       if (!response.success) {
         return c.json({
           todos: [],
@@ -1668,7 +1841,7 @@ export function createArmsRoutes() {
 
     const manager = getGlobalHarnessManager();
     if (!manager) {
-      throw HttpError.internal("Harness manager not initialized");
+      return c.json({ todos: [], message: "Harness manager not initialized" });
     }
 
     if (!manager.hasSession(id)) {
@@ -1724,6 +1897,8 @@ export function createArmsRoutes() {
     }
 
     let closed = false;
+    let intervalHandle: ReturnType<typeof setInterval> | null = null;
+    let closeStreamRef: (() => void) | null = null;
     const requestSignal = c.req.raw.signal;
 
     const stream = new ReadableStream({
@@ -1731,10 +1906,25 @@ export function createArmsRoutes() {
         const encoder = new TextEncoder();
         let lastPollTime = new Date(Date.now() - 2_000);
 
-        const writeEvent = (eventName: string, data: unknown): void => {
-          controller.enqueue(
-            encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`),
-          );
+        const writeEvent = (eventName: string, data: unknown): boolean => {
+          if (closed) {
+            return false;
+          }
+
+          try {
+            controller.enqueue(
+              encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`),
+            );
+            return true;
+          } catch {
+            // Stream may already be closed/cancelled by the client.
+            closed = true;
+            if (intervalHandle) {
+              clearInterval(intervalHandle);
+              intervalHandle = null;
+            }
+            return false;
+          }
         };
 
         const poll = async (): Promise<void> => {
@@ -1764,7 +1954,7 @@ export function createArmsRoutes() {
           }
         };
 
-        const interval = setInterval(() => {
+        intervalHandle = setInterval(() => {
           void poll();
         }, 1000);
 
@@ -1776,7 +1966,10 @@ export function createArmsRoutes() {
             return;
           }
           closed = true;
-          clearInterval(interval);
+          if (intervalHandle) {
+            clearInterval(intervalHandle);
+            intervalHandle = null;
+          }
           try {
             controller.close();
           } catch {
@@ -1784,10 +1977,19 @@ export function createArmsRoutes() {
           }
         };
 
+        closeStreamRef = closeStream;
         requestSignal?.addEventListener("abort", closeStream, { once: true });
       },
       cancel() {
+        if (closeStreamRef) {
+          closeStreamRef();
+          return;
+        }
         closed = true;
+        if (intervalHandle) {
+          clearInterval(intervalHandle);
+          intervalHandle = null;
+        }
       },
     });
 
@@ -1819,11 +2021,12 @@ export function createArmsRoutes() {
     }
 
     // Check if arm exists
-    const row = db.query("SELECT id, status, agent_id, harness, pid, port FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, agent_id, harness, host, pid, port FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
       agent_id: string | null;
       harness: string;
+      host: string | null;
       pid: number | null;
       port: number | null;
     } | null;
@@ -1832,7 +2035,10 @@ export function createArmsRoutes() {
       throw HttpError.notFound(`Arm not found: ${id}`);
     }
 
-    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id);
+    const distributedAgentId = resolveDistributedAgentId(id, row.agent_id, {
+      harness: row.harness,
+      host: row.host,
+    });
 
     // Check if arm is running
     if (row.status === "stopped" && !distributedAgentId) {
