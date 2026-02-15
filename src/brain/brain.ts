@@ -5763,34 +5763,70 @@ Report findings using bug resolution workflow.`;
 				nats?: { healthy: boolean; optional?: boolean; error?: string };
 				maildir?: { healthy: boolean; error?: string };
 			};
-		}>("/api/status");
+		}>("/api/status", {}, 5000);
 		const infrastructureFromApi = systemStatus?.infrastructure;
 
-		// API server is the source for infrastructure health.
 		if (!systemStatus || !infrastructureFromApi) {
-			this.infrastructureHealth.apiServer = {
-				healthy: false,
-				lastCheck: now,
-				error: "API status unavailable",
-			};
-			this.infrastructureHealth.database = {
-				healthy: false,
-				lastCheck: now,
-				error: "API status unavailable",
-			};
-			this.infrastructureHealth.nats = {
-				healthy: false,
-				lastCheck: now,
-				error: "API status unavailable",
-				optional: true,
-			};
-			this.infrastructureHealth.maildir = {
-				healthy: false,
-				lastCheck: now,
-				error: "API status unavailable",
-			};
+			const healthStatus = await this.apiRequest<{ status?: string }>(
+				"/api/health",
+				{},
+				1500,
+			);
+			const apiReachable = healthStatus?.status === "ok";
 
-			issues.push(`API server unavailable at ${this.apiBaseUrl} (status endpoint)`);
+			// If API is unreachable, treat it as a hard failure.
+			if (!apiReachable) {
+				this.infrastructureHealth.apiServer = {
+					healthy: false,
+					lastCheck: now,
+					error: "API health unavailable",
+				};
+				this.infrastructureHealth.database = {
+					healthy: false,
+					lastCheck: now,
+					error: "API health unavailable",
+				};
+				this.infrastructureHealth.nats = {
+					healthy: false,
+					lastCheck: now,
+					error: "API health unavailable",
+					optional: true,
+				};
+				this.infrastructureHealth.maildir = {
+					healthy: false,
+					lastCheck: now,
+					error: "API health unavailable",
+				};
+
+				issues.push(`API server unavailable at ${this.apiBaseUrl} (health endpoint)`);
+			} else {
+				// API is up but /api/status is slow/unavailable.
+				// Keep last-known component values to avoid false "API down" flapping.
+				this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
+
+				if (!this.infrastructureHealth.database.lastCheck) {
+					this.infrastructureHealth.database = {
+						healthy: true,
+						lastCheck: now,
+						error: "Database health unverified (/api/status unavailable)",
+					};
+				}
+				if (!this.infrastructureHealth.nats.lastCheck) {
+					this.infrastructureHealth.nats = {
+						healthy: false,
+						lastCheck: now,
+						error: "NATS health unverified (/api/status unavailable)",
+						optional: true,
+					};
+				}
+				if (!this.infrastructureHealth.maildir.lastCheck) {
+					this.infrastructureHealth.maildir = {
+						healthy: true,
+						lastCheck: now,
+						error: "Maildir health unverified (/api/status unavailable)",
+					};
+				}
+			}
 		} else {
 			this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
 
