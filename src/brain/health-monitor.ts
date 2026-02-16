@@ -451,13 +451,12 @@ export class ArmHealthMonitor {
 			try {
 				const runtime = await this.callbacks.getArmRuntimeState(armId);
 				if (runtime) {
-					const activeRuntimeStates = new Set([
-						"initializing",
-						"processing",
-						"executing",
-						"waiting_approval",
-						"busy",
-					]);
+			const activeRuntimeStates = new Set([
+				"initializing",
+				"processing",
+				"executing",
+				"waiting_approval",
+			]);
 					if (activeRuntimeStates.has(runtime.state)) {
 						return `runtime state is "${runtime.state}"`;
 					}
@@ -479,18 +478,19 @@ export class ArmHealthMonitor {
 		armId: string,
 		analysis: ArmAnalysis,
 	): Promise<void> {
-		const promptCount = (this.promptCounts.get(armId) || 0) + 1;
-		this.promptCounts.set(armId, promptCount);
-		this.lastPromptTime.set(armId, new Date());
+		// Note: promptCounts and lastPromptTime are now tracked by the brain
+		// when it calls recordPromptSent() after sending the prompt.
+		// We read the count here for escalation decision but don't increment.
+		const promptCount = this.promptCounts.get(armId) || 0;
 
 		// If we've prompted too many times, escalate instead
-		if (promptCount > this.config.maxPromptsBeforeEscalation) {
+		if (promptCount >= this.config.maxPromptsBeforeEscalation) {
 			await this.handleEscalation(armId, analysis);
 			return;
 		}
 
 		// Generate appropriate prompt based on state
-		const message = this.generatePromptMessage(armId, analysis, promptCount);
+		const message = this.generatePromptMessage(armId, analysis, promptCount + 1);
 		await this.callbacks.sendPromptToArm(armId, message);
 	}
 

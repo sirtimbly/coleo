@@ -5485,6 +5485,7 @@ Report findings using bug resolution workflow.`;
 		message: string,
 		options?: { interrupt?: boolean },
 	): Promise<boolean> {
+		this.healthMonitor?.recordPromptSent(armName);
 		try {
 			const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
 			const response = await fetch(url, {
@@ -5500,8 +5501,6 @@ Report findings using bug resolution workflow.`;
 			});
 
 			if (response.ok) {
-				// Clear stuck state when we successfully send a prompt
-				// (arm is now being actively interacted with)
 				const arm = this.arms.get(armName);
 				if (arm) {
 					this.lastStuckState.delete(arm.id);
