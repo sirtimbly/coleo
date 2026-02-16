@@ -152,6 +152,7 @@ export class ArmHealthMonitor {
 	// Running state
 	private checkTimer: ReturnType<typeof setInterval> | null = null;
 	private isRunning = false;
+	private checkInProgress = false;
 
 	constructor(
 		callbacks: HealthMonitorCallbacks,
@@ -219,85 +220,95 @@ export class ArmHealthMonitor {
 	 * Run a single health check cycle
 	 */
 	async runHealthCheck(): Promise<HealthCheckResult> {
-		const timestamp = new Date();
-		const armIds = await this.callbacks.getActiveArmIds();
-		for (const armId of armIds) {
-			if (!this.armFirstSeen.has(armId)) {
-				this.armFirstSeen.set(armId, timestamp);
-			}
+		if (this.checkInProgress) {
+			this.logFn("[HealthMonitor] Skipping check - previous check still in progress");
+			return this.lastResult ?? this.emptyResult(new Date());
 		}
+		this.checkInProgress = true;
 
-		if (armIds.length === 0) {
-			const result = this.emptyResult(timestamp);
+		try {
+			const timestamp = new Date();
+			const armIds = await this.callbacks.getActiveArmIds();
+			for (const armId of armIds) {
+				if (!this.armFirstSeen.has(armId)) {
+					this.armFirstSeen.set(armId, timestamp);
+				}
+			}
+
+			if (armIds.length === 0) {
+				const result = this.emptyResult(timestamp);
+				this.lastResult = result;
+				this.onResult?.(result);
+				return result;
+			}
+
+			// Fetch event windows for all arms
+			const windows = await this.eventWindow.getWindowsForAllArms(armIds, {
+				windowMs: this.config.eventWindowMs,
+			});
+
+			// Analyze each arm
+			const armResults = this.analyzer.analyzeAll(windows);
+
+			// Process results and take actions
+			const interventions: Intervention[] = [];
+			const pendingPermissions: PermissionRequest[] = [];
+
+			for (const [armId, analysis] of armResults) {
+				// Check for pending permissions
+				if (analysis.pendingPermission) {
+					const permRequest: PermissionRequest = {
+						armId,
+						requestId: `perm-${armId}-${Date.now()}`,
+						action: analysis.pendingPermission.action,
+						context: analysis.pendingPermission.context,
+						requestedAt: analysis.pendingPermission.requestedAt,
+					};
+					pendingPermissions.push(permRequest);
+
+					// Auto-process if possible
+					await this.handlePermission(permRequest);
+				}
+
+				// Determine and execute intervention
+				if (
+					this.config.autoInterventionEnabled &&
+					analysis.recommendedAction !== "none"
+				) {
+					const intervention = await this.executeIntervention(armId, analysis);
+					if (intervention) {
+						interventions.push(intervention);
+					}
+				}
+			}
+
+			// Build summary
+			const summary = this.buildSummary(armResults);
+
+			// Log result
+			this.logFn(
+				`[HealthMonitor] Check complete: ${summary.totalArms} arms, ` +
+					`${summary.productive} productive, ${summary.idle} idle, ` +
+					`${summary.looping} looping, ${summary.silent} silent, ` +
+					`${interventions.length} interventions`,
+			);
+
+			// Publish health check event
+			await this.publishHealthCheckEvent(timestamp, summary, interventions);
+
+			const result: HealthCheckResult = {
+				timestamp,
+				armResults,
+				interventions,
+				pendingPermissions,
+				summary,
+			};
 			this.lastResult = result;
 			this.onResult?.(result);
 			return result;
+		} finally {
+			this.checkInProgress = false;
 		}
-
-		// Fetch event windows for all arms
-		const windows = await this.eventWindow.getWindowsForAllArms(armIds, {
-			windowMs: this.config.eventWindowMs,
-		});
-
-		// Analyze each arm
-		const armResults = this.analyzer.analyzeAll(windows);
-
-		// Process results and take actions
-		const interventions: Intervention[] = [];
-		const pendingPermissions: PermissionRequest[] = [];
-
-		for (const [armId, analysis] of armResults) {
-			// Check for pending permissions
-			if (analysis.pendingPermission) {
-				const permRequest: PermissionRequest = {
-					armId,
-					requestId: `perm-${armId}-${Date.now()}`,
-					action: analysis.pendingPermission.action,
-					context: analysis.pendingPermission.context,
-					requestedAt: analysis.pendingPermission.requestedAt,
-				};
-				pendingPermissions.push(permRequest);
-
-				// Auto-process if possible
-				await this.handlePermission(permRequest);
-			}
-
-			// Determine and execute intervention
-			if (
-				this.config.autoInterventionEnabled &&
-				analysis.recommendedAction !== "none"
-			) {
-				const intervention = await this.executeIntervention(armId, analysis);
-				if (intervention) {
-					interventions.push(intervention);
-				}
-			}
-		}
-
-		// Build summary
-		const summary = this.buildSummary(armResults);
-
-		// Log result
-		this.logFn(
-			`[HealthMonitor] Check complete: ${summary.totalArms} arms, ` +
-				`${summary.productive} productive, ${summary.idle} idle, ` +
-				`${summary.looping} looping, ${summary.silent} silent, ` +
-				`${interventions.length} interventions`,
-		);
-
-		// Publish health check event
-		await this.publishHealthCheckEvent(timestamp, summary, interventions);
-
-		const result: HealthCheckResult = {
-			timestamp,
-			armResults,
-			interventions,
-			pendingPermissions,
-			summary,
-		};
-		this.lastResult = result;
-		this.onResult?.(result);
-		return result;
 	}
 
 	/**
@@ -752,6 +763,12 @@ export class ArmHealthMonitor {
 		this.lastPromptTime.delete(armId);
 		this.lastInterventions.delete(armId);
 		this.analyzer.resetArm(armId);
+	}
+
+	recordPromptSent(armId: string): void {
+		this.lastPromptTime.set(armId, new Date());
+		const currentCount = this.promptCounts.get(armId) || 0;
+		this.promptCounts.set(armId, currentCount + 1);
 	}
 
 	/**

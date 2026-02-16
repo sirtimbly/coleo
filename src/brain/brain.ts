@@ -5574,6 +5574,8 @@ Report findings using bug resolution workflow.`;
 				if (arm) {
 					this.lastStuckState.delete(arm.id);
 				}
+				// Notify health monitor that we sent a prompt
+				this.healthMonitor?.recordPromptSent(armName);
 			}
 
 			return response.ok;

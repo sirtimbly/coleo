@@ -38,6 +38,8 @@ export const KNOWN_EVENT_TYPES = new Set([
 	// Arm lifecycle events
 	"arm.spawned",
 	"arm.status_changed",
+	"status_changed",
+	"spawned",
 	"arm.heartbeat",
 	"arm.killed",
 	"arm.stopped",
@@ -52,6 +54,8 @@ export const KNOWN_EVENT_TYPES = new Set([
 
 	// Brain events
 	"arm_prompted",
+	"prompt_sent",
+	"arm_initialized",
 	"event-status",
 	"event-message-created",
 	"event-message-updated",
