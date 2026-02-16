@@ -1632,6 +1632,48 @@ export class Brain {
 			// Ensure the arm exists (prevents assignment failures)
 			await this.ensureArmExists(armId);
 
+			const task = await this.getTaskFromApi(taskId);
+			if (!task) {
+				this.log(
+					`Task ${taskId} not found for arm ${armId}; requesting fresh briefing`,
+				);
+				await this.clearArmTaskAssignment(armId);
+				await this.sendPromptToArm(
+					armId,
+					`Task ${taskId} is no longer available. Call \`get_full_briefing\` now to fetch the next task.`,
+				);
+				return;
+			}
+
+			if (task.assignedTo && task.assignedTo !== armId) {
+				this.log(
+					`Task ${taskId} is already assigned to ${task.assignedTo}; arm ${armId} must fetch another task`,
+				);
+				await this.clearArmTaskAssignment(armId);
+				await this.sendPromptToArm(
+					armId,
+					`Task ${taskId} is already assigned to another arm. Call \`get_full_briefing\` now for a different task.`,
+				);
+				return;
+			}
+
+			if (task.status !== "pending") {
+				if (task.status === "claimed" && task.assignedTo === armId) {
+					this.log(`Task ${taskId} is already claimed by arm ${armId}`);
+					return;
+				}
+
+				this.log(
+					`Task ${taskId} is ${task.status}; rejecting claim by ${armId} and requesting fresh briefing`,
+				);
+				await this.clearArmTaskAssignment(armId);
+				await this.sendPromptToArm(
+					armId,
+					`Task ${taskId} is currently ${task.status} and cannot be claimed. Call \`get_full_briefing\` now to fetch another task.`,
+				);
+				return;
+			}
+
 			const assignmentResponse = await this.apiRequest<{
 				result: {
 					success: boolean;
@@ -1652,11 +1694,16 @@ export class Brain {
 				this.log(
 					`Error claiming task ${taskId} for arm ${armId}: ${assignmentResponse?.result?.error || "assignment API unavailable"}`,
 				);
+				await this.clearArmTaskAssignment(armId);
+				await this.sendPromptToArm(
+					armId,
+					`Task ${taskId} could not be claimed. Call \`get_full_briefing\` now to fetch another task.`,
+				);
 				return;
 			}
 
-			const task = await this.getTaskFromApi(taskId);
-			let taskSubject = task?.subject;
+			const claimedTask = await this.getTaskFromApi(taskId);
+			let taskSubject = claimedTask?.subject;
 			if (!taskSubject) taskSubject = taskId;
 			await this.apiRequest(`/api/arms/${encodeURIComponent(armId)}`, {
 				method: "PATCH",
@@ -2850,9 +2897,21 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			const otherPendingTasks = (
 				await this.listTasksFromApi({ status: ["pending"], limit: 500 })
 			).filter((pendingTask) => pendingTask.id !== task.id);
+			const likelyClaimConflict = this.isLikelyClaimConflictBlock(report);
 
 			if (otherPendingTasks.length > 0) {
-				// There's other work to do - defer this task and notify user
+				if (likelyClaimConflict) {
+					this.log(
+						`Task ${task.subject} blocked by file-claim conflict - deferring without user notification`,
+					);
+					return {
+						shouldForward: false,
+						reason:
+							"Task blocked by file-claim conflict and deferred while alternate work exists.",
+						action: "defer_task",
+					};
+				}
+
 				this.log(
 					`Task ${task.subject} blocked - deferring and moving arm to other work`,
 				);
@@ -2876,6 +2935,16 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			reason: "Status requires user visibility and follow-up queue management",
 			action: "notify",
 		};
+	}
+
+	private isLikelyClaimConflictBlock(report: {
+		summary: string;
+		blockers?: string[];
+	}): boolean {
+		const text = [report.summary, ...(report.blockers || [])].join("\n");
+		return /\b(file claim|claim conflict|claimed by|conflicting claim|exclusive claim|write claim|claim_file|pre_file_operation|file operation blocked)\b/i.test(
+			text,
+		);
 	}
 
 	/**
@@ -6858,9 +6927,6 @@ Report findings using bug resolution workflow.`;
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
 					});
-
-					// Notify human about the conflict
-					await this.notifyHumanOfClaimConflict(task, conflicts);
 
 					// If active resolution is enabled, attempt to resolve
 					if (this.resolveClaimsActive) {
