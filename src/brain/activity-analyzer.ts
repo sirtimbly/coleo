@@ -27,6 +27,16 @@ import {
 	arraysEqual,
 } from "./activity-types";
 
+const ACTIVE_ARM_STATUSES = new Set([
+	"busy",
+	"running",
+	"starting",
+	"processing",
+	"executing",
+	"working",
+	"in_progress",
+]);
+
 export {
 	type ArmActivityState,
 	type ArmAnalysis,
@@ -234,16 +244,21 @@ export class ArmActivityAnalyzer {
 		}
 
 		// Check 7: Is the arm showing any activity at all?
+		const statusChangedActiveEvents = window.events.filter((e) =>
+			this.isActiveStatusChangeEvent(e),
+		);
 		const activeEvents = window.events.filter(
 			(e) =>
 				ACTIVE_EVENT_TYPES.has(e.type) || PRODUCTIVE_EVENT_TYPES.has(e.type),
 		);
+		const totalActiveEvents =
+			activeEvents.length + statusChangedActiveEvents.length;
 
-		if (activeEvents.length > 0) {
+		if (totalActiveEvents > 0) {
 			return {
 				state: "productive",
 				confidence: "medium",
-				reason: `${activeEvents.length} active events (processing)`,
+				reason: `${totalActiveEvents} active events (processing)`,
 				recommendedAction: "none",
 			};
 		}
@@ -297,6 +312,28 @@ export class ArmActivityAnalyzer {
 		}
 
 		return { pending: false };
+	}
+
+	private isActiveStatusChangeEvent(event: EventData): boolean {
+		if (event.type !== "status_changed" && event.type !== "arm.status_changed") {
+			return false;
+		}
+
+		const data = event.data as Record<string, unknown>;
+		const nextStatus =
+			typeof data.newStatus === "string"
+				? data.newStatus
+				: typeof data.to === "string"
+					? data.to
+					: typeof data.status === "string"
+						? data.status
+						: null;
+
+		if (!nextStatus) {
+			return false;
+		}
+
+		return ACTIVE_ARM_STATUSES.has(nextStatus.toLowerCase());
 	}
 
 	/**

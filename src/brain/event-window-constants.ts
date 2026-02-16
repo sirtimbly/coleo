@@ -38,6 +38,7 @@ export const KNOWN_EVENT_TYPES = new Set([
 	// Arm lifecycle events
 	"arm.spawned",
 	"arm.status_changed",
+	"status_changed",
 	"arm.heartbeat",
 	"arm.killed",
 	"arm.stopped",
