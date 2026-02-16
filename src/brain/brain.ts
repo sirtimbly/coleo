@@ -3089,25 +3089,36 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 						dependencyBlocked: false,
 					});
 
-					const body = await this.templates.renderTemplate(
-						"human-task-deferred.jinja",
-						{
-							task_subject: task.subject,
-							summary: report.summary,
-							blockers_list:
-								report.blockers.map((b) => `- ${b}`).join("\n") ||
-								"No specific blockers listed",
-							next_steps: report.nextSteps || "None specified",
-						},
+					await this.sendPromptToArm(
+						report.armId,
+						`Task ${task.id} was deferred. Call \`get_full_briefing\` now to fetch the next task. Do not retry ${task.id} until it is returned to pending.`,
 					);
-					await this.sendToHuman({
-						subject: `[coleo] Task deferred: ${task.subject}`,
-						body,
-						headers: {
-							"X-Coleo-Task-Id": report.taskId,
-							"X-Coleo-Type": "task-deferred",
-						},
-					});
+
+					if (forwardDecision.shouldForward) {
+						const body = await this.templates.renderTemplate(
+							"human-task-deferred.jinja",
+							{
+								task_subject: task.subject,
+								summary: report.summary,
+								blockers_list:
+									report.blockers.map((b) => `- ${b}`).join("\n") ||
+									"No specific blockers listed",
+								next_steps: report.nextSteps || "None specified",
+							},
+						);
+						await this.sendToHuman({
+							subject: `[coleo] Task deferred: ${task.subject}`,
+							body,
+							headers: {
+								"X-Coleo-Task-Id": report.taskId,
+								"X-Coleo-Type": "task-deferred",
+							},
+						});
+					} else {
+						this.log(
+							`Task ${task.subject} deferred without user notification: ${forwardDecision.reason}`,
+						);
+					}
 					this.log(
 						`Task ${task.subject} deferred. Arm ${report.armId} will be assigned to other work.`,
 					);
