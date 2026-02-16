@@ -1692,6 +1692,70 @@ export function formatContextBundle(result: ContextBundleResult): string {
 	return result.fullOutput;
 }
 
+const REFACTORING_KEYWORDS = [
+	"refactor",
+	"refactoring",
+	"restructure",
+	"rewrite",
+	"extract",
+	"modularize",
+	"cleanup code",
+	"code cleanup",
+	"reduce file size",
+	"split file",
+	"break down",
+];
+
+export function detectRefactoringIntent(
+	subject: string,
+	description: string,
+): boolean {
+	const text = `${subject} ${description}`.toLowerCase();
+	return REFACTORING_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+export function inferClassification(
+	subject: string,
+	description: string,
+	existingDomain?: string,
+): string {
+	if (existingDomain) {
+		return existingDomain;
+	}
+
+	const text = `${subject} ${description}`.toLowerCase();
+
+	if (
+		REFACTORING_KEYWORDS.some((keyword) => text.includes(keyword)) ||
+		text.includes("large file") ||
+		text.includes("file extraction")
+	) {
+		return "refactoring";
+	}
+
+	if (
+		text.includes("test") ||
+		text.includes("spec") ||
+		text.includes("coverage")
+	) {
+		return "testing";
+	}
+
+	if (
+		text.includes("document") ||
+		text.includes("readme") ||
+		text.includes("guide")
+	) {
+		return "documentation";
+	}
+
+	if (text.includes("bug") || text.includes("fix") || text.includes("error")) {
+		return "bug_fix";
+	}
+
+	return "development";
+}
+
 export const __promptTestables = {
 	readCurrentPlan,
 	extractDependenciesFromPhase,
@@ -1699,4 +1763,6 @@ export const __promptTestables = {
 	detectKeywordDependencies,
 	ensurePlanDependencyTask,
 	createPlanTaskDeliverable,
+	detectRefactoringIntent,
+	inferClassification,
 };

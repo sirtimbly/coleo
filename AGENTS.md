@@ -18,8 +18,8 @@ This document orients agentic contributors. Respect existing patterns, document 
 
 ### Testing
 - `bun test` - Run all tests in `src/**/__tests__/*.test.ts`
-- `bun test src/api/__tests__/tasks.test.ts` - Single file
-- `bun test -t "task creates"` - Filter by title (Bun `-t` flag)
+- `bun test src/api/__tests__/tasks.test.ts` - Single test file
+- `bun test -t "task creates"` - Filter by test title (Bun `-t` flag)
 - `bun run test:watch` - Watch mode
 - `bun run test:integration`, `bun run test:e2e` - Integration/e2e suites
 
@@ -75,14 +75,16 @@ This document orients agentic contributors. Respect existing patterns, document 
 ## Testing
 
 - Tests in `src/**/__tests__/*.test.ts` using Bun's `describe/it/expect`
-- In-memory SQLite with clean state in `afterEach`
+- In-memory SQLite (`:memory:`) with clean state in `afterEach`
 - Mock external services; avoid production DB files
+- Test database setup: create tables in `beforeEach`, no migrations
 
 ## Frontend (`src/web`)
 
-- React + Vite + TailwindCSS v4 + HeroUI v3 + TanStack Query
+- React 19 + Vite + TailwindCSS v4 + HeroUI v3 (beta) + TanStack Query
 - Path alias: `@/` maps to `src/web/src/`
 - Extract business logic into hooks; keep components focused on rendering
+- Use `memo` for expensive components: `const Component = memo(function Component(props) {})`
 - Expressive typography, deliberate palettes, purposeful layouts
 - Gradients/patterns over flat backgrounds; meaningful motion
 
@@ -96,7 +98,7 @@ This document orients agentic contributors. Respect existing patterns, document 
 - Runtime: Bun + TypeScript (strict)
 - API: Hono framework
 - Database: SQLite (`bun:sqlite`)
-- Frontend: React + Vite + TailwindCSS v4 + shadcn/ui + HeroUI v3
+- Frontend: React + Vite + TailwindCSS v4 + HeroUI v3
 - Messaging: NATS JetStream
 - Orchestration: MCP/brain with Maildir
 
@@ -117,8 +119,8 @@ src/
 
 ## Search & Tooling
 
-### Semantic Code Search
-Use for conceptual matches, not literal strings:
+### Semantic Code Search (Preferred)
+Use `search_code` MCP tool for conceptual matches:
 - How something is implemented
 - Where logic lives
 - Code patterns
@@ -127,6 +129,10 @@ Use for conceptual matches, not literal strings:
 - Filename queries
 - Regex matches
 - Exact string counts
+
+### Documentation Search
+- `search_docs` - Internal documentation (design system, ADRs, guides)
+- `search_api` - API specifications and endpoints
 
 ## Multi-Agent Collaboration
 

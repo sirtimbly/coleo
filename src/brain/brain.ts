@@ -2594,7 +2594,18 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			includeGitStatus: true,
 		});
 
-		if (highPriorityFiles.length > 0) {
+		// Check for existing pending refactoring tasks to avoid duplicates
+		const existingRefactorTasks = this.tasks.filter(
+			(t) =>
+				t.classification === "refactoring" &&
+				["pending", "claimed", "in_progress"].includes(t.status),
+		);
+
+		if (existingRefactorTasks.length > 0) {
+			this.log(
+				`Skipping refactoring task creation: ${existingRefactorTasks.length} existing refactoring task(s) pending`,
+			);
+		} else if (highPriorityFiles.length > 0) {
 			// Immediate escalation for high/critical priority files
 			await this.createRefactoringTask(highPriorityFiles);
 		} else if (this.completedTaskCount % 5 === 0) {
@@ -7998,7 +8009,7 @@ When refactoring large files:
 	}
 
 	/**
-	 * Create a refactoring task for large files
+	 * Create refactoring tasks for large files, broken into manageable batches
 	 */
 	private async createRefactoringTask(
 		files: Array<{
@@ -8008,22 +8019,23 @@ When refactoring large files:
 		}>,
 	): Promise<void> {
 		try {
-			const taskId = `refactor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-
+			const BATCH_SIZE = 8;
 			const maxLines = Math.max(...files.map((f) => f.lines));
-			let priority: "critical" | "high" | "normal" | "low" = "normal";
-			if (maxLines > 800) priority = "critical";
-			else if (maxLines > 600) priority = "high";
-			else if (maxLines > 400) priority = "normal";
 
-			const description = this.buildRefactoringDescription(files);
+			let basePriority: "critical" | "high" | "normal" | "low" = "normal";
+			if (maxLines > 800) basePriority = "critical";
+			else if (maxLines > 600) basePriority = "high";
+			else if (maxLines > 400) basePriority = "normal";
+
+			const parentTaskId = `refactor-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+			const parentDescription = this.buildRefactoringDescription(files);
 
 			await this.createTaskViaApi({
-				id: taskId,
-				subject: `Refactor large files (${files.length} files)`,
-				description,
+				id: parentTaskId,
+				subject: `Refactor large files (${files.length} files) - Parent`,
+				description: parentDescription,
 				status: "pending",
-				priority,
+				priority: basePriority,
 				classification: "refactoring",
 				domain: "refactoring",
 				sourceType: "system",
@@ -8031,15 +8043,172 @@ When refactoring large files:
 			});
 
 			this.log(
-				`Created refactoring task: ${taskId} (count: ${files.length}, priority: ${priority})`,
+				`Created parent refactoring task: ${parentTaskId} (count: ${files.length}, priority: ${basePriority})`,
 			);
-			this.logActivity("brain", "refactoring_task_created", taskId, {
+
+			const batches: Array<typeof files> = [];
+			for (let i = 0; i < files.length; i += BATCH_SIZE) {
+				batches.push(files.slice(i, i + BATCH_SIZE));
+			}
+
+			let previousBatchTaskId: string | null = null;
+
+			for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+				const batch = batches[batchIndex]!;
+				const batchTaskId = `${parentTaskId}-batch-${batchIndex + 1}`;
+				const batchMaxLines = Math.max(...batch.map((f) => f.lines));
+
+				let batchPriority: "critical" | "high" | "normal" | "low" = basePriority;
+				if (batchMaxLines > 800) batchPriority = "critical";
+				else if (batchMaxLines > 600) batchPriority = "high";
+
+				const batchDescription = this.buildBatchRefactoringDescription(batch, batchIndex + 1, batches.length);
+
+				await this.createTaskViaApi({
+					id: batchTaskId,
+					subject: `Refactor batch ${batchIndex + 1}/${batches.length} (${batch.length} files)`,
+					description: batchDescription,
+					status: "pending",
+					priority: batchPriority,
+					classification: "refactoring",
+					domain: "refactoring",
+					sourceType: "system",
+					sourceRef: parentTaskId,
+				});
+
+				if (previousBatchTaskId) {
+					await this.createTaskDependencyViaApi({
+						taskId: batchTaskId,
+						dependsOnTaskId: previousBatchTaskId,
+						dependencyType: "finish_to_start",
+						autoDetected: true,
+						reason: "Sequential batch processing for refactoring",
+					});
+				}
+
+				this.log(
+					`Created batch ${batchIndex + 1}/${batches.length}: ${batchTaskId} (${batch.length} files)`,
+				);
+				this.logActivity("brain", "refactoring_batch_created", batchTaskId, {
+					batchIndex: batchIndex + 1,
+					totalBatches: batches.length,
+					fileCount: batch.length,
+					priority: batchPriority,
+				});
+
+				previousBatchTaskId = batchTaskId;
+			}
+
+			this.logActivity("brain", "refactoring_task_created", parentTaskId, {
 				fileCount: files.length,
-				priority,
+				batchCount: batches.length,
+				priority: basePriority,
 				maxLines,
 			});
 		} catch (err) {
 			this.log(`Error creating refactoring task: ${err}`);
 		}
+	}
+
+	/**
+	 * Create a task dependency via API
+	 */
+	private async createTaskDependencyViaApi(input: {
+		taskId: string;
+		dependsOnTaskId: string;
+		dependencyType?: "finish_to_start" | "start_to_start" | "finish_to_finish" | "start_to_finish";
+		autoDetected?: boolean;
+		reason?: string | null;
+	}): Promise<void> {
+		try {
+			const response = await fetch(`${this.apiBaseUrl}/api/tasks/${input.taskId}/dependencies`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					"X-API-Key": this.apiKey,
+				},
+				body: JSON.stringify({
+					dependsOnTaskId: input.dependsOnTaskId,
+					dependencyType: input.dependencyType || "finish_to_start",
+					autoDetected: input.autoDetected ?? true,
+					reason: input.reason || null,
+				}),
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				this.log(`Failed to create task dependency: ${response.status} ${errorText}`);
+			}
+		} catch (err) {
+			this.log(`Error creating task dependency: ${err}`);
+		}
+	}
+
+	/**
+	 * Build a description for a batch refactoring task
+	 */
+	private buildBatchRefactoringDescription(
+		files: Array<{
+			path: string;
+			lines: number;
+			gitStatus?: { staged: boolean; modified: boolean; untracked: boolean };
+		}>,
+		batchNumber: number,
+		totalBatches: number,
+	): string {
+		const formatGitStatus = (status?: {
+			staged: boolean;
+			modified: boolean;
+			untracked: boolean;
+		}): string => {
+			if (!status) return "unknown";
+			const flags: string[] = [];
+			if (status.staged) flags.push("staged");
+			if (status.modified) flags.push("modified");
+			if (status.untracked) flags.push("untracked");
+			return flags.length > 0 ? flags.join(", ") : "clean";
+		};
+
+		const tableRows = files
+			.map((f) => {
+				const relPath = f.path.replace(process.cwd() + "/", "");
+				let priority = "normal";
+				if (f.lines > 600) priority = "high";
+				if (f.lines > 800) priority = "critical";
+				return `| \`${relPath}\` | ${f.lines} | **${priority}** | ${formatGitStatus(f.gitStatus)} |`;
+			})
+			.join("\n");
+
+		const hasCriticalFiles = files.some((f) => f.lines > 800);
+		const hasHighPriorityFiles = files.some(
+			(f) => f.lines > 600 && f.lines <= 800,
+		);
+
+		return `## Refactoring Batch ${batchNumber}/${totalBatches}
+
+This is batch ${batchNumber} of ${totalBatches} in a refactoring task. Complete this batch before moving to the next.
+
+### Prerequisites (VERIFY FIRST)
+- [ ] Run \`git status --porcelain\` and confirm target files are clean (no modified/staged/untracked)
+- [ ] Confirm the API server and brain are running (health checks pass)
+- [ ] Confirm files are checked in before making changes
+- [ ] Check no other arms have active claims on these files
+
+### Files in This Batch
+
+| File | Lines | Priority | Git status |
+|------|-------|----------|------------|
+${tableRows}
+
+${hasCriticalFiles ? "⚠️ **CRITICAL**: Files >800 lines detected. These files need extraction into smaller modules before refactoring." : ""}
+${hasHighPriorityFiles ? "💡 **High Priority**: Files >600 lines should be broken down into smaller units." : ""}
+
+### Guidelines
+
+1. **Extract functions/classes**: Break down monolithic functions into smaller, focused units
+2. **Separate concerns**: Move distinct functionality to separate modules or files
+3. **Maintain tests**: Ensure all existing tests pass after refactoring
+4. **Document rationale**: Add comments explaining the refactoring choices
+5. **Mark complete**: When done, mark this batch task as complete to unblock the next batch`;
 	}
 }
