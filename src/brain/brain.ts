@@ -2897,27 +2897,14 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			const otherPendingTasks = (
 				await this.listTasksFromApi({ status: ["pending"], limit: 500 })
 			).filter((pendingTask) => pendingTask.id !== task.id);
-			const likelyClaimConflict = this.isLikelyClaimConflictBlock(report);
 
 			if (otherPendingTasks.length > 0) {
-				if (likelyClaimConflict) {
-					this.log(
-						`Task ${task.subject} blocked by file-claim conflict - deferring without user notification`,
-					);
-					return {
-						shouldForward: false,
-						reason:
-							"Task blocked by file-claim conflict and deferred while alternate work exists.",
-						action: "defer_task",
-					};
-				}
-
 				this.log(
-					`Task ${task.subject} blocked - deferring and moving arm to other work`,
+					`Task ${task.subject} blocked - deferring without user notification because alternate work exists`,
 				);
 				return {
-					shouldForward: true,
-					reason: `Task blocked and deferred. Arm will pull other pending work. User notified.`,
+					shouldForward: false,
+					reason: `Task blocked and deferred. Arm will pull other pending work.`,
 					action: "defer_task",
 				};
 			}
@@ -2935,16 +2922,6 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			reason: "Status requires user visibility and follow-up queue management",
 			action: "notify",
 		};
-	}
-
-	private isLikelyClaimConflictBlock(report: {
-		summary: string;
-		blockers?: string[];
-	}): boolean {
-		const text = [report.summary, ...(report.blockers || [])].join("\n");
-		return /\b(file claim|claim conflict|claimed by|conflicting claim|exclusive claim|write claim|claim_file|pre_file_operation|file operation blocked)\b/i.test(
-			text,
-		);
 	}
 
 	/**

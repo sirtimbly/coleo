@@ -4,7 +4,7 @@
  * Tests queue-based forwarding decisions:
  * 1. `on_track` is never forwarded
  * 2. `needs_review` is always forwarded
- * 3. `blocked` is deferred when other pending work exists, otherwise forwarded
+ * 3. `blocked` is deferred silently when other pending work exists, otherwise forwarded
  * 4. `issues_found` and `completed_with_issues` are forwarded
  */
 
@@ -80,9 +80,8 @@ describe("Status Report Forwarding - Queue-Based Decisions", () => {
 				.get(report.taskId) as { count: number } | null;
 			if ((pendingCount?.count || 0) > 0) {
 				return {
-					shouldForward: true,
-					reason:
-						"Task blocked and deferred. Arm will pull other pending work. User notified.",
+					shouldForward: false,
+					reason: "Task blocked and deferred. Arm will pull other pending work.",
 					action: "defer_task",
 				};
 			}
@@ -136,7 +135,7 @@ describe("Status Report Forwarding - Queue-Based Decisions", () => {
 			taskId: "task-1",
 			status: "blocked",
 		});
-		expect(decision.shouldForward).toBe(true);
+		expect(decision.shouldForward).toBe(false);
 		expect(decision.action).toBe("defer_task");
 	});
 
