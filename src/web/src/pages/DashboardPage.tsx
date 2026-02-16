@@ -801,7 +801,7 @@ export function DashboardPage() {
   }, [loadIndexerHealth, loadNotableEvents]);
 
   const { connected, authenticated } = useWebSocket({
-    channels: ['arms', 'activity', 'brain', 'arm-events'],
+    channels: ['arms', 'activity', 'brain', 'arm-events', 'mail'],
     onMessage: handleWSMessage,
     autoConnect: true,
   });

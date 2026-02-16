@@ -1534,10 +1534,12 @@ ${task.description}
 ## Bug-Fix Specific
 
 - Use \`claim_bug\` if this bug is not already assigned.
+- Before editing files, call \`pre_file_operation\` and claim files with \`claim_file\`.
+- Release claims with \`release_claim\` when done with each file.
 - Use \`update_bug_status\` as you move through investigating -> fixing -> verifying -> resolved.
 - Include a concrete \`resolution\` when marking a bug resolved.
 - Do not use \`complete_task\` with bug IDs.`
-		);
+			);
 	}
 
 	if (domain === "docs" || subject.includes("doc")) {

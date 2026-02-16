@@ -31,7 +31,7 @@ class ApiClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {}
+    options: RequestInit & { timeout?: number } = {}
   ): Promise<T> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -43,20 +43,36 @@ class ApiClient {
       headers['X-API-Key'] = apiKey;
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
+    const { timeout = 10000, ...fetchOptions } = options;
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      const response = await fetch(`${API_BASE}${path}`, {
+        ...fetchOptions,
+        headers,
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      const error: ApiError = await response.json().catch(() => ({
-        error: 'Request failed',
-        message: response.statusText,
-      }));
-      throw new Error(error.message || error.error);
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({
+          error: 'Request failed',
+          message: response.statusText,
+        }));
+        throw new Error(error.message || error.error);
+      }
+
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Request timeout after ${timeout}ms`);
+      }
+      throw error;
     }
-
-    return response.json();
   }
 
   // Health & Status
@@ -360,6 +376,7 @@ class ApiClient {
   async markMailRead(id: string) {
     return this.request<{ success: boolean }>(`/mail/inbox/${id}/read`, {
       method: 'POST',
+      timeout: 5000, // 5 second timeout for mark-read operations
     });
   }
 
@@ -659,10 +676,10 @@ class ApiClient {
     });
   }
 
-  async reorderTask(taskId: string, toSortOrder: number) {
+  async reorderTask(taskId: string, toIndex: number) {
     return this.request<{ success: boolean }>('/tasks/reorder', {
       method: 'POST',
-      body: JSON.stringify({ taskId, toSortOrder }),
+      body: JSON.stringify({ taskId, toIndex }),
     });
   }
 

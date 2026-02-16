@@ -838,6 +838,201 @@ describe("MCP Server - Comprehensive Tool Tests", () => {
       expect(remaining).toBeGreaterThanOrEqual(0);
       expect(usagePercent).toBeGreaterThanOrEqual(0);
     });
+
+    it("handles multiple sequential compressions", () => {
+      for (let i = 0; i < 5; i++) {
+        db.run(`
+          INSERT INTO context_compressions 
+          (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [
+          TEST_ARM_ID,
+          `task-${i}`,
+          100000 - (i * 10000),
+          50000 - (i * 5000),
+          0.5,
+          JSON.stringify([{ type: "history", description: `Compression ${i}`, tokenCount: 50000 }])
+        ]);
+      }
+
+      const compressions = db.query(`
+        SELECT * FROM context_compressions WHERE arm_id = ? ORDER BY timestamp DESC
+      `).all(TEST_ARM_ID) as Array<{ task_id: string }>;
+
+      expect(compressions.length).toBe(5);
+    });
+
+    it("calculates average compression ratio from multiple compressions", () => {
+      const ratios = [0.5, 0.3, 0.7, 0.4];
+      
+      for (const ratio of ratios) {
+        db.run(`
+          INSERT INTO context_compressions 
+          (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [
+          TEST_ARM_ID,
+          `task-ratio-${ratio}`,
+          100000,
+          100000 * ratio,
+          ratio,
+          JSON.stringify([])
+        ]);
+      }
+
+      const result = db.query(`
+        SELECT AVG(compression_ratio) as avg_ratio FROM context_compressions WHERE arm_id = ?
+      `).get(TEST_ARM_ID) as { avg_ratio: number } | null;
+
+      const expectedAvg = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+      expect(result?.avg_ratio).toBeCloseTo(expectedAvg);
+    });
+
+    it("retrieves compressions within time window", () => {
+      db.run(`
+        INSERT INTO context_compressions 
+        (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now', '-2 hours'))
+      `, [TEST_ARM_ID, "old-task", 100000, 50000, 0.5, "[]"]);
+
+      db.run(`
+        INSERT INTO context_compressions 
+        (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [TEST_ARM_ID, "new-task", 80000, 40000, 0.5, "[]"]);
+
+      const recentCompressions = db.query(`
+        SELECT * FROM context_compressions 
+        WHERE arm_id = ? AND timestamp > datetime('now', '-1 hour')
+      `).all(TEST_ARM_ID) as Array<{ task_id: string }>;
+
+      expect(recentCompressions.length).toBe(1);
+      expect(recentCompressions[0]?.task_id).toBe("new-task");
+    });
+
+    it("tracks cumulative budget usage across compressions", () => {
+      const costs = [1000, 2000, 1500];
+      let totalUsed = 0;
+
+      for (const cost of costs) {
+        totalUsed += cost;
+        db.run(`
+          UPDATE arms SET context_budget_used = context_budget_used + ? WHERE id = ?
+        `, [cost, TEST_ARM_ID]);
+      }
+
+      const arm = db.query(`
+        SELECT context_budget_used FROM arms WHERE id = ?
+      `).get(TEST_ARM_ID) as { context_budget_used: number } | null;
+
+      expect(arm?.context_budget_used).toBe(totalUsed);
+    });
+
+    it("detects when budget exceeds warning threshold", () => {
+      const budget = 128000;
+      const warningThreshold = 0.8;
+      
+      db.run(`
+        UPDATE arms SET context_budget_used = ? WHERE id = ?
+      `, [budget * warningThreshold + 1000, TEST_ARM_ID]);
+
+      const arm = db.query(`
+        SELECT context_budget, context_budget_used FROM arms WHERE id = ?
+      `).get(TEST_ARM_ID) as { context_budget: number; context_budget_used: number } | null;
+
+      const usagePercent = ((arm?.context_budget_used || 0) / (arm?.context_budget || 1)) * 100;
+      
+      expect(usagePercent).toBeGreaterThan(80);
+    });
+
+    it("detects when budget exceeds critical threshold", () => {
+      const budget = 128000;
+      const criticalThreshold = 0.95;
+      
+      db.run(`
+        UPDATE arms SET context_budget_used = ? WHERE id = ?
+      `, [budget * criticalThreshold + 1000, TEST_ARM_ID]);
+
+      const arm = db.query(`
+        SELECT context_budget, context_budget_used FROM arms WHERE id = ?
+      `).get(TEST_ARM_ID) as { context_budget: number; context_budget_used: number } | null;
+
+      const usagePercent = ((arm?.context_budget_used || 0) / (arm?.context_budget || 1)) * 100;
+      
+      expect(usagePercent).toBeGreaterThan(95);
+    });
+
+    it("handles extreme compression ratio (99% reduction)", () => {
+      db.run(`
+        INSERT INTO context_compressions 
+        (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        TEST_ARM_ID,
+        "extreme-compression-task",
+        100000,
+        1000,
+        0.01,
+        JSON.stringify([{ type: "history", description: "Massive cleanup", tokenCount: 99000 }])
+      ]);
+
+      const compression = db.query(`
+        SELECT compression_ratio FROM context_compressions WHERE task_id = ?
+      `).get("extreme-compression-task") as { compression_ratio: number } | null;
+
+      expect(compression?.compression_ratio).toBeCloseTo(0.01);
+    });
+
+    it("handles minimal compression ratio (1% reduction)", () => {
+      db.run(`
+        INSERT INTO context_compressions 
+        (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        TEST_ARM_ID,
+        "minimal-compression-task",
+        100000,
+        99000,
+        0.99,
+        JSON.stringify([{ type: "context", description: "Tiny trim", tokenCount: 1000 }])
+      ]);
+
+      const compression = db.query(`
+        SELECT compression_ratio FROM context_compressions WHERE task_id = ?
+      `).get("minimal-compression-task") as { compression_ratio: number } | null;
+
+      expect(compression?.compression_ratio).toBeCloseTo(0.99);
+    });
+
+    it("stores removed_content with multiple content types", () => {
+      const removedContent = [
+        { type: "history", description: "Old messages", tokenCount: 30000 },
+        { type: "artifacts", description: "File contents", tokenCount: 15000 },
+        { type: "notes", description: "Shared notes", tokenCount: 5000 },
+        { type: "tools", description: "Tool results", tokenCount: 10000 }
+      ];
+
+      db.run(`
+        INSERT INTO context_compressions 
+        (arm_id, task_id, original_tokens, compressed_tokens, compression_ratio, removed_content)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [
+        TEST_ARM_ID,
+        "multi-type-removal-task",
+        100000,
+        40000,
+        0.4,
+        JSON.stringify(removedContent)
+      ]);
+
+      const compression = db.query(`
+        SELECT removed_content FROM context_compressions WHERE task_id = ?
+      `).get("multi-type-removal-task") as { removed_content: string } | null;
+
+      const parsed = JSON.parse(compression?.removed_content || "[]");
+      expect(parsed.length).toBe(4);
+      expect(parsed.map((c: { type: string }) => c.type)).toEqual(["history", "artifacts", "notes", "tools"]);
+    });
   });
 
   describe("Documentation Awareness Tools", () => {

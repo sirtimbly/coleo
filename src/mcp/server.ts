@@ -299,6 +299,28 @@ function ensureArmRegistered(): void {
 	}
 }
 
+function releaseAllClaimsForArm(reason: string): number {
+	try {
+		const database = getDatabase(false);
+		const now = new Date().toISOString();
+		const result = database.run(
+			"UPDATE claims SET released_at = ? WHERE arm_id = ? AND released_at IS NULL",
+			[now, ARM_ID],
+		);
+		const releasedClaims = result.changes ?? 0;
+		if (releasedClaims > 0) {
+			logActivity(ARM_ID, "claims_released_for_transition", undefined, {
+				reason,
+				releasedClaims,
+			});
+		}
+		return releasedClaims;
+	} catch (err) {
+		console.error(`[MCP] Failed to release claims for ${ARM_ID}: ${err}`);
+		return 0;
+	}
+}
+
 /**
  * Write a message to the brain's SQLite inbox table when NATS is unavailable.
  */
@@ -864,6 +886,9 @@ export function createMcpServer(): McpServer {
 			console.error(
 				`[MCP] claim_task called by ${ARM_ID} for task ${resolvedTaskId}`,
 			);
+			const releasedClaims = releaseAllClaimsForArm(
+				`claim_task:${resolvedTaskId}`,
+			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
@@ -875,14 +900,17 @@ export function createMcpServer(): McpServer {
 			});
 			clearRecentCompletedTaskExclusion();
 
-			logActivity(ARM_ID, "claim_task", resolvedTaskId, { messageId });
+			logActivity(ARM_ID, "claim_task", resolvedTaskId, {
+				messageId,
+				releasedClaims,
+			});
 			console.error(`[MCP] claim_task completed, messageId: ${messageId}`);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}${releasedClaims > 0 ? `Released ${releasedClaims} existing file claim(s) before switching work.\n\n` : ""}Task ${resolvedTaskId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
 					},
 				],
 			};
@@ -913,25 +941,31 @@ export function createMcpServer(): McpServer {
 
 			const resolvedBugId = resolution.bugId;
 			console.error(`[MCP] claim_bug called by ${ARM_ID} for bug ${resolvedBugId}`);
-				const messageId = await sendToBrain({
-					from: ARM_ID,
-					to: "brain",
-					type: "bug_claim",
-					payload: {
-						action: "claim",
-						bugId: resolvedBugId,
-					},
-				});
-				clearRecentCompletedTaskExclusion();
+			const releasedClaims = releaseAllClaimsForArm(
+				`claim_bug:${resolvedBugId}`,
+			);
+			const messageId = await sendToBrain({
+				from: ARM_ID,
+				to: "brain",
+				type: "bug_claim",
+				payload: {
+					action: "claim",
+					bugId: resolvedBugId,
+				},
+			});
+			clearRecentCompletedTaskExclusion();
 
-			logActivity(ARM_ID, "claim_bug", resolvedBugId, { messageId });
+			logActivity(ARM_ID, "claim_bug", resolvedBugId, {
+				messageId,
+				releasedClaims,
+			});
 			console.error(`[MCP] claim_bug completed, messageId: ${messageId}`);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Bug ${resolvedBugId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}${releasedClaims > 0 ? `Released ${releasedClaims} existing file claim(s) before switching work.\n\n` : ""}Bug ${resolvedBugId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
 					},
 				],
 			};
@@ -2315,30 +2349,47 @@ export function createMcpServer(): McpServer {
 					};
 				}
 
-				// Check for exclusive claim conflicts
-				if (claim_type === "exclusive") {
-					const existing = database
+					const activeClaims = database
 						.query(
-							"SELECT arm_id FROM claims WHERE file_path = ? AND released_at IS NULL",
+							"SELECT arm_id, claim_type FROM claims WHERE file_path = ? AND released_at IS NULL AND arm_id != ?",
 						)
-						.get(file_path) as { arm_id: string } | null;
-					if (existing && existing.arm_id !== ARM_ID) {
+						.all(file_path, ARM_ID) as Array<{
+						arm_id: string;
+						claim_type: "read" | "write" | "exclusive";
+					}>;
+
+					const conflictingClaims =
+						claim_type === "exclusive"
+							? activeClaims
+							: claim_type === "write"
+								? activeClaims.filter(
+										(claim) =>
+											claim.claim_type === "write" ||
+											claim.claim_type === "exclusive",
+									)
+								: activeClaims.filter(
+										(claim) => claim.claim_type === "exclusive",
+									);
+
+					if (conflictingClaims.length > 0) {
+						const conflictingArms = Array.from(
+							new Set(conflictingClaims.map((claim) => claim.arm_id)),
+						);
 						logActivity(ARM_ID, "claim_file_failed", file_path, {
-							error: "exclusive_conflict",
+							error: "claim_conflict",
 							claim_type,
 							reason,
-							existing_arm: existing.arm_id,
+							conflicting_arms: conflictingArms,
 						});
 						return {
 							content: [
 								{
 									type: "text" as const,
-									text: `Cannot claim ${file_path} exclusively: File already claimed by ${existing.arm_id}`,
+									text: `Cannot claim ${file_path} (${claim_type}): conflicting claim(s) by ${conflictingArms.join(", ")}`,
 								},
 							],
 						};
 					}
-				}
 
 				// Check if this arm already has a claim on this file
 				const existingClaim = database
@@ -4337,34 +4388,75 @@ export function createMcpServer(): McpServer {
 			description:
 				"Get a complete briefing: the brain's task determination AND the full context bundle for that task. This is the recommended way to start work - it combines 'get_task_determination' and 'get_context_bundle' into a single call for efficiency. After reviewing the briefing, use 'claim_task' to claim ownership of the task.",
 			inputSchema: {},
-		},
-		async () => {
-			console.error(`[MCP] get_full_briefing called by ${ARM_ID}`);
-			// Auto-register manual arms - this is the recommended entry point
-			ensureArmRegistered();
+			},
+			async () => {
+				console.error(`[MCP] get_full_briefing called by ${ARM_ID}`);
+				// Auto-register manual arms - this is the recommended entry point
+				ensureArmRegistered();
+				const releasedClaims = releaseAllClaimsForArm("get_full_briefing");
 
-			try {
-				// Use writable database - generateTaskDetermination may create tasks from plan
-				const database = getDatabase(false);
+				try {
+					// Use writable database - generateTaskDetermination may create tasks from plan
+					const database = getDatabase(false);
 
-				const ctx: PromptContext = {
-					projectRoot: PROJECT_ROOT,
-					coleoDir: COLEO_DIR,
-					db: database as unknown as PromptContext["db"],
-				};
+					const ctx: PromptContext = {
+						projectRoot: PROJECT_ROOT,
+						coleoDir: COLEO_DIR,
+						db: database as unknown as PromptContext["db"],
+					};
 
-				// Step 1: Get task determination
-				const determination = await generateTaskDetermination(
-					ctx,
-					buildTaskDeterminationOptionsForArm(),
-				);
-				updateCompletionExclusionAfterDetermination(determination);
-				const determinationFormatted = formatTaskDetermination(determination);
+					// Step 1: Get task determination
+					const determination = await generateTaskDetermination(
+						ctx,
+						buildTaskDeterminationOptionsForArm(),
+					);
+					updateCompletionExclusionAfterDetermination(determination);
+					const determinationFormatted = formatTaskDetermination(determination);
 
-				if (!determination.task) {
-					logActivity(ARM_ID, "get_full_briefing", undefined, {
-						hasTask: false,
-						reasoning: determination.reasoning,
+					if (!determination.task) {
+						logActivity(ARM_ID, "get_full_briefing", undefined, {
+							hasTask: false,
+							reasoning: determination.reasoning,
+							releasedClaims,
+						});
+
+						return {
+							content: [
+								{
+									type: "text" as const,
+									text:
+										determinationFormatted +
+										"\n\n---\n\nNo task was determined, so no context bundle is available.",
+								},
+							],
+						};
+					}
+
+					// Step 2: Get context bundle for the determined task
+					const contextLookupTarget =
+						determination.task.id || determination.task.subject;
+					const contextBundle = await generateContextBundle(
+						ctx,
+						contextLookupTarget,
+					);
+
+					let fullBriefing = determinationFormatted;
+
+					if (contextBundle) {
+						const contextFormatted = formatContextBundle(contextBundle);
+						fullBriefing += "\n" + "=".repeat(60) + "\n\n" + contextFormatted;
+					} else {
+						fullBriefing +=
+							"\n---\n\n*Context bundle could not be generated for this task.*";
+					}
+
+					logActivity(ARM_ID, "get_full_briefing", determination.task.id, {
+						hasTask: true,
+						taskSubject: determination.task.subject,
+						taskId: determination.task.id,
+						priority: determination.task.priority,
+						hasContextBundle: !!contextBundle,
+						releasedClaims,
 					});
 
 					return {
@@ -4372,60 +4464,25 @@ export function createMcpServer(): McpServer {
 							{
 								type: "text" as const,
 								text:
-									determinationFormatted +
-									"\n\n---\n\nNo task was determined, so no context bundle is available.",
+									(releasedClaims > 0
+										? `Released ${releasedClaims} existing file claim(s) before generating a new briefing.\n\n`
+										: "") + fullBriefing,
+							},
+						],
+					};
+				} catch (err) {
+					const errorMsg = err instanceof Error ? err.message : String(err);
+					return {
+						content: [
+							{
+								type: "text" as const,
+								text: `Failed to get full briefing: ${errorMsg}`,
 							},
 						],
 					};
 				}
-
-				// Step 2: Get context bundle for the determined task
-				const contextLookupTarget =
-					determination.task.id || determination.task.subject;
-				const contextBundle = await generateContextBundle(
-					ctx,
-					contextLookupTarget,
-				);
-
-				let fullBriefing = determinationFormatted;
-
-				if (contextBundle) {
-					const contextFormatted = formatContextBundle(contextBundle);
-					fullBriefing += "\n" + "=".repeat(60) + "\n\n" + contextFormatted;
-				} else {
-					fullBriefing +=
-						"\n---\n\n*Context bundle could not be generated for this task.*";
-				}
-
-				logActivity(ARM_ID, "get_full_briefing", determination.task.id, {
-					hasTask: true,
-					taskSubject: determination.task.subject,
-					taskId: determination.task.id,
-					priority: determination.task.priority,
-					hasContextBundle: !!contextBundle,
-				});
-
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: fullBriefing,
-						},
-					],
-				};
-			} catch (err) {
-				const errorMsg = err instanceof Error ? err.message : String(err);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Failed to get full briefing: ${errorMsg}`,
-						},
-					],
-				};
-			}
-		},
-	);
+			},
+		);
 
 	// Get recent events for this arm
 	server.registerTool(

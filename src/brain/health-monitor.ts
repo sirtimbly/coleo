@@ -459,7 +459,15 @@ export class ArmHealthMonitor {
 						"busy",
 					]);
 					if (activeRuntimeStates.has(runtime.state)) {
-						return `runtime state is "${runtime.state}"`;
+						// Guard against stale harness state: if the arm has been silent
+						// beyond stuck escalation delay, don't let "processing" block prompts forever.
+						const staleRuntimeThresholdMs = this.config.stuckEscalationDelayMs;
+						if (metrics.silentDurationMs < staleRuntimeThresholdMs) {
+							return `runtime state is "${runtime.state}"`;
+						}
+						this.logFn(
+							`[HealthMonitor] Runtime state "${runtime.state}" appears stale for ${armId} (silent ${Math.round(metrics.silentDurationMs / 1000)}s), allowing prompt`,
+						);
 					}
 				}
 			} catch (err) {

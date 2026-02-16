@@ -72,10 +72,7 @@ export function MailPage() {
 
 	const handleWSMessage = useCallback(
 		(msg: { channel?: string; event?: string; data?: unknown }) => {
-			if (
-				msg.channel === "activity" &&
-				(msg.event as string)?.includes("mail")
-			) {
+			if (msg.channel === "mail") {
 				loadMail();
 			}
 		},
@@ -83,7 +80,7 @@ export function MailPage() {
 	);
 
 	useWebSocket({
-		channels: ["activity"],
+		channels: ["mail"],
 		onMessage: handleWSMessage,
 	});
 
@@ -693,8 +690,8 @@ export function MailPage() {
 
 													{/* Message Body */}
 													{!isCollapsed && (
-														<div className="pl-9">
-															<pre className="whitespace-pre-wrap text-sm font-mono bg-secondary/30 p-3 rounded overflow-auto max-h-80">
+														<div className="pl-9 min-w-0 overflow-hidden">
+															<pre className="whitespace-pre-wrap break-words text-sm font-mono bg-secondary/30 p-3 rounded overflow-auto max-h-80 max-w-full">
 																{threadMsg.message.body}
 															</pre>
 

@@ -212,14 +212,29 @@ export function createGardenRoutes() {
     const claimType = body.claimType || "read";
     const now = new Date().toISOString();
 
-    // Check for exclusive claim conflicts
-    if (claimType === "exclusive") {
-      const existing = db
-        .query("SELECT id FROM claims WHERE file_path = ? AND released_at IS NULL")
-        .get(body.filePath);
-      if (existing) {
-        throw HttpError.badRequest(`File ${body.filePath} already has an active claim`);
-      }
+    const activeClaims = db
+      .query(
+        `SELECT arm_id as armId, claim_type as claimType
+         FROM claims
+         WHERE file_path = ? AND released_at IS NULL AND arm_id != ?`
+      )
+      .all(body.filePath, body.armId) as Array<{
+      armId: string;
+      claimType: "read" | "write" | "exclusive";
+    }>;
+
+    const conflictingClaims =
+      claimType === "exclusive"
+        ? activeClaims
+        : claimType === "write"
+          ? activeClaims.filter((claim) => claim.claimType === "write" || claim.claimType === "exclusive")
+          : activeClaims.filter((claim) => claim.claimType === "exclusive");
+
+    if (conflictingClaims.length > 0) {
+      const conflictingArms = Array.from(new Set(conflictingClaims.map((claim) => claim.armId)));
+      throw HttpError.badRequest(
+        `File ${body.filePath} has conflicting claim(s) by: ${conflictingArms.join(", ")}`
+      );
     }
 
     // Check if this arm already has a claim on this file

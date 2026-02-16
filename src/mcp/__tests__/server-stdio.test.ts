@@ -393,6 +393,75 @@ describe("MCP Server - Stdio Integration", () => {
     expect(conflictResult.content[0]?.text).toContain("claimed by you");
   }, testTimeoutMs);
 
+  it("releases existing claims when claiming a new task", async () => {
+    const db = new Database(dbPath);
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO tasks (id, subject, description, status, priority, assigned_to)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ["task-claim-release", "Release claims on task switch", "Test", "pending", "normal", null]
+    );
+    db.run(
+      `INSERT INTO claims (arm_id, file_path, claim_type, claimed_at)
+       VALUES (?, ?, ?, ?)`,
+      [armId, "src/held.ts", "write", now]
+    );
+    db.close();
+
+    client = await startServer();
+    await initializeHandshake(client);
+
+    const response = await client.request(
+      "tools/call",
+      {
+        name: "claim_task",
+        arguments: { task_id: "task-claim-release" },
+      },
+      { timeoutMs: 8000 }
+    );
+
+    expect(response.error).toBeUndefined();
+
+    const verifyDb = new Database(dbPath, { readonly: true });
+    const claim = verifyDb.query(
+      "SELECT released_at FROM claims WHERE arm_id = ? AND file_path = ? ORDER BY id DESC LIMIT 1"
+    ).get(armId, "src/held.ts") as { released_at: string | null } | null;
+    verifyDb.close();
+    expect(claim?.released_at).not.toBeNull();
+  }, testTimeoutMs);
+
+  it("releases existing claims when requesting a new briefing", async () => {
+    const db = new Database(dbPath);
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO claims (arm_id, file_path, claim_type, claimed_at)
+       VALUES (?, ?, ?, ?)`,
+      [armId, "src/briefing-held.ts", "write", now]
+    );
+    db.close();
+
+    client = await startServer();
+    await initializeHandshake(client);
+
+    const response = await client.request(
+      "tools/call",
+      {
+        name: "get_full_briefing",
+        arguments: {},
+      },
+      { timeoutMs: 12000 }
+    );
+
+    expect(response.error).toBeUndefined();
+
+    const verifyDb = new Database(dbPath, { readonly: true });
+    const claim = verifyDb.query(
+      "SELECT released_at FROM claims WHERE arm_id = ? AND file_path = ? ORDER BY id DESC LIMIT 1"
+    ).get(armId, "src/briefing-held.ts") as { released_at: string | null } | null;
+    verifyDb.close();
+    expect(claim?.released_at).not.toBeNull();
+  }, testTimeoutMs);
+
   it("shares a note via the brain queue", async () => {
     client = await startServer();
     await initializeHandshake(client);

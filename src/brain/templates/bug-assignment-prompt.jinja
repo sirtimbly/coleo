@@ -11,4 +11,7 @@ Please investigate this bug and update its status using the update_bug_status MC
 4. Set status to "resolved" when the bug is fixed
 5. Set status to "closed" when verification is complete
 
+Before editing any file, call `pre_file_operation` and then `claim_file`.
+Release claims with `release_claim` as soon as you are done with each file.
+
 Use the assign_bug tool if you need to delegate this to another arm.

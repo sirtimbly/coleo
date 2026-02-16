@@ -15,6 +15,7 @@ import {
   MessagingPage,
   UnifiedGridPage,
   MailPage,
+  MailOverflowTestPage,
 } from '@/pages';
 
 function App() {
@@ -38,6 +39,7 @@ function App() {
                 <Route path="activity" element={<ActivityPage />} />
                 <Route path="settings" element={<SettingsPage />} />
                 <Route path="grid" element={<UnifiedGridPage />} />
+                <Route path="test/mail-overflow" element={<MailOverflowTestPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

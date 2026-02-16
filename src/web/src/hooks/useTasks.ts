@@ -161,8 +161,10 @@ export function useTasks(filters?: TaskFilters) {
           
           // Sort tasks by sortOrder to get proper order for optimistic update
           const tasks = [...allTasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          
           const fromIndex = tasks.findIndex(t => (t.sortOrder ?? 0) === fromSortOrder);
           if (fromIndex === -1) return old;
+          
           const [movedTask] = tasks.splice(fromIndex, 1);
           // Calculate target index based on toSortOrder
           const toIndex = toSortOrder < 0 ? tasks.length : Math.min(toSortOrder, tasks.length);

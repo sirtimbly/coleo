@@ -17,6 +17,8 @@ import {
 	Bug,
 } from "lucide-react";
 import { cn, api, useToast, useMessage } from "@/lib";
+import { useWebSocket } from "@/hooks/useWebSocket";
+import type { WSMessage } from "@/hooks/useWebSocket";
 import { MessageModal } from "./MessageModal";
 import { ArmStatusBar } from "./ArmStatusBar";
 
@@ -75,56 +77,26 @@ const fetchStatus = useCallback(async () => {
 	}, [fetchStatus]);
 
 	// WebSocket connection for real-time updates
-	useEffect(() => {
-		const ws = new WebSocket("ws://localhost:3000/ws");
-
-		ws.onopen = () => {
-			// Authenticate and subscribe to mail events
-			ws.send(
-				JSON.stringify({
-					type: "auth",
-					apiKey: api.getApiKey(),
-				}),
-			);
-			ws.send(
-				JSON.stringify({
-					type: "subscribe",
-					channel: "mail",
-				}),
-			);
-		};
-
-		ws.onmessage = (event) => {
-			try {
-				const message = JSON.parse(event.data);
-				if (message.channel === "mail") {
-					// Handle mail events
-					if (message.event === "mail.received") {
-						showToast(
-							`New message: ${message.data.subject || "New message"}`,
-							"info",
-						);
-						fetchUnreadCount(); // Refresh unread count
-					} else if (
-						message.event === "mail.archived" ||
-						message.event === "mail.read"
-					) {
-						fetchUnreadCount(); // Refresh unread count
-					}
+	useWebSocket({
+		channels: ["mail"],
+		onMessage: useCallback((message: WSMessage) => {
+			if (message.channel === "mail") {
+				if (message.event === "mail.received") {
+					const data = message.data as { subject?: string } | undefined;
+					showToast(
+						`New message: ${data?.subject || "New message"}`,
+						"info",
+					);
+					fetchUnreadCount();
+				} else if (
+					message.event === "mail.archived" ||
+					message.event === "mail.read"
+				) {
+					fetchUnreadCount();
 				}
-			} catch (error) {
-				console.error("WebSocket message parse error:", error);
 			}
-		};
-
-		ws.onerror = (error) => {
-			console.error("WebSocket error:", error);
-		};
-
-		return () => {
-			ws.close();
-		};
-	}, [showToast, fetchUnreadCount]);
+		}, [showToast, fetchUnreadCount]),
+	});
 
 	// Fetch unread counts on mount and every 30 seconds
 	useEffect(() => {

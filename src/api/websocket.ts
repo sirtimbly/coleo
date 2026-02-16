@@ -102,7 +102,10 @@ export function createWebSocketHandlers(apiKey: string, logLevel: LogLevel = "qu
               ws.data.authenticated = true;
               ws.send(JSON.stringify({ type: "auth", success: true }));
             } else {
-              ws.send(JSON.stringify({ type: "auth", success: false, error: "Invalid API key" }));
+              const errorMsg = apiKey.startsWith("dev-")
+                ? "Dev mode: API key required. Get it from server startup output or leave empty for dev access"
+                : "Invalid API key";
+              ws.send(JSON.stringify({ type: "auth", success: false, error: errorMsg }));
             }
             break;
 

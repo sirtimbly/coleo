@@ -101,18 +101,10 @@ export function canWriteToFile(
     `).all(filePath, armId) as Array<{ arm_id: string }>;
     
     if (otherWriteClaims.length > 0) {
-      if (config.mode === "strict") {
-        return {
-          canWrite: false,
-          reason: `File ${filePath} has active write claims: ${otherWriteClaims.map(c => c.arm_id).join(", ")}`,
-        };
-      } else {
-        // lazy mode - allow but suggest claiming
-        return {
-          canWrite: true,
-          shouldClaim: true,
-        };
-      }
+      return {
+        canWrite: false,
+        reason: `File ${filePath} has active write claims: ${otherWriteClaims.map(c => c.arm_id).join(", ")}`,
+      };
     }
     
     // No conflicts - allow write

@@ -4,6 +4,7 @@ export { ArmViewerPage } from './ArmViewerPage';
 export { BrainPage } from './BrainPage';
 export { GardenPage } from './GardenPage';
 export { MailPage } from './MailPage';
+export { MailOverflowTestPage } from './MailOverflowTestPage';
 export { ProposalsPage } from './ProposalsPage';
 export { ActivityPage } from './ActivityPage';
 export { SettingsPage } from './SettingsPage';

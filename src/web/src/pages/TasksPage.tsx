@@ -544,7 +544,7 @@ export function TasksPage() {
 
         {/* Task details sidebar */}
         {selectedTask && (
-          <Card className="w-96 border-l rounded-none shadow-none flex flex-col">
+          <Card className="w-96 border-l rounded-none shadow-none flex flex-col h-full overflow-hidden">
             {/* Header with close button */}
             <div className="p-3 border-b flex items-center justify-between flex-shrink-0">
               <h3 className="font-semibold text-sm truncate max-w-[280px]" title={selectedTask.subject}>
@@ -604,7 +604,7 @@ export function TasksPage() {
 
                     <div>
                       <h5 className="text-sm font-medium text-foreground-500 mb-1">Description</h5>
-                      <p className="text-sm">
+                      <p className="text-sm whitespace-pre-wrap break-words overflow-wrap-anywhere">
                         {selectedTask.description}
                       </p>
                     </div>

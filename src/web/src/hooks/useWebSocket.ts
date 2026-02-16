@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api } from '@/lib';
+import { api, getWebSocketUrl } from '@/lib';
 
 type Channel = 'arms' | 'activity' | 'proposals' | 'brain' | 'mail' | 'tasks' | 'bugs' | 'arm-events' | 'all';
 
-interface WSMessage {
+export interface WSMessage {
   type: string;
   channel?: Channel;
   event?: string;
@@ -33,8 +33,7 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
       return;
     }
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = getWebSocketUrl();
 
     console.log('[WS] Connecting to', wsUrl);
     const ws = new WebSocket(wsUrl);
