@@ -736,6 +736,15 @@ export class ArmHealthMonitor {
 	}
 
 	/**
+	 * Record that a prompt was sent to an arm.
+	 * The brain should call this only after a prompt request succeeds.
+	 */
+	recordPromptSent(armId: string): void {
+		this.promptCounts.set(armId, (this.promptCounts.get(armId) || 0) + 1);
+		this.lastPromptTime.set(armId, new Date());
+	}
+
+	/**
 	 * Reset tracking for an arm (e.g., when arm is killed/restarted)
 	 */
 	resetArm(armId: string): void {

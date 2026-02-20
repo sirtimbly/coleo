@@ -159,6 +159,7 @@ bun run web:dev
 | -------------------------- | ------------------------------------ |
 | `bun run dev`              | Run CLI commands directly            |
 | `bun run brain`            | Start the Brain orchestrator         |
+| `bun run check`            | Run shellcheck + TypeScript checks   |
 | `bun run typecheck`        | Run TypeScript type checking         |
 | `bun run test`             | Run unit tests                       |
 | `bun run test:watch`       | Run unit tests in watch mode         |

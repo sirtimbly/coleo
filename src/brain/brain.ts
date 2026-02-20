@@ -139,6 +139,9 @@ export class Brain {
 	// Claims system integration config
 	private resolveClaimsActive = false; // Config flag for active claim resolution (default: false)
 
+	// Mail config for external email sending
+	private mailConfig: { fromAddress: string; toAddress: string } | null = null;
+
 	/**
 	 * Log an activity entry via API (API handles JetStream persistence).
 	 */
@@ -258,6 +261,26 @@ export class Brain {
 
 		// Initialize terminal dashboard (TTY only)
 		this.dashboard = new TerminalDashboard({ enabled: process.stdout.isTTY });
+	}
+
+	/**
+	 * Load mail configuration from API
+	 */
+	private async loadMailConfig(): Promise<void> {
+		try {
+			const response = await this.apiRequest<{
+				mail: { fromAddress: string; toAddress: string };
+			}>("/api/config/mail", {}, 5000);
+			if (response?.mail?.toAddress) {
+				this.mailConfig = {
+					fromAddress: response.mail.fromAddress || "brain@coleo.dev",
+					toAddress: response.mail.toAddress,
+				};
+				this.log(`Mail config loaded: ${this.mailConfig.fromAddress} -> ${this.mailConfig.toAddress}`);
+			}
+		} catch (err) {
+			this.log(`Failed to load mail config: ${err}`);
+		}
 	}
 
 	/**
@@ -529,6 +552,9 @@ export class Brain {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
+
+		// Load mail config for external email sending
+		await this.loadMailConfig();
 
 		// Initialize API-backed arm state persistence.
 		this.armStateDb = createArmStateApiDatabase(this.apiBaseUrl, this.apiKey);
@@ -924,10 +950,10 @@ export class Brain {
 	}
 
 	/**
-	 * Process new mail from human (in sent/ folder)
+	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
 	private async processHumanMail(): Promise<void> {
-		const messages = await this.sent.list("new");
+		const messages = await this.inbox.list("new");
 
 		if (messages.length === 0) return;
 
@@ -1110,7 +1136,7 @@ export class Brain {
 			}
 
 			// Mark as processed
-			await this.sent.markSeen(message.id);
+			await this.inbox.markSeen(message.id);
 		}
 	}
 
@@ -5485,7 +5511,6 @@ Report findings using bug resolution workflow.`;
 		message: string,
 		options?: { interrupt?: boolean },
 	): Promise<boolean> {
-		this.healthMonitor?.recordPromptSent(armName);
 		try {
 			const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
 			const response = await fetch(url, {
@@ -5501,6 +5526,7 @@ Report findings using bug resolution workflow.`;
 			});
 
 			if (response.ok) {
+				this.healthMonitor?.recordPromptSent(armName);
 				const arm = this.arms.get(armName);
 				if (arm) {
 					this.lastStuckState.delete(arm.id);
@@ -7034,6 +7060,7 @@ ${conflictList}
 		body: string;
 		headers?: Record<string, string>;
 	}): Promise<void> {
+		// Always write to local inbox
 		await this.inbox.write({
 			from: "brain@coleo.local",
 			to: "human@local",
@@ -7042,6 +7069,25 @@ ${conflictList}
 			body: this.stripTerminalArtifacts(message.body),
 			headers: message.headers || {},
 		});
+
+		// Also send via Postmark if configured
+		if (this.mailConfig?.toAddress) {
+			try {
+				await this.apiRequest("/api/mail/gateway/postmark/send", {
+					method: "POST",
+					body: JSON.stringify({
+						from: this.mailConfig.fromAddress,
+						to: this.mailConfig.toAddress,
+						subject: this.stripTerminalArtifacts(message.subject),
+						body: this.stripTerminalArtifacts(message.body),
+						replyTo: this.mailConfig.fromAddress,
+					}),
+				});
+				this.log(`Email sent to ${this.mailConfig.toAddress}`);
+			} catch (err) {
+				this.log(`Failed to send email: ${err}`);
+			}
+		}
 	}
 
 	// State persistence methods via API server

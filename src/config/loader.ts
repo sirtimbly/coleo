@@ -29,6 +29,7 @@ interface TomlConfig {
 	};
   mail?: {
     from_address?: string;
+    to_address?: string;
     digest_schedule?: string;
   };
   gitea?: {
@@ -122,6 +123,7 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
   if (toml.mail) {
     config.mail = {
       fromAddress: toml.mail.from_address ?? DEFAULT_CONFIG.mail.fromAddress,
+      toAddress: toml.mail.to_address ?? DEFAULT_CONFIG.mail.toAddress,
       digestSchedule: (toml.mail.digest_schedule as ColeoConfig["mail"]["digestSchedule"]) ?? DEFAULT_CONFIG.mail.digestSchedule,
     };
   }
@@ -197,6 +199,7 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
   if (config.mail) {
     toml.mail = {
       from_address: config.mail.fromAddress,
+      to_address: config.mail.toAddress,
       digest_schedule: config.mail.digestSchedule,
     };
   }

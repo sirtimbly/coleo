@@ -158,6 +158,36 @@ export function createConfigRoutes() {
     }
   });
 
+  /**
+   * Get mail configuration
+   * GET /api/config/mail
+   */
+  app.get("/mail", async (c) => {
+    try {
+      const config = await loadConfig();
+      return c.json({ mail: config.mail });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  /**
+   * Update mail configuration
+   * PATCH /api/config/mail
+   */
+  app.patch("/mail", async (c) => {
+    try {
+      const updates = await c.req.json<Partial<ColeoConfig["mail"]>>();
+      const config = await updateConfig({ mail: updates as ColeoConfig["mail"] });
+      return c.json({ mail: config.mail });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.internal(`Failed to update config: ${message}`);
+    }
+  });
+
   // ========================================
   // Arm Configuration Files
   // ========================================

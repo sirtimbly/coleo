@@ -17,11 +17,27 @@ export function SettingsPage() {
   const { theme, setTheme } = useTheme();
   const themeLabelId = useId();
   const apiKeyLabelId = useId();
+  const fromAddressLabelId = useId();
+  const toAddressLabelId = useId();
+  
+  const [fromAddress, setFromAddress] = useState('');
+  const [toAddress, setToAddress] = useState('');
+  const [mailSaved, setMailSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load saved key
     const key = api.getApiKey();
     if (key) setApiKey(key);
+    
+    api.getMailConfig().then((res) => {
+      if (res.mail) {
+        setFromAddress(res.mail.fromAddress || '');
+        setToAddress(res.mail.toAddress || '');
+      }
+      setLoading(false);
+    }).catch(() => {
+      setLoading(false);
+    });
   }, []);
 
   const handleSave = () => {
@@ -34,6 +50,27 @@ export function SettingsPage() {
     api.clearApiKey();
     setApiKey('');
   };
+
+  const handleSaveMail = async () => {
+    try {
+      await api.updateMailConfig({
+        fromAddress,
+        toAddress,
+      });
+      setMailSaved(true);
+      setTimeout(() => setMailSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save mail config:', err);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <p>Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-8 space-y-8">
@@ -84,6 +121,56 @@ export function SettingsPage() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Email Configuration</CardTitle>
+          <CardDescription>
+            Configure email settings for brain communication via Postmark
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label htmlFor={fromAddressLabelId} className="block text-sm font-medium mb-2">
+              From Address
+            </label>
+            <input
+              id={fromAddressLabelId}
+              type="email"
+              value={fromAddress}
+              onChange={(e) => setFromAddress(e.target.value)}
+              placeholder="brain@coleo.dev"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              The email address the brain sends from (verified in Postmark)
+            </p>
+          </div>
+
+          <div>
+            <label htmlFor={toAddressLabelId} className="block text-sm font-medium mb-2">
+              To Address
+            </label>
+            <input
+              id={toAddressLabelId}
+              type="email"
+              value={toAddress}
+              onChange={(e) => setToAddress(e.target.value)}
+              placeholder="your-email@example.com"
+              className="w-full px-3 py-2 bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Your email address where the brain sends notifications
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="primary" onPress={handleSaveMail}>
+              {mailSaved ? 'Saved!' : 'Save Email Settings'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>API Configuration</CardTitle>
           <CardDescription>
             Set your API key to authenticate with the Coleo server
@@ -91,11 +178,11 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label id={apiKeyLabelId} className="block text-sm font-medium mb-2">
+            <label htmlFor={apiKeyLabelId} className="block text-sm font-medium mb-2">
               API Key
             </label>
             <input
-              aria-labelledby={apiKeyLabelId}
+              id={apiKeyLabelId}
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}

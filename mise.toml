@@ -1,2 +1,69 @@
 [tools]
 bun = "latest"
+shellcheck = "latest"
+
+[tasks.dev]
+run = "bun run dev"
+
+[tasks.brain]
+run = "bun run brain"
+
+[tasks.server]
+run = "bun run server"
+
+[tasks.setup]
+run = "bun run setup"
+
+[tasks.build]
+run = "bun run build"
+
+[tasks.typecheck]
+run = "bun run typecheck"
+
+[tasks.shellcheck]
+run = "shellcheck bin/*.sh"
+
+[tasks.check]
+run = "mise run shellcheck && mise run typecheck"
+
+[tasks.test]
+run = "bun run test"
+
+[tasks."test:watch"]
+run = "bun run test:watch"
+
+[tasks."test:integration"]
+run = "bun run test:integration"
+
+[tasks."test:e2e"]
+run = "bun run test:e2e"
+
+[tasks."test:distributed-observability"]
+run = "bun run test:distributed-observability"
+
+[tasks."index:transcripts"]
+run = "bun run index:transcripts"
+
+[tasks."simulate:arm-output"]
+run = "bun run simulate:arm-output"
+
+[tasks."web:dev"]
+run = "bun run web:dev"
+
+[tasks."web:build"]
+run = "bun run web:build"
+
+[tasks."web:preview"]
+run = "bun run web:preview"
+
+[tasks."docs:dev"]
+run = "bun run docs:dev"
+
+[tasks."docs:build"]
+run = "bun run docs:build"
+
+[tasks."docs:preview"]
+run = "bun run docs:preview"
+
+[tasks."docs:deploy:cloudflare"]
+run = "bun run docs:deploy:cloudflare"

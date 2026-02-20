@@ -142,6 +142,18 @@ class ApiClient {
     });
   }
 
+  // Mail Config
+  async getMailConfig() {
+    return this.request<{ mail: ColeoConfig['mail'] }>('/config/mail');
+  }
+
+  async updateMailConfig(data: Partial<ColeoConfig['mail']>) {
+    return this.request<{ mail: ColeoConfig['mail'] }>('/config/mail', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Arm Config Files
   async listArmConfigs() {
     return this.request<{ arms: ArmConfigSummary[] }>('/config/arms');
@@ -764,6 +776,7 @@ export interface ColeoConfig {
   };
   mail: {
     fromAddress: string;
+    toAddress: string;
     digestSchedule: 'immediate' | 'hourly' | 'daily';
   };
   terminal: {

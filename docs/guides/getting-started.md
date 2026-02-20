@@ -4,7 +4,7 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) v1.1+ installed (CLI runtime)
+- [Bun](https://bun.sh/) v1.1+ (CLI runtime, installed automatically by the bootstrap methods below)
 - Git
 - [NATS Server](https://nats.io/) with JetStream enabled (for distributed arm management)
   - Run via Docker: `docker compose up -d nats`
@@ -14,14 +14,31 @@ This guide will help you set up Coleo and run your first brain + arm session.
 
 ## Installation
 
-### Install the CLI (npm)
+### Install with mise (project-local, includes init)
 
 ```bash
-# Install the CLI package (uses the Bun runtime)
+# Installs Bun, installs coleo via npm backend, and initializes ./.coleo
+mise use bun@latest && MISE_NPM_PACKAGE_MANAGER=bun mise use npm:coleo@latest && mise x -- coleo init --dir ./.coleo
+```
+
+### Install with Bun + npm (global)
+
+```bash
+# Requires Bun v1.1+ already installed
 bun install -g coleo
 
 # Initialize Coleo (copies default.toml)
 coleo init
+```
+
+### Install with bootstrap script (no mise required)
+
+```bash
+# Linux/macOS: installs Bun (if missing) and installs coleo globally
+curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.sh | bash
+
+# Then initialize Coleo in your project
+coleo init --dir ./.coleo
 ```
 
 ### From Source (contributors)

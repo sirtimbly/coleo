@@ -11,6 +11,18 @@ The CLI is published to npm as `coleo` and runs using the Bun runtime.
 bun install -g coleo
 ```
 
+Install with `mise` (project-local setup + initialize):
+
+```bash
+mise use bun@latest && MISE_NPM_PACKAGE_MANAGER=bun mise use npm:coleo@latest && mise x -- coleo init --dir ./.coleo
+```
+
+Install without `mise` (bootstrap Bun + global `coleo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.sh | bash
+```
+
 ## Global Options
 
 ```bash

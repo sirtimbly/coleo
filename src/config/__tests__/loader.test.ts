@@ -69,7 +69,7 @@ describe("config loader", () => {
     const toml = configToToml({
       version: 2,
       brain: { pollIntervalMs: 5000, maxArms: 3, armGracePeriodMinutes: 10 },
-      mail: { fromAddress: "bot@example.test", digestSchedule: "daily" },
+      mail: { fromAddress: "bot@example.test", toAddress: "human@example.test", digestSchedule: "daily" },
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
       refactoring: { fileSizeThreshold: 500, enabled: true },

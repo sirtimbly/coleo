@@ -359,6 +359,7 @@ export interface ColeoConfig {
 	};
   mail: {
     fromAddress: string;
+    toAddress: string;
     digestSchedule: "immediate" | "hourly" | "daily";
   };
   gitea?: {
@@ -398,7 +399,8 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		armGracePeriodMinutes: 2,
 	},
   mail: {
-    fromAddress: "brain@coleo.local",
+    fromAddress: "brain@coleo.dev",
+    toAddress: "",
     digestSchedule: "immediate",
   },
   terminal: {
