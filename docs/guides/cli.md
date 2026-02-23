@@ -37,29 +37,33 @@ Options:
 
 ### init
 
-Initialize Coleo in your home directory.
+Initialize Coleo in the current project (default: `./.coleo`).
 
 ```bash
 coleo init [options]
 
 Options:
-  -d, --dir &lt;path&gt;  Custom directory (default: ~/.coleo)
+  -d, --dir &lt;path&gt;  Custom directory (default: ./.coleo)
 ```
 
 **Examples:**
 ```bash
-# Default initialization
+# Default project-local initialization
 coleo init
 
-# Custom directory
-coleo init --dir ~/my-coleo
+# Explicit project-local directory
+coleo init --dir ./.coleo
+
+# Custom global directory
+coleo init --dir ~/.coleo
 ```
 
 **What happens:**
-1. Creates directory structure (`~/.coleo/`)
-2. Copies `default.toml` to `~/.coleo/arms/`
+1. Creates directory structure (`./.coleo/` by default)
+2. Copies `default.toml` to `./.coleo/arms/`
 3. Creates `config.toml`
 4. Initializes maildir directories
+5. Prompts to generate an API token in `.coleo/.env`
 
 **After initialization:**
 ```bash
@@ -67,7 +71,7 @@ coleo init --dir ~/my-coleo
 coleo config arms
 
 # Edit an arm configuration
-vim ~/.coleo/arms/default.toml
+vim ./.coleo/arms/default.toml
 ```
 
 ---
@@ -141,7 +145,7 @@ Options:
   --harness <harness>     Harness: opencode-api, opencode-tui, opencode
   --provider <provider>   AI provider (e.g., anthropic, openai, github-copilot, opencode-zen)
   --model <model>         Model name (e.g., gpt-5.1-codex-mini)
-  --template <name>       Use a template from ~/.coleo/arms/
+  --template <name>       Use a template from ./.coleo/arms/ (or your COLEO_DIR)
   --recover               Attempt to recover an existing OpenCode server
   --watch                 Watch the arm's conversation in real-time after spawning
 ```
@@ -453,26 +457,25 @@ coleo status
 **Output:**
 ```
 Coleo Status
-Directory: ~/.coleo
+Directory: /absolute/path/to/your-project/.coleo
 
-Brain: running (last poll: 10:30:00)
-Arms: 3
-  - explorer: working
-  - ui-worker: idle
-  - fixer: busy
-Inbox: 2 unread
-Tasks: 3 pending, 1 in progress
+System: ok (vX.Y.Z)
+Infrastructure:
+  Database: ✓ Healthy
+Arms: 3 total
+Proposals: 2 open
+Activity: 42 events (24h)
 ```
 
 ---
 
 ## config
 
-Manage Coleo arm configuration files in `~/.coleo/arms/`.
+Manage Coleo arm configuration files in `./.coleo/arms/` by default.
 
 #### config arms
 
-List configured arms in `~/.coleo/arms/`.
+List configured arms in `./.coleo/arms/` by default.
 
 ```bash
 coleo config arms
@@ -491,14 +494,14 @@ Arm Configurations:
 
 | Variable            | Description             | Default    |
 | ------------------- | ----------------------- | ---------- |
-| `OCTOPAI_DIR`       | Coleo data directory    | `~/.coleo` |
-| `OCTOPAI_API_KEY`   | API key for Observatory | (none)     |
+| `COLEO_DIR`         | Coleo data directory    | `./.coleo` |
+| `COLEO_API_KEY`     | API key for Observatory | (none)     |
 | `ANTHROPIC_API_KEY` | For Claude-based agents | (none)     |
 | `OPENAI_API_KEY`    | For GPT-based agents    | (none)     |
 
 ## Configuration File
 
-Configuration is stored in `~/.coleo/config.toml`:
+Configuration is stored in `./.coleo/config.toml` by default:
 
 ```toml
 version = 1
@@ -537,12 +540,12 @@ alias inbox="coleo mail inbox"
 
 ## Arm Configuration
 
-Arms can be configured via TOML files in `~/.coleo/arms/`. Each file defines an arm's domain, personality, and context preferences.
+Arms can be configured via TOML files in `./.coleo/arms/` by default. Each file defines an arm's domain, personality, and context preferences.
 
 ### Arm Config File Structure
 
 ```toml
-# ~/.coleo/arms/&lt;name&gt;.toml
+# ./.coleo/arms/&lt;name&gt;.toml
 
 [arm]
 name = "my-arm"
@@ -587,7 +590,7 @@ These domains were used as coarse focus hints for arms. In the current design, a
 Initialization writes a single starter config:
 
 ```bash
-~/.coleo/arms/default.toml
+./.coleo/arms/default.toml
 ```
 
 ### Managing Arm Configs

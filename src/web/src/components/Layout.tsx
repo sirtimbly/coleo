@@ -228,7 +228,7 @@ const fetchStatus = useCallback(async () => {
 
 				{/* Footer */}
 				<div className="p-4 border-t border-border text-xs text-muted-foreground">
-					v0.1.0
+					v0.2.0
 				</div>
 			</aside>
 

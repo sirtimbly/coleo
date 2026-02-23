@@ -27,8 +27,8 @@ mise use bun@latest && MISE_NPM_PACKAGE_MANAGER=bun mise use npm:coleo@latest &&
 # Requires Bun v1.1+ already installed
 bun install -g coleo
 
-# Initialize Coleo (copies default.toml)
-coleo init
+# Initialize Coleo in this project (copies default.toml)
+coleo init --dir ./.coleo
 ```
 
 ### Install with bootstrap script (no mise required)
@@ -49,7 +49,7 @@ git clone https://github.com/your-username/coleo
 cd coleo
 
 # Install dependencies
-bun install
+bun run setup
 
 # Initialize Coleo (copies default.toml)
 bun run src/cli/index.ts init
@@ -82,8 +82,8 @@ This `coleo` branch is where arms will make changes. You can merge or rebase it 
 ### 2. Initialize Coleo (one-time)
 
 ```bash
-# Set up ~/.coleo (maildir, config, templates, SQLite DB)
-coleo init
+# Set up ./.coleo (maildir, config, templates, SQLite DB)
+coleo init --dir ./.coleo
 ```
 
 **Security Note**: During initialization, you'll be prompted to generate an API token. This token is used to authenticate requests between Coleo components. The token will be saved to `.coleo/.env`. You can also set it manually:
@@ -97,7 +97,12 @@ export COLEO_API_TOKEN=your-secure-token
 
 ```bash
 # Terminal 1: API server (required for harness-based arms)
+# Foreground mode:
 coleo serve
+# If port 8080 is already in use:
+# coleo serve --port 18080
+# Background mode:
+# coleo serve start
 
 # Terminal 2: Brain polling loop
 coleo brain run
@@ -169,7 +174,7 @@ You can optionally bootstrap a framework here (`bun init`, `npm create vite@late
 ### 2. Initialize Coleo
 
 ```bash
-coleo init
+coleo init --dir ./.coleo
 ```
 
 ### 3. Start the brain
@@ -216,7 +221,7 @@ When you’re happy, you can push the `coleo` branch to your remote and open a P
 
 Coleo initialization writes a single starter arm config:
 
-- `~/.coleo/arms/default.toml`
+- `./.coleo/arms/default.toml`
 
 Edit this file before spawning arms, or copy it to create additional arm profiles.
 
@@ -229,35 +234,35 @@ coleo status
 You should see:
 ```
 Coleo Status
-Directory: ~/.coleo
+Directory: /absolute/path/to/your-project/.coleo
 
-Brain: not started
-Arms: 0
-Inbox: 0 unread
-Tasks: 0
+System: ok (vX.Y.Z)
+Infrastructure:
+  Database: ✓ Healthy
+Arms: 0 total
+Proposals: 0 open
+Activity: 0 events (24h)
 ```
 
 ## Directory Structure
 
-After initialization, Coleo creates this structure:
+After initialization, Coleo creates this structure (default path: `./.coleo`):
 
 ```
-~/.coleo/
+./.coleo/
 ├── mail/              # Human <-> brain mailbox (Maildir)
 │   ├── inbox/
 │   ├── sent/
 │   ├── drafts/
 │   └── archive/
-├── coleo.db           # SQLite system of record (tasks, arms, message inbox, etc.)
-├── run/               # Daemon pid/status files
-├── state/             # Legacy compatibility files (not canonical)
+├── coleo.db           # SQLite system of record (created on first server start)
+├── state/             # Persistent state
 ├── arms/              # Arm templates/configs
 ├── mcp/               # MCP configurations
 ├── logs/              # Log files
-└── config.toml        # Configuration
+├── .env               # API token and secrets
+└── src/brain/templates/  # Brain prompt templates
 ```
-
-The canonical brain inbox is the API-backed `messages` table in `coleo.db` (fed from NATS by the API bridge).
 
 ## Running the Brain
 
@@ -315,7 +320,7 @@ ls templates/arms/
 # default.toml  fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
 ```
 
-Only `default.toml` is copied to `~/.coleo/arms/` when you run `coleo init`.
+Only `default.toml` is copied to `./.coleo/arms/` when you run `coleo init`.
 
 ### General-Purpose Arms (Default)
 
@@ -347,10 +352,10 @@ In the current design, these domains are hints; the brain primarily matches task
 
 ### Custom Arm Profiles
 
-Create custom arm profiles in `~/.coleo/arms/` with domain-specific settings:
+Create custom arm profiles in `./.coleo/arms/` with domain-specific settings:
 
 ```toml
-# ~/.coleo/arms/frontend-specialist.toml
+# ./.coleo/arms/frontend-specialist.toml
 [arm]
 name = "frontend-specialist"
 domain = "frontend"
@@ -390,13 +395,13 @@ To switch between configurations:
 
 ```bash
 # List available configurations
-ls ~/.coleo/arms/
+ls ./.coleo/arms/
 
 # Edit the default profile
-$EDITOR ~/.coleo/arms/default.toml
+$EDITOR ./.coleo/arms/default.toml
 
 # Or create an additional profile
-cp ~/.coleo/arms/default.toml ~/.coleo/arms/reviewer.toml
+cp ./.coleo/arms/default.toml ./.coleo/arms/reviewer.toml
 ```
 
 ## Sending a Task
@@ -423,13 +428,14 @@ coleo status
 Output:
 ```
 Coleo Status
-Directory: ~/.coleo
+Directory: /absolute/path/to/your-project/.coleo
 
-Brain: running (last poll: 10:30:30)
-Arms: 1
-  - explorer: working [Add dark mode toggle]
-Inbox: 0 unread
-Tasks: 1 pending
+System: ok (vX.Y.Z)
+Infrastructure:
+  Database: ✓ Healthy
+Arms: 1 total
+Proposals: 0 open
+Activity: 0 events (24h)
 ```
 
 ## Viewing the Inbox

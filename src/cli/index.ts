@@ -30,7 +30,7 @@ const program = new Command();
 program
   .name("coleo")
   .description("AI agent orchestrator using the Octopus Model")
-  .version("0.1.0");
+  .version("0.2.0");
 
 // Register all command modules
 registerInitCommand(program);

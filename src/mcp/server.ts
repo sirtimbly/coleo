@@ -831,7 +831,7 @@ async function getSharedNotes(tags?: string[]): Promise<Note[]> {
 export function createMcpServer(): McpServer {
 	const server = new McpServer({
 		name: "coleo-brain",
-		version: "0.1.0",
+		version: "0.2.0",
 	});
 
 	// ============================================
