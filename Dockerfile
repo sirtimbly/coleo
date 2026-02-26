@@ -7,8 +7,9 @@ FROM oven/bun:1.3-debian AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy workspace manifests required for dependency resolution
 COPY package.json bun.lock ./
+COPY src/web/package.json ./src/web/package.json
 
 # Install dependencies
 RUN bun install --frozen-lockfile
