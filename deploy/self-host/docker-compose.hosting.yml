@@ -1,0 +1,149 @@
+name: coleo-hosting
+
+services:
+  coleo:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      COLEO_API_HOST: 0.0.0.0
+      COLEO_API_PORT: ${COLEO_API_PORT:-8080}
+      COLEO_PUBLIC_ORIGIN: ${COLEO_PUBLIC_ORIGIN}
+      COLEO_API_KEY: ${COLEO_API_KEY}
+      COLEO_BOOTSTRAP_TOKEN: ${COLEO_BOOTSTRAP_TOKEN}
+      COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
+      COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - coleo-data:/home/coleo/.coleo
+    depends_on:
+      nats:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+    restart: unless-stopped
+    command: ["bun", "src/cli/index.ts", "serve"]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.coleo.rule=Host(`${COLEO_DOMAIN}`)
+      - traefik.http.routers.coleo.entrypoints=websecure
+      - traefik.http.routers.coleo.tls.certresolver=letsencrypt
+      - traefik.http.routers.coleo.middlewares=authelia@file
+      - traefik.http.services.coleo.loadbalancer.server.port=${COLEO_API_PORT:-8080}
+
+  brain:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    environment:
+      COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
+      COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - coleo-data:/home/coleo/.coleo
+    depends_on:
+      nats:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      coleo:
+        condition: service_started
+    restart: unless-stopped
+    command: ["bun", "src/cli/index.ts", "brain", "run"]
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["--jetstream", "--http_port", "8222"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  traefik:
+    image: traefik:v3.1
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+      - traefik-acme:/acme
+    depends_on:
+      authelia:
+        condition: service_started
+    restart: unless-stopped
+
+  authelia:
+    image: authelia/authelia:latest
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTH_JWT_SECRET}
+      AUTHELIA_SESSION_SECRET: ${AUTH_SESSION_SECRET}
+      AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTH_STORAGE_ENCRYPTION_KEY}
+      AUTHELIA_NOTIFIER_FILESYSTEM_FILENAME: /config/notification.txt
+      AUTH_HMAC_SECRET: ${AUTH_HMAC_SECRET}
+      AUTH_WEBAUTHN_RP_ID: ${AUTH_WEBAUTHN_RP_ID}
+      AUTH_DOMAIN: ${AUTH_DOMAIN}
+      AUTH_ADMIN_EMAIL: ${AUTH_ADMIN_EMAIL}
+      AUTH_ADMIN_PASSWORD_HASH: ${AUTH_ADMIN_PASSWORD_HASH}
+    volumes:
+      - ./authelia/configuration.yml:/config/configuration.yml:ro
+      - ./authelia/users_database.yml:/config/users_database.yml:ro
+      - authelia-data:/var/lib/authelia
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.authelia.rule=Host(`${AUTH_DOMAIN}`)
+      - traefik.http.routers.authelia.entrypoints=websecure
+      - traefik.http.routers.authelia.tls.certresolver=letsencrypt
+      - traefik.http.services.authelia.loadbalancer.server.port=9091
+    restart: unless-stopped
+
+  tailscale:
+    image: tailscale/tailscale:stable
+    profiles: ["tailscale"]
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTHKEY}
+      TS_HOSTNAME: ${TAILSCALE_HOSTNAME:-coleo-host}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    network_mode: service:traefik
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    restart: unless-stopped
+
+volumes:
+  coleo-data:
+  qdrant-data:
+  traefik-acme:
+  authelia-data:
+  tailscale-state:

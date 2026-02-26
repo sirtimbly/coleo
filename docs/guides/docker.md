@@ -18,6 +18,19 @@ docker compose up -d
 docker compose ps
 ```
 
+## Self-Hosting on Cloud Providers
+
+For VPS/container platforms, use the hosting blueprint under `deploy/self-host/`.
+It includes a Compose stack for Coleo + NATS + Qdrant plus Traefik and passkey-capable auth.
+
+```bash
+cp deploy/self-host/.env.hosting.example deploy/self-host/.env.hosting
+./deploy/self-host/bin/bootstrap-host.sh
+docker compose --env-file deploy/self-host/.env.hosting -f deploy/self-host/docker-compose.hosting.yml up -d --build
+```
+
+See `deploy/self-host/README.md` for reverse proxy and Tailscale profile details.
+
 ## Email Gateway (Required for Human Email)
 
 Human email workflows require a managed gateway (Postmark recommended) and a fixed sender/receiver address pair:
