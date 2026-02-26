@@ -62,6 +62,8 @@ The Compose profile now separates `.coleo` into dedicated volumes so API/brain d
 
 This keeps hosted API dependencies explicit while still preserving compatibility with components that read `COLEO_DIR`.
 
+> Note: the stack intentionally avoids a Qdrant container healthcheck because the upstream Qdrant image does not ship curl/wget, which can create false `unhealthy` states on healthy containers. Service startup ordering uses `service_started` for Qdrant.
+
 ## Authentication model
 
 - `COLEO_BOOTSTRAP_TOKEN` is generated and printed during bootstrap.

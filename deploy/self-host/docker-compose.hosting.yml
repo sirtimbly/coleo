@@ -28,7 +28,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     command: ["bun", "src/cli/index.ts", "serve"]
     labels:
@@ -61,7 +61,7 @@ services:
       nats:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
       coleo:
         condition: service_started
     restart: unless-stopped
@@ -79,11 +79,8 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # Qdrant base image does not include curl/wget, so command-based healthchecks
+    # can stay perpetually "unhealthy" even when the service is up.
     volumes:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
