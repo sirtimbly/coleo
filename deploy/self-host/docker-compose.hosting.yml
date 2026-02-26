@@ -10,13 +10,20 @@ services:
       COLEO_API_PORT: ${COLEO_API_PORT:-8080}
       COLEO_PUBLIC_ORIGIN: ${COLEO_PUBLIC_ORIGIN}
       COLEO_API_KEY: ${COLEO_API_KEY}
+      COLEO_DB_PATH: ${COLEO_DB_PATH:-/home/coleo/.coleo/db/coleo.db}
       COLEO_BOOTSTRAP_TOKEN: ${COLEO_BOOTSTRAP_TOKEN}
       COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
       COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
-      - coleo-data:/home/coleo/.coleo
+      - coleo-root:/home/coleo/.coleo
+      - coleo-db:/home/coleo/.coleo/db
+      - coleo-mail:/home/coleo/.coleo/mail
+      - coleo-state:/home/coleo/.coleo/state
+      - coleo-logs:/home/coleo/.coleo/logs
+      - coleo-arms:/home/coleo/.coleo/arms
+      - coleo-mcp:/home/coleo/.coleo/mcp
     depends_on:
       nats:
         condition: service_healthy
@@ -39,10 +46,17 @@ services:
     environment:
       COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
       COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
+      COLEO_DB_PATH: ${COLEO_DB_PATH:-/home/coleo/.coleo/db/coleo.db}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
     volumes:
-      - coleo-data:/home/coleo/.coleo
+      - coleo-root:/home/coleo/.coleo
+      - coleo-db:/home/coleo/.coleo/db
+      - coleo-mail:/home/coleo/.coleo/mail
+      - coleo-state:/home/coleo/.coleo/state
+      - coleo-logs:/home/coleo/.coleo/logs
+      - coleo-arms:/home/coleo/.coleo/arms
+      - coleo-mcp:/home/coleo/.coleo/mcp
     depends_on:
       nats:
         condition: service_healthy
@@ -142,7 +156,13 @@ services:
     restart: unless-stopped
 
 volumes:
-  coleo-data:
+  coleo-root:
+  coleo-db:
+  coleo-mail:
+  coleo-state:
+  coleo-logs:
+  coleo-arms:
+  coleo-mcp:
   qdrant-data:
   traefik-acme:
   authelia-data:

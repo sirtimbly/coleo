@@ -37,7 +37,7 @@ docker compose \
 This deployment **does not run `coleo init` inside the image build**.
 Initialization should happen on the runtime where you want persistent Coleo state to live.
 
-- If API + Brain run on this host, run init in the running container once and keep the `coleo-data` volume.
+- If API + Brain run on this host, run init in the running container once and keep the split `coleo-*` volumes (especially `coleo-root`, `coleo-db`, and `coleo-mail`).
 - If you split deployment (for example laptop arms + remote API/observatory), initialize on each runtime that owns its own `.coleo` state.
 
 ```bash
@@ -47,6 +47,20 @@ docker compose \
   -f deploy/self-host/docker-compose.hosting.yml \
   exec coleo coleo init --dir /home/coleo/.coleo --non-interactive
 ```
+
+### Split persistence layout for hosted API/brain
+
+The Compose profile now separates `.coleo` into dedicated volumes so API/brain dependencies can be managed independently:
+
+- `coleo-root`: root metadata (`config.toml`, `.env`, wrapper files)
+- `coleo-db`: SQLite database at `/home/coleo/.coleo/db/coleo.db`
+- `coleo-mail`: Maildir state
+- `coleo-state`: runtime proposal/task/arm state
+- `coleo-logs`: server and arm logs
+- `coleo-arms`: arm config files
+- `coleo-mcp`: generated MCP manifests
+
+This keeps hosted API dependencies explicit while still preserving compatibility with components that read `COLEO_DIR`.
 
 ## Authentication model
 
