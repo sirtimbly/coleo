@@ -31,6 +31,8 @@ docker compose --env-file deploy/self-host/.env.hosting -f deploy/self-host/dock
 
 See `deploy/self-host/README.md` for reverse proxy and Tailscale profile details.
 
+The hosting image no longer runs `coleo init` during build. Initialize `.coleo` in the runtime where you want state to persist (for example via `docker compose exec coleo coleo init --dir /home/coleo/.coleo`).
+
 ## Email Gateway (Required for Human Email)
 
 Human email workflows require a managed gateway (Postmark recommended) and a fixed sender/receiver address pair:

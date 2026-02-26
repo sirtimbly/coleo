@@ -32,6 +32,22 @@ docker compose \
   up -d --build
 ```
 
+## Initialization model (`.coleo` state)
+
+This deployment **does not run `coleo init` inside the image build**.
+Initialization should happen on the runtime where you want persistent Coleo state to live.
+
+- If API + Brain run on this host, run init in the running container once and keep the `coleo-data` volume.
+- If you split deployment (for example laptop arms + remote API/observatory), initialize on each runtime that owns its own `.coleo` state.
+
+```bash
+# Example: initialize runtime state on the hosting stack
+docker compose \
+  --env-file deploy/self-host/.env.hosting \
+  -f deploy/self-host/docker-compose.hosting.yml \
+  exec coleo coleo init --dir /home/coleo/.coleo --non-interactive
+```
+
 ## Authentication model
 
 - `COLEO_BOOTSTRAP_TOKEN` is generated and printed during bootstrap.
