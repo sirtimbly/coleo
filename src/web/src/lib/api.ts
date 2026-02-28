@@ -178,13 +178,15 @@ class ApiClient {
     });
   }
 
-  // OpenCode Providers (fetched from OpenCode server)
+  // OpenCode Providers (served from the API's cached local OpenCode catalog)
   async getOpenCodeProviders() {
     return this.request<{ 
       providers: OpenCodeProvider[];
       connected: string[];
       default?: Record<string, string>;
       error?: string;
+      message?: string;
+      fallback?: boolean;
       cached?: boolean;
       cachedAt?: string;
       source?: 'live' | 'cache' | 'fallback';
@@ -193,6 +195,10 @@ class ApiClient {
 
   async listAgents() {
     return this.request<{ agents: AgentInfo[] }>('/agents');
+  }
+
+  async listArmTemplates() {
+    return this.request<{ templates: ArmTemplateSummary[] }>('/arms/templates');
   }
 
   // Arms
@@ -868,7 +874,19 @@ export interface ArmConfigSummary {
   budget?: number;
 }
 
-// OpenCode provider/model info (from OpenCode server API)
+export interface ArmTemplateSummary {
+  id: string;
+  filename: string;
+  name: string;
+  description: string;
+  domain: string;
+  harness: string;
+  contextBudget: number;
+  provider?: string;
+  model?: string;
+}
+
+// OpenCode provider/model info (from the cached authenticated OpenCode catalog)
 export interface OpenCodeModel {
   id: string;
   name: string;
@@ -940,6 +958,7 @@ export interface Arm {
 export interface SpawnArmRequest {
   name?: string;
   domain?: string;
+  template?: string;
   workdir?: string;
   provider?: string;
   model?: string;

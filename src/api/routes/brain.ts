@@ -35,6 +35,7 @@ import {
   validateBrainInboxPayload,
 } from "../../types/brain-inbox";
 import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
+import type { TaskAttachment } from "../../types";
 
 interface BrainContext {
   Variables: {
@@ -309,6 +310,7 @@ export function createBrainRoutes() {
       domain?: string;
       inReplyTo?: string;
       subject?: string;
+      attachments?: TaskAttachment[];
     }>();
 
     if (!body.message?.trim()) {
@@ -340,6 +342,9 @@ export function createBrainRoutes() {
       "X-Coleo-Type": "human-message",
       "X-Coleo-Priority": body.priority || "normal",
       ...(body.domain ? { "X-Coleo-Domain": body.domain } : {}),
+      ...(body.attachments?.length
+        ? { "X-Coleo-Attachments": JSON.stringify(body.attachments) }
+        : {}),
     };
     
     // Add In-Reply-To header if this is a reply
@@ -356,7 +361,7 @@ export function createBrainRoutes() {
       date: new Date(),
       body: body.message,
       headers,
-    }, { seen: true });
+    });
 
     // Broadcast that a new message was sent to brain
     broadcastBrainEvent("message_received", {

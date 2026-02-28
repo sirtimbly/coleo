@@ -10,7 +10,9 @@ import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, C
 
 type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
 
-interface UnifiedMessage {
+type ProposalData = Record<string, unknown>;
+
+interface UnifiedMessageBase {
   id: string;
   type: 'mail' | 'sent' | 'archive' | 'status-report' | 'proposal';
   timestamp: string;
@@ -19,7 +21,36 @@ interface UnifiedMessage {
   status?: string;
   priority?: 'critical' | 'high' | 'normal' | 'low';
   unread?: boolean;
-  data: unknown;
+}
+
+interface MailUnifiedMessage extends UnifiedMessageBase {
+  type: 'mail' | 'sent' | 'archive';
+  data: MailMessage;
+}
+
+interface StatusReportUnifiedMessage extends UnifiedMessageBase {
+  type: 'status-report';
+  data: StatusReport;
+}
+
+interface ProposalUnifiedMessage extends UnifiedMessageBase {
+  type: 'proposal';
+  data: ProposalData;
+}
+
+type UnifiedMessage =
+  | MailUnifiedMessage
+  | StatusReportUnifiedMessage
+  | ProposalUnifiedMessage;
+
+function isMailUnifiedMessage(message: UnifiedMessage): message is MailUnifiedMessage {
+  return message.type === 'mail' || message.type === 'sent' || message.type === 'archive';
+}
+
+function isStatusReportUnifiedMessage(
+  message: UnifiedMessage,
+): message is StatusReportUnifiedMessage {
+  return message.type === 'status-report';
 }
 
 export function MessagingPage() {
@@ -274,6 +305,15 @@ export function MessagingPage() {
     return filtered.filter(m => m.unread).length;
   };
 
+  const selectedMailMessage =
+    selectedMessage && isMailUnifiedMessage(selectedMessage)
+      ? selectedMessage
+      : null;
+  const selectedStatusReport =
+    selectedMessage && isStatusReportUnifiedMessage(selectedMessage)
+      ? selectedMessage
+      : null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -517,7 +557,12 @@ export function MessagingPage() {
                         {selectedMessage.title}
                       </Card.Title>
                       <Card.Description className="flex items-center space-x-2 text-sm mb-2">
-                        <span>From: {selectedMessage.type === 'mail' ? selectedMessage.data.from : `System (${selectedMessage.data.armId || 'Brain'})`}</span>
+                        <span>
+                          From:{' '}
+                          {selectedMailMessage
+                            ? selectedMailMessage.data.from
+                            : `System (${selectedStatusReport?.data.armId || 'Brain'})`}
+                        </span>
                         <span className="text-muted-foreground">•</span>
                         <span className="text-muted-foreground">{new Date(selectedMessage.timestamp).toLocaleString()}</span>
                       </Card.Description>
@@ -532,15 +577,15 @@ export function MessagingPage() {
                     </div>
                   </div>
                   <div className="flex items-center space-x-1">
-                    {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') && (
+                    {selectedMailMessage && (
                       <Button
                         variant="ghost"
                         size="sm"
                         onPress={() => openReply({
-                          messageId: selectedMessage.data.id,
-                          from: selectedMessage.data.from,
+                          messageId: selectedMailMessage.data.id,
+                          from: selectedMailMessage.data.from,
                           subject: selectedMessage.title,
-                          body: selectedMessage.data.body,
+                          body: selectedMailMessage.data.body,
                         })}
                       >
                         <Reply className="h-4 w-4 mr-1" />
@@ -569,11 +614,11 @@ export function MessagingPage() {
 
               <Card.Content className="pt-6">
                 <div className="prose prose-sm max-w-none">
-                  {(selectedMessage.type === 'mail' || selectedMessage.type === 'sent' || selectedMessage.type === 'archive') ? (
+                  {selectedMailMessage ? (
                     <div className="whitespace-pre-wrap font-mono text-sm bg-slate-50 p-5 rounded-xl border border-border/50 text-foreground leading-relaxed">
-                      {selectedMessage.data.body}
+                      {selectedMailMessage.data.body}
                     </div>
-                  ) : selectedMessage.type === 'status-report' ? (
+                  ) : selectedStatusReport ? (
                     <div className="space-y-4">
                       <Card className="shadow-md border-border/30 bg-white">
                         <Card.Header>
@@ -582,28 +627,28 @@ export function MessagingPage() {
                         <Card.Content className="space-y-3">
                           <div className="flex items-center justify-between py-2 border-b border-border/30">
                             <span className="text-muted-foreground text-sm">Arm</span>
-                            <span className="font-medium text-sm">{selectedMessage.data.armId}</span>
+                            <span className="font-medium text-sm">{selectedStatusReport.data.armId}</span>
                           </div>
                           <div className="flex items-center justify-between py-2 border-b border-border/30">
                             <span className="text-muted-foreground text-sm">Status</span>
                             <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              selectedMessage.data.status === 'on_track' ? 'bg-green-500/20 text-green-400' :
-                              selectedMessage.data.status === 'blocked' ? 'bg-red-500/20 text-red-400' :
-                              selectedMessage.data.status === 'issues_found' ? 'bg-orange-500/20 text-orange-400' :
+                              selectedStatusReport.data.status === 'on_track' ? 'bg-green-500/20 text-green-400' :
+                              selectedStatusReport.data.status === 'blocked' ? 'bg-red-500/20 text-red-400' :
+                              selectedStatusReport.data.status === 'issues_found' ? 'bg-orange-500/20 text-orange-400' :
                               'bg-muted text-muted-foreground'
                             }`}>
-                              {selectedMessage.data.status.replace('_', ' ').toUpperCase()}
+                              {selectedStatusReport.data.status.replace('_', ' ').toUpperCase()}
                             </span>
                           </div>
                           <div className="py-2">
                             <span className="text-muted-foreground text-sm block mb-1">Summary</span>
-                            <p className="text-sm">{selectedMessage.data.summary}</p>
+                            <p className="text-sm">{selectedStatusReport.data.summary}</p>
                           </div>
-                          {selectedMessage.data.issues && selectedMessage.data.issues.length > 0 && (
+                          {selectedStatusReport.data.issues && selectedStatusReport.data.issues.length > 0 && (
                             <div className="py-2 border-t border-border/30">
                               <span className="text-muted-foreground text-sm block mb-2">Issues</span>
                               <ul className="space-y-1">
-                                {selectedMessage.data.issues.map((issue: string, i: number) => (
+                                {selectedStatusReport.data.issues.map((issue: string, i: number) => (
                                   <li key={i} className="flex items-start space-x-2 text-sm">
                                     <span className="text-orange-400 mt-1">•</span>
                                     <span>{issue}</span>
@@ -612,11 +657,11 @@ export function MessagingPage() {
                               </ul>
                             </div>
                           )}
-                          {selectedMessage.data.blockers && selectedMessage.data.blockers.length > 0 && (
+                          {selectedStatusReport.data.blockers && selectedStatusReport.data.blockers.length > 0 && (
                             <div className="py-2 border-t border-border/30">
                               <span className="text-muted-foreground text-sm block mb-2">Blockers</span>
                               <ul className="space-y-1">
-                                {selectedMessage.data.blockers.map((blocker: string, i: number) => (
+                                {selectedStatusReport.data.blockers.map((blocker: string, i: number) => (
                                   <li key={i} className="flex items-start space-x-2 text-sm">
                                     <span className="text-red-400 mt-1">•</span>
                                     <span>{blocker}</span>
@@ -625,17 +670,17 @@ export function MessagingPage() {
                               </ul>
                             </div>
                           )}
-                          {selectedMessage.data.nextSteps && (
+                          {selectedStatusReport.data.nextSteps && (
                             <div className="py-2 border-t border-border/30">
                               <span className="text-muted-foreground text-sm block mb-1">Next Steps</span>
-                              <p className="text-sm">{selectedMessage.data.nextSteps}</p>
+                              <p className="text-sm">{selectedStatusReport.data.nextSteps}</p>
                             </div>
                           )}
-                          {selectedMessage.data.filesChanged && selectedMessage.data.filesChanged.length > 0 && (
+                          {selectedStatusReport.data.filesChanged && selectedStatusReport.data.filesChanged.length > 0 && (
                             <div className="py-2 border-t border-border/30">
                               <span className="text-muted-foreground text-sm block mb-2">Files Changed</span>
                               <div className="flex flex-wrap gap-2">
-                                {selectedMessage.data.filesChanged.map((file: string, i: number) => (
+                                {selectedStatusReport.data.filesChanged.map((file: string, i: number) => (
                                   <span key={i} className="font-mono text-xs bg-muted px-2 py-1 rounded border border-border/30">
                                     {file}
                                   </span>

@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { KEY_SEQUENCES } from "./types";
 import { PTYManager, stripAnsi } from "./pty-manager";
+import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
 
 /**
  * UI patterns for detecting OpenCode state
@@ -169,6 +170,8 @@ export class OpenCodeHarness implements AgentHarness {
    * @param options.interrupt - If true, send escape key twice before prompt to cancel current work
    */
   async sendPrompt(session: HarnessSession, prompt: string, options?: SendPromptOptions): Promise<void> {
+    const promptText = appendTaskAttachmentsToPromptText(prompt, options?.attachments);
+
     // If interrupt is requested, send escape key twice to cancel current work
     if (options?.interrupt) {
       console.log(`[harness] Sending interrupt (2x ESC) to ${session.id} before prompt`);
@@ -202,7 +205,7 @@ export class OpenCodeHarness implements AgentHarness {
 
     // OpenCode accepts text input followed by Enter
     // For multi-line prompts, we need to handle them carefully
-    const lines = prompt.split("\n");
+    const lines = promptText.split("\n");
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -222,7 +225,7 @@ export class OpenCodeHarness implements AgentHarness {
     // Send Enter to submit
     this.ptyManager.sendKey(session.pty, "ENTER");
     
-    console.log(`[harness] Sent prompt to ${session.id}: "${prompt.slice(0, 50)}..."${options?.interrupt ? " [interrupted]" : ""} [ENTER sent]`);
+    console.log(`[harness] Sent prompt to ${session.id}: "${promptText.slice(0, 50)}..."${options?.interrupt ? " [interrupted]" : ""} [ENTER sent]`);
   }
 
   /**

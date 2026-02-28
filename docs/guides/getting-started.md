@@ -134,6 +134,11 @@ coleo init
 
 This creates `.coleo` state, arm configs, Maildir folders, and local config files.
 
+When an OpenCode-backed arm is spawned, the API refreshes a cached authenticated model catalog
+from the local `opencode models` CLI and stores it in `.coleo/cache/opencode-models.json`.
+The Observatory uses that cache for OpenCode provider/model dropdowns instead of querying a live
+OpenCode server.
+
 ### 3. Decide whether to start NATS now
 
 #### Smallest possible local bring-up

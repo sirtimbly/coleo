@@ -141,7 +141,7 @@ Options:
   --harness <harness>     Harness: opencode-api, opencode-tui, opencode
   --provider <provider>   AI provider (e.g., anthropic, openai, github-copilot, opencode-zen)
   --model <model>         Model name (e.g., gpt-5.1-codex-mini)
-  --template <name>       Use a template from ~/.coleo/arms/
+  --template <name>       Use a template from ~/.coleo/templates/*.yml (legacy ~/.coleo/arms/*.toml still works)
   --recover               Attempt to recover an existing OpenCode server
   --watch                 Watch the arm's conversation in real-time after spawning
 ```

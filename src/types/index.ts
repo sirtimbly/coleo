@@ -49,6 +49,7 @@ export interface Task {
   artifacts?: string[]; // commit hashes, file paths, etc.
   mailThreadId?: string; // link back to mail conversation
   context?: {
+    attachments?: TaskAttachment[];
     discoveries?: Array<{
       id: string;
       kind: string;
@@ -60,6 +61,15 @@ export interface Task {
     }>;
     notes?: string;
   };
+}
+
+export interface TaskAttachment {
+  uploadId: string;
+  kind: "image";
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentUrl: string;
 }
 
 // Task configuration templates

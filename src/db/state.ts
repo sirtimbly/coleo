@@ -861,3 +861,105 @@ function rowToTaskComment(row: TaskCommentRow): TaskComment {
     updatedAt: row.updated_at,
   };
 }
+
+// ============================================
+// Uploaded Media
+// ============================================
+
+export interface UploadedMediaRow {
+  id: string;
+  kind: "image";
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path: string;
+  access_token: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface UploadedMedia {
+  id: string;
+  kind: "image";
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  accessToken: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export function createUploadedMedia(
+  db: Database,
+  media: {
+    id: string;
+    kind: "image";
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    storagePath: string;
+    accessToken: string;
+    createdBy?: string;
+  },
+): void {
+  db.run(
+    `INSERT INTO uploaded_media (
+      id,
+      kind,
+      filename,
+      mime_type,
+      size_bytes,
+      storage_path,
+      access_token,
+      created_by,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      media.id,
+      media.kind,
+      media.filename,
+      media.mimeType,
+      media.sizeBytes,
+      media.storagePath,
+      media.accessToken,
+      media.createdBy || null,
+      new Date().toISOString(),
+    ],
+  );
+}
+
+export function getUploadedMedia(
+  db: Database,
+  id: string,
+): UploadedMedia | null {
+  const row = db
+    .query("SELECT * FROM uploaded_media WHERE id = ?")
+    .get(id) as UploadedMediaRow | null;
+  return row ? rowToUploadedMedia(row) : null;
+}
+
+export function getUploadedMediaByToken(
+  db: Database,
+  id: string,
+  accessToken: string,
+): UploadedMedia | null {
+  const row = db
+    .query("SELECT * FROM uploaded_media WHERE id = ? AND access_token = ?")
+    .get(id, accessToken) as UploadedMediaRow | null;
+  return row ? rowToUploadedMedia(row) : null;
+}
+
+function rowToUploadedMedia(row: UploadedMediaRow): UploadedMedia {
+  return {
+    id: row.id,
+    kind: row.kind,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    storagePath: row.storage_path,
+    accessToken: row.access_token,
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
+  };
+}

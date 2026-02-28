@@ -11,7 +11,7 @@
 import { readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
-import { Maildir } from "../mail";
+import { Maildir, type MailMessage } from "../mail";
 import { getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import {
 	parsePlanFile,
@@ -50,8 +50,26 @@ import type {
 	Arm,
 	Discovery,
 	MessageType,
+	TaskAttachment,
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
+import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
+
+function isTaskAttachment(value: unknown): value is TaskAttachment {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const attachment = value as Partial<TaskAttachment>;
+	return (
+		attachment.kind === "image" &&
+		typeof attachment.uploadId === "string" &&
+		typeof attachment.filename === "string" &&
+		typeof attachment.mimeType === "string" &&
+		typeof attachment.sizeBytes === "number" &&
+		typeof attachment.contentUrl === "string"
+	);
+}
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -953,7 +971,26 @@ export class Brain {
 	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
 	private async processHumanMail(): Promise<void> {
-		const messages = await this.inbox.list("new");
+		const [inboxMessages, sentMessages] = await Promise.all([
+			this.inbox.list("new"),
+			this.sent.list("new"),
+		]);
+		const messages = [
+			...inboxMessages
+				.filter((message) => !message.from.toLowerCase().includes("brain@coleo.local"))
+				.map((message) => ({
+					mailbox: this.inbox,
+					source: "inbox" as const,
+					message,
+				})),
+			...sentMessages
+				.filter((message) => message.to.toLowerCase().includes("brain@coleo.local"))
+				.map((message) => ({
+					mailbox: this.sent,
+					source: "sent" as const,
+					message,
+				})),
+		];
 
 		if (messages.length === 0) return;
 
@@ -972,13 +1009,23 @@ export class Brain {
 			pendingTasks: this.state.pendingTasks,
 			recentActivity,
 		});
-		for (const message of messages) {
+		for (const entry of messages) {
+			const { mailbox, message, source } = entry;
 			this.log(`Processing: ${message.subject}`);
+			const attachments = this.parseMailAttachments(message);
+			const taskContext =
+				attachments.length > 0
+					? ({ attachments } satisfies NonNullable<Task["context"]>)
+					: undefined;
+			const messageBody = appendTaskAttachmentsToPromptText(
+				message.body,
+				attachments,
+			);
 
 			// Use LLM to determine intent
 			const intent = await this.mailProcessor.processMessage(
 				message.subject,
-				message.body,
+				messageBody,
 				systemPrompt,
 			);
 
@@ -993,6 +1040,7 @@ export class Brain {
 						message.id,
 						intent.priority,
 						intent.domain,
+						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
@@ -1011,6 +1059,7 @@ export class Brain {
 						intent.body || message.body,
 						intent.targetDoc,
 						message.id,
+						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
@@ -1027,7 +1076,10 @@ export class Brain {
 					// Note: createHumanBugReport already sends a confirmation email
 					await this.createHumanBugReport(
 						intent.title || message.subject,
-						intent.description || message.body,
+						appendTaskAttachmentsToPromptText(
+							intent.description || message.body,
+							attachments,
+						),
 						message.id,
 					);
 					break;
@@ -1066,6 +1118,8 @@ export class Brain {
 								intent.instruction,
 								message.id,
 								intent.priority,
+								undefined,
+								taskContext,
 							);
 						} else if (
 							targetArm.status === "busy" ||
@@ -1081,6 +1135,8 @@ export class Brain {
 								intent.instruction,
 								message.id,
 								intent.priority,
+								undefined,
+								taskContext,
 							);
 							const body = await this.templates.renderTemplate(
 								"human-task-queued-busy.jinja",
@@ -1096,10 +1152,14 @@ export class Brain {
 							});
 						} else {
 							// Arm is idle, can prompt directly
-							await this.sendPromptToArm(intent.armName, intent.instruction);
+							await this.sendPromptToArm(intent.armName, intent.instruction, {
+								attachments,
+							});
 							this.log(`Prompted arm ${intent.armName} directly`);
 							this.logActivity("brain", "arm_prompted", intent.armName, {
 								reason: "human_mail",
+								source,
+								attachmentCount: attachments.length,
 								instruction: intent.instruction.slice(0, 100),
 							});
 							// Send confirmation reply
@@ -1136,7 +1196,28 @@ export class Brain {
 			}
 
 			// Mark as processed
-			await this.inbox.markSeen(message.id);
+			await mailbox.markSeen(message.id);
+		}
+	}
+
+	private parseMailAttachments(message: MailMessage): TaskAttachment[] {
+		const raw = message.headers["x-coleo-attachments"];
+		if (!raw) {
+			return [];
+		}
+
+		try {
+			const parsed = JSON.parse(raw) as unknown;
+			if (!Array.isArray(parsed)) {
+				return [];
+			}
+
+			return parsed.filter(isTaskAttachment);
+		} catch (err) {
+			this.log(
+				`Failed to parse attachments for mail ${message.id}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			return [];
 		}
 	}
 
@@ -1149,6 +1230,7 @@ export class Brain {
 		mailThreadId?: string,
 		priority?: "critical" | "high" | "normal" | "low",
 		domain?: string,
+		context?: Task["context"],
 	): Promise<Task> {
 		const requestedId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 		const task =
@@ -1160,6 +1242,7 @@ export class Brain {
 				priority: priority || "normal",
 				domain,
 				mailThreadId,
+				context,
 				sourceType: "email",
 			})) ||
 			({
@@ -1172,6 +1255,7 @@ export class Brain {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 				mailThreadId,
+				context,
 			} as Task);
 
 		this.log(
@@ -1182,6 +1266,7 @@ export class Brain {
 			priority: task.priority,
 			domain,
 			mailThreadId,
+			attachmentCount: context?.attachments?.length || 0,
 		});
 
 		return task;
@@ -1527,6 +1612,7 @@ export class Brain {
 		description: string,
 		targetDoc?: string,
 		mailThreadId?: string,
+		context?: Task["context"],
 	): Promise<Task> {
 		const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -1547,6 +1633,7 @@ export class Brain {
 				domain: "docs",
 				classification: "documentation",
 				mailThreadId,
+				context,
 				sourceType: "email",
 			})) ||
 			({
@@ -1560,6 +1647,7 @@ export class Brain {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 				mailThreadId,
+				context,
 			} as Task);
 
 		this.log(`Created doc update task: ${subject} (${taskId})`);
@@ -1916,18 +2004,7 @@ export class Brain {
 		completedAt?: string | null;
 		artifacts?: string[];
 		mailThreadId?: string | null;
-		context?: {
-			discoveries?: Array<{
-				id: string;
-				kind: string;
-				title: string;
-				details: string;
-				filePath?: string;
-				lineNumber?: number;
-				severity: string;
-			}>;
-			notes?: string;
-		};
+		context?: Task["context"];
 	}): Task {
 		return {
 			id: task.id,
@@ -5509,7 +5586,7 @@ Report findings using bug resolution workflow.`;
 	private async sendPromptToArm(
 		armName: string,
 		message: string,
-		options?: { interrupt?: boolean },
+		options?: { interrupt?: boolean; attachments?: TaskAttachment[] },
 	): Promise<boolean> {
 		try {
 			const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
@@ -5522,6 +5599,7 @@ Report findings using bug resolution workflow.`;
 				body: JSON.stringify({
 					prompt: message,
 					interrupt: options?.interrupt,
+					attachments: options?.attachments,
 				}),
 			});
 

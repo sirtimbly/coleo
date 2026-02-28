@@ -1,3 +1,5 @@
+import type { TaskAttachment } from "../types";
+
 /**
  * NATS Message Types for Octopai Distributed Arm Management
  * 
@@ -86,6 +88,7 @@ export interface SendPromptCommand {
   requestId: string;
   armId: string;
   prompt: string;
+  attachments?: TaskAttachment[];
 }
 
 export interface GetStateCommand {

@@ -32,6 +32,7 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+import { buildHarnessPromptParts } from "./prompt-parts";
 
 /**
  * Format an SDK error for display
@@ -837,8 +838,11 @@ export class OpenCodeTuiHarness implements AgentHarness {
     console.log(`[harness-tui] Sending prompt to ${tuiSession.armId}: "${prompt.slice(0, 50)}..."`);
 
     // Build the message body - include model if specified
-    const messageBody: { parts: Array<{ type: "text"; text: string }>; model?: { providerID: string; modelID: string } } = {
-      parts: [{ type: "text", text: prompt }],
+    const messageBody: {
+      parts: ReturnType<typeof buildHarnessPromptParts>;
+      model?: { providerID: string; modelID: string };
+    } = {
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
     };
 
     // Pass model as object if session has provider/model set
@@ -998,7 +1002,11 @@ export class OpenCodeTuiHarness implements AgentHarness {
    * Uses the SDK's prompt_async endpoint which is reliable
    * but doesn't show the prompt being typed in the TUI input field.
    */
-  async sendPromptViaApi(session: HarnessSession, prompt: string): Promise<void> {
+  async sendPromptViaApi(
+    session: HarnessSession,
+    prompt: string,
+    options?: SendPromptOptions,
+  ): Promise<void> {
     const tuiSession = this.sessions.get(session.id);
     if (!tuiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -1008,7 +1016,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     // Use SDK's async prompt endpoint
     await tuiSession.client.session.promptAsync({
-      body: { parts: [{ type: "text", text: prompt }] },
+      body: { parts: buildHarnessPromptParts(prompt, options?.attachments) },
       path: { id: tuiSession.sessionId },
     });
 
@@ -1021,7 +1029,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
     */
   async sendPromptSync(
     session: HarnessSession,
-    prompt: string
+    prompt: string,
+    options?: SendPromptOptions,
   ): Promise<{ info: Message; parts: Part[] }> {
     const tuiSession = this.sessions.get(session.id);
     if (!tuiSession) {
@@ -1033,7 +1042,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Use SDK's prompt endpoint for synchronous response
     const response = await tuiSession.client.session.prompt({
       body: {
-        parts: [{ type: "text", text: prompt }],
+        parts: buildHarnessPromptParts(prompt, options?.attachments),
       },
       path: { id: tuiSession.sessionId },
     });

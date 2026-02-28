@@ -18,6 +18,7 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+import { buildHarnessPromptParts } from "./prompt-parts";
 
 /**
  * Format an SDK error for display
@@ -723,11 +724,11 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     const modelOverride = this.resolvePromptModel(apiSession, options?.model);
     const body: {
-      parts: Array<{ type: "text"; text: string }>;
+      parts: ReturnType<typeof buildHarnessPromptParts>;
       noReply: boolean;
       model?: { providerID: string; modelID: string };
     } = {
-      parts: [{ type: "text", text: prompt }],
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
       noReply: false,
     };
 
@@ -753,7 +754,11 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Send a prompt and wait for the response
    */
-  async sendPromptSync(session: HarnessSession, prompt: string): Promise<{ info: Message; parts: Part[] }> {
+  async sendPromptSync(
+    session: HarnessSession,
+    prompt: string,
+    options?: SendPromptOptions,
+  ): Promise<{ info: Message; parts: Part[] }> {
     const apiSession = this.sessions.get(session.id);
     if (!apiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -761,13 +766,13 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending sync prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
-    const modelOverride = this.resolvePromptModel(apiSession);
+    const modelOverride = this.resolvePromptModel(apiSession, options?.model);
     const body: {
-      parts: Array<{ type: "text"; text: string }>;
+      parts: ReturnType<typeof buildHarnessPromptParts>;
       noReply: boolean;
       model?: { providerID: string; modelID: string };
     } = {
-      parts: [{ type: "text", text: prompt }],
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
       noReply: false,
     };
 

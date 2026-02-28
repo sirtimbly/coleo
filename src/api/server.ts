@@ -10,7 +10,7 @@ import { dirname } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createUploadApiRoutes, createUploadContentRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -143,6 +143,9 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   // Auth middleware (skips /api/health)
   app.use("/api/*", createAuthMiddleware(config.apiKey));
 
+  // Public signed upload content URLs
+  app.route("/uploads", createUploadContentRoutes());
+
   // Mount routes
   app.route("/api", createSystemRoutes());
   app.route("/api/brain", createBrainRoutes());
@@ -161,6 +164,7 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/bugs", createBugsRoutes());
   app.route("/api/events", createEventsRoutes());
   app.route("/api/search", createSearchRoutes());
+  app.route("/api/uploads", createUploadApiRoutes());
 
   // Root redirect to health
   app.get("/", (c) => c.redirect("/api/health"));

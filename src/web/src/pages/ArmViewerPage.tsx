@@ -205,7 +205,7 @@ export function ArmViewerPage() {
 
 	const [arms, setArms] = useState<Arm[]>([]);
 	const [activities, setActivities] = useState<ActivityItem[]>([]);
-	const [todos, setTodos] = useState<ArmTodo[]>([]);
+	const [, setTodos] = useState<ArmTodo[]>([]);
 	const [sessionStatus, setSessionStatus] = useState<string>("unknown");
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -1193,38 +1193,6 @@ function ActivityItemComponent({
 					</pre>
 				</div>
 			)}
-		</div>
-	);
-}
-
-function TodoItem({ todo }: { todo: ArmTodo }) {
-	const statusIcon = {
-		pending: <Clock className="h-4 w-4 text-muted-foreground" />,
-		in_progress: <Loader2 className="h-4 w-4 animate-spin text-yellow-500" />,
-		completed: <CheckCircle2 className="h-4 w-4 text-green-500" />,
-		cancelled: <XCircle className="h-4 w-4 text-muted-foreground" />,
-	}[todo.status];
-
-	const priorityColor = {
-		high: "border-l-red-500",
-		medium: "border-l-yellow-500",
-		low: "border-l-green-500",
-	}[todo.priority];
-
-	return (
-		<div className={`p-3 rounded bg-secondary/50 border-l-2 ${priorityColor}`}>
-			<div className="flex items-start gap-2">
-				{statusIcon}
-				<span
-					className={`text-sm flex-1 ${
-						todo.status === "completed" || todo.status === "cancelled"
-							? "line-through text-muted-foreground"
-							: ""
-					}`}
-				>
-					{todo.content}
-				</span>
-			</div>
 		</div>
 	);
 }

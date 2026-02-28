@@ -7,8 +7,8 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Send, Brain, Cpu, ChevronDown, Reply } from 'lucide-react';
-import { api, type Arm } from '@/lib/api';
+import { X, Send, Brain, Cpu, ChevronDown, Reply, ImagePlus, Loader2, Trash2 } from 'lucide-react';
+import { api, type Arm, type TaskAttachment } from '@/lib/api';
 
 interface MessageModalProps {
   isOpen: boolean;
@@ -40,15 +40,21 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
   const [error, setError] = useState<string | null>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isReply, setIsReply] = useState(false);
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Set up reply context when modal opens with replyTo
   useEffect(() => {
     if (isOpen && replyTo) {
       setIsReply(true);
       setMode('brain'); // Replies go to brain
+      setAttachments([]);
+      setError(null);
       // Pre-fill with quoted original message
       const quotedBody = replyTo.body
         .split('\n')
@@ -58,6 +64,8 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
     } else if (isOpen) {
       setIsReply(false);
       setMessage('');
+      setAttachments([]);
+      setError(null);
     }
   }, [isOpen, replyTo]);
 
@@ -128,7 +136,8 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
         await api.sendBrainMessage({ 
           message,
           inReplyTo: isReply && replyTo ? replyTo.messageId : undefined,
-          subject: isReply && replyTo ? `Re: ${replyTo.subject}` : undefined
+          subject: isReply && replyTo ? `Re: ${replyTo.subject}` : undefined,
+          attachments,
         });
       } else {
         // Send directly to arm
@@ -138,23 +147,16 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           return;
         }
         
-        const response = await fetch(`/api/arms/${selectedArmId}/prompt`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': api.getApiKey() || '',
-          },
-          body: JSON.stringify({ prompt: message }),
+        await api.sendArmPrompt({
+          armId: selectedArmId,
+          prompt: message,
+          attachments,
         });
-        
-        if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Failed to send' }));
-          throw new Error(err.error || err.message || 'Failed to send prompt');
-        }
       }
       
       // Success - clear and close
       setMessage('');
+      setAttachments([]);
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
@@ -168,6 +170,42 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       handleSubmit();
+    }
+  };
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    const imageFiles = Array.from(files).filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setError('Only image uploads are supported');
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const uploaded: TaskAttachment[] = [];
+      for (const file of imageFiles) {
+        const response = await api.uploadImage(file);
+        uploaded.push(response.attachment);
+      }
+      setAttachments((current) => [...current, ...uploaded]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to upload image');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const removeAttachment = (uploadId: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.uploadId !== uploadId));
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      await uploadFiles(e.dataTransfer.files);
     }
   };
 
@@ -316,6 +354,84 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
             }
             className="w-full h-40 px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
           />
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) {
+                void uploadFiles(e.target.files);
+              }
+              e.target.value = '';
+            }}
+          />
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+            }}
+            onDrop={(e) => {
+              void handleDrop(e);
+            }}
+            className={`mt-3 rounded-lg border border-dashed px-3 py-3 transition-colors ${
+              isDragOver ? 'border-cyan-400 bg-cyan-500/10' : 'border-zinc-600 bg-zinc-800/60'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm text-zinc-300">
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
+                ) : (
+                  <ImagePlus className="w-4 h-4 text-cyan-300" />
+                )}
+                <span>Drag screenshots here or upload images to include with the prompt.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="shrink-0 rounded-md border border-zinc-500 px-3 py-1.5 text-sm text-white transition-colors hover:border-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Choose images
+              </button>
+            </div>
+
+            {attachments.length > 0 && (
+              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {attachments.map((attachment) => (
+                  <div key={attachment.uploadId} className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
+                    <img
+                      src={attachment.contentUrl}
+                      alt={attachment.filename}
+                      className="h-28 w-full object-cover"
+                    />
+                    <div className="flex items-center justify-between gap-2 px-2 py-2">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-white">{attachment.filename}</p>
+                        <p className="text-[11px] text-zinc-500">{Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(attachment.uploadId)}
+                        className="rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-red-300"
+                        aria-label={`Remove ${attachment.filename}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           
           {/* Error message */}
           {error && (
@@ -331,7 +447,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           
           <button
             onClick={handleSubmit}
-            disabled={isSending || !message.trim() || (mode === 'arm' && !selectedArmId)}
+            disabled={isSending || isUploading || !message.trim() || (mode === 'arm' && !selectedArmId)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
               mode === 'brain'
                 ? 'bg-purple-600 hover:bg-purple-500 disabled:bg-purple-600/50'

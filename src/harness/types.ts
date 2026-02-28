@@ -5,6 +5,7 @@
  */
 
 import type { IPty } from "bun-pty";
+import type { TaskAttachment } from "../types";
 
 /**
  * Capabilities that a harness may support
@@ -76,6 +77,8 @@ export interface SendPromptOptions {
   interrupt?: boolean;
   /** Override the model to use for this prompt */
   model?: string;
+  /** Optional file/image attachments to include with the prompt */
+  attachments?: TaskAttachment[];
 }
 
 /**

@@ -123,6 +123,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["047_task_order_key", MIGRATION_047, { table: "tasks", columns: MIGRATION_047_COLUMNS }],
 		["048_bugs_archived", MIGRATION_048, { table: "bugs", columns: MIGRATION_048_COLUMNS }],
 		["049_remove_arm_events_table", MIGRATION_049],
+		["050_uploaded_media", MIGRATION_050],
 	];
 
 
@@ -1298,6 +1299,23 @@ WHERE status IN ('resolved', 'closed')
 const MIGRATION_049 = `
 DROP TABLE IF EXISTS arm_events;
 DELETE FROM config WHERE key = 'arm_events_retention_days';
+`;
+
+const MIGRATION_050 = `
+CREATE TABLE IF NOT EXISTS uploaded_media (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('image')),
+  filename TEXT NOT NULL,
+  mime_type TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  storage_path TEXT NOT NULL,
+  access_token TEXT NOT NULL UNIQUE,
+  created_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploaded_media_created_at ON uploaded_media(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_uploaded_media_kind ON uploaded_media(kind);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

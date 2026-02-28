@@ -3,7 +3,13 @@ import { Coins, LoaderCircle, Play, Plus, Server, Trash2, X, Zap } from "lucide-
 import { createPortal } from "react-dom";
 import { Card, Chip, Button } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
-import { api, type AgentInfo, type Arm, type OpenCodeProvider } from "@/lib";
+import {
+	api,
+	type AgentInfo,
+	type Arm,
+	type ArmTemplateSummary,
+	type OpenCodeProvider,
+} from "@/lib";
 import { StatusBadge } from "@/components";
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -21,10 +27,27 @@ interface SpawnDefaults {
 	model: string;
 }
 
+interface OpenCodeCatalogState {
+	source: "cache" | "fallback" | "live" | "unknown";
+	message: string | null;
+}
+
+interface OpenCodeProvidersResponse {
+	providers: OpenCodeProvider[];
+	connected: string[];
+	default?: Record<string, string>;
+	error?: string;
+	message?: string;
+	fallback?: boolean;
+	cached?: boolean;
+	cachedAt?: string;
+	source?: "live" | "cache" | "fallback";
+}
+
 interface NewArmModalState {
 	isOpen: boolean;
 	name: string;
-	domain: string;
+	templateId: string;
 	harness: string;
 	provider: string;
 	model: string;
@@ -37,10 +60,22 @@ const DEFAULT_SPAWN_DEFAULTS: SpawnDefaults = {
 	model: "",
 };
 
+const DEFAULT_OPENCODE_CATALOG_STATE: OpenCodeCatalogState = {
+	source: "unknown",
+	message: null,
+};
+
+const EMPTY_OPENCODE_PROVIDERS_RESPONSE: OpenCodeProvidersResponse = {
+	providers: [],
+	connected: [],
+	source: "fallback",
+	message: "Unable to load the cached OpenCode catalog.",
+};
+
 const DEFAULT_SPAWN_MODAL_STATE: NewArmModalState = {
 	isOpen: false,
 	name: "",
-	domain: "general",
+	templateId: "",
 	harness: "",
 	provider: "",
 	model: "",
@@ -57,6 +92,15 @@ function usesOpenCodeCatalog(harness: string): boolean {
 
 function uniqueStrings(values: string[]): string[] {
 	return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function pickFirstCompatibleTemplate(
+	templates: ArmTemplateSummary[],
+	availableHarnesses: string[],
+): ArmTemplateSummary | null {
+	return (
+		templates.find((template) => availableHarnesses.includes(template.harness)) || null
+	);
 }
 
 function pickPreferredHarness(preferredHarness: string, availableHarnesses: string[]): string {
@@ -86,7 +130,11 @@ export function ArmsPage() {
 	document.title = "Coleo Observatory - Arms";
 	const [arms, setArms] = useState<Arm[]>([]);
 	const [agents, setAgents] = useState<AgentInfo[]>([]);
+	const [armTemplates, setArmTemplates] = useState<ArmTemplateSummary[]>([]);
 	const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
+	const [openCodeCatalog, setOpenCodeCatalog] = useState<OpenCodeCatalogState>(
+		DEFAULT_OPENCODE_CATALOG_STATE,
+	);
 	const [spawnDefaults, setSpawnDefaults] = useState<SpawnDefaults>(
 		DEFAULT_SPAWN_DEFAULTS,
 	);
@@ -100,17 +148,32 @@ export function ArmsPage() {
 
 	const loadArms = useCallback(async () => {
 		try {
-			const [armsRes, agentsRes, defaultsRes, providersRes] = await Promise.all([
+			const [armsRes, agentsRes, defaultsRes, providersRes, templatesRes] = await Promise.all([
 				api.listArms(),
 				api.listAgents().catch(() => ({ agents: [] as AgentInfo[] })),
 				api
 					.getDefaults()
 					.catch(() => ({ defaults: { ...DEFAULT_SPAWN_DEFAULTS, contextBudget: 0 } })),
-				api.getOpenCodeProviders().catch(() => ({ providers: [] as OpenCodeProvider[], connected: [] })),
+				api
+					.getOpenCodeProviders()
+					.catch(() => EMPTY_OPENCODE_PROVIDERS_RESPONSE),
+				api.listArmTemplates().catch(() => ({ templates: [] as ArmTemplateSummary[] })),
 			]);
 			setArms(armsRes.arms);
 			setAgents(agentsRes.agents);
-			setOpenCodeProviders(providersRes.providers);
+			setArmTemplates(templatesRes.templates);
+			const catalogIsCacheBacked =
+				providersRes.source === "cache" &&
+				providersRes.fallback !== true;
+			setOpenCodeProviders(catalogIsCacheBacked ? providersRes.providers : []);
+			setOpenCodeCatalog({
+				source: providersRes.source || "unknown",
+				message:
+					catalogIsCacheBacked
+						? providersRes.message || null
+						: providersRes.message ||
+						  "The API has not loaded a cached authenticated OpenCode catalog yet.",
+			});
 			setSpawnDefaults({
 				harness: defaultsRes.defaults.harness,
 				provider: defaultsRes.defaults.provider,
@@ -256,6 +319,11 @@ export function ArmsPage() {
 		[agents, spawnModal.agentId],
 	);
 
+	const selectedTemplate = useMemo(
+		() => armTemplates.find((template) => template.id === spawnModal.templateId) || null,
+		[armTemplates, spawnModal.templateId],
+	);
+
 	const selectedOpenCodeProvider = useMemo(
 		() => openCodeProviders.find((provider) => provider.id === spawnModal.provider) || null,
 		[openCodeProviders, spawnModal.provider],
@@ -270,24 +338,40 @@ export function ArmsPage() {
 		return uniqueStrings(selectedSpawnAgent?.capabilities ?? []);
 	}, [selectedSpawnAgent]);
 
+	const compatibleTemplates = useMemo(() => {
+		if (availableHarnesses.length === 0) {
+			return armTemplates;
+		}
+		return armTemplates.filter((template) =>
+			availableHarnesses.includes(template.harness),
+		);
+	}, [armTemplates, availableHarnesses]);
+
+	const hasCachedOpenCodeCatalog = openCodeCatalog.source === "cache";
+
 	const openSpawnModal = useCallback(() => {
 		const initialAgentId = agents[0]?.agentId || "";
+		const initialAgentHarnesses = uniqueStrings(agents[0]?.capabilities ?? allAgentHarnesses);
+		const initialTemplate = pickFirstCompatibleTemplate(
+			armTemplates,
+			initialAgentHarnesses,
+		);
 		const initialHarness = pickPreferredHarness(
-			spawnDefaults.harness,
-			allAgentHarnesses,
+			initialTemplate?.harness || spawnDefaults.harness,
+			initialAgentHarnesses,
 		);
 		const suggestedName = generateSuggestedArmName(arms);
 
 		setSpawnModal({
 			isOpen: true,
 			name: suggestedName,
-			domain: "general",
+			templateId: initialTemplate?.id || "",
 			harness: initialHarness,
-			provider: spawnDefaults.provider,
-			model: spawnDefaults.model,
+			provider: initialTemplate?.provider || spawnDefaults.provider,
+			model: initialTemplate?.model || spawnDefaults.model,
 			agentId: initialAgentId,
 		});
-	}, [agents, allAgentHarnesses, arms, spawnDefaults]);
+	}, [agents, allAgentHarnesses, armTemplates, arms, spawnDefaults]);
 
 	const closeSpawnModal = useCallback(() => {
 		setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
@@ -295,7 +379,6 @@ export function ArmsPage() {
 
 	const submitSpawnModal = useCallback(async () => {
 		const name = spawnModal.name.trim();
-		const domain = spawnModal.domain.trim() || "general";
 		const provider = spawnModal.provider.trim();
 		const model = spawnModal.model.trim();
 
@@ -332,7 +415,7 @@ export function ArmsPage() {
 		try {
 			const response = await api.spawnArm(name, {
 				name,
-				domain,
+				template: spawnModal.templateId || undefined,
 				harness: spawnModal.harness,
 				provider: provider || undefined,
 				model: model || undefined,
@@ -363,17 +446,45 @@ export function ArmsPage() {
 			const nextAgentId = agents.some((agent) => agent.agentId === current.agentId)
 				? current.agentId
 				: agents[0]?.agentId || "";
+			const nextAgent =
+				agents.find((agent) => agent.agentId === nextAgentId) || null;
+			const nextAvailableHarnesses = uniqueStrings(nextAgent?.capabilities ?? []);
+			const nextCompatibleTemplates =
+				nextAvailableHarnesses.length === 0
+					? armTemplates
+					: armTemplates.filter((template) =>
+							nextAvailableHarnesses.includes(template.harness),
+					  );
+			const nextTemplateId = current.templateId
+				? nextCompatibleTemplates.some((template) => template.id === current.templateId)
+					? current.templateId
+					: nextCompatibleTemplates[0]?.id || ""
+				: "";
+			const nextTemplate =
+				armTemplates.find((template) => template.id === nextTemplateId) || null;
 
 			const nextHarness = current.harness
-				? availableHarnesses.includes(current.harness)
+				? nextAvailableHarnesses.includes(current.harness)
 					? current.harness
-					: pickPreferredHarness(spawnDefaults.harness, availableHarnesses)
-				: pickPreferredHarness(spawnDefaults.harness, availableHarnesses);
+					: pickPreferredHarness(
+							nextTemplate?.harness || spawnDefaults.harness,
+							nextAvailableHarnesses,
+					  )
+				: pickPreferredHarness(
+						nextTemplate?.harness || spawnDefaults.harness,
+						nextAvailableHarnesses,
+				  );
 
-			let nextProvider = current.provider;
-			let nextModel = current.model;
+			let nextProvider =
+				nextTemplateId !== current.templateId
+					? nextTemplate?.provider || spawnDefaults.provider
+					: current.provider;
+			let nextModel =
+				nextTemplateId !== current.templateId
+					? nextTemplate?.model || spawnDefaults.model
+					: current.model;
 
-			if (usesOpenCodeCatalog(nextHarness) && openCodeProviders.length > 0) {
+			if (usesOpenCodeCatalog(nextHarness) && hasCachedOpenCodeCatalog && openCodeProviders.length > 0) {
 				const providerExists = openCodeProviders.some(
 					(provider) => provider.id === current.provider,
 				);
@@ -398,6 +509,7 @@ export function ArmsPage() {
 
 			if (
 				nextAgentId === current.agentId &&
+				nextTemplateId === current.templateId &&
 				nextHarness === current.harness &&
 				nextProvider === current.provider &&
 				nextModel === current.model
@@ -408,6 +520,7 @@ export function ArmsPage() {
 			return {
 				...current,
 				agentId: nextAgentId,
+				templateId: nextTemplateId,
 				harness: nextHarness,
 				provider: nextProvider,
 				model: nextModel,
@@ -415,7 +528,8 @@ export function ArmsPage() {
 		});
 	}, [
 		agents,
-		availableHarnesses,
+		armTemplates,
+		hasCachedOpenCodeCatalog,
 		openCodeProviders,
 		spawnDefaults.harness,
 		spawnDefaults.model,
@@ -676,21 +790,44 @@ export function ArmsPage() {
 									</div>
 									<div>
 										<label className="mb-2 block text-sm font-medium text-zinc-300">
-											Domain
+											Template
 										</label>
-										<input
-											value={spawnModal.domain}
+										<select
+											value={spawnModal.templateId}
 											onChange={(e) =>
-												setSpawnModal((current) => ({
-													...current,
-													domain: e.target.value,
-												}))
+												setSpawnModal((current) => {
+													const templateId = e.target.value;
+													const template =
+														armTemplates.find((entry) => entry.id === templateId) || null;
+													return {
+														...current,
+														templateId,
+														harness:
+															template?.harness || current.harness || spawnDefaults.harness,
+														provider:
+															template?.provider || spawnDefaults.provider,
+														model: template?.model || spawnDefaults.model,
+													};
+												})
 											}
-											placeholder="general"
-											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
-										/>
+											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+										>
+											<option value="">Custom arm (no template)</option>
+											{compatibleTemplates.map((template) => (
+												<option key={template.id} value={template.id}>
+													{template.filename} - {template.description}
+												</option>
+											))}
+										</select>
 									</div>
 								</div>
+
+								{selectedTemplate && (
+									<p className="text-sm text-zinc-400">
+										Using <code>{selectedTemplate.filename}</code> from{" "}
+										<code>.coleo/templates</code> to prefill harness and model settings.
+									</p>
+								)}
 
 								<div className="grid gap-4 md:grid-cols-3">
 									<div>
@@ -723,7 +860,9 @@ export function ArmsPage() {
 										<label className="mb-2 block text-sm font-medium text-zinc-300">
 											Provider
 										</label>
-										{usesOpenCodeCatalog(spawnModal.harness) && openCodeProviders.length > 0 ? (
+										{usesOpenCodeCatalog(spawnModal.harness) &&
+										hasCachedOpenCodeCatalog &&
+										openCodeProviders.length > 0 ? (
 											<select
 												value={spawnModal.provider}
 												onChange={(e) =>
@@ -766,7 +905,9 @@ export function ArmsPage() {
 										<label className="mb-2 block text-sm font-medium text-zinc-300">
 											Model
 										</label>
-										{usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeModels.length > 0 ? (
+										{usesOpenCodeCatalog(spawnModal.harness) &&
+										hasCachedOpenCodeCatalog &&
+										selectedOpenCodeModels.length > 0 ? (
 											<select
 												value={spawnModal.model}
 												onChange={(e) =>
@@ -799,11 +940,18 @@ export function ArmsPage() {
 									</div>
 								</div>
 
-								{usesOpenCodeCatalog(spawnModal.harness) && openCodeProviders.length > 0 && (
+								{usesOpenCodeCatalog(spawnModal.harness) && hasCachedOpenCodeCatalog && openCodeProviders.length > 0 && (
 									<p className="text-sm text-zinc-400">
-										Provider and model options are loaded from the OpenCode model catalog and
-										cached under <code>.coleo/cache/opencode-models.json</code>.
+										Provider and model options come from the cached authenticated OpenCode
+										catalog in <code>.coleo/cache/opencode-models.json</code>.
 									</p>
+								)}
+
+								{usesOpenCodeCatalog(spawnModal.harness) && !hasCachedOpenCodeCatalog && (
+									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+										{openCodeCatalog.message ||
+											"No cached authenticated OpenCode catalog is available yet. Spawn one OpenCode arm after restarting the API server, or enter provider/model manually for now."}
+									</div>
 								)}
 
 								{spawnModal.name.trim() && arms.some((arm) => arm.id === spawnModal.name.trim()) && (

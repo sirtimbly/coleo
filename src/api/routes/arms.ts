@@ -11,14 +11,18 @@ import { broadcast } from "../websocket";
 import { loadConfig, getColeoDir, getRandomPreferredModel } from "../../config";
 import { join } from "path";
 import { execSync } from "node:child_process";
-import { readFile, mkdir, writeFile, unlink } from "fs/promises";
+import { readFile, mkdir, writeFile, unlink, readdir } from "fs/promises";
 import { parse as parseToml } from "smol-toml";
 import { getArmClient } from "../server";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
 import { releaseClaimsForArm } from "../claim-cleanup";
+import { refreshOpenCodeProvidersCache } from "./opencode";
 import { getCliEntrypoint } from "../../cli/entrypoint";
 import { hostname } from "os";
+import { appendTaskAttachmentsToPromptText } from "../../lib/prompt-attachments";
+import { supportsInputModality } from "../../harness/model-resolver";
+import type { TaskAttachment } from "../../types";
 
 interface ArmsContext {
   Variables: {
@@ -450,41 +454,161 @@ export interface ArmTemplate {
   config: Record<string, unknown>;
 }
 
-/**
- * Load an arm template from .octopai/arms/
- * Searches by filename first, then by name field inside template files
- */
-export async function loadArmTemplate(name: string): Promise<ArmTemplate | null> {
-  const coleoDir = getColeoDir();
-  const armsDir = join(coleoDir, "arms");
+export interface ArmTemplateSummary {
+  id: string;
+  filename: string;
+  name: string;
+  description: string;
+  domain: string;
+  harness: string;
+  contextBudget: number;
+  provider?: string;
+  model?: string;
+}
 
-  // First, try direct filename match
-  const directPath = join(armsDir, `${name}.toml`);
-  try {
-    const content = await readFile(directPath, "utf-8");
-    return parseArmTemplate(content);
-  } catch {
-    // File doesn't exist, try searching by name field
+interface TemplateFileCandidate {
+  id: string;
+  filename: string;
+  path: string;
+}
+
+function normalizeTemplateId(value: string): string {
+  return value.trim().replace(/\.(ya?ml|toml)$/i, "");
+}
+
+async function listTemplateFileCandidates(): Promise<TemplateFileCandidate[]> {
+  const coleoDir = getColeoDir();
+  const templateDirs = [
+    {
+      dir: join(coleoDir, "templates"),
+      extensions: [".yml", ".yaml"],
+    },
+    {
+      // Legacy template location kept for CLI/API compatibility.
+      dir: join(coleoDir, "arms"),
+      extensions: [".toml"],
+    },
+  ] as const;
+
+  const candidates: TemplateFileCandidate[] = [];
+  for (const templateDir of templateDirs) {
+    let files: string[] = [];
+    try {
+      files = await readdir(templateDir.dir);
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      if (!templateDir.extensions.some((extension) => file.endsWith(extension))) {
+        continue;
+      }
+      candidates.push({
+        id: normalizeTemplateId(file),
+        filename: file,
+        path: join(templateDir.dir, file),
+      });
+    }
   }
 
-  // Search all .toml files for matching name field
+  return candidates.sort((a, b) => a.filename.localeCompare(b.filename));
+}
+
+function extractTemplateDescription(template: ArmTemplate): string {
+  return template.personality || `${template.domain} specialist`;
+}
+
+function getNestedRecord(
+  value: unknown,
+): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function parseArmTemplateYaml(content: string): ArmTemplate {
+  const result: ArmTemplate = {
+    name: "",
+    domain: "general",
+    harness: "opencode-api",
+    contextBudget: 100000,
+    config: {},
+  };
+
+  let parsed: Record<string, unknown> = {};
   try {
-    const { readdir } = await import("fs/promises");
-    const files = await readdir(armsDir);
-    for (const file of files) {
-      if (!file.endsWith(".toml")) continue;
-      try {
-        const content = await readFile(join(armsDir, file), "utf-8");
-        const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
-        if (nameMatch && nameMatch[1] === name) {
-          return parseArmTemplate(content);
-        }
-      } catch {
-        // Skip unreadable files
-      }
-    }
+    parsed = (Bun.YAML.parse(content) as Record<string, unknown> | null) ?? {};
   } catch {
-    // Can't read directory
+    return result;
+  }
+
+  const arm = getNestedRecord(parsed.arm);
+  const model = getNestedRecord(parsed.model);
+  const context = getNestedRecord(parsed.context);
+  const personality = getNestedRecord(parsed.personality);
+  const convictions = getNestedRecord(parsed.convictions);
+  const config = getNestedRecord(parsed.config);
+
+  const name = (arm?.name ?? parsed.name) as string | undefined;
+  const domain = (arm?.domain ?? parsed.domain) as string | undefined;
+  const harness = (arm?.harness ?? parsed.harness) as string | undefined;
+  const provider = (model?.provider ?? parsed.provider) as string | undefined;
+  const modelName = (model?.model ?? parsed.model) as string | undefined;
+  const budget =
+    (context?.budget ?? parsed.contextBudget ?? parsed.budget) as number | undefined;
+  const traits = (personality?.traits ?? parsed.description ?? parsed.traits) as
+    | string
+    | undefined;
+  const core = (convictions?.core ?? parsed.core) as string[] | undefined;
+
+  if (name) result.name = name;
+  if (domain) result.domain = domain;
+  if (harness) result.harness = harness;
+  if (provider) result.provider = provider;
+  if (modelName) result.model = modelName;
+  if (typeof budget === "number") result.contextBudget = budget;
+  if (traits) result.personality = traits;
+  if (Array.isArray(core)) result.convictions = core.filter((entry) => typeof entry === "string");
+  if (config) result.config = config;
+
+  return result;
+}
+
+/**
+ * Load an arm template from .coleo/templates/*.yml (preferred) or legacy .coleo/arms/*.toml.
+ * Searches by filename first, then by name field inside template files.
+ */
+export async function loadArmTemplate(name: string): Promise<ArmTemplate | null> {
+  const normalizedName = normalizeTemplateId(name);
+  const candidates = await listTemplateFileCandidates();
+
+  for (const candidate of candidates) {
+    if (candidate.id !== normalizedName && candidate.filename !== name) {
+      continue;
+    }
+
+    try {
+      const content = await readFile(candidate.path, "utf-8");
+      return candidate.filename.endsWith(".toml")
+        ? parseArmTemplate(content)
+        : parseArmTemplateYaml(content);
+    } catch {
+      // Fall through to name-field lookup below.
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const content = await readFile(candidate.path, "utf-8");
+      const parsed = candidate.filename.endsWith(".toml")
+        ? parseArmTemplate(content)
+        : parseArmTemplateYaml(content);
+      if (parsed.name === name || parsed.name === normalizedName) {
+        return parsed;
+      }
+    } catch {
+      // Skip unreadable files.
+    }
   }
 
   return null;
@@ -561,16 +685,37 @@ function parseArmTemplate(content: string): ArmTemplate {
  * List available arm templates
  */
 export async function listArmTemplates(): Promise<string[]> {
-  const coleoDir = getColeoDir();
-  const armsDir = join(coleoDir, "arms");
+  const candidates = await listTemplateFileCandidates();
+  return candidates.map((candidate) => candidate.id);
+}
 
-  try {
-    const { readdir } = await import("fs/promises");
-    const files = await readdir(armsDir);
-    return files.filter((f) => f.endsWith(".toml")).map((f) => f.replace(".toml", ""));
-  } catch {
-    return [];
-  }
+export async function listArmTemplateSummaries(): Promise<ArmTemplateSummary[]> {
+  const candidates = await listTemplateFileCandidates();
+  const templates = await Promise.all(
+    candidates.map(async (candidate) => {
+      try {
+        const content = await readFile(candidate.path, "utf-8");
+        const parsed = candidate.filename.endsWith(".toml")
+          ? parseArmTemplate(content)
+          : parseArmTemplateYaml(content);
+        return {
+          id: candidate.id,
+          filename: candidate.filename,
+          name: parsed.name || candidate.id,
+          description: extractTemplateDescription(parsed),
+          domain: parsed.domain,
+          harness: parsed.harness,
+          contextBudget: parsed.contextBudget,
+          provider: parsed.provider,
+          model: parsed.model,
+        } satisfies ArmTemplateSummary;
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return templates.filter((template) => template !== null) as ArmTemplateSummary[];
 }
 
 export function createArmsRoutes() {
@@ -614,6 +759,15 @@ export function createArmsRoutes() {
     } catch {
       return c.json({ arms: [] });
     }
+  });
+
+  /**
+   * List available arm templates
+   * GET /api/arms/templates
+   */
+  app.get("/templates", async (c) => {
+    const templates = await listArmTemplateSummaries();
+    return c.json({ templates });
   });
 
   /**
@@ -907,6 +1061,9 @@ export function createArmsRoutes() {
     const db = c.get("db");
     const id = c.req.param("id");
     const body = await c.req.json<{
+      name?: string;
+      domain?: string;
+      template?: string;
       workdir?: string;
       provider?: string;
       model?: string;
@@ -943,12 +1100,21 @@ export function createArmsRoutes() {
       // Load config for defaults
       const config = await loadConfig();
       const defaults = config.defaults;
+      let template: ArmTemplate | null = null;
+      if (body.template) {
+        template = await loadArmTemplate(body.template);
+        if (!template) {
+          throw HttpError.badRequest(`Template not found: ${body.template}`);
+        }
+      }
 
       const now = new Date().toISOString();
-      const harness = body.harness || defaults.harness;
-      const provider = body.provider || defaults.provider;
-      const model = body.model || defaults.model;
-      const contextBudget = defaults.contextBudget;
+      const harness = body.harness || template?.harness || defaults.harness;
+      const provider = body.provider || template?.provider || defaults.provider;
+      const model = body.model || template?.model || defaults.model;
+      const contextBudget = template?.contextBudget || defaults.contextBudget;
+      const armName = body.name?.trim() || id;
+      const armDomain = body.domain?.trim() || template?.domain || "general";
 
       try {
         // Create the arm record
@@ -957,8 +1123,8 @@ export function createArmsRoutes() {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           id,
-          id, // name = id for spawned arms
-          "general", // default domain
+          armName,
+          armDomain,
           harness,
           "starting",
           contextBudget,
@@ -968,11 +1134,16 @@ export function createArmsRoutes() {
           null,
           provider,
           model,
-          JSON.stringify({}),
+          JSON.stringify(template?.config || {}),
         ]);
 
         // Log activity
-        logActivity(db, id, "registered", undefined, { domain: "general", harness, provider, model });
+        logActivity(db, id, "registered", undefined, {
+          domain: armDomain,
+          harness,
+          provider,
+          model,
+        });
         console.log(`[spawn] Created arm record for ${id}`);
 
         // Fetch the newly created arm
@@ -1011,6 +1182,16 @@ export function createArmsRoutes() {
     provider = provider || defaults.provider;
     model = model || defaults.model;
     const workdir = body.workdir || process.cwd();
+
+    if (row.harness === "opencode-api" || row.harness === "opencode") {
+      try {
+        await refreshOpenCodeProvidersCache();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[spawn] Failed to refresh OpenCode provider cache: ${message}`);
+      }
+    }
+
     const systemPrompt = generateSystemPrompt({
       armId: id,
       name: row.name,
@@ -1037,6 +1218,81 @@ export function createArmsRoutes() {
     }
 
     if (armClient) {
+      const persistDistributedSpawn = (
+        agentId: string,
+        agentHost: string,
+        response: Awaited<ReturnType<typeof armClient.spawnArm>>,
+      ) => {
+        const now = new Date().toISOString();
+        db.run(
+          "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [agentId, agentHost, response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, now, now, id],
+        );
+
+        logActivity(db, id, "spawned", undefined, {
+          agentId,
+          host: agentHost,
+          pid: response.data?.pid,
+          port: response.data?.port,
+          provider,
+          model,
+          distributed: true,
+        });
+
+        broadcast("arms", "arm.spawned", {
+          id,
+          agentId,
+          host: agentHost,
+          pid: response.data?.pid,
+          port: response.data?.port,
+          sessionId: response.data?.sessionId,
+          status: "idle",
+          distributed: true,
+        });
+
+        return c.json({
+          spawned: true,
+          distributed: true,
+          agentId,
+          host: agentHost,
+          pid: response.data?.pid,
+          port: response.data?.port,
+          sessionId: response.data?.sessionId,
+          provider,
+          model,
+        });
+      };
+
+      const spawnOnAgent = async (agentId: string) => {
+        const agent = armClient.getAgent(agentId);
+        const agentHost = agent?.hostname || row.host || hostname();
+        const response = await armClient.spawnArm(agentId, id, {
+          name: row.name,
+          domain: row.domain,
+          harness: row.harness,
+          provider,
+          model,
+          contextBudget: row.context_budget,
+          workDir: workdir,
+          initialPrompt: fullInitialPrompt,
+        });
+
+        if (!response.success) {
+          throw new Error(response.error || "Agent spawn failed");
+        }
+
+        return { agentHost, response };
+      };
+
+      const isAgentReachable = async (agentId: string): Promise<boolean> => {
+        try {
+          const probe = await armClient.listArmsOnAgent(agentId, 2000);
+          return probe.success;
+        } catch {
+          return false;
+        }
+      };
+
       const shouldUseAgent = daemonManagedHarness || body.preferAgent || !!body.agentId;
 
       if (shouldUseAgent) {
@@ -1071,69 +1327,47 @@ export function createArmsRoutes() {
             throw HttpError.badRequest(`No agent available for harness: ${row.harness}`);
           }
 
-          const agent = armClient.getAgent(agentId);
-          const agentHost = agent?.hostname || row.host || hostname();
-
           // Spawn via agent
           try {
-            const response = await armClient.spawnArm(agentId, id, {
-              name: row.name,
-              domain: row.domain,
-              harness: row.harness,
-              provider,
-              model,
-              contextBudget: row.context_budget,
-              workDir: workdir,
-              initialPrompt: fullInitialPrompt,
-            });
-
-            if (!response.success) {
-              throw new Error(response.error || "Agent spawn failed");
-            }
-
-            // Update database with agent info
-            const now = new Date().toISOString();
-            db.run(
-              "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-              [agentId, agentHost, response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, now, now, id]
-            );
-
-            // Log activity
-            logActivity(db, id, "spawned", undefined, {
-              agentId,
-              host: agentHost,
-              pid: response.data?.pid,
-              port: response.data?.port,
-              provider,
-              model,
-              distributed: true,
-            });
-
-            // Broadcast arm spawned
-            broadcast("arms", "arm.spawned", {
-              id,
-              agentId,
-              host: agentHost,
-              pid: response.data?.pid,
-              port: response.data?.port,
-              sessionId: response.data?.sessionId,
-              status: "idle",
-              distributed: true,
-            });
-
-            return c.json({
-              spawned: true,
-              distributed: true,
-              agentId,
-              host: agentHost,
-              pid: response.data?.pid,
-              port: response.data?.port,
-              sessionId: response.data?.sessionId,
-              provider,
-              model,
-            });
+            const { agentHost, response } = await spawnOnAgent(agentId);
+            return persistDistributedSpawn(agentId, agentHost, response);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+
+            const retryableDistributedFailure =
+              daemonManagedHarness && !(await isAgentReachable(agentId));
+
+            if (retryableDistributedFailure) {
+              console.warn(
+                `[spawn] Agent ${agentId} became unreachable while spawning ${id}; evicting and retrying once`,
+              );
+              armClient.markAgentUnavailable(agentId);
+
+              try {
+                await ensureDaemonAgentAvailable(armClient, row.harness);
+              } catch {
+                // Fall through to the regular error handling below.
+              }
+
+              let retryAgentId = body.agentId;
+              if (!retryAgentId) {
+                const retryAgent = armClient.findBestAgent(row.harness);
+                retryAgentId = retryAgent?.agentId;
+              }
+
+              if (retryAgentId) {
+                try {
+                  const { agentHost, response } = await spawnOnAgent(retryAgentId);
+                  return persistDistributedSpawn(retryAgentId, agentHost, response);
+                } catch (retryErr) {
+                  const retryMessage = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                  console.warn(
+                    `[spawn] Retry after evicting agent ${agentId} failed for ${id}: ${retryMessage}`,
+                  );
+                }
+              }
+            }
+
             // If this harness should be daemon-managed, fail by default unless explicitly overridden
             if (daemonManagedHarness && !localFallbackEnabled) {
               throw HttpError.internal(`Failed to spawn ${row.harness} arm on daemon agent: ${message}`);
@@ -2014,6 +2248,7 @@ export function createArmsRoutes() {
     const body = await c.req.json<{
       prompt: string;
       interrupt?: boolean;
+      attachments?: TaskAttachment[];
     }>();
 
     if (!body.prompt) {
@@ -2021,7 +2256,7 @@ export function createArmsRoutes() {
     }
 
     // Check if arm exists
-    const row = db.query("SELECT id, status, agent_id, harness, host, pid, port FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, agent_id, harness, host, pid, port, provider, model FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
       agent_id: string | null;
@@ -2029,6 +2264,8 @@ export function createArmsRoutes() {
       host: string | null;
       pid: number | null;
       port: number | null;
+      provider: string | null;
+      model: string | null;
     } | null;
 
     if (!row) {
@@ -2039,6 +2276,20 @@ export function createArmsRoutes() {
       harness: row.harness,
       host: row.host,
     });
+    const requestedAttachments = body.attachments || [];
+    const apiUrl =
+      process.env.COLEO_API_URL ||
+      (process.env.COLEO_API_PORT
+        ? `http://localhost:${process.env.COLEO_API_PORT}`
+        : "http://localhost:8080");
+    const supportsNativeImages =
+      requestedAttachments.length > 0 &&
+      (row.harness === "opencode-api" || row.harness === "opencode-tui") &&
+      (await supportsInputModality(row.provider, row.model, "image", apiUrl)) === true;
+    const promptText = supportsNativeImages
+      ? body.prompt
+      : appendTaskAttachmentsToPromptText(body.prompt, requestedAttachments);
+    const promptAttachments = supportsNativeImages ? requestedAttachments : undefined;
 
     // Check if arm is running
     if (row.status === "stopped" && !distributedAgentId) {
@@ -2073,7 +2324,7 @@ export function createArmsRoutes() {
       );
 
       try {
-        const response = await armClient.sendPrompt(id, body.prompt);
+        const response = await armClient.sendPrompt(id, promptText, promptAttachments);
         if (!response.success) {
           return c.json(
             { error: `Arm ${id} is currently unreachable on distributed agent ${distributedAgentId}. Retry shortly.` },
@@ -2090,6 +2341,8 @@ export function createArmsRoutes() {
         logActivity(db, id, "prompt_sent", undefined, {
           promptLength: body.prompt.length,
           interrupt: body.interrupt,
+          attachmentCount: requestedAttachments.length,
+          nativeAttachments: promptAttachments ? promptAttachments.length : 0,
           distributed: true,
           agentId: distributedAgentId,
         });
@@ -2178,14 +2431,17 @@ export function createArmsRoutes() {
 
     try {
       // Send the prompt via harness manager
-      await manager.sendPrompt(id, body.prompt, {
+      await manager.sendPrompt(id, promptText, {
         interrupt: body.interrupt,
+        attachments: promptAttachments,
       });
 
       // Log activity
       logActivity(db, id, "prompt_sent", undefined, {
         promptLength: body.prompt.length,
         interrupt: body.interrupt,
+        attachmentCount: requestedAttachments.length,
+        nativeAttachments: promptAttachments ? promptAttachments.length : 0,
       });
 
       return c.json({

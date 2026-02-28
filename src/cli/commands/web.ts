@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { serve } from "bun";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { realpathSync } from "fs";
+import { existsSync, readFileSync, realpathSync } from "fs";
 import {
   startService,
   stopService,
@@ -19,18 +19,27 @@ const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
  * Find the web UI dist directory
  * Works for: installed package, linked package, and development
  */
+export function isBuiltWebDist(path: string): boolean {
+  const indexPath = join(path, "index.html");
+  const assetsPath = join(path, "assets");
+
+  if (!existsSync(path) || !existsSync(indexPath) || !existsSync(assetsPath)) {
+    return false;
+  }
+
+  try {
+    const indexHtml = readFileSync(indexPath, "utf8");
+    return !indexHtml.includes("/src/main.tsx");
+  } catch {
+    return false;
+  }
+}
+
 async function findWebDist(): Promise<string | null> {
-  const { existsSync } = await import("fs");
-
-  // Helper to check if path exists and has index.html
-  const isValidWebDist = (path: string): boolean => {
-    return existsSync(path) && existsSync(join(path, "index.html"));
-  };
-
   // 1. Try relative to the actual file location (resolves symlinks)
   // When built: dist/commands/web.js -> dist/web/
   const builtPath = join(dirname(__dirname), "../web");
-  if (isValidWebDist(builtPath)) {
+  if (isBuiltWebDist(builtPath)) {
     return builtPath;
   }
 
@@ -44,12 +53,12 @@ async function findWebDist(): Promise<string | null> {
 
       if (existsSync(pkgJsonPath)) {
         // Check if this is the coleo package and has web dist
-        if (isValidWebDist(webDistPath)) {
+        if (isBuiltWebDist(webDistPath)) {
           return webDistPath;
         }
         // Also check src/web/dist for development
         const srcWebPath = join(currentDir, "src/web/dist");
-        if (isValidWebDist(srcWebPath)) {
+        if (isBuiltWebDist(srcWebPath)) {
           return srcWebPath;
         }
       }
@@ -69,7 +78,7 @@ async function findWebDist(): Promise<string | null> {
   ];
 
   for (const path of devPaths) {
-    if (isValidWebDist(path)) {
+    if (isBuiltWebDist(path)) {
       return path;
     }
   }

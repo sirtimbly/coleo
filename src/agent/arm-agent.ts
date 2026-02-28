@@ -358,7 +358,7 @@ export class ArmAgent {
   }
 
   private async handlePrompt(command: AgentCommand & { type: 'prompt' }): Promise<CommandResponse> {
-    const { armId, prompt } = command;
+    const { armId, prompt, attachments } = command;
 
     const managedArm = this.managedArms.get(armId);
     if (!managedArm) {
@@ -370,7 +370,9 @@ export class ArmAgent {
     }
 
     // Send prompt
-    await managedArm.harness.sendPrompt(managedArm.session, prompt);
+    await managedArm.harness.sendPrompt(managedArm.session, prompt, {
+      attachments,
+    });
 
     // Update status
     const oldStatus = managedArm.status;
