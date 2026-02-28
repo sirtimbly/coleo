@@ -34,9 +34,11 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
     };
+    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const apiKey = this.getApiKey();
     if (apiKey) {
@@ -181,8 +183,16 @@ class ApiClient {
     return this.request<{ 
       providers: OpenCodeProvider[];
       connected: string[];
+      default?: Record<string, string>;
       error?: string;
+      cached?: boolean;
+      cachedAt?: string;
+      source?: 'live' | 'cache' | 'fallback';
     }>('/opencode/providers');
+  }
+
+  async listAgents() {
+    return this.request<{ agents: AgentInfo[] }>('/agents');
   }
 
   // Arms
@@ -196,6 +206,13 @@ class ApiClient {
 
   async createArm(data: Partial<Arm>) {
     return this.request<{ arm: Arm }>('/arms', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async spawnArm(id: string, data: SpawnArmRequest = {}) {
+    return this.request<SpawnArmResponse>(`/arms/${id}/spawn`, {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -236,6 +253,19 @@ class ApiClient {
       sessionId?: string;
       error?: string;
     }>(`/arms/${id}/status`);
+  }
+
+  async sendArmPrompt(data: {
+    armId: string;
+    prompt: string;
+    interrupt?: boolean;
+    attachments?: TaskAttachment[];
+  }) {
+    const { armId, ...body } = data;
+    return this.request<{ success: boolean; message: string; distributed?: boolean }>(`/arms/${armId}/prompt`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   }
 
   async updateArmMetrics(id: string, data: {
@@ -321,10 +351,26 @@ class ApiClient {
     }>('/brain/config');
   }
 
-  async sendBrainMessage(data: { message: string; priority?: 'critical' | 'high' | 'normal' | 'low'; domain?: string; inReplyTo?: string; subject?: string }) {
+  async sendBrainMessage(data: {
+    message: string;
+    priority?: 'critical' | 'high' | 'normal' | 'low';
+    domain?: string;
+    inReplyTo?: string;
+    subject?: string;
+    attachments?: TaskAttachment[];
+  }) {
     return this.request<{ sent: boolean; messageId: string; subject: string }>('/brain/message', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async uploadImage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<{ attachment: TaskAttachment }>('/uploads/images', {
+      method: 'POST',
+      body: formData,
     });
   }
 
@@ -830,6 +876,19 @@ export interface OpenCodeModel {
     context?: number;
     output?: number;
   };
+  modalities?: {
+    input: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
+    output: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
+  };
+}
+
+export interface TaskAttachment {
+  uploadId: string;
+  kind: 'image';
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  contentUrl: string;
 }
 
 export interface OpenCodeProvider {
@@ -838,17 +897,28 @@ export interface OpenCodeProvider {
   models: OpenCodeModel[];
 }
 
+export interface AgentInfo {
+  agentId: string;
+  hostname: string;
+  platform: string;
+  startedAt: string;
+  version: string;
+  capabilities: string[];
+  maxArms: number;
+}
+
 export interface Arm {
   id: string;
   name: string;
   domain: string;
   harness: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped';
+  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped' | 'starting' | 'running';
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
+  lastHeartbeat?: string | null;
   config: Record<string, unknown>;
   personality?: string;
   convictions?: string[];
@@ -858,6 +928,37 @@ export interface Arm {
   currentTaskSubject?: string;
   currentBugId?: string;
   currentBugTitle?: string;
+  pid?: number;
+  port?: number;
+  provider?: string;
+  model?: string;
+  agentId?: string;
+  host?: string;
+  sessionId?: string;
+}
+
+export interface SpawnArmRequest {
+  name?: string;
+  domain?: string;
+  workdir?: string;
+  provider?: string;
+  model?: string;
+  initialPrompt?: string;
+  harness?: string;
+  preferAgent?: boolean;
+  agentId?: string;
+  recover?: boolean;
+  allowLocalFallback?: boolean;
+}
+
+export interface SpawnArmResponse {
+  spawned: boolean;
+  distributed?: boolean;
+  agentId?: string;
+  host?: string;
+  pid?: number;
+  port?: number;
+  sessionId?: string;
   provider?: string;
   model?: string;
 }

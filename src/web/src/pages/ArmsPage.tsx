@@ -1,8 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
-import { Plus, Trash2, Coins, Zap } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { Coins, LoaderCircle, Play, Plus, Server, Trash2, X, Zap } from "lucide-react";
+import { createPortal } from "react-dom";
 import { Card, Chip, Button } from "@heroui/react";
-import { api, type Arm } from "@/lib";
+import { generateArmName } from "../../../cli/arm-names";
+import { api, type AgentInfo, type Arm, type OpenCodeProvider } from "@/lib";
 import { StatusBadge } from "@/components";
+import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
 
 interface ArmEventData {
@@ -12,16 +15,107 @@ interface ArmEventData {
 	changes?: Partial<Arm>;
 }
 
+interface SpawnDefaults {
+	harness: string;
+	provider: string;
+	model: string;
+}
+
+interface NewArmModalState {
+	isOpen: boolean;
+	name: string;
+	domain: string;
+	harness: string;
+	provider: string;
+	model: string;
+	agentId: string;
+}
+
+const DEFAULT_SPAWN_DEFAULTS: SpawnDefaults = {
+	harness: "opencode-api",
+	provider: "",
+	model: "",
+};
+
+const DEFAULT_SPAWN_MODAL_STATE: NewArmModalState = {
+	isOpen: false,
+	name: "",
+	domain: "general",
+	harness: "",
+	provider: "",
+	model: "",
+	agentId: "",
+};
+
+function isDaemonManagedHarness(harness: string): boolean {
+	return harness === "opencode-api" || harness === "opencode";
+}
+
+function usesOpenCodeCatalog(harness: string): boolean {
+	return harness === "opencode-api";
+}
+
+function uniqueStrings(values: string[]): string[] {
+	return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function pickPreferredHarness(preferredHarness: string, availableHarnesses: string[]): string {
+	if (availableHarnesses.length === 0) {
+		return preferredHarness;
+	}
+
+	return availableHarnesses.includes(preferredHarness)
+		? preferredHarness
+		: availableHarnesses[0]!;
+}
+
+function generateSuggestedArmName(existingArms: Arm[]): string {
+	const existingIds = new Set(existingArms.map((arm) => arm.id.toLowerCase()));
+
+	for (let attempt = 0; attempt < 20; attempt++) {
+		const candidate = generateArmName();
+		if (!existingIds.has(candidate.toLowerCase())) {
+			return candidate;
+		}
+	}
+
+	return `${generateArmName()}-${existingArms.length + 1}`;
+}
+
 export function ArmsPage() {
 	document.title = "Coleo Observatory - Arms";
 	const [arms, setArms] = useState<Arm[]>([]);
+	const [agents, setAgents] = useState<AgentInfo[]>([]);
+	const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
+	const [spawnDefaults, setSpawnDefaults] = useState<SpawnDefaults>(
+		DEFAULT_SPAWN_DEFAULTS,
+	);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [spawningArmId, setSpawningArmId] = useState<string | null>(null);
+	const [spawnModal, setSpawnModal] = useState<NewArmModalState>(
+		DEFAULT_SPAWN_MODAL_STATE,
+	);
+	const { showError, showSuccess } = useToast();
 
 	const loadArms = useCallback(async () => {
 		try {
-			const res = await api.listArms();
-			setArms(res.arms);
+			const [armsRes, agentsRes, defaultsRes, providersRes] = await Promise.all([
+				api.listArms(),
+				api.listAgents().catch(() => ({ agents: [] as AgentInfo[] })),
+				api
+					.getDefaults()
+					.catch(() => ({ defaults: { ...DEFAULT_SPAWN_DEFAULTS, contextBudget: 0 } })),
+				api.getOpenCodeProviders().catch(() => ({ providers: [] as OpenCodeProvider[], connected: [] })),
+			]);
+			setArms(armsRes.arms);
+			setAgents(agentsRes.agents);
+			setOpenCodeProviders(providersRes.providers);
+			setSpawnDefaults({
+				harness: defaultsRes.defaults.harness,
+				provider: defaultsRes.defaults.provider,
+				model: defaultsRes.defaults.model,
+			});
 			setError(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to load arms");
@@ -59,6 +153,9 @@ export function ArmsPage() {
 
 				case "arm.spawned":
 				case "arm.killed":
+					void loadArms();
+					break;
+
 				case "arm.prompt_sent":
 					if (data.id && data.status) {
 						setArms((prev) =>
@@ -72,7 +169,7 @@ export function ArmsPage() {
 					break;
 			}
 		},
-		[],
+		[loadArms],
 	);
 
 	useWebSocket({
@@ -88,11 +185,243 @@ export function ArmsPage() {
 		if (!confirm("Are you sure you want to delete this arm?")) return;
 		try {
 			await api.deleteArm(id);
-			loadArms();
+			await loadArms();
 		} catch (err) {
-			alert(err instanceof Error ? err.message : "Failed to delete arm");
+			showError(
+				err instanceof Error ? err.message : "Failed to delete arm",
+				"Delete Failed",
+			);
 		}
 	};
+
+	const handleSpawn = useCallback(
+		async (
+			arm: Arm,
+			options?: {
+				preferAgent?: boolean;
+				agentId?: string;
+				allowLocalFallback?: boolean;
+			},
+		) => {
+			setSpawningArmId(arm.id);
+
+			try {
+				const response = await api.spawnArm(arm.id, {
+					provider: arm.provider,
+					model: arm.model,
+					preferAgent: options?.preferAgent,
+					agentId: options?.agentId,
+					allowLocalFallback: options?.allowLocalFallback,
+				});
+				await loadArms();
+
+				const target = response.distributed
+					? response.host || response.agentId || "remote arm agent host"
+					: "the API server host";
+				showSuccess(`Spawned ${arm.name} on ${target}`, "Arm Started");
+				setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
+			} catch (err) {
+				showError(
+					err instanceof Error ? err.message : "Failed to spawn arm",
+					"Spawn Failed",
+				);
+			} finally {
+				setSpawningArmId(null);
+			}
+		},
+		[loadArms, showError, showSuccess],
+	);
+
+	const canSpawnArm = useCallback((arm: Arm) => {
+		if (arm.status === "stopped" || arm.status === "error") {
+			return true;
+		}
+
+		const hasRuntime =
+			arm.pid !== undefined ||
+			arm.port !== undefined ||
+			arm.sessionId !== undefined ||
+			arm.agentId !== undefined;
+
+		return arm.status === "starting" && !hasRuntime;
+	}, []);
+
+	const allAgentHarnesses = useMemo(
+		() => uniqueStrings(agents.flatMap((agent) => agent.capabilities)),
+		[agents],
+	);
+
+	const selectedSpawnAgent = useMemo(
+		() => agents.find((agent) => agent.agentId === spawnModal.agentId) || null,
+		[agents, spawnModal.agentId],
+	);
+
+	const selectedOpenCodeProvider = useMemo(
+		() => openCodeProviders.find((provider) => provider.id === spawnModal.provider) || null,
+		[openCodeProviders, spawnModal.provider],
+	);
+
+	const selectedOpenCodeModels = useMemo(
+		() => selectedOpenCodeProvider?.models ?? [],
+		[selectedOpenCodeProvider],
+	);
+
+	const availableHarnesses = useMemo(() => {
+		return uniqueStrings(selectedSpawnAgent?.capabilities ?? []);
+	}, [selectedSpawnAgent]);
+
+	const openSpawnModal = useCallback(() => {
+		const initialAgentId = agents[0]?.agentId || "";
+		const initialHarness = pickPreferredHarness(
+			spawnDefaults.harness,
+			allAgentHarnesses,
+		);
+		const suggestedName = generateSuggestedArmName(arms);
+
+		setSpawnModal({
+			isOpen: true,
+			name: suggestedName,
+			domain: "general",
+			harness: initialHarness,
+			provider: spawnDefaults.provider,
+			model: spawnDefaults.model,
+			agentId: initialAgentId,
+		});
+	}, [agents, allAgentHarnesses, arms, spawnDefaults]);
+
+	const closeSpawnModal = useCallback(() => {
+		setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
+	}, []);
+
+	const submitSpawnModal = useCallback(async () => {
+		const name = spawnModal.name.trim();
+		const domain = spawnModal.domain.trim() || "general";
+		const provider = spawnModal.provider.trim();
+		const model = spawnModal.model.trim();
+
+		if (!name) {
+			showError("Enter a name for the new arm", "Spawn Failed");
+			return;
+		}
+
+		if (arms.some((arm) => arm.id === name)) {
+			showError(`An arm named "${name}" already exists`, "Spawn Failed");
+			return;
+		}
+
+		if (agents.length === 0) {
+			showError(
+				"No connected arm agent hosts are available. Start an arm agent first.",
+				"Spawn Failed",
+			);
+			return;
+		}
+
+		if (!spawnModal.harness) {
+			showError("Choose a harness supported by the selected arm agent host", "Spawn Failed");
+			return;
+		}
+
+		if (!spawnModal.agentId) {
+			showError("Choose an arm agent host", "Spawn Failed");
+			return;
+		}
+
+		setSpawningArmId(name);
+
+		try {
+			const response = await api.spawnArm(name, {
+				name,
+				domain,
+				harness: spawnModal.harness,
+				provider: provider || undefined,
+				model: model || undefined,
+				preferAgent: true,
+				agentId: spawnModal.agentId,
+			});
+			await loadArms();
+
+			const target = response.host || response.agentId || "remote arm agent host";
+			showSuccess(`Spawned ${name} on ${target}`, "Arm Started");
+			setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
+		} catch (err) {
+			showError(
+				err instanceof Error ? err.message : "Failed to spawn arm",
+				"Spawn Failed",
+			);
+		} finally {
+			setSpawningArmId(null);
+		}
+	}, [agents.length, arms, loadArms, showError, showSuccess, spawnModal]);
+
+	useEffect(() => {
+		if (!spawnModal.isOpen) {
+			return;
+		}
+
+		setSpawnModal((current) => {
+			const nextAgentId = agents.some((agent) => agent.agentId === current.agentId)
+				? current.agentId
+				: agents[0]?.agentId || "";
+
+			const nextHarness = current.harness
+				? availableHarnesses.includes(current.harness)
+					? current.harness
+					: pickPreferredHarness(spawnDefaults.harness, availableHarnesses)
+				: pickPreferredHarness(spawnDefaults.harness, availableHarnesses);
+
+			let nextProvider = current.provider;
+			let nextModel = current.model;
+
+			if (usesOpenCodeCatalog(nextHarness) && openCodeProviders.length > 0) {
+				const providerExists = openCodeProviders.some(
+					(provider) => provider.id === current.provider,
+				);
+				const resolvedProvider =
+					providerExists
+						? current.provider
+						: openCodeProviders.find(
+								(provider) => provider.id === spawnDefaults.provider,
+						  )?.id || openCodeProviders[0]?.id || "";
+				const providerRecord =
+					openCodeProviders.find((provider) => provider.id === resolvedProvider) || null;
+				const providerModels = providerRecord?.models ?? [];
+				const modelExists = providerModels.some((model) => model.id === current.model);
+
+				nextProvider = resolvedProvider;
+				nextModel = modelExists
+					? current.model
+					: providerModels.find((model) => model.id === spawnDefaults.model)?.id ||
+					  providerModels[0]?.id ||
+					  "";
+			}
+
+			if (
+				nextAgentId === current.agentId &&
+				nextHarness === current.harness &&
+				nextProvider === current.provider &&
+				nextModel === current.model
+			) {
+				return current;
+			}
+
+			return {
+				...current,
+				agentId: nextAgentId,
+				harness: nextHarness,
+				provider: nextProvider,
+				model: nextModel,
+			};
+		});
+	}, [
+		agents,
+		availableHarnesses,
+		openCodeProviders,
+		spawnDefaults.harness,
+		spawnDefaults.model,
+		spawnDefaults.provider,
+		spawnModal.isOpen,
+	]);
 
 	if (error) {
 		return (
@@ -113,14 +442,19 @@ export function ArmsPage() {
 					<h1 className="text-2xl font-bold">Arms</h1>
 					<p className="text-muted-foreground">Manage your AI agents</p>
 				</div>
-				{/* <Button variant="primary">
+				<Button
+					variant="primary"
+					className="gap-2"
+					onPress={openSpawnModal}
+					isDisabled={loading}
+				>
 					<Plus className="h-4 w-4" />
 					Spawn Arm
-				</Button> */}
+				</Button>
 			</div>
 
 			{loading ? (
-				<div className="grid grid-cols-2 gap-4">
+				<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 					{[1, 2, 3, 4].map((i) => (
 						<Card key={i} className="h-48">
 							<Card.Content>
@@ -139,7 +473,7 @@ export function ArmsPage() {
 					</Card.Content>
 				</Card>
 			) : (
-				<div className="grid grid-cols-2 gap-4">
+				<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
 					{arms.map((arm) => (
 						<Card key={arm.id}>
 							<Card.Header className="flex flex-row items-start justify-between">
@@ -241,6 +575,26 @@ export function ArmsPage() {
 												: "Never"}
 										</span>
 									</div>
+
+									{(arm.host || arm.agentId) && (
+									<div className="flex justify-between gap-3">
+										<span className="text-muted-foreground">Runtime</span>
+										<span className="text-right">
+											{arm.host || arm.agentId}
+											{arm.host && arm.agentId ? ` · ${arm.agentId}` : ""}
+										</span>
+									</div>
+								)}
+
+									{(arm.port || arm.pid) && (
+										<div className="flex justify-between gap-3">
+											<span className="text-muted-foreground">Process</span>
+											<span className="text-right">
+												{arm.port ? `:${arm.port}` : "no port"}
+												{arm.pid ? ` · pid ${arm.pid}` : ""}
+											</span>
+										</div>
+									)}
 								</div>
 
 								{arm.personality && (
@@ -248,11 +602,308 @@ export function ArmsPage() {
 										{arm.personality.slice(0, 150)}...
 									</div>
 								)}
+
+								{canSpawnArm(arm) && (
+									<div className="mt-4 flex justify-end">
+										<Button
+											variant="primary"
+											size="sm"
+											onPress={() => void handleSpawn(arm)}
+											isDisabled={spawningArmId !== null}
+											className="gap-2"
+										>
+											{spawningArmId === arm.id ? (
+												<LoaderCircle className="h-4 w-4 animate-spin" />
+											) : (
+												<Play className="h-4 w-4" />
+											)}
+											{spawningArmId === arm.id ? "Starting..." : "Spawn"}
+										</Button>
+									</div>
+								)}
 							</Card.Content>
 						</Card>
 					))}
 				</div>
 			)}
+
+			{spawnModal.isOpen &&
+				createPortal(
+					<div className="fixed inset-0 z-50 flex items-center justify-center">
+						<div
+							className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+							onClick={closeSpawnModal}
+						/>
+						<div className="relative mx-4 w-full max-w-2xl rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
+							<div className="flex items-center justify-between border-b border-zinc-700 px-4 py-3">
+								<div>
+									<h2 className="text-lg font-semibold text-white">Spawn New Arm</h2>
+									<p className="text-sm text-zinc-400">
+										Create a new arm record and start it on a connected arm agent host.
+									</p>
+								</div>
+								<button
+									onClick={closeSpawnModal}
+									className="rounded p-1 text-zinc-400 transition-colors hover:text-white"
+								>
+									<X className="h-5 w-5" />
+								</button>
+							</div>
+
+							<div className="space-y-5 p-4">
+								<div className="rounded-lg border border-cyan-900/60 bg-cyan-950/30 p-3 text-sm text-cyan-100">
+									The API server is the control plane. Spawn sends a command to a connected
+									arm agent. If that agent is running on another host, the arm will start on
+									that host rather than on the API server machine.
+								</div>
+
+								<div className="grid gap-4 md:grid-cols-2">
+									<div>
+										<label className="mb-2 block text-sm font-medium text-zinc-300">
+											Arm name
+										</label>
+										<input
+											value={spawnModal.name}
+											onChange={(e) =>
+												setSpawnModal((current) => ({
+													...current,
+													name: e.target.value,
+												}))
+											}
+											placeholder="e.g. explorer-2"
+											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+										/>
+									</div>
+									<div>
+										<label className="mb-2 block text-sm font-medium text-zinc-300">
+											Domain
+										</label>
+										<input
+											value={spawnModal.domain}
+											onChange={(e) =>
+												setSpawnModal((current) => ({
+													...current,
+													domain: e.target.value,
+												}))
+											}
+											placeholder="general"
+											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+										/>
+									</div>
+								</div>
+
+								<div className="grid gap-4 md:grid-cols-3">
+									<div>
+										<label className="mb-2 block text-sm font-medium text-zinc-300">
+											Harness
+										</label>
+										<select
+											value={spawnModal.harness}
+											onChange={(e) =>
+												setSpawnModal((current) => ({
+													...current,
+													harness: e.target.value,
+												}))
+											}
+											disabled={availableHarnesses.length === 0}
+											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white disabled:opacity-50 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+										>
+											{availableHarnesses.length === 0 ? (
+												<option value="">No compatible harnesses available</option>
+											) : (
+												availableHarnesses.map((harness) => (
+													<option key={harness} value={harness}>
+														{harness}
+													</option>
+												))
+											)}
+										</select>
+									</div>
+									<div>
+										<label className="mb-2 block text-sm font-medium text-zinc-300">
+											Provider
+										</label>
+										{usesOpenCodeCatalog(spawnModal.harness) && openCodeProviders.length > 0 ? (
+											<select
+												value={spawnModal.provider}
+												onChange={(e) =>
+													setSpawnModal((current) => {
+														const providerId = e.target.value;
+														const providerRecord =
+															openCodeProviders.find(
+																(provider) => provider.id === providerId,
+															) || null;
+														return {
+															...current,
+															provider: providerId,
+															model: providerRecord?.models[0]?.id || "",
+														};
+													})
+												}
+												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											>
+												{openCodeProviders.map((provider) => (
+													<option key={provider.id} value={provider.id}>
+														{provider.name}
+													</option>
+												))}
+											</select>
+										) : (
+											<input
+												value={spawnModal.provider}
+												onChange={(e) =>
+													setSpawnModal((current) => ({
+														...current,
+														provider: e.target.value,
+													}))
+												}
+												placeholder={spawnDefaults.provider || "Use server default"}
+												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											/>
+										)}
+									</div>
+									<div>
+										<label className="mb-2 block text-sm font-medium text-zinc-300">
+											Model
+										</label>
+										{usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeModels.length > 0 ? (
+											<select
+												value={spawnModal.model}
+												onChange={(e) =>
+													setSpawnModal((current) => ({
+														...current,
+														model: e.target.value,
+													}))
+												}
+												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											>
+												{selectedOpenCodeModels.map((model) => (
+													<option key={model.id} value={model.id}>
+														{model.name}
+													</option>
+												))}
+											</select>
+										) : (
+											<input
+												value={spawnModal.model}
+												onChange={(e) =>
+													setSpawnModal((current) => ({
+														...current,
+														model: e.target.value,
+													}))
+												}
+												placeholder={spawnDefaults.model || "Use server default"}
+												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											/>
+										)}
+									</div>
+								</div>
+
+								{usesOpenCodeCatalog(spawnModal.harness) && openCodeProviders.length > 0 && (
+									<p className="text-sm text-zinc-400">
+										Provider and model options are loaded from the OpenCode model catalog and
+										cached under <code>.coleo/cache/opencode-models.json</code>.
+									</p>
+								)}
+
+								{spawnModal.name.trim() && arms.some((arm) => arm.id === spawnModal.name.trim()) && (
+									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+										An arm named <code>{spawnModal.name.trim()}</code> already exists. Pick a
+										new name for a brand new spawn, or use the row-level Spawn button to
+										restart the existing arm.
+									</div>
+								)}
+
+								<div>
+									<label className="mb-2 block text-sm font-medium text-zinc-300">
+										Arm agent host
+									</label>
+									<select
+										value={spawnModal.agentId}
+										onChange={(e) =>
+											setSpawnModal((current) => ({
+												...current,
+												agentId: e.target.value,
+											}))
+										}
+										disabled={agents.length === 0}
+										className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white disabled:opacity-50 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+									>
+										{agents.length === 0 ? (
+											<option value="">No arm agents connected</option>
+										) : (
+											agents.map((agent) => (
+												<option key={agent.agentId} value={agent.agentId}>
+													{agent.hostname} · {agent.agentId}
+												</option>
+											))
+										)}
+									</select>
+									<p className="mt-2 text-sm text-zinc-400">
+										This defaults to the first connected arm agent host.
+									</p>
+								</div>
+
+								{spawnModal.harness && isDaemonManagedHarness(spawnModal.harness) && (
+									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+										<div className="flex items-start gap-2">
+											<Server className="mt-0.5 h-4 w-4 shrink-0" />
+											<p>
+												<code>{spawnModal.harness}</code> is daemon-managed. A connected arm
+												agent host is required for this spawn flow.
+											</p>
+										</div>
+									</div>
+								)}
+
+								{agents.length === 0 && (
+									<div className="rounded-lg border border-danger/50 bg-danger/10 p-3 text-sm text-danger">
+										No arm agents are currently connected. Start <code>coleo agent start</code>{" "}
+										on a host you want to run arms on, then reopen this modal.
+									</div>
+								)}
+
+								{selectedSpawnAgent && (
+									<p className="text-sm text-zinc-400">
+										Selected host capabilities: {selectedSpawnAgent.capabilities.join(", ")}
+									</p>
+								)}
+							</div>
+
+							<div className="flex items-center justify-between border-t border-zinc-700 bg-zinc-800/50 px-4 py-3">
+								<span className="text-xs text-zinc-500">
+									The runtime host is chosen from the connected arm agents and returned by
+									the API after spawn.
+								</span>
+								<div className="flex gap-2">
+									<Button variant="ghost" onPress={closeSpawnModal}>
+										Cancel
+									</Button>
+									<Button
+										variant="primary"
+										onPress={submitSpawnModal}
+										isDisabled={
+											!spawnModal.name.trim() ||
+											!spawnModal.harness ||
+											agents.length === 0 ||
+											spawningArmId !== null ||
+											arms.some((arm) => arm.id === spawnModal.name.trim())
+										}
+										className="gap-2"
+									>
+										{spawningArmId !== null ? (
+											<LoaderCircle className="h-4 w-4 animate-spin" />
+										) : (
+											<Play className="h-4 w-4" />
+										)}
+										{spawningArmId !== null ? "Starting..." : "Spawn Arm"}
+									</Button>
+								</div>
+							</div>
+						</div>
+					</div>,
+					document.body,
+				)}
 		</div>
 	);
 }

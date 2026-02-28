@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { startServer } from "../../api";
+import { ensureLocalNatsForServe } from "../local-nats";
 import {
   startService,
   stopService,
@@ -20,6 +21,7 @@ export function registerServeCommand(program: Command): void {
     .option("-p, --port <port>", "Port to listen on", "8080")
     .option("-h, --host <host>", "Host to bind to", "0.0.0.0")
     .action(async (options) => {
+      await ensureLocalNatsForServe();
       await startServer({
         port: parseInt(options.port, 10),
         host: options.host,

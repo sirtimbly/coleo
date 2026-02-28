@@ -2,6 +2,94 @@
 
 Coleo supports automated deployments with arm consensus and optional human approval.
 
+For local-process development outside Docker, `coleo serve` is the matching single-host runtime entrypoint.
+When `COLEO_NATS_URL` is unset, it will try to bootstrap a local standalone `nats-server` into the active `.coleo/` directory.
+
+## Self-Hosted Runtime Topologies
+
+The repository also includes a practical self-host deployment path under `deploy/self-host/`.
+That path is intentionally staged so a developer can start simple and only add edge complexity later.
+
+### Default Topology: Local or Private Network
+
+The default file is:
+
+- `deploy/self-host/docker-compose.hosting.yml`
+
+It runs:
+
+- `observatory` (web app + API)
+- `brain`
+- `nats`
+- `qdrant`
+
+By default it binds only to loopback:
+
+- web UI on `http://localhost`
+- API on `http://localhost:8080`
+- NATS on `nats://localhost:4222`
+
+When serving the Observatory through `coleo web`, it must serve a built Vite bundle from
+`src/web/dist` or `dist/web`. If the browser ever loads `/src/main.tsx`, the server is
+serving source HTML instead of the built app and the UI will fail to boot.
+
+This is the intended first step for:
+
+- local Docker/OrbStack testing on a laptop or Mac mini
+- a home server used only from the same machine
+- a private host reached through Tailscale, WireGuard, or another VPN
+
+### Home Server over LAN, Tailscale, or VPN
+
+For a private home-server deployment, keep using the same base Compose file and set:
+
+```bash
+COLEO_BIND_HOST=0.0.0.0
+COLEO_PUBLIC_ORIGIN=http://<private-hostname-or-tailscale-name>
+```
+
+Examples:
+
+- `http://macmini.local`
+- `http://macmini.tailnet-name.ts.net`
+
+The preferred progression is:
+
+1. Start with the base stack only.
+2. Verify the UI/API work over your private network or VPN.
+3. Add a public reverse proxy/auth layer only if you actually need internet exposure.
+
+### Optional Public Edge Overlay
+
+Traefik, Authelia, and the optional Tailscale sidecar are not part of the default stack.
+They live in a separate example overlay:
+
+- `deploy/self-host/docker-compose.hosting.edge.example.yml`
+
+Use that overlay only when you want:
+
+- public DNS hostnames
+- TLS termination
+- browser auth in front of the Observatory/API
+
+### Bootstrap Behavior
+
+The helper script:
+
+- `deploy/self-host/bin/bootstrap-host.sh`
+
+is designed to support the staged model above.
+
+It will:
+
+- create `.env.hosting` if missing
+- fill missing local/private defaults
+- generate bootstrap/API/auth secrets only when they are missing or still placeholders
+- preserve existing secrets on rerun
+- render the optional Authelia and Tailscale config templates when `envsubst` is available
+
+It does not require Traefik or Authelia to be part of the default operator workflow.
+
 ## Environment Tiers
 
 Each environment has its own rules for deployment:
@@ -25,44 +113,44 @@ interface Environment {
 
 ### Default Configuration
 
-| Environment | Type | Strategy | Auto Deploy | Consensus | Human Approval |
-|-------------|------|----------|-------------|-----------|----------------|
-| `local` | development | N/A | Yes | No | No |
-| `dev` | development | N/A | Yes | No | No |
-| `staging` | deployment | blue_green | No | Yes | Yes |
-| `prod` | deployment | blue_green | No | Yes | Yes |
+| Environment | Type        | Strategy   | Auto Deploy | Consensus | Human Approval |
+| ----------- | ----------- | ---------- | ----------- | --------- | -------------- |
+| `local`     | development | N/A        | Yes         | No        | No             |
+| `dev`       | development | N/A        | Yes         | No        | No             |
+| `staging`   | deployment  | blue_green | No          | Yes       | Yes            |
+| `prod`      | deployment  | blue_green | No          | Yes       | Yes            |
 
 ```typescript
 const DEFAULT_ENVIRONMENTS: Environment[] = [
-  { 
-    name: "local",   
+  {
+    name: "local",
     type: "development",
-    autoDeployable: true,  
-    consensusRequired: false, 
-    humanApproval: false 
+    autoDeployable: true,
+    consensusRequired: false,
+    humanApproval: false
   },
-  { 
-    name: "dev",     
+  {
+    name: "dev",
     type: "development",
-    autoDeployable: true,  
-    consensusRequired: false,  
-    humanApproval: false 
+    autoDeployable: true,
+    consensusRequired: false,
+    humanApproval: false
   },
-  { 
-    name: "staging", 
+  {
+    name: "staging",
     type: "deployment",
     strategy: "blue_green",
-    autoDeployable: false, 
-    consensusRequired: true,  
-    humanApproval: true  
+    autoDeployable: false,
+    consensusRequired: true,
+    humanApproval: true
   },
-  { 
-    name: "prod",    
+  {
+    name: "prod",
     type: "deployment",
     strategy: "blue_green",
-    autoDeployable: false, 
-    consensusRequired: true,  
-    humanApproval: true  
+    autoDeployable: false,
+    consensusRequired: true,
+    humanApproval: true
   },
 ];
 ```
@@ -73,12 +161,12 @@ For `local` and `dev` environments, "deployment" means different things:
 
 ### Dev Server Actions
 
-| Action | Description | Consensus | Human |
-|--------|-------------|-----------|-------|
-| `dev.restart` | Restart the dev server | No | No |
-| `dev.rebuild` | Full rebuild (clear cache, reinstall) | No | No |
-| `dev.seed` | Reset and seed local database | No | No |
-| `dev.reset` | Full reset (rebuild + seed + restart) | Yes* | No |
+| Action        | Description                           | Consensus | Human |
+| ------------- | ------------------------------------- | --------- | ----- |
+| `dev.restart` | Restart the dev server                | No        | No    |
+| `dev.rebuild` | Full rebuild (clear cache, reinstall) | No        | No    |
+| `dev.seed`    | Reset and seed local database         | No        | No    |
+| `dev.reset`   | Full reset (rebuild + seed + restart) | Yes*      | No    |
 
 *Consensus only if multiple arms are actively working
 
@@ -369,12 +457,12 @@ const DEFAULT_ROLLBACK_CONFIG: RollbackConfig = {
 
 ### Reputation Effects for Deployments
 
-| Event | Delta | Notes |
-|-------|-------|-------|
-| Successful deployment | +5 | Arm that proposed |
-| Deployment required rollback | -15 | Configurable penalty |
-| Arm caught issue pre-deploy | +10 | Prevented bad deploy |
-| False positive (blocked good deploy) | -3 | Overcautious |
+| Event                                | Delta | Notes                |
+| ------------------------------------ | ----- | -------------------- |
+| Successful deployment                | +5    | Arm that proposed    |
+| Deployment required rollback         | -15   | Configurable penalty |
+| Arm caught issue pre-deploy          | +10   | Prevented bad deploy |
+| False positive (blocked good deploy) | -3    | Overcautious         |
 
 ### Disabling Reputation Punishment
 
@@ -432,13 +520,13 @@ const deploymentHooks: DeploymentHooks = {
 
 Arms use these MCP tools for deployment:
 
-| Tool | Description |
-|------|-------------|
-| `deploy.request` | Request a deployment |
-| `deploy.status` | Check deployment status |
-| `deploy.cancel` | Cancel pending deployment |
-| `deploy.rollback` | Initiate rollback |
-| `deploy.logs` | Get deployment logs |
+| Tool              | Description               |
+| ----------------- | ------------------------- |
+| `deploy.request`  | Request a deployment      |
+| `deploy.status`   | Check deployment status   |
+| `deploy.cancel`   | Cancel pending deployment |
+| `deploy.rollback` | Initiate rollback         |
+| `deploy.logs`     | Get deployment logs       |
 
 ## Environment Variables & Secrets
 

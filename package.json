@@ -39,6 +39,8 @@
 		"typecheck": "tsc --noEmit",
 		"shellcheck": "shellcheck bin/*.sh",
 		"check": "bun run shellcheck && bun run typecheck",
+		"nats:install": "bash bin/install-nats.sh",
+		"nats:run": "bash bin/run-nats.sh",
 		"test": "bun test src/**/__tests__/",
 		"test:watch": "bun test --watch src/**/__tests__/",
 		"test:integration": "bun run src/regression/runner.ts --quick",

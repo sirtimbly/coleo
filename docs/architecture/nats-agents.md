@@ -324,7 +324,7 @@ CREATE INDEX idx_arms_agent ON arms(agent_id);
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `COLEO_NATS_URL` | `nats://localhost:4222` | NATS server URL |
+| `COLEO_NATS_URL` | `nats://localhost:4222` | External NATS server URL. If unset, `coleo serve` will try to bootstrap a local standalone `nats-server` on `127.0.0.1:4222` for local-process development. |
 
 ### API Server Config
 
@@ -332,6 +332,7 @@ For distributed arm orchestration and brain message ingress, NATS + JetStream ar
 
 - `opencode-api` and `opencode` are daemon-managed and require at least one connected `ArmAgent`
 - `opencode-tui` can still be spawned locally for operator-visible sessions
+- The Observatory Arms view and the CLI both use `POST /api/arms/:id/spawn`, so a stopped or unspawned arm profile can be started remotely from the browser once an `ArmAgent` is connected
 
 If NATS is unavailable, distributed arm management and stream-backed activity/history are unavailable.
 
@@ -350,23 +351,19 @@ coleo agent start \
 ### Local Development (Single Host)
 
 ```bash
-# Start NATS first for stream-backed messaging
-docker compose up -d nats
-
 # Start the API server
+# If COLEO_NATS_URL is unset, this will auto-start local NATS
 coleo serve
 ```
 
 ### With Distributed Arms
 
 ```bash
-# Terminal 1: Start NATS
-docker compose up -d nats
-
-# Terminal 2: Start API server
+# Terminal 1: Start API server
+# If COLEO_NATS_URL is unset, this will auto-start local NATS
 coleo serve
 
-# Terminal 3: Start agent (same or different host)
+# Terminal 2: Start agent (same or different host)
 coleo agent start --nats-url nats://localhost:4222
 ```
 

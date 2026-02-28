@@ -107,7 +107,8 @@ COLEO_API_TOKEN=${apiToken}
 # COLEO_API_PORT=8080
 # COLEO_API_HOST=localhost
 
-# Optional: NATS Configuration (for distributed mode)
+# Optional: external NATS Configuration (for distributed mode)
+# Leave this unset to let 'coleo serve' auto-start a local nats-server
 # COLEO_NATS_URL=nats://localhost:4222
 `;
           await writeFile(envPath, envContent, "utf-8");
@@ -180,6 +181,7 @@ ${scriptInfo}${symlinkInfo}
 
  Quick Start:
    1. Start the API server:  coleo serve start
+      (auto-starts local NATS if COLEO_NATS_URL is unset)
    2. Start the web UI:     coleo web start
    3. View dashboard:       http://localhost:5173
    4. Configure arms:       edit .coleo/arms/default.toml
