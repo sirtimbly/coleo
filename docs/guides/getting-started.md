@@ -40,26 +40,40 @@ For the Docker path:
 
 - Docker or OrbStack
 
-## NATS: When You Need It
+## NATS: How It Works
 
-NATS is optional for the simplest single-machine bring-up.
-Coleo can still run without it, but these features depend on NATS + JetStream:
+For local-process development, you do not need to start NATS separately.
+If `COLEO_NATS_URL` is unset, `coleo serve` will bootstrap and manage a local standalone
+`nats-server` inside the active `.coleo/` directory.
+
+These features depend on NATS + JetStream:
 
 - distributed `ArmAgent` communication
 - remote arm spawning across hosts
 - stream-backed activity and transcript/event history
 
-If NATS is unavailable, Coleo still supports:
+If local bootstrap fails or you deliberately disable NATS, Coleo still supports:
 
 - SQLite-backed core state
 - local API server
 - brain polling loop
 - local web UI
 
-### Non-Docker NATS options
+### Local process default
 
-If `COLEO_NATS_URL` is unset, `coleo serve` will now try to bootstrap a pinned local `nats-server`
-automatically into the active `.coleo/` directory before the API server starts.
+For the normal local-process path, just run:
+
+```bash
+coleo serve
+```
+
+That will:
+
+- install a pinned `nats-server` binary into `.coleo/bin` if needed
+- start JetStream-backed local NATS using `.coleo/nats` for state
+- point the API server at `nats://127.0.0.1:4222`
+
+### Manual local NATS control
 
 If you want to install or run that local NATS runtime yourself from a source checkout of this repository, use the helper scripts:
 
@@ -139,33 +153,7 @@ from the local `opencode models` CLI and stores it in `.coleo/cache/opencode-mod
 The Observatory uses that cache for OpenCode provider/model dropdowns instead of querying a live
 OpenCode server.
 
-### 3. Decide whether to start NATS now
-
-#### Smallest possible local bring-up
-
-Skip NATS for now if you only want:
-
-- local API + brain
-- local UI
-- single-machine experimentation
-
-#### Enable distributed/stream-backed behavior
-
-Start NATS first if you want distributed arm management or stream-backed activity/history.
-If you do nothing and `COLEO_NATS_URL` is unset, `coleo serve` will attempt to install and start
-the pinned local NATS runtime automatically.
-
-From a source checkout, use:
-
-```bash
-bun run nats:install
-bun run nats:run
-```
-
-Otherwise, either rely on `coleo serve` to auto-bootstrap the local runtime, run NATS with Docker,
-or point `COLEO_NATS_URL` at another reachable NATS server.
-
-### 4. Start the API server
+### 3. Start the API server
 
 Foreground:
 
@@ -182,9 +170,12 @@ coleo serve start
 Default API URL:
 
 - `http://localhost:8080`
-- When `COLEO_NATS_URL` is unset, `coleo serve` will try to bring up local NATS at `nats://127.0.0.1:4222`
+- If `COLEO_NATS_URL` is unset, `coleo serve` will also bring up local NATS at `nats://127.0.0.1:4222`
 
-### 5. Start the web UI
+If you want to use a shared or remote NATS server instead, set `COLEO_NATS_URL` before starting
+the API server.
+
+### 4. Start the web UI
 
 If you installed a built package:
 
@@ -202,13 +193,13 @@ Default UI URL:
 
 - `http://localhost:5173`
 
-### 6. Start the brain
+### 5. Start the brain
 
 ```bash
 coleo brain run
 ```
 
-### 7. Spawn an arm
+### 6. Spawn an arm
 
 ```bash
 coleo arm spawn \
@@ -217,7 +208,7 @@ coleo arm spawn \
   --workdir /absolute/path/to/your-project
 ```
 
-### 8. Prompt it
+### 7. Prompt it
 
 ```bash
 coleo arm prompt dev-arm "Add a dark mode toggle to the settings page"
@@ -266,12 +257,3 @@ For most users, the clean progression is:
 4. Expose that base stack privately over LAN, Tailscale, or another VPN.
 5. Add Traefik and Authelia only when you actually need public internet exposure.
 
-## What To Defer
-
-You do not need to solve every infrastructure dependency on day one.
-
-Today, the practical split is:
-
-- SQLite: core local system of record
-- NATS: add when you want distributed arms and streams
-- Qdrant: can wait until you need transcript/vector indexing and semantic retrieval

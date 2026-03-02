@@ -66,3 +66,4 @@ docs/.vitepress/cache/deps
 # Local Netlify folder
 .netlify
 .vitepress/cache
+.coleo/nats/jetstream/$G/streams/coleo-events/msgs/index.db
