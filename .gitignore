@@ -69,3 +69,7 @@ docs/.vitepress/cache/deps
 .coleo/nats/jetstream/$G/streams/coleo-events/msgs/index.db
 .coleo/coleo.db.backup-before-pending-dedupe-20260305-221942.db
 .coleo/nats/jetstream/$G/streams
+.coleo/nats/jetstream/$G/streams
+
+# Database backups
+.coleo/*.db.backup-*
