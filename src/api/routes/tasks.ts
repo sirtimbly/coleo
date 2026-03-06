@@ -1322,6 +1322,23 @@ export function createTasksRoutes() {
 		// Update only the moved task's order_key (single-row update!)
 		db.run("UPDATE tasks SET order_key = ? WHERE id = ?", [newOrderKey, taskId]);
 
+		// Also update sort_order to match the new order for all tasks
+		// Get all tasks ordered by order_key and update their sort_order
+		const allTasks = db
+			.query("SELECT id FROM tasks ORDER BY order_key ASC NULLS LAST, created_at DESC")
+			.all() as Array<{ id: string }>;
+
+		// Batch update sort_order using CASE statement
+		if (allTasks.length > 0) {
+			const caseStatements = allTasks.map((t, idx) => `WHEN id = '${t.id}' THEN ${idx}`).join(' ');
+			const taskIds = allTasks.map(t => `'${t.id}'`).join(',');
+			db.run(`
+				UPDATE tasks 
+				SET sort_order = CASE ${caseStatements} END
+				WHERE id IN (${taskIds})
+			`);
+		}
+
 		logActivity(db, "api", "task_reordered", taskId, { 
 			newOrderKey,
 			prevTaskId,
