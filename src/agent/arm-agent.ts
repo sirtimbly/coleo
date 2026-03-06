@@ -150,7 +150,7 @@ export class ArmAgent {
       hostname: hostname(),
       platform: process.platform,
       startedAt: this.startedAt,
-      version: '0.1.0',
+      version: '0.2.0',
       capabilities: harnessRegistry.list(),
       maxArms: this.maxArms,
     };

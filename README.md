@@ -11,11 +11,12 @@ Distributed agent orchestration for software development. Coleo is a coordinatio
 Requires the [Bun](https://bun.sh/) runtime (v1.1+).
 
 ```bash
-# Install CLI from npm (uses the Bun runtime)
-bun install -g coleo
+# Install Bun + coleo globally (Linux/macOS, no mise required)
+curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.sh | bash
 
-# Initialize Coleo
-coleo init
+# Initialize Coleo in this project (creates ./.coleo/)
+coleo init --dir ./.coleo
+# During init you'll be prompted to generate an API token in ./.coleo/.env
 
 # Terminal 1: start the API server
 # If COLEO_NATS_URL is unset, this will auto-start local NATS for you
@@ -89,8 +90,10 @@ Arm       Arm       Arm
 ## Commands
 
 ```bash
-coleo init                      # Initialize ./.coleo
-coleo serve                     # Start the API server (auto-starts local NATS if needed)
+coleo init                      # Initialize ./.coleo in the current project
+coleo init --dir ~/.coleo       # Optional: use a global directory instead
+coleo serve                     # Start API server in foreground
+coleo serve start               # Start API server in background
 coleo brain run                 # Start Brain (foreground)
 coleo brain run --once          # Single poll cycle
 coleo arm spawn -n NAME         # Spawn an Arm (via API server)
@@ -132,9 +135,9 @@ This section is for contributors running Coleo from source. For regular usage, i
 # Clone and install dependencies
 git clone <repo-url>
 cd coleo
-bun install
+bun run setup
 
-# Initialize Coleo (creates ./.coleo directory and database)
+# Initialize Coleo (creates ./.coleo directory and database by default)
 bun run src/cli/index.ts init
 
 # Build the web UI
