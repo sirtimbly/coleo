@@ -1844,8 +1844,8 @@ export function createArmsRoutes() {
   app.get("/:id/messages", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
-    const parsedLimit = Number.parseInt(c.req.query("limit") || "100", 10);
-    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 100;
+    const parsedLimit = Number.parseInt(c.req.query("limit") || "50", 10);
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50;
 
     const row = db.query("SELECT id, status, port, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
       id: string;

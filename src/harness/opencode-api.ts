@@ -870,13 +870,27 @@ export class OpenCodeApiHarness implements AgentHarness {
       path: { id: apiSession.sessionId },
     });
 
-    const messages = response.data || [];
+    let messages = response.data || [];
+    
+    // Apply limit
     const limit = options?.limit;
     if (limit && limit > 0) {
-      return messages.slice(-limit);
+      messages = messages.slice(-limit);
     }
-
-    return messages;
+    
+    // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
+    return messages.map(msg => ({
+      info: msg.info,
+      parts: msg.parts?.map((part: Part) => {
+        if (part.type === 'text' && part.text) {
+          return {
+            ...part,
+            text: truncateLargeFields(part.text) as string
+          };
+        }
+        return part;
+      }) || []
+    }));
   }
 
   /**
