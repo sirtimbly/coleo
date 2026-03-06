@@ -345,7 +345,7 @@ export function TasksPage() {
 		if (!deleteConfirm.task) return;
 		try {
 			await removeFromPlan(deleteConfirm.task.id);
-		} catch (err) {
+		} catch {
 			// Error is handled by the mutation
 		} finally {
 			setDeleteConfirm({ show: false, task: null });
@@ -356,7 +356,7 @@ export function TasksPage() {
 		if (!deleteConfirm.task) return;
 		try {
 			await deleteTask(deleteConfirm.task.id);
-		} catch (err) {
+		} catch {
 			// Error is handled by the mutation
 		} finally {
 			setDeleteConfirm({ show: false, task: null });
@@ -394,7 +394,7 @@ export function TasksPage() {
 					// Clear after 3 seconds
 					setTimeout(() => setNewTaskId(null), 3000);
 				}
-			} catch (err) {
+			} catch {
 				// Error is handled by the mutation
 			}
 		},
@@ -444,7 +444,6 @@ export function TasksPage() {
 	}, [tasks, selectedTask]);
 
 	// Reset discussion count when selected task changes
-	// eslint-disable-next-line react-hooks/exhaustive-deps
 	React.useEffect(() => {
 		setDiscussionCount(0);
 	}, [selectedTask?.id]);
@@ -866,91 +865,99 @@ export function TasksPage() {
 				)}
 			</div>
 
-			{/* Task Modal */}
-			<TaskModal
-				isOpen={isModalOpen}
-				onClose={() => {
-					setIsModalOpen(false);
-					setEditingTask(undefined);
-				}}
-				onSaved={() => refetch()}
-				task={editingTask}
-			/>
+				{/* Task Modal */}
+				<TaskModal
+					isOpen={isModalOpen}
+					onClose={() => {
+						setIsModalOpen(false);
+						setEditingTask(undefined);
+					}}
+					onSaved={() => refetch()}
+					task={editingTask}
+				/>
 
-			{/* Delete Confirmation Dialog */}
-			{deleteConfirm.show &&
-				deleteConfirm.task &&
-				(() => {
-					const task = deleteConfirm.task;
-					const taskId = task.id;
-					const lineNumber = task.sourceRef?.split(":").pop();
-					return (
-						<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-							<div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
-								<h3 className="text-lg font-semibold mb-2">Delete Task</h3>
-								<p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-									This task is linked to plan.md at line {lineNumber}.
-								</p>
-								<div className="space-y-3 mb-4">
-									<div className="flex items-center gap-2 text-sm">
-										<input
-											type="radio"
-											name={`deleteOption-${taskId}`}
-											id={`deleteOnly-${taskId}`}
-											defaultChecked
-										/>
-										<label htmlFor={`deleteOnly-${taskId}`}>
-											<span className="font-medium">Delete task only</span>
-											<span className="text-gray-500 ml-1">
-												- removes from tasks list, keeps in plan.md
-											</span>
-										</label>
+				{/* Delete Confirmation Dialog */}
+				{deleteConfirm.show &&
+					deleteConfirm.task &&
+					(() => {
+						const task = deleteConfirm.task;
+						const taskId = task.id;
+						const lineNumber = task.sourceRef?.split(":").pop();
+						return (
+							<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+								<div className="bg-white dark:bg-zinc-800 rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
+									<h3 className="text-lg font-semibold mb-2">Delete Task</h3>
+									<p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+										This task is linked to plan.md
+										{lineNumber ? ` at line ${lineNumber}` : ""}.
+									</p>
+									<div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 rounded-md p-3 mb-4">
+										<p className="text-sm text-amber-800 dark:text-amber-200">
+											<strong>Warning:</strong> Removing the task from plan.md
+											will also delete its corresponding plan entry. This action
+											cannot be undone.
+										</p>
 									</div>
-									<div className="flex items-center gap-2 text-sm">
-										<input
-											type="radio"
-											name={`deleteOption-${taskId}`}
-											id={`removeFromPlan-${taskId}`}
-										/>
-										<label htmlFor={`removeFromPlan-${taskId}`}>
-											<span className="font-medium">
-												Remove from plan.md & delete
-											</span>
-											<span className="text-gray-500 ml-1">
-												- removes checkbox line from plan.md and deletes task
-											</span>
-										</label>
+									<div className="space-y-3 mb-4">
+										<div className="flex items-center gap-2 text-sm">
+											<input
+												type="radio"
+												name={`deleteOption-${taskId}`}
+												id={`deleteOnly-${taskId}`}
+												defaultChecked
+											/>
+											<label htmlFor={`deleteOnly-${taskId}`}>
+												<span className="font-medium">Delete task only</span>
+												<span className="text-gray-500 ml-1">
+													- removes it from the task list and keeps plan.md
+												</span>
+											</label>
+										</div>
+										<div className="flex items-center gap-2 text-sm">
+											<input
+												type="radio"
+												name={`deleteOption-${taskId}`}
+												id={`removeFromPlan-${taskId}`}
+											/>
+											<label htmlFor={`removeFromPlan-${taskId}`}>
+												<span className="font-medium">
+													Remove from plan.md and delete
+												</span>
+												<span className="text-gray-500 ml-1">
+													- removes the plan entry and deletes the task
+												</span>
+											</label>
+										</div>
 									</div>
-								</div>
-								<div className="flex gap-3 justify-end">
-									<Button
-										variant="ghost"
-										onPress={() =>
-											setDeleteConfirm({ show: false, task: null })
-										}
-									>
-										Cancel
-									</Button>
-									<Button
-										variant="danger"
-										onPress={() => {
-											const radio = document.querySelector<HTMLInputElement>(
-												`input[name="deleteOption-${taskId}"]:checked`,
-											);
-											if (radio?.id?.includes("removeFromPlan")) {
-												confirmDeleteFromPlan();
-											} else {
-												confirmDeleteOnly();
+									<div className="flex gap-3 justify-end">
+										<Button
+											variant="ghost"
+											onPress={() =>
+												setDeleteConfirm({ show: false, task: null })
 											}
-										}}
-									>
-										Delete
-									</Button>
+										>
+											Cancel
+										</Button>
+										<Button
+											variant="danger"
+											onPress={() => {
+												const radio = document.querySelector<HTMLInputElement>(
+													`input[name="deleteOption-${taskId}"]:checked`,
+												);
+												if (radio?.id?.includes("removeFromPlan")) {
+													confirmDeleteFromPlan();
+												} else {
+													confirmDeleteOnly();
+												}
+											}}
+										>
+											Delete
+										</Button>
+									</div>
 								</div>
 							</div>
-						</div>
-					);
-				})()}
-		</div>
-	);
+						);
+					})()}
+			</div>
+		);
 }

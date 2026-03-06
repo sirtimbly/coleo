@@ -1168,24 +1168,99 @@ export function createTasksRoutes() {
 	});
 
 	/**
-	 * Delete a task
+	 * Delete a task and remove from project plan
 	 * DELETE /api/tasks/:id
 	 */
-	app.delete("/:id", (c) => {
+	app.delete("/:id", async (c) => {
 		const db = c.get("db");
 		const id = c.req.param("id");
 
+		// Get the task to find its plan_line_uid before deleting
+		const taskRow = db
+			.query("SELECT id, subject, source_ref, plan_line_uid FROM tasks WHERE id = ?")
+			.get(id) as TaskRow | undefined;
+
+		if (!taskRow) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		// Remove from plan.md if the task has a plan_line_uid
+		const planLineUidValue = taskRow.plan_line_uid;
+		let removedFromPlan = false;
+		if (typeof planLineUidValue === "string" && taskRow.source_ref) {
+			// Extract file path from source_ref (format: "/path/to/file:lineNumber")
+			const sourceRefMatch = taskRow.source_ref.match(/^(.+):\d+$/);
+			if (sourceRefMatch) {
+				const planFilePath = sourceRefMatch[1];
+				try {
+					const mod = await import("../../brain/plan-parser");
+					const removeFn: (path: string, uid: string) => Promise<boolean> =
+						mod.removeTaskLineFromPlan;
+					// @ts-expect-error - TypeScript doesn't properly narrow the type here
+					removedFromPlan = await removeFn(planFilePath, planLineUidValue);
+				} catch (err) {
+					console.error(`Failed to remove line from plan file: ${err}`);
+					// Continue with deletion even if plan file removal fails
+				}
+			}
+		}
+
+		// Delete the task from database
 		const result = db.run("DELETE FROM tasks WHERE id = ?", [id]);
 		if (result.changes === 0) {
 			throw HttpError.notFound(`Task not found: ${id}`);
 		}
 
-		logActivity(db, "api", "task_deleted", id);
+		logActivity(db, "api", "task_deleted", id, {
+			subject: taskRow.subject,
+			removedFromPlan,
+			planLineUid: planLineUidValue,
+		});
+
+		// Notify brain about task deletion with plan cleanup info
+		try {
+			// Queue a message to the brain for plan cleanup
+			const messagePayload = {
+				taskId: id,
+				projectId: taskRow.source_ref || "default",
+				featureId: planLineUidValue || id,
+				deletedBy: "user",
+				timestamp: new Date().toISOString(),
+			};
+
+			// Import brain inbox validation
+			const { isBrainInboxMessageType, validateBrainInboxPayload } = await import("../../types/brain-inbox");
+			const { queueMessage } = await import("../../db/state");
+
+			const messageType = "task_deleted";
+			if (!isBrainInboxMessageType(messageType)) {
+				console.error(`[DELETE TASK] Invalid message type: ${messageType}`);
+			} else {
+				const validationError = validateBrainInboxPayload(messageType, messagePayload);
+				if (validationError) {
+					console.error(`[DELETE TASK] Message validation failed: ${validationError}`);
+				} else {
+					// Queue the message directly
+					const messageId = `task-deleted-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+					queueMessage(db, {
+						id: messageId,
+						from: "api",
+						to: "brain",
+						type: messageType,
+						payload: messagePayload,
+					});
+					console.log(`[DELETE TASK] Queued task_deleted message to brain: ${messageId}`);
+				}
+			}
+		} catch (err) {
+			console.error(`[DELETE TASK] Failed to notify brain about task deletion: ${err}`);
+			// Continue even if notification fails
+		}
 
 		// Broadcast task deleted
-		broadcast("tasks", "task.deleted", { taskId: id });
+		broadcast("tasks", "task.deleted", { taskId: id, removedFromPlan });
 
-		return c.json({ deleted: true });
+		return c.json({ deleted: true, removedFromPlan });
 	});
 
 	/**

@@ -250,6 +250,7 @@ export type MessageType =
   | "task_acknowledge"
   | "task_validate"
   | "task_failed"
+  | "task_deleted"
   | "discovery"
   | "dependency_discovery"
   | "approval_request"

@@ -6,6 +6,7 @@ export const BRAIN_INBOX_MESSAGE_TYPES = [
 	"task_validation",
 	"task_acknowledge",
 	"task_validate",
+	"task_deleted",
 	"discovery",
 	"dependency_discovery",
 	"approval_request",
@@ -144,6 +145,13 @@ export function validateBrainInboxPayload(type: BrainInboxMessageType, payload: 
 		case "bug_claim":
 			if (!hasString(payload, "bugId")) return "bug_claim requires payload.bugId";
 			if (!hasString(payload, "action")) return "bug_claim requires payload.action";
+			return null;
+		case "task_deleted":
+			if (!hasString(payload, "taskId")) return "task_deleted requires payload.taskId";
+			if (!hasString(payload, "projectId")) return "task_deleted requires payload.projectId";
+			if (!hasString(payload, "featureId")) return "task_deleted requires payload.featureId";
+			if (!hasString(payload, "deletedBy")) return "task_deleted requires payload.deletedBy";
+			if (!hasString(payload, "timestamp")) return "task_deleted requires payload.timestamp";
 			return null;
 		default:
 			return null;
