@@ -218,13 +218,21 @@ export class OpenCodeEventStream {
     if (data) {
       try {
         const parsed = JSON.parse(data) as OpenCodeEvent;
+        const sourceSessionId = this.extractSessionId(parsed.properties);
+
+        // OpenCode's /event endpoint is a shared bus. Ignore events from
+        // other sessions so each arm only sees its own session activity.
+        if (sourceSessionId && sourceSessionId !== this.sessionId) {
+          return;
+        }
+
         // Enrich with arm context
         const event: OpenCodeEvent = {
           type: parsed.type || eventType,
           properties: {
             ...parsed.properties,
             armId: this.armId,
-            sessionId: this.sessionId,
+            sessionId: sourceSessionId || this.sessionId,
           },
         };
         if (event.type !== "message.part.updated") {
@@ -245,6 +253,38 @@ export class OpenCodeEventStream {
         });
       }
     }
+  }
+
+  /**
+   * Extract session ID from known OpenCode event payload shapes.
+   */
+  private extractSessionId(properties: Record<string, unknown> | undefined): string | undefined {
+    if (!properties) {
+      return undefined;
+    }
+
+    const directSessionId = properties.sessionID || properties.sessionId;
+    if (typeof directSessionId === "string" && directSessionId.length > 0) {
+      return directSessionId;
+    }
+
+    const info = properties.info as Record<string, unknown> | undefined;
+    if (info) {
+      const infoSessionId = info.sessionID || info.sessionId || info.id;
+      if (typeof infoSessionId === "string" && infoSessionId.length > 0) {
+        return infoSessionId;
+      }
+    }
+
+    const part = properties.part as Record<string, unknown> | undefined;
+    if (part) {
+      const partSessionId = part.sessionID || part.sessionId;
+      if (typeof partSessionId === "string" && partSessionId.length > 0) {
+        return partSessionId;
+      }
+    }
+
+    return undefined;
   }
 
   /**

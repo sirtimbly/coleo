@@ -130,6 +130,45 @@ export class OpenCodeTuiHarness implements AgentHarness {
   private deathCallbacks: Set<ArmDeathCallback> = new Set();
   private defaultTerminal: TerminalEmulator = "ghostty";
 
+  private createSessionTitle(armId: string, reason: "spawn" | "recover" | "reset"): string {
+    const iso = new Date().toISOString();
+    if (reason === "recover") {
+      return `Coleo Arm: ${armId} (recovered ${iso})`;
+    }
+    if (reason === "reset") {
+      return `Coleo Arm: ${armId} (reset ${iso})`;
+    }
+    return `Coleo Arm: ${armId} (${iso})`;
+  }
+
+  /**
+   * Keep only the active session in this OpenCode server instance.
+   * Each arm server should be isolated; stale sessions can leak confusing events.
+   */
+  private async pruneOtherSessions(
+    client: OpencodeClient,
+    armId: string,
+    keepSessionId: string,
+  ): Promise<void> {
+    try {
+      const sessionsResponse = await client.session.list();
+      const sessions = sessionsResponse.data || [];
+      for (const existing of sessions) {
+        if (!existing?.id || existing.id === keepSessionId) {
+          continue;
+        }
+        try {
+          await client.session.delete({ path: { id: existing.id } });
+          console.log(`[harness-tui] Deleted stale session ${existing.id} for ${armId}`);
+        } catch (err) {
+          console.warn(`[harness-tui] Failed deleting stale session ${existing.id} for ${armId}: ${err}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[harness-tui] Failed listing sessions for ${armId}: ${err}`);
+    }
+  }
+
   /**
    * Set the default terminal emulator to use
    */
@@ -461,7 +500,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for this arm to prevent cross-contamination
     // Each arm gets its own isolated session with a unique title
     const createResponse = await client.session.create({
-      body: { title: `Coleo Arm: ${armId}` },
+      body: { title: this.createSessionTitle(armId, "spawn") },
     });
     const newSession = createResponse.data;
 
@@ -471,23 +510,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     const openCodeSession = newSession;
     console.log(`[harness-tui] Created new session ${openCodeSession.id} for arm ${armId}`);
-
-    // Initialize with model if specified (use resolved model)
-    if (resolvedProvider && resolvedModel) {
-      try {
-        await client.session.init({
-          path: { id: openCodeSession.id },
-          body: {
-            modelID: resolvedModel,
-            providerID: resolvedProvider,
-            messageID: `msg_${Date.now()}`,
-          },
-        });
-        console.log(`[harness-tui] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
-      } catch (initError) {
-        console.log(`[harness-tui] Session init warning: ${initError}`);
-      }
-    }
+    await this.pruneOtherSessions(client, armId, openCodeSession.id);
 
     // Select this session in the TUI so it displays correctly
     try {
@@ -745,7 +768,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
       // Create a new OpenCode session via SDK
       const newSessionResponse = await tuiSession.client.session.create({
-        body: { title: `Coleo Arm Session (reset ${Date.now()})` },
+        body: { title: this.createSessionTitle(tuiSession.armId, "reset") },
       });
       const newSession = newSessionResponse.data;
 
@@ -758,6 +781,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       tuiSession.sessionId = newSession.id;
       tuiSession.lastHeartbeat = new Date();
       tuiSession.consecutiveFailures = 0;
+      await this.pruneOtherSessions(tuiSession.client, tuiSession.armId, newSession.id);
 
       // Restart event stream with new session ID
       if (this.eventCallbacks.size > 0) {
@@ -1385,7 +1409,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for recovered arm to prevent cross-contamination
     try {
       const createResponse = await client.session.create({
-        body: { title: `Coleo Arm: ${armId} (recovered)` },
+        body: { title: this.createSessionTitle(armId, "recover") },
       });
       const recoveredSession = createResponse.data;
 
@@ -1395,6 +1419,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       }
 
       console.log(`[harness-tui] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
+      await this.pruneOtherSessions(client, armId, recoveredSession.id);
 
       const sessionId = `opencode-tui-recovered-${armId}-${Date.now().toString(36)}`;
 

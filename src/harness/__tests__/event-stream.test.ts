@@ -114,6 +114,57 @@ describe("OpenCodeEventStream internals", () => {
     expect(events[0]!.properties.raw).toBe("not-json");
   });
 
+  it("parseAndEmitEvent ignores events from other sessions", () => {
+    const events: Array<{ type: string; properties: Record<string, unknown> }> = [];
+    const stream = new OpenCodeEventStream({
+      serverUrl: "http://example.test",
+      armId: "arm-2",
+      sessionId: "session-active",
+      onEvent: event => events.push(event),
+    });
+
+    const payload = JSON.stringify({
+      type: "message.updated",
+      properties: {
+        info: {
+          id: "m1",
+          sessionID: "session-old",
+          role: "assistant",
+        },
+      },
+    });
+    (stream as unknown as { parseAndEmitEvent: (value: string) => void }).parseAndEmitEvent(
+      `event: message\ndata: ${payload}`
+    );
+
+    expect(events.length).toBe(0);
+  });
+
+  it("parseAndEmitEvent ignores session info events for other sessions", () => {
+    const events: Array<{ type: string; properties: Record<string, unknown> }> = [];
+    const stream = new OpenCodeEventStream({
+      serverUrl: "http://example.test",
+      armId: "arm-2",
+      sessionId: "session-active",
+      onEvent: event => events.push(event),
+    });
+
+    const payload = JSON.stringify({
+      type: "session.updated",
+      properties: {
+        info: {
+          id: "session-old",
+          title: "old",
+        },
+      },
+    });
+    (stream as unknown as { parseAndEmitEvent: (value: string) => void }).parseAndEmitEvent(
+      `event: message\ndata: ${payload}`
+    );
+
+    expect(events.length).toBe(0);
+  });
+
   it("connects and processes an SSE stream", async () => {
     const originalFetch = globalThis.fetch;
     const events: Array<{ type: string; properties: Record<string, unknown> }> = [];
