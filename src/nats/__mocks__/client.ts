@@ -8,6 +8,7 @@
  */
 
 import type { BrainMessage } from "../types";
+import type { CommandEnvelope } from "../command-types";
 
 interface MockSubscription {
   topic: string;
@@ -57,6 +58,11 @@ export class MockNatsClient {
 
   async publishBrainMessage(message: BrainMessage): Promise<void> {
     await this.publish("coleo.brain.messages", message);
+  }
+
+  async publishCommandEnvelope(message: CommandEnvelope): Promise<void> {
+    const subject = message.to === "brain" ? "coleo.cmd.to.brain" : `coleo.cmd.to.arm.${message.to}`;
+    await this.publish(subject, message);
   }
 
   subscribe<T>(topic: string, handler: (data: T, msg: unknown) => void | Promise<void>): { unsubscribe: () => void } {

@@ -138,7 +138,20 @@ export interface DeadLetterMessageInput {
   type: string;
   payload: unknown;
   reason: string;
-  source: "nats_bridge" | "api_queue";
+  source: "nats_bridge" | "api_queue" | "api_publish" | "jetstream_projector";
+}
+
+export interface ProjectedMessageInput {
+  id: string;
+  from: string;
+  to: string;
+  type: string;
+  payload: unknown;
+  createdAt?: string;
+  source: "jetstream";
+  streamName?: string | null;
+  streamSeq?: number | null;
+  dedupeId?: string;
 }
 
 /**
@@ -166,6 +179,71 @@ export function queueMessage(
       new Date().toISOString(),
     ]
   );
+}
+
+/**
+ * Upsert a projected message row from a durable command stream.
+ * Returns true when a new row is inserted and false for duplicate deliveries.
+ */
+export function upsertProjectedMessage(db: Database, message: ProjectedMessageInput): boolean {
+  const createdAt = message.createdAt || new Date().toISOString();
+  const dedupeId = message.dedupeId || message.id;
+
+  try {
+    const result = db.run(
+      `INSERT OR IGNORE INTO messages (
+        id,
+        from_id,
+        to_id,
+        message_type,
+        payload,
+        status,
+        created_at,
+        source,
+        stream_name,
+        stream_seq,
+        dedupe_id
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      [
+        message.id,
+        message.from,
+        message.to,
+        message.type,
+        JSON.stringify(message.payload),
+        createdAt,
+        message.source,
+        message.streamName || null,
+        message.streamSeq ?? null,
+        dedupeId,
+      ],
+    );
+    return result.changes > 0;
+  } catch (err) {
+    const errorText = err instanceof Error ? err.message : String(err);
+    if (!isMissingProjectionColumnError(errorText)) {
+      throw err;
+    }
+    const result = db.run(
+      `INSERT OR IGNORE INTO messages (
+        id,
+        from_id,
+        to_id,
+        message_type,
+        payload,
+        status,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [
+        message.id,
+        message.from,
+        message.to,
+        message.type,
+        JSON.stringify(message.payload),
+        createdAt,
+      ],
+    );
+    return result.changes > 0;
+  }
 }
 
 /**
@@ -376,6 +454,15 @@ function rowToMessage(row: MessageRow): Message {
     processedAt: row.processed_at ? new Date(row.processed_at) : undefined,
     error: row.error || undefined,
   };
+}
+
+function isMissingProjectionColumnError(errorText: string): boolean {
+  return (
+    errorText.includes("no column named source") ||
+    errorText.includes("no column named stream_name") ||
+    errorText.includes("no column named stream_seq") ||
+    errorText.includes("no column named dedupe_id")
+  );
 }
 
 // ============================================

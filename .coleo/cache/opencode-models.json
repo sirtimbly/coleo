@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-02-28T03:07:15.298Z",
+  "fetchedAt": "2026-03-06T14:25:15.741Z",
   "providers": [
     {
       "id": "cerebras",
@@ -94,14 +94,6 @@
       "name": "Friendli",
       "models": [
         {
-          "id": "LGAI-EXAONE/EXAONE-4.0.1-32B",
-          "name": "LGAI-EXAONE/EXAONE-4.0.1-32B"
-        },
-        {
-          "id": "LGAI-EXAONE/K-EXAONE-236B-A23B",
-          "name": "LGAI-EXAONE/K-EXAONE-236B-A23B"
-        },
-        {
           "id": "meta-llama/Llama-3.1-8B-Instruct",
           "name": "meta-llama/Llama-3.1-8B-Instruct"
         },
@@ -112,6 +104,10 @@
         {
           "id": "MiniMaxAI/MiniMax-M2.1",
           "name": "MiniMaxAI/MiniMax-M2.1"
+        },
+        {
+          "id": "MiniMaxAI/MiniMax-M2.5",
+          "name": "MiniMaxAI/MiniMax-M2.5"
         },
         {
           "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
@@ -436,12 +432,16 @@
           "name": "gpt-5.3-codex"
         },
         {
-          "id": "kimi-k2",
-          "name": "kimi-k2"
+          "id": "gpt-5.3-codex-spark",
+          "name": "gpt-5.3-codex-spark"
         },
         {
-          "id": "kimi-k2-thinking",
-          "name": "kimi-k2-thinking"
+          "id": "gpt-5.4",
+          "name": "gpt-5.4"
+        },
+        {
+          "id": "gpt-5.4-pro",
+          "name": "gpt-5.4-pro"
         },
         {
           "id": "kimi-k2.5",
@@ -458,10 +458,6 @@
         {
           "id": "minimax-m2.5-free",
           "name": "minimax-m2.5-free"
-        },
-        {
-          "id": "trinity-large-preview-free",
-          "name": "trinity-large-preview-free"
         }
       ]
     },

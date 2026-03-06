@@ -244,12 +244,11 @@ async function performKeywordSearch(
 	filters?: Record<string, unknown>,
 	limit = 50,
 ): Promise<SearchResult[]> {
-	// Build the search query
-	const searchTerms = query
-		.trim()
-		.split(/\s+/)
-		.map((term) => `${term}*`)
-		.join(" ");
+	// Build a valid FTS5 query from user input.
+	const searchTerms = buildFtsPrefixQuery(query);
+	if (!searchTerms) {
+		return [];
+	}
 
 	let sql = `
 		SELECT 
@@ -298,6 +297,14 @@ async function performKeywordSearch(
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 	}));
+}
+
+/**
+ * Convert raw input into an FTS5-safe prefix query.
+ */
+function buildFtsPrefixQuery(query: string): string {
+	const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+	return terms.map((term) => `${term}*`).join(" ");
 }
 
 /**

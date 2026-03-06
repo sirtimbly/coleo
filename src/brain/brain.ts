@@ -42,6 +42,17 @@ import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
 import { findLargeFiles as findLargeFilesUtil } from "./utils/find-large-files";
+import {
+	stripTerminalArtifacts,
+	getDomainPatterns,
+	isActiveHarnessState,
+	toEpochMs,
+	extractMessageTimestampMs,
+	humanizeStatus,
+	normalizeTaskPriority,
+	normalizeBugPriority,
+	mapApiTask,
+} from "./brain-utils";
 import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
@@ -482,14 +493,14 @@ export class Brain {
 		type: string;
 		payload: unknown;
 	}): Promise<boolean> {
-		const response = await this.apiRequest<{ queued?: boolean }>(
-			"/api/brain/internal/messages/queue",
+		const response = await this.apiRequest<{ accepted?: boolean; queued?: boolean }>(
+			"/api/brain/internal/commands/publish",
 			{
 				method: "POST",
 				body: JSON.stringify(input),
 			},
 		);
-		return response?.queued === true;
+		return response?.accepted === true || response?.queued === true;
 	}
 
 	private async listPendingMessagesViaApi(
@@ -1909,7 +1920,7 @@ export class Brain {
 
 			const armLabel = this.getArmDisplayName(armId);
 			const notes = message?.trim();
-			const statusLabel = this.humanizeStatus(status);
+			const statusLabel = humanizeStatus(status);
 			const parts: Array<string | null> = [
 				`Status update from ${armLabel}: ${statusLabel}.`,
 				dbStatus === "in_progress"
@@ -1978,54 +1989,9 @@ export class Brain {
 		return armId;
 	}
 
-	private humanizeStatus(value: string): string {
-		return value
-			.split("_")
-			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-			.join(" ");
-	}
-
 	/**
 	 * Fetch a single task from the API server.
 	 */
-	private mapApiTask(task: {
-		id: string;
-		subject: string;
-		description: string;
-		status: string;
-		priority: string;
-		domain?: string | null;
-		classification?: string | null;
-		assignedTo?: string | null;
-		dependencyBlocked?: boolean;
-		sortOrder?: number | null;
-		createdAt: string;
-		updatedAt: string;
-		completedAt?: string | null;
-		artifacts?: string[];
-		mailThreadId?: string | null;
-		context?: Task["context"];
-	}): Task {
-		return {
-			id: task.id,
-			subject: task.subject,
-			description: task.description,
-			status: task.status as Task["status"],
-			priority: task.priority as Task["priority"],
-			domain: task.domain || undefined,
-			classification: task.classification || undefined,
-			assignedTo: task.assignedTo || undefined,
-			dependencyBlocked: task.dependencyBlocked === true,
-			sortOrder: task.sortOrder ?? undefined,
-			createdAt: new Date(task.createdAt),
-			updatedAt: new Date(task.updatedAt),
-			completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
-			artifacts: task.artifacts || [],
-			mailThreadId: task.mailThreadId || undefined,
-			context: task.context || undefined,
-		};
-	}
-
 	private async listTasksFromApi(options?: {
 		status?: string[];
 		assignedTo?: string;
@@ -2089,7 +2055,7 @@ export class Brain {
 			this.state.pendingTasks = response.counts.byStatus.pending;
 		}
 
-		return response.tasks.map((task) => this.mapApiTask(task));
+		return response.tasks.map((task) => mapApiTask(task));
 	}
 
 	private async listBugsFromApi(
@@ -2238,7 +2204,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async patchTaskViaApi(
@@ -2283,7 +2249,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async getTaskFromApi(taskId: string): Promise<Task | null> {
@@ -2312,7 +2278,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async getTaskDependenciesFromApi(taskId: string): Promise<string[]> {
@@ -3043,10 +3009,10 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		});
 
 		const armLabel = this.getArmDisplayName(report.armId);
-		const statusLabel = this.humanizeStatus(report.status);
+		const statusLabel = humanizeStatus(report.status);
 		const trimmedSummary = report.summary?.trim();
 		const testsLabel = report.testsStatus
-			? this.humanizeStatus(report.testsStatus)
+			? humanizeStatus(report.testsStatus)
 			: null;
 
 		const formatList = (title: string, items: string[]) => {
@@ -4836,7 +4802,7 @@ Report findings using bug resolution workflow.`;
 					await this.syncArmStatus(arm.id, "stopped");
 					continue;
 				}
-				if (this.isActiveHarnessState(harnessState.state)) {
+				if (isActiveHarnessState(harnessState.state)) {
 					this.log(
 						`Arm ${arm.id} [${armDomain}]: harness state is "${harnessState.state}", skipping idle prompt`,
 					);
@@ -4932,75 +4898,10 @@ Report findings using bug resolution workflow.`;
 				this.logActivity("brain", "arm_waiting", arm.id, {
 					reason: "no_pending_tasks",
 					domain: armDomain,
-					watchingPatterns: this.getDomainPatterns(armDomain),
+					watchingPatterns: getDomainPatterns(armDomain),
 				});
 			}
 		}
-	}
-
-	/**
-	 * Get file patterns an arm with a given domain would be interested in
-	 */
-	private getDomainPatterns(domain: string): string[] {
-		const patterns: Record<string, string[]> = {
-			frontend: [
-				"src/components/**",
-				"src/web/**",
-				"*.css",
-				"*.scss",
-				"*.tsx",
-				"*.ts",
-			],
-			backend: ["src/api/**", "src/services/**", "src/db/**", "*.ts"],
-			testing: ["**/*.test.*", "**/*.spec.*", "e2e/**", "__tests__/**"],
-			docs: ["*.md", "docs/**", "README*"],
-			architect: [
-				"src/**",
-				"*.toml",
-				"*.json",
-				"AGENTS.md",
-				"docs/architecture/**",
-			],
-			devops: ["Dockerfile", ".github/**", "*.yml", "*.yaml", "infra/**"],
-			general: ["src/**", "*.ts", "*.md"],
-		};
-
-		return patterns[domain] ?? patterns["general"] ?? [];
-	}
-
-	private isActiveHarnessState(state: string): boolean {
-		return (
-			state === "initializing" ||
-			state === "processing" ||
-			state === "executing" ||
-			state === "waiting_approval" ||
-			state === "busy"
-		);
-	}
-
-	private toEpochMs(value: unknown): number | null {
-		if (typeof value !== "number" || !Number.isFinite(value)) {
-			return null;
-		}
-		// OpenCode message times may be seconds while JS dates are milliseconds.
-		return value < 1_000_000_000_000 ? value * 1000 : value;
-	}
-
-	private extractMessageTimestampMs(message: Record<string, unknown>): number | null {
-		const info = message.info;
-		if (!info || typeof info !== "object") {
-			return null;
-		}
-		const time = (info as Record<string, unknown>).time;
-		if (!time || typeof time !== "object") {
-			return null;
-		}
-		const timeObj = time as Record<string, unknown>;
-		return (
-			this.toEpochMs(timeObj.completed) ??
-			this.toEpochMs(timeObj.created) ??
-			null
-		);
 	}
 
 	private async getRecentArmMessageTimestampMs(
@@ -5022,7 +4923,7 @@ Report findings using bug resolution workflow.`;
 			if (!message || typeof message !== "object") {
 				continue;
 			}
-			const timestampMs = this.extractMessageTimestampMs(
+			const timestampMs = extractMessageTimestampMs(
 				message as Record<string, unknown>,
 			);
 			if (
@@ -5204,7 +5105,7 @@ Report findings using bug resolution workflow.`;
 			sawAssistant = true;
 
 			const text = this.extractSessionMessageText(messageObj);
-			const timestampMs = this.extractMessageTimestampMs(messageObj);
+			const timestampMs = extractMessageTimestampMs(messageObj);
 			if (timestampMs !== null) {
 				if (!latestAssistant || timestampMs > latestAssistant.timestampMs) {
 					latestAssistant = { timestampMs, hasText: Boolean(text) };
@@ -5252,40 +5153,6 @@ Report findings using bug resolution workflow.`;
 		return { inGrace: false, ageMs };
 	}
 
-	private normalizeTaskPriority(
-		value: string | undefined,
-	): Task["priority"] | undefined {
-		if (!value) return undefined;
-		switch (value) {
-			case "critical":
-			case "high":
-			case "normal":
-			case "low":
-				return value;
-			case "medium":
-				return "normal";
-			default:
-				return undefined;
-		}
-	}
-
-	private normalizeBugPriority(
-		value: string | undefined,
-	): "low" | "medium" | "high" | "critical" | undefined {
-		if (!value) return undefined;
-		switch (value) {
-			case "low":
-			case "medium":
-			case "high":
-			case "critical":
-				return value;
-			case "normal":
-				return "medium";
-			default:
-				return undefined;
-		}
-	}
-
 	private async applyArmOutputDecision(
 		arm: Arm,
 		decision: ArmOutputDecision,
@@ -5329,7 +5196,7 @@ Report findings using bug resolution workflow.`;
 			const taskDescription =
 				decision.task?.description?.trim() || sourceText.slice(0, 2000);
 			const priority =
-				this.normalizeTaskPriority(decision.task?.priority) || "normal";
+				normalizeTaskPriority(decision.task?.priority) || "normal";
 
 			const task = await this.createTaskViaApi({
 				subject: taskSubject,
@@ -5369,7 +5236,7 @@ Report findings using bug resolution workflow.`;
 				sourceMessages[sourceMessages.length - 1]?.text ||
 				"Bug reported by arm assistant output.";
 			const priority =
-				this.normalizeBugPriority(decision.bug?.priority) || "medium";
+				normalizeBugPriority(decision.bug?.priority) || "medium";
 			const bugTitle =
 				decision.bug?.title?.trim() || `Bug report from ${arm.name || arm.id}`;
 			const bugDescription =
@@ -5442,7 +5309,7 @@ Report findings using bug resolution workflow.`;
 			if (decision.update?.status) {
 				taskPatch.status = decision.update.status;
 			}
-			const updatePriority = this.normalizeTaskPriority(decision.update?.priority);
+			const updatePriority = normalizeTaskPriority(decision.update?.priority);
 			if (updatePriority) {
 				taskPatch.priority = updatePriority;
 			}
@@ -6153,7 +6020,7 @@ Report findings using bug resolution workflow.`;
 			const content = await readFile(logPath, "utf-8");
 			const lines = content.split("\n");
 			const rawOutput = lines.slice(-tailLines).join("\n");
-			return this.stripTerminalArtifacts(rawOutput);
+			return stripTerminalArtifacts(rawOutput);
 		} catch {
 			return "";
 		}
@@ -7142,9 +7009,9 @@ ${conflictList}
 		await this.inbox.write({
 			from: "brain@coleo.local",
 			to: "human@local",
-			subject: this.stripTerminalArtifacts(message.subject),
+			subject: stripTerminalArtifacts(message.subject),
 			date: new Date(),
-			body: this.stripTerminalArtifacts(message.body),
+			body: stripTerminalArtifacts(message.body),
 			headers: message.headers || {},
 		});
 
@@ -7156,8 +7023,8 @@ ${conflictList}
 					body: JSON.stringify({
 						from: this.mailConfig.fromAddress,
 						to: this.mailConfig.toAddress,
-						subject: this.stripTerminalArtifacts(message.subject),
-						body: this.stripTerminalArtifacts(message.body),
+						subject: stripTerminalArtifacts(message.subject),
+						body: stripTerminalArtifacts(message.body),
 						replyTo: this.mailConfig.fromAddress,
 					}),
 				});
