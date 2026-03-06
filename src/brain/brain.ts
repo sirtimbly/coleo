@@ -2703,7 +2703,71 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			},
 		});
 
+		// Create a commit task to capture unstaged changes
+		await this.createCommitTask(taskId, taskSubject, summary);
+
 		this.log(`Completed task: ${taskSubject}`);
+	}
+
+	/**
+	 * Create a commit task to capture unstaged changes for a completed task
+	 */
+	private async createCommitTask(
+		taskId: string,
+		taskSubject: string,
+		taskSummary: string,
+	): Promise<void> {
+		try {
+			const commitTaskId = `commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+
+			const description = `Create a commit for the completed task "${taskSubject}" (${taskId}).
+
+Task Summary:
+${taskSummary || "(no summary provided)"}
+
+Instructions:
+1. Run git status to see unstaged changes
+2. Identify files related to the completed task
+3. Stage those files with git add
+4. Create a commit with a descriptive message that:
+   - References the task ID (${taskId})
+   - Summarizes the work done
+   - Follows conventional commit format if applicable
+
+Example commit message:
+feat: implement user authentication
+
+- Add login form component
+- Implement JWT token handling
+- Add session management
+
+Refs: ${taskId}
+
+Note: If there are no unstaged changes or all changes are already committed, mark this task as completed with a note.`;
+
+			await this.createTaskViaApi({
+				id: commitTaskId,
+				subject: `Commit changes for: ${taskSubject}`,
+				description,
+				status: "pending",
+				priority: "high",
+				classification: "development",
+				domain: "vcs",
+				sourceType: "system",
+				sourceRef: taskId,
+				context: {
+					notes: `Auto-generated commit task for completed task ${taskId}`,
+				},
+			});
+
+			this.log(`Created commit task: ${commitTaskId} for task ${taskId}`);
+			this.logActivity("brain", "commit_task_created", commitTaskId, {
+				originalTaskId: taskId,
+				subject: taskSubject,
+			});
+		} catch (err) {
+			this.log(`Error creating commit task for ${taskId}: ${err}`);
+		}
 	}
 
 	/**
