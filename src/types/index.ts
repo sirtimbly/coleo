@@ -390,6 +390,15 @@ export interface ColeoConfig {
     fileSizeThreshold: number;
     enabled: boolean;
   };
+  automations: {
+    enabled: boolean;
+    refactorLargeFiles: {
+      enabled: boolean;
+      minIntervalHours: number;
+      lastRunAt: string | null;
+      requireEmptyQueue: boolean;
+    };
+  };
   defaults: {
     harness: string;
     provider: string;
@@ -424,6 +433,15 @@ export const DEFAULT_CONFIG: ColeoConfig = {
   refactoring: {
     fileSizeThreshold: 400,
     enabled: true,
+  },
+  automations: {
+    enabled: true,
+    refactorLargeFiles: {
+      enabled: true,
+      minIntervalHours: 24,
+      lastRunAt: null,
+      requireEmptyQueue: true,
+    },
   },
   defaults: {
     harness: "opencode-api",

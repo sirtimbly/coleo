@@ -2654,28 +2654,31 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		this.completedTaskCount = this.state.completedTaskCount;
 
-		// Priority escalation: Check for high/critical priority files (>600 lines) immediately
-		// Normal priority files (400-600 lines) are checked every 5 completed tasks
-		const highPriorityFiles = await findLargeFilesUtil({
-			rootDir: process.cwd(),
-			minLines: 600,
-			thresholds: { normal: 400, high: 600, critical: 800 },
-			includeGitStatus: true,
-		});
-
-		if (highPriorityFiles.length > 0) {
-			// Immediate escalation for high/critical priority files
-			await this.createRefactoringTask(highPriorityFiles);
-		} else if (this.completedTaskCount % 5 === 0) {
-			// Regular cycle for normal priority files (400-600 lines)
-			const normalPriorityFiles = await findLargeFilesUtil({
+		// Check if automations are enabled and if refactoring should run
+		if (await this.shouldRunRefactorAutomation()) {
+			// Priority escalation: Check for high/critical priority files (>600 lines) immediately
+			// Normal priority files (400-600 lines) are checked every 5 completed tasks
+			const highPriorityFiles = await findLargeFilesUtil({
 				rootDir: process.cwd(),
-				minLines: this.refactorFileThresholdLines,
-				thresholds: { normal: this.refactorFileThresholdLines },
+				minLines: 600,
+				thresholds: { normal: 400, high: 600, critical: 800 },
 				includeGitStatus: true,
 			});
-			if (normalPriorityFiles.length > 0) {
-				await this.createRefactoringTask(normalPriorityFiles);
+
+			if (highPriorityFiles.length > 0) {
+				// Immediate escalation for high/critical priority files
+				await this.createRefactoringTask(highPriorityFiles);
+			} else if (this.completedTaskCount % 5 === 0) {
+				// Regular cycle for normal priority files (400-600 lines)
+				const normalPriorityFiles = await findLargeFilesUtil({
+					rootDir: process.cwd(),
+					minLines: this.refactorFileThresholdLines,
+					thresholds: { normal: this.refactorFileThresholdLines },
+					includeGitStatus: true,
+				});
+				if (normalPriorityFiles.length > 0) {
+					await this.createRefactoringTask(normalPriorityFiles);
+				}
 			}
 		}
 
@@ -7988,6 +7991,97 @@ When refactoring large files:
 	}
 
 	/**
+	 * Check if refactor automation should run based on config and state
+	 */
+	private async shouldRunRefactorAutomation(): Promise<boolean> {
+		const config = await loadConfig(this.options.coleoDir);
+		const autoConfig = config.automations;
+
+		// Check if automations are enabled
+		if (!autoConfig.enabled || !autoConfig.refactorLargeFiles.enabled) {
+			return false;
+		}
+
+		const refactorConfig = autoConfig.refactorLargeFiles;
+
+		// Check if there's an existing refactor task
+		const existingRefactorTasks = await this.listTasksFromApi({
+			status: ["pending", "in_progress", "claimed"],
+			limit: 100,
+		});
+		const hasExistingRefactorTask = existingRefactorTasks.some(
+			(t) =>
+				t.subject?.startsWith("Refactor large files") &&
+				t.classification === "refactoring",
+		);
+		if (hasExistingRefactorTask) {
+			this.log("Skipping refactor automation: existing refactor task found");
+			return false;
+		}
+
+		// Check if queue should be empty
+		if (refactorConfig.requireEmptyQueue) {
+			// Check for pending tasks
+			const pendingTasks = await this.listTasksFromApi({
+				status: ["pending", "claimed"],
+				limit: 10,
+			});
+			if (pendingTasks.length > 0) {
+				this.log(
+					`Skipping refactor automation: ${pendingTasks.length} pending tasks in queue`,
+				);
+				return false;
+			}
+
+			// Check for open bugs
+			const openBugs = await this.listBugsFromApi(100, {
+				statuses: ["open", "investigating", "fixing"],
+			});
+			if (openBugs.length > 0) {
+				this.log(
+					`Skipping refactor automation: ${openBugs.length} open bugs`,
+				);
+				return false;
+			}
+		}
+
+		// Check minimum interval
+		if (refactorConfig.lastRunAt) {
+			const lastRun = new Date(refactorConfig.lastRunAt).getTime();
+			const hoursSinceLastRun = (Date.now() - lastRun) / (1000 * 60 * 60);
+			if (hoursSinceLastRun < refactorConfig.minIntervalHours) {
+				this.log(
+					`Skipping refactor automation: only ${hoursSinceLastRun.toFixed(1)}h since last run (min: ${refactorConfig.minIntervalHours}h)`,
+				);
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Update the last run timestamp for refactor automation
+	 */
+	private async updateRefactorAutomationLastRun(): Promise<void> {
+		try {
+			const { updateConfig } = await import("../config");
+			await updateConfig(
+				{
+					automations: {
+						refactorLargeFiles: {
+							lastRunAt: new Date().toISOString(),
+						},
+					},
+				},
+				this.options.coleoDir,
+			);
+		} catch (err) {
+			this.log(`Failed to update refactor automation lastRunAt: ${err}`);
+		}
+	}
+
+	/**
 	 * Create a refactoring task for large files
 	 */
 	private async createRefactoringTask(
@@ -8019,6 +8113,9 @@ When refactoring large files:
 				sourceType: "system",
 				sourceRef: "refactoring-cycle",
 			});
+
+			// Update last run timestamp
+			await this.updateRefactorAutomationLastRun();
 
 			this.log(
 				`Created refactoring task: ${taskId} (count: ${files.length}, priority: ${priority})`,

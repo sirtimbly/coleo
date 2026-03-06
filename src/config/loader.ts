@@ -50,6 +50,15 @@ interface TomlConfig {
     file_size_threshold?: number;
     enabled?: boolean;
   };
+  automations?: {
+    enabled?: boolean;
+    refactor_large_files?: {
+      enabled?: boolean;
+      min_interval_hours?: number;
+      last_run_at?: string | null;
+      require_empty_queue?: boolean;
+    };
+  };
   defaults?: {
     harness?: string;
     provider?: string;
@@ -161,6 +170,18 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.automations) {
+    config.automations = {
+      enabled: toml.automations.enabled ?? DEFAULT_CONFIG.automations.enabled,
+      refactorLargeFiles: {
+        enabled: toml.automations.refactor_large_files?.enabled ?? DEFAULT_CONFIG.automations.refactorLargeFiles.enabled,
+        minIntervalHours: toml.automations.refactor_large_files?.min_interval_hours ?? DEFAULT_CONFIG.automations.refactorLargeFiles.minIntervalHours,
+        lastRunAt: toml.automations.refactor_large_files?.last_run_at ?? DEFAULT_CONFIG.automations.refactorLargeFiles.lastRunAt,
+        requireEmptyQueue: toml.automations.refactor_large_files?.require_empty_queue ?? DEFAULT_CONFIG.automations.refactorLargeFiles.requireEmptyQueue,
+      },
+    };
+  }
+
   if (toml.defaults) {
     config.defaults = {
       harness: toml.defaults.harness ?? DEFAULT_CONFIG.defaults.harness,
@@ -193,6 +214,18 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 		toml.refactoring = {
 			file_size_threshold: config.refactoring.fileSizeThreshold,
 			enabled: config.refactoring.enabled,
+		};
+	}
+
+	if (config.automations) {
+		toml.automations = {
+			enabled: config.automations.enabled,
+			refactor_large_files: {
+				enabled: config.automations.refactorLargeFiles.enabled,
+				min_interval_hours: config.automations.refactorLargeFiles.minIntervalHours,
+				last_run_at: config.automations.refactorLargeFiles.lastRunAt,
+				require_empty_queue: config.automations.refactorLargeFiles.requireEmptyQueue,
+			},
 		};
 	}
 
@@ -272,6 +305,16 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
     if (tomlConfig.defaults) {
       config.defaults = { ...config.defaults, ...tomlConfig.defaults };
     }
+    if (tomlConfig.automations) {
+      config.automations = {
+        ...config.automations,
+        ...tomlConfig.automations,
+        refactorLargeFiles: {
+          ...config.automations.refactorLargeFiles,
+          ...tomlConfig.automations.refactorLargeFiles,
+        },
+      };
+    }
   }
 
   // Override with environment variables
@@ -303,13 +346,17 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 /**
  * Update configuration in TOML file
  */
-type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea"> & {
+type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea" | "automations"> & {
   brain?: Partial<ColeoConfig["brain"]>;
   mail?: Partial<ColeoConfig["mail"]>;
   terminal?: Partial<ColeoConfig["terminal"]>;
   docs?: Partial<ColeoConfig["docs"]>;
   defaults?: Partial<ColeoConfig["defaults"]>;
   gitea?: Partial<NonNullable<ColeoConfig["gitea"]>>;
+  automations?: {
+    enabled?: boolean;
+    refactorLargeFiles?: Partial<ColeoConfig["automations"]["refactorLargeFiles"]>;
+  };
 };
 
 export async function updateConfig(
@@ -321,7 +368,7 @@ export async function updateConfig(
   // Load current config
   const current = await loadConfig(dir);
 
-  const { gitea, ...rest } = updates;
+  const { gitea, automations, ...rest } = updates;
   
   // Merge updates
   const updated: ColeoConfig = {
@@ -333,6 +380,18 @@ export async function updateConfig(
     docs: updates.docs ? { ...current.docs, ...updates.docs } : current.docs,
     defaults: updates.defaults ? { ...current.defaults, ...updates.defaults } : current.defaults,
   };
+
+  if (automations) {
+    updated.automations = {
+      enabled: automations.enabled ?? current.automations.enabled,
+      refactorLargeFiles: {
+        enabled: automations.refactorLargeFiles?.enabled ?? current.automations.refactorLargeFiles.enabled,
+        minIntervalHours: automations.refactorLargeFiles?.minIntervalHours ?? current.automations.refactorLargeFiles.minIntervalHours,
+        lastRunAt: automations.refactorLargeFiles?.lastRunAt ?? current.automations.refactorLargeFiles.lastRunAt,
+        requireEmptyQueue: automations.refactorLargeFiles?.requireEmptyQueue ?? current.automations.refactorLargeFiles.requireEmptyQueue,
+      },
+    };
+  }
 
   if (gitea) {
     updated.gitea = {
