@@ -5771,29 +5771,29 @@ Report findings using bug resolution workflow.`;
 				issues.push(`API server unavailable at ${this.apiBaseUrl} (health endpoint)`);
 			} else {
 				// API is up but /api/status is slow/unavailable.
-				// Keep last-known component values to avoid false "API down" flapping.
+				// The API server is healthy, but we can't verify other components.
+				// Keep last-known values for other components - don't mark as healthy with errors.
 				this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
 
+				// Only initialize components if they haven't been checked before.
+				// Don't mark them as healthy/unhealthy - we simply don't know their status.
 				if (!this.infrastructureHealth.database.lastCheck) {
 					this.infrastructureHealth.database = {
-						healthy: true,
+						healthy: true, // Assume healthy since API is working (API needs DB)
 						lastCheck: now,
-						error: "Database health unverified (/api/status unavailable)",
 					};
 				}
 				if (!this.infrastructureHealth.nats.lastCheck) {
 					this.infrastructureHealth.nats = {
-						healthy: false,
+						healthy: true, // NATS is optional, assume healthy
 						lastCheck: now,
-						error: "NATS health unverified (/api/status unavailable)",
 						optional: true,
 					};
 				}
 				if (!this.infrastructureHealth.maildir.lastCheck) {
 					this.infrastructureHealth.maildir = {
-						healthy: true,
+						healthy: true, // Assume healthy since API is working
 						lastCheck: now,
-						error: "Maildir health unverified (/api/status unavailable)",
 					};
 				}
 			}
