@@ -1636,6 +1636,31 @@ export function createMcpServer(): McpServer {
 							updates: { status, resolution, assigneeArmId: assignee_arm_id },
 						});
 
+						// Notify brain when bug is resolved or closed
+						if (status === "resolved" || status === "closed") {
+							try {
+								await sendToBrain({
+									from: ARM_ID,
+									to: "brain",
+									type: "bug_report",
+									payload: {
+										id: bug_id,
+										title: existingBug.title,
+										description: existingBug.description,
+										status,
+										resolution: resolution || `${status} by ${ARM_ID}`,
+										source: "arm_reported",
+										sourceTaskId: undefined,
+										errorDetails: undefined,
+									},
+								});
+								console.log(`[MCP] Notified brain about bug ${bug_id} completion`);
+							} catch (err) {
+								console.error(`[MCP] Failed to notify brain about bug completion: ${err}`);
+								// Continue even if notification fails
+							}
+						}
+
 						logActivity(ARM_ID, "update_bug_status", bug_id, {
 							status,
 							resolution: resolution ? "provided" : undefined,
