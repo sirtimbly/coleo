@@ -18,9 +18,9 @@ curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.
 coleo init --dir ./.coleo
 # During init you'll be prompted to generate an API token in ./.coleo/.env
 
-# Terminal 1: start API server in foreground (or use `coleo serve start` for background mode)
-# If 8080 is already in use, choose another port (e.g. --port 18080)
-coleo serve --port 8080
+# Terminal 1: start the API server
+# If COLEO_NATS_URL is unset, this will auto-start local NATS for you
+coleo serve
 
 # Terminal 2: start the Brain (foreground polling loop)
 coleo brain run
@@ -124,7 +124,7 @@ coleo arm spawn -n worker --terminal tmux --workdir /path/to/repo
 ### Prerequisites
 
 - [Bun](https://bun.sh/) runtime (v1.1+)
-- [NATS Server](https://nats.io/) with JetStream enabled (optional, for event streaming)
+- [NATS Server](https://nats.io/) with JetStream enabled (optional, for distributed arms and stream-backed events)
 - [OpenCode](https://opencode.ai/) CLI (for spawning AI Arms)
 
 This section is for contributors running Coleo from source. For regular usage, install the global CLI and run `coleo` commands.
@@ -148,6 +148,7 @@ bun run web:build
 
 ```bash
 # Start the API server
+# If COLEO_NATS_URL is unset, this auto-starts local NATS into ./.coleo/
 bun run src/cli/index.ts serve
 
 # Start the Brain orchestrator
@@ -186,8 +187,9 @@ OPENAI_API_KEY=your-key-here      # Optional
 COLEO_API_PORT=8080               # API server port (default: 8080)
 COLEO_API_HOST=0.0.0.0            # API server host (default: 0.0.0.0)
 COLEO_API_KEY=your-key-here       # Optional API key for the Observatory/API
-COLEO_DB_PATH=~/.coleo/coleo.db   # Database location
-COLEO_NATS_URL=nats://localhost:4222  # NATS server URL
+COLEO_DB_PATH=./.coleo/coleo.db   # Database location
+# Leave unset to let `coleo serve` auto-start local NATS in ./.coleo/
+COLEO_NATS_URL=nats://localhost:4222  # External NATS server URL
 ```
 
 ## Testing

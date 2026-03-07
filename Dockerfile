@@ -7,8 +7,9 @@ FROM oven/bun:1.3-debian AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy workspace manifests required for dependency resolution
 COPY package.json bun.lock ./
+COPY src/web/package.json ./src/web/package.json
 
 # Install dependencies
 RUN bun install --frozen-lockfile
@@ -69,9 +70,8 @@ RUN echo '#!/bin/bash\nbun /home/coleo/coleo/src/cli/index.ts "$@"' > /usr/local
 RUN mkdir -p /home/coleo/projects \
     && chown coleo:coleo /home/coleo/projects
 
-# Initialize coleo for the user
+# Run as unprivileged user by default for interactive shells.
 USER coleo
-RUN /usr/local/bin/coleo init || true
 
 # Add helpful aliases to bashrc
 RUN echo '\n\

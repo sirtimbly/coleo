@@ -5,7 +5,7 @@
  * for communication between API server and agents.
  */
 
-import { connect, type NatsConnection, JSONCodec, type Subscription, type Msg } from 'nats';
+import { connect, type NatsConnection, JSONCodec, type Subscription, type Msg, type JetStreamClient } from 'nats';
 import {
   TOPICS,
   type AgentCommand,
@@ -16,6 +16,8 @@ import {
   type ArmState,
   type BrainMessage,
 } from './types';
+import { commandSubjectForEnvelope, type CommandEnvelope } from './command-types';
+import { ensureCommandStream } from './command-stream';
 import { initializeJetStreamEventStore } from './jetstream';
 
 const jc = JSONCodec<unknown>();
@@ -26,6 +28,22 @@ export interface NatsClientOptions {
   debug?: boolean;
 }
 
+class PayloadTooLargeError extends Error {
+  readonly topic: string;
+  readonly payloadBytes: number;
+  readonly maxPayloadBytes: number;
+
+  constructor(topic: string, payloadBytes: number, maxPayloadBytes: number) {
+    super(
+      `Payload for ${topic} is ${payloadBytes} bytes, which exceeds NATS max payload ${maxPayloadBytes} bytes`,
+    );
+    this.name = 'PayloadTooLargeError';
+    this.topic = topic;
+    this.payloadBytes = payloadBytes;
+    this.maxPayloadBytes = maxPayloadBytes;
+  }
+}
+
 export class NatsClient {
   private connection: NatsConnection | null = null;
   private subscriptions: Subscription[] = [];
@@ -33,6 +51,7 @@ export class NatsClient {
   private clientId: string;
   private debug: boolean;
   private isConnected = false;
+  private jetStream: JetStreamClient | null = null;
 
   constructor(options: NatsClientOptions) {
     this.serverUrl = options.serverUrl;
@@ -57,25 +76,29 @@ export class NatsClient {
       });
 
       this.isConnected = true;
+      this.jetStream = this.connection.jetstream();
       this.log('Connected to NATS server');
 
       // Track transient disconnect/reconnect state for callers relying on connected().
       (async () => {
         if (!this.connection) return;
         for await (const status of this.connection.status()) {
-          if (status.type === "disconnect" || status.type === "error") {
+          if (status.type === 'disconnect' || status.type === 'error') {
             this.isConnected = false;
-            this.log(`NATS status: ${status.type}`, "debug");
-          } else if (status.type === "reconnect") {
+            this.log(`NATS status: ${status.type}`, 'debug');
+          } else if (status.type === 'reconnect') {
             this.isConnected = true;
-            this.log("NATS status: reconnect", "debug");
+            this.log('NATS status: reconnect', 'debug');
           }
         }
       })();
 
       // Initialize JetStream EventStore
       try {
-        const js = this.connection.jetstream();
+        const js = this.jetStream;
+        if (!js) {
+          throw new Error('JetStream client unavailable');
+        }
         const jsm = await this.connection.jetstreamManager();
         await initializeJetStreamEventStore(js, jsm);
         this.log('JetStream EventStore initialized');
@@ -142,6 +165,7 @@ export class NatsClient {
         // Ignore close errors
       }
       this.connection = null;
+      this.jetStream = null;
     }
 
     this.isConnected = false;
@@ -164,7 +188,8 @@ export class NatsClient {
    */
   async publish<T>(topic: string, data: T): Promise<void> {
     this.ensureConnected();
-    this.connection!.publish(topic, jc.encode(data));
+    const payload = this.encodePayload(topic, data);
+    this.connection!.publish(topic, payload);
     this.log(`Published to ${topic}`, 'debug');
   }
 
@@ -179,14 +204,14 @@ export class NatsClient {
 
     // Subscribe to response first
     const sub = this.connection!.subscribe(replyTopic, { max: 1 });
-    
-    // Publish command
-    this.connection!.publish(topic, jc.encode(command));
-    this.log(`Sent command ${command.type} to agent ${agentId}`, 'debug');
 
     // Wait for response with timeout
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
+      const payload = this.encodePayload(topic, command);
+      this.connection!.publish(topic, payload);
+      this.log(`Sent command ${command.type} to agent ${agentId}`, 'debug');
+
       const responsePromise = (async (): Promise<CommandResponse<T>> => {
         const iterator = sub[Symbol.asyncIterator]();
         const result = await iterator.next();
@@ -194,7 +219,7 @@ export class NatsClient {
           return {
             requestId: command.requestId,
             success: false,
-            error: "No response received",
+            error: 'No response received',
           };
         }
         return jc.decode(result.value.data) as CommandResponse<T>;
@@ -254,11 +279,27 @@ export class NatsClient {
    }
 
    /**
-    * Publish a message to the brain
-    */
+   * Publish a message to the brain
+   */
    async publishBrainMessage(message: BrainMessage): Promise<void> {
      await this.publish(TOPICS.BRAIN_MESSAGES, message);
    }
+
+  /**
+   * Publish a command envelope to the JetStream command stream.
+   */
+  async publishCommandEnvelope(envelope: CommandEnvelope): Promise<void> {
+    this.ensureConnected();
+    if (!this.jetStream) {
+      throw new Error('JetStream is not initialized');
+    }
+    await ensureCommandStream(this.connection!);
+
+    const subject = commandSubjectForEnvelope(envelope);
+    const payload = this.encodePayload(subject, envelope);
+    await this.jetStream.publish(subject, payload, { msgID: envelope.id });
+    this.log(`Published command envelope to ${subject}`, 'debug');
+  }
 
    // ============================================
    // Subscription Methods
@@ -294,12 +335,41 @@ export class NatsClient {
   subscribeToCommands(agentId: string, handler: (command: AgentCommand) => Promise<CommandResponse>): Subscription {
     const topic = TOPICS.agentCommand(agentId);
     
-    return this.subscribe<AgentCommand>(topic, async (command, msg) => {
+    return this.subscribe<AgentCommand>(topic, async (command) => {
       const response = await handler(command);
       
       // Send response to the reply topic
       const replyTopic = TOPICS.agentResponse(agentId, command.requestId);
-      await this.publish(replyTopic, response);
+      try {
+        await this.publish(replyTopic, response);
+      } catch (err) {
+        if (!this.isMaxPayloadError(err)) {
+          throw err;
+        }
+
+        this.log(
+          `Response for command ${command.type} exceeded NATS payload limit; sending compact error response`,
+          'error',
+        );
+
+        const fallbackResponse: CommandResponse = {
+          requestId: command.requestId,
+          success: false,
+          error:
+            command.type === 'get_messages'
+              ? 'Response too large for NATS. Retry with a smaller messages limit.'
+              : 'Response too large for NATS.',
+        };
+
+        try {
+          await this.publish(replyTopic, fallbackResponse);
+        } catch (fallbackErr) {
+          this.log(
+            `Failed to publish compact fallback response for ${command.type}: ${fallbackErr}`,
+            'error',
+          );
+        }
+      }
     });
   }
 
@@ -339,6 +409,33 @@ export class NatsClient {
     if (!this.connection) {
       throw new Error('Not connected to NATS. Call connect() first.');
     }
+  }
+
+  private getMaxPayloadBytes(): number | null {
+    const maxPayload = this.connection?.info?.max_payload;
+    if (typeof maxPayload === 'number' && Number.isFinite(maxPayload) && maxPayload > 0) {
+      return maxPayload;
+    }
+    return null;
+  }
+
+  private encodePayload(topic: string, data: unknown): Uint8Array {
+    const payload = jc.encode(data);
+    const maxPayload = this.getMaxPayloadBytes();
+    if (maxPayload !== null && payload.length > maxPayload) {
+      throw new PayloadTooLargeError(topic, payload.length, maxPayload);
+    }
+    return payload;
+  }
+
+  private isMaxPayloadError(err: unknown): boolean {
+    if (err instanceof PayloadTooLargeError) {
+      return true;
+    }
+    if (err instanceof Error) {
+      return err.message.includes('MAX_PAYLOAD_EXCEEDED');
+    }
+    return false;
   }
 
   private log(message: string, level: 'debug' | 'info' | 'error' = 'info'): void {

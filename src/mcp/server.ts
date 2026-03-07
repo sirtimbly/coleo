@@ -16,16 +16,19 @@ import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
 import { getColeoDir } from "../config";
-import { NatsClient, TOPICS, type BrainMessage } from "../nats";
+import { NatsClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import {
-	queueMessage,
 	getPendingMessages,
 	markMessageCompleted,
 	getNotes,
 } from "../db/state";
 import { createApiDatabase } from "./api-db";
 import { broadcast } from "../api/websocket";
+import {
+	createCommandEnvelope,
+	getMcpCommandPublishMode,
+} from "../nats/command-types";
 import {
 	generateTaskDetermination,
 	generateContextBundle,
@@ -53,7 +56,7 @@ const PROJECT_ROOT = process.env.COLEO_PROJECT_ROOT || process.cwd();
 const API_BASE_URL = process.env.COLEO_API_URL || "http://127.0.0.1:8080";
 const API_KEY = process.env.COLEO_API_KEY || "dev-api-key-12345";
 
-type StateDb = Parameters<typeof queueMessage>[0];
+type StateDb = Parameters<typeof getPendingMessages>[0];
 
 // API-backed database proxy connection (lazy initialization)
 let dbClient: StateDb | null = null;
@@ -299,48 +302,100 @@ function ensureArmRegistered(): void {
 	}
 }
 
-/**
- * Write a message to the brain's SQLite inbox table when NATS is unavailable.
- */
-async function sendToBrainInbox(message: QueueMessage): Promise<string> {
-	const id = `${Date.now()}-${randomBytes(4).toString("hex")}`;
-
-	const database = getDatabase(false);
-	queueMessage(database, {
-		id,
-		from: message.from,
-		to: "brain",
-		type: message.type,
-		payload: message.payload,
+async function publishCommandViaApi(
+	envelope: ReturnType<typeof createCommandEnvelope>,
+	endpoint = "/api/brain/internal/commands/publish",
+): Promise<void> {
+	const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			"X-API-Key": API_KEY,
+		},
+		body: JSON.stringify(envelope),
 	});
-	return id;
+
+	if (!response.ok) {
+		const errorText = await response.text();
+		throw new Error(
+			`API publish failed (${response.status} ${response.statusText})${errorText ? `: ${errorText}` : ""}`,
+		);
+	}
+}
+
+async function publishCommandViaNats(
+	envelope: ReturnType<typeof createCommandEnvelope>,
+): Promise<void> {
+	const nats = await getNatsClient();
+	if (!nats || !nats.connected()) {
+		throw new Error("NATS unavailable");
+	}
+	await nats.publishCommandEnvelope(envelope);
 }
 
 /**
- * Send a message to the brain via NATS (preferred) or SQLite inbox fallback.
+ * Send a command message to the brain through API/JetStream (with optional direct NATS publish).
  */
 async function sendToBrain(
 	message: Omit<QueueMessage, "id" | "timestamp">,
 ): Promise<string> {
-	const nats = await getNatsClient();
+	const envelope = createCommandEnvelope({
+		id: `${Date.now()}-${randomBytes(4).toString("hex")}`,
+		from: message.from,
+		to: message.to,
+		type: message.type,
+		payload: message.payload,
+	});
+	const mode = getMcpCommandPublishMode();
+	const errors: string[] = [];
 
-	if (nats && nats.connected()) {
-		// Send via NATS
-		const brainMessage: BrainMessage = {
-			from: message.from,
-			to: "brain",
-			type: message.type,
-			payload: message.payload,
-			timestamp: new Date().toISOString(),
-		};
-
-		await nats.publishBrainMessage(brainMessage);
-		console.error(`[MCP] Sent ${message.type} to brain via NATS`);
-		return `nats-${Date.now()}`;
+	if (mode === "api" || mode === "auto") {
+		try {
+			await publishCommandViaApi(envelope, "/api/brain/internal/commands/publish");
+			return envelope.id;
+		} catch (err) {
+			errors.push(`authoritative API publish failed: ${err}`);
+		}
 	}
 
-	// Fall back to SQLite inbox table when NATS is unavailable.
-	return sendToBrainInbox(message as QueueMessage);
+	if (mode === "nats" || mode === "auto") {
+		try {
+			await publishCommandViaNats(envelope);
+			return envelope.id;
+		} catch (err) {
+			errors.push(`direct NATS publish failed: ${err}`);
+		}
+	}
+
+	try {
+		await publishCommandViaApi(envelope, "/api/brain/internal/messages/queue");
+		return envelope.id;
+	} catch (err) {
+		errors.push(`compat queue publish failed: ${err}`);
+	}
+
+	await sendToBrainFile({
+		id: envelope.id,
+		from: envelope.from,
+		to: envelope.to,
+		type: envelope.type as QueueMessage["type"],
+		payload: envelope.payload,
+		timestamp: new Date(envelope.createdAt),
+	});
+	console.error(`[MCP] All command publish paths failed, used file fallback: ${errors.join(" | ")}`);
+	return envelope.id;
+}
+
+async function sendToBrainFile(message: QueueMessage): Promise<void> {
+	const queueDir = join(COLEO_DIR, "queue", "brain", "pending");
+	await mkdir(queueDir, { recursive: true });
+
+	const filename = `${message.id}-${message.from}-${message.type}.json`;
+	await writeFile(
+		join(queueDir, filename),
+		JSON.stringify(message, null, 2),
+		"utf-8",
+	);
 }
 
 // TODO : The arms need a way of recognizing when they're in conflict with each other, when one is attempting to make changes to the same file that the other one is. So when it notices that a file is changed since the agent last worked on it unexpectedly, then it should be able to send that information up to the brain and the brain can distribute that information to the rest of the arms so that they know that whoever's working on this file, this other arm is reporting that things are changing out from underneath it. And then the brain should help resolve conflict. So if two arms claim a certain file that they're working on currently, then the brain needs to either allow them to work together because they're not going to conflict because they're working on different parts of the code and the brain should say okay arm one split the code into these files arm two you can do this in this file and this in the other file. So it should resolve conflicts and it should grant priority to whichever one is most important or looks like it's most likely to succeed or is doing the most important work on that file and then it should notify when those locks are released
@@ -842,7 +897,8 @@ export function createMcpServer(): McpServer {
 	server.registerTool(
 		"claim_task",
 		{
-			description: "Claim a pending task to work on",
+			description:
+				"Send an asynchronous claim request for a task. After calling, poll get_my_instructions to see the brain's assignment result.",
 			inputSchema: {
 				task_id: z.string().describe("The ID of the task to claim"),
 			},
@@ -942,7 +998,8 @@ export function createMcpServer(): McpServer {
 	server.registerTool(
 		"complete_task",
 		{
-			description: "Mark a task as complete with a summary",
+			description:
+				"Send an asynchronous completion report for a task with a summary. The brain processes it from the command queue.",
 			inputSchema: {
 				task_id: z.string().describe("The ID of the task"),
 				summary: z.string().describe("Summary of what was done"),
@@ -1003,7 +1060,7 @@ export function createMcpServer(): McpServer {
 		"submit_status_report",
 		{
 			description:
-				"Submit a status report for a task in progress or just completed. Use this to report issues, blockers, or completion with issues that require brain re-evaluation.",
+				"Send an asynchronous status update for a task in progress or just completed. Use this to report issues, blockers, or completion with issues that require brain re-evaluation.",
 			inputSchema: {
 				task_id: z.string().describe("The ID of the task this report is for"),
 				status: z
@@ -1828,7 +1885,7 @@ export function createMcpServer(): McpServer {
 		"get_my_instructions",
 		{
 			description:
-				"Get tasks and instructions assigned to this arm by the brain. Call this when you first start to see what you should work on.",
+				"Read your mailbox from the brain (assigned tasks and command responses). Call this at startup and poll periodically for async brain updates.",
 			inputSchema: {},
 		},
 		async () => {
@@ -1849,7 +1906,7 @@ export function createMcpServer(): McpServer {
 					content: [
 						{
 							type: "text" as const,
-							text: `No tasks assigned yet. You can:\n1. Wait for the brain to assign a task\n2. Use 'claim_task' to claim a pending task\n3. Explore the codebase and report discoveries`,
+							text: `No tasks assigned yet. You can:\n1. Poll 'get_my_instructions' again after a short wait\n2. Use 'claim_task' to claim a pending task\n3. Explore the codebase and report discoveries`,
 						},
 					],
 				};

@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { Hono } from "hono";
 import { createBrainRoutes } from "../routes/brain";
 import { HttpError } from "../middleware/error";
+import { setNatsManager } from "../../nats/server";
 
 function createTestDb(): Database {
   const db = new Database(":memory:");
@@ -16,8 +17,13 @@ function createTestDb(): Database {
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       processed_at TEXT,
-      error TEXT
-    )
+      error TEXT,
+      source TEXT,
+      stream_name TEXT,
+      stream_seq INTEGER,
+      dedupe_id TEXT
+    );
+    CREATE UNIQUE INDEX idx_messages_dedupe_id ON messages(dedupe_id) WHERE dedupe_id IS NOT NULL;
   `);
   return db;
 }
@@ -27,6 +33,12 @@ describe("brain internal messages API", () => {
   let app: Hono<{ Variables: { db: Database } }>;
 
   beforeEach(() => {
+    const connection = createMockNatsConnection();
+    setNatsManager({
+      getConnection: () => connection,
+      ready: () => true,
+    } as unknown as Parameters<typeof setNatsManager>[0]);
+
     db = createTestDb();
     app = new Hono<{ Variables: { db: Database } }>();
 
@@ -45,6 +57,10 @@ describe("brain internal messages API", () => {
   });
 
   afterEach(() => {
+    setNatsManager({
+      getConnection: () => null,
+      ready: () => false,
+    } as unknown as Parameters<typeof setNatsManager>[0]);
     db.close();
   });
 
@@ -132,25 +148,39 @@ describe("brain internal messages API", () => {
     });
 
     expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      queued: true,
+      id: "msg-valid",
+    });
 
-    const queued = db
-      .query("SELECT to_id, message_type, payload, status FROM messages WHERE id = ?")
-      .get("msg-valid") as
-      | {
-          to_id: string;
-          message_type: string;
-          payload: string;
-          status: string;
-        }
-      | null;
+    const queuedCount = db
+      .query("SELECT COUNT(*) AS count FROM messages WHERE id = ?")
+      .get("msg-valid") as { count: number };
+    expect(queuedCount.count).toBe(0);
 
-    expect(queued).toBeTruthy();
-    expect(queued?.to_id).toBe("brain");
-    expect(queued?.message_type).toBe("status_update");
-    expect(queued?.status).toBe("pending");
-    expect(JSON.parse(queued?.payload || "{}")).toEqual({
-      taskId: "task-2",
-      status: "in_progress",
+    const deadLetters = db
+      .query("SELECT COUNT(*) AS count FROM messages WHERE to_id = 'brain.deadletter'")
+      .get() as { count: number };
+    expect(deadLetters.count).toBe(0);
+  });
+
+  it("accepts command publish endpoint", async () => {
+    const response = await app.request("/api/brain/internal/commands/publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "cmd-publish-valid",
+        from: "arm-9",
+        to: "brain",
+        type: "status_update",
+        payload: { taskId: "task-9", status: "in_progress" },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      accepted: true,
+      id: "cmd-publish-valid",
     });
 
     const deadLetters = db
@@ -357,3 +387,51 @@ describe("brain internal messages API", () => {
     expect(missing).toBeNull();
   });
 });
+
+function createMockNatsConnection(): {
+  info: { max_payload: number };
+  jetstreamManager: () => Promise<{
+    streams: {
+      info: (name: string) => Promise<{ config: { subjects: string[] } }>;
+      add: (config: { name: string; subjects?: string[] }) => Promise<void>;
+      update: (name: string, config: { subjects?: string[] }) => Promise<void>;
+    };
+  }>;
+  jetstream: () => {
+    publish: (
+      subject: string,
+      payload: Uint8Array,
+      options?: { msgID?: string },
+    ) => Promise<{ stream: string; seq: number; duplicate: boolean }>;
+  };
+} {
+  const streams = new Map<string, { subjects: string[] }>();
+  let seq = 0;
+
+  return {
+    info: { max_payload: 2_000_000 },
+    jetstreamManager: async () => ({
+      streams: {
+        info: async (name: string) => {
+          const stream = streams.get(name);
+          if (!stream) {
+            throw new Error(`stream not found: ${name}`);
+          }
+          return { config: { subjects: stream.subjects } };
+        },
+        add: async (config: { name: string; subjects?: string[] }) => {
+          streams.set(config.name, { subjects: config.subjects || [] });
+        },
+        update: async (name: string, config: { subjects?: string[] }) => {
+          streams.set(name, { subjects: config.subjects || [] });
+        },
+      },
+    }),
+    jetstream: () => ({
+      publish: async (_subject: string, _payload: Uint8Array, _options?: { msgID?: string }) => {
+        seq += 1;
+        return { stream: "coleo-commands", seq, duplicate: false };
+      },
+    }),
+  };
+}

@@ -11,7 +11,7 @@
 import { readFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
-import { Maildir } from "../mail";
+import { Maildir, type MailMessage } from "../mail";
 import { getDocWatcher, stopDocWatcher } from "../docs/watcher";
 import {
 	parsePlanFile,
@@ -42,6 +42,17 @@ import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
 import { findLargeFiles as findLargeFilesUtil } from "./utils/find-large-files";
+import {
+	stripTerminalArtifacts,
+	getDomainPatterns,
+	isActiveHarnessState,
+	toEpochMs,
+	extractMessageTimestampMs,
+	humanizeStatus,
+	normalizeTaskPriority,
+	normalizeBugPriority,
+	mapApiTask,
+} from "./brain-utils";
 import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
@@ -50,8 +61,26 @@ import type {
 	Arm,
 	Discovery,
 	MessageType,
+	TaskAttachment,
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
+import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
+
+function isTaskAttachment(value: unknown): value is TaskAttachment {
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const attachment = value as Partial<TaskAttachment>;
+	return (
+		attachment.kind === "image" &&
+		typeof attachment.uploadId === "string" &&
+		typeof attachment.filename === "string" &&
+		typeof attachment.mimeType === "string" &&
+		typeof attachment.sizeBytes === "number" &&
+		typeof attachment.contentUrl === "string"
+	);
+}
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -464,14 +493,14 @@ export class Brain {
 		type: string;
 		payload: unknown;
 	}): Promise<boolean> {
-		const response = await this.apiRequest<{ queued?: boolean }>(
-			"/api/brain/internal/messages/queue",
+		const response = await this.apiRequest<{ accepted?: boolean; queued?: boolean }>(
+			"/api/brain/internal/commands/publish",
 			{
 				method: "POST",
 				body: JSON.stringify(input),
 			},
 		);
-		return response?.queued === true;
+		return response?.accepted === true || response?.queued === true;
 	}
 
 	private async listPendingMessagesViaApi(
@@ -953,7 +982,26 @@ export class Brain {
 	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
 	private async processHumanMail(): Promise<void> {
-		const messages = await this.inbox.list("new");
+		const [inboxMessages, sentMessages] = await Promise.all([
+			this.inbox.list("new"),
+			this.sent.list("new"),
+		]);
+		const messages = [
+			...inboxMessages
+				.filter((message) => !message.from.toLowerCase().includes("brain@coleo.local"))
+				.map((message) => ({
+					mailbox: this.inbox,
+					source: "inbox" as const,
+					message,
+				})),
+			...sentMessages
+				.filter((message) => message.to.toLowerCase().includes("brain@coleo.local"))
+				.map((message) => ({
+					mailbox: this.sent,
+					source: "sent" as const,
+					message,
+				})),
+		];
 
 		if (messages.length === 0) return;
 
@@ -972,13 +1020,23 @@ export class Brain {
 			pendingTasks: this.state.pendingTasks,
 			recentActivity,
 		});
-		for (const message of messages) {
+		for (const entry of messages) {
+			const { mailbox, message, source } = entry;
 			this.log(`Processing: ${message.subject}`);
+			const attachments = this.parseMailAttachments(message);
+			const taskContext =
+				attachments.length > 0
+					? ({ attachments } satisfies NonNullable<Task["context"]>)
+					: undefined;
+			const messageBody = appendTaskAttachmentsToPromptText(
+				message.body,
+				attachments,
+			);
 
 			// Use LLM to determine intent
 			const intent = await this.mailProcessor.processMessage(
 				message.subject,
-				message.body,
+				messageBody,
 				systemPrompt,
 			);
 
@@ -993,6 +1051,7 @@ export class Brain {
 						message.id,
 						intent.priority,
 						intent.domain,
+						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
@@ -1011,6 +1070,7 @@ export class Brain {
 						intent.body || message.body,
 						intent.targetDoc,
 						message.id,
+						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
@@ -1027,7 +1087,10 @@ export class Brain {
 					// Note: createHumanBugReport already sends a confirmation email
 					await this.createHumanBugReport(
 						intent.title || message.subject,
-						intent.description || message.body,
+						appendTaskAttachmentsToPromptText(
+							intent.description || message.body,
+							attachments,
+						),
 						message.id,
 					);
 					break;
@@ -1066,6 +1129,8 @@ export class Brain {
 								intent.instruction,
 								message.id,
 								intent.priority,
+								undefined,
+								taskContext,
 							);
 						} else if (
 							targetArm.status === "busy" ||
@@ -1081,6 +1146,8 @@ export class Brain {
 								intent.instruction,
 								message.id,
 								intent.priority,
+								undefined,
+								taskContext,
 							);
 							const body = await this.templates.renderTemplate(
 								"human-task-queued-busy.jinja",
@@ -1096,10 +1163,14 @@ export class Brain {
 							});
 						} else {
 							// Arm is idle, can prompt directly
-							await this.sendPromptToArm(intent.armName, intent.instruction);
+							await this.sendPromptToArm(intent.armName, intent.instruction, {
+								attachments,
+							});
 							this.log(`Prompted arm ${intent.armName} directly`);
 							this.logActivity("brain", "arm_prompted", intent.armName, {
 								reason: "human_mail",
+								source,
+								attachmentCount: attachments.length,
 								instruction: intent.instruction.slice(0, 100),
 							});
 							// Send confirmation reply
@@ -1136,7 +1207,28 @@ export class Brain {
 			}
 
 			// Mark as processed
-			await this.inbox.markSeen(message.id);
+			await mailbox.markSeen(message.id);
+		}
+	}
+
+	private parseMailAttachments(message: MailMessage): TaskAttachment[] {
+		const raw = message.headers["x-coleo-attachments"];
+		if (!raw) {
+			return [];
+		}
+
+		try {
+			const parsed = JSON.parse(raw) as unknown;
+			if (!Array.isArray(parsed)) {
+				return [];
+			}
+
+			return parsed.filter(isTaskAttachment);
+		} catch (err) {
+			this.log(
+				`Failed to parse attachments for mail ${message.id}: ${err instanceof Error ? err.message : String(err)}`,
+			);
+			return [];
 		}
 	}
 
@@ -1149,6 +1241,7 @@ export class Brain {
 		mailThreadId?: string,
 		priority?: "critical" | "high" | "normal" | "low",
 		domain?: string,
+		context?: Task["context"],
 	): Promise<Task> {
 		const requestedId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 		const task =
@@ -1160,6 +1253,7 @@ export class Brain {
 				priority: priority || "normal",
 				domain,
 				mailThreadId,
+				context,
 				sourceType: "email",
 			})) ||
 			({
@@ -1172,6 +1266,7 @@ export class Brain {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 				mailThreadId,
+				context,
 			} as Task);
 
 		this.log(
@@ -1182,6 +1277,7 @@ export class Brain {
 			priority: task.priority,
 			domain,
 			mailThreadId,
+			attachmentCount: context?.attachments?.length || 0,
 		});
 
 		return task;
@@ -1527,6 +1623,7 @@ export class Brain {
 		description: string,
 		targetDoc?: string,
 		mailThreadId?: string,
+		context?: Task["context"],
 	): Promise<Task> {
 		const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -1547,6 +1644,7 @@ export class Brain {
 				domain: "docs",
 				classification: "documentation",
 				mailThreadId,
+				context,
 				sourceType: "email",
 			})) ||
 			({
@@ -1560,6 +1658,7 @@ export class Brain {
 				createdAt: new Date(),
 				updatedAt: new Date(),
 				mailThreadId,
+				context,
 			} as Task);
 
 		this.log(`Created doc update task: ${subject} (${taskId})`);
@@ -1821,7 +1920,7 @@ export class Brain {
 
 			const armLabel = this.getArmDisplayName(armId);
 			const notes = message?.trim();
-			const statusLabel = this.humanizeStatus(status);
+			const statusLabel = humanizeStatus(status);
 			const parts: Array<string | null> = [
 				`Status update from ${armLabel}: ${statusLabel}.`,
 				dbStatus === "in_progress"
@@ -1890,65 +1989,9 @@ export class Brain {
 		return armId;
 	}
 
-	private humanizeStatus(value: string): string {
-		return value
-			.split("_")
-			.map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-			.join(" ");
-	}
-
 	/**
 	 * Fetch a single task from the API server.
 	 */
-	private mapApiTask(task: {
-		id: string;
-		subject: string;
-		description: string;
-		status: string;
-		priority: string;
-		domain?: string | null;
-		classification?: string | null;
-		assignedTo?: string | null;
-		dependencyBlocked?: boolean;
-		sortOrder?: number | null;
-		createdAt: string;
-		updatedAt: string;
-		completedAt?: string | null;
-		artifacts?: string[];
-		mailThreadId?: string | null;
-		context?: {
-			discoveries?: Array<{
-				id: string;
-				kind: string;
-				title: string;
-				details: string;
-				filePath?: string;
-				lineNumber?: number;
-				severity: string;
-			}>;
-			notes?: string;
-		};
-	}): Task {
-		return {
-			id: task.id,
-			subject: task.subject,
-			description: task.description,
-			status: task.status as Task["status"],
-			priority: task.priority as Task["priority"],
-			domain: task.domain || undefined,
-			classification: task.classification || undefined,
-			assignedTo: task.assignedTo || undefined,
-			dependencyBlocked: task.dependencyBlocked === true,
-			sortOrder: task.sortOrder ?? undefined,
-			createdAt: new Date(task.createdAt),
-			updatedAt: new Date(task.updatedAt),
-			completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
-			artifacts: task.artifacts || [],
-			mailThreadId: task.mailThreadId || undefined,
-			context: task.context || undefined,
-		};
-	}
-
 	private async listTasksFromApi(options?: {
 		status?: string[];
 		assignedTo?: string;
@@ -2012,7 +2055,7 @@ export class Brain {
 			this.state.pendingTasks = response.counts.byStatus.pending;
 		}
 
-		return response.tasks.map((task) => this.mapApiTask(task));
+		return response.tasks.map((task) => mapApiTask(task));
 	}
 
 	private async listBugsFromApi(
@@ -2161,7 +2204,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async patchTaskViaApi(
@@ -2206,7 +2249,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async getTaskFromApi(taskId: string): Promise<Task | null> {
@@ -2235,7 +2278,7 @@ export class Brain {
 			return null;
 		}
 
-		return this.mapApiTask(response.task);
+		return mapApiTask(response.task);
 	}
 
 	private async getTaskDependenciesFromApi(taskId: string): Promise<string[]> {
@@ -2611,28 +2654,31 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		this.completedTaskCount = this.state.completedTaskCount;
 
-		// Priority escalation: Check for high/critical priority files (>600 lines) immediately
-		// Normal priority files (400-600 lines) are checked every 5 completed tasks
-		const highPriorityFiles = await findLargeFilesUtil({
-			rootDir: process.cwd(),
-			minLines: 600,
-			thresholds: { normal: 400, high: 600, critical: 800 },
-			includeGitStatus: true,
-		});
-
-		if (highPriorityFiles.length > 0) {
-			// Immediate escalation for high/critical priority files
-			await this.createRefactoringTask(highPriorityFiles);
-		} else if (this.completedTaskCount % 5 === 0) {
-			// Regular cycle for normal priority files (400-600 lines)
-			const normalPriorityFiles = await findLargeFilesUtil({
+		// Check if automations are enabled and if refactoring should run
+		if (await this.shouldRunRefactorAutomation()) {
+			// Priority escalation: Check for high/critical priority files (>600 lines) immediately
+			// Normal priority files (400-600 lines) are checked every 5 completed tasks
+			const highPriorityFiles = await findLargeFilesUtil({
 				rootDir: process.cwd(),
-				minLines: this.refactorFileThresholdLines,
-				thresholds: { normal: this.refactorFileThresholdLines },
+				minLines: 600,
+				thresholds: { normal: 400, high: 600, critical: 800 },
 				includeGitStatus: true,
 			});
-			if (normalPriorityFiles.length > 0) {
-				await this.createRefactoringTask(normalPriorityFiles);
+
+			if (highPriorityFiles.length > 0) {
+				// Immediate escalation for high/critical priority files
+				await this.createRefactoringTask(highPriorityFiles);
+			} else if (this.completedTaskCount % 5 === 0) {
+				// Regular cycle for normal priority files (400-600 lines)
+				const normalPriorityFiles = await findLargeFilesUtil({
+					rootDir: process.cwd(),
+					minLines: this.refactorFileThresholdLines,
+					thresholds: { normal: this.refactorFileThresholdLines },
+					includeGitStatus: true,
+				});
+				if (normalPriorityFiles.length > 0) {
+					await this.createRefactoringTask(normalPriorityFiles);
+				}
 			}
 		}
 
@@ -2966,10 +3012,10 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		});
 
 		const armLabel = this.getArmDisplayName(report.armId);
-		const statusLabel = this.humanizeStatus(report.status);
+		const statusLabel = humanizeStatus(report.status);
 		const trimmedSummary = report.summary?.trim();
 		const testsLabel = report.testsStatus
-			? this.humanizeStatus(report.testsStatus)
+			? humanizeStatus(report.testsStatus)
 			: null;
 
 		const formatList = (title: string, items: string[]) => {
@@ -4759,7 +4805,7 @@ Report findings using bug resolution workflow.`;
 					await this.syncArmStatus(arm.id, "stopped");
 					continue;
 				}
-				if (this.isActiveHarnessState(harnessState.state)) {
+				if (isActiveHarnessState(harnessState.state)) {
 					this.log(
 						`Arm ${arm.id} [${armDomain}]: harness state is "${harnessState.state}", skipping idle prompt`,
 					);
@@ -4855,75 +4901,10 @@ Report findings using bug resolution workflow.`;
 				this.logActivity("brain", "arm_waiting", arm.id, {
 					reason: "no_pending_tasks",
 					domain: armDomain,
-					watchingPatterns: this.getDomainPatterns(armDomain),
+					watchingPatterns: getDomainPatterns(armDomain),
 				});
 			}
 		}
-	}
-
-	/**
-	 * Get file patterns an arm with a given domain would be interested in
-	 */
-	private getDomainPatterns(domain: string): string[] {
-		const patterns: Record<string, string[]> = {
-			frontend: [
-				"src/components/**",
-				"src/web/**",
-				"*.css",
-				"*.scss",
-				"*.tsx",
-				"*.ts",
-			],
-			backend: ["src/api/**", "src/services/**", "src/db/**", "*.ts"],
-			testing: ["**/*.test.*", "**/*.spec.*", "e2e/**", "__tests__/**"],
-			docs: ["*.md", "docs/**", "README*"],
-			architect: [
-				"src/**",
-				"*.toml",
-				"*.json",
-				"AGENTS.md",
-				"docs/architecture/**",
-			],
-			devops: ["Dockerfile", ".github/**", "*.yml", "*.yaml", "infra/**"],
-			general: ["src/**", "*.ts", "*.md"],
-		};
-
-		return patterns[domain] ?? patterns["general"] ?? [];
-	}
-
-	private isActiveHarnessState(state: string): boolean {
-		return (
-			state === "initializing" ||
-			state === "processing" ||
-			state === "executing" ||
-			state === "waiting_approval" ||
-			state === "busy"
-		);
-	}
-
-	private toEpochMs(value: unknown): number | null {
-		if (typeof value !== "number" || !Number.isFinite(value)) {
-			return null;
-		}
-		// OpenCode message times may be seconds while JS dates are milliseconds.
-		return value < 1_000_000_000_000 ? value * 1000 : value;
-	}
-
-	private extractMessageTimestampMs(message: Record<string, unknown>): number | null {
-		const info = message.info;
-		if (!info || typeof info !== "object") {
-			return null;
-		}
-		const time = (info as Record<string, unknown>).time;
-		if (!time || typeof time !== "object") {
-			return null;
-		}
-		const timeObj = time as Record<string, unknown>;
-		return (
-			this.toEpochMs(timeObj.completed) ??
-			this.toEpochMs(timeObj.created) ??
-			null
-		);
 	}
 
 	private async getRecentArmMessageTimestampMs(
@@ -4945,7 +4926,7 @@ Report findings using bug resolution workflow.`;
 			if (!message || typeof message !== "object") {
 				continue;
 			}
-			const timestampMs = this.extractMessageTimestampMs(
+			const timestampMs = extractMessageTimestampMs(
 				message as Record<string, unknown>,
 			);
 			if (
@@ -5127,7 +5108,7 @@ Report findings using bug resolution workflow.`;
 			sawAssistant = true;
 
 			const text = this.extractSessionMessageText(messageObj);
-			const timestampMs = this.extractMessageTimestampMs(messageObj);
+			const timestampMs = extractMessageTimestampMs(messageObj);
 			if (timestampMs !== null) {
 				if (!latestAssistant || timestampMs > latestAssistant.timestampMs) {
 					latestAssistant = { timestampMs, hasText: Boolean(text) };
@@ -5175,40 +5156,6 @@ Report findings using bug resolution workflow.`;
 		return { inGrace: false, ageMs };
 	}
 
-	private normalizeTaskPriority(
-		value: string | undefined,
-	): Task["priority"] | undefined {
-		if (!value) return undefined;
-		switch (value) {
-			case "critical":
-			case "high":
-			case "normal":
-			case "low":
-				return value;
-			case "medium":
-				return "normal";
-			default:
-				return undefined;
-		}
-	}
-
-	private normalizeBugPriority(
-		value: string | undefined,
-	): "low" | "medium" | "high" | "critical" | undefined {
-		if (!value) return undefined;
-		switch (value) {
-			case "low":
-			case "medium":
-			case "high":
-			case "critical":
-				return value;
-			case "normal":
-				return "medium";
-			default:
-				return undefined;
-		}
-	}
-
 	private async applyArmOutputDecision(
 		arm: Arm,
 		decision: ArmOutputDecision,
@@ -5252,7 +5199,7 @@ Report findings using bug resolution workflow.`;
 			const taskDescription =
 				decision.task?.description?.trim() || sourceText.slice(0, 2000);
 			const priority =
-				this.normalizeTaskPriority(decision.task?.priority) || "normal";
+				normalizeTaskPriority(decision.task?.priority) || "normal";
 
 			const task = await this.createTaskViaApi({
 				subject: taskSubject,
@@ -5292,7 +5239,7 @@ Report findings using bug resolution workflow.`;
 				sourceMessages[sourceMessages.length - 1]?.text ||
 				"Bug reported by arm assistant output.";
 			const priority =
-				this.normalizeBugPriority(decision.bug?.priority) || "medium";
+				normalizeBugPriority(decision.bug?.priority) || "medium";
 			const bugTitle =
 				decision.bug?.title?.trim() || `Bug report from ${arm.name || arm.id}`;
 			const bugDescription =
@@ -5365,7 +5312,7 @@ Report findings using bug resolution workflow.`;
 			if (decision.update?.status) {
 				taskPatch.status = decision.update.status;
 			}
-			const updatePriority = this.normalizeTaskPriority(decision.update?.priority);
+			const updatePriority = normalizeTaskPriority(decision.update?.priority);
 			if (updatePriority) {
 				taskPatch.priority = updatePriority;
 			}
@@ -5509,7 +5456,7 @@ Report findings using bug resolution workflow.`;
 	private async sendPromptToArm(
 		armName: string,
 		message: string,
-		options?: { interrupt?: boolean },
+		options?: { interrupt?: boolean; attachments?: TaskAttachment[] },
 	): Promise<boolean> {
 		try {
 			const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
@@ -5522,6 +5469,7 @@ Report findings using bug resolution workflow.`;
 				body: JSON.stringify({
 					prompt: message,
 					interrupt: options?.interrupt,
+					attachments: options?.attachments,
 				}),
 			});
 
@@ -5826,29 +5774,29 @@ Report findings using bug resolution workflow.`;
 				issues.push(`API server unavailable at ${this.apiBaseUrl} (health endpoint)`);
 			} else {
 				// API is up but /api/status is slow/unavailable.
-				// Keep last-known component values to avoid false "API down" flapping.
+				// The API server is healthy, but we can't verify other components.
+				// Keep last-known values for other components - don't mark as healthy with errors.
 				this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
 
+				// Only initialize components if they haven't been checked before.
+				// Don't mark them as healthy/unhealthy - we simply don't know their status.
 				if (!this.infrastructureHealth.database.lastCheck) {
 					this.infrastructureHealth.database = {
-						healthy: true,
+						healthy: true, // Assume healthy since API is working (API needs DB)
 						lastCheck: now,
-						error: "Database health unverified (/api/status unavailable)",
 					};
 				}
 				if (!this.infrastructureHealth.nats.lastCheck) {
 					this.infrastructureHealth.nats = {
-						healthy: false,
+						healthy: true, // NATS is optional, assume healthy
 						lastCheck: now,
-						error: "NATS health unverified (/api/status unavailable)",
 						optional: true,
 					};
 				}
 				if (!this.infrastructureHealth.maildir.lastCheck) {
 					this.infrastructureHealth.maildir = {
-						healthy: true,
+						healthy: true, // Assume healthy since API is working
 						lastCheck: now,
-						error: "Maildir health unverified (/api/status unavailable)",
 					};
 				}
 			}
@@ -6075,7 +6023,7 @@ Report findings using bug resolution workflow.`;
 			const content = await readFile(logPath, "utf-8");
 			const lines = content.split("\n");
 			const rawOutput = lines.slice(-tailLines).join("\n");
-			return this.stripTerminalArtifacts(rawOutput);
+			return stripTerminalArtifacts(rawOutput);
 		} catch {
 			return "";
 		}
@@ -7064,9 +7012,9 @@ ${conflictList}
 		await this.inbox.write({
 			from: "brain@coleo.local",
 			to: "human@local",
-			subject: this.stripTerminalArtifacts(message.subject),
+			subject: stripTerminalArtifacts(message.subject),
 			date: new Date(),
-			body: this.stripTerminalArtifacts(message.body),
+			body: stripTerminalArtifacts(message.body),
 			headers: message.headers || {},
 		});
 
@@ -7078,8 +7026,8 @@ ${conflictList}
 					body: JSON.stringify({
 						from: this.mailConfig.fromAddress,
 						to: this.mailConfig.toAddress,
-						subject: this.stripTerminalArtifacts(message.subject),
-						body: this.stripTerminalArtifacts(message.body),
+						subject: stripTerminalArtifacts(message.subject),
+						body: stripTerminalArtifacts(message.body),
 						replyTo: this.mailConfig.fromAddress,
 					}),
 				});
@@ -8043,6 +7991,97 @@ When refactoring large files:
 	}
 
 	/**
+	 * Check if refactor automation should run based on config and state
+	 */
+	private async shouldRunRefactorAutomation(): Promise<boolean> {
+		const config = await loadConfig(this.options.coleoDir);
+		const autoConfig = config.automations;
+
+		// Check if automations are enabled
+		if (!autoConfig.enabled || !autoConfig.refactorLargeFiles.enabled) {
+			return false;
+		}
+
+		const refactorConfig = autoConfig.refactorLargeFiles;
+
+		// Check if there's an existing refactor task
+		const existingRefactorTasks = await this.listTasksFromApi({
+			status: ["pending", "in_progress", "claimed"],
+			limit: 100,
+		});
+		const hasExistingRefactorTask = existingRefactorTasks.some(
+			(t) =>
+				t.subject?.startsWith("Refactor large files") &&
+				t.classification === "refactoring",
+		);
+		if (hasExistingRefactorTask) {
+			this.log("Skipping refactor automation: existing refactor task found");
+			return false;
+		}
+
+		// Check if queue should be empty
+		if (refactorConfig.requireEmptyQueue) {
+			// Check for pending tasks
+			const pendingTasks = await this.listTasksFromApi({
+				status: ["pending", "claimed"],
+				limit: 10,
+			});
+			if (pendingTasks.length > 0) {
+				this.log(
+					`Skipping refactor automation: ${pendingTasks.length} pending tasks in queue`,
+				);
+				return false;
+			}
+
+			// Check for open bugs
+			const openBugs = await this.listBugsFromApi(100, {
+				statuses: ["open", "investigating", "fixing"],
+			});
+			if (openBugs.length > 0) {
+				this.log(
+					`Skipping refactor automation: ${openBugs.length} open bugs`,
+				);
+				return false;
+			}
+		}
+
+		// Check minimum interval
+		if (refactorConfig.lastRunAt) {
+			const lastRun = new Date(refactorConfig.lastRunAt).getTime();
+			const hoursSinceLastRun = (Date.now() - lastRun) / (1000 * 60 * 60);
+			if (hoursSinceLastRun < refactorConfig.minIntervalHours) {
+				this.log(
+					`Skipping refactor automation: only ${hoursSinceLastRun.toFixed(1)}h since last run (min: ${refactorConfig.minIntervalHours}h)`,
+				);
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Update the last run timestamp for refactor automation
+	 */
+	private async updateRefactorAutomationLastRun(): Promise<void> {
+		try {
+			const { updateConfig } = await import("../config");
+			await updateConfig(
+				{
+					automations: {
+						refactorLargeFiles: {
+							lastRunAt: new Date().toISOString(),
+						},
+					},
+				},
+				this.options.coleoDir,
+			);
+		} catch (err) {
+			this.log(`Failed to update refactor automation lastRunAt: ${err}`);
+		}
+	}
+
+	/**
 	 * Create a refactoring task for large files
 	 */
 	private async createRefactoringTask(
@@ -8074,6 +8113,9 @@ When refactoring large files:
 				sourceType: "system",
 				sourceRef: "refactoring-cycle",
 			});
+
+			// Update last run timestamp
+			await this.updateRefactorAutomationLastRun();
 
 			this.log(
 				`Created refactoring task: ${taskId} (count: ${files.length}, priority: ${priority})`,

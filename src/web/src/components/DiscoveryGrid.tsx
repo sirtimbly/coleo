@@ -31,7 +31,8 @@ export function DiscoveryGrid({
 	discoveries,
 	selectedDiscoveryId,
 	onOpenDetails,
-onUpdateDiscovery,
+	className,
+	onUpdateDiscovery,
 	onDelete,
 }: DiscoveryGridProps) {
 	const handleUpdate = useCallback(

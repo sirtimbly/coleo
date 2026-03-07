@@ -1,0 +1,102 @@
+name: coleo-hosting
+
+services:
+  observatory:
+    container_name: coleo-observatory
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    working_dir: /home/coleo/coleo
+    environment:
+      COLEO_API_HOST: 0.0.0.0
+      COLEO_API_PORT: ${COLEO_API_PORT:-8080}
+      COLEO_PUBLIC_ORIGIN: ${COLEO_PUBLIC_ORIGIN}
+      COLEO_API_KEY: ${COLEO_API_KEY}
+      COLEO_DB_PATH: ${COLEO_DB_PATH:-/home/coleo/.coleo/db/coleo.db}
+      COLEO_BOOTSTRAP_TOKEN: ${COLEO_BOOTSTRAP_TOKEN}
+      COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
+      COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - coleo-root:/home/coleo/.coleo
+      - coleo-db:/home/coleo/.coleo/db
+      - coleo-mail:/home/coleo/.coleo/mail
+      - coleo-state:/home/coleo/.coleo/state
+      - coleo-logs:/home/coleo/.coleo/logs
+      - coleo-arms:/home/coleo/.coleo/arms
+      - coleo-mcp:/home/coleo/.coleo/mcp
+    depends_on:
+      nats:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    command:
+      - /bin/sh
+      - -lc
+      - bun /home/coleo/coleo/src/cli/index.ts serve start && bun run --cwd /home/coleo/coleo/src/web dev --host 0.0.0.0 --port 5173
+    ports:
+      - ${COLEO_BIND_HOST:-127.0.0.1}:${COLEO_API_PORT:-8080}:${COLEO_API_PORT:-8080}
+      - ${COLEO_BIND_HOST:-127.0.0.1}:${COLEO_WEB_PORT:-80}:5173
+
+  brain:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    working_dir: /home/coleo/coleo
+    environment:
+      COLEO_API_URL: http://observatory:${COLEO_API_PORT:-8080}
+      COLEO_API_KEY: ${COLEO_API_KEY}
+      COLEO_NATS_URL: ${COLEO_NATS_URL:-nats://nats:4222}
+      COLEO_QDRANT_URL: ${COLEO_QDRANT_URL:-http://qdrant:6333}
+      COLEO_DB_PATH: ${COLEO_DB_PATH:-/home/coleo/.coleo/db/coleo.db}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - coleo-root:/home/coleo/.coleo
+      - coleo-db:/home/coleo/.coleo/db
+      - coleo-mail:/home/coleo/.coleo/mail
+      - coleo-state:/home/coleo/.coleo/state
+      - coleo-logs:/home/coleo/.coleo/logs
+      - coleo-arms:/home/coleo/.coleo/arms
+      - coleo-mcp:/home/coleo/.coleo/mcp
+    depends_on:
+      nats:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      observatory:
+        condition: service_started
+    restart: unless-stopped
+    command: ["bun", "/home/coleo/coleo/src/cli/index.ts", "brain", "run"]
+
+  nats:
+    image: nats:2.10-alpine
+    command: ["--jetstream", "--http_port", "8222"]
+    ports:
+      - ${COLEO_BIND_HOST:-127.0.0.1}:4222:4222
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    # Qdrant base image does not include curl/wget, so command-based healthchecks
+    # can stay perpetually "unhealthy" even when the service is up.
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+volumes:
+  coleo-root:
+  coleo-db:
+  coleo-mail:
+  coleo-state:
+  coleo-logs:
+  coleo-arms:
+  coleo-mcp:
+  qdrant-data:

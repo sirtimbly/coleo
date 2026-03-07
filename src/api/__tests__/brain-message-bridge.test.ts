@@ -1,66 +1,10 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { JSONCodec, type Msg, type Subscription } from "nats";
-import { startBrainMessageBridge } from "../brain-message-bridge";
+import { createCommandEnvelope } from "../../nats/command-types";
+import { projectCommandEnvelopeToMessages } from "../brain-message-bridge";
 
-class MockSubscription implements AsyncIterable<Msg> {
-	private queue: Msg[] = [];
-	private waiters: Array<(value: IteratorResult<Msg>) => void> = [];
-	private closed = false;
-
-	push(msg: Msg): void {
-		if (this.closed) {
-			return;
-		}
-		const waiter = this.waiters.shift();
-		if (waiter) {
-			waiter({ value: msg, done: false });
-			return;
-		}
-		this.queue.push(msg);
-	}
-
-	unsubscribe(): void {
-		this.closed = true;
-		while (this.waiters.length > 0) {
-			const waiter = this.waiters.shift();
-			waiter?.({ value: undefined as unknown as Msg, done: true });
-		}
-	}
-
-	[Symbol.asyncIterator](): AsyncIterator<Msg> {
-		return {
-			next: () => {
-				if (this.queue.length > 0) {
-					const value = this.queue.shift()!;
-					return Promise.resolve({ value, done: false });
-				}
-				if (this.closed) {
-					return Promise.resolve({
-						value: undefined as unknown as Msg,
-						done: true,
-					});
-				}
-				return new Promise((resolve) => {
-					this.waiters.push(resolve);
-				});
-			},
-		};
-	}
-}
-
-class MockNatsConnection {
-	public readonly subscription = new MockSubscription();
-
-	subscribe(_subject: string): Subscription {
-		return this.subscription as unknown as Subscription;
-	}
-}
-
-const codec = JSONCodec<unknown>();
-
-function setupMessagesTable(db: Database): void {
-	db.run(`
+function createMessagesTable(db: Database): void {
+  db.exec(`
     CREATE TABLE messages (
       id TEXT PRIMARY KEY,
       from_id TEXT NOT NULL,
@@ -70,139 +14,123 @@ function setupMessagesTable(db: Database): void {
       status TEXT NOT NULL,
       created_at TEXT NOT NULL,
       processed_at TEXT,
-      error TEXT
-    )
+      error TEXT,
+      source TEXT,
+      stream_name TEXT,
+      stream_seq INTEGER,
+      dedupe_id TEXT
+    );
+    CREATE UNIQUE INDEX idx_messages_dedupe_id ON messages(dedupe_id) WHERE dedupe_id IS NOT NULL;
   `);
 }
 
-describe("brain-message-bridge", () => {
-	it("queues valid brain messages from NATS into the API message table", async () => {
-		const db = new Database(":memory:");
-		setupMessagesTable(db);
-		const connection = new MockNatsConnection();
+describe("brain-message-bridge projector", () => {
+  it("projects a valid envelope into pending messages", () => {
+    const db = new Database(":memory:");
+    createMessagesTable(db);
 
-		const bridge = startBrainMessageBridge({
-			connection: connection as unknown as Parameters<
-				typeof startBrainMessageBridge
-			>[0]["connection"],
-			db,
-		});
+    const envelope = createCommandEnvelope({
+      id: "cmd-valid-1",
+      from: "arm-1",
+      to: "brain",
+      type: "status_update",
+      payload: { taskId: "task-1", status: "in_progress" },
+    });
 
-		connection.subscription.push({
-			data: codec.encode({
-				from: "arm-1",
-				to: "brain",
-				type: "status_update",
-				payload: { taskId: "task-1", status: "in_progress" },
-				timestamp: new Date().toISOString(),
-			}),
-		} as Msg);
+    const inserted = projectCommandEnvelopeToMessages(db, envelope, {
+      streamName: "coleo-commands",
+      streamSeq: 12,
+    });
 
-		await Bun.sleep(20);
+    expect(inserted).toBe(true);
 
-		const row = db
-			.query("SELECT from_id, to_id, message_type, payload FROM messages LIMIT 1")
-			.get() as
-			| {
-					from_id: string;
-					to_id: string;
-					message_type: string;
-					payload: string;
-			  }
-			| null;
+    const row = db.query(
+      `SELECT to_id, message_type, status, source, stream_name, stream_seq, dedupe_id
+       FROM messages WHERE id = ?`,
+    ).get("cmd-valid-1") as {
+      to_id: string;
+      message_type: string;
+      status: string;
+      source: string;
+      stream_name: string;
+      stream_seq: number;
+      dedupe_id: string;
+    } | null;
 
-		expect(row).toBeTruthy();
-		expect(row?.from_id).toBe("arm-1");
-		expect(row?.to_id).toBe("brain");
-		expect(row?.message_type).toBe("status_update");
-		expect(JSON.parse(row?.payload || "{}")).toEqual({
-			taskId: "task-1",
-			status: "in_progress",
-		});
+    expect(row).toBeTruthy();
+    expect(row?.to_id).toBe("brain");
+    expect(row?.message_type).toBe("status_update");
+    expect(row?.status).toBe("pending");
+    expect(row?.source).toBe("jetstream");
+    expect(row?.stream_name).toBe("coleo-commands");
+    expect(row?.stream_seq).toBe(12);
+    expect(row?.dedupe_id).toBe("cmd-valid-1");
+  });
 
-		bridge.close();
-		db.close();
-	});
+  it("deduplicates repeated deliveries by envelope id", () => {
+    const db = new Database(":memory:");
+    createMessagesTable(db);
 
-	it("dead-letters invalid envelope payloads", async () => {
-		const db = new Database(":memory:");
-		setupMessagesTable(db);
-		const connection = new MockNatsConnection();
+    const envelope = createCommandEnvelope({
+      id: "cmd-dup-1",
+      from: "arm-2",
+      to: "brain",
+      type: "status_update",
+      payload: { taskId: "task-2", status: "queued" },
+    });
 
-		const bridge = startBrainMessageBridge({
-			connection: connection as unknown as Parameters<
-				typeof startBrainMessageBridge
-			>[0]["connection"],
-			db,
-		});
+    const first = projectCommandEnvelopeToMessages(db, envelope, {
+      streamName: "coleo-commands",
+      streamSeq: 30,
+    });
+    const second = projectCommandEnvelopeToMessages(db, envelope, {
+      streamName: "coleo-commands",
+      streamSeq: 31,
+    });
 
-		connection.subscription.push({
-			data: codec.encode({ from: "arm-1", to: "not-brain" }),
-		} as Msg);
+    expect(first).toBe(true);
+    expect(second).toBe(false);
 
-		await Bun.sleep(20);
+    const countRow = db
+      .query("SELECT COUNT(*) AS count FROM messages WHERE id = 'cmd-dup-1'")
+      .get() as { count: number };
+    expect(countRow.count).toBe(1);
+  });
 
-		const row = db
-			.query("SELECT to_id, message_type, status, error FROM messages LIMIT 1")
-			.get() as
-			| {
-					to_id: string;
-					message_type: string;
-					status: string;
-					error: string | null;
-			  }
-			| null;
-		expect(row).toBeTruthy();
-		expect(row?.to_id).toBe("brain.deadletter");
-		expect(row?.message_type).toBe("invalid_brain_message");
-		expect(row?.status).toBe("failed");
-		expect(row?.error).toContain("invalid brain message envelope");
+  it("dead-letters invalid envelopes through shared validation", () => {
+    const db = new Database(":memory:");
+    createMessagesTable(db);
 
-		bridge.close();
-		db.close();
-	});
+    const envelope = createCommandEnvelope({
+      id: "cmd-invalid-1",
+      from: "arm-3",
+      to: "brain",
+      type: "claim_transfer",
+      payload: { filePath: "src/brain/brain.ts" },
+    });
 
-	it("dead-letters unsupported brain message types", async () => {
-		const db = new Database(":memory:");
-		setupMessagesTable(db);
-		const connection = new MockNatsConnection();
+    const inserted = projectCommandEnvelopeToMessages(db, envelope, {
+      streamName: "coleo-commands",
+      streamSeq: 44,
+    });
 
-		const bridge = startBrainMessageBridge({
-			connection: connection as unknown as Parameters<
-				typeof startBrainMessageBridge
-			>[0]["connection"],
-			db,
-		});
+    expect(inserted).toBe(false);
 
-		connection.subscription.push({
-			data: codec.encode({
-				from: "arm-1",
-				to: "brain",
-				type: "claim_transfer",
-				payload: { filePath: "src/x.ts" },
-				timestamp: new Date().toISOString(),
-			}),
-		} as Msg);
+    const deadLetter = db.query(
+      `SELECT to_id, status, message_type, error
+       FROM messages
+       WHERE to_id = 'brain.deadletter'
+       LIMIT 1`,
+    ).get() as {
+      to_id: string;
+      status: string;
+      message_type: string;
+      error: string;
+    } | null;
 
-		await Bun.sleep(20);
-
-		const row = db
-			.query("SELECT to_id, message_type, status, error FROM messages LIMIT 1")
-			.get() as
-			| {
-					to_id: string;
-					message_type: string;
-					status: string;
-					error: string | null;
-			  }
-			| null;
-		expect(row).toBeTruthy();
-		expect(row?.to_id).toBe("brain.deadletter");
-		expect(row?.message_type).toBe("claim_transfer");
-		expect(row?.status).toBe("failed");
-		expect(row?.error).toContain("unsupported brain message type");
-
-		bridge.close();
-		db.close();
-	});
+    expect(deadLetter).toBeTruthy();
+    expect(deadLetter?.status).toBe("failed");
+    expect(deadLetter?.message_type).toBe("claim_transfer");
+    expect(deadLetter?.error).toContain("unsupported brain message type");
+  });
 });

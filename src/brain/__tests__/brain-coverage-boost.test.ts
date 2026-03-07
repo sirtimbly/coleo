@@ -649,9 +649,6 @@ describe("Brain coverage boost", () => {
   });
 
   it("covers helper methods", async () => {
-    const patterns = (brain as any).getDomainPatterns("frontend");
-    expect(patterns.length).toBeGreaterThan(0);
-
     expect((brain as any).isProductiveAction("heartbeat")).toBe(true);
     expect((brain as any).isProductiveAction("unknown_action")).toBe(false);
 

@@ -1,0 +1,499 @@
+{
+  "fetchedAt": "2026-03-06T14:25:15.741Z",
+  "providers": [
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "models": [
+        {
+          "id": "gpt-oss-120b",
+          "name": "gpt-oss-120b"
+        },
+        {
+          "id": "llama3.1-8b",
+          "name": "llama3.1-8b"
+        },
+        {
+          "id": "qwen-3-235b-a22b-instruct-2507",
+          "name": "qwen-3-235b-a22b-instruct-2507"
+        },
+        {
+          "id": "zai-glm-4.7",
+          "name": "zai-glm-4.7"
+        }
+      ]
+    },
+    {
+      "id": "deepinfra",
+      "name": "Deepinfra",
+      "models": [
+        {
+          "id": "anthropic/claude-3-7-sonnet-latest",
+          "name": "anthropic/claude-3-7-sonnet-latest"
+        },
+        {
+          "id": "anthropic/claude-4-opus",
+          "name": "anthropic/claude-4-opus"
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-R1-0528",
+          "name": "deepseek-ai/DeepSeek-R1-0528"
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V3.2",
+          "name": "deepseek-ai/DeepSeek-V3.2"
+        },
+        {
+          "id": "MiniMaxAI/MiniMax-M2",
+          "name": "MiniMaxAI/MiniMax-M2"
+        },
+        {
+          "id": "MiniMaxAI/MiniMax-M2.1",
+          "name": "MiniMaxAI/MiniMax-M2.1"
+        },
+        {
+          "id": "moonshotai/Kimi-K2-Instruct",
+          "name": "moonshotai/Kimi-K2-Instruct"
+        },
+        {
+          "id": "moonshotai/Kimi-K2-Thinking",
+          "name": "moonshotai/Kimi-K2-Thinking"
+        },
+        {
+          "id": "moonshotai/Kimi-K2.5",
+          "name": "moonshotai/Kimi-K2.5"
+        },
+        {
+          "id": "openai/gpt-oss-120b",
+          "name": "openai/gpt-oss-120b"
+        },
+        {
+          "id": "openai/gpt-oss-20b",
+          "name": "openai/gpt-oss-20b"
+        },
+        {
+          "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+          "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct"
+        },
+        {
+          "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+          "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo"
+        },
+        {
+          "id": "zai-org/GLM-4.7",
+          "name": "zai-org/GLM-4.7"
+        },
+        {
+          "id": "zai-org/GLM-4.7-Flash",
+          "name": "zai-org/GLM-4.7-Flash"
+        }
+      ]
+    },
+    {
+      "id": "friendli",
+      "name": "Friendli",
+      "models": [
+        {
+          "id": "meta-llama/Llama-3.1-8B-Instruct",
+          "name": "meta-llama/Llama-3.1-8B-Instruct"
+        },
+        {
+          "id": "meta-llama/Llama-3.3-70B-Instruct",
+          "name": "meta-llama/Llama-3.3-70B-Instruct"
+        },
+        {
+          "id": "MiniMaxAI/MiniMax-M2.1",
+          "name": "MiniMaxAI/MiniMax-M2.1"
+        },
+        {
+          "id": "MiniMaxAI/MiniMax-M2.5",
+          "name": "MiniMaxAI/MiniMax-M2.5"
+        },
+        {
+          "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+          "name": "Qwen/Qwen3-235B-A22B-Instruct-2507"
+        },
+        {
+          "id": "zai-org/GLM-4.7",
+          "name": "zai-org/GLM-4.7"
+        },
+        {
+          "id": "zai-org/GLM-5",
+          "name": "zai-org/GLM-5"
+        }
+      ]
+    },
+    {
+      "id": "google",
+      "name": "Google",
+      "models": [
+        {
+          "id": "gemini-1.5-flash",
+          "name": "gemini-1.5-flash"
+        },
+        {
+          "id": "gemini-1.5-flash-8b",
+          "name": "gemini-1.5-flash-8b"
+        },
+        {
+          "id": "gemini-1.5-pro",
+          "name": "gemini-1.5-pro"
+        },
+        {
+          "id": "gemini-2.0-flash",
+          "name": "gemini-2.0-flash"
+        },
+        {
+          "id": "gemini-2.0-flash-lite",
+          "name": "gemini-2.0-flash-lite"
+        },
+        {
+          "id": "gemini-2.5-flash",
+          "name": "gemini-2.5-flash"
+        },
+        {
+          "id": "gemini-2.5-flash-image",
+          "name": "gemini-2.5-flash-image"
+        },
+        {
+          "id": "gemini-2.5-flash-image-preview",
+          "name": "gemini-2.5-flash-image-preview"
+        },
+        {
+          "id": "gemini-2.5-flash-lite",
+          "name": "gemini-2.5-flash-lite"
+        },
+        {
+          "id": "gemini-2.5-flash-lite-preview-06-17",
+          "name": "gemini-2.5-flash-lite-preview-06-17"
+        },
+        {
+          "id": "gemini-2.5-flash-lite-preview-09-2025",
+          "name": "gemini-2.5-flash-lite-preview-09-2025"
+        },
+        {
+          "id": "gemini-2.5-flash-preview-04-17",
+          "name": "gemini-2.5-flash-preview-04-17"
+        },
+        {
+          "id": "gemini-2.5-flash-preview-05-20",
+          "name": "gemini-2.5-flash-preview-05-20"
+        },
+        {
+          "id": "gemini-2.5-flash-preview-09-2025",
+          "name": "gemini-2.5-flash-preview-09-2025"
+        },
+        {
+          "id": "gemini-2.5-flash-preview-tts",
+          "name": "gemini-2.5-flash-preview-tts"
+        },
+        {
+          "id": "gemini-2.5-pro",
+          "name": "gemini-2.5-pro"
+        },
+        {
+          "id": "gemini-2.5-pro-preview-05-06",
+          "name": "gemini-2.5-pro-preview-05-06"
+        },
+        {
+          "id": "gemini-2.5-pro-preview-06-05",
+          "name": "gemini-2.5-pro-preview-06-05"
+        },
+        {
+          "id": "gemini-2.5-pro-preview-tts",
+          "name": "gemini-2.5-pro-preview-tts"
+        },
+        {
+          "id": "gemini-3-flash-preview",
+          "name": "gemini-3-flash-preview"
+        },
+        {
+          "id": "gemini-3-pro-preview",
+          "name": "gemini-3-pro-preview"
+        },
+        {
+          "id": "gemini-3.1-pro-preview",
+          "name": "gemini-3.1-pro-preview"
+        },
+        {
+          "id": "gemini-3.1-pro-preview-customtools",
+          "name": "gemini-3.1-pro-preview-customtools"
+        },
+        {
+          "id": "gemini-embedding-001",
+          "name": "gemini-embedding-001"
+        },
+        {
+          "id": "gemini-flash-latest",
+          "name": "gemini-flash-latest"
+        },
+        {
+          "id": "gemini-flash-lite-latest",
+          "name": "gemini-flash-lite-latest"
+        },
+        {
+          "id": "gemini-live-2.5-flash",
+          "name": "gemini-live-2.5-flash"
+        },
+        {
+          "id": "gemini-live-2.5-flash-preview-native-audio",
+          "name": "gemini-live-2.5-flash-preview-native-audio"
+        }
+      ]
+    },
+    {
+      "id": "kimi-for-coding",
+      "name": "Kimi For Coding",
+      "models": [
+        {
+          "id": "k2p5",
+          "name": "k2p5"
+        },
+        {
+          "id": "kimi-k2-thinking",
+          "name": "kimi-k2-thinking"
+        }
+      ]
+    },
+    {
+      "id": "moonshotai",
+      "name": "Moonshotai",
+      "models": [
+        {
+          "id": "kimi-k2-0711-preview",
+          "name": "kimi-k2-0711-preview"
+        },
+        {
+          "id": "kimi-k2-0905-preview",
+          "name": "kimi-k2-0905-preview"
+        },
+        {
+          "id": "kimi-k2-thinking",
+          "name": "kimi-k2-thinking"
+        },
+        {
+          "id": "kimi-k2-thinking-turbo",
+          "name": "kimi-k2-thinking-turbo"
+        },
+        {
+          "id": "kimi-k2-turbo-preview",
+          "name": "kimi-k2-turbo-preview"
+        },
+        {
+          "id": "kimi-k2.5",
+          "name": "kimi-k2.5"
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "name": "Openai",
+      "models": [
+        {
+          "id": "codex-mini-latest",
+          "name": "codex-mini-latest"
+        },
+        {
+          "id": "gpt-5-codex",
+          "name": "gpt-5-codex"
+        },
+        {
+          "id": "gpt-5.1-codex",
+          "name": "gpt-5.1-codex"
+        },
+        {
+          "id": "gpt-5.1-codex-max",
+          "name": "gpt-5.1-codex-max"
+        },
+        {
+          "id": "gpt-5.1-codex-mini",
+          "name": "gpt-5.1-codex-mini"
+        },
+        {
+          "id": "gpt-5.2",
+          "name": "gpt-5.2"
+        },
+        {
+          "id": "gpt-5.2-codex",
+          "name": "gpt-5.2-codex"
+        },
+        {
+          "id": "gpt-5.3-codex",
+          "name": "gpt-5.3-codex"
+        },
+        {
+          "id": "gpt-5.3-codex-spark",
+          "name": "gpt-5.3-codex-spark"
+        }
+      ]
+    },
+    {
+      "id": "opencode",
+      "name": "Opencode",
+      "models": [
+        {
+          "id": "big-pickle",
+          "name": "big-pickle"
+        },
+        {
+          "id": "claude-3-5-haiku",
+          "name": "claude-3-5-haiku"
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "name": "claude-haiku-4-5"
+        },
+        {
+          "id": "claude-opus-4-1",
+          "name": "claude-opus-4-1"
+        },
+        {
+          "id": "claude-opus-4-5",
+          "name": "claude-opus-4-5"
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "claude-opus-4-6"
+        },
+        {
+          "id": "claude-sonnet-4",
+          "name": "claude-sonnet-4"
+        },
+        {
+          "id": "claude-sonnet-4-5",
+          "name": "claude-sonnet-4-5"
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "name": "claude-sonnet-4-6"
+        },
+        {
+          "id": "gemini-3-flash",
+          "name": "gemini-3-flash"
+        },
+        {
+          "id": "gemini-3-pro",
+          "name": "gemini-3-pro"
+        },
+        {
+          "id": "gemini-3.1-pro",
+          "name": "gemini-3.1-pro"
+        },
+        {
+          "id": "glm-4.6",
+          "name": "glm-4.6"
+        },
+        {
+          "id": "glm-4.7",
+          "name": "glm-4.7"
+        },
+        {
+          "id": "glm-5",
+          "name": "glm-5"
+        },
+        {
+          "id": "gpt-5",
+          "name": "gpt-5"
+        },
+        {
+          "id": "gpt-5-codex",
+          "name": "gpt-5-codex"
+        },
+        {
+          "id": "gpt-5-nano",
+          "name": "gpt-5-nano"
+        },
+        {
+          "id": "gpt-5.1",
+          "name": "gpt-5.1"
+        },
+        {
+          "id": "gpt-5.1-codex",
+          "name": "gpt-5.1-codex"
+        },
+        {
+          "id": "gpt-5.1-codex-max",
+          "name": "gpt-5.1-codex-max"
+        },
+        {
+          "id": "gpt-5.1-codex-mini",
+          "name": "gpt-5.1-codex-mini"
+        },
+        {
+          "id": "gpt-5.2",
+          "name": "gpt-5.2"
+        },
+        {
+          "id": "gpt-5.2-codex",
+          "name": "gpt-5.2-codex"
+        },
+        {
+          "id": "gpt-5.3-codex",
+          "name": "gpt-5.3-codex"
+        },
+        {
+          "id": "gpt-5.3-codex-spark",
+          "name": "gpt-5.3-codex-spark"
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4"
+        },
+        {
+          "id": "gpt-5.4-pro",
+          "name": "gpt-5.4-pro"
+        },
+        {
+          "id": "kimi-k2.5",
+          "name": "kimi-k2.5"
+        },
+        {
+          "id": "minimax-m2.1",
+          "name": "minimax-m2.1"
+        },
+        {
+          "id": "minimax-m2.5",
+          "name": "minimax-m2.5"
+        },
+        {
+          "id": "minimax-m2.5-free",
+          "name": "minimax-m2.5-free"
+        }
+      ]
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "models": [
+        {
+          "id": "sonar",
+          "name": "sonar"
+        },
+        {
+          "id": "sonar-deep-research",
+          "name": "sonar-deep-research"
+        },
+        {
+          "id": "sonar-pro",
+          "name": "sonar-pro"
+        },
+        {
+          "id": "sonar-reasoning-pro",
+          "name": "sonar-reasoning-pro"
+        }
+      ]
+    }
+  ],
+  "connected": [
+    "cerebras",
+    "deepinfra",
+    "friendli",
+    "google",
+    "kimi-for-coding",
+    "moonshotai",
+    "openai",
+    "opencode",
+    "perplexity"
+  ],
+  "default": {}
+}

@@ -17,6 +17,10 @@ export interface ModelInfo {
     context?: number;
     output?: number;
   };
+  modalities?: {
+    input: Array<"text" | "audio" | "image" | "video" | "pdf">;
+    output: Array<"text" | "audio" | "image" | "video" | "pdf">;
+  };
   // Price per million tokens (input/output)
   pricing?: {
     input?: number;
@@ -184,6 +188,26 @@ export async function fetchProviders(apiUrl: string = "http://localhost:8080"): 
       error: err instanceof Error ? err.message : String(err),
     };
   }
+}
+
+export async function supportsInputModality(
+  providerId: string | null | undefined,
+  modelId: string | null | undefined,
+  modality: "text" | "audio" | "image" | "video" | "pdf",
+  apiUrl: string = "http://localhost:8080",
+): Promise<boolean | null> {
+  if (!providerId || !modelId) {
+    return null;
+  }
+
+  const data = await fetchProviders(apiUrl);
+  const provider = data.providers.find((entry) => entry.id === providerId);
+  const model = provider?.models.find((entry) => entry.id === modelId);
+  if (!model?.modalities?.input) {
+    return null;
+  }
+
+  return model.modalities.input.includes(modality);
 }
 
 /**

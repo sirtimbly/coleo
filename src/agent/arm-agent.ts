@@ -30,8 +30,11 @@ import {
   type OpenCodeTuiHarness,
   type ArmEventCallback,
 } from '../harness';
+import { truncateLargeFields } from '../harness/event-stream';
 
 const execAsync = promisify(exec);
+const MAX_DISTRIBUTED_MESSAGES = 100;
+const MAX_DISTRIBUTED_TODOS = 200;
 
 export interface ArmAgentOptions {
   agentId?: string;
@@ -358,7 +361,7 @@ export class ArmAgent {
   }
 
   private async handlePrompt(command: AgentCommand & { type: 'prompt' }): Promise<CommandResponse> {
-    const { armId, prompt } = command;
+    const { armId, prompt, attachments } = command;
 
     const managedArm = this.managedArms.get(armId);
     if (!managedArm) {
@@ -370,7 +373,9 @@ export class ArmAgent {
     }
 
     // Send prompt
-    await managedArm.harness.sendPrompt(managedArm.session, prompt);
+    await managedArm.harness.sendPrompt(managedArm.session, prompt, {
+      attachments,
+    });
 
     // Update status
     const oldStatus = managedArm.status;
@@ -466,9 +471,16 @@ export class ArmAgent {
       };
     }
 
-    const messages = await managedArm.harness.getMessages(managedArm.session, {
-      limit,
+    const cappedLimit =
+      typeof limit === 'number' && Number.isFinite(limit) && limit > 0
+        ? Math.min(limit, MAX_DISTRIBUTED_MESSAGES)
+        : MAX_DISTRIBUTED_MESSAGES;
+    const rawMessages = await managedArm.harness.getMessages(managedArm.session, {
+      limit: cappedLimit,
     });
+    const messages = truncateLargeFields(
+      Array.isArray(rawMessages) ? rawMessages.slice(-cappedLimit) : [],
+    ) as unknown[];
     const state = this.armToState(managedArm);
     return {
       requestId: command.requestId,
@@ -501,7 +513,10 @@ export class ArmAgent {
       };
     }
 
-    const todos = await managedArm.harness.getTodos(managedArm.session);
+    const rawTodos = await managedArm.harness.getTodos(managedArm.session);
+    const todos = truncateLargeFields(
+      Array.isArray(rawTodos) ? rawTodos.slice(0, MAX_DISTRIBUTED_TODOS) : [],
+    ) as unknown[];
     return {
       requestId: command.requestId,
       success: true,

@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { Database } from "bun:sqlite";
 import { join } from "path";
 import { getColeoDir } from "../config";
+import type { Task } from "../types";
 import type {
 	BrainArmListFilters,
 	BrainArmRecord,
@@ -55,6 +56,7 @@ interface ApiTask {
 	createdAt: string;
 	updatedAt: string;
 	completedAt: string | null;
+	context?: Task["context"];
 }
 
 interface ApiBug {
@@ -236,6 +238,7 @@ export class ApiDatabase implements McpDb, BrainDb {
 			assignedTo: input.assignedTo,
 			dependencyBlocked: input.dependencyBlocked,
 			sortOrder: input.sortOrder,
+			context: input.context,
 		});
 		if (!response?.task) {
 			throw new Error("Task creation response missing task");
@@ -456,6 +459,7 @@ export class ApiDatabase implements McpDb, BrainDb {
 			createdAt: task.createdAt,
 			updatedAt: task.updatedAt,
 			completedAt: task.completedAt ?? null,
+			context: task.context,
 		};
 	}
 

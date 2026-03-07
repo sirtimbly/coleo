@@ -148,6 +148,36 @@ describe("Search API", () => {
 			const body = (await res.json()) as { results: unknown[] };
 			expect(body.results.length).toBeLessThanOrEqual(1);
 		});
+
+		it("should handle punctuation in query without FTS syntax errors", async () => {
+			const res = await app.request("/", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					query: "search.api",
+					semanticWeight: 0,
+				}),
+			});
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as { results: unknown[] };
+			expect(Array.isArray(body.results)).toBe(true);
+		});
+
+		it("should return empty results for symbol-only queries", async () => {
+			const res = await app.request("/", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					query: "...",
+					semanticWeight: 0,
+				}),
+			});
+
+			expect(res.status).toBe(200);
+			const body = (await res.json()) as { results: unknown[] };
+			expect(body.results).toEqual([]);
+		});
 	});
 
 	describe("GET /suggestions", () => {

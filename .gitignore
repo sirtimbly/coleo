@@ -66,3 +66,6 @@ docs/.vitepress/cache/deps
 # Local Netlify folder
 .netlify
 .vitepress/cache
+.coleo/nats/jetstream/$G/streams/coleo-events/msgs/index.db
+.coleo/coleo.db.backup-before-pending-dedupe-20260305-221942.db
+.coleo/nats/jetstream/$G/streams

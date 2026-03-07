@@ -16,6 +16,7 @@ import {
 	type DiscoverySummary,
 } from "./discovery-summarizer";
 import { findPlanFiles } from "./plan-parser";
+import { formatTaskAttachmentList } from "../lib/prompt-attachments";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -55,6 +56,7 @@ export interface ContextBundleResult {
 		planExcerpt: string;
 		taskHistory: string;
 		instructions: string;
+		attachments: string;
 	};
 	fullOutput: string;
 }
@@ -1096,6 +1098,7 @@ export async function generateContextBundle(
 				.map((t) => `- ${t.subject} (completed: ${t.completedAt || "unknown"})`)
 				.join("\n"),
 			instructions,
+			attachments: formatTaskAttachmentList(task.context?.attachments),
 		},
 		fullOutput,
 	};
@@ -1407,7 +1410,7 @@ async function getTaskBySubject(
 				domain: result.domain || undefined,
 				createdAt: new Date(),
 				updatedAt: new Date(),
-				context: undefined,
+				context: result.context,
 			};
 		}
 	} catch {
@@ -1583,6 +1586,7 @@ function buildContextBundle(
 ): string {
 	// Format the LLM-summarized discoveries
 	const discoverySection = formatDiscoverySummary(context.discoverySummary);
+	const attachmentSection = formatTaskAttachmentList(task.context?.attachments);
 	const isBugTask =
 		(task.domain?.toLowerCase() || "") === "bug_fix" ||
 		task.id.startsWith("bug-");
@@ -1606,6 +1610,8 @@ ID: ${task.id}
 
 ## TASK DESCRIPTION
 ${task.description}
+
+${attachmentSection}
 
 === CONTEXT BUNDLE ===
 

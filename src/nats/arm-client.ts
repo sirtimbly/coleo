@@ -22,6 +22,7 @@ import {
   type GetMessagesResponse,
   type GetTodosResponse,
 } from '../nats';
+import type { TaskAttachment } from "../types";
 
 export interface ArmClientOptions {
   natsUrl: string;
@@ -122,6 +123,25 @@ export class ArmClient {
    */
   getAgent(agentId: string): AgentInfo | undefined {
     return this.agents.get(agentId)?.info;
+  }
+
+  /**
+   * Remove an agent from the live registry and clear any arm mappings that point to it.
+   * This is used when a command path proves an agent is no longer reachable before
+   * heartbeat-based stale detection has caught up.
+   */
+  markAgentUnavailable(agentId: string): void {
+    const agent = this.agents.get(agentId);
+    if (!agent) {
+      return;
+    }
+
+    this.agents.delete(agentId);
+    for (const armId of agent.arms) {
+      this.armToAgent.delete(armId);
+    }
+
+    this.onAgentDisconnected?.(agentId);
   }
 
   /**
@@ -240,7 +260,12 @@ export class ArmClient {
   /**
    * Send a prompt to an arm
    */
-  async sendPrompt(armId: string, prompt: string, timeoutMs = 30000): Promise<CommandResponse> {
+  async sendPrompt(
+    armId: string,
+    prompt: string,
+    attachments?: TaskAttachment[],
+    timeoutMs = 30000,
+  ): Promise<CommandResponse> {
     const agentId = this.armToAgent.get(armId);
     if (!agentId) {
       return {
@@ -255,6 +280,7 @@ export class ArmClient {
       requestId: generateRequestId(),
       armId,
       prompt,
+      attachments,
     };
 
     return this.natsClient.sendCommand(agentId, command, timeoutMs);

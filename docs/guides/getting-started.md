@@ -1,118 +1,205 @@
 # Getting Started
 
-This guide will help you set up Coleo and run your first brain + arm session.
+This guide starts from the first decision you need to make:
+
+- run Coleo directly from your terminal as local processes
+- run Coleo in Docker as a local or home-server service
+
+## Choose Your Runtime Path
+
+### Path A: Local process
+
+Use this when you want to run Coleo directly on your machine with Bun.
+This is the best fit for:
+
+- local development
+- source checkout workflows
+- minimal setup on a laptop or desktop
+- people who want to understand the moving parts before containerizing
+
+### Path B: Docker or home server
+
+Use this when you want Coleo running as a service in containers.
+This is the best fit for:
+
+- OrbStack or Docker Desktop on a Mac mini or laptop
+- a home server on your LAN
+- access over Tailscale, WireGuard, or another VPN
+- a future path to Traefik and Authelia
+
+See [Docker Guide](/guides/docker) for the container path.
 
 ## Prerequisites
 
-- [Bun](https://bun.sh/) v1.1+ (CLI runtime, installed automatically by the bootstrap methods below)
+For the local-process path:
+
+- [Bun](https://bun.sh/) v1.1+
 - Git
-- [NATS Server](https://nats.io/) with JetStream enabled (for distributed arm management)
-  - Run via Docker: `docker compose up -d nats`
-- (Optional) Docker for containerized deployment
 
-> **Git workflow:** The happy path is a single clone and a shared `coleo` branch that multiple arms work in together. You can still use other branches and stashes, but we assume a mostly linear history coordinated by tasks, claims, and proposals rather than one worktree per arm.
+For the Docker path:
 
-## Installation
+- Docker or OrbStack
 
-### Install with mise (project-local, includes init)
+## NATS: How It Works
+
+For local-process development, you do not need to start NATS separately.
+If `COLEO_NATS_URL` is unset, `coleo serve` will bootstrap and manage a local standalone
+`nats-server` inside the active `.coleo/` directory.
+
+These features depend on NATS + JetStream:
+
+- distributed `ArmAgent` communication
+- remote arm spawning across hosts
+- stream-backed activity and transcript/event history
+
+If local bootstrap fails or you deliberately disable NATS, Coleo still supports:
+
+- SQLite-backed core state
+- local API server
+- brain polling loop
+- local web UI
+
+### Local process default
+
+For the normal local-process path, just run:
 
 ```bash
-# Installs Bun, installs coleo via npm backend, and initializes ./.coleo
-mise use bun@latest && MISE_NPM_PACKAGE_MANAGER=bun mise use npm:coleo@latest && mise x -- coleo init --dir ./.coleo
+coleo serve
 ```
 
-### Install with Bun + npm (global)
+That will:
+
+- install a pinned `nats-server` binary into `.coleo/bin` if needed
+- start JetStream-backed local NATS using `.coleo/nats` for state
+- point the API server at `nats://127.0.0.1:4222`
+
+### Manual local NATS control
+
+If you want to install or run that local NATS runtime yourself from a source checkout of this repository, use the helper scripts:
 
 ```bash
-# Requires Bun v1.1+ already installed
+bun run nats:install
+bun run nats:run
+```
+
+That installs a pinned official `nats-server` binary into `.coleo/bin` and runs JetStream locally using `.coleo/nats` for state.
+
+Equivalent direct command from the repo root:
+
+```bash
+bash bin/run-nats.sh
+```
+
+If you installed Coleo globally and do not have the repo checkout, either:
+
+- let `coleo serve` bootstrap local NATS for you
+- clone the repo and use the helper scripts from there
+- run NATS with Docker
+- install the official `nats-server` binary yourself and point `COLEO_NATS_URL` at it
+
+### Docker NATS option
+
+If you are already using Docker, you can run just NATS from the hosting stack:
+
+```bash
+docker compose \
+  --env-file deploy/self-host/.env.hosting \
+  -f deploy/self-host/docker-compose.hosting.yml \
+  up -d nats
+```
+
+## Path A: Run Coleo as Local Processes
+
+### 1. Install Coleo
+
+#### Install with mise
+
+```bash
+mise use bun@latest
+MISE_NPM_PACKAGE_MANAGER=bun mise use npm:coleo@latest
+mise x -- coleo init --dir ./.coleo
+```
+
+#### Install with Bun + npm
+
+```bash
 bun install -g coleo
-
-# Initialize Coleo in this project (copies default.toml)
-coleo init --dir ./.coleo
+coleo init
 ```
 
-### Install with bootstrap script (no mise required)
+#### From source
 
 ```bash
-# Linux/macOS: installs Bun (if missing) and installs coleo globally
-curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.sh | bash
-
-# Then initialize Coleo in your project
-coleo init --dir ./.coleo
-```
-
-### From Source (contributors)
-
-```bash
-# Clone the repository
-git clone https://github.com/your-username/coleo
+git clone https://github.com/sirtimbly/coleo
 cd coleo
-
-# Install dependencies
-bun run setup
-
-# Initialize Coleo (copies default.toml)
+bun install
 bun run src/cli/index.ts init
 ```
 
-Use `bun run src/cli/index.ts <command>` to run the local CLI while you develop from source.
+If you are developing from source, use `bun run src/cli/index.ts <command>` instead of the global `coleo` binary.
 
-## Quickstart: Existing Codebase (Partial Adoption)
+### 2. Initialize state
 
-Use this path when you already have a repository and just want Coleo to help inside it.
-
-### 1. Prepare your project
-
-In your project repo:
+If you did not already run init during install:
 
 ```bash
-git clone git@github.com:you/your-project.git
-cd your-project
-
-# Create a branch that Coleo will use
-git checkout -b coleo
-
-# Make sure it runs / builds in your environment
-npm install        # or bun install / pnpm install / etc.
-npm test           # optional but recommended
+coleo init
 ```
 
-This `coleo` branch is where arms will make changes. You can merge or rebase it into your main branch whenever you’re comfortable.
+This creates `.coleo` state, arm configs, Maildir folders, and local config files.
 
-### 2. Initialize Coleo (one-time)
+When an OpenCode-backed arm is spawned, the API refreshes a cached authenticated model catalog
+from the local `opencode models` CLI and stores it in `.coleo/cache/opencode-models.json`.
+The Observatory uses that cache for OpenCode provider/model dropdowns instead of querying a live
+OpenCode server.
 
-```bash
-# Set up ./.coleo (maildir, config, templates, SQLite DB)
-coleo init --dir ./.coleo
-```
+### 3. Start the API server
 
-**Security Note**: During initialization, you'll be prompted to generate an API token. This token is used to authenticate requests between Coleo components. The token will be saved to `.coleo/.env`. You can also set it manually:
-
-```bash
-export COLEO_API_TOKEN=your-secure-token
-# or add to .coleo/.env
-```
-
-### 3. Start the server and brain
+Foreground:
 
 ```bash
-# Terminal 1: API server (required for harness-based arms)
-# Foreground mode:
 coleo serve
-# If port 8080 is already in use:
-# coleo serve --port 18080
-# Background mode:
-# coleo serve start
+```
 
-# Terminal 2: Brain polling loop
+Background daemon:
+
+```bash
+coleo serve start
+```
+
+Default API URL:
+
+- `http://localhost:8080`
+- If `COLEO_NATS_URL` is unset, `coleo serve` will also bring up local NATS at `nats://127.0.0.1:4222`
+
+If you want to use a shared or remote NATS server instead, set `COLEO_NATS_URL` before starting
+the API server.
+
+### 4. Start the web UI
+
+If you installed a built package:
+
+```bash
+coleo web start
+```
+
+If you are running from source:
+
+```bash
+bun run web:dev
+```
+
+Default UI URL:
+
+- `http://localhost:5173`
+
+### 5. Start the brain
+
+```bash
 coleo brain run
 ```
 
-Leave these running; the server tracks arms/state and the brain coordinates tasks.
-
-### 4. Spawn a general-purpose arm on your repo
-
-In another terminal:
+### 6. Spawn an arm
 
 ```bash
 coleo arm spawn \
@@ -121,548 +208,52 @@ coleo arm spawn \
   --workdir /absolute/path/to/your-project
 ```
 
-This registers an arm in SQLite and starts an `opencode-api` agent pointed at your existing codebase.
-
-### 5. Give it a task and review its work
+### 7. Prompt it
 
 ```bash
-# Send a task via mail
-coleo mail send \
-  "Improve error handling in the user signup flow"
-
-# Or prompt the arm directly
-coleo arm prompt dev-arm \
-  "Add a dark mode toggle to the settings page"
+coleo arm prompt dev-arm "Add a dark mode toggle to the settings page"
 ```
 
-You can do the same thing from the web interface at `http://localhost:5173/mail`:
+## Path B: Run Coleo in Docker
 
-![Coleo mail interface screenshot](/mail-ui.png)
-
-Then review changes in your repo on the `coleo` branch:
+Use the hosting blueprint under `deploy/self-host/`.
 
 ```bash
-cd /absolute/path/to/your-project
-git status
-git diff
+cp deploy/self-host/.env.hosting.example deploy/self-host/.env.hosting
+./deploy/self-host/bin/bootstrap-host.sh
+
+docker compose \
+  --env-file deploy/self-host/.env.hosting \
+  -f deploy/self-host/docker-compose.hosting.yml \
+  up -d --build
 ```
 
-You decide when to commit, squash, or merge those changes into your main branch. This is “partial adoption”: Coleo helps inside your existing process, without taking it over.
+Default endpoints:
 
----
+- Observatory: `http://localhost`
+- API health: `http://localhost:8080/api/health`
+- NATS: `nats://localhost:4222`
 
-## Quickstart: New Project (Greenfield)
-
-Use this path when you’re starting from a blank slate and want Coleo involved from the first commit.
-
-### 1. Create a new repo and branch
+For a home server over LAN, Tailscale, or another VPN, keep the same base Compose file and set:
 
 ```bash
-mkdir ~/projects/my-new-idea
-cd ~/projects/my-new-idea
-
-git init
-git checkout -b coleo
-
-echo "# My New Idea" > README.md
-git add README.md
-git commit -m "chore: initial project skeleton"
+COLEO_BIND_HOST=0.0.0.0
+COLEO_PUBLIC_ORIGIN=http://<your-private-hostname-or-tailscale-name>
 ```
 
-You can optionally bootstrap a framework here (`bun init`, `npm create vite@latest`, etc.), or let an arm do that in the next step.
+If you later want public internet exposure, add:
 
-### 2. Initialize Coleo
+- `deploy/self-host/docker-compose.hosting.edge.example.yml`
 
-```bash
-coleo init --dir ./.coleo
-```
+See [Docker Guide](/guides/docker) for the full Docker path.
 
-### 3. Start the brain
+## Recommended Progression
 
-```bash
-coleo brain run
-```
+For most users, the clean progression is:
 
-### 4. Spawn a development arm into your new project
+1. Start with local processes if you are developing from source or just learning the system.
+2. Add local NATS only when you want distributed arms or stream-backed observability.
+3. Move to the Docker base stack when you want a stable service on a Mac mini or home server.
+4. Expose that base stack privately over LAN, Tailscale, or another VPN.
+5. Add Traefik and Authelia only when you actually need public internet exposure.
 
-```bash
-coleo arm spawn \
-  --name greenfield-dev \
-  --harness opencode-api \
-  --workdir ~/projects/my-new-idea
-```
-
-Both you and the arm now share the same working tree and the same `coleo` branch.
-
-### 5. Describe the idea and let the arm scaffold
-
-```bash
-coleo mail send \
-  "Create a minimal Bun + React app for a personal task tracker. Start with a single page that lists in-memory tasks and a simple form to add a new task."
-```
-
-The brain will turn this into a task (eventually with explicit classification like `development`), assign it to the arm, and the arm will:
-
-- Create files and run commands in `~/projects/my-new-idea`.
-- Report progress and discoveries via Maildir.
-
-You stay in control:
-
-```bash
-cd ~/projects/my-new-idea
-git status
-git diff
-git commit -am "feat: initial task tracker UI"
-```
-
-When you’re happy, you can push the `coleo` branch to your remote and open a PR as usual.
-
-### Arm Configuration
-
-Coleo initialization writes a single starter arm config:
-
-- `./.coleo/arms/default.toml`
-
-Edit this file before spawning arms, or copy it to create additional arm profiles.
-
-### Verify Installation
-
-```bash
-coleo status
-```
-
-You should see:
-```
-Coleo Status
-Directory: /absolute/path/to/your-project/.coleo
-
-System: ok (vX.Y.Z)
-Infrastructure:
-  Database: ✓ Healthy
-Arms: 0 total
-Proposals: 0 open
-Activity: 0 events (24h)
-```
-
-## Directory Structure
-
-After initialization, Coleo creates this structure (default path: `./.coleo`):
-
-```
-./.coleo/
-├── mail/              # Human <-> brain mailbox (Maildir)
-│   ├── inbox/
-│   ├── sent/
-│   ├── drafts/
-│   └── archive/
-├── coleo.db           # SQLite system of record (created on first server start)
-├── state/             # Persistent state
-├── arms/              # Arm templates/configs
-├── mcp/               # MCP configurations
-├── logs/              # Log files
-├── .env               # API token and secrets
-└── src/brain/templates/  # Brain prompt templates
-```
-
-## Running the Brain
-
-The brain is the central coordinator. Run it in the foreground to see what's happening:
-
-```bash
-coleo brain run
-```
-
-You'll see output like:
-```
-Brain starting...
-Polling every 30000ms
-Press Ctrl+C to stop
-
-[10:30:00] Polling... 0 messages, 0 tasks
-[10:30:30] Polling... 0 messages, 0 tasks
-```
-
-### Single Poll Cycle
-
-For testing, you can run a single poll cycle:
-
-```bash
-coleo brain run --once
-```
-
-## Spawning an Arm
-
-With the brain running (in another terminal), spawn an arm:
-
-```bash
-coleo arm spawn \
-  --name explorer \
-  --harness opencode-api \
-  --workdir ~/projects/my-project
-```
-
-This will:
-1. Create MCP configuration for the arm
-2. Open a new terminal window (or tmux session in headless mode)
-3. Start the AI agent with Coleo MCP connected
-
-## Arm Configurations
-
-Arms can be configured for different patterns of work distribution. Historically this used domains; the current design emphasizes task classifications, history, and availability instead.
-
-### From Templates
-
-Arm configuration templates are included in the project at `templates/arms/`:
-
-```bash
-# List available templates
-ls templates/arms/
-# default.toml  fullstack.toml  frontend.toml  backend.toml  testing.toml  docs.toml  architect.toml
-```
-
-Only `default.toml` is copied to `./.coleo/arms/` when you run `coleo init`.
-
-### General-Purpose Arms (Default)
-
-By default, arms are general-purpose and can work on any part of your codebase. Their behavior is shaped by task classification and task history rather than a fixed domain:
-
-```bash
-# Spawn a general-purpose arm
-coleo arm spawn --name default-arm
-```
-
-A general-purpose arm will handle frontend, backend, QA, and documentation tasks as assigned by the brain.
-
-### Layer-Focused Configuration (Legacy style)
-
-For larger projects, you can still run arms with focus hints that tend to work on specific layers:
-
-```bash
-# Frontend-leaning arm
-coleo arm spawn --name frontend-arm --domain frontend
-
-# Backend-leaning arm
-coleo arm spawn --name backend-arm --domain backend
-
-# Infrastructure-leaning arm
-coleo arm spawn --name infra-arm --domain infrastructure
-```
-
-In the current design, these domains are hints; the brain primarily matches tasks using task classifications, recent work, and availability.
-
-### Custom Arm Profiles
-
-Create custom arm profiles in `./.coleo/arms/` with domain-specific settings:
-
-```toml
-# ./.coleo/arms/frontend-specialist.toml
-[arm]
-name = "frontend-specialist"
-domain = "frontend"
-harness = "opencode"
-
-[context]
-budget = 150000
-priority_files = [
-  "src/web/**",
-  "*.css",
-  "*.tsx"
-]
-
-[personality]
-traits = "Detail-oriented, UX-focused, advocates for accessibility"
-
-[convictions]
-core = [
-  "Accessibility is not optional",
-  "Performance is a feature",
-  "Component reusability matters"
-]
-```
-
-### Configuration Priority
-
-The brain considers multiple factors when assigning tasks:
-
-1. **Task classification match** - Task type vs an arm's recent work and configuration templates
-2. **Availability** - Idle arms preferred over busy ones
-3. **Workload** - Arms with fewer active claims get priority
-4. **Context budget** - Arms with remaining budget for the task scope
-
-### Switching Configurations
-
-To switch between configurations:
-
-```bash
-# List available configurations
-ls ./.coleo/arms/
-
-# Edit the default profile
-$EDITOR ./.coleo/arms/default.toml
-
-# Or create an additional profile
-cp ./.coleo/arms/default.toml ./.coleo/arms/reviewer.toml
-```
-
-## Sending a Task
-
-Send a task to the brain via the mail interface:
-
-```bash
-coleo mail send "Add a dark mode toggle to the settings page"
-```
-
-The brain will:
-1. Pick up the message on the next poll
-2. Parse it as a new task
-3. Assign it to an available arm
-
-## Checking Status
-
-View the current status:
-
-```bash
-coleo status
-```
-
-Output:
-```
-Coleo Status
-Directory: /absolute/path/to/your-project/.coleo
-
-System: ok (vX.Y.Z)
-Infrastructure:
-  Database: ✓ Healthy
-Arms: 1 total
-Proposals: 0 open
-Activity: 0 events (24h)
-```
-
-## Viewing the Inbox
-
-Check messages from arms:
-
-```bash
-coleo mail inbox
-```
-
-## Docker Deployment
-
-For a containerized setup with Gitea and NATS:
-
-```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit with your API keys and token
-vim .env
-# Required: ANTHROPIC_API_KEY, OPENAI_API_KEY (depending on your models)
-# Optional: COLEO_API_TOKEN (for component authentication)
-
-# Start the stack (includes NATS for distributed arms)
-docker compose up -d
-
-# SSH into the container
-ssh -p 2222 coleo@localhost  # password: coleo
-
-# Inside container
-coleo brain run
-```
-
-The docker-compose.yml includes:
-- **NATS** on port 4222 (message queue for distributed arms)
-- **Gitea** on port 3000 (local git forge)
-- **Coleo** on port 2222 (SSH access)
-
-See the [Docker Setup Guide](./docker) for more details.
-
-## Next Steps
-
-- [CLI Reference](./cli) - All available commands
-- [Docker Setup](./docker) - Containerized deployment
-- [Architecture Overview](/architecture/overview) - System design
-
----
-
-## Documentation Sync
-
-Coleo automatically watches your `docs/` directory and keeps arms informed of changes. This ensures that when you update requirements, plans, or architectural decisions, all arms stay synchronized.
-
-### How It Works
-
-1. **File Watching**: The brain watches `docs/` for changes (created, modified, deleted)
-2. **Change Detection**: Docs are hashed to detect content changes
-3. **Arm Notification**: Arms are notified via MCP tools when relevant docs change
-4. **Task Re-evaluation**: When requirements or plans change, pending tasks are re-prioritized
-
-### Documentation Categories
-
-Organize docs in subdirectories for automatic categorization:
-
-```
-docs/
-├── architecture/    # System design, component details
-├── guides/          # How-to guides, tutorials
-├── plans/           # Phase plans, sprint goals
-├── requirements/    # Feature requirements, specifications
-├── decisions/       # ADR (Architectural Decision Records)
-└── other/           # Miscellaneous documentation
-```
-
-### MCP Tools for Documentation
-
-Arms can use these MCP tools to stay informed:
-
-```bash
-# List available documentation
-get_documentation()
-
-# Check for changes since last read
-check_documentation_changes(since="2024-01-15T10:00:00Z")
-
-# Find docs relevant to current task
-find_relevant_docs(task_description="implementing auth flow")
-```
-
-### Example Workflow
-
-1. User updates `docs/requirements/auth.md` with new requirements
-2. Brain detects change, logs it
-3. Next poll cycle re-evaluates pending tasks
-4. Arms use `check_documentation_changes` to detect updates
-5. Arms use `get_documentation` to re-read updated requirements
-
-### Watching Status
-
-View documentation watcher status:
-
-```bash
-# Check if docs are being watched
-coleo brain status
-
-# Output includes:
-# Documentation: 12 files tracked, last scan: 10:30:00
-```
-
----
-
-## File Watching Workflow
-
-Arms automatically monitor files relevant to their work. When files change, the brain coordinates notifications to keep all arms in sync.
-
-### How It Works
-
-1. **Arms Subscribe**: When an arm starts work, it subscribes to relevant file patterns
-2. **Change Detection**: Arms periodically check their subscribed files for changes
-3. **Change Reporting**: When a change is detected, the arm reports to the brain
-4. **Brain Notification**: The brain notifies all subscribed arms
-5. **Impact Assessment**: Each arm assesses if the change affects their work
-
-### MCP Tools for File Watching
-
-Arms use these tools to manage file subscriptions:
-
-```bash
-# Subscribe to watch a file or pattern
-subscribe_file({
-  pattern: "docs/requirements/*.md",
-  category: "requirements"
-})
-
-# Stop watching a pattern
-unsubscribe_file({ pattern: "docs/requirements/*.md" })
-
-# Report a detected change
-report_file_change({
-  file_path: "docs/requirements/auth.md",
-  change_type: "modified",
-  summary: "Added OAuth 2.0 requirements",
-  impact: "high"
-})
-```
-
-### Example: Requirements Change Flow
-
-1. User updates `docs/requirements/auth.md` with new OAuth requirements
-2. Docs arm detects change via `check_documentation_changes`
-3. Docs arm reports to brain: `report_file_change`
-4. Brain notifies subscribed arms (frontend-dev, backend-dev)
-5. Frontend arm assesses impact on UI components
-6. Backend arm assesses impact on API endpoints
-7. Affected arms report back if their work needs adjustment
-
-### Notification Types
-
-| Change              | Notified Arms                                      | Action                     |
-| ------------------- | -------------------------------------------------- | -------------------------- |
-| docs/requirements/* | All arms                                           | Re-evaluate task alignment |
-| docs/plans/*        | All arms                                           | Update sprint priorities   |
-| docs/architecture/* | Arms running architect or backend-classified tasks | Review consistency         |
-| Source code changes | Arms with claims or recent work on affected files  | Check for regressions      |
-
-### For Source Code Arms
-
-When requirements change:
-
-1. You will receive a `file_change_notification` via your arm queue
-2. Read the requirements change
-3. Assess if your current work is affected
-4. Report back to brain if you need to adjust your approach
-
-### For Documentation-Classified Tasks
-
-When monitoring documentation:
-
-1. Periodically check for changes: `check_documentation_changes`
-2. Summarize significant changes
-3. Report high-impact changes to brain
-4. Notify relevant arms if source code needs updates
-
----
-
-## Documentation Updates from Email
-
-When you reply to emails from Coleo with documentation changes, the brain creates documentation update tasks classified as `documentation`.
-
-Email-triggered workflows require a configured email gateway (Postmark recommended) and a fixed sender/receiver pair:
-- **Sender** (Brain mailbox), for example: `brain@your-domain.com`
-- **Receiver** (human mailbox), for example: `you@your-domain.com`
-
-### How It Works
-
-1. **You send an email** from the configured receiver mailbox to the configured sender mailbox with instructions like:
-   - "Update the requirements for auth flow"
-   - "Update docs to clarify the deployment process"
-   - "Revise the API documentation"
-
-2. **Brain detects the intent** and creates a `doc_update` task with high priority
-
-3. **Docs arm picks up the task** and uses MCP tools to update the relevant files:
-   - `get_documentation` - Read current docs
-   - `update_documentation` - Write updated content
-   - `check_documentation_changes` - Track what changed
-
-4. **Other arms are notified** when documentation changes (via documentation watcher)
-
-### Example Email Flow
-
-```
-You: "Please update docs/requirements/auth.md to reflect the new OAuth flow"
-      (subject: Update auth requirements)
-
-Brain: Creates task "Docs: Update auth requirements" classified as `documentation`
-
-Docs Arm: Receives task, reads current docs, updates with new OAuth requirements
-
-Brain: Notifies you when complete, other arms detect the change
-```
-
-### For Documentation Work
-
-Tasks classified as `documentation` tend to involve:
-
-1. Reviewing and updating project documentation
-2. Updating requirements based on user feedback
-3. Keeping docs/architecture/ in sync with implementation
-
-Any general-purpose arm can take on documentation tasks; you can still use a documentation-leaning template as a hint if you want one arm to focus there.

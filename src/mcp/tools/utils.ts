@@ -10,6 +10,7 @@ import { join } from "path";
 import { getColeoDir } from "../../config";
 import { createApiDatabase } from "../api-db";
 import type { MessageType, QueueMessage, Task } from "../../types";
+import { createCommandEnvelope } from "../../nats/command-types";
 
 // Get coleo directory from env or default (project-local)
 export const COLEO_DIR = getColeoDir();
@@ -43,21 +44,21 @@ export async function sendToBrain(message: {
 	type: MessageType;
 	payload: unknown;
 }): Promise<string> {
-	const messageId = `${Date.now()}-${randomBytes(4).toString("hex")}`;
+	const envelope = createCommandEnvelope({
+		id: `${Date.now()}-${randomBytes(4).toString("hex")}`,
+		from: message.from,
+		to: message.to,
+		type: message.type,
+		payload: message.payload,
+	});
 	try {
-		const response = await fetch(`${API_BASE_URL}/api/brain/internal/messages/queue`, {
+		const response = await fetch(`${API_BASE_URL}/api/brain/internal/commands/publish`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
 				"X-API-Key": API_KEY,
 			},
-			body: JSON.stringify({
-				id: messageId,
-				from: message.from,
-				to: message.to,
-				type: message.type,
-				payload: message.payload,
-			}),
+			body: JSON.stringify(envelope),
 		});
 
 		if (!response.ok) {
@@ -67,21 +68,21 @@ export async function sendToBrain(message: {
 			);
 		}
 
-		return messageId;
+		return envelope.id;
 	} catch (err) {
 		console.error(`[MCP] Failed to queue message via API, falling back to file: ${err}`);
 	}
 
 	await sendToBrainFile({
-		id: messageId,
-		from: message.from,
-		to: message.to,
-		type: message.type,
-		payload: message.payload,
-		timestamp: new Date(),
+		id: envelope.id,
+		from: envelope.from,
+		to: envelope.to,
+		type: envelope.type as QueueMessage["type"],
+		payload: envelope.payload,
+		timestamp: new Date(envelope.createdAt),
 	});
 
-	return messageId;
+	return envelope.id;
 }
 
 async function sendToBrainFile(message: QueueMessage): Promise<void> {

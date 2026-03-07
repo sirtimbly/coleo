@@ -5,7 +5,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import { api, type TaskAttachment } from '@/lib/api';
 import { brainKeys } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/useToast';
 
@@ -14,6 +14,7 @@ interface SendMessageVariables {
   message: string;
   priority?: 'critical' | 'high' | 'normal' | 'low';
   domain?: string;
+  attachments?: TaskAttachment[];
 }
 
 export function useBrain() {

@@ -32,6 +32,7 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+import { buildHarnessPromptParts } from "./prompt-parts";
 
 /**
  * Format an SDK error for display
@@ -128,6 +129,45 @@ export class OpenCodeTuiHarness implements AgentHarness {
   private eventCallbacks: Set<ArmEventCallback> = new Set();
   private deathCallbacks: Set<ArmDeathCallback> = new Set();
   private defaultTerminal: TerminalEmulator = "ghostty";
+
+  private createSessionTitle(armId: string, reason: "spawn" | "recover" | "reset"): string {
+    const iso = new Date().toISOString();
+    if (reason === "recover") {
+      return `Coleo Arm: ${armId} (recovered ${iso})`;
+    }
+    if (reason === "reset") {
+      return `Coleo Arm: ${armId} (reset ${iso})`;
+    }
+    return `Coleo Arm: ${armId} (${iso})`;
+  }
+
+  /**
+   * Keep only the active session in this OpenCode server instance.
+   * Each arm server should be isolated; stale sessions can leak confusing events.
+   */
+  private async pruneOtherSessions(
+    client: OpencodeClient,
+    armId: string,
+    keepSessionId: string,
+  ): Promise<void> {
+    try {
+      const sessionsResponse = await client.session.list();
+      const sessions = sessionsResponse.data || [];
+      for (const existing of sessions) {
+        if (!existing?.id || existing.id === keepSessionId) {
+          continue;
+        }
+        try {
+          await client.session.delete({ path: { id: existing.id } });
+          console.log(`[harness-tui] Deleted stale session ${existing.id} for ${armId}`);
+        } catch (err) {
+          console.warn(`[harness-tui] Failed deleting stale session ${existing.id} for ${armId}: ${err}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[harness-tui] Failed listing sessions for ${armId}: ${err}`);
+    }
+  }
 
   /**
    * Set the default terminal emulator to use
@@ -460,7 +500,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for this arm to prevent cross-contamination
     // Each arm gets its own isolated session with a unique title
     const createResponse = await client.session.create({
-      body: { title: `Coleo Arm: ${armId}` },
+      body: { title: this.createSessionTitle(armId, "spawn") },
     });
     const newSession = createResponse.data;
 
@@ -470,23 +510,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     const openCodeSession = newSession;
     console.log(`[harness-tui] Created new session ${openCodeSession.id} for arm ${armId}`);
-
-    // Initialize with model if specified (use resolved model)
-    if (resolvedProvider && resolvedModel) {
-      try {
-        await client.session.init({
-          path: { id: openCodeSession.id },
-          body: {
-            modelID: resolvedModel,
-            providerID: resolvedProvider,
-            messageID: `msg_${Date.now()}`,
-          },
-        });
-        console.log(`[harness-tui] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
-      } catch (initError) {
-        console.log(`[harness-tui] Session init warning: ${initError}`);
-      }
-    }
+    await this.pruneOtherSessions(client, armId, openCodeSession.id);
 
     // Select this session in the TUI so it displays correctly
     try {
@@ -744,7 +768,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
       // Create a new OpenCode session via SDK
       const newSessionResponse = await tuiSession.client.session.create({
-        body: { title: `Coleo Arm Session (reset ${Date.now()})` },
+        body: { title: this.createSessionTitle(tuiSession.armId, "reset") },
       });
       const newSession = newSessionResponse.data;
 
@@ -757,6 +781,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       tuiSession.sessionId = newSession.id;
       tuiSession.lastHeartbeat = new Date();
       tuiSession.consecutiveFailures = 0;
+      await this.pruneOtherSessions(tuiSession.client, tuiSession.armId, newSession.id);
 
       // Restart event stream with new session ID
       if (this.eventCallbacks.size > 0) {
@@ -837,8 +862,11 @@ export class OpenCodeTuiHarness implements AgentHarness {
     console.log(`[harness-tui] Sending prompt to ${tuiSession.armId}: "${prompt.slice(0, 50)}..."`);
 
     // Build the message body - include model if specified
-    const messageBody: { parts: Array<{ type: "text"; text: string }>; model?: { providerID: string; modelID: string } } = {
-      parts: [{ type: "text", text: prompt }],
+    const messageBody: {
+      parts: ReturnType<typeof buildHarnessPromptParts>;
+      model?: { providerID: string; modelID: string };
+    } = {
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
     };
 
     // Pass model as object if session has provider/model set
@@ -998,7 +1026,11 @@ export class OpenCodeTuiHarness implements AgentHarness {
    * Uses the SDK's prompt_async endpoint which is reliable
    * but doesn't show the prompt being typed in the TUI input field.
    */
-  async sendPromptViaApi(session: HarnessSession, prompt: string): Promise<void> {
+  async sendPromptViaApi(
+    session: HarnessSession,
+    prompt: string,
+    options?: SendPromptOptions,
+  ): Promise<void> {
     const tuiSession = this.sessions.get(session.id);
     if (!tuiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -1008,7 +1040,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
 
     // Use SDK's async prompt endpoint
     await tuiSession.client.session.promptAsync({
-      body: { parts: [{ type: "text", text: prompt }] },
+      body: { parts: buildHarnessPromptParts(prompt, options?.attachments) },
       path: { id: tuiSession.sessionId },
     });
 
@@ -1021,7 +1053,8 @@ export class OpenCodeTuiHarness implements AgentHarness {
     */
   async sendPromptSync(
     session: HarnessSession,
-    prompt: string
+    prompt: string,
+    options?: SendPromptOptions,
   ): Promise<{ info: Message; parts: Part[] }> {
     const tuiSession = this.sessions.get(session.id);
     if (!tuiSession) {
@@ -1033,7 +1066,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Use SDK's prompt endpoint for synchronous response
     const response = await tuiSession.client.session.prompt({
       body: {
-        parts: [{ type: "text", text: prompt }],
+        parts: buildHarnessPromptParts(prompt, options?.attachments),
       },
       path: { id: tuiSession.sessionId },
     });
@@ -1376,7 +1409,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Always create a NEW session for recovered arm to prevent cross-contamination
     try {
       const createResponse = await client.session.create({
-        body: { title: `Coleo Arm: ${armId} (recovered)` },
+        body: { title: this.createSessionTitle(armId, "recover") },
       });
       const recoveredSession = createResponse.data;
 
@@ -1386,6 +1419,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       }
 
       console.log(`[harness-tui] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
+      await this.pruneOtherSessions(client, armId, recoveredSession.id);
 
       const sessionId = `opencode-tui-recovered-${armId}-${Date.now().toString(36)}`;
 

@@ -39,6 +39,7 @@ export function registerInitCommand(program: Command): void {
     .command("init")
     .description("Initialize Coleo in the current project (.coleo/)")
     .option("-d, --dir <path>", "Custom directory", ".coleo")
+    .option("--non-interactive", "Skip prompts (for automation)", false)
     .action(async (options) => {
       const coleoDir = options.dir.startsWith("/") ? options.dir : join(process.cwd(), options.dir);
       console.log(`Initializing Coleo in ${coleoDir}...`);
@@ -81,11 +82,16 @@ export function registerInitCommand(program: Command): void {
         await access(envPath);
         // .env already exists, skip token generation
       } catch {
-        // .env doesn't exist, ask user if they want to generate a token
+        // .env doesn't exist, optionally ask user if they want to generate a token
         console.log("\n🔐 API Security Setup");
         console.log("Coleo uses an API token for secure communication between components.");
-        
-        const shouldGenerate = await askYesNo("Generate a random API token and save it to .env?");
+
+        let shouldGenerate = false;
+        if (options.nonInteractive) {
+          console.log("  ℹ Non-interactive mode: skipping API token generation prompt.");
+        } else {
+          shouldGenerate = await askYesNo("Generate a random API token and save it to .env?");
+        }
         
         if (shouldGenerate) {
           apiToken = generateApiToken();
@@ -101,7 +107,8 @@ COLEO_API_TOKEN=${apiToken}
 # COLEO_API_PORT=8080
 # COLEO_API_HOST=localhost
 
-# Optional: NATS Configuration (for distributed mode)
+# Optional: external NATS Configuration (for distributed mode)
+# Leave this unset to let 'coleo serve' auto-start a local nats-server
 # COLEO_NATS_URL=nats://localhost:4222
 `;
           await writeFile(envPath, envContent, "utf-8");
@@ -174,6 +181,7 @@ ${scriptInfo}${symlinkInfo}
 
  Quick Start:
    1. Start the API server:  coleo serve start
+      (auto-starts local NATS if COLEO_NATS_URL is unset)
    2. Start the web UI:     coleo web start
    3. View dashboard:       http://localhost:5173
    4. Configure arms:       edit .coleo/arms/default.toml

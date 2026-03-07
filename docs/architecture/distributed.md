@@ -196,6 +196,12 @@ interface ArmPlacement {
 
 ### Spawning an Arm
 
+From the Observatory web UI, the page-level `Spawn Arm` action creates a new arm record on
+the control plane and then sends a spawn command to a connected arm agent host. If the chosen
+agent is remote, the runtime starts on that remote machine rather than on the API server host.
+The modal now removes the old free-form domain input and instead offers arm templates from
+`.coleo/templates/*.yml`, pre-filling harness/provider/model before the spawn request is sent.
+
 ```
 Human (CLI)                Control Plane              Garden Daemon
     │                           │                          │

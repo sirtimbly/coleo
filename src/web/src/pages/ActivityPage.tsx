@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Button } from '@heroui/react';
 import { api, type ActivityEntry } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components';
-import { Activity } from 'lucide-react';
 
 export function ActivityPage() {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);

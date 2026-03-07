@@ -17,7 +17,6 @@ import { Maildir } from "../../mail/maildir";
 import {
   getBrainState,
   updateBrainState,
-  queueMessage,
   getPendingMessages,
   acquireMessageLease,
   markMessageCompleted,
@@ -27,7 +26,6 @@ import {
   requeueDeadLetterMessage,
   createNote,
   upsertTool,
-  recordDeadLetterMessage,
   type BrainState,
 } from "../../db/state";
 import {
@@ -35,6 +33,14 @@ import {
   validateBrainInboxPayload,
 } from "../../types/brain-inbox";
 import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
+import type { TaskAttachment } from "../../types";
+import { getNatsManager } from "../../nats/server";
+import { publishCommandEnvelope } from "../../nats/command-stream";
+import {
+  normalizeCommandEnvelope,
+  validateAndRecordCommandEnvelope,
+  type CommandIngressSource,
+} from "../brain-command-ingress";
 
 interface BrainContext {
   Variables: {
@@ -74,6 +80,18 @@ export interface BrainStatus {
   uptime: number | null;
 }
 
+interface CommandPublishRequestBody {
+  id?: string;
+  requestId?: string;
+  correlationId?: string;
+  from?: string;
+  to?: string;
+  type?: string;
+  payload?: unknown;
+  createdAt?: string;
+  schemaVersion?: number;
+}
+
 // Re-export BrainState for backward compatibility
 export type { BrainState } from "../../db/state";
 
@@ -89,6 +107,40 @@ export function createBrainRoutes() {
       throw HttpError.badRequest("params must be an array");
     }
     return { sql: body.sql, params: (body.params || []) as SQLQueryBindings[] };
+  };
+
+  const publishCommandToJetStream = async (
+    envelope: ReturnType<typeof normalizeCommandEnvelope>,
+  ): Promise<void> => {
+    const natsManager = getNatsManager();
+    const connection = natsManager?.getConnection();
+    if (!connection) {
+      throw HttpError.internal("NATS connection unavailable for command publish");
+    }
+    try {
+      await publishCommandEnvelope(connection, envelope);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("max payload")) {
+        throw HttpError.badRequest(message);
+      }
+      throw HttpError.internal(`JetStream command publish failed: ${message}`);
+    }
+  };
+
+  const ingestCommand = async (
+    db: Database,
+    body: CommandPublishRequestBody,
+    source: CommandIngressSource,
+  ): Promise<{ id: string }> => {
+    const envelope = normalizeCommandEnvelope(body);
+    const validationError = validateAndRecordCommandEnvelope(db, envelope, source);
+    if (validationError) {
+      throw HttpError.badRequest(validationError);
+    }
+
+    await publishCommandToJetStream(envelope);
+    return { id: envelope.id };
   };
 
   app.use("*", async (c, next) => {
@@ -309,6 +361,7 @@ export function createBrainRoutes() {
       domain?: string;
       inReplyTo?: string;
       subject?: string;
+      attachments?: TaskAttachment[];
     }>();
 
     if (!body.message?.trim()) {
@@ -340,6 +393,9 @@ export function createBrainRoutes() {
       "X-Coleo-Type": "human-message",
       "X-Coleo-Priority": body.priority || "normal",
       ...(body.domain ? { "X-Coleo-Domain": body.domain } : {}),
+      ...(body.attachments?.length
+        ? { "X-Coleo-Attachments": JSON.stringify(body.attachments) }
+        : {}),
     };
     
     // Add In-Reply-To header if this is a reply
@@ -356,7 +412,7 @@ export function createBrainRoutes() {
       date: new Date(),
       body: body.message,
       headers,
-    }, { seen: true });
+    });
 
     // Broadcast that a new message was sent to brain
     broadcastBrainEvent("message_received", {
@@ -381,55 +437,18 @@ export function createBrainRoutes() {
     }, 201);
   });
 
+  app.post("/internal/commands/publish", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<CommandPublishRequestBody>();
+    const result = await ingestCommand(db, body, "api_publish");
+    return c.json({ accepted: true, id: result.id });
+  });
+
   app.post("/internal/messages/queue", async (c) => {
     const db = c.get("db");
-    const body = await c.req.json<{
-      id: string;
-      from: string;
-      to: string;
-      type: string;
-      payload: unknown;
-    }>();
-
-    if (!body.id || !body.from || !body.to || !body.type) {
-      throw HttpError.badRequest("id, from, to, and type are required");
-    }
-
-    if (body.to === "brain") {
-      if (!isBrainInboxMessageType(body.type)) {
-        recordDeadLetterMessage(db, {
-          id: `deadletter-${randomUUID()}`,
-          from: body.from,
-          type: body.type,
-          payload: body.payload,
-          reason: `unsupported brain message type: ${body.type}`,
-          source: "api_queue",
-        });
-        throw HttpError.badRequest(`unsupported brain message type: ${body.type}`);
-      }
-
-      const payloadError = validateBrainInboxPayload(body.type, body.payload);
-      if (payloadError) {
-        recordDeadLetterMessage(db, {
-          id: `deadletter-${randomUUID()}`,
-          from: body.from,
-          type: body.type,
-          payload: body.payload,
-          reason: payloadError,
-          source: "api_queue",
-        });
-        throw HttpError.badRequest(payloadError);
-      }
-    }
-    queueMessage(db, {
-      id: body.id,
-      from: body.from,
-      to: body.to,
-      type: body.type,
-      payload: body.payload,
-    });
-
-    return c.json({ queued: true, id: body.id });
+    const body = await c.req.json<CommandPublishRequestBody>();
+    const result = await ingestCommand(db, body, "api_queue");
+    return c.json({ queued: true, id: result.id });
   });
 
   app.get("/internal/messages/pending", (c) => {

@@ -1,3 +1,5 @@
+import type { Task } from "../types";
+
 /**
  * Brain-side DB contracts.
  *
@@ -23,6 +25,7 @@ export interface BrainTaskRecord {
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  context?: Task["context"];
 }
 
 export interface BrainTaskListFilters {
@@ -61,6 +64,7 @@ export interface BrainTaskCreateInput {
   assignedTo?: string | null;
   dependencyBlocked?: boolean;
   sortOrder?: number | null;
+  context?: Task["context"];
 }
 
 export interface BrainTaskPatchInput {
@@ -74,6 +78,7 @@ export interface BrainTaskPatchInput {
   assignedTo?: string | null;
   dependencyBlocked?: boolean;
   sortOrder?: number | null;
+  context?: Task["context"];
 }
 
 export interface BrainBugRecord {

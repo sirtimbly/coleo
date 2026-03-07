@@ -54,6 +54,7 @@ class MockSubscription implements AsyncIterableIterator<ReplyMessage> {
 class MockConnection {
   public lastSubscription: MockSubscription | null = null;
   public publishedTopics: string[] = [];
+  public info: { max_payload: number } | undefined;
 
   subscribe(): MockSubscription {
     this.lastSubscription = new MockSubscription();
@@ -73,6 +74,15 @@ function makeCommand(requestId: string): AgentCommand {
   return {
     type: "list_arms",
     requestId,
+  };
+}
+
+function makePromptCommand(requestId: string, prompt: string): AgentCommand {
+  return {
+    type: "prompt",
+    requestId,
+    armId: "arm-test",
+    prompt,
   };
 }
 
@@ -111,5 +121,26 @@ describe("NatsClient.sendCommand", () => {
     const result = await pending;
     expect(result.success).toBe(true);
     expect(result.data?.ok).toBe(true);
+  });
+
+  it("returns an error when command payload exceeds server max payload", async () => {
+    const client = new NatsClient({
+      serverUrl: "nats://localhost:4222",
+      clientId: "test-client",
+    });
+    const connection = new MockConnection();
+    connection.info = { max_payload: 512 };
+    setMockConnection(client, connection);
+
+    const result = await client.sendCommand(
+      "agent-test",
+      makePromptCommand("req-too-large", "x".repeat(5000)),
+      200,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("exceeds NATS max payload");
+    expect(connection.publishedTopics).toEqual([]);
+    expect(connection.lastSubscription?.unsubscribeCalled).toBe(true);
   });
 });

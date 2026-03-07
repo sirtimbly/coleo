@@ -18,6 +18,7 @@ import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEve
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
+import { buildHarnessPromptParts } from "./prompt-parts";
 
 /**
  * Format an SDK error for display
@@ -91,7 +92,6 @@ export class OpenCodeApiHarness implements AgentHarness {
   private nextPort = 19300; // Start port for OpenCode servers
   private eventCallbacks: Set<ArmEventCallback> = new Set();
   private static readonly SESSION_CREATE_TIMEOUT_MS = 15000;
-  private static readonly SESSION_INIT_TIMEOUT_MS = 12000;
 
   /**
    * Race an async SDK call with a timeout so spawn never hangs indefinitely.
@@ -114,6 +114,47 @@ export class OpenCodeApiHarness implements AgentHarness {
       if (timeoutHandle) {
         clearTimeout(timeoutHandle);
       }
+    }
+  }
+
+  private createSessionTitle(armId: string, reason: "spawn" | "recover" | "reset"): string {
+    const iso = new Date().toISOString();
+    if (reason === "recover") {
+      return `Coleo Arm: ${armId} (recovered ${iso})`;
+    }
+    if (reason === "reset") {
+      return `Coleo Arm: ${armId} (reset ${iso})`;
+    }
+    return `Coleo Arm: ${armId} (${iso})`;
+  }
+
+  /**
+   * Keep only the active session in this OpenCode server instance.
+   * Each arm server should be isolated; stale sessions can leak confusing events.
+   */
+  private async pruneOtherSessions(
+    client: OpencodeClient,
+    armId: string,
+    keepSessionId: string,
+  ): Promise<void> {
+    try {
+      const sessionsResponse = await client.session.list();
+      const sessions = sessionsResponse.data || [];
+      for (const existing of sessions) {
+        if (!existing?.id || existing.id === keepSessionId) {
+          continue;
+        }
+        try {
+          await client.session.delete({ path: { id: existing.id } });
+          console.log(`[harness-api] Deleted stale session ${existing.id} for ${armId}`);
+        } catch (err) {
+          console.warn(
+            `[harness-api] Failed deleting stale session ${existing.id} for ${armId}: ${formatSdkError(err)}`
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(`[harness-api] Failed listing sessions for ${armId}: ${formatSdkError(err)}`);
     }
   }
 
@@ -348,7 +389,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Create a new session using SDK (access .data to get the actual session)
     const sessionResponse = await this.withTimeout(
       client.session.create({
-        body: { title: "Coleo Arm Session" },
+        body: { title: this.createSessionTitle(armId, "spawn") },
       }),
       OpenCodeApiHarness.SESSION_CREATE_TIMEOUT_MS,
       `OpenCode session.create for ${armId}`,
@@ -359,28 +400,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       throw new Error("Failed to create session: no session ID returned");
     }
     console.log(`[harness-api] Created OpenCode session ${session.id} for ${armId}`);
-
-    // Initialize session with model if specified (use resolved model)
-    if (resolvedProvider && resolvedModel) {
-      try {
-        console.log(`[harness-api] Initializing session ${session.id} with model ${resolvedProvider}/${resolvedModel}...`);
-        await this.withTimeout(
-          client.session.init({
-            path: { id: session.id },
-            body: {
-              modelID: resolvedModel,
-              providerID: resolvedProvider,
-              messageID: `msg_${Date.now()}`,
-            },
-          }),
-          OpenCodeApiHarness.SESSION_INIT_TIMEOUT_MS,
-          `OpenCode session.init for ${armId}`,
-        );
-        console.log(`[harness-api] Initialized session with model: ${resolvedProvider}/${resolvedModel}`);
-      } catch (initError) {
-        console.log(`[harness-api] Session init warning: ${initError}`);
-      }
-    }
+    await this.pruneOtherSessions(client, armId, session.id);
 
     // Create a dummy PTY session for compatibility
     const ptySession: PTYSession = {
@@ -525,7 +545,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     try {
       console.log(`[harness-api] Creating new session for recovered arm ${armId}`);
       const newSessionResponse = await client.session.create({
-        body: { title: `Coleo Arm: ${armId} (recovered)` },
+        body: { title: this.createSessionTitle(armId, "recover") },
       });
       const recoveredSession = newSessionResponse.data;
       
@@ -535,6 +555,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       }
       
       console.log(`[harness-api] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
+      await this.pruneOtherSessions(client, armId, recoveredSession.id);
       
       const sessionId = `opencode-api-recovered-${armId}-${Date.now().toString(36)}`;
       
@@ -659,7 +680,7 @@ export class OpenCodeApiHarness implements AgentHarness {
 
       // Create a new OpenCode session via SDK
       const newSessionResponse = await apiSession.client.session.create({
-        body: { title: `Coleo Arm Session (reset ${Date.now()})` },
+        body: { title: this.createSessionTitle(apiSession.armId, "reset") },
       });
       const newSession = newSessionResponse.data;
 
@@ -671,6 +692,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       const oldSessionId = apiSession.sessionId;
       apiSession.sessionId = newSession.id;
       apiSession.lastHeartbeat = new Date();
+      await this.pruneOtherSessions(apiSession.client, apiSession.armId, newSession.id);
 
       const armId = apiSession.armId;
 
@@ -723,11 +745,11 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     const modelOverride = this.resolvePromptModel(apiSession, options?.model);
     const body: {
-      parts: Array<{ type: "text"; text: string }>;
+      parts: ReturnType<typeof buildHarnessPromptParts>;
       noReply: boolean;
       model?: { providerID: string; modelID: string };
     } = {
-      parts: [{ type: "text", text: prompt }],
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
       noReply: false,
     };
 
@@ -753,7 +775,11 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Send a prompt and wait for the response
    */
-  async sendPromptSync(session: HarnessSession, prompt: string): Promise<{ info: Message; parts: Part[] }> {
+  async sendPromptSync(
+    session: HarnessSession,
+    prompt: string,
+    options?: SendPromptOptions,
+  ): Promise<{ info: Message; parts: Part[] }> {
     const apiSession = this.sessions.get(session.id);
     if (!apiSession) {
       throw new Error(`Session ${session.id} not found`);
@@ -761,13 +787,13 @@ export class OpenCodeApiHarness implements AgentHarness {
 
     console.log(`[harness-api] Sending sync prompt to ${session.id}: "${prompt.slice(0, 50)}..."`);
 
-    const modelOverride = this.resolvePromptModel(apiSession);
+    const modelOverride = this.resolvePromptModel(apiSession, options?.model);
     const body: {
-      parts: Array<{ type: "text"; text: string }>;
+      parts: ReturnType<typeof buildHarnessPromptParts>;
       noReply: boolean;
       model?: { providerID: string; modelID: string };
     } = {
-      parts: [{ type: "text", text: prompt }],
+      parts: buildHarnessPromptParts(prompt, options?.attachments),
       noReply: false,
     };
 

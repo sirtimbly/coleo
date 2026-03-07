@@ -138,7 +138,20 @@ export interface DeadLetterMessageInput {
   type: string;
   payload: unknown;
   reason: string;
-  source: "nats_bridge" | "api_queue";
+  source: "nats_bridge" | "api_queue" | "api_publish" | "jetstream_projector";
+}
+
+export interface ProjectedMessageInput {
+  id: string;
+  from: string;
+  to: string;
+  type: string;
+  payload: unknown;
+  createdAt?: string;
+  source: "jetstream";
+  streamName?: string | null;
+  streamSeq?: number | null;
+  dedupeId?: string;
 }
 
 /**
@@ -166,6 +179,71 @@ export function queueMessage(
       new Date().toISOString(),
     ]
   );
+}
+
+/**
+ * Upsert a projected message row from a durable command stream.
+ * Returns true when a new row is inserted and false for duplicate deliveries.
+ */
+export function upsertProjectedMessage(db: Database, message: ProjectedMessageInput): boolean {
+  const createdAt = message.createdAt || new Date().toISOString();
+  const dedupeId = message.dedupeId || message.id;
+
+  try {
+    const result = db.run(
+      `INSERT OR IGNORE INTO messages (
+        id,
+        from_id,
+        to_id,
+        message_type,
+        payload,
+        status,
+        created_at,
+        source,
+        stream_name,
+        stream_seq,
+        dedupe_id
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?)`,
+      [
+        message.id,
+        message.from,
+        message.to,
+        message.type,
+        JSON.stringify(message.payload),
+        createdAt,
+        message.source,
+        message.streamName || null,
+        message.streamSeq ?? null,
+        dedupeId,
+      ],
+    );
+    return result.changes > 0;
+  } catch (err) {
+    const errorText = err instanceof Error ? err.message : String(err);
+    if (!isMissingProjectionColumnError(errorText)) {
+      throw err;
+    }
+    const result = db.run(
+      `INSERT OR IGNORE INTO messages (
+        id,
+        from_id,
+        to_id,
+        message_type,
+        payload,
+        status,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      [
+        message.id,
+        message.from,
+        message.to,
+        message.type,
+        JSON.stringify(message.payload),
+        createdAt,
+      ],
+    );
+    return result.changes > 0;
+  }
 }
 
 /**
@@ -376,6 +454,15 @@ function rowToMessage(row: MessageRow): Message {
     processedAt: row.processed_at ? new Date(row.processed_at) : undefined,
     error: row.error || undefined,
   };
+}
+
+function isMissingProjectionColumnError(errorText: string): boolean {
+  return (
+    errorText.includes("no column named source") ||
+    errorText.includes("no column named stream_name") ||
+    errorText.includes("no column named stream_seq") ||
+    errorText.includes("no column named dedupe_id")
+  );
 }
 
 // ============================================
@@ -859,5 +946,107 @@ function rowToTaskComment(row: TaskCommentRow): TaskComment {
     deleted: row.deleted === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+// ============================================
+// Uploaded Media
+// ============================================
+
+export interface UploadedMediaRow {
+  id: string;
+  kind: "image";
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  storage_path: string;
+  access_token: string;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface UploadedMedia {
+  id: string;
+  kind: "image";
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  storagePath: string;
+  accessToken: string;
+  createdBy?: string;
+  createdAt: string;
+}
+
+export function createUploadedMedia(
+  db: Database,
+  media: {
+    id: string;
+    kind: "image";
+    filename: string;
+    mimeType: string;
+    sizeBytes: number;
+    storagePath: string;
+    accessToken: string;
+    createdBy?: string;
+  },
+): void {
+  db.run(
+    `INSERT INTO uploaded_media (
+      id,
+      kind,
+      filename,
+      mime_type,
+      size_bytes,
+      storage_path,
+      access_token,
+      created_by,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      media.id,
+      media.kind,
+      media.filename,
+      media.mimeType,
+      media.sizeBytes,
+      media.storagePath,
+      media.accessToken,
+      media.createdBy || null,
+      new Date().toISOString(),
+    ],
+  );
+}
+
+export function getUploadedMedia(
+  db: Database,
+  id: string,
+): UploadedMedia | null {
+  const row = db
+    .query("SELECT * FROM uploaded_media WHERE id = ?")
+    .get(id) as UploadedMediaRow | null;
+  return row ? rowToUploadedMedia(row) : null;
+}
+
+export function getUploadedMediaByToken(
+  db: Database,
+  id: string,
+  accessToken: string,
+): UploadedMedia | null {
+  const row = db
+    .query("SELECT * FROM uploaded_media WHERE id = ? AND access_token = ?")
+    .get(id, accessToken) as UploadedMediaRow | null;
+  return row ? rowToUploadedMedia(row) : null;
+}
+
+function rowToUploadedMedia(row: UploadedMediaRow): UploadedMedia {
+  return {
+    id: row.id,
+    kind: row.kind,
+    filename: row.filename,
+    mimeType: row.mime_type,
+    sizeBytes: row.size_bytes,
+    storagePath: row.storage_path,
+    accessToken: row.access_token,
+    createdBy: row.created_by || undefined,
+    createdAt: row.created_at,
   };
 }
