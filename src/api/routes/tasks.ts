@@ -1330,13 +1330,18 @@ export function createTasksRoutes() {
 
 		// Batch update sort_order using CASE statement
 		if (allTasks.length > 0) {
-			const caseStatements = allTasks.map((t, idx) => `WHEN id = '${t.id}' THEN ${idx}`).join(' ');
-			const taskIds = allTasks.map(t => `'${t.id}'`).join(',');
-			db.run(`
-				UPDATE tasks 
-				SET sort_order = CASE ${caseStatements} END
-				WHERE id IN (${taskIds})
-			`);
+			const caseStatements = allTasks.map(() => "WHEN ? THEN ?").join(" ");
+			const wherePlaceholders = allTasks.map(() => "?").join(", ");
+			const caseParams = allTasks.flatMap((task, idx) => [task.id, idx]);
+			const whereParams = allTasks.map((task) => task.id);
+			db.run(
+				`
+				UPDATE tasks
+				SET sort_order = CASE id ${caseStatements} END
+				WHERE id IN (${wherePlaceholders})
+			`,
+				[...caseParams, ...whereParams],
+			);
 		}
 
 		logActivity(db, "api", "task_reordered", taskId, { 

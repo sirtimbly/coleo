@@ -13,6 +13,23 @@ export interface TaskManagerOptions {
 	coleoDir: string;
 }
 
+interface TaskCreateInput {
+	id?: string;
+	subject: string;
+	description: string;
+	status?: Task["status"];
+	priority?: Task["priority"];
+	domain?: string;
+	classification?: string;
+	phase?: string;
+	mailThreadId?: string;
+	context?: Task["context"];
+	metadata?: Record<string, unknown>;
+	sourceType?: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
+	sourceRef?: string;
+	sortOrder?: number;
+}
+
 export interface TaskManagerCallbacks {
 	log: (message: string) => void;
 	logActivity: (
@@ -21,7 +38,7 @@ export interface TaskManagerCallbacks {
 		entityId: string,
 		meta?: Record<string, unknown>,
 	) => void;
-	createTaskViaApi: (task: Partial<Task>) => Promise<Task | null>;
+	createTaskViaApi: (task: TaskCreateInput) => Promise<Task | null>;
 	listPendingMessagesViaApi: (queue: string, limit: number) => Promise<Array<{
 		id: string;
 		from: string;

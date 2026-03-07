@@ -641,6 +641,12 @@ describe("tasks API", () => {
       expect(rows[1]?.id).toBe("task-a"); // Shifted down
       expect(rows[2]?.id).toBe("task-b");
       expect(rows[3]?.id).toBe("task-c");
+
+      const sortedRows = db
+        .query("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC")
+        .all() as Array<{ id: string; sort_order: number }>;
+      expect(sortedRows.map((row) => row.id)).toEqual(["task-d", "task-a", "task-b", "task-c"]);
+      expect(sortedRows.map((row) => row.sort_order)).toEqual([0, 1, 2, 3]);
     });
 
     it("should move task using prevTaskId and nextTaskId", async () => {
