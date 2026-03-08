@@ -224,6 +224,13 @@ class ApiClient {
     });
   }
 
+  async recoverArm(id: string, data: SpawnArmRequest = {}) {
+    return this.request<SpawnArmResponse>(`/arms/${id}/recover`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateArm(id: string, data: Partial<Arm>) {
     return this.request<{ arm: Arm }>(`/arms/${id}`, {
       method: 'PATCH',
@@ -937,6 +944,7 @@ export interface Arm {
   updatedAt: string;
   lastActivityAt: string | null;
   lastHeartbeat?: string | null;
+  lastOutputAt?: string | null;
   config: Record<string, unknown>;
   personality?: string;
   convictions?: string[];
@@ -953,6 +961,8 @@ export interface Arm {
   agentId?: string;
   host?: string;
   sessionId?: string;
+  workdir?: string;
+  runtime?: ArmRuntimeSummary;
 }
 
 export interface SpawnArmRequest {
@@ -972,6 +982,8 @@ export interface SpawnArmRequest {
 
 export interface SpawnArmResponse {
   spawned: boolean;
+  recovered?: boolean;
+  recoveryMode?: 'reattached' | 'recovered' | 'restarted';
   distributed?: boolean;
   agentId?: string;
   host?: string;
@@ -980,6 +992,32 @@ export interface SpawnArmResponse {
   sessionId?: string;
   provider?: string;
   model?: string;
+}
+
+export interface ArmRuntimeSummary {
+  state: 'starting' | 'active' | 'quiet' | 'hung' | 'recoverable' | 'stopped' | 'unknown';
+  reason: string;
+  distributed: boolean;
+  hasRuntime: boolean;
+  hasSession: boolean;
+  canRecover: boolean;
+  canRestart: boolean;
+  lastActivityAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastOutputAt: string | null;
+  secondsSinceActivity: number | null;
+  secondsSinceHeartbeat: number | null;
+  secondsSinceOutput: number | null;
+  signals: {
+    dbStatus: string;
+    hasPid: boolean;
+    hasPort: boolean;
+    hasSessionId: boolean;
+    hasAgentId: boolean;
+    hasWorkdir: boolean;
+    hasAssignedTask: boolean;
+    distributed: boolean;
+  };
 }
 
 export interface ActivityEntry {

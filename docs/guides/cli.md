@@ -146,7 +146,7 @@ Options:
   --provider <provider>   AI provider (e.g., anthropic, openai, github-copilot, opencode-zen)
   --model <model>         Model name (e.g., gpt-5.1-codex-mini)
   --template <name>       Use a template from ./.coleo/arms/ (or your COLEO_DIR)
-  --recover               Attempt to recover an existing OpenCode server
+  --recover               Reattach/recover an existing arm before falling back to restart
   --watch                 Watch the arm's conversation in real-time after spawning
 ```
 
@@ -181,6 +181,34 @@ coleo arm spawn -n my-arm --provider anthropic --model claude-opus-4
 
 # In terminal window
 coleo arm spawn -n worker --terminal ghostty
+
+# Reuse an existing arm if possible, otherwise restart it
+coleo arm spawn -n worker --recover
+```
+
+#### arm recover
+
+Recover or restart an existing arm using its persisted runtime metadata.
+
+```bash
+coleo arm recover <name>
+```
+
+The recovery flow is:
+
+1. Reattach if the runtime is still alive and the current agent or harness manager can confirm it.
+2. Recover an existing local OpenCode server when `pid` + `port` are still valid.
+3. Restart the arm on a live compatible agent (or locally for non-daemon harnesses) when reattachment is not possible.
+
+Examples:
+
+```bash
+# Recover a stopped or hung daemon-managed arm
+coleo arm recover Nebyx
+
+# Then confirm the unified runtime view
+coleo arm status Nebyx
+coleo arm watch Nebyx --history 1
 ```
 
 #### arm list
@@ -190,6 +218,10 @@ List all registered arms.
 ```bash
 coleo arm list
 ```
+
+The list view shows the runtime-derived state and the age of the last output seen for each arm. Use
+`coleo arm status <name>` for the full runtime summary, including heartbeat age, activity age, and
+the recovery signals the API is using.
 
 **Output:**
 ```

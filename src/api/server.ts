@@ -114,6 +114,42 @@ async function maybeStartTranscriptIndexer(
   }
 }
 
+function mapHarnessEventStatus(event: string, data: unknown): string | null {
+  if (event === "session.idle") {
+    return "idle";
+  }
+
+  if (event === "session.error") {
+    return "error";
+  }
+
+  if (event === "process.died") {
+    return "stopped";
+  }
+
+  if (event === "session.status" || event === "session.updated") {
+    const status = (data as { status?: unknown } | null)?.status;
+    if (typeof status !== "string") {
+      return null;
+    }
+
+    const normalized = status.toLowerCase();
+    if (normalized === "idle") return "idle";
+    if (
+      normalized === "busy" ||
+      normalized === "processing" ||
+      normalized === "executing" ||
+      normalized === "running" ||
+      normalized === "retry"
+    ) {
+      return "busy";
+    }
+    if (normalized === "error" || normalized === "failed") return "error";
+  }
+
+  return null;
+}
+
 /**
  * Create and configure the Hono app
  */
@@ -323,8 +359,8 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           if (event.type === "arm.spawned") {
             const state = event.state;
             db.run(
-              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
-              [state.status, state.pid, state.port, state.sessionId, event.agentId, agentHost, now, now, armId],
+              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, last_activity_at = COALESCE(?, last_activity_at), agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [state.status, state.pid, state.port, state.sessionId, state.lastActivityAt, event.agentId, agentHost, now, now, armId],
             );
             persistDistributedEvent("arm.spawned", {
               agentId: event.agentId,
@@ -337,8 +373,8 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           if (event.type === "arm.recovered") {
             const state = event.state;
             db.run(
-              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
-              [state.status, state.pid, state.port, state.sessionId, event.agentId, agentHost, now, now, armId],
+              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, last_activity_at = COALESCE(?, last_activity_at), agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [state.status, state.pid, state.port, state.sessionId, state.lastActivityAt, event.agentId, agentHost, now, now, armId],
             );
             persistDistributedEvent("arm.recovered", {
               agentId: event.agentId,
@@ -349,6 +385,10 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           }
 
           if (event.type === "arm.log") {
+            db.run(
+              "UPDATE arms SET last_activity_at = ?, last_output_at = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [now, now, now, now, armId],
+            );
             persistDistributedEvent("arm.log", {
               level: event.level,
               message: event.message,
@@ -360,6 +400,10 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           }
 
           if (event.type === "arm.activity") {
+            db.run(
+              "UPDATE arms SET last_activity_at = ?, last_output_at = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [now, now, now, now, armId],
+            );
             const rawType = typeof event.activity?.type === "string" ? event.activity.type : "activity";
             const activityData =
               event.activity && typeof event.activity.data === "object" && event.activity.data !== null
@@ -424,7 +468,22 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     const armExists = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as { id: string } | null;
     if (!armExists) {
       console.warn(`[server] Skipping arm event for unknown arm: ${armId}`);
-    } else if (eventStore.isInitialized()) {
+    } else {
+      const nextStatus = mapHarnessEventStatus(event, data);
+      if (nextStatus) {
+        db.run(
+          "UPDATE arms SET status = ?, last_activity_at = ?, last_output_at = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [nextStatus, now, now, now, now, armId],
+        );
+      } else {
+        db.run(
+          "UPDATE arms SET last_activity_at = ?, last_output_at = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [now, now, now, now, armId],
+        );
+      }
+    }
+
+    if (armExists && eventStore.isInitialized()) {
       eventStore
         .publishEvent(`coleo.events.arm.${armId}.${event}`, {
           type: event,
@@ -485,6 +544,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   
   // Subscribe to log events and broadcast via WebSocket
   harnessManager.onLog((armId, data) => {
+    const now = new Date().toISOString();
+    db.run(
+      "UPDATE arms SET last_activity_at = ?, last_output_at = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+      [now, now, now, now, armId],
+    );
     broadcast("arms", "arm.log", { armId, data });
   });
   

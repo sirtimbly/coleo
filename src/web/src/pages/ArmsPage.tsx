@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Coins, LoaderCircle, Play, Plus, Server, Trash2, X, Zap } from "lucide-react";
+import { Coins, LoaderCircle, Play, Plus, RotateCcw, Server, Trash2, X, Zap } from "lucide-react";
 import { createPortal } from "react-dom";
 import { Card, Chip, Button } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
@@ -124,6 +124,52 @@ function generateSuggestedArmName(existingArms: Arm[]): string {
 	}
 
 	return `${generateArmName()}-${existingArms.length + 1}`;
+}
+
+function formatAge(seconds: number | null | undefined): string {
+	if (seconds === null || seconds === undefined) {
+		return "Never";
+	}
+	if (seconds < 60) {
+		return `${seconds}s ago`;
+	}
+	const minutes = Math.floor(seconds / 60);
+	if (minutes < 60) {
+		return `${minutes}m ago`;
+	}
+	const hours = Math.floor(minutes / 60);
+	if (hours < 24) {
+		return `${hours}h ${minutes % 60}m ago`;
+	}
+	const days = Math.floor(hours / 24);
+	return `${days}d ${hours % 24}h ago`;
+}
+
+function runtimeTone(state: string | undefined): "success" | "warning" | "danger" | "default" {
+	if (state === "active" || state === "quiet") return "success";
+	if (state === "starting") return "warning";
+	if (state === "hung" || state === "recoverable") return "danger";
+	return "default";
+}
+
+function armActionFor(arm: Arm): { kind: "spawn" | "recover"; label: string } | null {
+	const runtimeState = arm.runtime?.state;
+	if (
+		arm.runtime?.canRecover &&
+		(runtimeState === "hung" || runtimeState === "recoverable" || runtimeState === "stopped")
+	) {
+		return { kind: "recover", label: runtimeState === "hung" ? "Recover" : "Restart" };
+	}
+
+	if (arm.status === "stopped" || arm.status === "error") {
+		return { kind: "spawn", label: "Spawn" };
+	}
+
+	if (arm.status === "starting" && !arm.runtime?.hasRuntime) {
+		return { kind: "spawn", label: "Spawn" };
+	}
+
+	return null;
 }
 
 export function ArmsPage() {
@@ -295,19 +341,46 @@ export function ArmsPage() {
 		[loadArms, showError, showSuccess],
 	);
 
-	const canSpawnArm = useCallback((arm: Arm) => {
-		if (arm.status === "stopped" || arm.status === "error") {
-			return true;
-		}
+	const handleRecover = useCallback(
+		async (
+			arm: Arm,
+			options?: {
+				agentId?: string;
+				allowLocalFallback?: boolean;
+			},
+		) => {
+			setSpawningArmId(arm.id);
 
-		const hasRuntime =
-			arm.pid !== undefined ||
-			arm.port !== undefined ||
-			arm.sessionId !== undefined ||
-			arm.agentId !== undefined;
+			try {
+				const response = await api.recoverArm(arm.id, {
+					provider: arm.provider,
+					model: arm.model,
+					agentId: options?.agentId,
+					allowLocalFallback: options?.allowLocalFallback,
+				});
+				await loadArms();
 
-		return arm.status === "starting" && !hasRuntime;
-	}, []);
+				const target = response.distributed
+					? response.host || response.agentId || "remote arm agent host"
+					: "the API server host";
+				const action =
+					response.recoveryMode === "reattached"
+						? "Reattached"
+						: response.recoveryMode === "recovered"
+							? "Recovered"
+							: "Restarted";
+				showSuccess(`${action} ${arm.name} on ${target}`, "Arm Recovery");
+			} catch (err) {
+				showError(
+					err instanceof Error ? err.message : "Failed to recover arm",
+					"Recovery Failed",
+				);
+			} finally {
+				setSpawningArmId(null);
+			}
+		},
+		[loadArms, showError, showSuccess],
+	);
 
 	const allAgentHarnesses = useMemo(
 		() => uniqueStrings(agents.flatMap((agent) => agent.capabilities)),
@@ -690,6 +763,55 @@ export function ArmsPage() {
 										</span>
 									</div>
 
+									{arm.runtime && (
+										<>
+											<div className="flex justify-between items-center gap-3">
+												<span className="text-muted-foreground">Runtime state</span>
+												<Chip
+													size="sm"
+													variant="soft"
+													color={runtimeTone(arm.runtime.state)}
+												>
+													{arm.runtime.state}
+												</Chip>
+											</div>
+
+											<div className="flex justify-between gap-3">
+												<span className="text-muted-foreground">Last output</span>
+												<span className="text-right">
+													{formatAge(arm.runtime.secondsSinceOutput)}
+												</span>
+											</div>
+
+											<div className="flex justify-between gap-3">
+												<span className="text-muted-foreground">Heartbeat</span>
+												<span className="text-right">
+													{formatAge(arm.runtime.secondsSinceHeartbeat)}
+												</span>
+											</div>
+
+											<div className="rounded bg-default-100 p-2 text-xs text-muted-foreground">
+												{arm.runtime.reason}
+											</div>
+
+											<div className="rounded bg-default-100/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
+												status={arm.runtime.signals.dbStatus}
+												{" · "}
+												{arm.runtime.signals.hasPid ? "pid" : "no-pid"}
+												{" · "}
+												{arm.runtime.signals.hasPort ? "port" : "no-port"}
+												{" · "}
+												{arm.runtime.signals.hasSessionId ? "session" : "no-session"}
+												{" · "}
+												{arm.runtime.signals.hasAgentId ? "agent" : "local"}
+												{" · "}
+												{arm.runtime.signals.hasWorkdir ? "workdir" : "no-workdir"}
+												{" · "}
+												{arm.runtime.signals.hasAssignedTask ? "task" : "no-task"}
+											</div>
+										</>
+									)}
+
 									{(arm.host || arm.agentId) && (
 									<div className="flex justify-between gap-3">
 										<span className="text-muted-foreground">Runtime</span>
@@ -717,24 +839,41 @@ export function ArmsPage() {
 									</div>
 								)}
 
-								{canSpawnArm(arm) && (
-									<div className="mt-4 flex justify-end">
-										<Button
-											variant="primary"
-											size="sm"
-											onPress={() => void handleSpawn(arm)}
-											isDisabled={spawningArmId !== null}
-											className="gap-2"
-										>
-											{spawningArmId === arm.id ? (
-												<LoaderCircle className="h-4 w-4 animate-spin" />
-											) : (
-												<Play className="h-4 w-4" />
-											)}
-											{spawningArmId === arm.id ? "Starting..." : "Spawn"}
-										</Button>
-									</div>
-								)}
+								{(() => {
+									const action = armActionFor(arm);
+									if (!action) {
+										return null;
+									}
+
+									const isRecover = action.kind === "recover";
+									return (
+										<div className="mt-4 flex justify-end">
+											<Button
+												variant={isRecover ? "flat" : "primary"}
+												color={isRecover ? "warning" : "primary"}
+												size="sm"
+												onPress={() =>
+													void (isRecover ? handleRecover(arm) : handleSpawn(arm))
+												}
+												isDisabled={spawningArmId !== null}
+												className="gap-2"
+											>
+												{spawningArmId === arm.id ? (
+													<LoaderCircle className="h-4 w-4 animate-spin" />
+												) : isRecover ? (
+													<RotateCcw className="h-4 w-4" />
+												) : (
+													<Play className="h-4 w-4" />
+												)}
+												{spawningArmId === arm.id
+													? isRecover
+														? "Recovering..."
+														: "Starting..."
+													: action.label}
+											</Button>
+										</div>
+									);
+								})()}
 							</Card.Content>
 						</Card>
 					))}
@@ -957,8 +1096,8 @@ export function ArmsPage() {
 								{spawnModal.name.trim() && arms.some((arm) => arm.id === spawnModal.name.trim()) && (
 									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
 										An arm named <code>{spawnModal.name.trim()}</code> already exists. Pick a
-										new name for a brand new spawn, or use the row-level Spawn button to
-										restart the existing arm.
+										new name for a brand new spawn, or use the row-level Recover/Spawn action
+										on the existing arm card.
 									</div>
 								)}
 

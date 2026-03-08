@@ -16,6 +16,31 @@ For restart resilience, API-driven arm spawning uses a daemon-first policy:
 - `opencode-tui` may run locally without daemon management when an operator wants a visible terminal session.
 - Local fallback for daemon-managed harnesses is available only as an explicit override for debugging/recovery scenarios.
 
+### Recovery Model
+
+Arm recovery is now an explicit first-class flow in both the CLI and web UI:
+
+- `POST /api/arms/:id/recover` is the shared recovery endpoint for CLI and web clients.
+- Recovery always uses the API as the source of truth for runtime metadata and session identity.
+- For distributed arms, the API prefers a currently live agent on the recorded host/harness instead of blindly trusting a stale persisted `agent_id`.
+- If the runtime cannot be confirmed as live, recovery falls back to a restart instead of reporting a false reattach.
+
+Runtime health is summarized from the same signals everywhere:
+
+- database status (`idle`, `busy`, `stopped`, etc.)
+- runtime metadata (`pid`, `port`, `session_id`, `agent_id`, `workdir`)
+- `last_heartbeat`
+- `last_activity_at`
+- `last_output_at`
+
+That summary is exposed on arm list/detail responses and powers:
+
+- CLI `arm list`
+- CLI `arm status`
+- Web UI arm cards
+- recovery button enablement
+- watch/session routing
+
 ---
 
 ## Current Harnesses

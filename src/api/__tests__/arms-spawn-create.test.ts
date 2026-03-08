@@ -36,6 +36,8 @@ function createTestDb(): Database {
       agent_id TEXT,
       host TEXT,
       session_id TEXT,
+      workdir TEXT,
+      last_output_at TEXT,
       config TEXT
     );
   `);
@@ -59,6 +61,15 @@ describe("arms spawn route auto-creation", () => {
     originalPath = process.env.PATH;
     process.env.COLEO_DIR = tempDir;
     process.env.HOME = tempDir;
+    const binDir = join(tempDir, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(
+      join(binDir, "opencode"),
+      ["#!/bin/sh", "exit 1", ""].join("\n"),
+      "utf-8",
+    );
+    await chmod(join(binDir, "opencode"), 0o755);
+    process.env.PATH = `${binDir}:${originalPath || ""}`;
 
     app = new Hono<{ Variables: { db: Database } }>();
     app.use("*", async (c, next) => {
@@ -70,6 +81,7 @@ describe("arms spawn route auto-creation", () => {
 
   afterEach(async () => {
     getArmClientSpy?.mockRestore();
+    serverModule.setArmClient({} as never);
     db.close();
     if (originalColeoDir === undefined) {
       delete process.env.COLEO_DIR;
@@ -99,7 +111,6 @@ describe("arms spawn route auto-creation", () => {
       "utf-8",
     );
     const binDir = join(tempDir, "bin");
-    await mkdir(binDir, { recursive: true });
     const scriptPath = join(binDir, "opencode");
     await writeFile(
       scriptPath,
@@ -281,12 +292,14 @@ describe("arms spawn route auto-creation", () => {
     getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
       () => mockArmClient as never,
     );
+    serverModule.setArmClient(mockArmClient as never);
 
     const response = await app.request("http://coleo.test/api/arms/retry-arm/spawn", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         workdir: tempDir,
+        allowLocalFallback: false,
       }),
     });
 
@@ -326,5 +339,374 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.pid).toBe(4242);
     expect(updated?.port).toBe(19300);
     expect(updated?.session_id).toBe("ses_retry");
+  });
+
+  it("reattaches to an existing distributed runtime when recover is requested", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, last_activity_at, last_heartbeat, pid, port,
+        provider, model, agent_id, host, session_id, workdir, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "recover-arm",
+        "Recover Arm",
+        "development",
+        "opencode-api",
+        "busy",
+        100000,
+        0,
+        now,
+        now,
+        now,
+        now,
+        5151,
+        19310,
+        "opencode",
+        "gpt-5.1-codex-mini",
+        "agent-1",
+        "recover-host",
+        "ses_old",
+        tempDir,
+        JSON.stringify({}),
+      ],
+    );
+
+    const mockArmClient = {
+      getAgent: (agentId: string) => ({
+        agentId,
+        hostname: "recover-host",
+      }),
+      getAgentForArm: () => "agent-1",
+      getAgents: () => [],
+      findBestAgent: () => ({
+        agentId: "agent-1",
+        hostname: "recover-host",
+        capabilities: ["opencode-api"],
+        maxArms: 10,
+      }),
+      getArmState: async () => ({
+        requestId: "req-recover",
+        success: true,
+        data: {
+          status: "idle",
+          pid: 6161,
+          port: 19311,
+          sessionId: "ses_live",
+          lastActivityAt: now,
+        },
+      }),
+    };
+
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
+      () => mockArmClient as never,
+    );
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request("http://coleo.test/api/arms/recover-arm/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      recovered: boolean;
+      recoveryMode: string;
+      distributed: boolean;
+      host: string;
+      pid: number;
+      port: number;
+      sessionId: string;
+    };
+
+    expect(body.recovered).toBe(true);
+    expect(body.recoveryMode).toBe("reattached");
+    expect(body.distributed).toBe(true);
+    expect(body.host).toBe("recover-host");
+    expect(body.pid).toBe(6161);
+    expect(body.port).toBe(19311);
+    expect(body.sessionId).toBe("ses_live");
+
+    const updated = db
+      .query("SELECT status, pid, port, session_id, agent_id, host FROM arms WHERE id = ?")
+      .get("recover-arm") as {
+        status: string;
+        pid: number | null;
+        port: number | null;
+        session_id: string | null;
+        agent_id: string | null;
+        host: string | null;
+      } | null;
+
+    expect(updated?.status).toBe("idle");
+    expect(updated?.pid).toBe(6161);
+    expect(updated?.port).toBe(19311);
+    expect(updated?.session_id).toBe("ses_live");
+    expect(updated?.agent_id).toBe("agent-1");
+    expect(updated?.host).toBe("recover-host");
+  });
+
+  it("restarts a distributed arm when recovery metadata is stale and no live runtime is confirmed", async () => {
+    const now = new Date().toISOString();
+    const spawnCalls: string[] = [];
+
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, last_activity_at, last_heartbeat, pid, port,
+        provider, model, agent_id, host, session_id, workdir, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "stale-recover-arm",
+        "Stale Recover Arm",
+        "development",
+        "opencode-api",
+        "stopped",
+        100000,
+        0,
+        now,
+        now,
+        now,
+        now,
+        5151,
+        19310,
+        "opencode",
+        "gpt-5.1-codex-mini",
+        "agent-1",
+        "recover-host",
+        "ses_old",
+        tempDir,
+        JSON.stringify({}),
+      ],
+    );
+
+    const mockArmClient = {
+      getAgent: (agentId: string) => ({
+        agentId,
+        hostname: "recover-host",
+      }),
+      getAgentForArm: () => "agent-1",
+      getAgents: () => [],
+      findBestAgent: () => ({
+        agentId: "agent-1",
+        hostname: "recover-host",
+        capabilities: ["opencode-api"],
+        maxArms: 10,
+      }),
+      getArmState: async () => ({
+        requestId: "req-stale-recover",
+        success: false,
+        error: "not found",
+      }),
+      listArmsOnAgent: async () => ({
+        requestId: "req-list-stale-recover",
+        success: true,
+        data: {
+          arms: [],
+        },
+      }),
+      spawnArm: async (agentId: string) => {
+        spawnCalls.push(agentId);
+        return {
+          requestId: "req-spawn-stale-recover",
+          success: true,
+          data: {
+            armId: "stale-recover-arm",
+            pid: 7171,
+            port: 19312,
+            sessionId: "ses_restarted",
+          },
+        };
+      },
+    };
+
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
+      () => mockArmClient as never,
+    );
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request("http://coleo.test/api/arms/stale-recover-arm/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(200);
+    expect(spawnCalls).toEqual(["agent-1"]);
+
+    const body = (await response.json()) as {
+      recovered: boolean;
+      recoveryMode: string;
+      distributed: boolean;
+      host: string;
+      pid: number;
+      port: number;
+      sessionId: string;
+    };
+
+    expect(body.recovered).toBe(true);
+    expect(body.recoveryMode).toBe("restarted");
+    expect(body.distributed).toBe(true);
+    expect(body.host).toBe("recover-host");
+    expect(body.pid).toBe(7171);
+    expect(body.port).toBe(19312);
+    expect(body.sessionId).toBe("ses_restarted");
+
+    const updated = db
+      .query("SELECT status, pid, port, session_id, agent_id, host FROM arms WHERE id = ?")
+      .get("stale-recover-arm") as {
+        status: string;
+        pid: number | null;
+        port: number | null;
+        session_id: string | null;
+        agent_id: string | null;
+        host: string | null;
+      } | null;
+
+    expect(updated?.status).toBe("idle");
+    expect(updated?.pid).toBe(7171);
+    expect(updated?.port).toBe(19312);
+    expect(updated?.session_id).toBe("ses_restarted");
+    expect(updated?.agent_id).toBe("agent-1");
+    expect(updated?.host).toBe("recover-host");
+  });
+
+  it("recovers using the current live agent when the persisted agent id is stale", async () => {
+    const now = new Date().toISOString();
+    const spawnCalls: string[] = [];
+
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, last_activity_at, last_heartbeat, pid, port,
+        provider, model, agent_id, host, session_id, workdir, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "stale-agent-arm",
+        "Stale Agent Arm",
+        "development",
+        "opencode-api",
+        "stopped",
+        100000,
+        0,
+        now,
+        now,
+        now,
+        now,
+        5151,
+        19310,
+        "opencode",
+        "gpt-5.1-codex-mini",
+        "stale-agent",
+        "recover-host",
+        "ses_old",
+        tempDir,
+        JSON.stringify({}),
+      ],
+    );
+
+    const mockArmClient = {
+      getAgent: (agentId: string) =>
+        agentId === "live-agent"
+          ? {
+              agentId,
+              hostname: "recover-host",
+            }
+          : undefined,
+      getAgentForArm: () => undefined,
+      getAgents: () => [
+        {
+          agentId: "live-agent",
+          hostname: "recover-host",
+          capabilities: ["opencode-api"],
+          maxArms: 10,
+        },
+      ],
+      findBestAgent: () => ({
+        agentId: "live-agent",
+        hostname: "recover-host",
+        capabilities: ["opencode-api"],
+        maxArms: 10,
+      }),
+      getArmState: async () => ({
+        requestId: "req-stale-agent-recover",
+        success: false,
+        error: "not found",
+      }),
+      listArmsOnAgent: async (agentId: string) => ({
+        requestId: `req-list-${agentId}`,
+        success: true,
+        data: {
+          arms: [],
+        },
+      }),
+      spawnArm: async (agentId: string) => {
+        spawnCalls.push(agentId);
+        return {
+          requestId: "req-spawn-live-agent",
+          success: true,
+          data: {
+            armId: "stale-agent-arm",
+            pid: 8181,
+            port: 19313,
+            sessionId: "ses_live_agent",
+          },
+        };
+      },
+    };
+
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
+      () => mockArmClient as never,
+    );
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request("http://coleo.test/api/arms/stale-agent-arm/recover", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    });
+
+    expect(response.status).toBe(200);
+    expect(spawnCalls).toEqual(["live-agent"]);
+
+    const body = (await response.json()) as {
+      recovered: boolean;
+      recoveryMode: string;
+      distributed: boolean;
+      agentId: string;
+      host: string;
+      pid: number;
+      port: number;
+      sessionId: string;
+    };
+
+    expect(body.recovered).toBe(true);
+    expect(body.recoveryMode).toBe("restarted");
+    expect(body.distributed).toBe(true);
+    expect(body.agentId).toBe("live-agent");
+    expect(body.host).toBe("recover-host");
+    expect(body.pid).toBe(8181);
+    expect(body.port).toBe(19313);
+    expect(body.sessionId).toBe("ses_live_agent");
+
+    const updated = db
+      .query("SELECT status, pid, port, session_id, agent_id, host FROM arms WHERE id = ?")
+      .get("stale-agent-arm") as {
+        status: string;
+        pid: number | null;
+        port: number | null;
+        session_id: string | null;
+        agent_id: string | null;
+        host: string | null;
+      } | null;
+
+    expect(updated?.status).toBe("idle");
+    expect(updated?.pid).toBe(8181);
+    expect(updated?.port).toBe(19313);
+    expect(updated?.session_id).toBe("ses_live_agent");
+    expect(updated?.agent_id).toBe("live-agent");
+    expect(updated?.host).toBe("recover-host");
   });
 });

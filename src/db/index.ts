@@ -127,6 +127,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["051_command_projection_metadata", MIGRATION_051, { table: "messages", columns: MIGRATION_051_COLUMNS }],
     ["052_bugs_fts", MIGRATION_052],
     ["053_fix_bugs_fts_external_content", MIGRATION_053],
+    ["054_arm_runtime_metadata", MIGRATION_054, { table: "arms", columns: MIGRATION_054_COLUMNS }],
 	];
 
 
@@ -1401,6 +1402,22 @@ CREATE TRIGGER bugs_fts_au AFTER UPDATE ON bugs BEGIN
 END;
 
 INSERT INTO bugs_fts(bugs_fts) VALUES ('rebuild');
+`;
+
+const MIGRATION_054_COLUMNS = [
+  {
+    name: "workdir",
+    sql: "ALTER TABLE arms ADD COLUMN workdir TEXT;",
+  },
+  {
+    name: "last_output_at",
+    sql: "ALTER TABLE arms ADD COLUMN last_output_at TEXT;",
+  },
+];
+
+const MIGRATION_054 = `
+CREATE INDEX IF NOT EXISTS idx_arms_workdir ON arms(workdir);
+CREATE INDEX IF NOT EXISTS idx_arms_last_output_at ON arms(last_output_at);
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

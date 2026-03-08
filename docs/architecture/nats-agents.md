@@ -465,6 +465,7 @@ curl http://localhost:8222/connz
 
 - `opencode-api`: recoverable when process + port are still available
 - PTY/TUI harnesses: re-attachment is limited and may require manual restart
+- API-initiated `arm recover` will reattach only when the runtime is confirmed by a live agent; otherwise it restarts the arm on a reachable compatible agent.
 
 If recovery fails, restart the affected arm from the API/CLI.
 

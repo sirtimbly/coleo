@@ -44,6 +44,82 @@ interface DistributedRuntimeSnapshot {
   pid: number | null;
   port: number | null;
   sessionId: string | null;
+  lastActivityAt: string | null;
+}
+
+interface DistributedRuntimeRefreshResult {
+  snapshot: DistributedRuntimeSnapshot;
+  confirmed: boolean;
+}
+
+type ArmRuntimeState =
+  | "starting"
+  | "active"
+  | "quiet"
+  | "hung"
+  | "recoverable"
+  | "stopped"
+  | "unknown";
+
+interface ArmRuntimeSignals {
+  dbStatus: string;
+  hasPid: boolean;
+  hasPort: boolean;
+  hasSessionId: boolean;
+  hasAgentId: boolean;
+  hasWorkdir: boolean;
+  hasAssignedTask: boolean;
+  distributed: boolean;
+}
+
+export interface ArmRuntimeSummary {
+  state: ArmRuntimeState;
+  reason: string;
+  distributed: boolean;
+  hasRuntime: boolean;
+  hasSession: boolean;
+  canRecover: boolean;
+  canRestart: boolean;
+  lastActivityAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastOutputAt: string | null;
+  secondsSinceActivity: number | null;
+  secondsSinceHeartbeat: number | null;
+  secondsSinceOutput: number | null;
+  signals: ArmRuntimeSignals;
+}
+
+const ACTIVE_OUTPUT_THRESHOLD_MS = 90_000;
+const QUIET_OUTPUT_THRESHOLD_MS = 180_000;
+const HUNG_OUTPUT_THRESHOLD_MS = 300_000;
+const STALE_HEARTBEAT_THRESHOLD_MS = 120_000;
+
+function ageInSeconds(timestamp: string | null | undefined): number | null {
+  if (!timestamp) return null;
+  const ms = Date.now() - new Date(timestamp).getTime();
+  if (!Number.isFinite(ms) || ms < 0) {
+    return null;
+  }
+  return Math.floor(ms / 1000);
+}
+
+function isAgeWithin(seconds: number | null, thresholdMs: number): boolean {
+  if (seconds === null) {
+    return false;
+  }
+  return seconds * 1000 <= thresholdMs;
+}
+
+function hasDistributedRuntimeMetadata(snapshot: DistributedRuntimeSnapshot): boolean {
+  return snapshot.pid !== null || snapshot.port !== null || snapshot.sessionId !== null;
+}
+
+function isDistributedRuntimeReattachable(result: DistributedRuntimeRefreshResult): boolean {
+  if (!result.confirmed || !hasDistributedRuntimeMetadata(result.snapshot)) {
+    return false;
+  }
+
+  return !["stopped", "error", "stale"].includes(result.snapshot.status);
 }
 
 function resolveDistributedAgentId(
@@ -57,21 +133,31 @@ function resolveDistributedAgentId(
   }
 
   const mapped = armClient.getAgentForArm(armId);
-  if (persistedAgentId || mapped) {
-    return persistedAgentId || mapped || null;
+  if (mapped && armClient.getAgent(mapped)) {
+    return mapped;
+  }
+
+  if (persistedAgentId && armClient.getAgent(persistedAgentId)) {
+    return persistedAgentId;
   }
 
   const daemonManagedHarness =
     options?.harness === "opencode-api" || options?.harness === "opencode";
-  if (!daemonManagedHarness) {
-    return null;
-  }
 
   if (options?.host) {
-    const matchingAgent = armClient.getAgents().find((agent) => agent.hostname === options.host);
+    const matchingAgent = armClient
+      .getAgents()
+      .find((agent) =>
+        agent.hostname === options.host &&
+        (!options.harness || agent.capabilities.includes(options.harness)),
+      );
     if (matchingAgent) {
       return matchingAgent.agentId;
     }
+  }
+
+  if (!daemonManagedHarness) {
+    return mapped || persistedAgentId || null;
   }
 
   // Local daemon fallback for bootstrap/restart windows before heartbeats populate mappings.
@@ -79,7 +165,7 @@ function resolveDistributedAgentId(
     return AUTO_AGENT_ID;
   }
 
-  return null;
+  return mapped || persistedAgentId || null;
 }
 
 function mapDistributedStatusToHarnessState(status: string): string {
@@ -100,15 +186,40 @@ function mapDistributedStatusToHarnessState(status: string): string {
   }
 }
 
+function findReachableAgentForHarness(
+  harness: string,
+  options?: { preferredAgentId?: string | null; preferredHost?: string | null },
+): string | null {
+  const armClient = getArmClient();
+  if (!armClient) {
+    return options?.preferredAgentId || null;
+  }
+
+  if (options?.preferredAgentId && armClient.getAgent(options.preferredAgentId)) {
+    return options.preferredAgentId;
+  }
+
+  if (options?.preferredHost) {
+    const hostMatch = armClient
+      .getAgents()
+      .find((agent) => agent.hostname === options.preferredHost && agent.capabilities.includes(harness));
+    if (hostMatch) {
+      return hostMatch.agentId;
+    }
+  }
+
+  return armClient.findBestAgent(harness)?.agentId || null;
+}
+
 async function refreshDistributedRuntimeFromAgent(
   db: Database,
   armId: string,
   agentId: string | null,
   current: DistributedRuntimeSnapshot,
-): Promise<DistributedRuntimeSnapshot> {
+): Promise<DistributedRuntimeRefreshResult> {
   const armClient = getArmClient();
   if (!armClient) {
-    return current;
+    return { snapshot: current, confirmed: false };
   }
 
   let remoteState:
@@ -117,6 +228,7 @@ async function refreshDistributedRuntimeFromAgent(
         pid?: number | null;
         port?: number | null;
         sessionId?: string | null;
+        lastActivityAt?: string | null;
       }
     | undefined;
 
@@ -131,11 +243,11 @@ async function refreshDistributedRuntimeFromAgent(
       }
     }
   } catch {
-    return current;
+    return { snapshot: current, confirmed: false };
   }
 
   if (!remoteState) {
-    return current;
+    return { snapshot: current, confirmed: false };
   }
 
   const next: DistributedRuntimeSnapshot = {
@@ -152,16 +264,20 @@ async function refreshDistributedRuntimeFromAgent(
       typeof remoteState.sessionId === "string" || remoteState.sessionId === null
         ? remoteState.sessionId
         : current.sessionId,
+    lastActivityAt:
+      typeof remoteState.lastActivityAt === "string" || remoteState.lastActivityAt === null
+        ? remoteState.lastActivityAt
+        : current.lastActivityAt,
   };
 
   const now = new Date().toISOString();
   const resolvedHost = agentId ? armClient.getAgent(agentId)?.hostname ?? null : null;
   db.run(
-    "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
-    [next.status, next.pid, next.port, next.sessionId, agentId, resolvedHost, now, now, armId],
+    "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, last_activity_at = COALESCE(?, last_activity_at), agent_id = COALESCE(?, agent_id), host = COALESCE(?, host), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+    [next.status, next.pid, next.port, next.sessionId, next.lastActivityAt, agentId, resolvedHost, now, now, armId],
   );
 
-  return next;
+  return { snapshot: next, confirmed: true };
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -427,6 +543,7 @@ export interface ArmProfile {
   updatedAt: string;
   lastActivityAt: string | null;
   lastHeartbeat?: string | null;
+  lastOutputAt?: string | null;
   config: Record<string, unknown>;
   pid?: number;
   port?: number;
@@ -440,6 +557,9 @@ export interface ArmProfile {
   currentBugTitle?: string;
   agentId?: string;
   host?: string;
+  sessionId?: string;
+  workdir?: string;
+  runtime?: ArmRuntimeSummary;
 }
 
 export interface ArmTemplate {
@@ -464,6 +584,118 @@ export interface ArmTemplateSummary {
   contextBudget: number;
   provider?: string;
   model?: string;
+}
+
+function deriveArmRuntime(row: {
+  status: string;
+  pid: number | null;
+  port: number | null;
+  sessionId: string | null;
+  agentId: string | null;
+  workdir: string | null;
+  currentTaskId: string | null;
+  currentTaskSubject: string | null;
+  lastActivityAt: string | null;
+  lastHeartbeat: string | null;
+  lastOutputAt: string | null;
+}): ArmRuntimeSummary {
+  const secondsSinceActivity = ageInSeconds(row.lastActivityAt);
+  const secondsSinceHeartbeat = ageInSeconds(row.lastHeartbeat);
+  const secondsSinceOutput = ageInSeconds(row.lastOutputAt);
+  const distributed = Boolean(row.agentId);
+  const hasPid = typeof row.pid === "number" && row.pid > 0;
+  const hasPort = typeof row.port === "number" && row.port > 0;
+  const hasSessionId = typeof row.sessionId === "string" && row.sessionId.length > 0;
+  const hasRuntime = hasPid || hasPort || hasSessionId || distributed;
+  const hasSession = hasPort || hasSessionId;
+  const hasWorkdir = typeof row.workdir === "string" && row.workdir.length > 0;
+  const hasAssignedTask = Boolean(row.currentTaskId || row.currentTaskSubject);
+  const recentOutput = isAgeWithin(secondsSinceOutput, ACTIVE_OUTPUT_THRESHOLD_MS);
+  const recentActivity = isAgeWithin(secondsSinceActivity, QUIET_OUTPUT_THRESHOLD_MS);
+  const recentHeartbeat = isAgeWithin(secondsSinceHeartbeat, STALE_HEARTBEAT_THRESHOLD_MS);
+  const outputIsStale =
+    secondsSinceOutput !== null && secondsSinceOutput * 1000 > HUNG_OUTPUT_THRESHOLD_MS;
+  const canRecover = hasWorkdir || hasRuntime;
+  const canRestart = hasWorkdir || hasRuntime;
+
+  let state: ArmRuntimeState = "unknown";
+  let reason = "No runtime signals were recorded for this arm.";
+
+  if (row.status === "starting") {
+    state = "starting";
+    reason = hasRuntime
+      ? "The arm has runtime metadata and is still starting."
+      : "The arm is marked as starting but has not reported a runtime yet.";
+  } else if (row.status === "stopped") {
+    state = "stopped";
+    reason = canRecover
+      ? "The arm is stopped but has enough metadata to recover or restart."
+      : "The arm is stopped and missing runtime metadata needed for recovery.";
+  } else if (row.status === "error") {
+    state = canRecover ? "recoverable" : "unknown";
+    reason = canRecover
+      ? "The arm reported an error and can be recovered or restarted."
+      : "The arm reported an error and no recovery metadata is available.";
+  } else if (row.status === "busy" || row.status === "running") {
+    if (recentOutput || recentActivity || recentHeartbeat) {
+      state = "active";
+      reason = recentOutput
+        ? "Recent output is still arriving from this arm."
+        : recentHeartbeat
+          ? "The arm is still heartbeating even though output is quiet."
+          : "The arm recently reported activity.";
+    } else if (hasRuntime) {
+      state = "hung";
+      reason = outputIsStale
+        ? "The arm still has a runtime but has not produced output recently."
+        : "The arm is marked busy but recent runtime activity is missing.";
+    } else {
+      state = "recoverable";
+      reason = "The arm is marked busy but no active runtime is visible.";
+    }
+  } else if (row.status === "idle" || row.status === "paused") {
+    if (recentOutput || recentActivity || recentHeartbeat || hasRuntime) {
+      state = "quiet";
+      reason = recentOutput
+        ? "The arm produced output recently and is now quiet."
+        : recentHeartbeat
+          ? "The arm is reachable and currently idle."
+          : hasRuntime
+            ? "The arm still has a runtime attached but has not emitted recent output."
+            : "The arm recently reported activity and is currently quiet.";
+    } else {
+      state = canRecover ? "recoverable" : "unknown";
+      reason = canRecover
+        ? "The arm is idle in the database but no fresh runtime signals are visible."
+        : "The arm is idle and no runtime metadata is available.";
+    }
+  }
+
+  return {
+    state,
+    reason,
+    distributed,
+    hasRuntime,
+    hasSession,
+    canRecover,
+    canRestart,
+    lastActivityAt: row.lastActivityAt,
+    lastHeartbeatAt: row.lastHeartbeat,
+    lastOutputAt: row.lastOutputAt,
+    secondsSinceActivity,
+    secondsSinceHeartbeat,
+    secondsSinceOutput,
+    signals: {
+      dbStatus: row.status,
+      hasPid,
+      hasPort,
+      hasSessionId,
+      hasAgentId: distributed,
+      hasWorkdir,
+      hasAssignedTask,
+      distributed,
+    },
+  };
 }
 
 interface TemplateFileCandidate {
@@ -739,6 +971,7 @@ export function createArmsRoutes() {
           updated_at as updatedAt,
           last_activity_at as lastActivityAt,
           last_heartbeat as lastHeartbeat,
+          last_output_at as lastOutputAt,
           current_task_id as currentTaskId,
           pid, port, provider, model,
           total_tokens as totalTokens,
@@ -748,6 +981,8 @@ export function createArmsRoutes() {
           current_bug_title as currentBugTitle,
           agent_id as agentId,
           host,
+          session_id as sessionId,
+          workdir,
           config
         FROM arms
         ${includeAll ? "" : "WHERE NOT (harness = 'manual' AND status = 'idle' AND current_task_subject IS NULL)"}
@@ -787,6 +1022,7 @@ export function createArmsRoutes() {
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
         last_heartbeat as lastHeartbeat,
+        last_output_at as lastOutputAt,
         current_task_id as currentTaskId,
         pid, port, provider, model,
         total_tokens as totalTokens,
@@ -796,6 +1032,8 @@ export function createArmsRoutes() {
         current_bug_title as currentBugTitle,
         agent_id as agentId,
         host,
+        session_id as sessionId,
+        workdir,
         config
       FROM arms
       WHERE id = ?
@@ -821,6 +1059,7 @@ export function createArmsRoutes() {
       harness?: string;
       provider?: string;
       model?: string;
+      workdir?: string;
       contextBudget?: number;
       config?: Record<string, unknown>;
     }>();
@@ -853,8 +1092,8 @@ export function createArmsRoutes() {
     const domain = body.domain || template?.domain || "general";
 
     db.run(`
-      INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, workdir, config)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       body.name,
@@ -868,6 +1107,7 @@ export function createArmsRoutes() {
       null,
       provider,
       model,
+      body.workdir || null,
       JSON.stringify(body.config || template?.config || {}),
     ]);
 
@@ -885,9 +1125,24 @@ export function createArmsRoutes() {
       createdAt: now,
       updatedAt: now,
       lastActivityAt: null,
+      lastOutputAt: null,
       pid: undefined,
       provider,
       model,
+      workdir: body.workdir,
+      runtime: deriveArmRuntime({
+        status: "starting",
+        pid: null,
+        port: null,
+        sessionId: null,
+        agentId: null,
+        workdir: body.workdir || null,
+        currentTaskId: null,
+        currentTaskSubject: null,
+        lastActivityAt: null,
+        lastHeartbeat: null,
+        lastOutputAt: null,
+      }),
       config: body.config || template?.config || {},
     };
 
@@ -965,6 +1220,10 @@ export function createArmsRoutes() {
       updates.push("last_heartbeat = ?");
       values.push(body.lastHeartbeat);
     }
+    if (body.lastOutputAt !== undefined) {
+      updates.push("last_output_at = ?");
+      values.push(body.lastOutputAt);
+    }
     if (body.currentTaskId !== undefined) {
       updates.push("current_task_id = ?");
       values.push(body.currentTaskId);
@@ -980,6 +1239,26 @@ export function createArmsRoutes() {
     if (body.currentBugTitle !== undefined) {
       updates.push("current_bug_title = ?");
       values.push(body.currentBugTitle);
+    }
+    if (body.workdir !== undefined) {
+      updates.push("workdir = ?");
+      values.push(body.workdir);
+    }
+    if (body.sessionId !== undefined) {
+      updates.push("session_id = ?");
+      values.push(body.sessionId);
+    }
+    if (body.port !== undefined) {
+      updates.push("port = ?");
+      values.push(body.port);
+    }
+    if (body.agentId !== undefined) {
+      updates.push("agent_id = ?");
+      values.push(body.agentId);
+    }
+    if (body.host !== undefined) {
+      updates.push("host = ?");
+      values.push(body.host);
     }
 
     if (updates.length === 0) {
@@ -1010,11 +1289,16 @@ export function createArmsRoutes() {
         updated_at as updatedAt,
         last_activity_at as lastActivityAt,
         last_heartbeat as lastHeartbeat,
+        last_output_at as lastOutputAt,
         current_task_id as currentTaskId,
-        pid, provider, model,
+        pid, port, provider, model,
         current_task_subject as currentTaskSubject,
         current_bug_id as currentBugId,
         current_bug_title as currentBugTitle,
+        agent_id as agentId,
+        host,
+        session_id as sessionId,
+        workdir,
         config
       FROM arms
       WHERE id = ?
@@ -1075,8 +1359,8 @@ export function createArmsRoutes() {
       allowLocalFallback?: boolean; // Allow local fallback for daemon-managed harnesses
     }>();
 
-    // Check if arm exists (include port and pid for potential recovery)
-    let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as {
+    // Check if arm exists (include runtime metadata for recovery)
+    let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
@@ -1086,9 +1370,16 @@ export function createArmsRoutes() {
       model: string | null;
       port: number | null;
       pid: number | null;
+      session_id: string | null;
       agent_id: string | null;
       host: string | null;
       context_budget: number;
+      workdir: string | null;
+      last_activity_at: string | null;
+      last_heartbeat: string | null;
+      last_output_at: string | null;
+      current_task_id: string | null;
+      current_task_subject: string | null;
     } | null;
 
     console.log(`[spawn] Checking arm ${id}, exists: ${!!row}`);
@@ -1119,8 +1410,8 @@ export function createArmsRoutes() {
       try {
         // Create the arm record
         db.run(`
-          INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, workdir, config)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           id,
           armName,
@@ -1134,6 +1425,7 @@ export function createArmsRoutes() {
           null,
           provider,
           model,
+          body.workdir || null,
           JSON.stringify(template?.config || {}),
         ]);
 
@@ -1147,7 +1439,7 @@ export function createArmsRoutes() {
         console.log(`[spawn] Created arm record for ${id}`);
 
         // Fetch the newly created arm
-        row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, agent_id, host, context_budget FROM arms WHERE id = ?").get(id) as typeof row;
+        row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?").get(id) as typeof row;
 
         if (!row) {
           throw new Error(`Failed to fetch newly created arm record for ${id}`);
@@ -1181,7 +1473,7 @@ export function createArmsRoutes() {
     // Fall back to config defaults if still not set
     provider = provider || defaults.provider;
     model = model || defaults.model;
-    const workdir = body.workdir || process.cwd();
+    const workdir = body.workdir || row.workdir || process.cwd();
 
     if (row.harness === "opencode-api" || row.harness === "opencode") {
       try {
@@ -1208,11 +1500,231 @@ export function createArmsRoutes() {
     const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
     const localFallbackEnabled =
       body.allowLocalFallback === true ||
-      process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
-      process.env.NODE_ENV === "test";
+      (body.allowLocalFallback !== false &&
+        (process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
+          process.env.NODE_ENV === "test"));
 
     // Try distributed spawning via ArmClient if available
     const armClient = getArmClient();
+    let runtimeSummary = deriveArmRuntime({
+      status: row.status,
+      pid: row.pid,
+      port: row.port,
+      sessionId: row.session_id,
+      agentId: row.agent_id,
+      workdir: row.workdir,
+      currentTaskId: row.current_task_id,
+      currentTaskSubject: row.current_task_subject,
+      lastActivityAt: row.last_activity_at,
+      lastHeartbeat: row.last_heartbeat,
+      lastOutputAt: row.last_output_at,
+    });
+
+    if (body.recover) {
+      if (daemonManagedHarness && armClient) {
+        const distributedAgentId =
+          body.agentId ||
+          resolveDistributedAgentId(id, row.agent_id, {
+            harness: row.harness,
+            host: row.host,
+          });
+
+        if (distributedAgentId) {
+          const refreshResult = await refreshDistributedRuntimeFromAgent(
+            db,
+            id,
+            distributedAgentId,
+            {
+              status: row.status,
+              pid: row.pid,
+              port: row.port,
+              sessionId: row.session_id,
+              lastActivityAt: row.last_activity_at,
+            },
+          );
+
+          runtimeSummary = deriveArmRuntime({
+            status: refreshResult.snapshot.status,
+            pid: refreshResult.snapshot.pid,
+            port: refreshResult.snapshot.port,
+            sessionId: refreshResult.snapshot.sessionId,
+            agentId: distributedAgentId,
+            workdir,
+            currentTaskId: row.current_task_id,
+            currentTaskSubject: row.current_task_subject,
+            lastActivityAt: refreshResult.snapshot.lastActivityAt,
+            lastHeartbeat: refreshResult.confirmed ? new Date().toISOString() : row.last_heartbeat,
+            lastOutputAt: row.last_output_at,
+          });
+
+          if (runtimeSummary.state !== "hung" && isDistributedRuntimeReattachable(refreshResult)) {
+            const agentHost = armClient.getAgent(distributedAgentId)?.hostname || row.host || hostname();
+            const now = new Date().toISOString();
+            db.run(
+              "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, last_activity_at = COALESCE(?, last_activity_at), agent_id = ?, host = ?, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [
+                refreshResult.snapshot.status,
+                refreshResult.snapshot.pid,
+                refreshResult.snapshot.port,
+                refreshResult.snapshot.sessionId,
+                refreshResult.snapshot.lastActivityAt,
+                distributedAgentId,
+                agentHost,
+                provider,
+                model,
+                workdir,
+                now,
+                now,
+                id,
+              ],
+            );
+
+            logActivity(db, id, "recovered", undefined, {
+              distributed: true,
+              recoveryMode: "reattached",
+              agentId: distributedAgentId,
+              host: agentHost,
+              pid: refreshResult.snapshot.pid,
+              port: refreshResult.snapshot.port,
+              sessionId: refreshResult.snapshot.sessionId,
+            });
+
+            broadcast("arms", "arm.spawned", {
+              id,
+              recovered: true,
+              recoveryMode: "reattached",
+              distributed: true,
+              agentId: distributedAgentId,
+              host: agentHost,
+              pid: refreshResult.snapshot.pid,
+              port: refreshResult.snapshot.port,
+              sessionId: refreshResult.snapshot.sessionId,
+              status: refreshResult.snapshot.status,
+            });
+
+            return c.json({
+              spawned: true,
+              recovered: true,
+              recoveryMode: "reattached",
+              distributed: true,
+              agentId: distributedAgentId,
+              host: agentHost,
+              pid: refreshResult.snapshot.pid,
+              port: refreshResult.snapshot.port,
+              sessionId: refreshResult.snapshot.sessionId,
+              provider,
+              model,
+            });
+          }
+
+          if (runtimeSummary.state === "hung") {
+            await armClient.killArm(id).catch(() => undefined);
+            const now = new Date().toISOString();
+            db.run(
+              "UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = ?, host = COALESCE(?, host), updated_at = ? WHERE id = ?",
+              [distributedAgentId, row.host, now, id],
+            );
+          }
+        }
+      } else {
+        const manager = getGlobalHarnessManager();
+        if (!manager) {
+          throw HttpError.internal("Harness manager not initialized");
+        }
+
+        if (manager.hasSession(id) && runtimeSummary.state !== "hung") {
+          const session = manager.getSession(id);
+          const pid = manager.getPid(id);
+          const port = manager.getPort(id);
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+            [
+              row.status === "error" || row.status === "stopped" ? "idle" : row.status,
+              pid ?? null,
+              port ?? null,
+              session?.session.id ?? null,
+              provider,
+              model,
+              workdir,
+              now,
+              now,
+              id,
+            ],
+          );
+
+          logActivity(db, id, "recovered", undefined, {
+            distributed: false,
+            recoveryMode: "reattached",
+            pid,
+            port,
+            sessionId: session?.session.id,
+          });
+
+          return c.json({
+            spawned: true,
+            recovered: true,
+            recoveryMode: "reattached",
+            distributed: false,
+            sessionId: session?.session.id,
+            pid,
+            port,
+            provider,
+            model,
+          });
+        }
+
+        if (manager.hasSession(id) && runtimeSummary.state === "hung") {
+          await manager.kill(id).catch(() => undefined);
+        } else if (
+          runtimeSummary.state !== "hung" &&
+          row.port &&
+          row.pid &&
+          (row.harness === "opencode-api" || row.harness === "opencode-tui")
+        ) {
+          const recovered = await manager.recover(id, row.harness, row.port, row.pid);
+          if (recovered) {
+            const now = new Date().toISOString();
+            const recoveredSessionId = manager.getSession(id)?.session.id ?? null;
+            db.run(
+              "UPDATE arms SET status = 'idle', session_id = ?, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [recoveredSessionId, provider, model, workdir, now, now, id],
+            );
+
+            logActivity(db, id, "recovered", undefined, {
+              distributed: false,
+              recoveryMode: "recovered",
+              pid: row.pid,
+              port: row.port,
+              sessionId: recoveredSessionId,
+            });
+
+            broadcast("arms", "arm.spawned", {
+              id,
+              recovered: true,
+              recoveryMode: "recovered",
+              pid: row.pid,
+              port: row.port,
+              status: "idle",
+              distributed: false,
+            });
+
+            return c.json({
+              spawned: true,
+              recovered: true,
+              recoveryMode: "recovered",
+              distributed: false,
+              sessionId: recoveredSessionId ?? undefined,
+              pid: row.pid,
+              port: row.port,
+              provider,
+              model,
+            });
+          }
+        }
+      }
+    }
+
     if (armClient && daemonManagedHarness && !localFallbackEnabled) {
       await ensureDaemonAgentAvailable(armClient, row.harness);
     }
@@ -1225,8 +1737,8 @@ export function createArmsRoutes() {
       ) => {
         const now = new Date().toISOString();
         db.run(
-          "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-          [agentId, agentHost, response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, now, now, id],
+          "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, workdir = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [agentId, agentHost, response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, workdir, now, now, id],
         );
 
         logActivity(db, id, "spawned", undefined, {
@@ -1405,39 +1917,6 @@ export function createArmsRoutes() {
       throw HttpError.badRequest(`Arm ${id} is already running`);
     }
 
-    // If arm was stopped but has port/pid, try to recover existing OpenCode server
-    // Recovery is disabled by default - must pass recover: true to enable
-    if (body.recover && row.status === "stopped" && row.port && row.pid && row.harness === "opencode-api") {
-      console.log(`[spawn] Attempting to recover existing OpenCode server for ${id} (port: ${row.port}, pid: ${row.pid})`);
-      const recovered = await manager.recover(id, row.harness, row.port, row.pid);
-      if (recovered) {
-        // Update database to reflect recovered state
-        const now = new Date().toISOString();
-        const recoveredSessionId = manager.getSession(id)?.session.id;
-        db.run(
-          "UPDATE arms SET status = 'idle', session_id = ?, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-          [recoveredSessionId ?? null, provider, model, now, now, id]
-        );
-        
-        // Log activity
-        logActivity(db, id, "recovered", undefined, { port: row.port, pid: row.pid });
-        
-        // Broadcast arm recovered
-        broadcast("arms", "arm.spawned", { id, recovered: true, pid: row.pid, port: row.port, status: "idle" });
-        
-        return c.json({
-          spawned: true,
-          recovered: true,
-          sessionId: manager.getSession(id)?.session.id,
-          pid: row.pid,
-          port: row.port,
-          provider,
-          model,
-        });
-      }
-      // Recovery failed, continue with fresh spawn
-    }
-
     try {
       // Spawn via harness
       const session = await manager.spawn(id, row.harness, {
@@ -1452,12 +1931,12 @@ export function createArmsRoutes() {
       const pid = manager.getPid(id);
       const port = manager.getPort(id);
       db.run(
-        "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, provider = ?, model = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
-        [pid ?? null, port ?? null, session.session.id, provider, model, now, now, id]
+        "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, provider = ?, model = ?, workdir = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [pid ?? null, port ?? null, session.session.id, provider, model, workdir, now, now, id]
       );
 
       // Log activity
-      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, port: port ?? undefined, workdir: body.workdir, provider, model, distributed: false });
+      logActivity(db, id, "spawned", undefined, { pid: pid ?? undefined, port: port ?? undefined, workdir, provider, model, distributed: false });
 
       // Broadcast arm spawned
       broadcast("arms", "arm.spawned", { id, sessionId: session.session.id, pid, port, status: "idle", distributed: false });
@@ -1475,6 +1954,384 @@ export function createArmsRoutes() {
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to spawn arm: ${message}`);
     }
+  });
+
+  app.post("/:id/recover", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{
+      workdir?: string;
+      provider?: string;
+      model?: string;
+      agentId?: string;
+      allowLocalFallback?: boolean;
+    }>().catch(() => ({} as {
+      workdir?: string;
+      provider?: string;
+      model?: string;
+      agentId?: string;
+      allowLocalFallback?: boolean;
+    }));
+
+    const row = db.query(
+      "SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?",
+    ).get(id) as {
+      id: string;
+      name: string;
+      domain: string;
+      harness: string;
+      status: string;
+      provider: string | null;
+      model: string | null;
+      port: number | null;
+      pid: number | null;
+      session_id: string | null;
+      agent_id: string | null;
+      host: string | null;
+      context_budget: number;
+      workdir: string | null;
+      last_activity_at: string | null;
+      last_heartbeat: string | null;
+      last_output_at: string | null;
+      current_task_id: string | null;
+      current_task_subject: string | null;
+    } | null;
+
+    if (!row) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+
+    const config = await loadConfig();
+    const provider = body.provider || row.provider || config.defaults.provider;
+    const model = body.model || row.model || config.defaults.model;
+    const workdir = body.workdir || row.workdir || process.cwd();
+    const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
+    const localFallbackEnabled =
+      body.allowLocalFallback === true ||
+      (body.allowLocalFallback !== false &&
+        (process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
+          process.env.NODE_ENV === "test"));
+
+    let runtimeSummary = deriveArmRuntime({
+      status: row.status,
+      pid: row.pid,
+      port: row.port,
+      sessionId: row.session_id,
+      agentId: row.agent_id,
+      workdir: row.workdir,
+      currentTaskId: row.current_task_id,
+      currentTaskSubject: row.current_task_subject,
+      lastActivityAt: row.last_activity_at,
+      lastHeartbeat: row.last_heartbeat,
+      lastOutputAt: row.last_output_at,
+    });
+
+    const armClient = getArmClient();
+    if (daemonManagedHarness && armClient) {
+      if (!localFallbackEnabled) {
+        await ensureDaemonAgentAvailable(armClient, row.harness);
+      }
+
+      const distributedAgentId =
+        body.agentId ||
+        resolveDistributedAgentId(id, row.agent_id, {
+          harness: row.harness,
+          host: row.host,
+        });
+
+      if (distributedAgentId) {
+        const refreshResult = await refreshDistributedRuntimeFromAgent(
+          db,
+          id,
+          distributedAgentId,
+          {
+            status: row.status,
+            pid: row.pid,
+            port: row.port,
+            sessionId: row.session_id,
+            lastActivityAt: row.last_activity_at,
+          },
+        );
+
+        runtimeSummary = deriveArmRuntime({
+          status: refreshResult.snapshot.status,
+          pid: refreshResult.snapshot.pid,
+          port: refreshResult.snapshot.port,
+          sessionId: refreshResult.snapshot.sessionId,
+          agentId: distributedAgentId,
+          workdir,
+          currentTaskId: row.current_task_id,
+          currentTaskSubject: row.current_task_subject,
+          lastActivityAt: refreshResult.snapshot.lastActivityAt,
+          lastHeartbeat: refreshResult.confirmed ? new Date().toISOString() : row.last_heartbeat,
+          lastOutputAt: row.last_output_at,
+        });
+
+        if (runtimeSummary.state !== "hung" && isDistributedRuntimeReattachable(refreshResult)) {
+          const agentHost = armClient.getAgent(distributedAgentId)?.hostname || row.host || hostname();
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, last_activity_at = COALESCE(?, last_activity_at), agent_id = ?, host = ?, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+            [
+              refreshResult.snapshot.status,
+              refreshResult.snapshot.pid,
+              refreshResult.snapshot.port,
+              refreshResult.snapshot.sessionId,
+              refreshResult.snapshot.lastActivityAt,
+              distributedAgentId,
+              agentHost,
+              provider,
+              model,
+              workdir,
+              now,
+              now,
+              id,
+            ],
+          );
+
+          logActivity(db, id, "recovered", undefined, {
+            distributed: true,
+            recoveryMode: "reattached",
+            agentId: distributedAgentId,
+            host: agentHost,
+            pid: refreshResult.snapshot.pid,
+            port: refreshResult.snapshot.port,
+            sessionId: refreshResult.snapshot.sessionId,
+          });
+
+          broadcast("arms", "arm.spawned", {
+            id,
+            recovered: true,
+            recoveryMode: "reattached",
+            distributed: true,
+            agentId: distributedAgentId,
+            host: agentHost,
+            pid: refreshResult.snapshot.pid,
+            port: refreshResult.snapshot.port,
+            sessionId: refreshResult.snapshot.sessionId,
+            status: refreshResult.snapshot.status,
+          });
+
+          return c.json({
+            spawned: true,
+            recovered: true,
+            recoveryMode: "reattached",
+            distributed: true,
+            agentId: distributedAgentId,
+            host: agentHost,
+            pid: refreshResult.snapshot.pid,
+            port: refreshResult.snapshot.port,
+            sessionId: refreshResult.snapshot.sessionId,
+            provider,
+            model,
+          });
+        }
+
+        if (runtimeSummary.state === "hung") {
+          await armClient.killArm(id).catch(() => undefined);
+        }
+
+        const restartAgentId = findReachableAgentForHarness(row.harness, {
+          preferredAgentId: body.agentId || distributedAgentId,
+          preferredHost: row.host,
+        });
+        if (restartAgentId) {
+          const agent = armClient.getAgent(restartAgentId);
+          const response = await armClient.spawnArm(restartAgentId, id, {
+            name: row.name,
+            domain: row.domain,
+            harness: row.harness,
+            provider,
+            model,
+            contextBudget: row.context_budget,
+            workDir: workdir,
+          });
+
+          if (!response.success) {
+            throw HttpError.internal(response.error || "Failed to restart arm on agent");
+          }
+
+          const now = new Date().toISOString();
+          db.run(
+            "UPDATE arms SET status = 'idle', agent_id = ?, host = ?, pid = ?, port = ?, session_id = ?, provider = ?, model = ?, workdir = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+            [restartAgentId, agent?.hostname || row.host || hostname(), response.data?.pid ?? null, response.data?.port ?? null, response.data?.sessionId ?? null, provider, model, workdir, now, now, id],
+          );
+
+          logActivity(db, id, "recovered", undefined, {
+            distributed: true,
+            recoveryMode: "restarted",
+            agentId: restartAgentId,
+            host: agent?.hostname || row.host || hostname(),
+            pid: response.data?.pid,
+            port: response.data?.port,
+            sessionId: response.data?.sessionId,
+          });
+
+          broadcast("arms", "arm.spawned", {
+            id,
+            recovered: true,
+            recoveryMode: "restarted",
+            distributed: true,
+            agentId: restartAgentId,
+            host: agent?.hostname || row.host || hostname(),
+            pid: response.data?.pid,
+            port: response.data?.port,
+            sessionId: response.data?.sessionId,
+            status: "idle",
+          });
+
+          return c.json({
+            spawned: true,
+            recovered: true,
+            recoveryMode: "restarted",
+            distributed: true,
+            agentId: restartAgentId,
+            host: agent?.hostname || row.host || hostname(),
+            pid: response.data?.pid,
+            port: response.data?.port,
+            sessionId: response.data?.sessionId,
+            provider,
+            model,
+          });
+        }
+      }
+
+      if (!localFallbackEnabled) {
+        throw HttpError.internal(
+          `Harness '${row.harness}' requires the arm agent daemon. Distributed arm management is unavailable.`,
+        );
+      }
+    }
+
+    const manager = getGlobalHarnessManager();
+    if (!manager) {
+      throw HttpError.internal("Harness manager not initialized");
+    }
+
+    if (manager.hasSession(id) && runtimeSummary.state !== "hung") {
+      const session = manager.getSession(id);
+      const pid = manager.getPid(id);
+      const port = manager.getPort(id);
+      const now = new Date().toISOString();
+      db.run(
+        "UPDATE arms SET status = ?, pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+        [
+          row.status === "error" || row.status === "stopped" ? "idle" : row.status,
+          pid ?? null,
+          port ?? null,
+          session?.session.id ?? null,
+          provider,
+          model,
+          workdir,
+          now,
+          now,
+          id,
+        ],
+      );
+
+      logActivity(db, id, "recovered", undefined, {
+        distributed: false,
+        recoveryMode: "reattached",
+        pid,
+        port,
+        sessionId: session?.session.id,
+      });
+
+      return c.json({
+        spawned: true,
+        recovered: true,
+        recoveryMode: "reattached",
+        distributed: false,
+        sessionId: session?.session.id,
+        pid,
+        port,
+        provider,
+        model,
+      });
+    }
+
+    if (manager.hasSession(id)) {
+      await manager.kill(id).catch(() => undefined);
+    } else if (
+      runtimeSummary.state !== "hung" &&
+      row.port &&
+      row.pid &&
+      (row.harness === "opencode-api" || row.harness === "opencode-tui")
+    ) {
+      const recovered = await manager.recover(id, row.harness, row.port, row.pid);
+      if (recovered) {
+        const now = new Date().toISOString();
+        const recoveredSessionId = manager.getSession(id)?.session.id ?? null;
+        db.run(
+          "UPDATE arms SET status = 'idle', session_id = ?, provider = ?, model = ?, workdir = COALESCE(?, workdir), last_heartbeat = ?, updated_at = ? WHERE id = ?",
+          [recoveredSessionId, provider, model, workdir, now, now, id],
+        );
+
+        logActivity(db, id, "recovered", undefined, {
+          distributed: false,
+          recoveryMode: "recovered",
+          pid: row.pid,
+          port: row.port,
+          sessionId: recoveredSessionId,
+        });
+
+        return c.json({
+          spawned: true,
+          recovered: true,
+          recoveryMode: "recovered",
+          distributed: false,
+          sessionId: recoveredSessionId,
+          pid: row.pid,
+          port: row.port,
+          provider,
+          model,
+        });
+      }
+    }
+
+    const systemPrompt = generateSystemPrompt({
+      armId: id,
+      name: row.name,
+      domain: row.domain,
+      harness: row.harness,
+      workdir,
+      provider,
+      model,
+    });
+    const session = await manager.spawn(id, row.harness, {
+      workdir,
+      provider,
+      model,
+      initialPrompt: systemPrompt,
+    });
+
+    const now = new Date().toISOString();
+    const pid = manager.getPid(id);
+    const port = manager.getPort(id);
+    db.run(
+      "UPDATE arms SET status = 'idle', pid = ?, port = ?, session_id = ?, agent_id = NULL, host = NULL, provider = ?, model = ?, workdir = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+      [pid ?? null, port ?? null, session.session.id, provider, model, workdir, now, now, id],
+    );
+
+    logActivity(db, id, "recovered", undefined, {
+      distributed: false,
+      recoveryMode: "restarted",
+      pid,
+      port,
+      sessionId: session.session.id,
+    });
+
+    return c.json({
+      spawned: true,
+      recovered: true,
+      recoveryMode: "restarted",
+      distributed: false,
+      sessionId: session.session.id,
+      pid,
+      port,
+      provider,
+      model,
+    });
   });
 
   /**
@@ -1704,7 +2561,7 @@ export function createArmsRoutes() {
       host: row.host,
     });
     if (distributedAgentId) {
-      const snapshot = await refreshDistributedRuntimeFromAgent(
+      const { snapshot } = await refreshDistributedRuntimeFromAgent(
         db,
         id,
         distributedAgentId,
@@ -1713,6 +2570,7 @@ export function createArmsRoutes() {
           pid: row.pid,
           port: row.port,
           sessionId: row.session_id,
+          lastActivityAt: null,
         },
       );
       const hasSession = !!(snapshot.sessionId || snapshot.port);
@@ -1847,9 +2705,10 @@ export function createArmsRoutes() {
     const parsedLimit = Number.parseInt(c.req.query("limit") || "50", 10);
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50;
 
-    const row = db.query("SELECT id, status, port, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, pid, port, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
+      pid: number | null;
       port: number | null;
       session_id: string | null;
       agent_id: string | null;
@@ -1879,6 +2738,7 @@ export function createArmsRoutes() {
           pid: null,
           port: row.port,
           sessionId: row.session_id,
+          lastActivityAt: null,
         },
       );
 
@@ -1925,6 +2785,28 @@ export function createArmsRoutes() {
         sessionId: row.session_id,
         error: "Harness manager not initialized",
       });
+    }
+
+    if (!manager.hasSession(id)) {
+      if (
+        (row.harness === "opencode-api" || row.harness === "opencode-tui") &&
+        row.port !== null &&
+        row.pid !== null
+      ) {
+        try {
+          const recovered = await manager.recover(id, row.harness, row.port, row.pid);
+          if (recovered) {
+            const now = new Date().toISOString();
+            const recoveredSessionId = manager.getSession(id)?.session.id ?? null;
+            db.run(
+              "UPDATE arms SET session_id = ?, last_heartbeat = ?, updated_at = ? WHERE id = ?",
+              [recoveredSessionId, now, now, id],
+            );
+          }
+        } catch (err) {
+          console.warn(`[messages] Auto-recovery attempt failed for ${id}: ${err}`);
+        }
+      }
     }
 
     if (!manager.hasSession(id)) {
@@ -2037,6 +2919,7 @@ export function createArmsRoutes() {
           pid: null,
           port: row.port,
           sessionId: row.session_id,
+          lastActivityAt: null,
         },
       );
 
@@ -2320,6 +3203,7 @@ export function createArmsRoutes() {
           pid: row.pid,
           port: row.port,
           sessionId: null,
+          lastActivityAt: null,
         },
       );
 
@@ -2470,6 +3354,7 @@ interface ArmRow {
   updatedAt: string;
   lastActivityAt: string | null;
   lastHeartbeat: string | null;
+  lastOutputAt: string | null;
   currentTaskId: string | null;
   pid: number | null;
   port: number | null;
@@ -2482,6 +3367,8 @@ interface ArmRow {
   currentBugTitle: string | null;
   agentId: string | null;
   host: string | null;
+  sessionId: string | null;
+  workdir: string | null;
   config: string;
 }
 
@@ -2501,6 +3388,22 @@ function parseArmRow(row: ArmRow): ArmProfile {
     currentBugTitle: row.currentBugTitle ?? undefined,
     agentId: row.agentId ?? undefined,
     host: row.host ?? undefined,
+    sessionId: row.sessionId ?? undefined,
+    workdir: row.workdir ?? undefined,
+    lastOutputAt: row.lastOutputAt,
+    runtime: deriveArmRuntime({
+      status: row.status,
+      pid: row.pid,
+      port: row.port,
+      sessionId: row.sessionId,
+      agentId: row.agentId,
+      workdir: row.workdir,
+      currentTaskId: row.currentTaskId,
+      currentTaskSubject: row.currentTaskSubject,
+      lastActivityAt: row.lastActivityAt,
+      lastHeartbeat: row.lastHeartbeat,
+      lastOutputAt: row.lastOutputAt,
+    }),
     config: JSON.parse(row.config || "{}"),
   };
 }
