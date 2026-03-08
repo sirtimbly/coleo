@@ -54,6 +54,233 @@ interface BugRow {
   archived: number;
 }
 
+const ACTIVE_BUG_STATUSES = ["open", "investigating", "fixing", "verifying"] as const;
+const BUG_TITLE_MIN_DUPLICATE_SCORE = 0.74;
+const BUG_TITLE_SAME_TASK_MIN_DUPLICATE_SCORE = 0.66;
+
+function parseBugRow(row: BugRow & { assignee_arm_name?: string }): Bug {
+  return {
+    id: row.id,
+    title: row.title,
+    description: row.description,
+    source: row.source as Bug["source"],
+    sourceArmId: row.source_arm_id || undefined,
+    sourceTaskId: row.source_task_id || undefined,
+    status: row.status as Bug["status"],
+    priority: row.priority as Bug["priority"],
+    assigneeArmId: row.assignee_arm_id || undefined,
+    assigneeArmName: row.assignee_arm_name || undefined,
+    blockers: JSON.parse(row.blockers || "[]"),
+    errorDetails: row.error_details || undefined,
+    resolution: row.resolution || undefined,
+    sortOrder: row.sort_order ?? undefined,
+    metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    resolvedAt: row.resolved_at || undefined,
+    humanNotified: row.human_notified === 1,
+    archived: row.archived === 1,
+  };
+}
+
+function normalizeBugTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\(bug-[^)]+\)/g, " ")
+    .replace(/\bbug-[a-z0-9-]+\b/g, " ")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeBugTitle(title: string): string[] {
+  return normalizeBugTitle(title)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1);
+}
+
+function buildBugTitleFtsQuery(title: string): string | null {
+  const tokens = Array.from(
+    new Set(
+      tokenizeBugTitle(title).filter(
+        (token) => token.length > 2 && token !== "bug" && token !== "issue",
+      ),
+    ),
+  ).slice(0, 8);
+
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  return tokens.map((token) => `"${token.replace(/"/g, "\"\"")}"*`).join(" OR ");
+}
+
+function titleSimilarity(left: string, right: string): number {
+  const leftTokens = new Set(tokenizeBugTitle(left));
+  const rightTokens = new Set(tokenizeBugTitle(right));
+  if (leftTokens.size === 0 || rightTokens.size === 0) {
+    return 0;
+  }
+
+  let intersection = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      intersection++;
+    }
+  }
+
+  if (intersection === 0) {
+    return 0;
+  }
+
+  const union = leftTokens.size + rightTokens.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function isLikelyDuplicateBugTitle(left: string, right: string): boolean {
+  const leftNormalized = normalizeBugTitle(left);
+  const rightNormalized = normalizeBugTitle(right);
+  if (leftNormalized.length === 0 || rightNormalized.length === 0) {
+    return false;
+  }
+
+  if (leftNormalized === rightNormalized) {
+    return true;
+  }
+
+  return titleSimilarity(leftNormalized, rightNormalized) >= 0.86;
+}
+
+function duplicateBugTitleScore(left: string, right: string): number {
+  const leftNormalized = normalizeBugTitle(left);
+  const rightNormalized = normalizeBugTitle(right);
+  if (!leftNormalized || !rightNormalized) {
+    return 0;
+  }
+
+  if (leftNormalized === rightNormalized) {
+    return 1;
+  }
+
+  const similarity = titleSimilarity(leftNormalized, rightNormalized);
+  if (
+    leftNormalized.length >= 18 &&
+    rightNormalized.length >= 18 &&
+    (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized))
+  ) {
+    return Math.max(similarity, 0.9);
+  }
+
+  return similarity;
+}
+
+export function findSimilarActiveBug(
+  db: Database,
+  input: {
+    title: string;
+    sourceTaskId?: string;
+    excludeBugId?: string;
+    createdBefore?: string;
+  },
+): (BugRow & { assignee_arm_name?: string }) | null {
+  const ftsQuery = buildBugTitleFtsQuery(input.title);
+  const statusPlaceholders = ACTIVE_BUG_STATUSES.map(() => "?").join(", ");
+  const excludeBugId = input.excludeBugId || null;
+  const createdBefore = input.createdBefore || null;
+
+  let candidates: Array<BugRow & { assignee_arm_name?: string }> = [];
+
+  if (ftsQuery) {
+    try {
+      candidates = db.query(`
+        SELECT
+          b.*,
+          a.name as assignee_arm_name
+        FROM bugs_fts
+        JOIN bugs b ON b.rowid = bugs_fts.rowid
+        LEFT JOIN arms a ON b.assignee_arm_id = a.id
+        WHERE bugs_fts MATCH ?
+          AND b.archived = 0
+          AND b.status IN (${statusPlaceholders})
+          AND (? IS NULL OR b.id <> ?)
+          AND (? IS NULL OR b.created_at < ? OR (b.created_at = ? AND b.id < ?))
+        ORDER BY
+          CASE WHEN ? IS NOT NULL AND b.source_task_id = ? THEN 0 ELSE 1 END,
+          bm25(bugs_fts, 10.0),
+          b.updated_at DESC
+        LIMIT 25
+      `).all(
+        ftsQuery,
+        ...ACTIVE_BUG_STATUSES,
+        excludeBugId,
+        excludeBugId,
+        createdBefore,
+        createdBefore,
+        createdBefore,
+        excludeBugId,
+        input.sourceTaskId || null,
+        input.sourceTaskId || null,
+      ) as Array<BugRow & { assignee_arm_name?: string }>;
+    } catch {
+      // Older test fixtures or pre-migration DBs can fall back to scan mode.
+    }
+  }
+
+  if (candidates.length === 0) {
+    candidates = db.query(`
+      SELECT
+        b.*,
+        a.name as assignee_arm_name
+      FROM bugs b
+      LEFT JOIN arms a ON b.assignee_arm_id = a.id
+      WHERE b.archived = 0
+        AND b.status IN (${statusPlaceholders})
+        AND (? IS NULL OR b.id <> ?)
+        AND (? IS NULL OR b.created_at < ? OR (b.created_at = ? AND b.id < ?))
+      ORDER BY
+        CASE WHEN ? IS NOT NULL AND b.source_task_id = ? THEN 0 ELSE 1 END,
+        b.updated_at DESC
+      LIMIT 200
+    `).all(
+      ...ACTIVE_BUG_STATUSES,
+      excludeBugId,
+      excludeBugId,
+      createdBefore,
+      createdBefore,
+      createdBefore,
+      excludeBugId,
+      input.sourceTaskId || null,
+      input.sourceTaskId || null,
+    ) as Array<BugRow & { assignee_arm_name?: string }>;
+  }
+
+  let bestMatch: (BugRow & { assignee_arm_name?: string }) | null = null;
+  let bestScore = 0;
+
+  for (const candidate of candidates) {
+    const score = duplicateBugTitleScore(candidate.title, input.title);
+    const sameTask = input.sourceTaskId && candidate.source_task_id === input.sourceTaskId;
+    const threshold = sameTask
+      ? BUG_TITLE_SAME_TASK_MIN_DUPLICATE_SCORE
+      : BUG_TITLE_MIN_DUPLICATE_SCORE;
+
+    if (score >= threshold && score > bestScore) {
+      bestMatch = candidate;
+      bestScore = score;
+    }
+  }
+
+  if (bestMatch) {
+    return bestMatch;
+  }
+
+  return candidates.find((candidate) =>
+    isLikelyDuplicateBugTitle(candidate.title, input.title),
+  ) || null;
+}
+
 interface BugsContext {
   Variables: {
     db: Database;
@@ -119,28 +346,7 @@ export function createBugsRoutes() {
       const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
       const typedRows = rows as (BugRow & { assignee_arm_name?: string })[];
 
-      const bugs: Bug[] = typedRows.map(row => ({
-        id: row.id,
-        title: row.title,
-        description: row.description,
-        source: row.source as Bug["source"],
-        sourceArmId: row.source_arm_id || undefined,
-        sourceTaskId: row.source_task_id || undefined,
-        status: row.status as Bug["status"],
-        priority: row.priority as Bug["priority"],
-        assigneeArmId: row.assignee_arm_id || undefined,
-        assigneeArmName: row.assignee_arm_name || undefined,
-        blockers: JSON.parse(row.blockers || "[]"),
-        errorDetails: row.error_details || undefined,
-        resolution: row.resolution || undefined,
-        sortOrder: row.sort_order ?? undefined,
-        metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-        resolvedAt: row.resolved_at || undefined,
-        humanNotified: row.human_notified === 1,
-        archived: row.archived === 1,
-      }));
+      const bugs: Bug[] = typedRows.map(parseBugRow);
 
       return c.json({ bugs });
     } catch (err) {
@@ -166,28 +372,7 @@ export function createBugsRoutes() {
       throw HttpError.notFound("Bug not found");
     }
 
-    const bug: Bug = {
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      source: row.source as Bug["source"],
-      sourceArmId: row.source_arm_id || undefined,
-      sourceTaskId: row.source_task_id || undefined,
-      status: row.status as Bug["status"],
-      priority: row.priority as Bug["priority"],
-      assigneeArmId: row.assignee_arm_id || undefined,
-      assigneeArmName: row.assignee_arm_name || undefined,
-      blockers: JSON.parse(row.blockers || "[]"),
-      errorDetails: row.error_details || undefined,
-      resolution: row.resolution || undefined,
-      sortOrder: row.sort_order ?? undefined,
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      resolvedAt: row.resolved_at || undefined,
-      humanNotified: row.human_notified === 1,
-      archived: row.archived === 1,
-    };
+    const bug: Bug = parseBugRow(row);
 
     return c.json({ bug });
   });
@@ -211,6 +396,18 @@ export function createBugsRoutes() {
     const priority = body.priority || "medium";
     if (!validPriorities.includes(priority)) {
       throw HttpError.badRequest("Invalid priority");
+    }
+
+    const existingBug = findSimilarActiveBug(db, {
+      title: body.title,
+      sourceTaskId: body.sourceTaskId,
+    });
+    if (existingBug) {
+      return c.json({
+        bugId: existingBug.id,
+        bug: parseBugRow(existingBug),
+        deduplicated: true,
+      });
     }
 
     const now = new Date().toISOString();
@@ -244,10 +441,23 @@ export function createBugsRoutes() {
         now
       ]);
 
+      const inserted = db.query(`
+        SELECT
+          b.*,
+          a.name as assignee_arm_name
+        FROM bugs b
+        LEFT JOIN arms a ON b.assignee_arm_id = a.id
+        WHERE b.id = ?
+      `).get(bugId) as (BugRow & { assignee_arm_name?: string }) | null;
+
       // Broadcast bug creation
       broadcast("bugs", "bug.created", { bugId, title: body.title, priority, source: body.source });
 
-      return c.json({ bugId }, 201);
+      return c.json({
+        bugId,
+        bug: inserted ? parseBugRow(inserted) : undefined,
+        deduplicated: false,
+      }, 201);
     } catch (err) {
       throw HttpError.internal("Failed to create bug");
     }

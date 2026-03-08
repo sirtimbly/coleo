@@ -34,6 +34,28 @@ function createTestDb(): Database {
       id TEXT PRIMARY KEY,
       name TEXT
     );
+
+    CREATE VIRTUAL TABLE bugs_fts USING fts5(
+      title,
+      content='bugs',
+      content_rowid='rowid',
+      tokenize='porter unicode61'
+    );
+
+    CREATE TRIGGER bugs_fts_ai AFTER INSERT ON bugs BEGIN
+      INSERT INTO bugs_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;
+
+    CREATE TRIGGER bugs_fts_ad AFTER DELETE ON bugs BEGIN
+      INSERT INTO bugs_fts(bugs_fts, rowid, title) VALUES('delete', old.rowid, old.title);
+    END;
+
+    CREATE TRIGGER bugs_fts_au AFTER UPDATE ON bugs BEGIN
+      INSERT INTO bugs_fts(bugs_fts, rowid, title) VALUES('delete', old.rowid, old.title);
+      INSERT INTO bugs_fts(rowid, title) VALUES (new.rowid, new.title);
+    END;
+
+    INSERT INTO bugs_fts(bugs_fts) VALUES ('rebuild');
   `);
 
   return db;
@@ -166,6 +188,40 @@ describe("bugs API", () => {
       expect(getResponse.status).toBe(200);
       const getBody = await getResponse.json() as { bug: Bug };
       expect(getBody.bug.metadata).toEqual(metadata);
+    });
+
+    it("should deduplicate similar bug titles using FTS candidates", async () => {
+      const first = await app.request("/api/bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Infrastructure health issues detected: Database, NATS, Maildir unavailable",
+          description: "first report",
+          source: "human_reported",
+        }),
+      });
+
+      expect(first.status).toBe(201);
+      const firstBody = await first.json() as { bugId: string; deduplicated: boolean };
+      expect(firstBody.deduplicated).toBe(false);
+
+      const second = await app.request("/api/bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Infrastructure health issues: database and nats and maildir unavailable",
+          description: "second report",
+          source: "human_reported",
+        }),
+      });
+
+      expect(second.status).toBe(200);
+      const secondBody = await second.json() as { bugId: string; deduplicated: boolean };
+      expect(secondBody.deduplicated).toBe(true);
+      expect(secondBody.bugId).toBe(firstBody.bugId);
+
+      const bugCount = db.query("SELECT COUNT(*) as count FROM bugs").get() as { count: number };
+      expect(bugCount.count).toBe(1);
     });
   });
 

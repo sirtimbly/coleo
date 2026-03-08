@@ -981,6 +981,12 @@ export class Brain {
 	/**
 	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
+	private isColeoGeneratedMail(message: MailMessage): boolean {
+		return Object.keys(message.headers).some(
+			(header) => header.toLowerCase() === "x-coleo-type",
+		);
+	}
+
 	private async processHumanMail(): Promise<void> {
 		const [inboxMessages, sentMessages] = await Promise.all([
 			this.inbox.list("new"),
@@ -988,14 +994,22 @@ export class Brain {
 		]);
 		const messages = [
 			...inboxMessages
-				.filter((message) => !message.from.toLowerCase().includes("brain@coleo.local"))
+				.filter(
+					(message) =>
+						!message.from.toLowerCase().includes("brain@coleo.local") &&
+						!this.isColeoGeneratedMail(message),
+				)
 				.map((message) => ({
 					mailbox: this.inbox,
 					source: "inbox" as const,
 					message,
 				})),
 			...sentMessages
-				.filter((message) => message.to.toLowerCase().includes("brain@coleo.local"))
+				.filter(
+					(message) =>
+						message.to.toLowerCase().includes("brain@coleo.local") &&
+						!this.isColeoGeneratedMail(message),
+				)
 				.map((message) => ({
 					mailbox: this.sent,
 					source: "sent" as const,
@@ -1689,20 +1703,32 @@ export class Brain {
 			errorDetails: undefined,
 		};
 
-		await this.handleBugReport("human", bugPayload);
+		const result = await this.handleBugReport("human", bugPayload);
+		if (!result) {
+			return;
+		}
 
-		this.log(`Created human bug report: ${title}`);
-		this.logActivity("brain", "bug_created", bugPayload.id, {
+		this.log(
+			result.deduplicated
+				? `Matched existing human bug report: ${title} (${result.bugId})`
+				: `Created human bug report: ${title}`,
+		);
+		this.logActivity("brain", "bug_created", result.bugId, {
 			title,
 			source: "human_reported",
 			mailThreadId,
+			deduplicated: result.deduplicated,
 		});
+
+		if (result.deduplicated) {
+			return;
+		}
 
 		// Send confirmation to human
 		const body = await this.templates.renderTemplate(
 			"human-bug-report-confirmation.jinja",
 			{
-				bug_id: bugPayload.id,
+				bug_id: result.bugId,
 				title,
 			},
 		);
@@ -1711,7 +1737,7 @@ export class Brain {
 			body,
 			headers: {
 				"X-Coleo-Type": "bug-confirmation",
-				"X-Coleo-Bug-Id": bugPayload.id,
+				"X-Coleo-Bug-Id": result.bugId,
 			},
 		});
 	}
@@ -3874,7 +3900,7 @@ ${originalTask.id}`;
 			sourceTaskId?: string;
 			errorDetails?: string;
 		},
-	): Promise<void> {
+	): Promise<{ bugId: string; deduplicated: boolean } | null> {
 		try {
 			const now = new Date().toISOString();
 			const bugId =
@@ -3913,7 +3939,10 @@ ${originalTask.id}`;
 			// Set blockers array if this bug is blocking a task
 			const blockersList = payload.sourceTaskId ? [payload.sourceTaskId] : [];
 
-			await this.apiRequest("/api/bugs", {
+			const bugResponse = await this.apiRequest<{
+				bugId?: string;
+				deduplicated?: boolean;
+			}>("/api/bugs", {
 				method: "POST",
 				body: JSON.stringify({
 					id: bugId,
@@ -3928,10 +3957,17 @@ ${originalTask.id}`;
 					metadata: { reportedAt: now },
 				}),
 			});
+			const storedBugId = bugResponse?.bugId || bugId;
+			const deduplicated = bugResponse?.deduplicated === true;
 
 			this.log(
-				`Bug reported: ${payload.title} (${priority} priority) by ${payload.source}`,
+				deduplicated
+					? `Matched existing bug: ${payload.title} (${storedBugId})`
+					: `Bug reported: ${payload.title} (${priority} priority) by ${payload.source}`,
 			);
+			if (deduplicated) {
+				return { bugId: storedBugId, deduplicated: true };
+			}
 
 			// Query blocked tasks for notification
 			const blockedTasks: Task[] = [];
@@ -3964,13 +4000,13 @@ ${originalTask.id}`;
 					body,
 					headers: {
 						"X-Coleo-Type": "bug-report",
-						"X-Coleo-Bug-Id": bugId,
+						"X-Coleo-Bug-Id": storedBugId,
 						"X-Coleo-Priority": priority,
 					},
 				});
 
 				// Mark as human notified
-				await this.apiRequest(`/api/bugs/${encodeURIComponent(bugId)}`, {
+				await this.apiRequest(`/api/bugs/${encodeURIComponent(storedBugId)}`, {
 					method: "PATCH",
 					body: JSON.stringify({ humanNotified: true }),
 				});
@@ -3979,10 +4015,10 @@ ${originalTask.id}`;
 			// Handle escalation based on priority and impact
 			if (priority === "medium") {
 				// For medium priority bugs, evaluate impacted active tasks and log for resolution
-				await this.handleMediumPriorityBugEscalation(bugId, payload);
+				await this.handleMediumPriorityBugEscalation(storedBugId, payload);
 			} else if (priority === "low") {
 				// For low priority bugs, continue work but track for later resolution
-				this.log(`Low priority bug ${bugId} logged for later resolution`);
+				this.log(`Low priority bug ${storedBugId} logged for later resolution`);
 			}
 
 			// If bug blocks a task, try to assign an arm to investigate
@@ -3990,11 +4026,13 @@ ${originalTask.id}`;
 				const task = await this.getTaskFromApi(payload.sourceTaskId);
 				if (task && task.status !== "completed" && task.status !== "failed") {
 					// Create investigation task
-					await this.createBugInvestigationTask(bugId, payload);
+					await this.createBugInvestigationTask(storedBugId, payload);
 				}
 			}
+			return { bugId: storedBugId, deduplicated: false };
 		} catch (err) {
 			this.log(`Error handling bug report: ${err}`);
+			return null;
 		}
 	}
 

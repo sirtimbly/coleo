@@ -125,6 +125,8 @@ async function runMigrations(db: Database): Promise<void> {
 		["049_remove_arm_events_table", MIGRATION_049],
 		["050_uploaded_media", MIGRATION_050],
     ["051_command_projection_metadata", MIGRATION_051, { table: "messages", columns: MIGRATION_051_COLUMNS }],
+    ["052_bugs_fts", MIGRATION_052],
+    ["053_fix_bugs_fts_external_content", MIGRATION_053],
 	];
 
 
@@ -1338,6 +1340,67 @@ WHERE dedupe_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_source ON messages(source);
 CREATE INDEX IF NOT EXISTS idx_messages_stream ON messages(stream_name, stream_seq);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedupe_id ON messages(dedupe_id) WHERE dedupe_id IS NOT NULL;
+`;
+
+const MIGRATION_052 = `
+CREATE VIRTUAL TABLE IF NOT EXISTS bugs_fts USING fts5(
+  title,
+  content = 'bugs',
+  content_rowid = 'rowid',
+  tokenize = 'porter unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS bugs_fts_ai AFTER INSERT ON bugs BEGIN
+  INSERT INTO bugs_fts(rowid, title)
+  VALUES (new.rowid, new.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bugs_fts_ad AFTER DELETE ON bugs BEGIN
+  INSERT INTO bugs_fts(bugs_fts, rowid, title)
+  VALUES ('delete', old.rowid, old.title);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bugs_fts_au AFTER UPDATE ON bugs BEGIN
+  INSERT INTO bugs_fts(bugs_fts, rowid, title)
+  VALUES ('delete', old.rowid, old.title);
+  INSERT INTO bugs_fts(rowid, title)
+  VALUES (new.rowid, new.title);
+END;
+
+INSERT INTO bugs_fts(bugs_fts) VALUES ('rebuild');
+`;
+
+const MIGRATION_053 = `
+DROP TRIGGER IF EXISTS bugs_fts_ai;
+DROP TRIGGER IF EXISTS bugs_fts_ad;
+DROP TRIGGER IF EXISTS bugs_fts_au;
+DROP TABLE IF EXISTS bugs_fts;
+
+CREATE VIRTUAL TABLE bugs_fts USING fts5(
+  title,
+  content = 'bugs',
+  content_rowid = 'rowid',
+  tokenize = 'porter unicode61'
+);
+
+CREATE TRIGGER bugs_fts_ai AFTER INSERT ON bugs BEGIN
+  INSERT INTO bugs_fts(rowid, title)
+  VALUES (new.rowid, new.title);
+END;
+
+CREATE TRIGGER bugs_fts_ad AFTER DELETE ON bugs BEGIN
+  INSERT INTO bugs_fts(bugs_fts, rowid, title)
+  VALUES ('delete', old.rowid, old.title);
+END;
+
+CREATE TRIGGER bugs_fts_au AFTER UPDATE ON bugs BEGIN
+  INSERT INTO bugs_fts(bugs_fts, rowid, title)
+  VALUES ('delete', old.rowid, old.title);
+  INSERT INTO bugs_fts(rowid, title)
+  VALUES (new.rowid, new.title);
+END;
+
+INSERT INTO bugs_fts(bugs_fts) VALUES ('rebuild');
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
