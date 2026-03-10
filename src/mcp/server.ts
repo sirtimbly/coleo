@@ -16,6 +16,13 @@ import { writeFile, readFile, mkdir, readdir, stat } from "fs/promises";
 import { join } from "path";
 import { randomBytes, createHash } from "crypto";
 import { getColeoDir } from "../config";
+import {
+	getCompressionConfigFromEnv,
+	getStatusEmoji,
+	formatThresholds,
+	DEFAULT_COMPRESSION_CONFIG,
+	type CompressionConfig,
+} from "./config/compression";
 import { NatsClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import {
@@ -2311,9 +2318,9 @@ export function createMcpServer(): McpServer {
 							).toFixed(1)
 						: "N/A";
 
-				let statusEmoji = "✅";
-				if (usagePercent > 80) statusEmoji = "⚠️";
-				if (usagePercent > 95) statusEmoji = "🔥";
+				// Load compression configuration from environment (sync for MCP tools)
+				const compressionConfig = getCompressionConfigFromEnv();
+				const statusEmoji = getStatusEmoji(usagePercent, compressionConfig);
 
 				return {
 					content: [
@@ -2327,10 +2334,8 @@ export function createMcpServer(): McpServer {
 								`**Remaining:** ${(remaining / 1000).toFixed(1)}K tokens\n\n` +
 								`**Recent compressions (1h):** ${compressionCount}\n` +
 								`**Avg compression:** ${avgCompression}%\n\n` +
-								`**Thresholds:**\n` +
-								`- 80%: Warning - consider completing or compressing\n` +
-								`- 95%: Hard limit - compression will trigger\n` +
-								`- 100%: Maximum - forced compression or task handoff${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
+								formatThresholds(compressionConfig) +
+								`${task_id ? `\n\nTask-specific budget check for: ${task_id}` : ""}`,
 						},
 					],
 				};

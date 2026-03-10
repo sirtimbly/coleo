@@ -65,6 +65,12 @@ interface TomlConfig {
     model?: string;
     context_budget?: number;
   };
+  compression?: {
+    warning_threshold?: number;
+    critical_threshold?: number;
+    max_threshold?: number;
+    enabled?: boolean;
+  };
 }
 
 /**
@@ -191,6 +197,15 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.compression) {
+    config.compression = {
+      warningThreshold: toml.compression.warning_threshold ?? DEFAULT_CONFIG.compression.warningThreshold,
+      criticalThreshold: toml.compression.critical_threshold ?? DEFAULT_CONFIG.compression.criticalThreshold,
+      maxThreshold: toml.compression.max_threshold ?? DEFAULT_CONFIG.compression.maxThreshold,
+      enabled: toml.compression.enabled ?? DEFAULT_CONFIG.compression.enabled,
+    };
+  }
+
   return config;
 }
 
@@ -269,6 +284,15 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
     };
   }
 
+  if (config.compression) {
+    toml.compression = {
+      warning_threshold: config.compression.warningThreshold,
+      critical_threshold: config.compression.criticalThreshold,
+      max_threshold: config.compression.maxThreshold,
+      enabled: config.compression.enabled,
+    };
+  }
+
   return toml;
 }
 
@@ -315,6 +339,9 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
         },
       };
     }
+    if (tomlConfig.compression) {
+      config.compression = { ...config.compression, ...tomlConfig.compression };
+    }
   }
 
   // Override with environment variables
@@ -339,6 +366,18 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
   if (process.env.COLEO_DEFAULT_MODEL) {
     config.defaults.model = process.env.COLEO_DEFAULT_MODEL;
   }
+  if (process.env.COLEO_COMPRESSION_WARNING_THRESHOLD) {
+    config.compression.warningThreshold = parseInt(process.env.COLEO_COMPRESSION_WARNING_THRESHOLD, 10);
+  }
+  if (process.env.COLEO_COMPRESSION_CRITICAL_THRESHOLD) {
+    config.compression.criticalThreshold = parseInt(process.env.COLEO_COMPRESSION_CRITICAL_THRESHOLD, 10);
+  }
+  if (process.env.COLEO_COMPRESSION_MAX_THRESHOLD) {
+    config.compression.maxThreshold = parseInt(process.env.COLEO_COMPRESSION_MAX_THRESHOLD, 10);
+  }
+  if (process.env.COLEO_COMPRESSION_ENABLED) {
+    config.compression.enabled = process.env.COLEO_COMPRESSION_ENABLED === "true";
+  }
 
   return config;
 }
@@ -346,7 +385,7 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 /**
  * Update configuration in TOML file
  */
-type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea" | "automations"> & {
+type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea" | "automations" | "compression"> & {
   brain?: Partial<ColeoConfig["brain"]>;
   mail?: Partial<ColeoConfig["mail"]>;
   terminal?: Partial<ColeoConfig["terminal"]>;
@@ -357,6 +396,7 @@ type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "termina
     enabled?: boolean;
     refactorLargeFiles?: Partial<ColeoConfig["automations"]["refactorLargeFiles"]>;
   };
+  compression?: Partial<ColeoConfig["compression"]>;
 };
 
 export async function updateConfig(
@@ -368,7 +408,7 @@ export async function updateConfig(
   // Load current config
   const current = await loadConfig(dir);
 
-  const { gitea, automations, ...rest } = updates;
+  const { gitea, automations, compression, ...rest } = updates;
   
   // Merge updates
   const updated: ColeoConfig = {
@@ -379,6 +419,7 @@ export async function updateConfig(
     terminal: updates.terminal ? { ...current.terminal, ...updates.terminal } : current.terminal,
     docs: updates.docs ? { ...current.docs, ...updates.docs } : current.docs,
     defaults: updates.defaults ? { ...current.defaults, ...updates.defaults } : current.defaults,
+    compression: compression ? { ...current.compression, ...compression } : current.compression,
   };
 
   if (automations) {

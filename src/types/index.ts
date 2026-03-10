@@ -406,6 +406,12 @@ export interface ColeoConfig {
     model: string;
     contextBudget: number;
   };
+  compression: {
+    warningThreshold: number;
+    criticalThreshold: number;
+    maxThreshold: number;
+    enabled: boolean;
+  };
 }
 
 // Default config
@@ -449,6 +455,12 @@ export const DEFAULT_CONFIG: ColeoConfig = {
     provider: "opencode",
     model: "gpt-5.1-codex-mini",
     contextBudget: 100000,
+  },
+  compression: {
+    warningThreshold: 80,
+    criticalThreshold: 95,
+    maxThreshold: 100,
+    enabled: true,
   },
 };
 

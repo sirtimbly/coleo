@@ -11,6 +11,7 @@ import {
   loadConfig,
   updateConfig,
 } from "../loader";
+import { DEFAULT_CONFIG } from "../../types";
 
 const createTempDir = async () => {
   const dir = join(tmpdir(), `coleo-config-test-${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -167,5 +168,138 @@ describe("config loader", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  // Compression configuration tests
+  describe("compression config", () => {
+    it("loadConfig applies compression defaults when not in TOML", async () => {
+      const dir = await createTempDir();
+      try {
+        await writeTomlConfig({ version: 1 }, dir);
+        const loaded = await loadConfig(dir);
+        expect(loaded.compression.warningThreshold).toBe(DEFAULT_CONFIG.compression.warningThreshold);
+        expect(loaded.compression.criticalThreshold).toBe(DEFAULT_CONFIG.compression.criticalThreshold);
+        expect(loaded.compression.maxThreshold).toBe(DEFAULT_CONFIG.compression.maxThreshold);
+        expect(loaded.compression.enabled).toBe(DEFAULT_CONFIG.compression.enabled);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("loadConfig reads compression settings from TOML", async () => {
+      const dir = await createTempDir();
+      try {
+        await writeTomlConfig(
+          {
+            version: 1,
+            compression: {
+              warning_threshold: 70,
+              critical_threshold: 85,
+              max_threshold: 98,
+              enabled: false,
+            },
+          },
+          dir
+        );
+        const loaded = await loadConfig(dir);
+        expect(loaded.compression.warningThreshold).toBe(70);
+        expect(loaded.compression.criticalThreshold).toBe(85);
+        expect(loaded.compression.maxThreshold).toBe(98);
+        expect(loaded.compression.enabled).toBe(false);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("configToToml maps compression camelCase to snake_case", () => {
+      const toml = configToToml({
+        version: 1,
+        compression: {
+          warningThreshold: 75,
+          criticalThreshold: 90,
+          maxThreshold: 99,
+          enabled: true,
+        },
+      });
+      expect(toml.compression?.warning_threshold).toBe(75);
+      expect(toml.compression?.critical_threshold).toBe(90);
+      expect(toml.compression?.max_threshold).toBe(99);
+      expect(toml.compression?.enabled).toBe(true);
+    });
+
+    it("loadConfig merges TOML compression with env overrides", async () => {
+      const dir = await createTempDir();
+      const envSnapshot = {
+        COLEO_COMPRESSION_WARNING_THRESHOLD: process.env.COLEO_COMPRESSION_WARNING_THRESHOLD,
+        COLEO_COMPRESSION_CRITICAL_THRESHOLD: process.env.COLEO_COMPRESSION_CRITICAL_THRESHOLD,
+        COLEO_COMPRESSION_MAX_THRESHOLD: process.env.COLEO_COMPRESSION_MAX_THRESHOLD,
+        COLEO_COMPRESSION_ENABLED: process.env.COLEO_COMPRESSION_ENABLED,
+      };
+      try {
+        await writeTomlConfig(
+          {
+            version: 1,
+            compression: {
+              warning_threshold: 70,
+              critical_threshold: 85,
+              max_threshold: 98,
+              enabled: true,
+            },
+          },
+          dir
+        );
+        process.env.COLEO_COMPRESSION_WARNING_THRESHOLD = "65";
+        process.env.COLEO_COMPRESSION_CRITICAL_THRESHOLD = "88";
+        process.env.COLEO_COMPRESSION_MAX_THRESHOLD = "97";
+        process.env.COLEO_COMPRESSION_ENABLED = "false";
+        const loaded = await loadConfig(dir);
+        expect(loaded.compression.warningThreshold).toBe(65);
+        expect(loaded.compression.criticalThreshold).toBe(88);
+        expect(loaded.compression.maxThreshold).toBe(97);
+        expect(loaded.compression.enabled).toBe(false);
+      } finally {
+        for (const [key, value] of Object.entries(envSnapshot)) {
+          if (value === undefined) {
+            delete process.env[key as keyof typeof envSnapshot];
+          } else {
+            process.env[key as keyof typeof envSnapshot] = value;
+          }
+        }
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it("updateConfig merges compression updates", async () => {
+      const dir = await createTempDir();
+      try {
+        await writeTomlConfig(
+          {
+            version: 1,
+            compression: {
+              warning_threshold: 80,
+              critical_threshold: 95,
+              max_threshold: 100,
+              enabled: true,
+            },
+          },
+          dir
+        );
+        const updated = await updateConfig(
+          {
+            compression: { warningThreshold: 70, enabled: false },
+          },
+          dir
+        );
+        expect(updated.compression.warningThreshold).toBe(70);
+        expect(updated.compression.criticalThreshold).toBe(95);
+        expect(updated.compression.maxThreshold).toBe(100);
+        expect(updated.compression.enabled).toBe(false);
+        const reloaded = await readTomlConfig(dir);
+        expect(reloaded?.compression?.warning_threshold).toBe(70);
+        expect(reloaded?.compression?.enabled).toBe(false);
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
   });
 });

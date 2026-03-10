@@ -1,0 +1,130 @@
+/* App Styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+.app {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e1e;
+}
+
+.layout-container {
+  flex: 1;
+  overflow: hidden;
+}
+
+/* Golden Layout Customizations */
+.lm_goldenlayout {
+  background: #1e1e1e !important;
+}
+
+.lm_header {
+  background: #2d2d2d !important;
+  height: 32px !important;
+}
+
+.lm_tab {
+  background: #3c3c3c !important;
+  color: #cccccc !important;
+  border-radius: 4px 4px 0 0 !important;
+  margin-right: 2px !important;
+  padding: 8px 16px !important;
+  font-size: 13px !important;
+  border: none !important;
+  transition: all 0.2s ease;
+}
+
+.lm_tab:hover {
+  background: #4a4a4a !important;
+  color: #ffffff !important;
+}
+
+.lm_tab.lm_active {
+  background: #1e1e1e !important;
+  color: #ffffff !important;
+  border-top: 2px solid #007acc !important;
+}
+
+.lm_tab .lm_close_tab {
+  color: #cccccc !important;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.lm_tab .lm_close_tab:hover {
+  opacity: 1;
+  color: #ff6b6b !important;
+}
+
+.lm_splitter {
+  background: #3c3c3c !important;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+
+.lm_splitter:hover {
+  opacity: 1;
+  background: #007acc !important;
+}
+
+.lm_content {
+  background: #1e1e1e !important;
+  border: none !important;
+}
+
+.lm_dropTargetIndicator {
+  background: rgba(0, 122, 204, 0.3) !important;
+  border: 2px dashed #007acc !important;
+}
+
+.lm_dragProxy {
+  background: #2d2d2d !important;
+  border: 1px solid #007acc !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+}
+
+.lm_dragProxy .lm_content {
+  background: #2d2d2d !important;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #5a5a5a;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6a6a6a;
+}
+
+/* Selection */
+::selection {
+  background: #007acc;
+  color: white;
+}
