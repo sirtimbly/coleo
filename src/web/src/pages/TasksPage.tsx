@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef, useId } from "react";
 import {
 	Plus,
 	Clock,
@@ -17,15 +17,21 @@ import {
 	MessageSquare,
 } from "lucide-react";
 import { Button, Chip, Card, Tabs } from "@heroui/react";
-import { useSearchParams } from "react-router-dom";
 import { type Task, cn } from "@/lib";
 import { TaskModal, TaskDiscussionPanel } from "@/components";
+import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
 import { useTasks } from "@/hooks/useTasks";
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
 import { tasksKeys } from "@/lib/queryKeys";
+import {
+	useIsWorkspacePanel,
+	useWorkspaceOpenRoute,
+	useWorkspaceSearchParams,
+} from '@/workspace/route-context';
 
 type SidebarTab = "details" | "discussions";
 
@@ -192,36 +198,53 @@ function TaskPriorityBadge({
 }
 
 export function TasksPage() {
-	document.title = "Coleo Observatory - Tasks";
+	usePageTitle('Coleo Observatory - Tasks');
 	const queryClient = useQueryClient();
-	const [searchParams, setSearchParams] = useSearchParams();
-	const [filter, setFilter] = useState<{ status?: string; priority?: string }>(
-		{},
-	);
-	const [tagFilter, setTagFilter] = useState<string[]>([]);
-
-	// Rehydrate filter from localStorage and URL on mount
-	useEffect(() => {
+	const isWorkspacePanel = useIsWorkspacePanel();
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
+	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
+	
+	// Initialize filter from localStorage and URL (during component initialization, not in useEffect)
+	const [filter, setFilter] = useState<{ status?: string; priority?: string }>(() => {
 		const saved = localStorage.getItem("task-filter");
 		const initialFilter = saved ? JSON.parse(saved) : {};
-
+		
 		// Check URL params and merge with localStorage
 		const statusFromUrl = searchParams.get("status");
 		if (statusFromUrl) {
 			initialFilter.status = statusFromUrl;
 		}
+		
+		return initialFilter;
+	});
+	
+	const [tagFilter, setTagFilter] = useState<string[]>([]);
+	
+	// Track previous filter value to avoid unnecessary updates
+	const prevFilterRef = useRef(filter);
 
-		setFilter(initialFilter);
-	}, [searchParams]);
-
-	// Save filter to localStorage and URL when it changes
+	// Save filter to localStorage and URL when it changes (but not on initial mount)
 	useEffect(() => {
+		// Only save if filter has actually changed from previous value
+		if (JSON.stringify(prevFilterRef.current) === JSON.stringify(filter)) {
+			return;
+		}
+		
+		prevFilterRef.current = filter;
 		localStorage.setItem("task-filter", JSON.stringify(filter));
 
 		if (filter.status) {
-			setSearchParams({ status: filter.status });
+			setSearchParams((current) => {
+				const next = new URLSearchParams(current);
+				next.set("status", filter.status!);
+				return next;
+			});
 		} else {
-			setSearchParams({});
+			setSearchParams((current) => {
+				const next = new URLSearchParams(current);
+				next.delete("status");
+				return next;
+			});
 		}
 	}, [filter, setSearchParams]);
 	const [searchText, setSearchText] = useState("");
@@ -235,6 +258,20 @@ export function TasksPage() {
 		task: Task | null;
 	}>({ show: false, task: null });
 	const [newTaskId, setNewTaskId] = useState<string | null>(null);
+	const detailsTabId = useId();
+	const discussionsTabId = useId();
+
+	const taskModal = (
+		<TaskModal
+			isOpen={isModalOpen}
+			onClose={() => {
+				setIsModalOpen(false);
+				setEditingTask(undefined);
+			}}
+			onSaved={() => refetch()}
+			task={editingTask}
+		/>
+	);
 
 	// Use React Query hook for tasks
 	const {
@@ -298,6 +335,21 @@ export function TasksPage() {
 
 		return result;
 	}, [tasks, tagFilter, searchText, getTaskUiMeta]);
+
+	useEffect(() => {
+		if (!isWorkspacePanel) return;
+
+		const taskId = searchParams.get("task");
+		const view = searchParams.get("view");
+		setSidebarTab(view === "discussions" ? "discussions" : "details");
+
+		if (!taskId) {
+			setSelectedTask(null);
+			return;
+		}
+
+		setSelectedTask(tasks.find((task) => task.id === taskId) || null);
+	}, [isWorkspacePanel, searchParams, tasks]);
 
 	const handleUpdateTask = useCallback(
 		async (taskId: string, updates: TaskUpdate) => {
@@ -402,22 +454,50 @@ export function TasksPage() {
 	);
 
 	const handleReorder = useCallback(
-		(taskId: string, fromSortOrder: number, toSortOrder: number) => {
+		(taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => {
 			if (!taskId) return;
-			reorderTask({ taskId, fromSortOrder, toSortOrder });
+			reorderTask({ taskId, fromSortOrder, toSortOrder, prevTaskId, nextTaskId });
 		},
 		[reorderTask],
 	);
 
-	const handleOpenDetails = useCallback((task: Task) => {
-		setSelectedTask(task);
-		setSidebarTab("details");
-	}, []);
+  const handleOpenDetails = useCallback((task: Task) => {
+    if (!isWorkspacePanel) {
+      setSelectedTask(task);
+      setSidebarTab("details");
+      return;
+    }
 
-	const handleOpenDiscussions = useCallback((task: Task) => {
-		setSelectedTask(task);
-		setSidebarTab("discussions");
-	}, []);
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set("task", task.id);
+    nextSearchParams.set("view", "details");
+    openWorkspaceRoute(
+      {
+        pathname: "/tasks",
+        search: `?${nextSearchParams.toString()}`,
+      },
+      "split",
+    );
+  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
+
+  const handleOpenDiscussions = useCallback((task: Task) => {
+    if (!isWorkspacePanel) {
+      setSelectedTask(task);
+      setSidebarTab("discussions");
+      return;
+    }
+
+    const nextSearchParams = new URLSearchParams(searchParams);
+    nextSearchParams.set("task", task.id);
+    nextSearchParams.set("view", "discussions");
+    openWorkspaceRoute(
+      {
+        pathname: "/tasks",
+        search: `?${nextSearchParams.toString()}`,
+      },
+      "split",
+    );
+  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
 
 	const toggleTagFilter = useCallback((tag: string) => {
 		setTagFilter((prev) =>
@@ -445,6 +525,10 @@ export function TasksPage() {
 
 	// Reset discussion count when selected task changes
 	React.useEffect(() => {
+		if (selectedTask?.id === undefined) {
+			setDiscussionCount(0);
+			return;
+		}
 		setDiscussionCount(0);
 	}, [selectedTask?.id]);
 
@@ -480,6 +564,184 @@ export function TasksPage() {
 	) => {
 		updateTask({ id: taskId, updates: { priority: newPriority } });
 	};
+
+	if (isWorkspacePanel) {
+		const toolbar = (
+			<>
+				<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
+					<RefreshCw className="h-4 w-4" />
+				</Button>
+				<Button
+					size="sm"
+					variant="primary"
+					onPress={() => {
+						setEditingTask(undefined);
+						setIsModalOpen(true);
+					}}
+				>
+					<Plus className="h-4 w-4 mr-1.5" />
+					New
+				</Button>
+			</>
+		);
+
+		const filters = (
+			<div className="space-y-2">
+				<div className="flex flex-wrap items-center gap-2">
+					<div className="relative min-w-[220px] flex-1 max-w-sm">
+						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
+						<input
+							type="text"
+							placeholder="Search tasks..."
+							value={searchText}
+							onChange={(e) => setSearchText(e.target.value)}
+							className="w-full rounded-md border border-border/70 bg-content2 px-8 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+						/>
+					</div>
+					<div className="text-xs text-muted-foreground">
+						{counts?.total ?? 0} total
+					</div>
+				</div>
+
+				<div className="flex flex-wrap items-center gap-2">
+					{Object.entries(counts?.byStatus ?? {}).map(([status, count]) => (
+						<Button
+							key={status}
+							size="sm"
+							variant={filter.status === status ? "primary" : "ghost"}
+							onPress={() =>
+								setFilter((current) =>
+									current.status === status ? {} : { ...current, status },
+								)
+							}
+						>
+							<span>{status.replace("_", " ")}</span>
+							<span>{count}</span>
+						</Button>
+					))}
+					{availableTags.slice(0, 8).map((tag) => (
+						<Chip
+							key={tag}
+							size="sm"
+							variant={tagFilter.includes(tag) ? "primary" : "soft"}
+							onClick={() => toggleTagFilter(tag)}
+							className="cursor-pointer"
+						>
+							{tag}
+						</Chip>
+					))}
+				</div>
+			</div>
+		);
+
+		if (!selectedTask) {
+			return (
+				<>
+					<WorkspacePageShell
+						title="Tasks"
+						subtitle="Compact task queue"
+						toolbar={toolbar}
+						filters={filters}
+					>
+						<div className="h-full overflow-auto p-3">
+							<TaskGrid
+								tasks={filteredTasks}
+								totalTasks={pagination?.total}
+								availableTags={availableTags}
+								selectedTaskId={undefined}
+								newTaskId={newTaskId}
+								onOpenDetails={handleOpenDetails}
+								onOpenDiscussions={handleOpenDiscussions}
+								onUpdateTask={handleUpdateTask}
+								onUpdateUi={handleUpdateUi}
+								onDelete={handleDeleteTask}
+								onCreateTaskAt={handleCreateTaskAt}
+								onReorder={handleReorder}
+							/>
+						</div>
+					</WorkspacePageShell>
+					{taskModal}
+				</>
+			);
+		}
+
+		return (
+			<>
+				<WorkspacePageShell
+					title={selectedTask.subject}
+					subtitle={sidebarTab === "discussions" ? "Task discussion" : "Task details"}
+					toolbar={
+						<div className="flex items-center gap-2">
+							<TaskPriorityBadge
+								priority={selectedTask.priority}
+								taskId={selectedTask.id}
+								onPriorityChange={handlePriorityChange}
+							/>
+						</div>
+					}
+				>
+					<Tabs
+						selectedKey={sidebarTab}
+						onSelectionChange={(key) => setSidebarTab(key as SidebarTab)}
+						className="flex h-full flex-col"
+					>
+						<Tabs.ListContainer className="border-b border-border/70 px-3 py-2">
+							<Tabs.List aria-label="Task tabs">
+							<Tabs.Tab id={detailsTabId}>
+								<FileText className="h-4 w-4" />
+								<span className="px-2">Details</span>
+								<Tabs.Indicator />
+							</Tabs.Tab>
+							<Tabs.Tab id={discussionsTabId}>
+								<MessageSquare className="h-4 w-4" />
+								<span className="px-2">Discussions</span>
+								<Tabs.Indicator />
+							</Tabs.Tab>
+						</Tabs.List>
+					</Tabs.ListContainer>
+
+					<Tabs.Panel id={detailsTabId} className="flex-1 overflow-auto p-4">
+							<div className="space-y-4">
+								<div className="text-xs text-muted-foreground">ID: {selectedTask.id}</div>
+								<div>
+									<h5 className="mb-1 text-sm font-medium text-foreground-500">Description</h5>
+									<p className="text-sm">{selectedTask.description}</p>
+								</div>
+								<div className="grid grid-cols-2 gap-4 text-sm">
+									<div>
+										<span className="text-foreground-500">Status</span>
+										<div className="mt-1 flex items-center gap-1">
+											{React.createElement(STATUS_CONFIG[selectedTask.status].icon, {
+												className: "h-3 w-3",
+											})}
+											<span className={STATUS_CONFIG[selectedTask.status].color}>
+												{STATUS_CONFIG[selectedTask.status].label}
+											</span>
+										</div>
+									</div>
+									<div>
+										<span className="text-foreground-500">Assigned</span>
+										<div className="mt-1 text-sm">
+											{selectedTask.assignedArmName ?? "Unassigned"}
+										</div>
+									</div>
+								</div>
+							</div>
+						</Tabs.Panel>
+
+					<Tabs.Panel id={discussionsTabId} className="flex-1 p-0">
+							<TaskDiscussionPanel
+								taskId={selectedTask.id}
+								onCommentCountChange={setDiscussionCount}
+								className="h-full"
+							/>
+						</Tabs.Panel>
+					</Tabs>
+				</WorkspacePageShell>
+				{taskModal}
+			</>
+		);
+	}
 
 	return (
 		<div className="flex flex-col h-full">
@@ -694,12 +956,12 @@ export function TasksPage() {
 						>
 							<Tabs.ListContainer className="flex-shrink-0">
 								<Tabs.List aria-label="Task tabs" className="w-full">
-									<Tabs.Tab id="details" className="flex-1">
+									<Tabs.Tab id={detailsTabId} className="flex-1">
 										<FileText className="h-4 w-4" />
 										<span className="px-2">Details</span>
 										<Tabs.Indicator />
 									</Tabs.Tab>
-									<Tabs.Tab id="discussions" className="flex-1">
+									<Tabs.Tab id={discussionsTabId} className="flex-1">
 										<MessageSquare className="h-4 w-4" />
 										<span className="px-2">Discussions</span>
 										<Tabs.Indicator />
@@ -712,7 +974,7 @@ export function TasksPage() {
 								</Tabs.List>
 							</Tabs.ListContainer>
 
-							<Tabs.Panel id="details" className="flex-1 p-0">
+						<Tabs.Panel id={detailsTabId} className="flex-1 p-0">
 								<div className="p-4 overflow-auto h-full">
 									<div className="space-y-4">
 										<div>
@@ -850,10 +1112,10 @@ export function TasksPage() {
 								</div>
 							</Tabs.Panel>
 
-							<Tabs.Panel
-								id="discussions"
-								className="flex-1 p-0"
-							>
+						<Tabs.Panel
+							id={discussionsTabId}
+							className="flex-1 p-0"
+						>
 								<TaskDiscussionPanel
 									taskId={selectedTask.id}
 									onCommentCountChange={setDiscussionCount}

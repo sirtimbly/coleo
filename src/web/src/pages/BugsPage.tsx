@@ -4,15 +4,16 @@
  * Displays bug reports and allows tracking and management
  * Uses React Query for data fetching with optimistic updates
  */
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useId } from 'react';
 import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
 import { type Bug, cn } from '@/lib';
-import { BugGrid } from '@/components/BugGrid';
+import { BugGrid, BugModal } from '@/components';
 import type { BugUpdate } from '@/components/BugGridRow';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 type SidebarTab = 'details';
@@ -42,13 +43,16 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 };
 
 export function BugsPage() {
-  document.title = "Coleo Observatory - Bugs";
+  usePageTitle('Coleo Observatory - Bugs');
+
   const queryClient = useQueryClient();
 	const [filter, setFilter] = useState<{ status?: string; priority?: string; source?: string }>({});
 	const [tagFilter, setTagFilter] = useState<string[]>([]);
 	const [searchText, setSearchText] = useState('');
+	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+	const detailsTabId = useId();
 
 	// Use React Query hook for bugs
 	const {
@@ -152,7 +156,7 @@ export function BugsPage() {
 					source: 'human_reported',
 					priority: 'medium',
 				});
-			} catch (err) {
+			} catch {
 				// Error is handled by the mutation
 			}
 		},
@@ -231,8 +235,7 @@ export function BugsPage() {
 						<Button
 							variant="primary"
 							onPress={() => {
-								// For now, just create a bug at the end
-								handleCreateBugAt(bugs.length, 'New Bug');
+								setIsModalOpen(true);
 							}}
 						>
 							<Plus className="h-4 w-4 mr-2" />
@@ -361,8 +364,8 @@ export function BugsPage() {
 				</div>
 
 				{/* Bug details sidebar */}
-				{selectedBug && (
-					<Card className="w-96 border-l rounded-none shadow-none flex flex-col">
+			{selectedBug && (
+				<Card className="w-96 border-l rounded-none shadow-none flex flex-col">
 						{/* Header with close button */}
 						<div className="p-3 border-b flex items-center justify-between flex-shrink-0">
 							<h3
@@ -392,8 +395,8 @@ export function BugsPage() {
 							>
 								<Tabs.List aria-label="Bug tabs" className="w-full"
 								>
-									<Tabs.Tab id="details" className="flex-1"
-									>
+							<Tabs.Tab id={detailsTabId} className="flex-1"
+							>
 										<FileText className="h-4 w-4" />
 										Details
 										<Tabs.Indicator />
@@ -401,8 +404,8 @@ export function BugsPage() {
 								</Tabs.List>
 							</Tabs.ListContainer>
 
-							<Tabs.Panel id="details" className="flex-1 overflow-hidden p-0"
-							>
+						<Tabs.Panel id={detailsTabId} className="flex-1 overflow-hidden p-0"
+						>
 								<div className="p-4 overflow-auto h-full"
 								>
 									<div className="space-y-4"
@@ -476,9 +479,15 @@ export function BugsPage() {
 								</div>
 							</Tabs.Panel>
 						</Tabs>
-					</Card>
-				)}
-			</div>
+				</Card>
+			)}
 		</div>
+
+		<BugModal
+			isOpen={isModalOpen}
+			onClose={() => setIsModalOpen(false)}
+			onSaved={() => refetch()}
+		/>
+	</div>
 	);
 }
