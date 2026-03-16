@@ -141,9 +141,14 @@ export class OpenCodeTuiHarness implements AgentHarness {
     return `Coleo Arm: ${armId} (${iso})`;
   }
 
+  private isColeoSession(session: { id?: string; title?: string }, armId: string): boolean {
+    return session.title?.startsWith(`Coleo Arm: ${armId}`) ?? false;
+  }
+
   /**
    * Keep only the active session in this OpenCode server instance.
    * Each arm server should be isolated; stale sessions can leak confusing events.
+   * Only deletes sessions that were created by Coleo for this specific arm.
    */
   private async pruneOtherSessions(
     client: OpencodeClient,
@@ -157,6 +162,9 @@ export class OpenCodeTuiHarness implements AgentHarness {
         if (!existing?.id || existing.id === keepSessionId) {
           continue;
         }
+        if (!this.isColeoSession(existing, armId)) {
+          continue;
+        }
         try {
           await client.session.delete({ path: { id: existing.id } });
           console.log(`[harness-tui] Deleted stale session ${existing.id} for ${armId}`);
@@ -166,6 +174,84 @@ export class OpenCodeTuiHarness implements AgentHarness {
       }
     } catch (err) {
       console.warn(`[harness-tui] Failed listing sessions for ${armId}: ${err}`);
+    }
+  }
+
+  /**
+   * Check if we should resume an existing session or start fresh based on task status
+   * Returns the existing session ID to resume, or null to create a new session
+   */
+  private async determineSessionRecoveryStrategy(
+    armId: string,
+    client: OpencodeClient,
+  ): Promise<{ shouldResume: boolean; existingSessionId?: string; reason: string }> {
+    // Query Coleo API for arm's current task
+    const apiUrl = process.env.COLEO_API_URL
+      || (process.env.COLEO_API_PORT ? `http://localhost:${process.env.COLEO_API_PORT}` : "http://localhost:8080");
+
+    try {
+      // Get arm info to find current task
+      const armResponse = await fetch(`${apiUrl}/api/arms/${armId}`);
+      if (!armResponse.ok) {
+        return { shouldResume: false, reason: "Could not fetch arm info from API" };
+      }
+      const armData = await armResponse.json() as { arm?: { currentTaskId?: string } };
+      const currentTaskId = armData.arm?.currentTaskId;
+
+      if (!currentTaskId) {
+        return { shouldResume: false, reason: "No task assigned to arm" };
+      }
+
+      // Get task details to check status and assignment
+      const taskResponse = await fetch(`${apiUrl}/api/tasks/${currentTaskId}`);
+      if (!taskResponse.ok) {
+        return { shouldResume: false, reason: "Could not fetch task info from API" };
+      }
+      const taskData = await taskResponse.json() as {
+        task?: { status?: string; assignedTo?: string }
+      };
+      const task = taskData.task;
+
+      if (!task) {
+        return { shouldResume: false, reason: "Task not found" };
+      }
+
+      // Check if task is in_progress and assigned to this arm
+      if (task.status !== "in_progress") {
+        return {
+          shouldResume: false,
+          reason: `Task status is "${task.status}", not "in_progress"`
+        };
+      }
+
+      if (task.assignedTo !== armId) {
+        return {
+          shouldResume: false,
+          reason: `Task assigned to "${task.assignedTo}", not this arm`
+        };
+      }
+
+      // Task is in_progress and assigned to this arm - try to find existing session
+      const sessionsResponse = await client.session.list();
+      const sessions = sessionsResponse.data || [];
+
+      for (const session of sessions) {
+        if (session?.id && this.isColeoSession(session, armId)) {
+          return {
+            shouldResume: true,
+            existingSessionId: session.id,
+            reason: `Task ${currentTaskId} is in_progress and assigned to this arm`
+          };
+        }
+      }
+
+      return {
+        shouldResume: false,
+        reason: "Task is in_progress but no existing session found"
+      };
+    } catch (err) {
+      console.warn(`[harness-tui] Error determining recovery strategy: ${err}`);
+      return { shouldResume: false, reason: `Error checking task status: ${err}` };
     }
   }
 
@@ -1420,108 +1506,125 @@ export class OpenCodeTuiHarness implements AgentHarness {
     // Create SDK client for recovered session
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    // Always create a NEW session for recovered arm to prevent cross-contamination
-    try {
-      const createResponse = await client.session.create({
-        body: { title: this.createSessionTitle(armId, "recover") },
-      });
-      const recoveredSession = createResponse.data;
+    // Determine whether to resume existing session or create new one based on task status
+    const recoveryStrategy = await this.determineSessionRecoveryStrategy(armId, client);
 
-      if (!recoveredSession?.id) {
-        console.log(`[harness-tui] Failed to create session for recovered arm`);
+    let recoveredSessionId: string;
+    let isResumedSession = false;
+
+    if (recoveryStrategy.shouldResume && recoveryStrategy.existingSessionId) {
+      // Resume existing session
+      recoveredSessionId = recoveryStrategy.existingSessionId;
+      isResumedSession = true;
+      console.log(`[harness-tui] Resuming existing session ${recoveredSessionId} for ${armId}: ${recoveryStrategy.reason}`);
+    } else {
+      // Create a NEW session for recovered arm
+      console.log(`[harness-tui] Creating new session for recovered arm ${armId}: ${recoveryStrategy.reason}`);
+      try {
+        const createResponse = await client.session.create({
+          body: { title: this.createSessionTitle(armId, "recover") },
+        });
+        const newSession = createResponse.data;
+
+        if (!newSession?.id) {
+          console.log(`[harness-tui] Failed to create session for recovered arm`);
+          return null;
+        }
+
+        recoveredSessionId = newSession.id;
+        console.log(`[harness-tui] Created new session ${recoveredSessionId} for recovered arm ${armId}`);
+      } catch (err) {
+        console.log(`[harness-tui] Failed to create new session: ${err}`);
         return null;
       }
-
-      console.log(`[harness-tui] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
-      await this.pruneOtherSessions(client, armId, recoveredSession.id);
-
-      const sessionId = `opencode-tui-recovered-${armId}-${Date.now().toString(36)}`;
-
-      const ptySession: PTYSession = {
-        pty: null as any,
-        buffer: "",
-        lineBuffer: [],
-        lastActivity: new Date(),
-      };
-
-      const tuiSession: TuiHarnessSession = {
-        id: sessionId,
-        pty: ptySession,
-        harnessName: this.name,
-        spawnedAt: new Date(),
-        lastHeartbeat: new Date(),
-        serverUrl,
-        sessionId: recoveredSession.id,
-        port,
-        terminal: "ghostty", // Assume ghostty for recovered sessions
-        armId,
-        workdir: process.cwd(),
-        consecutiveFailures: 0,
-        client,
-      };
-
-      // Start event stream for recovered session
-      if (this.eventCallbacks.size > 0) {
-        const eventStream = new OpenCodeEventStream({
-          serverUrl,
-          armId,
-          sessionId: recoveredSession.id,
-          onEvent: async (event: OpenCodeEvent) => {
-            // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
-            const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
-            
-            // Check if this event should be persisted to JetStream
-            const persistCheck = shouldPersistEvent(event);
-            
-            // Publish to JetStream for persistence (only filtered events, and only if NATS is initialized)
-            if (persistCheck.shouldPersist && eventStore.isInitialized()) {
-              try {
-                const subject = `coleo.events.arm.${armId}.${event.type}`;
-                await eventStore.publishEvent(subject, {
-                  type: event.type,
-                  armId,
-                  sessionId: event.properties?.sessionID as string,
-                  data: truncatedProps,
-                  timestamp: new Date().toISOString(),
-                  ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
-                  ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
-                  ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
-                });
-              } catch (err) {
-                console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
-              }
-            }
-
-            // Also emit to legacy callbacks for backward compatibility
-            this.emitEvent(armId, event.type, {
-              ...truncatedProps,
-              _timestamp: new Date().toISOString(),
-            });
-          },
-          onError: (error) => {
-            console.error(`[harness-tui] ${armId} event stream error:`, error.message);
-          },
-        });
-        eventStream.start();
-        tuiSession.eventStream = eventStream;
-        console.log(`[harness-tui] Started event stream for recovered ${armId}`);
-      }
-
-      // Start health check polling for recovered session
-      this.startHealthCheck(tuiSession);
-
-      this.sessions.set(sessionId, tuiSession);
-
-      // Update nextPort to avoid conflicts
-      if (port >= this.nextPort) {
-        this.nextPort = port + 1;
-      }
-
-      console.log(`[harness-tui] Recovered session for ${armId} on port ${port} (session: ${recoveredSession.id})`);
-      return tuiSession;
-    } catch (err) {
-      console.log(`[harness-tui] Failed to recover session: ${err}`);
-      return null;
     }
+
+    // Prune other sessions (keep only the one we're using)
+    await this.pruneOtherSessions(client, armId, recoveredSessionId);
+
+    const sessionId = `opencode-tui-recovered-${armId}-${Date.now().toString(36)}`;
+
+    const ptySession: PTYSession = {
+      pty: null as any,
+      buffer: "",
+      lineBuffer: [],
+      lastActivity: new Date(),
+    };
+
+    const tuiSession: TuiHarnessSession = {
+      id: sessionId,
+      pty: ptySession,
+      harnessName: this.name,
+      spawnedAt: new Date(),
+      lastHeartbeat: new Date(),
+      serverUrl,
+      sessionId: recoveredSessionId,
+      port,
+      terminal: "ghostty", // Assume ghostty for recovered sessions
+      armId,
+      workdir: process.cwd(),
+      consecutiveFailures: 0,
+      client,
+    };
+
+    // Start event stream for recovered session
+    if (this.eventCallbacks.size > 0) {
+      const eventStream = new OpenCodeEventStream({
+        serverUrl,
+        armId,
+        sessionId: recoveredSessionId,
+        onEvent: async (event: OpenCodeEvent) => {
+          // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED
+          const truncatedProps = truncateLargeFields(event.properties || {}) as Record<string, unknown>;
+          
+          // Check if this event should be persisted to JetStream
+          const persistCheck = shouldPersistEvent(event);
+          
+          // Publish to JetStream for persistence (only filtered events, and only if NATS is initialized)
+          if (persistCheck.shouldPersist && eventStore.isInitialized()) {
+            try {
+              const subject = `coleo.events.arm.${armId}.${event.type}`;
+              await eventStore.publishEvent(subject, {
+                type: event.type,
+                armId,
+                sessionId: event.properties?.sessionID as string,
+                data: truncatedProps,
+                timestamp: new Date().toISOString(),
+                ...(persistCheck.tokenData && { tokenData: persistCheck.tokenData }),
+                ...(persistCheck.fileChanges && { fileChanges: persistCheck.fileChanges }),
+                ...(persistCheck.messageData && { messageData: persistCheck.messageData }),
+              });
+            } catch (err) {
+              console.error(`[harness-tui] Failed to publish event to JetStream: ${err}`);
+            }
+          }
+
+          // Also emit to legacy callbacks for backward compatibility
+          this.emitEvent(armId, event.type, {
+            ...truncatedProps,
+            _timestamp: new Date().toISOString(),
+          });
+        },
+        onError: (error) => {
+          console.error(`[harness-tui] ${armId} event stream error:`, error.message);
+        },
+      });
+      eventStream.start();
+      tuiSession.eventStream = eventStream;
+      console.log(`[harness-tui] Started event stream for recovered ${armId}`);
+    }
+
+    // Start health check polling for recovered session
+    this.startHealthCheck(tuiSession);
+
+    this.sessions.set(sessionId, tuiSession);
+
+    // Update nextPort to avoid conflicts
+    if (port >= this.nextPort) {
+      this.nextPort = port + 1;
+    }
+
+    console.log(`[harness-tui] Recovered session for ${armId} on port ${port} (session: ${recoveredSessionId})`);
+    return tuiSession;
   }
 }
