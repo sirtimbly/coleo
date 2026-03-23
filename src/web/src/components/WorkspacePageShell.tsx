@@ -20,10 +20,10 @@ export function WorkspacePageShell({
 }: WorkspacePageShellProps) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-transparent">
-      <header className="border-b border-border/70 bg-content1/85 backdrop-blur-sm">
-        <div className="flex items-center justify-between gap-3 px-3 py-2">
+      <header className="border-b border-border/70 bg-surface/70 backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
+        <div className="flex items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-semibold text-foreground">{title}</div>
+            <div className="truncate text-sm font-semibold tracking-[0.01em] text-foreground">{title}</div>
             {subtitle ? (
               <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
             ) : null}
@@ -33,7 +33,7 @@ export function WorkspacePageShell({
         </div>
 
         {filters ? (
-          <div className="border-t border-border/60 px-3 py-2">
+          <div className="border-t border-border/60 bg-background/20 px-4 py-3">
             {filters}
           </div>
         ) : null}

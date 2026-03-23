@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-03-06T14:25:15.741Z",
+  "fetchedAt": "2026-03-16T21:02:23.953Z",
   "providers": [
     {
       "id": "cerebras",
@@ -44,6 +44,34 @@
           "name": "deepseek-ai/DeepSeek-V3.2"
         },
         {
+          "id": "meta-llama/Llama-3.1-70B-Instruct",
+          "name": "meta-llama/Llama-3.1-70B-Instruct"
+        },
+        {
+          "id": "meta-llama/Llama-3.1-70B-Instruct-Turbo",
+          "name": "meta-llama/Llama-3.1-70B-Instruct-Turbo"
+        },
+        {
+          "id": "meta-llama/Llama-3.1-8B-Instruct",
+          "name": "meta-llama/Llama-3.1-8B-Instruct"
+        },
+        {
+          "id": "meta-llama/Llama-3.1-8B-Instruct-Turbo",
+          "name": "meta-llama/Llama-3.1-8B-Instruct-Turbo"
+        },
+        {
+          "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+          "name": "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+        },
+        {
+          "id": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+          "name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+        },
+        {
+          "id": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+          "name": "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+        },
+        {
           "id": "MiniMaxAI/MiniMax-M2",
           "name": "MiniMaxAI/MiniMax-M2"
         },
@@ -52,8 +80,16 @@
           "name": "MiniMaxAI/MiniMax-M2.1"
         },
         {
+          "id": "MiniMaxAI/MiniMax-M2.5",
+          "name": "MiniMaxAI/MiniMax-M2.5"
+        },
+        {
           "id": "moonshotai/Kimi-K2-Instruct",
           "name": "moonshotai/Kimi-K2-Instruct"
+        },
+        {
+          "id": "moonshotai/Kimi-K2-Instruct-0905",
+          "name": "moonshotai/Kimi-K2-Instruct-0905"
         },
         {
           "id": "moonshotai/Kimi-K2-Thinking",
@@ -80,12 +116,24 @@
           "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo"
         },
         {
+          "id": "zai-org/GLM-4.6",
+          "name": "zai-org/GLM-4.6"
+        },
+        {
+          "id": "zai-org/GLM-4.6V",
+          "name": "zai-org/GLM-4.6V"
+        },
+        {
           "id": "zai-org/GLM-4.7",
           "name": "zai-org/GLM-4.7"
         },
         {
           "id": "zai-org/GLM-4.7-Flash",
           "name": "zai-org/GLM-4.7-Flash"
+        },
+        {
+          "id": "zai-org/GLM-5",
+          "name": "zai-org/GLM-5"
         }
       ]
     },
@@ -212,6 +260,14 @@
           "name": "gemini-3-pro-preview"
         },
         {
+          "id": "gemini-3.1-flash-image-preview",
+          "name": "gemini-3.1-flash-image-preview"
+        },
+        {
+          "id": "gemini-3.1-flash-lite-preview",
+          "name": "gemini-3.1-flash-lite-preview"
+        },
+        {
           "id": "gemini-3.1-pro-preview",
           "name": "gemini-3.1-pro-preview"
         },
@@ -324,6 +380,10 @@
         {
           "id": "gpt-5.3-codex-spark",
           "name": "gpt-5.3-codex-spark"
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "gpt-5.4"
         }
       ]
     },
@@ -448,6 +508,10 @@
           "name": "kimi-k2.5"
         },
         {
+          "id": "mimo-v2-flash-free",
+          "name": "mimo-v2-flash-free"
+        },
+        {
           "id": "minimax-m2.1",
           "name": "minimax-m2.1"
         },
@@ -458,6 +522,10 @@
         {
           "id": "minimax-m2.5-free",
           "name": "minimax-m2.5-free"
+        },
+        {
+          "id": "nemotron-3-super-free",
+          "name": "nemotron-3-super-free"
         }
       ]
     },

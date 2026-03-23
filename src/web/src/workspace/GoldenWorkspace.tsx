@@ -54,9 +54,6 @@ interface PanelInstance {
   route: RoutePanelState;
 }
 
-interface GoldenWorkspaceProps {
-}
-
 function createPanelId(): string {
   return `panel-${crypto.randomUUID()}`;
 }
@@ -170,7 +167,7 @@ function findFirstStack(item: ContentItem | undefined): Stack | null {
   return null;
 }
 
-export function GoldenWorkspace({}: GoldenWorkspaceProps) {
+export function GoldenWorkspace() {
   const { openNewMessage } = useMessage();
   const layoutHostRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef<GoldenLayout | null>(null);
@@ -614,20 +611,22 @@ export function GoldenWorkspace({}: GoldenWorkspaceProps) {
                   aria-haspopup="menu"
                   aria-expanded={launcherOpen}
                 >
-                  <img
-                    src="favicon.svg"
-                    width="18"
-                    height="18"
-                    alt="octopus illustration"
-                  />
-                  <span className="golden-launcher-title">Launcher</span>
-                  <LayoutPanelTop className="h-4 w-4 opacity-60" />
+                  <span className="golden-launcher-badge" aria-hidden="true">
+                    <img
+                      src="favicon.svg"
+                      width="18"
+                      height="18"
+                      alt=""
+                    />
+                  </span>
+                  <span className="golden-launcher-title">Open</span>
+                  <LayoutPanelTop className="h-4 w-4 opacity-60" aria-hidden="true" />
                 </button>
 
                 {launcherOpen ? (
-                  <div className="golden-launcher-menu" role="menu" aria-label="Launcher menu">
+                  <div className="golden-launcher-menu" role="menu" aria-label="Open workspace view">
                     <div className="golden-launcher-menu-header">
-                      <div className="font-semibold text-foreground">Workspace Launcher</div>
+                      <div className="font-semibold text-foreground">Open a Workspace View</div>
                       <div className="text-xs text-muted-foreground">
                         Open a route in focus or spawn a fresh pane beside your current stack.
                       </div>
@@ -677,7 +676,7 @@ export function GoldenWorkspace({}: GoldenWorkspaceProps) {
               <WorkspaceArmRail onOpenViewer={openViewerForArm} />
             </div>
 
-            <div className="golden-dock-right">
+            <div className="golden-dock-right" role="toolbar" aria-label="Workspace actions">
               <button
                 type="button"
                 className="golden-dock-button golden-dock-button--primary"
@@ -754,7 +753,7 @@ export function GoldenWorkspace({}: GoldenWorkspaceProps) {
         <div className="flex-1 min-h-0 p-3">
           <div
             ref={layoutHostRef}
-            className="golden-workspace-layout h-full rounded-[8px] border border-border/60 bg-surface/55 shadow-[0_18px_44px_rgba(15,23,42,0.12)]"
+            className="golden-workspace-layout h-full"
           />
         </div>
       </div>

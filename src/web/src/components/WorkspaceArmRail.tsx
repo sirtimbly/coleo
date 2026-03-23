@@ -71,6 +71,8 @@ export function WorkspaceArmRail({ onOpenViewer }: WorkspaceArmRailProps) {
       {arms.map((arm) => {
         const state = arm.analysis?.analysis.state;
         const StateIcon = state ? stateIcons[state] : null;
+        const activityLabel = state?.replaceAll('_', ' ') ?? 'standby';
+        const currentWorkItem = arm.currentTaskSubject ?? arm.currentBugTitle ?? 'Monitoring for new work';
 
         return (
           <button
@@ -85,24 +87,17 @@ export function WorkspaceArmRail({ onOpenViewer }: WorkspaceArmRailProps) {
             }}
             title={arm.analysis?.analysis.reason || arm.harness}
           >
-            <span className="golden-dock-arm-name">{arm.name}</span>
-
-            {StateIcon ? (
+            <div className="golden-dock-arm-heading">
+              <span className="golden-dock-arm-name">{arm.name}</span>
               <span className="golden-dock-arm-state">
-                <StateIcon className="h-3.5 w-3.5" />
-                <span>{state?.replace('_', ' ')}</span>
+                {StateIcon ? <StateIcon className="h-3.5 w-3.5" /> : null}
+                <span>{activityLabel}</span>
               </span>
-            ) : null}
+            </div>
 
-            {arm.currentTaskSubject ? (
-              <span className="golden-dock-arm-meta" title={arm.currentTaskSubject}>
-                {arm.currentTaskSubject}
-              </span>
-            ) : arm.currentBugTitle ? (
-              <span className="golden-dock-arm-meta" title={arm.currentBugTitle}>
-                {arm.currentBugTitle}
-              </span>
-            ) : null}
+            <span className="golden-dock-arm-meta" title={currentWorkItem}>
+              {currentWorkItem}
+            </span>
           </button>
         );
       })}

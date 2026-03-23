@@ -1,54 +1,101 @@
 .golden-workspace-shell {
+  --golden-radius-shell: 28px;
+  --golden-radius-control: 16px;
+  --golden-radius-panel: 24px;
+  --golden-border-soft: color-mix(in oklch, var(--border) 76%, transparent);
+  --golden-border-strong: color-mix(in oklch, var(--border) 92%, transparent);
+  --golden-shell-shadow:
+    0 18px 48px rgba(15, 23, 42, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   background:
-    radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 8%, transparent), transparent 44%),
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 20%, transparent), transparent 34%),
+    radial-gradient(circle at top left, color-mix(in oklch, var(--surface) 90%, white 10%), transparent 42%),
     linear-gradient(
       180deg,
-      color-mix(in oklch, var(--surface) 95%, white 5%),
+      color-mix(in oklch, var(--background) 92%, var(--surface) 8%),
       color-mix(in oklch, var(--background) 98%, black 2%)
     );
 }
 
 .golden-workspace-dock {
-  backdrop-filter: blur(18px);
   position: relative;
   z-index: 40;
+  backdrop-filter: blur(20px);
 }
 
 .golden-workspace-dock-inner {
+  position: relative;
+  isolation: isolate;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  border-radius: 20px;
-  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  border-radius: var(--golden-radius-shell);
+  border: 1px solid var(--golden-border-soft);
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklch, var(--surface) 96%, white 4%),
-      color-mix(in oklch, var(--surface) 92%, black 8%)
+      color-mix(in oklch, var(--surface) 82%, white 18%),
+      color-mix(in oklch, var(--surface-secondary) 92%, black 8%)
     );
-  box-shadow:
-    0 18px 40px rgba(15, 23, 42, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.65) inset;
-  overflow: visible;
-  padding: 12px 14px;
+  box-shadow: var(--golden-shell-shadow);
+  overflow: hidden;
+  padding: 10px 12px;
+}
+
+.golden-workspace-dock-inner::before,
+.golden-workspace-dock-inner::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  inset: auto;
+  z-index: -1;
+}
+
+.golden-workspace-dock-inner::before {
+  top: -18%;
+  right: 10%;
+  width: 36%;
+  height: 120%;
+  background: radial-gradient(circle, color-mix(in oklch, var(--accent) 26%, transparent), transparent 70%);
+  filter: blur(28px);
+  opacity: 0.85;
+}
+
+.golden-workspace-dock-inner::after {
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.18),
+    transparent
+  );
 }
 
 .golden-dock-left,
 .golden-dock-center,
 .golden-dock-right {
   min-width: 0;
-}
-
-.golden-dock-left,
-.golden-dock-right {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+.golden-dock-left {
+  justify-content: flex-start;
+}
+
 .golden-dock-center {
+  padding: 0 2px;
   overflow: hidden;
+}
+
+.golden-dock-right {
+  justify-content: flex-end;
 }
 
 .golden-launcher,
@@ -63,69 +110,108 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
-  background: color-mix(in oklch, var(--surface) 94%, white 6%);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  gap: 10px;
+  min-height: 48px;
+  border-radius: var(--golden-radius-control);
+  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--surface) 46%, transparent);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
   color: var(--foreground);
-  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .golden-launcher-button:hover,
 .golden-dock-button:hover,
 .golden-dock-icon-button:hover {
-  border-color: color-mix(in oklch, var(--accent) 34%, transparent);
-  transform: translateY(-1px);
+  background: color-mix(in oklch, var(--surface) 60%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 34%, var(--border) 66%);
 }
 
-.golden-dock-arm-tile:hover {
-  transform: translateY(-2px);
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in oklch, var(--surface) 100%, white 0%) 0%,
-      color-mix(in oklch, var(--surface) 88%, black 12%) 50%,
-      color-mix(in oklch, var(--surface) 78%, black 22%) 100%
-    );
+.golden-launcher-button:focus-visible,
+.golden-dock-button:focus-visible,
+.golden-dock-icon-button:focus-visible,
+.golden-launcher-menu-action:focus-visible,
+.golden-launcher-menu-plus:focus-visible,
+.golden-launcher-menu-secondary:focus-visible,
+.golden-pane-menu-action:focus-visible,
+.golden-dock-arm-tile:focus-visible,
+.golden-workspace-layout .lm_tab:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent) 44%, transparent),
+    0 0 0 4px color-mix(in oklch, var(--accent) 20%, transparent),
+    0 10px 24px rgba(15, 23, 42, 0.18);
 }
 
 .golden-launcher-button {
-  padding: 9px 14px;
+  gap: 12px;
+  padding: 0 14px 0 10px;
+}
+
+.golden-launcher-badge {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--accent) 82%, white 18%),
+      color-mix(in oklch, var(--accent) 72%, black 28%)
+    );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.16) inset;
 }
 
 .golden-launcher-title {
-  font-size: 0.92rem;
+  font-size: 0.98rem;
   font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .golden-launcher-menu,
 .golden-pane-menu-dropdown {
   position: absolute;
   z-index: 120;
-  border-radius: 20px;
-  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
-  background: color-mix(in oklch, var(--surface) 97%, white 3%);
-  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+  border-radius: 22px;
+  border: 1px solid var(--golden-border-strong);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--overlay) 92%, white 8%),
+      color-mix(in oklch, var(--overlay) 86%, black 14%)
+    );
+  box-shadow:
+    0 30px 60px rgba(15, 23, 42, 0.28),
+    0 1px 0 rgba(255, 255, 255, 0.1) inset;
+  backdrop-filter: blur(20px);
 }
 
 .golden-launcher-menu {
   top: calc(100% + 10px);
   left: 0;
-  width: 340px;
+  width: 360px;
   padding: 10px;
 }
 
 .golden-pane-menu-dropdown {
   top: calc(100% + 10px);
   right: 0;
-  min-width: 220px;
+  min-width: 240px;
   padding: 8px;
 }
 
 .golden-launcher-menu-header,
 .golden-launcher-menu-footer {
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .golden-launcher-menu-list,
@@ -152,25 +238,29 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid transparent;
   background: transparent;
   color: var(--foreground);
-  padding: 10px 12px;
-  transition: background-color 140ms ease, border-color 140ms ease;
+  padding: 11px 12px;
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    transform 140ms ease;
 }
 
 .golden-launcher-menu-action:hover,
 .golden-launcher-menu-plus:hover,
 .golden-launcher-menu-secondary:hover,
 .golden-pane-menu-action:hover {
+  transform: translateY(-1px);
   background: color-mix(in oklch, var(--surface-secondary) 84%, white 16%);
   border-color: color-mix(in oklch, var(--border) 80%, transparent);
 }
 
 .golden-launcher-menu-plus {
   justify-content: center;
-  min-width: 40px;
+  min-width: 44px;
 }
 
 .golden-launcher-menu-secondary {
@@ -188,26 +278,26 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
-  background: color-mix(in oklch, var(--surface) 96%, white 4%);
-  padding: 9px 12px;
+  border-radius: 16px;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0 4px;
   color: var(--muted);
   white-space: nowrap;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
 }
 
 .golden-dock-pill-label {
   color: color-mix(in oklch, var(--muted) 88%, transparent);
   font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .golden-dock-button {
-  padding: 9px 14px;
-  font-size: 0.88rem;
-  font-weight: 600;
+  padding: 0 16px;
+  font-size: 0.9rem;
+  font-weight: 650;
 }
 
 .golden-dock-button--primary {
@@ -215,11 +305,11 @@
     linear-gradient(
       180deg,
       color-mix(in oklch, var(--accent) 88%, white 12%),
-      color-mix(in oklch, var(--accent) 76%, black 24%)
+      color-mix(in oklch, var(--accent) 72%, black 28%)
     );
-  border-color: color-mix(in oklch, var(--accent) 68%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 70%, transparent);
   box-shadow:
-    0 12px 28px color-mix(in oklch, var(--accent) 26%, transparent),
+    0 8px 18px color-mix(in oklch, var(--accent) 14%, transparent),
     0 1px 0 rgba(255, 255, 255, 0.18) inset;
   color: white;
 }
@@ -229,13 +319,14 @@
     linear-gradient(
       180deg,
       color-mix(in oklch, var(--accent) 94%, white 6%),
-      color-mix(in oklch, var(--accent) 80%, black 20%)
+      color-mix(in oklch, var(--accent) 78%, black 22%)
     );
 }
 
 .golden-dock-icon-button {
-  width: 38px;
-  height: 38px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
 }
 
 .golden-dock-arm-strip {
@@ -243,145 +334,166 @@
   align-items: stretch;
   gap: 8px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding: 2px 0;
+  scrollbar-width: none;
+}
+
+.golden-dock-arm-strip::-webkit-scrollbar {
+  display: none;
 }
 
 .golden-dock-arm-tile {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  width: 200px;
-  min-height: 64px;
-  gap: 3px;
-  border-radius: 16px;
-  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
-  background:
-    linear-gradient(
-      165deg,
-      color-mix(in oklch, var(--surface) 98%, white 2%) 0%,
-      color-mix(in oklch, var(--surface) 85%, black 15%) 50%,
-      color-mix(in oklch, var(--surface) 75%, black 25%) 100%
-    );
-  padding: 9px 12px;
-  text-align: left;
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
-  transition: all 200ms ease;
   position: relative;
   overflow: hidden;
+  display: flex;
+  width: 220px;
+  min-height: 70px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background: color-mix(in oklch, var(--surface) 54%, transparent);
+  padding: 11px 12px;
+  text-align: left;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
 }
 
 .golden-dock-arm-tile::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.15) 50%,
-    transparent 100%
-  );
+  inset: 0;
+  background:
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 10%, transparent), transparent 44%);
+  opacity: 0.55;
+  pointer-events: none;
 }
 
-.golden-dock-arm-tile[data-state="productive"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 20px color-mix(in oklch, var(--success) 35%, transparent),
-    0 0 40px color-mix(in oklch, var(--success) 15%, transparent);
-  border-color: color-mix(in oklch, var(--success) 50%, var(--border) 50%);
+.golden-dock-arm-tile:hover {
+  transform: translateY(-1px);
+  background: color-mix(in oklch, var(--surface) 62%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 30%, var(--border) 70%);
 }
 
-.golden-dock-arm-tile[data-state="idle"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 16px color-mix(in oklch, var(--muted) 25%, transparent);
-}
-
-.golden-dock-arm-tile[data-state="waiting_permission"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 24px color-mix(in oklch, var(--warning) 45%, transparent),
-    0 0 48px color-mix(in oklch, var(--warning) 20%, transparent);
-  border-color: color-mix(in oklch, var(--warning) 50%, var(--border) 50%);
-  animation: pulse-amber 2s ease-in-out infinite;
-}
-
-.golden-dock-arm-tile[data-state="looping"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 20px color-mix(in oklch, var(--accent) 35%, transparent),
-    0 0 40px color-mix(in oklch, var(--accent) 15%, transparent);
-  border-color: color-mix(in oklch, var(--accent) 50%, var(--border) 50%);
-}
-
-.golden-dock-arm-tile[data-state="silent"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 12px color-mix(in oklch, var(--muted) 20%, transparent);
-  opacity: 0.85;
-}
-
-.golden-dock-arm-tile[data-state="error"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 24px color-mix(in oklch, var(--danger) 50%, transparent),
-    0 0 48px color-mix(in oklch, var(--danger) 25%, transparent);
-  border-color: color-mix(in oklch, var(--danger) 60%, var(--border) 40%);
-  animation: pulse-red 1.5s ease-in-out infinite;
-}
-
-.golden-dock-arm-tile[data-state="starting"] {
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.25),
-    0 1px 0 rgba(255, 255, 255, 0.08) inset,
-    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
-    0 0 20px color-mix(in oklch, var(--info) 35%, transparent),
-    0 0 40px color-mix(in oklch, var(--info) 15%, transparent);
-  border-color: color-mix(in oklch, var(--info) 50%, var(--border) 50%);
-}
-
-@keyframes pulse-amber {
-  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 24px color-mix(in oklch, var(--warning) 45%, transparent), 0 0 48px color-mix(in oklch, var(--warning) 20%, transparent); }
-  50% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 32px color-mix(in oklch, var(--warning) 60%, transparent), 0 0 64px color-mix(in oklch, var(--warning) 30%, transparent); }
-}
-
-@keyframes pulse-red {
-  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 24px color-mix(in oklch, var(--danger) 50%, transparent), 0 0 48px color-mix(in oklch, var(--danger) 25%, transparent); }
-  50% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 36px color-mix(in oklch, var(--danger) 70%, transparent), 0 0 72px color-mix(in oklch, var(--danger) 35%, transparent); }
+.golden-dock-arm-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
 }
 
 .golden-dock-arm-name {
-  font-size: 0.85rem;
+  min-width: 0;
+  font-size: 0.92rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--foreground);
 }
 
-.golden-dock-arm-state,
-.golden-dock-arm-meta {
+.golden-dock-arm-state {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 6px;
-  font-size: 0.72rem;
-  color: var(--muted);
-  white-space: nowrap;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+  background: color-mix(in oklch, var(--surface) 40%, transparent);
+  padding: 3px 7px;
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in oklch, var(--foreground) 76%, transparent);
+}
+
+.golden-dock-arm-meta {
+  display: block;
+  min-width: 0;
   overflow: hidden;
+  color: color-mix(in oklch, var(--muted) 96%, transparent);
+  font-size: 0.76rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
+}
+
+.golden-dock-arm-tile[data-state="productive"] {
+  border-color: color-mix(in oklch, var(--success) 46%, var(--border) 54%);
+  background: color-mix(in oklch, var(--surface) 58%, color-mix(in oklch, var(--success) 6%, transparent));
+}
+
+.golden-dock-arm-tile[data-state="idle"],
+.golden-dock-arm-tile[data-state="silent"] {
+  opacity: 0.92;
+}
+
+.golden-dock-arm-tile[data-state="waiting_permission"] {
+  border-color: color-mix(in oklch, var(--warning) 56%, var(--border) 44%);
+  animation: pulse-amber 2s ease-in-out infinite;
+}
+
+.golden-dock-arm-tile[data-state="looping"],
+.golden-dock-arm-tile[data-state="starting"] {
+  border-color: color-mix(in oklch, var(--accent) 48%, var(--border) 52%);
+}
+
+.golden-dock-arm-tile[data-state="error"] {
+  border-color: color-mix(in oklch, var(--danger) 62%, var(--border) 38%);
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-amber {
+  0%,
+  100% {
+    background: color-mix(in oklch, var(--surface) 56%, color-mix(in oklch, var(--warning) 4%, transparent));
+  }
+
+  50% {
+    background: color-mix(in oklch, var(--surface) 58%, color-mix(in oklch, var(--warning) 8%, transparent));
+  }
+}
+
+@keyframes pulse-red {
+  0%,
+  100% {
+    background: color-mix(in oklch, var(--surface) 56%, color-mix(in oklch, var(--danger) 4%, transparent));
+  }
+
+  50% {
+    background: color-mix(in oklch, var(--surface) 58%, color-mix(in oklch, var(--danger) 8%, transparent));
+  }
+}
+
+.golden-workspace-layout {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: var(--golden-radius-panel);
+  border: 1px solid var(--golden-border-soft);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 84%, white 16%),
+      color-mix(in oklch, var(--surface-secondary) 94%, black 6%)
+    );
+  box-shadow:
+    0 30px 72px rgba(15, 23, 42, 0.24),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.golden-workspace-layout::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 14%),
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 10%, transparent), transparent 32%);
 }
 
 .golden-workspace-layout,
@@ -391,23 +503,23 @@
   background: transparent !important;
 }
 
-.golden-workspace-layout {
-  position: relative;
-  z-index: 1;
-}
-
 .golden-workspace-layout .lm_row,
 .golden-workspace-layout .lm_column {
   background: transparent !important;
 }
 
 .golden-workspace-layout .lm_stack {
-  background: color-mix(in oklch, var(--surface) 99%, white 1%) !important;
-  border: 1px solid color-mix(in oklch, var(--border) 74%, transparent) !important;
-  border-radius: 3px !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 92%, white 8%),
+      color-mix(in oklch, var(--surface-secondary) 92%, black 8%)
+    ) !important;
+  border: 1px solid color-mix(in oklch, var(--border) 76%, transparent) !important;
+  border-radius: 22px !important;
   box-shadow:
-    0 14px 36px rgba(15, 23, 42, 0.08),
-    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+    0 12px 24px rgba(15, 23, 42, 0.14),
+    0 1px 0 rgba(255, 255, 255, 0.06) inset !important;
   overflow: hidden;
 }
 
@@ -415,73 +527,117 @@
   background:
     linear-gradient(
       180deg,
-      color-mix(in oklch, var(--surface-secondary) 94%, white 6%),
-      color-mix(in oklch, var(--surface-secondary) 90%, black 10%)
+      color-mix(in oklch, var(--surface-secondary) 88%, white 12%),
+      color-mix(in oklch, var(--surface-secondary) 96%, black 4%)
     ) !important;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 88%, transparent) !important;
-  border-radius: 3px 3px 0 0 !important;
-  height: 32px !important;
-  margin: 1px 1px 0 !important;
-  padding: 0 1px !important;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 92%, transparent) !important;
+  border-radius: 18px 18px 0 0 !important;
+  height: 52px !important;
+  margin: 8px 8px 0 !important;
+  padding: 6px 8px 6px !important;
 }
 
 .golden-workspace-layout .lm_tabs {
-  top: 1px;
-  left: 1px;
-  right: 1px;
+  top: 0;
+  left: 0;
+  right: 0;
   align-items: center;
-  gap: 1px;
-  padding-left: 1px;
-  padding-right: 1px;
+  gap: 6px;
+  padding: 0 2px;
 }
 
 .golden-workspace-layout .lm_tab {
-  background: transparent !important;
-  border-radius: 2px 2px 0 0 !important;
-  color: color-mix(in oklch, var(--foreground) 62%, transparent) !important;
-  margin-right: 0 !important;
-  margin-top: 0 !important;
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 !important;
+  min-height: 32px;
   border: 1px solid transparent !important;
-  border-bottom: none !important;
-  height: auto !important;
-  min-height: 22px;
-  padding: 4px 24px 5px 10px !important;
-  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+  border-radius: 14px !important;
+  background: color-mix(in oklch, var(--surface) 52%, transparent) !important;
+  color: color-mix(in oklch, var(--foreground) 64%, transparent) !important;
+  padding: 6px 30px 8px 14px !important;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.golden-workspace-layout .lm_tab::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 4px;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 150ms ease;
 }
 
 .golden-workspace-layout .lm_tab .lm_title {
   display: inline-block;
-  line-height: 1.15;
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.2;
   padding-top: 0 !important;
+  text-overflow: ellipsis;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .golden-workspace-layout .lm_tab:hover {
-  background: color-mix(in oklch, var(--surface) 92%, white 8%) !important;
+  background: color-mix(in oklch, var(--surface) 82%, white 18%) !important;
   color: var(--foreground) !important;
+  border-color: color-mix(in oklch, var(--border) 78%, transparent) !important;
+}
+
+.golden-workspace-layout .lm_tab:hover::after {
+  background: color-mix(in oklch, var(--accent) 26%, transparent);
 }
 
 .golden-workspace-layout .lm_tab.lm_active {
-  background: color-mix(in oklch, var(--surface) 99%, white 1%) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 94%, white 6%),
+      color-mix(in oklch, var(--surface-secondary) 86%, black 14%)
+    ) !important;
   color: var(--foreground) !important;
-  border-color: color-mix(in oklch, var(--border) 82%, transparent) !important;
-  box-shadow: inset 0 2px 0 0 var(--accent);
+  border-color: color-mix(in oklch, var(--border) 88%, transparent) !important;
+  box-shadow:
+    0 4px 12px rgba(15, 23, 42, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset;
+}
+
+.golden-workspace-layout .lm_tab.lm_active::after {
+  background: color-mix(in oklch, var(--accent) 88%, white 12%);
 }
 
 .golden-workspace-layout .lm_tab .lm_close_tab {
-  color: color-mix(in oklch, var(--foreground) 36%, transparent) !important;
-  width: 12px;
-  height: 12px;
   top: 50% !important;
   right: 8px !important;
+  width: 18px;
+  height: 18px;
   margin-left: 0;
-  line-height: 1;
+  border-radius: 999px;
+  background-color: transparent !important;
   background-position: center center !important;
   background-size: 10px 10px !important;
+  color: color-mix(in oklch, var(--foreground) 38%, transparent) !important;
+  line-height: 1;
   transform: translateY(-50%);
+  transition:
+    color 140ms ease,
+    background-color 140ms ease;
 }
 
 .golden-workspace-layout .lm_tab .lm_close_tab:hover {
+  background-color: color-mix(in oklch, var(--danger) 18%, transparent) !important;
   color: var(--danger) !important;
 }
 
@@ -490,17 +646,31 @@
 }
 
 .golden-workspace-layout .lm_items {
-  background: color-mix(in oklch, var(--surface) 99%, black 1%) !important;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 97%, white 3%),
+      color-mix(in oklch, var(--surface-secondary) 94%, black 6%)
+    ) !important;
 }
 
 .golden-workspace-layout .lm_splitter {
-  background: color-mix(in oklch, var(--border) 76%, transparent) !important;
-  border-radius: 999px;
-  opacity: 1 !important;
+  position: relative;
+  background: transparent !important;
 }
 
-.golden-workspace-layout .lm_splitter:hover {
-  background: var(--accent) !important;
+.golden-workspace-layout .lm_splitter::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--border) 70%, transparent);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.golden-workspace-layout .lm_splitter:hover::after {
+  background: color-mix(in oklch, var(--accent) 72%, transparent);
+  box-shadow: 0 0 18px color-mix(in oklch, var(--accent) 24%, transparent);
 }
 
 .golden-workspace-layout .lm_dragProxy,
@@ -519,7 +689,12 @@
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: color-mix(in oklch, var(--surface) 99%, black 1%);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 98%, white 2%),
+      color-mix(in oklch, var(--surface-secondary) 95%, black 5%)
+    );
   color: var(--foreground);
 }
 
@@ -531,5 +706,26 @@
   .golden-dock-left,
   .golden-dock-right {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 720px) {
+  .golden-workspace-dock {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+
+  .golden-dock-right {
+    justify-content: stretch;
+  }
+
+  .golden-dock-button,
+  .golden-dock-icon-button,
+  .golden-launcher-button {
+    flex: 1 1 auto;
+  }
+
+  .golden-dock-icon-button {
+    flex: 0 0 auto;
   }
 }

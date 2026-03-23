@@ -1,0 +1,56 @@
+setcpm(100/4)
+
+stack(
+  note("e")
+    .sound("white")
+    .lpf(350)
+    .gain(0.65)
+    .penv("<12 7 1 .5 0 -1 -7 -12>")
+    .room(0.25)
+    .rlp(300)
+    .size(0.15)
+    .attack(5)
+    .decay(5)
+    .sustain(0.8)
+    .release(5)
+    ._spectrum(),
+  note("<[c3 eb3 g3 bb3] ~ [ab2 c3 eb3 g3] ~ [f2 ab2 c3 eb3] ~ [g2 b2 d3 f3] ~ [d2 f2 ab2 c3] ~ [g2 b2 d3 f3] ~ [c3 eb3 g3 bb3] ~ [eb3 g3 bb3 d4] ~>")
+    .sound("sine")
+    .slow(2)
+    .gain(0.26)
+    .lpf(980)
+    .room(0.86)
+    .size(1.2),
+  note("<c2 ~ ab1 ~ f1 ~ g1 ~ d2 ~ g1 ~ c2 ~ eb2 ~>")
+    .sound("z_triangle")
+    .gain(0.44)
+    .room(.5)
+    .size(0.7),
+  s("crackle*2").gain(0.3).density("<0.01 0.04 0.06>".slow(2))._scope(),
+  // note("<g4 bb4 g4 eb4 f4 ab4 f4 c4 c5 eb5 c5 g4 d5 f5 d5 b4>")
+  //   .sound("sawtooth")
+  //   .slow(2)
+  //   .gain(0.09)
+  //   .lpf(1700)
+  //   .delay(0.2)
+  //   .room(0.74),
+  n("<g4 bb4 g4 eb4 f4 ab4 f4 c4 c5 eb5 c5 g4 d5 f5 d5 b4>")
+    .slow(2)
+    .scale("E:minor")
+    .sound("gm_fx_soundtrack")
+    .room(.9)
+    .gain(0.16)
+    .attack(0.28)
+    .release(0.71),
+ 
+  // s("sd lt hh lt")
+  //   .lpf(1600)
+  //   .gain("<0.2 0.8 0.4 0.25> [0.25 0.5]")
+  //   .phaser("<0.2 1 0.2 0.2> [0.5 0.1]")
+  // ,
+  s("<bd ~>*4 [<mt lt>]")
+    .bank("<RolandTR808>")
+    .gain("0.74")
+)
+
+
