@@ -6,8 +6,11 @@ This document orients agentic contributors working on Coleo, an AI agent orchest
 
 ### Development Commands
 - `bun run dev` - Launch CLI + web dev servers concurrently
-- `bun run server` - Start standalone API server (port 8080)
+- `bun run src/cli/index.ts serve start` - Start standalone API server (port 8080)
 - `bun run brain` - Start standalone brain process
+- `bun run dev:core` - Run API server + brain together (foreground, color-coded output)
+- `bun run dev:all` - Run API + brain + web dev server together
+- `bun run dev:core:restart` - Restart API + brain quickly
 
 ### Web Workspace (`src/web/`)
 - `bun run web:dev` - Start Vite dev server
