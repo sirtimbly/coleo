@@ -19,6 +19,7 @@ import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 import { buildHarnessPromptParts } from "./prompt-parts";
+import { shouldPruneSession } from "./session-lifecycle";
 
 /**
  * Format an SDK error for display
@@ -131,6 +132,8 @@ export class OpenCodeApiHarness implements AgentHarness {
   /**
    * Keep only the active session in this OpenCode server instance.
    * Each arm server should be isolated; stale sessions can leak confusing events.
+   * Only deletes sessions that were created by Coleo for this specific arm,
+   * preserving sessions from other arms and manually created sessions.
    */
   private async pruneOtherSessions(
     client: OpencodeClient,
@@ -141,7 +144,7 @@ export class OpenCodeApiHarness implements AgentHarness {
       const sessionsResponse = await client.session.list();
       const sessions = sessionsResponse.data || [];
       for (const existing of sessions) {
-        if (!existing?.id || existing.id === keepSessionId) {
+        if (!shouldPruneSession(existing, armId, keepSessionId)) {
           continue;
         }
         try {

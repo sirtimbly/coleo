@@ -4,6 +4,7 @@ import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivi
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket } from '@/hooks';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 interface SystemStatus {
   status: string;
@@ -694,7 +695,8 @@ const formatLastSeen = (timestamp?: string) => {
 };
 
 export function DashboardPage() {
-  document.title = "Coleo Observatory - Dashboard";
+  usePageTitle('Coleo Observatory - Dashboard');
+
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
   const [activity, setActivity] = useState<ActivityEntry[]>([]);

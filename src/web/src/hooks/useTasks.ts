@@ -32,6 +32,8 @@ interface ReorderTaskVariables {
   taskId: string;
   toSortOrder: number;
   fromSortOrder: number;
+  prevTaskId?: string | null;
+  nextTaskId?: string | null;
 }
 
 interface CreateTaskVariables {
@@ -141,61 +143,18 @@ export function useTasks(filters?: TaskFilters) {
     },
   });
 
-  // Mutation: Reorder task with optimistic update
+  // Mutation: Reorder task
+  // Uses neighbor task IDs (prev/next) for reliable positioning regardless of filters
   const reorderTaskMutation = useMutation({
-    mutationFn: async ({ taskId, toSortOrder }: ReorderTaskVariables) => {
-      await api.reorderTask(taskId, toSortOrder);
+    mutationFn: async ({ taskId, toSortOrder, prevTaskId, nextTaskId }: ReorderTaskVariables) => {
+      await api.reorderTask(taskId, toSortOrder, prevTaskId, nextTaskId);
     },
-    onMutate: async ({ toSortOrder, fromSortOrder }) => {
-      await queryClient.cancelQueries({ queryKey: tasksKeys.all() });
-
-      const previousData = queryClient.getQueryData(tasksKeys.list(filters ?? {}));
-
-      queryClient.setQueryData(
-        tasksKeys.list(filters ?? {}),
-        (old: { pages: Array<{ tasks: Task[]; pagination: unknown; counts: unknown }>; pageParams: number[] } | undefined) => {
-          if (!old) return old;
-          
-          // Flatten all tasks for reordering
-          const allTasks = old.pages.flatMap(page => page.tasks);
-          
-          // Sort tasks by sortOrder to get proper order for optimistic update
-          const tasks = [...allTasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-          const fromIndex = tasks.findIndex(t => (t.sortOrder ?? 0) === fromSortOrder);
-          if (fromIndex === -1) return old;
-          const [movedTask] = tasks.splice(fromIndex, 1);
-          // Calculate target index based on toSortOrder
-          const toIndex = toSortOrder < 0 ? tasks.length : Math.min(toSortOrder, tasks.length);
-          tasks.splice(toIndex, 0, movedTask);
-          // Update sortOrder values
-          tasks.forEach((task, i) => {
-            task.sortOrder = i;
-          });
-          
-          // Redistribute tasks back to pages
-          const newPages = old.pages.map((page, pageIndex) => {
-            const start = pageIndex * PAGE_SIZE;
-            const end = start + PAGE_SIZE;
-            return {
-              ...page,
-              tasks: tasks.slice(start, end),
-            };
-          });
-          
-          return { ...old, pages: newPages };
-        }
-      );
-
-      return { previousData };
-    },
-    onError: (err, _variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(tasksKeys.list(filters ?? {}), context.previousData);
-      }
-      showError(`Failed to reorder task: ${err.message}`, 'Reorder Failed');
-    },
-    onSettled: () => {
+    onSuccess: () => {
+      // Invalidate and refetch to get the correct order from server
       queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
+    },
+    onError: (err) => {
+      showError(`Failed to reorder task: ${err.message}`, 'Reorder Failed');
     },
   });
 

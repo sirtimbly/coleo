@@ -484,6 +484,45 @@ describe("tasks API", () => {
       expect(body.task.description).toBe("Original Description"); // unchanged
     });
 
+    it("should handle subject with single quotes", async () => {
+      const subject = "Can't edit task with single quotes in subject";
+      const response = await app.request("/api/tasks/task-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { task: Task };
+      expect(body.task.subject).toBe(subject);
+    });
+
+    it("should handle description with double quotes and newlines", async () => {
+      const description = "Error: \"Something failed\"\nDetails:\n- Item 1\n- Item 2";
+      const response = await app.request("/api/tasks/task-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { task: Task };
+      expect(body.task.description).toBe(description);
+    });
+
+    it("should handle subject with special characters and backslashes", async () => {
+      const subject = "Path C:\\Users\\Test <script>alert('xss')</script>";
+      const response = await app.request("/api/tasks/task-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { task: Task };
+      expect(body.task.subject).toBe(subject);
+    });
+
     it("should update task status and set timestamps", async () => {
       // Update to claimed
       const claimedRes = await app.request("/api/tasks/task-123", {
@@ -642,11 +681,9 @@ describe("tasks API", () => {
       expect(rows[2]?.id).toBe("task-b");
       expect(rows[3]?.id).toBe("task-c");
 
-      const sortedRows = db
-        .query("SELECT id, sort_order FROM tasks ORDER BY sort_order ASC")
-        .all() as Array<{ id: string; sort_order: number }>;
-      expect(sortedRows.map((row) => row.id)).toEqual(["task-d", "task-a", "task-b", "task-c"]);
-      expect(sortedRows.map((row) => row.sort_order)).toEqual([0, 1, 2, 3]);
+      // sort_order is deprecated; ordering is driven by order_key.
+      const movedTask = rows.find((row) => row.id === "task-d");
+      expect(movedTask?.order_key).toBeDefined();
     });
 
     it("should move task using prevTaskId and nextTaskId", async () => {

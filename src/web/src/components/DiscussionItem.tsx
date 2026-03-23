@@ -87,16 +87,21 @@ function canEditComment(comment: TaskComment, currentUserId: string): boolean {
  */
 function renderMarkdown(content: string): ReactNode {
   const lines = content.split('\n');
+  const lineCounts = new Map<string, number>();
 
   return (
     <>
-      {lines.map((line, lineIndex) => (
-        // eslint-disable-next-line
-        <span key={`line-${lineIndex}`}>
-          {renderMarkdownLine(line, lineIndex)}
-          {lineIndex < lines.length - 1 && <br />}
-        </span>
-      ))}
+      {lines.map((line, lineIndex) => {
+        const seenCount = lineCounts.get(line) ?? 0;
+        lineCounts.set(line, seenCount + 1);
+
+        return (
+          <span key={`line-${line}-${seenCount}`}>
+            {renderMarkdownLine(line, lineIndex)}
+            {lineIndex < lines.length - 1 && <br />}
+          </span>
+        );
+      })}
     </>
   );
 }

@@ -59,12 +59,12 @@ const STATUS_OPTIONS: Bug["status"][] = [
 ];
 
 const STATUS_STYLES: Record<Bug["status"], string> = {
-	open: "bg-red-50 text-red-700 border-red-100",
-	investigating: "bg-yellow-50 text-yellow-700 border-yellow-100",
-	fixing: "bg-blue-50 text-blue-700 border-blue-100",
-	verifying: "bg-purple-50 text-purple-700 border-purple-100",
-	resolved: "bg-green-50 text-green-700 border-green-100",
-	closed: "bg-gray-50 text-gray-700 border-gray-100",
+	open: "bg-red-900/30 text-red-300 border-red-800",
+	investigating: "bg-yellow-900/30 text-yellow-300 border-yellow-800",
+	fixing: "bg-blue-900/30 text-blue-300 border-blue-800",
+	verifying: "bg-purple-900/30 text-purple-300 border-purple-800",
+	resolved: "bg-green-900/30 text-green-300 border-green-800",
+	closed: "bg-gray-800 text-gray-300 border-gray-700",
 };
 
 const PRIORITY_OPTIONS: Bug["priority"][] = [
@@ -75,16 +75,16 @@ const PRIORITY_OPTIONS: Bug["priority"][] = [
 ];
 
 const PRIORITY_STYLES: Record<Bug["priority"], string> = {
-	low: "bg-emerald-50 text-emerald-700 border-emerald-100",
-	medium: "bg-sky-50 text-sky-700 border-sky-100",
-	high: "bg-amber-50 text-amber-700 border-amber-100",
-	critical: "bg-rose-50 text-rose-700 border-rose-100",
+	low: "bg-emerald-900/30 text-emerald-300 border-emerald-800",
+	medium: "bg-sky-900/30 text-sky-300 border-sky-800",
+	high: "bg-amber-900/30 text-amber-300 border-amber-800",
+	critical: "bg-rose-900/30 text-rose-300 border-rose-800",
 };
 
 const SOURCE_STYLES: Record<Bug["source"], string> = {
-	arm_reported: "bg-blue-50 text-blue-700 border-blue-100",
-	human_reported: "bg-purple-50 text-purple-700 border-purple-100",
-	system_detected: "bg-red-50 text-red-700 border-red-100",
+	arm_reported: "bg-blue-900/30 text-blue-300 border-blue-800",
+	human_reported: "bg-purple-900/30 text-purple-300 border-purple-800",
+	system_detected: "bg-red-900/30 text-red-300 border-red-800",
 };
 
 const COLOR_OPTIONS = ["slate", "blue", "emerald", "amber", "rose"] as const;
@@ -96,28 +96,28 @@ const COLOR_CLASSES: Record<
 > = {
 	slate: {
 		dot: "bg-slate-400",
-		row: "bg-slate-50 border-slate-200 border-l-slate-400",
-		rowBold: "bg-slate-100 border-slate-400 border-l-slate-600 border-2",
+		row: "bg-slate-900/30 border-slate-700 border-l-slate-500",
+		rowBold: "bg-slate-800/50 border-slate-500 border-l-slate-400 border-2",
 	},
 	blue: {
 		dot: "bg-blue-400",
-		row: "bg-blue-50 border-blue-200 border-l-blue-400",
-		rowBold: "bg-blue-100 border-blue-400 border-l-blue-600 border-2",
+		row: "bg-blue-900/30 border-blue-700 border-l-blue-500",
+		rowBold: "bg-blue-800/50 border-blue-500 border-l-blue-400 border-2",
 	},
 	emerald: {
 		dot: "bg-emerald-400",
-		row: "bg-emerald-50 border-emerald-200 border-l-emerald-400",
-		rowBold: "bg-emerald-100 border-emerald-400 border-l-emerald-600 border-2",
+		row: "bg-emerald-900/30 border-emerald-700 border-l-emerald-500",
+		rowBold: "bg-emerald-800/50 border-emerald-500 border-l-emerald-400 border-2",
 	},
 	amber: {
 		dot: "bg-amber-400",
-		row: "bg-amber-50 border-amber-200 border-l-amber-400",
-		rowBold: "bg-amber-100 border-amber-400 border-l-amber-600 border-2",
+		row: "bg-amber-900/30 border-amber-700 border-l-amber-500",
+		rowBold: "bg-amber-800/50 border-amber-500 border-l-amber-400 border-2",
 	},
 	rose: {
 		dot: "bg-rose-400",
-		row: "bg-rose-50 border-rose-200 border-l-rose-400",
-		rowBold: "bg-rose-100 border-rose-400 border-l-rose-600 border-2",
+		row: "bg-rose-900/30 border-rose-700 border-l-rose-500",
+		rowBold: "bg-rose-800/50 border-rose-500 border-l-rose-400 border-2",
 	},
 };
 

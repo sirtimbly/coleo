@@ -1397,27 +1397,9 @@ export function createTasksRoutes() {
 		// Update only the moved task's order_key (single-row update!)
 		db.run("UPDATE tasks SET order_key = ? WHERE id = ?", [newOrderKey, taskId]);
 
-		// Also update sort_order to match the new order for all tasks
-		// Get all tasks ordered by order_key and update their sort_order
-		const allTasks = db
-			.query("SELECT id FROM tasks ORDER BY order_key ASC NULLS LAST, created_at DESC")
-			.all() as Array<{ id: string }>;
-
-		// Batch update sort_order using CASE statement
-		if (allTasks.length > 0) {
-			const caseStatements = allTasks.map(() => "WHEN ? THEN ?").join(" ");
-			const wherePlaceholders = allTasks.map(() => "?").join(", ");
-			const caseParams = allTasks.flatMap((task, idx) => [task.id, idx]);
-			const whereParams = allTasks.map((task) => task.id);
-			db.run(
-				`
-				UPDATE tasks
-				SET sort_order = CASE id ${caseStatements} END
-				WHERE id IN (${wherePlaceholders})
-			`,
-				[...caseParams, ...whereParams],
-			);
-		}
+		// Note: We intentionally do NOT update sort_order here.
+		// sort_order is deprecated - we only use order_key (fractional indexing) for ordering.
+		// Updating sort_order for all 300+ tasks was causing 2-3 second delays on every reorder.
 
 		logActivity(db, "api", "task_reordered", taskId, { 
 			newOrderKey,

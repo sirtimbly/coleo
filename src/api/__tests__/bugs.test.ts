@@ -301,6 +301,57 @@ describe("bugs API", () => {
       expect(getBody.bug.description).toBe("Original Description"); // unchanged
     });
 
+    it("should handle title with single quotes", async () => {
+      const title = "Can't edit bug with single quotes in title";
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean };
+      expect(body.success).toBe(true);
+
+      const getResponse = await app.request("/api/bugs/bug-123");
+      const getBody = await getResponse.json() as { bug: Bug };
+      expect(getBody.bug.title).toBe(title);
+    });
+
+    it("should handle description with double quotes and newlines", async () => {
+      const description = "Error message: \"Something went wrong\"\nStack trace:\n- Line 1\n- Line 2";
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean };
+      expect(body.success).toBe(true);
+
+      const getResponse = await app.request("/api/bugs/bug-123");
+      const getBody = await getResponse.json() as { bug: Bug };
+      expect(getBody.bug.description).toBe(description);
+    });
+
+    it("should handle title with backslashes and special characters", async () => {
+      const title = "Path C:\\Users\\Test <script>alert('xss')</script>";
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { success: boolean };
+      expect(body.success).toBe(true);
+
+      const getResponse = await app.request("/api/bugs/bug-123");
+      const getBody = await getResponse.json() as { bug: Bug };
+      expect(getBody.bug.title).toBe(title);
+    });
+
     it("should update bug status", async () => {
       const response = await app.request("/api/bugs/bug-123", {
         method: "PATCH",

@@ -1,8 +1,10 @@
 import { useState, useEffect, useId } from 'react';
 import { Button, Select, Label, ListBox } from '@heroui/react';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { LayoutPanelTop, Monitor, Moon, PanelsTopLeft, Sun } from 'lucide-react';
 import { api, useTheme } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 const themeOptions = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -11,10 +13,12 @@ const themeOptions = [
 ] as const;
 
 export function SettingsPage() {
-  document.title = "Coleo Observatory - Settings";
+  usePageTitle('Coleo Observatory - Settings');
+
   const [apiKey, setApiKey] = useState(api.getApiKey() || '');
   const [saved, setSaved] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { layoutMode, setLayoutMode } = useLayoutMode();
   const themeLabelId = useId();
   const apiKeyLabelId = useId();
   const fromAddressLabelId = useId();
@@ -115,6 +119,53 @@ export function SettingsPage() {
             <p className="text-xs text-muted-foreground mt-1">
               Choose your preferred color scheme. "System" follows your device settings.
             </p>
+          </div>
+
+          <div className="space-y-3 border-t border-border/60 pt-4">
+            <div>
+              <Label>Workspace Layout</Label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Golden Workspace is now the default layout for new users. You can switch back to the classic sidebar layout here at any time.
+              </p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setLayoutMode('golden')}
+                className={`rounded-lg border p-4 text-left transition-colors ${
+                  layoutMode === 'golden'
+                    ? 'border-accent bg-accent/10'
+                    : 'border-border bg-content1 hover:bg-content2'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <PanelsTopLeft className="h-4 w-4" />
+                  Golden Workspace
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Multi-pane docked workspace with launcher-driven navigation.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setLayoutMode('classic')}
+                className={`rounded-lg border p-4 text-left transition-colors ${
+                  layoutMode === 'classic'
+                    ? 'border-accent bg-accent/10'
+                    : 'border-border bg-content1 hover:bg-content2'
+                }`}
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <LayoutPanelTop className="h-4 w-4" />
+                  Classic Layout
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Single-window layout with the permanent left navigation sidebar.
+                </p>
+              </button>
+            </div>
           </div>
         </CardContent>
       </Card>

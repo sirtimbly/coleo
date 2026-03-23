@@ -21,7 +21,7 @@ interface TaskGridProps {
   onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
   onDelete?: (task: Task) => void;
   onCreateTaskAt?: (index: number, subject: string) => void;
-  onReorder?: (taskId: string, fromSortOrder: number, toSortOrder: number) => void;
+  onReorder?: (taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => void;
   className?: string;
 }
 
@@ -234,13 +234,30 @@ export function TaskGrid({
     const finalIndex = hoverIndexRef.current ?? taskIndexMap.get(over.id as string) ?? null;
     if (finalIndex === null) return;
 
+    // Get neighbor tasks for reliable positioning
+    // prevTask = task before the drop position, nextTask = task after the drop position
+    let prevTaskId: string | null = null;
+    let nextTaskId: string | null = null;
+    
+    if (finalIndex > 0) {
+      // The task at finalIndex-1 is the previous task
+      prevTaskId = tasks[finalIndex - 1]?.id ?? null;
+    }
+    if (finalIndex < tasks.length) {
+      // The task at finalIndex is the next task (or the task we dragged over)
+      nextTaskId = tasks[finalIndex]?.id ?? null;
+    }
+    
+    // If dragging to the end, there's no next task
+    if (finalIndex >= tasks.length) {
+      nextTaskId = null;
+    }
+    
     // The toSortOrder should be the visual index position
-    // This represents where we want the task to be in the sorted list
-    // The API expects: 0 = top position, 1 = second position, etc.
     const toSortOrder = finalIndex;
     
     if (fromSortOrder !== toSortOrder) {
-      onReorder?.(draggedTask.id, fromSortOrder, toSortOrder);
+      onReorder?.(draggedTask.id, fromSortOrder, toSortOrder, prevTaskId, nextTaskId);
     }
   }, [tasks, onReorder, taskIndexMap]);
 
@@ -254,7 +271,21 @@ export function TaskGrid({
       actualToSortOrder = Math.max(0, taskCount - 1);
     }
     
-    onReorder?.(taskId, fromSortOrder, actualToSortOrder);
+    // Find the target index in the current tasks array
+    const targetIndex = Math.min(actualToSortOrder, tasks.length);
+    
+    // Get neighbor task IDs for reliable positioning
+    let prevTaskId: string | null = null;
+    let nextTaskId: string | null = null;
+    
+    if (targetIndex > 0) {
+      prevTaskId = tasks[targetIndex - 1]?.id ?? null;
+    }
+    if (targetIndex < tasks.length) {
+      nextTaskId = tasks[targetIndex]?.id ?? null;
+    }
+    
+    onReorder?.(taskId, fromSortOrder, actualToSortOrder, prevTaskId, nextTaskId);
   }, [onReorder, tasks, totalTasks]);
 
   const activeTask = activeId ? taskMap.get(activeId) : null;
@@ -281,8 +312,7 @@ export function TaskGrid({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-[48px_24px_minmax(0,1fr)_96px_120px_110px_160px_120px] items-center gap-3 p-3 text-xs font-semibold text-muted-foreground border-b border-border bg-muted/50">
-          <div className="text-right pr-1">Order</div>
+        <div className="grid grid-cols-[24px_minmax(0,1fr)_96px_120px_110px_160px_120px] items-center gap-3 p-3 text-xs font-semibold text-muted-foreground border-b border-border bg-muted/50">
           <div className="flex items-center justify-end">
             <Button
               isIconOnly

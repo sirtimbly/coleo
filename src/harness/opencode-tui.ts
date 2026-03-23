@@ -33,6 +33,7 @@ import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 import { buildHarnessPromptParts } from "./prompt-parts";
+import { isColeoSessionForArm, shouldPruneSession } from "./session-lifecycle";
 
 /**
  * Format an SDK error for display
@@ -142,7 +143,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
   }
 
   private isColeoSession(session: { id?: string; title?: string }, armId: string): boolean {
-    return session.title?.startsWith(`Coleo Arm: ${armId}`) ?? false;
+    return isColeoSessionForArm(session, armId);
   }
 
   /**
@@ -159,10 +160,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
       const sessionsResponse = await client.session.list();
       const sessions = sessionsResponse.data || [];
       for (const existing of sessions) {
-        if (!existing?.id || existing.id === keepSessionId) {
-          continue;
-        }
-        if (!this.isColeoSession(existing, armId)) {
+        if (!shouldPruneSession(existing, armId, keepSessionId)) {
           continue;
         }
         try {

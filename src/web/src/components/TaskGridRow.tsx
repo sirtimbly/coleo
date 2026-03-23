@@ -119,10 +119,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 	onGridKeyDown,
 	className,
 }: TaskGridRowProps) {
-	// Use sortOrder from database if available, otherwise fall back to index+1
-	const displayRowNumber = task.sortOrder !== null && task.sortOrder !== undefined 
-		? task.sortOrder + 1 
-		: index + 1;
 	const uiMeta = useMemo(() => {
 		const meta = (task.metadata ?? {}) as Record<string, unknown>;
 		const ui = (meta.ui ?? {}) as Record<string, unknown>;
@@ -231,7 +227,7 @@ export const TaskGridRow = memo(function TaskGridRow({
   return (
     <li
       className={cn(
-        "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_120px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        "grid grid-cols-[24px_minmax(0,1fr)_96px_120px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
         "rounded-md ",
         // Base color from row color setting
         !isDragging &&
@@ -252,10 +248,6 @@ export const TaskGridRow = memo(function TaskGridRow({
       onClick={handleRowClick}
       onKeyDown={handleRowKeyDown}
     >
-		{/* Row number - based on database sortOrder */}
-      <div className="text-xs text-muted-foreground font-mono text-right pr-1" title={`Database order: ${task.sortOrder ?? index}`}>
-        {displayRowNumber}
-      </div>
       <div
         className="p-1 text-default-500 hover:text-default-700 rounded cursor-move"
         {...dragHandleProps}

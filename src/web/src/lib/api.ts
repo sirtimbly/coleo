@@ -508,12 +508,15 @@ class ApiClient {
   }
 
   async updateBug(id: string, updates: {
+    title?: string;
+    description?: string;
     status?: string;
     priority?: string;
     assigneeArmId?: string;
     blockers?: string[];
     resolution?: string;
     humanNotified?: boolean;
+    metadata?: Record<string, unknown>;
   }) {
     return this.request<{ success: boolean }>(`/bugs/${id}`, {
       method: 'PATCH',
@@ -730,10 +733,10 @@ class ApiClient {
     });
   }
 
-  async reorderTask(taskId: string, toSortOrder: number) {
+  async reorderTask(taskId: string, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) {
     return this.request<{ success: boolean }>('/tasks/reorder', {
       method: 'POST',
-      body: JSON.stringify({ taskId, toSortOrder }),
+      body: JSON.stringify({ taskId, toIndex: toSortOrder, prevTaskId, nextTaskId }),
     });
   }
 
@@ -778,6 +781,11 @@ class ApiClient {
 
   async getEventTypes() {
     return this.request<{ knownTypes: string[]; count: number }>('/events/types');
+  }
+
+  // Garden
+  async getGardenScene() {
+    return this.request<{ scene: GardenScene }>('/garden/scene');
   }
 
   async getHealthConfig() {
@@ -1027,6 +1035,118 @@ export interface ActivityEntry {
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+export interface GardenVec3 {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface GardenSceneAnchor {
+  id: string;
+  label: string;
+  kind: 'workspace' | 'domain' | 'operations';
+  position: GardenVec3;
+  itemCount: number;
+}
+
+export interface GardenSceneBrain {
+  id: 'brain';
+  label: string;
+  position: GardenVec3;
+  status: 'stopped' | 'running' | 'paused';
+  pollIntervalMs: number;
+  lastPollAt?: string;
+  pendingTasks: number;
+  completedToday: number;
+  completedTaskCount: number;
+}
+
+export interface GardenSceneArm {
+  id: string;
+  label: string;
+  domain: string | null;
+  position: GardenVec3;
+  legacyStatus: string;
+  lifecycleState: string | null;
+  currentTaskId: string | null;
+  currentBugId: string | null;
+  targetAnchorId: string | null;
+  lastActivityAt: string | null;
+  lastHeartbeatAt: string | null;
+  lastOutputAt: string | null;
+  workdir: string | null;
+}
+
+export interface GardenSceneTask {
+  id: string;
+  label: string;
+  position: GardenVec3;
+  status: string;
+  priority: string;
+  domain: string | null;
+  classification: string | null;
+  phase: string | null;
+  assignedTo: string | null;
+  anchorId: string;
+  progress: number | null;
+  updatedAt: string;
+}
+
+export interface GardenSceneBug {
+  id: string;
+  label: string;
+  position: GardenVec3;
+  status: string;
+  priority: string;
+  assigneeArmId: string | null;
+  sourceTaskId: string | null;
+}
+
+export interface GardenSceneBubble {
+  id: string;
+  label: string;
+  kind: 'proposal' | 'discovery' | 'health';
+  position: GardenVec3;
+  status: string;
+  severity?: string | null;
+  phase?: string | null;
+  sourceArmId?: string | null;
+  taskId?: string | null;
+}
+
+export interface GardenSceneLink {
+  id: string;
+  kind: 'brain_arm' | 'task_assignment' | 'claim' | 'consensus';
+  sourceId: string;
+  targetId: string;
+  weight: number;
+  opacity: number;
+  count?: number;
+}
+
+export interface GardenSceneStats {
+  activeArms: number;
+  visibleTasks: number;
+  visibleBugs: number;
+  visibleDiscoveries: number;
+  openProposals: number;
+  activeClaims: number;
+  conflictZones: number;
+  recentActivity: number;
+}
+
+export interface GardenScene {
+  generatedAt: string;
+  brain: GardenSceneBrain;
+  anchors: GardenSceneAnchor[];
+  arms: GardenSceneArm[];
+  tasks: GardenSceneTask[];
+  bugs: GardenSceneBug[];
+  bubbles: GardenSceneBubble[];
+  links: GardenSceneLink[];
+  stats: GardenSceneStats;
 }
 
 export interface TranscriptIndexerHealth {

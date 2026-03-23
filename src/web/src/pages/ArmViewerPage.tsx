@@ -1,6 +1,5 @@
 import { Button } from "@heroui/react";
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
 	Eye,
 	Radio,
@@ -43,7 +42,13 @@ import {
 	type ArmMessage,
 } from "@/lib";
 import { StatusBadge } from "@/components";
+import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { useArmEvents, useWebSocket } from "@/hooks";
+import {
+	useIsWorkspacePanel,
+	useWorkspaceOpenRoute,
+	useWorkspaceSearchParams,
+} from '@/workspace/route-context';
 
 // Activity item types for the log
 type ActivityType =
@@ -200,7 +205,9 @@ const activityIcons: Record<ActivityType, typeof Wrench> = {
 };
 
 export function ArmViewerPage() {
-	const [searchParams, setSearchParams] = useSearchParams();
+	const isWorkspacePanel = useIsWorkspacePanel();
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
+	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
 	const selectedArmId = searchParams.get("arm");
 
 	const [arms, setArms] = useState<Arm[]>([]);
@@ -226,9 +233,11 @@ export function ArmViewerPage() {
 	const [logsError, setLogsError] = useState<string | null>(null);
 
 	const feedContainerRef = useRef<HTMLDivElement>(null);
+	const workspaceContainerRef = useRef<HTMLDivElement>(null);
 	const autoScrollEnabledRef = useRef(true);
 	const activityIdCounter = useRef(0);
 	const lastLogsRefreshAt = useRef(0);
+	const [workspaceWidth, setWorkspaceWidth] = useState(0);
 
 	const isAtBottom = useCallback((container: HTMLDivElement) => {
 		const bottomOffset =
@@ -764,8 +773,35 @@ export function ArmViewerPage() {
 		return () => cancelAnimationFrame(raf);
 	}, [activeTab, isAtBottom, scrollFeedToBottom]);
 
+	useEffect(() => {
+		if (!isWorkspacePanel || !workspaceContainerRef.current) {
+			return;
+		}
+
+		const observer = new ResizeObserver((entries) => {
+			const entry = entries[0];
+			if (entry) {
+				setWorkspaceWidth(entry.contentRect.width);
+			}
+		});
+
+		observer.observe(workspaceContainerRef.current);
+		return () => observer.disconnect();
+	}, [isWorkspacePanel]);
+
 	const selectArm = (armId: string) => {
-		setSearchParams({ arm: armId });
+		if (!isWorkspacePanel) {
+			setSearchParams({ arm: armId });
+			return;
+		}
+
+		openWorkspaceRoute(
+			{
+				pathname: "/viewer",
+				search: `?arm=${encodeURIComponent(armId)}`,
+			},
+			workspaceWidth >= 920 ? "split" : "tab",
+		);
 	};
 
 	const handleClearHistory = useCallback(() => {
@@ -803,6 +839,173 @@ export function ArmViewerPage() {
 					<div className="h-8 bg-secondary rounded w-48" />
 					<div className="h-96 bg-secondary rounded" />
 				</div>
+			</div>
+		);
+	}
+
+	if (isWorkspacePanel) {
+		if (!selectedArmId) {
+			return (
+				<div ref={workspaceContainerRef} className="h-full">
+					<WorkspacePageShell
+						title="Arm Viewer"
+						subtitle="Select an active arm"
+						toolbar={
+							<Button variant="ghost" onPress={loadArms} isIconOnly size="sm" aria-label="Refresh">
+								<RefreshCw className="h-4 w-4" />
+							</Button>
+						}
+						filters={
+							<div className="text-xs text-muted-foreground">
+								{arms.length} active arm{arms.length === 1 ? "" : "s"}
+							</div>
+						}
+					>
+						<div className="h-full overflow-auto p-2">
+							{arms.length === 0 ? (
+								<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+									No active arms
+								</div>
+							) : (
+								<div className="space-y-2">
+									{arms.map((arm) => (
+										<button
+											key={arm.id}
+											type="button"
+											className="w-full rounded-md border border-border/70 bg-content1/80 px-3 py-2 text-left hover:bg-accent/5"
+											onClick={() => selectArm(arm.id)}
+										>
+											<div className="flex items-center justify-between gap-3">
+												<div className="min-w-0">
+													<div className="truncate text-sm font-medium">{arm.name}</div>
+													<div className="truncate text-xs text-muted-foreground">
+														{arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness}
+													</div>
+												</div>
+												<StatusBadge status={arm.status} />
+											</div>
+										</button>
+									))}
+								</div>
+							)}
+						</div>
+					</WorkspacePageShell>
+				</div>
+			);
+		}
+
+		return (
+			<div ref={workspaceContainerRef} className="h-full">
+				<WorkspacePageShell
+					title={selectedArm ? selectedArm.name : "Arm Viewer"}
+					subtitle={selectedWorkItem ?? "No active task or bug"}
+					toolbar={
+						<Button
+							variant="ghost"
+							onPress={() => {
+								loadArms();
+								if (selectedArmId) {
+									loadTodos(selectedArmId);
+									loadAnalysis(selectedArmId);
+									if (activeTab === "logs") {
+										void loadMessages(selectedArmId);
+									}
+								}
+							}}
+							isIconOnly
+							size="sm"
+							aria-label="Refresh"
+						>
+							<RefreshCw className="h-4 w-4" />
+						</Button>
+					}
+					filters={
+						<div className="flex items-center gap-2">
+							<Button
+								size="sm"
+								variant={activeTab === "logs" ? "primary" : "ghost"}
+								onPress={() => setActiveTab("logs")}
+							>
+								Logs
+							</Button>
+							<Button
+								size="sm"
+								variant={activeTab === "events" ? "primary" : "ghost"}
+								onPress={() => setActiveTab("events")}
+							>
+								Events
+							</Button>
+						</div>
+					}
+				>
+					<div className="flex h-full min-h-0 flex-col">
+						{error ? (
+							<div className="border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+								{error}
+							</div>
+						) : null}
+
+						{selectedArmId ? (
+							<ArmAnalysisPanel
+								analysis={armAnalysis}
+								loading={analysisLoading}
+								onRefresh={() => loadAnalysis(selectedArmId)}
+							/>
+						) : null}
+
+						<div className="flex-1 overflow-hidden">
+							{activeTab === "events" ? (
+								<div
+									ref={feedContainerRef}
+									onScroll={handleFeedScroll}
+									className="h-full overflow-auto p-4 space-y-2"
+								>
+									{currentText ? (
+										<div className="rounded-lg border border-border bg-secondary/30 p-4">
+											<div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+												<Bot className="h-3 w-3" />
+												<span>Assistant is typing...</span>
+											</div>
+											<div className="max-h-48 overflow-auto whitespace-pre-wrap text-sm">
+												{currentText.slice(-1500)}
+											</div>
+										</div>
+									) : null}
+
+									{activities.length === 0 && !currentText ? (
+										<div className="py-8 text-center text-sm text-muted-foreground">
+											No activity yet.
+										</div>
+									) : (
+										activities.map((activity) => (
+											<ActivityItemComponent
+												key={activity.id}
+												activity={activity}
+												onToggle={() => toggleActivity(activity.id)}
+											/>
+										))
+									)}
+								</div>
+							) : (
+								<div
+									ref={feedContainerRef}
+									onScroll={handleFeedScroll}
+									className="h-full overflow-auto p-4 space-y-4"
+								>
+									{messages.length === 0 && !logsLoading ? (
+										<div className="py-8 text-center text-sm text-muted-foreground">
+											No message logs yet.
+										</div>
+									) : (
+										messages.map((message) => (
+											<MessageLogItem key={message.info.id} message={message} />
+										))
+									)}
+								</div>
+							)}
+						</div>
+					</div>
+				</WorkspacePageShell>
 			</div>
 		);
 	}

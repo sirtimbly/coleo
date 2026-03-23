@@ -1,7 +1,9 @@
 import { Card, CardContent } from '@/components';
+import { usePageTitle } from '@/hooks/usePageTitle';
 
 export function ProposalsPage() {
-  document.title = "Coleo Observatory - Proposals";
+  usePageTitle('Coleo Observatory - Proposals');
+
   return (
     <div className="p-8 space-y-8">
       <div>

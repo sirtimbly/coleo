@@ -4,6 +4,7 @@ import { api } from '@/lib';
 import type { ColeoConfig, OpenCodeProvider } from '@/lib';
 import { Button, Chip } from '@heroui/react';
 import { Card } from '@heroui/react';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface BrainStatus {
@@ -422,7 +423,8 @@ function ActivityCard({ status }: { status: BrainStatus | null }) {
 }
 
 export function BrainPage() {
-  document.title = "Coleo Observatory - Brain";
+  usePageTitle('Coleo Observatory - Brain');
+
   const [status, setStatus] = useState<BrainStatus | null>(null);
   const [config, setConfig] = useState<ColeoConfig | null>(null);
   const [loading, setLoading] = useState(true);

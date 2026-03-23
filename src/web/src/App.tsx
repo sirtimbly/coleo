@@ -1,21 +1,24 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { APP_ROUTES } from '@/app/routes';
+import { AppMessageOverlay } from '@/components/AppMessageOverlay';
 import { Layout } from '@/components';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { ToastProvider, MessageProvider, ThemeProvider } from '@/lib';
-import {
-  DashboardPage,
-  ArmsPage,
-  ArmViewerPage,
-  BrainPage,
-  GardenPage,
-  ActivityPage,
-  SettingsPage,
-  TasksPage,
-  StatusReportsPage,
-  BugsPage,
-  MessagingPage,
-  UnifiedGridPage,
-  MailPage,
-} from '@/pages';
+import { GoldenWorkspace } from '@/workspace/GoldenWorkspace';
+
+function AppShell() {
+  const { layoutMode } = useLayoutMode();
+
+  if (layoutMode === 'golden') {
+    return <GoldenWorkspace />;
+  }
+
+  return (
+    <Layout layoutMode={layoutMode}>
+      <Outlet />
+    </Layout>
+  );
+}
 
 function App() {
   return (
@@ -23,21 +26,25 @@ function App() {
       <ToastProvider>
         <MessageProvider>
           <BrowserRouter>
+            <AppMessageOverlay />
             <Routes>
-              <Route path="/" element={<Layout />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="arms" element={<ArmsPage />} />
-                <Route path="viewer" element={<ArmViewerPage />} />
-                <Route path="brain" element={<BrainPage />} />
-                <Route path="tasks" element={<TasksPage />} />
-                <Route path="status-reports" element={<StatusReportsPage />} />
-                <Route path="bugs" element={<BugsPage />} />
-                <Route path="garden" element={<GardenPage />} />
-                <Route path="messaging" element={<MessagingPage />} />
-                <Route path="mail" element={<MailPage />} />
-                <Route path="activity" element={<ActivityPage />} />
-                <Route path="settings" element={<SettingsPage />} />
-                <Route path="grid" element={<UnifiedGridPage />} />
+              <Route path="/" element={<AppShell />}>
+                {APP_ROUTES.map((route) => {
+                  const RouteComponent = route.component;
+
+                  if (route.index) {
+                    return <Route key={route.id} index element={<RouteComponent />} />;
+                  }
+
+                  return (
+                    <Route
+                      key={route.id}
+                      path={route.path}
+                      element={<RouteComponent />}
+                    />
+                  );
+                })}
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
           </BrowserRouter>
