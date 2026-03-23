@@ -508,12 +508,15 @@ class ApiClient {
   }
 
   async updateBug(id: string, updates: {
+    title?: string;
+    description?: string;
     status?: string;
     priority?: string;
     assigneeArmId?: string;
     blockers?: string[];
     resolution?: string;
     humanNotified?: boolean;
+    metadata?: Record<string, unknown>;
   }) {
     return this.request<{ success: boolean }>(`/bugs/${id}`, {
       method: 'PATCH',
