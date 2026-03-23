@@ -10,6 +10,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { releaseClaimsForInactiveArms } from "../claim-cleanup";
 import { eventStore } from "../../nats/jetstream";
+import { buildGardenScene } from "./garden-scene";
 import { getActiveClaims, getRecentActivity, generateCoords } from "./garden-utils";
 
 interface GardenContext {
@@ -46,6 +47,16 @@ export interface FileActivity {
 
 export function createGardenRoutes() {
   const app = new Hono<GardenContext>();
+
+  /**
+   * Get the aggregate garden scene used by the WebGL client.
+   * GET /api/garden/scene
+   */
+  app.get("/scene", async (c) => {
+    const db = c.get("db");
+    const scene = await buildGardenScene(db);
+    return c.json({ scene });
+  });
 
   /**
    * Get garden topology - a 3D view of file ownership and activity

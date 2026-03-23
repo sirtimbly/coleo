@@ -7,3 +7,4 @@ export { useMail } from './useMail';
 export { useBrain } from './useBrain';
 export { useToast } from './useToast';
 export { useDiscoveries } from './useDiscoveries';
+export { useGardenScene } from './useGardenScene';
