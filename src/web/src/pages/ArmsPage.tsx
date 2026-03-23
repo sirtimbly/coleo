@@ -11,8 +11,10 @@ import {
 	type OpenCodeProvider,
 } from "@/lib";
 import { StatusBadge } from "@/components";
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { useWorkspaceSearchParams } from '@/workspace/route-context';
 
 interface ArmEventData {
 	arm?: Arm;
@@ -173,7 +175,8 @@ function armActionFor(arm: Arm): { kind: "spawn" | "recover"; label: string } | 
 }
 
 export function ArmsPage() {
-	document.title = "Coleo Observatory - Arms";
+	usePageTitle('Coleo Observatory - Arms');
+	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
 	const [arms, setArms] = useState<Arm[]>([]);
 	const [agents, setAgents] = useState<AgentInfo[]>([]);
 	const [armTemplates, setArmTemplates] = useState<ArmTemplateSummary[]>([]);
@@ -511,6 +514,15 @@ export function ArmsPage() {
 	}, [agents.length, arms, loadArms, showError, showSuccess, spawnModal]);
 
 	useEffect(() => {
+		if (searchParams.get("spawn") !== "1") {
+			return;
+		}
+
+		openSpawnModal();
+		setSearchParams({});
+	}, [openSpawnModal, searchParams, setSearchParams]);
+
+	useEffect(() => {
 		if (!spawnModal.isOpen) {
 			return;
 		}
@@ -623,7 +635,7 @@ export function ArmsPage() {
 	}
 
 	return (
-		<div className="p-8 space-y-8">
+		<div className="p-8 space-y-8 overflow-auto">
 			<div className="flex items-center justify-between">
 				<div>
 					<h1 className="text-2xl font-bold">Arms</h1>
@@ -847,17 +859,16 @@ export function ArmsPage() {
 
 									const isRecover = action.kind === "recover";
 									return (
-										<div className="mt-4 flex justify-end">
-											<Button
-												variant={isRecover ? "flat" : "primary"}
-												color={isRecover ? "warning" : "primary"}
-												size="sm"
-												onPress={() =>
-													void (isRecover ? handleRecover(arm) : handleSpawn(arm))
-												}
-												isDisabled={spawningArmId !== null}
-												className="gap-2"
-											>
+											<div className="mt-4 flex justify-end">
+												<Button
+													variant={isRecover ? "secondary" : "primary"}
+													size="sm"
+													onPress={() =>
+														void (isRecover ? handleRecover(arm) : handleSpawn(arm))
+													}
+													isDisabled={spawningArmId !== null}
+													className={isRecover ? "gap-2 text-warning" : "gap-2"}
+												>
 												{spawningArmId === arm.id ? (
 													<LoaderCircle className="h-4 w-4 animate-spin" />
 												) : isRecover ? (

@@ -1,0 +1,535 @@
+.golden-workspace-shell {
+  background:
+    radial-gradient(circle at top right, color-mix(in oklch, var(--accent) 8%, transparent), transparent 44%),
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 95%, white 5%),
+      color-mix(in oklch, var(--background) 98%, black 2%)
+    );
+}
+
+.golden-workspace-dock {
+  backdrop-filter: blur(18px);
+  position: relative;
+  z-index: 40;
+}
+
+.golden-workspace-dock-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  border-radius: 20px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface) 96%, white 4%),
+      color-mix(in oklch, var(--surface) 92%, black 8%)
+    );
+  box-shadow:
+    0 18px 40px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.65) inset;
+  overflow: visible;
+  padding: 12px 14px;
+}
+
+.golden-dock-left,
+.golden-dock-center,
+.golden-dock-right {
+  min-width: 0;
+}
+
+.golden-dock-left,
+.golden-dock-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.golden-dock-center {
+  overflow: hidden;
+}
+
+.golden-launcher,
+.golden-pane-menu {
+  position: relative;
+  z-index: 60;
+}
+
+.golden-launcher-button,
+.golden-dock-button,
+.golden-dock-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background: color-mix(in oklch, var(--surface) 94%, white 6%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  color: var(--foreground);
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.golden-launcher-button:hover,
+.golden-dock-button:hover,
+.golden-dock-icon-button:hover {
+  border-color: color-mix(in oklch, var(--accent) 34%, transparent);
+  transform: translateY(-1px);
+}
+
+.golden-dock-arm-tile:hover {
+  transform: translateY(-2px);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklch, var(--surface) 100%, white 0%) 0%,
+      color-mix(in oklch, var(--surface) 88%, black 12%) 50%,
+      color-mix(in oklch, var(--surface) 78%, black 22%) 100%
+    );
+}
+
+.golden-launcher-button {
+  padding: 9px 14px;
+}
+
+.golden-launcher-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.golden-launcher-menu,
+.golden-pane-menu-dropdown {
+  position: absolute;
+  z-index: 120;
+  border-radius: 20px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background: color-mix(in oklch, var(--surface) 97%, white 3%);
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+}
+
+.golden-launcher-menu {
+  top: calc(100% + 10px);
+  left: 0;
+  width: 340px;
+  padding: 10px;
+}
+
+.golden-pane-menu-dropdown {
+  top: calc(100% + 10px);
+  right: 0;
+  min-width: 220px;
+  padding: 8px;
+}
+
+.golden-launcher-menu-header,
+.golden-launcher-menu-footer {
+  padding: 8px 10px;
+}
+
+.golden-launcher-menu-list,
+.golden-pane-menu-dropdown {
+  display: grid;
+  gap: 4px;
+}
+
+.golden-launcher-menu-list {
+  max-height: min(60vh, 520px);
+  overflow-y: auto;
+}
+
+.golden-launcher-menu-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.golden-launcher-menu-action,
+.golden-launcher-menu-plus,
+.golden-launcher-menu-secondary,
+.golden-pane-menu-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--foreground);
+  padding: 10px 12px;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.golden-launcher-menu-action:hover,
+.golden-launcher-menu-plus:hover,
+.golden-launcher-menu-secondary:hover,
+.golden-pane-menu-action:hover {
+  background: color-mix(in oklch, var(--surface-secondary) 84%, white 16%);
+  border-color: color-mix(in oklch, var(--border) 80%, transparent);
+}
+
+.golden-launcher-menu-plus {
+  justify-content: center;
+  min-width: 40px;
+}
+
+.golden-launcher-menu-secondary {
+  width: 100%;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.golden-pane-menu-action {
+  text-align: left;
+}
+
+.golden-dock-empty,
+.golden-dock-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in oklch, var(--border) 82%, transparent);
+  background: color-mix(in oklch, var(--surface) 96%, white 4%);
+  padding: 9px 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.golden-dock-pill-label {
+  color: color-mix(in oklch, var(--muted) 88%, transparent);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.golden-dock-button {
+  padding: 9px 14px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+.golden-dock-button--primary {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--accent) 88%, white 12%),
+      color-mix(in oklch, var(--accent) 76%, black 24%)
+    );
+  border-color: color-mix(in oklch, var(--accent) 68%, transparent);
+  box-shadow:
+    0 12px 28px color-mix(in oklch, var(--accent) 26%, transparent),
+    0 1px 0 rgba(255, 255, 255, 0.18) inset;
+  color: white;
+}
+
+.golden-dock-button--primary:hover {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--accent) 94%, white 6%),
+      color-mix(in oklch, var(--accent) 80%, black 20%)
+    );
+}
+
+.golden-dock-icon-button {
+  width: 38px;
+  height: 38px;
+}
+
+.golden-dock-arm-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.golden-dock-arm-tile {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 200px;
+  min-height: 64px;
+  gap: 3px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in oklch, var(--border) 72%, transparent);
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklch, var(--surface) 98%, white 2%) 0%,
+      color-mix(in oklch, var(--surface) 85%, black 15%) 50%,
+      color-mix(in oklch, var(--surface) 75%, black 25%) 100%
+    );
+  padding: 9px 12px;
+  text-align: left;
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset;
+  transition: all 200ms ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.golden-dock-arm-tile::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.15) 50%,
+    transparent 100%
+  );
+}
+
+.golden-dock-arm-tile[data-state="productive"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px color-mix(in oklch, var(--success) 35%, transparent),
+    0 0 40px color-mix(in oklch, var(--success) 15%, transparent);
+  border-color: color-mix(in oklch, var(--success) 50%, var(--border) 50%);
+}
+
+.golden-dock-arm-tile[data-state="idle"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 16px color-mix(in oklch, var(--muted) 25%, transparent);
+}
+
+.golden-dock-arm-tile[data-state="waiting_permission"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 24px color-mix(in oklch, var(--warning) 45%, transparent),
+    0 0 48px color-mix(in oklch, var(--warning) 20%, transparent);
+  border-color: color-mix(in oklch, var(--warning) 50%, var(--border) 50%);
+  animation: pulse-amber 2s ease-in-out infinite;
+}
+
+.golden-dock-arm-tile[data-state="looping"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px color-mix(in oklch, var(--accent) 35%, transparent),
+    0 0 40px color-mix(in oklch, var(--accent) 15%, transparent);
+  border-color: color-mix(in oklch, var(--accent) 50%, var(--border) 50%);
+}
+
+.golden-dock-arm-tile[data-state="silent"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 12px color-mix(in oklch, var(--muted) 20%, transparent);
+  opacity: 0.85;
+}
+
+.golden-dock-arm-tile[data-state="error"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 24px color-mix(in oklch, var(--danger) 50%, transparent),
+    0 0 48px color-mix(in oklch, var(--danger) 25%, transparent);
+  border-color: color-mix(in oklch, var(--danger) 60%, var(--border) 40%);
+  animation: pulse-red 1.5s ease-in-out infinite;
+}
+
+.golden-dock-arm-tile[data-state="starting"] {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.25),
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 0 20px color-mix(in oklch, var(--info) 35%, transparent),
+    0 0 40px color-mix(in oklch, var(--info) 15%, transparent);
+  border-color: color-mix(in oklch, var(--info) 50%, var(--border) 50%);
+}
+
+@keyframes pulse-amber {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 24px color-mix(in oklch, var(--warning) 45%, transparent), 0 0 48px color-mix(in oklch, var(--warning) 20%, transparent); }
+  50% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 32px color-mix(in oklch, var(--warning) 60%, transparent), 0 0 64px color-mix(in oklch, var(--warning) 30%, transparent); }
+}
+
+@keyframes pulse-red {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 24px color-mix(in oklch, var(--danger) 50%, transparent), 0 0 48px color-mix(in oklch, var(--danger) 25%, transparent); }
+  50% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 0 0 1px rgba(255, 255, 255, 0.03) inset, 0 0 36px color-mix(in oklch, var(--danger) 70%, transparent), 0 0 72px color-mix(in oklch, var(--danger) 35%, transparent); }
+}
+
+.golden-dock-arm-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.golden-dock-arm-state,
+.golden-dock-arm-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.golden-workspace-layout,
+.golden-workspace-layout .lm_goldenlayout,
+.golden-workspace-layout .lm_item_container,
+.golden-workspace-layout .lm_content {
+  background: transparent !important;
+}
+
+.golden-workspace-layout {
+  position: relative;
+  z-index: 1;
+}
+
+.golden-workspace-layout .lm_row,
+.golden-workspace-layout .lm_column {
+  background: transparent !important;
+}
+
+.golden-workspace-layout .lm_stack {
+  background: color-mix(in oklch, var(--surface) 99%, white 1%) !important;
+  border: 1px solid color-mix(in oklch, var(--border) 74%, transparent) !important;
+  border-radius: 3px !important;
+  box-shadow:
+    0 14px 36px rgba(15, 23, 42, 0.08),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  overflow: hidden;
+}
+
+.golden-workspace-layout .lm_header {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--surface-secondary) 94%, white 6%),
+      color-mix(in oklch, var(--surface-secondary) 90%, black 10%)
+    ) !important;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 88%, transparent) !important;
+  border-radius: 3px 3px 0 0 !important;
+  height: 32px !important;
+  margin: 1px 1px 0 !important;
+  padding: 0 1px !important;
+}
+
+.golden-workspace-layout .lm_tabs {
+  top: 1px;
+  left: 1px;
+  right: 1px;
+  align-items: center;
+  gap: 1px;
+  padding-left: 1px;
+  padding-right: 1px;
+}
+
+.golden-workspace-layout .lm_tab {
+  background: transparent !important;
+  border-radius: 2px 2px 0 0 !important;
+  color: color-mix(in oklch, var(--foreground) 62%, transparent) !important;
+  margin-right: 0 !important;
+  margin-top: 0 !important;
+  border: 1px solid transparent !important;
+  border-bottom: none !important;
+  height: auto !important;
+  min-height: 22px;
+  padding: 4px 24px 5px 10px !important;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.golden-workspace-layout .lm_tab .lm_title {
+  display: inline-block;
+  line-height: 1.15;
+  padding-top: 0 !important;
+  vertical-align: middle;
+}
+
+.golden-workspace-layout .lm_tab:hover {
+  background: color-mix(in oklch, var(--surface) 92%, white 8%) !important;
+  color: var(--foreground) !important;
+}
+
+.golden-workspace-layout .lm_tab.lm_active {
+  background: color-mix(in oklch, var(--surface) 99%, white 1%) !important;
+  color: var(--foreground) !important;
+  border-color: color-mix(in oklch, var(--border) 82%, transparent) !important;
+  box-shadow: inset 0 2px 0 0 var(--accent);
+}
+
+.golden-workspace-layout .lm_tab .lm_close_tab {
+  color: color-mix(in oklch, var(--foreground) 36%, transparent) !important;
+  width: 12px;
+  height: 12px;
+  top: 50% !important;
+  right: 8px !important;
+  margin-left: 0;
+  line-height: 1;
+  background-position: center center !important;
+  background-size: 10px 10px !important;
+  transform: translateY(-50%);
+}
+
+.golden-workspace-layout .lm_tab .lm_close_tab:hover {
+  color: var(--danger) !important;
+}
+
+.golden-workspace-layout .lm_controls {
+  display: none !important;
+}
+
+.golden-workspace-layout .lm_items {
+  background: color-mix(in oklch, var(--surface) 99%, black 1%) !important;
+}
+
+.golden-workspace-layout .lm_splitter {
+  background: color-mix(in oklch, var(--border) 76%, transparent) !important;
+  border-radius: 999px;
+  opacity: 1 !important;
+}
+
+.golden-workspace-layout .lm_splitter:hover {
+  background: var(--accent) !important;
+}
+
+.golden-workspace-layout .lm_dragProxy,
+.golden-workspace-layout .lm_dropTargetIndicator {
+  background: color-mix(in oklch, var(--accent) 18%, transparent) !important;
+  border-color: var(--accent) !important;
+}
+
+.golden-workspace-panel-host {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.golden-workspace-panel {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: color-mix(in oklch, var(--surface) 99%, black 1%);
+  color: var(--foreground);
+}
+
+@media (max-width: 1200px) {
+  .golden-workspace-dock-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .golden-dock-left,
+  .golden-dock-right {
+    flex-wrap: wrap;
+  }
+}

@@ -1,249 +1,29 @@
-import { useState, useEffect, useCallback } from "react";
-import { Button, Chip } from "@heroui/react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import {
-	LayoutDashboard,
-	Bot,
-	Eye,
-	Terminal,
-	Flower2,
-	Mail,
-	Vote,
-	Activity,
-	FileText,
-	Settings,
-	MessageSquarePlus,
-	ListTodo,
-	Bug,
-} from "lucide-react";
-import { cn, api, useToast, useMessage } from "@/lib";
-import { MessageModal } from "./MessageModal";
+import type { ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
+import type { AppLayoutMode } from '@/hooks/useLayoutMode';
 import { ArmStatusBar } from "./ArmStatusBar";
+import { AppSidebar } from './AppSidebar';
 
-const getNavItems = (unreadCount: number) => [
-	{ to: "/", icon: LayoutDashboard, label: "Dashboard" },
-	{ to: "/brain", icon: Terminal, label: "Brain" },
-	{ to: "/arms", icon: Bot, label: "Arms" },
-	{ to: "/viewer", icon: Eye, label: "Viewer" },
-	{ to: "/tasks", icon: ListTodo, label: "Tasks" },
-	{ to: "/status-reports", icon: FileText, label: "Status History" },
-	{ to: "/bugs", icon: Bug, label: "Bugs" },
-	{ to: "/garden", icon: Flower2, label: "Garden" },
-	{ to: "/mail", icon: Mail, label: "Mail", badge: unreadCount },
-	{ to: "/proposals", icon: Vote, label: "Proposals" },
-	{ to: "/activity", icon: Activity, label: "Activity" },
-	{ to: "/settings", icon: Settings, label: "Settings" },
-];
+interface LayoutProps {
+	children: ReactNode;
+	layoutMode: AppLayoutMode;
+}
 
-export function Layout() {
+export function Layout({ children, layoutMode }: LayoutProps) {
 	const location = useLocation();
-	const [unreadCount, setUnreadCount] = useState(0);
-	const [cwd, setCwd] = useState<string>('/');
-	const { showToast } = useToast();
-	const {
-		isMessageModalOpen,
-		replyContext,
-		openNewMessage,
-		closeMessageModal,
-	} = useMessage();
 	const showArmStatusBar = location.pathname !== "/viewer";
-
-const fetchStatus = useCallback(async () => {
-		try {
-			const status = await api.status();
-			setCwd(status.cwd);
-		} catch (error) {
-			console.error('Failed to fetch status:', error);
-		}
-	}, []);
-
-	// Fetch unread message counts
-	const fetchUnreadCount = useCallback(async () => {
-		try {
-			const [inboxResult] = await Promise.all([
-				api.listInbox({ limit: 1 }), // Get pagination info with unread count
-			]);
-			setUnreadCount(inboxResult.pagination.unread);
-		} catch (error) {
-			console.error("Failed to fetch unread count:", error);
-		}
-	}, []);
-
-	// Fetch status on mount
-	useEffect(() => {
-		fetchStatus();
-	}, [fetchStatus]);
-
-	// WebSocket connection for real-time updates
-	useEffect(() => {
-		const ws = new WebSocket("ws://localhost:3000/ws");
-
-		ws.onopen = () => {
-			// Authenticate and subscribe to mail events
-			ws.send(
-				JSON.stringify({
-					type: "auth",
-					apiKey: api.getApiKey(),
-				}),
-			);
-			ws.send(
-				JSON.stringify({
-					type: "subscribe",
-					channel: "mail",
-				}),
-			);
-		};
-
-		ws.onmessage = (event) => {
-			try {
-				const message = JSON.parse(event.data);
-				if (message.channel === "mail") {
-					// Handle mail events
-					if (message.event === "mail.received") {
-						showToast(
-							`New message: ${message.data.subject || "New message"}`,
-							"info",
-						);
-						fetchUnreadCount(); // Refresh unread count
-					} else if (
-						message.event === "mail.archived" ||
-						message.event === "mail.read"
-					) {
-						fetchUnreadCount(); // Refresh unread count
-					}
-				}
-			} catch (error) {
-				console.error("WebSocket message parse error:", error);
-			}
-		};
-
-		ws.onerror = (error) => {
-			console.error("WebSocket error:", error);
-		};
-
-		return () => {
-			ws.close();
-		};
-	}, [showToast, fetchUnreadCount]);
-
-	// Fetch unread counts on mount and every 30 seconds
-	useEffect(() => {
-		fetchUnreadCount();
-		const interval = setInterval(fetchUnreadCount, 30000);
-		return () => clearInterval(interval);
-	}, [fetchUnreadCount]);
-
-	// Global keyboard shortcut: 'N' to open message modal
-	useEffect(() => {
-		function handleKeyDown(e: KeyboardEvent) {
-			// Ignore if typing in an input/textarea
-			const target = e.target as HTMLElement;
-			if (
-				target.tagName === "INPUT" ||
-				target.tagName === "TEXTAREA" ||
-				target.isContentEditable
-			) {
-				return;
-			}
-
-			// 'N' key opens the message modal
-			if (e.key === "n" || e.key === "N") {
-				e.preventDefault();
-				openNewMessage();
-			}
-		}
-
-		document.addEventListener("keydown", handleKeyDown);
-		return () => document.removeEventListener("keydown", handleKeyDown);
-	}, [openNewMessage]);
 
 	return (
 		<div className="flex h-screen">
-			{/* Sidebar */}
-			<aside className="w-64 border-r border-border bg-card flex flex-col">
-				{/* Logo */}
-				<div className="p-4 border-b border-border">
-					<div className="flex items-start gap-1">
-						<img
-							src="favicon.svg"
-							width="20"
-							height="20"
-							className="pt-1"
-							alt="octopus illustration"
-						/>
-						<div>
-							<h1 className="font-bold text-lg">Coleo</h1>
-							<p className="text-xs text-muted-foreground">{cwd}</p>
-						</div>
-					</div>
-				</div>
-
-				{/* Navigation */}
-				<nav className="flex-1 p-4">
-					<ul className="space-y-1">
-						{getNavItems(unreadCount).map((item) => (
-							<li key={item.to}>
-								<NavLink
-									to={item.to}
-									className={({ isActive }) =>
-										cn(
-											"flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
-											isActive
-												? "bg-accent text-accent-foreground"
-												: "text-muted-foreground hover:bg-secondary/50 hover:text-foreground",
-										)
-									}
-								>
-									<item.icon className="h-4 w-4" />
-									{item.label}
-									{item.badge ? (
-										<Chip
-											size="sm"
-											variant="primary"
-											color="danger"
-											className="ml-auto"
-										>
-											{item.badge > 99 ? "99+" : item.badge}
-										</Chip>
-									) : null}
-								</NavLink>
-							</li>
-						))}
-					</ul>
-				</nav>
-
-				{/* New Message Button */}
-				<div className="p-4 border-t border-border">
-					<Button
-						onPress={openNewMessage}
-						className="w-full justify-center gap-2"
-					>
-						<MessageSquarePlus className="h-4 w-4" />
-						New Message
-						<kbd className="ml-auto px-1.5 py-0.5 bg-purple-700 rounded text-xs">
-							N
-						</kbd>
-					</Button>
-				</div>
-
-				{/* Footer */}
-				<div className="p-4 border-t border-border text-xs text-muted-foreground">
-					v0.2.0
-				</div>
-			</aside>
+			<AppSidebar
+				layoutMode={layoutMode}
+			/>
 
 			{/* Main content */}
 			<main className="flex-1 overflow-auto flex flex-col">
 				{showArmStatusBar && <ArmStatusBar />}
-				<Outlet />
+				{children}
 			</main>
-
-			{/* Message Modal */}
-			<MessageModal
-				isOpen={isMessageModalOpen}
-				onClose={closeMessageModal}
-				replyTo={replyContext}
-			/>
 		</div>
 	);
 }

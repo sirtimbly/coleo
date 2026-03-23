@@ -6,13 +6,17 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api, type StatusReport } from '@/lib/api';
 import { Button } from '@heroui/react';
 import { RefreshCw, AlertCircle, CheckCircle, Clock, XCircle, FileText, Search, FilterX } from 'lucide-react';
+import { usePageTitle } from '@/hooks/usePageTitle';
+
+type StatusReportStats = Awaited<ReturnType<typeof api.getStatusReportStats>>;
 
 export function StatusReportsPage() {
-  document.title = "Coleo Observatory - Status History";
+  usePageTitle('Coleo Observatory - Status History');
+
   const [reports, setReports] = useState<StatusReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<StatusReportStats | null>(null);
   const [pagination, setPagination] = useState({ limit: 50, offset: 0, total: 0 });
   const [searchText, setSearchText] = useState('');
   const [taskIdFilter, setTaskIdFilter] = useState('');
@@ -89,6 +93,17 @@ export function StatusReportsPage() {
     loadReports(0);
   }, [loadReports]);
 
+  const getStatusCount = useCallback(
+    (status: StatusReport['status']) => {
+      if (!stats) {
+        return 0;
+      }
+
+      return stats.statusDistribution.find((entry) => entry.status === status)?.count ?? 0;
+    },
+    [stats],
+  );
+
 
 
   if (loading) {
@@ -136,7 +151,7 @@ export function StatusReportsPage() {
               <CheckCircle className="h-5 w-5 text-green-500" />
               <div>
                 <p className="text-sm font-medium">On Track</p>
-                <p className="text-2xl font-bold">{stats.statusDistribution?.find((s: any) => s.status === 'on_track')?.count || 0}</p>
+                <p className="text-2xl font-bold">{getStatusCount('on_track')}</p>
                 <p className="text-xs text-gray-500">Tasks progressing normally</p>
               </div>
             </div>
@@ -146,7 +161,7 @@ export function StatusReportsPage() {
               <XCircle className="h-5 w-5 text-red-500" />
               <div>
                 <p className="text-sm font-medium">Blocked</p>
-                <p className="text-2xl font-bold">{stats.statusDistribution?.find((s: any) => s.status === 'blocked')?.count || 0}</p>
+                <p className="text-2xl font-bold">{getStatusCount('blocked')}</p>
                 <p className="text-xs text-gray-500">Need human intervention</p>
               </div>
             </div>
@@ -156,7 +171,7 @@ export function StatusReportsPage() {
               <AlertCircle className="h-5 w-5 text-orange-500" />
               <div>
                 <p className="text-sm font-medium">Issues Found</p>
-                <p className="text-2xl font-bold">{stats.statusDistribution?.find((s: any) => s.status === 'issues_found')?.count || 0}</p>
+                <p className="text-2xl font-bold">{getStatusCount('issues_found')}</p>
                 <p className="text-xs text-gray-500">Problems discovered</p>
               </div>
             </div>

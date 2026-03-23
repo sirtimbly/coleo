@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Card } from '@heroui/react';
 import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
+import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
@@ -54,7 +55,8 @@ function isStatusReportUnifiedMessage(
 }
 
 export function MessagingPage() {
-  document.title = "Coleo Observatory - Messaging";
+  usePageTitle('Coleo Observatory - Messaging');
+
   const [activeTab, setActiveTab] = useState<MessageType>('all');
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,6 +67,7 @@ export function MessagingPage() {
   const [isResizing, setIsResizing] = useState(false);
   const [viewerExpanded, setViewerExpanded] = useState(false);
   const [previousMessageCount, setPreviousMessageCount] = useState(0);
+  const previousUnreadCountRef = useRef(0);
   const resizeRef = useRef<HTMLDivElement>(null);
   const { showToast } = useToast();
   const { openReply } = useMessage();
@@ -140,8 +143,8 @@ export function MessagingPage() {
 
       setMessages(unifiedMessages);
 
-      const newUnreadCount = unifiedMessages.filter(m => m.unread).length;
-      const previousUnreadCount = messages.filter(m => m.unread).length;
+      const newUnreadCount = unifiedMessages.filter((message) => message.unread).length;
+      const previousUnreadCount = previousUnreadCountRef.current;
 
       if (previousMessageCount > 0 && newUnreadCount > previousUnreadCount) {
         const newMessages = newUnreadCount - previousUnreadCount;
@@ -152,6 +155,7 @@ export function MessagingPage() {
         );
       }
 
+      previousUnreadCountRef.current = newUnreadCount;
       setPreviousMessageCount(unifiedMessages.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load messages');
@@ -337,7 +341,7 @@ export function MessagingPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full min-h-0 flex flex-col bg-background">
       <div className="flex items-center justify-between p-6 border-b border-border bg-card">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Messaging</h1>
