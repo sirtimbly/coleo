@@ -619,16 +619,16 @@ export function GoldenWorkspace() {
                       alt=""
                     />
                   </span>
-                  <span className="golden-launcher-title">Open</span>
+                  <span className="golden-launcher-title">Views</span>
                   <LayoutPanelTop className="h-4 w-4 opacity-60" aria-hidden="true" />
                 </button>
 
                 {launcherOpen ? (
                   <div className="golden-launcher-menu" role="menu" aria-label="Open workspace view">
                     <div className="golden-launcher-menu-header">
-                      <div className="font-semibold text-foreground">Open a Workspace View</div>
+                      <div className="font-semibold text-foreground">Open a view</div>
                       <div className="text-xs text-muted-foreground">
-                        Open a route in focus or spawn a fresh pane beside your current stack.
+                        Open in the current stack or split beside the active pane.
                       </div>
                     </div>
 

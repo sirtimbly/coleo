@@ -80,33 +80,37 @@ export function AppSidebar({
   });
 
   return (
-    <aside className="w-64 border-r border-border bg-card flex flex-col shrink-0">
-      <div className="p-4 border-b border-border">
-        <div className="flex items-start gap-1">
-          <img
-            src="favicon.svg"
-            width="20"
-            height="20"
-            className="pt-1"
-            alt="octopus illustration"
-          />
-          <div>
-            <h1 className="font-bold text-lg">Coleo</h1>
-            <p className="text-xs text-muted-foreground">{cwd}</p>
+    <aside className="flex w-72 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
+      <div className="border-b border-sidebar-border px-5 py-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md border border-sidebar-border bg-sidebar-accent">
+            <img
+              src="favicon.svg"
+              width="20"
+              height="20"
+              alt="octopus illustration"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <h1 className="truncate text-sm font-semibold uppercase tracking-[0.22em] text-sidebar-foreground">
+              Coleo
+            </h1>
+            <p className="truncate pt-1 text-xs text-muted-foreground">{cwd}</p>
           </div>
         </div>
       </div>
 
-      <nav className="flex-1 p-4">
-        <ul className="space-y-1">
+      <nav className="flex-1 px-3 py-4">
+        <ul className="space-y-1.5">
           {NAVIGATION_ROUTES.map((route) => {
             const routeBadge =
               route.id === 'mail' && unreadCount > 0 ? (
                 <Chip
                   size="sm"
-                  variant="primary"
+                  variant="soft"
                   color="danger"
-                  className="ml-auto"
+                  className="ml-auto border border-danger/25"
                 >
                   {unreadCount > 99 ? '99+' : unreadCount}
                 </Chip>
@@ -117,25 +121,27 @@ export function AppSidebar({
 
               return (
                 <li key={route.id}>
-                  <div
-                    className={cn(
-                      'group flex items-center gap-1 rounded-md transition-colors',
-                      isActive ? 'bg-accent/10' : 'hover:bg-secondary/40',
-                    )}
-                  >
+                  <div className="group flex items-center gap-2">
                     <button
                       type="button"
                       onClick={() => onOpenRoute(route.href)}
                       className={cn(
-                        'flex min-w-0 flex-1 items-center gap-3 rounded-md px-3 py-2 text-left text-sm font-medium transition-colors',
+                        'flex min-w-0 flex-1 items-center gap-3 rounded-md border px-3 py-3 text-left text-sm font-medium transition-colors',
                         isActive
-                          ? 'text-accent'
-                          : 'text-muted-foreground hover:text-foreground',
+                          ? 'border-sidebar-border bg-sidebar-accent text-sidebar-foreground'
+                          : 'border-transparent text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground',
                       )}
                     >
                       <route.icon className="h-4 w-4 shrink-0" />
                       <span className="truncate">{route.label}</span>
                       {routeBadge}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'ml-1 h-6 w-px rounded-full',
+                          isActive ? 'bg-accent' : 'bg-transparent',
+                        )}
+                      />
                     </button>
 
                     <Button
@@ -143,7 +149,7 @@ export function AppSidebar({
                       size="sm"
                       variant="ghost"
                       onPress={() => onOpenRouteInNewPane?.(route.href)}
-                      className="mr-1 opacity-0 transition-opacity group-hover:opacity-100"
+                      className="h-10 w-10 rounded-md border border-transparent text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground"
                       aria-label={`Open ${route.label} in a new pane`}
                     >
                       <Plus className="h-3.5 w-3.5" />
@@ -159,16 +165,27 @@ export function AppSidebar({
                   to={route.href}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-md border px-3 py-3 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground',
+                        ? 'border-sidebar-border bg-sidebar-accent text-sidebar-foreground'
+                        : 'border-transparent text-muted-foreground hover:border-sidebar-border hover:bg-sidebar-accent hover:text-sidebar-foreground',
                     )
                   }
                 >
-                  <route.icon className="h-4 w-4" />
-                  {route.label}
-                  {routeBadge}
+                  {({ isActive }) => (
+                    <>
+                      <route.icon className="h-4 w-4 shrink-0" />
+                      <span>{route.label}</span>
+                      {routeBadge}
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          'ml-auto h-6 w-px rounded-full',
+                          isActive ? 'bg-accent' : 'bg-transparent',
+                        )}
+                      />
+                    </>
+                  )}
                 </NavLink>
               </li>
             );
@@ -176,20 +193,21 @@ export function AppSidebar({
         </ul>
       </nav>
 
-      <div className="p-4 border-t border-border space-y-3">
-        <Button
-          onPress={openNewMessage}
-          className="w-full justify-center gap-2"
+      <div className="border-t border-sidebar-border px-4 py-4">
+        <button
+          type="button"
+          onClick={openNewMessage}
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-3 py-3 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-surface-secondary"
         >
           <MessageSquarePlus className="h-4 w-4" />
           New Message
-          <kbd className="ml-auto px-1.5 py-0.5 bg-purple-700 rounded text-xs">
+          <kbd className="ml-auto rounded border border-sidebar-border px-1.5 py-0.5 text-[0.68rem] text-muted-foreground">
             N
           </kbd>
-        </Button>
+        </button>
       </div>
 
-      <div className="p-4 border-t border-border text-xs text-muted-foreground">
+      <div className="border-t border-sidebar-border px-5 py-4 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
         v0.2.0
       </div>
     </aside>

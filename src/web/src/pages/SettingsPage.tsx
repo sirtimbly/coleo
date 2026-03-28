@@ -70,17 +70,17 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="p-8">
+      <div className="px-6 py-6">
         <p>Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gradient-heading">Settings</h1>
-        <p className="text-muted-foreground">Configure the Observatory</p>
+    <div className="space-y-6 px-6 py-6">
+      <div className="border-b border-border pb-4">
+        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Configure the workspace and system connections</p>
       </div>
 
       <Card>
@@ -133,10 +133,10 @@ export function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setLayoutMode('golden')}
-                className={`rounded-lg border p-4 text-left transition-colors ${
+                className={`rounded-md border p-4 text-left transition-colors ${
                   layoutMode === 'golden'
                     ? 'border-accent bg-accent/10'
-                    : 'border-border bg-content1 hover:bg-content2'
+                    : 'border-border bg-surface hover:bg-surface-secondary'
                 }`}
               >
                 <div className="flex items-center gap-2 text-sm font-medium">
@@ -151,10 +151,10 @@ export function SettingsPage() {
               <button
                 type="button"
                 onClick={() => setLayoutMode('classic')}
-                className={`rounded-lg border p-4 text-left transition-colors ${
+                className={`rounded-md border p-4 text-left transition-colors ${
                   layoutMode === 'classic'
                     ? 'border-accent bg-accent/10'
-                    : 'border-border bg-content1 hover:bg-content2'
+                    : 'border-border bg-surface hover:bg-surface-secondary'
                 }`}
               >
                 <div className="flex items-center gap-2 text-sm font-medium">
@@ -188,7 +188,7 @@ export function SettingsPage() {
               value={fromAddress}
               onChange={(e) => setFromAddress(e.target.value)}
               placeholder="brain@coleo.dev"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-xs text-muted-foreground mt-1">
               The email address the brain sends from (verified in Postmark)
@@ -205,7 +205,7 @@ export function SettingsPage() {
               value={toAddress}
               onChange={(e) => setToAddress(e.target.value)}
               placeholder="your-email@example.com"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Your email address where the brain sends notifications
@@ -238,7 +238,7 @@ export function SettingsPage() {
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder="Enter your API key"
-              className="w-full px-3 py-2 bg-secondary border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-xs text-muted-foreground mt-1">
               Get your API key from the server startup output

@@ -25,10 +25,10 @@ export function ActivityPage() {
   }, []);
 
   return (
-    <div className="p-8 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-gradient-heading">Activity</h1>
-        <p className="text-muted-foreground">System activity log</p>
+    <div className="space-y-6 px-6 py-6">
+      <div className="border-b border-border pb-4">
+        <h1 className="text-3xl font-semibold tracking-tight">Activity</h1>
+        <p className="mt-1 text-sm text-muted-foreground">System activity log</p>
       </div>
 
       <Card>
@@ -52,11 +52,11 @@ export function ActivityPage() {
               No activity recorded yet
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0">
               {activity.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-4 p-3 rounded hover:bg-secondary/50 transition-colors"
+                  className="flex items-center gap-4 border-b border-border px-1 py-3 transition-colors last:border-b-0 hover:bg-surface-secondary/40"
                 >
                     <div className="h-2 w-2 rounded-full bg-accent flex-shrink-0" />
                   <div className="flex-1 min-w-0">

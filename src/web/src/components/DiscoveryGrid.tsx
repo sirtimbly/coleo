@@ -14,7 +14,7 @@ interface DiscoveryGridProps {
 
 export const DiscoveryGridHeader = memo(function DiscoveryGridHeader() {
 	return (
-		<div className="grid grid-cols-[48px_24px_minmax(0,1fr)_80px_80px_80px_100px_48px] items-center gap-3 p-3 text-xs font-semibold text-muted-foreground border-b border-border bg-muted/50">
+		<div className="grid grid-cols-[48px_24px_minmax(0,1fr)_80px_80px_80px_100px_48px] items-center gap-3 border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 			<div className="text-right pr-1">#</div>
 			<div />
 
@@ -50,9 +50,9 @@ export function DiscoveryGrid({
 	);
 
 	return (
-		<div className={cn('border border-border rounded-lg bg-card overflow-hidden', className)}>
+		<div className={cn('overflow-hidden rounded-md border border-border bg-card', className)}>
 			<DiscoveryGridHeader />
-			<div className="overflow-y-auto p-1">
+			<div className="overflow-y-auto p-2">
 				{discoveries.length === 0 ? (
 					<div className="p-6 text-center text-muted-foreground text-sm">No discoveries found</div>
 				) : (

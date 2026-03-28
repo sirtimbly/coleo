@@ -94,7 +94,7 @@ export function MailPage() {
 	const handleWSMessage = useCallback(
 		(msg: { channel?: string; event?: string; data?: unknown }) => {
 			if (
-				msg.channel === "activity" &&
+				msg.channel === "mail" &&
 				(msg.event as string)?.includes("mail")
 			) {
 				loadMail();

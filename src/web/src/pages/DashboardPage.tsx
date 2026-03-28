@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Bot, Vote, Activity, Clock, Wifi, WifiOff, Database, MessageSquare } from 'lucide-react';
+import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
@@ -357,23 +357,23 @@ function StatsGrid({ status, isLoading }: { status?: SystemStatus, isLoading: bo
   };
 
   const stats = [
-    { key: "arms", icon: Bot, value: status?.arms.total ?? 0, label: "Active Arms", sublabel: status && status.arms.total > 0 ? `${status.arms.healthy} healthy, ${status.arms.idle} idle` : undefined, sublabelErrors: status && (status.arms.stuck > 0 || status.arms.stale > 0) ? { stuck: status.arms.stuck, stale: status.arms.stale } : undefined },
-    { key: "proposals", icon: Vote, value: status?.proposals.open ?? 0, label: "Open Proposals" },
-    { key: "activity", icon: Activity, value: status?.activity.last24h ?? 0, label: "Activity (24h)" },
-    { key: "uptime", icon: Clock, value: status ? formatUptime(status.uptime) : "-", label: "Uptime" },
+    { key: "arms", value: status?.arms.total ?? 0, label: "Active Arms", sublabel: status && status.arms.total > 0 ? `${status.arms.healthy} healthy, ${status.arms.idle} idle` : undefined, sublabelErrors: status && (status.arms.stuck > 0 || status.arms.stale > 0) ? { stuck: status.arms.stuck, stale: status.arms.stale } : undefined },
+    { key: "proposals", value: status?.proposals.open ?? 0, label: "Open Proposals" },
+    { key: "activity", value: status?.activity.last24h ?? 0, label: "Activity (24h)" },
+    { key: "uptime", value: status ? formatUptime(status.uptime) : "-", label: "Uptime" },
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       {isLoading ? (
         <>
           {[1, 2, 3, 4].map((i) => (
             <Card key={i}>
-              <CardContent className="flex items-center gap-4">
-                <Skeleton className="h-12 w-12 rounded-lg" />
+              <CardContent className="space-y-3">
+                <Skeleton className="h-3 w-24 rounded" />
                 <div className="flex-1">
-                  <Skeleton className="h-8 w-16 rounded mb-2" />
-                  <Skeleton className="h-4 w-24 rounded" />
+                  <Skeleton className="mb-2 h-10 w-20 rounded" />
+                  <Skeleton className="h-4 w-32 rounded" />
                 </div>
               </CardContent>
             </Card>
@@ -382,15 +382,14 @@ function StatsGrid({ status, isLoading }: { status?: SystemStatus, isLoading: bo
       ) : (
         stats.map((stat) => (
           <Card key={stat.key}>
-            <CardContent className="flex items-center gap-4">
-              <div className="p-3 rounded-lg bg-secondary">
-                <stat.icon className="h-6 w-6" />
-              </div>
+            <CardContent className="space-y-3">
+              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                {stat.label}
+              </p>
               <div>
-                <p className="text-2xl font-bold">{stat.value}</p>
-                <p className="text-sm text-muted-foreground">{stat.label}</p>
+                <p className="text-4xl font-semibold tracking-tight">{stat.value}</p>
                 {stat.sublabel && (
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {stat.sublabel}
                     {stat.sublabelErrors && (
                       <>
@@ -840,27 +839,23 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="p-8 space-y-8">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 px-6 py-6">
+      <div className="flex items-center justify-between border-b border-border pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-gradient-heading">Dashboard</h1>
-          <p className="text-muted-foreground">System overview and status</p>
+          <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
+          <p className="mt-1 text-sm text-muted-foreground">System overview and status</p>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex items-center gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em]">
           {connected && authenticated ? (
-            <Chip variant="soft" color="success" size="sm">
-              <div className="flex items-center gap-1">
-                <Wifi className="h-3 w-3" />
-                <span>Live</span>
-              </div>
-            </Chip>
+            <div className="flex items-center gap-2 text-success">
+              <span className="h-2 w-2 rounded-full bg-success" />
+              <span>Connected</span>
+            </div>
           ) : (
-            <Chip variant="soft" color="warning" size="sm">
-              <div className="flex items-center gap-1">
-                <WifiOff className="h-3 w-3" />
-                <span>Polling</span>
-              </div>
-            </Chip>
+            <div className="flex items-center gap-2 text-warning">
+              <span className="h-2 w-2 rounded-full bg-warning" />
+              <span>Polling</span>
+            </div>
           )}
         </div>
       </div>
@@ -873,7 +868,7 @@ export function DashboardPage() {
 
       <ArmAnalysisSection analysis={armsAnalysis ?? undefined} isLoading={detailsLoading} />
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} />
         <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} />
         <ActivitySection activity={activity} isLoading={detailsLoading} />

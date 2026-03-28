@@ -1,5 +1,5 @@
 import { Button } from "@heroui/react";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import {
 	Eye,
 	Radio,
@@ -34,6 +34,7 @@ import {
 } from "lucide-react";
 import {
 	api,
+	cn,
 	type Arm,
 	type ArmTodo,
 	type OpenCodeEvent,
@@ -42,7 +43,6 @@ import {
 	type ArmMessage,
 } from "@/lib";
 import { StatusBadge } from "@/components";
-import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { useArmEvents, useWebSocket } from "@/hooks";
 import {
 	useIsWorkspacePanel,
@@ -204,6 +204,27 @@ const activityIcons: Record<ActivityType, typeof Wrench> = {
 	branch: GitBranch,
 };
 
+const SESSION_STATUS_LABELS: Record<string, string> = {
+	busy: "Working",
+	idle: "Idle",
+	retry: "Retrying",
+	unknown: "Waiting",
+};
+
+function formatViewerSessionStatus(status: string): string {
+	return (
+		SESSION_STATUS_LABELS[status] ??
+		status.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase())
+	);
+}
+
+function formatCompactNumber(value: number): string {
+	return new Intl.NumberFormat("en-US", {
+		notation: value >= 1000 ? "compact" : "standard",
+		maximumFractionDigits: 1,
+	}).format(value);
+}
+
 export function ArmViewerPage() {
 	const isWorkspacePanel = useIsWorkspacePanel();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
@@ -228,6 +249,7 @@ export function ArmViewerPage() {
 	const [armAnalysis, setArmAnalysis] = useState<ArmAnalysisFull | null>(null);
 	const [analysisLoading, setAnalysisLoading] = useState(false);
 	const [activeTab, setActiveTab] = useState<ViewerTab>("logs");
+	const [summaryExpanded, setSummaryExpanded] = useState(false);
 	const [messages, setMessages] = useState<ArmMessage[]>([]);
 	const [logsLoading, setLogsLoading] = useState(false);
 	const [logsError, setLogsError] = useState<string | null>(null);
@@ -846,166 +868,91 @@ export function ArmViewerPage() {
 	if (isWorkspacePanel) {
 		if (!selectedArmId) {
 			return (
-				<div ref={workspaceContainerRef} className="h-full">
-					<WorkspacePageShell
-						title="Arm Viewer"
-						subtitle="Select an active arm"
-						toolbar={
-							<Button variant="ghost" onPress={loadArms} isIconOnly size="sm" aria-label="Refresh">
+				<div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-background">
+					<div className="border-b border-border px-5 py-5">
+						<div className="flex items-start justify-between gap-4">
+							<div>
+								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+									Arm Viewer
+								</p>
+								<h1 className="mt-2 text-3xl font-semibold tracking-tight">
+									Select an active arm
+								</h1>
+								<p className="mt-1 text-sm text-muted-foreground">
+									Open a live console to inspect session output, state changes, and recent activity.
+								</p>
+							</div>
+
+							<Button
+								variant="ghost"
+								onPress={loadArms}
+								isIconOnly
+								size="sm"
+								aria-label="Refresh"
+							>
 								<RefreshCw className="h-4 w-4" />
 							</Button>
-						}
-						filters={
-							<div className="text-xs text-muted-foreground">
-								{arms.length} active arm{arms.length === 1 ? "" : "s"}
-							</div>
-						}
-					>
-						<div className="h-full overflow-auto p-2">
-							{arms.length === 0 ? (
-								<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-									No active arms
-								</div>
-							) : (
-								<div className="space-y-2">
-									{arms.map((arm) => (
-										<button
-											key={arm.id}
-											type="button"
-											className="w-full rounded-md border border-border/70 bg-content1/80 px-3 py-2 text-left hover:bg-accent/5"
-											onClick={() => selectArm(arm.id)}
-										>
-											<div className="flex items-center justify-between gap-3">
-												<div className="min-w-0">
-													<div className="truncate text-sm font-medium">{arm.name}</div>
-													<div className="truncate text-xs text-muted-foreground">
-														{arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness}
-													</div>
-												</div>
-												<StatusBadge status={arm.status} />
-											</div>
-										</button>
-									))}
-								</div>
-							)}
 						</div>
-					</WorkspacePageShell>
+					</div>
+
+					<div className="border-b border-border px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+						{arms.length} active arm{arms.length === 1 ? "" : "s"}
+					</div>
+
+					<ArmSelectorPanel
+						arms={arms}
+						selectedArmId={selectedArmId}
+						onSelectArm={selectArm}
+						emptyTitle="No active arms"
+						emptyDescription="Spawn an arm to open a viewer session."
+						className="flex-1"
+					/>
 				</div>
 			);
 		}
 
 		return (
 			<div ref={workspaceContainerRef} className="h-full">
-				<WorkspacePageShell
-					title={selectedArm ? selectedArm.name : "Arm Viewer"}
-					subtitle={selectedWorkItem ?? "No active task or bug"}
-					toolbar={
-						<Button
-							variant="ghost"
-							onPress={() => {
-								loadArms();
-								if (selectedArmId) {
-									loadTodos(selectedArmId);
-									loadAnalysis(selectedArmId);
-									if (activeTab === "logs") {
-										void loadMessages(selectedArmId);
-									}
-								}
-							}}
-							isIconOnly
-							size="sm"
-							aria-label="Refresh"
-						>
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-					}
-					filters={
-						<div className="flex items-center gap-2">
-							<Button
-								size="sm"
-								variant={activeTab === "logs" ? "primary" : "ghost"}
-								onPress={() => setActiveTab("logs")}
-							>
-								Logs
-							</Button>
-							<Button
-								size="sm"
-								variant={activeTab === "events" ? "primary" : "ghost"}
-								onPress={() => setActiveTab("events")}
-							>
-								Events
-							</Button>
-						</div>
-					}
-				>
-					<div className="flex h-full min-h-0 flex-col">
-						{error ? (
-							<div className="border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-								{error}
-							</div>
-						) : null}
-
-						{selectedArmId ? (
-							<ArmAnalysisPanel
-								analysis={armAnalysis}
-								loading={analysisLoading}
-								onRefresh={() => loadAnalysis(selectedArmId)}
-							/>
-						) : null}
-
-						<div className="flex-1 overflow-hidden">
-							{activeTab === "events" ? (
-								<div
-									ref={feedContainerRef}
-									onScroll={handleFeedScroll}
-									className="h-full overflow-auto p-4 space-y-2"
-								>
-									{currentText ? (
-										<div className="rounded-lg border border-border bg-secondary/30 p-4">
-											<div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
-												<Bot className="h-3 w-3" />
-												<span>Assistant is typing...</span>
-											</div>
-											<div className="max-h-48 overflow-auto whitespace-pre-wrap text-sm">
-												{currentText.slice(-1500)}
-											</div>
-										</div>
-									) : null}
-
-									{activities.length === 0 && !currentText ? (
-										<div className="py-8 text-center text-sm text-muted-foreground">
-											No activity yet.
-										</div>
-									) : (
-										activities.map((activity) => (
-											<ActivityItemComponent
-												key={activity.id}
-												activity={activity}
-												onToggle={() => toggleActivity(activity.id)}
-											/>
-										))
-									)}
-								</div>
-							) : (
-								<div
-									ref={feedContainerRef}
-									onScroll={handleFeedScroll}
-									className="h-full overflow-auto p-4 space-y-4"
-								>
-									{messages.length === 0 && !logsLoading ? (
-										<div className="py-8 text-center text-sm text-muted-foreground">
-											No message logs yet.
-										</div>
-									) : (
-										messages.map((message) => (
-											<MessageLogItem key={message.info.id} message={message} />
-										))
-									)}
-								</div>
-							)}
-						</div>
-					</div>
-				</WorkspacePageShell>
+				<ArmViewerConsole
+					selectedArm={selectedArm}
+					selectedWorkItem={selectedWorkItem}
+					workItemType={workItemType}
+					activeTab={activeTab}
+					onTabChange={setActiveTab}
+					summaryExpanded={summaryExpanded}
+					onSummaryExpandedChange={setSummaryExpanded}
+					connected={connected}
+					sessionStatus={sessionStatus}
+					error={error}
+					totalCost={totalCost}
+					totalTokens={totalTokens}
+					activities={activities}
+					currentText={currentText}
+					messages={messages}
+					logsLoading={logsLoading}
+					logsError={logsError}
+					analysis={armAnalysis}
+					analysisLoading={analysisLoading}
+					onRefresh={() => {
+						loadArms();
+						if (selectedArmId) {
+							loadTodos(selectedArmId);
+							loadAnalysis(selectedArmId);
+							if (activeTab === "logs") {
+								void loadMessages(selectedArmId);
+							}
+						}
+					}}
+					onRefreshAnalysis={() => {
+						if (selectedArmId) {
+							loadAnalysis(selectedArmId);
+						}
+					}}
+					onClearHistory={handleClearHistory}
+					feedContainerRef={feedContainerRef}
+					onFeedScroll={handleFeedScroll}
+					onToggleActivity={toggleActivity}
+				/>
 			</div>
 		);
 	}
@@ -1013,320 +960,764 @@ export function ArmViewerPage() {
 	return (
 		<div className="flex h-full">
 			{/* Left Panel - Arm selector */}
-			<div className="flex flex-col" style={{ width: panelWidth }}>
-				<div className="border-b border-border px-4 py-3 bg-muted/20">
-					<div className="flex items-center justify-between">
-						<div className="flex items-center space-x-2">
-							<Eye className="h-4 w-4 text-muted-foreground" />
-							<h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">
-								Active Arms
-							</h2>
-						</div>
-						<Button
-							variant="secondary"
-							onClick={() => setViewerExpanded(!viewerExpanded)}
-							aria-label={viewerExpanded ? "Collapse panel" : "Expand panel"}
-							isIconOnly
-						>
-							{viewerExpanded ? (
+			{viewerExpanded ? null : (
+				<div
+					className="flex shrink-0 flex-col border-r border-border bg-background"
+					style={{ width: panelWidth }}
+				>
+					<div className="border-b border-border px-4 py-4">
+						<div className="flex items-center justify-between gap-3">
+							<div>
+								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+									Arm Viewer
+								</p>
+								<h2 className="mt-2 text-lg font-semibold tracking-tight">Active Arms</h2>
+							</div>
+							<Button
+								variant="ghost"
+								onPress={() => setViewerExpanded(true)}
+								aria-label="Collapse arm selector"
+								isIconOnly
+								size="sm"
+							>
 								<Minimize2 className="h-4 w-4" />
-							) : (
-								<Maximize2 className="h-4 w-4" />
-							)}
-						</Button>
+							</Button>
+						</div>
 					</div>
-				</div>
 
-				<div className="flex-1 overflow-auto">
-					{arms.length === 0 ? (
-						<div className="p-8 text-center text-muted-foreground">
-							<Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
-							<p className="text-sm">No active arms</p>
-						</div>
-					) : (
-						<div className="p-2 space-y-1">
-							{arms.map((arm) => (
-								<Button
-									key={arm.id}
-									variant="ghost"
-									className={`w-full justify-start h-auto py-3 px-4 ${
-										selectedArmId === arm.id
-											? "bg-accent text-accent-foreground"
-											: "hover:bg-secondary"
-									}`}
-									onPress={() => selectArm(arm.id)}
-								>
-									<div className="flex items-center justify-between">
-										<span className="font-medium truncate pr-2">
-											{arm.name}
-										</span>
-										<StatusBadge status={arm.status} />
-									</div>
-									<p
-										className={`text-xs mt-1 ${
-											selectedArmId === arm.id
-												? "text-accent-foreground/70"
-												: "text-muted-foreground"
-										}`}
-									>
-										{arm.harness}
-									</p>
-								</Button>
-							))}
-						</div>
-					)}
+					<ArmSelectorPanel
+						arms={arms}
+						selectedArmId={selectedArmId}
+						onSelectArm={selectArm}
+						emptyTitle="No active arms"
+						emptyDescription="Spawn an arm to inspect its live console."
+						className="flex-1"
+					/>
 				</div>
-			</div>
+			)}
 
 			{/* Resizable divider */}
-			<div
-				className="w-1 bg-border hover:bg-accent/20 cursor-col-resize transition-colors"
-				onMouseDown={() => setIsResizing(true)}
-			/>
+			{viewerExpanded ? null : (
+				<div
+					className="w-px bg-border hover:bg-accent/30 cursor-col-resize transition-colors"
+					onMouseDown={() => setIsResizing(true)}
+				/>
+			)}
 
 			{/* Right Panel - Activity viewer */}
-			<div className="flex-1 flex flex-col overflow-hidden">
-				{/* Header */}
-				<div className="border-b border-border px-4 py-3 bg-gradient-to-r from-muted/15 via-background to-muted/10">
-					<div className="flex flex-wrap items-start justify-between gap-3">
-						<div className="min-w-0 flex-1">
-							<div className="flex flex-wrap items-center gap-2">
-								<div className="h-8 w-8 rounded-lg bg-accent/10 text-accent flex items-center justify-center">
-									<Bot className="h-4 w-4" />
+			<div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+				{viewerExpanded ? (
+					<div className="border-b border-border px-4 py-3">
+						<Button
+							variant="ghost"
+							onPress={() => setViewerExpanded(false)}
+							aria-label="Expand arm selector"
+							size="sm"
+						>
+							<Maximize2 className="h-4 w-4" />
+							Show Arms
+						</Button>
+					</div>
+				) : null}
+
+				<ArmViewerConsole
+					selectedArm={selectedArm}
+					selectedWorkItem={selectedWorkItem}
+					workItemType={workItemType}
+					activeTab={activeTab}
+					onTabChange={setActiveTab}
+					summaryExpanded={summaryExpanded}
+					onSummaryExpandedChange={setSummaryExpanded}
+					connected={connected}
+					sessionStatus={sessionStatus}
+					error={error}
+					totalCost={totalCost}
+					totalTokens={totalTokens}
+					activities={activities}
+					currentText={currentText}
+					messages={messages}
+					logsLoading={logsLoading}
+					logsError={logsError}
+					analysis={armAnalysis}
+					analysisLoading={analysisLoading}
+					onRefresh={() => {
+						loadArms();
+						if (selectedArmId) {
+							loadTodos(selectedArmId);
+							loadAnalysis(selectedArmId);
+							if (activeTab === "logs") {
+								void loadMessages(selectedArmId);
+							}
+						}
+					}}
+					onRefreshAnalysis={() => {
+						if (selectedArmId) {
+							loadAnalysis(selectedArmId);
+						}
+					}}
+					onClearHistory={handleClearHistory}
+					feedContainerRef={feedContainerRef}
+					onFeedScroll={handleFeedScroll}
+					onToggleActivity={toggleActivity}
+				/>
+			</div>
+		</div>
+	);
+}
+
+function ArmSelectorPanel({
+	arms,
+	selectedArmId,
+	onSelectArm,
+	emptyTitle,
+	emptyDescription,
+	className,
+}: {
+	arms: Arm[];
+	selectedArmId: string | null;
+	onSelectArm: (armId: string) => void;
+	emptyTitle: string;
+	emptyDescription: string;
+	className?: string;
+}) {
+	return (
+		<div className={cn("min-h-0 overflow-auto p-3", className)}>
+			{arms.length === 0 ? (
+				<div className="flex h-full min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 px-6 text-center">
+					<div>
+						<Eye className="mx-auto mb-4 h-10 w-10 text-muted-foreground/60" />
+						<p className="text-sm font-medium">{emptyTitle}</p>
+						<p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p>
+					</div>
+				</div>
+			) : (
+				<div className="space-y-2">
+					{arms.map((arm) => {
+						const isSelected = selectedArmId === arm.id;
+						const summary =
+							arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
+
+						return (
+							<button
+								key={arm.id}
+								type="button"
+								className={cn(
+									"w-full rounded-md border px-3 py-3 text-left transition-colors",
+									isSelected
+										? "border-accent/45 bg-accent/8"
+										: "border-border bg-card hover:bg-surface-secondary/55",
+								)}
+								onClick={() => onSelectArm(arm.id)}
+							>
+								<div className="flex items-start justify-between gap-3">
+									<div className="min-w-0">
+										<div className="flex items-center gap-2">
+											<span
+												className={cn(
+													"h-2 w-2 rounded-full",
+													arm.status === "running"
+														? "bg-success"
+														: arm.status === "starting"
+															? "bg-warning"
+															: arm.status === "error"
+																? "bg-danger"
+																: "bg-muted-foreground/60",
+												)}
+											/>
+											<div className="truncate text-sm font-medium">{arm.name}</div>
+										</div>
+										<div className="mt-1 truncate text-xs text-muted-foreground">
+											{summary}
+										</div>
+										<div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+											<span>{arm.harness}</span>
+											{arm.provider ? <span>{arm.provider}</span> : null}
+										</div>
+									</div>
+
+									<StatusBadge status={arm.status} />
 								</div>
-								<h1 className="text-lg font-semibold tracking-tight truncate">
-									{selectedArm ? selectedArm.name : "Arm Viewer"}
-								</h1>
-								{selectedArm && <StatusBadge status={selectedArm.status} />}
-								{selectedArm?.harness && (
-									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-										{selectedArm.harness}
-									</span>
-								)}
-							</div>
-							<div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-								{selectedWorkItem ? (
-									<div className="w-full min-w-0 rounded-md border border-border/70 bg-background/70 px-2.5 py-1.5">
-										<span className="flex items-center gap-1.5 text-foreground/90">
-											{workItemType === "bug" ? (
-												<AlertOctagon className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-											) : (
-												<ListTodo className="h-3.5 w-3.5 shrink-0 text-accent" />
-											)}
-											<span className="truncate min-w-0">{selectedWorkItem}</span>
-										</span>
-									</div>
-								) : (
-									<div className="inline-flex items-center gap-1.5 text-muted-foreground">
-										<Minus className="h-3.5 w-3.5" />
-										<span>No active task or bug</span>
-									</div>
-								)}
-								{selectedArm?.provider && (
-									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
-										{selectedArm.provider}
-									</span>
-								)}
-								{selectedArm?.model && (
-									<span className="inline-flex items-center rounded-md border border-border/70 bg-background/70 px-2 py-1 text-xs text-muted-foreground">
-										{selectedArm.model}
-									</span>
-								)}
-							</div>
-						</div>
+							</button>
+						);
+					})}
+				</div>
+			)}
+		</div>
+	);
+}
 
-						{selectedArmId && (
-							<div className="flex items-center gap-3 flex-wrap justify-end">
-								<Button
-									variant="secondary"
-									onPress={() => {
-										loadArms();
-										if (selectedArmId) {
-											loadTodos(selectedArmId);
-											loadAnalysis(selectedArmId);
-											if (activeTab === "logs") {
-												void loadMessages(selectedArmId);
-											}
-										}
-									}}
-									isDisabled={loading}
-									isIconOnly
-								>
-									<RefreshCw className="h-4 w-4" />
-								</Button>
+function ArmViewerConsole({
+	selectedArm,
+	selectedWorkItem,
+	workItemType,
+	activeTab,
+	onTabChange,
+	summaryExpanded,
+	onSummaryExpandedChange,
+	connected,
+	sessionStatus,
+	error,
+	totalCost,
+	totalTokens,
+	activities,
+	currentText,
+	messages,
+	logsLoading,
+	logsError,
+	analysis,
+	analysisLoading,
+	onRefresh,
+	onRefreshAnalysis,
+	onClearHistory,
+	feedContainerRef,
+	onFeedScroll,
+	onToggleActivity,
+}: {
+	selectedArm?: Arm;
+	selectedWorkItem: string | null;
+	workItemType: "bug" | "task" | null;
+	activeTab: ViewerTab;
+	onTabChange: (tab: ViewerTab) => void;
+	summaryExpanded: boolean;
+	onSummaryExpandedChange: (expanded: boolean) => void;
+	connected: boolean;
+	sessionStatus: string;
+	error: string | null;
+	totalCost: number;
+	totalTokens: { input: number; output: number };
+	activities: ActivityItem[];
+	currentText: string;
+	messages: ArmMessage[];
+	logsLoading: boolean;
+	logsError: string | null;
+	analysis: ArmAnalysisFull | null;
+	analysisLoading: boolean;
+	onRefresh: () => void;
+	onRefreshAnalysis: () => void;
+	onClearHistory: () => void;
+	feedContainerRef: { current: HTMLDivElement | null };
+	onFeedScroll: () => void;
+	onToggleActivity: (id: string) => void;
+}) {
+	const arm = selectedArm ?? null;
+	const sessionLabel = formatViewerSessionStatus(sessionStatus);
+	const analysisState = analysis?.analysis.state.replaceAll("_", " ") ?? null;
+	const totalTokenCount = totalTokens.input + totalTokens.output;
+	const streamCount = activeTab === "logs" ? messages.length : activities.length;
+	const activityStateTone =
+		analysis?.analysis.state === "error"
+			? "danger"
+			: analysis?.analysis.state === "waiting_permission" ||
+				 analysis?.analysis.state === "starting"
+				? "warning"
+				: analysis?.analysis.state === "productive"
+					? "success"
+					: "neutral";
+	const sessionTone =
+		sessionStatus === "busy" ? "warning" : connected ? "success" : "neutral";
+	const compactSummary = true;
 
-								{/* Clear history button */}
-								{activeTab === "events" && activities.length > 0 && (
-									<Button
-										variant="ghost"
-										size="sm"
-										onPress={handleClearHistory}
-										aria-label="Clear message history"
-									>
-										<Trash2 className="h-3 w-3" />
-										<span>Clear</span>
-									</Button>
-								)}
+	return (
+		<div className="flex h-full min-h-0 flex-col bg-background">
+			<div className="border-b border-border px-5 py-3">
+				<div className="flex flex-wrap items-start justify-between gap-4">
+					<div className="min-w-0 flex-1">
+						<p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+							Arm Console
+						</p>
 
-								{/* Stats */}
-								{(totalCost > 0 || totalTokens.input > 0) && (
-									<div className="flex items-center gap-3 text-xs text-muted-foreground">
-										<span className="flex items-center gap-1">
-											<Coins className="h-3 w-3" />${totalCost.toFixed(4)}
-										</span>
-										<span>
-											{(
-												totalTokens.input + totalTokens.output
-											).toLocaleString()}{" "}
-											tokens
-										</span>
+						{arm ? (
+							<>
+								<div className="mt-2.5 flex flex-wrap items-center gap-3">
+									<div className="flex h-10 w-10 items-center justify-center rounded-md border border-border bg-surface-secondary text-accent">
+										<Bot className="h-4 w-4" />
 									</div>
-								)}
+									<div className="min-w-0">
+										<div className="flex flex-wrap items-center gap-3">
+											<h1 className="truncate text-2xl font-semibold tracking-tight">
+												{arm.name}
+											</h1>
+											<StatusBadge status={arm.status} />
+											<span className="inline-flex items-center rounded-md border border-border bg-surface-secondary px-2 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+												{arm.harness}
+											</span>
+										</div>
+										<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+											{arm.provider ? <span>{arm.provider}</span> : null}
+											{arm.model ? <span>{arm.model}</span> : null}
+											<span className="inline-flex items-center gap-2">
+												<span className={cn("h-2 w-2 rounded-full", connected ? "bg-success" : "bg-danger")} />
+												{connected ? "Live stream connected" : "Stream disconnected"}
+											</span>
+										</div>
+									</div>
+								</div>
 
-								{/* Connection status */}
-								{connected ? (
-									<div className="flex items-center gap-1 text-green-500 text-sm">
-										<Radio className="h-4 w-4" />
-										<span>Live</span>
-									</div>
-								) : (
-									<div className="flex items-center gap-1 text-muted-foreground text-sm">
-										<XCircle className="h-4 w-4" />
-										<span>Disconnected</span>
-									</div>
-								)}
-
-								{sessionStatus === "busy" && (
-									<div className="flex items-center gap-1 text-yellow-500 text-sm">
-										<Loader2 className="h-4 w-4 animate-spin" />
-										<span>Working...</span>
-									</div>
-								)}
+							</>
+						) : (
+							<div className="mt-3">
+								<h1 className="text-3xl font-semibold tracking-tight">Arm Viewer</h1>
+								<p className="mt-2 text-sm text-muted-foreground">
+									Select an arm to inspect its live output, structured events, and recent health signals.
+								</p>
 							</div>
 						)}
 					</div>
+
+					<div className="flex flex-wrap items-center justify-end gap-2">
+						<Button
+							variant="ghost"
+							onPress={onRefresh}
+							isIconOnly
+							size="sm"
+							aria-label="Refresh viewer"
+						>
+							<RefreshCw className="h-4 w-4" />
+						</Button>
+					</div>
 				</div>
+			</div>
 
-				{error && (
-					<div className="p-4 bg-destructive/10 text-destructive border-b border-destructive/20">
-						<div className="flex items-center gap-2">
-							<AlertTriangle className="h-4 w-4" />
-							<span className="text-sm">{error}</span>
+			{arm ? (
+				<div className="border-b border-border">
+					<button
+						type="button"
+						onClick={() => onSummaryExpandedChange(!summaryExpanded)}
+						className="flex w-full flex-wrap items-center gap-2 px-5 py-2.5 text-left transition-colors hover:bg-surface-secondary/35"
+						aria-expanded={summaryExpanded}
+						aria-label={summaryExpanded ? "Collapse status summary" : "Expand status summary"}
+					>
+						<div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+							<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+								Status Summary
+							</span>
+							<ViewerToolbarPill
+								label={analysisState ?? arm.status}
+								tone={activityStateTone}
+								icon={<PulseStateIcon analysis={analysis} armStatus={arm.status} />}
+							/>
+							<ViewerToolbarPill
+								label={sessionLabel}
+								tone={sessionTone}
+								icon={
+									sessionStatus === "busy" ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<Radio className="h-3.5 w-3.5" />
+									)
+								}
+							/>
+							<ViewerToolbarPill
+								label={`${formatCompactNumber(streamCount)} ${activeTab}`}
+								tone="neutral"
+								icon={
+									activeTab === "logs" ? (
+										<MessageSquare className="h-3.5 w-3.5" />
+									) : (
+										<Zap className="h-3.5 w-3.5" />
+									)
+								}
+							/>
 						</div>
+						<ChevronDown
+							className={cn(
+								"h-4 w-4 text-muted-foreground transition-transform",
+								summaryExpanded ? "rotate-180" : "",
+							)}
+						/>
+					</button>
+
+					{summaryExpanded ? (
+						<div className="px-5 pb-3">
+							<div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))]">
+								<ViewerMetricCard
+									label="Current Focus"
+									value={selectedWorkItem ?? "Monitoring"}
+									detail={
+										selectedWorkItem
+											? workItemType === "bug"
+												? "Bug under review"
+												: "Task in progress"
+											: "No active task or bug"
+									}
+									tone={workItemType === "bug" ? "warning" : "accent"}
+									icon={
+										workItemType === "bug" ? (
+											<AlertOctagon className="h-4 w-4" />
+										) : (
+											<ListTodo className="h-4 w-4" />
+										)
+									}
+									isPrimary
+									compact={compactSummary}
+								/>
+								<ViewerMetricCard
+									label="Activity State"
+									value={analysisState ?? arm.status}
+									detail={
+										analysis?.analysis.confidence
+											? `${analysis.analysis.confidence} confidence`
+											: "Awaiting analysis"
+									}
+									tone={activityStateTone}
+									icon={<PulseStateIcon analysis={analysis} armStatus={arm.status} />}
+									compact={compactSummary}
+								/>
+								<ViewerMetricCard
+									label="Session"
+									value={sessionLabel}
+									detail={connected ? "Receiving events" : "History only"}
+									tone={sessionTone}
+									icon={
+										sessionStatus === "busy" ? (
+											<Loader2 className="h-4 w-4 animate-spin" />
+										) : (
+											<Radio className="h-4 w-4" />
+										)
+									}
+									compact={compactSummary}
+								/>
+								<ViewerMetricCard
+									label="Stream"
+									value={`${formatCompactNumber(streamCount)} ${activeTab}`}
+									detail={activeTab === "logs" ? "Captured messages" : "Structured events"}
+									tone="neutral"
+									icon={
+										activeTab === "logs" ? (
+											<Terminal className="h-4 w-4" />
+										) : (
+											<Zap className="h-4 w-4" />
+										)
+									}
+									compact={compactSummary}
+								/>
+								<ViewerMetricCard
+									label="Usage"
+									value={totalTokenCount > 0 ? `${formatCompactNumber(totalTokenCount)} tokens` : "No usage yet"}
+									detail={totalCost > 0 ? `$${totalCost.toFixed(4)} total` : "Cost not available"}
+									tone="neutral"
+									icon={<Coins className="h-4 w-4" />}
+									compact={compactSummary}
+								/>
+							</div>
+
+							<ArmAnalysisPanel
+								analysis={analysis}
+								loading={analysisLoading}
+								onRefresh={onRefreshAnalysis}
+								compact
+								embedded
+							/>
+						</div>
+					) : null}
+				</div>
+			) : null}
+
+			<div className="border-b border-border px-5 py-2.5">
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<div className="inline-flex items-center rounded-md border border-border bg-surface-secondary p-1">
+						<ViewerTabButton
+							label="Logs"
+							isActive={activeTab === "logs"}
+							onPress={() => onTabChange("logs")}
+						/>
+						<ViewerTabButton
+							label="Events"
+							isActive={activeTab === "events"}
+							onPress={() => onTabChange("events")}
+						/>
 					</div>
-				)}
 
-				{/* Arm Analysis Panel */}
-				{selectedArmId && (
-					<ArmAnalysisPanel
-						analysis={armAnalysis}
-						loading={analysisLoading}
-						onRefresh={() => loadAnalysis(selectedArmId)}
-					/>
-				)}
-
-				{/* Tabs */}
-				{selectedArmId && (
-					<div className="border-b border-border px-4 py-2 bg-muted/5">
-						<div className="inline-flex items-center rounded-lg border border-border p-1 gap-1">
-							<Button
-								size="sm"
-								variant={activeTab === "logs" ? "primary" : "ghost"}
-								onPress={() => setActiveTab("logs")}
-							>
-								Logs
+					<div className="flex flex-wrap items-center gap-2">
+						<ViewerToolbarPill
+							label={connected ? "Live" : "Offline"}
+							tone={connected ? "success" : "danger"}
+							icon={connected ? <Radio className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+						/>
+						{activeTab === "events" && activities.length > 0 ? (
+							<Button variant="ghost" size="sm" onPress={onClearHistory}>
+								<Trash2 className="h-3.5 w-3.5" />
+								Clear
 							</Button>
-							<Button
-								size="sm"
-								variant={activeTab === "events" ? "primary" : "ghost"}
-								onPress={() => setActiveTab("events")}
-							>
-								Events
-							</Button>
-						</div>
+						) : null}
 					</div>
-				)}
+				</div>
+			</div>
 
-				{/* Content area */}
-				{!selectedArmId ? (
-					<div className="flex-1 flex items-center justify-center text-muted-foreground">
-						<div className="text-center">
-							<Eye className="h-12 w-12 mx-auto mb-4 opacity-50" />
-							<p>Select an arm from the left panel to view its activity</p>
-						</div>
+			{error ? (
+				<div className="border-b border-danger/20 bg-danger/10 px-5 py-3">
+					<div className="flex items-center gap-2 text-sm text-danger">
+						<AlertTriangle className="h-4 w-4" />
+						<span>{error}</span>
 					</div>
-				) : (
-					<div className="flex-1 flex overflow-hidden">
-						{activeTab === "events" ? (
-							<div
-								ref={feedContainerRef}
-								onScroll={handleFeedScroll}
-								className="flex-1 overflow-auto p-4 space-y-2"
-							>
-								{/* Current text output */}
-								{currentText && (
-									<div className="bg-secondary/30 rounded-lg p-4 mb-4 border border-border">
-										<div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
-											<Bot className="h-3 w-3" />
-											<span>Assistant is typing...</span>
-											<Loader2 className="h-3 w-3 animate-spin ml-auto" />
+				</div>
+			) : null}
+
+			<div className="min-h-0 flex-1 overflow-hidden">
+				{arm ? (
+					activeTab === "events" ? (
+						<div
+							ref={feedContainerRef}
+							onScroll={onFeedScroll}
+							className="h-full overflow-auto bg-surface/70 p-4"
+						>
+							<div className="mx-auto flex max-w-5xl flex-col gap-3">
+								{currentText ? (
+									<div className="overflow-hidden rounded-md border border-accent/35 bg-accent/8">
+										<div className="flex items-center gap-2 border-b border-accent/20 px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-accent">
+											<Bot className="h-3.5 w-3.5" />
+											Live Draft
+											<Loader2 className="ml-auto h-3.5 w-3.5 animate-spin" />
 										</div>
-										<div className="text-sm whitespace-pre-wrap max-h-48 overflow-auto">
-											{currentText.slice(-1500)}
-										</div>
+										<pre className="max-h-56 overflow-auto px-4 py-4 font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/90">
+											{currentText.slice(-2000)}
+										</pre>
 									</div>
-								)}
+								) : null}
 
-								{/* Activity items */}
 								{activities.length === 0 && !currentText ? (
-									<div className="text-center text-muted-foreground py-8">
-										<p>No activity yet. Send a prompt to start.</p>
-									</div>
+									<ViewerEmptyState
+										icon={<Zap className="h-8 w-8" />}
+										title="No activity yet"
+										description="Structured events will appear here as the arm works."
+									/>
 								) : (
 									activities.map((activity) => (
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}
-											onToggle={() => toggleActivity(activity.id)}
+											onToggle={() => onToggleActivity(activity.id)}
 										/>
 									))
 								)}
 							</div>
-						) : (
-							<div
-								ref={feedContainerRef}
-								onScroll={handleFeedScroll}
-								className="flex-1 overflow-auto p-4 space-y-4"
-							>
-								{logsError && (
-									<div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+						</div>
+					) : (
+						<div
+							ref={feedContainerRef}
+							onScroll={onFeedScroll}
+							className="h-full overflow-auto bg-surface/70 p-4"
+						>
+							<div className="mx-auto flex max-w-5xl flex-col gap-4">
+								{logsError ? (
+									<div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
 										{logsError}
 									</div>
-								)}
+								) : null}
 
 								{logsLoading && messages.length === 0 ? (
-									<div className="flex items-center gap-2 text-muted-foreground text-sm">
+									<div className="flex items-center gap-2 text-sm text-muted-foreground">
 										<Loader2 className="h-4 w-4 animate-spin" />
 										<span>Loading logs...</span>
 									</div>
 								) : null}
 
 								{messages.length === 0 && !logsLoading ? (
-									<div className="text-center text-muted-foreground py-8">
-										<p>No message logs yet.</p>
-									</div>
+									<ViewerEmptyState
+										icon={<Terminal className="h-8 w-8" />}
+										title="No message logs yet"
+										description="Conversation turns, tool calls, and system notes will accumulate here."
+									/>
 								) : (
 									messages.map((message) => (
 										<MessageLogItem key={message.info.id} message={message} />
 									))
 								)}
 							</div>
-						)}
+						</div>
+					)
+				) : (
+					<div className="flex h-full items-center justify-center px-6">
+						<ViewerEmptyState
+							icon={<Eye className="h-9 w-9" />}
+							title="Select an arm to begin"
+							description="Choose an active arm from the selector to inspect its console."
+						/>
 					</div>
 				)}
 			</div>
 		</div>
 	);
+}
+
+function ViewerMetricCard({
+	label,
+	value,
+	detail,
+	icon,
+	tone,
+	isPrimary = false,
+	compact = false,
+}: {
+	label: string;
+	value: string;
+	detail: string;
+	icon: ReactNode;
+	tone: "neutral" | "accent" | "success" | "warning" | "danger";
+	isPrimary?: boolean;
+	compact?: boolean;
+}) {
+	const toneClass = {
+		neutral: "border-border bg-card text-foreground",
+		accent: "border-accent/25 bg-accent/8 text-foreground",
+		success: "border-success/25 bg-success/8 text-foreground",
+		warning: "border-warning/30 bg-warning/10 text-foreground",
+		danger: "border-danger/25 bg-danger/10 text-foreground",
+	}[tone];
+
+	const iconTone = {
+		neutral: "text-muted-foreground",
+		accent: "text-accent",
+		success: "text-success",
+		warning: "text-warning",
+		danger: "text-danger",
+	}[tone];
+
+	const showDetail = !compact || isPrimary;
+
+	return (
+		<div
+			className={cn(
+				"rounded-md border",
+				compact ? "px-2.5 py-2" : "px-4 py-3",
+				toneClass,
+				isPrimary && !compact ? "md:col-span-2 2xl:col-span-1 2xl:min-h-[96px]" : "",
+			)}
+		>
+			<div className={cn("flex items-start", compact ? "gap-2.5" : "gap-3")}>
+				<div className={cn("mt-0.5", iconTone)}>{icon}</div>
+				<div className="min-w-0">
+					<div
+						className={cn(
+							"font-semibold uppercase text-muted-foreground",
+							compact ? "text-[0.62rem] tracking-[0.15em]" : "text-[0.68rem] tracking-[0.18em]",
+						)}
+					>
+						{label}
+					</div>
+					<div
+						className={cn(
+							"break-words font-semibold capitalize leading-tight text-foreground",
+							compact ? "mt-1 text-[0.9rem]" : "mt-2 text-sm",
+						)}
+					>
+						{value}
+					</div>
+					{showDetail ? (
+						<div
+							className={cn(
+								"text-muted-foreground",
+								compact ? "mt-0.5 text-[0.72rem] leading-4" : "mt-1 text-sm",
+							)}
+						>
+							{detail}
+						</div>
+					) : null}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function ViewerTabButton({
+	label,
+	isActive,
+	onPress,
+}: {
+	label: string;
+	isActive: boolean;
+	onPress: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			onClick={onPress}
+			className={cn(
+				"rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+				isActive
+					? "bg-background text-foreground shadow-sm"
+					: "text-muted-foreground hover:text-foreground",
+			)}
+		>
+			{label}
+		</button>
+	);
+}
+
+function ViewerToolbarPill({
+	label,
+	icon,
+	tone,
+}: {
+	label: string;
+	icon: ReactNode;
+	tone: "neutral" | "success" | "warning" | "danger";
+}) {
+	const toneClass = {
+		neutral: "border-border bg-surface-secondary text-muted-foreground",
+		success: "border-success/25 bg-success/8 text-success",
+		warning: "border-warning/25 bg-warning/10 text-warning",
+		danger: "border-danger/25 bg-danger/10 text-danger",
+	}[tone];
+
+	return (
+		<div
+			className={cn(
+				"inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em]",
+				toneClass,
+			)}
+		>
+			{icon}
+			<span>{label}</span>
+		</div>
+	);
+}
+
+function ViewerEmptyState({
+	icon,
+	title,
+	description,
+}: {
+	icon: ReactNode;
+	title: string;
+	description: string;
+}) {
+	return (
+		<div className="rounded-md border border-dashed border-border bg-surface-secondary/35 px-6 py-10 text-center">
+			<div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-md border border-border bg-card text-muted-foreground">
+				{icon}
+			</div>
+			<p className="text-base font-semibold">{title}</p>
+			<p className="mt-2 text-sm text-muted-foreground">{description}</p>
+		</div>
+	);
+}
+
+function PulseStateIcon({
+	analysis,
+	armStatus,
+}: {
+	analysis: ArmAnalysisFull | null;
+	armStatus: string;
+}) {
+	if (analysis) {
+		const Icon = stateConfig[analysis.analysis.state].icon;
+		return <Icon className="h-4 w-4" />;
+	}
+
+	if (armStatus === "running") {
+		return <Play className="h-4 w-4" />;
+	}
+
+	if (armStatus === "starting") {
+		return <Loader2 className="h-4 w-4 animate-spin" />;
+	}
+
+	if (armStatus === "error") {
+		return <AlertOctagon className="h-4 w-4" />;
+	}
+
+	return <CircleDashed className="h-4 w-4" />;
 }
 
 function ActivityItemComponent({
@@ -1342,60 +1733,62 @@ function ActivityItemComponent({
 		activity.details && Object.keys(activity.details).length > 0;
 
 	const statusIcon = {
-		pending: <Clock className="h-3 w-3 text-muted-foreground" />,
-		running: <Loader2 className="h-3 w-3 animate-spin text-yellow-500" />,
-		completed: <CheckCircle2 className="h-3 w-3 text-green-500" />,
-		error: <XCircle className="h-3 w-3 text-red-500" />,
+		pending: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
+		running: <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />,
+		completed: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
+		error: <XCircle className="h-3.5 w-3.5 text-danger" />,
 		info: null,
 	}[activity.status];
 
 	return (
-		<div
-			className={`rounded-lg border-l-2 ${colors.border} ${colors.bg} overflow-hidden`}
-		>
+		<div className="overflow-hidden rounded-md border border-border bg-card">
+			<div className={cn("h-1 w-full", colors.bg)} />
 			<Button
 				variant="ghost"
 				onPress={onToggle}
 				isDisabled={!hasDetails}
-				className="w-full justify-start h-auto py-2 px-2"
+				className="h-auto w-full justify-start px-4 py-3"
 			>
-				{hasDetails ? (
-					activity.expanded ? (
-						<ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-					) : (
-						<ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-					)
-				) : (
-					<span className="w-3" />
-				)}
+				<div className="flex min-w-0 flex-1 items-start gap-3 text-left">
+					<div className={cn("mt-0.5 rounded-sm border border-border p-2", colors.bg)}>
+						<Icon className={`h-4 w-4 ${colors.icon}`} />
+					</div>
 
-				<Icon className={`h-4 w-4 ${colors.icon} flex-shrink-0`} />
+					<div className="min-w-0 flex-1">
+						<div className="flex flex-wrap items-center gap-2">
+							<span className="truncate text-sm font-semibold">{activity.title}</span>
+							{statusIcon}
+							<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+								{activity.status}
+							</span>
+						</div>
+						{activity.subtitle ? (
+							<div className="mt-1 truncate text-sm text-muted-foreground">
+								{activity.subtitle}
+							</div>
+						) : null}
+					</div>
 
-				<span className="text-sm font-medium truncate flex-1">
-					{activity.title}
-				</span>
-
-				{activity.subtitle && (
-					<span className="text-xs text-muted-foreground truncate max-w-[40%]">
-						{activity.subtitle}
-					</span>
-				)}
-
-				{statusIcon}
-
-				<span className="text-xs text-muted-foreground flex-shrink-0">
-					{formatTime(activity.timestamp)}
-				</span>
+					<div className="flex items-center gap-2 pl-2 text-xs text-muted-foreground">
+						<span>{formatTime(activity.timestamp)}</span>
+						{hasDetails ? (
+							activity.expanded ? (
+								<ChevronDown className="h-3.5 w-3.5" />
+							) : (
+								<ChevronRight className="h-3.5 w-3.5" />
+							)
+						) : null}
+					</div>
+				</div>
 			</Button>
 
-			{/* Expanded details */}
-			{activity.expanded && hasDetails && (
-				<div className="px-4 pb-3 pt-1 border-t border-border/50">
-					<pre className="text-xs text-muted-foreground overflow-auto max-h-48 whitespace-pre-wrap">
+			{activity.expanded && hasDetails ? (
+				<div className="border-t border-border px-4 py-3">
+					<pre className="max-h-56 overflow-auto rounded-sm bg-surface-secondary/45 px-3 py-3 text-[12px] leading-6 whitespace-pre-wrap text-muted-foreground">
 						{formatDetails(activity.details!)}
 					</pre>
 				</div>
-			)}
+			) : null}
 		</div>
 	);
 }
@@ -1413,25 +1806,28 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 	const timestamp = formatMessageTime(message.info.time);
 
 	return (
-		<div className="rounded-lg border border-border bg-card p-3">
-			<div className="flex items-center justify-between gap-2 mb-2">
-				<div
-					className={`text-xs uppercase tracking-wide font-semibold ${roleColor}`}
-				>
-					{roleLabel}
+		<div className="overflow-hidden rounded-md border border-border bg-card">
+			<div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+				<div className="flex items-center gap-2">
+					<span className={cn("h-2.5 w-2.5 rounded-full", role === "assistant" ? "bg-accent" : role === "user" ? "bg-success" : "bg-warning")} />
+					<div
+						className={`text-[0.68rem] uppercase tracking-[0.18em] font-semibold ${roleColor}`}
+					>
+						{roleLabel}
+					</div>
 				</div>
-				{timestamp && (
+				{timestamp ? (
 					<div className="text-xs text-muted-foreground">{timestamp}</div>
-				)}
+				) : null}
 			</div>
 
-			<div className="space-y-2">
+			<div className="space-y-3 px-4 py-4">
 				{message.parts.map((part, index) => {
 					if (part.type === "text" && part.text) {
 						return (
 							<pre
 								key={`${message.info.id}-text-${index}`}
-								className="text-sm whitespace-pre-wrap font-mono"
+								className="overflow-auto rounded-sm bg-surface-secondary/45 px-3 py-3 font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92"
 							>
 								{part.text}
 							</pre>
@@ -1448,13 +1844,13 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 						return (
 							<div
 								key={`${message.info.id}-tool-${index}`}
-								className="rounded border border-border/60 bg-muted/20 px-2 py-1"
+								className="rounded-sm border border-border bg-surface-secondary/35 px-3 py-2"
 							>
-								<div className="text-xs text-muted-foreground font-mono">
+								<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 									{`Tool: ${tool}${state}`}
 								</div>
 								{details.input !== undefined && details.input !== null && (
-									<div className="text-[11px] text-muted-foreground font-mono">
+									<div className="mt-2 text-[11px] text-muted-foreground font-mono">
 										{`input: ${summarizeToolValue(details.input)}`}
 									</div>
 								)}
@@ -1654,17 +2050,26 @@ function ArmAnalysisPanel({
 	analysis,
 	loading,
 	onRefresh,
+	compact = false,
+	embedded = false,
 }: {
 	analysis: ArmAnalysisFull | null;
 	loading: boolean;
 	onRefresh: () => void;
+	compact?: boolean;
+	embedded?: boolean;
 }) {
 	if (loading) {
 		return (
-			<div className="p-4 border-b border">
+			<div
+				className={cn(
+					embedded ? "pt-2.5" : "border-b border-border px-5",
+					compact ? "py-3" : "py-4",
+				)}
+			>
 				<div className="flex items-center gap-2 text-sm text-muted-foreground">
 					<Loader2 className="h-4 w-4 animate-spin" />
-					<span>Loading analysis...</span>
+					<span>Loading health signals...</span>
 				</div>
 			</div>
 		);
@@ -1692,91 +2097,161 @@ function ArmAnalysisPanel({
 			? "Degrading"
 			: "Stable";
 
+	const compactSignals = [
+		analysis.analysis.pendingPermission
+			? { label: "Permission pending", tone: "warning" as const }
+			: null,
+		analysis.analysis.loopPattern
+			? {
+					label: `Loop ${analysis.analysis.loopPattern.repetitions}x`,
+					tone: "danger" as const,
+				}
+			: null,
+	].filter((value): value is { label: string; tone: "warning" | "danger" } => value !== null);
+
 	return (
-		<div className={`p-4 border-b border-l-2 ${config.border} ${config.bg}`}>
-			<div className="flex items-center justify-between mb-2">
-				<div className="flex items-center gap-2">
-					<StateIcon className={`h-4 w-4 ${config.text}`} />
-					<span className={`font-medium text-sm capitalize ${config.text}`}>
-						{state.replace("_", " ")}
-					</span>
-					<span
-						className={`text-xs px-1.5 py-0.5 rounded ${
-							analysis.analysis.confidence === "high"
-								? "bg-green-500/20 text-green-700"
-								: analysis.analysis.confidence === "medium"
-									? "bg-yellow-500/20 text-yellow-700"
-									: "bg-gray-500/20 text-gray-600"
-						}`}
-					>
-						{analysis.analysis.confidence} confidence
-					</span>
-				</div>
-				<button
-					onClick={onRefresh}
-					className="text-muted-foreground hover:text-foreground transition-colors"
-					aria-label="Refresh analysis"
-				>
-					<RefreshCw className="h-3 w-3" />
-				</button>
-			</div>
-
-			<p className="text-xs text-muted-foreground mb-2">
-				{analysis.analysis.reason}
-			</p>
-
-			{/* Metrics row */}
-			<div className="flex items-center gap-4 text-xs text-muted-foreground">
-				<span>{analysis.analysis.metrics.eventCount} events</span>
-				<span>
-					{analysis.analysis.metrics.recentFileEditCount} files edited
-				</span>
-				<span className="flex items-center gap-1">
-					{trendIcon}
-					{trendLabel}
-				</span>
-			</div>
-
-			{/* Permission pending alert */}
-			{analysis.analysis.pendingPermission && (
-				<div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded text-xs">
-					<div className="flex items-center gap-2 text-yellow-700">
-						<ShieldQuestion className="h-3 w-3" />
-						<span className="font-medium">Permission requested:</span>
-						<span>{analysis.analysis.pendingPermission.action}</span>
-					</div>
-					{analysis.analysis.pendingPermission.context && (
-						<p className="mt-1 text-muted-foreground">
-							{analysis.analysis.pendingPermission.context}
-						</p>
-					)}
-				</div>
+		<div
+			className={cn(
+				embedded ? "pt-2.5" : "border-b border-border px-5",
+				compact ? "py-3" : "py-4",
 			)}
-
-			{/* Loop pattern alert */}
-			{analysis.analysis.loopPattern && (
-				<div className="mt-3 p-2 bg-orange-500/10 border border-orange-500/30 rounded text-xs">
-					<div className="flex items-center gap-2 text-orange-700">
-						<RefreshCw className="h-3 w-3" />
-						<span className="font-medium">Loop detected:</span>
-						<span>{analysis.analysis.loopPattern.repetitions} repetitions</span>
+		>
+			<div
+				className={cn(
+					"grid md:grid-cols-2 2xl:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]",
+					compact ? "gap-2" : "gap-3",
+				)}
+			>
+				<div className={cn("rounded-md border", config.bg, compact ? "px-3 py-2.5" : "px-4 py-3")}>
+					<div className="flex items-start justify-between gap-3">
+						<div className={cn("flex items-start", compact ? "gap-2.5" : "gap-3")}>
+							<div
+								className={cn(
+									"rounded-sm border border-current/15",
+									config.text,
+									compact ? "p-1.5" : "p-2",
+								)}
+							>
+								<StateIcon className="h-4 w-4" />
+							</div>
+							<div>
+								<div
+									className={cn(
+										"font-semibold uppercase text-muted-foreground",
+										compact ? "text-[0.62rem] tracking-[0.15em]" : "text-[0.68rem] tracking-[0.18em]",
+									)}
+								>
+									Health Signal
+								</div>
+								<div
+									className={cn(
+										"font-semibold capitalize",
+										config.text,
+										compact ? "mt-1.5 text-[0.92rem]" : "mt-2 text-sm",
+									)}
+								>
+									{state.replace("_", " ")}
+								</div>
+							</div>
+						</div>
+						<button
+							onClick={onRefresh}
+							className="text-muted-foreground transition-colors hover:text-foreground"
+							aria-label="Refresh analysis"
+						>
+							<RefreshCw className="h-3.5 w-3.5" />
+						</button>
 					</div>
-					<p className="mt-1 text-muted-foreground font-mono">
-						{analysis.analysis.loopPattern.pattern.slice(0, 3).join(" → ")}
-						{analysis.analysis.loopPattern.pattern.length > 3 && "..."}
+					<p className={cn("text-muted-foreground", compact ? "mt-2 text-[0.76rem] leading-5" : "mt-3 text-sm")}>
+						{analysis.analysis.reason}
 					</p>
+					{compactSignals.length > 0 ? (
+						<div className="mt-2 flex flex-wrap gap-2">
+							{compactSignals.map((signal) => (
+								<span
+									key={signal.label}
+									className={cn(
+										"inline-flex items-center rounded-md border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]",
+										signal.tone === "warning"
+											? "border-warning/25 bg-warning/10 text-warning"
+											: "border-danger/25 bg-danger/10 text-danger",
+									)}
+								>
+									{signal.label}
+								</span>
+							))}
+						</div>
+					) : null}
 				</div>
-			)}
 
-			{/* Unknown event types warning
-      {analysis.analysis.unknownEventTypes.length > 0 && (
-        <div className="mt-3 p-2 bg-gray-500/10 border border-gray-500/30 rounded text-xs">
-          <div className="flex items-center gap-2 text-gray-600">
-            <AlertTriangle className="h-3 w-3" />
-            <span>Unknown events: {analysis.analysis.unknownEventTypes.slice(0, 3).join(', ')}</span>
-          </div>
-        </div>
-      )} */}
+				<ViewerMetricCard
+					label="Confidence"
+					value={analysis.analysis.confidence}
+					detail="Model confidence in the current state"
+					tone={
+						analysis.analysis.confidence === "high"
+							? "success"
+							: analysis.analysis.confidence === "medium"
+								? "warning"
+								: "neutral"
+					}
+					icon={<ShieldQuestion className="h-4 w-4" />}
+					compact={compact}
+				/>
+				<ViewerMetricCard
+					label="Recent Events"
+					value={`${analysis.analysis.metrics.eventCount}`}
+					detail={`${analysis.analysis.metrics.recentFileEditCount} files edited`}
+					tone="neutral"
+					icon={<Zap className="h-4 w-4" />}
+					compact={compact}
+				/>
+				<ViewerMetricCard
+					label="Trend"
+					value={trendLabel}
+					detail="Direction of activity quality"
+					tone={analysis.trend.improving ? "success" : analysis.trend.degrading ? "danger" : "neutral"}
+					icon={trendIcon}
+					compact={compact}
+				/>
+			</div>
+
+			{!compact && (analysis.analysis.pendingPermission || analysis.analysis.loopPattern) ? (
+				<div className="mt-3 grid gap-3 xl:grid-cols-2">
+					{analysis.analysis.pendingPermission ? (
+						<div className="rounded-md border border-warning/25 bg-warning/10 px-4 py-3 text-sm">
+							<div className="flex items-center gap-2 font-medium text-warning">
+								<ShieldQuestion className="h-4 w-4" />
+								<span>Permission requested</span>
+							</div>
+							<div className="mt-2 text-foreground">
+								{analysis.analysis.pendingPermission.action}
+							</div>
+							{analysis.analysis.pendingPermission.context ? (
+								<p className="mt-1 text-sm text-muted-foreground">
+									{analysis.analysis.pendingPermission.context}
+								</p>
+							) : null}
+						</div>
+					) : null}
+
+					{analysis.analysis.loopPattern ? (
+						<div className="rounded-md border border-danger/25 bg-danger/10 px-4 py-3 text-sm">
+							<div className="flex items-center gap-2 font-medium text-danger">
+								<RefreshCw className="h-4 w-4" />
+								<span>Loop detected</span>
+							</div>
+							<div className="mt-2 text-foreground">
+								{analysis.analysis.loopPattern.repetitions} repetitions
+							</div>
+							<p className="mt-1 font-mono text-[12px] text-muted-foreground">
+								{analysis.analysis.loopPattern.pattern.slice(0, 3).join(" → ")}
+								{analysis.analysis.loopPattern.pattern.length > 3 ? "..." : ""}
+							</p>
+						</div>
+					) : null}
+				</div>
+			) : null}
 		</div>
 	);
 }
