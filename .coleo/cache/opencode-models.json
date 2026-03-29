@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-03-16T21:02:23.953Z",
+  "fetchedAt": "2026-03-28T22:05:59.422Z",
   "providers": [
     {
       "id": "cerebras",
@@ -432,20 +432,8 @@
           "name": "gemini-3-flash"
         },
         {
-          "id": "gemini-3-pro",
-          "name": "gemini-3-pro"
-        },
-        {
           "id": "gemini-3.1-pro",
           "name": "gemini-3.1-pro"
-        },
-        {
-          "id": "glm-4.6",
-          "name": "glm-4.6"
-        },
-        {
-          "id": "glm-4.7",
-          "name": "glm-4.7"
         },
         {
           "id": "glm-5",
@@ -500,6 +488,14 @@
           "name": "gpt-5.4"
         },
         {
+          "id": "gpt-5.4-mini",
+          "name": "gpt-5.4-mini"
+        },
+        {
+          "id": "gpt-5.4-nano",
+          "name": "gpt-5.4-nano"
+        },
+        {
           "id": "gpt-5.4-pro",
           "name": "gpt-5.4-pro"
         },
@@ -508,12 +504,12 @@
           "name": "kimi-k2.5"
         },
         {
-          "id": "mimo-v2-flash-free",
-          "name": "mimo-v2-flash-free"
+          "id": "mimo-v2-omni-free",
+          "name": "mimo-v2-omni-free"
         },
         {
-          "id": "minimax-m2.1",
-          "name": "minimax-m2.1"
+          "id": "mimo-v2-pro-free",
+          "name": "mimo-v2-pro-free"
         },
         {
           "id": "minimax-m2.5",
