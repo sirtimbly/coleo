@@ -68,6 +68,12 @@ export interface TestScenario {
   description: string;
   /** Tags for filtering */
   tags: string[];
+  /** Optional fixed model list for scenarios that should not use the suite-wide matrix */
+  models?: Array<{
+    provider: string;
+    model: string;
+    env?: Record<string, string>;
+  }>;
   /** Timeout in milliseconds */
   timeout: number;
   /** Setup function - runs before test */

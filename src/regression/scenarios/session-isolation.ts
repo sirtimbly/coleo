@@ -1,19 +1,25 @@
 import type { TestScenario, TestContext, TestResult } from "../types";
 import { initTestDatabase, startApiServer, startBrain, spawnArm, waitForArmStatus } from "../harness";
 
+const SESSION_ISOLATION_MODEL = {
+  provider: "opencode",
+  model: "gpt-5.1-codex-mini",
+} as const;
+
 /**
  * Session Isolation Test
  * 
  * Verifies that multiple arms get unique OpenCode sessions and don't
  * cross-contaminate each other's conversation history.
- * 
- * Tests the fix in src/harness/opencode-tui.ts that always creates
- * new sessions instead of reusing existing ones.
+ *
+ * This regression talks to the OpenCode API harness directly and
+ * identifies each arm's session by the generated session title.
  */
 export const sessionIsolationScenario: TestScenario = {
   name: "session-isolation",
   description: "Verifies that multiple arms get unique OpenCode sessions",
   tags: ["core", "isolation", "session", "quick"],
+  models: [SESSION_ISOLATION_MODEL],
   timeout: 180000, // 3 minutes - spawning multiple arms takes time
   
   async setup(ctx: TestContext) {
@@ -31,13 +37,14 @@ export const sessionIsolationScenario: TestScenario = {
       ctx.log("Spawning first arm (arm-alpha)...");
       const arm1 = await spawnArm(ctx, "arm-alpha", {
         harness: "opencode-api",
+        ...SESSION_ISOLATION_MODEL,
       });
       await waitForArmStatus(ctx, arm1.id, "idle");
       ctx.log(`First arm spawned: ${arm1.id} on port ${arm1.port}`);
 
       // Get session ID for first arm
       if (arm1.port) {
-        const session1 = await getOpenCodeSession(arm1.port);
+        const session1 = await getOpenCodeSession(arm1.port, arm1.id);
         if (session1) {
           armSessions.set(arm1.id, session1);
           ctx.log(`Arm ${arm1.id} has session: ${session1}`);
@@ -48,13 +55,14 @@ export const sessionIsolationScenario: TestScenario = {
       ctx.log("Spawning second arm (arm-beta)...");
       const arm2 = await spawnArm(ctx, "arm-beta", {
         harness: "opencode-api",
+        ...SESSION_ISOLATION_MODEL,
       });
       await waitForArmStatus(ctx, arm2.id, "idle");
       ctx.log(`Second arm spawned: ${arm2.id} on port ${arm2.port}`);
 
       // Get session ID for second arm
       if (arm2.port) {
-        const session2 = await getOpenCodeSession(arm2.port);
+        const session2 = await getOpenCodeSession(arm2.port, arm2.id);
         if (session2) {
           armSessions.set(arm2.id, session2);
           ctx.log(`Arm ${arm2.id} has session: ${session2}`);
@@ -113,7 +121,7 @@ export const sessionIsolationScenario: TestScenario = {
 /**
  * Get the current session ID from an OpenCode server
  */
-async function getOpenCodeSession(port: number): Promise<string | null> {
+async function getOpenCodeSession(port: number, armId: string): Promise<string | null> {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/session`, {
       signal: AbortSignal.timeout(5000),
@@ -129,8 +137,13 @@ async function getOpenCodeSession(port: number): Promise<string | null> {
       return null;
     }
 
-    // Return the first (most recent) session
-    return sessions[0]?.id || null;
+    // OpenCode can expose a shared session catalog. Pick the session that
+    // belongs to this arm instead of assuming the first row is local.
+    const matchingSession = sessions.find((session) =>
+      session.title?.startsWith(`Coleo Arm: ${armId}`),
+    );
+
+    return matchingSession?.id || sessions[0]?.id || null;
   } catch {
     return null;
   }

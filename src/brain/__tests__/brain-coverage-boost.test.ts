@@ -740,6 +740,43 @@ describe("Brain coverage boost", () => {
     expect(row.completed_at).toBeTruthy();
   });
 
+  it("hands completed arms off to their next task automatically", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-auto-handoff", "Auto handoff task", "assigned to arm", "in_progress", "normal", "arm-1", now, now]
+    );
+
+    const prompts: string[] = [];
+    let resetCount = 0;
+
+    (brain as any).sendPromptToArm = async (_armId: string, message: string) => {
+      prompts.push(message);
+      return true;
+    };
+    (brain as any).resetArmSession = async () => {
+      resetCount++;
+      return true;
+    };
+
+    await (brain as any).completeTask("task-auto-handoff", "Done", []);
+
+    const completed = db
+      .query("SELECT status, assigned_to, completed_at FROM tasks WHERE id = ?")
+      .get("task-auto-handoff") as {
+        status: string;
+        assigned_to: string | null;
+        completed_at: string | null;
+      };
+
+    expect(completed.status).toBe("completed");
+    expect(completed.assigned_to).toBeNull();
+    expect(completed.completed_at).toBeTruthy();
+    expect((brain as any).arms.get("arm-1")?.status).toBe("idle");
+    expect(resetCount).toBe(1);
+    expect(prompts.some((prompt) => prompt.includes("get_full_briefing"))).toBe(true);
+  });
+
   it("creates verification tasks for db-only tasks that have issue reports", async () => {
     const now = nowIso();
     db.run(
@@ -778,6 +815,53 @@ describe("Brain coverage boost", () => {
       .get() as { id: string; subject: string; status: string } | undefined;
     expect(verification).toBeDefined();
     expect(verification?.status).toBe("pending");
+  });
+
+  it("releases completed_with_issues arms and hands them off", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-issues-handoff", "Issues handoff task", "assigned to arm", "in_progress", "high", "arm-1", now, now]
+    );
+
+    const prompts: string[] = [];
+    let resetCount = 0;
+
+    (brain as any).sendPromptToArm = async (_armId: string, message: string) => {
+      prompts.push(message);
+      return true;
+    };
+    (brain as any).resetArmSession = async () => {
+      resetCount++;
+      return true;
+    };
+
+    await (brain as any).handleStatusReport({
+      id: "report-issues-handoff",
+      taskId: "task-issues-handoff",
+      armId: "arm-1",
+      status: "completed_with_issues",
+      summary: "Done, but edge cases remain",
+      issues: ["Missing edge case coverage"],
+      blockers: [],
+      nextSteps: "Add tests for edge cases",
+      filesChanged: ["src/example.ts"],
+      testsStatus: "failing",
+    });
+
+    const completed = db
+      .query("SELECT status, assigned_to, completed_at FROM tasks WHERE id = ?")
+      .get("task-issues-handoff") as {
+        status: string;
+        assigned_to: string | null;
+        completed_at: string | null;
+      };
+
+    expect(completed.status).toBe("completed");
+    expect(completed.assigned_to).toBeNull();
+    expect((brain as any).arms.get("arm-1")?.status).toBe("idle");
+    expect(resetCount).toBe(1);
+    expect(prompts.some((prompt) => prompt.includes("get_full_briefing"))).toBe(true);
   });
 
   it("re-evaluation only unblocks tasks marked dependency_blocked", async () => {

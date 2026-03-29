@@ -296,7 +296,13 @@ export async function startBrain(ctx: TestContext, options?: { once?: boolean })
 export async function spawnArm(
   ctx: TestContext,
   name: string,
-  options?: { domain?: string; prompt?: string; harness?: string }
+  options?: {
+    domain?: string;
+    prompt?: string;
+    harness?: string;
+    provider?: string;
+    model?: string;
+  }
 ): Promise<{ id: string; pid?: number; port?: number }> {
   ctx.timing.mark(`arm_spawn_${name}`);
   
@@ -311,8 +317,8 @@ export async function spawnArm(
       name,
       domain: options?.domain || "general",
       harness: options?.harness || "opencode-api",
-      provider: ctx.model.provider,
-      model: ctx.model.model,
+      provider: options?.provider || ctx.model.provider,
+      model: options?.model || ctx.model.model,
       prompt: options?.prompt,
     }),
   });
@@ -335,8 +341,8 @@ export async function spawnArm(
     },
     body: JSON.stringify({
       workdir: ctx.workDir,
-      provider: ctx.model.provider,
-      model: ctx.model.model,
+      provider: options?.provider || ctx.model.provider,
+      model: options?.model || ctx.model.model,
       initialPrompt: options?.prompt,
     }),
   });

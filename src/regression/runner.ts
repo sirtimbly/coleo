@@ -58,16 +58,18 @@ export async function runTestSuite(config: TestSuiteConfig): Promise<TestSuiteRe
   }
 
   const iterations = config.iterations || 1;
-  const models = config.models.length > 0 ? config.models : DEFAULT_MODELS;
+  const defaultModels = config.models.length > 0 ? config.models : DEFAULT_MODELS;
 
   console.log(`Scenarios: ${scenarios.map(s => s.name).join(", ")}`);
-  console.log(`Models: ${models.map(m => `${m.provider}/${m.model}`).join(", ")}`);
+  console.log(`Models: ${defaultModels.map(m => `${m.provider}/${m.model}`).join(", ")}`);
   console.log(`Iterations: ${iterations}`);
   console.log("");
 
   // Run scenarios
   for (const scenario of scenarios) {
-    for (const model of models) {
+    const scenarioModels = scenario.models?.length ? scenario.models : defaultModels;
+
+    for (const model of scenarioModels) {
       for (let i = 0; i < iterations; i++) {
         const iterLabel = iterations > 1 ? ` (iteration ${i + 1}/${iterations})` : "";
         console.log(`\n${"─".repeat(50)}`);

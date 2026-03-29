@@ -1039,7 +1039,10 @@ function generateTaskId(phaseName: string, subject: string): string {
 }
 
 /**
- * Generate full context bundle for a task
+ * Generate the task briefing returned by `get_full_briefing`.
+ *
+ * This is the main prompt payload an arm sees when it starts work or when the
+ * brain automatically hands it off to the next task after completion.
  */
 export async function generateContextBundle(
 	ctx: PromptContext,
@@ -1500,6 +1503,10 @@ function generateInstructions(task: Task): string {
 		task.id.startsWith("bug-") ||
 		subject.includes("bug");
 
+	// These domain-specific instructions are embedded directly into the
+	// `get_full_briefing` response, so keep them short, operational, and safe to
+	// reuse when an arm is auto-handed-off to follow-up work.
+
 	let baseInstructions = `## Your Task: ${task.subject}
 
 ${task.description}
@@ -1569,6 +1576,25 @@ ${task.description}
 - Consider edge cases
 - Ensure tests are maintainable
 - Run existing tests to verify nothing is broken`
+		);
+	}
+
+	if (domain === "refactoring" || subject.includes("refactor")) {
+		return (
+			baseInstructions +
+			`
+
+## Refactoring-Specific
+
+- This guidance is intentionally conservative because refactor tasks are often
+  resumed via follow-up briefings after another arm iteration.
+- **Prerequisites**: Verify git working tree is clean, services are running, and no other arms have claims on target files
+- **File Size Thresholds**: Files >800 lines are critical, >600 lines are high priority, >400 lines are normal priority
+- **Incremental Approach**: Work on ONE file at a time, or split large files into batches of 5-10 files maximum
+- **Test Safety**: Run ALL tests after each refactoring batch to ensure no regressions
+- **Extraction Strategy**: Break down monolithic functions into smaller, focused units; separate concerns into distinct modules
+- **Document Changes**: Add comments explaining refactoring rationale
+- **Report Blockers**: If a file is too large or complex for incremental refactoring, report a discovery and request breakdown into subtasks`
 		);
 	}
 

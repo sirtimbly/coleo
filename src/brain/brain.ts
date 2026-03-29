@@ -2599,6 +2599,24 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		}
 	}
 
+	private async markArmTaskCompletedAndRelease(
+		armId: string,
+		taskId: string,
+	): Promise<void> {
+		if (this.armStateMachine) {
+			await this.armStateMachine.transition(armId, {
+				type: "TASK_COMPLETED",
+				taskId,
+			});
+		}
+
+		await this.clearArmTaskAssignment(armId);
+		await this.apiRequest(`/api/arms/${encodeURIComponent(armId)}/metrics`, {
+			method: "POST",
+			body: JSON.stringify({ currentTask: null }),
+		});
+	}
+
 	/**
 	 * Finalize task completion (called after validation or if validation skipped)
 	 */
@@ -2610,19 +2628,8 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		const task = await this.getTaskFromApi(taskId);
 		const workerArmId = task?.assignedTo;
 
-		// Find the arm that was working on this task and transition its state
-		if (workerArmId && this.armStateMachine) {
-			await this.armStateMachine.transition(workerArmId, {
-				type: "TASK_COMPLETED",
-				taskId,
-			});
-
-			// Also update the legacy in-memory arm status
-			const arm = this.arms.get(workerArmId);
-			if (arm) {
-				arm.status = "idle";
-				arm.currentTask = undefined;
-			}
+		if (workerArmId) {
+			await this.markArmTaskCompletedAndRelease(workerArmId, taskId);
 		}
 
 		await this.patchTaskViaApi(taskId, {
@@ -2631,19 +2638,6 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			assignedTo: null,
 			dependencyBlocked: false,
 		});
-		if (workerArmId) {
-			await this.apiRequest(`/api/arms/${encodeURIComponent(workerArmId)}`, {
-				method: "PATCH",
-				body: JSON.stringify({ status: "idle" }),
-			});
-			await this.apiRequest(
-				`/api/arms/${encodeURIComponent(workerArmId)}/metrics`,
-				{
-					method: "POST",
-					body: JSON.stringify({ currentTask: null }),
-				},
-			);
-		}
 
 		this.state.completedToday++;
 		this.state.completedTaskCount++;
@@ -2816,6 +2810,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			);
 			return;
 		}
+		const workerArmId = task.assignedTo || null;
 
 		const isFollowUpTask =
 			task.subject?.startsWith("Validate completion:") ||
@@ -2828,6 +2823,9 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 				`Skipping recursive follow-up generation for ${taskId} (${task.subject})`,
 			);
 			await this.finalizeTaskCompletion(taskId, summary, artifacts);
+			if (workerArmId) {
+				await this.handOffCompletedArm(workerArmId);
+			}
 			return;
 		}
 
@@ -2851,10 +2849,16 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			});
 
 			// The verification task creation also completes the original task
+			if (workerArmId) {
+				await this.handOffCompletedArm(workerArmId);
+			}
 			return;
 		}
 
 		await this.initiateTaskValidation(taskId, summary, artifacts, task);
+		if (workerArmId) {
+			await this.handOffCompletedArm(workerArmId);
+		}
 	}
 
 	/**
@@ -3293,6 +3297,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 					report,
 					!forwardDecision.shouldForward,
 				);
+				await this.handOffCompletedArm(report.armId);
 				break;
 			}
 
@@ -3374,6 +3379,13 @@ ${originalTask.id}`;
 					notes: `Follow-up verification for ${originalTask.id}. Status report: ${report.id}`,
 				},
 			} as Task);
+
+		if (originalTask.assignedTo) {
+			await this.markArmTaskCompletedAndRelease(
+				originalTask.assignedTo,
+				originalTask.id,
+			);
+		}
 
 		// Mark original task as completed (with issues noted)
 		await this.patchTaskViaApi(originalTask.id, {
@@ -4944,53 +4956,23 @@ Report findings using bug resolution workflow.`;
 				continue;
 			}
 
-			// Get all unassigned pending tasks - any idle arm should be able to work on them
-			// Domain is a preference, not a hard filter
-			const availableTasks = taskSnapshot.filter((task) => {
-				if (task.status !== "pending") return false;
-				if (task.assignedTo) return false; // Already assigned to someone
-				return true; // Any unassigned pending task is fair game
-			});
+			const availableTasks = this.getAvailableTasksForArm(taskSnapshot, arm.id);
 
-			// Also include tasks specifically assigned to this arm
-			const myAssignedTasks = taskSnapshot.filter(
-				(task) => task.assignedTo === arm.id && task.status === "claimed",
-			);
-
-			const allTasks = [...myAssignedTasks, ...availableTasks];
-			const uniqueTasks = allTasks.filter(
-				(task, index, self) =>
-					index === self.findIndex((t) => t.id === task.id),
-			);
-
-			if (uniqueTasks.length > 0) {
+			if (availableTasks.length > 0) {
 				// There are tasks available - prompt the arm to fetch its assignment
-				const taskCount = uniqueTasks.length;
-				const domainMatchCount = uniqueTasks.filter(
-					(t) => !t.domain || t.domain === armDomain,
-				).length;
-
 				this.log(
-					`Arm ${arm.id} [${armDomain}]: ${taskCount} task(s) available (${domainMatchCount} domain match), prompting to check instructions...`,
+					`Arm ${arm.id} [${armDomain}]: ${availableTasks.length} task(s) available, prompting to check instructions...`,
 				);
 
-				const prompt = await this.templates.renderTemplate(
-					"arm-tasks-available-prompt.jinja",
+				const promptSuccess = await this.promptArmForAvailableTasks(
+					arm.id,
+					availableTasks,
 					{
-						task_count: taskCount,
+						reason: "tasks_available",
 					},
 				);
 
-				const promptSuccess = await this.sendPromptToArm(arm.name, prompt);
-
-				if (promptSuccess) {
-					this.logActivity("brain", "arm_prompted", arm.id, {
-						reason: "tasks_available",
-						taskCount,
-						domainMatchCount,
-						domain: armDomain,
-					});
-				} else {
+				if (!promptSuccess) {
 					this.log(`Failed to prompt arm ${arm.id} - API may not be running`);
 				}
 			} else {
@@ -5006,6 +4988,102 @@ Report findings using bug resolution workflow.`;
 					watchingPatterns: getDomainPatterns(armDomain),
 				});
 			}
+		}
+	}
+
+	private getAvailableTasksForArm(taskSnapshot: Task[], armId: string): Task[] {
+		const availableTasks = taskSnapshot.filter((task) => {
+			if (task.status !== "pending") return false;
+			if (task.assignedTo) return false;
+			return true;
+		});
+
+		const myAssignedTasks = taskSnapshot.filter(
+			(task) => task.assignedTo === armId && task.status === "claimed",
+		);
+
+		return [...myAssignedTasks, ...availableTasks].filter(
+			(task, index, self) =>
+				index === self.findIndex((candidate) => candidate.id === task.id),
+		);
+	}
+
+	private async promptArmForAvailableTasks(
+		armId: string,
+		availableTasks: Task[],
+		options?: {
+			reason?: string;
+			resetSession?: boolean;
+		},
+	): Promise<boolean> {
+		if (availableTasks.length === 0) {
+			return false;
+		}
+
+		const arm = this.arms.get(armId);
+		const armName = arm?.name || armId;
+		const armDomain =
+			(arm as (Arm & { domain?: string }) | undefined)?.domain || "general";
+		const taskCount = availableTasks.length;
+		const domainMatchCount = availableTasks.filter(
+			(task) => !task.domain || task.domain === armDomain,
+		).length;
+
+		let sessionReset = false;
+		if (options?.resetSession) {
+			sessionReset = await this.resetArmSession(armId);
+			if (!sessionReset) {
+				this.log(
+					`Arm ${armId}: session reset unavailable, continuing with existing session`,
+				);
+			}
+		}
+
+		const prompt = await this.templates.renderTemplate(
+			"arm-tasks-available-prompt.jinja",
+			{
+				task_count: taskCount,
+			},
+		);
+
+		const promptSuccess = await this.sendPromptToArm(armName, prompt);
+
+		if (promptSuccess) {
+			this.logActivity("brain", "arm_prompted", armId, {
+				reason: options?.reason || "tasks_available",
+				taskCount,
+				domainMatchCount,
+				domain: armDomain,
+				sessionReset,
+			});
+		}
+
+		return promptSuccess;
+	}
+
+	private async handOffCompletedArm(armId: string): Promise<void> {
+		if (this.shuttingDown) {
+			return;
+		}
+
+		await this.loadTasks();
+		const availableTasks = this.getAvailableTasksForArm(this.tasks, armId);
+		if (availableTasks.length === 0) {
+			this.log(`Arm ${armId}: no follow-up work available after completion`);
+			return;
+		}
+
+		const promptSuccess = await this.promptArmForAvailableTasks(
+			armId,
+			availableTasks,
+			{
+				reason: "task_completion_handoff",
+				resetSession: true,
+			},
+		);
+
+		if (!promptSuccess) {
+			this.log(`Failed to hand off next task to arm ${armId}`);
 		}
 	}
 
