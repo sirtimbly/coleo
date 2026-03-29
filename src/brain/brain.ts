@@ -1591,6 +1591,18 @@ export class Brain {
 				);
 				break;
 			}
+
+			case "task_deleted": {
+				const payload = message.payload as {
+					taskId: string;
+					projectId: string;
+					featureId: string;
+					deletedBy: string;
+					timestamp: string;
+				};
+				await this.handleTaskDeletion(payload);
+				break;
+			}
 		}
 	}
 
@@ -1626,6 +1638,111 @@ export class Brain {
 
 		// TODO: Store dependency relationships in database for future task planning
 		// For now, just log it
+	}
+
+	/**
+	 * Handle task deletion notification from API
+	 * 
+	 * Performs idempotent cleanup of project plans when a task is deleted.
+	 * The API attempts to remove the feature from plan files before notifying
+	 * the Brain. This handler verifies the cleanup and handles any additional
+	 * processing needed (reindexing, logging, etc.).
+	 */
+	private async handleTaskDeletion(payload: {
+		taskId: string;
+		projectId: string;
+		featureId: string;
+		deletedBy: string;
+		timestamp: string;
+	}): Promise<void> {
+		const { taskId, projectId, featureId, deletedBy, timestamp } = payload;
+		
+		this.log(`Processing task deletion: ${taskId} (feature: ${featureId})`);
+
+		try {
+			// Idempotent verification: Check if feature still exists in plan files
+			// The API should have already removed it, but we verify here
+			const cleanupNeeded = await this.verifyAndCleanupPlanFeature(projectId, featureId);
+			
+			if (cleanupNeeded) {
+				this.log(`Cleaned up feature ${featureId} from project plan ${projectId}`);
+			}
+
+			// Log the deletion activity
+			this.logActivity("brain", "task_deleted", taskId, {
+				projectId,
+				featureId,
+				deletedBy,
+				timestamp,
+				planCleanupNeeded: cleanupNeeded,
+			});
+
+			// Publish deletion event for other consumers
+			await this.publishEventViaApi({
+				subject: `coleo.events.task.${taskId}.deleted`,
+				type: "task.deleted",
+				data: {
+					taskId,
+					projectId,
+					featureId,
+					deletedBy,
+					timestamp,
+					planCleaned: cleanupNeeded,
+				},
+			});
+
+			this.log(`Task deletion processed successfully: ${taskId}`);
+		} catch (err) {
+			// Log error but don't throw - deletion notification should not fail the overall flow
+			this.log(`Error processing task deletion for ${taskId}: ${err}`);
+			
+			// Log activity about the failure for monitoring
+			this.logActivity("brain", "task_deletion_failed", taskId, {
+				projectId,
+				featureId,
+				error: err instanceof Error ? err.message : String(err),
+				timestamp: new Date().toISOString(),
+			});
+		}
+	}
+
+	/**
+	 * Verify and cleanup a feature from project plan files
+	 * 
+	 * Returns true if cleanup was performed, false if feature was already absent
+	 */
+	private async verifyAndCleanupPlanFeature(
+		projectId: string,
+		featureId: string,
+	): Promise<boolean> {
+		try {
+			// Determine the plan file path
+			let planFilePath: string;
+			
+			// Extract file path from projectId (format: "/path/to/file:lineNumber")
+			const sourceRefMatch = projectId.match(/^(.+):\d+$/);
+			if (sourceRefMatch?.[1]) {
+				planFilePath = sourceRefMatch[1];
+			} else if (projectId === "default" || !projectId.includes("/")) {
+				// No specific plan file to check
+				return false;
+			} else {
+				// Treat projectId as file path directly
+				planFilePath = projectId;
+			}
+
+			// Import the plan parser dynamically to avoid circular deps
+			const { removeTaskLineFromPlan } = await import("./plan-parser");
+			
+			// Attempt to remove the line - this is idempotent (returns false if not found)
+			const removed = await removeTaskLineFromPlan(planFilePath, featureId);
+			
+			return removed;
+		} catch (err) {
+			// If file doesn't exist or other error, log but don't fail
+			this.log(`Could not verify/cleanup plan feature ${featureId}: ${err}`);
+			return false;
+		}
 	}
 
 	/**
