@@ -503,6 +503,46 @@ export class Brain {
 		return response?.accepted === true || response?.queued === true;
 	}
 
+	private async listActiveStuckRequestsViaApi(): Promise<
+		Array<{
+			id: number;
+			armId: string;
+			reason?: string | null;
+			requestedBy?: string | null;
+			createdAt: string;
+			updatedAt: string;
+		}>
+	> {
+		const response = await this.apiRequest<{
+			requests?: Array<{
+				id: number;
+				armId: string;
+				reason?: string | null;
+				requestedBy?: string | null;
+				createdAt: string;
+				updatedAt: string;
+			}>;
+		}>("/api/arms/stuck-requests");
+		return response?.requests || [];
+	}
+
+	private async resolveStuckRequestViaApi(
+		requestId: number,
+		outcome: string,
+	): Promise<boolean> {
+		const response = await this.apiRequest<{ success?: boolean }>(
+			`/api/arms/stuck-requests/${requestId}/resolve`,
+			{
+				method: "POST",
+				body: JSON.stringify({
+					handledBy: "brain",
+					outcome,
+				}),
+			},
+		);
+		return response?.success === true;
+	}
+
 	private async listPendingMessagesViaApi(
 		to: string,
 		limit = 500,
@@ -782,6 +822,9 @@ export class Brain {
 
 			// Refresh tasks in case assistant-output processing changed task state.
 			await this.loadTasks();
+
+			// Step 3.6: Honor operator requests to treat an arm as stuck.
+			await this.processManualStuckRequests();
 
 			// Step 4: Use unified health monitor for stuck detection
 			// This replaces checkStuckArms() and checkIdleArmStuckLoops()
@@ -5782,6 +5825,80 @@ Report findings using bug resolution workflow.`;
 		} catch (err) {
 			this.log(`Failed to send prompt to arm ${armName}: ${err}`);
 			return false;
+		}
+	}
+
+	private async processManualStuckRequests(): Promise<void> {
+		const requests = await this.listActiveStuckRequestsViaApi();
+		if (requests.length === 0) {
+			return;
+		}
+
+		this.log(`Processing ${requests.length} manual stuck request(s)`);
+
+		for (const request of requests) {
+			const arm = this.arms.get(request.armId);
+			if (!arm) {
+				await this.resolveStuckRequestViaApi(
+					request.id,
+					"ignored: arm not active",
+				);
+				continue;
+			}
+
+			const reasonText = request.reason?.trim();
+			this.log(
+				`Manual stuck request for ${arm.name}${reasonText ? `: ${reasonText}` : ""}`,
+			);
+
+			const recentOutput = await this.readArmLogs(arm.name, 100);
+			let analysis: StuckAnalysis | null = null;
+			if (recentOutput && recentOutput.trim().length >= 50) {
+				const armDomain =
+					(arm as Arm & { domain?: string }).domain || "general";
+				const currentTaskDescription = arm.currentTask
+					? this.tasks.find((task) => task.id === arm.currentTask)?.subject
+					: undefined;
+				const detected = await this.stuckArmAnalyzer.analyze(
+					arm.name,
+					armDomain,
+					recentOutput,
+					currentTaskDescription,
+				);
+				if (detected.isStuck) {
+					analysis = detected;
+				}
+			}
+
+			if (!analysis) {
+				const operatorReason = reasonText
+					? `Human operator marked this arm as stuck: ${reasonText}`
+					: "Human operator marked this arm as stuck.";
+				analysis = {
+					isStuck: true,
+					stuckType: "unknown",
+					reasoning: operatorReason,
+					suggestedAction: "prompt",
+					suggestedResponse:
+						`${operatorReason} Stop, reassess your current work, share the blocker clearly, ` +
+						`then either continue with a concrete next step or ask a precise question.`,
+					confidence: 1,
+				};
+			}
+
+			this.logActivity("brain", "manual_stuck_request_processing", arm.id, {
+				requestId: request.id,
+				reason: request.reason,
+				requestedBy: request.requestedBy,
+				detectedStuckType: analysis.stuckType,
+				suggestedAction: analysis.suggestedAction,
+			});
+
+			await this.handleStuckArm(arm, analysis);
+			await this.resolveStuckRequestViaApi(
+				request.id,
+				`handled:${analysis.suggestedAction || "escalate"}`,
+			);
 		}
 	}
 

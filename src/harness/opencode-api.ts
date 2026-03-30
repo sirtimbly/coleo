@@ -862,7 +862,7 @@ export class OpenCodeApiHarness implements AgentHarness {
    */
   async getMessages(
     session: HarnessSession,
-    options?: { limit?: number }
+    options?: { limit?: number; truncateText?: boolean }
   ): Promise<{ info: Message; parts: Part[] }[]> {
     const apiSession = this.sessions.get(session.id);
     if (!apiSession) {
@@ -881,11 +881,11 @@ export class OpenCodeApiHarness implements AgentHarness {
       messages = messages.slice(-limit);
     }
     
-    // Truncate large fields to prevent MAX_PAYLOAD_EXCEEDED errors
+    const truncateText = options?.truncateText !== false;
     return messages.map(msg => ({
       info: msg.info,
       parts: msg.parts?.map((part: Part) => {
-        if (part.type === 'text' && part.text) {
+        if (truncateText && part.type === 'text' && part.text) {
           return {
             ...part,
             text: truncateLargeFields(part.text) as string

@@ -264,6 +264,7 @@ export class ArmClient {
     armId: string,
     prompt: string,
     attachments?: TaskAttachment[],
+    interrupt?: boolean,
     timeoutMs = 30000,
   ): Promise<CommandResponse> {
     const agentId = this.armToAgent.get(armId);
@@ -280,6 +281,7 @@ export class ArmClient {
       requestId: generateRequestId(),
       armId,
       prompt,
+      interrupt,
       attachments,
     };
 
@@ -313,7 +315,7 @@ export class ArmClient {
    */
   async getMessages(
     armId: string,
-    options?: { limit?: number },
+    options?: { limit?: number; truncateText?: boolean },
     timeoutMs = 10000,
   ): Promise<CommandResponse<GetMessagesResponse>> {
     const agentId = this.armToAgent.get(armId);
@@ -332,6 +334,7 @@ export class ArmClient {
         requestId: generateRequestId(),
         armId,
         limit: options?.limit,
+        truncateText: options?.truncateText,
       },
       timeoutMs,
     );

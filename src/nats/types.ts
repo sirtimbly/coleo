@@ -88,6 +88,7 @@ export interface SendPromptCommand {
   requestId: string;
   armId: string;
   prompt: string;
+  interrupt?: boolean;
   attachments?: TaskAttachment[];
 }
 
@@ -113,6 +114,7 @@ export interface GetMessagesCommand {
   requestId: string;
   armId: string;
   limit?: number;
+  truncateText?: boolean;
 }
 
 export interface GetTodosCommand {
