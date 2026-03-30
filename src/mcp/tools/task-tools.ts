@@ -6,7 +6,15 @@
 
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { ARM_ID, sendToBrain, logActivity } from "./utils";
+import {
+	ARM_ID,
+	sendToBrain,
+	logActivity,
+	getPendingTasks,
+	resolveTaskReferenceForTool,
+	rememberRecentlyCompletedTask,
+	clearRecentCompletedTaskExclusion,
+} from "./utils";
 
 /**
  * Register task-related tools on the MCP server
@@ -16,31 +24,48 @@ export function registerTaskTools(server: McpServer): void {
 	server.registerTool(
 		"claim_task",
 		{
-			description: "Claim a pending task to work on",
+			description:
+				"Send an asynchronous claim request for a task. After calling, poll get_my_instructions to see the brain's assignment result.",
 			inputSchema: {
 				task_id: z.string().describe("The ID of the task to claim"),
 			},
 		},
 		async ({ task_id }) => {
-			console.error(`[MCP] claim_task called by ${ARM_ID} for task ${task_id}`);
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+
+			const resolvedTaskId = resolution.taskId;
+			console.error(
+				`[MCP] claim_task called by ${ARM_ID} for task ${resolvedTaskId}`,
+			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "task_assignment",
 				payload: {
 					action: "claim",
-					taskId: task_id,
+					taskId: resolvedTaskId,
 				},
 			});
+			clearRecentCompletedTaskExclusion();
 
-			logActivity(ARM_ID, "claim_task", task_id, { messageId });
+			logActivity(ARM_ID, "claim_task", resolvedTaskId, { messageId });
 			console.error(`[MCP] claim_task completed, messageId: ${messageId}`);
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} claim request sent (message: ${messageId}). Brain will confirm assignment.`,
 					},
 				],
 			};
@@ -51,7 +76,8 @@ export function registerTaskTools(server: McpServer): void {
 	server.registerTool(
 		"complete_task",
 		{
-			description: "Mark a task as complete with a summary",
+			description:
+				"Send an asynchronous completion report for a task with a summary. The brain processes it from the command queue.",
 			inputSchema: {
 				task_id: z.string().describe("The ID of the task"),
 				summary: z.string().describe("Summary of what was done"),
@@ -62,21 +88,36 @@ export function registerTaskTools(server: McpServer): void {
 			},
 		},
 		async ({ task_id, summary, artifacts }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+			const resolvedTaskId = resolution.taskId;
 			console.error(
-				`[MCP] complete_task called by ${ARM_ID} for task ${task_id}`,
+				`[MCP] complete_task called by ${ARM_ID} for task ${resolvedTaskId}`,
 			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "task_complete",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					summary,
 					artifacts: artifacts || [],
 				},
 			});
+			// Guard against queue-processing races: the immediate next briefing should
+			// not return the same task (or its verify follow-up) to this same arm.
+			rememberRecentlyCompletedTask(resolvedTaskId);
 
-			logActivity(ARM_ID, "complete_task", task_id, {
+			logActivity(ARM_ID, "complete_task", resolvedTaskId, {
 				messageId,
 				artifactCount: (artifacts || []).length,
 			});
@@ -85,7 +126,7 @@ export function registerTaskTools(server: McpServer): void {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} marked complete. Summary sent to brain (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} marked complete. Summary sent to brain (message: ${messageId}).`,
 					},
 				],
 			};
@@ -151,6 +192,18 @@ export function registerTaskTools(server: McpServer): void {
 			tests_status,
 			screenshot_path,
 		}) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+			const resolvedTaskId = resolution.taskId;
 			const reportId = `sr-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
 			const messageId = await sendToBrain({
@@ -159,7 +212,7 @@ export function registerTaskTools(server: McpServer): void {
 				type: "status_report",
 				payload: {
 					id: reportId,
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					armId: ARM_ID,
 					status,
 					summary,
@@ -172,7 +225,7 @@ export function registerTaskTools(server: McpServer): void {
 				},
 			});
 
-			logActivity(ARM_ID, "submit_status_report", task_id, {
+			logActivity(ARM_ID, "submit_status_report", resolvedTaskId, {
 				messageId,
 				reportId,
 				status,
@@ -182,7 +235,7 @@ export function registerTaskTools(server: McpServer): void {
 				content: [
 					{
 						type: "text" as const,
-						text: `Status report ${reportId} submitted for task ${task_id} (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Status report ${reportId} submitted for task ${resolvedTaskId} (message: ${messageId}).`,
 					},
 				],
 			};
@@ -203,26 +256,38 @@ export function registerTaskTools(server: McpServer): void {
 			},
 		},
 		async ({ task_id, screenshot_path }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+			const resolvedTaskId = resolution.taskId;
 			console.error(
-				`[MCP] acknowledge_task called by ${ARM_ID} for task ${task_id}`,
+				`[MCP] acknowledge_task called by ${ARM_ID} for task ${resolvedTaskId}`,
 			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
 				type: "task_acknowledge",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					screenshotPath: screenshot_path,
 				},
 			});
 
-			logActivity(ARM_ID, "acknowledge_task", task_id, { messageId });
+			logActivity(ARM_ID, "acknowledge_task", resolvedTaskId, { messageId });
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} acknowledged (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} acknowledged (message: ${messageId}).`,
 					},
 				],
 			};
@@ -250,28 +315,40 @@ export function registerTaskTools(server: McpServer): void {
 			},
 		},
 		async ({ task_id, approved, notes, screenshot_path }) => {
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: resolution.error,
+						},
+					],
+				};
+			}
+			const resolvedTaskId = resolution.taskId;
 			console.error(
-				`[MCP] validate_task called by ${ARM_ID} for task ${task_id}`,
+				`[MCP] validate_task called by ${ARM_ID} for task ${resolvedTaskId}`,
 			);
 			const messageId = await sendToBrain({
 				from: ARM_ID,
 				to: "brain",
-				type: "task_validate",
+				type: "task_validation",
 				payload: {
-					taskId: task_id,
+					taskId: resolvedTaskId,
 					approved,
 					notes,
 					screenshotPath: screenshot_path,
 				},
 			});
 
-			logActivity(ARM_ID, "validate_task", task_id, { messageId, approved });
+			logActivity(ARM_ID, "validate_task", resolvedTaskId, { messageId, approved });
 
 			return {
 				content: [
 					{
 						type: "text" as const,
-						text: `Task ${task_id} validation submitted: ${approved ? "APPROVED" : "REJECTED"} (message: ${messageId}).`,
+						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Task ${resolvedTaskId} validation submitted: ${approved ? "APPROVED" : "REJECTED"} (message: ${messageId}).`,
 					},
 				],
 			};
@@ -290,7 +367,6 @@ export function registerTaskTools(server: McpServer): void {
 			console.error(`[MCP] get_my_instructions called by ${ARM_ID}`);
 
 			// Import here to avoid circular dependencies
-			const { getPendingTasks } = await import("./utils");
 			const tasks = await getPendingTasks();
 
 			// Find tasks assigned to this arm
