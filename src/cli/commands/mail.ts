@@ -4,7 +4,7 @@ import { getColeoDir } from "../context";
 import { Maildir } from "../../mail";
 
 export function registerMailCommands(program: Command): void {
-  const mailCmd = program.command("mail").description("View and send mail");
+  const mailCmd = program.command("mail").description("Send requests to the brain and read replies");
 
   mailCmd
     .command("inbox")

@@ -2,6 +2,15 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { createInterface } from "readline";
 
+export interface ArmTemplateSummary {
+  name: string;
+  file: string;
+  domain: string;
+  description: string;
+  provider?: string;
+  model?: string;
+}
+
 export async function prompt(text: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
@@ -37,8 +46,8 @@ export async function promptYN(text: string, defaultYes = true): Promise<boolean
   return answer.toLowerCase().startsWith("y");
 }
 
-export async function loadArmTemplates(armsDir: string): Promise<Array<{ name: string; file: string; domain: string; description: string }>> {
-  const templates: Array<{ name: string; file: string; domain: string; description: string }> = [];
+export async function loadArmTemplates(armsDir: string): Promise<ArmTemplateSummary[]> {
+  const templates: ArmTemplateSummary[] = [];
   try {
     const files = await readDirSafe(armsDir);
     for (const file of files) {
@@ -47,18 +56,24 @@ export async function loadArmTemplates(armsDir: string): Promise<Array<{ name: s
       let name = file.replace(".toml", "");
       let domain = "general";
       let description = `${domain} specialist`;
+      let provider: string | undefined;
+      let model: string | undefined;
       try {
         const content = await readFile(filePath, "utf-8");
         const nameMatch = content.match(/name\s*=\s*"([^"]*)"/);
         const domainMatch = content.match(/domain\s*=\s*"([^"]*)"/);
         const traitsMatch = content.match(/traits\s*=\s*"([^"]*)"/);
+        const providerMatch = content.match(/provider\s*=\s*"([^"]*)"/);
+        const modelMatch = content.match(/model\s*=\s*"([^"]*)"/);
         name = nameMatch?.[1] || name;
         domain = domainMatch?.[1] || domain;
         description = traitsMatch?.[1] || `${domain} specialist`;
+        provider = providerMatch?.[1] || undefined;
+        model = modelMatch?.[1] || undefined;
       } catch {
         // Fall back to filename-derived defaults
       }
-      templates.push({ name, file, domain, description });
+      templates.push({ name, file, domain, description, provider, model });
     }
   } catch {
     // Directory may not exist

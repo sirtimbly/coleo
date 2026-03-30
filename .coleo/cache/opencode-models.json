@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-03-28T22:05:59.422Z",
+  "fetchedAt": "2026-03-30T19:37:58.251Z",
   "providers": [
     {
       "id": "cerebras",
@@ -294,6 +294,26 @@
         {
           "id": "gemini-live-2.5-flash-preview-native-audio",
           "name": "gemini-live-2.5-flash-preview-native-audio"
+        },
+        {
+          "id": "gemma-3-12b-it",
+          "name": "gemma-3-12b-it"
+        },
+        {
+          "id": "gemma-3-27b-it",
+          "name": "gemma-3-27b-it"
+        },
+        {
+          "id": "gemma-3-4b-it",
+          "name": "gemma-3-4b-it"
+        },
+        {
+          "id": "gemma-3n-e2b-it",
+          "name": "gemma-3n-e2b-it"
+        },
+        {
+          "id": "gemma-3n-e4b-it",
+          "name": "gemma-3n-e4b-it"
         }
       ]
     },

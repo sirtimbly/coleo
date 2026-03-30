@@ -2,8 +2,57 @@ import { Command } from "commander";
 import { join } from "path";
 import { getColeoDir } from "../context";
 
+const TASK_STATUS_ORDER: Record<string, number> = {
+  in_progress: 0,
+  claimed: 1,
+  pending: 2,
+  blocked: 3,
+  failed: 4,
+  completed: 5,
+  cancelled: 6,
+};
+
+const TASK_PRIORITY_ORDER: Record<string, number> = {
+  critical: 0,
+  high: 1,
+  normal: 2,
+  low: 3,
+};
+
+function getTaskStatusIcon(status: string): string {
+  switch (status) {
+    case "pending":
+      return "○";
+    case "claimed":
+      return "◐";
+    case "in_progress":
+      return "◑";
+    case "blocked":
+      return "△";
+    case "failed":
+      return "✕";
+    case "cancelled":
+      return "⊘";
+    default:
+      return "●";
+  }
+}
+
+function getTaskPriorityIcon(priority: string): string {
+  switch (priority) {
+    case "critical":
+      return "🔴";
+    case "high":
+      return "🟠";
+    case "low":
+      return "🔵";
+    default:
+      return "⚪";
+  }
+}
+
 export function registerTasksCommands(program: Command): void {
-  const tasksCmd = program.command("tasks").description("Manage tasks");
+  const tasksCmd = program.command("tasks").description("Sync, review, and discuss tasks");
 
   tasksCmd
     .command("sync")
@@ -148,9 +197,10 @@ export function registerTasksCommands(program: Command): void {
 
   tasksCmd
     .command("list")
-    .description("List tasks in database")
-    .option("-s, --status <status>", "Filter by status (pending, claimed, completed)")
+    .description("List tasks from the local database")
+    .option("-s, --status <status>", "Filter by status (pending, claimed, in_progress, blocked, completed, failed, cancelled)")
     .option("-n, --limit <n>", "Limit results", "20")
+    .option("--json", "Output raw task rows as JSON")
     .action(async (options) => {
       const coleoDir = getColeoDir();
       const dbPath = join(coleoDir, "coleo.db");
@@ -159,7 +209,7 @@ export function registerTasksCommands(program: Command): void {
         const { Database } = await import("bun:sqlite");
         const db = new Database(dbPath, { readonly: true });
 
-        let query = "SELECT id, subject, status, priority, phase FROM tasks";
+        let query = "SELECT id, subject, status, priority, phase, created_at, updated_at FROM tasks";
         const params: string[] = [];
 
         if (options.status) {
@@ -167,7 +217,28 @@ export function registerTasksCommands(program: Command): void {
           params.push(options.status);
         }
 
-        query += " ORDER BY created_at DESC LIMIT ?";
+        query += `
+          ORDER BY
+            CASE status
+              WHEN 'in_progress' THEN 0
+              WHEN 'claimed' THEN 1
+              WHEN 'pending' THEN 2
+              WHEN 'blocked' THEN 3
+              WHEN 'failed' THEN 4
+              WHEN 'completed' THEN 5
+              WHEN 'cancelled' THEN 6
+              ELSE 7
+            END,
+            CASE priority
+              WHEN 'critical' THEN 0
+              WHEN 'high' THEN 1
+              WHEN 'normal' THEN 2
+              WHEN 'low' THEN 3
+              ELSE 4
+            END,
+            COALESCE(updated_at, created_at) DESC
+          LIMIT ?
+        `;
         params.push(options.limit);
 
         const rows = db.query(query).all(...params) as Array<{
@@ -176,6 +247,8 @@ export function registerTasksCommands(program: Command): void {
           status: string;
           priority: string;
           phase: string | null;
+          created_at: string | null;
+          updated_at: string | null;
         }>;
 
         if (rows.length === 0) {
@@ -185,28 +258,37 @@ export function registerTasksCommands(program: Command): void {
           return;
         }
 
-        console.log("Tasks:");
+        if (options.json) {
+          const orderedRows = [...rows].sort((a, b) => {
+            const statusDelta = (TASK_STATUS_ORDER[a.status] ?? 99) - (TASK_STATUS_ORDER[b.status] ?? 99);
+            if (statusDelta !== 0) {
+              return statusDelta;
+            }
+
+            const priorityDelta =
+              (TASK_PRIORITY_ORDER[a.priority] ?? 99) - (TASK_PRIORITY_ORDER[b.priority] ?? 99);
+            if (priorityDelta !== 0) {
+              return priorityDelta;
+            }
+
+            const aTime = a.updated_at ?? a.created_at ?? "";
+            const bTime = b.updated_at ?? b.created_at ?? "";
+            return bTime.localeCompare(aTime);
+          });
+
+          console.log(JSON.stringify(orderedRows, null, 2));
+          db.close();
+          return;
+        }
+
+        console.log(`Tasks (${rows.length} shown):`);
 
         const headers = ["Status", "Priority", "Subject", "Phase", "ID"];
         const SUBJECT_MAX_WIDTH = 50;
 
         const tableRows = rows.map((row) => {
-          const statusIcon =
-            row.status === "pending"
-              ? "○"
-              : row.status === "claimed"
-                ? "◐"
-                : row.status === "in_progress"
-                  ? "◑"
-                  : "●";
-          const priorityIcon =
-            row.priority === "critical"
-              ? "🔴"
-              : row.priority === "high"
-                ? "🟠"
-                : row.priority === "low"
-                  ? "🔵"
-                  : "⚪";
+          const statusIcon = getTaskStatusIcon(row.status);
+          const priorityIcon = getTaskPriorityIcon(row.priority);
           // Truncate subject if too long
           const subject = row.subject.length > SUBJECT_MAX_WIDTH
             ? row.subject.slice(0, SUBJECT_MAX_WIDTH - 3) + "..."
@@ -248,8 +330,8 @@ export function registerTasksCommands(program: Command): void {
       } catch {
         console.log("No task database found.");
         console.log("Start the API server or run 'coleo tasks sync'.");
-        }
-      });
+      }
+    });
 
   tasksCmd
     .command("unclaim")

@@ -4,7 +4,7 @@ import { readFile, readdir } from "fs/promises";
 import { getColeoDir } from "../context";
 
 export function registerConfigCommands(program: Command): void {
-  const configCmd = program.command("config").description("Manage Coleo arm configuration");
+  const configCmd = program.command("config").description("Inspect local Coleo configuration");
   // Preset subcommands are intentionally disabled for now.
 
   configCmd

@@ -37,7 +37,7 @@ async function askYesNo(question: string): Promise<boolean> {
 export function registerInitCommand(program: Command): void {
   program
     .command("init")
-    .description("Initialize Coleo in the current project (.coleo/)")
+    .description("Set up a project-local .coleo workspace")
     .option("-d, --dir <path>", "Custom directory", ".coleo")
     .option("--non-interactive", "Skip prompts (for automation)", false)
     .action(async (options) => {
@@ -182,10 +182,12 @@ ${scriptInfo}${symlinkInfo}
  Quick Start:
    1. Start the API server:  coleo serve start
       (auto-starts local NATS if COLEO_NATS_URL is unset)
-   2. Start the web UI:     coleo web start
-   3. View dashboard:       http://localhost:5173
-   4. Configure arms:       edit .coleo/arms/default.toml
-   5. Spawn an arm:         coleo arm spawn --workdir ./src
+   2. Start the brain:      coleo brain start
+   3. Check system status:  coleo status
+   4. Review tasks:         coleo tasks list
+   5. Spawn an arm:         coleo arm spawn --prompt "Pick up the next important task"
+   6. Optional web UI:      coleo web start
+      Dashboard URL:        http://localhost:5173
 
  Documentation: https://coleo.dev
     `);

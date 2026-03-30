@@ -3,7 +3,7 @@ import { join } from "path";
 import { getColeoDir } from "../context";
 
 export function registerDebugCommands(program: Command): void {
-  const debugCmd = program.command("debug").description("Debug and test brain components");
+  const debugCmd = program.command("debug").description("Troubleshoot how the brain interprets inputs");
 
   debugCmd
     .command("intent <message>")

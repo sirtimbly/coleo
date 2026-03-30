@@ -67,7 +67,7 @@ async function ensureBackfillTask(db: Database, taskId: string): Promise<void> {
 export function registerStatusReportsCommands(program: Command): void {
 	const statusReportsCmd = program
 		.command("status-reports")
-		.description("Manage status reports");
+		.description("Import status report files into the database");
 
 	statusReportsCmd
 		.command("backfill")

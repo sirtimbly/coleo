@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { join } from "path";
-import { clearLine, cursorTo, moveCursor } from "node:readline";
+import { clearLine, cursorTo, emitKeypressEvents, moveCursor } from "node:readline";
 import { spawnArm, killArm } from "../../arm";
 import { generateArmName, generateArmNames, getNameGeneratorStats } from "../arm-names";
 import {
@@ -18,6 +18,9 @@ function normalizeTemplateName(value: string): string {
 
 type ArmDisplayState = "Idle" | "Busy" | "Stuck";
 const TERMINAL_WIDTH_SAFETY = 2;
+const WATCH_MESSAGE_TRUNCATE_LENGTH = 500;
+const WATCH_AUX_FETCH_TIMEOUT_MS = 5000;
+const WATCH_MESSAGES_FETCH_TIMEOUT_MS = 12000;
 
 function stripAnsi(value: string): string {
   return value.replace(/\u001b\[[0-9;]*m/g, "");
@@ -120,9 +123,10 @@ type RowInput = {
   statusIndicator: string;
 };
 
-function buildAlignedArmLines(rows: RowInput[], columns: number): string[] {
+export function buildAlignedArmLines(rows: RowInput[], columns: number): string[] {
   const safeColumns = Math.max(20, columns - TERMINAL_WIDTH_SAFETY);
   const statusWidth = Math.max(...rows.map((row) => displayWidth(stripAnsi(row.statusIndicator))), 0);
+  const columnGapCount = 4;
 
   let nameWidth = Math.min(
     28,
@@ -137,21 +141,37 @@ function buildAlignedArmLines(rows: RowInput[], columns: number): string[] {
     Math.max(8, ...rows.map((row) => displayWidth(row.health)))
   );
 
-  const minTaskWidth = 10;
-  let taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+  const minTaskWidth = 6;
+  let taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
 
   while (taskWidth < minTaskWidth && nameWidth > 10) {
     nameWidth--;
-    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
   }
   while (taskWidth < minTaskWidth && healthWidth > 8) {
     healthWidth--;
-    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
   }
   while (taskWidth < minTaskWidth && lifetimeWidth > 4) {
     lifetimeWidth--;
-    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + 4);
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
   }
+  while (taskWidth < minTaskWidth && nameWidth > 6) {
+    nameWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
+  }
+  while (taskWidth < minTaskWidth && healthWidth > 4) {
+    healthWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
+  }
+  while (taskWidth < minTaskWidth && lifetimeWidth > 3) {
+    lifetimeWidth--;
+    taskWidth = safeColumns - (nameWidth + lifetimeWidth + healthWidth + statusWidth + columnGapCount);
+  }
+
+  nameWidth = Math.max(6, nameWidth);
+  lifetimeWidth = Math.max(3, lifetimeWidth);
+  healthWidth = Math.max(4, healthWidth);
 
   taskWidth = Math.max(0, taskWidth);
 
@@ -187,9 +207,557 @@ function renderLines(lines: string[], previousLineCount: number): number {
   return lines.length;
 }
 
+function enterFullscreenTui(): void {
+  if (!process.stdout.isTTY) {
+    return;
+  }
+
+  process.stdout.write("\u001b[?1049h");
+  process.stdout.write("\u001b[?25l");
+  process.stdout.write("\u001b[2J\u001b[H");
+}
+
+function exitFullscreenTui(): void {
+  if (!process.stdout.isTTY) {
+    return;
+  }
+
+  process.stdout.write("\u001b[?25h");
+  process.stdout.write("\u001b[?1049l");
+}
+
+function renderFullscreenLines(lines: string[]): void {
+  if (!process.stdout.isTTY) {
+    for (const line of lines) {
+      console.log(stripAnsi(line));
+    }
+    return;
+  }
+
+  const columns = process.stdout.columns ?? 120;
+  const rows = process.stdout.rows ?? Math.max(lines.length, 1);
+  const visibleLines = lines.slice(0, rows);
+
+  process.stdout.write("\u001b[2J\u001b[H");
+  for (let i = 0; i < rows; i++) {
+    const line = visibleLines[i] ?? "";
+    process.stdout.write(fitToWidth(line, columns));
+    if (i < rows - 1) {
+      process.stdout.write("\n");
+    }
+  }
+}
+
+function createWatchTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function") {
+    return AbortSignal.timeout(timeoutMs);
+  }
+  return undefined;
+}
+
+export interface WatchMessagePart {
+  type: string;
+  text?: string;
+  tool?: string;
+  toolName?: string;
+  name?: string;
+  state?: unknown;
+}
+
+function getWatchMessageDate(timeValue: unknown): Date | null {
+  if (timeValue === undefined || timeValue === null) {
+    return null;
+  }
+
+  let raw: unknown = timeValue;
+  if (typeof timeValue === "object") {
+    const timeObj = timeValue as Record<string, unknown>;
+    raw =
+      timeObj.completed ??
+      timeObj.created ??
+      timeObj.updated ??
+      timeObj.end ??
+      timeObj.start;
+  }
+
+  let date: Date | null = null;
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const ms = raw < 1_000_000_000_000 ? raw * 1000 : raw;
+    date = new Date(ms);
+  } else if (typeof raw === "string") {
+    if (/^\d+$/.test(raw)) {
+      const parsed = Number.parseInt(raw, 10);
+      const ms = parsed < 1_000_000_000_000 ? parsed * 1000 : parsed;
+      date = new Date(ms);
+    } else {
+      date = new Date(raw);
+    }
+  }
+
+  if (!date || Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+}
+
+export function formatWatchMessageTimestamp(
+  timeValue: unknown,
+  options?: { locale?: string; timeZone?: string },
+): string | null {
+  if (timeValue === undefined || timeValue === null) {
+    return null;
+  }
+
+  let raw: unknown = timeValue;
+  if (typeof timeValue === "object") {
+    const timeObj = timeValue as Record<string, unknown>;
+    raw =
+      timeObj.completed ??
+      timeObj.created ??
+      timeObj.updated ??
+      timeObj.end ??
+      timeObj.start;
+  }
+
+  const date = getWatchMessageDate(raw);
+  if (!date) {
+    return null;
+  }
+
+  return date.toLocaleString(options?.locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+    timeZone: options?.timeZone,
+  });
+}
+
+function getWatchToolStatus(state: unknown): string | undefined {
+  if (typeof state === "string" && state.trim()) {
+    return state.trim();
+  }
+
+  if (state && typeof state === "object") {
+    const status = (state as { status?: unknown }).status;
+    if (typeof status === "string" && status.trim()) {
+      return status.trim();
+    }
+  }
+
+  return undefined;
+}
+
+export function getRenderableWatchMessageLines(
+  parts: WatchMessagePart[],
+  options?: { tools?: boolean; truncateMessages?: boolean },
+): string[] {
+  const showTools = options?.tools !== false;
+  const truncateMessages = options?.truncateMessages !== false;
+  const lines: string[] = [];
+
+  for (const part of parts) {
+    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+      lines.push(
+        truncateMessages && part.text.length > WATCH_MESSAGE_TRUNCATE_LENGTH
+          ? `${part.text.slice(0, WATCH_MESSAGE_TRUNCATE_LENGTH)}\n... (truncated, press x in watch to show full text)`
+          : part.text,
+      );
+      continue;
+    }
+
+    if (
+      showTools &&
+      (part.type === "tool-invocation" || part.type === "tool")
+    ) {
+      const toolName = part.toolName || part.tool || part.name;
+      if (!toolName) {
+        continue;
+      }
+
+      const status = getWatchToolStatus(part.state);
+      lines.push(`🔧 Tool: ${toolName}${status ? ` [${status}]` : ""}`);
+    }
+  }
+
+  return lines;
+}
+
+interface WatchMessage {
+  info: { role: string; id: string; time?: unknown };
+  parts: WatchMessagePart[];
+}
+
+interface WatchArmStatusPayload {
+  arm: {
+    id: string;
+    name: string;
+    status: string;
+    harness?: string;
+    provider?: string | null;
+    model?: string | null;
+    sessionId?: string | null;
+    currentTaskSubject?: string | null;
+    currentBugTitle?: string | null;
+    runtime?: {
+      state: string;
+      reason: string;
+      secondsSinceOutput: number | null;
+      secondsSinceActivity: number | null;
+      secondsSinceHeartbeat: number | null;
+    };
+  };
+}
+
+interface WatchArmListEntry {
+  id: string;
+  name: string;
+  status: string;
+  currentTaskSubject?: string | null;
+  runtime?: {
+    state?: string | null;
+    secondsSinceOutput?: number | null;
+  };
+}
+
+type FetchLike = (
+  input: string | URL | Request,
+  init?: RequestInit,
+) => Promise<Response>;
+
+interface WatchStuckRequest {
+  id: number;
+  reason?: string | null;
+  requestedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function getWatchArmDisplayName(arm: WatchArmListEntry): string {
+  if (arm.name && arm.name !== arm.id) {
+    return `${arm.name} (${arm.id})`;
+  }
+  return arm.name || arm.id;
+}
+
+export function formatWatchArmSelectionOption(
+  arm: WatchArmListEntry,
+  options?: { color?: boolean; columns?: number },
+): string {
+  const runtimeState = arm.runtime?.state || "unknown";
+  const displayState = classifyArmDisplayState(arm.status, runtimeState);
+  const statusIndicator = formatStatusIndicator(displayState, options?.color === true);
+  const taskText = arm.currentTaskSubject || "no current task";
+
+  return fitToWidth(
+    `${getWatchArmDisplayName(arm)} | ${statusIndicator} | ${runtimeState} | ${taskText}`,
+    options?.columns ?? 120,
+  );
+}
+
+export async function resolveWatchArmName(
+  name: string | undefined,
+  options?: {
+    apiUrl?: string;
+    headers?: Record<string, string>;
+    fetchImpl?: FetchLike;
+    interactive?: boolean;
+    color?: boolean;
+    columns?: number;
+    selectPrompt?: (text: string, values: string[]) => Promise<string>;
+  },
+): Promise<string> {
+  const trimmedName = name?.trim();
+  if (trimmedName) {
+    return trimmedName;
+  }
+
+  const { apiUrl, headers } = options?.apiUrl && options?.headers
+    ? { apiUrl: options.apiUrl, headers: options.headers }
+    : getApiConfig();
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  const response = await fetchImpl(`${apiUrl}/api/arms`, { headers });
+  if (!response.ok) {
+    throw new Error("Failed to fetch active arms from API.");
+  }
+
+  const payload = await response.json() as { arms?: WatchArmListEntry[] };
+  const arms = payload.arms || [];
+  if (arms.length === 0) {
+    throw new Error("No active arms to watch.");
+  }
+
+  if (options?.interactive === false) {
+    if (arms.length === 1) {
+      return arms[0]?.name || arms[0]?.id || "";
+    }
+    throw new Error("Multiple active arms found. Pass a name or run from a TTY to choose one.");
+  }
+
+  const labels = arms.map((arm) =>
+    formatWatchArmSelectionOption(arm, {
+      color: options?.color,
+      columns: options?.columns,
+    }),
+  );
+  const selectPromptFn = options?.selectPrompt ?? promptSelect;
+  const selected = await selectPromptFn("Select an active arm to watch:", labels);
+  const selectedIndex = labels.indexOf(selected);
+  const selectedArm = selectedIndex >= 0 ? arms[selectedIndex] : arms[0];
+
+  if (!selectedArm) {
+    throw new Error("No active arms to watch.");
+  }
+
+  return selectedArm.name || selectedArm.id;
+}
+
+function formatWatchMessageBlock(
+  msg: WatchMessage,
+  options?: { tools?: boolean; system?: boolean; truncateMessages?: boolean },
+): string[] {
+  if (msg.info.role === "system" && options?.system === false) {
+    return [];
+  }
+
+  const lines = getRenderableWatchMessageLines(msg.parts, {
+    tools: options?.tools,
+    truncateMessages: options?.truncateMessages,
+  });
+  if (lines.length === 0) {
+    return [];
+  }
+
+  const roleLabel =
+    msg.info.role === "assistant"
+      ? "Assistant"
+      : msg.info.role === "user"
+        ? "User"
+        : msg.info.role === "system"
+          ? "System"
+          : msg.info.role;
+  const timestamp = formatWatchMessageTimestamp(msg.info.time);
+
+  return [
+    "─".repeat(60),
+    timestamp ? `${roleLabel}  ${timestamp}` : roleLabel,
+    "",
+    ...lines,
+    "",
+  ];
+}
+
+function summarizeWatchActivity(
+  messages: WatchMessage[],
+  options?: { tools?: boolean; system?: boolean },
+): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (!msg) {
+      continue;
+    }
+    const lines = getRenderableWatchMessageLines(msg.parts, {
+      tools: options?.tools,
+    });
+    if (msg.info.role === "system" && options?.system === false) {
+      continue;
+    }
+    if (lines.length === 0) {
+      continue;
+    }
+
+    const preview = truncateToWidth(lines[0] || "", 70);
+    const timestamp = formatWatchMessageTimestamp(msg.info.time);
+    const role =
+      msg.info.role === "assistant"
+        ? "assistant"
+        : msg.info.role === "user"
+          ? "user"
+          : msg.info.role;
+    return `${role}${timestamp ? ` @ ${timestamp}` : ""} · ${preview}`;
+  }
+
+  return "No renderable activity yet";
+}
+
+function getLatestWatchMessageAgeSeconds(messages: WatchMessage[]): number | null {
+  let latestTimeMs: number | null = null;
+
+  for (const msg of messages) {
+    const date = getWatchMessageDate(msg.info.time);
+    if (!date) {
+      continue;
+    }
+    const timeMs = date.getTime();
+    if (latestTimeMs === null || timeMs > latestTimeMs) {
+      latestTimeMs = timeMs;
+    }
+  }
+
+  if (latestTimeMs === null) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor((Date.now() - latestTimeMs) / 1000));
+}
+
+function getFreshestAgeSeconds(...values: Array<number | null | undefined>): number | null {
+  const numericValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (numericValues.length === 0) {
+    return null;
+  }
+  return Math.min(...numericValues);
+}
+
+export function getWatchActivityAgeSeconds(input: {
+  arm: WatchArmStatusPayload["arm"] | null;
+  messages: WatchMessage[];
+}): number | null {
+  return getFreshestAgeSeconds(
+    input.arm?.runtime?.secondsSinceActivity,
+    input.arm?.runtime?.secondsSinceOutput,
+    getLatestWatchMessageAgeSeconds(input.messages),
+  );
+}
+
+export function settleWatchRefreshNotice(
+  notice: string | null,
+  options?: { succeeded?: boolean },
+): string | null {
+  if (
+    notice !== "Refreshing..." &&
+    !(typeof notice === "string" && notice.startsWith("Reloading messages with "))
+  ) {
+    return notice;
+  }
+
+  if (options?.succeeded === false) {
+    return null;
+  }
+
+  return null;
+}
+
+export function getWatchFocusLine(input: {
+  arm: WatchArmStatusPayload["arm"] | null;
+  messages: WatchMessage[];
+  showTools: boolean;
+  showSystem: boolean;
+}): string {
+  const task = input.arm?.currentTaskSubject?.trim();
+  const bug = input.arm?.currentBugTitle?.trim();
+  if (task || bug) {
+    return `Task ${task || "none"} | Bug ${bug || "none"}`;
+  }
+
+  const recent = summarizeWatchActivity(input.messages, {
+    tools: input.showTools,
+    system: input.showSystem,
+  });
+  if (recent !== "No renderable activity yet") {
+    return `Focus inferred from recent activity | ${recent}`;
+  }
+
+  return "Task not yet recorded | Bug not yet recorded";
+}
+
+function buildWatchTuiLines(input: {
+  name: string;
+  arm: WatchArmStatusPayload["arm"] | null;
+  stuckRequest: WatchStuckRequest | null;
+  messages: WatchMessage[];
+  showTools: boolean;
+  showSystem: boolean;
+  truncateMessages: boolean;
+  interruptNext: boolean;
+  composing: boolean;
+  draft: string;
+  notice: string | null;
+  error: string | null;
+  columns: number;
+  rows: number;
+}): string[] {
+  const arm = input.arm;
+  const runtime = arm?.runtime;
+  const freshestActivitySeconds = getWatchActivityAgeSeconds({
+    arm,
+    messages: input.messages,
+  });
+  const topLines = [
+    fitToWidth(
+      `Arm ${input.name} | db ${arm?.status || "unknown"} | runtime ${runtime?.state || "unknown"} | last output ${formatAgeFromSeconds(runtime?.secondsSinceOutput)}`,
+      input.columns,
+    ),
+    fitToWidth(
+      getWatchFocusLine({
+        arm,
+        messages: input.messages,
+        showTools: input.showTools,
+        showSystem: input.showSystem,
+      }),
+      input.columns,
+    ),
+    fitToWidth(
+      `Recent ${summarizeWatchActivity(input.messages, { tools: input.showTools, system: input.showSystem })}`,
+      input.columns,
+    ),
+    fitToWidth(
+      input.stuckRequest
+        ? `Stuck requested ${formatWatchMessageTimestamp(input.stuckRequest.updatedAt) || input.stuckRequest.updatedAt}${input.stuckRequest.reason ? ` · ${truncateToWidth(input.stuckRequest.reason, 60)}` : ""}`
+        : `Session ${arm?.sessionId || "n/a"} | heartbeat ${formatAgeFromSeconds(runtime?.secondsSinceHeartbeat)} | activity ${formatAgeFromSeconds(freshestActivitySeconds)}`,
+      input.columns,
+    ),
+    "═".repeat(Math.max(20, (input.columns || 80) - TERMINAL_WIDTH_SAFETY)),
+  ];
+
+  const messageLines = input.messages.flatMap((msg) =>
+    formatWatchMessageBlock(msg, {
+      tools: input.showTools,
+      system: input.showSystem,
+      truncateMessages: input.truncateMessages,
+    }),
+  );
+
+  const bottomLines = input.composing
+    ? [
+        "═".repeat(Math.max(20, (input.columns || 80) - TERMINAL_WIDTH_SAFETY)),
+        fitToWidth(
+          `Message> ${input.draft || ""}`,
+          input.columns,
+        ),
+        fitToWidth(
+          `Enter send | Esc cancel | i toggle interrupt (${input.interruptNext ? "on" : "off"}) | x toggle messages | q quit`,
+          input.columns,
+        ),
+      ]
+    : [
+        "═".repeat(Math.max(20, (input.columns || 80) - TERMINAL_WIDTH_SAFETY)),
+        fitToWidth(
+          input.notice || input.error || "m message | i toggle interrupt | x toggle messages | s mark stuck | r refresh | q quit",
+          input.columns,
+        ),
+        fitToWidth(
+          `Interrupt before send: ${input.interruptNext ? "on" : "off"} | Message bodies: ${input.truncateMessages ? "truncated" : "full"}`,
+          input.columns,
+        ),
+      ];
+
+  const availableBodyRows = Math.max(
+    5,
+    (input.rows || 30) - topLines.length - bottomLines.length,
+  );
+  const visibleBody = messageLines.slice(-availableBodyRows);
+
+  return [...topLines, ...visibleBody, ...bottomLines];
+}
+
 export function registerArmCommands(program: Command): void {
 
-  const armCmd = program.command("arm").description("Manage arms (agents)");
+  const armCmd = program.command("arm").description("Spawn, inspect, and control arms");
 
   armCmd
     .command("spawn")
@@ -233,6 +801,8 @@ export function registerArmCommands(program: Command): void {
 
         const suggestedName = armName || generateArmName();
         const templates = await loadArmTemplates(join(coleoDir, "arms"));
+        let templateProvider: string | undefined;
+        let templateModel: string | undefined;
 
         let useTemplate = false;
         if (templates.length > 0) {
@@ -246,6 +816,8 @@ export function registerArmCommands(program: Command): void {
               const selectedTemplate = templates[selectedIdx];
               if (selectedTemplate) {
                 armTemplate = normalizeTemplateName(selectedTemplate.file);
+                templateProvider = selectedTemplate.provider;
+                templateModel = selectedTemplate.model;
               }
             }
           }
@@ -259,16 +831,30 @@ export function registerArmCommands(program: Command): void {
           armWorkdir = workdir;
         }
 
-        const hasProvider = await promptYN("Configure provider/model?", false);
+        const templateModelSummary = [
+          templateProvider,
+          templateModel,
+        ].filter((value): value is string => typeof value === "string" && value.trim().length > 0).join(" / ");
+
+        const providerModelQuestion = templateModelSummary
+          ? `Configure provider/model? (template default: ${templateModelSummary})`
+          : "Configure provider/model?";
+
+        const hasProvider = await promptYN(providerModelQuestion, false);
         if (hasProvider) {
-          const provider = await prompt("Provider (anthropic, openai, github-copilot, opencode-zen): ");
-          if (provider.trim()) {
-            armProvider = provider;
-            const model = await prompt("Model [optional]: ");
-            if (model.trim()) {
-              armModel = model;
-            }
-          }
+          const providerPrompt = templateProvider
+            ? `Provider [${templateProvider}]: `
+            : "Provider (anthropic, openai, github-copilot, opencode-zen): ";
+          const provider = await prompt(providerPrompt);
+          const providerValue = provider.trim();
+          armProvider = providerValue || templateProvider;
+
+          const modelPrompt = templateModel
+            ? `Model [${templateModel}]: `
+            : "Model [optional]: ";
+          const model = await prompt(modelPrompt);
+          const modelValue = model.trim();
+          armModel = modelValue || templateModel;
         }
 
         console.log("\n=== Spawning Arm ===");
@@ -277,9 +863,15 @@ export function registerArmCommands(program: Command): void {
           console.log(`  Template: ${armTemplate}.toml`);
         }
         console.log(`  Workdir: ${armWorkdir}`);
-        if (armProvider) {
-          console.log(`  Provider: ${armProvider}`);
-          if (armModel) console.log(`  Model: ${armModel}`);
+        const summaryProvider = armProvider || templateProvider;
+        const summaryModel = armModel || templateModel;
+        if (summaryProvider) {
+          const providerSuffix = armProvider ? "" : " (template default)";
+          console.log(`  Provider: ${summaryProvider}${providerSuffix}`);
+          if (summaryModel) {
+            const modelSuffix = armModel ? "" : " (template default)";
+            console.log(`  Model: ${summaryModel}${modelSuffix}`);
+          }
         }
         console.log("");
       }
@@ -888,11 +1480,12 @@ export function registerArmCommands(program: Command): void {
    */
   async function watchArm(
     name: string,
-    options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }
+    options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean; fullMessages?: boolean }
   ): Promise<void> {
     const { apiUrl, headers } = getApiConfig();
     const showTools = options?.tools !== false;
     const showSystem = options?.system !== false;
+    let truncateMessages = options?.fullMessages !== true;
     const historyCount = parseInt(options?.history || "2", 10);
     const verbose = options?.verbose === true;
 
@@ -907,170 +1500,415 @@ export function registerArmCommands(program: Command): void {
       process.exit(1);
     }
 
-    const armData = (await armRes.json()) as {
-      arm: {
-        status: string;
-        agentId?: string | null;
-        host?: string | null;
-        runtime?: {
-          state: string;
-          secondsSinceOutput: number | null;
-        };
-      };
-    };
-
-    console.log(`Watching arm: ${name} (${armData.arm.status})`);
-    if (armData.arm.agentId) {
-      console.log(`  Type: Distributed (agent: ${armData.arm.agentId})`);
-      console.log(`  Host: ${armData.arm.host || "unknown"}`);
-    } else {
-      console.log(`  Type: Local`);
-    }
-    if (armData.arm.runtime) {
-      console.log(
-        `  Runtime: ${armData.arm.runtime.state} · last output ${formatAgeFromSeconds(armData.arm.runtime.secondsSinceOutput)}`,
-      );
-    }
-    console.log("Press Ctrl+C to stop\n");
-
-    let activeSessionId: string | undefined;
-    const renderedMessages = new Map<string, string>();
-
-    const renderMessage = (msg: {
-      info: { role: string; id: string };
-      parts: Array<{
-        type: string;
-        text?: string;
-        toolName?: string;
-        name?: string;
-        state?: string;
-      }>;
-    }): void => {
-      if (msg.info.role === "system" && !showSystem) return;
-
-      const signature = JSON.stringify(msg.parts);
-      if (renderedMessages.get(msg.info.id) === signature) {
-        return;
-      }
-      renderedMessages.set(msg.info.id, signature);
-
-      const roleLabel =
-        msg.info.role === "assistant"
-          ? "🤖 Assistant"
-          : msg.info.role === "user"
-            ? "👤 User"
-            : msg.info.role === "system"
-              ? "⚙️ System"
-              : msg.info.role;
-
-      console.log("─".repeat(60));
-      console.log(roleLabel);
-      console.log("");
-
-      for (const part of msg.parts) {
-        if (part.type === "text" && part.text) {
-          const text =
-            part.text.length > 500
-              ? `${part.text.slice(0, 500)}\n... (truncated, showing last 500 chars)`
-              : part.text;
-          console.log(text);
-        } else if (part.type === "tool-invocation" && showTools) {
-          const toolName = part.toolName || part.name || "unknown";
-          const state = part.state || "completed";
-          console.log(`🔧 Tool: ${toolName} [${state}]`);
-        }
-      }
-
-      console.log("");
-    };
-
-    const loadMessages = async (limit: number) => {
-      const res = await fetch(`${apiUrl}/api/arms/${name}/messages?limit=${limit}`, { headers });
+    const interactiveTui = Boolean(process.stdout.isTTY && process.stdin.isTTY);
+    const loadArmStatus = async (): Promise<WatchArmStatusPayload> => {
+      const res = await fetch(`${apiUrl}/api/arms/${name}`, {
+        headers,
+        signal: createWatchTimeoutSignal(WATCH_AUX_FETCH_TIMEOUT_MS),
+      });
       if (!res.ok) {
-        throw new Error(`Failed to fetch messages: ${res.statusText}`);
+        throw new Error(`Failed to fetch arm: ${res.statusText}`);
       }
-      return await res.json() as {
-        messages: Array<{
-          info: { role: string; id: string };
-          parts: Array<{
-            type: string;
-            text?: string;
-            toolName?: string;
-            name?: string;
-            state?: string;
-          }>;
-        }>;
-        sessionId?: string;
-        error?: string;
-      };
+      return await res.json() as WatchArmStatusPayload;
     };
 
-    try {
-      const initial = await loadMessages(Math.max(historyCount * 4, 20));
-      activeSessionId = initial.sessionId;
-      if (activeSessionId) {
-        console.log(`Session: ${activeSessionId}`);
-        console.log("─".repeat(60));
-      }
-
-      if (historyCount > 0) {
-        for (const msg of initial.messages.slice(-historyCount)) {
-          renderMessage(msg);
+    const loadMessages = async (limit: number, requestedTruncateMessages = truncateMessages) => {
+      try {
+        const res = await fetch(
+          `${apiUrl}/api/arms/${name}/messages?limit=${limit}&fullText=${requestedTruncateMessages ? "false" : "true"}`,
+          {
+            headers,
+            signal: createWatchTimeoutSignal(WATCH_MESSAGES_FETCH_TIMEOUT_MS),
+          },
+        );
+        if (!res.ok) {
+          throw new Error(`Failed to fetch messages: ${res.statusText}`);
         }
+        return await res.json() as {
+          messages: WatchMessage[];
+          sessionId?: string;
+          error?: string;
+        };
+      } catch (err) {
+        if (
+          err instanceof Error &&
+          (err.name === "TimeoutError" || err.name === "AbortError")
+        ) {
+          throw new Error(
+            `Timed out loading ${requestedTruncateMessages ? "truncated" : "full-text"} messages`,
+          );
+        }
+        throw err;
       }
-    } catch {
-      console.log("(Could not fetch message history)");
-      console.log("─".repeat(60));
-    }
+    };
+    const loadStuckRequest = async (): Promise<WatchStuckRequest | null> => {
+      const res = await fetch(`${apiUrl}/api/arms/${name}/stuck`, {
+        headers,
+        signal: createWatchTimeoutSignal(WATCH_AUX_FETCH_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to fetch stuck request: ${res.statusText}`);
+      }
+      const payload = await res.json() as { request?: WatchStuckRequest | null };
+      return payload.request || null;
+    };
 
-    console.log("Waiting for new messages...\n");
+    const sendWatchPrompt = async (promptText: string, interrupt: boolean): Promise<void> => {
+      const res = await fetch(`${apiUrl}/api/arms/${name}/prompt`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          prompt: promptText,
+          interrupt,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || res.statusText);
+      }
+    };
+
+    const requestManualStuck = async (): Promise<void> => {
+      const res = await fetch(`${apiUrl}/api/arms/${name}/stuck`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          requestedBy: "watch",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || res.statusText);
+      }
+    };
+
+    if (!interactiveTui) {
+      console.log(`Watching arm: ${name}`);
+      console.log("Press Ctrl+C to stop\n");
+
+      let running = true;
+      let lastRenderedLineCount = 0;
+      const stop = () => {
+        if (!running) return;
+        running = false;
+        console.log("\nStopping...");
+      };
+
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+
+      while (running) {
+        try {
+          const [armPayload, messagePayload, stuckRequest] = await Promise.all([
+            loadArmStatus(),
+            loadMessages(Math.max(historyCount * 4, 20)),
+            loadStuckRequest(),
+          ]);
+          const lines = buildWatchTuiLines({
+            name,
+            arm: armPayload.arm,
+            stuckRequest,
+            messages: messagePayload.messages,
+            showTools,
+            showSystem,
+            truncateMessages,
+            interruptNext: false,
+            composing: false,
+            draft: "",
+            notice: null,
+            error: verbose ? messagePayload.error || null : null,
+            columns: process.stdout.columns ?? 120,
+            rows: process.stdout.rows ?? 40,
+          });
+          lastRenderedLineCount = renderLines(lines, lastRenderedLineCount);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`[watch] ${message}`);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
+      return;
+    }
 
     let running = true;
+    let currentArm: WatchArmStatusPayload["arm"] | null = null;
+    let currentMessages: WatchMessage[] = [];
+    let currentStuckRequest: WatchStuckRequest | null = null;
+    let notice: string | null = null;
+    let errorMessage: string | null = null;
+    let interruptNext = false;
+    let composing = false;
+    let draft = "";
+    let fetching = false;
+    let forceRefresh = true;
+    let lastPollAt = 0;
+    let activeSessionId: string | null = null;
+    let seededHistory = false;
+    let pendingTruncateMessages: boolean | null = null;
+    const seenMessageSignatures = new Map<string, string>();
+
+    const render = () => {
+      const lines = buildWatchTuiLines({
+        name,
+        arm: currentArm,
+        stuckRequest: currentStuckRequest,
+        messages: currentMessages,
+        showTools,
+        showSystem,
+        truncateMessages,
+        interruptNext,
+        composing,
+        draft,
+        notice,
+        error: errorMessage,
+        columns: process.stdout.columns ?? 120,
+        rows: process.stdout.rows ?? 40,
+      });
+      renderFullscreenLines(lines);
+    };
+
     const stop = () => {
       if (!running) return;
       running = false;
-      console.log("\nStopping...");
+      notice = "Stopping...";
+      render();
     };
 
-    process.once("SIGINT", stop);
-    process.once("SIGTERM", stop);
-
-    while (running) {
+    const refreshSnapshot = async () => {
+      if (fetching) return;
+      fetching = true;
+      const requestedTruncateMessages = pendingTruncateMessages ?? truncateMessages;
       try {
-        const payload = await loadMessages(50);
-        if (payload.sessionId && payload.sessionId !== activeSessionId) {
-          activeSessionId = payload.sessionId;
-          renderedMessages.clear();
-          console.log(`\nSession: ${activeSessionId}`);
-          console.log("─".repeat(60));
+        const [armPayload, messagePayload, stuckRequest] = await Promise.all([
+          loadArmStatus(),
+          loadMessages(Math.max(historyCount * 4, 50), requestedTruncateMessages),
+          loadStuckRequest(),
+        ]);
+        currentArm = armPayload.arm;
+
+        if (messagePayload.sessionId && messagePayload.sessionId !== activeSessionId) {
+          activeSessionId = messagePayload.sessionId;
+          seededHistory = false;
+          seenMessageSignatures.clear();
+          currentMessages = [];
         }
 
-        for (const msg of payload.messages) {
-          renderMessage(msg);
+        if (!seededHistory) {
+          currentMessages =
+            historyCount > 0
+              ? messagePayload.messages.slice(-historyCount)
+              : [];
+          for (const msg of messagePayload.messages) {
+            seenMessageSignatures.set(msg.info.id, JSON.stringify(msg.parts));
+          }
+          seededHistory = true;
+        } else {
+          for (const msg of messagePayload.messages) {
+            const signature = JSON.stringify(msg.parts);
+            const previous = seenMessageSignatures.get(msg.info.id);
+            if (previous !== signature) {
+              const existingIndex = currentMessages.findIndex(
+                (candidate) => candidate.info.id === msg.info.id,
+              );
+              if (existingIndex >= 0) {
+                currentMessages[existingIndex] = msg;
+              } else {
+                currentMessages.push(msg);
+              }
+            }
+            seenMessageSignatures.set(msg.info.id, signature);
+          }
+          currentMessages = currentMessages.slice(-100);
         }
 
-        if (verbose && payload.error) {
-          console.log(`[watch] ${payload.error}`);
-        }
+        currentStuckRequest = stuckRequest;
+        truncateMessages = requestedTruncateMessages;
+        pendingTruncateMessages = null;
+        notice = settleWatchRefreshNotice(notice, { succeeded: true });
+        errorMessage = verbose ? messagePayload.error || null : null;
+        lastPollAt = Date.now();
       } catch (err) {
-        if (verbose) {
-          console.error(`[watch] ${err instanceof Error ? err.message : String(err)}`);
-        }
+        pendingTruncateMessages = null;
+        notice = settleWatchRefreshNotice(notice, { succeeded: false });
+        errorMessage = err instanceof Error ? err.message : String(err);
+      } finally {
+        fetching = false;
+        render();
+      }
+    };
+
+    emitKeypressEvents(process.stdin);
+    enterFullscreenTui();
+    process.stdin.setRawMode?.(true);
+    process.stdin.resume();
+
+    const onKeypress = async (str: string, key: { name?: string; ctrl?: boolean; meta?: boolean; sequence?: string }) => {
+      if (key.ctrl && key.name === "c") {
+        stop();
+        return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!running) {
+        return;
+      }
+
+      if (composing) {
+        if (key.name === "return") {
+          const promptText = draft.trim();
+          if (!promptText) {
+            notice = "Message cancelled";
+            composing = false;
+            draft = "";
+            render();
+            return;
+          }
+
+          try {
+            notice = `Sending message${interruptNext ? " with interrupt" : ""}...`;
+            render();
+            await sendWatchPrompt(promptText, interruptNext);
+            notice = `Message sent${interruptNext ? " with interrupt" : ""}`;
+            composing = false;
+            draft = "";
+            interruptNext = false;
+            forceRefresh = true;
+          } catch (err) {
+            errorMessage = err instanceof Error ? err.message : String(err);
+          }
+          render();
+          return;
+        }
+
+        if (key.name === "escape") {
+          composing = false;
+          draft = "";
+          notice = "Message cancelled";
+          render();
+          return;
+        }
+
+        if (key.name === "backspace") {
+          draft = draft.slice(0, -1);
+          render();
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "i") {
+          interruptNext = !interruptNext;
+          render();
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && key.name === "x") {
+          pendingTruncateMessages = !(pendingTruncateMessages ?? truncateMessages);
+          forceRefresh = true;
+          notice = `Reloading messages with ${(pendingTruncateMessages ?? truncateMessages) ? "truncation" : "full text"}...`;
+          render();
+          return;
+        }
+
+        if (!key.ctrl && !key.meta && str) {
+          draft += str;
+          render();
+        }
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "q") {
+        stop();
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "m") {
+        composing = true;
+        draft = "";
+        notice = null;
+        render();
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "i") {
+        interruptNext = !interruptNext;
+        notice = `Interrupt before send ${interruptNext ? "enabled" : "disabled"}`;
+        render();
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "x") {
+        pendingTruncateMessages = !(pendingTruncateMessages ?? truncateMessages);
+        forceRefresh = true;
+        notice = `Reloading messages with ${(pendingTruncateMessages ?? truncateMessages) ? "truncation" : "full text"}...`;
+        render();
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "s") {
+        try {
+          notice = "Marking arm as stuck for brain follow-up...";
+          render();
+          await requestManualStuck();
+          notice = "Arm marked as stuck; brain will handle it on the next poll";
+          forceRefresh = true;
+        } catch (err) {
+          errorMessage = err instanceof Error ? err.message : String(err);
+        }
+        render();
+        return;
+      }
+
+      if (!key.ctrl && !key.meta && key.name === "r") {
+        notice = "Refreshing...";
+        forceRefresh = true;
+        render();
+      }
+    };
+
+    process.stdin.on("keypress", onKeypress);
+    process.once("SIGTERM", stop);
+
+    try {
+      await refreshSnapshot();
+
+      while (running) {
+        if (forceRefresh || Date.now() - lastPollAt >= 2000) {
+          forceRefresh = false;
+          await refreshSnapshot();
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } finally {
+      process.stdin.removeListener("keypress", onKeypress);
+      process.stdin.setRawMode?.(false);
+      process.removeListener("SIGTERM", stop);
+      exitFullscreenTui();
+      process.stdout.write("\n");
     }
   }
 
   armCmd
-    .command("watch <name>")
+    .command("watch [name]")
     .description("Watch an arm's conversation in real-time (shows message text as it streams)")
     .option("--no-tools", "Hide tool invocations")
     .option("--no-system", "Hide system messages")
+    .option("--full-messages", "Show full message text without truncation")
     .option("-n, --history <count>", "Show last N messages on connect", "2")
     .option("-v, --verbose", "Show all SSE events for debugging")
-    .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean }) => {
-      await watchArm(name, options);
+    .action(async (name, options?: { tools?: boolean; system?: boolean; history?: string; verbose?: boolean; fullMessages?: boolean }) => {
+      try {
+        const resolvedName = await resolveWatchArmName(name, {
+          interactive: Boolean(process.stdout.isTTY && process.stdin.isTTY),
+          color: Boolean(process.stdout.isTTY),
+          columns: process.stdout.columns ?? 120,
+        });
+        await watchArm(resolvedName, options);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(message);
+        process.exit(1);
+      }
     });
 
   armCmd

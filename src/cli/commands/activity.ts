@@ -61,7 +61,7 @@ interface SearchApiResponse {
 }
 
 export function registerActivityCommands(program: Command): void {
-  const activityCmd = program.command("activity").description("View and search arm activity");
+  const activityCmd = program.command("activity").description("Inspect arm events, transcripts, and search results");
 
   activityCmd
     .command("list")

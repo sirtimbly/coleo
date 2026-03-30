@@ -361,7 +361,7 @@ export class ArmAgent {
   }
 
   private async handlePrompt(command: AgentCommand & { type: 'prompt' }): Promise<CommandResponse> {
-    const { armId, prompt, attachments } = command;
+    const { armId, prompt, attachments, interrupt } = command;
 
     const managedArm = this.managedArms.get(armId);
     if (!managedArm) {
@@ -374,6 +374,7 @@ export class ArmAgent {
 
     // Send prompt
     await managedArm.harness.sendPrompt(managedArm.session, prompt, {
+      interrupt,
       attachments,
     });
 
@@ -453,7 +454,7 @@ export class ArmAgent {
   private async handleGetMessages(
     command: AgentCommand & { type: 'get_messages' },
   ): Promise<CommandResponse<GetMessagesResponse>> {
-    const { armId, limit } = command;
+    const { armId, limit, truncateText } = command;
     const managedArm = this.managedArms.get(armId);
     if (!managedArm) {
       return {
@@ -477,10 +478,12 @@ export class ArmAgent {
         : MAX_DISTRIBUTED_MESSAGES;
     const rawMessages = await managedArm.harness.getMessages(managedArm.session, {
       limit: cappedLimit,
+      truncateText,
     });
-    const messages = truncateLargeFields(
-      Array.isArray(rawMessages) ? rawMessages.slice(-cappedLimit) : [],
-    ) as unknown[];
+    const slicedMessages = Array.isArray(rawMessages) ? rawMessages.slice(-cappedLimit) : [];
+    const messages = truncateText === false
+      ? slicedMessages as unknown[]
+      : truncateLargeFields(slicedMessages) as unknown[];
     const state = this.armToState(managedArm);
     return {
       requestId: command.requestId,

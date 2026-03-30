@@ -1,6 +1,6 @@
 # CLI Reference
 
-Complete reference for the `coleo` command-line interface.
+Complete reference for the `coleo` command-line interface, with a terminal-first workflow for the core day-to-day tasks.
 
 ## Installation
 
@@ -31,6 +31,26 @@ coleo [command] [options]
 Options:
   -V, --version  Output version number
   -h, --help     Display help
+```
+
+## Common Workflows
+
+```bash
+# Set up a local workspace
+coleo init
+
+# Start the core services
+coleo serve start
+coleo brain start
+
+# Check overall health
+coleo status
+
+# Work from the terminal
+coleo tasks list
+coleo arm spawn --prompt "Pick up the next important task"
+coleo arm list
+coleo mail inbox
 ```
 
 ## Commands
@@ -67,10 +87,16 @@ coleo init --dir ~/.coleo
 
 **After initialization:**
 ```bash
-# List configured arms
-coleo config arms
+# Start the core services
+coleo serve start
+coleo brain start
 
-# Edit an arm configuration
+# Check status and review tasks
+coleo status
+coleo tasks list
+
+# Configure arms
+coleo config arms
 vim ./.coleo/arms/default.toml
 ```
 

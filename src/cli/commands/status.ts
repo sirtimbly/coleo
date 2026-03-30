@@ -271,11 +271,16 @@ export function registerStatusCommand(program: Command): void {
         console.log(`Inbox: ${newCount} unread`);
 
         try {
-          const content = await readFile(join(coleoDir, "state", "tasks.json"), "utf-8");
-          const tasks = JSON.parse(content);
-          const pending = tasks.filter((t: { status: string }) => t.status === "pending").length;
-          const inProgress = tasks.filter((t: { status: string }) => t.status === "in_progress").length;
-          console.log(`Tasks: ${pending} pending, ${inProgress} in progress`);
+          const { Database } = await import("bun:sqlite");
+          const db = new Database(join(coleoDir, "coleo.db"), { readonly: true });
+          const pending = db
+            .query("SELECT COUNT(*) AS count FROM tasks WHERE status = 'pending'")
+            .get() as { count: number } | null;
+          const inProgress = db
+            .query("SELECT COUNT(*) AS count FROM tasks WHERE status = 'in_progress'")
+            .get() as { count: number } | null;
+          db.close();
+          console.log(`Tasks: ${pending?.count || 0} pending, ${inProgress?.count || 0} in progress`);
         } catch {
           console.log(`Tasks: 0`);
         }

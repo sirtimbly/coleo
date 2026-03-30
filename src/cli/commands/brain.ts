@@ -14,11 +14,11 @@ import {
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 
 export function registerBrainCommands(program: Command): void {
-  const brainCmd = program.command("brain").description("Manage the Coleo brain");
+  const brainCmd = program.command("brain").description("Run and inspect the background planner");
 
   brainCmd
     .command("run")
-    .description("Run brain polling loop (foreground)")
+    .description("Run the brain loop in the foreground")
     .option("-i, --interval <ms>", "Poll interval in milliseconds", "30000")
     .option("-v, --verbose", "Verbose output", false)
     .option("--once", "Run a single poll cycle and exit")
@@ -52,7 +52,7 @@ export function registerBrainCommands(program: Command): void {
       const brain = new Brain({
         coleoDir,
         pollIntervalMs: interval,
-        verbose: verbose || true,
+        verbose,
       });
 
       await brain.init();

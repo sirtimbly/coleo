@@ -4,13 +4,13 @@ import { getColeoDir } from "../context";
 import { startImapServer } from "../../imap";
 
 export function registerImapCommands(program: Command): void {
-  const imapCmd = program.command("imap").description("IMAP server for email clients");
+  const imapCmd = program.command("imap").description("Connect Coleo mail to a desktop email client");
 
   imapCmd
     .command("serve")
     .description("Start the IMAP server")
     .option("-p, --port <port>", "IMAP server port", "1143")
-    .option("-h, --host <host>", "IMAP server host", "127.0.0.1")
+    .option("-H, --host <host>", "IMAP server host", "127.0.0.1")
     .option("-u, --username <username>", "IMAP username", "coleo")
     .option("--password <password>", "IMAP password (defaults to auto-generated)")
     .action(async (options) => {

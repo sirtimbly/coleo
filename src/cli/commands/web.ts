@@ -150,12 +150,12 @@ async function startWebServer(options: { port: number; host: string }): Promise<
 export function registerWebCommand(program: Command): void {
   const webCmd = program
     .command("web")
-    .description("Manage the Octopai Web UI (serves the React dashboard)");
+    .description("Serve the Coleo web dashboard");
 
   // Default action: run in foreground
   webCmd
     .option("-p, --port <port>", "Port to listen on", "5173")
-    .option("-h, --host <host>", "Host to bind to", "0.0.0.0")
+    .option("-H, --host <host>", "Host to bind to", "0.0.0.0")
     .action(async (options) => {
       await startWebServer({
         port: parseInt(options.port, 10),
@@ -168,7 +168,7 @@ export function registerWebCommand(program: Command): void {
     .command("start")
     .description("Start the web UI server in the background")
     .option("-p, --port <port>", "Port to listen on", "5173")
-    .option("-h, --host <host>", "Host to bind to", "0.0.0.0")
+    .option("-H, --host <host>", "Host to bind to", "0.0.0.0")
     .action(async (options) => {
       try {
         // Set environment variables for the background process

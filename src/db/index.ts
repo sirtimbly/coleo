@@ -126,8 +126,9 @@ async function runMigrations(db: Database): Promise<void> {
 		["050_uploaded_media", MIGRATION_050],
     ["051_command_projection_metadata", MIGRATION_051, { table: "messages", columns: MIGRATION_051_COLUMNS }],
     ["052_bugs_fts", MIGRATION_052],
-    ["053_fix_bugs_fts_external_content", MIGRATION_053],
+		["053_fix_bugs_fts_external_content", MIGRATION_053],
     ["054_arm_runtime_metadata", MIGRATION_054, { table: "arms", columns: MIGRATION_054_COLUMNS }],
+		["055_arm_stuck_requests", MIGRATION_055],
 	];
 
 
@@ -1418,6 +1419,31 @@ const MIGRATION_054_COLUMNS = [
 const MIGRATION_054 = `
 CREATE INDEX IF NOT EXISTS idx_arms_workdir ON arms(workdir);
 CREATE INDEX IF NOT EXISTS idx_arms_last_output_at ON arms(last_output_at);
+`;
+
+const MIGRATION_055 = `
+CREATE TABLE IF NOT EXISTS arm_stuck_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  reason TEXT,
+  requested_by TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  handled_at TEXT,
+  handled_by TEXT,
+  outcome TEXT,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_arm_stuck_requests_arm_id
+  ON arm_stuck_requests(arm_id);
+
+CREATE INDEX IF NOT EXISTS idx_arm_stuck_requests_active
+  ON arm_stuck_requests(arm_id, handled_at, updated_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_arm_stuck_requests_one_active
+  ON arm_stuck_requests(arm_id)
+  WHERE handled_at IS NULL;
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

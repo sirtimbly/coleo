@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { getApiConfig, getColeoDir, isApiRunning } from "../context";
 
 export function registerAgentCommands(program: Command): void {
-  const agentCmd = program.command("agent").description("Manage arm agents (distributed arm management)");
+  const agentCmd = program.command("agent").description("Run distributed arm agents on this machine");
 
   agentCmd
     .command("start")

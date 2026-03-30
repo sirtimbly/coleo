@@ -15,11 +15,11 @@ import {
 } from "./discoveries-db";
 
 export function registerDiscoveriesCommands(program: Command): void {
-  const discoveriesCmd = program.command("discoveries").description("Discovery analysis tools");
+  const discoveriesCmd = program.command("discoveries").description("Review and resolve discoveries");
 
   discoveriesCmd
     .command("summarize")
-    .description("Test the LLM discovery summarizer for a task")
+    .description("Summarize the discoveries that matter for a task")
     .option("-t, --task <subject>", "Task subject or ID to summarize discoveries for")
     .option("-v, --verbose", "Show raw LLM response and reasoning")
     .action(async (options: { task?: string; verbose?: boolean }) => {

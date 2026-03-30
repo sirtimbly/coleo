@@ -14,12 +14,12 @@ import {
 export function registerServeCommand(program: Command): void {
   const serveCmd = program
     .command("serve")
-    .description("Start the API server (required for harness-based arms)");
+    .description("Run the API server and local background services");
 
   // Default action: run in foreground (existing behavior)
   serveCmd
     .option("-p, --port <port>", "Port to listen on", "8080")
-    .option("-h, --host <host>", "Host to bind to", "0.0.0.0")
+    .option("-H, --host <host>", "Host to bind to", "0.0.0.0")
     .action(async (options) => {
       await ensureLocalNatsForServe();
       await startServer({

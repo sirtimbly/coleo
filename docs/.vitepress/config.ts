@@ -38,6 +38,10 @@ export default defineConfig({
 						{ text: "Security", link: "/architecture/security" },
 					],
 				},
+				{
+					text: "Releases",
+					items: [{ text: "Coleo 0.1", link: "/releases/0.1" }],
+				},
 			],
 		},
 	},
