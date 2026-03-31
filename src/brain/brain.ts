@@ -4483,31 +4483,6 @@ Report findings using bug resolution workflow.`;
 		}
 	}
 
-	private pathMatchesPattern(filePath: string, pattern: string): boolean {
-		const normalizedPath = filePath.replaceAll("\\", "/");
-		const normalizedPattern = pattern.replaceAll("\\", "/");
-
-		if (normalizedPattern === "**" || normalizedPattern === "*") {
-			return true;
-		}
-
-		if (!normalizedPattern.includes("*")) {
-			return normalizedPath.includes(normalizedPattern);
-		}
-
-		const tokenDouble = "__DOUBLE_STAR__";
-		const tokenSingle = "__SINGLE_STAR__";
-		const escaped = normalizedPattern
-			.replaceAll("**", tokenDouble)
-			.replaceAll("*", tokenSingle)
-			.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-			.replaceAll(tokenDouble, ".*")
-			.replaceAll(tokenSingle, "[^/]*");
-
-		const regex = new RegExp(`^${escaped}$`);
-		return regex.test(normalizedPath);
-	}
-
 	/**
 	 * Check arm health and mark stale arms as stopped
 	 */
