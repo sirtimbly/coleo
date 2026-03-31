@@ -528,7 +528,9 @@ export function registerFileClaimTools(server: McpServer): void {
 				const { canWriteToFile, autoClaimFile } = await import(
 					"../../arm/claim-enforcement"
 				);
-				const database = getDatabase(false);
+				// ApiDatabase has compatible query/run interface with Database
+				// TypeScript types don't match but runtime works correctly
+				const database = getDatabase(false) as unknown as import("bun:sqlite").Database;
 
 				// Check if operation is allowed
 				if (
@@ -644,7 +646,8 @@ export function registerFileClaimTools(server: McpServer): void {
 				const { checkAndEscalateIfThrashing } = await import(
 					"../../arm/claim-enforcement"
 				);
-				const database = getDatabase(false);
+				// ApiDatabase has compatible query/run interface with Database
+				const database = getDatabase(false) as unknown as import("bun:sqlite").Database;
 
 				// Log the activity for thrashing detection
 				logActivity(ARM_ID, `file_${operation}`, file_path, {
@@ -693,7 +696,8 @@ export function registerFileClaimTools(server: McpServer): void {
 				const { getClaimMode, getClaimEnforcementConfig } = await import(
 					"../../arm/claim-enforcement"
 				);
-				const database = getDatabase();
+				// ApiDatabase has compatible query/run interface with Database
+				const database = getDatabase() as unknown as import("bun:sqlite").Database;
 				const mode = getClaimMode(database);
 				const config = getClaimEnforcementConfig(database);
 
