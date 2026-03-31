@@ -65,30 +65,40 @@ import type {
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
-
-function isTaskAttachment(value: unknown): value is TaskAttachment {
-	if (!value || typeof value !== "object") {
-		return false;
-	}
-
-	const attachment = value as Partial<TaskAttachment>;
-	return (
-		attachment.kind === "image" &&
-		typeof attachment.uploadId === "string" &&
-		typeof attachment.filename === "string" &&
-		typeof attachment.mimeType === "string" &&
-		typeof attachment.sizeBytes === "number" &&
-		typeof attachment.contentUrl === "string"
-	);
-}
-
-export interface BrainOptions {
-	coleoDir: string;
-	pollIntervalMs: number;
-	verbose: boolean;
-	apiBaseUrl?: string;
-	apiKey?: string;
-}
+import {
+	type BrainOptions,
+	isTaskAttachment,
+	pathMatchesPattern,
+	buildDocUpdateDescription,
+	buildCommitTaskDescription,
+	buildVerificationTaskDescription,
+	type DocUpdateContext,
+} from "./brain-types";
+export { type BrainOptions } from "./brain-types";
+import {
+	createApiClient,
+	logActivityViaApi,
+	publishEventViaApi,
+	queueMessageViaApi,
+	listPendingMessagesViaApi,
+	markMessageStatusViaApi,
+} from "./brain-api-client";
+import {
+	listTasksFromApi,
+	getTaskFromApi,
+	createTaskViaApi,
+	patchTaskViaApi,
+	listStatusReportsFromApi,
+	getTaskSubjectFromApi,
+} from "./brain-task-client";
+import {
+	listBugsFromApi,
+	getBugFromApi,
+	createBugViaApi,
+	patchBugViaApi,
+	determineBugPriority,
+	formatBugReport,
+} from "./brain-bug-handler";
 
 export class Brain {
 	private options: BrainOptions;
@@ -2583,20 +2593,12 @@ export class Brain {
 
 		await this.finalizeTaskCompletion(taskId, summary, artifacts);
 
-		const validationDescription = [
-			`Validate completion for task "${task.subject}" (${task.id}).`,
-			"",
-			"Review the implementation and artifacts to confirm acceptance criteria.",
-			"If issues are found, create a follow-up bug/task with concrete repro steps.",
-			"",
-			"Completion summary:",
-			summary || "(no summary provided)",
-			"",
-			"Artifacts:",
-			artifacts.length > 0
-				? artifacts.map((a) => `- ${a}`).join("\n")
-				: "- None",
-		].join("\n");
+		const validationDescription = buildVerificationTaskDescription(
+			task.subject,
+			task.id,
+			summary,
+			artifacts,
+		);
 
 		const validationTask = await this.createTaskViaApi({
 			subject: `Validate completion: ${task.subject}`,
@@ -2857,30 +2859,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		try {
 			const commitTaskId = `commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-			const description = `Create a commit for the completed task "${taskSubject}" (${taskId}).
-
-Task Summary:
-${taskSummary || "(no summary provided)"}
-
-Instructions:
-1. Run git status to see unstaged changes
-2. Identify files related to the completed task
-3. Stage those files with git add
-4. Create a commit with a descriptive message that:
-   - References the task ID (${taskId})
-   - Summarizes the work done
-   - Follows conventional commit format if applicable
-
-Example commit message:
-feat: implement user authentication
-
-- Add login form component
-- Implement JWT token handling
-- Add session management
-
-Refs: ${taskId}
-
-Note: If there are no unstaged changes or all changes are already committed, mark this task as completed with a note.`;
+		const description = buildCommitTaskDescription(taskId, taskSubject, taskSummary);
 
 			await this.createTaskViaApi({
 				id: commitTaskId,
@@ -4422,9 +4401,9 @@ Report findings using bug resolution workflow.`;
 		// Notify subscribed arms
 		for (const [subArmId, patterns] of this.fileSubscriptions.entries()) {
 			if (subArmId === armId) continue;
-			const matches = Array.from(patterns).some((pattern) =>
-				this.pathMatchesPattern(payload.filePath, pattern),
-			);
+		const matches = Array.from(patterns).some((pattern) =>
+			pathMatchesPattern(payload.filePath, pattern),
+		);
 			if (!matches) continue;
 
 			await this.sendToArm(subArmId, {
@@ -4475,31 +4454,6 @@ Report findings using bug resolution workflow.`;
 				},
 			});
 		}
-	}
-
-	private pathMatchesPattern(filePath: string, pattern: string): boolean {
-		const normalizedPath = filePath.replaceAll("\\", "/");
-		const normalizedPattern = pattern.replaceAll("\\", "/");
-
-		if (normalizedPattern === "**" || normalizedPattern === "*") {
-			return true;
-		}
-
-		if (!normalizedPattern.includes("*")) {
-			return normalizedPath.includes(normalizedPattern);
-		}
-
-		const tokenDouble = "__DOUBLE_STAR__";
-		const tokenSingle = "__SINGLE_STAR__";
-		const escaped = normalizedPattern
-			.replaceAll("**", tokenDouble)
-			.replaceAll("*", tokenSingle)
-			.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-			.replaceAll(tokenDouble, ".*")
-			.replaceAll(tokenSingle, "[^/]*");
-
-		const regex = new RegExp(`^${escaped}$`);
-		return regex.test(normalizedPath);
 	}
 
 	/**
@@ -6412,18 +6366,55 @@ Report findings using bug resolution workflow.`;
 					// Arm is actively processing - check how long
 					// If it's been processing for too long, it might be stuck
 					this.log(`Arm ${arm.name}: harness confirms "processing" state`);
+					// For API harnesses, trust the processing state - don't override to idle
+					// even if there's no recent activity signal (long-running tasks are valid)
+					const isApi = await this.isApiHarness(arm.id);
+					if (isApi) {
+						this.log(
+							`Arm ${arm.name}: API harness confirmed processing, keeping busy`,
+						);
+						continue;
+					}
 					// Fall through to log analysis to check if it's stuck
 				}
-				// Could not get harness state - decide how to proceed based on harness type
+				// Could not get harness state or state is error/unknown - decide how to proceed based on harness type
 				const isApi = await this.isApiHarness(arm.id);
 				if (isApi) {
 					// For API harnesses, we can't reliably analyze logs
-					// Instead, check if the arm is sending heartbeats (indicating it's active)
+					// Instead, check if the arm is sending heartbeats. Heartbeat alone
+					// is not enough for recovery because API arms can keep heartbeating
+					// long after real work has stalled.
 					const hasRecentHb = await this.hasRecentHeartbeat(arm.id, 60);
 					if (hasRecentHb) {
-						this.log(
-							`Arm ${arm.name}: API harness with recent heartbeat, assuming active`,
+						const staleMinutes = await this.getBrainConfigNumber(
+							"brain_api_arm_stale_activity_minutes",
+							5,
 						);
+						const staleThresholdMs = staleMinutes * 60 * 1000;
+						const recentSignal = await this.getRecentArmActivitySignal(
+							arm.id,
+							staleThresholdMs,
+						);
+						if (recentSignal.recent) {
+							this.log(
+								`Arm ${arm.name}: API harness heartbeat is fresh and ${recentSignal.reason || "activity is recent"}, keeping busy`,
+							);
+							continue;
+						}
+
+						const lastActivityAgeMinutes = arm.lastActivity
+							? (Date.now() - arm.lastActivity.getTime()) / 1000 / 60
+							: null;
+						const lastActivitySuffix =
+							lastActivityAgeMinutes !== null &&
+							Number.isFinite(lastActivityAgeMinutes)
+								? ` (last activity ${lastActivityAgeMinutes.toFixed(1)}m ago)`
+								: "";
+						this.log(
+							`Arm ${arm.name}: API harness heartbeat is fresh but no activity signal for ${staleMinutes}m${lastActivitySuffix}, marking idle so the next poll can nudge it`,
+						);
+						await this.syncArmStatus(arm.id, "idle");
+						arm.status = "idle";
 						continue;
 					} else {
 						// No recent heartbeat - might be truly stuck or the API server is down
@@ -8080,7 +8071,7 @@ ${originalTask.id}`;
 		}
 
 		// Build task description
-		const description = this.buildDocUpdateDescription(context);
+		const description = buildDocUpdateDescription(context);
 
 		// Create documentation task
 		const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -8114,58 +8105,6 @@ ${originalTask.id}`;
 			filesChanged: context.changedFilesCount,
 			docsToUpdate: context.featureDocsToUpdate.length,
 		});
-	}
-
-	/**
-	 * Build description for documentation update task
-	 */
-	private buildDocUpdateDescription(context: {
-		filesChanged: string[];
-		changedFilesCount: number;
-		featureDocsToUpdate: string[];
-		planDocument?: string;
-	}): string {
-		let desc = `## Documentation Update Task
-
-This task ensures feature documentation remains aligned with actual code implementation.
-
-### Files Changed Since Last Update
-${context.changedFilesCount} files have been modified:
-${context.filesChanged
-	.slice(0, 10)
-	.map((f) => `- ${f}`)
-	.join("\n")}
-${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
-
-### Feature Docs to Review
-${
-	context.featureDocsToUpdate.length > 0
-		? context.featureDocsToUpdate.map((d) => `- ${d}`).join("\n")
-		: "No specific feature docs identified - review general docs for accuracy."
-}
-
-### Your Tasks
-
-1. **Review changed files** - Understand what code changes were made
-2. **Update feature docs** - Ensure docs/features/, docs/api/, and docs/capabilities/ match implementation
-3. **Add "Future Work" notes** - For features documented but not yet implemented:
-   - Mark as "Planned for Phase N"
-   - Reference the plan document
-4. **Do NOT update** - Conceptual docs, architecture decisions, or requirements
-
-### Output
-When complete, report:
-- Which docs were updated
-- Any "Future Work" notes added
-- Any features that need attention
-
-`;
-
-		if (context.planDocument) {
-			desc += `### Reference\nSee \`${context.planDocument}\` for planned features that may need "Future Work" notes.\n`;
-		}
-
-		return desc;
 	}
 
 	/**

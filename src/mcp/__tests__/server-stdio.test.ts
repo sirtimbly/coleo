@@ -279,7 +279,6 @@ describe("MCP Server - Stdio Integration", () => {
 
     const result = listResponse.result as { tools: Array<{ name: string }> };
     const toolNames = result.tools.map((tool) => tool.name);
-    expect(toolNames).toContain("heartbeat");
     expect(toolNames).toContain("get_my_instructions");
     expect(toolNames).toContain("claim_task");
     expect(toolNames).toContain("claim_file");
@@ -287,34 +286,53 @@ describe("MCP Server - Stdio Integration", () => {
     expect(toolNames).toContain("check_conflicts");
   }, testTimeoutMs);
 
-  it("sends heartbeat and enqueues message for the brain", async () => {
+  it("sends status and enqueues message for the brain", async () => {
+    const db = new Database(dbPath);
+    db.run(
+      `INSERT INTO tasks (id, subject, description, status, priority, assigned_to)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      ["test-task-1", "Status Report Test", "Test task for status report", "pending", "high", null]
+    );
+    db.close();
+
     client = await startServer();
     await initializeHandshake(client);
+
+    // Auto-register the arm via get_task_determination
+    await client.request(
+      "tools/call",
+      { name: "get_task_determination", arguments: {} },
+      { timeoutMs: 8000 }
+    );
 
     const response = await client.request(
       "tools/call",
       {
-      name: "heartbeat",
-      arguments: { status: "idle", current_task: "Bootstrapping" },
+      name: "submit_status_report",
+      arguments: { 
+        task_id: "test-task-1",
+        status: "on_track",
+        summary: "Test status report tool"
+      },
       },
       { timeoutMs: 8000 }
     );
 
     expect(response.error).toBeUndefined();
     const result = response.result as { content: Array<{ type: string; text: string }> };
-    expect(result.content[0]?.text).toContain("Heartbeat sent");
+    expect(result.content[0]?.text).toContain("Status report");
 
-    const db = new Database(dbPath, { readonly: true });
-    const arm = db.query("SELECT id, harness, status FROM arms WHERE id = ?").get(armId) as
+    const dbRead = new Database(dbPath, { readonly: true });
+    const arm = dbRead.query("SELECT id, harness, status FROM arms WHERE id = ?").get(armId) as
       | { id: string; harness: string; status: string }
       | null;
     expect(arm?.id).toBe(armId);
     expect(arm?.harness).toBe("manual");
 
-    db.close();
+    dbRead.close();
 
     const message = await getLatestBrainMessage();
-    expect(message?.type).toBe("heartbeat");
+    expect(message?.type).toBe("status_report");
     expect(message?.from).toBe(armId);
     expect(message?.to).toBe("brain");
   }, testTimeoutMs);
@@ -349,12 +367,10 @@ describe("MCP Server - Stdio Integration", () => {
     client = await startServer();
     await initializeHandshake(client);
 
+    // Auto-register the arm via get_task_determination
     await client.request(
       "tools/call",
-      {
-        name: "heartbeat",
-        arguments: { status: "idle" },
-      },
+      { name: "get_task_determination", arguments: {} },
       { timeoutMs: 8000 }
     );
 
