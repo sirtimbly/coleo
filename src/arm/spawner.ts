@@ -9,34 +9,23 @@ import { spawn, exec } from "child_process";
 import { promisify } from "util";
 import { writeFile, mkdir, readFile, readdir, appendFile } from "fs/promises";
 import { join } from "path";
-import { initDatabase, Database } from "../db";
 import { harnessRegistry, type HarnessSession, type SpawnConfig, type SendPromptOptions } from "../harness";
 import { getColeoDir, getRandomPreferredModel } from "../config";
-import { getCliEntrypoint } from "../cli/entrypoint";
 import type { Arm } from "../types";
+
+// Import from extracted modules
+import type { AgentType, TerminalEmulator, SpawnOptions } from "./spawner-types";
+import { isHeadlessEnvironment, detectTerminal, getTerminalCommand } from "./terminal-detector";
+import { getAgentCommand, createMcpConfig } from "./agent-commands";
+import { listArms, updateArmStatus, killArm, createArmState } from "./spawner-db";
 
 const execAsync = promisify(exec);
 
-export type AgentType = "opencode" | "opencode-api" | "opencode-tui" | "claude-code" | "aider" | "custom";
-export type TerminalEmulator = "auto" | "ghostty" | "iterm2" | "terminal" | "wezterm" | "kitty" | "headless" | "tmux" | "harness";
-
-export interface SpawnOptions {
-  coleoDir: string;
-  name: string;
-  agent: AgentType;
-  workdir: string;
-  terminal?: TerminalEmulator;
-  customCommand?: string;
-  initialPrompt?: string;
-  /** Run in headless mode (no terminal window) - uses harness system */
-  headless?: boolean;
-  /** AI provider (e.g., "opencode", "github-copilot", "anthropic") */
-  provider?: string;
-  /** Model name (e.g., "claude-sonnet-4", "gpt-5.1-codex") */
-  model?: string;
-  /** Domain of expertise (e.g., "frontend", "backend", "testing") */
-  domain?: string;
-}
+// Re-export types and functions for backward compatibility
+export type { AgentType, TerminalEmulator, SpawnOptions } from "./spawner-types";
+export { isHeadlessEnvironment, detectTerminal, getTerminalCommand } from "./terminal-detector";
+export { getAgentCommand, createMcpConfig } from "./agent-commands";
+export { listArms, updateArmStatus, killArm, isProcessRunning, createArmState } from "./spawner-db";
 
 /**
  * Active harness sessions - maps arm ID to session
@@ -48,289 +37,6 @@ const activeSessions = new Map<string, HarnessSession>();
  */
 export function getHarnessSession(armId: string): HarnessSession | undefined {
   return activeSessions.get(armId);
-}
-
-/**
- * Detect if we're running in a headless environment (no display)
- */
-function isHeadlessEnvironment(): boolean {
-  // Docker containers typically don't have DISPLAY
-  // Also check for common container indicators
-  return (
-    !process.env.DISPLAY &&
-    (process.env.container !== undefined ||
-      process.env.DOCKER === "true" ||
-      Bun.file("/.dockerenv").size > 0 ||
-      process.env.SSH_CONNECTION !== undefined)
-  );
-}
-
-/**
- * Detect which terminal emulator is available
- */
-async function detectTerminal(): Promise<TerminalEmulator> {
-  // In headless environments, prefer tmux if available, otherwise headless
-  if (isHeadlessEnvironment()) {
-    try {
-      await execAsync("which tmux");
-      return "tmux";
-    } catch {
-      return "headless";
-    }
-  }
-
-  const terminals: Array<{ name: TerminalEmulator; check: string }> = [
-    { name: "ghostty", check: "which ghostty" },
-    { name: "wezterm", check: "which wezterm" },
-    { name: "kitty", check: "which kitty" },
-    { name: "iterm2", check: "ls /Applications/iTerm.app" },
-    { name: "terminal", check: "ls /System/Applications/Utilities/Terminal.app" },
-  ];
-
-  for (const { name, check } of terminals) {
-    try {
-      await execAsync(check);
-      return name;
-    } catch {
-      continue;
-    }
-  }
-
-  return "terminal"; // Fallback to Terminal.app
-}
-
-/**
- * Get the command to launch a terminal with a specific command
- */
-function getTerminalCommand(
-  terminal: TerminalEmulator,
-  command: string,
-  title: string,
-  workdir: string
-): { cmd: string; args: string[] } {
-  switch (terminal) {
-    case "ghostty":
-      // Ghostty on macOS works best with open command
-      // We wrap in bash -c to handle environment variables properly
-      return {
-        cmd: "ghostty",
-        args: [
-          `--title=${title}`,
-          `--working-directory=${workdir}`,
-          "-e", "bash", "-c", command,
-        ],
-      };
-
-    case "wezterm":
-      return {
-        cmd: "wezterm",
-        args: [
-          "start",
-          "--cwd", workdir,
-          "--", "bash", "-c", command,
-        ],
-      };
-
-    case "kitty":
-      return {
-        cmd: "kitty",
-        args: [
-          "--title", title,
-          "--directory", workdir,
-          "bash", "-c", command,
-        ],
-      };
-
-    case "iterm2":
-      // iTerm2 requires AppleScript
-      {
-        const script = `
-          tell application "iTerm2"
-            create window with default profile
-            tell current session of current window
-              write text "cd ${workdir} && ${command}"
-            end tell
-          end tell
-        `;
-        return {
-          cmd: "osascript",
-          args: ["-e", script],
-        };
-      }
-
-    case "terminal":
-    default:
-      // Terminal.app also uses AppleScript
-      {
-        const termScript = `
-          tell application "Terminal"
-            do script "cd ${workdir} && ${command}"
-            activate
-          end tell
-        `;
-        return {
-          cmd: "osascript",
-          args: ["-e", termScript],
-        };
-      }
-
-    case "tmux":
-      // Create a new tmux session for the arm
-      return {
-        cmd: "tmux",
-        args: [
-          "new-session",
-          "-d",  // Detached
-          "-s", title.replace(/[^a-zA-Z0-9_-]/g, "_"),  // Session name (sanitized)
-          "-c", workdir,
-          command,
-        ],
-      };
-
-    case "headless":
-      // Run directly as a background process, logging to file
-      {
-        const logFile = join(process.env.COLEO_DIR || getColeoDir(), "logs", `${title}.log`);
-        return {
-          cmd: "bash",
-          args: [
-            "-c",
-            `mkdir -p "$(dirname "${logFile}")" && cd "${workdir}" && ${command} >> "${logFile}" 2>&1`,
-          ],
-        };
-      }
-  }
-}
-
-/**
- * Generate the agent command based on type
- */
-export function getAgentCommand(agent: AgentType, options: SpawnOptions): string {
-  const mcpConfig = join(options.coleoDir, "mcp", `${options.name}.json`);
-  
-  // Build model string if provider/model specified
-  const modelEnv = options.provider && options.model 
-    ? `OPENCODE_MODEL=${options.provider}/${options.model} `
-    : options.model 
-      ? `OPENCODE_MODEL=${options.model} `
-      : "";
-  
-  switch (agent) {
-    case "opencode":
-      // OpenCode reads config from OPENCODE_CONFIG
-      return `${modelEnv}COLEO_ARM_ID=${options.name} OPENCODE_CONFIG="${mcpConfig}" opencode`;
-
-    case "claude-code":
-      // Claude Code (assuming similar CLI)
-      return `COLEO_ARM_ID=${options.name} claude`;
-
-    case "aider":
-      // Aider doesn't support MCP natively, but can still be used
-      return `COLEO_ARM_ID=${options.name} aider`;
-
-    case "custom":
-      return options.customCommand || "bash";
-
-    default:
-      return "bash";
-  }
-}
-
-/**
- * Create MCP configuration for the arm
- */
-export async function createMcpConfig(options: SpawnOptions): Promise<void> {
-  const mcpDir = join(options.coleoDir, "mcp");
-  await mkdir(mcpDir, { recursive: true });
-
-  const bunBinary = process.execPath;
-  const cliEntrypoint = getCliEntrypoint();
-
-  // OpenCode v1.1+ expects MCP servers under `mcp` in OPENCODE_CONFIG.
-  const mcpConfig = {
-    $schema: "https://opencode.ai/config.json",
-    mcp: {
-      coleo: {
-        type: "local",
-        command: [bunBinary, cliEntrypoint, "mcp", "serve"],
-        environment: {
-          COLEO_ARM_ID: options.name,
-          COLEO_DIR: options.coleoDir,
-        },
-        enabled: true,
-      },
-    },
-  };
-
-  await writeFile(
-    join(mcpDir, `${options.name}.json`),
-    JSON.stringify(mcpConfig, null, 2),
-    "utf-8"
-  );
-}
-
-/**
- * Get or create database connection (runs migrations)
- */
-async function getDatabase(coleoDir: string): Promise<Database> {
-  const dbPath = join(coleoDir, "coleo.db");
-  return await initDatabase(dbPath);
-}
-
-/**
- * Create an arm in the database
- */
-async function createArmState(options: SpawnOptions, pid?: number): Promise<Arm> {
-  const arm: Arm = {
-    id: options.name,
-    name: options.name,
-    agent: options.agent,
-    status: "starting",
-    pid,
-    startedAt: new Date(),
-    provider: options.provider,
-    model: options.model,
-  };
-
-  const db = await getDatabase(options.coleoDir);
-  const now = new Date().toISOString();
-
-  try {
-    // Try to insert, or update if exists (upsert)
-    db.run(`
-      INSERT INTO arms (id, name, domain, harness, status, context_budget, current_context_used, created_at, updated_at, pid, provider, model, config)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        status = excluded.status,
-        domain = excluded.domain,
-        pid = excluded.pid,
-        provider = excluded.provider,
-        model = excluded.model,
-        updated_at = excluded.updated_at
-    `, [
-      arm.id,
-      arm.name,
-      options.domain || "general", // domain
-      arm.agent, // harness
-      arm.status,
-      100000, // context_budget
-      0, // current_context_used
-      now,
-      now,
-      arm.pid || null,
-      arm.provider || null,
-      arm.model || null,
-      JSON.stringify({}),
-    ]);
-  } finally {
-    db.close();
-  }
-
-  // Also create arm's notes directory (still file-based for notes)
-  const notesDir = join(options.coleoDir, "state", "arms", options.name, "notes");
-  await mkdir(notesDir, { recursive: true });
-
-  return arm;
 }
 
 /**
@@ -383,13 +89,7 @@ export async function spawnArmWithHarness(options: SpawnOptions): Promise<Arm> {
     const arm = await createArmState(options, pid);
 
     // Update status to idle since harness confirms it's ready
-    const db = await getDatabase(options.coleoDir);
-    const now = new Date().toISOString();
-    try {
-      db.run("UPDATE arms SET status = 'idle', last_heartbeat = ?, updated_at = ? WHERE id = ?", [now, now, options.name]);
-    } finally {
-      db.close();
-    }
+    await updateArmStatus(options.coleoDir, options.name, "idle");
     arm.status = "idle";
 
     // Log output to file
@@ -484,7 +184,7 @@ export async function spawnArmInTerminal(options: SpawnOptions): Promise<Arm> {
   const windowTitle = `coleo:${options.name}:${sessionId}`;
 
   // Get terminal launch command
-  const { cmd, args } = getTerminalCommand(
+  const { cmd, args } = await getTerminalCommand(
     terminal,
     fullCommand,
     windowTitle,
@@ -529,153 +229,4 @@ export async function spawnArm(options: SpawnOptions): Promise<Arm> {
 
   // Default: use harness for full control
   return spawnArmWithHarness(options);
-}
-
-/**
- * Check if a process is running
- */
-function isProcessRunning(pid: number): boolean {
-  try {
-    // Sending signal 0 checks if process exists without killing it
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-interface ArmRow {
-  id: string;
-  name: string;
-  harness: string;
-  status: string;
-  pid: number | null;
-  provider: string | null;
-  model: string | null;
-  created_at: string;
-  last_activity_at: string | null;
-}
-
-/**
- * List running arms from database (also updates status based on process state)
- */
-export async function listArms(coleoDir: string): Promise<Arm[]> {
-  const db = await getDatabase(coleoDir);
-
-  try {
-    const rows = db.query(`
-      SELECT id, name, harness, status, pid, provider, model, created_at, last_activity_at
-      FROM arms
-      ORDER BY name
-    `).all() as ArmRow[];
-
-    const arms: Arm[] = [];
-
-    for (const row of rows) {
-      const arm: Arm = {
-        id: row.id,
-        name: row.name,
-        agent: row.harness,
-        status: row.status as Arm["status"],
-        pid: row.pid ?? undefined,
-        provider: row.provider ?? undefined,
-        model: row.model ?? undefined,
-        startedAt: new Date(row.created_at),
-        lastActivity: row.last_activity_at ? new Date(row.last_activity_at) : undefined,
-      };
-
-      // Check if process is still running and update status
-      if (arm.pid && arm.status !== "stopped") {
-        const running = isProcessRunning(arm.pid);
-        if (running) {
-          // Process is running - if it was "starting", mark as "idle"
-          if (arm.status === "starting") {
-            arm.status = "idle";
-            db.run("UPDATE arms SET status = ?, updated_at = ? WHERE id = ?", [
-              arm.status,
-              new Date().toISOString(),
-              arm.id,
-            ]);
-          }
-        } else {
-          // Process is not running anymore
-          arm.status = "stopped";
-          db.run("UPDATE arms SET status = ?, updated_at = ? WHERE id = ?", [
-            arm.status,
-            new Date().toISOString(),
-            arm.id,
-          ]);
-        }
-      }
-
-      arms.push(arm);
-    }
-
-    return arms;
-  } catch {
-    return [];
-  } finally {
-    db.close();
-  }
-}
-
-/**
- * Update arm status
- */
-export async function updateArmStatus(
-  coleoDir: string,
-  armId: string,
-  status: Arm["status"]
-): Promise<void> {
-  const db = await getDatabase(coleoDir);
-
-  try {
-    const now = new Date().toISOString();
-    db.run("UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ? WHERE id = ?", [
-      status,
-      now,
-      now,
-      armId,
-    ]);
-  } catch (err) {
-    console.error(`Failed to update arm ${armId}:`, err);
-  } finally {
-    db.close();
-  }
-}
-
-/**
- * Kill an arm (if we have its PID)
- */
-export async function killArm(coleoDir: string, armId: string): Promise<boolean> {
-  const db = await getDatabase(coleoDir);
-
-  try {
-    const row = db.query("SELECT pid FROM arms WHERE id = ?").get(armId) as { pid: number | null } | null;
-
-    if (!row) {
-      console.error(`Arm ${armId} not found`);
-      return false;
-    }
-
-    if (row.pid) {
-      try {
-        process.kill(row.pid);
-        console.log(`Killed arm ${armId} (pid: ${row.pid})`);
-      } catch {
-        console.log(`Arm ${armId} process already dead`);
-      }
-    }
-
-    // Update status
-    const now = new Date().toISOString();
-    db.run("UPDATE arms SET status = ?, updated_at = ? WHERE id = ?", ["stopped", now, armId]);
-
-    return true;
-  } catch (err) {
-    console.error(`Failed to kill arm ${armId}:`, err);
-    return false;
-  } finally {
-    db.close();
-  }
 }
