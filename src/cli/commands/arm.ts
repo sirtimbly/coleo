@@ -10,7 +10,7 @@ import {
   getSubcommandArgs,
   isApiRunning,
 } from "../context";
-import { prompt, promptSelect, promptYN, loadArmTemplates } from "../helpers/prompts";
+import { loadArmTemplates, prompt, promptSelect, promptYN } from "../helpers/prompts";
 
 function normalizeTemplateName(value: string): string {
   return value.trim().replace(/\.toml$/i, "");
@@ -187,6 +187,124 @@ function renderLines(lines: string[], previousLineCount: number): number {
   return lines.length;
 }
 
+interface ArmSpawnConfig {
+  name: string;
+  workdir: string;
+  provider?: string;
+  model?: string;
+  template?: string;
+}
+
+function formatProviderModel(provider?: string, model?: string): string | null {
+  if (!provider && !model) {
+    return null;
+  }
+  return `${provider ? `${provider}/` : ""}${model || "default"}`;
+}
+
+function summarizeArmSpawnConfig(config: ArmSpawnConfig): string {
+  return [
+    `Name: ${config.name}`,
+    config.template ? `Template: ${config.template}.toml` : null,
+    `Workdir: ${config.workdir}`,
+    config.provider ? `Provider: ${config.provider}` : null,
+    config.model ? `Model: ${config.model}` : null,
+  ].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+async function promptArmSpawnConfig(options: {
+  coleoDir: string;
+  defaults: ArmSpawnConfig;
+  repeat?: boolean;
+}): Promise<ArmSpawnConfig> {
+  const { coleoDir, defaults, repeat = false } = options;
+  const templates = await loadArmTemplates(join(coleoDir, "arms"));
+  let armTemplate = normalizeTemplateName(defaults.template || "");
+  let armProvider = defaults.provider;
+  let armModel = defaults.model;
+  const suggestedName = defaults.name || generateArmName();
+
+  if (repeat) {
+    console.log("\n=== Spawn Another ===");
+    console.log("Adjust the next arm's settings below.\n");
+  }
+
+  if (templates.length > 0) {
+    let shouldSelectTemplate = false;
+
+    if (armTemplate) {
+      const keepTemplate = await promptYN(`Keep current template (${armTemplate}.toml)?`, true);
+      shouldSelectTemplate = !keepTemplate;
+    } else {
+      shouldSelectTemplate = await promptYN("Would you like to use an arm template?", true);
+    }
+
+    if (shouldSelectTemplate) {
+      const templateNames = templates.map((template) => `${template.file} - ${template.description}`);
+      templateNames.push("Custom arm (no template)");
+      const selected = await promptSelect("Select a template:", templateNames);
+      const selectedIdx = templateNames.indexOf(selected);
+      if (selectedIdx >= 0 && selectedIdx < templates.length) {
+        const selectedTemplate = templates[selectedIdx];
+        if (selectedTemplate) {
+          armTemplate = normalizeTemplateName(selectedTemplate.file);
+        }
+      } else {
+        armTemplate = "";
+      }
+    }
+  }
+
+  const customName = await prompt(`Arm name [${suggestedName}]: `);
+  const armName = customName.trim() || suggestedName;
+
+  const workdir = await prompt(`Working directory [${defaults.workdir || process.cwd()}]: `);
+  const armWorkdir = workdir.trim() || defaults.workdir || process.cwd();
+
+  let shouldConfigureProviderModel = false;
+  const providerModelLabel = formatProviderModel(armProvider, armModel);
+  if (providerModelLabel) {
+    const keepProviderModel = await promptYN(`Keep current provider/model (${providerModelLabel})?`, true);
+    shouldConfigureProviderModel = !keepProviderModel;
+  } else {
+    shouldConfigureProviderModel = await promptYN("Configure provider/model?", false);
+  }
+
+  if (shouldConfigureProviderModel) {
+    armProvider = undefined;
+    armModel = undefined;
+
+    const providerPrompt = defaults.provider
+      ? `Provider [${defaults.provider}]: `
+      : "Provider (anthropic, openai, github-copilot, opencode-zen): ";
+    const provider = await prompt(providerPrompt);
+    if (provider.trim() || defaults.provider) {
+      armProvider = provider.trim() || defaults.provider;
+      const modelPrompt = defaults.model
+        ? `Model [${defaults.model}]: `
+        : "Model [optional]: ";
+      const model = await prompt(modelPrompt);
+      if (model.trim() || defaults.model) {
+        armModel = model.trim() || defaults.model;
+      }
+    }
+  }
+
+  const config: ArmSpawnConfig = {
+    name: armName,
+    workdir: armWorkdir,
+    provider: armProvider,
+    model: armModel,
+    template: armTemplate,
+  };
+
+  console.log("\n=== Spawning Arm ===");
+  for (const line of summarizeArmSpawnConfig(config).split("\n")) {
+    console.log(`  ${line}`);
+  }
+  console.log("");
+  return config;
+}
 export function registerArmCommands(program: Command): void {
 
   const armCmd = program.command("arm").description("Manage arms (agents)");
