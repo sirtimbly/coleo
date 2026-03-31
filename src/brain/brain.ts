@@ -6366,9 +6366,18 @@ Report findings using bug resolution workflow.`;
 					// Arm is actively processing - check how long
 					// If it's been processing for too long, it might be stuck
 					this.log(`Arm ${arm.name}: harness confirms "processing" state`);
+					// For API harnesses, trust the processing state - don't override to idle
+					// even if there's no recent activity signal (long-running tasks are valid)
+					const isApi = await this.isApiHarness(arm.id);
+					if (isApi) {
+						this.log(
+							`Arm ${arm.name}: API harness confirmed processing, keeping busy`,
+						);
+						continue;
+					}
 					// Fall through to log analysis to check if it's stuck
 				}
-				// Could not get harness state - decide how to proceed based on harness type
+				// Could not get harness state or state is error/unknown - decide how to proceed based on harness type
 				const isApi = await this.isApiHarness(arm.id);
 				if (isApi) {
 					// For API harnesses, we can't reliably analyze logs
