@@ -2883,10 +2883,238 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			},
 		});
 
-		// Create a commit task to capture unstaged changes
-		await this.createCommitTask(taskId, taskSubject, summary);
+		// Check if this is a "good stopping point" for branch/PR workflow
+		const isGoodStoppingPoint = await this.isGoodStoppingPoint(taskId, workerArmId);
+		if (isGoodStoppingPoint) {
+			this.log(`Task ${taskId} reached a good stopping point - creating branch/PR workflow task`);
+			await this.createBranchAndPRTask(taskId, taskSubject, summary, workerArmId);
+		} else {
+			// Create a commit task to capture unstaged changes
+			await this.createCommitTask(taskId, taskSubject, summary);
+		}
 
 		this.log(`Completed task: ${taskSubject}`);
+	}
+
+	/**
+	 * Detect if a completed task represents a "good stopping point" for creating a branch and PR.
+	 * This is true when:
+	 * - The task has been reviewed/validated (consensus reached)
+	 * - OR there's confirmation from multiple arms that work is done
+	 * - AND the work meets acceptance criteria
+	 */
+	private async isGoodStoppingPoint(
+		taskId: string,
+		workerArmId: string | null | undefined,
+	): Promise<boolean> {
+		try {
+			// Check for task validation/approval
+			const response = await this.apiRequest<{
+				validations: Array<{
+					approved: boolean;
+					armId: string;
+					createdAt: string;
+				}>;
+			} | null>(`/api/tasks/${encodeURIComponent(taskId)}/validations`);
+
+			if (response?.validations && response.validations.length > 0) {
+				// Check if we have approval from multiple arms or consensus
+				const approvals = response.validations.filter((v) => v.approved);
+				if (approvals.length >= 1) {
+					this.log(`Task ${taskId} has ${approvals.length} approval(s) - good stopping point detected`);
+					return true;
+				}
+			}
+
+			// Check for status reports indicating completion with confidence
+			const statusReports = await this.getStatusReportsWithIssues(taskId);
+			const confidentCompletions = statusReports.filter(
+				(r) => !r.issues || r.issues.length === 0,
+			);
+			if (confidentCompletions.length > 0) {
+				this.log(`Task ${taskId} has confident completion reports - good stopping point detected`);
+				return true;
+			}
+
+			return false;
+		} catch (err) {
+			this.log(`Error checking good stopping point for ${taskId}: ${err}`);
+			return false;
+		}
+	}
+
+	/**
+	 * Create a task that instructs the arm to:
+	 * 1. Create a branch with organized commits
+	 * 2. Submit a PR
+	 * 3. Return to clean main/master
+	 */
+	private async createBranchAndPRTask(
+		taskId: string,
+		taskSubject: string,
+		taskSummary: string,
+		workerArmId: string | null | undefined,
+	): Promise<void> {
+		try {
+			const branchTaskId = `branch-pr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+			const branchName = `feat/${taskId}-${taskSubject.toLowerCase().replace(/[^a-z0-9]+/g, "-").substring(0, 40)}`;
+
+			const description = `## Branch and PR Workflow
+
+Your work on "${taskSubject}" (${taskId}) has reached a good completion point. 
+
+### Your Task
+
+Create a branch, organize your commits, submit a PR, and return to a clean main/master branch.
+
+### Instructions
+
+**Step 1: Ensure you're on main/master and it's clean**
+\`\`\`bash
+git checkout main  # or master
+git pull origin main
+git status  # Should be clean
+\`\`\`
+
+**Step 2: Create and checkout a feature branch**
+\`\`\`bash
+git checkout -b ${branchName}
+\`\`\`
+
+**Step 3: Organize your work into clean commits**
+
+Review your changes and organize them logically:
+\`\`\`bash
+git status
+git diff --cached  # See what's staged
+git diff  # See unstaged changes
+\`\`\`
+
+Create well-organized commits following conventional commit format:
+- Each commit should be a logical unit of work
+- Use clear, descriptive commit messages
+- Reference the task ID in commits: \`Refs: ${taskId}\`
+
+Example commits:
+\`\`\`
+feat: implement user authentication
+
+- Add login form component with validation
+- Implement JWT token handling in auth middleware
+- Add session persistence with secure cookies
+
+Refs: ${taskId}
+
+test: add authentication unit tests
+
+- Test login form validation
+- Test JWT token generation and verification
+- Test session management
+
+Refs: ${taskId}
+\`\`\`
+
+**Step 4: Push the branch**
+\`\`\`bash
+git push -u origin ${branchName}
+\`\`\`
+
+**Step 5: Create a Pull Request**
+
+Use the gh CLI to create a PR:
+\`\`\`bash
+gh pr create --title "feat: ${taskSubject}" --body "$(cat <<'EOF'
+## Summary
+
+${taskSummary || "Implementation of the task requirements."}
+
+## Changes
+
+- [List the key changes made]
+- [Reference any architectural decisions]
+- [Note any breaking changes or deprecations]
+
+## Testing
+
+- [Describe testing performed]
+- [Note any test coverage added]
+
+## Related
+
+Task: ${taskId}
+EOF
+)"
+\`\`\`
+
+**Step 6: Return to clean main/master**
+\`\`\`bash
+git checkout main
+git pull origin main  # Ensure you have the latest
+git status  # Verify clean state
+\`\`\`
+
+### Completion Criteria
+
+- [ ] Branch created with descriptive name
+- [ ] Commits are well-organized and follow conventional format
+- [ ] All changes related to ${taskId} are committed
+- [ ] Branch pushed to origin
+- [ ] PR created with comprehensive description
+- [ ] Returned to clean main/master branch
+
+### Notes
+
+- If there are no changes to commit (already committed or no work done), mark this task complete with a note
+- If you encounter merge conflicts, resolve them carefully
+- Ensure the PR description clearly explains what was done and why
+
+Task Summary:
+${taskSummary || "(no summary provided)"}`;
+
+			await this.createTaskViaApi({
+				id: branchTaskId,
+				subject: `Create branch and PR for: ${taskSubject}`,
+				description,
+				status: "pending",
+				priority: "high",
+				classification: "development",
+				domain: "vcs",
+				sourceType: "system",
+				sourceRef: taskId,
+				context: {
+					notes: `Auto-generated branch/PR task for completed task ${taskId}. Suggested branch name: ${branchName}`,
+				},
+			});
+
+			this.log(`Created branch/PR task: ${branchTaskId} for task ${taskId}`);
+			this.logActivity("brain", "branch_pr_task_created", branchTaskId, {
+				originalTaskId: taskId,
+				subject: taskSubject,
+				branchName,
+				assignedTo: workerArmId,
+			});
+
+			// Notify the human
+			const body = await this.templates.renderTemplate(
+				"human-branch-pr-created.jinja",
+				{
+					subject: taskSubject,
+					taskId,
+					branchName,
+					armName: workerArmId || "an arm",
+				},
+			);
+			await this.sendToHuman({
+				subject: `[coleo] Branch and PR task created: ${taskSubject}`,
+				body,
+				headers: {
+					"X-Coleo-Task-Id": taskId,
+					"X-Coleo-Type": "branch-pr-created",
+				},
+			});
+		} catch (err) {
+			this.log(`Error creating branch/PR task for ${taskId}: ${err}`);
+		}
 	}
 
 	/**
