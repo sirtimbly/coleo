@@ -340,6 +340,7 @@ export function registerArmCommands(program: Command): void {
       let armProvider = options.provider;
       let armModel = options.model;
       let armTemplate = normalizeTemplateName(options.template || "");
+      const spawnedArmNames: string[] = [];
 
       if (!interactive && !armName) {
         armName = generateArmName();
@@ -348,58 +349,21 @@ export function registerArmCommands(program: Command): void {
 
       if (interactive) {
         console.log("\n=== Arm Configuration ===\n");
-
-        const suggestedName = armName || generateArmName();
-        const templates = await loadArmTemplates(join(coleoDir, "arms"));
-
-        let useTemplate = false;
-        if (templates.length > 0) {
-          useTemplate = await promptYN("Would you like to use an arm template?", true);
-          if (useTemplate) {
-            const templateNames = templates.map((t) => `${t.file} - ${t.description}`);
-            templateNames.push("Custom arm (no template)");
-            const selected = await promptSelect("Select a template:", templateNames);
-            const selectedIdx = templateNames.indexOf(selected);
-            if (selectedIdx >= 0 && selectedIdx < templates.length) {
-              const selectedTemplate = templates[selectedIdx];
-              if (selectedTemplate) {
-                armTemplate = normalizeTemplateName(selectedTemplate.file);
-              }
-            }
-          }
-        }
-
-        const customName = await prompt(`Arm name [${suggestedName}]: `);
-        armName = customName.trim() || suggestedName;
-
-        const workdir = await prompt(`Working directory [${process.cwd()}]: `);
-        if (workdir.trim()) {
-          armWorkdir = workdir;
-        }
-
-        const hasProvider = await promptYN("Configure provider/model?", false);
-        if (hasProvider) {
-          const provider = await prompt("Provider (anthropic, openai, github-copilot, opencode-zen): ");
-          if (provider.trim()) {
-            armProvider = provider;
-            const model = await prompt("Model [optional]: ");
-            if (model.trim()) {
-              armModel = model;
-            }
-          }
-        }
-
-        console.log("\n=== Spawning Arm ===");
-        console.log(`  Name: ${armName}`);
-        if (armTemplate) {
-          console.log(`  Template: ${armTemplate}.toml`);
-        }
-        console.log(`  Workdir: ${armWorkdir}`);
-        if (armProvider) {
-          console.log(`  Provider: ${armProvider}`);
-          if (armModel) console.log(`  Model: ${armModel}`);
-        }
-        console.log("");
+        const config = await promptArmSpawnConfig({
+          coleoDir,
+          defaults: {
+            name: armName || generateArmName(),
+            workdir: armWorkdir,
+            provider: armProvider,
+            model: armModel,
+            template: armTemplate,
+          },
+        });
+        armName = config.name;
+        armWorkdir = config.workdir;
+        armProvider = config.provider;
+        armModel = config.model;
+        armTemplate = config.template || "";
       }
 
       if (!armName) {
