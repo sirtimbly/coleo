@@ -5,216 +5,35 @@
  * This provides event sourcing with the stream as the single source of truth.
  */
 import { Hono } from "hono";
-import type { Database } from "bun:sqlite";
-import { basename } from "path";
 import { eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
+import type { ActivityContext, ActivityEntry, ArmMetadata, TranscriptEntry } from "./activity-types";
+import {
+  parseLimit,
+  parseDateQuery,
+  parseOptionalPositiveInt,
+  parseIdList,
+  parseWorkdir,
+  deriveProject,
+  matchesProjectFilter,
+  buildTranscriptText,
+  sortEventsOldestFirst,
+  toIsoTimestamp,
+} from "./activity-utils";
 
-interface ActivityContext {
-  Variables: {
-    db: Database;
-  };
-}
-
-export interface ActivityEntry {
-  timestamp: string;
-  actor: string;
-  action: string;
-  target: string | null;
-  details: Record<string, unknown>;
-}
-
-interface ArmMetadata {
-  id: string;
-  host: string | null;
-  workdir: string | null;
-  project: string | null;
-}
-
-interface TranscriptEntry {
-  timestamp: string;
-  armId: string;
-  action: string;
-  text: string;
-  details: Record<string, unknown>;
-  partitions: {
-    armId: string;
-    host: string | null;
-    project: string | null;
-    workdir: string | null;
-  };
-}
-
-function parseLimit(raw: string | undefined, fallback: number, max: number): number {
-  const parsed = parseInt(raw || String(fallback), 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-  return Math.min(parsed, max);
-}
-
-function parseDateQuery(raw: string | undefined): { value?: Date; error?: string } {
-  if (!raw) {
-    return {};
-  }
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) {
-    return { error: `Invalid date: ${raw}` };
-  }
-
-  return { value: parsed };
-}
-
-function parseOptionalPositiveInt(raw: string | undefined, fallback: number, max: number): number {
-  if (!raw) {
-    return fallback;
-  }
-
-  const parsed = parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return Math.min(parsed, max);
-}
-
-function parseIdList(...rawValues: Array<string | undefined>): string[] {
-  const values: string[] = [];
-  for (const raw of rawValues) {
-    if (!raw) {
-      continue;
-    }
-
-    for (const token of raw.split(",")) {
-      const id = token.trim();
-      if (id.length > 0) {
-        values.push(id);
-      }
-    }
-  }
-
-  return Array.from(new Set(values));
-}
-
-function parseWorkdir(configText: string | null): string | null {
-  if (!configText) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(configText) as Record<string, unknown>;
-    const workdir = parsed.workdir;
-    return typeof workdir === "string" && workdir.trim().length > 0 ? workdir : null;
-  } catch {
-    return null;
-  }
-}
-
-function deriveProject(workdir: string | null): string | null {
-  if (!workdir) {
-    return null;
-  }
-
-  const normalized = workdir.replace(/\\/g, "/").replace(/\/+$/, "");
-  const project = basename(normalized);
-  return project.length > 0 ? project : null;
-}
-
-function matchesProjectFilter(projectFilter: string, metadata: ArmMetadata | undefined): boolean {
-  if (!metadata) {
-    return false;
-  }
-
-  const filter = projectFilter.toLowerCase();
-  const project = metadata.project?.toLowerCase();
-  const workdir = metadata.workdir?.toLowerCase();
-
-  if (project === filter) {
-    return true;
-  }
-
-  if (!workdir) {
-    return false;
-  }
-
-  if (workdir === filter) {
-    return true;
-  }
-
-  return workdir.includes(`/${filter}/`);
-}
-
-function serializeValue(value: unknown): string | null {
-  if (typeof value === "string" && value.trim().length > 0) {
-    return value.trim();
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    const values = value
-      .map((item) => (typeof item === "string" ? item.trim() : ""))
-      .filter((item) => item.length > 0);
-    return values.length > 0 ? values.join(" ") : null;
-  }
-  return null;
-}
-
-function buildTranscriptText(eventType: string, details: Record<string, unknown>): string {
-  const preferredKeys = [
-    "message",
-    "prompt",
-    "content",
-    "text",
-    "summary",
-    "error",
-    "reason",
-    "title",
-  ];
-
-  const textParts: string[] = [];
-  for (const key of preferredKeys) {
-    const value = serializeValue(details[key]);
-    if (value) {
-      textParts.push(value);
-    }
-  }
-
-  let body = textParts.join(" ").trim();
-  if (!body) {
-    body = JSON.stringify(details);
-  }
-
-  const combined = `${eventType} ${body}`.trim();
-  return combined.length > 4000 ? `${combined.slice(0, 4000)}...` : combined;
-}
-
-function sortEventsOldestFirst(a: { event: EventData }, b: { event: EventData }): number {
-  const aTime = new Date(a.event.timestamp).getTime();
-  const bTime = new Date(b.event.timestamp).getTime();
-
-  if (aTime !== bTime) {
-    return aTime - bTime;
-  }
-
-  return a.event.type.localeCompare(b.event.type);
-}
-
-function toIsoTimestamp(value: unknown): string | null {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof value === "string" || typeof value === "number") {
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) {
-      return parsed.toISOString();
-    }
-  }
-
-  return null;
-}
+export type { ActivityEntry, ArmMetadata, TranscriptEntry } from "./activity-types";
+export {
+  parseLimit,
+  parseDateQuery,
+  parseOptionalPositiveInt,
+  parseIdList,
+  parseWorkdir,
+  deriveProject,
+  matchesProjectFilter,
+  buildTranscriptText,
+  sortEventsOldestFirst,
+  toIsoTimestamp,
+} from "./activity-utils";
 
 export function createActivityRoutes() {
   const app = new Hono<ActivityContext>();

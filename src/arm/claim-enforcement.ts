@@ -14,6 +14,18 @@ import { eventStore } from "../nats/jetstream";
 
 export type ClaimMode = "strict" | "lazy" | "disabled";
 
+/**
+ * Minimal database interface for claim enforcement operations.
+ * Compatible with both bun:sqlite Database and ApiDatabase.
+ */
+export interface ClaimDb {
+  query: (sql: string) => {
+    get: (...params: any[]) => any | null;
+    all: (...params: any[]) => any[];
+  };
+  run: (sql: string, ...bindings: any[]) => { changes: number };
+}
+
 export interface ClaimEnforcementConfig {
   mode: ClaimMode;
   autoClaimOnWrite: boolean;
@@ -24,7 +36,7 @@ export interface ClaimEnforcementConfig {
 /**
  * Get the current claim mode from the database
  */
-export function getClaimMode(db: Database): ClaimMode {
+export function getClaimMode(db: ClaimDb): ClaimMode {
   try {
     const result = db.query("SELECT value FROM config WHERE key = 'context_claim_mode'").get() as { value: string } | null;
     const mode = result?.value || "lazy";
@@ -42,7 +54,7 @@ export function getClaimMode(db: Database): ClaimMode {
 /**
  * Get claim enforcement configuration
  */
-export function getClaimEnforcementConfig(db: Database): ClaimEnforcementConfig {
+export function getClaimEnforcementConfig(db: ClaimDb): ClaimEnforcementConfig {
   const mode = getClaimMode(db);
   
   return {
@@ -57,7 +69,7 @@ export function getClaimEnforcementConfig(db: Database): ClaimEnforcementConfig 
  * Check if an arm can write to a file based on current claim mode
  */
 export function canWriteToFile(
-  db: Database,
+  db: ClaimDb,
   armId: string,
   filePath: string
 ): { canWrite: boolean; reason?: string; shouldClaim?: boolean } {
@@ -135,7 +147,7 @@ export function canWriteToFile(
  * Auto-claim a file for an arm in lazy mode
  */
 export function autoClaimFile(
-  db: Database,
+  db: ClaimDb,
   armId: string,
   filePath: string,
   claimType: "read" | "write" = "write"
@@ -184,7 +196,7 @@ export function autoClaimFile(
  * Detect file thrashing (multiple arms overwriting same file)
  */
 export async function detectThrashing(
-  _db: Database,
+  _db: ClaimDb,
   filePath: string,
   windowMinutes: number = 30
 ): Promise<{ isTrash: boolean; arms: string[]; overwriteCount: number }> {
@@ -248,7 +260,7 @@ export async function detectThrashing(
  * Escalate claim mode to strict for a specific file due to thrashing
  */
 export function escalateClaimModeForFile(
-  db: Database,
+  db: ClaimDb,
   filePath: string,
   reason: string
 ): void {
@@ -275,7 +287,7 @@ export function escalateClaimModeForFile(
 /**
  * Get database connection
  */
-export function getDatabase(readonly = true): Database {
+export function getDatabase(readonly = true): ClaimDb {
   const dbPath = join(getColeoDir(), "coleo.db");
   return new Database(dbPath, { readonly });
 }
@@ -284,7 +296,7 @@ export function getDatabase(readonly = true): Database {
  * Monitor file for thrashing and auto-escalate if needed
  */
 export async function checkAndEscalateIfThrashing(
-  db: Database,
+  db: ClaimDb,
   filePath: string
 ): Promise<void> {
   const config = getClaimEnforcementConfig(db);

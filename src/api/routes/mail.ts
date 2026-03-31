@@ -3,62 +3,19 @@
  * Enhanced to expose Maildir metadata for downstream gateways (IMAP/SMTP)
  */
 import { Hono } from "hono";
-import type { Database } from "bun:sqlite";
 import { Maildir } from "../../mail/maildir";
 import { broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
-import { join, basename } from "path";
+import { join } from "path";
 import { readdir, stat } from "fs/promises";
 import { HttpError } from "../middleware/error";
 import { eventStore } from "../../nats/jetstream";
 import { normalizePostmarkInbound, sendPostmarkMessage } from "../../mail/postmark-gateway";
+import type { MailContext, MessageMetadata, FolderInfo } from "./mail-types";
+import { getDetailedMessages } from "./mail-utils";
 
-interface MailContext {
-  Variables: {
-    db: Database;
-    coleoDir: string;
-  };
-}
-
-/**
- * Enhanced message metadata for downstream gateways
- */
-interface MessageMetadata {
-  id: string;
-  filename: string;
-  folder: string;
-  filePath: string;
-  size: number;
-  flags: {
-    seen: boolean;
-    replied: boolean;
-    flagged: boolean;
-    draft: boolean;
-    trashed: boolean;
-  };
-  headers: {
-    from: string;
-    to: string;
-    subject: string;
-    date: string;
-    messageId?: string;
-  };
-  uidl?: string; // Unique ID for POP3/IMAP
-  modifiedAt: Date;
-}
-
-/**
- * Maildir folder information for gateways
- */
-interface FolderInfo {
-  name: string;
-  path: string;
-  type: 'mailbox' | 'folder';
-  messageCount: number;
-  unreadCount: number;
-  size: number;
-  lastModified: Date;
-}
+export type { MailContext, MessageMetadata, FolderInfo } from "./mail-types";
+export { getDetailedMessages } from "./mail-utils";
 
 export function createMailRoutes() {
   const app = new Hono<MailContext>();
@@ -328,43 +285,6 @@ export function createMailRoutes() {
       throw HttpError.internal(`Failed to update flags for message ${id}: ${err}`);
     }
   });
-
-  // Helper function to get detailed message metadata
-  async function getDetailedMessages(maildir: Maildir, subfolder: "new" | "cur"): Promise<MessageMetadata[]> {
-    const messages = await maildir.list(subfolder);
-    const detailed: MessageMetadata[] = [];
-    
-    for (const message of messages) {
-      if (!message.filePath) continue;
-      
-      try {
-        const fileStat = await stat(message.filePath);
-        const filename = basename(message.filePath);
-        
-        detailed.push({
-          id: message.id,
-          filename,
-          folder: subfolder,
-          filePath: message.filePath,
-          size: fileStat.size,
-          flags: message.flags,
-          headers: {
-            from: message.from,
-            to: message.to,
-            subject: message.subject,
-            date: message.date.toISOString(),
-            messageId: message.headers['message-id'],
-          },
-          uidl: `${message.id}.${fileStat.mtime.getTime()}`, // Unique ID for POP3
-          modifiedAt: fileStat.mtime,
-        });
-      } catch (err) {
-        console.warn(`Failed to get metadata for message ${message.id}:`, err);
-      }
-    }
-    
-    return detailed;
-  }
 
   // Existing API endpoints (enhanced with proper error handling)
   

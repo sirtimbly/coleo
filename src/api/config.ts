@@ -40,10 +40,16 @@ export function shouldLog(level: LogLevel, messageLevel: LogLevel): boolean {
 }
 
 /**
+ * Default dev API key for local development
+ * Matches the default used by CLI and MCP tools
+ */
+const DEV_API_KEY = "dev-api-key-12345";
+
+/**
  * Generate a dev API key (printed to console on startup)
  */
 function generateDevApiKey(): string {
-  return `dev-${Math.random().toString(36).slice(2, 10)}`;
+  return DEV_API_KEY;
 }
 
 /**
