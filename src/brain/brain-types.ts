@@ -156,33 +156,60 @@ export function getArmDisplayName(armId: string, arms: Map<string, Arm>): string
 	return arm?.name || armId;
 }
 
-export function buildDocUpdateDescription(
-	subject: string,
-	description: string,
-	targetDoc?: string,
-): string {
-	if (targetDoc) {
-		return `Update documentation: docs/${targetDoc}\n\n${description}`;
-	}
-	return `Update project documentation based on human feedback:\n\n${description}`;
+export interface DocUpdateContext {
+	filesChanged: string[];
+	changedFilesCount: number;
+	featureDocsToUpdate: string[];
+	planDocument?: string;
 }
 
-export function buildRefactoringDescription(
-	largeFiles: Array<{ path: string; lines: number }>,
-	threshold: number,
-): string {
-	const fileLines = largeFiles
-		.map((f) => `- ${f.path}: ${f.lines} lines (threshold: ${threshold})`)
-		.join("\n");
+export interface LargeFile {
+	path: string;
+	lines: number;
+}
 
-	return `The following files exceed ${threshold} lines and should be refactored:
+export function buildDocUpdateDescription(context: DocUpdateContext): string {
+	let desc = `## Documentation Update Task
 
-${fileLines}
+This task ensures feature documentation remains aligned with actual code implementation.
 
-**Guidelines:**
-- Extract utilities, types, and helper functions into focused modules
-- Maintain backward compatibility by re-exporting from original files
-- Target ~300 lines per module for maintainability
-- Avoid circular dependencies between modules
+### Files Changed Since Last Update
+${context.changedFilesCount} files have been modified:
+${context.filesChanged
+	.slice(0, 10)
+	.map((f) => `- ${f}`)
+	.join("\n")}
+${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
+
+### Feature Docs to Review
+${
+	context.featureDocsToUpdate.length > 0
+		? context.featureDocsToUpdate.map((d) => `- ${d}`).join("\n")
+		: "No specific feature docs identified - review general docs for accuracy."
+}
+
+### Your Tasks
+
+1. **Review changed files** - Understand what code changes were made
+2. **Update feature docs** - Ensure docs/features/, docs/api/, and docs/capabilities/ match implementation
+3. **Add "Future Work" notes** - For features documented but not yet implemented:
+   - Mark as "Planned for Phase N"
+   - Reference the plan document
+4. **Do NOT update** - Conceptual docs, architecture decisions, or requirements
+
+### Output
+When complete, report:
+- Which docs were updated
+- Any "Future Work" notes added
+- Any features that need attention
+
 `;
+
+	if (context.planDocument) {
+		desc += `### Reference\nSee \`${context.planDocument}\` for planned features that may need "Future Work" notes.\n`;
+	}
+
+	return desc;
 }
+
+

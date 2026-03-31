@@ -69,6 +69,8 @@ import {
 	type BrainOptions,
 	isTaskAttachment,
 	pathMatchesPattern,
+	buildDocUpdateDescription,
+	type DocUpdateContext,
 } from "./brain-types";
 export { type BrainOptions } from "./brain-types";
 import {
@@ -8089,7 +8091,7 @@ ${originalTask.id}`;
 		}
 
 		// Build task description
-		const description = this.buildDocUpdateDescription(context);
+		const description = buildDocUpdateDescription(context);
 
 		// Create documentation task
 		const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -8123,58 +8125,6 @@ ${originalTask.id}`;
 			filesChanged: context.changedFilesCount,
 			docsToUpdate: context.featureDocsToUpdate.length,
 		});
-	}
-
-	/**
-	 * Build description for documentation update task
-	 */
-	private buildDocUpdateDescription(context: {
-		filesChanged: string[];
-		changedFilesCount: number;
-		featureDocsToUpdate: string[];
-		planDocument?: string;
-	}): string {
-		let desc = `## Documentation Update Task
-
-This task ensures feature documentation remains aligned with actual code implementation.
-
-### Files Changed Since Last Update
-${context.changedFilesCount} files have been modified:
-${context.filesChanged
-	.slice(0, 10)
-	.map((f) => `- ${f}`)
-	.join("\n")}
-${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
-
-### Feature Docs to Review
-${
-	context.featureDocsToUpdate.length > 0
-		? context.featureDocsToUpdate.map((d) => `- ${d}`).join("\n")
-		: "No specific feature docs identified - review general docs for accuracy."
-}
-
-### Your Tasks
-
-1. **Review changed files** - Understand what code changes were made
-2. **Update feature docs** - Ensure docs/features/, docs/api/, and docs/capabilities/ match implementation
-3. **Add "Future Work" notes** - For features documented but not yet implemented:
-   - Mark as "Planned for Phase N"
-   - Reference the plan document
-4. **Do NOT update** - Conceptual docs, architecture decisions, or requirements
-
-### Output
-When complete, report:
-- Which docs were updated
-- Any "Future Work" notes added
-- Any features that need attention
-
-`;
-
-		if (context.planDocument) {
-			desc += `### Reference\nSee \`${context.planDocument}\` for planned features that may need "Future Work" notes.\n`;
-		}
-
-		return desc;
 	}
 
 	/**
