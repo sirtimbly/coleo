@@ -212,4 +212,59 @@ When complete, report:
 	return desc;
 }
 
+export function buildCommitTaskDescription(
+	taskId: string,
+	taskSubject: string,
+	taskSummary: string,
+): string {
+	return `Create a commit for the completed task "${taskSubject}" (${taskId}).
+
+Task Summary:
+${taskSummary || "(no summary provided)"}
+
+Instructions:
+1. Run git status to see unstaged changes
+2. Identify files related to the completed task
+3. Stage those files with git add
+4. Create a commit with a descriptive message that:
+   - References the task ID (${taskId})
+   - Summarizes the work done
+   - Follows conventional commit format if applicable
+
+Example commit message:
+feat: implement user authentication
+
+- Add login form component
+- Implement JWT token handling
+- Add session management
+
+Refs: ${taskId}
+
+Note: If there are no unstaged changes or all changes are already committed, mark this task as completed with a note.`;
+}
+
+export function buildVerificationTaskDescription(
+	taskSubject: string,
+	taskId: string,
+	summary: string,
+	artifacts: string[],
+): string {
+	const artifactList =
+		artifacts.length > 0
+			? artifacts.map((a) => `- ${a}`).join("\n")
+			: "- None";
+
+	return [
+		`Validate completion for task "${taskSubject}" (${taskId}).`,
+		"",
+		"Review the implementation and artifacts to confirm acceptance criteria.",
+		"If issues are found, create a follow-up bug/task with concrete repro steps.",
+		"",
+		"Completion summary:",
+		summary || "(no summary provided)",
+		"",
+		"Artifacts:",
+		artifactList,
+	].join("\n");
+}
 
