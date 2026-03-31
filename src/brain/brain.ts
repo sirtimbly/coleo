@@ -4428,9 +4428,9 @@ Report findings using bug resolution workflow.`;
 		// Notify subscribed arms
 		for (const [subArmId, patterns] of this.fileSubscriptions.entries()) {
 			if (subArmId === armId) continue;
-			const matches = Array.from(patterns).some((pattern) =>
-				this.pathMatchesPattern(payload.filePath, pattern),
-			);
+		const matches = Array.from(patterns).some((pattern) =>
+			pathMatchesPattern(payload.filePath, pattern),
+		);
 			if (!matches) continue;
 
 			await this.sendToArm(subArmId, {

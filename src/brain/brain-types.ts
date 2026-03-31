@@ -73,15 +73,29 @@ export function isTaskAttachment(value: unknown): value is TaskAttachment {
 	);
 }
 
-export function pathMatchesPattern(path: string, pattern: string): boolean {
-	if (pattern.includes("*")) {
-		const regexPattern = pattern
-			.replace(/\./g, "\\.")
-			.replace(/\*\*/g, ".*")
-			.replace(/\*/g, "[^/]*");
-		return new RegExp(`^${regexPattern}$`).test(path);
+export function pathMatchesPattern(filePath: string, pattern: string): boolean {
+	const normalizedPath = filePath.replaceAll("\\", "/");
+	const normalizedPattern = pattern.replaceAll("\\", "/");
+
+	if (normalizedPattern === "**" || normalizedPattern === "*") {
+		return true;
 	}
-	return path === pattern || path.startsWith(pattern + "/");
+
+	if (!normalizedPattern.includes("*")) {
+		return normalizedPath.includes(normalizedPattern);
+	}
+
+	const tokenDouble = "__DOUBLE_STAR__";
+	const tokenSingle = "__SINGLE_STAR__";
+	const escaped = normalizedPattern
+		.replaceAll("**", tokenDouble)
+		.replaceAll("*", tokenSingle)
+		.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+		.replaceAll(tokenDouble, ".*")
+		.replaceAll(tokenSingle, "[^/]*");
+
+	const regex = new RegExp(`^${escaped}$`);
+	return regex.test(normalizedPath);
 }
 
 export function isProductiveAction(action: string): boolean {
