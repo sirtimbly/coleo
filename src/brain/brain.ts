@@ -65,30 +65,36 @@ import type {
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
-
-function isTaskAttachment(value: unknown): value is TaskAttachment {
-	if (!value || typeof value !== "object") {
-		return false;
-	}
-
-	const attachment = value as Partial<TaskAttachment>;
-	return (
-		attachment.kind === "image" &&
-		typeof attachment.uploadId === "string" &&
-		typeof attachment.filename === "string" &&
-		typeof attachment.mimeType === "string" &&
-		typeof attachment.sizeBytes === "number" &&
-		typeof attachment.contentUrl === "string"
-	);
-}
-
-export interface BrainOptions {
-	coleoDir: string;
-	pollIntervalMs: number;
-	verbose: boolean;
-	apiBaseUrl?: string;
-	apiKey?: string;
-}
+import {
+	type BrainOptions,
+	isTaskAttachment,
+	pathMatchesPattern,
+} from "./brain-types";
+export { type BrainOptions } from "./brain-types";
+import {
+	createApiClient,
+	logActivityViaApi,
+	publishEventViaApi,
+	queueMessageViaApi,
+	listPendingMessagesViaApi,
+	markMessageStatusViaApi,
+} from "./brain-api-client";
+import {
+	listTasksFromApi,
+	getTaskFromApi,
+	createTaskViaApi,
+	patchTaskViaApi,
+	listStatusReportsFromApi,
+	getTaskSubjectFromApi,
+} from "./brain-task-client";
+import {
+	listBugsFromApi,
+	getBugFromApi,
+	createBugViaApi,
+	patchBugViaApi,
+	determineBugPriority,
+	formatBugReport,
+} from "./brain-bug-handler";
 
 export class Brain {
 	private options: BrainOptions;
@@ -6418,12 +6424,40 @@ Report findings using bug resolution workflow.`;
 				const isApi = await this.isApiHarness(arm.id);
 				if (isApi) {
 					// For API harnesses, we can't reliably analyze logs
-					// Instead, check if the arm is sending heartbeats (indicating it's active)
+					// Instead, check if the arm is sending heartbeats. Heartbeat alone
+					// is not enough for recovery because API arms can keep heartbeating
+					// long after real work has stalled.
 					const hasRecentHb = await this.hasRecentHeartbeat(arm.id, 60);
 					if (hasRecentHb) {
-						this.log(
-							`Arm ${arm.name}: API harness with recent heartbeat, assuming active`,
+						const staleMinutes = await this.getBrainConfigNumber(
+							"brain_api_arm_stale_activity_minutes",
+							5,
 						);
+						const staleThresholdMs = staleMinutes * 60 * 1000;
+						const recentSignal = await this.getRecentArmActivitySignal(
+							arm.id,
+							staleThresholdMs,
+						);
+						if (recentSignal.recent) {
+							this.log(
+								`Arm ${arm.name}: API harness heartbeat is fresh and ${recentSignal.reason || "activity is recent"}, keeping busy`,
+							);
+							continue;
+						}
+
+						const lastActivityAgeMinutes = arm.lastActivity
+							? (Date.now() - arm.lastActivity.getTime()) / 1000 / 60
+							: null;
+						const lastActivitySuffix =
+							lastActivityAgeMinutes !== null &&
+							Number.isFinite(lastActivityAgeMinutes)
+								? ` (last activity ${lastActivityAgeMinutes.toFixed(1)}m ago)`
+								: "";
+						this.log(
+							`Arm ${arm.name}: API harness heartbeat is fresh but no activity signal for ${staleMinutes}m${lastActivitySuffix}, marking idle so the next poll can nudge it`,
+						);
+						await this.syncArmStatus(arm.id, "idle");
+						arm.status = "idle";
 						continue;
 					} else {
 						// No recent heartbeat - might be truly stuck or the API server is down
