@@ -137,6 +137,88 @@ export class StuckArmAnalyzer {
 	}
 
 	/**
+	 * Analyze if an arm has silently completed its task without calling complete_task
+	 */
+	async analyzeSilentCompletion(
+		armName: string,
+		recentOutput: string,
+		statusReports: Array<{
+			status: string;
+			summary: string;
+			issues?: string[];
+			testsStatus?: "passing" | "failing" | "not_run";
+			filesChanged?: string[];
+		}>,
+		taskDescription?: string,
+	): Promise<StuckAnalysis | null> {
+		// Check if we have recent status reports indicating completion
+		if (!statusReports || statusReports.length === 0) {
+			return null;
+		}
+
+		const latestReport = statusReports[statusReports.length - 1];
+		if (!latestReport) {
+			return null;
+		}
+
+		// Criteria for silent completion:
+		// 1. Status is "on_track" or "completed_with_issues" but not explicitly completed
+		// 2. Tests are passing
+		// 3. No blockers or critical issues
+		// 4. Files have been changed
+		// 5. Arm appears to be idle or waiting
+
+		const isOnTrack = latestReport.status === "on_track";
+		const isCompletedWithIssues = latestReport.status === "completed_with_issues";
+		const testsPassing = latestReport.testsStatus === "passing";
+		const noCriticalIssues = !latestReport.issues || latestReport.issues.length === 0;
+		const hasFilesChanged = latestReport.filesChanged && latestReport.filesChanged.length > 0;
+
+		// Check if output indicates waiting state
+		const lines = recentOutput.trim().split("\n");
+		const lastLines = lines.slice(-10).join("\n").toLowerCase();
+		const waitingPatterns = [
+			/waiting for/i,
+			/awaiting/i,
+			/paused/i,
+			/idle/i,
+			/done\?/i,
+			/finished\?/i,
+			/complete\?/i,
+		];
+		const appearsWaiting = waitingPatterns.some(p => p.test(lastLines));
+
+		// Calculate confidence based on criteria met
+		let confidence = 0;
+		if (isOnTrack || isCompletedWithIssues) confidence += 0.3;
+		if (testsPassing) confidence += 0.25;
+		if (noCriticalIssues) confidence += 0.2;
+		if (hasFilesChanged) confidence += 0.15;
+		if (appearsWaiting) confidence += 0.1;
+
+		// If confidence is high enough, report silent completion
+		if (confidence >= 0.6) {
+			return {
+				isStuck: true,
+				stuckType: "silent_completion",
+				reasoning: `Arm appears to have completed work but hasn't called complete_task. ` +
+					`Status: ${latestReport.status}, tests: ${latestReport.testsStatus || "unknown"}, ` +
+					`files changed: ${latestReport.filesChanged?.length || 0}`,
+				suggestedAction: "prompt_complete_task",
+				confidence,
+				silentCompletion: {
+					taskId: "unknown", // Will be filled in by brain
+					filesChanged: latestReport.filesChanged || [],
+					testsStatus: latestReport.testsStatus,
+					isReadyForCompletion: confidence >= 0.75,
+				},
+			};
+		}
+
+		return null;
+	}
+
+	/**
 	 * Quick heuristic analysis (avoids LLM call)
 	 */
 	private quickAnalysis(output: string): StuckAnalysis | null {

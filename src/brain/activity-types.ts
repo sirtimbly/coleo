@@ -100,6 +100,7 @@ export interface StuckAnalysis {
 		| "looping"
 		| "error"
 		| "idle_too_long"
+		| "silent_completion"
 		| "unknown";
 	reasoning: string;
 	suggestedAction?:
@@ -108,9 +109,17 @@ export interface StuckAnalysis {
 		| "restart"
 		| "compact"
 		| "escalate"
-		| "prompt";
+		| "prompt"
+		| "prompt_complete_task";
 	suggestedResponse?: string;
 	confidence: number; // 0-1
+	/** If stuckType is "silent_completion", details about the completion */
+	silentCompletion?: {
+		taskId: string;
+		filesChanged: string[];
+		testsStatus?: "passing" | "failing" | "not_run";
+		isReadyForCompletion: boolean;
+	};
 }
 
 /**
