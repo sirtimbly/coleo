@@ -8013,7 +8013,8 @@ ${originalTask.id}`;
 
 	private async appendLog(line: string): Promise<void> {
 		const logPath = join(this.options.coleoDir, "logs", "brain.log");
-		const { appendFile } = await import("fs/promises");
+		const { appendFile, mkdir } = await import("fs/promises");
+		await mkdir(join(this.options.coleoDir, "logs"), { recursive: true });
 		await appendFile(logPath, line + "\n", "utf-8");
 	}
 
