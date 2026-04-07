@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-03-28T22:05:59.422Z",
+  "fetchedAt": "2026-04-07T20:42:03.394Z",
   "providers": [
     {
       "id": "cerebras",
@@ -294,6 +294,34 @@
         {
           "id": "gemini-live-2.5-flash-preview-native-audio",
           "name": "gemini-live-2.5-flash-preview-native-audio"
+        },
+        {
+          "id": "gemma-3-12b-it",
+          "name": "gemma-3-12b-it"
+        },
+        {
+          "id": "gemma-3-27b-it",
+          "name": "gemma-3-27b-it"
+        },
+        {
+          "id": "gemma-3-4b-it",
+          "name": "gemma-3-4b-it"
+        },
+        {
+          "id": "gemma-3n-e2b-it",
+          "name": "gemma-3n-e2b-it"
+        },
+        {
+          "id": "gemma-3n-e4b-it",
+          "name": "gemma-3n-e4b-it"
+        },
+        {
+          "id": "gemma-4-26b-it",
+          "name": "gemma-4-26b-it"
+        },
+        {
+          "id": "gemma-4-31b-it",
+          "name": "gemma-4-31b-it"
         }
       ]
     },
@@ -384,6 +412,10 @@
         {
           "id": "gpt-5.4",
           "name": "gpt-5.4"
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "gpt-5.4-mini"
         }
       ]
     },
@@ -504,14 +536,6 @@
           "name": "kimi-k2.5"
         },
         {
-          "id": "mimo-v2-omni-free",
-          "name": "mimo-v2-omni-free"
-        },
-        {
-          "id": "mimo-v2-pro-free",
-          "name": "mimo-v2-pro-free"
-        },
-        {
           "id": "minimax-m2.5",
           "name": "minimax-m2.5"
         },
@@ -522,6 +546,10 @@
         {
           "id": "nemotron-3-super-free",
           "name": "nemotron-3-super-free"
+        },
+        {
+          "id": "qwen3.6-plus-free",
+          "name": "qwen3.6-plus-free"
         }
       ]
     },

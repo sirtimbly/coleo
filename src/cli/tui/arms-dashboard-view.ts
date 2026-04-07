@@ -7,6 +7,7 @@ import type {
   DashboardSnapshot,
   DashboardStatusReport,
 } from "./arms-dashboard-data";
+import type { MailMessage } from "../../mail";
 
 export type DashboardNodeKind =
   | "brain"
@@ -26,12 +27,29 @@ export interface DashboardNode {
   description: string;
   depth: number;
   armId?: string;
+  mailId?: string;
+  discoveryId?: string;
+  reportId?: string;
 }
 
 export interface DashboardView {
   title: string;
   subtitle: string;
   lines: string[];
+}
+
+export type DashboardDetailItemKind = "arm" | "mail" | "discovery" | "status-report";
+
+export interface DashboardDetailItem {
+  id: string;
+  kind: DashboardDetailItemKind;
+  label: string;
+  description: string;
+  armId?: string;
+  armName?: string;
+  mailId?: string;
+  discoveryId?: string;
+  reportId?: string;
 }
 
 function formatDateTime(value?: string | null): string {
@@ -191,6 +209,94 @@ function buildArmRow(arm: DashboardArmSummary): string {
   ].join("  ");
 }
 
+function buildMailSummary(message: MailMessage): string {
+  const unread = message.flags.seen ? " " : "*";
+  return `${unread} ${message.from}  ${message.subject || "(no subject)"}`;
+}
+
+function buildMailDetail(message: MailMessage): DashboardView {
+  const lines = [
+    `from: ${message.from}`,
+    `to: ${message.to}`,
+    `date: ${formatDateTime(message.date.toISOString())}`,
+    `subject: ${message.subject || "(no subject)"}`,
+    `seen: ${message.flags.seen ? "yes" : "no"}`,
+    `flagged: ${message.flags.flagged ? "yes" : "no"}`,
+    "",
+    "Body",
+    "----",
+    ...(message.body.trim() ? message.body.trim().split(/\r?\n/) : ["(empty body)"]),
+  ];
+
+  return {
+    title: message.subject || "Mail",
+    subtitle: `Message from ${message.from}`,
+    lines,
+  };
+}
+
+function buildDiscoveryDetail(discovery: DashboardDiscovery): DashboardView {
+  const lines = [
+    `severity: ${discovery.severity}`,
+    `status: ${discovery.status}`,
+    `arm: ${discovery.armName || discovery.armId}`,
+    `kind: ${discovery.kind}`,
+    `task: ${discovery.taskId || "n/a"}`,
+    `phase: ${discovery.phase || "n/a"}`,
+    `created: ${formatDateTime(discovery.createdAt)}`,
+    `updated: ${formatDateTime(discovery.updatedAt)}`,
+    discovery.filePath
+      ? `file: ${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`
+      : "file: n/a",
+    "",
+    "Details",
+    "-------",
+    ...(discovery.details.trim() ? discovery.details.trim().split(/\r?\n/) : ["(no details)"]),
+  ];
+
+  return {
+    title: discovery.title,
+    subtitle: `Discovery for ${discovery.armName || discovery.armId}`,
+    lines,
+  };
+}
+
+function buildStatusReportDetail(report: DashboardStatusReport): DashboardView {
+  const lines = [
+    `status: ${report.status}`,
+    `arm: ${report.armId}`,
+    `task: ${report.taskId}`,
+    `created: ${formatDateTime(report.createdAt)}`,
+    `tests: ${report.testsStatus || "n/a"}`,
+    "",
+    "Summary",
+    "-------",
+    report.summary || "(no summary)",
+  ];
+
+  if (report.nextSteps) {
+    lines.push("", "Next Steps", "----------", report.nextSteps);
+  }
+
+  if (report.issues && report.issues.length > 0) {
+    lines.push("", "Issues", "------", ...report.issues.map((issue) => `- ${issue}`));
+  }
+
+  if (report.blockers && report.blockers.length > 0) {
+    lines.push("", "Blockers", "--------", ...report.blockers.map((blocker) => `- ${blocker}`));
+  }
+
+  if (report.filesChanged && report.filesChanged.length > 0) {
+    lines.push("", "Files Changed", "-------------", ...report.filesChanged.map((file) => `- ${file}`));
+  }
+
+  return {
+    title: `${report.armId} -> ${report.taskId}`,
+    subtitle: "Status report detail",
+    lines,
+  };
+}
+
 export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[] {
   const activeArms = snapshot.arms
     .filter((arm) => arm.status !== "stopped")
@@ -202,6 +308,20 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
       kind: "brain",
       label: "Brain",
       description: snapshot.brainService.running ? "service and logs" : "stopped",
+      depth: 0,
+    },
+    {
+      id: "api",
+      kind: "api",
+      label: "API",
+      description: snapshot.serverService.running ? "server service" : "stopped",
+      depth: 0,
+    },
+    {
+      id: "nats",
+      kind: "nats",
+      label: "NATS",
+      description: "event stream health",
       depth: 0,
     },
     {
@@ -224,6 +344,44 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
     });
   }
 
+  nodes.push({
+    id: "discoveries",
+    kind: "discoveries",
+    label: `Discoveries (${snapshot.discoveries.length})`,
+    description: "recent findings",
+    depth: 0,
+  });
+
+  for (const discovery of snapshot.discoveries) {
+    nodes.push({
+      id: `discovery:${discovery.id}`,
+      kind: "discoveries",
+      label: discovery.title,
+      description: `[${discovery.severity}] ${discovery.armName || discovery.armId}`,
+      depth: 1,
+      discoveryId: discovery.id,
+    });
+  }
+
+  nodes.push({
+    id: "mail",
+    kind: "mail",
+    label: `Email (${snapshot.inboxMessages.filter((msg) => !msg.flags.seen).length})`,
+    description: "human and brain messages",
+    depth: 0,
+  });
+
+  for (const message of snapshot.inboxMessages) {
+    nodes.push({
+      id: `mail:${message.id}`,
+      kind: "mail",
+      label: message.subject || "(no subject)",
+      description: buildMailSummary(message),
+      depth: 1,
+      mailId: message.id,
+    });
+  }
+
   nodes.push(
     {
       id: "status-reports",
@@ -233,43 +391,64 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
       depth: 0,
     },
     {
-      id: "discoveries",
-      kind: "discoveries",
-      label: `Discoveries (${snapshot.discoveries.length})`,
-      description: "recent findings",
-      depth: 0,
-    },
-    {
       id: "activity",
       kind: "activity",
       label: `Activity (${snapshot.recentActivity.length})`,
       description: "recent system events",
       depth: 0,
     },
-    {
-      id: "api",
-      kind: "api",
-      label: "API",
-      description: snapshot.serverService.running ? "server service" : "stopped",
-      depth: 0,
-    },
-    {
-      id: "nats",
-      kind: "nats",
-      label: "NATS",
-      description: "event stream health",
-      depth: 0,
-    },
-    {
-      id: "mail",
-      kind: "mail",
-      label: `Mail (${snapshot.inboxMessages.filter((msg) => !msg.flags.seen).length})`,
-      description: "human/brain messages",
-      depth: 0,
-    },
   );
 
+  for (const report of snapshot.statusReports) {
+    nodes.push({
+      id: `status-report:${report.id}`,
+      kind: "status-reports",
+      label: `${report.armId} -> ${report.taskId}`,
+      description: `[${report.status}] ${report.summary}`,
+      depth: 1,
+      reportId: report.id,
+    });
+  }
+
   return nodes;
+}
+
+export function buildViewForDetailItem(
+  snapshot: DashboardSnapshot,
+  item: DashboardDetailItem,
+  armDetail: DashboardArmDetail | null,
+): DashboardView {
+  switch (item.kind) {
+    case "arm": {
+      const node: DashboardNode = {
+        id: item.id,
+        kind: "arm",
+        label: item.label,
+        description: item.description,
+        depth: 1,
+        armId: item.armId,
+      };
+      return buildViewForNode(snapshot, node, armDetail);
+    }
+    case "mail": {
+      const message = snapshot.inboxMessages.find((candidate) => candidate.id === item.mailId);
+      return message
+        ? buildMailDetail(message)
+        : { title: item.label, subtitle: "Mail detail", lines: ["Message unavailable."] };
+    }
+    case "discovery": {
+      const discovery = snapshot.discoveries.find((candidate) => candidate.id === item.discoveryId);
+      return discovery
+        ? buildDiscoveryDetail(discovery)
+        : { title: item.label, subtitle: "Discovery detail", lines: ["Discovery unavailable."] };
+    }
+    case "status-report": {
+      const report = snapshot.statusReports.find((candidate) => candidate.id === item.reportId);
+      return report
+        ? buildStatusReportDetail(report)
+        : { title: item.label, subtitle: "Status report detail", lines: ["Status report unavailable."] };
+    }
+  }
 }
 
 export function buildViewForNode(
@@ -355,18 +534,34 @@ export function buildViewForNode(
         lines,
       };
     }
-    case "status-reports":
+    case "status-reports": {
+      if (node.reportId) {
+        const report = snapshot.statusReports.find((candidate) => candidate.id === node.reportId);
+        return report
+          ? buildStatusReportDetail(report)
+          : { title: node.label, subtitle: "Status report detail", lines: ["Status report unavailable."] };
+      }
+
       return {
         title: "Status Reports",
         subtitle: "Recent status updates from arms",
         lines: formatStatusReportRows(snapshot.statusReports),
       };
-    case "discoveries":
+    }
+    case "discoveries": {
+      if (node.discoveryId) {
+        const discovery = snapshot.discoveries.find((candidate) => candidate.id === node.discoveryId);
+        return discovery
+          ? buildDiscoveryDetail(discovery)
+          : { title: node.label, subtitle: "Discovery detail", lines: ["Discovery unavailable."] };
+      }
+
       return {
         title: "Discoveries",
         subtitle: "Recent findings and issues",
         lines: formatDiscoveryRows(snapshot.discoveries),
       };
+    }
     case "activity":
       return {
         title: "Activity",
@@ -427,12 +622,20 @@ export function buildViewForNode(
         lines,
       };
     }
-    case "mail":
+    case "mail": {
+      if (node.mailId) {
+        const message = snapshot.inboxMessages.find((candidate) => candidate.id === node.mailId);
+        return message
+          ? buildMailDetail(message)
+          : { title: node.label, subtitle: "Mail detail", lines: ["Message unavailable."] };
+      }
+
       return {
-        title: "Mail",
+        title: "Email",
         subtitle: "Recent inbox messages",
         lines: formatMailRows(snapshot),
       };
+    }
   }
 }
 
@@ -460,7 +663,7 @@ export function buildFooterControls(
   node: DashboardNode,
   interruptBeforeSend: boolean,
 ): string {
-  const shared = "tab focus  j/k move  r refresh  / search  e editor  q quit";
+  const shared = "tab next pane  S-tab prev pane  j/k move  enter open  r refresh  / search  e editor  q quit";
 
   if (node.kind === "brain") {
     return `${shared}  |  m message brain  R restart brain`;
@@ -470,10 +673,13 @@ export function buildFooterControls(
     return `${shared}  |  n spawn arm`;
   }
 
+  if (node.kind === "discoveries" || node.kind === "mail" || node.kind === "status-reports" || node.kind === "activity") {
+    return shared;
+  }
+
   if (node.kind === "arm") {
     return `${shared}  |  m message arm  i interrupt=${interruptBeforeSend ? "on" : "off"}  s mark stuck  x kill  d delete  n spawn arm`;
   }
 
   return shared;
 }
-

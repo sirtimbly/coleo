@@ -41,6 +41,12 @@ interface ConfirmAction {
   execute: () => Promise<void>;
 }
 
+interface SidebarRow {
+  nodeId: string | null;
+  content: string;
+  selected: boolean;
+}
+
 function truncateLine(value: string, maxLength = 140): string {
   if (value.length <= maxLength) {
     return value;
@@ -106,10 +112,22 @@ class ArmsDashboardTui {
   private closeResolver: (() => void) | null = null;
   private expandedNodeIds = new Set<string>(["arms"]);
   private navScrollOffset = 0;
+  private sidebarRowRenderables: Array<BoxRenderable | TextRenderable> = [];
+  private loadDetailRequestId = 0;
+  private searchRequestId = 0;
+  private refreshRequestId = 0;
+  private footerInputEnterHandler: (() => void) | null = null;
+  private keypressHandler: ((key: KeyEvent) => void) | null = null;
 
   async run(): Promise<void> {
-    this.snapshot = await fetchDashboardSnapshot();
-    this.nodes = buildDashboardNodes(this.snapshot);
+    try {
+      this.snapshot = await fetchDashboardSnapshot();
+      this.nodes = buildDashboardNodes(this.snapshot);
+    } catch (error) {
+      console.error(`Failed to load dashboard: ${formatErrorMessage(error)}`);
+      console.error("Please ensure the Coleo API server is running.");
+      process.exit(1);
+    }
 
     this.renderer = await createCliRenderer({
       screenMode: "alternate-screen",
@@ -123,7 +141,7 @@ class ArmsDashboardTui {
 
     this.buildUi();
     this.wireEvents();
-    await this.loadSelectionDetail();
+
     this.setFocus("nav");
     this.render(true);
     this.renderer.start();
@@ -279,13 +297,19 @@ class ArmsDashboardTui {
   }
 
   private wireEvents(): void {
-    this.footerInput.on(InputRenderableEvents.ENTER, () => {
-      void this.submitInput();
-    });
+    this.footerInputEnterHandler = () => {
+      if (!this.destroyed) {
+        void this.submitInput();
+      }
+    };
+    this.footerInput.on(InputRenderableEvents.ENTER, this.footerInputEnterHandler);
 
-    this.renderer.keyInput.on("keypress", (key: KeyEvent) => {
-      void this.handleKeyPress(key);
-    });
+    this.keypressHandler = (key: KeyEvent) => {
+      if (!this.destroyed) {
+        void this.handleKeyPress(key);
+      }
+    };
+    this.renderer.keyInput.on("keypress", this.keypressHandler);
   }
 
   private currentNode(): DashboardNode {
@@ -298,12 +322,12 @@ class ArmsDashboardTui {
       kind: "brain",
       label: "Brain",
       description: "",
-      depth: 0,
+     depth: 0,
     };
   }
 
   private nodeHasChildren(node: DashboardNode): boolean {
-    return node.kind === "arms-root";
+    return this.nodes.some((candidate) => candidate.depth === node.depth + 1 && this.parentNodeId(candidate) === node.id);
   }
 
   private isExpanded(node: DashboardNode): boolean {
@@ -319,7 +343,8 @@ class ArmsDashboardTui {
         continue;
       }
 
-      if (node.depth === 1 && this.expandedNodeIds.has("arms")) {
+      const parentId = this.parentNodeId(node);
+      if (parentId && this.expandedNodeIds.has(parentId)) {
         visible.push(node);
       }
     }
@@ -340,15 +365,18 @@ class ArmsDashboardTui {
     this.selectedNodeId = node.id;
     this.searchQuery = "";
     this.searchLinesOverride = null;
+    this.selectedArmDetail = null;
     this.ensureNavSelectionVisible();
-    void this.loadSelectionDetail().then(() => {
-      this.render(resetScroll);
-    });
+    this.render(resetScroll);
+
+    if (node.kind === "arm") {
+      void this.loadSelectedArmDetail();
+    }
   }
 
   private ensureNavSelectionVisible(): void {
-    const visible = this.visibleNodes();
-    const selectedIndex = Math.max(0, visible.findIndex((node) => node.id === this.selectedNodeId));
+    const rows = this.buildSidebarRows();
+    const selectedIndex = Math.max(0, rows.findIndex((row) => row.nodeId === this.selectedNodeId));
     const viewportHeight = Math.max(1, this.sidebarListBox.height);
 
     if (selectedIndex < this.navScrollOffset) {
@@ -357,7 +385,7 @@ class ArmsDashboardTui {
       this.navScrollOffset = selectedIndex - viewportHeight + 1;
     }
 
-    const maxOffset = Math.max(0, visible.length - viewportHeight);
+    const maxOffset = Math.max(0, rows.length - viewportHeight);
     this.navScrollOffset = Math.max(0, Math.min(this.navScrollOffset, maxOffset));
   }
 
@@ -403,39 +431,44 @@ class ArmsDashboardTui {
   }
 
   private rebuildSidebar(): void {
+    // Destroy and remove old renderables to prevent memory leaks
     for (const child of this.sidebarListBox.getChildren()) {
+      child.destroy?.();
       this.sidebarListBox.remove(child.id);
     }
+    for (const renderable of this.sidebarRowRenderables) {
+      renderable.destroy?.();
+    }
+    this.sidebarRowRenderables = [];
 
-    const visible = this.visibleNodes();
+    const visible = this.buildSidebarRows();
     this.ensureNavSelectionVisible();
     const viewportHeight = Math.max(1, this.sidebarListBox.height);
     const rows = visible.slice(this.navScrollOffset, this.navScrollOffset + viewportHeight);
 
-    for (const node of rows) {
-      const selected = node.id === this.selectedNodeId;
-      const isParent = this.nodeHasChildren(node);
-      const icon = isParent ? (this.isExpanded(node) ? "▾" : "▸") : " ";
+    for (const rowData of rows) {
       const navFocused = this.focusArea === "nav";
-      const rowBg = selected
+      const rowBg = rowData.selected
         ? (navFocused ? "#2b617c" : "#21485c")
-        : (navFocused ? "#10222d" : "#0b0f10");
+        : "#0b0f10";
 
       const row = new BoxRenderable(this.renderer, {
         width: "100%",
         height: 1,
         backgroundColor: rowBg,
       });
+      this.sidebarRowRenderables.push(row);
 
       const text = new TextRenderable(this.renderer, {
         width: "100%",
         height: 1,
         wrapMode: "none",
         truncate: true,
-        fg: selected ? "#ffffff" : "#d7e3e8",
+        fg: rowData.selected ? "#ffffff" : "#d7e3e8",
         bg: rowBg,
-        content: `${"  ".repeat(node.depth)}${icon} ${node.label}`,
+        content: rowData.content,
       });
+      this.sidebarRowRenderables.push(text);
 
       row.add(text);
       this.sidebarListBox.add(row);
@@ -451,20 +484,32 @@ class ArmsDashboardTui {
       this.footerInput.focus();
     } else {
       this.footerInput.blur();
-      this.bodyBox.focus();
     }
 
     this.render(false);
   }
 
-  private async loadSelectionDetail(): Promise<void> {
+  private async loadSelectedArmDetail(): Promise<void> {
     const node = this.currentNode();
     if (node.kind !== "arm" || !node.armId) {
       this.selectedArmDetail = null;
       return;
     }
 
-    this.selectedArmDetail = await fetchArmDetail(node.armId);
+    const requestId = ++this.loadDetailRequestId;
+
+    try {
+      const detail = await fetchArmDetail(node.armId);
+      if (requestId === this.loadDetailRequestId && !this.destroyed) {
+        this.selectedArmDetail = detail;
+        this.render(false);
+      }
+    } catch (error) {
+      if (requestId === this.loadDetailRequestId && !this.destroyed) {
+        this.selectedArmDetail = null;
+        this.notice = `Failed to load arm detail: ${truncateLine(formatErrorMessage(error), 80)}`;
+      }
+    }
   }
 
   private async refresh(resetScroll: boolean): Promise<void> {
@@ -472,23 +517,38 @@ class ArmsDashboardTui {
       return;
     }
 
+    const requestId = ++this.refreshRequestId;
     this.refreshInFlight = true;
     this.notice = "Refreshing dashboard...";
     this.render(false);
 
     try {
-      const currentSelection = this.selectedNodeId;
+      const selectionAtStart = this.selectedNodeId;
       this.snapshot = await fetchDashboardSnapshot();
       this.nodes = buildDashboardNodes(this.snapshot);
 
-      if (!this.nodes.some((node) => node.id === currentSelection)) {
-        this.selectedNodeId = this.nodes[0]?.id || "brain";
-      } else {
-        this.selectedNodeId = currentSelection;
+      if (requestId !== this.refreshRequestId || this.destroyed) {
+        return;
       }
 
-      await this.loadSelectionDetail();
+      const selectionStillExists = this.nodes.some((node) => node.id === this.selectedNodeId);
+      if (!selectionStillExists) {
+        const startSelectionStillExists = this.nodes.some((node) => node.id === selectionAtStart);
+        this.selectedNodeId = startSelectionStillExists
+          ? selectionAtStart
+          : (this.nodes[0]?.id || "brain");
+      }
+
+      await this.loadSelectedArmDetail();
+      if (requestId !== this.refreshRequestId || this.destroyed) {
+        return;
+      }
+
       await this.refreshSearchIfNeeded();
+      if (requestId !== this.refreshRequestId || this.destroyed) {
+        return;
+      }
+
       this.notice = `Refreshed ${new Date().toLocaleTimeString()}`;
       this.render(resetScroll);
     } catch (error) {
@@ -505,24 +565,34 @@ class ArmsDashboardTui {
       return;
     }
 
+    // Capture the current search state to avoid race conditions
+    const requestId = ++this.searchRequestId;
+    const query = this.searchQuery;
     const node = this.currentNode();
-    if (node.kind === "brain") {
-      this.searchLinesOverride = applySearch(await readFullBrainLogLines(), this.searchQuery);
-      return;
-    }
 
-    if (node.kind === "api") {
-      this.searchLinesOverride = applySearch(await readFullServerLogLines(), this.searchQuery);
-      return;
-    }
+    try {
+      let lines: string[];
 
-    if (!this.snapshot) {
-      this.searchLinesOverride = null;
-      return;
-    }
+      if (node.kind === "brain") {
+        lines = await readFullBrainLogLines();
+      } else if (node.kind === "api") {
+        lines = await readFullServerLogLines();
+      } else if (this.snapshot) {
+        const view = buildViewForNode(this.snapshot, node, this.selectedArmDetail);
+        lines = view.lines;
+      } else {
+        lines = [];
+      }
 
-    const view = buildViewForNode(this.snapshot, node, this.selectedArmDetail);
-    this.searchLinesOverride = applySearch(view.lines, this.searchQuery);
+      // Only apply results if this is still the current search
+      if (requestId === this.searchRequestId && !this.destroyed) {
+        this.searchLinesOverride = applySearch(lines, query);
+      }
+    } catch (error) {
+      if (requestId === this.searchRequestId && !this.destroyed) {
+        this.searchLinesOverride = [`Search failed: ${truncateLine(formatErrorMessage(error), 80)}`];
+      }
+    }
   }
 
   private async applySearchQuery(query: string): Promise<void> {
@@ -591,6 +661,8 @@ class ArmsDashboardTui {
       240,
     );
 
+    const activeArmLabel = node.label;
+
     if (this.confirmAction) {
       this.footerPromptText.content = this.confirmAction.prompt;
       this.footerInput.value = "";
@@ -603,7 +675,7 @@ class ArmsDashboardTui {
       this.footerPromptText.content = "Send a message to the brain.";
       this.footerInput.placeholder = "Brain message";
     } else if (this.inputMode === "arm-message") {
-      this.footerPromptText.content = `Send a message to ${node.label}. Interrupt=${this.interruptBeforeSend ? "on" : "off"}`;
+      this.footerPromptText.content = `Send a message to ${activeArmLabel}. Interrupt=${this.interruptBeforeSend ? "on" : "off"}`;
       this.footerInput.placeholder = "Arm message";
     } else {
       this.footerPromptText.content = this.searchQuery
@@ -659,7 +731,10 @@ class ArmsDashboardTui {
         return;
       }
 
-      return;
+      // Let other keys pass through to the InputRenderable when focused
+      if (this.focusArea === "input") {
+        return;
+      }
     }
 
     if (key.name === "q") {
@@ -672,7 +747,7 @@ class ArmsDashboardTui {
     if (key.name === "tab") {
       key.preventDefault();
       key.stopPropagation();
-      this.cycleFocus();
+      this.cycleFocus(key.shift ? -1 : 1);
       return;
     }
 
@@ -734,7 +809,10 @@ class ArmsDashboardTui {
       if (key.name === "enter" || key.name === "l" || key.name === "right") {
         key.preventDefault();
         key.stopPropagation();
-        await this.toggleCurrentNode(true);
+        if (this.nodeHasChildren(this.currentNode())) {
+          await this.toggleCurrentNode(true);
+        }
+        this.setFocus("body");
         return;
       }
 
@@ -788,6 +866,13 @@ class ArmsDashboardTui {
         key.stopPropagation();
         this.bodyText.scrollY = this.bodyText.maxScrollY;
         this.render(false);
+        return;
+      }
+
+      if (key.name === "left" || key.name === "h") {
+        key.preventDefault();
+        key.stopPropagation();
+        this.setFocus("nav");
         return;
       }
     }
@@ -855,12 +940,15 @@ class ArmsDashboardTui {
       if (key.name === "x") {
         key.preventDefault();
         key.stopPropagation();
+        // Capture values at creation time to avoid stale references
+        const armId = node.armId!;
+        const armLabel = node.label;
         this.confirmAction = {
-          prompt: `Kill arm session for ${node.label}? [y/N]`,
+          prompt: `Kill arm session for ${armLabel}? [y/N]`,
           execute: async () => {
-            await killArmSession(node.armId!);
+            await killArmSession(armId);
             await this.refresh(true);
-            this.notice = `Killed ${node.label}`;
+            this.notice = `Killed ${armLabel}`;
             this.render(false);
           },
         };
@@ -871,13 +959,16 @@ class ArmsDashboardTui {
       if (key.name === "d") {
         key.preventDefault();
         key.stopPropagation();
+        // Capture values at creation time to avoid stale references
+        const armId = node.armId!;
+        const armLabel = node.label;
         this.confirmAction = {
-          prompt: `Delete arm profile ${node.label}? The arm must already be stopped. [y/N]`,
+          prompt: `Delete arm profile ${armLabel}? The arm must already be stopped. [y/N]`,
           execute: async () => {
-            await deleteArmProfile(node.armId!);
+            await deleteArmProfile(armId);
             this.selectedNodeId = "arms";
             await this.refresh(true);
-            this.notice = `Deleted ${node.label}`;
+            this.notice = `Deleted ${armLabel}`;
             this.render(false);
           },
         };
@@ -897,18 +988,11 @@ class ArmsDashboardTui {
     return Math.max(4, Math.floor(this.bodyText.height * 0.8));
   }
 
-  private cycleFocus(): void {
-    if (this.focusArea === "nav") {
-      this.setFocus("body");
-      return;
-    }
-
-    if (this.focusArea === "body") {
-      this.setFocus("nav");
-      return;
-    }
-
-    this.setFocus("nav");
+  private cycleFocus(direction: 1 | -1): void {
+    const order: FocusArea[] = ["nav", "body"];
+    const currentIndex = Math.max(0, order.indexOf(this.focusArea));
+    const nextIndex = (currentIndex + direction + order.length) % order.length;
+    this.setFocus(order[nextIndex] || "nav");
   }
 
   private async submitInput(): Promise<void> {
@@ -941,7 +1025,7 @@ class ArmsDashboardTui {
       return;
     }
 
-    if (this.inputMode === "arm-message" && node.armId) {
+    if (this.inputMode === "arm-message" && node.kind === "arm" && node.armId) {
       if (!value) {
         this.notice = "Arm message is empty";
         this.render(false);
@@ -949,8 +1033,9 @@ class ArmsDashboardTui {
       }
 
       this.inputMode = null;
+      const armId = node.armId;
       await this.performAction(async () => {
-        await sendArmMessage(node.armId!, value, this.interruptBeforeSend);
+        await sendArmMessage(armId, value, this.interruptBeforeSend);
         this.footerInput.value = "";
         await this.refresh(false);
         this.notice = `Sent message to ${node.label}`;
@@ -1013,8 +1098,18 @@ class ArmsDashboardTui {
     await writeFile(filePath, contents, "utf-8");
 
     const editor = process.env.EDITOR?.trim() || "vi";
-    const escapedPath = filePath.replace(/"/g, "\\\"");
-    await this.suspendForExternalCommand(["sh", "-lc", `${editor} "${escapedPath}"`]);
+    // Parse editor command safely - split on whitespace but respect quoted strings
+    const editorParts = editor.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || ["vi"];
+    const cmd = editorParts.map((part) => {
+      // Remove quotes if present
+      if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
+        return part.slice(1, -1);
+      }
+      return part;
+    });
+    
+    // Pass file path directly without shell interpretation
+    await this.suspendForExternalCommand([...cmd, filePath]);
     this.notice = `Opened ${filePath} in ${editor}`;
     this.render(false);
   }
@@ -1029,8 +1124,101 @@ class ArmsDashboardTui {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
     }
+
+    // Remove event listeners to prevent memory leaks
+    if (this.footerInputEnterHandler) {
+      try {
+        this.footerInput.off?.(InputRenderableEvents.ENTER, this.footerInputEnterHandler);
+      } catch {
+        // EventEmitter may not support off(), ignore
+      }
+      this.footerInputEnterHandler = null;
+    }
+
+    if (this.keypressHandler) {
+      try {
+        this.renderer.keyInput.off?.("keypress", this.keypressHandler);
+      } catch {
+        // EventEmitter may not support off(), ignore
+      }
+      this.keypressHandler = null;
+    }
+
+    // Clean up sidebar renderables to prevent memory leaks
+    for (const renderable of this.sidebarRowRenderables) {
+      renderable.destroy?.();
+    }
+    this.sidebarRowRenderables = [];
+
     this.renderer.destroy();
     this.closeResolver?.();
+  }
+
+  private parentNodeId(node: DashboardNode): string | null {
+    if (node.depth !== 1) {
+      return null;
+    }
+
+    if (node.kind === "arm") {
+      return "arms";
+    }
+
+    if (node.discoveryId) {
+      return "discoveries";
+    }
+
+    if (node.mailId) {
+      return "mail";
+    }
+
+    if (node.reportId) {
+      return "status-reports";
+    }
+
+    return null;
+  }
+
+  private buildSidebarRows(): SidebarRow[] {
+    const rows: SidebarRow[] = [];
+    const roots = this.nodes.filter((node) => node.depth === 0);
+
+    for (const root of roots) {
+      const children = this.nodes.filter((node) => this.parentNodeId(node) === root.id);
+
+      if (children.length === 0) {
+        rows.push({
+          nodeId: root.id,
+          content: ` ${root.label}`,
+          selected: root.id === this.selectedNodeId,
+        });
+        continue;
+      }
+
+      const expanded = this.isExpanded(root);
+      rows.push({
+        nodeId: root.id,
+        content: `┌ ${expanded ? "▾" : "▸"} ${root.label}`,
+        selected: root.id === this.selectedNodeId,
+      });
+
+      if (expanded) {
+        for (const child of children) {
+          rows.push({
+            nodeId: child.id,
+            content: `│ ${child.id === this.selectedNodeId ? "▸" : "•"} ${child.label}`,
+            selected: child.id === this.selectedNodeId,
+          });
+        }
+      }
+
+      rows.push({
+        nodeId: null,
+        content: "└",
+        selected: false,
+      });
+    }
+
+    return rows;
   }
 }
 
