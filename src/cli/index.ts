@@ -26,6 +26,8 @@ import { registerDiscoveriesCommands } from "./commands/discoveries";
 import { registerDebugCommands } from "./commands/debug";
 import { registerWebCommand } from "./commands/web";
 
+import { registerBranchCommands } from "./commands/branch";
+
 await loadEnvFile();
 
 const program = new Command();
@@ -53,5 +55,6 @@ registerConfigCommands(program);
 registerDiscoveriesCommands(program);
 registerDebugCommands(program);
 registerWebCommand(program);
+registerBranchCommands(program);
 
 await program.parseAsync();
