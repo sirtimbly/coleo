@@ -59,7 +59,9 @@ describe("list CSV helpers", () => {
     );
 
     expect(exportListToCsv(db, "tasks")).toBe(
-      "id,name,status,order,notes\ntask-1,First task,pending,1,first note\ntask-2,Second task,claimed,2,second note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,First task,pending,1,first note,First task,pending,1,first note\n" +
+        "task-2,Second task,claimed,2,second note,Second task,claimed,2,second note\n",
     );
   });
 
@@ -71,13 +73,15 @@ describe("list CSV helpers", () => {
     );
 
     expect(exportListToCsv(db, "tasks")).toBe(
-      "id,name,status,order,notes\ntask-1,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline two%5Ctrail%2C %22quoted%22\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline two%5Ctrail%2C %22quoted%22,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline two%5Ctrail%2C %22quoted%22\n",
     );
 
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-1,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline three%5Ctrail%2C %22quoted%22\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline three%5Ctrail%2C %22quoted%22,Task with%09tab%2C and %22quotes%22,pending,1,line one%0Aline two%5Ctrail%2C %22quoted%22\n",
     );
 
     expect(result.changed).toBe(1);
@@ -103,7 +107,8 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-1,Legacy task,pending,1,line one\\\\nline two\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Legacy task,pending,1,line one\\\\nline two,Legacy task,pending,1,line one\\nline two\n",
     );
 
     expect(result.changed).toBe(0);
@@ -126,10 +131,13 @@ describe("list CSV helpers", () => {
     );
 
     expect(exportListToCsv(db, "tasks", "pending")).toBe(
-      "id,name,status,order,notes\ntask-1,Pending task,pending,1,pending note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Pending task,pending,1,pending note,Pending task,pending,1,pending note\n",
     );
     expect(exportListToCsv(db, "tasks", "not-completed")).toBe(
-      "id,name,status,order,notes\ntask-1,Pending task,pending,1,pending note\ntask-2,Working task,in_progress,2,working note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Pending task,pending,1,pending note,Pending task,pending,1,pending note\n" +
+        "task-2,Working task,in_progress,2,working note,Working task,in_progress,2,working note\n",
     );
   });
 
@@ -147,7 +155,9 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-2,Updated second,in_progress,1,updated note\ntask-1,First task,completed,2,first note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-2,Updated second,in_progress,1,updated note,Second task,claimed,2,second note\n" +
+        "task-1,First task,completed,2,first note,First task,pending,1,first note\n",
     );
 
     expect(result.changed).toBe(2);
@@ -176,7 +186,9 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "bugs",
-      "id,name,status,order,notes\nbug-2,Renamed bug,resolved,1,renamed bug note\nbug-1,First bug,investigating,2,first bug note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "bug-2,Renamed bug,resolved,1,renamed bug note,Second bug,fixing,2,second bug note\n" +
+        "bug-1,First bug,investigating,2,first bug note,First bug,open,1,first bug note\n",
     );
 
     expect(result.changed).toBe(2);
@@ -207,10 +219,13 @@ describe("list CSV helpers", () => {
     );
 
     expect(exportListToCsv(db, "bugs", "pending")).toBe(
-      "id,name,status,order,notes\nbug-1,Open bug,open,1,open note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "bug-1,Open bug,open,1,open note,Open bug,open,1,open note\n",
     );
     expect(exportListToCsv(db, "bugs", "not-completed")).toBe(
-      "id,name,status,order,notes\nbug-1,Open bug,open,1,open note\nbug-2,Fixing bug,fixing,2,fixing note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "bug-1,Open bug,open,1,open note,Open bug,open,1,open note\n" +
+        "bug-2,Fixing bug,fixing,2,fixing note,Fixing bug,fixing,2,fixing note\n",
     );
   });
 
@@ -228,14 +243,17 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-1,First task,pending,1,first note\ntask-2,Second task,claimed,2,second note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,First task,pending,1,first note,First task,pending,1,first note\n" +
+        "task-2,Second task,claimed,2,second note,Second task,claimed,2,second note\n",
     );
 
     expect(result.changed).toBe(0);
 
-    const rows = db.query(
-      "SELECT id, order_key FROM tasks ORDER BY order_key ASC",
-    ).all() as Array<{ id: string; order_key: string }>;
+    const rows = db.query("SELECT id, order_key FROM tasks ORDER BY order_key ASC").all() as Array<{
+      id: string;
+      order_key: string;
+    }>;
     expect(rows).toEqual([
       { id: "task-1", order_key: "a" },
       { id: "task-2", order_key: "c" },
@@ -260,7 +278,9 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-1,Pending one,pending,1,updated note one\ntask-3,Pending two,pending,2,note two\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Pending one,pending,1,updated note one,Pending one,pending,1,note one\n" +
+        "task-3,Pending two,pending,2,note two,Pending two,pending,2,note two\n",
     );
 
     expect(result.changed).toBe(1);
@@ -294,7 +314,9 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "bugs",
-      "id,name,status,order,notes\nbug-1,Open one,open,1,updated note one\nbug-3,Open two,open,2,note two\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "bug-1,Open one,open,1,updated note one,Open one,open,1,note one\n" +
+        "bug-3,Open two,open,2,note two,Open two,open,2,note two\n",
     );
 
     expect(result.changed).toBe(1);
@@ -310,6 +332,51 @@ describe("list CSV helpers", () => {
     ]);
   });
 
+  it("does not overwrite status when the csv value was not edited but the task changed after export", () => {
+    const exportedAt = new Date().toISOString();
+    const currentAt = new Date(Date.now() + 1000).toISOString();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, order_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["task-1", "Pending task", "old note", "completed", "a", exportedAt, currentAt],
+    );
+
+    const result = importListFromCsv(
+      db,
+      "tasks",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Pending task,pending,1,new note,Pending task,pending,1,old note\n",
+    );
+
+    expect(result.changed).toBe(1);
+    expect(result.conflicts).toEqual([]);
+    expect(result.changes).toEqual([{ id: "task-1", fields: ["notes"] }]);
+
+    const row = db.query("SELECT description, status FROM tasks WHERE id = ?").get("task-1") as {
+      description: string;
+      status: string;
+    };
+    expect(row).toEqual({ description: "new note", status: "completed" });
+  });
+
+  it("reports a conflict when the same field changed after export and in the csv", () => {
+    const exportedAt = new Date().toISOString();
+    const currentAt = new Date(Date.now() + 1000).toISOString();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, order_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["task-1", "Task", "fresh note", "completed", "a", exportedAt, currentAt],
+    );
+
+    const result = importListFromCsv(
+      db,
+      "tasks",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,Task,pending,1,edited stale note,Task,pending,1,stale note\n",
+    );
+
+    expect(result.changed).toBe(0);
+    expect(result.conflicts).toEqual(["task-1: notes changed since export"]);
+  });
+
   it("reports invalid CSV rows without applying changes", () => {
     const now = new Date().toISOString();
     db.run(
@@ -320,7 +387,8 @@ describe("list CSV helpers", () => {
     const result = importListFromCsv(
       db,
       "tasks",
-      "id,name,status,order,notes\ntask-1,First task,not-a-status,1,first note\n",
+      "id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes\n" +
+        "task-1,First task,not-a-status,1,first note,First task,pending,1,first note\n",
     );
 
     expect(result.changed).toBe(0);

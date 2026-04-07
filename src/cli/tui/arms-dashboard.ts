@@ -94,6 +94,7 @@ class ArmsDashboardTui {
   private titleText!: TextRenderable;
   private bodyBox!: BoxRenderable;
   private bodyContentBox!: BoxRenderable;
+  private statusBox!: BoxRenderable;
   private footerBox!: BoxRenderable;
   private bodyText!: TextRenderable;
   private bodyScrollbarText!: TextRenderable;
@@ -250,33 +251,45 @@ class ArmsDashboardTui {
     });
     this.bodyBox.add(this.bodyScrollbarText);
 
-    this.footerBox = new BoxRenderable(this.renderer, {
-      height: 6,
+    this.statusBox = new BoxRenderable(this.renderer, {
+      height: 3,
       border: true,
-      title: "Command",
+      title: "Status",
       borderColor: "#34515e",
-      padding: 1,
+      padding: 0,
+      marginTop: 1,
+      flexDirection: "column",
+      backgroundColor: "#0b0f10",
+    });
+    this.mainBox.add(this.statusBox);
+
+    this.footerStatusText = new TextRenderable(this.renderer, {
+      width: "100%",
+      height: 1,
+      wrapMode: "none",
+      truncate: true,
+      fg: "#f6d365",
+      bg: "#0b0f10",
+    });
+    this.statusBox.add(this.footerStatusText);
+
+    this.footerBox = new BoxRenderable(this.renderer, {
+      height: 5,
+      border: true,
+      title: "Commands",
+      borderColor: "#34515e",
+      padding: 0,
       marginTop: 1,
       flexDirection: "column",
       backgroundColor: "#0b0f10",
     });
     this.mainBox.add(this.footerBox);
 
-    this.footerStatusText = new TextRenderable(this.renderer, {
-      width: "100%",
-      height: 1,
-      wrapMode: "word",
-      truncate: false,
-      fg: "#f6d365",
-      bg: "#0b0f10",
-    });
-    this.footerBox.add(this.footerStatusText);
-
     this.footerControlsText = new TextRenderable(this.renderer, {
       width: "100%",
       height: 1,
-      wrapMode: "word",
-      truncate: false,
+      wrapMode: "none",
+      truncate: true,
       fg: "#9fb9c6",
       bg: "#0b0f10",
     });
@@ -285,8 +298,8 @@ class ArmsDashboardTui {
     this.footerPromptText = new TextRenderable(this.renderer, {
       width: "100%",
       height: 1,
-      wrapMode: "word",
-      truncate: false,
+      wrapMode: "none",
+      truncate: true,
       fg: "#d7e3e8",
       bg: "#0b0f10",
     });
@@ -652,11 +665,13 @@ class ArmsDashboardTui {
 
     this.sidebarBox.borderColor = navFocused ? "#63b3d6" : "#34515e";
     this.bodyBox.borderColor = bodyFocused ? "#63b3d6" : "#34515e";
+    this.statusBox.borderColor = this.notice.toLowerCase().includes("failed") ? "#b85c5c" : "#34515e";
     this.footerBox.borderColor = inputFocused ? "#63b3d6" : "#34515e";
     this.sidebarBox.backgroundColor = navFocused ? "#10222d" : "#0b0f10";
     this.sidebarListBox.backgroundColor = navFocused ? "#10222d" : "#0b0f10";
     this.bodyBox.backgroundColor = bodyFocused ? "#10222d" : "#0b0f10";
     this.bodyContentBox.backgroundColor = bodyFocused ? "#10222d" : "#0b0f10";
+    this.statusBox.backgroundColor = "#0b0f10";
     this.footerBox.backgroundColor = inputFocused ? "#10222d" : "#0b0f10";
     this.titleText.bg = bodyFocused ? "#10222d" : "#0b0f10";
     this.titleText.fg = bodyFocused ? "#ffffff" : "#f2f7f9";
@@ -683,7 +698,8 @@ class ArmsDashboardTui {
       this.bodyScrollbarText.content = "";
     }
 
-    this.footerStatusText.content = truncateLine(this.notice, 200);
+    this.footerStatusText.content = truncateLine(this.notice, 240);
+    this.footerStatusText.fg = this.notice.toLowerCase().includes("failed") ? "#ff9b9b" : "#f6d365";
     this.footerControlsText.content = truncateLine(
       this.buildFooterControls(node),
       240,
@@ -778,6 +794,12 @@ class ArmsDashboardTui {
       return;
     }
 
+    const closeHelpForCommand = (): void => {
+      if (this.showHelp) {
+        this.showHelp = false;
+      }
+    };
+
     if (this.showHelp && key.name === "escape") {
       key.preventDefault();
       key.stopPropagation();
@@ -797,6 +819,7 @@ class ArmsDashboardTui {
     if (key.name === "tab") {
       key.preventDefault();
       key.stopPropagation();
+      closeHelpForCommand();
       this.cycleFocus(key.shift ? -1 : 1);
       return;
     }
@@ -804,6 +827,7 @@ class ArmsDashboardTui {
     if (key.name === "r" && !key.shift) {
       key.preventDefault();
       key.stopPropagation();
+      closeHelpForCommand();
       await this.refresh(false);
       return;
     }
@@ -811,6 +835,7 @@ class ArmsDashboardTui {
     if (key.name === "/") {
       key.preventDefault();
       key.stopPropagation();
+      closeHelpForCommand();
       this.inputMode = "search";
       this.footerInput.value = this.searchQuery;
       this.setFocus("input");
@@ -820,6 +845,7 @@ class ArmsDashboardTui {
     if (key.name === "e") {
       key.preventDefault();
       key.stopPropagation();
+      closeHelpForCommand();
       await this.exportCurrentViewToEditor();
       return;
     }
@@ -827,6 +853,7 @@ class ArmsDashboardTui {
     if (key.name === "n") {
       key.preventDefault();
       key.stopPropagation();
+      closeHelpForCommand();
       await this.launchSpawnFlow();
       return;
     }
@@ -835,6 +862,7 @@ class ArmsDashboardTui {
       if (key.name === "j" || key.name === "down") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         const visible = this.visibleNodes();
         const nextIndex = Math.min(visible.length - 1, this.visibleNodeIndex() + 1);
         const nextNode = visible[nextIndex];
@@ -847,6 +875,7 @@ class ArmsDashboardTui {
       if (key.name === "k" || key.name === "up") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         const visible = this.visibleNodes();
         const nextIndex = Math.max(0, this.visibleNodeIndex() - 1);
         const nextNode = visible[nextIndex];
@@ -859,6 +888,7 @@ class ArmsDashboardTui {
       if (key.name === "enter" || key.name === "l" || key.name === "right") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         if (this.nodeHasChildren(this.currentNode())) {
           await this.toggleCurrentNode(true);
         }
@@ -869,6 +899,7 @@ class ArmsDashboardTui {
       if (key.name === "h" || key.name === "left") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         await this.collapseCurrentNodeOrParent();
         return;
       }
@@ -878,6 +909,7 @@ class ArmsDashboardTui {
       if (key.name === "j" || key.name === "down") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.scrollBody(1);
         return;
       }
@@ -885,6 +917,7 @@ class ArmsDashboardTui {
       if (key.name === "k" || key.name === "up") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.scrollBody(-1);
         return;
       }
@@ -892,6 +925,7 @@ class ArmsDashboardTui {
       if (key.name === "pagedown") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.scrollBody(this.pageScrollAmount());
         return;
       }
@@ -899,6 +933,7 @@ class ArmsDashboardTui {
       if (key.name === "pageup") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.scrollBody(-this.pageScrollAmount());
         return;
       }
@@ -906,6 +941,7 @@ class ArmsDashboardTui {
       if (key.name === "home") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.bodyText.scrollY = 0;
         this.render(false);
         return;
@@ -914,6 +950,7 @@ class ArmsDashboardTui {
       if (key.name === "end") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.bodyText.scrollY = this.bodyText.maxScrollY;
         this.render(false);
         return;
@@ -922,6 +959,7 @@ class ArmsDashboardTui {
       if (key.name === "left" || key.name === "h") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.setFocus("nav");
         return;
       }
@@ -933,6 +971,7 @@ class ArmsDashboardTui {
       if (key.name === "m") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.inputMode = "brain-message";
         this.footerInput.value = "";
         this.setFocus("input");
@@ -942,6 +981,7 @@ class ArmsDashboardTui {
       if (key.name === "r" && key.shift) {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.confirmAction = {
           prompt: "Restart the brain service? [y/N]",
           execute: async () => {
@@ -960,6 +1000,7 @@ class ArmsDashboardTui {
       if (key.name === "m") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.inputMode = "arm-message";
         this.footerInput.value = "";
         this.setFocus("input");
@@ -969,6 +1010,7 @@ class ArmsDashboardTui {
       if (key.name === "i") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         this.interruptBeforeSend = !this.interruptBeforeSend;
         this.notice = `Interrupt before send ${this.interruptBeforeSend ? "enabled" : "disabled"}`;
         this.render(false);
@@ -978,6 +1020,7 @@ class ArmsDashboardTui {
       if (key.name === "s") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         await this.performAction(async () => {
           await markArmStuck(node.armId!);
           await this.refresh(true);
@@ -990,6 +1033,7 @@ class ArmsDashboardTui {
       if (key.name === "x") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         // Capture values at creation time to avoid stale references
         const armId = node.armId!;
         const armLabel = node.label;
@@ -1009,6 +1053,7 @@ class ArmsDashboardTui {
       if (key.name === "d") {
         key.preventDefault();
         key.stopPropagation();
+        closeHelpForCommand();
         // Capture values at creation time to avoid stale references
         const armId = node.armId!;
         const armLabel = node.label;

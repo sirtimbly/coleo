@@ -32,6 +32,10 @@ interface CsvRow {
   status: string;
   order: number;
   notes: string;
+  originalName: string;
+  originalStatus: string;
+  originalOrder: number;
+  originalNotes: string;
 }
 
 function matchesFilter(kind: CsvListKind, status: string, filter: CsvListFilter): boolean {
@@ -68,6 +72,7 @@ export interface CsvImportResult {
   unchanged: number;
   missing: string[];
   invalid: string[];
+  conflicts: string[];
   changes: ImportChange[];
 }
 
@@ -159,7 +164,7 @@ function decodeTextCell(value: string): string {
 }
 
 function serializeCsv(rows: CsvRow[]): string {
-  const lines = ["id,name,status,order,notes"];
+  const lines = ["id,name,status,order,notes,_original_name,_original_status,_original_order,_original_notes"];
   for (const row of rows) {
     lines.push(
       [
@@ -168,6 +173,10 @@ function serializeCsv(rows: CsvRow[]): string {
         row.status,
         String(row.order),
         encodeTextCell(row.notes),
+        encodeTextCell(row.originalName),
+        row.originalStatus,
+        String(row.originalOrder),
+        encodeTextCell(row.originalNotes),
       ]
         .map(escapeCsvCell)
         .join(","),
@@ -256,7 +265,17 @@ function parseCsvRows(kind: CsvListKind, text: string): { rows: ParsedCsvRow[]; 
   }
 
   const [header, ...dataRows] = matrix;
-  const expectedHeader = ["id", "name", "status", "order", "notes"];
+  const expectedHeader = [
+    "id",
+    "name",
+    "status",
+    "order",
+    "notes",
+    "_original_name",
+    "_original_status",
+    "_original_order",
+    "_original_notes",
+  ];
   if (!header || header.length !== expectedHeader.length || header.some((value, index) => value.trim() !== expectedHeader[index])) {
     return {
       rows: [],
@@ -273,8 +292,8 @@ function parseCsvRows(kind: CsvListKind, text: string): { rows: ParsedCsvRow[]; 
     if (rawRow.every((value) => value.trim() === "")) {
       return;
     }
-    if (rawRow.length !== 5) {
-      invalid.push(`Line ${line}: expected 5 columns, found ${rawRow.length}`);
+    if (rawRow.length !== expectedHeader.length) {
+      invalid.push(`Line ${line}: expected ${expectedHeader.length} columns, found ${rawRow.length}`);
       return;
     }
 
@@ -283,6 +302,10 @@ function parseCsvRows(kind: CsvListKind, text: string): { rows: ParsedCsvRow[]; 
     const status = rawRow[2]?.trim() ?? "";
     const orderText = rawRow[3]?.trim() ?? "";
     const notes = decodeTextCell(rawRow[4] ?? "");
+    const originalName = decodeTextCell(rawRow[5] ?? "").trim();
+    const originalStatus = rawRow[6]?.trim() ?? "";
+    const originalOrderText = rawRow[7]?.trim() ?? "";
+    const originalNotes = decodeTextCell(rawRow[8] ?? "");
     if (!id) {
       invalid.push(`Line ${line}: id is required`);
       return;
@@ -302,7 +325,30 @@ function parseCsvRows(kind: CsvListKind, text: string): { rows: ParsedCsvRow[]; 
       return;
     }
 
-    rows.push({ id, name, status, order, notes, line, fileIndex: index });
+    const originalOrder = Number.parseInt(originalOrderText, 10);
+    if (!Number.isFinite(originalOrder) || originalOrder < 1) {
+      invalid.push(`Line ${line}: _original_order must be an integer >= 1`);
+      return;
+    }
+
+    if (!validStatuses.has(originalStatus)) {
+      invalid.push(`Line ${line}: invalid _original_status '${originalStatus}'`);
+      return;
+    }
+
+    rows.push({
+      id,
+      name,
+      status,
+      order,
+      notes,
+      originalName,
+      originalStatus,
+      originalOrder,
+      originalNotes,
+      line,
+      fileIndex: index,
+    });
   });
 
   return { rows, invalid };
@@ -342,6 +388,10 @@ function loadTaskRows(db: Database, filter: CsvListFilter): CsvRow[] {
     status: row.status,
     order: index + 1,
     notes: row.description,
+    originalName: row.subject,
+    originalStatus: row.status,
+    originalOrder: index + 1,
+    originalNotes: row.description,
     }));
 }
 
@@ -380,6 +430,10 @@ function loadBugRows(db: Database, filter: CsvListFilter): CsvRow[] {
     status: row.status,
     order: index + 1,
     notes: row.description,
+    originalName: row.title,
+    originalStatus: row.status,
+    originalOrder: index + 1,
+    originalNotes: row.description,
     }));
 }
 
@@ -395,20 +449,23 @@ function importTasksFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResul
   ).all() as Array<{ id: string; subject: string; description: string; status: string; order_key: string | null }>;
   const existing = new Map(existingRows.map((row) => [row.id, row]));
   const missing: string[] = [];
+  const conflicts: string[] = [];
   const changes: ImportChange[] = [];
   let changed = 0;
   let unchanged = 0;
 
   const orderedRows = [...rows].sort((left, right) => left.order - right.order || left.fileIndex - right.fileIndex);
   const importedIdSet = new Set(orderedRows.map((row) => row.id));
-  const currentOrderedIds = getOrderedTaskIds(db).filter((id) => importedIdSet.has(id));
+  const originalOrderedIds = [...orderedRows]
+    .sort((left, right) => left.originalOrder - right.originalOrder || left.fileIndex - right.fileIndex)
+    .map((row) => row.id);
   const importedOrderedIds = orderedRows.map((row) => row.id);
-  const orderChanged =
-    currentOrderedIds.length !== importedOrderedIds.length ||
-    currentOrderedIds.some((id, index) => id !== importedOrderedIds[index]);
+  const orderEdited =
+    originalOrderedIds.length !== importedOrderedIds.length ||
+    originalOrderedIds.some((id, index) => id !== importedOrderedIds[index]);
   let previousOrderKey: string | null = null;
   const nextOrderKeyById = new Map<string, string>();
-  if (orderChanged) {
+  if (orderEdited) {
     for (const row of orderedRows) {
       const nextOrderKey = generateKeyBetween(previousOrderKey, null);
       nextOrderKeyById.set(row.id, nextOrderKey);
@@ -434,16 +491,32 @@ function importTasksFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResul
       const fieldChanges: Array<"name" | "status" | "order" | "notes"> = [];
       const nextOrderKey = nextOrderKeyById.get(row.id) ?? current.order_key ?? "a";
       const now = new Date().toISOString();
-      if (current.subject !== row.name) {
+      const nameEdited = row.name !== row.originalName;
+      const statusEdited = row.status !== row.originalStatus;
+      const notesEdited = row.notes !== row.originalNotes;
+      if (nameEdited && current.subject !== row.originalName) {
+        conflicts.push(`${row.id}: name changed since export`);
+        continue;
+      }
+      if (statusEdited && current.status !== row.originalStatus) {
+        conflicts.push(`${row.id}: status changed since export`);
+        continue;
+      }
+      if (notesEdited && current.description !== row.originalNotes) {
+        conflicts.push(`${row.id}: notes changed since export`);
+        continue;
+      }
+
+      if (nameEdited) {
         fieldChanges.push("name");
       }
-      if (current.description !== row.notes) {
+      if (notesEdited) {
         fieldChanges.push("notes");
       }
-      if (current.status !== row.status) {
+      if (statusEdited) {
         fieldChanges.push("status");
       }
-      if (orderChanged && (current.order_key ?? "") !== nextOrderKey) {
+      if (orderEdited) {
         fieldChanges.push("order");
       }
 
@@ -452,13 +525,26 @@ function importTasksFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResul
         continue;
       }
 
-      const updates = ["subject = ?", "description = ?", "status = ?", "updated_at = ?"];
-      const params: Array<string | null> = [row.name, row.notes, row.status, now];
-      if (orderChanged) {
+      const updates = ["updated_at = ?"];
+      const params: Array<string | null> = [now];
+      if (nameEdited) {
+        updates.unshift("subject = ?");
+        params.unshift(row.name);
+      }
+      if (notesEdited) {
+        updates.splice(nameEdited ? 1 : 0, 0, "description = ?");
+        params.splice(nameEdited ? 1 : 0, 0, row.notes);
+      }
+      if (statusEdited) {
+        const statusInsertIndex = updates.length - 1;
+        updates.splice(statusInsertIndex, 0, "status = ?");
+        params.splice(statusInsertIndex, 0, row.status);
+      }
+      if (orderEdited) {
         updates.push("order_key = ?");
         params.push(nextOrderKey);
       }
-      if (current.status !== row.status) {
+      if (statusEdited) {
         if (row.status === "claimed") {
           updates.push("claimed_at = ?", "completed_at = NULL");
           params.push(now);
@@ -485,6 +571,7 @@ function importTasksFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResul
     unchanged,
     missing,
     invalid: [],
+    conflicts,
     changes,
   };
 }
@@ -497,19 +584,22 @@ function importBugsFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResult
   ).all() as Array<{ id: string; title: string; description: string; status: string; sort_order: number | null }>;
   const existing = new Map(existingRows.map((row) => [row.id, row]));
   const missing: string[] = [];
+  const conflicts: string[] = [];
   const changes: ImportChange[] = [];
   let changed = 0;
   let unchanged = 0;
 
   const orderedRows = [...rows].sort((left, right) => left.order - right.order || left.fileIndex - right.fileIndex);
   const importedIdSet = new Set(orderedRows.map((row) => row.id));
-  const currentOrderedIds = getOrderedBugIds(db).filter((id) => importedIdSet.has(id));
+  const originalOrderedIds = [...orderedRows]
+    .sort((left, right) => left.originalOrder - right.originalOrder || left.fileIndex - right.fileIndex)
+    .map((row) => row.id);
   const importedOrderedIds = orderedRows.map((row) => row.id);
-  const orderChanged =
-    currentOrderedIds.length !== importedOrderedIds.length ||
-    currentOrderedIds.some((id, index) => id !== importedOrderedIds[index]);
+  const orderEdited =
+    originalOrderedIds.length !== importedOrderedIds.length ||
+    originalOrderedIds.some((id, index) => id !== importedOrderedIds[index]);
   const nextSortOrderById = new Map<string, number>();
-  if (orderChanged) {
+  if (orderEdited) {
     orderedRows.forEach((row, index) => {
       nextSortOrderById.set(row.id, index);
     });
@@ -533,16 +623,32 @@ function importBugsFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResult
       const fieldChanges: Array<"name" | "status" | "order" | "notes"> = [];
       const nextSortOrder = nextSortOrderById.get(row.id) ?? current.sort_order ?? 0;
       const now = new Date().toISOString();
-      if (current.title !== row.name) {
+      const nameEdited = row.name !== row.originalName;
+      const statusEdited = row.status !== row.originalStatus;
+      const notesEdited = row.notes !== row.originalNotes;
+      if (nameEdited && current.title !== row.originalName) {
+        conflicts.push(`${row.id}: name changed since export`);
+        continue;
+      }
+      if (statusEdited && current.status !== row.originalStatus) {
+        conflicts.push(`${row.id}: status changed since export`);
+        continue;
+      }
+      if (notesEdited && current.description !== row.originalNotes) {
+        conflicts.push(`${row.id}: notes changed since export`);
+        continue;
+      }
+
+      if (nameEdited) {
         fieldChanges.push("name");
       }
-      if (current.description !== row.notes) {
+      if (notesEdited) {
         fieldChanges.push("notes");
       }
-      if (current.status !== row.status) {
+      if (statusEdited) {
         fieldChanges.push("status");
       }
-      if (orderChanged && (current.sort_order ?? -1) !== nextSortOrder) {
+      if (orderEdited) {
         fieldChanges.push("order");
       }
 
@@ -551,9 +657,26 @@ function importBugsFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResult
         continue;
       }
 
-      const updates = ["title = ?", "description = ?", "status = ?", "sort_order = ?", "updated_at = ?"];
-      const params: Array<string | number> = [row.name, row.notes, row.status, nextSortOrder, now];
-      if (current.status !== row.status) {
+      const updates = ["updated_at = ?"];
+      const params: Array<string | number> = [now];
+      if (nameEdited) {
+        updates.unshift("title = ?");
+        params.unshift(row.name);
+      }
+      if (notesEdited) {
+        updates.splice(nameEdited ? 1 : 0, 0, "description = ?");
+        params.splice(nameEdited ? 1 : 0, 0, row.notes);
+      }
+      if (statusEdited) {
+        const statusInsertIndex = updates.length - 1;
+        updates.splice(statusInsertIndex, 0, "status = ?");
+        params.splice(statusInsertIndex, 0, row.status);
+      }
+      if (orderEdited) {
+        updates.splice(updates.length - 1, 0, "sort_order = ?");
+        params.splice(params.length - 1, 0, nextSortOrder);
+      }
+      if (statusEdited) {
         if (row.status === "resolved" || row.status === "closed") {
           updates.push("resolved_at = ?");
           params.push(now);
@@ -574,6 +697,7 @@ function importBugsFromRows(db: Database, rows: ParsedCsvRow[]): CsvImportResult
     unchanged,
     missing,
     invalid: [],
+    conflicts,
     changes,
   };
 }
@@ -587,6 +711,7 @@ export function importListFromCsv(db: Database, kind: CsvListKind, text: string)
       unchanged: 0,
       missing: [],
       invalid: parsed.invalid,
+      conflicts: [],
       changes: [],
     };
   }
@@ -620,6 +745,13 @@ export function printImportResult(kind: CsvListKind, result: CsvImportResult): v
     console.log("  Invalid rows:");
     for (const error of result.invalid) {
       console.log(`    - ${error}`);
+    }
+  }
+
+  if (result.conflicts.length > 0) {
+    console.log("  Conflicts:");
+    for (const conflict of result.conflicts) {
+      console.log(`    - ${conflict}`);
     }
   }
 }

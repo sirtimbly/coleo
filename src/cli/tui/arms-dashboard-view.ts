@@ -28,6 +28,7 @@ export interface DashboardNode {
   depth: number;
   armId?: string;
   mailId?: string;
+  mailFolder?: "inbox" | "sent";
   discoveryId?: string;
   reportId?: string;
 }
@@ -48,6 +49,7 @@ export interface DashboardDetailItem {
   armId?: string;
   armName?: string;
   mailId?: string;
+  mailFolder?: "inbox" | "sent";
   discoveryId?: string;
   reportId?: string;
 }
@@ -186,14 +188,29 @@ function formatStatusReportRows(reports: DashboardStatusReport[]): string[] {
   return rows;
 }
 
-function formatMailRows(snapshot: DashboardSnapshot): string[] {
-  if (snapshot.inboxMessages.length === 0) {
-    return ["Inbox is empty."];
+function getMailMessages(snapshot: DashboardSnapshot, folder: "inbox" | "sent" | "all"): MailMessage[] {
+  if (folder === "inbox") {
+    return snapshot.inboxMessages;
   }
 
-  return snapshot.inboxMessages.map((message) => {
+  if (folder === "sent") {
+    return snapshot.sentMessages;
+  }
+
+  return [...snapshot.inboxMessages, ...snapshot.sentMessages]
+    .sort((a, b) => b.date.getTime() - a.date.getTime());
+}
+
+function formatMailRows(snapshot: DashboardSnapshot): string[] {
+  const messages = getMailMessages(snapshot, "all");
+  if (messages.length === 0) {
+    return ["Inbox and sent mail are empty."];
+  }
+
+  return messages.map((message) => {
     const unread = message.flags.seen ? " " : "*";
-    return `${unread} ${formatDateTime(message.date.toISOString())}  ${message.from}  ${message.subject}`;
+    const folder = snapshot.inboxMessages.some((candidate) => candidate.id === message.id) ? "inbox" : "sent";
+    return `${unread} [${folder}] ${formatDateTime(message.date.toISOString())}  ${message.from}  ${message.subject}`;
   });
 }
 
@@ -209,13 +226,15 @@ function buildArmRow(arm: DashboardArmSummary): string {
   ].join("  ");
 }
 
-function buildMailSummary(message: MailMessage): string {
+function buildMailSummary(message: MailMessage, folder: "inbox" | "sent"): string {
   const unread = message.flags.seen ? " " : "*";
-  return `${unread} ${message.from}  ${message.subject || "(no subject)"}`;
+  const peer = folder === "sent" ? message.to : message.from;
+  return `${unread} [${folder}] ${peer}  ${message.subject || "(no subject)"}`;
 }
 
-function buildMailDetail(message: MailMessage): DashboardView {
+function buildMailDetail(message: MailMessage, folder: "inbox" | "sent"): DashboardView {
   const lines = [
+    `folder: ${folder}`,
     `from: ${message.from}`,
     `to: ${message.to}`,
     `date: ${formatDateTime(message.date.toISOString())}`,
@@ -230,7 +249,7 @@ function buildMailDetail(message: MailMessage): DashboardView {
 
   return {
     title: message.subject || "Mail",
-    subtitle: `Message from ${message.from}`,
+    subtitle: folder === "sent" ? `Sent to ${message.to}` : `Message from ${message.from}`,
     lines,
   };
 }
@@ -367,7 +386,7 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
     id: "mail",
     kind: "mail",
     label: `Email (${snapshot.inboxMessages.filter((msg) => !msg.flags.seen).length})`,
-    description: "human and brain messages",
+    description: `${snapshot.inboxMessages.length} inbox, ${snapshot.sentMessages.length} sent`,
     depth: 0,
   });
 
@@ -376,9 +395,22 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
       id: `mail:${message.id}`,
       kind: "mail",
       label: message.subject || "(no subject)",
-      description: buildMailSummary(message),
+      description: buildMailSummary(message, "inbox"),
       depth: 1,
       mailId: message.id,
+      mailFolder: "inbox",
+    });
+  }
+
+  for (const message of snapshot.sentMessages) {
+    nodes.push({
+      id: `mail:sent:${message.id}`,
+      kind: "mail",
+      label: message.subject || "(no subject)",
+      description: buildMailSummary(message, "sent"),
+      depth: 1,
+      mailId: message.id,
+      mailFolder: "sent",
     });
   }
 
@@ -431,9 +463,10 @@ export function buildViewForDetailItem(
       return buildViewForNode(snapshot, node, armDetail);
     }
     case "mail": {
-      const message = snapshot.inboxMessages.find((candidate) => candidate.id === item.mailId);
+      const messages = getMailMessages(snapshot, item.mailFolder || "inbox");
+      const message = messages.find((candidate) => candidate.id === item.mailId);
       return message
-        ? buildMailDetail(message)
+        ? buildMailDetail(message, item.mailFolder || "inbox")
         : { title: item.label, subtitle: "Mail detail", lines: ["Message unavailable."] };
     }
     case "discovery": {
@@ -624,15 +657,16 @@ export function buildViewForNode(
     }
     case "mail": {
       if (node.mailId) {
-        const message = snapshot.inboxMessages.find((candidate) => candidate.id === node.mailId);
+        const messages = getMailMessages(snapshot, node.mailFolder || "inbox");
+        const message = messages.find((candidate) => candidate.id === node.mailId);
         return message
-          ? buildMailDetail(message)
+          ? buildMailDetail(message, node.mailFolder || "inbox")
           : { title: node.label, subtitle: "Mail detail", lines: ["Message unavailable."] };
       }
 
       return {
         title: "Email",
-        subtitle: "Recent inbox messages",
+        subtitle: "Recent inbox and sent messages",
         lines: formatMailRows(snapshot),
       };
     }

@@ -194,6 +194,7 @@ export interface DashboardSnapshot {
   discoveries: DashboardDiscovery[];
   statusReports: DashboardStatusReport[];
   inboxMessages: MailMessage[];
+  sentMessages: MailMessage[];
   brainLogLines: string[];
   serverLogLines: string[];
 }
@@ -231,14 +232,14 @@ async function readJsonFile<T>(path: string): Promise<T | null> {
   }
 }
 
-async function readInboxMessages(limit: number): Promise<MailMessage[]> {
+async function readMailboxMessages(folder: "inbox" | "sent", limit: number): Promise<MailMessage[]> {
   const coleoDir = getColeoDir();
-  const inbox = new Maildir(join(coleoDir, "mail", "inbox"));
+  const mailbox = new Maildir(join(coleoDir, "mail", folder));
 
   try {
     const [fresh, seen] = await Promise.all([
-      inbox.list("new"),
-      inbox.list("cur"),
+      mailbox.list("new"),
+      mailbox.list("cur"),
     ]);
 
     return [...fresh, ...seen]
@@ -316,6 +317,7 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
     brainLogLines,
     serverLogLines,
     inboxMessages,
+    sentMessages,
   ] = await Promise.all([
     getServiceStatus("brain"),
     getServiceStatus("server"),
@@ -323,7 +325,8 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
     readJsonFile<DashboardBrainState>(join(coleoDir, "state", "brain.json")),
     readTailLines(brainLogPath, RECENT_LOG_LINES),
     getServiceLogs("server", RECENT_LOG_LINES).catch(() => [] as string[]),
-    readInboxMessages(RECENT_MAIL_COUNT),
+    readMailboxMessages("inbox", RECENT_MAIL_COUNT),
+    readMailboxMessages("sent", RECENT_MAIL_COUNT),
   ]);
 
   let arms: DashboardArmSummary[] = [];
@@ -372,6 +375,7 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
     discoveries,
     statusReports,
     inboxMessages,
+    sentMessages,
     brainLogLines,
     serverLogLines,
   };

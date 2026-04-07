@@ -992,9 +992,10 @@ export class Brain {
 	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
 	private isColeoGeneratedMail(message: MailMessage): boolean {
-		return Object.keys(message.headers).some(
-			(header) => header.toLowerCase() === "x-coleo-type",
-		);
+		const type = Object.entries(message.headers).find(
+			([header]) => header.toLowerCase() === "x-coleo-type",
+		)?.[1];
+		return Boolean(type && type.toLowerCase() !== "human-message");
 	}
 
 	private async processHumanMail(): Promise<void> {
