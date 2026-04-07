@@ -58,6 +58,14 @@ function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function padRight(value: string, width: number): string {
+  if (value.length >= width) {
+    return value.slice(0, width);
+  }
+
+  return value + " ".repeat(width - value.length);
+}
+
 function slugify(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "export";
 }
@@ -170,7 +178,7 @@ class ArmsDashboardTui {
       border: true,
       title: "Navigator",
       flexDirection: "column",
-      padding: 1,
+      padding: 0,
       borderColor: "#34515e",
       backgroundColor: "#0b0f10",
     });
@@ -1181,6 +1189,7 @@ class ArmsDashboardTui {
   private buildSidebarRows(): SidebarRow[] {
     const rows: SidebarRow[] = [];
     const roots = this.nodes.filter((node) => node.depth === 0);
+    const contentWidth = this.sidebarContentWidth();
 
     for (const root of roots) {
       const children = this.nodes.filter((node) => this.parentNodeId(node) === root.id);
@@ -1188,24 +1197,27 @@ class ArmsDashboardTui {
       if (children.length === 0) {
         rows.push({
           nodeId: root.id,
-          content: ` ${root.label}`,
+          content: padRight(root.label, contentWidth),
           selected: root.id === this.selectedNodeId,
         });
         continue;
       }
 
       const expanded = this.isExpanded(root);
+      const headerLabel = ` ${expanded ? "▾" : "▸"} ${root.label} `;
+      const headerFill = Math.max(0, contentWidth - 2 - headerLabel.length);
       rows.push({
         nodeId: root.id,
-        content: `┌ ${expanded ? "▾" : "▸"} ${root.label}`,
+        content: `┌${headerLabel}${"─".repeat(headerFill)}┐`,
         selected: root.id === this.selectedNodeId,
       });
 
       if (expanded) {
         for (const child of children) {
+          const childLabel = `${child.id === this.selectedNodeId ? "▸" : "•"} ${child.label}`;
           rows.push({
             nodeId: child.id,
-            content: `│ ${child.id === this.selectedNodeId ? "▸" : "•"} ${child.label}`,
+            content: `│${padRight(` ${childLabel} `, contentWidth - 2)}│`,
             selected: child.id === this.selectedNodeId,
           });
         }
@@ -1213,12 +1225,20 @@ class ArmsDashboardTui {
 
       rows.push({
         nodeId: null,
-        content: "└",
+        content: `└${"─".repeat(Math.max(0, contentWidth - 2))}┘`,
         selected: false,
       });
     }
 
     return rows;
+  }
+
+  private sidebarContentWidth(): number {
+    const width = typeof this.sidebarListBox.width === "number"
+      ? this.sidebarListBox.width
+      : (typeof this.sidebarBox.width === "number" ? this.sidebarBox.width - 2 : 30);
+
+    return Math.max(8, width);
   }
 }
 
