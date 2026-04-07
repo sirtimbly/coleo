@@ -107,6 +107,7 @@ class ArmsDashboardTui {
   private nodes: DashboardNode[] = [];
   private selectedNodeId = "brain";
   private selectedArmDetail: DashboardArmDetail | null = null;
+  private armDetailCache = new Map<string, DashboardArmDetail>();
   private focusArea: FocusArea = "nav";
   private inputMode: InputMode = null;
   private confirmAction: ConfirmAction | null = null;
@@ -373,7 +374,9 @@ class ArmsDashboardTui {
     this.selectedNodeId = node.id;
     this.searchQuery = "";
     this.searchLinesOverride = null;
-    this.selectedArmDetail = null;
+    this.selectedArmDetail = node.kind === "arm" && node.armId
+      ? (this.armDetailCache.get(node.armId) || null)
+      : null;
     this.ensureNavSelectionVisible();
     this.render(resetScroll);
 
@@ -504,12 +507,21 @@ class ArmsDashboardTui {
       return;
     }
 
+    const cachedDetail = this.armDetailCache.get(node.armId);
+    if (cachedDetail) {
+      this.selectedArmDetail = cachedDetail;
+      this.render(false);
+    }
+
     const requestId = ++this.loadDetailRequestId;
 
     try {
       const detail = await fetchArmDetail(node.armId);
       if (requestId === this.loadDetailRequestId && !this.destroyed) {
         this.selectedArmDetail = detail;
+        if (detail) {
+          this.armDetailCache.set(node.armId, detail);
+        }
         this.render(false);
       }
     } catch (error) {
@@ -534,6 +546,7 @@ class ArmsDashboardTui {
       const selectionAtStart = this.selectedNodeId;
       this.snapshot = await fetchDashboardSnapshot();
       this.nodes = buildDashboardNodes(this.snapshot);
+      this.pruneArmDetailCache();
 
       if (requestId !== this.refreshRequestId || this.destroyed) {
         return;
@@ -1184,6 +1197,16 @@ class ArmsDashboardTui {
     }
 
     return null;
+  }
+
+  private pruneArmDetailCache(): void {
+    const activeArmIds = new Set(this.nodes.filter((node) => node.kind === "arm" && node.armId).map((node) => node.armId));
+
+    for (const armId of this.armDetailCache.keys()) {
+      if (!activeArmIds.has(armId)) {
+        this.armDetailCache.delete(armId);
+      }
+    }
   }
 
   private buildSidebarRows(): SidebarRow[] {
