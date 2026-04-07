@@ -28,7 +28,6 @@ import {
 import {
   applySearch,
   buildDashboardNodes,
-  buildFooterControls,
   buildViewForNode,
   type DashboardNode,
 } from "./arms-dashboard-view";
@@ -108,6 +107,7 @@ class ArmsDashboardTui {
   private selectedNodeId = "brain";
   private selectedArmDetail: DashboardArmDetail | null = null;
   private armDetailCache = new Map<string, DashboardArmDetail>();
+  private showHelp = false;
   private focusArea: FocusArea = "nav";
   private inputMode: InputMode = null;
   private confirmAction: ConfirmAction | null = null;
@@ -632,8 +632,15 @@ class ArmsDashboardTui {
 
     this.rebuildSidebar();
     const node = this.currentNode();
-    const view = buildViewForNode(this.snapshot, node, this.selectedArmDetail);
-    const lines = this.searchLinesOverride || view.lines;
+    const baseView = buildViewForNode(this.snapshot, node, this.selectedArmDetail);
+    const view = this.showHelp
+      ? {
+        title: "Help",
+        subtitle: "Arms dashboard keyboard commands",
+        lines: this.buildHelpLines(node),
+      }
+      : baseView;
+    const lines = this.showHelp ? view.lines : (this.searchLinesOverride || view.lines);
 
     const navFocused = this.focusArea === "nav";
     const bodyFocused = this.focusArea === "body";
@@ -654,7 +661,7 @@ class ArmsDashboardTui {
     this.titleText.bg = bodyFocused ? "#10222d" : "#0b0f10";
     this.titleText.fg = bodyFocused ? "#ffffff" : "#f2f7f9";
 
-    this.titleText.content = view.title;
+    this.titleText.content = this.showHelp ? `${view.title} - ${baseView.title}` : view.title;
 
     this.bodyText.bg = bodyFocused ? "#10222d" : "#0b0f10";
     this.bodyText.content = lines.join("\n");
@@ -678,7 +685,7 @@ class ArmsDashboardTui {
 
     this.footerStatusText.content = truncateLine(this.notice, 200);
     this.footerControlsText.content = truncateLine(
-      buildFooterControls(node, this.interruptBeforeSend),
+      this.buildFooterControls(node),
       240,
     );
 
@@ -698,10 +705,14 @@ class ArmsDashboardTui {
     } else if (this.inputMode === "arm-message") {
       this.footerPromptText.content = `Send a message to ${activeArmLabel}. Interrupt=${this.interruptBeforeSend ? "on" : "off"}`;
       this.footerInput.placeholder = "Arm message";
+    } else if (this.showHelp) {
+      this.footerPromptText.content = "Help is open. Press ? or Esc to close.";
+      this.footerInput.value = "";
+      this.footerInput.placeholder = "";
     } else {
       this.footerPromptText.content = this.searchQuery
         ? `Active search: ${this.searchQuery}`
-        : "Press / to search, e to export, n to spawn, or tab to change focus.";
+        : "Press ? for help.";
       this.footerInput.value = "";
       this.footerInput.placeholder = "";
     }
@@ -756,6 +767,24 @@ class ArmsDashboardTui {
       if (this.focusArea === "input") {
         return;
       }
+    }
+
+    if (key.name === "?" || (key.shift && key.name === "slash")) {
+      key.preventDefault();
+      key.stopPropagation();
+      this.showHelp = !this.showHelp;
+      this.notice = this.showHelp ? "Help opened" : "Help closed";
+      this.render(true);
+      return;
+    }
+
+    if (this.showHelp && key.name === "escape") {
+      key.preventDefault();
+      key.stopPropagation();
+      this.showHelp = false;
+      this.notice = "Help closed";
+      this.render(false);
+      return;
     }
 
     if (key.name === "q") {
@@ -1262,6 +1291,106 @@ class ArmsDashboardTui {
       : (typeof this.sidebarBox.width === "number" ? this.sidebarBox.width - 2 : 30);
 
     return Math.max(8, width);
+  }
+
+  private buildFooterControls(node: DashboardNode): string {
+    if (this.showHelp) {
+      return "? close help  tab change focus  j/k scroll  q quit";
+    }
+
+    const global = "? help  / search  r refresh  q quit";
+
+    if (this.focusArea === "nav") {
+      const navActions = this.nodeHasChildren(node)
+        ? "j/k move  enter open  h/l collapse-expand  tab details"
+        : "j/k move  enter details  tab details";
+      const nodeActions = node.kind === "arms-root" || node.kind === "arm" ? "  n spawn arm" : "";
+      return `${navActions}  ${global}${nodeActions}`;
+    }
+
+    if (this.focusArea === "body") {
+      const bodyActions = "j/k scroll  pgup/pgdn page  home/end jump  h nav";
+
+      if (node.kind === "brain") {
+        return `${bodyActions}  ${global}  m message brain  R restart brain`;
+      }
+
+      if (node.kind === "arm") {
+        return `${bodyActions}  ${global}  m message  i interrupt=${this.interruptBeforeSend ? "on" : "off"}  s stuck  x kill  d delete`;
+      }
+
+      return `${bodyActions}  ${global}  e export`;
+    }
+
+    if (this.focusArea === "input") {
+      return "enter submit  esc cancel  ? help";
+    }
+
+    return global;
+  }
+
+  private buildHelpLines(node: DashboardNode): string[] {
+    const lines = [
+      "Global",
+      "------",
+      "?            Toggle help",
+      "tab          Switch focus between navigator and details",
+      "S-tab        Switch focus backwards",
+      "/            Search current view",
+      "r            Refresh dashboard",
+      "e            Export current detail view to $EDITOR",
+      "n            Launch arm spawn flow",
+      "q            Quit dashboard",
+      "",
+      "Navigator",
+      "---------",
+      "j / down     Move selection down",
+      "k / up       Move selection up",
+      "enter        Open selected node details",
+      "l / right    Expand section and open details",
+      "h / left     Collapse selected section or move to parent",
+      "",
+      "Details",
+      "-------",
+      "j / down     Scroll detail view down",
+      "k / up       Scroll detail view up",
+      "pgup/pgdn    Scroll by page",
+      "home/end     Jump to top or bottom",
+      "h / left     Return focus to navigator",
+    ];
+
+    if (node.kind === "brain") {
+      lines.push(
+        "",
+        "Brain",
+        "-----",
+        "m            Send a message to the brain",
+        "R            Restart the brain service",
+      );
+    }
+
+    if (node.kind === "arm") {
+      lines.push(
+        "",
+        `Arm: ${node.label}`,
+        "-----------",
+        "m            Send a message to this arm",
+        `i            Toggle interrupt before send (${this.interruptBeforeSend ? "on" : "off"})`,
+        "s            Mark arm stuck/idle for brain follow-up",
+        "x            Kill arm session",
+        "d            Delete arm profile",
+      );
+    }
+
+    lines.push(
+      "",
+      "Input",
+      "-----",
+      "enter        Submit current prompt",
+      "esc          Cancel input or close help",
+    );
+
+    return lines;
   }
 }
 
