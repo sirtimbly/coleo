@@ -316,32 +316,102 @@ describe("Brain coverage boost", () => {
         const query = path.split("?")[1] || "";
         const params = new URLSearchParams(query);
         const taskId = params.get("taskId");
-        if (!taskId) {
-          return { reports: [] } as T;
-        }
-        const rows = db
-          .query(`
-            SELECT id, status, summary, issues, next_steps, tests_status
-            FROM status_reports
-            WHERE task_id = ?
-            ORDER BY created_at DESC
-          `)
-          .all(taskId) as Array<{
+        const since = params.get("since");
+        const rows = (taskId
+          ? db
+              .query(`
+                SELECT id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at
+                FROM status_reports
+                WHERE task_id = ?
+                ORDER BY created_at DESC
+              `)
+              .all(taskId)
+          : db
+              .query(`
+                SELECT id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at
+                FROM status_reports
+                ORDER BY created_at DESC
+              `)
+              .all()) as Array<{
           id: string;
+          task_id: string;
+          arm_id: string;
           status: string;
           summary: string;
           issues: string | null;
+          blockers: string | null;
           next_steps: string | null;
+          files_changed: string | null;
           tests_status: string | null;
+          created_at: string;
         }>;
+        const filteredRows = since
+          ? rows.filter((row) => row.created_at > since)
+          : rows;
         return {
-          reports: rows.map((row) => ({
+          reports: filteredRows.map((row) => ({
             id: row.id,
+            taskId: row.task_id,
+            armId: row.arm_id,
             status: row.status,
             summary: row.summary,
             issues: row.issues ? JSON.parse(row.issues) : [],
+            blockers: row.blockers ? JSON.parse(row.blockers) : [],
             nextSteps: row.next_steps || undefined,
+            filesChanged: row.files_changed ? JSON.parse(row.files_changed) : [],
             testsStatus: row.tests_status || undefined,
+            createdAt: row.created_at,
+          })),
+        } as T;
+      }
+
+      if (path.startsWith("/api/discoveries?")) {
+        const query = path.split("?")[1] || "";
+        const params = new URLSearchParams(query);
+        const since = params.get("since");
+        const status = params.get("status") || "open";
+        const rows = db
+          .query(`
+            SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
+            FROM discoveries
+            WHERE status = ?
+            ORDER BY created_at DESC
+          `)
+          .all(status) as Array<{
+          id: string;
+          arm_id: string;
+          arm_name: string;
+          kind: string;
+          title: string;
+          details: string;
+          file_path: string | null;
+          line_number: number | null;
+          severity: string;
+          status: string;
+          task_id: string | null;
+          phase: string | null;
+          created_at: string;
+          updated_at: string;
+        }>;
+        const filteredRows = since
+          ? rows.filter((row) => row.created_at > since)
+          : rows;
+        return {
+          discoveries: filteredRows.map((row) => ({
+            id: row.id,
+            armId: row.arm_id,
+            armName: row.arm_name,
+            kind: row.kind,
+            title: row.title,
+            details: row.details,
+            filePath: row.file_path,
+            lineNumber: row.line_number,
+            severity: row.severity,
+            status: row.status,
+            taskId: row.task_id,
+            phase: row.phase,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at,
           })),
         } as T;
       }
@@ -740,6 +810,35 @@ describe("Brain coverage boost", () => {
     expect(row.completed_at).toBeTruthy();
   });
 
+  it("does not create recursive commit tasks for commit follow-ups", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        "task-commit-followup",
+        "Commit changes for: Original task",
+        "capture worktree changes",
+        "pending",
+        "high",
+        now,
+        now,
+      ]
+    );
+
+    await (brain as any).completeTask("task-commit-followup", "Committed changes", []);
+
+    const completed = db
+      .query("SELECT status, completed_at FROM tasks WHERE id = ?")
+      .get("task-commit-followup") as { status: string; completed_at: string | null };
+    expect(completed.status).toBe("completed");
+    expect(completed.completed_at).toBeTruthy();
+
+    const recursiveCount = db
+      .query("SELECT COUNT(*) AS count FROM tasks WHERE subject LIKE 'Commit changes for: Commit changes for:%'")
+      .get() as { count: number };
+    expect(recursiveCount.count).toBe(0);
+  });
+
   it("hands completed arms off to their next task automatically", async () => {
     const now = nowIso();
     db.run(
@@ -920,5 +1019,41 @@ describe("Brain coverage boost", () => {
     };
     expect(dependencyBlocked.status).toBe("pending");
     expect(dependencyBlocked.dependency_blocked).toBe(0);
+  });
+
+  it("processes persisted status reports that were not received through the queue path", async () => {
+    const now = nowIso();
+    db.run(
+      `INSERT INTO status_reports (
+        id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "report-persisted-blocked",
+        "task-blocked-standard",
+        "arm-1",
+        "blocked",
+        "Waiting on clarification",
+        JSON.stringify([]),
+        JSON.stringify(["Need product decision"]),
+        "Pause implementation until clarified",
+        JSON.stringify([]),
+        "not_run",
+        now,
+      ],
+    );
+
+    await (brain as any).processOperationalSignals(new Date(Date.now() - 60_000).toISOString());
+
+    const task = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-blocked-standard") as { status: string };
+    expect(task.status).toBe("blocked");
+    expect(
+      sentToHuman.some(
+        (message) =>
+          message.subject.includes("Blocked standard") &&
+          (message.subject.includes("Task blocked") || message.subject.includes("Task deferred")),
+      ),
+    ).toBe(true);
   });
 });

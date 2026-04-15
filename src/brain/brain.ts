@@ -148,6 +148,8 @@ export class Brain {
 	private armDetectionTimes: Map<string, Date> = new Map();
 	// Track which assistant session messages have already been interpreted
 	private processedArmOutputMessageIds: Map<string, Set<string>> = new Map();
+	private processedStatusReportIds: Set<string> = new Set();
+	private processedDiscoveryIds: Set<string> = new Set();
 	// In-memory file subscriptions keyed by arm ID
 	private fileSubscriptions: Map<string, Set<string>> = new Map();
 	// Plan hash cache to avoid reprocessing unchanged plan files
@@ -736,6 +738,7 @@ export class Brain {
 			return;
 		}
 
+		const previousLastPollAt = this.state.lastPollAt;
 		this.state.lastPollAt = new Date().toISOString();
 
 		// Step 0: Infrastructure health check - verify the "body" is healthy before arms
@@ -774,6 +777,11 @@ export class Brain {
 
 		// Step 2: Process arm messages
 		await this.processArmQueue();
+
+		// Step 2.25: Evaluate recently persisted status reports and discoveries
+		// so reports visible in the dashboard also influence planning even when
+		// they were not handled through the live arm queue path.
+		await this.processOperationalSignals(previousLastPollAt);
 
 		// Step 2.5: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
@@ -2449,6 +2457,7 @@ export class Brain {
 		taskId?: string;
 		armId?: string;
 		limit?: number;
+		since?: string;
 	}): Promise<
 		Array<{
 			id: string;
@@ -2499,6 +2508,7 @@ export class Brain {
 			});
 			if (options?.taskId) params.set("taskId", options.taskId);
 			if (options?.armId) params.set("armId", options.armId);
+			if (options?.since) params.set("since", options.since);
 
 			const response = await this.apiRequest<{
 				reports: Array<{
@@ -2538,6 +2548,94 @@ export class Brain {
 		}
 
 		return reports;
+	}
+
+	private async listDiscoveriesFromApi(options?: {
+		limit?: number;
+		status?: string;
+		since?: string;
+	}): Promise<
+		Array<{
+			id: string;
+			armId: string;
+			armName: string;
+			kind: string;
+			title: string;
+			details: string;
+			filePath?: string | null;
+			lineNumber?: number | null;
+			severity: string;
+			status: string;
+			taskId?: string | null;
+			phase?: string | null;
+			createdAt: string;
+			updatedAt: string;
+		}>
+	> {
+		const params = new URLSearchParams({
+			limit: String(Math.max(1, options?.limit ?? 100)),
+			status: options?.status || "open",
+		});
+		if (options?.since) params.set("since", options.since);
+
+		const response = await this.apiRequest<{
+			discoveries: Array<{
+				id: string;
+				armId: string;
+				armName: string;
+				kind: string;
+				title: string;
+				details: string;
+				filePath?: string | null;
+				lineNumber?: number | null;
+				severity: string;
+				status: string;
+				taskId?: string | null;
+				phase?: string | null;
+				createdAt: string;
+				updatedAt: string;
+			}>;
+		}>(`/api/discoveries?${params.toString()}`);
+
+		return response?.discoveries || [];
+	}
+
+	private rememberProcessedSignal(
+		cache: Set<string>,
+		id: string,
+		limit = 500,
+	): void {
+		cache.add(id);
+		while (cache.size > limit) {
+			const oldest = cache.values().next().value;
+			if (!oldest) break;
+			cache.delete(oldest);
+		}
+	}
+
+	private async processOperationalSignals(since?: string): Promise<void> {
+		const marker = since || new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+		try {
+			const [reports, discoveries] = await Promise.all([
+				this.listStatusReportsFromApi({ limit: 100, since: marker }),
+				this.listDiscoveriesFromApi({ limit: 100, status: "open", since: marker }),
+			]);
+
+			for (const report of reports
+				.filter((item) => !this.processedStatusReportIds.has(item.id))
+				.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
+				await this.processPersistedStatusReport(report);
+			}
+
+			for (const discovery of discoveries
+				.filter((item) => !this.processedDiscoveryIds.has(item.id))
+				.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
+				await this.processPersistedDiscovery(discovery);
+			}
+		} catch (err) {
+			this.log(`Failed to process persisted operational signals: ${err}`);
+		}
 	}
 
 	private async getTaskDiscussionText(taskId: string): Promise<string> {
@@ -2843,8 +2941,15 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			},
 		});
 
-		// Create a commit task to capture unstaged changes
-		await this.createCommitTask(taskId, taskSubject, summary);
+		const isTerminalFollowUpTask =
+			taskSubject?.startsWith("Validate completion:") ||
+			taskSubject?.startsWith("Verify & Polish:") ||
+			taskSubject?.startsWith("Commit changes for:");
+
+		// Terminal follow-up tasks should not generate additional commit tasks.
+		if (!isTerminalFollowUpTask) {
+			await this.createCommitTask(taskId, taskSubject, summary);
+		}
 
 		this.log(`Completed task: ${taskSubject}`);
 	}
@@ -2911,10 +3016,11 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 		const isFollowUpTask =
 			task.subject?.startsWith("Validate completion:") ||
-			task.subject?.startsWith("Verify & Polish:");
+			task.subject?.startsWith("Verify & Polish:") ||
+			task.subject?.startsWith("Commit changes for:");
 
-		// Follow-up QA tasks are terminal. Do not recursively generate
-		// additional verification/validation work from them.
+		// Follow-up QA and commit tasks are terminal. Do not recursively generate
+		// additional validation or commit work from them.
 		if (isFollowUpTask) {
 			this.log(
 				`Skipping recursive follow-up generation for ${taskId} (${task.subject})`,
@@ -3158,19 +3264,6 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			return;
 		}
 
-		// Update last activity for the arm
-		const now = new Date().toISOString();
-		const reportedArmStatus = report.status === "blocked" ? "idle" : "busy";
-		await this.patchArmViaApi(report.armId, {
-			lastActivityAt: now,
-			status: reportedArmStatus,
-		});
-		const reportingArm = this.arms.get(report.armId);
-		if (reportingArm) {
-			reportingArm.lastActivity = new Date();
-			reportingArm.status = reportedArmStatus;
-		}
-
 		const statusReportResponse = await this.apiRequest<{
 			report?: { id: string };
 		}>("/api/status-reports", {
@@ -3189,8 +3282,86 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		});
 		if (statusReportResponse?.report?.id) {
 			this.log(`Stored status report: ${statusReportResponse.report.id}`);
+			this.rememberProcessedSignal(
+				this.processedStatusReportIds,
+				statusReportResponse.report.id,
+			);
 		} else {
 			this.log(`Failed to persist status report ${report.id} via API`);
+		}
+
+		await this.applyStatusReportActions(
+			{
+				...report,
+				id: statusReportResponse?.report?.id || report.id,
+			},
+			task,
+		);
+	}
+
+	private async processPersistedStatusReport(report: {
+		id: string;
+		taskId: string;
+		armId: string;
+		status:
+			| "on_track"
+			| "blocked"
+			| "issues_found"
+			| "needs_review"
+			| "completed_with_issues";
+		summary: string;
+		issues?: string[];
+		blockers?: string[];
+		nextSteps?: string;
+		filesChanged?: string[];
+		testsStatus?: "passing" | "failing" | "not_run";
+		createdAt: string;
+	}): Promise<void> {
+		const task = await this.getTaskFromApi(report.taskId);
+		if (!task) {
+			this.log(`Persisted status report for unknown task: ${report.taskId}`);
+			this.rememberProcessedSignal(this.processedStatusReportIds, report.id);
+			return;
+		}
+
+		await this.applyStatusReportActions(report, task);
+		this.rememberProcessedSignal(this.processedStatusReportIds, report.id);
+	}
+
+	private async applyStatusReportActions(
+		report: {
+			id: string;
+			taskId: string;
+			armId: string;
+			status:
+				| "on_track"
+				| "blocked"
+				| "issues_found"
+				| "needs_review"
+				| "completed_with_issues";
+			summary: string;
+			issues?: string[];
+			blockers?: string[];
+			nextSteps?: string;
+			filesChanged?: string[];
+			testsStatus?: "passing" | "failing" | "not_run";
+			screenshotPath?: string;
+		},
+		task: Task,
+	): Promise<void> {
+		const now = new Date().toISOString();
+		const issues = report.issues || [];
+		const blockers = report.blockers || [];
+		const filesChanged = report.filesChanged || [];
+		const reportedArmStatus = report.status === "blocked" ? "idle" : "busy";
+		await this.patchArmViaApi(report.armId, {
+			lastActivityAt: now,
+			status: reportedArmStatus,
+		});
+		const reportingArm = this.arms.get(report.armId);
+		if (reportingArm) {
+			reportingArm.lastActivity = new Date();
+			reportingArm.status = reportedArmStatus;
 		}
 
 		// Log activity
@@ -3198,8 +3369,8 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			reportId: report.id,
 			armId: report.armId,
 			status: report.status,
-			issueCount: report.issues.length,
-			blockerCount: report.blockers.length,
+			issueCount: issues.length,
+			blockerCount: blockers.length,
 		});
 
 		const armLabel = this.getArmDisplayName(report.armId);
@@ -3220,9 +3391,9 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			return `${title}\n${preview}${more}`;
 		};
 
-		const filesSection = formatList("Files changed:", report.filesChanged);
-		const issuesSection = formatList("Issues:", report.issues);
-		const blockersSection = formatList("Blockers:", report.blockers);
+		const filesSection = formatList("Files changed:", filesChanged);
+		const issuesSection = formatList("Issues:", issues);
+		const blockersSection = formatList("Blockers:", blockers);
 		const nextSteps = report.nextSteps?.trim();
 
 		const statusParts: Array<string | null> = [
@@ -3278,7 +3449,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 							task_subject: task.subject,
 							summary: report.summary,
 							blockers_list:
-								report.blockers.map((b) => `- ${b}`).join("\n") ||
+								blockers.map((b) => `- ${b}`).join("\n") ||
 								"No specific blockers listed",
 							next_steps: report.nextSteps || "None specified",
 						},
@@ -3308,7 +3479,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 							arm_id: report.armId,
 							summary: report.summary,
 							blockers_list:
-								report.blockers.map((b) => `- ${b}`).join("\n") ||
+								blockers.map((b) => `- ${b}`).join("\n") ||
 								"No specific blockers listed",
 							next_steps: report.nextSteps || "None specified",
 						},
@@ -3329,20 +3500,20 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			case "issues_found": {
 				// Log issues but don't change task status yet
 				this.log(
-					`Issues found in task ${task.subject}: ${report.issues.length} issues`,
+					`Issues found in task ${task.subject}: ${issues.length} issues`,
 				);
 
 				// Only notify human if decision says to forward
-				if (forwardDecision.shouldForward && report.issues.length > 0) {
+				if (forwardDecision.shouldForward && issues.length > 0) {
 					const body = await this.templates.renderTemplate(
 						"human-issues-found.jinja",
-						{
-							arm_id: report.armId,
-							task_subject: task.subject,
-							issues_list: report.issues.map((i) => `- ${i}`).join("\n"),
-							summary: report.summary,
-							next_steps: report.nextSteps || "Continuing work...",
-							forward_reason: forwardDecision.reason,
+					{
+						arm_id: report.armId,
+						task_subject: task.subject,
+						issues_list: issues.map((i) => `- ${i}`).join("\n"),
+						summary: report.summary,
+						next_steps: report.nextSteps || "Continuing work...",
+						forward_reason: forwardDecision.reason,
 						},
 					);
 					await this.sendToHuman({
@@ -3371,7 +3542,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 						task_subject: task.subject,
 						summary: report.summary,
 						files_list:
-							report.filesChanged.map((f) => `- ${f}`).join("\n") ||
+							filesChanged.map((f) => `- ${f}`).join("\n") ||
 							"None listed",
 						tests_status: report.testsStatus || "Not run",
 					},
@@ -3391,7 +3562,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 				// Create a verification task for follow-up
 				await this.createVerificationTask(
 					task,
-					report,
+					{ ...report, issues },
 					!forwardDecision.shouldForward,
 				);
 				await this.handOffCompletedArm(report.armId);
@@ -3537,6 +3708,7 @@ ${originalTask.id}`;
 		discovery: Discovery,
 	): Promise<void> {
 		const discoveryId = `disc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const now = new Date().toISOString();
 		await this.apiRequest("/api/discoveries", {
 			method: "POST",
 			body: JSON.stringify({
@@ -3550,32 +3722,139 @@ ${originalTask.id}`;
 				lineNumber: discovery.line || null,
 				severity: discovery.severity || "info",
 				status: "open",
+				taskId: discovery.taskId || null,
+				phase: discovery.phase || null,
 			}),
 		});
 		this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
+		this.rememberProcessedSignal(this.processedDiscoveryIds, discoveryId);
 
-		// Also notify human for high-severity discoveries
-		if (discovery.severity === "error" || discovery.severity === "warning") {
+		await this.applyDiscoveryActions({
+			id: discoveryId,
+			armId,
+			armName: armId,
+			kind: discovery.kind,
+			title: discovery.title,
+			details: discovery.details,
+			filePath: discovery.file || null,
+			lineNumber: discovery.line || null,
+			severity: discovery.severity || "info",
+			status: "open",
+			taskId: discovery.taskId || null,
+			phase: discovery.phase || null,
+			createdAt: now,
+			updatedAt: now,
+		});
+	}
+
+	private async processPersistedDiscovery(discovery: {
+		id: string;
+		armId: string;
+		armName: string;
+		kind: string;
+		title: string;
+		details: string;
+		filePath?: string | null;
+		lineNumber?: number | null;
+		severity: string;
+		status: string;
+		taskId?: string | null;
+		phase?: string | null;
+		createdAt: string;
+		updatedAt: string;
+	}): Promise<void> {
+		await this.applyDiscoveryActions(discovery);
+		this.rememberProcessedSignal(this.processedDiscoveryIds, discovery.id);
+	}
+
+	private async applyDiscoveryActions(discovery: {
+		id: string;
+		armId: string;
+		armName: string;
+		kind: string;
+		title: string;
+		details: string;
+		filePath?: string | null;
+		lineNumber?: number | null;
+		severity: string;
+		status: string;
+		taskId?: string | null;
+		phase?: string | null;
+		createdAt: string;
+		updatedAt: string;
+	}): Promise<void> {
+		const severity = discovery.severity || "info";
+		const fileInfo = discovery.filePath
+			? `${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`
+			: null;
+
+		if (discovery.taskId) {
+			const taskComment = [
+				`Discovery (${severity}) from ${discovery.armName || discovery.armId}: ${discovery.title}`,
+				discovery.details,
+				fileInfo ? `File: ${fileInfo}` : null,
+				discovery.phase ? `Phase: ${discovery.phase}` : null,
+			]
+				.filter((part): part is string => Boolean(part))
+				.join("\n\n");
+			await this.appendTaskComment(discovery.taskId, taskComment, {
+				armId: discovery.armId,
+			});
+
+			const task = await this.getTaskFromApi(discovery.taskId);
+			if (
+				task?.assignedTo &&
+				task.status === "in_progress" &&
+				(severity === "warning" || severity === "error")
+			) {
+				const followupPrompt = [
+					`A new ${severity} discovery was recorded for your active task \"${task.subject}\".`,
+					`Title: ${discovery.title}`,
+					discovery.details,
+					fileInfo ? `File: ${fileInfo}` : null,
+					"Adjust your plan accordingly and send an updated status report if this changes your execution strategy.",
+				]
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n");
+				await this.sendPromptToArm(task.assignedTo, followupPrompt);
+			}
+		}
+
+		if (severity === "error" || severity === "warning") {
 			const body = await this.templates.renderTemplate(
 				"human-discovery.jinja",
 				{
-					arm_id: armId,
+					arm_id: discovery.armId,
 					kind: discovery.kind,
-					severity: discovery.severity || "info",
+					severity,
 					details: discovery.details,
-					file_info: discovery.file
-						? `**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}`
+					file_info: discovery.filePath
+						? `**File:** ${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`
 						: "",
 				},
 			);
 			await this.sendToHuman({
-				subject: `[coleo] Discovery: ${discovery.title}`,
-				body,
-				headers: {
-					"X-Coleo-Type": "discovery",
-					"X-Coleo-From": armId,
-					"X-Coleo-Severity": discovery.severity || "info",
-				},
+					subject: `[coleo] Discovery: ${discovery.title}`,
+					body,
+					headers: {
+						"X-Coleo-Type": "discovery",
+						"X-Coleo-From": discovery.armId,
+						"X-Coleo-Severity": severity,
+					},
+				});
+
+			await this.handleBugReport("system", {
+				id: `bug-${discovery.id}`,
+				title: discovery.title,
+				description: [
+					discovery.details,
+					fileInfo ? `File: ${fileInfo}` : null,
+					discovery.phase ? `Phase: ${discovery.phase}` : null,
+				]
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n"),
+				source: "system_detected",
+				sourceTaskId: discovery.taskId || undefined,
 			});
 		}
 	}

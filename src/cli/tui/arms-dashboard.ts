@@ -257,7 +257,7 @@ class ArmsDashboardTui {
       title: "Status",
       borderColor: "#34515e",
       padding: 0,
-      marginTop: 1,
+      marginTop: 0,
       flexDirection: "column",
       backgroundColor: "#0b0f10",
     });
@@ -279,7 +279,7 @@ class ArmsDashboardTui {
       title: "Commands",
       borderColor: "#34515e",
       padding: 0,
-      marginTop: 1,
+      marginTop: 0,
       flexDirection: "column",
       backgroundColor: "#0b0f10",
     });

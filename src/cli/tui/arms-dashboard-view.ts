@@ -201,6 +201,44 @@ function getMailMessages(snapshot: DashboardSnapshot, folder: "inbox" | "sent" |
     .sort((a, b) => b.date.getTime() - a.date.getTime());
 }
 
+function getMailIcon(message: MailMessage): string {
+  const from = message.from.toLowerCase();
+  const to = message.to.toLowerCase();
+
+  if (from.includes("brain@coleo.local") || from.includes("brain@coleo.dev")) {
+    return "󰚩";
+  }
+
+  if (to.includes("brain@coleo.local") || to.includes("brain@coleo.dev")) {
+    return "󰍹";
+  }
+
+  return "󰇮";
+}
+
+function getMailActorLabel(message: MailMessage): string {
+  const from = message.from.toLowerCase();
+  const to = message.to.toLowerCase();
+
+  if (from.includes("brain@coleo.local") || from.includes("brain@coleo.dev")) {
+    return "brain";
+  }
+
+  if (to.includes("brain@coleo.local") || to.includes("brain@coleo.dev")) {
+    return "human";
+  }
+
+  return "mail";
+}
+
+function getMailFolder(snapshot: DashboardSnapshot, message: MailMessage): "inbox" | "sent" {
+  return snapshot.inboxMessages.some((candidate) => candidate.id === message.id) ? "inbox" : "sent";
+}
+
+function getMailCounterparty(message: MailMessage, folder: "inbox" | "sent"): string {
+  return folder === "sent" ? message.to : message.from;
+}
+
 function formatMailRows(snapshot: DashboardSnapshot): string[] {
   const messages = getMailMessages(snapshot, "all");
   if (messages.length === 0) {
@@ -209,8 +247,8 @@ function formatMailRows(snapshot: DashboardSnapshot): string[] {
 
   return messages.map((message) => {
     const unread = message.flags.seen ? " " : "*";
-    const folder = snapshot.inboxMessages.some((candidate) => candidate.id === message.id) ? "inbox" : "sent";
-    return `${unread} [${folder}] ${formatDateTime(message.date.toISOString())}  ${message.from}  ${message.subject}`;
+    const folder = getMailFolder(snapshot, message);
+    return `${unread} ${formatDateTime(message.date.toISOString())}  ${getMailCounterparty(message, folder)}  ${message.subject || "(no subject)"}`;
   });
 }
 
@@ -228,13 +266,14 @@ function buildArmRow(arm: DashboardArmSummary): string {
 
 function buildMailSummary(message: MailMessage, folder: "inbox" | "sent"): string {
   const unread = message.flags.seen ? " " : "*";
-  const peer = folder === "sent" ? message.to : message.from;
-  return `${unread} [${folder}] ${peer}  ${message.subject || "(no subject)"}`;
+  return `${unread} ${formatDateTime(message.date.toISOString())}  ${getMailCounterparty(message, folder)}`;
 }
 
 function buildMailDetail(message: MailMessage, folder: "inbox" | "sent"): DashboardView {
+  const direction = folder === "sent" ? "outbox" : "inbox";
   const lines = [
-    `folder: ${folder}`,
+    `mailbox: ${direction}`,
+    `actor: ${getMailIcon(message)} ${getMailActorLabel(message)}`,
     `from: ${message.from}`,
     `to: ${message.to}`,
     `date: ${formatDateTime(message.date.toISOString())}`,
@@ -249,7 +288,7 @@ function buildMailDetail(message: MailMessage, folder: "inbox" | "sent"): Dashbo
 
   return {
     title: message.subject || "Mail",
-    subtitle: folder === "sent" ? `Sent to ${message.to}` : `Message from ${message.from}`,
+    subtitle: folder === "sent" ? `󰇺 Sent to ${message.to}` : `󰇰 Received from ${message.from}`,
     lines,
   };
 }
@@ -390,27 +429,16 @@ export function buildDashboardNodes(snapshot: DashboardSnapshot): DashboardNode[
     depth: 0,
   });
 
-  for (const message of snapshot.inboxMessages) {
+  for (const message of getMailMessages(snapshot, "all")) {
+    const folder = getMailFolder(snapshot, message);
     nodes.push({
-      id: `mail:${message.id}`,
+      id: folder === "sent" ? `mail:sent:${message.id}` : `mail:${message.id}`,
       kind: "mail",
-      label: message.subject || "(no subject)",
-      description: buildMailSummary(message, "inbox"),
+      label: `${getMailIcon(message)} ${message.subject || "(no subject)"}`,
+      description: buildMailSummary(message, folder),
       depth: 1,
       mailId: message.id,
-      mailFolder: "inbox",
-    });
-  }
-
-  for (const message of snapshot.sentMessages) {
-    nodes.push({
-      id: `mail:sent:${message.id}`,
-      kind: "mail",
-      label: message.subject || "(no subject)",
-      description: buildMailSummary(message, "sent"),
-      depth: 1,
-      mailId: message.id,
-      mailFolder: "sent",
+      mailFolder: folder,
     });
   }
 
