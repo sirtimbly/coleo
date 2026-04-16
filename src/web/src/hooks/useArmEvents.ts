@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api, type OpenCodeEvent } from '@/lib';
+import { api, isOpenCodeEvent, type OpenCodeEvent } from '@/lib';
 
 interface UseArmEventsOptions {
   armId: string | null;
@@ -49,7 +49,10 @@ export function useArmEvents({ armId, onEvent, autoConnect = true }: UseArmEvent
 
     eventSource.onmessage = (event) => {
       try {
-        const data = JSON.parse(event.data) as OpenCodeEvent;
+        const data = JSON.parse(event.data);
+        if (!isOpenCodeEvent(data)) {
+          throw new Error('Invalid arm event payload');
+        }
         setState(s => ({ ...s, lastEventTime: Date.now() }));
         
         if (data.type === 'error') {

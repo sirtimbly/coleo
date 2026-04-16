@@ -66,8 +66,15 @@ export const COLOR_CLASSES_LIGHT: Record<
 	},
 };
 
+const isColorOption = (value: string | undefined): value is ColorOption =>
+	value !== undefined && COLOR_OPTIONS.some((option) => option === value);
+
 export function getValidColor(color: string | undefined): ColorOption {
-	return COLOR_OPTIONS.includes(color as ColorOption) ? (color as ColorOption) : "slate";
+	return isColorOption(color) ? color : "slate";
+}
+
+export function isHTMLElement(target: EventTarget | null): target is HTMLElement {
+	return target instanceof HTMLElement;
 }
 
 export interface TagHandlerProps {
@@ -125,7 +132,10 @@ export function useTagHandlers({ tags, availableTags, onUpdateTags }: TagHandler
 
 export function useRowClickHandler<T>(onOpenDetails?: (item: T) => void) {
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>, item: T) => {
-		const target = event.target as HTMLElement;
+		if (!isHTMLElement(event.target)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||

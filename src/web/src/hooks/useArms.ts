@@ -5,7 +5,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type Arm } from '@/lib/api';
+import { api, type Arm, type JsonObject } from '@/lib/api';
 import { armsKeys } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/useToast';
 
@@ -15,7 +15,7 @@ interface CreateArmVariables {
   domain: string;
   harness: string;
   contextBudget?: number;
-  config?: Record<string, unknown>;
+  config?: JsonObject;
 }
 
 interface UpdateArmVariables {

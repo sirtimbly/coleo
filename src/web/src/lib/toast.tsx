@@ -39,8 +39,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts(prev => prev.filter(toast => toast.id !== id));
   };
 
+  const value: ToastContextType = { toasts, showToast, removeToast };
+
   return (
-    <ToastContext.Provider value={{ toasts, showToast, removeToast } as ToastContextType}>
+    <ToastContext.Provider value={value}>
       {children}
     </ToastContext.Provider>
   );

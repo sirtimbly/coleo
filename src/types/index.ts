@@ -18,9 +18,6 @@ export interface Arm {
   model?: string;
 }
 
-/** @deprecated Use Arm instead */
-export type Tentacle = Arm;
-
 // Task representation
 export interface Task {
   id: string;
@@ -330,6 +327,8 @@ export type StatusReportStatus =
   | "needs_review"
   | "completed_with_issues";
 
+export type StatusReportTestsStatus = "passing" | "failing" | "not_run";
+
 export interface StatusReport {
   id: string;
   taskId: string;
@@ -340,7 +339,7 @@ export interface StatusReport {
   blockers?: string[];
   nextSteps?: string;
   filesChanged?: string[];
-  testsStatus?: "passing" | "failing" | "not_run";
+  testsStatus?: StatusReportTestsStatus;
   createdAt: string;
   updatedAt?: string;
   resolvedAt?: string;
@@ -517,18 +516,22 @@ export interface ArmConfigSummary {
 }
 
 // Task comment/discussion
+export type TaskCommentAuthorType = "human" | "arm" | "brain";
+export type TaskCommentClient = "web" | "mail" | "mcp" | "cli";
+
 export interface TaskComment {
   id: string;
   taskId: string;
   parentId?: string;
   content: string;
-  authorType: "human" | "arm" | "brain";
+  authorType: TaskCommentAuthorType;
   authorId: string;
   authorName?: string;
-  client: "web" | "mail" | "mcp" | "cli";
+  client: TaskCommentClient;
   screenshotPath?: string;
   edited: boolean;
   deleted: boolean;
   createdAt: string;
   updatedAt: string;
+  replies?: TaskComment[];
 }

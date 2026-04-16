@@ -1,12 +1,11 @@
 import type { JetStreamClient, JetStreamManager } from 'nats';
 import type { IEventStore } from './jetstream-types';
-import type { EventStore as EventStoreClass } from './jetstream';
+import { EventStore } from './event-store';
 
 let _eventStore: IEventStore | undefined;
 
 function getDefaultStore(): IEventStore {
   if (!_eventStore) {
-    const { EventStore } = require('./jetstream') as typeof import('./jetstream');
     _eventStore = new EventStore();
   }
   return _eventStore!;
@@ -28,7 +27,6 @@ export function setEventStore(store: IEventStore): void {
 }
 
 export function resetEventStore(): void {
-  const { EventStore } = require('./jetstream') as typeof import('./jetstream');
   _eventStore = new EventStore();
 }
 
@@ -36,11 +34,10 @@ export async function initializeJetStreamEventStore(
   js: JetStreamClient,
   jsm: JetStreamManager
 ): Promise<void> {
-  const { EventStore } = require('./jetstream') as typeof import('./jetstream');
   if (!(_eventStore instanceof EventStore)) {
     _eventStore = new EventStore();
   }
-  await (_eventStore as EventStoreClass).initialize(js, jsm);
+  await (_eventStore as EventStore).initialize(js, jsm);
 }
 
 export { InMemoryEventStore } from './in-memory-event-store';

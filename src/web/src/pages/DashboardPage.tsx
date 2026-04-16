@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
-import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
+import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
-import { useWebSocket } from '@/hooks';
+import { useWebSocket, type WebSocketMessage } from '@/hooks';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
 interface SystemStatus {
@@ -97,7 +97,7 @@ const EVENT_LABELS: Record<string, string> = {
   'session.error': 'Session error',
 };
 
-const getDataString = (data: Record<string, unknown> | undefined, keys: string[]) => {
+const getDataString = (data: JsonObject | undefined, keys: string[]) => {
   if (!data) return undefined;
   for (const key of keys) {
     const value = data[key];
@@ -786,7 +786,7 @@ export function DashboardPage() {
     }
   }, []);
 
-  const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
+  const handleWSMessage = useCallback((msg: WebSocketMessage) => {
     if (msg.channel === 'arms') {
       api.listArms().then((res) => setArms(res.arms)).catch(console.error);
     } else if (msg.channel === 'activity') {

@@ -1,12 +1,9 @@
-/**
- * TaskDiscussionPanel - Main panel for task discussions with threading support
- */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MessageSquare, ChevronDown } from 'lucide-react';
 import { Button } from '@heroui/react';
-import { api, type TaskComment } from '@/lib/api';
+import { api, isJsonObject, type TaskComment } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { DiscussionItem } from './DiscussionItem';
 import { DiscussionComposer } from './DiscussionComposer';
 
@@ -16,12 +13,10 @@ interface TaskDiscussionPanelProps {
   onCommentCountChange?: (count: number) => void;
 }
 
-// Get current user ID from localStorage or default
 function getCurrentUserId(): string {
   return localStorage.getItem('coleo_user_email') || 'human@local';
 }
 
-// Get current user name
 function getCurrentUserName(): string {
   return localStorage.getItem('coleo_user_name') || 'You';
 }
@@ -37,22 +32,17 @@ export function TaskDiscussionPanel({
   const [hasMore, setHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Reply state
   const [replyTo, setReplyTo] = useState<{ id: string; authorName: string } | null>(null);
-  
-  // Edit state
+
   const [editing, setEditing] = useState<TaskComment | null>(null);
-  
-  // Unread tracking
+
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastReadCommentId, setLastReadCommentId] = useState<string | null>(null);
-  
-  // Refs
+
   const discussionListRef = useRef<HTMLDivElement>(null);
   const currentUserId = getCurrentUserId();
   const currentUserName = getCurrentUserName();
 
-  // Fetch discussions
   const fetchDiscussions = useCallback(async (loadMore = false) => {
     try {
       const offset = loadMore ? discussions.length : 0;
@@ -61,18 +51,16 @@ export function TaskDiscussionPanel({
         offset,
         threaded: true,
       });
-      
       if (loadMore) {
         setDiscussions(prev => [...prev, ...result.discussions]);
       } else {
         setDiscussions(result.discussions);
       }
-      
+
       setTotalCount(result.totalCount);
       setHasMore(offset + result.discussions.length < result.totalCount);
       setError(null);
-      
-      // Notify parent of comment count
+
       onCommentCountChange?.(result.totalCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load discussions');
@@ -81,66 +69,54 @@ export function TaskDiscussionPanel({
     }
   }, [taskId, discussions.length, onCommentCountChange]);
 
-  // Fetch unread count
   const fetchUnreadCount = useCallback(async () => {
     try {
       const result = await api.getUnreadDiscussionCount(taskId, currentUserId);
       setUnreadCount(result.unreadCount);
-    } catch {
-      // Ignore unread count errors
-    }
+    } catch {}
   }, [taskId, currentUserId]);
 
-  // Handle WebSocket events for real-time updates
-  const handleWSMessage = useCallback((msg: { channel?: string; event?: string; data?: unknown }) => {
-    if (msg.channel !== 'tasks' || !msg.data) return;
+  const handleWSMessage = useCallback((msg: WebSocketMessage) => {
+    if (msg.channel !== 'tasks' || !isJsonObject(msg.data)) return;
     
-    const data = msg.data as { taskId?: string; commentId?: string };
-    
-    // Only handle events for this task
-    if (data.taskId !== taskId) return;
+    const data = msg.data;
+    const taskIdValue = data.taskId;
+    if (typeof taskIdValue !== 'string' || taskIdValue !== taskId) return;
     
     switch (msg.event) {
       case 'discussion.created':
       case 'discussion.updated':
       case 'discussion.deleted':
-        // Refresh the discussion list
         fetchDiscussions();
         break;
     }
   }, [taskId, fetchDiscussions]);
 
-  // Subscribe to WebSocket events
   useWebSocket({
     channels: ['tasks'],
     onMessage: handleWSMessage,
   });
 
-  // Initial fetch
   useEffect(() => {
     setIsLoading(true);
     fetchDiscussions();
     fetchUnreadCount();
   }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mark as read when viewing
   useEffect(() => {
     if (discussions.length > 0 && unreadCount > 0) {
-      const latestComment = discussions[0]; // Discussions are ordered by created_at DESC
+      const latestComment = discussions[0];
       if (latestComment && latestComment.id !== lastReadCommentId) {
         api.markTaskDiscussionsRead(taskId, currentUserId, latestComment.id)
           .then(() => {
             setUnreadCount(0);
             setLastReadCommentId(latestComment.id);
           })
-          .catch(() => {
-            // Ignore mark-read errors
-          });
+          .catch(() => {});
       }
     }
   }, [discussions, unreadCount, taskId, currentUserId, lastReadCommentId]);
 
-  // Handle new comment submission
   const handleSubmit = async (content: string, parentId?: string) => {
     const result = await api.createTaskDiscussion(taskId, {
       content,
@@ -150,26 +126,21 @@ export function TaskDiscussionPanel({
       authorName: currentUserName,
       client: 'web',
     });
-    
-    // Add new comment to list (at the beginning since sorted DESC)
+
     if (!parentId) {
       setDiscussions(prev => [result.comment, ...prev]);
     } else {
-      // For replies, we need to add to the parent's replies
       setDiscussions(prev => addReplyToDiscussions(prev, parentId, result.comment));
     }
-    
+
     setTotalCount(prev => prev + 1);
     onCommentCountChange?.(totalCount + 1);
-    
-    // Clear reply state
+
     setReplyTo(null);
-    
-    // Scroll to top to show new comment
+
     discussionListRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Handle edit submission
   const handleEditSubmit = async (content: string) => {
     if (!editing) return;
     
@@ -177,22 +148,18 @@ export function TaskDiscussionPanel({
       content,
       authorId: currentUserId,
     });
-    
-    // Update comment in list
+
     setDiscussions(prev => updateCommentInDiscussions(prev, editing.id, result.comment));
-    
-    // Clear edit state
+
     setEditing(null);
   };
 
-  // Handle delete
   const handleDelete = async (commentId: string) => {
     if (!confirm('Are you sure you want to delete this comment?')) return;
     
     try {
       await api.deleteTaskDiscussion(taskId, commentId, currentUserId);
-      
-      // Remove from list
+
       setDiscussions(prev => removeCommentFromDiscussions(prev, commentId));
       setTotalCount(prev => prev - 1);
       onCommentCountChange?.(totalCount - 1);
@@ -201,7 +168,6 @@ export function TaskDiscussionPanel({
     }
   };
 
-  // Handle reply
   const handleReply = (commentId: string) => {
     const comment = findCommentById(discussions, commentId);
     if (comment) {
@@ -213,31 +179,26 @@ export function TaskDiscussionPanel({
     }
   };
 
-  // Handle edit
   const handleEdit = (comment: TaskComment) => {
     setEditing(comment);
     setReplyTo(null);
   };
 
-  // Reverse the display order (newest at bottom for chat-like UX)
   const displayDiscussions = [...discussions].reverse();
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
-      {/* Error state */}
       {error && (
         <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/30">
           <p className="text-sm text-red-400">{error}</p>
         </div>
       )}
 
-      {/* Discussion list */}
       <div 
         ref={discussionListRef}
         className="flex-1 overflow-y-auto p-4 space-y-3"
       >
         {isLoading ? (
-          // Loading skeleton
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
               <div key={i} className="p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg animate-pulse">
@@ -250,7 +211,6 @@ export function TaskDiscussionPanel({
             ))}
           </div>
         ) : displayDiscussions.length === 0 ? (
-          // Empty state
           <div className="flex flex-col items-center justify-center h-full text-center py-8">
             <MessageSquare className="h-12 w-12 text-zinc-600 mb-3" />
             <p className="text-zinc-400 text-sm">No discussions yet</p>
@@ -260,7 +220,6 @@ export function TaskDiscussionPanel({
           </div>
         ) : (
           <>
-            {/* Load more button at top (for older messages) */}
             {hasMore && (
               <Button
                 size="sm"
@@ -273,7 +232,6 @@ export function TaskDiscussionPanel({
               </Button>
             )}
             
-            {/* Discussion items */}
             {displayDiscussions.map((comment) => (
               <DiscussionItem
                 key={comment.id}
@@ -288,7 +246,6 @@ export function TaskDiscussionPanel({
         )}
       </div>
 
-      {/* Composer */}
       <div className="border-t border-zinc-700 p-3">
         {editing ? (
           <DiscussionComposer
@@ -309,8 +266,6 @@ export function TaskDiscussionPanel({
     </div>
   );
 }
-
-// Helper functions for managing nested comments
 
 function addReplyToDiscussions(
   discussions: TaskComment[],

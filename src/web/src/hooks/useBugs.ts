@@ -5,7 +5,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { api, type Bug } from '@/lib/api';
+import { api, type Bug, type BugMetadata } from '@/lib/api';
 import { bugsKeys } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/useToast';
 
@@ -20,11 +20,11 @@ interface BugFilters {
 interface CreateBugVariables {
   title: string;
   description: string;
-  source: "arm_reported" | "human_reported" | "system_detected";
+  source: Bug['source'];
   sourceTaskId?: string;
-  priority?: "low" | "medium" | "high" | "critical";
+  priority?: Bug['priority'];
   errorDetails?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: BugMetadata;
 }
 
 interface UpdateBugVariables {
@@ -32,13 +32,13 @@ interface UpdateBugVariables {
   updates: {
     title?: string;
     description?: string;
-    status?: string;
-    priority?: string;
+    status?: Bug['status'];
+    priority?: Bug['priority'];
     assigneeArmId?: string;
     blockers?: string[];
     resolution?: string;
     humanNotified?: boolean;
-    metadata?: Record<string, unknown>;
+    metadata?: BugMetadata;
   };
 }
 
@@ -87,8 +87,8 @@ export function useBugs(filters?: BugFilters) {
     },
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
-      const previousBugs = queryClient.getQueryData(bugsKeys.list(filters ?? {}));
-      const previousStats = queryClient.getQueryData(bugsKeys.stats());
+      const previousBugs = queryClient.getQueryData<Bug[]>(bugsKeys.list(filters ?? {}));
+      const previousStats = queryClient.getQueryData<{ byStatus: Record<string, number> }>(bugsKeys.stats());
 
       // Optimistically update the bug list
       queryClient.setQueryData(
@@ -130,7 +130,7 @@ export function useBugs(filters?: BugFilters) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
-      const previousBugs = queryClient.getQueryData(bugsKeys.list(filters ?? {}));
+      const previousBugs = queryClient.getQueryData<Bug[]>(bugsKeys.list(filters ?? {}));
 
       queryClient.setQueryData(
         bugsKeys.list(filters ?? {}),

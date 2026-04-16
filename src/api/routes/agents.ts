@@ -2,8 +2,8 @@
  * Agent Routes - API for distributed arm agent management
  */
 import { Hono } from "hono";
-import type { ServerContext } from "../server";
-import { getArmClient } from "../server";
+import type { ServerContext } from "../server-context";
+import { getArmClient } from "../arm-client-registry";
 import { HttpError } from "../middleware";
 
 export function createAgentsRoutes(): Hono<ServerContext> {
@@ -19,7 +19,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
       throw new HttpError(503, "NATS/ArmClient not available");
     }
 
-    const agents = armClient.getAgents().map((agent: any) => ({
+    const agents = armClient.getAgents().map((agent) => ({
       agentId: agent.agentId,
       hostname: agent.hostname,
       platform: agent.platform,

@@ -1,11 +1,10 @@
 import { describe, it, expect } from "bun:test";
-import { generateSystemPrompt, generateDomainSpecificInstructions } from "../prompts";
+import { generateSystemPrompt } from "../prompts";
 
 describe("arm prompts", () => {
   it("generates system prompt with key fields", () => {
     const prompt = generateSystemPrompt({
       armId: "arm-1",
-      domain: "general",
       name: "ArmOne",
       workdir: "/tmp",
       harness: "opencode",
@@ -17,9 +16,5 @@ describe("arm prompts", () => {
     expect(prompt).toContain("arm-1");
     expect(prompt).toContain("/tmp");
     expect(prompt).toContain("get_full_briefing");
-  });
-
-  it("returns empty domain-specific instructions while disabled", () => {
-    expect(generateDomainSpecificInstructions("frontend")).toBe("");
   });
 });

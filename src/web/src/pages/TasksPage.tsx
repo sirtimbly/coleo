@@ -17,10 +17,16 @@ import {
 	MessageSquare,
 } from "lucide-react";
 import { Button, Chip, Card, Tabs } from "@heroui/react";
-import { type Task, cn } from "@/lib";
+import {
+	type Task,
+	type TaskLlmMetadata,
+	type TaskMetadata,
+	type TaskUiMetadata,
+	cn,
+} from "@/lib";
 import { TaskModal, TaskDiscussionPanel } from "@/components";
 import { WorkspacePageShell } from "@/components/WorkspacePageShell";
-import { useWebSocket } from "@/hooks/useWebSocket";
+import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
 import { useTasks } from "@/hooks/useTasks";
@@ -34,25 +40,6 @@ import {
 } from '@/workspace/route-context';
 
 type SidebarTab = "details" | "discussions";
-
-type TaskLlmMessage = {
-	role: "user" | "assistant";
-	content: string;
-	at: string;
-};
-
-type TaskLlmMeta = {
-	originalPrompt?: string;
-	generatedDescription?: string;
-	history?: TaskLlmMessage[];
-};
-
-type TaskUiMeta = {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-	llm?: TaskLlmMeta;
-};
 
 // Status configuration
 const STATUS_CONFIG: Record<
@@ -107,6 +94,9 @@ const STATUS_CONFIG: Record<
 		label: "Cancelled",
 	},
 };
+
+const isTaskStatus = (value: string): value is Task["status"] =>
+	value in STATUS_CONFIG;
 
 // Priority configuration
 const PRIORITY_CONFIG: Record<
@@ -292,14 +282,13 @@ export function TasksPage() {
 		fetchNextPage,
 	} = useTasks(filter);
 
-	const getTaskUiMeta = useCallback((task: Task): TaskUiMeta => {
-		const meta = (task.metadata ?? {}) as Record<string, unknown>;
-		const ui = (meta.ui ?? {}) as Record<string, unknown>;
+	const getTaskUiMeta = useCallback((task: Task): TaskUiMetadata => {
+		const ui = task.metadata.ui;
 		return {
-			tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
-			color: typeof ui.color === "string" ? (ui.color as string) : "slate",
-			bold: Boolean(ui.bold),
-			llm: (ui.llm ?? {}) as TaskLlmMeta,
+			tags: ui?.tags ?? [],
+			color: ui?.color ?? "slate",
+			bold: ui?.bold ?? false,
+			llm: ui?.llm,
 		};
 	}, []);
 
@@ -360,20 +349,20 @@ export function TasksPage() {
 	);
 
 	const handleUpdateUi = useCallback(
-		async (taskId: string, updates: TaskUiMeta) => {
+		async (taskId: string, updates: TaskUiMetadata) => {
 			const target = tasks.find((task) => task.id === taskId);
 			if (!target) return;
 			const currentUi = getTaskUiMeta(target);
-			const nextUi: TaskUiMeta = {
+			const nextUi: TaskUiMetadata = {
 				...currentUi,
 				...updates,
 				tags: updates.tags ?? currentUi.tags,
 				llm: updates.llm ? { ...currentUi.llm, ...updates.llm } : currentUi.llm,
 			};
-			const nextMetadata = {
-				...(target.metadata ?? {}),
+			const nextMetadata: TaskMetadata = {
+				...target.metadata,
 				ui: nextUi,
-			} as Record<string, unknown>;
+			};
 
 			updateTask({ id: taskId, updates: { metadata: nextMetadata } });
 		},
@@ -418,22 +407,14 @@ export function TasksPage() {
 	const handleCreateTaskAt = useCallback(
 		async (index: number, subject: string) => {
 			const now = new Date().toISOString();
-			const llmMeta: TaskLlmMeta = {
+			const llmMeta: TaskLlmMetadata = {
 				originalPrompt: subject,
-				generatedDescription: `LLM draft: ${subject}`,
-				history: [
-					{ role: "user", content: subject, at: now },
-					{
-						role: "assistant",
-						content: "LLM stub: detailed description will appear here.",
-						at: now,
-					},
-				],
+				history: [{ role: "user", content: subject, at: now }],
 			};
 			try {
 				const result = await createTaskAsync({
 					subject,
-					description: llmMeta.generatedDescription ?? subject,
+					description: subject,
 					priority: "normal",
 					metadata: {
 						ui: { tags: [], bold: false, color: "slate", llm: llmMeta },
@@ -534,8 +515,8 @@ export function TasksPage() {
 
 	// Handle WebSocket messages for real-time updates
 	const handleWSMessage = useCallback(
-		(msg: { channel?: string; event?: string; data?: unknown }) => {
-			if (msg.channel !== "tasks" || !msg.event || !msg.data) return;
+		(msg: WebSocketMessage) => {
+			if (msg.channel !== "tasks" || !msg.event) return;
 
 			// WebSocket data can be used for more granular updates if needed
 			// const data = msg.data as TaskEventData;
@@ -682,7 +663,11 @@ export function TasksPage() {
 				>
 					<Tabs
 						selectedKey={sidebarTab}
-						onSelectionChange={(key) => setSidebarTab(key as SidebarTab)}
+						onSelectionChange={(key) => {
+							if (key === "details" || key === "discussions") {
+								setSidebarTab(key);
+							}
+						}}
 						className="flex h-full flex-col"
 					>
 						<Tabs.ListContainer className="border-b border-border/70 px-3 py-2">
@@ -808,14 +793,15 @@ export function TasksPage() {
 								}
 								className="h-7"
 							>
-								<span
-									className={
-										filter.status === status
-											? ""
-											: STATUS_CONFIG[status as Task["status"]]?.color ||
-												"text-foreground-500"
-									}
-								>
+							<span
+								className={
+									filter.status === status
+										? ""
+										: isTaskStatus(status)
+											? STATUS_CONFIG[status].color
+											: "text-foreground-500"
+								}
+							>
 									{status.replace("_", " ")}
 								</span>
 								<span>{count}</span>
@@ -951,7 +937,11 @@ export function TasksPage() {
 						{/* Tabs */}
 						<Tabs
 							selectedKey={sidebarTab}
-							onSelectionChange={(key) => setSidebarTab(key as SidebarTab)}
+							onSelectionChange={(key) => {
+								if (key === "details" || key === "discussions") {
+									setSidebarTab(key);
+								}
+							}}
 							className="flex-1 flex flex-col"
 						>
 							<Tabs.ListContainer className="flex-shrink-0">

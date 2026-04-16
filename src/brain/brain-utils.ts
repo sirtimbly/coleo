@@ -6,6 +6,78 @@
  */
 
 import type { Task } from "../types";
+import { isRecord } from "../utils/json";
+
+function isTaskStatus(value: string): value is Task["status"] {
+	return (
+		value === "pending" ||
+		value === "claimed" ||
+		value === "in_progress" ||
+		value === "completing" ||
+		value === "completed" ||
+		value === "failed" ||
+		value === "blocked"
+	);
+}
+
+function isTaskPriority(value: string): value is Task["priority"] {
+	return (
+		value === "critical" ||
+		value === "high" ||
+		value === "normal" ||
+		value === "low"
+	);
+}
+
+export interface SessionMessageInfo {
+	id?: string;
+	role?: string;
+	modelID?: string;
+	providerID?: string;
+	agent?: string;
+	sessionID?: string;
+	sessionId?: string;
+	time?: {
+		created?: number;
+		completed?: number;
+	};
+}
+
+export interface SessionMessagePart {
+	type?: string;
+	text?: string;
+}
+
+export interface SessionMessage {
+	info?: SessionMessageInfo;
+	parts?: SessionMessagePart[];
+}
+
+export function isSessionMessage(value: unknown): value is SessionMessage {
+	if (!isRecord(value)) {
+		return false;
+	}
+
+	if (value.info !== undefined) {
+		if (!isRecord(value.info)) {
+			return false;
+		}
+		if (value.info.time !== undefined && !isRecord(value.info.time)) {
+			return false;
+		}
+	}
+
+	if (value.parts !== undefined) {
+		if (!Array.isArray(value.parts)) {
+			return false;
+		}
+		if (value.parts.some((part) => !isRecord(part))) {
+			return false;
+		}
+	}
+
+	return true;
+}
 
 /**
  * Strip terminal artifacts from text
@@ -132,21 +204,16 @@ export function toEpochMs(value: unknown): number | null {
 /**
  * Extract timestamp from message info object
  */
-export function extractMessageTimestampMs(
-	message: Record<string, unknown>,
-): number | null {
+export function extractMessageTimestampMs(message: SessionMessage): number | null {
 	const info = message.info;
-	if (!info || typeof info !== "object") {
+	if (!info) {
 		return null;
 	}
-	const time = (info as Record<string, unknown>).time;
-	if (!time || typeof time !== "object") {
+	const time = info.time;
+	if (!time) {
 		return null;
 	}
-	const timeObj = time as Record<string, unknown>;
-	return (
-		toEpochMs(timeObj.completed) ?? toEpochMs(timeObj.created) ?? null
-	);
+	return toEpochMs(time.completed) ?? toEpochMs(time.created) ?? null;
 }
 
 /**
@@ -239,12 +306,15 @@ export function mapApiTask(task: {
 	mailThreadId?: string | null;
 	context?: Task["context"];
 }): Task {
+	const status = isTaskStatus(task.status) ? task.status : "pending";
+	const priority = isTaskPriority(task.priority) ? task.priority : "normal";
+
 	return {
 		id: task.id,
 		subject: task.subject,
 		description: task.description,
-		status: task.status as Task["status"],
-		priority: task.priority as Task["priority"],
+		status,
+		priority,
 		domain: task.domain || undefined,
 		classification: task.classification || undefined,
 		assignedTo: task.assignedTo || undefined,

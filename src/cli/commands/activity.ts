@@ -4,9 +4,8 @@ import {
   fetchActivityFromApi,
   fetchTranscriptFromApi,
   fetchTranscriptSearch,
-  type TranscriptQuery,
-  type TranscriptEntry,
 } from "./activity-api";
+import type { TranscriptQuery, TranscriptEntry } from "./activity-types";
 import {
   parseLimit,
   parseNumber,

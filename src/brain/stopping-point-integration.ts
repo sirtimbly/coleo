@@ -58,10 +58,8 @@ export async function analyzeStoppingPoint(
   }
 
   try {
-    // Gather git status (this would need to be passed in or fetched)
-    // For now, we'll use placeholder values that would come from the arm's environment
     const gitStatus = {
-      branch: "master",
+      branch: "",
       ahead: 0,
       behind: 0,
       staged: [],
@@ -208,6 +206,5 @@ export function logStoppingPointTelemetry(
     details,
   };
 
-  // Log to console (in production, this would go to a proper telemetry system)
   console.log("[STOPPING_POINT_TELEMETRY]", JSON.stringify(logEntry));
 }

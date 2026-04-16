@@ -16,6 +16,7 @@ import {
   markTaskCommentsRead,
   getUnreadCommentCount,
 } from "../../db/state";
+import type { TaskComment } from "../../types";
 
 interface DiscussionsContext {
   Variables: {
@@ -26,32 +27,16 @@ interface DiscussionsContext {
 interface CreateDiscussionRequest {
   content: string;
   parentId?: string;
-  authorType: "human" | "arm" | "brain";
+  authorType: TaskComment["authorType"];
   authorId: string;
   authorName?: string;
   screenshotPath?: string;
-  client: "web" | "mail" | "mcp" | "cli";
+  client: TaskComment["client"];
 }
 
-interface TaskCommentResponse {
-  id: string;
-  taskId: string;
-  parentId?: string;
-  content: string;
-  authorType: "human" | "arm" | "brain";
-  authorId: string;
-  authorName?: string;
-  screenshotPath?: string;
-  client: "web" | "mail" | "mcp" | "cli";
-  edited: boolean;
-  deleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ThreadedComment extends TaskCommentResponse {
+type ThreadedComment = TaskComment & {
   replies: ThreadedComment[];
-}
+};
 
 function toCommentResponse(row: {
   id: string;
@@ -59,15 +44,15 @@ function toCommentResponse(row: {
   parent_id: string | null;
   content: string;
   screenshot_path?: string | null;
-  author_type: "human" | "arm" | "brain";
+  author_type: TaskComment["authorType"];
   author_id: string;
   author_name: string | null;
-  client: "web" | "mail" | "mcp" | "cli";
+  client: TaskComment["client"];
   edited: number;
   deleted: number;
   created_at: string;
   updated_at: string;
-}): TaskCommentResponse {
+}): TaskComment {
   return {
     id: row.id,
     taskId: row.task_id,
@@ -86,7 +71,7 @@ function toCommentResponse(row: {
 }
 
 function buildThreadedComments(
-  comments: TaskCommentResponse[],
+  comments: TaskComment[],
   parentId: string | null = null
 ): ThreadedComment[] {
   const result: ThreadedComment[] = [];
@@ -148,10 +133,10 @@ export function createTaskDiscussionsRoutes() {
       task_id: string;
       parent_id: string | null;
       content: string;
-      author_type: "human" | "arm" | "brain";
+      author_type: TaskComment["authorType"];
       author_id: string;
       author_name: string | null;
-      client: "web" | "mail" | "mcp" | "cli";
+      client: TaskComment["client"];
       edited: number;
       deleted: number;
       created_at: string;
