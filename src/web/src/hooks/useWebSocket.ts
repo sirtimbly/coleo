@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api } from '@/lib';
+import { api, type JsonValue } from '@/lib';
 
 type Channel = 'arms' | 'activity' | 'proposals' | 'brain' | 'mail' | 'tasks' | 'bugs' | 'arm-events' | 'all';
 
-interface WSMessage {
+export interface WebSocketMessage {
   type: string;
   channel?: Channel;
   event?: string;
-  data?: unknown;
+  data?: JsonValue;
   timestamp?: string;
   success?: boolean;
   error?: string;
@@ -15,7 +15,7 @@ interface WSMessage {
 
 interface UseWebSocketOptions {
   channels: Channel[];
-  onMessage?: (message: WSMessage) => void;
+  onMessage?: (message: WebSocketMessage) => void;
   autoConnect?: boolean;
 }
 
@@ -50,7 +50,7 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
 
     ws.onmessage = (event) => {
       try {
-        const msg: WSMessage = JSON.parse(event.data);
+        const msg: WebSocketMessage = JSON.parse(event.data);
 
         if (msg.type === 'auth') {
           if (msg.success) {

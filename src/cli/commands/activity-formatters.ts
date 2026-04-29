@@ -1,4 +1,4 @@
-import type { ActivityListRow, TranscriptEntry, SearchResultRow } from "./activity-api";
+import type { ActivityListRow, TranscriptEntry, SearchResultRow } from "./activity-types";
 
 export function normalizeActivityRow(entry: unknown, fallbackId: number): ActivityListRow | null {
   if (!isRecord(entry)) {

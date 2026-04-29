@@ -17,6 +17,10 @@
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
 import type { NextTaskResult, StatusReportItem } from "../types";
+import {
+	VALIDATION_TASK_SUBJECT_PREFIX,
+	buildVerificationTaskSubject,
+} from "../../task-subjects";
 
 interface DetermineNextTaskInput {
   planId?: string;
@@ -203,7 +207,7 @@ export class DetermineNextTaskTool extends BrainTool {
       statuses: ["pending"],
       dependencyBlocked: false,
       unassignedOnly: true,
-      excludeSubjectPrefix: "Validate completion:",
+      excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
       sort: "priority_then_created_asc",
       limit: 20,
     });
@@ -369,7 +373,7 @@ export class DetermineNextTaskTool extends BrainTool {
 
     return {
       task: {
-        subject: `Verify & Polish: ${taskWithIssues.subject}`,
+        subject: buildVerificationTaskSubject(taskWithIssues.subject),
         description: `This is a verification task for: "${taskWithIssues.subject}"
 
 The original task was completed but with issues that need attention.
@@ -380,7 +384,7 @@ ${issuesList}${testWarning}
 
 ## Original Task ID
 ${taskWithIssues.id}`,
-        classification: "qa",  // Verification tasks are QA-type work
+        classification: "qa",
         priority: "high",
       },
       context: {
@@ -449,7 +453,7 @@ ${taskWithIssues.id}`,
         statuses: ["pending"],
         dependencyBlocked: false,
         unassignedOnly: true,
-        excludeSubjectPrefix: "Validate completion:",
+        excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
         sort: "sort_order_asc",
         limit: 1,
       })[0];

@@ -11,6 +11,7 @@ import {
   type KeyEvent,
 } from "@opentui/core";
 import { getCliEntrypoint } from "../entrypoint";
+import { parseEditorCommand } from "../helpers/editor";
 import {
   deleteArmProfile,
   fetchArmDetail,
@@ -713,7 +714,7 @@ class ArmsDashboardTui {
       this.footerInput.placeholder = "";
       this.footerInput.blur();
     } else if (this.inputMode === "search") {
-      this.footerPromptText.content = "Search current view. Brain/API search persisted logs.";
+      this.footerPromptText.content = "Search the current view.";
       this.footerInput.placeholder = "Search text";
     } else if (this.inputMode === "brain-message") {
       this.footerPromptText.content = "Send a message to the brain.";
@@ -1193,17 +1194,7 @@ class ArmsDashboardTui {
     await writeFile(filePath, contents, "utf-8");
 
     const editor = process.env.EDITOR?.trim() || "vi";
-    // Parse editor command safely - split on whitespace but respect quoted strings
-    const editorParts = editor.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || ["vi"];
-    const cmd = editorParts.map((part) => {
-      // Remove quotes if present
-      if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-        return part.slice(1, -1);
-      }
-      return part;
-    });
-    
-    // Pass file path directly without shell interpretation
+    const cmd = parseEditorCommand(editor);
     await this.suspendForExternalCommand([...cmd, filePath]);
     this.notice = `Opened ${filePath} in ${editor}`;
     this.render(false);

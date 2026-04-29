@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api } from './api';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -22,7 +21,8 @@ function getSystemTheme(): 'light' | 'dark' {
 function getStoredTheme(): Theme | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(STORAGE_KEY) as Theme | null;
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored === 'light' || stored === 'dark' || stored === 'system' ? stored : null;
   } catch {
     return null;
   }
@@ -86,13 +86,6 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const resolved = newTheme === 'system' ? getSystemTheme() : newTheme;
     setResolvedTheme(resolved);
     document.documentElement.classList.toggle('dark', resolved === 'dark');
-    
-    // Persist to backend if user is authenticated
-    try {
-      await api.updateUserPreference('theme', newTheme);
-    } catch {
-      // Silently fail - local storage is the primary source
-    }
   }, []);
 
   const toggleTheme = useCallback(() => {

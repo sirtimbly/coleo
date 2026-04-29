@@ -11,16 +11,12 @@ import {
 	Bug as BugIcon,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import { type Bug } from "@/lib/api";
+import { type Bug, type BugMetadata, type BugUiMetadata } from "@/lib";
 import { cn } from "@/lib";
 import { COLOR_OPTIONS, COLOR_CLASSES, getValidColor } from "./grid-shared";
 import { STATUS_OPTIONS, STATUS_STYLES, PRIORITY_OPTIONS, PRIORITY_STYLES, SOURCE_STYLES } from "./bug-styles";
 
-export interface BugUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type BugUiMeta = BugUiMetadata;
 
 export type BugUpdate = Partial<{
 	title: string;
@@ -31,6 +27,7 @@ export type BugUpdate = Partial<{
 	blockers: string[];
 	resolution: string;
 	humanNotified: boolean;
+	metadata: BugMetadata;
 }>;
 
 interface BugGridRowProps {
@@ -45,12 +42,24 @@ interface BugGridRowProps {
 	onUpdateUi?: (bugId: string, updates: BugUiMeta) => void;
 	onDelete?: (bug: Bug) => void;
 	onReorderToSortOrder?: (bugId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: Record<string, unknown>;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }
 
 type ColorOption = (typeof COLOR_OPTIONS)[number];
+
+type BugRowUiMeta = {
+	tags: string[];
+	color: ColorOption;
+	bold: boolean;
+};
+
+const isBugStatus = (value: string): value is Bug["status"] =>
+	STATUS_OPTIONS.some((option) => option === value);
+
+const isBugPriority = (value: string): value is Bug["priority"] =>
+	PRIORITY_OPTIONS.some((option) => option === value);
 
 export const BugGridRow = memo(function BugGridRow({
 	bug,
@@ -69,16 +78,14 @@ export const BugGridRow = memo(function BugGridRow({
 	className,
 }: BugGridRowProps) {
 	const displayRowNumber = index + 1;
-	
-	const uiMeta = useMemo(() => {
-		return {
-			tags: [] as string[],
-			color: "slate" as ColorOption,
-			bold: false,
-		};
-	}, []);
-	
-  const [open, setOpen] = useState(false);
+
+	const uiMeta: BugRowUiMeta = {
+		tags: [],
+		color: "slate",
+		bold: false,
+	};
+
+	const [open, setOpen] = useState(false);
 	const [titleValue, setTitleValue] = useState(bug.title);
 	const [tagSearch, setTagSearch] = useState("");
 	const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
@@ -147,7 +154,10 @@ export const BugGridRow = memo(function BugGridRow({
 	};
 
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
-		const target = event.target as HTMLElement;
+		if (!(event.target instanceof HTMLElement)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||
@@ -278,9 +288,11 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
-						onAction={(key) =>
-							onUpdateBug?.(bug.id, { status: key as Bug["status"] })
-						}
+						onAction={(key) => {
+							if (typeof key === "string" && isBugStatus(key)) {
+								onUpdateBug?.(bug.id, { status: key });
+							}
+						}}
 					>
 						{STATUS_OPTIONS.map((status) => (
 							<Dropdown.Item key={status}>{status.replace("_", " ")}</Dropdown.Item>
@@ -308,9 +320,11 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
-						onAction={(key) =>
-							onUpdateBug?.(bug.id, { priority: key as Bug["priority"] })
-						}
+						onAction={(key) => {
+							if (typeof key === "string" && isBugPriority(key)) {
+								onUpdateBug?.(bug.id, { priority: key });
+							}
+						}}
 					>
 						{PRIORITY_OPTIONS.map((priority) => (
 							<Dropdown.Item key={priority}>{priority}</Dropdown.Item>
@@ -504,7 +518,11 @@ export const BugGridRow = memo(function BugGridRow({
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const input = e.currentTarget.querySelector('input') as HTMLInputElement;
+                    const input = e.currentTarget.elements.namedItem("row-number");
+                    if (!(input instanceof HTMLInputElement)) {
+                      setOpen(false);
+                      return;
+                    }
                     const targetRowNumber = parseInt(input.value, 10);
                     if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
                       const targetSortOrder = targetRowNumber - 1;
@@ -516,6 +534,7 @@ export const BugGridRow = memo(function BugGridRow({
                   }}
                 >
                   <input
+                    name="row-number"
                     type="number"
                     min="1"
                     placeholder="Row #"

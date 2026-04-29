@@ -111,4 +111,32 @@ describe("cleanupOrphanedArms", () => {
 		expect(arm?.port).toBe(19301);
 		expect(arm?.agent_id).toBe("agent-1");
 	});
+
+	it("marks dead local arms as stopped and releases their active claims", async () => {
+		const now = new Date().toISOString();
+		db.run(
+			"INSERT INTO arms (id, name, pid, port, agent_id, harness, status, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+			["arm-4", "arm-4", 999999, 17321, null, "opencode-api", "running", now],
+		);
+		db.run(
+			"INSERT INTO claims (arm_id, file_path, claim_type, claimed_at) VALUES (?, ?, ?, ?)",
+			["arm-4", "src/stale.ts", "write", now],
+		);
+
+		await cleanupOrphanedArms(db);
+
+		const arm = db
+			.query("SELECT status, pid, port FROM arms WHERE id = ?")
+			.get("arm-4") as { status: string; pid: number | null; port: number | null } | null;
+		expect(arm).not.toBeNull();
+		expect(arm?.status).toBe("stopped");
+		expect(arm?.pid).toBeNull();
+		expect(arm?.port).toBeNull();
+
+		const claim = db
+			.query("SELECT released_at FROM claims WHERE arm_id = ? AND file_path = ?")
+			.get("arm-4", "src/stale.ts") as { released_at: string | null } | null;
+		expect(claim).not.toBeNull();
+		expect(typeof claim?.released_at).toBe("string");
+	});
 });

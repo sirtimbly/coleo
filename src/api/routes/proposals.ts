@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import { isRecord, safeJsonParse } from "../../utils/json";
 
 interface ProposalsContext {
   Variables: {
@@ -32,6 +33,20 @@ export interface Proposal {
   ticksElapsed: number;
 }
 
+interface ProposalArgument {
+  armId: string;
+  content: string;
+  evidence?: string[];
+  timestamp: string;
+}
+
+interface ProposalSignal {
+  weight: number;
+  reason?: string;
+}
+
+type ProposalSignals = Record<string, ProposalSignal>;
+
 interface ProposalRow {
   id: string;
   proposer: string;
@@ -39,9 +54,9 @@ interface ProposalRow {
   title: string;
   description: string;
   status: string;
-  arguments_for: string;
-  arguments_against: string;
-  signals: string;
+  arguments_for: string | null;
+  arguments_against: string | null;
+  signals: string | null;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -50,17 +65,86 @@ interface ProposalRow {
   ticks_elapsed: number;
 }
 
+function isProposalStatus(value: string): value is Proposal["status"] {
+  return (
+    value === "open" ||
+    value === "accepted" ||
+    value === "rejected" ||
+    value === "withdrawn" ||
+    value === "expired"
+  );
+}
+
+function isProposalArgument(value: unknown): value is ProposalArgument {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.armId === "string" &&
+    typeof value.content === "string" &&
+    typeof value.timestamp === "string" &&
+    (value.evidence === undefined ||
+      (Array.isArray(value.evidence) && value.evidence.every((entry) => typeof entry === "string")))
+  );
+}
+
+function isProposalArgumentArray(value: unknown): value is ProposalArgument[] {
+  return Array.isArray(value) && value.every(isProposalArgument);
+}
+
+function isProposalSignal(value: unknown): value is ProposalSignal {
+  return (
+    isRecord(value) &&
+    typeof value.weight === "number" &&
+    (value.reason === undefined || typeof value.reason === "string")
+  );
+}
+
+function parseProposalArgumentList(value: string | null, fieldName: string): ProposalArgument[] {
+  const parsed = safeJsonParse(value || "[]");
+  if (!parsed.success) {
+    throw new Error(`Invalid ${fieldName} JSON: ${parsed.error}`);
+  }
+  if (!isProposalArgumentArray(parsed.data)) {
+    throw new Error(`Invalid ${fieldName} JSON: expected an array of proposal arguments`);
+  }
+  return parsed.data;
+}
+
+function parseProposalSignals(value: string | null): ProposalSignals {
+  const parsed = safeJsonParse(value || "{}");
+  if (!parsed.success) {
+    throw new Error(`Invalid proposal signals JSON: ${parsed.error}`);
+  }
+  if (!isRecord(parsed.data)) {
+    throw new Error("Invalid proposal signals JSON: expected an object");
+  }
+
+  const signals: ProposalSignals = {};
+  for (const [armId, signal] of Object.entries(parsed.data)) {
+    if (!isProposalSignal(signal)) {
+      throw new Error(`Invalid proposal signals JSON: invalid signal for ${armId}`);
+    }
+    signals[armId] = signal;
+  }
+
+  return signals;
+}
+
 function parseProposalRow(row: ProposalRow): Proposal {
+  const status = isProposalStatus(row.status) ? row.status : "open";
+
   return {
     id: row.id,
     proposer: row.proposer,
     type: row.type,
     title: row.title,
     description: row.description,
-    status: row.status as Proposal["status"],
-    argumentsFor: JSON.parse(row.arguments_for || "[]"),
-    argumentsAgainst: JSON.parse(row.arguments_against || "[]"),
-    signals: JSON.parse(row.signals || "{}"),
+    status,
+    argumentsFor: parseProposalArgumentList(row.arguments_for, "arguments_for"),
+    argumentsAgainst: parseProposalArgumentList(row.arguments_against, "arguments_against"),
+    signals: parseProposalSignals(row.signals),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     resolvedAt: row.resolved_at,
@@ -93,7 +177,7 @@ export function createProposalsRoutes() {
       FROM proposals
       WHERE 1=1
     `;
-    const params: unknown[] = [];
+    const params: (string | number)[] = [];
 
     if (status && status !== "all") {
       query += " AND status = ?";
@@ -112,12 +196,12 @@ export function createProposalsRoutes() {
     params.push(limit, offset);
 
     try {
-      const rows = db.query(query).all(...(params as (string | number)[])) as ProposalRow[];
+      const rows = db.query(query).all(...params) as ProposalRow[];
       const proposals = rows.map(parseProposalRow);
 
       // Get total count
       let countQuery = "SELECT COUNT(*) as count FROM proposals WHERE 1=1";
-      const countParams: unknown[] = [];
+      const countParams: (string | number)[] = [];
       if (status && status !== "all") {
         countQuery += " AND status = ?";
         countParams.push(status);
@@ -130,11 +214,11 @@ export function createProposalsRoutes() {
         countQuery += " AND proposer = ?";
         countParams.push(author);
       }
-      const countRow = db.query(countQuery).get(...(countParams as string[])) as { count: number };
+      const countRow = db.query(countQuery).get(...countParams) as { count: number } | null;
 
       return c.json({
         proposals,
-        pagination: { limit, offset, total: countRow.count },
+        pagination: { limit, offset, total: countRow?.count || 0 },
       });
     } catch {
       return c.json({
@@ -272,8 +356,8 @@ export function createProposalsRoutes() {
       timestamp: new Date().toISOString(),
     };
 
-    let argumentsFor = JSON.parse(row.arguments_for || "[]");
-    let argumentsAgainst = JSON.parse(row.arguments_against || "[]");
+    const argumentsFor = parseProposalArgumentList(row.arguments_for, "arguments_for");
+    const argumentsAgainst = parseProposalArgumentList(row.arguments_against, "arguments_against");
 
     if (body.position === "for") {
       argumentsFor.push(argument);
@@ -329,7 +413,7 @@ export function createProposalsRoutes() {
       throw HttpError.badRequest(`Cannot signal on a ${row.status} proposal`);
     }
 
-    const signals = JSON.parse(row.signals || "{}");
+    const signals = parseProposalSignals(row.signals);
     signals[body.armId] = { weight: body.weight, reason: body.reason };
 
     const now = new Date().toISOString();

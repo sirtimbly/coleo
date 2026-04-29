@@ -51,6 +51,13 @@ describe("Brain poll order", () => {
 				record("processArmQueue");
 			};
 		(
+			brain as unknown as {
+				processOperationalSignals: (_since?: string) => Promise<void>;
+			}
+		).processOperationalSignals = async () => {
+			record("processOperationalSignals");
+		};
+		(
 			brain as unknown as { checkResolvedBugsAndResumeTasks: () => Promise<void> }
 		).checkResolvedBugsAndResumeTasks = async () => {
 			record("checkResolvedBugsAndResumeTasks");
@@ -121,14 +128,25 @@ describe("Brain poll order", () => {
 
 		await brain.poll();
 
-		expect(calls.indexOf("promptIdleArms")).toBeGreaterThan(
-			calls.indexOf("reEvaluatePlanProgress"),
-		);
-		expect(calls.indexOf("promptIdleArms")).toBeGreaterThan(
-			calls.indexOf("processArmQueue"),
-		);
-		expect(calls.indexOf("promptIdleArms")).toBeLessThan(
-			calls.indexOf("saveState"),
-		);
+		expect(calls).toEqual([
+			"checkInfrastructureHealth",
+			"processHumanMail",
+			"processArmQueue",
+			"processOperationalSignals",
+			"checkResolvedBugsAndResumeTasks",
+			"checkArms",
+			"loadTasks",
+			"processArmAssistantOutputs",
+			"loadTasks",
+			"assignTasks",
+			"assignInitialTasks",
+			"syncPlanTasks",
+			"processInbox",
+			"checkDocUpdateTrigger",
+			"reEvaluatePlanProgress",
+			"promptIdleArms",
+			"saveState",
+			"notifyObservatory",
+		]);
 	});
 });

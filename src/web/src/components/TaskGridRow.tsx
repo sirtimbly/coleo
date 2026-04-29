@@ -11,17 +11,13 @@ import {
 	Check,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import { type Task } from "@/lib/api";
+import { type Task, type TaskMetadata, type UiMetadata } from "@/lib";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib";
 import { COLOR_OPTIONS, COLOR_CLASSES_LIGHT, getValidColor } from "./grid-shared";
 import { PRIORITY_OPTIONS, PRIORITY_STYLES } from "./task-styles";
 
-export interface TaskUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type TaskUiMeta = UiMetadata;
 
 export type TaskUpdate = Partial<{
 	subject: string;
@@ -34,7 +30,7 @@ export type TaskUpdate = Partial<{
 	dueDate: string | null;
 	progress: number;
 	artifacts: string[];
-	metadata: Record<string, unknown>;
+	metadata: TaskMetadata;
 }>;
 
 interface TaskGridRowProps {
@@ -50,12 +46,15 @@ interface TaskGridRowProps {
 	onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
 	onDelete?: (task: Task) => void;
 	onReorderToSortOrder?: (taskId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: Record<string, unknown>;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }
 
 type ColorOption = (typeof COLOR_OPTIONS)[number];
+
+const isTaskPriority = (value: string): value is Task["priority"] =>
+	PRIORITY_OPTIONS.some((option) => option === value);
 
 export const TaskGridRow = memo(function TaskGridRow({
 	task,
@@ -74,16 +73,12 @@ export const TaskGridRow = memo(function TaskGridRow({
 	onGridKeyDown,
 	className,
 }: TaskGridRowProps) {
-	const uiMeta = useMemo(() => {
-		const meta = (task.metadata ?? {}) as Record<string, unknown>;
-		const ui = (meta.ui ?? {}) as Record<string, unknown>;
-		return {
-			tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
-			color: typeof ui.color === "string" ? (ui.color as string) : "slate",
-			bold: Boolean(ui.bold),
-		};
-	}, [task.metadata]);
-  const [open, setOpen] = useState(false);
+	const uiMeta = {
+		tags: task.metadata.ui?.tags ?? [],
+		color: task.metadata.ui?.color ?? "slate",
+		bold: task.metadata.ui?.bold ?? false,
+	};
+	const [open, setOpen] = useState(false);
 	const [subjectValue, setSubjectValue] = useState(task.subject);
 	const [tagSearch, setTagSearch] = useState("");
 	const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
@@ -154,7 +149,10 @@ export const TaskGridRow = memo(function TaskGridRow({
 	};
 
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
-		const target = event.target as HTMLElement;
+		if (!(event.target instanceof HTMLElement)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||
@@ -295,9 +293,11 @@ export const TaskGridRow = memo(function TaskGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 				<Dropdown.Menu
-					onAction={(key) =>
-						onUpdateTask?.(task.id, { priority: key as Task["priority"] })
-					}
+					onAction={(key) => {
+						if (typeof key === "string" && isTaskPriority(key)) {
+							onUpdateTask?.(task.id, { priority: key });
+						}
+					}}
 				>
 					{PRIORITY_OPTIONS.map((priority) => (
 						<Dropdown.Item
@@ -494,16 +494,20 @@ export const TaskGridRow = memo(function TaskGridRow({
 					<Dropdown.Item id={moveTopId} textValue="Move to Top">
 						Move to Top
 					</Dropdown.Item>
-					<Dropdown.Item id={moveBottomId} textValue="Move to Bottom">
-						Move to Bottom
-					</Dropdown.Item>
-				</Dropdown.Menu>
+				<Dropdown.Item id={moveBottomId} textValue="Move to Bottom">
+					Move to Bottom
+				</Dropdown.Item>
+			</Dropdown.Menu>
               <div className="mt-3 pt-2 border-t border-default-200">
                 <form 
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const input = e.currentTarget.querySelector('input') as HTMLInputElement;
+                    const input = e.currentTarget.elements.namedItem("row-number");
+                    if (!(input instanceof HTMLInputElement)) {
+                      setOpen(false);
+                      return;
+                    }
                     const targetRowNumber = parseInt(input.value, 10);
                     if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
                       const targetSortOrder = targetRowNumber - 1;
@@ -515,6 +519,7 @@ export const TaskGridRow = memo(function TaskGridRow({
                   }}
                 >
                   <input
+                    name="row-number"
                     type="number"
                     min="1"
                     placeholder="Row #"

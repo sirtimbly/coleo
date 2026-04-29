@@ -22,25 +22,11 @@ import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
 import { getServiceStatus, startService } from "../daemon";
+import { setArmClient } from "./arm-client-registry";
+import type { ServerContext } from "./server-context";
 
-export interface ServerContext {
-  Variables: {
-    db: Database;
-    startedAt: Date;
-  };
-}
-
-// Global ArmClient for distributed arm management
-let globalArmClient: ArmClient | null = null;
+export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
-
-export function getArmClient(): ArmClient | null {
-  return globalArmClient;
-}
-
-export function setArmClient(client: ArmClient): void {
-  globalArmClient = client;
-}
 
 function shouldAutostartTranscriptIndexer(): boolean {
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();

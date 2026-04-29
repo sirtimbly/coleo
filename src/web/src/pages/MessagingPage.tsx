@@ -4,14 +4,28 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button, Card } from '@heroui/react';
-import { api, type StatusReport, type MailMessage, useToast, useMessage } from '@/lib';
+import type { LucideIcon } from 'lucide-react';
+import { api, type StatusReport, type MailMessage, type JsonObject, useToast, useMessage } from '@/lib';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
 type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
 
-type ProposalData = Record<string, unknown>;
+type ProposalData = JsonObject;
+
+const MESSAGE_NAV_ITEMS: Array<{
+  key: MessageType;
+  label: string;
+  icon: LucideIcon;
+}> = [
+  { key: 'all', label: 'All', icon: MessageSquare },
+  { key: 'mail', label: 'Inbox', icon: Mail },
+  { key: 'sent', label: 'Sent', icon: Mail },
+  { key: 'archive', label: 'Archive', icon: Archive },
+  { key: 'status-reports', label: 'Status Reports', icon: FileText },
+  { key: 'proposals', label: 'Proposals', icon: Vote },
+];
 
 interface UnifiedMessageBase {
   id: string;
@@ -375,14 +389,7 @@ export function MessagingPage() {
         >
           <div className="border-b border-border p-2">
             <nav className="space-y-1">
-              {[
-                { key: 'all' as MessageType, label: 'All', icon: MessageSquare },
-                { key: 'mail' as MessageType, label: 'Inbox', icon: Mail },
-                { key: 'sent' as MessageType, label: 'Sent', icon: Mail },
-                { key: 'archive' as MessageType, label: 'Archive', icon: Archive },
-                { key: 'status-reports' as MessageType, label: 'Status Reports', icon: FileText },
-                { key: 'proposals' as MessageType, label: 'Proposals', icon: Vote },
-              ].map(({ key, label, icon: Icon }) => (
+              {MESSAGE_NAV_ITEMS.map(({ key, label, icon: Icon }) => (
                 <Button
                   key={key}
                   variant="ghost"

@@ -42,9 +42,14 @@ const SOURCE_TYPE_OPTIONS: { value: TaskSourceType; label: string }[] = [
   { value: 'proposal', label: 'Proposal' },
 ];
 
-// NOTE: Domain functionality is temporarily disabled
-// Common domains - kept for future use
-// const DOMAIN_SUGGESTIONS = ['backend', 'frontend', 'testing', 'devops', 'docs', 'design', 'security'];
+const isTaskStatus = (value: string): value is TaskStatus =>
+  STATUS_OPTIONS.some((option) => option.value === value);
+
+const isTaskPriority = (value: string): value is TaskPriority =>
+  PRIORITY_OPTIONS.some((option) => option.value === value);
+
+const isTaskSourceType = (value: string): value is TaskSourceType =>
+  SOURCE_TYPE_OPTIONS.some((option) => option.value === value);
 
 export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
   const isEditing = Boolean(task);
@@ -234,7 +239,11 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
                 </label>
                 <select
                   value={priority}
-                  onChange={(e) => setPriority(e.target.value as TaskPriority)}
+                  onChange={(e) => {
+                    if (isTaskPriority(e.currentTarget.value)) {
+                      setPriority(e.currentTarget.value);
+                    }
+                  }}
                   className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
                 >
                   {PRIORITY_OPTIONS.map(opt => (
@@ -252,7 +261,11 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
                   </label>
                   <select
                     value={status}
-                    onChange={(e) => setStatus(e.target.value as TaskStatus)}
+                    onChange={(e) => {
+                      if (isTaskStatus(e.currentTarget.value)) {
+                        setStatus(e.currentTarget.value);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
                   >
                     {STATUS_OPTIONS.map(opt => (
@@ -271,7 +284,11 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
                   </label>
                   <select
                     value={sourceType}
-                    onChange={(e) => setSourceType(e.target.value as TaskSourceType)}
+                    onChange={(e) => {
+                      if (isTaskSourceType(e.currentTarget.value)) {
+                        setSourceType(e.currentTarget.value);
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
                   >
                     {SOURCE_TYPE_OPTIONS.map(opt => (
@@ -284,30 +301,8 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
               )}
             </div>
             
-            {/* Phase (domain field hidden for now) */}
+            {/* Phase */}
             <div className="grid grid-cols-2 gap-4">
-              {/* Domain field - temporarily hidden
-              <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">
-                  Domain
-                </label>
-                <input
-                  type="text"
-                  value={domain}
-                  onChange={(e) => setDomain(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  list="domain-suggestions"
-                  placeholder="e.g., backend, frontend"
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
-                />
-                <datalist id="domain-suggestions">
-                  {DOMAIN_SUGGESTIONS.map(d => (
-                    <option key={d} value={d} />
-                  ))}
-                </datalist>
-              </div>
-              */}
-              
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-1">
                   Phase

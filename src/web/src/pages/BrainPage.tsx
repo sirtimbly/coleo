@@ -17,7 +17,7 @@ interface BrainStatus {
   uptime: number | null;
 }
 
-const KNOWN_HARNESSES = ['opencode', 'claude-code', 'aider'];
+const AVAILABLE_HARNESSES = ['opencode', 'opencode-api', 'opencode-tui'] as const;
 const TERMINAL_EMULATORS = ['auto', 'ghostty', 'iterm2', 'terminal', 'wezterm'] as const;
 
 function BrainStatusCard({ status }: { status: BrainStatus | null }) {
@@ -90,7 +90,13 @@ function BrainConfigSection({ config, onUpdate }: { config: ColeoConfig | null; 
 
   const handleSave = async () => {
     try {
-      await api.updateConfig({ brain: { pollIntervalMs, maxArms } });
+      await api.updateConfig({
+        brain: {
+          pollIntervalMs,
+          maxArms,
+          armGracePeriodMinutes: config?.brain.armGracePeriodMinutes ?? 10,
+        },
+      });
       onUpdate();
       setIsEditing(false);
     } catch (err) {
@@ -233,7 +239,7 @@ function DefaultsSection({
                   }}
                   className="w-full px-3 py-2 bg-secondary border border-border rounded-md"
                 >
-                  {KNOWN_HARNESSES.map(h => <option key={h} value={h}>{h}</option>)}
+                  {AVAILABLE_HARNESSES.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
               </div>
               {isOpenCode && (

@@ -8,11 +8,14 @@
  * - Toast notifications on errors
  */
 
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api, type Task } from '@/lib/api';
 import { tasksKeys } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/useToast';
 import { useMemo } from 'react';
+
+type TaskListResponse = Awaited<ReturnType<typeof api.listTasks>>;
+type TaskListQueryData = InfiniteData<TaskListResponse>;
 
 // Types
 interface TaskFilters {
@@ -25,7 +28,7 @@ interface TaskFilters {
 
 interface UpdateTaskVariables {
   id: string;
-  updates: Partial<Task>;
+  updates: Parameters<typeof api.updateTask>[1];
 }
 
 interface ReorderTaskVariables {
@@ -45,7 +48,7 @@ interface CreateTaskVariables {
   sourceType?: Task['sourceType'];
   sourceRef?: string;
   dueDate?: string;
-  metadata?: Record<string, unknown>;
+  metadata?: Parameters<typeof api.createTask>[0]['metadata'];
   sortOrder?: number;
 }
 
@@ -101,7 +104,7 @@ export function useTasks(filters?: TaskFilters) {
   // Mutation: Update task with optimistic update
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, updates }: UpdateTaskVariables) => {
-      const response = await api.updateTask(id, updates as Parameters<typeof api.updateTask>[1]);
+      const response = await api.updateTask(id, updates);
       return response.task;
     },
     onMutate: async ({ id, updates }) => {
@@ -109,12 +112,12 @@ export function useTasks(filters?: TaskFilters) {
       await queryClient.cancelQueries({ queryKey: tasksKeys.all() });
 
       // Snapshot previous value
-      const previousData = queryClient.getQueryData(tasksKeys.list(filters ?? {}));
+      const previousData = queryClient.getQueryData<TaskListQueryData>(tasksKeys.list(filters ?? {}));
 
       // Optimistically update across all pages
       queryClient.setQueryData(
         tasksKeys.list(filters ?? {}),
-        (old: { pages: Array<{ tasks: Task[]; pagination: unknown; counts: unknown }>; pageParams: number[] } | undefined) => {
+        (old: TaskListQueryData | undefined) => {
           if (!old) return old;
           return {
             ...old,
@@ -180,11 +183,11 @@ export function useTasks(filters?: TaskFilters) {
     onMutate: async (taskId) => {
       await queryClient.cancelQueries({ queryKey: tasksKeys.all() });
 
-      const previousData = queryClient.getQueryData(tasksKeys.list(filters ?? {}));
+      const previousData = queryClient.getQueryData<TaskListQueryData>(tasksKeys.list(filters ?? {}));
 
       queryClient.setQueryData(
         tasksKeys.list(filters ?? {}),
-        (old: { pages: Array<{ tasks: Task[]; pagination: { total: number }; counts: unknown }>; pageParams: number[] } | undefined) => {
+        (old: TaskListQueryData | undefined) => {
           if (!old) return old;
           return {
             ...old,

@@ -1,4 +1,4 @@
-import type { ActivityListRow, TranscriptEntry, SearchResultRow } from "./activity-api";
+import type { ActivityListRow, TranscriptEntry, SearchResultRow } from "./activity-types";
 import { asDetailString } from "./activity-formatters";
 
 export function printDetailedActivityRows(rows: ActivityListRow[]): void {

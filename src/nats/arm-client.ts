@@ -5,23 +5,22 @@
  * Used by the API server to manage arms running on remote hosts.
  */
 
-import { 
-  NatsClient, 
-  generateRequestId,
-  type AgentInfo, 
-  type AgentHeartbeat,
-  type OctopaiEvent,
-  type ArmState,
-  type SpawnArmCommand,
-  type KillArmCommand,
-  type SendPromptCommand,
-  type AbortCommand,
-  type CommandResponse,
-  type SpawnResponse,
-  type ListArmsResponse,
-  type GetMessagesResponse,
-  type GetTodosResponse,
-} from '../nats';
+import { NatsClient, generateRequestId } from './client';
+import type {
+  AgentInfo,
+  AgentHeartbeat,
+  OctopaiEvent,
+  ArmState,
+  SpawnArmCommand,
+  KillArmCommand,
+  SendPromptCommand,
+  AbortCommand,
+  CommandResponse,
+  SpawnResponse,
+  ListArmsResponse,
+  GetMessagesResponse,
+  GetTodosResponse,
+} from './types';
 import type { TaskAttachment } from "../types";
 
 export interface ArmClientOptions {

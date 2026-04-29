@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Database } from "bun:sqlite";
+import { parseEditorCommand } from "./helpers/editor";
 import { generateKeyBetween } from "../lib/fractional-indexing";
 
 export type CsvListKind = "tasks" | "bugs";
@@ -352,16 +353,6 @@ function parseCsvRows(kind: CsvListKind, text: string): { rows: ParsedCsvRow[]; 
   });
 
   return { rows, invalid };
-}
-
-function parseEditorCommand(editor: string): string[] {
-  const parts = editor.match(/[^\s"']+|"([^"]*)"|'([^']*)'/g) || ["vi"];
-  return parts.map((part) => {
-    if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-      return part.slice(1, -1);
-    }
-    return part;
-  });
 }
 
 function getPreferredEditor(): string {

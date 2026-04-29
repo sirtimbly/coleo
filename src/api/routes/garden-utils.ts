@@ -8,7 +8,7 @@
 import type { Database } from "bun:sqlite";
 import { eventStore } from "../../nats/jetstream";
 import { releaseClaimsForInactiveArms } from "../claim-cleanup";
-import type { FileClaim } from "./garden";
+import type { FileClaim } from "./garden-types";
 
 /**
  * Get all active file claims from the database

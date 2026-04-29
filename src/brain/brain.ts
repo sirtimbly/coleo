@@ -52,7 +52,9 @@ import {
 	normalizeTaskPriority,
 	normalizeBugPriority,
 	mapApiTask,
+	isSessionMessage,
 } from "./brain-utils";
+import type { SessionMessage } from "./brain-utils";
 import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
@@ -65,6 +67,14 @@ import type {
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
+import {
+	buildCommitTaskSubject,
+	buildValidationTaskSubject,
+	buildVerificationTaskSubject,
+	isFollowUpTaskSubject,
+	isValidationTaskSubject,
+	isVerificationTaskSubject,
+} from "./task-subjects";
 import {
 	type BrainOptions,
 	isTaskAttachment,
@@ -127,35 +137,25 @@ export class Brain {
 	private lastHealthCheck: HealthCheckResult | null = null;
 	private dashboard: TerminalDashboard | null = null;
 
-	// Track last stuck state per arm to avoid duplicate escalations
-	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
 	private lastStuckState: Map<
 		string,
 		{ stuckType: string; escalatedAt: Date }
 	> = new Map();
-	// Track idle arm prompt-response patterns to detect stuck loops
-	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
 	private idleArmPromptTracker: Map<
 		string,
 		{
-			promptCount: number; // How many prompts sent without productive response
-			lastPromptAt: Date; // When we last prompted this arm
-			lastProductiveAt: Date | null; // When arm last did real work
-			escalationLevel: number; // 0 = none, 1 = interrupt, 2 = compact, 3 = kill
+			promptCount: number;
+			lastPromptAt: Date;
+			lastProductiveAt: Date | null;
+			escalationLevel: number;
 		}
 	> = new Map();
-	// Track when each arm was first detected (for grace period)
 	private armDetectionTimes: Map<string, Date> = new Map();
-	// Track which assistant session messages have already been interpreted
 	private processedArmOutputMessageIds: Map<string, Set<string>> = new Map();
 	private processedStatusReportIds: Set<string> = new Set();
 	private processedDiscoveryIds: Set<string> = new Set();
-	// In-memory file subscriptions keyed by arm ID
 	private fileSubscriptions: Map<string, Set<string>> = new Map();
-	// Plan hash cache to avoid reprocessing unchanged plan files
 	private planFileHashes: Map<string, string> = new Map();
-
-	// Infrastructure health tracking
 	private infrastructureHealth: {
 		database: { healthy: boolean; lastCheck: Date | null; error?: string };
 		apiServer: { healthy: boolean; lastCheck: Date | null; error?: string };
@@ -1654,9 +1654,6 @@ export class Brain {
 				severity: payload.severity,
 			},
 		});
-
-		// TODO: Store dependency relationships in database for future task planning
-		// For now, just log it
 	}
 
 	/**
@@ -2700,7 +2697,7 @@ export class Brain {
 		);
 
 		const validationTask = await this.createTaskViaApi({
-			subject: `Validate completion: ${task.subject}`,
+			subject: buildValidationTaskSubject(task.subject),
 			description: validationDescription,
 			status: "pending",
 			priority: task.priority === "critical" ? "critical" : "high",
@@ -2941,10 +2938,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			},
 		});
 
-		const isTerminalFollowUpTask =
-			taskSubject?.startsWith("Validate completion:") ||
-			taskSubject?.startsWith("Verify & Polish:") ||
-			taskSubject?.startsWith("Commit changes for:");
+		const isTerminalFollowUpTask = isFollowUpTaskSubject(taskSubject);
 
 		// Terminal follow-up tasks should not generate additional commit tasks.
 		if (!isTerminalFollowUpTask) {
@@ -2969,7 +2963,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 
 			await this.createTaskViaApi({
 				id: commitTaskId,
-				subject: `Commit changes for: ${taskSubject}`,
+				subject: buildCommitTaskSubject(taskSubject),
 				description,
 				status: "pending",
 				priority: "high",
@@ -3014,10 +3008,7 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		}
 		const workerArmId = task.assignedTo || null;
 
-		const isFollowUpTask =
-			task.subject?.startsWith("Validate completion:") ||
-			task.subject?.startsWith("Verify & Polish:") ||
-			task.subject?.startsWith("Commit changes for:");
+		const isFollowUpTask = isFollowUpTaskSubject(task.subject);
 
 		// Follow-up QA and commit tasks are terminal. Do not recursively generate
 		// additional validation or commit work from them.
@@ -3621,7 +3612,7 @@ ${originalTask.id}`;
 		const verifyTask =
 			(await this.createTaskViaApi({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -3635,7 +3626,7 @@ ${originalTask.id}`;
 			})) ||
 			({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -4056,7 +4047,6 @@ ${originalTask.id}`;
 		approved: boolean,
 		comment: string,
 	): Promise<void> {
-		// TODO: Find pending approval and notify the arm
 		this.log(
 			`Approval response for ${originalId}: ${approved ? "approved" : "rejected"}`,
 		);
@@ -4543,11 +4533,10 @@ ${originalTask.id}`;
 		// If this bug came from a specific task, capture impact context for queue-based follow-up
 		if (bugPayload.sourceTaskId) {
 			const task = this.tasks.find((t) => t.id === bugPayload.sourceTaskId);
-			if (task && task.assignedTo && task.status === "in_progress") {
-				// Task is in progress, record context for subsequent planning decisions
-				const assignedArm = Array.from(this.arms.values()).find(
-					(a) => a.id === task.assignedTo,
-				);
+		if (task && task.assignedTo && task.status === "in_progress") {
+					const assignedArm = Array.from(this.arms.values()).find(
+						(a) => a.id === task.assignedTo,
+					);
 				if (assignedArm) {
 					this.log(`Task ${task.id} may need follow-up due to bug ${bugId}`);
 				}
@@ -5149,15 +5138,14 @@ Report findings using bug resolution workflow.`;
 
 			if (success) {
 				this.log(`Sent initial prompt to ${armId}`);
-				this.logActivity("brain", "arm_initialized", armId, {
-					source: "initial_prompt_sent",
-				});
-				this.initializedArmIds.add(armId);
+					this.logActivity("brain", "arm_initialized", armId, {
+						source: "initial_prompt_sent",
+					});
+					this.initializedArmIds.add(armId);
 
-				// Create a placeholder task record so hasReceivedInitialTasks persists across restarts.
-				await this.createTaskViaApi({
-					id: `init-${armId}`,
-					subject: `Arm ${armId} initialized`,
+					await this.createTaskViaApi({
+						id: `init-${armId}`,
+						subject: `Arm ${armId} initialized`,
 					description: "Initial prompt sent to arm",
 					status: "completed",
 					priority: "normal",
@@ -5442,7 +5430,7 @@ Report findings using bug resolution workflow.`;
 		armId: string,
 		limit = 20,
 	): Promise<number | null> {
-		const response = await this.apiRequest<{ messages?: unknown[] }>(
+		const response = await this.apiRequest<{ messages?: SessionMessage[] }>(
 			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
 			{},
 			1500,
@@ -5454,12 +5442,10 @@ Report findings using bug resolution workflow.`;
 
 		let latestMs: number | null = null;
 		for (const message of messages) {
-			if (!message || typeof message !== "object") {
+			if (!isSessionMessage(message)) {
 				continue;
 			}
-			const timestampMs = extractMessageTimestampMs(
-				message as Record<string, unknown>,
-			);
+			const timestampMs = extractMessageTimestampMs(message);
 			if (
 				timestampMs !== null &&
 				(latestMs === null || timestampMs > latestMs)
@@ -5536,29 +5522,29 @@ Report findings using bug resolution workflow.`;
 	}
 
 	private extractSessionMessageId(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const info = message.info;
-		if (!info || typeof info !== "object") {
+		if (!info) {
 			return null;
 		}
-		const id = (info as Record<string, unknown>).id;
+		const id = info.id;
 		return typeof id === "string" && id.trim() ? id : null;
 	}
 
 	private extractSessionMessageRole(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const info = message.info;
-		if (!info || typeof info !== "object") {
+		if (!info) {
 			return null;
 		}
-		const role = (info as Record<string, unknown>).role;
+		const role = info.role;
 		return typeof role === "string" && role.trim() ? role : null;
 	}
 
 	private extractSessionMessageText(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const parts = message.parts;
 		if (!Array.isArray(parts)) {
@@ -5570,11 +5556,10 @@ Report findings using bug resolution workflow.`;
 			if (!part || typeof part !== "object") {
 				continue;
 			}
-			const partObj = part as Record<string, unknown>;
-			if (partObj.type !== "text") {
+			if (part.type !== "text") {
 				continue;
 			}
-			const text = partObj.text;
+			const text = part.text;
 			if (typeof text === "string" && text.trim()) {
 				textParts.push(text.trim());
 			}
@@ -5614,7 +5599,7 @@ Report findings using bug resolution workflow.`;
 		messages: Array<{ id: string; timestampMs: number; text: string }>;
 		latestAssistantHasText: boolean;
 	}> {
-		const response = await this.apiRequest<{ messages?: unknown[] }>(
+		const response = await this.apiRequest<{ messages?: SessionMessage[] }>(
 			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
 			{},
 			1500,
@@ -5628,25 +5613,24 @@ Report findings using bug resolution workflow.`;
 		let latestAssistant: { timestampMs: number; hasText: boolean } | null = null;
 		let sawAssistant = false;
 		for (const message of messages) {
-			if (!message || typeof message !== "object") {
+			if (!isSessionMessage(message)) {
 				continue;
 			}
-			const messageObj = message as Record<string, unknown>;
-			const role = this.extractSessionMessageRole(messageObj);
+			const role = this.extractSessionMessageRole(message);
 			if (role !== "assistant") {
 				continue;
 			}
 			sawAssistant = true;
 
-			const text = this.extractSessionMessageText(messageObj);
-			const timestampMs = extractMessageTimestampMs(messageObj);
+			const text = this.extractSessionMessageText(message);
+			const timestampMs = extractMessageTimestampMs(message);
 			if (timestampMs !== null) {
 				if (!latestAssistant || timestampMs > latestAssistant.timestampMs) {
 					latestAssistant = { timestampMs, hasText: Boolean(text) };
 				}
 			}
 
-			const messageId = this.extractSessionMessageId(messageObj);
+			const messageId = this.extractSessionMessageId(message);
 			if (!messageId) {
 				continue;
 			}
@@ -6456,8 +6440,6 @@ Report findings using bug resolution workflow.`;
 	private async attemptInfrastructureRecovery(): Promise<boolean> {
 		let recovered = false;
 
-		// API server is required for all recovery decisions.
-		// If API is down, skip local fallback recovery work for this tick.
 		if (!this.infrastructureHealth.apiServer.healthy) {
 			try {
 				const status = await this.apiRequest<{ status: string }>("/api/health");
@@ -7528,24 +7510,13 @@ ${conflictList}
 		});
 	}
 
-	/**
-	 * Attempt to resolve claim conflicts (placeholder for future active resolution)
-	 */
 	private async attemptClaimConflictResolution(
 		task: Task,
 		conflicts: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>,
 	): Promise<void> {
-		// This is a placeholder for future active resolution logic
-		// For now, just log that we would attempt resolution
 		this.log(
 			`Active claim resolution enabled but not yet implemented. Task ${task.id} has ${conflicts.length} conflict(s).`,
 		);
-
-		// Future implementation could:
-		// 1. Transfer claims from idle arms to active arms
-		// 2. Coordinate work between arms on the same file
-		// 3. Split tasks based on file boundaries
-		// 4. Prioritize tasks based on urgency/importance
 	}
 
 	/**
@@ -7666,14 +7637,6 @@ ${conflictList}
 		});
 		this.state.pendingTasks = this.tasks.filter(
 			(t) => t.status === "pending",
-		).length;
-	}
-
-	private async saveTasks(): Promise<void> {
-		// Task persistence is API-driven. Keep this method for compatibility with
-		// older call sites while migration to explicit API writes is in progress.
-		this.state.pendingTasks = (
-			await this.listTasksFromApi({ status: ["pending"], limit: 500 })
 		).length;
 	}
 
@@ -7895,9 +7858,7 @@ ${conflictList}
 			const allReports = await this.listStatusReportsFromApi({ limit: 500 });
 			const activeTasks = await this.listTasksFromApi({ limit: 500 });
 			const verifySubjects = new Set(
-				activeTasks
-					.filter((t) => t.subject.startsWith("Verify & Polish: "))
-					.map((t) => t.subject),
+				activeTasks.filter((t) => isVerificationTaskSubject(t.subject)).map((t) => t.subject),
 			);
 
 			let verificationTasksCreated = 0;
@@ -7936,14 +7897,11 @@ ${conflictList}
 			}
 
 			for (const task of completedTasks) {
-				if (
-					task.subject.startsWith("Validate completion:") ||
-					task.subject.startsWith("Verify & Polish:")
-				) {
+				if (isValidationTaskSubject(task.subject) || isVerificationTaskSubject(task.subject)) {
 					continue;
 				}
 
-				const verifySubject = `Verify & Polish: ${task.subject}`;
+				const verifySubject = buildVerificationTaskSubject(task.subject);
 				if (verifySubjects.has(verifySubject)) {
 					continue;
 				}
@@ -8078,7 +8036,7 @@ ${originalTask.id}`;
 		const verifyTask =
 			(await this.createTaskViaApi({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -8092,7 +8050,7 @@ ${originalTask.id}`;
 			})) ||
 			({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",

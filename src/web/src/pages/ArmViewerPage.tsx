@@ -35,12 +35,15 @@ import {
 import {
 	api,
 	cn,
+	type JsonObject,
+	type JsonValue,
 	type Arm,
 	type ArmTodo,
 	type OpenCodeEvent,
 	type ArmAnalysisFull,
 	type ArmActivityState,
 	type ArmMessage,
+	isJsonObject,
 } from "@/lib";
 import { StatusBadge } from "@/components";
 import { useArmEvents, useWebSocket } from "@/hooks";
@@ -69,8 +72,18 @@ interface ActivityItem {
 	subtitle?: string;
 	status: "pending" | "running" | "completed" | "error" | "info";
 	timestamp: number;
-	details?: Record<string, unknown>;
+	details?: JsonObject;
 	expanded?: boolean;
+}
+
+function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
+	const result: JsonObject = {};
+	for (const [key, value] of Object.entries(entries)) {
+		if (value !== undefined) {
+			result[key] = value;
+		}
+	}
+	return result;
 }
 
 interface ArmHistoryState {
@@ -427,14 +440,14 @@ export function ArmViewerPage() {
 							state?: {
 								status: string;
 								title?: string;
-								input?: Record<string, unknown>;
+								input?: JsonObject;
 								output?: string;
 								error?: string;
 								time?: { start: number; end: number };
 							};
 					  }
 					| undefined;
-				const delta = props.delta as string | undefined;
+				const delta = typeof props.delta === "string" ? props.delta : undefined;
 
 				if (part) {
 					// Text content - use delta for updates, full text for creates
@@ -461,26 +474,26 @@ export function ArmViewerPage() {
 						else if (status === "completed") actStatus = "completed";
 						else if (status === "error") actStatus = "error";
 
-						upsertActivity(toolId, {
-							type: "tool",
-							title: title,
-							subtitle: part.tool,
-							status: actStatus,
-							details: {
-								tool: part.tool,
-								input: state?.input,
-								output: state?.output,
-								error: state?.error,
-								duration: state?.time
-									? state.time.end - state.time.start
-									: undefined,
-							},
-						});
-					}
+							upsertActivity(toolId, {
+								type: "tool",
+								title: title,
+								subtitle: part.tool,
+								status: actStatus,
+								details: compactJsonObject({
+									tool: part.tool,
+									input: state?.input,
+									output: state?.output,
+									error: state?.error,
+									duration: state?.time
+										? state.time.end - state.time.start
+										: undefined,
+								}),
+							});
+						}
 
 					// Step finish - contains cost/token info
 					if (part.type === "step-finish") {
-						const stepPart = part as unknown as {
+						const stepPart = part as {
 							cost?: number;
 							tokens?: {
 								input: number;
@@ -501,21 +514,21 @@ export function ArmViewerPage() {
 							}));
 						}
 
-						upsertActivity(genId(), {
-							type: "step",
-							title: "Step completed",
-							subtitle: stepPart.reason || "done",
-							status: "completed",
-							details: {
-								cost: stepPart.cost,
-								tokens: stepPart.tokens,
-							},
-						});
-					}
+							upsertActivity(genId(), {
+								type: "step",
+								title: "Step completed",
+								subtitle: stepPart.reason || "done",
+								status: "completed",
+								details: compactJsonObject({
+									cost: stepPart.cost,
+									tokens: stepPart.tokens,
+								}),
+							});
+						}
 
 					// File parts
 					if (part.type === "file") {
-						const filePart = part as unknown as {
+						const filePart = part as {
 							filename?: string;
 							mime?: string;
 						};
@@ -535,7 +548,7 @@ export function ArmViewerPage() {
 
 			// File edited
 			if (type === "file.edited") {
-				const file = props.file as string | undefined;
+				const file = typeof props.file === "string" ? props.file : undefined;
 				if (file) {
 					upsertActivity(genId(), {
 						type: "file",
@@ -592,18 +605,18 @@ export function ArmViewerPage() {
 					| { name?: string; data?: { message?: string } }
 					| undefined;
 				const message = error?.data?.message || error?.name || "Unknown error";
-				upsertActivity(genId(), {
-					type: "error",
-					title: "Error",
-					subtitle: message,
-					status: "error",
-					details: { error },
-				});
-			}
+					upsertActivity(genId(), {
+						type: "error",
+						title: "Error",
+						subtitle: message,
+						status: "error",
+						details: compactJsonObject({ error }),
+					});
+				}
 
-			// Todo updates - only update if this is for the currently selected arm
-			if (type === "todo.updated") {
-				const todos = props.todos as ArmTodo[] | undefined;
+				// Todo updates - only update if this is for the currently selected arm
+				if (type === "todo.updated") {
+					const todos = Array.isArray(props.todos) ? (props.todos as unknown as ArmTodo[]) : undefined;
 				if (todos && selectedArmId) {
 					// Only update todos if the event is from the currently selected arm
 					// The SSE connection should already be filtered by arm, but this adds extra safety
@@ -620,7 +633,7 @@ export function ArmViewerPage() {
 
 			// PTY (terminal) events
 			if (type === "pty.created" || type === "pty.updated") {
-				const ptyId = props.id as string | undefined;
+				const ptyId = typeof props.id === "string" ? props.id : undefined;
 				upsertActivity(`pty-${ptyId}`, {
 					type: "terminal",
 					title: "Terminal",
@@ -630,8 +643,8 @@ export function ArmViewerPage() {
 			}
 
 			if (type === "pty.exited") {
-				const ptyId = props.id as string | undefined;
-				const code = props.code as number | undefined;
+				const ptyId = typeof props.id === "string" ? props.id : undefined;
+				const code = typeof props.code === "number" ? props.code : undefined;
 				upsertActivity(`pty-${ptyId}`, {
 					type: "terminal",
 					title: "Terminal exited",
@@ -642,7 +655,7 @@ export function ArmViewerPage() {
 
 			// VCS branch
 			if (type === "vcs.branch.updated") {
-				const branch = props.branch as string | undefined;
+				const branch = typeof props.branch === "string" ? props.branch : undefined;
 				upsertActivity(genId(), {
 					type: "branch",
 					title: "Branch updated",
@@ -1880,21 +1893,23 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 	);
 }
 
-function formatMessageTime(timeValue: unknown): string | null {
+function formatMessageTime(timeValue: JsonValue | undefined): string | null {
 	if (timeValue === undefined || timeValue === null) {
 		return null;
 	}
 
-	let raw: unknown = timeValue;
-	if (typeof timeValue === "object") {
-		const timeObj = timeValue as Record<string, unknown>;
-		raw =
-			timeObj.completed ??
-			timeObj.created ??
-			timeObj.updated ??
-			timeObj.end ??
-			timeObj.start;
-	}
+	let raw: JsonValue = timeValue;
+		if (isJsonObject(timeValue)) {
+			const timeObj = timeValue;
+			raw = (
+				timeObj.completed ??
+				timeObj.created ??
+				timeObj.updated ??
+				timeObj.end ??
+				timeObj.start ??
+				null
+			);
+		}
 
 	let date: Date | null = null;
 	if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -1923,23 +1938,23 @@ function formatMessageTime(timeValue: unknown): string | null {
 
 function extractToolDetails(part: ArmMessage["parts"][number]): {
 	status?: string;
-	input?: unknown;
-	output?: unknown;
-	error?: unknown;
+	input?: JsonValue;
+	output?: JsonValue;
+	error?: JsonValue;
 	durationMs?: number;
 } {
 	const details: {
 		status?: string;
-		input?: unknown;
-		output?: unknown;
-		error?: unknown;
+		input?: JsonValue;
+		output?: JsonValue;
+		error?: JsonValue;
 		durationMs?: number;
 	} = {};
 
 	if (typeof part.state === "string") {
 		details.status = part.state;
-	} else if (part.state && typeof part.state === "object") {
-		const stateObj = part.state as Record<string, unknown>;
+	} else if (isJsonObject(part.state)) {
+		const stateObj = part.state;
 		if (typeof stateObj.status === "string") {
 			details.status = stateObj.status;
 		}
@@ -1952,8 +1967,8 @@ function extractToolDetails(part: ArmMessage["parts"][number]): {
 		if (stateObj.error !== undefined) {
 			details.error = stateObj.error;
 		}
-		if (stateObj.time && typeof stateObj.time === "object") {
-			const timeObj = stateObj.time as Record<string, unknown>;
+		if (isJsonObject(stateObj.time)) {
+			const timeObj = stateObj.time;
 			const start =
 				typeof timeObj.start === "number" ? timeObj.start : undefined;
 			const end = typeof timeObj.end === "number" ? timeObj.end : undefined;
@@ -1979,7 +1994,7 @@ function extractToolDetails(part: ArmMessage["parts"][number]): {
 	return details;
 }
 
-function summarizeToolValue(value: unknown): string {
+function summarizeToolValue(value: JsonValue): string {
 	if (typeof value === "string") {
 		return value.length > 220 ? `${value.slice(0, 220)}...` : value;
 	}
@@ -2265,19 +2280,19 @@ function formatTime(timestamp: number): string {
 	});
 }
 
-function formatDetails(details: Record<string, unknown>): string {
+function formatDetails(details: JsonObject): string {
 	// Format details for display, handling special cases
-	const formatted: Record<string, unknown> = {};
+	const formatted: JsonObject = {};
 
 	for (const [key, value] of Object.entries(details)) {
 		if (value === undefined || value === null) continue;
 
 		if (key === "output" && typeof value === "string" && value.length > 500) {
 			formatted[key] = value.slice(0, 500) + "... (truncated)";
-		} else if (key === "input" && typeof value === "object") {
+		} else if (key === "input" && isJsonObject(value)) {
 			// Truncate long input values
-			const inputObj = value as Record<string, unknown>;
-			const truncatedInput: Record<string, unknown> = {};
+			const inputObj = value;
+			const truncatedInput: JsonObject = {};
 			for (const [k, v] of Object.entries(inputObj)) {
 				if (typeof v === "string" && v.length > 200) {
 					truncatedInput[k] = v.slice(0, 200) + "...";

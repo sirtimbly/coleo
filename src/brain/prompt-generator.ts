@@ -17,6 +17,10 @@ import {
 } from "./discovery-summarizer";
 import { findPlanFiles } from "./plan-parser";
 import { formatTaskAttachmentList } from "../lib/prompt-attachments";
+import {
+	VALIDATION_TASK_SUBJECT_PREFIX,
+	isVerificationTaskSubject,
+} from "./task-subjects";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -371,7 +375,7 @@ function getNextPendingTask(
 			statuses: ["pending"],
 			dependencyBlocked: false,
 			phase: phaseValue || undefined,
-			excludeSubjectPrefix: "Validate completion:",
+			excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
 			sort: "priority_then_created_asc",
 			limit: 200,
 		})
@@ -580,7 +584,7 @@ function shouldExcludeTask(
 
 function isVerificationFollowupTask(task: BrainTaskRecord): boolean {
 	if (task.id.startsWith("verify-")) return true;
-	if (task.subject.startsWith("Verify & Polish:")) return true;
+	if (isVerificationTaskSubject(task.subject)) return true;
 	if (task.classification === "qa") return true;
 	return false;
 }

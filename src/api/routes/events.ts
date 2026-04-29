@@ -12,6 +12,7 @@ import { HttpError } from "../middleware";
 import { BrainEventWindow, brainEventWindow } from "../../brain/event-window";
 import { ArmActivityAnalyzer, armActivityAnalyzer } from "../../brain/activity-analyzer";
 import { eventStore } from "../../nats/jetstream";
+import { isRecord } from "../../utils/json";
 
 interface EventsContext {
   Variables: {
@@ -61,6 +62,18 @@ const SENSITIVE_PATTERNS = [
 /**
  * Sanitize event data by redacting sensitive fields
  */
+function sanitizeEventValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeEventValue(item));
+  }
+
+  if (isRecord(value)) {
+    return sanitizeEventData(value);
+  }
+
+  return value;
+}
+
 function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
 
@@ -73,11 +86,8 @@ function sanitizeEventData(data: Record<string, unknown>): Record<string, unknow
     } else if (typeof value === "string" && value.length > 2000) {
       // Truncate very long strings
       sanitized[key] = value.slice(0, 2000) + "... [truncated]";
-    } else if (typeof value === "object" && value !== null) {
-      // Recursively sanitize nested objects
-      sanitized[key] = sanitizeEventData(value as Record<string, unknown>);
     } else {
-      sanitized[key] = value;
+      sanitized[key] = sanitizeEventValue(value);
     }
   }
 
@@ -109,7 +119,7 @@ export function createEventsRoutes() {
     if (typeof body.type !== "string" || body.type.trim().length === 0) {
       throw HttpError.badRequest("type is required");
     }
-    if (!body.data || typeof body.data !== "object" || Array.isArray(body.data)) {
+    if (!isRecord(body.data)) {
       throw HttpError.badRequest("data must be an object");
     }
     if (body.armId !== undefined && typeof body.armId !== "string") {
@@ -130,7 +140,7 @@ export function createEventsRoutes() {
     await eventStore.publishEvent(body.subject, {
       type: body.type,
       armId: typeof body.armId === "string" ? body.armId : undefined,
-      data: body.data as Record<string, unknown>,
+      data: body.data,
       timestamp:
         typeof body.timestamp === "string"
           ? new Date(body.timestamp).toISOString()
