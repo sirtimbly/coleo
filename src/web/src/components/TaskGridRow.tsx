@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import {
 	Bold,
 	GripVertical,
@@ -11,7 +11,6 @@ import {
 	Check,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
 import { type Task, type TaskMetadata, type UiMetadata } from "@/lib";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib";
@@ -47,7 +46,7 @@ interface TaskGridRowProps {
 	onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
 	onDelete?: (task: Task) => void;
 	onReorderToSortOrder?: (taskId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: DraggableAttributes & DraggableSyntheticListeners;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }

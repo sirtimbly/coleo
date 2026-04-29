@@ -90,7 +90,13 @@ function BrainConfigSection({ config, onUpdate }: { config: ColeoConfig | null; 
 
   const handleSave = async () => {
     try {
-      await api.updateConfig({ brain: { pollIntervalMs, maxArms } });
+      await api.updateConfig({
+        brain: {
+          pollIntervalMs,
+          maxArms,
+          armGracePeriodMinutes: config?.brain.armGracePeriodMinutes ?? 10,
+        },
+      });
       onUpdate();
       setIsEditing(false);
     } catch (err) {

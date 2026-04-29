@@ -17,26 +17,26 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 
 export interface JsonObject {
-  [key: string]: JsonValue;
+  [key: string]: JsonValue | undefined;
 }
 
 export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export interface UiMetadata {
+export interface UiMetadata extends JsonObject {
   tags?: string[];
   color?: string;
   bold?: boolean;
 }
 
-export interface TaskLlmMessage {
+export interface TaskLlmMessage extends JsonObject {
   role: 'user' | 'assistant';
   content: string;
   at: string;
 }
 
-export interface TaskLlmMetadata {
+export interface TaskLlmMetadata extends JsonObject {
   originalPrompt?: string;
   generatedDescription?: string;
   history?: TaskLlmMessage[];
@@ -1273,7 +1273,7 @@ export interface Task {
 }
 
 // OpenCode SSE event types
-export interface OpenCodeEvent {
+export interface OpenCodeEvent extends JsonObject {
   type: string;
   properties: JsonObject;
 }

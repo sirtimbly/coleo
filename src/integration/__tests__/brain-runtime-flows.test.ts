@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm } from "fs/promises";
 import { join } from "path";
-import { Brain } from "../brain";
+import { Brain } from "../../brain/brain";
 import { initDatabase, type Database } from "../../db";
 import type { Task, Arm } from "../../types";
 
@@ -9,14 +9,14 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-describe("Brain coverage boost", () => {
+describe("Brain runtime flows", () => {
   let testDir: string;
   let db: Database;
   let brain: Brain;
-  let sentToHuman: Array<{ subject: string; body: string }>; 
+  let sentToHuman: Array<{ subject: string; body: string }>;
 
   beforeEach(async () => {
-    testDir = join("/tmp", `coleo-brain-coverage-boost-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+    testDir = join("/tmp", `coleo-brain-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     await mkdir(join(testDir, "mail", "inbox", "new"), { recursive: true });
     await mkdir(join(testDir, "mail", "inbox", "cur"), { recursive: true });
@@ -290,6 +290,45 @@ describe("Brain coverage boost", () => {
       }
 
       if (path.startsWith("/api/bugs")) {
+        if (path === "/api/bugs" && options.method === "POST") {
+          const body = JSON.parse(String(options.body || "{}")) as {
+            id?: string;
+            title: string;
+            description: string;
+            source: string;
+            priority?: string;
+            blockers?: string[];
+            metadata?: Record<string, unknown>;
+          };
+          const bugId = body.id || `bug-${Date.now()}`;
+          const now = nowIso();
+          db.run(
+            `INSERT INTO bugs (
+              id, title, description, source, priority, status, blockers, metadata, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?, ?, ?)`,
+            [
+              bugId,
+              body.title,
+              body.description,
+              body.source,
+              body.priority || "medium",
+              JSON.stringify(body.blockers || []),
+              JSON.stringify(body.metadata || {}),
+              now,
+              now,
+            ],
+          );
+          return {
+            bugId,
+            deduplicated: false,
+          } as T;
+        }
+
+        const bugId = path.split("/").pop();
+        if (bugId && options.method === "PATCH") {
+          return { success: true } as T;
+        }
+
         const rows = db.query(`
           SELECT id, title, status, priority, blockers
           FROM bugs
@@ -310,6 +349,48 @@ describe("Brain coverage boost", () => {
             blockers: row.blockers ? JSON.parse(row.blockers) : [],
           })),
         } as T;
+      }
+
+      if (path === "/api/discoveries" && options.method === "POST") {
+        const body = JSON.parse(String(options.body || "{}")) as {
+          id?: string;
+          armId: string;
+          armName: string;
+          kind: string;
+          title: string;
+          details: string;
+          filePath?: string | null;
+          lineNumber?: number | null;
+          severity?: string;
+          status?: string;
+          taskId?: string | null;
+          phase?: string | null;
+        };
+        const id = body.id || `disc-${Date.now()}`;
+        const now = nowIso();
+        db.run(
+          `INSERT INTO discoveries (
+            id, arm_id, arm_name, kind, title, details, file_path, line_number,
+            severity, status, task_id, phase, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            id,
+            body.armId,
+            body.armName,
+            body.kind,
+            body.title,
+            body.details,
+            body.filePath || null,
+            body.lineNumber || null,
+            body.severity || "info",
+            body.status || "open",
+            body.taskId || null,
+            body.phase || null,
+            now,
+            now,
+          ],
+        );
+        return { discovery: { id } } as T;
       }
 
       if (path.startsWith("/api/status-reports?")) {
@@ -571,6 +652,7 @@ describe("Brain coverage boost", () => {
   });
 
   afterEach(async () => {
+    brain.stop();
     db.close();
     try {
       await rm(testDir, { recursive: true, force: true });
@@ -579,7 +661,7 @@ describe("Brain coverage boost", () => {
     }
   });
 
-  it("exercises infrastructure health and notifications", async () => {
+  it("raises a human-facing infrastructure alert for critical service failures", async () => {
     const health = await (brain as any).checkInfrastructureHealth();
     expect(health.healthy).toBe(true);
 
@@ -588,10 +670,13 @@ describe("Brain coverage boost", () => {
       "API Server unreachable",
     ]);
 
-    expect(sentToHuman.length).toBeGreaterThan(0);
+    expect(sentToHuman.map((message) => message.subject)).toEqual([
+      expect.stringContaining("Critical Infrastructure Issues Detected"),
+      "[coleo] Infrastructure health issues detected",
+    ]);
   });
 
-  it("handles status reports across multiple branches", async () => {
+  it("applies blocked, review, issue, and completion-with-issues status report flows", async () => {
     // Blocked with defer (other pending tasks exist)
     await (brain as any).handleStatusReport({
       id: "report-blocked-defer",
@@ -662,10 +747,38 @@ describe("Brain coverage boost", () => {
       testsStatus: "not_run",
     });
 
-    expect(sentToHuman.length).toBeGreaterThan(0);
+    const blockedDeferTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-blocked-defer") as { status: string };
+    expect(blockedDeferTask.status).toBe("blocked");
+
+    const blockedStandardTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-blocked-standard") as { status: string };
+    expect(blockedStandardTask.status).toBe("blocked");
+
+    const verificationTask = db
+      .query(
+        "SELECT subject, status FROM tasks WHERE subject LIKE 'Verify & Polish: Completed with issues' ORDER BY created_at DESC LIMIT 1",
+      )
+      .get() as { subject: string; status: string } | null;
+    expect(verificationTask).toEqual({
+      subject: "Verify & Polish: Completed with issues",
+      status: "pending",
+    });
+
+    expect(sentToHuman.map((message) => message.subject)).toEqual(
+      expect.arrayContaining([
+        "[coleo] Task deferred: Blocked defer",
+        "[coleo] Task deferred: Blocked standard",
+        "[coleo] Issues found: Issues found",
+        "[coleo] Review needed: Needs review",
+        "[coleo] Verification needed: Completed with issues",
+      ]),
+    );
   });
 
-  it("handles bugs, discoveries, doc updates, file changes, and approvals", async () => {
+  it("records bug reports and escalates warning discoveries to humans", async () => {
     await (brain as any).handleBugReport("arm-1", {
       id: "bug-1",
       title: "Minor issue",
@@ -695,6 +808,26 @@ describe("Brain coverage boost", () => {
       severity: "warning",
     });
 
+    const bugRows = db
+      .query("SELECT title, priority FROM bugs ORDER BY title ASC")
+      .all() as Array<{ title: string; priority: string }>;
+    expect(bugRows.map((row) => row.title)).toEqual(
+      expect.arrayContaining([
+        "Crash on start",
+        "Minor issue",
+        "Potential secret",
+        "Task failure",
+      ]),
+    );
+    expect(
+      sentToHuman.some((message) => message.subject === "[coleo] Discovery: Potential secret"),
+    ).toBe(true);
+    expect(
+      sentToHuman.some((message) => message.subject === "[coleo] HIGH Priority Bug: Potential secret"),
+    ).toBe(true);
+  });
+
+  it("notifies humans about documentation, file changes, and approval requests", async () => {
     await (brain as any).handleDocUpdate("arm-1", {
       path: "docs/requirements.md",
       reason: "Update requirement",
@@ -715,20 +848,32 @@ describe("Brain coverage boost", () => {
       options: ["approve", "reject"],
     });
 
-    expect(sentToHuman.length).toBeGreaterThan(0);
+    expect(sentToHuman.map((message) => message.subject)).toEqual(
+      expect.arrayContaining([
+        "[coleo] Documentation updated: docs/requirements.md",
+        "[coleo] File change detected: docs/requirements.md",
+        expect.stringContaining("Approval needed: delete file"),
+      ]),
+    );
   });
 
-  it("covers helper methods", async () => {
+  it("treats productive activity kinds as progress signals for idle-arm detection", async () => {
     expect((brain as any).isProductiveAction("heartbeat")).toBe(true);
     expect((brain as any).isProductiveAction("unknown_action")).toBe(false);
+  });
 
+  it("detects recent prompt activity in an arm event stream", async () => {
     const pattern = (brain as any).analyzePromptResponsePattern("arm-1", [
       { timestamp: new Date().toISOString(), action: "prompt_received", details: "{}" },
     ]);
-    expect(pattern.hasPrompt).toBe(true);
+    expect(pattern).toEqual({
+      hasPrompt: true,
+      justReceivedPrompt: true,
+      promptCount: 1,
+    });
   });
 
-  it("covers task creation and stuck handling flows", async () => {
+  it("creates follow-up tasks used by human mail and status-report workflows", async () => {
     const created = await (brain as any).createTask("New task", "Do the thing");
     expect(created.subject).toBe("New task");
 
@@ -755,7 +900,21 @@ describe("Brain coverage boost", () => {
     );
     expect(verification.subject).toContain("Verify & Polish");
 
+    const humanBugConfirmation = sentToHuman.find((message) =>
+      message.subject.includes("Bug Report Received: Bug title"),
+    );
+    expect(humanBugConfirmation).toBeDefined();
+  });
+
+  it("handles the stuck-arm responses used by the runtime recovery path", async () => {
     const arm = (brain as any).arms.get("arm-1") as Arm;
+    const prompts: string[] = [];
+
+    (brain as any).sendPromptToArm = async (_armId: string, message: string) => {
+      prompts.push(message);
+      return true;
+    };
+    (brain as any).readArmLogs = async () => "recent output";
 
     await (brain as any).handleStuckArm(arm, {
       isStuck: true,
@@ -777,21 +936,30 @@ describe("Brain coverage boost", () => {
 
     await (brain as any).handleStuckArm(arm, {
       isStuck: true,
-      stuckType: "looping",
-      reasoning: "Loop detected",
-      suggestedAction: "compact",
-      confidence: 0.8,
-    });
-
-    await (brain as any).handleStuckArm(arm, {
-      isStuck: true,
       stuckType: "idle_too_long",
       reasoning: "Idle",
       suggestedAction: "prompt",
       confidence: 0.6,
     });
 
-    expect(sentToHuman.length).toBeGreaterThan(0);
+    await (brain as any).handleStuckArm(arm, {
+      isStuck: true,
+      stuckType: "looping",
+      reasoning: "Loop detected",
+      suggestedAction: "escalate",
+      confidence: 0.8,
+    });
+
+    expect(prompts).toEqual([
+      "Here is the answer",
+      "Yes, proceed.",
+      expect.any(String),
+    ]);
+    expect(sentToHuman.map((message) => message.subject)).toEqual(
+      expect.arrayContaining([
+        "[coleo] Arm ArmOne needs help (looping)",
+      ]),
+    );
   });
 
   it("completes tasks even when they are missing from in-memory cache", async () => {

@@ -3,7 +3,7 @@ import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
 import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
-import { useWebSocket, type WebSocketMessage } from '@/hooks';
+import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
 interface SystemStatus {

@@ -18,23 +18,15 @@ import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
+	buildMailThreads,
+	getSelectedInboxUnreadMessageIds,
+	type MailThread,
+} from "@/pages/mail-page-utils";
+import {
 	useIsWorkspacePanel,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from "@/workspace/route-context";
-
-interface ThreadMessage {
-	message: MailMessage;
-	isCollapsed: boolean;
-}
-
-interface Thread {
-	id: string;
-	subject: string;
-	messages: ThreadMessage[];
-	unreadCount: number;
-	lastMessageDate: Date;
-}
 
 export function MailPage() {
 	usePageTitle('Coleo Observatory - Mail');
@@ -166,112 +158,17 @@ export function MailPage() {
 	};
 
 	// Group messages into threads (combine all folders for proper threading)
-	const threads = useMemo(() => {
-		// Combine all messages from all folders for proper threading
-		const allMessages = [
-			...(inbox?.messages || []),
-			...(sent?.messages || []),
-			...(archive?.messages || []),
-		];
-
-		const threadMap = new Map<string, Thread>();
-
-		allMessages.forEach((msg) => {
-			// Use subject as thread key (normalize by removing Re: and Fwd: prefixes)
-			const normalizedSubject = msg.subject
-				.replace(/^(Re:|Fwd:|RE:|FWD:)\s*/i, "")
-				.trim();
-
-			// Also check In-Reply-To header for more accurate threading
-			const inReplyTo = msg.headers["in-reply-to"];
-			const references = msg.headers["references"];
-
-			// Use message-id from headers as thread ID if available, otherwise use normalized subject
-			let threadId = normalizedSubject;
-
-			// If this is a reply, try to find the parent thread
-			if (inReplyTo || references) {
-				// Check if there's an existing thread that matches
-				for (const [existingId, thread] of threadMap) {
-					if (
-						thread.messages.some(
-							(m) =>
-								inReplyTo?.includes(m.message.headers["message-id"] || "") ||
-								references?.includes(m.message.headers["message-id"] || ""),
-						)
-					) {
-						threadId = existingId;
-						break;
-					}
-				}
-			}
-
-			if (!threadMap.has(threadId)) {
-				threadMap.set(threadId, {
-					id: threadId,
-					subject: normalizedSubject,
-					messages: [],
-					unreadCount: 0,
-					lastMessageDate: new Date(msg.date),
-				});
-			}
-
-			const thread = threadMap.get(threadId)!;
-			// Only auto-collapse if explicitly in collapsedThreads state
-			const isCollapsed = collapsedThreads.has(`${threadId}-${msg.id}`);
-
-			thread.messages.push({
-				message: msg,
-				isCollapsed,
-			});
-
-			if (!msg.flags.seen) {
-				thread.unreadCount++;
-			}
-
-			const msgDate = new Date(msg.date);
-			if (msgDate > thread.lastMessageDate) {
-				thread.lastMessageDate = msgDate;
-			}
-		});
-
-		// Sort messages within each thread by date (oldest first)
-		threadMap.forEach((thread) => {
-			thread.messages.sort(
-				(a, b) =>
-					new Date(a.message.date).getTime() -
-					new Date(b.message.date).getTime(),
-			);
-		});
-
-		// Sort threads by last message date (newest first)
-		let sortedThreads = Array.from(threadMap.values()).sort(
-			(a, b) => b.lastMessageDate.getTime() - a.lastMessageDate.getTime(),
-		);
-
-		// Filter threads by activeTab - only show threads that have messages in the selected folder
-		if (activeTab === "inbox") {
-			sortedThreads = sortedThreads.filter((t) =>
-				t.messages.some((m) =>
-					inbox?.messages.some((im) => im.id === m.message.id),
-				),
-			);
-		} else if (activeTab === "sent") {
-			sortedThreads = sortedThreads.filter((t) =>
-				t.messages.some((m) =>
-					sent?.messages.some((sm) => sm.id === m.message.id),
-				),
-			);
-		} else if (activeTab === "archive") {
-			sortedThreads = sortedThreads.filter((t) =>
-				t.messages.some((m) =>
-					archive?.messages.some((am) => am.id === m.message.id),
-				),
-			);
-		}
-
-		return sortedThreads;
-	}, [inbox, sent, archive, activeTab, collapsedThreads]);
+	const threads = useMemo(
+		() =>
+			buildMailThreads({
+				inboxMessages: inbox?.messages,
+				sentMessages: sent?.messages,
+				archiveMessages: archive?.messages,
+				activeTab,
+				collapsedThreads,
+			}),
+		[inbox?.messages, sent?.messages, archive?.messages, activeTab, collapsedThreads],
+	);
 
 	const selectedThread = threads.find((t) => t.id === selectedThreadId);
 
@@ -280,18 +177,15 @@ export function MailPage() {
 		? selectedThread.messages.findIndex((m) => !m.message.flags.seen)
 		: -1;
 
-	const selectedInboxUnreadMessageIds = useMemo(() => {
-		if (!selectedThread || activeTab !== "inbox") return [];
-
-		const inboxMessageIds = new Set(
-			(inbox?.messages ?? []).map((message) => message.id),
-		);
-
-		return selectedThread.messages
-			.map((threadMessage) => threadMessage.message)
-			.filter((message) => !message.flags.seen && inboxMessageIds.has(message.id))
-			.map((message) => message.id);
-	}, [activeTab, inbox?.messages, selectedThread]);
+	const selectedInboxUnreadMessageIds = useMemo(
+		() =>
+			getSelectedInboxUnreadMessageIds(
+				selectedThread,
+				activeTab,
+				inbox?.messages,
+			),
+		[activeTab, inbox?.messages, selectedThread],
+	);
 	const selectedInboxUnreadMessageIdsKey = selectedInboxUnreadMessageIds.join(",");
 
 	const markThreadRead = useCallback(
@@ -359,7 +253,7 @@ export function MailPage() {
 	};
 
 	const replyToThread = useCallback(
-		(thread: Thread) => {
+		(thread: MailThread) => {
 			const lastMessage = thread.messages[thread.messages.length - 1];
 			if (!lastMessage) return;
 
@@ -414,7 +308,7 @@ export function MailPage() {
   );
 
 	const archiveThread = useCallback(
-		async (thread: Thread) => {
+		async (thread: MailThread) => {
 			const threadIndex = threads.findIndex(
 				(candidateThread) => candidateThread.id === thread.id,
 			);

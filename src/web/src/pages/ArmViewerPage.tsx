@@ -76,6 +76,16 @@ interface ActivityItem {
 	expanded?: boolean;
 }
 
+function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
+	const result: JsonObject = {};
+	for (const [key, value] of Object.entries(entries)) {
+		if (value !== undefined) {
+			result[key] = value;
+		}
+	}
+	return result;
+}
+
 interface ArmHistoryState {
 	activities: ActivityItem[];
 	todos: ArmTodo[];
@@ -464,22 +474,22 @@ export function ArmViewerPage() {
 						else if (status === "completed") actStatus = "completed";
 						else if (status === "error") actStatus = "error";
 
-						upsertActivity(toolId, {
-							type: "tool",
-							title: title,
-							subtitle: part.tool,
-							status: actStatus,
-							details: {
-								tool: part.tool,
-								input: state?.input,
-								output: state?.output,
-								error: state?.error,
-								duration: state?.time
-									? state.time.end - state.time.start
-									: undefined,
-							},
-						});
-					}
+							upsertActivity(toolId, {
+								type: "tool",
+								title: title,
+								subtitle: part.tool,
+								status: actStatus,
+								details: compactJsonObject({
+									tool: part.tool,
+									input: state?.input,
+									output: state?.output,
+									error: state?.error,
+									duration: state?.time
+										? state.time.end - state.time.start
+										: undefined,
+								}),
+							});
+						}
 
 					// Step finish - contains cost/token info
 					if (part.type === "step-finish") {
@@ -504,17 +514,17 @@ export function ArmViewerPage() {
 							}));
 						}
 
-						upsertActivity(genId(), {
-							type: "step",
-							title: "Step completed",
-							subtitle: stepPart.reason || "done",
-							status: "completed",
-							details: {
-								cost: stepPart.cost,
-								tokens: stepPart.tokens,
-							},
-						});
-					}
+							upsertActivity(genId(), {
+								type: "step",
+								title: "Step completed",
+								subtitle: stepPart.reason || "done",
+								status: "completed",
+								details: compactJsonObject({
+									cost: stepPart.cost,
+									tokens: stepPart.tokens,
+								}),
+							});
+						}
 
 					// File parts
 					if (part.type === "file") {
@@ -595,18 +605,18 @@ export function ArmViewerPage() {
 					| { name?: string; data?: { message?: string } }
 					| undefined;
 				const message = error?.data?.message || error?.name || "Unknown error";
-				upsertActivity(genId(), {
-					type: "error",
-					title: "Error",
-					subtitle: message,
-					status: "error",
-					details: { error },
-				});
-			}
+					upsertActivity(genId(), {
+						type: "error",
+						title: "Error",
+						subtitle: message,
+						status: "error",
+						details: compactJsonObject({ error }),
+					});
+				}
 
-			// Todo updates - only update if this is for the currently selected arm
-			if (type === "todo.updated") {
-				const todos = Array.isArray(props.todos) ? (props.todos as ArmTodo[]) : undefined;
+				// Todo updates - only update if this is for the currently selected arm
+				if (type === "todo.updated") {
+					const todos = Array.isArray(props.todos) ? (props.todos as unknown as ArmTodo[]) : undefined;
 				if (todos && selectedArmId) {
 					// Only update todos if the event is from the currently selected arm
 					// The SSE connection should already be filtered by arm, but this adds extra safety
@@ -1889,15 +1899,17 @@ function formatMessageTime(timeValue: JsonValue | undefined): string | null {
 	}
 
 	let raw: JsonValue = timeValue;
-	if (isJsonObject(timeValue)) {
-		const timeObj = timeValue;
-		raw =
-			timeObj.completed ??
-			timeObj.created ??
-			timeObj.updated ??
-			timeObj.end ??
-			timeObj.start;
-	}
+		if (isJsonObject(timeValue)) {
+			const timeObj = timeValue;
+			raw = (
+				timeObj.completed ??
+				timeObj.created ??
+				timeObj.updated ??
+				timeObj.end ??
+				timeObj.start ??
+				null
+			);
+		}
 
 	let date: Date | null = null;
 	if (typeof raw === "number" && Number.isFinite(raw)) {

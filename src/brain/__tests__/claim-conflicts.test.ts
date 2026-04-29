@@ -1,15 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { Brain } from "../brain";
+import { mkdtemp, rm } from "fs/promises";
+import { tmpdir } from "os";
 import { join } from "path";
-import { mkdir, writeFile, rm } from "fs/promises";
+import { Brain } from "../brain";
 import type { Task } from "../../types";
 
-describe("Brain claims integration", () => {
-  const testDir = join("/tmp", `coleo-claims-test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+describe("Brain claim conflict detection", () => {
+  let testDir: string;
   let brain: Brain;
 
   beforeEach(async () => {
-    await mkdir(testDir, { recursive: true });
+    testDir = await mkdtemp(join(tmpdir(), "coleo-claims-test-"));
     brain = new Brain({
       coleoDir: testDir,
       pollIntervalMs: 1000,

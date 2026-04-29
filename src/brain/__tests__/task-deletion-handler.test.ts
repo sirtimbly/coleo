@@ -86,10 +86,24 @@ describe("Task Deletion Handler", () => {
   });
 
   describe("handleTaskDeletion", () => {
-    it("should process task deletion and log activity", async () => {
+    it("removes the deleted feature from its source plan and publishes a deletion event", async () => {
+      const planDir = join(testDir, ".project");
+      await mkdir(planDir, { recursive: true });
+      const planPath = join(planDir, "plan.md");
+      await writeFile(
+        planPath,
+        `## Phase 1: Test
+
+### Deliverables
+
+- [ ] Task with feature <!--octopai:abcd1234-->
+`,
+        "utf-8",
+      );
+
       const payload = {
         taskId: "task-123",
-        projectId: "/path/to/plan.md:42",
+        projectId: `${planPath}:42`,
         featureId: "abcd1234",
         deletedBy: "user",
         timestamp: nowIso(),
@@ -106,9 +120,10 @@ describe("Task Deletion Handler", () => {
       expect(deletionLog).toBeDefined();
       expect(deletionLog?.target).toBe("task-123");
       expect(deletionLog?.details).toMatchObject({
-        projectId: "/path/to/plan.md:42",
+        projectId: `${planPath}:42`,
         featureId: "abcd1234",
         deletedBy: "user",
+        planCleanupNeeded: true,
       });
 
       // Should publish deletion event
@@ -119,13 +134,16 @@ describe("Task Deletion Handler", () => {
       expect(deletionEvent?.subject).toBe("coleo.events.task.task-123.deleted");
       expect(deletionEvent?.data).toMatchObject({
         taskId: "task-123",
-        projectId: "/path/to/plan.md:42",
+        projectId: `${planPath}:42`,
         featureId: "abcd1234",
         deletedBy: "user",
+        planCleaned: true,
       });
+
+      expect(await readFile(planPath, "utf-8")).not.toContain("abcd1234");
     });
 
-    it("should handle deletion with default projectId", async () => {
+    it("skips plan cleanup when the deletion is not tied to a specific plan file", async () => {
       const payload = {
         taskId: "task-456",
         projectId: "default",
@@ -143,12 +161,15 @@ describe("Task Deletion Handler", () => {
       );
       expect(deletionLog).toBeDefined();
       expect(deletionLog?.details?.planCleanupNeeded).toBe(false);
+      expect(
+        publishEventCalls.find((call) => call.type === "task.deleted")?.data?.planCleaned
+      ).toBe(false);
     });
 
-    it("should handle errors gracefully", async () => {
+    it("records a failure activity when downstream publishing fails", async () => {
       const payload = {
         taskId: "task-789",
-        projectId: "/path/to/plan.md:100",
+        projectId: "default",
         featureId: "ijkl9012",
         deletedBy: "user",
         timestamp: nowIso(),
@@ -179,7 +200,7 @@ describe("Task Deletion Handler", () => {
   });
 
   describe("verifyAndCleanupPlanFeature", () => {
-    it("should remove feature from plan file if present", async () => {
+    it("removes the feature line when it is still present", async () => {
       const planDir = join(testDir, ".project");
       await mkdir(planDir, { recursive: true });
       const planPath = join(planDir, "plan.md");
@@ -206,7 +227,7 @@ describe("Task Deletion Handler", () => {
       expect(updatedContent).toContain("feature456"); // Other feature should remain
     });
 
-    it("should return false if feature not found (idempotent)", async () => {
+    it("returns false when the feature is already gone", async () => {
       const planDir = join(testDir, ".project");
       await mkdir(planDir, { recursive: true });
       const planPath = join(planDir, "plan.md");
@@ -231,7 +252,7 @@ describe("Task Deletion Handler", () => {
       expect(updatedContent).toBe(planContent);
     });
 
-    it("should handle source_ref format with line numbers", async () => {
+    it("accepts source_ref values with line numbers", async () => {
       const planDir = join(testDir, ".project");
       await mkdir(planDir, { recursive: true });
       const planPath = join(planDir, "plan.md");
@@ -256,7 +277,7 @@ describe("Task Deletion Handler", () => {
       expect(updatedContent).not.toContain("feature789");
     });
 
-    it("should handle missing plan file gracefully", async () => {
+    it("returns false when the source plan no longer exists", async () => {
       const verifyAndCleanup = (brain as any).verifyAndCleanupPlanFeature.bind(brain);
       
       // Try to cleanup from non-existent file
@@ -265,7 +286,7 @@ describe("Task Deletion Handler", () => {
       expect(result).toBe(false);
     });
 
-    it("should return false for default projectId", async () => {
+    it("returns false for default project ids", async () => {
       const verifyAndCleanup = (brain as any).verifyAndCleanupPlanFeature.bind(brain);
       
       const result = await verifyAndCleanup("default", "feature123");
@@ -275,7 +296,7 @@ describe("Task Deletion Handler", () => {
   });
 
   describe("handleArmMessage integration", () => {
-    it("should route task_deleted messages to handler", async () => {
+    it("routes task_deleted queue messages through the deletion workflow", async () => {
       const planDir = join(testDir, ".project");
       await mkdir(planDir, { recursive: true });
       const planPath = join(planDir, "plan.md");
@@ -324,7 +345,7 @@ describe("Task Deletion Handler", () => {
       expect(updatedContent).not.toContain("delete123");
     });
 
-    it("should ignore unsupported message types", async () => {
+    it("ignores unrelated queue messages", async () => {
       const message: QueueMessage = {
         id: "msg-456",
         from: "api",

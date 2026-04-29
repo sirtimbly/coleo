@@ -4,7 +4,7 @@ import { join } from "path";
 import { Brain } from "../brain";
 import { BrainTemplateManager } from "../template-manager";
 
-describe("Brain template rendering", () => {
+describe("Brain template manager", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -30,7 +30,7 @@ describe("Brain template rendering", () => {
   });
 });
 
-describe("Brain activity reads", () => {
+describe("Brain activity API reads", () => {
   let testDir: string;
   let calls: Array<{ actor: string; limit: number }> = [];
   const originalFetch = globalThis.fetch;
@@ -103,5 +103,7 @@ describe("Brain activity reads", () => {
 
     // Data serialized to details
     expect(result![0]?.details).toContain("\"tool\":\"rg\"");
+
+    brain.stop();
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from "react";
+import { useEffect, useMemo, useRef, useState, memo } from "react";
 import {
 	Bold,
 	GripVertical,
@@ -11,17 +11,12 @@ import {
 	Bug as BugIcon,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
-import { type Bug, type BugMetadata } from "@/lib";
+import { type Bug, type BugMetadata, type BugUiMetadata } from "@/lib";
 import { cn } from "@/lib";
 import { COLOR_OPTIONS, COLOR_CLASSES, getValidColor } from "./grid-shared";
 import { STATUS_OPTIONS, STATUS_STYLES, PRIORITY_OPTIONS, PRIORITY_STYLES, SOURCE_STYLES } from "./bug-styles";
 
-export interface BugUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type BugUiMeta = BugUiMetadata;
 
 export type BugUpdate = Partial<{
 	title: string;
@@ -47,7 +42,7 @@ interface BugGridRowProps {
 	onUpdateUi?: (bugId: string, updates: BugUiMeta) => void;
 	onDelete?: (bug: Bug) => void;
 	onReorderToSortOrder?: (bugId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: DraggableAttributes & DraggableSyntheticListeners;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
 	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }
