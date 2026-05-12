@@ -35,6 +35,22 @@ import { truncateLargeFields } from '../harness/event-stream';
 const execAsync = promisify(exec);
 const MAX_DISTRIBUTED_MESSAGES = 100;
 const MAX_DISTRIBUTED_TODOS = 200;
+const DISTRIBUTED_OBSERVABILITY_TIMEOUT_MS = 7000;
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+    });
+
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
 
 export interface ArmAgentOptions {
   agentId?: string;
@@ -475,9 +491,13 @@ export class ArmAgent {
       typeof limit === 'number' && Number.isFinite(limit) && limit > 0
         ? Math.min(limit, MAX_DISTRIBUTED_MESSAGES)
         : MAX_DISTRIBUTED_MESSAGES;
-    const rawMessages = await managedArm.harness.getMessages(managedArm.session, {
-      limit: cappedLimit,
-    });
+    const rawMessages = await withTimeout(
+      managedArm.harness.getMessages(managedArm.session, {
+        limit: cappedLimit,
+      }),
+      DISTRIBUTED_OBSERVABILITY_TIMEOUT_MS,
+      `Fetching messages for arm ${armId}`,
+    );
     const messages = truncateLargeFields(
       Array.isArray(rawMessages) ? rawMessages.slice(-cappedLimit) : [],
     ) as unknown[];
@@ -513,7 +533,11 @@ export class ArmAgent {
       };
     }
 
-    const rawTodos = await managedArm.harness.getTodos(managedArm.session);
+    const rawTodos = await withTimeout(
+      managedArm.harness.getTodos(managedArm.session),
+      DISTRIBUTED_OBSERVABILITY_TIMEOUT_MS,
+      `Fetching todos for arm ${armId}`,
+    );
     const todos = truncateLargeFields(
       Array.isArray(rawTodos) ? rawTodos.slice(0, MAX_DISTRIBUTED_TODOS) : [],
     ) as unknown[];

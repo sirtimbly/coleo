@@ -1,5 +1,12 @@
-import { describe, expect, it } from "bun:test";
-import { normalizePostmarkInbound } from "../postmark-gateway";
+import { afterEach, describe, expect, it } from "bun:test";
+import { normalizePostmarkInbound, sendPostmarkMessage } from "../postmark-gateway";
+
+const createFetchMock = (
+  impl: (...args: Parameters<typeof fetch>) => Promise<Response>,
+): typeof fetch => {
+  const mock = Object.assign(impl, { preconnect: () => {} });
+  return mock as typeof fetch;
+};
 
 describe("normalizePostmarkInbound", () => {
   it("normalizes a minimal payload", () => {
@@ -62,5 +69,45 @@ describe("normalizePostmarkInbound", () => {
 
   it("throws for non-object payload", () => {
     expect(() => normalizePostmarkInbound("invalid")).toThrow("Inbound payload must be an object");
+  });
+});
+
+describe("sendPostmarkMessage", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("passes conversation headers to Postmark", async () => {
+    let payload: Record<string, unknown> | undefined;
+
+    globalThis.fetch = createFetchMock(async (_input, init) => {
+      payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        JSON.stringify({ MessageID: "postmark-123", SubmittedAt: "2026-04-20T00:00:00Z" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    });
+
+    await sendPostmarkMessage({
+      apiToken: "token",
+      from: "brain@example.test",
+      to: "human@example.test",
+      subject: "Re: Task",
+      textBody: "Done",
+      headers: {
+        "X-Coleo-Thread-Id": "task-123",
+        "In-Reply-To": "<message@example.test>",
+      },
+    });
+
+    expect(payload?.Headers).toEqual([
+      { Name: "X-Coleo-Thread-Id", Value: "task-123" },
+      { Name: "In-Reply-To", Value: "<message@example.test>" },
+    ]);
   });
 });

@@ -1007,6 +1007,26 @@ describe("Brain runtime flows", () => {
     expect(recursiveCount.count).toBe(0);
   });
 
+  it("defense-in-depth: createCommitTask refuses to create commit tasks for follow-up tasks", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["task-original-defense", "Original task", "do the thing", "completed", "normal", now, now]
+    );
+
+    // Directly calling createCommitTask with a commit task subject should be a no-op
+    await (brain as any).createCommitTask(
+      "task-original-defense",
+      "Commit changes for: Original task",
+      "Committed",
+    );
+
+    const recursiveCount = db
+      .query("SELECT COUNT(*) AS count FROM tasks WHERE subject LIKE 'Commit changes for: Commit changes for:%'")
+      .get() as { count: number };
+    expect(recursiveCount.count).toBe(0);
+  });
+
   it("hands completed arms off to their next task automatically", async () => {
     const now = nowIso();
     db.run(

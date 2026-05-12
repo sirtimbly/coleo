@@ -30,6 +30,7 @@ describe("Brain human mail processing", () => {
     });
     const sent = new Maildir(join(testDir, "mail", "sent"));
 
+    const messageId = "<human-msg@example.test>";
     const message = await sent.write({
       from: "human@coleo.local",
       to: "brain@coleo.local",
@@ -37,11 +38,13 @@ describe("Brain human mail processing", () => {
       date: new Date(),
       body: "Track this as a task.",
       headers: {
+        "Message-ID": messageId,
         "X-Coleo-Type": "human-message",
       },
     });
 
-    const processed: Array<{ subject: string; body: string }> = [];
+    const processed: Array<{ subject: string; body: string; mailThreadId?: string }> = [];
+    const replies: Array<{ subject: string; body: string; headers?: Record<string, string> }> = [];
 
     (brain as any).mailProcessor = {
       processMessage: async () => ({
@@ -56,8 +59,12 @@ describe("Brain human mail processing", () => {
       loadMailProcessorSystemPrompt: async () => "system prompt",
     };
     (brain as any).listRecentActivitySummary = async () => [];
-    (brain as any).createTask = async (subject: string, body: string) => {
-      processed.push({ subject, body });
+    (brain as any).createTask = async (
+      subject: string,
+      body: string,
+      mailThreadId?: string,
+    ) => {
+      processed.push({ subject, body, mailThreadId });
       return {
         id: "task-1",
         subject,
@@ -66,7 +73,13 @@ describe("Brain human mail processing", () => {
         status: "pending",
       };
     };
-    (brain as any).sendToHuman = async () => {};
+    (brain as any).sendToHuman = async (reply: {
+      subject: string;
+      body: string;
+      headers?: Record<string, string>;
+    }) => {
+      replies.push(reply);
+    };
 
     await (brain as any).processHumanMail();
 
@@ -74,8 +87,17 @@ describe("Brain human mail processing", () => {
       {
         subject: "Processed task",
         body: "Processed body",
+        mailThreadId: messageId,
       },
     ]);
+
+    expect(replies[0]?.headers).toMatchObject({
+      "X-Coleo-Type": "task-created",
+      "X-Coleo-Task-Id": "task-1",
+      "X-Coleo-Thread-Id": messageId,
+      "In-Reply-To": messageId,
+      References: messageId,
+    });
 
     const remainingNew = await sent.list("new");
     expect(remainingNew.some((entry) => entry.id === message.id)).toBe(false);

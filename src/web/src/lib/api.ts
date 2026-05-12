@@ -419,6 +419,7 @@ class ApiClient {
     priority?: 'critical' | 'high' | 'normal' | 'low';
     domain?: string;
     inReplyTo?: string;
+    threadId?: string;
     subject?: string;
     attachments?: TaskAttachment[];
   }) {

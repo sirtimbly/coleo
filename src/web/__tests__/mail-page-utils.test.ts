@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test";
 import type { MailMessage } from "../src/lib/api";
 import {
   buildMailThreads,
+  getMailMessageId,
+  getMailThreadId,
   getSelectedInboxUnreadMessageIds,
   normalizeMailSubject,
 } from "../src/pages/mail-page-utils";
@@ -85,6 +87,45 @@ describe("mail-page-utils", () => {
       "sent-1",
     ]);
     expect(threads[0]?.messages[1]?.isCollapsed).toBe(true);
+  });
+
+  it("uses Coleo thread headers before falling back to subject grouping", () => {
+    const brainMessage = createMailMessage({
+      id: "brain-1",
+      subject: "[coleo] Task completed: Deploy status",
+      date: "2026-04-20T09:00:00.000Z",
+      headers: {
+        "message-id": "<brain-1@example.test>",
+        "x-coleo-thread-id": "task-123",
+      },
+    });
+    const humanReply = createMailMessage({
+      id: "sent-1",
+      subject: "Re: Different visible subject",
+      date: "2026-04-20T10:00:00.000Z",
+      headers: {
+        "message-id": "<sent-1@example.test>",
+        "in-reply-to": "<brain-1@example.test>",
+        "x-coleo-thread-id": "task-123",
+      },
+    });
+
+    const threads = buildMailThreads({
+      inboxMessages: [brainMessage],
+      sentMessages: [humanReply],
+      archiveMessages: [],
+      activeTab: "inbox",
+      collapsedThreads: new Set(),
+    });
+
+    expect(getMailMessageId(brainMessage)).toBe("<brain-1@example.test>");
+    expect(getMailThreadId(humanReply)).toBe("task-123");
+    expect(threads).toHaveLength(1);
+    expect(threads[0]?.id).toBe("task-123");
+    expect(threads[0]?.messages.map((message) => message.message.id)).toEqual([
+      "brain-1",
+      "sent-1",
+    ]);
   });
 
   it("filters threads to the active mailbox based on actual message membership", () => {

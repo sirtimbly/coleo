@@ -27,6 +27,31 @@ export function normalizeMailSubject(subject: string): string {
   return subject.replace(/^(Re:|Fwd:|RE:|FWD:)\s*/i, "").trim();
 }
 
+export function getMailHeader(message: MailMessage, name: string): string | undefined {
+  const normalizedName = name.toLowerCase();
+  const value = Object.entries(message.headers).find(
+    ([header]) => header.toLowerCase() === normalizedName,
+  )?.[1];
+
+  return value?.trim() || undefined;
+}
+
+export function getMailMessageId(message: MailMessage): string {
+  return getMailHeader(message, "message-id") ?? message.id;
+}
+
+export function getMailThreadId(message: MailMessage, fallback?: string): string {
+  return (
+    getMailHeader(message, "x-coleo-thread-id") ??
+    getMailHeader(message, "x-coleo-task-id") ??
+    getMailHeader(message, "x-coleo-bug-id") ??
+    getMailHeader(message, "x-coleo-request-id") ??
+    getMailHeader(message, "in-reply-to") ??
+    fallback ??
+    normalizeMailSubject(message.subject)
+  );
+}
+
 export function buildMailThreads({
   inboxMessages = [],
   sentMessages = [],
@@ -39,18 +64,19 @@ export function buildMailThreads({
 
   for (const msg of allMessages) {
     const normalizedSubject = normalizeMailSubject(msg.subject);
-    const inReplyTo = msg.headers["in-reply-to"];
-    const references = msg.headers.references;
+    const explicitThreadId = getMailThreadId(msg);
+    const inReplyTo = getMailHeader(msg, "in-reply-to");
+    const references = getMailHeader(msg, "references");
 
-    let threadId = normalizedSubject;
+    let threadId = explicitThreadId || normalizedSubject;
 
     if (inReplyTo || references) {
       for (const [existingId, thread] of threadMap) {
         if (
           thread.messages.some(
             (threadMessage) =>
-              inReplyTo?.includes(threadMessage.message.headers["message-id"] || "") ||
-              references?.includes(threadMessage.message.headers["message-id"] || ""),
+              inReplyTo?.includes(getMailMessageId(threadMessage.message)) ||
+              references?.includes(getMailMessageId(threadMessage.message)),
           )
         ) {
           threadId = existingId;

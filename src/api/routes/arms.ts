@@ -32,6 +32,7 @@ interface ArmsContext {
 
 const AUTO_AGENT_ID = `agent-${hostname()}-autostart`;
 const AUTO_AGENT_WAIT_MS_DEFAULT = 8000;
+const DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS = 8000;
 let autoStartAgentPromise: Promise<void> | null = null;
 
 interface ArmClientLookup {
@@ -2740,7 +2741,7 @@ export function createArmsRoutes() {
 
       let response;
       try {
-        response = await armClient.getMessages(id, { limit }, 10000);
+        response = await armClient.getMessages(id, { limit }, DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return c.json({
@@ -2917,7 +2918,7 @@ export function createArmsRoutes() {
 
       let response;
       try {
-        response = await armClient.getTodos(id, 10000);
+        response = await armClient.getTodos(id, DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return c.json({
