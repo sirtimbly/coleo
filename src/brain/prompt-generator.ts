@@ -15,7 +15,7 @@ import {
 	formatDiscoverySummary,
 	type DiscoverySummary,
 } from "./discovery-summarizer";
-import { findPlanFiles } from "./plan-parser";
+
 import { formatTaskAttachmentList } from "../lib/prompt-attachments";
 import {
 	VALIDATION_TASK_SUBJECT_PREFIX,
@@ -1122,30 +1122,18 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 	currentPhase: string;
 	dependencies: string[];
 }> {
-	// Find all plan files (main plan + linked plans)
-	const planFiles = await findPlanFiles(projectRoot);
+	const mainPlanPath = join(projectRoot, ".project", "plan.md");
 	
 	let allContent = "";
 	const goals: string[] = [];
 	const bullets: string[] = [];
 	let currentPhase = "";
 	
-	// Read all plan files and concatenate their content
-	for (const planPath of planFiles) {
-		try {
-			const fileContent = await readFile(planPath, "utf-8");
-			// Add file header to distinguish between plans
-			const relativePath = planPath.replace(projectRoot, "").replace(/^\//, "");
-			allContent += `\n\n<!-- Plan file: ${relativePath} -->\n\n${fileContent}`;
-		} catch (err) {
-			// Skip files that can't be read
-			console.warn(`Could not read plan file ${planPath}: ${err}`);
-		}
-	}
-	
-	// If no plan files found, return fallback message
-	if (!allContent) {
-		allContent = "# Plan not found\n\nNo project plan files could be read.\n\nTask determination requires the database tasks API for accurate information.";
+	try {
+		allContent = await readFile(mainPlanPath, "utf-8");
+	} catch (err) {
+		allContent = "# Plan not found or unreadable. Task determination requires the database tasks API for accurate information.";
+		console.warn(`Could not read plan file ${mainPlanPath}: ${err}`);
 	}
 
 	// Extract current phase (the first incomplete phase)
