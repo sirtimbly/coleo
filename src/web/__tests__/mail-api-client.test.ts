@@ -143,4 +143,30 @@ describe("web mail API client", () => {
       }),
     );
   });
+
+  it("posts brain replies with mail thread identity", async () => {
+    let requestInit: RequestInit | undefined;
+
+    globalThis.fetch = createFetchMock(async (_input, init) => {
+      requestInit = init;
+      return createResponse({ sent: true, messageId: "mail-1", subject: "Re: Subject" });
+    });
+
+    await api.sendBrainMessage({
+      message: "Follow up",
+      subject: "Re: Subject",
+      inReplyTo: "<brain-message@example.test>",
+      threadId: "task-123",
+    });
+
+    expect(requestInit?.method).toBe("POST");
+    expect(requestInit?.body).toBe(
+      JSON.stringify({
+        message: "Follow up",
+        subject: "Re: Subject",
+        inReplyTo: "<brain-message@example.test>",
+        threadId: "task-123",
+      }),
+    );
+  });
 });

@@ -19,6 +19,8 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
 	buildMailThreads,
+	getMailMessageId,
+	getMailThreadId,
 	getSelectedInboxUnreadMessageIds,
 	type MailThread,
 } from "@/pages/mail-page-utils";
@@ -257,11 +259,12 @@ export function MailPage() {
 			const lastMessage = thread.messages[thread.messages.length - 1];
 			if (!lastMessage) return;
 
-			openReply({
-				messageId: lastMessage.message.id,
-				from: lastMessage.message.from,
-				subject: thread.subject,
-				body: lastMessage.message.body,
+				openReply({
+					messageId: getMailMessageId(lastMessage.message),
+					threadId: getMailThreadId(lastMessage.message, thread.id),
+					from: lastMessage.message.from,
+					subject: thread.subject,
+					body: lastMessage.message.body,
 			});
 		},
 		[openReply],

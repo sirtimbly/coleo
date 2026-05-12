@@ -833,6 +833,25 @@ describe("Brain runtime flows", () => {
     ).toBe(0);
   });
 
+  it("defense-in-depth: createCommitTask refuses to create commit tasks for follow-up tasks", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ["task-original-defense", "Original task", "do the thing", "completed", "normal", now, now],
+    );
+
+    // Directly calling createCommitTask with a commit task subject should be a no-op
+    await (brain as any).createCommitTask(
+      "task-original-defense",
+      "Commit changes for: Original task",
+      "Committed",
+    );
+
+    expect(
+      (db.query("SELECT COUNT(*) AS count FROM tasks WHERE subject LIKE 'Commit changes for: Commit changes for:%'").get() as { count: number }).count,
+    ).toBe(0);
+  });
+
   it("hands completed work off to the next task and creates verification follow-ups for issue reports", async () => {
     const now = nowIso();
     db.run(

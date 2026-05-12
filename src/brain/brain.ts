@@ -1006,6 +1006,46 @@ export class Brain {
 		return Boolean(type && type.toLowerCase() !== "human-message");
 	}
 
+	private getMailHeader(message: MailMessage, name: string): string | undefined {
+		const normalizedName = name.toLowerCase();
+		const value = Object.entries(message.headers).find(
+			([header]) => header.toLowerCase() === normalizedName,
+		)?.[1];
+		return value?.trim() || undefined;
+	}
+
+	private getMailMessageId(message: MailMessage): string {
+		return this.getMailHeader(message, "message-id") ?? message.id;
+	}
+
+	private getMailThreadId(message: MailMessage): string {
+		return (
+			this.getMailHeader(message, "x-coleo-thread-id") ??
+			this.getMailHeader(message, "x-coleo-task-id") ??
+			this.getMailHeader(message, "x-coleo-bug-id") ??
+			this.getMailHeader(message, "x-coleo-request-id") ??
+			this.getMailHeader(message, "in-reply-to") ??
+			this.getMailMessageId(message)
+		);
+	}
+
+	private buildMailReplyHeaders(
+		message: MailMessage,
+		type = "brain-reply",
+		extraHeaders: Record<string, string> = {},
+	): Record<string, string> {
+		const messageId = this.getMailMessageId(message);
+		const existingReferences = this.getMailHeader(message, "references");
+
+		return {
+			"X-Coleo-Type": type,
+			"X-Coleo-Thread-Id": this.getMailThreadId(message),
+			"In-Reply-To": messageId,
+			References: existingReferences ? `${existingReferences} ${messageId}` : messageId,
+			...extraHeaders,
+		};
+	}
+
 	private async processHumanMail(): Promise<void> {
 		const [inboxMessages, sentMessages] = await Promise.all([
 			this.inbox.list("new"),
@@ -1053,9 +1093,11 @@ export class Brain {
 			pendingTasks: this.state.pendingTasks,
 			recentActivity,
 		});
+
 		for (const entry of messages) {
 			const { mailbox, message, source } = entry;
 			this.log(`Processing: ${message.subject}`);
+			const threadId = this.getMailThreadId(message);
 			const attachments = this.parseMailAttachments(message);
 			const taskContext =
 				attachments.length > 0
@@ -1081,7 +1123,7 @@ export class Brain {
 					const task = await this.createTask(
 						intent.subject || message.subject,
 						intent.body || message.body,
-						message.id,
+						threadId,
 						intent.priority,
 						intent.domain,
 						taskContext,
@@ -1090,9 +1132,9 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your message and created a new task.\n\n**Task:** ${task.subject}\n**Priority:** ${task.priority}\n**Status:** ${task.status}\n\nI'll assign this to an appropriate arm and keep you updated on progress.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "task-created", {
+							"X-Coleo-Task-Id": task.id,
+						}),
 					});
 					break;
 				}
@@ -1102,16 +1144,16 @@ export class Brain {
 						intent.subject || message.subject,
 						intent.body || message.body,
 						intent.targetDoc,
-						message.id,
+						threadId,
 						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your documentation update request.\n\n**Target:** ${intent.targetDoc || "documentation"}\n**Task:** ${docTask.subject}\n**Priority:** ${docTask.priority}\n\nI'll have an arm update the documentation and notify you when complete.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "doc-task-created", {
+							"X-Coleo-Task-Id": docTask.id,
+						}),
 					});
 					break;
 				}
@@ -1124,7 +1166,8 @@ export class Brain {
 							intent.description || message.body,
 							attachments,
 						),
-						message.id,
+						threadId,
+						this.buildMailReplyHeaders(message, "bug-confirmation"),
 					);
 					break;
 
@@ -1138,15 +1181,16 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your ${intent.approved ? "approval" : "rejection"}${intent.comment ? " with comment" : ""}.\n\nThe appropriate arm has been notified and will proceed accordingly.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "approval-response"),
 					});
 					break;
 				}
 
 				case "query":
-					await this.handleQuery(intent.query || "status", message.id);
+					await this.handleQuery(
+						intent.query || "status",
+						this.buildMailReplyHeaders(message, "status"),
+					);
 					break;
 
 				case "prompt_arm": {
@@ -1160,7 +1204,7 @@ export class Brain {
 							await this.createTask(
 								`Task for ${intent.armName}: ${message.subject}`,
 								intent.instruction,
-								message.id,
+								threadId,
 								intent.priority,
 								undefined,
 								taskContext,
@@ -1177,7 +1221,7 @@ export class Brain {
 							await this.createTask(
 								message.subject,
 								intent.instruction,
-								message.id,
+								threadId,
 								intent.priority,
 								undefined,
 								taskContext,
@@ -1193,6 +1237,7 @@ export class Brain {
 							await this.sendToHuman({
 								subject: `[coleo] Task queued (${intent.armName} is busy)`,
 								body,
+								headers: this.buildMailReplyHeaders(message, "task-queued-busy"),
 							});
 						} else {
 							// Arm is idle, can prompt directly
@@ -1210,9 +1255,9 @@ export class Brain {
 							await this.sendToHuman({
 								subject: `Re: ${message.subject}`,
 								body: `I've received your request and prompted **${intent.armName}** directly.\n\nThe arm is working on:\n\n${intent.instruction.slice(0, 200)}${intent.instruction.length > 200 ? "..." : ""}\n\nYou'll receive updates as the arm progresses.`,
-								headers: {
-									"In-Reply-To": message.id,
-								},
+								headers: this.buildMailReplyHeaders(message, "arm-prompted", {
+									"X-Coleo-Arm": intent.armName,
+								}),
 							});
 						}
 					}
@@ -1231,6 +1276,7 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `[coleo] Cannot process: ${message.subject}`,
 						body,
+						headers: this.buildMailReplyHeaders(message, "mail-escalate"),
 					});
 					break;
 				}
@@ -1826,6 +1872,7 @@ export class Brain {
 		title: string,
 		description: string,
 		mailThreadId?: string,
+		replyHeaders?: Record<string, string>,
 	): Promise<void> {
 		const bugPayload = {
 			id: `bug-human-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1869,6 +1916,7 @@ export class Brain {
 			subject: `[coleo] Bug Report Received: ${title}`,
 			body,
 			headers: {
+				...(replyHeaders ?? {}),
 				"X-Coleo-Type": "bug-confirmation",
 				"X-Coleo-Bug-Id": result.bugId,
 			},
@@ -2956,6 +3004,14 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		taskSubject: string,
 		taskSummary: string,
 	): Promise<void> {
+		// Defense-in-depth: never create commit tasks for follow-up tasks
+		if (isFollowUpTaskSubject(taskSubject)) {
+			this.log(
+				`Skipping commit task creation for follow-up task ${taskId} (${taskSubject})`,
+			);
+			return;
+		}
+
 		try {
 			const commitTaskId = `commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
@@ -4055,7 +4111,10 @@ ${originalTask.id}`;
 	/**
 	 * Handle a status query from human
 	 */
-	private async handleQuery(query: string, replyToId: string): Promise<void> {
+	private async handleQuery(
+		query: string,
+		replyHeaders: Record<string, string>,
+	): Promise<void> {
 		if (query === "status") {
 			const taskSnapshot = await this.listTasksFromApi({
 				status: ["pending", "in_progress"],
@@ -4083,10 +4142,7 @@ ${originalTask.id}`;
 			await this.sendToHuman({
 				subject: "[coleo] Status Report",
 				body,
-				headers: {
-					"X-Coleo-Type": "status",
-					"In-Reply-To": replyToId,
-				},
+				headers: replyHeaders,
 			});
 		}
 	}
@@ -7568,6 +7624,7 @@ ${conflictList}
 						subject: stripTerminalArtifacts(message.subject),
 						body: stripTerminalArtifacts(message.body),
 						replyTo: this.mailConfig.fromAddress,
+						headers: message.headers || {},
 					}),
 				});
 				this.log(`Email sent to ${this.mailConfig.toAddress}`);

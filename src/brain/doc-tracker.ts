@@ -192,8 +192,16 @@ export class DocUpdateTracker {
     });
 
     // Find plan document for "future work" notes
-    const planFiles = await fg(".project/plans/*.md", { cwd: this.projectRoot });
-    const planDocument = planFiles[0];
+    // Brain should only read the main plan.md, not individual plan files in .project/plans/
+    const mainPlanPath = join(this.projectRoot, ".project", "plan.md");
+    let planDocument: string | undefined;
+    try {
+      await readFile(mainPlanPath, "utf-8");
+      planDocument = mainPlanPath;
+    } catch {
+      // Main plan.md doesn't exist, don't use any plan document
+      planDocument = undefined;
+    }
 
     return {
       filesChanged: codeFiles,
