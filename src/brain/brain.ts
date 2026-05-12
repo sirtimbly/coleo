@@ -3172,6 +3172,55 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 	}
 
 	/**
+	 * Get all status reports for a task (including on_track)
+	 * Used for silent completion detection
+	 */
+	private async getAllStatusReportsForTask(taskId: string): Promise<
+		Array<{
+			id: string;
+			status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+			summary: string;
+			issues?: string[];
+			nextSteps?: string;
+			testsStatus?: "passing" | "failing" | "not_run";
+		}>
+	> {
+		const params = new URLSearchParams({
+			taskId,
+			limit: "100",
+			offset: "0",
+		});
+		const response = await this.apiRequest<{
+			reports: Array<{
+				id: string;
+				status:
+					| "on_track"
+					| "blocked"
+					| "issues_found"
+					| "needs_review"
+					| "completed_with_issues";
+				summary: string;
+				issues?: string[];
+				nextSteps?: string;
+				testsStatus?: "passing" | "failing" | "not_run";
+			}>;
+		}>(`/api/status-reports?${params.toString()}`);
+
+		if (!response?.reports) {
+			return [];
+		}
+
+		return response.reports.map((report) => ({
+			id: report.id,
+			status: report.status,
+			summary: report.summary,
+			issues: report.issues || [],
+			nextSteps: report.nextSteps || undefined,
+			testsStatus: report.testsStatus,
+		}));
+	}
+
+	/**
 	 * Unblock tasks that were waiting on a completed task
 	 * Part of progressive planning - re-evaluates which tasks can now proceed
 	 */
@@ -6757,6 +6806,36 @@ Report findings using bug resolution workflow.`;
 				continue;
 			}
 
+			// Check for silent completion (arm completed task but didn't call complete_task)
+			const silentCheck = await this.detectSilentCompletion(arm);
+			if (silentCheck.isComplete) {
+				this.log(
+					`Arm ${arm.name}: detected silent completion for task ${silentCheck.taskId} (confidence: ${silentCheck.confidence})`,
+				);
+				this.logActivity("brain", "silent_completion_detected", arm.id, {
+					taskId: silentCheck.taskId,
+					confidence: silentCheck.confidence,
+					reasoning: silentCheck.reasoning,
+				});
+
+				// Create analysis for silent completion
+				const analysis: StuckAnalysis = {
+					isStuck: true,
+					stuckType: "silent_completion",
+					reasoning: silentCheck.reasoning,
+					suggestedAction: "prompt_complete_task",
+					confidence: silentCheck.confidence,
+					silentCompletion: {
+						taskId: silentCheck.taskId!,
+						filesChanged: [],
+						isReadyForCompletion: silentCheck.confidence >= 0.75,
+					},
+				};
+
+				await this.handleStuckArm(arm, analysis);
+				continue;
+			}
+
 			// Get current task description for context
 			let currentTaskDescription: string | undefined;
 			if (arm.currentTask) {
@@ -6894,11 +6973,156 @@ Report findings using bug resolution workflow.`;
 				break;
 			}
 
+			case "prompt_complete_task": {
+				// Arm has silently completed task - prompt to call complete_task
+				await this.promptArmToCompleteTask(arm, analysis);
+				break;
+			}
+
 			case "escalate":
 			default:
 				// Can't handle automatically - escalate to human
 				await this.escalateStuckArm(arm, analysis);
 				break;
+		}
+	}
+
+	/**
+	 * Detect if an arm has silently completed its task without calling complete_task
+	 * Analyzes status reports, recent activity, and task state
+	 */
+	private async detectSilentCompletion(
+		arm: Arm,
+	): Promise<{
+		isComplete: boolean;
+		taskId?: string;
+		confidence: number;
+		reasoning: string;
+	}> {
+		const taskId = arm.currentTask;
+		if (!taskId) {
+			return { isComplete: false, confidence: 0, reasoning: "No current task" };
+		}
+
+		// Get task details
+		const task = await this.getTaskFromApi(taskId);
+		if (!task) {
+			return { isComplete: false, confidence: 0, reasoning: "Task not found" };
+		}
+
+		// Get recent status reports for this task (including on_track)
+		const statusReports = await this.getAllStatusReportsForTask(taskId);
+		if (statusReports.length === 0) {
+			return { isComplete: false, confidence: 0, reasoning: "No status reports" };
+		}
+
+		const latestReport = statusReports[0];
+		if (!latestReport) {
+			return { isComplete: false, confidence: 0, reasoning: "No valid status report" };
+		}
+
+		// Check if status indicates completion
+		const isOnTrack = latestReport.status === "on_track";
+		const isCompletedWithIssues = latestReport.status === "completed_with_issues";
+		const testsPassing = latestReport.testsStatus === "passing";
+		const noBlockers = latestReport.issues?.length === 0;
+
+		// Calculate confidence
+		let confidence = 0;
+		let reasoning = "";
+
+		if (isOnTrack) {
+			confidence += 0.3;
+			reasoning += "Status is 'on_track'. ";
+		} else if (isCompletedWithIssues) {
+			confidence += 0.25;
+			reasoning += "Status is 'completed_with_issues'. ";
+		}
+
+		if (testsPassing) {
+			confidence += 0.25;
+			reasoning += "Tests are passing. ";
+		}
+
+		if (noBlockers) {
+			confidence += 0.2;
+			reasoning += "No blockers reported. ";
+		}
+
+		// Check for recent activity indicating completion
+		const recentOutput = await this.readArmLogs(arm.name, 50);
+		const completionIndicators = [
+			/done/i,
+			/completed/i,
+			/finished/i,
+			/success/i,
+			/ready for review/i,
+		];
+
+		const hasCompletionIndicator = completionIndicators.some((pattern) =>
+			pattern.test(recentOutput),
+		);
+
+		if (hasCompletionIndicator) {
+			confidence += 0.2;
+			reasoning += "Recent output indicates completion. ";
+		}
+
+		return {
+			isComplete: confidence >= 0.6,
+			taskId,
+			confidence,
+			reasoning: reasoning.trim() || "Insufficient indicators",
+		};
+	}
+
+	/**
+	 * Prompt an arm to complete its task by calling complete_task
+	 */
+	private async promptArmToCompleteTask(
+		arm: Arm,
+		analysis: StuckAnalysis,
+	): Promise<void> {
+		const taskId = arm.currentTask;
+		if (!taskId) {
+			this.log(`Cannot prompt ${arm.name} to complete task - no current task`);
+			return;
+		}
+
+		const task = await this.getTaskFromApi(taskId);
+		const taskSubject = task?.subject || taskId;
+
+		// Generate prompt message
+		const promptText = await this.templates.renderTemplate(
+			"arm-prompt-complete-task.jinja",
+			{
+				arm_name: arm.name,
+				task_subject: taskSubject,
+				task_id: taskId,
+				confidence: analysis.confidence,
+				reasoning: analysis.reasoning,
+			},
+		);
+
+		this.log(
+			`Prompting ${arm.name} to complete task ${taskId}: "${promptText.slice(0, 50)}..."`,
+		);
+
+		// Send prompt to arm
+		const success = await this.sendPromptToArm(arm.name, promptText);
+
+		if (success) {
+			this.logActivity("brain", "arm_prompted_complete_task", arm.id, {
+				taskId,
+				confidence: analysis.confidence,
+				reasoning: analysis.reasoning,
+			});
+
+			this.log(
+				`Prompted ${arm.name} to complete task ${taskId} via complete_task`,
+			);
+		} else {
+			this.log(`Failed to prompt ${arm.name} to complete task`);
 		}
 	}
 

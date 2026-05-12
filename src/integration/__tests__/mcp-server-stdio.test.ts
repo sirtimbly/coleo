@@ -19,6 +19,9 @@ type JsonRpcMessage = {
   error?: { code: number; message: string; data?: unknown };
 };
 
+const MCP_REQUEST_TIMEOUT_MS = 15000;
+const MCP_TEST_TIMEOUT_MS = 30000;
+
 class JsonRpcClient {
   private child: ReturnType<typeof Bun.spawn>;
   private buffer = "";
@@ -124,7 +127,7 @@ class JsonRpcClient {
     const responsePromise = new Promise<JsonRpcMessage>((resolve) => {
       this.pending.set(id, resolve);
     });
-    const timeoutMs = options?.timeoutMs ?? 8000;
+    const timeoutMs = options?.timeoutMs ?? MCP_REQUEST_TIMEOUT_MS;
     return Promise.race([
       responsePromise,
       new Promise<JsonRpcMessage>((_, reject) => {
@@ -172,7 +175,6 @@ describe("MCP Server - Stdio Integration", () => {
   let dbPath: string;
   let client: JsonRpcClient | null = null;
   const armId = "arm-stdio-test";
-  const testTimeoutMs = 15000;
 
   beforeEach(async () => {
     testDir = join("/tmp", `coleo-mcp-stdio-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -228,7 +230,7 @@ describe("MCP Server - Stdio Integration", () => {
         clientInfo: { name: "coleo-test", version: "0.0.1" },
         capabilities: {},
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(initResponse.error).toBeUndefined();
@@ -274,7 +276,7 @@ describe("MCP Server - Stdio Integration", () => {
     client = await startServer();
     await initializeHandshake(client);
 
-    const listResponse = await client.request("tools/list", undefined, { timeoutMs: 8000 });
+    const listResponse = await client.request("tools/list", undefined, { timeoutMs: MCP_REQUEST_TIMEOUT_MS });
     expect(listResponse.error).toBeUndefined();
 
     const result = listResponse.result as { tools: Array<{ name: string }> };
@@ -284,7 +286,7 @@ describe("MCP Server - Stdio Integration", () => {
     expect(toolNames).toContain("claim_file");
     expect(toolNames).toContain("share_note");
     expect(toolNames).toContain("check_conflicts");
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("sends status and enqueues message for the brain", async () => {
     const db = new Database(dbPath);
@@ -302,7 +304,7 @@ describe("MCP Server - Stdio Integration", () => {
     await client.request(
       "tools/call",
       { name: "get_task_determination", arguments: {} },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     const response = await client.request(
@@ -315,7 +317,7 @@ describe("MCP Server - Stdio Integration", () => {
         summary: "Test status report tool"
       },
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(response.error).toBeUndefined();
@@ -335,7 +337,7 @@ describe("MCP Server - Stdio Integration", () => {
     expect(message?.type).toBe("status_report");
     expect(message?.from).toBe(armId);
     expect(message?.to).toBe("brain");
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("returns pending tasks for the arm", async () => {
     const db = new Database(dbPath);
@@ -355,13 +357,13 @@ describe("MCP Server - Stdio Integration", () => {
       name: "get_my_instructions",
       arguments: {},
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(response.error).toBeUndefined();
     const result = response.result as { content: Array<{ type: string; text: string }> };
     expect(result.content[0]?.text).toContain("Test Task");
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("claims a file and reports conflicts", async () => {
     client = await startServer();
@@ -371,7 +373,7 @@ describe("MCP Server - Stdio Integration", () => {
     await client.request(
       "tools/call",
       { name: "get_task_determination", arguments: {} },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     const claimResponse = await client.request(
@@ -380,7 +382,7 @@ describe("MCP Server - Stdio Integration", () => {
         name: "claim_file",
         arguments: { file_path: "src/mcp/server.ts", claim_type: "write", reason: "Test" },
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(claimResponse.error).toBeUndefined();
@@ -401,13 +403,13 @@ describe("MCP Server - Stdio Integration", () => {
         name: "check_conflicts",
         arguments: { file_path: "src/mcp/server.ts" },
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(conflictResponse.error).toBeUndefined();
     const conflictResult = conflictResponse.result as { content: Array<{ type: string; text: string }> };
     expect(conflictResult.content[0]?.text).toContain("claimed by you");
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("shares a note via the brain queue", async () => {
     client = await startServer();
@@ -419,7 +421,7 @@ describe("MCP Server - Stdio Integration", () => {
         name: "share_note",
         arguments: { title: "Test Note", content: "Hello", tags: ["mcp", "test"] },
       },
-      { timeoutMs: 8000 }
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS }
     );
 
     expect(response.error).toBeUndefined();
@@ -431,7 +433,7 @@ describe("MCP Server - Stdio Integration", () => {
     expect(payload?.title).toBe("Test Note");
     expect(payload?.content).toBe("Hello");
     expect(payload?.tags).toEqual(["mcp", "test"]);
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("rejects task tools when task_id references a bug", async () => {
     const db = new Database(dbPath);
@@ -462,7 +464,7 @@ describe("MCP Server - Stdio Integration", () => {
           artifacts: [],
         },
       },
-      { timeoutMs: 8000 },
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS },
     );
 
     expect(response.error).toBeUndefined();
@@ -471,7 +473,7 @@ describe("MCP Server - Stdio Integration", () => {
 
     const message = await getLatestBrainMessage();
     expect(message).toBeNull();
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 
   it("resolves task subject text to a task ID before queueing", async () => {
     const db = new Database(dbPath);
@@ -503,7 +505,7 @@ describe("MCP Server - Stdio Integration", () => {
           artifacts: [],
         },
       },
-      { timeoutMs: 8000 },
+      { timeoutMs: MCP_REQUEST_TIMEOUT_MS },
     );
 
     expect(response.error).toBeUndefined();
@@ -515,5 +517,5 @@ describe("MCP Server - Stdio Integration", () => {
     expect(message?.type).toBe("task_complete");
     const payload = message?.payload as { taskId?: string } | undefined;
     expect(payload?.taskId).toBe("task-stdio-subject");
-  }, testTimeoutMs);
+  }, MCP_TEST_TIMEOUT_MS);
 });

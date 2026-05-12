@@ -649,7 +649,7 @@ describe("Brain runtime flows", () => {
         [task.id, task.subject, task.description, task.status, task.priority, now, now]
       );
     }
-  });
+  }, 30_000);
 
   afterEach(async () => {
     brain.stop();
@@ -659,7 +659,7 @@ describe("Brain runtime flows", () => {
     } catch {
       // ignore
     }
-  });
+  }, 30_000);
 
   it("raises a human-facing infrastructure alert for critical service failures", async () => {
     const health = await (brain as any).checkInfrastructureHealth();

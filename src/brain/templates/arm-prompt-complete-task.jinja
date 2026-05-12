@@ -1,0 +1,37 @@
+## Task Completion Detected
+
+Hello {{ arm_name }},
+
+I've analyzed your recent work on task "{{ task_subject }}" ({{ task_id }}) and it appears you may have completed the work but haven't called `complete_task` yet.
+
+### What I Detected
+
+{{ reasoning }}
+
+### What You Should Do
+
+Please call the `complete_task` MCP tool to mark this task as completed:
+
+```json
+{
+  "tool": "complete_task",
+  "params": {
+    "taskId": "{{ task_id }}",
+    "summary": "Brief description of what was accomplished",
+    "artifacts": ["list", "of", "files", "changed"]
+  }
+}
+```
+
+### If You're Not Actually Done
+
+If you haven't actually finished the task yet, please continue working and submit a status report when you reach a natural stopping point.
+
+### Why This Matters
+
+Calling `complete_task` allows the brain to:
+- Validate your work
+- Assign you the next task
+- Keep the project moving forward efficiently
+
+Thanks for your work!
