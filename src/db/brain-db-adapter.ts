@@ -1,9 +1,6 @@
 import type { Database } from "bun:sqlite";
 
 import type {
-	ArmStateRecord,
-	ArmStateStore,
-	ArmStateUpsertInput,
 	BrainArmListFilters,
 	BrainArmRecord,
 	BrainBugListFilters,
@@ -21,101 +18,10 @@ import type {
 	BrainTaskRecord,
 } from "../brain/db-client";
 
-function getTableColumns(db: Database, table: string): Set<string> {
-	try {
-		const rows = db
-			.query(`PRAGMA table_info(${table})`)
-			.all() as Array<{ name: string }>;
-		return new Set(rows.map((row) => row.name));
-	} catch {
-		return new Set<string>();
-	}
-}
+import { createSqliteArmStateStore } from "./arm-state-store";
+import { getTableColumns, hasColumn, mapTaskRows, sortTasks } from "./db-helpers";
 
-function hasColumn(columns: Set<string>, name: string): boolean {
-	return columns.has(name);
-}
-
-function mapTaskRows(rows: Array<Record<string, unknown>>): BrainTaskRecord[] {
-	return rows.map((row) => ({
-		id: String(row.id || ""),
-		subject: String(row.subject || ""),
-		description: String(row.description || ""),
-		status: String(row.status || "pending"),
-		priority: String(row.priority || "normal"),
-		sourceType: String(row.source_type || "manual"),
-		sourceRef: (row.source_ref as string | null) ?? null,
-		phase: (row.phase as string | null) ?? null,
-		domain: (row.domain as string | null) ?? null,
-		classification: (row.classification as string | null) ?? null,
-		assignedTo: (row.assigned_to as string | null) ?? null,
-		dependencyBlocked:
-			Number(row.dependency_blocked || 0) === 1 || row.dependency_blocked === true,
-		consensusStatus: (row.consensus_status as string | null) ?? null,
-		sortOrder:
-			row.sort_order === null || row.sort_order === undefined
-				? null
-				: Number(row.sort_order),
-		createdAt: String(row.created_at || new Date(0).toISOString()),
-		updatedAt: String(row.updated_at || row.created_at || new Date(0).toISOString()),
-		completedAt: (row.completed_at as string | null) ?? null,
-	}));
-}
-
-function sortTasks(
-	rows: BrainTaskRecord[],
-	sort: NonNullable<BrainTaskListFilters["sort"]>,
-): BrainTaskRecord[] {
-	const tasks = [...rows];
-	switch (sort) {
-		case "created_asc":
-			tasks.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-			return tasks;
-		case "updated_desc":
-			tasks.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-			return tasks;
-		case "completed_desc":
-			tasks.sort((a, b) => (b.completedAt || "").localeCompare(a.completedAt || ""));
-			return tasks;
-		case "priority_then_created_asc":
-			tasks.sort((a, b) => {
-				const rank = (priority: string): number => {
-					switch (priority) {
-						case "critical":
-							return 1;
-						case "high":
-							return 2;
-						case "normal":
-							return 3;
-						case "low":
-							return 4;
-						default:
-							return 5;
-					}
-				};
-				const diff = rank(a.priority) - rank(b.priority);
-				if (diff !== 0) {
-					return diff;
-				}
-				return a.createdAt.localeCompare(b.createdAt);
-			});
-			return tasks;
-		case "sort_order_asc":
-			tasks.sort((a, b) => {
-				const left = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
-				const right = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
-				if (left !== right) {
-					return left - right;
-				}
-				return a.createdAt.localeCompare(b.createdAt);
-			});
-			return tasks;
-		case "created_desc":
-		default:
-			tasks.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-			return tasks;
-	}
-}
+export { createSqliteArmStateStore };
 
 export function createSqliteBrainDb(db: Database): BrainDb {
 	return {
@@ -668,78 +574,6 @@ export function createSqliteBrainDb(db: Database): BrainDb {
 			} catch {
 				return [];
 			}
-		},
-	};
-}
-
-export function createSqliteArmStateStore(db: Database): ArmStateStore {
-	return {
-		getArmState(armId: string): ArmStateRecord | null {
-			const row = db
-				.query(
-					`SELECT arm_id, state, previous_state, current_task_id, current_task_subject, last_event_type,
-                last_event_at, state_entered_at, task_assigned_at, disconnected_at, last_error,
-                error_count, last_heartbeat, consecutive_missed_heartbeats
-         FROM arm_state_machine WHERE arm_id = ?`,
-				)
-				.get(armId) as ArmStateRecord | null;
-			return row;
-		},
-		listArmStatesByState(state: string): ArmStateRecord[] {
-			return db
-				.query(
-					`SELECT arm_id, state, previous_state, current_task_id, current_task_subject, last_event_type,
-                last_event_at, state_entered_at, task_assigned_at, disconnected_at, last_error,
-                error_count, last_heartbeat, consecutive_missed_heartbeats
-         FROM arm_state_machine WHERE state = ?`,
-				)
-				.all(state) as ArmStateRecord[];
-		},
-		upsertArmState(armId: string, input: ArmStateUpsertInput): void {
-			const now = new Date().toISOString();
-			db.run(
-				`INSERT INTO arm_state_machine (
-           arm_id, state, previous_state, current_task_id, current_task_subject, last_event_type,
-           last_event_at, state_entered_at, task_assigned_at, disconnected_at, last_error,
-           error_count, last_heartbeat, consecutive_missed_heartbeats
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(arm_id) DO UPDATE SET
-           state = excluded.state,
-           previous_state = excluded.previous_state,
-           current_task_id = excluded.current_task_id,
-           current_task_subject = excluded.current_task_subject,
-           last_event_type = excluded.last_event_type,
-           last_event_at = excluded.last_event_at,
-           state_entered_at = excluded.state_entered_at,
-           task_assigned_at = excluded.task_assigned_at,
-           disconnected_at = excluded.disconnected_at,
-           last_error = excluded.last_error,
-           error_count = excluded.error_count,
-           last_heartbeat = excluded.last_heartbeat,
-           consecutive_missed_heartbeats = excluded.consecutive_missed_heartbeats`,
-				[
-					armId,
-					input.state || "spawning",
-					input.previousState ?? null,
-					input.currentTaskId ?? null,
-					input.currentTaskSubject ?? null,
-					input.lastEventType ?? null,
-					input.lastEventAt || now,
-					input.stateEnteredAt || now,
-					input.taskAssignedAt ?? null,
-					input.disconnectedAt ?? null,
-					input.lastError ?? null,
-					input.errorCount ?? 0,
-					input.lastHeartbeat ?? null,
-					input.consecutiveMissedHeartbeats ?? 0,
-				],
-			);
-		},
-		deleteArmState(armId: string): void {
-			db.run("DELETE FROM arm_state_machine WHERE arm_id = ?", [armId]);
-		},
-		transaction<T>(fn: () => T): () => T {
-			return () => fn();
 		},
 	};
 }

@@ -6,6 +6,8 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import { isStringArray, safeJsonParse } from "../../utils/json";
+import type { StatusReport } from "../../types";
 
 interface StatusReportsContext {
   Variables: {
@@ -13,18 +15,14 @@ interface StatusReportsContext {
   };
 }
 
-export interface StatusReport {
-  id: string;
-  taskId: string;
-  armId: string;
-  status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
-  summary: string;
-  issues?: string[];
-  blockers?: string[];
-  nextSteps?: string;
-  filesChanged?: string[];
-  testsStatus?: "passing" | "failing" | "not_run";
-  createdAt: string;
+function isStatusReportStatus(value: string): value is StatusReport["status"] {
+  return (
+    value === "on_track" ||
+    value === "blocked" ||
+    value === "issues_found" ||
+    value === "needs_review" ||
+    value === "completed_with_issues"
+  );
 }
 
 export function createStatusReportsRoutes() {
@@ -115,7 +113,7 @@ export function createStatusReportsRoutes() {
         created_at as createdAt
       FROM status_reports
     `;
-    const params: unknown[] = [];
+    const params: (string | number)[] = [];
 
     if (taskId || armId || status || since) {
       query += " WHERE";
@@ -144,13 +142,13 @@ export function createStatusReportsRoutes() {
     params.push(limit, offset);
 
     try {
-      const rows = db.query(query).all(...(params as any[])) as StatusReportRow[];
+      const rows = db.query(query).all(...params) as StatusReportRow[];
 
       const reports = rows.map(parseStatusReportRow);
 
       // Get total count
       let countQuery = "SELECT COUNT(*) as count FROM status_reports";
-      const countParams: any[] = [];
+      const countParams: (string | number)[] = [];
       if (taskId || armId || status || since) {
         countQuery += " WHERE";
         if (taskId) {
@@ -174,14 +172,14 @@ export function createStatusReportsRoutes() {
         }
       }
 
-      const countRow = db.query(countQuery).get(...countParams) as { count: number };
+      const countRow = db.query(countQuery).get(...countParams) as { count: number } | null;
 
       return c.json({
         reports,
         pagination: {
           limit,
           offset,
-          total: countRow.count,
+          total: countRow?.count || 0,
         },
       });
     } catch (err) {
@@ -282,13 +280,33 @@ interface StatusReportRow {
 function parseStatusReportRow(row: StatusReportRow): StatusReport {
   return {
     ...row,
-    status: row.status as StatusReport["status"],
-    issues: row.issues ? JSON.parse(row.issues) : undefined,
-    blockers: row.blockers ? JSON.parse(row.blockers) : undefined,
+    status: isStatusReportStatus(row.status) ? row.status : "needs_review",
+    issues: parseStringArrayField(row.issues, "issues"),
+    blockers: parseStringArrayField(row.blockers, "blockers"),
     nextSteps: row.nextSteps || undefined,
-    filesChanged: row.filesChanged ? JSON.parse(row.filesChanged) : undefined,
-    testsStatus: (row.testsStatus === "passing" || row.testsStatus === "failing" || row.testsStatus === "not_run")
-      ? row.testsStatus as StatusReport["testsStatus"]
-      : undefined,
+    filesChanged: parseStringArrayField(row.filesChanged, "filesChanged"),
+    testsStatus:
+      row.testsStatus === "passing" ||
+      row.testsStatus === "failing" ||
+      row.testsStatus === "not_run"
+        ? row.testsStatus
+        : undefined,
   };
+}
+
+function parseStringArrayField(value: string | null, fieldName: string): string[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = safeJsonParse(value);
+  if (!parsed.success) {
+    throw new Error(`Invalid ${fieldName} JSON: ${parsed.error}`);
+  }
+
+  if (!isStringArray(parsed.data)) {
+    throw new Error(`Invalid ${fieldName} JSON: expected a string array`);
+  }
+
+  return parsed.data;
 }

@@ -52,7 +52,9 @@ import {
 	normalizeTaskPriority,
 	normalizeBugPriority,
 	mapApiTask,
+	isSessionMessage,
 } from "./brain-utils";
+import type { SessionMessage } from "./brain-utils";
 import type { ArmStateStore } from "./db-client";
 import type {
 	BrainState,
@@ -65,30 +67,48 @@ import type {
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
-
-function isTaskAttachment(value: unknown): value is TaskAttachment {
-	if (!value || typeof value !== "object") {
-		return false;
-	}
-
-	const attachment = value as Partial<TaskAttachment>;
-	return (
-		attachment.kind === "image" &&
-		typeof attachment.uploadId === "string" &&
-		typeof attachment.filename === "string" &&
-		typeof attachment.mimeType === "string" &&
-		typeof attachment.sizeBytes === "number" &&
-		typeof attachment.contentUrl === "string"
-	);
-}
-
-export interface BrainOptions {
-	coleoDir: string;
-	pollIntervalMs: number;
-	verbose: boolean;
-	apiBaseUrl?: string;
-	apiKey?: string;
-}
+import {
+	buildCommitTaskSubject,
+	buildValidationTaskSubject,
+	buildVerificationTaskSubject,
+	isFollowUpTaskSubject,
+	isValidationTaskSubject,
+	isVerificationTaskSubject,
+} from "./task-subjects";
+import {
+	type BrainOptions,
+	isTaskAttachment,
+	pathMatchesPattern,
+	buildDocUpdateDescription,
+	buildCommitTaskDescription,
+	buildVerificationTaskDescription,
+	type DocUpdateContext,
+} from "./brain-types";
+export { type BrainOptions } from "./brain-types";
+import {
+	createApiClient,
+	logActivityViaApi,
+	publishEventViaApi,
+	queueMessageViaApi,
+	listPendingMessagesViaApi,
+	markMessageStatusViaApi,
+} from "./brain-api-client";
+import {
+	listTasksFromApi,
+	getTaskFromApi,
+	createTaskViaApi,
+	patchTaskViaApi,
+	listStatusReportsFromApi,
+	getTaskSubjectFromApi,
+} from "./brain-task-client";
+import {
+	listBugsFromApi,
+	getBugFromApi,
+	createBugViaApi,
+	patchBugViaApi,
+	determineBugPriority,
+	formatBugReport,
+} from "./brain-bug-handler";
 
 export class Brain {
 	private options: BrainOptions;
@@ -117,33 +137,25 @@ export class Brain {
 	private lastHealthCheck: HealthCheckResult | null = null;
 	private dashboard: TerminalDashboard | null = null;
 
-	// Track last stuck state per arm to avoid duplicate escalations
-	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
 	private lastStuckState: Map<
 		string,
 		{ stuckType: string; escalatedAt: Date }
 	> = new Map();
-	// Track idle arm prompt-response patterns to detect stuck loops
-	// DEPRECATED: Now tracked by ArmHealthMonitor - kept for backward compatibility during transition
 	private idleArmPromptTracker: Map<
 		string,
 		{
-			promptCount: number; // How many prompts sent without productive response
-			lastPromptAt: Date; // When we last prompted this arm
-			lastProductiveAt: Date | null; // When arm last did real work
-			escalationLevel: number; // 0 = none, 1 = interrupt, 2 = compact, 3 = kill
+			promptCount: number;
+			lastPromptAt: Date;
+			lastProductiveAt: Date | null;
+			escalationLevel: number;
 		}
 	> = new Map();
-	// Track when each arm was first detected (for grace period)
 	private armDetectionTimes: Map<string, Date> = new Map();
-	// Track which assistant session messages have already been interpreted
 	private processedArmOutputMessageIds: Map<string, Set<string>> = new Map();
-	// In-memory file subscriptions keyed by arm ID
+	private processedStatusReportIds: Set<string> = new Set();
+	private processedDiscoveryIds: Set<string> = new Set();
 	private fileSubscriptions: Map<string, Set<string>> = new Map();
-	// Plan hash cache to avoid reprocessing unchanged plan files
 	private planFileHashes: Map<string, string> = new Map();
-
-	// Infrastructure health tracking
 	private infrastructureHealth: {
 		database: { healthy: boolean; lastCheck: Date | null; error?: string };
 		apiServer: { healthy: boolean; lastCheck: Date | null; error?: string };
@@ -726,6 +738,7 @@ export class Brain {
 			return;
 		}
 
+		const previousLastPollAt = this.state.lastPollAt;
 		this.state.lastPollAt = new Date().toISOString();
 
 		// Step 0: Infrastructure health check - verify the "body" is healthy before arms
@@ -764,6 +777,11 @@ export class Brain {
 
 		// Step 2: Process arm messages
 		await this.processArmQueue();
+
+		// Step 2.25: Evaluate recently persisted status reports and discoveries
+		// so reports visible in the dashboard also influence planning even when
+		// they were not handled through the live arm queue path.
+		await this.processOperationalSignals(previousLastPollAt);
 
 		// Step 2.5: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
@@ -982,9 +1000,50 @@ export class Brain {
 	 * Process new mail from human (in inbox folder - via Postmark inbound)
 	 */
 	private isColeoGeneratedMail(message: MailMessage): boolean {
-		return Object.keys(message.headers).some(
-			(header) => header.toLowerCase() === "x-coleo-type",
+		const type = Object.entries(message.headers).find(
+			([header]) => header.toLowerCase() === "x-coleo-type",
+		)?.[1];
+		return Boolean(type && type.toLowerCase() !== "human-message");
+	}
+
+	private getMailHeader(message: MailMessage, name: string): string | undefined {
+		const normalizedName = name.toLowerCase();
+		const value = Object.entries(message.headers).find(
+			([header]) => header.toLowerCase() === normalizedName,
+		)?.[1];
+		return value?.trim() || undefined;
+	}
+
+	private getMailMessageId(message: MailMessage): string {
+		return this.getMailHeader(message, "message-id") ?? message.id;
+	}
+
+	private getMailThreadId(message: MailMessage): string {
+		return (
+			this.getMailHeader(message, "x-coleo-thread-id") ??
+			this.getMailHeader(message, "x-coleo-task-id") ??
+			this.getMailHeader(message, "x-coleo-bug-id") ??
+			this.getMailHeader(message, "x-coleo-request-id") ??
+			this.getMailHeader(message, "in-reply-to") ??
+			this.getMailMessageId(message)
 		);
+	}
+
+	private buildMailReplyHeaders(
+		message: MailMessage,
+		type = "brain-reply",
+		extraHeaders: Record<string, string> = {},
+	): Record<string, string> {
+		const messageId = this.getMailMessageId(message);
+		const existingReferences = this.getMailHeader(message, "references");
+
+		return {
+			"X-Coleo-Type": type,
+			"X-Coleo-Thread-Id": this.getMailThreadId(message),
+			"In-Reply-To": messageId,
+			References: existingReferences ? `${existingReferences} ${messageId}` : messageId,
+			...extraHeaders,
+		};
 	}
 
 	private async processHumanMail(): Promise<void> {
@@ -1034,9 +1093,11 @@ export class Brain {
 			pendingTasks: this.state.pendingTasks,
 			recentActivity,
 		});
+
 		for (const entry of messages) {
 			const { mailbox, message, source } = entry;
 			this.log(`Processing: ${message.subject}`);
+			const threadId = this.getMailThreadId(message);
 			const attachments = this.parseMailAttachments(message);
 			const taskContext =
 				attachments.length > 0
@@ -1062,7 +1123,7 @@ export class Brain {
 					const task = await this.createTask(
 						intent.subject || message.subject,
 						intent.body || message.body,
-						message.id,
+						threadId,
 						intent.priority,
 						intent.domain,
 						taskContext,
@@ -1071,9 +1132,9 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your message and created a new task.\n\n**Task:** ${task.subject}\n**Priority:** ${task.priority}\n**Status:** ${task.status}\n\nI'll assign this to an appropriate arm and keep you updated on progress.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "task-created", {
+							"X-Coleo-Task-Id": task.id,
+						}),
 					});
 					break;
 				}
@@ -1083,16 +1144,16 @@ export class Brain {
 						intent.subject || message.subject,
 						intent.body || message.body,
 						intent.targetDoc,
-						message.id,
+						threadId,
 						taskContext,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your documentation update request.\n\n**Target:** ${intent.targetDoc || "documentation"}\n**Task:** ${docTask.subject}\n**Priority:** ${docTask.priority}\n\nI'll have an arm update the documentation and notify you when complete.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "doc-task-created", {
+							"X-Coleo-Task-Id": docTask.id,
+						}),
 					});
 					break;
 				}
@@ -1105,7 +1166,8 @@ export class Brain {
 							intent.description || message.body,
 							attachments,
 						),
-						message.id,
+						threadId,
+						this.buildMailReplyHeaders(message, "bug-confirmation"),
 					);
 					break;
 
@@ -1119,15 +1181,16 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `Re: ${message.subject}`,
 						body: `I've received your ${intent.approved ? "approval" : "rejection"}${intent.comment ? " with comment" : ""}.\n\nThe appropriate arm has been notified and will proceed accordingly.`,
-						headers: {
-							"In-Reply-To": message.id,
-						},
+						headers: this.buildMailReplyHeaders(message, "approval-response"),
 					});
 					break;
 				}
 
 				case "query":
-					await this.handleQuery(intent.query || "status", message.id);
+					await this.handleQuery(
+						intent.query || "status",
+						this.buildMailReplyHeaders(message, "status"),
+					);
 					break;
 
 				case "prompt_arm": {
@@ -1141,7 +1204,7 @@ export class Brain {
 							await this.createTask(
 								`Task for ${intent.armName}: ${message.subject}`,
 								intent.instruction,
-								message.id,
+								threadId,
 								intent.priority,
 								undefined,
 								taskContext,
@@ -1158,7 +1221,7 @@ export class Brain {
 							await this.createTask(
 								message.subject,
 								intent.instruction,
-								message.id,
+								threadId,
 								intent.priority,
 								undefined,
 								taskContext,
@@ -1174,6 +1237,7 @@ export class Brain {
 							await this.sendToHuman({
 								subject: `[coleo] Task queued (${intent.armName} is busy)`,
 								body,
+								headers: this.buildMailReplyHeaders(message, "task-queued-busy"),
 							});
 						} else {
 							// Arm is idle, can prompt directly
@@ -1191,9 +1255,9 @@ export class Brain {
 							await this.sendToHuman({
 								subject: `Re: ${message.subject}`,
 								body: `I've received your request and prompted **${intent.armName}** directly.\n\nThe arm is working on:\n\n${intent.instruction.slice(0, 200)}${intent.instruction.length > 200 ? "..." : ""}\n\nYou'll receive updates as the arm progresses.`,
-								headers: {
-									"In-Reply-To": message.id,
-								},
+								headers: this.buildMailReplyHeaders(message, "arm-prompted", {
+									"X-Coleo-Arm": intent.armName,
+								}),
 							});
 						}
 					}
@@ -1212,6 +1276,7 @@ export class Brain {
 					await this.sendToHuman({
 						subject: `[coleo] Cannot process: ${message.subject}`,
 						body,
+						headers: this.buildMailReplyHeaders(message, "mail-escalate"),
 					});
 					break;
 				}
@@ -1635,9 +1700,6 @@ export class Brain {
 				severity: payload.severity,
 			},
 		});
-
-		// TODO: Store dependency relationships in database for future task planning
-		// For now, just log it
 	}
 
 	/**
@@ -1810,6 +1872,7 @@ export class Brain {
 		title: string,
 		description: string,
 		mailThreadId?: string,
+		replyHeaders?: Record<string, string>,
 	): Promise<void> {
 		const bugPayload = {
 			id: `bug-human-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1853,6 +1916,7 @@ export class Brain {
 			subject: `[coleo] Bug Report Received: ${title}`,
 			body,
 			headers: {
+				...(replyHeaders ?? {}),
 				"X-Coleo-Type": "bug-confirmation",
 				"X-Coleo-Bug-Id": result.bugId,
 			},
@@ -2438,6 +2502,7 @@ export class Brain {
 		taskId?: string;
 		armId?: string;
 		limit?: number;
+		since?: string;
 	}): Promise<
 		Array<{
 			id: string;
@@ -2488,6 +2553,7 @@ export class Brain {
 			});
 			if (options?.taskId) params.set("taskId", options.taskId);
 			if (options?.armId) params.set("armId", options.armId);
+			if (options?.since) params.set("since", options.since);
 
 			const response = await this.apiRequest<{
 				reports: Array<{
@@ -2527,6 +2593,94 @@ export class Brain {
 		}
 
 		return reports;
+	}
+
+	private async listDiscoveriesFromApi(options?: {
+		limit?: number;
+		status?: string;
+		since?: string;
+	}): Promise<
+		Array<{
+			id: string;
+			armId: string;
+			armName: string;
+			kind: string;
+			title: string;
+			details: string;
+			filePath?: string | null;
+			lineNumber?: number | null;
+			severity: string;
+			status: string;
+			taskId?: string | null;
+			phase?: string | null;
+			createdAt: string;
+			updatedAt: string;
+		}>
+	> {
+		const params = new URLSearchParams({
+			limit: String(Math.max(1, options?.limit ?? 100)),
+			status: options?.status || "open",
+		});
+		if (options?.since) params.set("since", options.since);
+
+		const response = await this.apiRequest<{
+			discoveries: Array<{
+				id: string;
+				armId: string;
+				armName: string;
+				kind: string;
+				title: string;
+				details: string;
+				filePath?: string | null;
+				lineNumber?: number | null;
+				severity: string;
+				status: string;
+				taskId?: string | null;
+				phase?: string | null;
+				createdAt: string;
+				updatedAt: string;
+			}>;
+		}>(`/api/discoveries?${params.toString()}`);
+
+		return response?.discoveries || [];
+	}
+
+	private rememberProcessedSignal(
+		cache: Set<string>,
+		id: string,
+		limit = 500,
+	): void {
+		cache.add(id);
+		while (cache.size > limit) {
+			const oldest = cache.values().next().value;
+			if (!oldest) break;
+			cache.delete(oldest);
+		}
+	}
+
+	private async processOperationalSignals(since?: string): Promise<void> {
+		const marker = since || new Date(Date.now() - 15 * 60 * 1000).toISOString();
+
+		try {
+			const [reports, discoveries] = await Promise.all([
+				this.listStatusReportsFromApi({ limit: 100, since: marker }),
+				this.listDiscoveriesFromApi({ limit: 100, status: "open", since: marker }),
+			]);
+
+			for (const report of reports
+				.filter((item) => !this.processedStatusReportIds.has(item.id))
+				.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
+				await this.processPersistedStatusReport(report);
+			}
+
+			for (const discovery of discoveries
+				.filter((item) => !this.processedDiscoveryIds.has(item.id))
+				.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())) {
+				await this.processPersistedDiscovery(discovery);
+			}
+		} catch (err) {
+			this.log(`Failed to process persisted operational signals: ${err}`);
+		}
 	}
 
 	private async getTaskDiscussionText(taskId: string): Promise<string> {
@@ -2583,23 +2737,15 @@ export class Brain {
 
 		await this.finalizeTaskCompletion(taskId, summary, artifacts);
 
-		const validationDescription = [
-			`Validate completion for task "${task.subject}" (${task.id}).`,
-			"",
-			"Review the implementation and artifacts to confirm acceptance criteria.",
-			"If issues are found, create a follow-up bug/task with concrete repro steps.",
-			"",
-			"Completion summary:",
-			summary || "(no summary provided)",
-			"",
-			"Artifacts:",
-			artifacts.length > 0
-				? artifacts.map((a) => `- ${a}`).join("\n")
-				: "- None",
-		].join("\n");
+		const validationDescription = buildVerificationTaskDescription(
+			task.subject,
+			task.id,
+			summary,
+			artifacts,
+		);
 
 		const validationTask = await this.createTaskViaApi({
-			subject: `Validate completion: ${task.subject}`,
+			subject: buildValidationTaskSubject(task.subject),
 			description: validationDescription,
 			status: "pending",
 			priority: task.priority === "critical" ? "critical" : "high",
@@ -2840,8 +2986,12 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			},
 		});
 
-		// Create a commit task to capture unstaged changes
-		await this.createCommitTask(taskId, taskSubject, summary);
+		const isTerminalFollowUpTask = isFollowUpTaskSubject(taskSubject);
+
+		// Terminal follow-up tasks should not generate additional commit tasks.
+		if (!isTerminalFollowUpTask) {
+			await this.createCommitTask(taskId, taskSubject, summary);
+		}
 
 		this.log(`Completed task: ${taskSubject}`);
 	}
@@ -2854,37 +3004,22 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		taskSubject: string,
 		taskSummary: string,
 	): Promise<void> {
+		// Defense-in-depth: never create commit tasks for follow-up tasks
+		if (isFollowUpTaskSubject(taskSubject)) {
+			this.log(
+				`Skipping commit task creation for follow-up task ${taskId} (${taskSubject})`,
+			);
+			return;
+		}
+
 		try {
 			const commitTaskId = `commit-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-			const description = `Create a commit for the completed task "${taskSubject}" (${taskId}).
-
-Task Summary:
-${taskSummary || "(no summary provided)"}
-
-Instructions:
-1. Run git status to see unstaged changes
-2. Identify files related to the completed task
-3. Stage those files with git add
-4. Create a commit with a descriptive message that:
-   - References the task ID (${taskId})
-   - Summarizes the work done
-   - Follows conventional commit format if applicable
-
-Example commit message:
-feat: implement user authentication
-
-- Add login form component
-- Implement JWT token handling
-- Add session management
-
-Refs: ${taskId}
-
-Note: If there are no unstaged changes or all changes are already committed, mark this task as completed with a note.`;
+		const description = buildCommitTaskDescription(taskId, taskSubject, taskSummary);
 
 			await this.createTaskViaApi({
 				id: commitTaskId,
-				subject: `Commit changes for: ${taskSubject}`,
+				subject: buildCommitTaskSubject(taskSubject),
 				description,
 				status: "pending",
 				priority: "high",
@@ -2929,12 +3064,10 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 		}
 		const workerArmId = task.assignedTo || null;
 
-		const isFollowUpTask =
-			task.subject?.startsWith("Validate completion:") ||
-			task.subject?.startsWith("Verify & Polish:");
+		const isFollowUpTask = isFollowUpTaskSubject(task.subject);
 
-		// Follow-up QA tasks are terminal. Do not recursively generate
-		// additional verification/validation work from them.
+		// Follow-up QA and commit tasks are terminal. Do not recursively generate
+		// additional validation or commit work from them.
 		if (isFollowUpTask) {
 			this.log(
 				`Skipping recursive follow-up generation for ${taskId} (${task.subject})`,
@@ -3227,19 +3360,6 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			return;
 		}
 
-		// Update last activity for the arm
-		const now = new Date().toISOString();
-		const reportedArmStatus = report.status === "blocked" ? "idle" : "busy";
-		await this.patchArmViaApi(report.armId, {
-			lastActivityAt: now,
-			status: reportedArmStatus,
-		});
-		const reportingArm = this.arms.get(report.armId);
-		if (reportingArm) {
-			reportingArm.lastActivity = new Date();
-			reportingArm.status = reportedArmStatus;
-		}
-
 		const statusReportResponse = await this.apiRequest<{
 			report?: { id: string };
 		}>("/api/status-reports", {
@@ -3258,8 +3378,86 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 		});
 		if (statusReportResponse?.report?.id) {
 			this.log(`Stored status report: ${statusReportResponse.report.id}`);
+			this.rememberProcessedSignal(
+				this.processedStatusReportIds,
+				statusReportResponse.report.id,
+			);
 		} else {
 			this.log(`Failed to persist status report ${report.id} via API`);
+		}
+
+		await this.applyStatusReportActions(
+			{
+				...report,
+				id: statusReportResponse?.report?.id || report.id,
+			},
+			task,
+		);
+	}
+
+	private async processPersistedStatusReport(report: {
+		id: string;
+		taskId: string;
+		armId: string;
+		status:
+			| "on_track"
+			| "blocked"
+			| "issues_found"
+			| "needs_review"
+			| "completed_with_issues";
+		summary: string;
+		issues?: string[];
+		blockers?: string[];
+		nextSteps?: string;
+		filesChanged?: string[];
+		testsStatus?: "passing" | "failing" | "not_run";
+		createdAt: string;
+	}): Promise<void> {
+		const task = await this.getTaskFromApi(report.taskId);
+		if (!task) {
+			this.log(`Persisted status report for unknown task: ${report.taskId}`);
+			this.rememberProcessedSignal(this.processedStatusReportIds, report.id);
+			return;
+		}
+
+		await this.applyStatusReportActions(report, task);
+		this.rememberProcessedSignal(this.processedStatusReportIds, report.id);
+	}
+
+	private async applyStatusReportActions(
+		report: {
+			id: string;
+			taskId: string;
+			armId: string;
+			status:
+				| "on_track"
+				| "blocked"
+				| "issues_found"
+				| "needs_review"
+				| "completed_with_issues";
+			summary: string;
+			issues?: string[];
+			blockers?: string[];
+			nextSteps?: string;
+			filesChanged?: string[];
+			testsStatus?: "passing" | "failing" | "not_run";
+			screenshotPath?: string;
+		},
+		task: Task,
+	): Promise<void> {
+		const now = new Date().toISOString();
+		const issues = report.issues || [];
+		const blockers = report.blockers || [];
+		const filesChanged = report.filesChanged || [];
+		const reportedArmStatus = report.status === "blocked" ? "idle" : "busy";
+		await this.patchArmViaApi(report.armId, {
+			lastActivityAt: now,
+			status: reportedArmStatus,
+		});
+		const reportingArm = this.arms.get(report.armId);
+		if (reportingArm) {
+			reportingArm.lastActivity = new Date();
+			reportingArm.status = reportedArmStatus;
 		}
 
 		// Log activity
@@ -3267,8 +3465,8 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			reportId: report.id,
 			armId: report.armId,
 			status: report.status,
-			issueCount: report.issues.length,
-			blockerCount: report.blockers.length,
+			issueCount: issues.length,
+			blockerCount: blockers.length,
 		});
 
 		const armLabel = this.getArmDisplayName(report.armId);
@@ -3289,9 +3487,9 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			return `${title}\n${preview}${more}`;
 		};
 
-		const filesSection = formatList("Files changed:", report.filesChanged);
-		const issuesSection = formatList("Issues:", report.issues);
-		const blockersSection = formatList("Blockers:", report.blockers);
+		const filesSection = formatList("Files changed:", filesChanged);
+		const issuesSection = formatList("Issues:", issues);
+		const blockersSection = formatList("Blockers:", blockers);
 		const nextSteps = report.nextSteps?.trim();
 
 		const statusParts: Array<string | null> = [
@@ -3347,7 +3545,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 							task_subject: task.subject,
 							summary: report.summary,
 							blockers_list:
-								report.blockers.map((b) => `- ${b}`).join("\n") ||
+								blockers.map((b) => `- ${b}`).join("\n") ||
 								"No specific blockers listed",
 							next_steps: report.nextSteps || "None specified",
 						},
@@ -3377,7 +3575,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 							arm_id: report.armId,
 							summary: report.summary,
 							blockers_list:
-								report.blockers.map((b) => `- ${b}`).join("\n") ||
+								blockers.map((b) => `- ${b}`).join("\n") ||
 								"No specific blockers listed",
 							next_steps: report.nextSteps || "None specified",
 						},
@@ -3398,20 +3596,20 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 			case "issues_found": {
 				// Log issues but don't change task status yet
 				this.log(
-					`Issues found in task ${task.subject}: ${report.issues.length} issues`,
+					`Issues found in task ${task.subject}: ${issues.length} issues`,
 				);
 
 				// Only notify human if decision says to forward
-				if (forwardDecision.shouldForward && report.issues.length > 0) {
+				if (forwardDecision.shouldForward && issues.length > 0) {
 					const body = await this.templates.renderTemplate(
 						"human-issues-found.jinja",
-						{
-							arm_id: report.armId,
-							task_subject: task.subject,
-							issues_list: report.issues.map((i) => `- ${i}`).join("\n"),
-							summary: report.summary,
-							next_steps: report.nextSteps || "Continuing work...",
-							forward_reason: forwardDecision.reason,
+					{
+						arm_id: report.armId,
+						task_subject: task.subject,
+						issues_list: issues.map((i) => `- ${i}`).join("\n"),
+						summary: report.summary,
+						next_steps: report.nextSteps || "Continuing work...",
+						forward_reason: forwardDecision.reason,
 						},
 					);
 					await this.sendToHuman({
@@ -3440,7 +3638,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 						task_subject: task.subject,
 						summary: report.summary,
 						files_list:
-							report.filesChanged.map((f) => `- ${f}`).join("\n") ||
+							filesChanged.map((f) => `- ${f}`).join("\n") ||
 							"None listed",
 						tests_status: report.testsStatus || "Not run",
 					},
@@ -3460,7 +3658,7 @@ Note: If there are no unstaged changes or all changes are already committed, mar
 				// Create a verification task for follow-up
 				await this.createVerificationTask(
 					task,
-					report,
+					{ ...report, issues },
 					!forwardDecision.shouldForward,
 				);
 				await this.handOffCompletedArm(report.armId);
@@ -3519,7 +3717,7 @@ ${originalTask.id}`;
 		const verifyTask =
 			(await this.createTaskViaApi({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -3533,7 +3731,7 @@ ${originalTask.id}`;
 			})) ||
 			({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -3606,6 +3804,7 @@ ${originalTask.id}`;
 		discovery: Discovery,
 	): Promise<void> {
 		const discoveryId = `disc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const now = new Date().toISOString();
 		await this.apiRequest("/api/discoveries", {
 			method: "POST",
 			body: JSON.stringify({
@@ -3619,32 +3818,139 @@ ${originalTask.id}`;
 				lineNumber: discovery.line || null,
 				severity: discovery.severity || "info",
 				status: "open",
+				taskId: discovery.taskId || null,
+				phase: discovery.phase || null,
 			}),
 		});
 		this.log(`Stored discovery: ${discovery.title} (${discovery.kind})`);
+		this.rememberProcessedSignal(this.processedDiscoveryIds, discoveryId);
 
-		// Also notify human for high-severity discoveries
-		if (discovery.severity === "error" || discovery.severity === "warning") {
+		await this.applyDiscoveryActions({
+			id: discoveryId,
+			armId,
+			armName: armId,
+			kind: discovery.kind,
+			title: discovery.title,
+			details: discovery.details,
+			filePath: discovery.file || null,
+			lineNumber: discovery.line || null,
+			severity: discovery.severity || "info",
+			status: "open",
+			taskId: discovery.taskId || null,
+			phase: discovery.phase || null,
+			createdAt: now,
+			updatedAt: now,
+		});
+	}
+
+	private async processPersistedDiscovery(discovery: {
+		id: string;
+		armId: string;
+		armName: string;
+		kind: string;
+		title: string;
+		details: string;
+		filePath?: string | null;
+		lineNumber?: number | null;
+		severity: string;
+		status: string;
+		taskId?: string | null;
+		phase?: string | null;
+		createdAt: string;
+		updatedAt: string;
+	}): Promise<void> {
+		await this.applyDiscoveryActions(discovery);
+		this.rememberProcessedSignal(this.processedDiscoveryIds, discovery.id);
+	}
+
+	private async applyDiscoveryActions(discovery: {
+		id: string;
+		armId: string;
+		armName: string;
+		kind: string;
+		title: string;
+		details: string;
+		filePath?: string | null;
+		lineNumber?: number | null;
+		severity: string;
+		status: string;
+		taskId?: string | null;
+		phase?: string | null;
+		createdAt: string;
+		updatedAt: string;
+	}): Promise<void> {
+		const severity = discovery.severity || "info";
+		const fileInfo = discovery.filePath
+			? `${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`
+			: null;
+
+		if (discovery.taskId) {
+			const taskComment = [
+				`Discovery (${severity}) from ${discovery.armName || discovery.armId}: ${discovery.title}`,
+				discovery.details,
+				fileInfo ? `File: ${fileInfo}` : null,
+				discovery.phase ? `Phase: ${discovery.phase}` : null,
+			]
+				.filter((part): part is string => Boolean(part))
+				.join("\n\n");
+			await this.appendTaskComment(discovery.taskId, taskComment, {
+				armId: discovery.armId,
+			});
+
+			const task = await this.getTaskFromApi(discovery.taskId);
+			if (
+				task?.assignedTo &&
+				task.status === "in_progress" &&
+				(severity === "warning" || severity === "error")
+			) {
+				const followupPrompt = [
+					`A new ${severity} discovery was recorded for your active task \"${task.subject}\".`,
+					`Title: ${discovery.title}`,
+					discovery.details,
+					fileInfo ? `File: ${fileInfo}` : null,
+					"Adjust your plan accordingly and send an updated status report if this changes your execution strategy.",
+				]
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n");
+				await this.sendPromptToArm(task.assignedTo, followupPrompt);
+			}
+		}
+
+		if (severity === "error" || severity === "warning") {
 			const body = await this.templates.renderTemplate(
 				"human-discovery.jinja",
 				{
-					arm_id: armId,
+					arm_id: discovery.armId,
 					kind: discovery.kind,
-					severity: discovery.severity || "info",
+					severity,
 					details: discovery.details,
-					file_info: discovery.file
-						? `**File:** ${discovery.file}${discovery.line ? `:${discovery.line}` : ""}`
+					file_info: discovery.filePath
+						? `**File:** ${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`
 						: "",
 				},
 			);
 			await this.sendToHuman({
-				subject: `[coleo] Discovery: ${discovery.title}`,
-				body,
-				headers: {
-					"X-Coleo-Type": "discovery",
-					"X-Coleo-From": armId,
-					"X-Coleo-Severity": discovery.severity || "info",
-				},
+					subject: `[coleo] Discovery: ${discovery.title}`,
+					body,
+					headers: {
+						"X-Coleo-Type": "discovery",
+						"X-Coleo-From": discovery.armId,
+						"X-Coleo-Severity": severity,
+					},
+				});
+
+			await this.handleBugReport("system", {
+				id: `bug-${discovery.id}`,
+				title: discovery.title,
+				description: [
+					discovery.details,
+					fileInfo ? `File: ${fileInfo}` : null,
+					discovery.phase ? `Phase: ${discovery.phase}` : null,
+				]
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n"),
+				source: "system_detected",
+				sourceTaskId: discovery.taskId || undefined,
 			});
 		}
 	}
@@ -3846,7 +4152,6 @@ ${originalTask.id}`;
 		approved: boolean,
 		comment: string,
 	): Promise<void> {
-		// TODO: Find pending approval and notify the arm
 		this.log(
 			`Approval response for ${originalId}: ${approved ? "approved" : "rejected"}`,
 		);
@@ -3855,7 +4160,10 @@ ${originalTask.id}`;
 	/**
 	 * Handle a status query from human
 	 */
-	private async handleQuery(query: string, replyToId: string): Promise<void> {
+	private async handleQuery(
+		query: string,
+		replyHeaders: Record<string, string>,
+	): Promise<void> {
 		if (query === "status") {
 			const taskSnapshot = await this.listTasksFromApi({
 				status: ["pending", "in_progress"],
@@ -3883,10 +4191,7 @@ ${originalTask.id}`;
 			await this.sendToHuman({
 				subject: "[coleo] Status Report",
 				body,
-				headers: {
-					"X-Coleo-Type": "status",
-					"In-Reply-To": replyToId,
-				},
+				headers: replyHeaders,
 			});
 		}
 	}
@@ -4333,11 +4638,10 @@ ${originalTask.id}`;
 		// If this bug came from a specific task, capture impact context for queue-based follow-up
 		if (bugPayload.sourceTaskId) {
 			const task = this.tasks.find((t) => t.id === bugPayload.sourceTaskId);
-			if (task && task.assignedTo && task.status === "in_progress") {
-				// Task is in progress, record context for subsequent planning decisions
-				const assignedArm = Array.from(this.arms.values()).find(
-					(a) => a.id === task.assignedTo,
-				);
+		if (task && task.assignedTo && task.status === "in_progress") {
+					const assignedArm = Array.from(this.arms.values()).find(
+						(a) => a.id === task.assignedTo,
+					);
 				if (assignedArm) {
 					this.log(`Task ${task.id} may need follow-up due to bug ${bugId}`);
 				}
@@ -4471,9 +4775,9 @@ Report findings using bug resolution workflow.`;
 		// Notify subscribed arms
 		for (const [subArmId, patterns] of this.fileSubscriptions.entries()) {
 			if (subArmId === armId) continue;
-			const matches = Array.from(patterns).some((pattern) =>
-				this.pathMatchesPattern(payload.filePath, pattern),
-			);
+		const matches = Array.from(patterns).some((pattern) =>
+			pathMatchesPattern(payload.filePath, pattern),
+		);
 			if (!matches) continue;
 
 			await this.sendToArm(subArmId, {
@@ -4524,31 +4828,6 @@ Report findings using bug resolution workflow.`;
 				},
 			});
 		}
-	}
-
-	private pathMatchesPattern(filePath: string, pattern: string): boolean {
-		const normalizedPath = filePath.replaceAll("\\", "/");
-		const normalizedPattern = pattern.replaceAll("\\", "/");
-
-		if (normalizedPattern === "**" || normalizedPattern === "*") {
-			return true;
-		}
-
-		if (!normalizedPattern.includes("*")) {
-			return normalizedPath.includes(normalizedPattern);
-		}
-
-		const tokenDouble = "__DOUBLE_STAR__";
-		const tokenSingle = "__SINGLE_STAR__";
-		const escaped = normalizedPattern
-			.replaceAll("**", tokenDouble)
-			.replaceAll("*", tokenSingle)
-			.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
-			.replaceAll(tokenDouble, ".*")
-			.replaceAll(tokenSingle, "[^/]*");
-
-		const regex = new RegExp(`^${escaped}$`);
-		return regex.test(normalizedPath);
 	}
 
 	/**
@@ -4964,15 +5243,14 @@ Report findings using bug resolution workflow.`;
 
 			if (success) {
 				this.log(`Sent initial prompt to ${armId}`);
-				this.logActivity("brain", "arm_initialized", armId, {
-					source: "initial_prompt_sent",
-				});
-				this.initializedArmIds.add(armId);
+					this.logActivity("brain", "arm_initialized", armId, {
+						source: "initial_prompt_sent",
+					});
+					this.initializedArmIds.add(armId);
 
-				// Create a placeholder task record so hasReceivedInitialTasks persists across restarts.
-				await this.createTaskViaApi({
-					id: `init-${armId}`,
-					subject: `Arm ${armId} initialized`,
+					await this.createTaskViaApi({
+						id: `init-${armId}`,
+						subject: `Arm ${armId} initialized`,
 					description: "Initial prompt sent to arm",
 					status: "completed",
 					priority: "normal",
@@ -5257,7 +5535,7 @@ Report findings using bug resolution workflow.`;
 		armId: string,
 		limit = 20,
 	): Promise<number | null> {
-		const response = await this.apiRequest<{ messages?: unknown[] }>(
+		const response = await this.apiRequest<{ messages?: SessionMessage[] }>(
 			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
 			{},
 			1500,
@@ -5269,12 +5547,10 @@ Report findings using bug resolution workflow.`;
 
 		let latestMs: number | null = null;
 		for (const message of messages) {
-			if (!message || typeof message !== "object") {
+			if (!isSessionMessage(message)) {
 				continue;
 			}
-			const timestampMs = extractMessageTimestampMs(
-				message as Record<string, unknown>,
-			);
+			const timestampMs = extractMessageTimestampMs(message);
 			if (
 				timestampMs !== null &&
 				(latestMs === null || timestampMs > latestMs)
@@ -5351,29 +5627,29 @@ Report findings using bug resolution workflow.`;
 	}
 
 	private extractSessionMessageId(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const info = message.info;
-		if (!info || typeof info !== "object") {
+		if (!info) {
 			return null;
 		}
-		const id = (info as Record<string, unknown>).id;
+		const id = info.id;
 		return typeof id === "string" && id.trim() ? id : null;
 	}
 
 	private extractSessionMessageRole(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const info = message.info;
-		if (!info || typeof info !== "object") {
+		if (!info) {
 			return null;
 		}
-		const role = (info as Record<string, unknown>).role;
+		const role = info.role;
 		return typeof role === "string" && role.trim() ? role : null;
 	}
 
 	private extractSessionMessageText(
-		message: Record<string, unknown>,
+		message: SessionMessage,
 	): string | null {
 		const parts = message.parts;
 		if (!Array.isArray(parts)) {
@@ -5385,11 +5661,10 @@ Report findings using bug resolution workflow.`;
 			if (!part || typeof part !== "object") {
 				continue;
 			}
-			const partObj = part as Record<string, unknown>;
-			if (partObj.type !== "text") {
+			if (part.type !== "text") {
 				continue;
 			}
-			const text = partObj.text;
+			const text = part.text;
 			if (typeof text === "string" && text.trim()) {
 				textParts.push(text.trim());
 			}
@@ -5429,7 +5704,7 @@ Report findings using bug resolution workflow.`;
 		messages: Array<{ id: string; timestampMs: number; text: string }>;
 		latestAssistantHasText: boolean;
 	}> {
-		const response = await this.apiRequest<{ messages?: unknown[] }>(
+		const response = await this.apiRequest<{ messages?: SessionMessage[] }>(
 			`/api/arms/${encodeURIComponent(armId)}/messages?limit=${limit}`,
 			{},
 			1500,
@@ -5443,25 +5718,24 @@ Report findings using bug resolution workflow.`;
 		let latestAssistant: { timestampMs: number; hasText: boolean } | null = null;
 		let sawAssistant = false;
 		for (const message of messages) {
-			if (!message || typeof message !== "object") {
+			if (!isSessionMessage(message)) {
 				continue;
 			}
-			const messageObj = message as Record<string, unknown>;
-			const role = this.extractSessionMessageRole(messageObj);
+			const role = this.extractSessionMessageRole(message);
 			if (role !== "assistant") {
 				continue;
 			}
 			sawAssistant = true;
 
-			const text = this.extractSessionMessageText(messageObj);
-			const timestampMs = extractMessageTimestampMs(messageObj);
+			const text = this.extractSessionMessageText(message);
+			const timestampMs = extractMessageTimestampMs(message);
 			if (timestampMs !== null) {
 				if (!latestAssistant || timestampMs > latestAssistant.timestampMs) {
 					latestAssistant = { timestampMs, hasText: Boolean(text) };
 				}
 			}
 
-			const messageId = this.extractSessionMessageId(messageObj);
+			const messageId = this.extractSessionMessageId(message);
 			if (!messageId) {
 				continue;
 			}
@@ -6271,8 +6545,6 @@ Report findings using bug resolution workflow.`;
 	private async attemptInfrastructureRecovery(): Promise<boolean> {
 		let recovered = false;
 
-		// API server is required for all recovery decisions.
-		// If API is down, skip local fallback recovery work for this tick.
 		if (!this.infrastructureHealth.apiServer.healthy) {
 			try {
 				const status = await this.apiRequest<{ status: string }>("/api/health");
@@ -6461,18 +6733,55 @@ Report findings using bug resolution workflow.`;
 					// Arm is actively processing - check how long
 					// If it's been processing for too long, it might be stuck
 					this.log(`Arm ${arm.name}: harness confirms "processing" state`);
+					// For API harnesses, trust the processing state - don't override to idle
+					// even if there's no recent activity signal (long-running tasks are valid)
+					const isApi = await this.isApiHarness(arm.id);
+					if (isApi) {
+						this.log(
+							`Arm ${arm.name}: API harness confirmed processing, keeping busy`,
+						);
+						continue;
+					}
 					// Fall through to log analysis to check if it's stuck
 				}
-				// Could not get harness state - decide how to proceed based on harness type
+				// Could not get harness state or state is error/unknown - decide how to proceed based on harness type
 				const isApi = await this.isApiHarness(arm.id);
 				if (isApi) {
 					// For API harnesses, we can't reliably analyze logs
-					// Instead, check if the arm is sending heartbeats (indicating it's active)
+					// Instead, check if the arm is sending heartbeats. Heartbeat alone
+					// is not enough for recovery because API arms can keep heartbeating
+					// long after real work has stalled.
 					const hasRecentHb = await this.hasRecentHeartbeat(arm.id, 60);
 					if (hasRecentHb) {
-						this.log(
-							`Arm ${arm.name}: API harness with recent heartbeat, assuming active`,
+						const staleMinutes = await this.getBrainConfigNumber(
+							"brain_api_arm_stale_activity_minutes",
+							5,
 						);
+						const staleThresholdMs = staleMinutes * 60 * 1000;
+						const recentSignal = await this.getRecentArmActivitySignal(
+							arm.id,
+							staleThresholdMs,
+						);
+						if (recentSignal.recent) {
+							this.log(
+								`Arm ${arm.name}: API harness heartbeat is fresh and ${recentSignal.reason || "activity is recent"}, keeping busy`,
+							);
+							continue;
+						}
+
+						const lastActivityAgeMinutes = arm.lastActivity
+							? (Date.now() - arm.lastActivity.getTime()) / 1000 / 60
+							: null;
+						const lastActivitySuffix =
+							lastActivityAgeMinutes !== null &&
+							Number.isFinite(lastActivityAgeMinutes)
+								? ` (last activity ${lastActivityAgeMinutes.toFixed(1)}m ago)`
+								: "";
+						this.log(
+							`Arm ${arm.name}: API harness heartbeat is fresh but no activity signal for ${staleMinutes}m${lastActivitySuffix}, marking idle so the next poll can nudge it`,
+						);
+						await this.syncArmStatus(arm.id, "idle");
+						arm.status = "idle";
 						continue;
 					} else {
 						// No recent heartbeat - might be truly stuck or the API server is down
@@ -7489,24 +7798,13 @@ ${conflictList}
 		});
 	}
 
-	/**
-	 * Attempt to resolve claim conflicts (placeholder for future active resolution)
-	 */
 	private async attemptClaimConflictResolution(
 		task: Task,
 		conflicts: Array<{ armId: string; filePath: string; claimType: string; claimedAt: string }>,
 	): Promise<void> {
-		// This is a placeholder for future active resolution logic
-		// For now, just log that we would attempt resolution
 		this.log(
 			`Active claim resolution enabled but not yet implemented. Task ${task.id} has ${conflicts.length} conflict(s).`,
 		);
-
-		// Future implementation could:
-		// 1. Transfer claims from idle arms to active arms
-		// 2. Coordinate work between arms on the same file
-		// 3. Split tasks based on file boundaries
-		// 4. Prioritize tasks based on urgency/importance
 	}
 
 	/**
@@ -7558,6 +7856,7 @@ ${conflictList}
 						subject: stripTerminalArtifacts(message.subject),
 						body: stripTerminalArtifacts(message.body),
 						replyTo: this.mailConfig.fromAddress,
+						headers: message.headers || {},
 					}),
 				});
 				this.log(`Email sent to ${this.mailConfig.toAddress}`);
@@ -7627,14 +7926,6 @@ ${conflictList}
 		});
 		this.state.pendingTasks = this.tasks.filter(
 			(t) => t.status === "pending",
-		).length;
-	}
-
-	private async saveTasks(): Promise<void> {
-		// Task persistence is API-driven. Keep this method for compatibility with
-		// older call sites while migration to explicit API writes is in progress.
-		this.state.pendingTasks = (
-			await this.listTasksFromApi({ status: ["pending"], limit: 500 })
 		).length;
 	}
 
@@ -7856,9 +8147,7 @@ ${conflictList}
 			const allReports = await this.listStatusReportsFromApi({ limit: 500 });
 			const activeTasks = await this.listTasksFromApi({ limit: 500 });
 			const verifySubjects = new Set(
-				activeTasks
-					.filter((t) => t.subject.startsWith("Verify & Polish: "))
-					.map((t) => t.subject),
+				activeTasks.filter((t) => isVerificationTaskSubject(t.subject)).map((t) => t.subject),
 			);
 
 			let verificationTasksCreated = 0;
@@ -7897,14 +8186,11 @@ ${conflictList}
 			}
 
 			for (const task of completedTasks) {
-				if (
-					task.subject.startsWith("Validate completion:") ||
-					task.subject.startsWith("Verify & Polish:")
-				) {
+				if (isValidationTaskSubject(task.subject) || isVerificationTaskSubject(task.subject)) {
 					continue;
 				}
 
-				const verifySubject = `Verify & Polish: ${task.subject}`;
+				const verifySubject = buildVerificationTaskSubject(task.subject);
 				if (verifySubjects.has(verifySubject)) {
 					continue;
 				}
@@ -8039,7 +8325,7 @@ ${originalTask.id}`;
 		const verifyTask =
 			(await this.createTaskViaApi({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -8053,7 +8339,7 @@ ${originalTask.id}`;
 			})) ||
 			({
 				id: taskId,
-				subject: `Verify & Polish: ${originalTask.subject}`,
+				subject: buildVerificationTaskSubject(originalTask.subject),
 				description,
 				status: "pending",
 				priority: originalTask.priority === "critical" ? "critical" : "high",
@@ -8254,7 +8540,8 @@ ${originalTask.id}`;
 
 	private async appendLog(line: string): Promise<void> {
 		const logPath = join(this.options.coleoDir, "logs", "brain.log");
-		const { appendFile } = await import("fs/promises");
+		const { appendFile, mkdir } = await import("fs/promises");
+		await mkdir(join(this.options.coleoDir, "logs"), { recursive: true });
 		await appendFile(logPath, line + "\n", "utf-8");
 	}
 
@@ -8312,7 +8599,7 @@ ${originalTask.id}`;
 		}
 
 		// Build task description
-		const description = this.buildDocUpdateDescription(context);
+		const description = buildDocUpdateDescription(context);
 
 		// Create documentation task
 		const taskId = `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -8346,58 +8633,6 @@ ${originalTask.id}`;
 			filesChanged: context.changedFilesCount,
 			docsToUpdate: context.featureDocsToUpdate.length,
 		});
-	}
-
-	/**
-	 * Build description for documentation update task
-	 */
-	private buildDocUpdateDescription(context: {
-		filesChanged: string[];
-		changedFilesCount: number;
-		featureDocsToUpdate: string[];
-		planDocument?: string;
-	}): string {
-		let desc = `## Documentation Update Task
-
-This task ensures feature documentation remains aligned with actual code implementation.
-
-### Files Changed Since Last Update
-${context.changedFilesCount} files have been modified:
-${context.filesChanged
-	.slice(0, 10)
-	.map((f) => `- ${f}`)
-	.join("\n")}
-${context.filesChanged.length > 10 ? `- ... and ${context.filesChanged.length - 10} more` : ""}
-
-### Feature Docs to Review
-${
-	context.featureDocsToUpdate.length > 0
-		? context.featureDocsToUpdate.map((d) => `- ${d}`).join("\n")
-		: "No specific feature docs identified - review general docs for accuracy."
-}
-
-### Your Tasks
-
-1. **Review changed files** - Understand what code changes were made
-2. **Update feature docs** - Ensure docs/features/, docs/api/, and docs/capabilities/ match implementation
-3. **Add "Future Work" notes** - For features documented but not yet implemented:
-   - Mark as "Planned for Phase N"
-   - Reference the plan document
-4. **Do NOT update** - Conceptual docs, architecture decisions, or requirements
-
-### Output
-When complete, report:
-- Which docs were updated
-- Any "Future Work" notes added
-- Any features that need attention
-
-`;
-
-		if (context.planDocument) {
-			desc += `### Reference\nSee \`${context.planDocument}\` for planned features that may need "Future Work" notes.\n`;
-		}
-
-		return desc;
 	}
 
 	/**

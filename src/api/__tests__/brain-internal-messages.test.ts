@@ -1,9 +1,11 @@
-import { describe, it, beforeEach, afterEach, expect } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { Hono } from "hono";
-import { createBrainRoutes } from "../routes/brain";
-import { HttpError } from "../middleware/error";
+
 import { setNatsManager } from "../../nats/server";
+import type { CommandEnvelope } from "../../nats/command-types";
+import { HttpError } from "../middleware/error";
+import { createBrainRoutes } from "../routes/brain";
 
 function createTestDb(): Database {
   const db = new Database(":memory:");
@@ -31,11 +33,18 @@ function createTestDb(): Database {
 describe("brain internal messages API", () => {
   let db: Database;
   let app: Hono<{ Variables: { db: Database } }>;
+  let publishedMessages: Array<{
+    subject: string;
+    envelope: CommandEnvelope;
+    msgID?: string;
+  }>;
 
   beforeEach(() => {
     const connection = createMockNatsConnection();
+    publishedMessages = connection.published;
+
     setNatsManager({
-      getConnection: () => connection,
+      getConnection: () => connection.connection,
       ready: () => true,
     } as unknown as Parameters<typeof setNatsManager>[0]);
 
@@ -97,6 +106,7 @@ describe("brain internal messages API", () => {
     expect(row?.message_type).toBe("claim_transfer");
     expect(row?.status).toBe("failed");
     expect(row?.error).toContain("unsupported brain message type");
+    expect(publishedMessages).toEqual([]);
   });
 
   it("rejects invalid brain payloads and records dead-letter", async () => {
@@ -132,9 +142,10 @@ describe("brain internal messages API", () => {
     expect(row?.message_type).toBe("status_update");
     expect(row?.status).toBe("failed");
     expect(row?.error).toContain("status_update requires payload.status");
+    expect(publishedMessages).toEqual([]);
   });
 
-  it("queues valid brain messages", async () => {
+  it("queues valid brain messages onto the command stream", async () => {
     const response = await app.request("/api/brain/internal/messages/queue", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -152,6 +163,18 @@ describe("brain internal messages API", () => {
       queued: true,
       id: "msg-valid",
     });
+    expect(publishedMessages).toHaveLength(1);
+    expect(publishedMessages[0]).toMatchObject({
+      subject: "coleo.cmd.to.brain",
+      msgID: "msg-valid",
+      envelope: {
+        id: "msg-valid",
+        from: "arm-3",
+        to: "brain",
+        type: "status_update",
+        payload: { taskId: "task-2", status: "in_progress" },
+      },
+    });
 
     const queuedCount = db
       .query("SELECT COUNT(*) AS count FROM messages WHERE id = ?")
@@ -164,7 +187,7 @@ describe("brain internal messages API", () => {
     expect(deadLetters.count).toBe(0);
   });
 
-  it("accepts command publish endpoint", async () => {
+  it("accepts the publish endpoint and writes the same command envelope to JetStream", async () => {
     const response = await app.request("/api/brain/internal/commands/publish", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -182,6 +205,18 @@ describe("brain internal messages API", () => {
       accepted: true,
       id: "cmd-publish-valid",
     });
+    expect(publishedMessages).toHaveLength(1);
+    expect(publishedMessages[0]).toMatchObject({
+      subject: "coleo.cmd.to.brain",
+      msgID: "cmd-publish-valid",
+      envelope: {
+        id: "cmd-publish-valid",
+        from: "arm-9",
+        to: "brain",
+        type: "status_update",
+        payload: { taskId: "task-9", status: "in_progress" },
+      },
+    });
 
     const deadLetters = db
       .query("SELECT COUNT(*) AS count FROM messages WHERE to_id = 'brain.deadletter'")
@@ -189,7 +224,7 @@ describe("brain internal messages API", () => {
     expect(deadLetters.count).toBe(0);
   });
 
-  it("leases pending messages once for processing", async () => {
+  it("leases pending messages once for processing and records the lease timestamp", async () => {
     const now = new Date().toISOString();
     db.run(
       `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at)
@@ -220,9 +255,15 @@ describe("brain internal messages API", () => {
     });
     expect(second.status).toBe(200);
     expect(await second.json()).toEqual({ success: false });
+
+    const leased = db
+      .query("SELECT status, processed_at FROM messages WHERE id = ?")
+      .get("msg-lease") as { status: string; processed_at: string | null } | null;
+    expect(leased?.status).toBe("processing");
+    expect(typeof leased?.processed_at).toBe("string");
   });
 
-  it("re-leases stale processing messages and only exposes stale processing in pending endpoint", async () => {
+  it("re-leases stale processing messages and only exposes stale processing in the pending endpoint", async () => {
     const now = new Date();
     const staleProcessedAt = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
     const freshProcessedAt = new Date(now.getTime() - 60 * 1000).toISOString();
@@ -230,7 +271,7 @@ describe("brain internal messages API", () => {
 
     db.run(
       `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at, processed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "msg-stale",
         "arm-stale",
@@ -245,7 +286,7 @@ describe("brain internal messages API", () => {
 
     db.run(
       `INSERT INTO messages (id, from_id, to_id, message_type, payload, status, created_at, processed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)` ,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "msg-fresh",
         "arm-fresh",
@@ -261,7 +302,7 @@ describe("brain internal messages API", () => {
     const pendingBeforeLeaseResponse = await app.request("/api/brain/internal/messages/pending?to=brain");
     expect(pendingBeforeLeaseResponse.status).toBe(200);
 
-    const pendingBeforeLease = await pendingBeforeLeaseResponse.json() as {
+    const pendingBeforeLease = (await pendingBeforeLeaseResponse.json()) as {
       messages: Array<{ id: string }>;
     };
     const idsBeforeLease = pendingBeforeLease.messages.map((message) => message.id);
@@ -280,7 +321,7 @@ describe("brain internal messages API", () => {
     const pendingAfterLeaseResponse = await app.request("/api/brain/internal/messages/pending?to=brain");
     expect(pendingAfterLeaseResponse.status).toBe(200);
 
-    const pendingAfterLease = await pendingAfterLeaseResponse.json() as {
+    const pendingAfterLease = (await pendingAfterLeaseResponse.json()) as {
       messages: Array<{ id: string }>;
     };
     const idsAfterLease = pendingAfterLease.messages.map((message) => message.id);
@@ -311,7 +352,7 @@ describe("brain internal messages API", () => {
 
     const deadLetterResponse = await app.request("/api/brain/internal/messages/deadletter?limit=10");
     expect(deadLetterResponse.status).toBe(200);
-    const deadLetterBody = await deadLetterResponse.json() as {
+    const deadLetterBody = (await deadLetterResponse.json()) as {
       messages: Array<{ id: string; reason?: string; payload: unknown }>;
     };
     expect(deadLetterBody.messages).toHaveLength(1);
@@ -380,7 +421,7 @@ describe("brain internal messages API", () => {
       },
     );
     expect(requeueResponse.status).toBe(400);
-    const body = await requeueResponse.json() as { error: string };
+    const body = (await requeueResponse.json()) as { error: string };
     expect(body.error).toContain("cannot requeue invalid payload");
 
     const missing = db.query("SELECT id FROM messages WHERE id = ?").get("msg-should-not-exist");
@@ -389,49 +430,61 @@ describe("brain internal messages API", () => {
 });
 
 function createMockNatsConnection(): {
-  info: { max_payload: number };
-  jetstreamManager: () => Promise<{
-    streams: {
-      info: (name: string) => Promise<{ config: { subjects: string[] } }>;
-      add: (config: { name: string; subjects?: string[] }) => Promise<void>;
-      update: (name: string, config: { subjects?: string[] }) => Promise<void>;
+  connection: {
+    info: { max_payload: number };
+    jetstreamManager: () => Promise<{
+      streams: {
+        info: (name: string) => Promise<{ config: { subjects: string[] } }>;
+        add: (config: { name: string; subjects?: string[] }) => Promise<void>;
+        update: (name: string, config: { subjects?: string[] }) => Promise<void>;
+      };
+    }>;
+    jetstream: () => {
+      publish: (
+        subject: string,
+        payload: Uint8Array,
+        options?: { msgID?: string },
+      ) => Promise<{ stream: string; seq: number; duplicate: boolean }>;
     };
-  }>;
-  jetstream: () => {
-    publish: (
-      subject: string,
-      payload: Uint8Array,
-      options?: { msgID?: string },
-    ) => Promise<{ stream: string; seq: number; duplicate: boolean }>;
   };
+  published: Array<{ subject: string; envelope: CommandEnvelope; msgID?: string }>;
 } {
+  const published: Array<{ subject: string; envelope: CommandEnvelope; msgID?: string }> = [];
   const streams = new Map<string, { subjects: string[] }>();
   let seq = 0;
 
   return {
-    info: { max_payload: 2_000_000 },
-    jetstreamManager: async () => ({
-      streams: {
-        info: async (name: string) => {
-          const stream = streams.get(name);
-          if (!stream) {
-            throw new Error(`stream not found: ${name}`);
-          }
-          return { config: { subjects: stream.subjects } };
+    published,
+    connection: {
+      info: { max_payload: 2_000_000 },
+      jetstreamManager: async () => ({
+        streams: {
+          info: async (name: string) => {
+            const stream = streams.get(name);
+            if (!stream) {
+              throw new Error(`stream not found: ${name}`);
+            }
+            return { config: { subjects: stream.subjects } };
+          },
+          add: async (config: { name: string; subjects?: string[] }) => {
+            streams.set(config.name, { subjects: config.subjects || [] });
+          },
+          update: async (name: string, config: { subjects?: string[] }) => {
+            streams.set(name, { subjects: config.subjects || [] });
+          },
         },
-        add: async (config: { name: string; subjects?: string[] }) => {
-          streams.set(config.name, { subjects: config.subjects || [] });
+      }),
+      jetstream: () => ({
+        publish: async (subject: string, payload: Uint8Array, options?: { msgID?: string }) => {
+          published.push({
+            subject,
+            envelope: JSON.parse(new TextDecoder().decode(payload)) as CommandEnvelope,
+            msgID: options?.msgID,
+          });
+          seq += 1;
+          return { stream: "coleo-commands", seq, duplicate: false };
         },
-        update: async (name: string, config: { subjects?: string[] }) => {
-          streams.set(name, { subjects: config.subjects || [] });
-        },
-      },
-    }),
-    jetstream: () => ({
-      publish: async (_subject: string, _payload: Uint8Array, _options?: { msgID?: string }) => {
-        seq += 1;
-        return { stream: "coleo-commands", seq, duplicate: false };
-      },
-    }),
+      }),
+    },
   };
 }

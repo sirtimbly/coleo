@@ -13,7 +13,7 @@ import { join } from "path";
 import { execSync } from "node:child_process";
 import { readFile, mkdir, writeFile, unlink, readdir } from "fs/promises";
 import { parse as parseToml } from "smol-toml";
-import { getArmClient } from "../server";
+import { getArmClient } from "../arm-client-registry";
 import { generateSystemPrompt } from "../../arm/prompts";
 import { eventStore } from "../../nats/jetstream";
 import { releaseClaimsForArm } from "../claim-cleanup";
@@ -32,6 +32,7 @@ interface ArmsContext {
 
 const AUTO_AGENT_ID = `agent-${hostname()}-autostart`;
 const AUTO_AGENT_WAIT_MS_DEFAULT = 8000;
+const DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS = 8000;
 let autoStartAgentPromise: Promise<void> | null = null;
 
 interface ArmClientLookup {
@@ -716,7 +717,6 @@ async function listTemplateFileCandidates(): Promise<TemplateFileCandidate[]> {
       extensions: [".yml", ".yaml"],
     },
     {
-      // Legacy template location kept for CLI/API compatibility.
       dir: join(coleoDir, "arms"),
       extensions: [".toml"],
     },
@@ -883,11 +883,8 @@ function parseArmTemplate(content: string): ArmTemplate {
     if (Array.isArray(core)) result.convictions = core;
     if (provider) result.provider = provider;
     if (modelName) result.model = modelName;
-  } catch {
-    // Fall back to regex parsing below
-  }
+    } catch {}
 
-  // Fill any missing fields via regex for backwards compatibility
   const nameMatch = content.match(/name\s*=\s*["']([^"']*)["']/);
   const domainMatch = content.match(/domain\s*=\s*["']([^"']*)["']/);
   const harnessMatch = content.match(/harness\s*=\s*["']([^"']*)["']/);
@@ -1334,13 +1331,6 @@ export function createArmsRoutes() {
     return c.json({ deleted: true });
   });
 
-  /**
-   * Spawn an arm via agent daemon (distributed) or local harness fallback
-   * POST /api/arms/:id/spawn
-   * 
-   * Daemon-managed harnesses (`opencode-api`, `opencode`) require an arm agent
-   * by default so sessions survive API restarts.
-   */
   app.post("/:id/spawn", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
@@ -1352,11 +1342,11 @@ export function createArmsRoutes() {
       provider?: string;
       model?: string;
       initialPrompt?: string;
-      harness?: string; // Allow specifying harness for auto-created arms
-      preferAgent?: boolean; // Explicitly request agent spawning
-      agentId?: string; // Spawn on a specific agent
-      recover?: boolean; // Enable recovery of existing OpenCode server (default: false)
-      allowLocalFallback?: boolean; // Allow local fallback for daemon-managed harnesses
+      harness?: string;
+      preferAgent?: boolean;
+      agentId?: string;
+      recover?: boolean;
+      allowLocalFallback?: boolean;
     }>();
 
     // Check if arm exists (include runtime metadata for recovery)
@@ -1487,7 +1477,6 @@ export function createArmsRoutes() {
     const systemPrompt = generateSystemPrompt({
       armId: id,
       name: row.name,
-      domain: row.domain,
       harness: row.harness,
       workdir,
       provider,
@@ -2292,7 +2281,6 @@ export function createArmsRoutes() {
     const systemPrompt = generateSystemPrompt({
       armId: id,
       name: row.name,
-      domain: row.domain,
       harness: row.harness,
       workdir,
       provider,
@@ -2753,7 +2741,7 @@ export function createArmsRoutes() {
 
       let response;
       try {
-        response = await armClient.getMessages(id, { limit }, 10000);
+        response = await armClient.getMessages(id, { limit }, DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return c.json({
@@ -2930,7 +2918,7 @@ export function createArmsRoutes() {
 
       let response;
       try {
-        response = await armClient.getTodos(id, 10000);
+        response = await armClient.getTodos(id, DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return c.json({

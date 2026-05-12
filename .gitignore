@@ -58,6 +58,7 @@ repro_*.ts
 debug-*.sh
 mock-*.ts
 test-*.ts
+!src/regression/test-*.ts
 init-db.js
 .coleo/run
 .coleo/mcp
@@ -73,3 +74,4 @@ docs/.vitepress/cache/deps
 
 # Database backups
 .coleo/*.db.backup-*
+.kilocode/package-lock.json

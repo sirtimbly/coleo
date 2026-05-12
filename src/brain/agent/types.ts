@@ -2,6 +2,8 @@
  * Agentic Brain Types
  */
 
+import type { StatusReportStatus, StatusReportTestsStatus } from "../../types";
+
 export interface BrainAgentInput {
   messages: Array<{
     role: "user" | "assistant" | "system";
@@ -71,13 +73,13 @@ export interface StatusReportItem {
   taskId: string;
   taskSubject?: string;
   armId: string;
-  status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
+  status: StatusReportStatus;
   summary: string;
   issues: string[];
   blockers: string[];
   nextSteps?: string;
   filesChanged: string[];
-  testsStatus?: "passing" | "failing" | "not_run";
+  testsStatus?: StatusReportTestsStatus;
   createdAt: string;
 }
 

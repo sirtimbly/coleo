@@ -590,6 +590,7 @@ export function createMailRoutes() {
       body: string;
       from?: string;
       replyTo?: string;
+      headers?: Record<string, string>;
     }>();
 
     if (!body.from || !body.to || !body.subject || !body.body) {
@@ -606,6 +607,7 @@ export function createMailRoutes() {
         subject: body.subject,
         textBody: body.body,
         replyTo: body.replyTo,
+        headers: body.headers,
       });
 
       const message = await sent.write({
@@ -615,6 +617,7 @@ export function createMailRoutes() {
         date: new Date(),
         body: body.body,
         headers: {
+          ...(body.headers ?? {}),
           "x-mail-provider": "postmark",
           "x-postmark-message-id": sendResult.messageId,
         },

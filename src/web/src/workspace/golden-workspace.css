@@ -59,7 +59,6 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  min-height: 44px;
   border-radius: var(--golden-control-radius);
   border: 1px solid var(--golden-border);
   background: var(--surface-secondary);
@@ -98,8 +97,8 @@
 
 .golden-launcher-button {
   gap: 12px;
-  padding: 0 14px 0 10px;
-  background: var(--surface);
+  padding: 18px 14px 18px 10px;
+  background: linear-gradient(130deg, #1e213a 0%, #5d496d 90%)
 }
 
 .golden-launcher-badge {
@@ -109,9 +108,7 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  border-radius: 8px;
-  border: 1px solid color-mix(in oklch, var(--accent) 36%, var(--border) 64%);
-  background: color-mix(in oklch, var(--accent) 18%, var(--surface) 82%);
+
 }
 
 .golden-launcher-title {

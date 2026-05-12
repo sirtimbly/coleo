@@ -64,6 +64,8 @@ export function createDiscoveriesRoutes() {
       lineNumber?: number | null;
       severity?: string;
       status?: string;
+      taskId?: string | null;
+      phase?: string | null;
     }>();
 
     if (!body.armId || !body.kind || !body.title || !body.details) {
@@ -77,8 +79,8 @@ export function createDiscoveriesRoutes() {
       db.run(
         `
         INSERT INTO discoveries (
-          id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           id,
@@ -91,6 +93,8 @@ export function createDiscoveriesRoutes() {
           body.lineNumber || null,
           body.severity || "info",
           body.status || "open",
+          body.taskId || null,
+          body.phase || null,
           now,
           now,
         ],
@@ -108,6 +112,8 @@ export function createDiscoveriesRoutes() {
           lineNumber: body.lineNumber || null,
           severity: body.severity || "info",
           status: body.status || "open",
+          taskId: body.taskId || null,
+          phase: body.phase || null,
           createdAt: now,
           updatedAt: now,
         },
@@ -124,6 +130,7 @@ export function createDiscoveriesRoutes() {
     const kind = c.req.query("kind");
     const severity = c.req.query("severity");
     const status = c.req.query("status") || "open";
+    const since = c.req.query("since");
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
     
     let query = `
@@ -147,6 +154,11 @@ export function createDiscoveriesRoutes() {
     if (severity) {
       query += " AND severity = ?";
       params.push(severity);
+    }
+
+    if (since) {
+      query += " AND created_at > ?";
+      params.push(since);
     }
     
     query += " ORDER BY created_at DESC LIMIT ?";

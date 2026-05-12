@@ -5,8 +5,6 @@ import {
 	generateInitialKeys,
 	compareKeys,
 	isValidKey,
-	MIN_KEY,
-	MAX_KEY,
 } from "../fractional-indexing";
 
 describe("fractional-indexing", () => {
@@ -69,6 +67,14 @@ describe("fractional-indexing", () => {
 			const key = generateKeyBetween("z", null);
 			expect(key > "z").toBe(true);
 		});
+
+		it("does not regress on consecutive neighbors like 'a' and 'b'", () => {
+			const key = generateKeyBetween("a", "b");
+			expect(key > "a").toBe(true);
+			expect(key < "b").toBe(true);
+			expect(key.startsWith("a")).toBe(true);
+			expect(key.length).toBeGreaterThan(1);
+		}, 5000);
 	});
 
 	describe("generateKeysBetween", () => {
@@ -184,5 +190,23 @@ describe("fractional-indexing", () => {
 				expect(keys[i]! > keys[i - 1]!).toBe(true);
 			}
 		});
+
+		it("should keep making progress between consecutive neighbors", () => {
+			let prev: string | null = "a";
+			const next = "b";
+			const keys: string[] = [];
+
+			for (let i = 0; i < 10; i++) {
+				const key = generateKeyBetween(prev, next);
+				keys.push(key);
+				expect(key > (prev ?? "")).toBe(true);
+				expect(key < next).toBe(true);
+				prev = key;
+			}
+
+			for (let i = 1; i < keys.length; i++) {
+				expect(keys[i]! > keys[i - 1]!).toBe(true);
+			}
+		}, 10000);
 	});
 });

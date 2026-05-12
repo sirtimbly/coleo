@@ -7,7 +7,6 @@
 
 export interface ArmPromptOptions {
   armId: string;
-  domain: string;
   name: string;
   workdir: string;
   harness: string;
@@ -16,8 +15,6 @@ export interface ArmPromptOptions {
 }
 
 export function generateSystemPrompt(options: ArmPromptOptions): string {
-  // NOTE: Domain-specific instructions are disabled for now
-  // const domainInstructions = generateDomainSpecificInstructions(options.domain);
   const timestamp = new Date().toISOString();
 
   return `# Coleo Arm System Prompt
@@ -213,103 +210,4 @@ The brain is your coordinator. Use the tools to communicate with it. Other arms 
 Current Time: ${timestamp}
 Your Session ID: ${options.armId}
 `;
-}
-
-// NOTE: Domain-specific instructions are disabled for now.
-// The function is kept for future use when domain specialization is re-enabled.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function generateDomainSpecificInstructions(_domain: string): string {
-  // Domain functionality is temporarily disabled
-  return "";
-  
-  /* Original domain instructions - kept for reference:
-  const domainInstructions: Record<string, string> = {
-    general: `
-## Generalist Domain
-
-You work across the entire codebase. Watch for:
-- Changes to any README or overview documentation
-- Configuration changes that affect multiple areas
-- New task assignments that might span domains
-`,
-    frontend: `
-## Frontend Domain
-
-You specialize in UI/UX, React components, and web development. Watch for:
-- Changes to docs/requirements/*.md (UI/UX requirements)
-- Changes to docs/guides/*.md (Frontend guides)
-- Design system documentation updates
-- CSS/SCSS file changes
-- Component library updates
-
-When requirements change:
-1. Read the updated requirements
-2. Identify affected components
-3. Report to brain if major redesign is needed
-`,
-    backend: `
-## Backend Domain
-
-You specialize in APIs, databases, and services. Watch for:
-- Changes to docs/requirements/api.md
-- Changes to docs/architecture/*.md
-- Database schema documentation
-- API specification changes (OpenAPI/Swagger)
-- Security requirement updates
-
-When requirements change:
-1. Assess API changes needed
-2. Report database migration requirements
-3. Update API documentation if needed
-`,
-    testing: `
-## Testing Domain
-
-You specialize in quality assurance and test infrastructure. Watch for:
-- Changes to any requirements docs
-- New feature documentation
-- Test plan updates
-- CI/CD configuration changes
-
-When requirements change:
-1. Identify new test cases needed
-2. Update test plans
-3. Report coverage gaps
-`,
-    docs: `
-## Documentation Domain
-
-You specialize in keeping documentation in sync with development. Watch for:
-- ALL changes to docs/ directory
-- README updates
-- Changelog entries
-- API documentation updates
-
-Your workflow:
-1. Periodically check all doc categories
-2. Read changes to understand what was updated
-3. Notify brain of significant changes
-4. Ensure documentation matches code reality
-5. Update docs when user provides feedback via email
-`,
-    architect: `
-## Architect Domain
-
-You specialize in code review and architectural consistency. Watch for:
-- Changes to docs/architecture/*.md
-- Changes to docs/decisions/*.md (ADRs)
-- Major refactoring proposals
-- Dependency updates
-- Security architecture changes
-
-When decisions change:
-1. Assess architectural impact
-2. Review code for alignment with decisions
-3. Report architectural drift
-4. Suggest course corrections
-`,
-  };
-
-  return domainInstructions[domain] || domainInstructions["general"] || "";
-  */
 }

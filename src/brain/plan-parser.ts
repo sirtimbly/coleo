@@ -225,14 +225,6 @@ export async function findPlanFiles(projectRoot: string): Promise<string[]> {
     return [...files];
   }
 
-  // Fallback: only look inside .project/plans if plan.md is missing
-  const { glob } = await import("fast-glob");
-  const matches = await glob(".project/plans/*.md", {
-    cwd: projectRoot,
-    absolute: true,
-  });
-  matches.forEach((filePath) => files.add(filePath));
-
   return [...files];
 }
 

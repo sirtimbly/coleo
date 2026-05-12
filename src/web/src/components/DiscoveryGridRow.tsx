@@ -1,14 +1,11 @@
 import { memo } from "react";
 import { GripVertical, Trash2, ChevronRight, ChevronDown, Info } from "lucide-react";
 import { Dropdown, Button } from "@heroui/react";
-import { type Discovery as ApiDiscovery } from "@/lib/api";
+import type { DraggableAttributes, DraggableSyntheticListeners } from "@dnd-kit/core";
+import { type Discovery as ApiDiscovery, type UiMetadata } from "@/lib";
 import { cn } from "@/lib";
 
-export interface DiscoveryUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type DiscoveryUiMeta = UiMetadata;
 
 export type DiscoveryUpdate = {
 	status: string;
@@ -22,7 +19,7 @@ interface DiscoveryGridRowProps {
 	onOpenDetails?: (discovery: ApiDiscovery) => void;
 	onUpdateDiscovery?: (discoveryId: string, updates: DiscoveryUpdate) => void;
 	onDelete?: (discoveryId: string) => void;
-	dragHandleProps?: Record<string, unknown>;
+	dragHandleProps?: DraggableAttributes & DraggableSyntheticListeners;
 	className?: string;
 }
 
@@ -67,14 +64,17 @@ export const DiscoveryGridRow = memo(function DiscoveryGridRow({
 	className,
 }: DiscoveryGridRowProps) {
 	const displayRowNumber = index + 1;
-	const uiMeta = { tags: [], color: "slate", bold: false };
+	const uiMeta: UiMetadata = { tags: [], color: "slate", bold: false };
 
 	const statusClasses = STATUS_STYLES[discovery.status] || STATUS_STYLES.open;
 	const severityClasses = SEVERITY_STYLES[discovery.severity] || SEVERITY_STYLES.info;
 	const kindClasses = KIND_STYLES[discovery.kind] || KIND_STYLES.other;
 
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
-		const target = event.target as HTMLElement;
+		if (!(event.target instanceof HTMLElement)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||
@@ -173,8 +173,12 @@ export const DiscoveryGridRow = memo(function DiscoveryGridRow({
 					</div>
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
-					<Dropdown.Menu
-						onAction={(key) => onUpdateDiscovery?.(discovery.id, { status: key as string })}
+				<Dropdown.Menu
+						onAction={(key) => {
+							if (typeof key === "string") {
+								onUpdateDiscovery?.(discovery.id, { status: key });
+							}
+						}}
 					>
 						{STATUS_OPTIONS.map((status) => (
 							<Dropdown.Item key={status}>{status.replace(/_/g, " ")}</Dropdown.Item>

@@ -7,7 +7,7 @@
  */
 
 import { watch, type FSWatcher } from "fs";
-import { join, relative } from "path";
+import { join } from "path";
 import { createHash } from "crypto";
 import { readFile, stat, readdir } from "fs/promises";
 
@@ -31,13 +31,9 @@ export interface DocState {
 
 export type DocWatcherCallback = (event: DocChangeEvent) => void;
 
-const DOC_CATEGORIES: Record<string, string> = {
-  architecture: "architecture",
-  guides: "guides",
-  plans: "plans",
-  requirements: "requirements",
-  decisions: "decisions",
-};
+interface RankedDocState extends DocState {
+  relevanceScore: number;
+}
 
 export class DocWatcher {
   private watchers: Map<string, FSWatcher> = new Map();
@@ -144,21 +140,21 @@ export class DocWatcher {
    */
   async findRelevantDocs(taskDescription: string): Promise<DocState[]> {
     const keywords = taskDescription.toLowerCase().split(/\s+/);
-    const relevant: DocState[] = [];
+    const relevant: RankedDocState[] = [];
 
     for (const doc of this.docStates.values()) {
       const docText = doc.relativePath.toLowerCase();
       const score = keywords.filter(k => docText.includes(k)).length;
 
       if (score > 0) {
-        relevant.push({ ...doc, ...{ _relevanceScore: score } });
+        relevant.push({ ...doc, relevanceScore: score });
       }
     }
 
     // Sort by relevance score
-    relevant.sort((a, b) => (b as any)._relevanceScore - (a as any)._relevanceScore);
+    relevant.sort((a, b) => b.relevanceScore - a.relevanceScore);
 
-    return relevant.slice(0, 5); // Return top 5 most relevant
+    return relevant.slice(0, 5).map(({ relevanceScore, ...doc }) => doc); // Return top 5 most relevant
   }
 
   /**
@@ -178,8 +174,8 @@ export class DocWatcher {
   /**
    * Get document categories
    */
-  getCategories(): string[] {
-    return [...new Set(this.docStates.values().map(d => d.category))];
+  getCategories(): DocState["category"][] {
+    return [...new Set(this.docStates.values().map((d) => d.category))];
   }
 
   /**

@@ -35,6 +35,7 @@ export interface PostmarkSendRequest {
   subject: string;
   textBody: string;
   replyTo?: string;
+  headers?: Record<string, string>;
 }
 
 export interface PostmarkSendResponse {
@@ -140,6 +141,9 @@ export async function sendPostmarkMessage(request: PostmarkSendRequest): Promise
       Subject: request.subject,
       TextBody: request.textBody,
       ReplyTo: request.replyTo,
+      Headers: request.headers
+        ? Object.entries(request.headers).map(([Name, Value]) => ({ Name, Value }))
+        : undefined,
     }),
   });
 

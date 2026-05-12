@@ -6,6 +6,7 @@
  */
 
 import type { Database } from "bun:sqlite";
+import type { TaskComment } from "../types";
 
 // ============================================
 // Brain State
@@ -724,22 +725,6 @@ export interface TaskCommentRow {
   deleted: number;
   created_at: string;
   updated_at: string;
-}
-
-export interface TaskComment {
-  id: string;
-  taskId: string;
-  parentId?: string;
-  content: string;
-  authorType: "human" | "arm" | "brain";
-  authorId: string;
-  authorName?: string;
-  client: "web" | "mail" | "mcp" | "cli";
-  screenshotPath?: string;
-  edited: boolean;
-  deleted: boolean;
-  createdAt: string;
-  updatedAt: string;
 }
 
 /**

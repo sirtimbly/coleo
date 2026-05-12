@@ -7,22 +7,18 @@
 import React, { useMemo, useState, useCallback, useId } from 'react';
 import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
-import { type Bug, cn } from '@/lib';
+import { type Bug, type BugMetadata, type UiMetadata, cn } from '@/lib';
 import { BugGrid, BugModal } from '@/components';
 import type { BugUpdate } from '@/components/BugGridRow';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 
 type SidebarTab = 'details';
 
-type BugUiMeta = {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-};
+type BugUiMeta = UiMetadata;
 
 // Status configuration
 const STATUS_CONFIG: Record<Bug['status'], { color: string; bgColor: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
@@ -41,6 +37,9 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 	medium: { color: 'text-yellow-500', bgColor: 'bg-yellow-500/20', label: 'Medium' },
 	low: { color: 'text-gray-500', bgColor: 'bg-gray-500/20', label: 'Low' },
 };
+
+const isBugStatus = (value: string): value is Bug["status"] =>
+	value in STATUS_CONFIG;
 
 export function BugsPage() {
   usePageTitle('Coleo Observatory - Bugs');
@@ -69,12 +68,11 @@ export function BugsPage() {
 	} = useBugs(filter);
 
 	const getBugUiMeta = useCallback((bug: Bug): BugUiMeta => {
-		const meta = (bug.metadata ?? {}) as Record<string, unknown>;
-		const ui = (meta.ui ?? {}) as Record<string, unknown>;
+		const ui = bug.metadata?.ui;
 		return {
-			tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
-			color: typeof ui.color === 'string' ? (ui.color as string) : 'slate',
-			bold: Boolean(ui.bold),
+			tags: ui?.tags ?? [],
+			color: ui?.color ?? 'slate',
+			bold: ui?.bold ?? false,
 		};
 	}, []);
 
@@ -128,10 +126,10 @@ export function BugsPage() {
 				...updates,
 				tags: updates.tags ?? currentUi.tags,
 			};
-			const nextMetadata = {
-				...(target.metadata ?? {}),
+			const nextMetadata: BugMetadata = {
+				...target.metadata,
 				ui: nextUi,
-			} as Record<string, unknown>;
+			};
 
 			updateBug({ id: bugId, updates: { metadata: nextMetadata } });
 		},
@@ -191,8 +189,8 @@ export function BugsPage() {
 
 	// Handle WebSocket messages for real-time updates
 	const handleWSMessage = useCallback(
-		(msg: { channel?: string; event?: string; data?: unknown }) => {
-			if (msg.channel !== 'bugs' || !msg.event || !msg.data) return;
+		(msg: WebSocketMessage) => {
+			if (msg.channel !== 'bugs' || !msg.event) return;
 
 			switch (msg.event) {
 				case 'bug.created':
@@ -278,11 +276,12 @@ export function BugsPage() {
 								<span
 									className={
 										filter.status === status
-											? ''
-											: STATUS_CONFIG[status as Bug['status']]?.color ||
-											  'text-foreground-500'
-									}
-								>
+								? ''
+											: isBugStatus(status)
+												? STATUS_CONFIG[status].color
+												: 'text-foreground-500'
+								}
+							>
 									{status.replace('_', ' ')}
 								</span>
 								<span>{count}</span>
@@ -388,7 +387,11 @@ export function BugsPage() {
 						{/* Tabs */}
 						<Tabs
 							selectedKey={sidebarTab}
-							onSelectionChange={(key) => setSidebarTab(key as SidebarTab)}
+							onSelectionChange={(key) => {
+								if (key === 'details') {
+									setSidebarTab(key);
+								}
+							}}
 							className="flex-1 flex flex-col"
 						>
 							<Tabs.ListContainer className="flex-shrink-0 border-b"

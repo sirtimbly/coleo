@@ -15,8 +15,12 @@ import {
 	formatDiscoverySummary,
 	type DiscoverySummary,
 } from "./discovery-summarizer";
-import { findPlanFiles } from "./plan-parser";
+
 import { formatTaskAttachmentList } from "../lib/prompt-attachments";
+import {
+	VALIDATION_TASK_SUBJECT_PREFIX,
+	isVerificationTaskSubject,
+} from "./task-subjects";
 
 export interface PromptContext {
 	projectRoot: string;
@@ -230,23 +234,6 @@ interface StatusSnapshot {
 	discoveries: string[];
 }
 
-function buildPhaseInfo(phaseSection: string): PhaseInfo {
-	const headerLine = phaseSection.split("\n")[0]?.trim() ?? "";
-	const match = headerLine.match(/^## (Phase \d+(?:\.\d+)?)/);
-
-	if (match) {
-		return { label: match[1]!, header: headerLine };
-	}
-
-	const cleanedHeader = headerLine.replace(/^##\s*/, "").trim();
-	const fallback = cleanedHeader || "Unknown Phase";
-
-	return {
-		label: fallback,
-		header: headerLine || fallback,
-	};
-}
-
 function pickExistingActiveTask(
 	db: BrainDb,
 	phaseLabel: string,
@@ -371,7 +358,7 @@ function getNextPendingTask(
 			statuses: ["pending"],
 			dependencyBlocked: false,
 			phase: phaseValue || undefined,
-			excludeSubjectPrefix: "Validate completion:",
+			excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
 			sort: "priority_then_created_asc",
 			limit: 200,
 		})
@@ -452,78 +439,6 @@ function mapBugPriority(priority: string): Task["priority"] {
 	}
 }
 
-function createPlanTaskDeliverable(
-	db: BrainDb,
-	plan: { currentPhase: string; bullets: string[]; dependencies: string[] },
-	phaseLabel: string,
-	now: string,
-): DeterminationStepResult | null {
-	const nextTask = createNextTaskFromPlan(
-		db,
-		plan,
-		phaseLabel || "Unknown Phase",
-		now,
-	);
-	if (!nextTask) {
-		return null;
-	}
-
-	const dependencyInfo = collectDependenciesForTask(db, {
-		taskId: nextTask.id,
-		subject: nextTask.subject,
-		phaseLabel: phaseLabel || "Unknown Phase",
-		planDependencies: plan.dependencies || [],
-	});
-	const dependencies = dependencyInfo.dependencies;
-	const sourceRef =
-		plan.currentPhase.split("\n")[0]?.substring(0, 100) || phaseLabel || "plan";
-
-	db.createTask({
-		id: nextTask.id,
-		subject: nextTask.subject,
-		description: nextTask.description,
-		status: "pending",
-		priority: nextTask.priority,
-		domain: nextTask.domain || null,
-		phase: phaseLabel || "Unknown Phase",
-		sourceType: "plan",
-		sourceRef,
-	});
-
-	for (const dep of dependencies) {
-		db.upsertTaskDependency({
-			taskId: nextTask.id,
-			dependsOnTaskId: dep.taskId,
-			dependencyType: "finish_to_start",
-			autoDetected: true,
-			reason: dep.reason,
-		});
-	}
-
-	if (dependencies.some((dep) => dep.blocking)) {
-		db.updateTask(nextTask.id, { dependencyBlocked: true });
-	}
-
-	if (dependencyInfo.planUpdateReasons.length > 0) {
-		ensurePlanDependencyTask(db, {
-			phaseLabel: phaseLabel || "Unknown Phase",
-			reasons: dependencyInfo.planUpdateReasons,
-			now,
-		});
-	}
-
-	return {
-		task: {
-			id: nextTask.id,
-			subject: nextTask.subject,
-			description: nextTask.description,
-			classification: nextTask.domain || "development",
-			priority: nextTask.priority,
-			domain: nextTask.domain,
-		},
-		reasoning: `Created new task from ${phaseLabel || "plan"}${dependencies.length > 0 ? ` (${dependencies.length} dependency${dependencies.length > 1 ? "s" : ""} detected)` : ""}: ${nextTask.priority} - ${nextTask.subject}`,
-	};
-}
 
 function buildNoTaskResult(phaseInfo: PhaseInfo): DeterminationStepResult {
 	const label = phaseInfo.label || "current phase";
@@ -580,7 +495,7 @@ function shouldExcludeTask(
 
 function isVerificationFollowupTask(task: BrainTaskRecord): boolean {
 	if (task.id.startsWith("verify-")) return true;
-	if (task.subject.startsWith("Verify & Polish:")) return true;
+	if (isVerificationTaskSubject(task.subject)) return true;
 	if (task.classification === "qa") return true;
 	return false;
 }
@@ -918,126 +833,6 @@ function parseArmsFromJson(json: string): string[] {
 	}
 }
 
-interface PlanTask {
-	id: string;
-	subject: string;
-	description: string;
-	priority: Task["priority"];
-	domain?: string;
-}
-
-function createNextTaskFromPlan(
-	db: BrainDb,
-	plan: { currentPhase: string; bullets: string[] },
-	phaseName: string,
-	now: string,
-): PlanTask | null {
-	void now;
-	// Get already-created tasks for this phase
-	const existingTasks = db.listTasks({
-		phase: phaseName,
-		limit: 500,
-	}).map((task) => ({ subject: task.subject }));
-
-	const existingSubjects = new Set(
-		existingTasks.map((t) => t.subject.toLowerCase()),
-	);
-
-	// Find the first incomplete deliverable from the current phase
-	const phaseLines = plan.currentPhase.split("\n");
-
-	for (let i = 0; i < phaseLines.length; i++) {
-		const line = phaseLines[i]!;
-
-		// Look for unchecked deliverables: "- [ ]" or "- [x]" patterns
-		const deliverableMatch = line.match(/^- \[ \] (.+)/);
-		if (deliverableMatch) {
-			const subject = deliverableMatch[1]!.trim();
-
-			// Skip if already created
-			if (existingSubjects.has(subject.toLowerCase())) {
-				continue;
-			}
-
-			// Generate a task ID based on phase and subject
-			const taskId = generateTaskId(phaseName, subject);
-
-			// Look for associated acceptance criteria
-			let description = `Implement: ${subject}\n\n`;
-
-			// Look for acceptance criteria below (lines starting with "- [ ]")
-			const acceptanceCriteria: string[] = [];
-			for (let j = i + 1; j < phaseLines.length; j++) {
-				const nextLine = phaseLines[j]!;
-				if (nextLine.startsWith("- [ ]")) {
-					acceptanceCriteria.push(nextLine.replace("- [ ]", "•").trim());
-				} else if (nextLine.startsWith("- [")) {
-					// Skip checked items
-					continue;
-				} else if (
-					nextLine.startsWith("## ") ||
-					nextLine.startsWith("### ") ||
-					nextLine.trim() === ""
-				) {
-					// Stop at next section header or empty line
-					break;
-				}
-			}
-
-			if (acceptanceCriteria.length > 0) {
-				description += `**Acceptance Criteria**:\n${acceptanceCriteria.join("\n")}`;
-			} else {
-				description += "See plan.md for details.";
-			}
-
-			// Determine priority based on section context
-			let priority: Task["priority"] = "normal";
-			if (phaseName.includes("Phase 1")) {
-				priority = "high";
-			}
-
-			// Determine domain/classification based on keywords
-			let domain: string | undefined;
-			const subjectLower = subject.toLowerCase();
-			if (subjectLower.includes("refactor") || subjectLower.includes("refactoring")) {
-				domain = "refactoring";
-			} else if (subjectLower.includes("test") || subjectLower.includes("qa")) {
-				domain = "testing";
-			} else if (
-				subjectLower.includes("doc") ||
-				subjectLower.includes("readme")
-			) {
-				domain = "documentation";
-			} else if (
-				subjectLower.includes("plan") ||
-				subjectLower.includes("architect")
-			) {
-				domain = "architect";
-			}
-
-			return {
-				id: taskId,
-				subject,
-				description,
-				priority,
-				domain,
-			};
-		}
-	}
-
-	return null;
-}
-
-function generateTaskId(phaseName: string, subject: string): string {
-	const phaseNum = phaseName.replace(/[^0-9.]/g, "");
-	const slug = subject
-		.substring(0, 20)
-		.toLowerCase()
-		.replace(/[^a-z0-9]/g, "-");
-	const hash = Buffer.from(subject).toString("base64").substring(0, 4);
-	return `${phaseNum}-${slug}-${hash}`;
-}
-
 /**
  * Generate the task briefing returned by `get_full_briefing`.
  *
@@ -1111,6 +906,10 @@ export async function generateContextBundle(
 // Helper Functions
 // ============================================
 
+// NOTE: readCurrentPlan is used ONLY for the context bundle plan excerpt,
+// NOT for task selection. Task determination reads exclusively from the
+// tasks API (database). Plan → task syncing is handled by syncPlanTasks.
+
 async function readCurrentPlan(projectRoot: string): Promise<{
 	content: string;
 	goals: string[];
@@ -1118,30 +917,18 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 	currentPhase: string;
 	dependencies: string[];
 }> {
-	// Find all plan files (main plan + linked plans)
-	const planFiles = await findPlanFiles(projectRoot);
+	const mainPlanPath = join(projectRoot, ".project", "plan.md");
 	
 	let allContent = "";
 	const goals: string[] = [];
 	const bullets: string[] = [];
 	let currentPhase = "";
 	
-	// Read all plan files and concatenate their content
-	for (const planPath of planFiles) {
-		try {
-			const fileContent = await readFile(planPath, "utf-8");
-			// Add file header to distinguish between plans
-			const relativePath = planPath.replace(projectRoot, "").replace(/^\//, "");
-			allContent += `\n\n<!-- Plan file: ${relativePath} -->\n\n${fileContent}`;
-		} catch (err) {
-			// Skip files that can't be read
-			console.warn(`Could not read plan file ${planPath}: ${err}`);
-		}
-	}
-	
-	// If no plan files found, return fallback message
-	if (!allContent) {
-		allContent = "# Plan not found\n\nNo project plan files could be read.\n\nTask determination requires the database tasks API for accurate information.";
+	try {
+		allContent = await readFile(mainPlanPath, "utf-8");
+	} catch (err) {
+		allContent = "# Plan not found or unreadable. Task determination requires the database tasks API for accurate information.";
+		console.warn(`Could not read plan file ${mainPlanPath}: ${err}`);
 	}
 
 	// Extract current phase (the first incomplete phase)
@@ -1728,5 +1515,4 @@ export const __promptTestables = {
 	collectDependenciesForTask,
 	detectKeywordDependencies,
 	ensurePlanDependencyTask,
-	createPlanTaskDeliverable,
 };

@@ -7,6 +7,8 @@ import type { Task } from "../types";
  * SQLite/SQL access belongs in the API server layer.
  */
 
+import type { StatusReportTestsStatus } from "../types";
+
 export interface BrainTaskRecord {
   id: string;
   subject: string;
@@ -139,7 +141,7 @@ export interface BrainStatusReportRecord {
   blockers: string[];
   nextSteps?: string;
   filesChanged: string[];
-  testsStatus?: "passing" | "failing" | "not_run";
+  testsStatus?: StatusReportTestsStatus;
   createdAt: string;
 }
 

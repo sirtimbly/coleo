@@ -75,7 +75,13 @@ describe("prompt-generator dependencies", () => {
     const projectDir = join(root, ".project");
     await mkdir(projectDir, { recursive: true });
 
-    const plan = `## Phase 2: Progressive Planning\n- [ ] Build scheduling loop\n\n### Dependencies\n- Phase 1: Task Classification\n- Database migrations complete\n`;
+    const plan = `## Phase 2: Progressive Planning
+- [ ] Build scheduling loop
+
+### Dependencies
+- Phase 1: Task Classification
+- Database migrations complete
+`;
     await writeFile(join(projectDir, "plan.md"), plan, "utf-8");
 
     const result = await __promptTestables.readCurrentPlan(root);
@@ -108,48 +114,10 @@ describe("prompt-generator dependencies", () => {
     const dep = result.dependencies[0]!;
     expect(dep.taskId).toBe("phase1-db");
     expect(dep.blocking).toBe(true);
-    expect(dep.reason).toContain("Plan dependency \"Phase 1 Database Schema\"");
+    expect(dep.reason).toContain(`Plan dependency "Phase 1 Database Schema"`);
     expect(dep.reason).toContain("API typically requires database schema");
 
     expect(result.planUpdateReasons.some(reason => reason.includes("Missing feature X"))).toBe(true);
-
-    db.close();
-  });
-
-  it("blocks new tasks and records task_dependencies when prerequisites exist", () => {
-    const db = createTestDb();
-    const brainDb = createSqliteBrainDb(db);
-    insertTask(db, {
-      id: "phase1-db",
-      subject: "Phase 1 Database",
-      status: "pending",
-      phase: "Phase 1",
-    });
-
-    const planSection = `## Phase 2: Progressive Planning\n- [ ] Build API server\n\n### Dependencies\n- Phase 1 Database\n`;
-    const result = __promptTestables.createPlanTaskDeliverable(
-      brainDb,
-      {
-        currentPhase: planSection,
-        bullets: [],
-        dependencies: ["Phase 1 Database"],
-      },
-      "Phase 2",
-      NOW
-    );
-
-    expect(result).not.toBeNull();
-    const taskId = result!.task!.id!;
-
-    const inserted = db
-      .query(`SELECT dependency_blocked FROM tasks WHERE id = ?`)
-      .get(taskId) as { dependency_blocked: number };
-    expect(inserted.dependency_blocked).toBe(1);
-
-    const depRow = db
-      .query(`SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?`)
-      .get(taskId) as { depends_on_task_id: string };
-    expect(depRow.depends_on_task_id).toBe("phase1-db");
 
     db.close();
   });
@@ -158,17 +126,11 @@ describe("prompt-generator dependencies", () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
 
-    const planSection = `## Phase 9: Observability\n- [ ] Implement WebSocket watchers\n`;
-    __promptTestables.createPlanTaskDeliverable(
-      brainDb,
-      {
-        currentPhase: planSection,
-        bullets: [],
-        dependencies: [],
-      },
-      "Phase 9",
-      NOW
-    );
+    __promptTestables.ensurePlanDependencyTask(brainDb, {
+      phaseLabel: "Phase 9",
+      reasons: ["Missing tracked dependency: Unknown Service"],
+      now: NOW,
+    });
 
     const planUpdateTask = db
       .query(`SELECT subject, description FROM tasks WHERE subject LIKE 'Update plan dependencies%' ORDER BY created_at DESC LIMIT 1`)
@@ -177,6 +139,29 @@ describe("prompt-generator dependencies", () => {
     expect(planUpdateTask).toBeDefined();
     expect(planUpdateTask!.subject).toBe("Update plan dependencies for Phase 9");
     expect(planUpdateTask!.description).toContain("Missing tracked dependency");
+
+    db.close();
+  });
+
+  it("does not create duplicate plan-update tasks", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    __promptTestables.ensurePlanDependencyTask(brainDb, {
+      phaseLabel: "Phase 9",
+      reasons: ["Missing tracked dependency: X"],
+      now: NOW,
+    });
+    __promptTestables.ensurePlanDependencyTask(brainDb, {
+      phaseLabel: "Phase 9",
+      reasons: ["Missing tracked dependency: Y"],
+      now: NOW,
+    });
+
+    const count = db
+      .query(`SELECT COUNT(*) as cnt FROM tasks WHERE subject = 'Update plan dependencies for Phase 9'`)
+      .get() as { cnt: number };
+    expect(count.cnt).toBe(1);
 
     db.close();
   });
@@ -216,7 +201,6 @@ describe("prompt-generator dependencies", () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
 
-    // Dominant phase by count, but only completed work.
     insertTask(db, {
       id: "phase-stale-1",
       subject: "Completed stale 1",
@@ -239,7 +223,6 @@ describe("prompt-generator dependencies", () => {
       phase: "Phase stale",
     });
 
-    // Real work exists in another phase.
     insertTask(db, {
       id: "phase-fresh-pending",
       subject: "Fresh pending work",
@@ -264,7 +247,6 @@ describe("prompt-generator dependencies", () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);
 
-    // Simulate race window: completed task still appears claimed in DB.
     insertTask(db, {
       id: "task-old",
       subject: "Implement API endpoint",
@@ -272,7 +254,6 @@ describe("prompt-generator dependencies", () => {
       priority: "high",
       phase: "Phase 1",
     });
-    // Follow-up verification task that references the original task.
     insertTask(db, {
       id: "verify-race1",
       subject: "Verify & Polish: Implement API endpoint",
@@ -281,7 +262,6 @@ describe("prompt-generator dependencies", () => {
       phase: "Phase 1",
       source_ref: "task-old",
     });
-    // Alternative next task that should be selected instead.
     insertTask(db, {
       id: "task-next",
       subject: "Update API docs",

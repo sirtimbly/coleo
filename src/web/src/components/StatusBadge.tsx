@@ -5,7 +5,7 @@ interface StatusBadgeProps {
   size?: 'sm' | 'md';
 }
 
-const statusConfig: Record<string, { label: string; color: 'default' | 'accent' | 'success' | 'warning' | 'danger' }> = {
+const statusConfig = {
   idle: { label: 'Idle', color: 'default' },
   busy: { label: 'Busy', color: 'warning' },
   paused: { label: 'Paused', color: 'accent' },
@@ -13,12 +13,16 @@ const statusConfig: Record<string, { label: string; color: 'default' | 'accent' 
   stopped: { label: 'Stopped', color: 'default' },
   starting: { label: 'Starting', color: 'warning' },
   running: { label: 'Running', color: 'success' },
-};
+} as const;
 
 const defaultConfig = { label: 'Unknown', color: 'default' as const };
 
+const isKnownStatus = (
+  status: string,
+): status is keyof typeof statusConfig => status in statusConfig;
+
 export function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {
-  const config = statusConfig[status] || defaultConfig;
+  const config = isKnownStatus(status) ? statusConfig[status] : defaultConfig;
   const chipSize = size === 'sm' ? 'sm' : 'md';
 
   return (

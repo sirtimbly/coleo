@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-03-28T22:05:59.422Z",
+  "fetchedAt": "2026-05-12T17:52:07.995Z",
   "providers": [
     {
       "id": "cerebras",
@@ -42,6 +42,22 @@
         {
           "id": "deepseek-ai/DeepSeek-V3.2",
           "name": "deepseek-ai/DeepSeek-V3.2"
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V4-Flash",
+          "name": "deepseek-ai/DeepSeek-V4-Flash"
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V4-Pro",
+          "name": "deepseek-ai/DeepSeek-V4-Pro"
+        },
+        {
+          "id": "google/gemma-4-26B-A4B-it",
+          "name": "google/gemma-4-26B-A4B-it"
+        },
+        {
+          "id": "google/gemma-4-31B-it",
+          "name": "google/gemma-4-31B-it"
         },
         {
           "id": "meta-llama/Llama-3.1-70B-Instruct",
@@ -100,6 +116,10 @@
           "name": "moonshotai/Kimi-K2.5"
         },
         {
+          "id": "moonshotai/Kimi-K2.6",
+          "name": "moonshotai/Kimi-K2.6"
+        },
+        {
           "id": "openai/gpt-oss-120b",
           "name": "openai/gpt-oss-120b"
         },
@@ -114,6 +134,18 @@
         {
           "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
           "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo"
+        },
+        {
+          "id": "Qwen/Qwen3.5-35B-A3B",
+          "name": "Qwen/Qwen3.5-35B-A3B"
+        },
+        {
+          "id": "Qwen/Qwen3.5-397B-A17B",
+          "name": "Qwen/Qwen3.5-397B-A17B"
+        },
+        {
+          "id": "Qwen/Qwen3.6-35B-A3B",
+          "name": "Qwen/Qwen3.6-35B-A3B"
         },
         {
           "id": "zai-org/GLM-4.6",
@@ -134,6 +166,10 @@
         {
           "id": "zai-org/GLM-5",
           "name": "zai-org/GLM-5"
+        },
+        {
+          "id": "zai-org/GLM-5.1",
+          "name": "zai-org/GLM-5.1"
         }
       ]
     },
@@ -162,12 +198,12 @@
           "name": "Qwen/Qwen3-235B-A22B-Instruct-2507"
         },
         {
-          "id": "zai-org/GLM-4.7",
-          "name": "zai-org/GLM-4.7"
-        },
-        {
           "id": "zai-org/GLM-5",
           "name": "zai-org/GLM-5"
+        },
+        {
+          "id": "zai-org/GLM-5.1",
+          "name": "zai-org/GLM-5.1"
         }
       ]
     },
@@ -264,6 +300,10 @@
           "name": "gemini-3.1-flash-image-preview"
         },
         {
+          "id": "gemini-3.1-flash-lite",
+          "name": "gemini-3.1-flash-lite"
+        },
+        {
           "id": "gemini-3.1-flash-lite-preview",
           "name": "gemini-3.1-flash-lite-preview"
         },
@@ -294,6 +334,34 @@
         {
           "id": "gemini-live-2.5-flash-preview-native-audio",
           "name": "gemini-live-2.5-flash-preview-native-audio"
+        },
+        {
+          "id": "gemma-3-12b-it",
+          "name": "gemma-3-12b-it"
+        },
+        {
+          "id": "gemma-3-27b-it",
+          "name": "gemma-3-27b-it"
+        },
+        {
+          "id": "gemma-3-4b-it",
+          "name": "gemma-3-4b-it"
+        },
+        {
+          "id": "gemma-3n-e2b-it",
+          "name": "gemma-3n-e2b-it"
+        },
+        {
+          "id": "gemma-3n-e4b-it",
+          "name": "gemma-3n-e4b-it"
+        },
+        {
+          "id": "gemma-4-26b-a4b-it",
+          "name": "gemma-4-26b-a4b-it"
+        },
+        {
+          "id": "gemma-4-31b-it",
+          "name": "gemma-4-31b-it"
         }
       ]
     },
@@ -304,6 +372,10 @@
         {
           "id": "k2p5",
           "name": "k2p5"
+        },
+        {
+          "id": "k2p6",
+          "name": "k2p6"
         },
         {
           "id": "kimi-k2-thinking",
@@ -338,6 +410,10 @@
         {
           "id": "kimi-k2.5",
           "name": "kimi-k2.5"
+        },
+        {
+          "id": "kimi-k2.6",
+          "name": "kimi-k2.6"
         }
       ]
     },
@@ -346,32 +422,8 @@
       "name": "Openai",
       "models": [
         {
-          "id": "codex-mini-latest",
-          "name": "codex-mini-latest"
-        },
-        {
-          "id": "gpt-5-codex",
-          "name": "gpt-5-codex"
-        },
-        {
-          "id": "gpt-5.1-codex",
-          "name": "gpt-5.1-codex"
-        },
-        {
-          "id": "gpt-5.1-codex-max",
-          "name": "gpt-5.1-codex-max"
-        },
-        {
-          "id": "gpt-5.1-codex-mini",
-          "name": "gpt-5.1-codex-mini"
-        },
-        {
           "id": "gpt-5.2",
           "name": "gpt-5.2"
-        },
-        {
-          "id": "gpt-5.2-codex",
-          "name": "gpt-5.2-codex"
         },
         {
           "id": "gpt-5.3-codex",
@@ -384,6 +436,30 @@
         {
           "id": "gpt-5.4",
           "name": "gpt-5.4"
+        },
+        {
+          "id": "gpt-5.4-fast",
+          "name": "gpt-5.4-fast"
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "gpt-5.4-mini"
+        },
+        {
+          "id": "gpt-5.4-mini-fast",
+          "name": "gpt-5.4-mini-fast"
+        },
+        {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5"
+        },
+        {
+          "id": "gpt-5.5-fast",
+          "name": "gpt-5.5-fast"
+        },
+        {
+          "id": "gpt-5.5-pro",
+          "name": "gpt-5.5-pro"
         }
       ]
     },
@@ -394,10 +470,6 @@
         {
           "id": "big-pickle",
           "name": "big-pickle"
-        },
-        {
-          "id": "claude-3-5-haiku",
-          "name": "claude-3-5-haiku"
         },
         {
           "id": "claude-haiku-4-5",
@@ -416,6 +488,10 @@
           "name": "claude-opus-4-6"
         },
         {
+          "id": "claude-opus-4-7",
+          "name": "claude-opus-4-7"
+        },
+        {
           "id": "claude-sonnet-4",
           "name": "claude-sonnet-4"
         },
@@ -428,6 +504,10 @@
           "name": "claude-sonnet-4-6"
         },
         {
+          "id": "deepseek-v4-flash-free",
+          "name": "deepseek-v4-flash-free"
+        },
+        {
           "id": "gemini-3-flash",
           "name": "gemini-3-flash"
         },
@@ -438,6 +518,10 @@
         {
           "id": "glm-5",
           "name": "glm-5"
+        },
+        {
+          "id": "glm-5.1",
+          "name": "glm-5.1"
         },
         {
           "id": "gpt-5",
@@ -500,16 +584,20 @@
           "name": "gpt-5.4-pro"
         },
         {
+          "id": "gpt-5.5",
+          "name": "gpt-5.5"
+        },
+        {
+          "id": "gpt-5.5-pro",
+          "name": "gpt-5.5-pro"
+        },
+        {
           "id": "kimi-k2.5",
           "name": "kimi-k2.5"
         },
         {
-          "id": "mimo-v2-omni-free",
-          "name": "mimo-v2-omni-free"
-        },
-        {
-          "id": "mimo-v2-pro-free",
-          "name": "mimo-v2-pro-free"
+          "id": "kimi-k2.6",
+          "name": "kimi-k2.6"
         },
         {
           "id": "minimax-m2.5",
@@ -520,8 +608,24 @@
           "name": "minimax-m2.5-free"
         },
         {
+          "id": "minimax-m2.7",
+          "name": "minimax-m2.7"
+        },
+        {
           "id": "nemotron-3-super-free",
           "name": "nemotron-3-super-free"
+        },
+        {
+          "id": "qwen3.5-plus",
+          "name": "qwen3.5-plus"
+        },
+        {
+          "id": "qwen3.6-plus",
+          "name": "qwen3.6-plus"
+        },
+        {
+          "id": "ring-2.6-1t-free",
+          "name": "ring-2.6-1t-free"
         }
       ]
     },

@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, memo } from "react";
-import type { KeyboardEvent } from "react";
 import {
 	Bold,
 	GripVertical,
@@ -12,14 +11,12 @@ import {
 	Bug as BugIcon,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import { type Bug } from "@/lib/api";
+import { type Bug, type BugMetadata, type BugUiMetadata } from "@/lib";
 import { cn } from "@/lib";
+import { COLOR_OPTIONS, COLOR_CLASSES, getValidColor } from "./grid-shared";
+import { STATUS_OPTIONS, STATUS_STYLES, PRIORITY_OPTIONS, PRIORITY_STYLES, SOURCE_STYLES } from "./bug-styles";
 
-export interface BugUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type BugUiMeta = BugUiMetadata;
 
 export type BugUpdate = Partial<{
 	title: string;
@@ -30,6 +27,7 @@ export type BugUpdate = Partial<{
 	blockers: string[];
 	resolution: string;
 	humanNotified: boolean;
+	metadata: BugMetadata;
 }>;
 
 interface BugGridRowProps {
@@ -44,82 +42,24 @@ interface BugGridRowProps {
 	onUpdateUi?: (bugId: string, updates: BugUiMeta) => void;
 	onDelete?: (bug: Bug) => void;
 	onReorderToSortOrder?: (bugId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: Record<string, unknown>;
-	onGridKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }
 
-const STATUS_OPTIONS: Bug["status"][] = [
-	"open",
-	"investigating",
-	"fixing",
-	"verifying",
-	"resolved",
-	"closed",
-];
-
-const STATUS_STYLES: Record<Bug["status"], string> = {
-	open: "bg-red-900/30 text-red-300 border-red-800",
-	investigating: "bg-yellow-900/30 text-yellow-300 border-yellow-800",
-	fixing: "bg-blue-900/30 text-blue-300 border-blue-800",
-	verifying: "bg-purple-900/30 text-purple-300 border-purple-800",
-	resolved: "bg-green-900/30 text-green-300 border-green-800",
-	closed: "bg-gray-800 text-gray-300 border-gray-700",
-};
-
-const PRIORITY_OPTIONS: Bug["priority"][] = [
-	"low",
-	"medium",
-	"high",
-	"critical",
-];
-
-const PRIORITY_STYLES: Record<Bug["priority"], string> = {
-	low: "bg-emerald-900/30 text-emerald-300 border-emerald-800",
-	medium: "bg-sky-900/30 text-sky-300 border-sky-800",
-	high: "bg-amber-900/30 text-amber-300 border-amber-800",
-	critical: "bg-rose-900/30 text-rose-300 border-rose-800",
-};
-
-const SOURCE_STYLES: Record<Bug["source"], string> = {
-	arm_reported: "bg-blue-900/30 text-blue-300 border-blue-800",
-	human_reported: "bg-purple-900/30 text-purple-300 border-purple-800",
-	system_detected: "bg-red-900/30 text-red-300 border-red-800",
-};
-
-const COLOR_OPTIONS = ["slate", "blue", "emerald", "amber", "rose"] as const;
 type ColorOption = (typeof COLOR_OPTIONS)[number];
 
-const COLOR_CLASSES: Record<
-	ColorOption,
-	{ dot: string; row: string; rowBold: string }
-> = {
-	slate: {
-		dot: "bg-slate-400",
-		row: "bg-slate-900/30 border-slate-700 border-l-slate-500",
-		rowBold: "bg-slate-800/50 border-slate-500 border-l-slate-400 border-2",
-	},
-	blue: {
-		dot: "bg-blue-400",
-		row: "bg-blue-900/30 border-blue-700 border-l-blue-500",
-		rowBold: "bg-blue-800/50 border-blue-500 border-l-blue-400 border-2",
-	},
-	emerald: {
-		dot: "bg-emerald-400",
-		row: "bg-emerald-900/30 border-emerald-700 border-l-emerald-500",
-		rowBold: "bg-emerald-800/50 border-emerald-500 border-l-emerald-400 border-2",
-	},
-	amber: {
-		dot: "bg-amber-400",
-		row: "bg-amber-900/30 border-amber-700 border-l-amber-500",
-		rowBold: "bg-amber-800/50 border-amber-500 border-l-amber-400 border-2",
-	},
-	rose: {
-		dot: "bg-rose-400",
-		row: "bg-rose-900/30 border-rose-700 border-l-rose-500",
-		rowBold: "bg-rose-800/50 border-rose-500 border-l-rose-400 border-2",
-	},
+type BugRowUiMeta = {
+	tags: string[];
+	color: ColorOption;
+	bold: boolean;
 };
+
+const isBugStatus = (value: string): value is Bug["status"] =>
+	STATUS_OPTIONS.some((option) => option === value);
+
+const isBugPriority = (value: string): value is Bug["priority"] =>
+	PRIORITY_OPTIONS.some((option) => option === value);
 
 export const BugGridRow = memo(function BugGridRow({
 	bug,
@@ -137,21 +77,15 @@ export const BugGridRow = memo(function BugGridRow({
 	onGridKeyDown,
 	className,
 }: BugGridRowProps) {
-	// Row number is just index+1 since bugs don't have sortOrder yet
 	const displayRowNumber = index + 1;
-	
-	// Use metadata from bug if available (stored in a flexible way)
-	const uiMeta = useMemo(() => {
-		// For now, bugs don't have metadata, so return defaults
-		// In the future, this could be stored in a separate field or localStorage
-		return {
-			tags: [] as string[],
-			color: "slate" as ColorOption,
-			bold: false,
-		};
-	}, []);
-	
-  const [open, setOpen] = useState(false);
+
+	const uiMeta: BugRowUiMeta = {
+		tags: [],
+		color: "slate",
+		bold: false,
+	};
+
+	const [open, setOpen] = useState(false);
 	const [titleValue, setTitleValue] = useState(bug.title);
 	const [tagSearch, setTagSearch] = useState("");
 	const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
@@ -162,7 +96,6 @@ export const BugGridRow = memo(function BugGridRow({
 
 	useEffect(() => {
 		if (isTagDropdownOpen) {
-			// Delay focus to allow dropdown animation to complete and avoid focus conflicts
 			const timer = setTimeout(() => {
 				tagInputRef.current?.focus();
 			}, 50);
@@ -170,11 +103,7 @@ export const BugGridRow = memo(function BugGridRow({
 		}
 	}, [isTagDropdownOpen]);
 
-	const savedColor = COLOR_OPTIONS.includes(uiMeta.color as ColorOption)
-		? (uiMeta.color as ColorOption)
-		: "slate";
-
-	// Use preview color if hovering, otherwise use saved color
+	const savedColor = getValidColor(uiMeta.color);
 	const colorKey = previewColor ?? savedColor;
 
 	const statusClasses = STATUS_STYLES[bug.status];
@@ -213,7 +142,7 @@ export const BugGridRow = memo(function BugGridRow({
 		return availableTags.filter((tag) => tag.toLowerCase().includes(query));
 	}, [availableTags, tagSearch]);
 
-	const handleTagInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+	const handleTagInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
 		if (event.key === "Enter") {
 			event.preventDefault();
 			handleCreateTag(tagSearch);
@@ -225,8 +154,10 @@ export const BugGridRow = memo(function BugGridRow({
 	};
 
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
-		// Don't open details if clicking on interactive elements
-		const target = event.target as HTMLElement;
+		if (!(event.target instanceof HTMLElement)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||
@@ -239,7 +170,6 @@ export const BugGridRow = memo(function BugGridRow({
 	};
 
 	const handleRowKeyDown = (event: React.KeyboardEvent<HTMLLIElement>) => {
-		// Open details on Enter when the row background is focused (not child elements)
 		if (event.key === "Enter" && event.target === event.currentTarget) {
 			onOpenDetails?.(bug);
 		}
@@ -250,18 +180,14 @@ export const BugGridRow = memo(function BugGridRow({
       className={cn(
         "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
         "rounded-md ",
-        // Base color from row color setting
         !isDragging &&
           (uiMeta.bold
             ? COLOR_CLASSES[colorKey]?.rowBold
             : COLOR_CLASSES[colorKey]?.row),
-        // Hover state (only when not selected and not dragging)
         !isSelected &&
           !isDragging &&
           "hover:bg-accent/20 hover:border-accent",
-        // Selected state - bright accent color with glow
         isSelected && "bg-accent shadow-md shadow-accent/20",
-        // Dragging state - dim the original row
         isDragging &&
           "opacity-40 bg-default-100 border-dashed border-default-300",
         className,
@@ -362,9 +288,11 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
-						onAction={(key) =>
-							onUpdateBug?.(bug.id, { status: key as Bug["status"] })
-						}
+						onAction={(key) => {
+							if (typeof key === "string" && isBugStatus(key)) {
+								onUpdateBug?.(bug.id, { status: key });
+							}
+						}}
 					>
 						{STATUS_OPTIONS.map((status) => (
 							<Dropdown.Item key={status}>{status.replace("_", " ")}</Dropdown.Item>
@@ -392,9 +320,11 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
-						onAction={(key) =>
-							onUpdateBug?.(bug.id, { priority: key as Bug["priority"] })
-						}
+						onAction={(key) => {
+							if (typeof key === "string" && isBugPriority(key)) {
+								onUpdateBug?.(bug.id, { priority: key });
+							}
+						}}
 					>
 						{PRIORITY_OPTIONS.map((priority) => (
 							<Dropdown.Item key={priority}>{priority}</Dropdown.Item>
@@ -408,7 +338,7 @@ export const BugGridRow = memo(function BugGridRow({
 				className={cn(
 					"flex items-center justify-center min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold",
 					sourceClasses,
-					)}
+				)}
 				data-cell
 				data-row={index}
 				data-col={4}
@@ -501,7 +431,6 @@ export const BugGridRow = memo(function BugGridRow({
 					</Dropdown.Trigger>
 					<Dropdown.Popover>
 						<div className="p-2">
-							{/* Bold toggle */}
 							<button
 								type="button"
 								onClick={() => onUpdateUi?.(bug.id, { bold: !uiMeta.bold })}
@@ -513,7 +442,6 @@ export const BugGridRow = memo(function BugGridRow({
 								</span>
 							</button>
 
-							{/* Color picker */}
 							<div className="mt-2 px-2">
 								<div className="text-[11px] uppercase tracking-wide text-default-500 mb-2">
 									Row color
@@ -545,8 +473,6 @@ export const BugGridRow = memo(function BugGridRow({
 					</Dropdown.Popover>
 				</Dropdown>
 
-				{/* Comment count indicator - bugs don't have comments yet */}
-				
 				<Button
 					variant="ghost"
 					size="sm"
@@ -592,10 +518,13 @@ export const BugGridRow = memo(function BugGridRow({
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const input = e.currentTarget.querySelector('input') as HTMLInputElement;
+                    const input = e.currentTarget.elements.namedItem("row-number");
+                    if (!(input instanceof HTMLInputElement)) {
+                      setOpen(false);
+                      return;
+                    }
                     const targetRowNumber = parseInt(input.value, 10);
                     if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
-                      // Convert from 1-based row number to 0-based sortOrder
                       const targetSortOrder = targetRowNumber - 1;
                       const currentSortOrder = index;
                       onReorderToSortOrder?.(bug.id, currentSortOrder, targetSortOrder);
@@ -605,6 +534,7 @@ export const BugGridRow = memo(function BugGridRow({
                   }}
                 >
                   <input
+                    name="row-number"
                     type="number"
                     min="1"
                     placeholder="Row #"
@@ -634,7 +564,6 @@ export const BugGridRow = memo(function BugGridRow({
 					/>
 				</Button>
 
-			{/* Selected indicator chevron */}
 		</div>
 	</li>
 );

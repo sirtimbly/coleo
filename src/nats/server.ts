@@ -140,8 +140,3 @@ export function getNatsManager(): NatsManager | null {
 export function setNatsManager(manager: NatsManager): void {
   natsManager = manager;
 }
-
-// Keep old exports for compatibility (aliased to new names)
-export { NatsManager as EmbeddedNats };
-export const getEmbeddedNats = getNatsManager;
-export const setEmbeddedNats = setNatsManager;

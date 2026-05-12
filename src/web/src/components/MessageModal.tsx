@@ -15,6 +15,7 @@ interface MessageModalProps {
   onClose: () => void;
   replyTo?: {
     messageId: string;
+    threadId?: string;
     from: string;
     subject: string;
     body: string;
@@ -136,6 +137,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
         await api.sendBrainMessage({ 
           message,
           inReplyTo: isReply && replyTo ? replyTo.messageId : undefined,
+          threadId: isReply && replyTo ? replyTo.threadId : undefined,
           subject: isReply && replyTo ? `Re: ${replyTo.subject}` : undefined,
           attachments,
         });

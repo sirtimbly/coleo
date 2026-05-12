@@ -12,6 +12,8 @@ import { releaseClaimsForInactiveArms } from "../claim-cleanup";
 import { eventStore } from "../../nats/jetstream";
 import { buildGardenScene } from "./garden-scene";
 import { getActiveClaims, getRecentActivity, generateCoords } from "./garden-utils";
+import type { FileClaim } from "./garden-types";
+export type { FileClaim } from "./garden-types";
 
 interface GardenContext {
   Variables: {
@@ -27,15 +29,6 @@ export interface GardenNode {
   lastTouchedBy: string | null;
   lastTouchedAt: string | null;
   conflictZone: boolean;
-}
-
-export interface FileClaim {
-  id: number;
-  armId: string;
-  filePath: string;
-  claimType: "read" | "write" | "exclusive";
-  claimedAt: string;
-  releasedAt: string | null;
 }
 
 export interface FileActivity {

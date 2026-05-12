@@ -2,7 +2,59 @@
  * API Client for Coleo Observatory
  */
 
+import type {
+  ArmConfig as SharedArmConfig,
+  ArmConfigSummary as SharedArmConfigSummary,
+  ColeoConfig as SharedColeoConfig,
+  StatusReport as SharedStatusReport,
+  TaskAttachment as SharedTaskAttachment,
+  TaskComment as SharedTaskComment,
+} from '../../../types';
+
 const API_BASE = '/api';
+
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
+
+export interface JsonObject {
+  [key: string]: JsonValue | undefined;
+}
+
+export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export interface UiMetadata extends JsonObject {
+  tags?: string[];
+  color?: string;
+  bold?: boolean;
+}
+
+export interface TaskLlmMessage extends JsonObject {
+  role: 'user' | 'assistant';
+  content: string;
+  at: string;
+}
+
+export interface TaskLlmMetadata extends JsonObject {
+  originalPrompt?: string;
+  generatedDescription?: string;
+  history?: TaskLlmMessage[];
+}
+
+export interface TaskUiMetadata extends UiMetadata {
+  llm?: TaskLlmMetadata;
+}
+
+export interface TaskMetadata extends JsonObject {
+  ui?: TaskUiMetadata;
+}
+
+export interface BugUiMetadata extends UiMetadata {}
+
+export interface BugMetadata extends JsonObject {
+  ui?: BugUiMetadata;
+}
 
 interface ApiError {
   error: string;
@@ -33,16 +85,14 @@ class ApiClient {
     path: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const headers: Record<string, string> = {
-      ...(options.headers as Record<string, string>),
-    };
-    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
-      headers['Content-Type'] = 'application/json';
+    const headers = new Headers(options.headers);
+    if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
     }
 
     const apiKey = this.getApiKey();
     if (apiKey) {
-      headers['X-API-Key'] = apiKey;
+      headers.set('X-API-Key', apiKey);
     }
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -369,6 +419,7 @@ class ApiClient {
     priority?: 'critical' | 'high' | 'normal' | 'low';
     domain?: string;
     inReplyTo?: string;
+    threadId?: string;
     subject?: string;
     attachments?: TaskAttachment[];
   }) {
@@ -500,6 +551,7 @@ class ApiClient {
     sourceTaskId?: string;
     priority?: "low" | "medium" | "high" | "critical";
     errorDetails?: string;
+    metadata?: BugMetadata;
   }) {
     return this.request<{ bug: Bug }>(`/bugs`, {
       method: 'POST',
@@ -510,13 +562,13 @@ class ApiClient {
   async updateBug(id: string, updates: {
     title?: string;
     description?: string;
-    status?: string;
-    priority?: string;
+    status?: Bug['status'];
+    priority?: Bug['priority'];
     assigneeArmId?: string;
     blockers?: string[];
     resolution?: string;
     humanNotified?: boolean;
-    metadata?: Record<string, unknown>;
+    metadata?: BugMetadata;
   }) {
     return this.request<{ success: boolean }>(`/bugs/${id}`, {
       method: 'PATCH',
@@ -627,7 +679,7 @@ class ApiClient {
     sourceRef?: string;
     dueDate?: string;
     progress?: number;
-    metadata?: Record<string, unknown>;
+    metadata?: TaskMetadata;
     sortOrder?: number;
   }) {
     return this.request<{ task: Task }>('/tasks', {
@@ -647,7 +699,7 @@ class ApiClient {
     dueDate: string | null;
     progress: number;
     artifacts: string[];
-    metadata: Record<string, unknown>;
+    metadata: TaskMetadata;
   }>) {
     return this.request<{ task: Task }>(`/tasks/${id}`, {
       method: 'PATCH',
@@ -816,78 +868,16 @@ class ApiClient {
     return `${API_BASE}/events/stream?${params.toString()}`;
   }
 
-  // User Preferences
-  async getUserPreferences() {
-    return this.request<{
-      preferences: Record<string, string>;
-    }>('/user/preferences');
-  }
-
-  async updateUserPreference(key: string, value: string) {
-    return this.request<{
-      success: boolean;
-      preferences: Record<string, string>;
-    }>('/user/preferences', {
-      method: 'PATCH',
-      body: JSON.stringify({ [key]: value }),
-    });
-  }
 }
 
 // Types
-export interface ColeoConfig {
-  version: number;
-  brain: {
-    pollIntervalMs: number;
-    maxArms: number;
-  };
-  mail: {
-    fromAddress: string;
-    toAddress: string;
-    digestSchedule: 'immediate' | 'hourly' | 'daily';
-  };
-  terminal: {
-    emulator: 'auto' | 'ghostty' | 'iterm2' | 'terminal' | 'wezterm';
-  };
-  defaults: {
-    harness: string;
-    provider: string;
-    model: string;
-    contextBudget: number;
-  };
-}
+export type ColeoConfig = SharedColeoConfig;
 
 // Arm configuration file structure (from .coleo/arms/*.toml)
-export interface ArmConfig {
-  arm: {
-    name: string;
-    domain: string;
-    harness: string;
-  };
-  context?: {
-    budget?: number;
-    priority_files?: string[];
-  };
-  personality?: {
-    traits?: string;
-  };
-  convictions?: {
-    core?: string[];
-  };
-  specializations?: string[];
-  tools?: {
-    requires_browser?: boolean;
-  };
-}
+export type ArmConfig = SharedArmConfig;
 
 // Summary of arm config for listing
-export interface ArmConfigSummary {
-  filename: string;
-  name: string;
-  domain: string;
-  harness: string;
-  budget?: number;
-}
+export type ArmConfigSummary = SharedArmConfigSummary;
 
 export interface ArmTemplateSummary {
   id: string;
@@ -915,14 +905,7 @@ export interface OpenCodeModel {
   };
 }
 
-export interface TaskAttachment {
-  uploadId: string;
-  kind: 'image';
-  filename: string;
-  mimeType: string;
-  sizeBytes: number;
-  contentUrl: string;
-}
+export type TaskAttachment = SharedTaskAttachment;
 
 export interface OpenCodeProvider {
   id: string;
@@ -953,7 +936,7 @@ export interface Arm {
   lastActivityAt: string | null;
   lastHeartbeat?: string | null;
   lastOutputAt?: string | null;
-  config: Record<string, unknown>;
+  config: JsonObject;
   personality?: string;
   convictions?: string[];
   reputation?: number;
@@ -1034,7 +1017,7 @@ export interface ActivityEntry {
   actor: string;
   action: string;
   target: string | null;
-  details: Record<string, unknown>;
+  details: JsonObject;
 }
 
 export interface GardenVec3 {
@@ -1192,19 +1175,19 @@ export interface ArmMessagePart {
   tool?: string;
   toolName?: string;
   name?: string;
-  state?: unknown;
-  input?: unknown;
-  output?: unknown;
-  time?: unknown;
-  result?: unknown;
-  error?: unknown;
+  state?: JsonValue;
+  input?: JsonValue;
+  output?: JsonValue;
+  time?: JsonValue;
+  result?: JsonValue;
+  error?: JsonValue;
 }
 
 export interface ArmMessage {
   info: {
     id: string;
     role: 'user' | 'assistant' | 'system';
-    time?: unknown;
+    time?: JsonValue;
     error?: { name: string; data?: { message: string } };
   };
   parts: ArmMessagePart[];
@@ -1219,22 +1202,7 @@ export interface ArmTodo {
 }
 
 // Status report from arm during or after task execution
-export interface StatusReport {
-  id: string;
-  taskId: string;
-  armId: string;
-  status: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
-  summary: string;
-  issues?: string[];
-  blockers?: string[];
-  nextSteps?: string;
-  filesChanged?: string[];
-  testsStatus?: "passing" | "failing" | "not_run";
-  createdAt: string;
-  updatedAt?: string;
-  resolvedAt?: string;
-  resolution?: string;
-}
+export type StatusReport = SharedStatusReport;
 
 // Bug tracking
 export interface Bug {
@@ -1252,7 +1220,7 @@ export interface Bug {
   errorDetails?: string;
   resolution?: string;
   sortOrder?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: BugMetadata;
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
@@ -1275,22 +1243,7 @@ export interface Discovery {
 }
 
 // Task comment/discussion
-export interface TaskComment {
-  id: string;
-  taskId: string;
-  parentId?: string;
-  content: string;
-  authorType: 'human' | 'arm' | 'brain';
-  authorId: string;
-  authorName?: string;
-  client: 'web' | 'mail' | 'mcp' | 'cli';
-  edited: boolean;
-  deleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-  screenshotPath?: string;
-  replies?: TaskComment[]; // For threaded view
-}
+export type TaskComment = SharedTaskComment;
 
 // Brain-managed task
 export interface Task {
@@ -1315,15 +1268,20 @@ export interface Task {
   startedAt: string | null;
   dueDate: string | null;
   artifacts: string[];
-  metadata: Record<string, unknown>;
+  metadata: TaskMetadata;
   commentCount?: number;
   lastCommentAt?: string | null;
 }
 
 // OpenCode SSE event types
-export interface OpenCodeEvent {
+export interface OpenCodeEvent extends JsonObject {
   type: string;
-  properties: Record<string, unknown>;
+  properties: JsonObject;
+}
+
+export function isOpenCodeEvent(value: JsonValue | undefined): value is OpenCodeEvent {
+  if (!isJsonObject(value)) return false;
+  return typeof value.type === 'string' && isJsonObject(value.properties);
 }
 
 // Arm activity analysis types (from brain event-window system)
@@ -1400,7 +1358,7 @@ export interface EventWindowResponse {
     events: Array<{
       type: string;
       timestamp: string;
-      data: Record<string, unknown>;
+      data: JsonObject;
     }>;
     lastEventAt: string | null;
     silentDurationMs: number;
@@ -1420,7 +1378,7 @@ export interface RecentEventsResponse {
     type: string;
     armId?: string;
     timestamp: string;
-    data: Record<string, unknown>;
+    data: JsonObject;
   }>;
   count: number;
 }

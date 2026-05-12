@@ -360,6 +360,7 @@ export function createBrainRoutes() {
       priority?: "critical" | "high" | "normal" | "low";
       domain?: string;
       inReplyTo?: string;
+      threadId?: string;
       subject?: string;
       attachments?: TaskAttachment[];
     }>();
@@ -403,6 +404,10 @@ export function createBrainRoutes() {
       headers["In-Reply-To"] = body.inReplyTo;
       // Also add References header
       headers["References"] = body.inReplyTo;
+    }
+
+    if (body.threadId || body.inReplyTo) {
+      headers["X-Coleo-Thread-Id"] = body.threadId || body.inReplyTo || "";
     }
     
     const mailMessage = await sent.write({

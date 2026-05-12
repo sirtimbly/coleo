@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, memo } from "react";
-import type { KeyboardEvent } from "react";
 import {
 	Bold,
 	GripVertical,
@@ -12,15 +11,13 @@ import {
 	Check,
 } from "lucide-react";
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
-import { type Task } from "@/lib/api";
+import { type Task, type TaskMetadata, type UiMetadata } from "@/lib";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib";
+import { COLOR_OPTIONS, COLOR_CLASSES_LIGHT, getValidColor } from "./grid-shared";
+import { PRIORITY_OPTIONS, PRIORITY_STYLES } from "./task-styles";
 
-export interface TaskUiMeta {
-	tags?: string[];
-	color?: string;
-	bold?: boolean;
-}
+export type TaskUiMeta = UiMetadata;
 
 export type TaskUpdate = Partial<{
 	subject: string;
@@ -33,7 +30,7 @@ export type TaskUpdate = Partial<{
 	dueDate: string | null;
 	progress: number;
 	artifacts: string[];
-	metadata: Record<string, unknown>;
+	metadata: TaskMetadata;
 }>;
 
 interface TaskGridRowProps {
@@ -49,58 +46,15 @@ interface TaskGridRowProps {
 	onUpdateUi?: (taskId: string, updates: TaskUiMeta) => void;
 	onDelete?: (task: Task) => void;
 	onReorderToSortOrder?: (taskId: string, fromSortOrder: number, toSortOrder: number) => void;
-	dragHandleProps?: Record<string, unknown>;
-	onGridKeyDown?: (event: KeyboardEvent<HTMLElement>) => void;
+	dragHandleProps?: React.HTMLAttributes<HTMLDivElement>;
+	onGridKeyDown?: (event: React.KeyboardEvent<HTMLElement>) => void;
 	className?: string;
 }
 
-const PRIORITY_OPTIONS: Task["priority"][] = [
-	"low",
-	"normal",
-	"high",
-	"critical",
-];
-
-const PRIORITY_STYLES: Record<Task["priority"], string> = {
-	low: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900",
-	normal: "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-900",
-	high: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900",
-	critical: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900",
-};
-
-const COLOR_OPTIONS = ["slate", "blue", "emerald", "amber", "rose"] as const;
 type ColorOption = (typeof COLOR_OPTIONS)[number];
 
-const COLOR_CLASSES: Record<
-	ColorOption,
-	{ dot: string; row: string; rowBold: string }
-> = {
-	slate: {
-		dot: "bg-slate-400",
-		row: "bg-slate-50 border-slate-200 border-l-slate-400 dark:bg-slate-950/30 dark:border-slate-800 dark:border-l-slate-600",
-		rowBold: "bg-slate-100 border-slate-400 border-l-slate-600 border-2 dark:bg-slate-900/50 dark:border-slate-600 dark:border-l-slate-400",
-	},
-	blue: {
-		dot: "bg-blue-400",
-		row: "bg-blue-50 border-blue-200 border-l-blue-400 dark:bg-blue-950/30 dark:border-blue-800 dark:border-l-blue-600",
-		rowBold: "bg-blue-100 border-blue-400 border-l-blue-600 border-2 dark:bg-blue-900/50 dark:border-blue-600 dark:border-l-blue-400",
-	},
-	emerald: {
-		dot: "bg-emerald-400",
-		row: "bg-emerald-50 border-emerald-200 border-l-emerald-400 dark:bg-emerald-950/30 dark:border-emerald-800 dark:border-l-emerald-600",
-		rowBold: "bg-emerald-100 border-emerald-400 border-l-emerald-600 border-2 dark:bg-emerald-900/50 dark:border-emerald-600 dark:border-l-emerald-400",
-	},
-	amber: {
-		dot: "bg-amber-400",
-		row: "bg-amber-50 border-amber-200 border-l-amber-400 dark:bg-amber-950/30 dark:border-amber-800 dark:border-l-amber-600",
-		rowBold: "bg-amber-100 border-amber-400 border-l-amber-600 border-2 dark:bg-amber-900/50 dark:border-amber-600 dark:border-l-amber-400",
-	},
-	rose: {
-		dot: "bg-rose-400",
-		row: "bg-rose-50 border-rose-200 border-l-rose-400 dark:bg-rose-950/30 dark:border-rose-800 dark:border-l-rose-600",
-		rowBold: "bg-rose-100 border-rose-400 border-l-rose-600 border-2 dark:bg-rose-900/50 dark:border-rose-600 dark:border-l-rose-400",
-	},
-};
+const isTaskPriority = (value: string): value is Task["priority"] =>
+	PRIORITY_OPTIONS.some((option) => option === value);
 
 export const TaskGridRow = memo(function TaskGridRow({
 	task,
@@ -119,16 +73,12 @@ export const TaskGridRow = memo(function TaskGridRow({
 	onGridKeyDown,
 	className,
 }: TaskGridRowProps) {
-	const uiMeta = useMemo(() => {
-		const meta = (task.metadata ?? {}) as Record<string, unknown>;
-		const ui = (meta.ui ?? {}) as Record<string, unknown>;
-		return {
-			tags: Array.isArray(ui.tags) ? (ui.tags as string[]) : [],
-			color: typeof ui.color === "string" ? (ui.color as string) : "slate",
-			bold: Boolean(ui.bold),
-		};
-	}, [task.metadata]);
-  const [open, setOpen] = useState(false);
+	const uiMeta = {
+		tags: task.metadata.ui?.tags ?? [],
+		color: task.metadata.ui?.color ?? "slate",
+		bold: task.metadata.ui?.bold ?? false,
+	};
+	const [open, setOpen] = useState(false);
 	const [subjectValue, setSubjectValue] = useState(task.subject);
 	const [tagSearch, setTagSearch] = useState("");
 	const [previewColor, setPreviewColor] = useState<ColorOption | null>(null);
@@ -139,7 +89,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 
 	useEffect(() => {
 		if (isTagDropdownOpen) {
-			// Delay focus to allow dropdown animation to complete and avoid focus conflicts
 			const timer = setTimeout(() => {
 				tagInputRef.current?.focus();
 			}, 50);
@@ -147,11 +96,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 		}
 	}, [isTagDropdownOpen]);
 
-	const savedColor = COLOR_OPTIONS.includes(uiMeta.color as ColorOption)
-		? (uiMeta.color as ColorOption)
-		: "slate";
-
-	// Use preview color if hovering, otherwise use saved color
+	const savedColor = getValidColor(uiMeta.color);
 	const colorKey = previewColor ?? savedColor;
 
 	const priorityClasses = PRIORITY_STYLES[task.priority];
@@ -192,7 +137,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 		return availableTags.filter((tag) => tag.toLowerCase().includes(query));
 	}, [availableTags, tagSearch]);
 
-	const handleTagInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+	const handleTagInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
 		if (event.key === "Enter") {
 			event.preventDefault();
 			handleCreateTag(tagSearch);
@@ -204,8 +149,10 @@ export const TaskGridRow = memo(function TaskGridRow({
 	};
 
 	const handleRowClick = (event: React.MouseEvent<HTMLLIElement>) => {
-		// Don't open details if clicking on interactive elements
-		const target = event.target as HTMLElement;
+		if (!(event.target instanceof HTMLElement)) {
+			return;
+		}
+		const target = event.target;
 		if (
 			target.closest("button") ||
 			target.closest("input") ||
@@ -218,7 +165,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 	};
 
 	const handleRowKeyDown = (event: React.KeyboardEvent<HTMLLIElement>) => {
-		// Open details on Enter when the row background is focused (not child elements)
 		if (event.key === "Enter" && event.target === event.currentTarget) {
 			onOpenDetails?.(task);
 		}
@@ -229,18 +175,14 @@ export const TaskGridRow = memo(function TaskGridRow({
       className={cn(
         "grid grid-cols-[24px_minmax(0,1fr)_96px_120px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
         "rounded-md ",
-        // Base color from row color setting
         !isDragging &&
           (uiMeta.bold
-            ? COLOR_CLASSES[colorKey]?.rowBold
-            : COLOR_CLASSES[colorKey]?.row),
-        // Hover state (only when not selected and not dragging)
+            ? COLOR_CLASSES_LIGHT[colorKey]?.rowBold
+            : COLOR_CLASSES_LIGHT[colorKey]?.row),
         !isSelected &&
           !isDragging &&
           "hover:bg-accent/20 hover:border-accent",
-        // Selected state - bright accent color with glow
         isSelected && "bg-accent shadow-md shadow-accent/20",
-        // Dragging state - dim the original row
         isDragging &&
           "opacity-40 bg-default-100 border-dashed border-default-300",
         className,
@@ -351,9 +293,11 @@ export const TaskGridRow = memo(function TaskGridRow({
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 				<Dropdown.Menu
-					onAction={(key) =>
-						onUpdateTask?.(task.id, { priority: key as Task["priority"] })
-					}
+					onAction={(key) => {
+						if (typeof key === "string" && isTaskPriority(key)) {
+							onUpdateTask?.(task.id, { priority: key });
+						}
+					}}
 				>
 					{PRIORITY_OPTIONS.map((priority) => (
 						<Dropdown.Item
@@ -453,7 +397,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 					</Dropdown.Trigger>
 					<Dropdown.Popover>
 						<div className="p-2">
-							{/* Bold toggle */}
 							<button
 								type="button"
 								onClick={() => onUpdateUi?.(task.id, { bold: !uiMeta.bold })}
@@ -465,7 +408,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 								</span>
 							</button>
 
-							{/* Color picker */}
 							<div className="mt-2 px-2">
 								<div className="text-[11px] uppercase tracking-wide text-default-500 mb-2">
 									Row color
@@ -483,7 +425,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 											onMouseLeave={() => setPreviewColor(null)}
 											className={cn(
 												"h-5 w-5 rounded-full border-2 transition-all cursor-pointer",
-												COLOR_CLASSES[color].dot,
+												COLOR_CLASSES_LIGHT[color].dot,
 												savedColor === color
 													? "border-accent ring-2 ring-accent/30 scale-110"
 													: "border-white shadow-sm hover:scale-110 hover:shadow-md",
@@ -552,19 +494,22 @@ export const TaskGridRow = memo(function TaskGridRow({
 					<Dropdown.Item id={moveTopId} textValue="Move to Top">
 						Move to Top
 					</Dropdown.Item>
-					<Dropdown.Item id={moveBottomId} textValue="Move to Bottom">
-						Move to Bottom
-					</Dropdown.Item>
-				</Dropdown.Menu>
+				<Dropdown.Item id={moveBottomId} textValue="Move to Bottom">
+					Move to Bottom
+				</Dropdown.Item>
+			</Dropdown.Menu>
               <div className="mt-3 pt-2 border-t border-default-200">
                 <form 
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
                     e.preventDefault();
-                    const input = e.currentTarget.querySelector('input') as HTMLInputElement;
+                    const input = e.currentTarget.elements.namedItem("row-number");
+                    if (!(input instanceof HTMLInputElement)) {
+                      setOpen(false);
+                      return;
+                    }
                     const targetRowNumber = parseInt(input.value, 10);
                     if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
-                      // Convert from 1-based row number to 0-based sortOrder
                       const targetSortOrder = targetRowNumber - 1;
                       const currentSortOrder = task.sortOrder ?? index;
                       onReorderToSortOrder?.(task.id, currentSortOrder, targetSortOrder);
@@ -574,6 +519,7 @@ export const TaskGridRow = memo(function TaskGridRow({
                   }}
                 >
                   <input
+                    name="row-number"
                     type="number"
                     min="1"
                     placeholder="Row #"
@@ -603,7 +549,6 @@ export const TaskGridRow = memo(function TaskGridRow({
 					/>
 				</Button>
 
-			{/* Selected indicator chevron */}
 		</div>
 	</li>
 );
