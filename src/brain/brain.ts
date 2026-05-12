@@ -7016,7 +7016,7 @@ Report findings using bug resolution workflow.`;
 			return { isComplete: false, confidence: 0, reasoning: "No status reports" };
 		}
 
-		const latestReport = statusReports[statusReports.length - 1];
+		const latestReport = statusReports[0];
 		if (!latestReport) {
 			return { isComplete: false, confidence: 0, reasoning: "No valid status report" };
 		}
@@ -7118,17 +7118,9 @@ Report findings using bug resolution workflow.`;
 				reasoning: analysis.reasoning,
 			});
 
-			// If confidence is very high, auto-complete the task
-			if (analysis.confidence >= 0.85 && analysis.silentCompletion?.isReadyForCompletion) {
-				this.log(
-					`Auto-completing task ${taskId} for ${arm.name} with high confidence`,
-				);
-				await this.completeTask(
-					taskId,
-					`Auto-completed: ${analysis.reasoning}`,
-					analysis.silentCompletion.filesChanged || [],
-				);
-			}
+			this.log(
+				`Prompted ${arm.name} to complete task ${taskId} via complete_task`,
+			);
 		} else {
 			this.log(`Failed to prompt ${arm.name} to complete task`);
 		}
