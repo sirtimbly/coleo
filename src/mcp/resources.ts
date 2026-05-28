@@ -1,13 +1,10 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { join } from "path";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { readFile } from "fs/promises";
-import {
-	COLEO_DIR,
-	getPendingTasks,
-	getSharedNotes,
-} from "./utils";
+import { join } from "path";
+import { getPendingTasks, getSharedNotes, COLEO_DIR } from "./utils";
 
 export function registerResources(server: McpServer): void {
+	// List pending tasks
 	server.registerResource(
 		"List of tasks available to claim",
 		"coleo://tasks/pending",
@@ -26,6 +23,7 @@ export function registerResources(server: McpServer): void {
 		},
 	);
 
+	// Get shared notes
 	server.registerResource(
 		"Shared knowledge base from all arms",
 		"coleo://notes/shared",
@@ -44,6 +42,7 @@ export function registerResources(server: McpServer): void {
 		},
 	);
 
+	// System status
 	server.registerResource(
 		"Current system status",
 		"coleo://status",

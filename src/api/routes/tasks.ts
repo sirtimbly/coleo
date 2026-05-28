@@ -11,6 +11,7 @@ import { withTransaction } from "../../db/transactions";
 import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
+import type { ChecklistItem } from "./task-checklists";
 
 interface TasksContext {
 	Variables: {
@@ -57,6 +58,7 @@ export interface Task {
 	artifacts: string[];
 	context: Record<string, unknown>;
 	metadata: Record<string, unknown>;
+	checklist?: ChecklistItem[];
 }
 
 interface TaskRow {
@@ -405,6 +407,7 @@ export function createTasksRoutes() {
 		const id = c.req.param("id");
 		const include = c.req.query("include") || "";
 		const includeDiscussions = include.split(",").includes("discussions");
+		const includeChecklist = include.split(",").includes("checklist");
 
 		const row = db
 			.query(`
@@ -441,6 +444,33 @@ export function createTasksRoutes() {
 			task,
 			dependencies: deps.map((d) => d.depends_on_task_id),
 		};
+
+		// Include checklist if requested
+		if (includeChecklist) {
+			const checklistRows = db
+				.query(
+					"SELECT id, task_id, text, completed, sort_order, created_at, updated_at FROM task_checklist_items WHERE task_id = ? ORDER BY sort_order, created_at",
+				)
+				.all(id) as Array<{
+					id: number;
+					task_id: string;
+					text: string;
+					completed: number;
+					sort_order: number;
+					created_at: string;
+					updated_at: string;
+				}>;
+
+			task.checklist = checklistRows.map((row) => ({
+				id: row.id,
+				taskId: row.task_id,
+				text: row.text,
+				completed: row.completed === 1,
+				sortOrder: row.sort_order,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}));
+		}
 
 		// Include discussions if requested
 		if (includeDiscussions) {
@@ -669,7 +699,7 @@ export function createTasksRoutes() {
 					.query("SELECT MAX(order_key) as max_key FROM tasks WHERE order_key IS NOT NULL")
 					.get() as { max_key: string | null };
 				const maxOrderKey = maxOrderKeyRow?.max_key ?? null;
-				
+
 				// Generate new order_key after the current max
 				// If no tasks exist, start with "a"
 				const newOrderKey = generateKeyBetween(maxOrderKey, null);
@@ -1317,7 +1347,7 @@ export function createTasksRoutes() {
 	 * Reorder a task to a specific position using fractional indexing
 	 * POST /api/tasks/reorder
 	 * Body: { taskId: string, toIndex: number, prevTaskId?: string, nextTaskId?: string }
-	 * 
+	 *
 	 * Supports two modes:
 	 * 1. Legacy: { taskId, toIndex } - moves to 0-based position
 	 * 2. Drag-and-drop: { taskId, prevTaskId?, nextTaskId? } - moves between neighbors
@@ -1404,11 +1434,11 @@ export function createTasksRoutes() {
 		// sort_order is deprecated - we only use order_key (fractional indexing) for ordering.
 		// Updating sort_order for all 300+ tasks was causing 2-3 second delays on every reorder.
 
-		logActivity(db, "api", "task_reordered", taskId, { 
+		logActivity(db, "api", "task_reordered", taskId, {
 			newOrderKey,
 			prevTaskId,
 			nextTaskId,
-			toIndex 
+			toIndex
 		});
 
 		// Broadcast task updated
@@ -1418,6 +1448,40 @@ export function createTasksRoutes() {
 		});
 
 		return c.json({ success: true, orderKey: newOrderKey });
+	});
+
+	/**
+	 * Get task statistics for progress visualization
+	 * GET /api/tasks/stats
+	 */
+	app.get("/stats", async (c) => {
+		const db = c.get("db");
+
+		const totalResult = db
+			.query("SELECT COUNT(*) as count FROM tasks")
+			.get() as { count: number };
+
+		const statusRows = db
+			.query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status")
+			.all() as Array<{ status: string; count: number }>;
+
+		const byStatus: Record<string, number> = {};
+		for (const row of statusRows) {
+			byStatus[row.status] = row.count;
+		}
+
+		const completed = byStatus["completed"] ?? 0;
+		const failed = byStatus["failed"] ?? 0;
+		const total = totalResult.count;
+		const completionRate = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
+
+		return c.json({
+			total,
+			byStatus,
+			completionRate,
+			active: (byStatus["claimed"] ?? 0) + (byStatus["in_progress"] ?? 0) + (byStatus["completing"] ?? 0),
+			blocked: byStatus["blocked"] ?? 0,
+		});
 	});
 
 	return app;

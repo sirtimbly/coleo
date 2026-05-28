@@ -76,7 +76,6 @@ import {
 	publishCommandViaNats,
 	sendToBrain,
 	sendToBrainFile,
-	getPendingTasks,
 	getMyInstructions,
 	normalizeReference,
 	findTaskByReference,
@@ -85,7 +84,6 @@ import {
 	getBugReferenceHint,
 	resolveTaskReferenceForTool,
 	resolveBugReferenceForTool,
-	getSharedNotes,
 	type TaskReferenceRow,
 	type BugReferenceRow,
 } from "./utils";
