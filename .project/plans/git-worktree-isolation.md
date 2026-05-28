@@ -11,6 +11,12 @@ Enable arms to work in isolated git worktrees while maintaining visibility and c
 3. **Coordination**: Brain manages worktree lifecycle and merging
 4. **Backward Compatibility**: Shared branch remains the default; worktrees are opt-in
 
+## Current Status (2026-05-26)
+
+- Draft plan approved, but no schema migration or service implementation has been merged yet.
+- Phase 1 (Worktree Storage table + WorktreeService) is the next deliverable; track progress via the project backlog items referencing this plan.
+- Phase 2 (MCP tools) and Phase 3 (Brain coordinator) remain gated on Phase 1 so the Brain keeps a single source of truth for worktrees.
+
 ## Architecture
 
 ```
