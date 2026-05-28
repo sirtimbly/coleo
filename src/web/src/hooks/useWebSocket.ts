@@ -21,12 +21,27 @@ interface UseWebSocketOptions {
 
 export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWebSocketOptions) {
   const wsRef = useRef<WebSocket | null>(null);
+  const channelsRef = useRef(channels);
+  const onMessageRef = useRef(onMessage);
   const [connected, setConnected] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reconnectAttempts = useRef(0);
+  const shouldReconnectRef = useRef(false);
+
+  channelsRef.current = channels;
+  onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
+    if (
+      wsRef.current?.readyState === WebSocket.OPEN ||
+      wsRef.current?.readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
+
+    shouldReconnectRef.current = true;
     const apiKey = api.getApiKey();
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -57,7 +72,7 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
             setAuthenticated(true);
 
             // Subscribe to channels
-            for (const channel of channels) {
+            for (const channel of channelsRef.current) {
               ws.send(JSON.stringify({ type: 'subscribe', channel }));
             }
           } else {
@@ -66,8 +81,8 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
           }
         } else if (msg.type === 'pong') {
           // Heartbeat response
-        } else if (onMessage) {
-          onMessage(msg);
+        } else {
+          onMessageRef.current?.(msg);
         }
       } catch (err) {
         console.error('[WS] Failed to parse message:', err);
@@ -78,13 +93,24 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
       console.log('[WS] Disconnected');
       setConnected(false);
       setAuthenticated(false);
-      wsRef.current = null;
+      if (wsRef.current === ws) {
+        wsRef.current = null;
+      }
+      if (pingIntervalRef.current) {
+        clearInterval(pingIntervalRef.current);
+        pingIntervalRef.current = null;
+      }
+
+      if (!shouldReconnectRef.current) return;
 
       // Reconnect with exponential backoff
       const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
       reconnectAttempts.current++;
       console.log(`[WS] Reconnecting in ${delay}ms...`);
-      reconnectTimeoutRef.current = setTimeout(connect, delay);
+      reconnectTimeoutRef.current = setTimeout(() => {
+        reconnectTimeoutRef.current = null;
+        connect();
+      }, delay);
     };
 
     ws.onerror = (err) => {
@@ -94,24 +120,28 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
     wsRef.current = ws;
 
     // Start heartbeat
-    const pingInterval = setInterval(() => {
+    pingIntervalRef.current = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'ping' }));
       }
     }, 30000);
-
-    return () => {
-      clearInterval(pingInterval);
-    };
-  }, [channels, onMessage]);
+  }, []);
 
   const disconnect = useCallback(() => {
+    shouldReconnectRef.current = false;
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (pingIntervalRef.current) {
+      clearInterval(pingIntervalRef.current);
+      pingIntervalRef.current = null;
     }
     if (wsRef.current) {
-      wsRef.current.close();
+      const ws = wsRef.current;
       wsRef.current = null;
+      ws.onclose = null;
+      ws.close();
     }
     setConnected(false);
     setAuthenticated(false);

@@ -4,7 +4,7 @@ import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllAr
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
-import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
+import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
@@ -957,12 +957,12 @@ export function DashboardPage() {
       void loadCriticalData();
     }
     if (msg.channel === 'tasks') {
-      loadTaskStats();
+      void loadTaskStats();
     }
   }, [loadBrainStatus, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents, loadTaskStats]);
 
   const { connected, authenticated } = useWebSocket({
-    channels: ['arms', 'activity', 'brain', 'arm-events'],
+    channels: ['arms', 'activity', 'brain', 'arm-events', 'tasks'],
     onMessage: handleWSMessage,
     autoConnect: true,
   });
@@ -985,6 +985,7 @@ export function DashboardPage() {
       loadIndexerHealth();
       loadBrainStatus();
       loadArmHosts();
+      loadTaskStats();
     }, 30000);
     return () => clearInterval(interval);
   }, [loadArmHosts, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus, loadTaskStats]);

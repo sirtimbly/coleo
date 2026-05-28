@@ -61,7 +61,7 @@ describe("Brain silent completion detection", () => {
 		});
 	});
 
-	it("prompts the arm without auto-completing the task", async () => {
+	it("auto-completes high-confidence silent completion", async () => {
 		const prompts: string[] = [];
 		let completed = false;
 
@@ -91,8 +91,7 @@ describe("Brain silent completion detection", () => {
 			},
 		});
 
-		expect(prompts).toHaveLength(1);
-		expect(prompts[0]).toContain("complete_task");
-		expect(completed).toBe(false);
+		expect(prompts).toHaveLength(0);
+		expect(completed).toBe(true);
 	});
 });

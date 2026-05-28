@@ -11,7 +11,16 @@ import { withTransaction } from "../../db/transactions";
 import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
-import type { ChecklistItem } from "./task-checklists";
+
+interface ChecklistItem {
+	id: number;
+	taskId: string;
+	text: string;
+	completed: boolean;
+	sortOrder: number;
+	createdAt: string;
+	updatedAt: string;
+}
 
 interface TasksContext {
 	Variables: {
@@ -52,6 +61,7 @@ export interface Task {
 	createdAt: string;
 	updatedAt: string;
 	completedAt: string | null;
+	blockedAt?: string | null;
 	claimedAt: string | null;
 	startedAt: string | null;
 	dueDate: string | null;
@@ -88,6 +98,7 @@ interface TaskRow {
 	completed_at: string | null;
 	claimed_at: string | null;
 	started_at: string | null;
+	blocked_at: string | null;
 	due_date: string | null;
 	artifacts: string;
 	context: string | null;
@@ -121,6 +132,7 @@ function parseTaskRow(row: TaskRow): Task {
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		completedAt: row.completed_at,
+		blockedAt: row.blocked_at,
 		claimedAt: row.claimed_at,
 		startedAt: row.started_at,
 		dueDate: row.due_date,
@@ -140,7 +152,7 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
         t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       WHERE t.id = ?
@@ -334,7 +346,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -419,7 +431,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -859,7 +871,7 @@ export function createTasksRoutes() {
 			updates.push("status = ?");
 			values.push(body.status);
 
-			// Set timestamp fields based on status change
+			// Set lifecycle timestamps based on status transitions.
 			if (body.status === "claimed" && existing.status === "pending") {
 				updates.push("claimed_at = ?");
 				values.push(now);
@@ -876,6 +888,14 @@ export function createTasksRoutes() {
 			) {
 				updates.push("completed_at = ?");
 				values.push(now);
+			}
+
+			if (body.status === "blocked" && existing.status !== "blocked") {
+				updates.push("blocked_at = ?");
+				values.push(now);
+			}
+			if (existing.status === "blocked" && body.status !== "blocked") {
+				updates.push("blocked_at = NULL");
 			}
 		}
 
@@ -973,7 +993,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -1481,6 +1501,79 @@ export function createTasksRoutes() {
 			completionRate,
 			active: (byStatus["claimed"] ?? 0) + (byStatus["in_progress"] ?? 0) + (byStatus["completing"] ?? 0),
 			blocked: byStatus["blocked"] ?? 0,
+		});
+	});
+
+	/**
+	 * Get blocking bugs for a task
+	 * GET /api/tasks/:id/blocking-bugs
+	 */
+	app.get("/:id/blocking-bugs", async (c) => {
+		const db = c.get("db");
+		const id = c.req.param("id");
+
+		// Check if task exists
+		const taskExists = db
+			.query("SELECT 1 FROM tasks WHERE id = ?")
+			.get(id) as { "1": number } | null;
+		if (!taskExists) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		// Find unresolved bugs that block this task
+		const rows = db
+			.query(`
+				SELECT id, title, description, source, source_arm_id, source_task_id,
+				       status, priority, assignee_arm_id, blockers, error_details,
+				       resolution, created_at, updated_at, resolved_at
+				FROM bugs
+				WHERE status IN ('open', 'investigating', 'fixing', 'verifying')
+				  AND blockers LIKE ?
+			`)
+			.all(`%${id}%`) as Array<{
+				id: string;
+				title: string;
+				description: string;
+				source: string;
+				source_arm_id: string | null;
+				source_task_id: string | null;
+				status: string;
+				priority: string;
+				assignee_arm_id: string | null;
+				blockers: string;
+				error_details: string | null;
+				resolution: string | null;
+				created_at: string;
+				updated_at: string;
+				resolved_at: string | null;
+			}>;
+
+		// Filter to only bugs that actually have this task in their blockers
+		const blockingBugs = rows
+			.filter((row) => {
+				try {
+					const blockers = JSON.parse(row.blockers || "[]") as string[];
+					return blockers.includes(id);
+				} catch {
+					return false;
+				}
+			})
+			.map((row) => ({
+				id: row.id,
+				title: row.title,
+				description: row.description,
+				source: row.source,
+				status: row.status,
+				priority: row.priority,
+				assigneeArmId: row.assignee_arm_id || undefined,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}));
+
+		return c.json({
+			taskId: id,
+			blockingBugs,
+			count: blockingBugs.length,
 		});
 	});
 

@@ -902,6 +902,24 @@ class ApiClient {
     }>('/tasks/stats');
   }
 
+  async getTaskBlockingBugs(taskId: string) {
+    return this.request<{
+      taskId: string;
+      blockingBugs: Array<{
+        id: string;
+        title: string;
+        description: string;
+        source: string;
+        status: string;
+        priority: string;
+        assigneeArmId?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+      count: number;
+    }>(`/tasks/${taskId}/blocking-bugs`);
+  }
+
   // Task Discussions
   async getTaskDiscussions(
     taskId: string,

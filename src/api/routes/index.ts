@@ -15,6 +15,7 @@ export { createTaskDiffsRoutes } from "./task-diffs";
 export { createAgentsRoutes } from "./agents";
 export { createDiscoveriesRoutes } from "./discoveries";
 export { createBugsRoutes } from "./bugs";
+export { createEscalationRoutes } from "./escalations";
 export { createEventsRoutes } from "./events";
 export { createSearchRoutes } from "./search";
 export { createStatusHistoryRoutes } from "./status-history";

@@ -18,4 +18,3 @@ export { DiscoveryGridRow } from './DiscoveryGridRow';
 export { ArmStatusBar } from './ArmStatusBar';
 export { DenseSection, DenseRow, DenseRowSkeleton, DOT_TONE_CLASS, TEXT_TONE_CLASS, type Tone, type DenseRowProps } from './DenseList';
 export { TaskProgressWidget } from './TaskProgressWidget';
-export { TaskChecklist } from './TaskChecklist';

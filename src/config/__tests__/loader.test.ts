@@ -189,6 +189,69 @@ describe("config loader", () => {
     }
   });
 
+  it("updateConfig merges maintenance task updates", async () => {
+    const dir = await createTempDir();
+    try {
+      const updated = await updateConfig(
+        {
+          maintenance: { tasks: [] },
+        },
+        dir
+      );
+
+      expect(updated.maintenance.enabled).toBe(DEFAULT_CONFIG.maintenance.enabled);
+      expect(updated.maintenance.taskPrefix).toBe(DEFAULT_CONFIG.maintenance.taskPrefix);
+      expect(updated.maintenance.tasks).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("round-trips maintenance tasks through TOML", async () => {
+    const dir = await createTempDir();
+    try {
+      const maintenance = {
+        enabled: true,
+        taskPrefix: "Upkeep",
+        tasks: [
+          {
+            id: "docs",
+            enabled: true,
+            title: "Refresh docs",
+            description: "Keep documentation current",
+            slices: ["docs"],
+            instructions: "Review changed behavior",
+            instructionsFile: ".project/docs-maintenance.md",
+            priority: "high" as const,
+            domain: "docs",
+            classification: "maintenance",
+            requireEmptyQueue: true,
+            triggers: {
+              everyHours: 24,
+              everyCompletedTasks: 10,
+              onMainCommit: true,
+              branches: ["main"],
+            },
+            lastRunAt: "2026-07-16T10:00:00.000Z",
+            lastCompletedTaskCount: 40,
+            lastMainCommit: "abc123",
+          },
+        ],
+      };
+
+      const toml = configToToml({ maintenance });
+      expect(toml.maintenance?.task_prefix).toBe("Upkeep");
+      expect(toml.maintenance?.tasks?.[0]?.instructions_file).toBe(".project/docs-maintenance.md");
+      expect(toml.maintenance?.tasks?.[0]?.triggers?.every_completed_tasks).toBe(10);
+
+      await writeTomlConfig(toml, dir);
+      const loaded = await loadConfig(dir);
+      expect(loaded.maintenance).toEqual(maintenance);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   // Compression configuration tests
   describe("compression config", () => {
     it("loadConfig applies compression defaults when not in TOML", async () => {

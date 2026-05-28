@@ -1,6 +1,7 @@
 export const VALIDATION_TASK_SUBJECT_PREFIX = "Validate completion:" as const;
 export const VERIFICATION_TASK_SUBJECT_PREFIX = "Verify & Polish:" as const;
 export const COMMIT_TASK_SUBJECT_PREFIX = "Commit changes for:" as const;
+const COMMIT_TASK_SUBJECT_KEYWORD = /commit changes for/i;
 
 function hasSubjectPrefix(subject: string | null | undefined, prefix: string): boolean {
 	return typeof subject === "string" && subject.startsWith(prefix);
@@ -16,6 +17,12 @@ export function isVerificationTaskSubject(subject: string | null | undefined): b
 
 export function isCommitTaskSubject(subject: string | null | undefined): boolean {
 	return hasSubjectPrefix(subject, COMMIT_TASK_SUBJECT_PREFIX);
+}
+
+export function containsCommitTaskKeyword(
+	subject: string | null | undefined,
+): boolean {
+	return typeof subject === "string" && COMMIT_TASK_SUBJECT_KEYWORD.test(subject);
 }
 
 export function isFollowUpTaskSubject(subject: string | null | undefined): boolean {

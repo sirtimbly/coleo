@@ -31,10 +31,11 @@ function createTestDb(): Database {
       progress INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      completed_at TEXT,
-      claimed_at TEXT,
-      started_at TEXT,
-      due_date TEXT,
+       completed_at TEXT,
+       claimed_at TEXT,
+       started_at TEXT,
+       blocked_at TEXT,
+       due_date TEXT,
       artifacts TEXT DEFAULT '[]',
       context TEXT DEFAULT '{}',
       metadata TEXT DEFAULT '{}'
@@ -531,10 +532,10 @@ describe("tasks API", () => {
         body: JSON.stringify({ status: "claimed" }),
       });
 
-      expect(claimedRes.status).toBe(200);
-      const claimedBody = await claimedRes.json() as { task: Task };
-      expect(claimedBody.task.status).toBe("claimed");
-      expect(claimedBody.task.claimedAt).toBeDefined();
+       expect(claimedRes.status).toBe(200);
+       const claimedBody = await claimedRes.json() as { task: Task };
+       expect(claimedBody.task.status).toBe("claimed");
+		expect(claimedBody.task.claimedAt).not.toBeNull();
 
       // Update to in_progress
       const progressRes = await app.request("/api/tasks/task-123", {
@@ -543,10 +544,10 @@ describe("tasks API", () => {
         body: JSON.stringify({ status: "in_progress" }),
       });
 
-      expect(progressRes.status).toBe(200);
-      const progressBody = await progressRes.json() as { task: Task };
-      expect(progressBody.task.status).toBe("in_progress");
-      expect(progressBody.task.startedAt).toBeDefined();
+       expect(progressRes.status).toBe(200);
+       const progressBody = await progressRes.json() as { task: Task };
+       expect(progressBody.task.status).toBe("in_progress");
+		expect(progressBody.task.startedAt).not.toBeNull();
 
       // Update to completed
       const completedRes = await app.request("/api/tasks/task-123", {
@@ -555,11 +556,34 @@ describe("tasks API", () => {
         body: JSON.stringify({ status: "completed" }),
       });
 
-      expect(completedRes.status).toBe(200);
-      const completedBody = await completedRes.json() as { task: Task };
-      expect(completedBody.task.status).toBe("completed");
-      expect(completedBody.task.completedAt).toBeDefined();
-    });
+       expect(completedRes.status).toBe(200);
+       const completedBody = await completedRes.json() as { task: Task };
+       expect(completedBody.task.status).toBe("completed");
+		expect(completedBody.task.completedAt).not.toBeNull();
+     });
+
+		it("sets and clears blocked_at across blocked transitions", async () => {
+			const blockedRes = await app.request("/api/tasks/task-123", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ status: "blocked" }),
+			});
+
+			expect(blockedRes.status).toBe(200);
+			const blockedBody = (await blockedRes.json()) as { task: Task };
+			expect(blockedBody.task.blockedAt).not.toBeNull();
+
+			const resumedRes = await app.request("/api/tasks/task-123", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ status: "in_progress" }),
+			});
+
+			expect(resumedRes.status).toBe(200);
+			const resumedBody = (await resumedRes.json()) as { task: Task };
+			expect(resumedBody.task.blockedAt).toBeNull();
+			expect(resumedBody.task.startedAt).not.toBeNull();
+		});
 
     it("should update metadata", async () => {
       const response = await app.request("/api/tasks/task-123", {
