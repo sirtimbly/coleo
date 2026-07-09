@@ -70,10 +70,11 @@
 		"concurrently": "^9.0.0",
 		"playwright": "^1.58.2",
 		"tailwindcss": "^4.1.18",
+		"typescript": "^7.0.2",
 		"vitepress": "^1.6.4"
 	},
 	"peerDependencies": {
-		"typescript": "^5"
+		"typescript": "^7.0.0"
 	},
 	"dependencies": {
 		"@hono/node-server": "^1.19.9",
