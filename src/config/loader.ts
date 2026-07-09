@@ -133,6 +133,12 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
 			maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
 			armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
 		};
+		if (toml.brain.refactor_file_threshold_lines !== undefined) {
+			config.refactoring = {
+				fileSizeThreshold: toml.brain.refactor_file_threshold_lines,
+				enabled: DEFAULT_CONFIG.refactoring.enabled,
+			};
+		}
 	}
 
   if (toml.mail) {
@@ -325,6 +331,9 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
     }
     if (tomlConfig.docs) {
       config.docs = { ...config.docs, ...tomlConfig.docs };
+    }
+    if (tomlConfig.refactoring) {
+      config.refactoring = { ...config.refactoring, ...tomlConfig.refactoring };
     }
     if (tomlConfig.defaults) {
       config.defaults = { ...config.defaults, ...tomlConfig.defaults };

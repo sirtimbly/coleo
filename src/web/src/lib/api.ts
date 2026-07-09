@@ -116,6 +116,26 @@ class ApiClient {
     return this.request<{ status: string; timestamp: string }>('/health');
   }
 
+  async search(params: {
+    query: string;
+    types?: string[];
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    return this.request<SearchResponse>('/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        types: params.types,
+        limit: params.limit ?? 20,
+        // Prefer keyword for command-palette snappiness; semantic is optional/slow.
+        keywordWeight: params.keywordWeight ?? 0.85,
+        semanticWeight: params.semanticWeight ?? 0.15,
+      }),
+    });
+  }
+
   async status() {
     return this.request<{
       status: string;
@@ -906,6 +926,27 @@ export interface OpenCodeModel {
 }
 
 export type TaskAttachment = SharedTaskAttachment;
+
+export interface SearchResult {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  score: number;
+  keywordScore?: number;
+  semanticScore?: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  took: number;
+}
 
 export interface OpenCodeProvider {
   id: string;

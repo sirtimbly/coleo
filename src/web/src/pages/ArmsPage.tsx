@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
-import { Coins, LoaderCircle, Play, Plus, RotateCcw, Server, Trash2, X, Zap } from "lucide-react";
+import {
+	AlertTriangle,
+	Coins,
+	LoaderCircle,
+	Play,
+	Plus,
+	RotateCcw,
+	Server,
+	Trash2,
+	X,
+	Zap,
+} from "lucide-react";
 import { createPortal } from "react-dom";
 import { Card, Chip, Button } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
@@ -10,11 +21,10 @@ import {
 	type ArmTemplateSummary,
 	type OpenCodeProvider,
 } from "@/lib";
-import { StatusBadge } from "@/components";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { useWorkspaceSearchParams } from '@/workspace/route-context';
+import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from '@/workspace/route-context';
 
 interface ArmEventData {
 	arm?: Arm;
@@ -174,9 +184,216 @@ function armActionFor(arm: Arm): { kind: "spawn" | "recover"; label: string } | 
 	return null;
 }
 
+function needsAttention(arm: Arm): boolean {
+	const runtimeState = arm.runtime?.state;
+	return (
+		armActionFor(arm) !== null ||
+		runtimeState === "hung" ||
+		runtimeState === "recoverable" ||
+		arm.status === "error"
+	);
+}
+
+const STATUS_DOT_CLASS: Record<string, string> = {
+	busy: "bg-primary",
+	idle: "bg-success",
+	starting: "bg-warning",
+	stopped: "bg-default-400",
+	error: "bg-danger",
+};
+
+function statusDotClass(status: string): string {
+	return STATUS_DOT_CLASS[status] || "bg-default-400";
+}
+
+interface ArmRowProps {
+	arm: Arm;
+	attention: boolean;
+	spawningArmId: string | null;
+	onOpen: () => void;
+	onDelete: () => void;
+	onSpawn: () => void;
+	onRecover: () => void;
+}
+
+function ArmRow({
+	arm,
+	attention,
+	spawningArmId,
+	onOpen,
+	onDelete,
+	onSpawn,
+	onRecover,
+}: ArmRowProps) {
+	const action = armActionFor(arm);
+	const isRecover = action?.kind === "recover";
+	const isSpawning = spawningArmId === arm.id;
+	const contextPct = arm.contextBudget
+		? Math.min((arm.currentContextUsed / arm.contextBudget) * 100, 100)
+		: 0;
+	const currentWork = arm.currentBugTitle || arm.currentTaskSubject || null;
+
+	const diagnosticParts: string[] = [];
+	if (arm.runtime) {
+		diagnosticParts.push(arm.runtime.reason);
+		diagnosticParts.push(
+			[
+				`status=${arm.runtime.signals.dbStatus}`,
+				arm.runtime.signals.hasPid ? "pid" : "no-pid",
+				arm.runtime.signals.hasPort ? "port" : "no-port",
+				arm.runtime.signals.hasSessionId ? "session" : "no-session",
+				arm.runtime.signals.hasAgentId ? "agent" : "local",
+				arm.runtime.signals.hasWorkdir ? "workdir" : "no-workdir",
+				arm.runtime.signals.hasAssignedTask ? "task" : "no-task",
+			].join(" · "),
+		);
+	}
+	if (arm.host || arm.agentId) {
+		diagnosticParts.push(
+			`${arm.host || arm.agentId}${arm.host && arm.agentId ? ` · ${arm.agentId}` : ""}`,
+		);
+	}
+	if (arm.port || arm.pid) {
+		diagnosticParts.push(
+			`${arm.port ? `:${arm.port}` : "no port"}${arm.pid ? ` · pid ${arm.pid}` : ""}`,
+		);
+	}
+
+	return (
+		<div
+			role="button"
+			tabIndex={0}
+			onClick={onOpen}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					onOpen();
+				}
+			}}
+			className={`group relative flex cursor-pointer flex-col gap-1.5 px-4 py-3 outline-none transition-colors hover:bg-default-100/50 focus-visible:bg-default-100/60 ${
+				attention ? "bg-warning/5" : ""
+			}`}
+		>
+			<div className="flex items-center gap-3">
+				<span
+					className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(arm.status)} ${
+						arm.status === "busy" ? "animate-pulse" : ""
+					}`}
+					aria-hidden
+				/>
+				<span className="font-medium shrink-0">{arm.name}</span>
+				<span className="text-xs text-muted-foreground shrink-0">{arm.harness}</span>
+				{arm.provider && (
+					<Chip size="sm" variant="soft" className="shrink-0">
+						{arm.provider}
+					</Chip>
+				)}
+				{arm.model && (
+					<Chip size="sm" variant="soft" color="success" className="shrink-0">
+						{arm.model}
+					</Chip>
+				)}
+
+				<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
+					{currentWork ? (
+						<>
+							<span className="mr-1">{arm.currentBugTitle ? "🐛" : "📋"}</span>
+							{currentWork}
+						</>
+					) : (
+						<span className="italic text-muted-foreground/60">
+							Idle — waiting for the brain to assign work
+						</span>
+					)}
+				</span>
+
+				<div className="hidden shrink-0 items-center gap-1.5 sm:flex" title="Context used">
+					<div className="h-1.5 w-16 overflow-hidden rounded-full bg-default-200">
+						<div
+							className="h-full bg-primary transition-all"
+							style={{ width: `${contextPct}%` }}
+						/>
+					</div>
+					<span className="w-9 text-right text-[11px] text-muted-foreground">
+						{Math.round(contextPct)}%
+					</span>
+				</div>
+
+				{arm.totalTokens !== undefined && (
+					<span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground md:flex">
+						<Zap className="h-3 w-3" />
+						{arm.totalTokens.toLocaleString()}
+					</span>
+				)}
+				{arm.totalCost !== undefined && arm.totalCost > 0 && (
+					<span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground lg:flex">
+						<Coins className="h-3 w-3" />${arm.totalCost.toFixed(3)}
+					</span>
+				)}
+
+				<span className="hidden w-24 shrink-0 text-right text-[11px] text-muted-foreground md:block">
+					{arm.lastActivityAt ? formatAge(arm.runtime?.secondsSinceOutput) : "Never"}
+				</span>
+
+				<div
+					className="flex shrink-0 items-center gap-1.5"
+					onClick={(e) => e.stopPropagation()}
+				>
+					{action && (
+						<Button
+							variant={isRecover ? "secondary" : "primary"}
+							size="sm"
+							onPress={() => void (isRecover ? onRecover() : onSpawn())}
+							isDisabled={spawningArmId !== null}
+							className={isRecover ? "gap-1.5 text-warning" : "gap-1.5"}
+						>
+							{isSpawning ? (
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+							) : isRecover ? (
+								<RotateCcw className="h-3.5 w-3.5" />
+							) : (
+								<Play className="h-3.5 w-3.5" />
+							)}
+							{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
+						</Button>
+					)}
+					<Button
+						isIconOnly
+						variant="ghost"
+						size="sm"
+						onPress={onDelete}
+						className="text-muted-foreground opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+					>
+						<Trash2 className="h-3.5 w-3.5" />
+					</Button>
+				</div>
+			</div>
+
+			{diagnosticParts.length > 0 && (
+				<div className="pl-5 font-mono text-[10.5px] leading-relaxed text-muted-foreground/50 flex flex-wrap gap-x-3">
+					{arm.runtime && (
+						<Chip
+							size="sm"
+							variant="soft"
+							color={runtimeTone(arm.runtime.state)}
+							className="!h-4 !px-1.5 !text-[10px] normal-case"
+						>
+							{arm.runtime.state}
+						</Chip>
+					)}
+					{diagnosticParts.map((part, i) => (
+						<span key={i}>{part}</span>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
+
 export function ArmsPage() {
 	usePageTitle('Coleo Observatory - Arms');
 	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const [arms, setArms] = useState<Arm[]>([]);
 	const [agents, setAgents] = useState<AgentInfo[]>([]);
 	const [armTemplates, setArmTemplates] = useState<ArmTemplateSummary[]>([]);
@@ -453,6 +670,16 @@ export function ArmsPage() {
 		setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
 	}, []);
 
+	const openArmViewer = useCallback(
+		(armId: string) => {
+			openWorkspaceRoute(
+				{ pathname: "/viewer", search: `?arm=${encodeURIComponent(armId)}` },
+				"tab",
+			);
+		},
+		[openWorkspaceRoute],
+	);
+
 	const submitSpawnModal = useCallback(async () => {
 		const name = spawnModal.name.trim();
 		const provider = spawnModal.provider.trim();
@@ -622,6 +849,15 @@ export function ArmsPage() {
 		spawnModal.isOpen,
 	]);
 
+	const { attentionArms, healthyArms } = useMemo(() => {
+		const attention: Arm[] = [];
+		const healthy: Arm[] = [];
+		for (const arm of arms) {
+			(needsAttention(arm) ? attention : healthy).push(arm);
+		}
+		return { attentionArms: attention, healthyArms: healthy };
+	}, [arms]);
+
 	if (error) {
 		return (
 			<div className="p-8">
@@ -653,13 +889,9 @@ export function ArmsPage() {
 			</div>
 
 			{loading ? (
-				<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+				<div className="space-y-2">
 					{[1, 2, 3, 4].map((i) => (
-						<Card key={i} className="h-48">
-							<Card.Content>
-								<div className="h-full bg-muted animate-pulse rounded" />
-							</Card.Content>
-						</Card>
+						<div key={i} className="h-16 rounded-lg bg-default-100/60 animate-pulse" />
 					))}
 				</div>
 			) : arms.length === 0 ? (
@@ -672,222 +904,57 @@ export function ArmsPage() {
 					</Card.Content>
 				</Card>
 			) : (
-				<div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-					{arms.map((arm) => (
-						<Card key={arm.id}>
-							<Card.Header className="flex flex-row items-start justify-between">
-								<div>
-									<Card.Title className="flex items-center gap-2">
-										{arm.name}
-										<StatusBadge status={arm.status} />
-									</Card.Title>
-									<p className="text-sm text-muted-foreground mt-1">
-										{arm.harness}
-										{(arm.provider || arm.model) && (
-											<span className="block mt-1">
-												{arm.provider && (
-													<Chip size="sm" variant="soft">
-														{arm.provider}
-													</Chip>
-												)}
-												{arm.provider && arm.model && <span> · </span>}
-												{arm.model && (
-													<Chip size="sm" variant="soft" color="success">
-														{arm.model}
-													</Chip>
-												)}
-											</span>
-										)}
-									</p>
+				<div className="space-y-6">
+					{attentionArms.length > 0 && (
+						<div className="space-y-2">
+							<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-warning">
+								<AlertTriangle className="h-3.5 w-3.5" />
+								Needs attention · {attentionArms.length}
+							</div>
+							<div className="rounded-lg border border-warning/40 divide-y divide-warning/20 overflow-hidden">
+								{attentionArms.map((arm) => (
+									<ArmRow
+										key={arm.id}
+										arm={arm}
+										attention
+										spawningArmId={spawningArmId}
+										onOpen={() => openArmViewer(arm.id)}
+										onDelete={() => handleDelete(arm.id)}
+										onSpawn={() => handleSpawn(arm)}
+										onRecover={() => handleRecover(arm)}
+									/>
+								))}
+							</div>
+						</div>
+					)}
+
+					<div className="space-y-2">
+						{attentionArms.length > 0 && (
+							<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								Running · {healthyArms.length}
+							</div>
+						)}
+						<div className="rounded-lg border border-default-200 divide-y divide-default-200 overflow-hidden">
+							{healthyArms.length === 0 ? (
+								<div className="px-4 py-6 text-center text-sm text-muted-foreground">
+									All arms need attention right now.
 								</div>
-								<Button
-									isIconOnly
-									variant="ghost"
-									size="sm"
-									onPress={() => handleDelete(arm.id)}
-									className="text-danger hover:text-danger"
-								>
-									<Trash2 className="h-4 w-4" />
-								</Button>
-							</Card.Header>
-							<Card.Content>
-								<div className="space-y-3 text-sm">
-									<div>
-										<div className="flex justify-between text-muted-foreground mb-1">
-											<span>Context</span>
-											<span>
-												{arm.currentContextUsed.toLocaleString()} /{" "}
-												{arm.contextBudget.toLocaleString()}
-											</span>
-										</div>
-										<div className="h-2 bg-default-200 rounded-full overflow-hidden">
-											<div
-												className="h-full bg-primary transition-all"
-												style={{
-													width: `${Math.min((arm.currentContextUsed / arm.contextBudget) * 100, 100)}%`,
-												}}
-											/>
-										</div>
-									</div>
-
-									{(arm.totalTokens !== undefined ||
-										arm.totalCost !== undefined) && (
-										<div className="flex items-center gap-4 text-muted-foreground">
-											{arm.totalTokens !== undefined && (
-												<div className="flex items-center gap-1">
-													<Zap className="h-3 w-3" />
-													<span>{arm.totalTokens.toLocaleString()} tokens</span>
-												</div>
-											)}
-											{arm.totalCost !== undefined && arm.totalCost > 0 && (
-												<div className="flex items-center gap-1">
-													<Coins className="h-3 w-3" />
-													<span>${arm.totalCost.toFixed(4)}</span>
-												</div>
-											)}
-										</div>
-									)}
-
-									{(arm.currentTaskSubject || arm.currentBugTitle) && (
-										<div className="p-2 bg-default-100 rounded">
-											<div className="text-xs text-muted-foreground mb-1">
-												{arm.currentBugTitle ? '🐛 Current bug' : '📋 Current task'}
-											</div>
-											<div className="text-sm truncate">
-												{arm.currentBugTitle || arm.currentTaskSubject}
-											</div>
-										</div>
-									)}
-
-									{arm.reputation !== undefined && (
-										<div className="flex justify-between">
-											<span className="text-muted-foreground">Reputation</span>
-											<span className="font-medium">{arm.reputation}/100</span>
-										</div>
-									)}
-
-									<div className="flex justify-between">
-										<span className="text-muted-foreground">Last active</span>
-										<span>
-											{arm.lastActivityAt
-												? new Date(arm.lastActivityAt).toLocaleString()
-												: "Never"}
-										</span>
-									</div>
-
-									{arm.runtime && (
-										<>
-											<div className="flex justify-between items-center gap-3">
-												<span className="text-muted-foreground">Runtime state</span>
-												<Chip
-													size="sm"
-													variant="soft"
-													color={runtimeTone(arm.runtime.state)}
-												>
-													{arm.runtime.state}
-												</Chip>
-											</div>
-
-											<div className="flex justify-between gap-3">
-												<span className="text-muted-foreground">Last output</span>
-												<span className="text-right">
-													{formatAge(arm.runtime.secondsSinceOutput)}
-												</span>
-											</div>
-
-											<div className="flex justify-between gap-3">
-												<span className="text-muted-foreground">Heartbeat</span>
-												<span className="text-right">
-													{formatAge(arm.runtime.secondsSinceHeartbeat)}
-												</span>
-											</div>
-
-											<div className="rounded bg-default-100 p-2 text-xs text-muted-foreground">
-												{arm.runtime.reason}
-											</div>
-
-											<div className="rounded bg-default-100/60 px-2 py-1 font-mono text-[11px] text-muted-foreground">
-												status={arm.runtime.signals.dbStatus}
-												{" · "}
-												{arm.runtime.signals.hasPid ? "pid" : "no-pid"}
-												{" · "}
-												{arm.runtime.signals.hasPort ? "port" : "no-port"}
-												{" · "}
-												{arm.runtime.signals.hasSessionId ? "session" : "no-session"}
-												{" · "}
-												{arm.runtime.signals.hasAgentId ? "agent" : "local"}
-												{" · "}
-												{arm.runtime.signals.hasWorkdir ? "workdir" : "no-workdir"}
-												{" · "}
-												{arm.runtime.signals.hasAssignedTask ? "task" : "no-task"}
-											</div>
-										</>
-									)}
-
-									{(arm.host || arm.agentId) && (
-									<div className="flex justify-between gap-3">
-										<span className="text-muted-foreground">Runtime</span>
-										<span className="text-right">
-											{arm.host || arm.agentId}
-											{arm.host && arm.agentId ? ` · ${arm.agentId}` : ""}
-										</span>
-									</div>
-								)}
-
-									{(arm.port || arm.pid) && (
-										<div className="flex justify-between gap-3">
-											<span className="text-muted-foreground">Process</span>
-											<span className="text-right">
-												{arm.port ? `:${arm.port}` : "no port"}
-												{arm.pid ? ` · pid ${arm.pid}` : ""}
-											</span>
-										</div>
-									)}
-								</div>
-
-								{arm.personality && (
-									<div className="mt-4 p-3 bg-default-100 rounded text-xs text-muted-foreground">
-										{arm.personality.slice(0, 150)}...
-									</div>
-								)}
-
-								{(() => {
-									const action = armActionFor(arm);
-									if (!action) {
-										return null;
-									}
-
-									const isRecover = action.kind === "recover";
-									return (
-											<div className="mt-4 flex justify-end">
-												<Button
-													variant={isRecover ? "secondary" : "primary"}
-													size="sm"
-													onPress={() =>
-														void (isRecover ? handleRecover(arm) : handleSpawn(arm))
-													}
-													isDisabled={spawningArmId !== null}
-													className={isRecover ? "gap-2 text-warning" : "gap-2"}
-												>
-												{spawningArmId === arm.id ? (
-													<LoaderCircle className="h-4 w-4 animate-spin" />
-												) : isRecover ? (
-													<RotateCcw className="h-4 w-4" />
-												) : (
-													<Play className="h-4 w-4" />
-												)}
-												{spawningArmId === arm.id
-													? isRecover
-														? "Recovering..."
-														: "Starting..."
-													: action.label}
-											</Button>
-										</div>
-									);
-								})()}
-							</Card.Content>
-						</Card>
-					))}
+							) : (
+								healthyArms.map((arm) => (
+									<ArmRow
+										key={arm.id}
+										arm={arm}
+										attention={false}
+										spawningArmId={spawningArmId}
+										onOpen={() => openArmViewer(arm.id)}
+										onDelete={() => handleDelete(arm.id)}
+										onSpawn={() => handleSpawn(arm)}
+										onRecover={() => handleRecover(arm)}
+									/>
+								))
+							)}
+						</div>
+					</div>
 				</div>
 			)}
 

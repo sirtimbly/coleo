@@ -38,6 +38,8 @@ export {
   type AllArmsAnalysis,
   type EventWindowResponse,
   type RecentEventsResponse,
+  type SearchResult,
+  type SearchResponse,
 } from './api';
 export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';

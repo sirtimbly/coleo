@@ -129,6 +129,24 @@ describe("config loader", () => {
     }
   });
 
+  it("loadConfig maps legacy brain refactor threshold", async () => {
+    const dir = await createTempDir();
+    try {
+      await writeTomlConfig(
+        {
+          version: 1,
+          brain: { refactor_file_threshold_lines: 600 },
+        },
+        dir
+      );
+
+      const loaded = await loadConfig(dir);
+      expect(loaded.refactoring.fileSizeThreshold).toBe(600);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("updateConfig merges updates and writes TOML", async () => {
     const dir = await createTempDir();
     try {

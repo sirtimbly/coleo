@@ -30,9 +30,11 @@ The server runs in the background. Use dev_server_stop to stop it.`,
       // Not running, proceed to start
     }
 
-    // Start the server in background
-    const result = await Bun.$`bun run src/cli/index.ts serve &>/tmp/coleo-server.log &`.text();
-    
+    // Start the server via the daemon manager so it tracks PID/uptime
+    // (bare `serve` never writes ~/.coleo/run/server.pid, which breaks
+    // the Arms TUI's "service" status even though the API itself is up)
+    await Bun.$`bun run src/cli/index.ts serve start &>/tmp/coleo-server.log`.text();
+
     // Wait for server to be ready
     let attempts = 0;
     while (attempts < 10) {
@@ -58,7 +60,10 @@ export const server_stop = tool({
 Kills any running Coleo server process.`,
   args: {},
   async execute() {
-    const result = await Bun.$`pkill -f "bun.*cli/index.ts.*serve" 2>/dev/null || true`.text();
+    // Use the daemon manager's stop so the PID file is removed cleanly.
+    // Falls back to pkill in case the process was started outside `serve start`.
+    await Bun.$`bun run src/cli/index.ts serve stop -f 2>/dev/null || true`.text();
+    await Bun.$`pkill -f "bun.*cli/index.ts.*serve" 2>/dev/null || true`.text();
     
     // Verify it's stopped
     await new Promise(resolve => setTimeout(resolve, 500));

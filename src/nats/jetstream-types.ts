@@ -58,6 +58,7 @@ export interface IEventStore {
   getArmEvents(armId: string, limit?: number): Promise<EventData[]>;
   getEventsByType(eventType: string, limit?: number): Promise<EventData[]>;
   getRecentEvents(limit?: number, since?: Date): Promise<EventData[]>;
+  getStreamMetrics(): Promise<StreamMetrics>;
   isInitialized(): boolean;
 }
 

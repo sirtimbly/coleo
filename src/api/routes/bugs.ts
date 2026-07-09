@@ -83,6 +83,30 @@ function parseBugRow(row: BugRow & { assignee_arm_name?: string }): Bug {
   };
 }
 
+/**
+ * Optional FK helper for provenance columns (source_arm_id / source_task_id /
+ * assignee_arm_id). If the referenced row is missing, return null instead of
+ * letting SQLite raise FOREIGN KEY constraint failed on insert.
+ */
+function resolveOptionalFk(
+  db: Database,
+  table: "arms" | "tasks",
+  id: unknown,
+): string | null {
+  if (typeof id !== "string") return null;
+  const trimmed = id.trim();
+  if (!trimmed) return null;
+
+  try {
+    const row = db.query(`SELECT id FROM ${table} WHERE id = ? LIMIT 1`).get(trimmed) as
+      | { id: string }
+      | null;
+    return row?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function normalizeBugTitle(title: string): string {
   return title
     .toLowerCase()
@@ -417,6 +441,12 @@ export function createBugsRoutes() {
     const maxSortOrder = db.query("SELECT COALESCE(MAX(sort_order), -1) as max_sort FROM bugs").get() as { max_sort: number };
     const newSortOrder = (maxSortOrder?.max_sort ?? -1) + 1;
 
+    // Optional provenance FKs: arms report stale task/arm IDs often. Prefer nulling
+    // missing refs over failing the whole insert with a cryptic 500.
+    const sourceArmId = resolveOptionalFk(db, "arms", body.sourceArmId);
+    const sourceTaskId = resolveOptionalFk(db, "tasks", body.sourceTaskId);
+    const assigneeArmId = resolveOptionalFk(db, "arms", body.assigneeArmId);
+
     try {
       db.run(`
         INSERT INTO bugs (
@@ -429,10 +459,10 @@ export function createBugsRoutes() {
         body.title,
         body.description,
         body.source,
-        body.sourceArmId || null,
-        body.sourceTaskId || null,
+        sourceArmId,
+        sourceTaskId,
         priority,
-        body.assigneeArmId || null,
+        assigneeArmId,
         JSON.stringify(body.blockers || []),
         body.errorDetails || null,
         JSON.stringify(body.metadata || {}),
@@ -459,7 +489,9 @@ export function createBugsRoutes() {
         deduplicated: false,
       }, 201);
     } catch (err) {
-      throw HttpError.internal("Failed to create bug");
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error(`[bugs] Failed to create bug: ${detail}`);
+      throw HttpError.internal(`Failed to create bug: ${detail}`);
     }
   });
 

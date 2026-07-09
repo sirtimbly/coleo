@@ -87,10 +87,28 @@ function formatUptime(seconds?: number): string {
 }
 
 function pushSection(lines: string[], title: string, rows: string[]): void {
-  lines.push(title);
-  lines.push("-".repeat(title.length));
-  lines.push(...rows);
+  lines.push(`── ${title} ${"─".repeat(Math.max(2, 48 - title.length))}`);
+  if (rows.length === 0) {
+    lines.push("  · none");
+  } else {
+    lines.push(...rows);
+  }
   lines.push("");
+}
+
+function shortId(value?: string | null): string {
+  if (!value) return "";
+  if (value.length <= 12) return value;
+  return `${value.slice(0, 8)}…`;
+}
+
+function roleLabel(role?: string | null): string {
+  const normalized = (role || "unknown").toLowerCase();
+  if (normalized === "assistant") return "assistant";
+  if (normalized === "user") return "user";
+  if (normalized === "system") return "system";
+  if (normalized === "tool") return "tool";
+  return normalized;
 }
 
 function flattenMessageParts(message: DashboardArmMessage): string[] {
@@ -105,33 +123,44 @@ function flattenMessageParts(message: DashboardArmMessage): string[] {
     if ((part.type === "tool-invocation" || part.type === "tool") && (part.toolName || part.name)) {
       const toolName = part.toolName || part.name || "unknown";
       const state = part.state || part.status || "completed";
-      lines.push(`  [tool] ${toolName} (${state})`);
+      lines.push(`  · tool ${toolName}  [${state}]`);
     }
-  }
-
-  if (lines.length === 0) {
-    lines.push("  (no visible content)");
   }
 
   return lines;
 }
 
 function formatArmMessages(messages: DashboardArmMessage[]): string[] {
+  if (messages.length === 0) {
+    return ["  · no messages yet"];
+  }
+
   const lines: string[] = [];
 
   for (const message of messages) {
-    const role = message.info.role || "unknown";
-    lines.push(`${role.toUpperCase()}  ${message.info.id}`);
-    lines.push(...flattenMessageParts(message));
+    const role = roleLabel(message.info.role);
+    const id = shortId(message.info.id);
+    lines.push(`▸ ${role}${id ? `  ${id}` : ""}`);
+    const parts = flattenMessageParts(message);
+    if (parts.length === 0) {
+      lines.push("  · empty");
+    } else {
+      lines.push(...parts);
+    }
     lines.push("");
   }
 
-  return lines.length > 0 ? lines : ["(no messages yet)"];
+  // Drop trailing blank from the last message so the section separator stays tight.
+  if (lines[lines.length - 1] === "") {
+    lines.pop();
+  }
+
+  return lines;
 }
 
 function formatActivityRows(entries: DashboardActivityEntry[]): string[] {
   if (entries.length === 0) {
-    return ["(no recent activity)"];
+    return ["  · no recent activity"];
   }
 
   return entries.map((entry) => {
@@ -141,7 +170,7 @@ function formatActivityRows(entries: DashboardActivityEntry[]): string[] {
       .join(" ");
 
     return [
-      formatDateTime(entry.timestamp),
+      `  ${formatAge(entry.timestamp)}`,
       entry.actor || "unknown",
       entry.action,
       details,
@@ -151,16 +180,16 @@ function formatActivityRows(entries: DashboardActivityEntry[]): string[] {
 
 function formatDiscoveryRows(discoveries: DashboardDiscovery[]): string[] {
   if (discoveries.length === 0) {
-    return ["(no discoveries)"];
+    return ["  · no discoveries"];
   }
 
   const rows: string[] = [];
   for (const discovery of discoveries) {
     rows.push(
-      `[${discovery.severity}] ${discovery.title}  ${discovery.armName || discovery.armId}  ${formatAge(discovery.createdAt)}`,
+      `▸ [${discovery.severity}] ${discovery.title}  ·  ${discovery.armName || discovery.armId}  ·  ${formatAge(discovery.createdAt)}`,
     );
     if (discovery.filePath) {
-      rows.push(`  file: ${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`);
+      rows.push(`  file  ${discovery.filePath}${discovery.lineNumber ? `:${discovery.lineNumber}` : ""}`);
     }
     rows.push(`  ${discovery.details}`);
     rows.push("");
@@ -171,17 +200,17 @@ function formatDiscoveryRows(discoveries: DashboardDiscovery[]): string[] {
 
 function formatStatusReportRows(reports: DashboardStatusReport[]): string[] {
   if (reports.length === 0) {
-    return ["(no status reports)"];
+    return ["  · no status reports"];
   }
 
   const rows: string[] = [];
   for (const report of reports) {
     rows.push(
-      `[${report.status}] ${report.armId} -> ${report.taskId}  ${formatAge(report.createdAt)}`,
+      `▸ [${report.status}] ${report.armId} → ${report.taskId}  ·  ${formatAge(report.createdAt)}`,
     );
     rows.push(`  ${report.summary}`);
     if (report.nextSteps) {
-      rows.push(`  next: ${report.nextSteps}`);
+      rows.push(`  next  ${report.nextSteps}`);
     }
     rows.push("");
   }
@@ -521,20 +550,28 @@ export function buildViewForNode(
     case "brain": {
       const lines: string[] = [];
       pushSection(lines, "Overview", [
-        `service: ${snapshot.brainService.running ? "running" : "stopped"}`,
-        `pid: ${snapshot.brainService.pid || "n/a"}`,
-        `uptime: ${formatUptime(snapshot.brainService.uptime)}`,
-        `brain state: ${snapshot.brainState?.status || "unknown"}`,
-        `last poll: ${formatDateTime(snapshot.brainState?.lastPollAt)}`,
-        `poll interval: ${snapshot.brainState?.pollIntervalMs || "n/a"}ms`,
-        `pending tasks: ${snapshot.brainState?.pendingTasks ?? "n/a"}`,
-        `completed today: ${snapshot.brainState?.completedToday ?? "n/a"}`,
+        `  service         ${snapshot.brainService.running ? "running" : "stopped"}`,
+        `  pid             ${snapshot.brainService.pid || "n/a"}`,
+        `  uptime          ${formatUptime(snapshot.brainService.uptime)}`,
+        `  brain state     ${snapshot.brainState?.status || "unknown"}`,
+        `  last poll       ${formatAge(snapshot.brainState?.lastPollAt)}`,
+        `  poll interval   ${snapshot.brainState?.pollIntervalMs || "n/a"}ms`,
+        `  pending tasks   ${snapshot.brainState?.pendingTasks ?? "n/a"}`,
+        `  completed today ${snapshot.brainState?.completedToday ?? "n/a"}`,
       ]);
-      pushSection(lines, "Brain Log", snapshot.brainLogLines.length > 0 ? snapshot.brainLogLines : ["(no persisted brain log yet)"]);
+      pushSection(
+        lines,
+        "Brain Log",
+        snapshot.brainLogLines.length > 0
+          ? snapshot.brainLogLines.map((line) => `  ${line}`)
+          : ["  · no persisted brain log yet"],
+      );
 
       return {
         title: "Brain",
-        subtitle: "Service state and persisted brain log",
+        subtitle: snapshot.brainService.running
+          ? `running · ${formatUptime(snapshot.brainService.uptime)}`
+          : "stopped",
         lines,
       };
     }
@@ -542,15 +579,21 @@ export function buildViewForNode(
       const activeArms = snapshot.arms.filter((arm) => arm.status !== "stopped");
       const lines: string[] = [];
       pushSection(lines, "Summary", [
-        `api available: ${snapshot.apiAvailable ? "yes" : "no"}`,
-        `active arms: ${activeArms.length}`,
-        `total known arms: ${snapshot.arms.length}`,
+        `  api            ${snapshot.apiAvailable ? "reachable" : "unreachable"}`,
+        `  active arms    ${activeArms.length}`,
+        `  known arms     ${snapshot.arms.length}`,
       ]);
-      pushSection(lines, "Active Arms", activeArms.length > 0 ? activeArms.map(buildArmRow) : ["(no active arms)"]);
+      pushSection(
+        lines,
+        "Active Arms",
+        activeArms.length > 0
+          ? activeArms.map((arm) => `  ${buildArmRow(arm)}`)
+          : ["  · no active arms"],
+      );
 
       return {
         title: "Arms",
-        subtitle: "Live arm status overview",
+        subtitle: `${activeArms.length} active`,
         lines,
       };
     }
@@ -562,36 +605,39 @@ export function buildViewForNode(
         lines.push("Arm details are unavailable.");
         return {
           title: node.label,
-          subtitle: "Arm detail view",
+          subtitle: "arm detail",
           lines,
         };
       }
 
-      pushSection(lines, "Overview", [
-        `status: ${arm.status}`,
-        `runtime: ${arm.runtime?.state || "unknown"}`,
-        `reason: ${arm.runtime?.reason || "n/a"}`,
-        `task: ${arm.currentTaskSubject || "(none)"}`,
-        `bug: ${arm.currentBugTitle || "(none)"}`,
-        `provider/model: ${arm.provider ? `${arm.provider}/${arm.model || "default"}` : arm.model || "default"}`,
-        `workdir: ${arm.workdir || "n/a"}`,
-        `host: ${arm.host || "local"}`,
-        `session: ${arm.sessionId || "n/a"}`,
-        `last activity: ${formatDateTime(arm.lastActivityAt || arm.runtime?.lastActivityAt)}`,
-        `last heartbeat: ${formatDateTime(arm.lastHeartbeat || arm.runtime?.lastHeartbeatAt)}`,
-        `last output: ${formatDateTime(arm.lastOutputAt || arm.runtime?.lastOutputAt)}`,
-      ]);
+      const task = arm.currentTaskSubject || arm.currentBugTitle || "none";
+      const model = arm.provider
+        ? `${arm.provider}/${arm.model || "default"}`
+        : (arm.model || "default");
 
-      pushSection(lines, "Recent Messages", armDetail?.messagesError
-        ? [`message fetch error: ${armDetail.messagesError}`]
+      pushSection(lines, "Overview", [
+        `  status     ${arm.status} · ${arm.runtime?.state || "unknown"}`,
+        `  task       ${task}`,
+        `  model      ${model}`,
+        `  workdir    ${arm.workdir || "n/a"}`,
+        `  host       ${arm.host || "local"}`,
+        `  session    ${shortId(arm.sessionId) || "n/a"}`,
+        `  activity   ${formatAge(arm.lastActivityAt || arm.runtime?.lastActivityAt)}`,
+        `  heartbeat  ${formatAge(arm.lastHeartbeat || arm.runtime?.lastHeartbeatAt)}`,
+        `  output     ${formatAge(arm.lastOutputAt || arm.runtime?.lastOutputAt)}`,
+        arm.runtime?.reason ? `  reason     ${arm.runtime.reason}` : "",
+      ].filter((row) => row.length > 0));
+
+      pushSection(lines, "Messages", armDetail?.messagesError
+        ? [`  · fetch error: ${armDetail.messagesError}`]
         : formatArmMessages(armDetail?.messages || []));
-      pushSection(lines, "Recent Activity", armDetail?.activityMessage
-        ? [`activity message: ${armDetail.activityMessage}`]
+      pushSection(lines, "Activity", armDetail?.activityMessage
+        ? [`  · ${armDetail.activityMessage}`]
         : formatActivityRows(armDetail?.activity || []));
 
       return {
         title: arm.name || arm.id,
-        subtitle: "Arm detail, messages, and activity",
+        subtitle: `${arm.status} · ${task}`,
         lines,
       };
     }
@@ -632,54 +678,66 @@ export function buildViewForNode(
     case "api": {
       const lines: string[] = [];
       pushSection(lines, "Overview", [
-        `service: ${snapshot.serverService.running ? "running" : "stopped"}`,
-        `pid: ${snapshot.serverService.pid || "n/a"}`,
-        `uptime: ${formatUptime(snapshot.serverService.uptime)}`,
-        `api reachable: ${snapshot.apiAvailable ? "yes" : "no"}`,
-        `started: ${formatDateTime(snapshot.systemStatus?.startedAt)}`,
+        `  service        ${snapshot.serverService.running ? "running" : "stopped"}`,
+        `  pid            ${snapshot.serverService.pid || "n/a"}`,
+        `  uptime         ${formatUptime(snapshot.serverService.uptime)}`,
+        `  api reachable  ${snapshot.apiAvailable ? "yes" : "no"}`,
+        `  started        ${formatAge(snapshot.systemStatus?.startedAt)}`,
       ]);
       if (snapshot.systemStatus?.infrastructure) {
         pushSection(lines, "Infrastructure", [
-          `database: ${snapshot.systemStatus.infrastructure.database?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.database?.error || "unhealthy"}`,
-          `nats: ${snapshot.systemStatus.infrastructure.nats?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.nats?.error || "unhealthy"}`,
-          `maildir: ${snapshot.systemStatus.infrastructure.maildir?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.maildir?.error || "unhealthy"}`,
-          `qdrant: ${snapshot.systemStatus.infrastructure.qdrant?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.qdrant?.error || "unhealthy"}`,
+          `  database  ${snapshot.systemStatus.infrastructure.database?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.database?.error || "unhealthy"}`,
+          `  nats      ${snapshot.systemStatus.infrastructure.nats?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.nats?.error || "unhealthy"}`,
+          `  maildir   ${snapshot.systemStatus.infrastructure.maildir?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.maildir?.error || "unhealthy"}`,
+          `  qdrant    ${snapshot.systemStatus.infrastructure.qdrant?.healthy ? "healthy" : snapshot.systemStatus.infrastructure.qdrant?.error || "unhealthy"}`,
         ]);
       }
-      pushSection(lines, "API Log", snapshot.serverLogLines.length > 0 ? snapshot.serverLogLines : ["(no server log yet)"]);
+      pushSection(
+        lines,
+        "API Log",
+        snapshot.serverLogLines.length > 0
+          ? snapshot.serverLogLines.map((line) => `  ${line}`)
+          : ["  · no server log yet"],
+      );
 
       return {
         title: "API",
-        subtitle: "API service status and daemon log",
+        subtitle: snapshot.serverService.running
+          ? `running · ${formatUptime(snapshot.serverService.uptime)}`
+          : snapshot.apiAvailable
+            ? "reachable · unmanaged"
+            : "stopped",
         lines,
       };
     }
     case "nats": {
       const lines: string[] = [];
       pushSection(lines, "Overview", [
-        `nats health: ${snapshot.systemStatus?.infrastructure?.nats?.healthy ? "healthy" : snapshot.systemStatus?.infrastructure?.nats?.error || "unknown"}`,
-        `indexer service: ${snapshot.indexerService.running ? "running" : "stopped"}`,
-        `indexer uptime: ${formatUptime(snapshot.indexerService.uptime)}`,
+        `  nats health      ${snapshot.systemStatus?.infrastructure?.nats?.healthy ? "healthy" : snapshot.systemStatus?.infrastructure?.nats?.error || "unknown"}`,
+        `  indexer service  ${snapshot.indexerService.running ? "running" : "stopped"}`,
+        `  indexer uptime   ${formatUptime(snapshot.indexerService.uptime)}`,
       ]);
       if (snapshot.indexerHealth) {
         pushSection(lines, "Indexer Health", [
-          `status: ${snapshot.indexerHealth.status}`,
-          `stream: ${snapshot.indexerHealth.stream}`,
-          `durable: ${snapshot.indexerHealth.durable}`,
-          `consumer found: ${snapshot.indexerHealth.consumerFound ? "yes" : "no"}`,
-          `lag messages: ${snapshot.indexerHealth.lagMessages ?? "n/a"}`,
-          `ack pending: ${snapshot.indexerHealth.ackPending ?? "n/a"}`,
-          `last active: ${formatDateTime(snapshot.indexerHealth.lastActive)}`,
-          `updated: ${formatDateTime(snapshot.indexerHealth.updatedAt)}`,
-          snapshot.indexerHealth.message ? `message: ${snapshot.indexerHealth.message}` : "message: n/a",
+          `  status          ${snapshot.indexerHealth.status}`,
+          `  stream          ${snapshot.indexerHealth.stream}`,
+          `  durable         ${snapshot.indexerHealth.durable}`,
+          `  consumer found  ${snapshot.indexerHealth.consumerFound ? "yes" : "no"}`,
+          `  lag messages    ${snapshot.indexerHealth.lagMessages ?? "n/a"}`,
+          `  ack pending     ${snapshot.indexerHealth.ackPending ?? "n/a"}`,
+          `  last active     ${formatAge(snapshot.indexerHealth.lastActive)}`,
+          `  updated         ${formatAge(snapshot.indexerHealth.updatedAt)}`,
+          snapshot.indexerHealth.message
+            ? `  message         ${snapshot.indexerHealth.message}`
+            : "  message         n/a",
         ]);
       } else {
-        pushSection(lines, "Indexer Health", ["(indexer health unavailable)"]);
+        pushSection(lines, "Indexer Health", ["  · indexer health unavailable"]);
       }
 
       return {
         title: "NATS",
-        subtitle: "JetStream and transcript indexer health",
+        subtitle: snapshot.systemStatus?.infrastructure?.nats?.healthy ? "healthy" : "degraded",
         lines,
       };
     }

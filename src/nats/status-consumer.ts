@@ -6,7 +6,7 @@
  */
 
 import { DeliverPolicy, AckPolicy } from "nats";
-import type { ConsumerConfig, ConsumerInfo, JsMsg } from "nats";
+import type { ConsumerInfo, JetStreamClient, JsMsg } from "nats";
 import { eventStore, EventStore, type EventData } from "./jetstream";
 
 export interface StatusEvent {
@@ -27,6 +27,22 @@ export interface StatusConsumerOptions {
 	entityType?: "arm" | "task" | "system";
 	/** Optional filter by specific entity ID */
 	entityId?: string;
+	/** Optional JetStream client override for tests or embedded consumers */
+	jetstream?: JetStreamClient;
+}
+
+type StatusEventType = StatusEvent["type"];
+
+function isStatusEventType(type: string): type is StatusEventType {
+	return (
+		type === "arm.status_changed" ||
+		type === "task.status_changed" ||
+		type === "system.status"
+	);
+}
+
+function valueAsString(value: unknown): string | undefined {
+	return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -101,28 +117,34 @@ export class StatusEventsConsumer {
 	 * Build filter subjects based on options
 	 */
 	private buildFilterSubjects(): string[] {
-		const subjects: string[] = [];
+		const entityId = this.options.entityId;
 
 		if (this.options.entityType) {
 			// Filter by entity type
 			switch (this.options.entityType) {
 				case "arm":
-					subjects.push("coleo.events.arm.status_changed");
-					break;
+					return [
+						entityId
+							? `coleo.events.arm.${entityId}.status_changed`
+							: "coleo.events.arm.*.status_changed",
+					];
 				case "task":
-					subjects.push("coleo.events.task.status_changed");
-					break;
+					return [
+						entityId
+							? `coleo.events.task.${entityId}.status_changed`
+							: "coleo.events.task.*.status_changed",
+					];
 				case "system":
-					subjects.push("coleo.events.system.status");
-					break;
+					return ["coleo.events.system.status"];
 			}
-		} else {
-			// All status events
-			subjects.push("coleo.events.*.status_changed");
-			subjects.push("coleo.events.system.status");
 		}
 
-		return subjects;
+		// All status events
+		return [
+			"coleo.events.arm.*.status_changed",
+			"coleo.events.task.*.status_changed",
+			"coleo.events.system.status",
+		];
 	}
 
 	/**
@@ -132,8 +154,7 @@ export class StatusEventsConsumer {
 		if (!this.consumer) return;
 
 		try {
-			// Get the JetStream client
-			const js = (eventStore as any).js;
+			const js = this.options.jetstream ?? (eventStore as unknown as { js?: JetStreamClient }).js;
 			if (!js) {
 				console.error(`[StatusConsumer:${this.options.name}] JetStream not available`);
 				return;
@@ -190,35 +211,51 @@ export class StatusEventsConsumer {
 	/**
 	 * Parse EventData into StatusEvent
 	 */
-	private parseStatusEvent(data: EventData): StatusEvent | null {
+	parseStatusEvent(data: EventData): StatusEvent | null {
 		// Determine event type and extract status info
-		if (data.type === "arm.status_changed") {
+		const eventType = data.type === "status_changed" ? "arm.status_changed" : data.type;
+		if (!isStatusEventType(eventType)) return null;
+
+		if (eventType === "arm.status_changed") {
+			const newStatus = valueAsString(data.data.to) ?? valueAsString(data.data.newStatus);
+			if (!newStatus) return null;
+
 			return {
 				type: "arm.status_changed",
-				entityId: data.armId || (data.data.armId as string) || "unknown",
-				oldStatus: data.data.from as string,
-				newStatus: data.data.to as string,
+				entityId: data.armId || valueAsString(data.data.armId) || "unknown",
+				oldStatus: valueAsString(data.data.from) ?? valueAsString(data.data.oldStatus),
+				newStatus,
 				timestamp: data.timestamp,
 				data: data.data,
 			};
 		}
 
-		if (data.type === "task.status_changed") {
+		if (eventType === "task.status_changed") {
+			const taskId = valueAsString(data.data.taskId) ?? valueAsString(data.data.id);
+			const newStatus =
+				valueAsString(data.data.to) ??
+				valueAsString(data.data.newStatus) ??
+				valueAsString(data.data.status);
+			if (!taskId || !newStatus) return null;
+
 			return {
 				type: "task.status_changed",
-				entityId: data.data.taskId as string,
-				oldStatus: data.data.from as string,
-				newStatus: data.data.to as string,
+				entityId: taskId,
+				oldStatus: valueAsString(data.data.from) ?? valueAsString(data.data.oldStatus),
+				newStatus,
 				timestamp: data.timestamp,
 				data: data.data,
 			};
 		}
 
-		if (data.type === "system.status") {
+		if (eventType === "system.status") {
+			const newStatus = valueAsString(data.data.status) ?? valueAsString(data.data.newStatus);
+			if (!newStatus) return null;
+
 			return {
 				type: "system.status",
 				entityId: "system",
-				newStatus: data.data.status as string,
+				newStatus,
 				timestamp: data.timestamp,
 				data: data.data,
 			};
