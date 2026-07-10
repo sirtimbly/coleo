@@ -122,10 +122,17 @@ const formatEventTitle = (event: RecentEvent) => {
   const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
   const bugId = getDataString(event.data, ['bugId', 'bug_id']);
   const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
+  const summary = getDataString(event.data, ['summary', 'title', 'content']);
 
   if (event.type === 'arm.status_changed' && armId) {
     const newStatus = getDataString(event.data, ['to', 'newStatus', 'status']);
     return newStatus ? `Arm ${armId} is ${newStatus}` : `${label}: ${armId}`;
+  }
+
+  if (event.type === 'task.status_reported' && summary) {
+    const status = getDataString(event.data, ['status', 'newStatus']);
+    const prefix = status ? status.replace(/_/g, ' ') : 'status';
+    return `${prefix}: ${summary.slice(0, 80)}${summary.length > 80 ? '…' : ''}`;
   }
 
   const subject = taskId ? `Task ${taskId}` : bugId ? `Bug ${bugId}` : armId ? `Arm ${armId}` : null;
@@ -642,6 +649,13 @@ function NotableEventsSection({
           <CardTitle className="group-hover:text-accent">Notable Events</CardTitle>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
         </button>
+        <button
+          type="button"
+          onClick={() => onNavigate("/status-reports")}
+          className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground hover:text-accent"
+        >
+          Search history
+        </button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -662,7 +676,16 @@ function NotableEventsSection({
             <p className="text-xs text-muted-foreground mt-1">Event stream may be unavailable.</p>
           </div>
         ) : events.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No notable events yet</p>
+          <div className="space-y-2">
+            <p className="text-muted-foreground text-sm">No notable events yet</p>
+            <button
+              type="button"
+              onClick={() => onNavigate("/status-reports")}
+              className="text-xs text-accent hover:underline"
+            >
+              Open status history search
+            </button>
+          </div>
         ) : (
           <div className="space-y-1">
             {events.map((event, index) => {
@@ -673,16 +696,16 @@ function NotableEventsSection({
               const target = taskId
                 ? { pathname: '/tasks', search: `?task=${encodeURIComponent(taskId)}&view=details` }
                 : bugId
-                  ? { pathname: '/bugs', search: '' }
+                  ? { pathname: '/bugs', search: `?bug=${encodeURIComponent(bugId)}` }
                   : armId
                     ? { pathname: '/viewer', search: `?arm=${encodeURIComponent(armId)}` }
-                    : null;
+                    : { pathname: '/status-reports', search: '' };
 
               const rowContent = (
                 <>
                   <div className={`h-2 w-2 rounded-full mt-1.5 ${getEventDotClass(event)}`} />
-                  <div className="flex-1">
-                    <p className="font-medium">{formatEventTitle(event)}</p>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{formatEventTitle(event)}</p>
                     <p className="text-xs text-muted-foreground">
                       {meta.length > 0 ? `${meta.join(' • ')} • ` : ''}
                       {new Date(event.timestamp).toLocaleString()}
@@ -691,7 +714,7 @@ function NotableEventsSection({
                 </>
               );
 
-              return target ? (
+              return (
                 <button
                   key={`${event.type}-${event.timestamp}-${index}`}
                   type="button"
@@ -700,10 +723,6 @@ function NotableEventsSection({
                 >
                   {rowContent}
                 </button>
-              ) : (
-                <div key={`${event.type}-${event.timestamp}-${index}`} className="flex items-start gap-3 px-1 py-1 text-sm">
-                  {rowContent}
-                </div>
               );
             })}
           </div>
@@ -814,12 +833,66 @@ export function DashboardPage() {
   const loadNotableEvents = useCallback(async () => {
     setEventsLoading(true);
     try {
-      const eventsRes = await api.getRecentEvents({ limit: 60, sinceMs: 1000 * 60 * 60 * 24 });
-      const filtered = eventsRes.events.filter(isNotableEvent).slice(0, 6);
-      setNotableEvents(filtered);
+      // Prefer live event stream; fall back to high-signal status reports so the
+      // widget still has content when JetStream is empty/unavailable.
+      const eventsRes = await api.getRecentEvents({ limit: 80, sinceMs: 1000 * 60 * 60 * 24 });
+      let filtered = eventsRes.events.filter(isNotableEvent);
+
+      if (filtered.length < 6) {
+        try {
+          const reportsRes = await api.listStatusReports({ limit: 20 });
+          const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
+          const reportEvents: RecentEvent[] = reportsRes.reports
+            .filter((r) => HIGH_SIGNAL.has(r.status))
+            .map((r) => ({
+              type: 'task.status_reported',
+              timestamp: r.createdAt,
+              armId: r.armId,
+              data: {
+                taskId: r.taskId,
+                status: r.status,
+                summary: r.summary,
+              },
+            }));
+          const seen = new Set(filtered.map((e) => `${e.type}-${e.timestamp}-${e.armId}`));
+          for (const re of reportEvents) {
+            const key = `${re.type}-${re.timestamp}-${re.armId}`;
+            if (!seen.has(key)) {
+              filtered.push(re);
+              seen.add(key);
+            }
+          }
+          filtered = filtered
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        } catch {
+          // status reports optional
+        }
+      }
+
+      setNotableEvents(filtered.slice(0, 8));
       setEventsError(null);
     } catch (err) {
-      setEventsError(err instanceof Error ? err.message : 'Failed to load events');
+      // Full fallback: status reports only
+      try {
+        const reportsRes = await api.listStatusReports({ limit: 8 });
+        const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
+        const reportEvents: RecentEvent[] = reportsRes.reports
+          .filter((r) => HIGH_SIGNAL.has(r.status))
+          .map((r) => ({
+            type: 'task.status_reported',
+            timestamp: r.createdAt,
+            armId: r.armId,
+            data: {
+              taskId: r.taskId,
+              status: r.status,
+              summary: r.summary,
+            },
+          }));
+        setNotableEvents(reportEvents.slice(0, 8));
+        setEventsError(null);
+      } catch {
+        setEventsError(err instanceof Error ? err.message : 'Failed to load events');
+      }
     } finally {
       setEventsLoading(false);
     }
