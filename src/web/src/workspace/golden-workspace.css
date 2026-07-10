@@ -1,6 +1,6 @@
 .golden-workspace-shell {
-  --golden-shell-radius: 14px;
-  --golden-panel-radius: 12px;
+  --golden-shell-radius: 4px;
+  --golden-panel-radius: 2px;
   --golden-control-radius: 10px;
   --golden-control-height: 36px;
   --golden-border: color-mix(in oklch, var(--border) 88%, transparent);
@@ -405,11 +405,11 @@
 }
 
 .golden-workspace-layout .lm_header {
-  background: transparent !important;
-  border-bottom: 1px solid color-mix(in oklch, var(--border) 88%, transparent) !important;
+  background: color-mix(in oklch, var(--border) 88%, transparent) !important;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 98%, transparent) !important;
   border-radius: 0 !important;
-  height: 40px !important;
-  margin: 0 10px !important;
+  height: 28px !important;
+  margin: 2px 2px;
   padding: 8px 0 6px !important;
 }
 
@@ -417,8 +417,10 @@
   top: 0;
   left: 0;
   right: 0;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 2px;
   padding: 0;
 }
 
@@ -430,7 +432,7 @@
   min-height: 26px;
   height: 26px !important;
   border: 1px solid color-mix(in oklch, var(--border) 58%, transparent) !important;
-  border-radius: 999px !important;
+  border-radius: 1px !important;
   background: var(--surface-secondary) !important;
   color: color-mix(in oklch, var(--foreground) 62%, transparent) !important;
   padding: 0 28px 0 12px !important;
