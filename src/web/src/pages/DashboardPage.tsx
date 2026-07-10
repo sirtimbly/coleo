@@ -1,10 +1,13 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent, StatusBadge } from '@/components';
-import { Button, Chip, Surface, Skeleton, Disclosure } from '@heroui/react';
+import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
+import { Chip, Skeleton, Disclosure, Button } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { useWorkspaceOpenRoute } from '@/workspace/route-context';
+
+type Navigate = (pathname: string, search?: string) => void;
 
 interface SystemStatus {
   status: string;
@@ -37,6 +40,8 @@ interface SystemStatus {
     indexer: { healthy: boolean; optional: boolean; running: boolean; error?: string };
   };
 }
+
+type BrainStatus = Awaited<ReturnType<typeof api.getBrainStatus>>['brain'];
 
 const healthColorMap: Record<string, "success" | "warning" | "danger" | "default"> = {
   healthy: "success",
@@ -150,367 +155,305 @@ const getEventDotClass = (event: RecentEvent) => {
   return 'bg-accent';
 };
 
-function InfrastructureCard({ infrastructure, isLoading }: { infrastructure?: SystemStatus['infrastructure'], isLoading: boolean }) {
-  const qdrant = infrastructure?.qdrant ?? {
-    healthy: false,
-    optional: true,
-    error: "Status unavailable",
-  };
-  const indexer = infrastructure?.indexer ?? {
-    healthy: false,
-    optional: true,
-    running: false,
-    error: "Status unavailable",
-  };
+const formatLastSeen = (timestamp?: string | null) => {
+  if (!timestamp) return 'Never';
+  const ms = Date.now() - new Date(timestamp).getTime();
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+};
 
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Infrastructure Health</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-center gap-3">
-                <Skeleton className="h-5 w-5 rounded" />
-                <div className="flex-1">
-                  <Skeleton className="h-4 w-20 rounded mb-1" />
-                  <Skeleton className="h-3 w-16 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : !infrastructure ? null : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-            <div className="flex items-center gap-3">
-              <Database className="h-5 w-5 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Database</span>
-                  <Chip
-                    size="sm"
-                    variant="soft"
-                    color={infrastructure.database.healthy ? "success" : "danger"}
-                  >
-                    {infrastructure.database.healthy ? "Healthy" : "Error"}
-                  </Chip>
-                </div>
-                {infrastructure.database.error && (
-                  <p className="text-xs text-danger mt-1">{infrastructure.database.error}</p>
-                )}
-              </div>
-            </div>
+const formatUptime = (seconds: number) => {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+};
 
-            <div className="flex items-center gap-3">
-              <MessageSquare className="h-5 w-5 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">NATS</span>
-                  <Chip
-                    size="sm"
-                    variant="soft"
-                    color={infrastructure.nats.healthy ? "success" : infrastructure.nats.optional ? "warning" : "danger"}
-                  >
-                    {infrastructure.nats.healthy ? "Healthy" : infrastructure.nats.optional ? "Optional" : "Error"}
-                  </Chip>
-                  {infrastructure.nats.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
-                </div>
-                {infrastructure.nats.error && (
-                  <p className="text-xs text-warning mt-1">{infrastructure.nats.error}</p>
-                )}
-              </div>
-            </div>
+// ---------------------------------------------------------------------------
 
-            <div className="flex items-center gap-3">
-              <Activity className="h-5 w-5 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Maildir</span>
-                  <Chip
-                    size="sm"
-                    variant="soft"
-                    color={infrastructure.maildir.healthy ? "success" : "danger"}
-                  >
-                    {infrastructure.maildir.healthy ? "Healthy" : "Error"}
-                  </Chip>
-                </div>
-                {infrastructure.maildir.error && (
-                  <p className="text-xs text-danger mt-1">{infrastructure.maildir.error}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Database className="h-5 w-5 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Qdrant</span>
-                  <Chip
-                    size="sm"
-                    variant="soft"
-                    color={qdrant.healthy ? "success" : qdrant.optional ? "warning" : "danger"}
-                  >
-                    {qdrant.healthy ? "Healthy" : qdrant.optional ? "Optional" : "Error"}
-                  </Chip>
-                  {qdrant.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
-                </div>
-                {qdrant.error && (
-                  <p className="text-xs text-warning mt-1">{qdrant.error}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <Bot className="h-5 w-5 text-muted-foreground" />
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">Indexer</span>
-                  <Chip
-                    size="sm"
-                    variant="soft"
-                    color={indexer.running ? "success" : indexer.optional ? "warning" : "danger"}
-                  >
-                    {indexer.running ? "Running" : indexer.optional ? "Optional" : "Error"}
-                  </Chip>
-                  {indexer.optional && <span className="text-xs text-muted-foreground">(optional)</span>}
-                </div>
-                {indexer.error && (
-                  <p className="text-xs text-warning mt-1">{indexer.error}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function TranscriptIndexerCard({
-  health,
+function InfrastructureSection({
+  infrastructure,
+  indexerHealth,
   isLoading,
+  indexerLoading,
 }: {
-  health?: TranscriptIndexerHealth | null;
+  infrastructure?: SystemStatus['infrastructure'];
+  indexerHealth?: TranscriptIndexerHealth | null;
   isLoading: boolean;
+  indexerLoading: boolean;
 }) {
+  const qdrant = infrastructure?.qdrant ?? { healthy: false, optional: true, error: "Status unavailable" };
+  const indexer = infrastructure?.indexer ?? { healthy: false, optional: true, running: false, error: "Status unavailable" };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Transcript Indexer</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-5 w-32 rounded" />
-            <Skeleton className="h-4 w-48 rounded" />
-            <Skeleton className="h-4 w-40 rounded" />
-          </div>
-        ) : !health ? (
-          <p className="text-sm text-muted-foreground">No indexer data available</p>
-        ) : (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="font-medium">Status</div>
-              <Chip size="sm" variant="soft" color={indexerColorMap[health.status]}>
-                {health.status}
-              </Chip>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              <div>Stream: <span className="font-mono">{health.stream}</span></div>
-              <div>Durable: <span className="font-mono">{health.durable}</span></div>
-            </div>
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-muted-foreground">Lag</p>
-                <p className="font-semibold">{health.lagMessages ?? "-"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Ack Pending</p>
-                <p className="font-semibold">{health.ackPending ?? "-"}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Last Active</p>
-                <p className="font-semibold">{formatLastSeen(health.lastActive || undefined)}</p>
-              </div>
-              <div>
-                <p className="text-muted-foreground">Consumer Seq</p>
-                <p className="font-semibold">{health.consumerSeq ?? "-"}</p>
-              </div>
-            </div>
-            {health.message && (
-              <p className="text-xs text-warning">{health.message}</p>
+    <DenseSection title="Infrastructure & Services">
+      {isLoading ? (
+        <>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <DenseRowSkeleton key={i} />
+          ))}
+        </>
+      ) : !infrastructure ? (
+        <div className="px-4 py-6 text-center text-sm text-muted-foreground">No infrastructure data available</div>
+      ) : (
+        <>
+          <DenseRow
+            tone={infrastructure.database.healthy ? "success" : "danger"}
+            label="Database"
+            detail={infrastructure.database.error}
+            detailTone="danger"
+            chipLabel={infrastructure.database.healthy ? "Healthy" : "Error"}
+            chipColor={infrastructure.database.healthy ? "success" : "danger"}
+          />
+          <DenseRow
+            tone={infrastructure.nats.healthy ? "success" : infrastructure.nats.optional ? "warning" : "danger"}
+            label="NATS"
+            badge={infrastructure.nats.optional && (
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">optional</span>
             )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+            detail={infrastructure.nats.error}
+            detailTone="warning"
+            chipLabel={infrastructure.nats.healthy ? "Healthy" : infrastructure.nats.optional ? "Optional" : "Error"}
+            chipColor={infrastructure.nats.healthy ? "success" : infrastructure.nats.optional ? "warning" : "danger"}
+          />
+          <DenseRow
+            tone={infrastructure.maildir.healthy ? "success" : "danger"}
+            label="Maildir"
+            detail={infrastructure.maildir.error}
+            detailTone="danger"
+            chipLabel={infrastructure.maildir.healthy ? "Healthy" : "Error"}
+            chipColor={infrastructure.maildir.healthy ? "success" : "danger"}
+          />
+          <DenseRow
+            tone={qdrant.healthy ? "success" : qdrant.optional ? "warning" : "danger"}
+            label="Qdrant"
+            badge={qdrant.optional && (
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">optional</span>
+            )}
+            detail={qdrant.error}
+            detailTone="warning"
+            chipLabel={qdrant.healthy ? "Healthy" : qdrant.optional ? "Optional" : "Error"}
+            chipColor={qdrant.healthy ? "success" : qdrant.optional ? "warning" : "danger"}
+          />
+          <DenseRow
+            tone={indexer.running ? "success" : indexer.optional ? "warning" : "danger"}
+            label="Indexer"
+            badge={indexer.optional && (
+              <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">optional</span>
+            )}
+            detail={indexer.error}
+            detailTone="warning"
+            chipLabel={indexer.running ? "Running" : indexer.optional ? "Optional" : "Error"}
+            chipColor={indexer.running ? "success" : indexer.optional ? "warning" : "danger"}
+          />
+        </>
+      )}
+
+      {indexerLoading ? (
+        <DenseRowSkeleton />
+      ) : indexerHealth ? (
+        <DenseRow
+          tone={indexerColorMap[indexerHealth.status]}
+          label="Transcript Indexer"
+          detail={indexerHealth.message}
+          detailTone="warning"
+          meta={`lag ${indexerHealth.lagMessages ?? "-"} · ack ${indexerHealth.ackPending ?? "-"} · last active ${formatLastSeen(indexerHealth.lastActive)}`}
+          chipLabel={indexerHealth.status}
+          chipColor={indexerColorMap[indexerHealth.status]}
+          sub={`stream=${indexerHealth.stream} · durable=${indexerHealth.durable} · consumerSeq=${indexerHealth.consumerSeq ?? "-"}`}
+        />
+      ) : null}
+    </DenseSection>
   );
 }
 
-function StatsGrid({ status, isLoading }: { status?: SystemStatus, isLoading: boolean }) {
-  const formatUptime = (seconds: number) => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
-  };
-
-  const stats = [
-    { key: "arms", value: status?.arms.total ?? 0, label: "Active Arms", sublabel: status && status.arms.total > 0 ? `${status.arms.healthy} healthy, ${status.arms.idle} idle` : undefined, sublabelErrors: status && (status.arms.stuck > 0 || status.arms.stale > 0) ? { stuck: status.arms.stuck, stale: status.arms.stale } : undefined },
-    { key: "proposals", value: status?.proposals.open ?? 0, label: "Open Proposals" },
-    { key: "activity", value: status?.activity.last24h ?? 0, label: "Activity (24h)" },
-    { key: "uptime", value: status ? formatUptime(status.uptime) : "-", label: "Uptime" },
-  ];
+function PlanStatusSection({
+  status,
+  brain,
+  analysis,
+  isLoading,
+  brainLoading,
+  onNavigate,
+}: {
+  status?: SystemStatus;
+  brain?: BrainStatus | null;
+  analysis?: AllArmsAnalysis;
+  isLoading: boolean;
+  brainLoading: boolean;
+  onNavigate: Navigate;
+}) {
+  const attentionArms = analysis?.arms.filter(
+    (a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending,
+  ) ?? [];
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <DenseSection title="Plan Status">
       {isLoading ? (
         <>
           {[1, 2, 3, 4].map((i) => (
-            <Card key={i}>
-              <CardContent className="space-y-3">
-                <Skeleton className="h-3 w-24 rounded" />
-                <div className="flex-1">
-                  <Skeleton className="mb-2 h-10 w-20 rounded" />
-                  <Skeleton className="h-4 w-32 rounded" />
-                </div>
-              </CardContent>
-            </Card>
+            <DenseRowSkeleton key={i} />
           ))}
         </>
+      ) : !status ? (
+        <div className="px-4 py-6 text-center text-sm text-muted-foreground">No plan data available</div>
       ) : (
-        stats.map((stat) => (
-          <Card key={stat.key}>
-            <CardContent className="space-y-3">
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-                {stat.label}
-              </p>
-              <div>
-                <p className="text-4xl font-semibold tracking-tight">{stat.value}</p>
-                {stat.sublabel && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {stat.sublabel}
-                    {stat.sublabelErrors && (
-                      <>
-                        {stat.sublabelErrors.stuck > 0 && (
-                          <span className="text-danger">, {stat.sublabelErrors.stuck} stuck</span>
-                        )}
-                        {stat.sublabelErrors.stale > 0 && (
-                          <span className="text-warning">, {stat.sublabelErrors.stale} stale</span>
-                        )}
-                      </>
-                    )}
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))
+        <>
+          <DenseRow
+            tone={status.arms.stuck > 0 ? "danger" : status.arms.stale > 0 ? "warning" : status.arms.total > 0 ? "success" : "default"}
+            label="Arms"
+            detail={
+              status.arms.total > 0
+                ? `${status.arms.healthy} healthy · ${status.arms.idle} idle${status.arms.stuck > 0 ? ` · ${status.arms.stuck} stuck` : ""}${status.arms.stale > 0 ? ` · ${status.arms.stale} stale` : ""}`
+                : "No arms registered"
+            }
+            detailTone={status.arms.stuck > 0 ? "danger" : status.arms.stale > 0 ? "warning" : "default"}
+            chipLabel={String(status.arms.total)}
+            chipColor="accent"
+            onClick={() => onNavigate("/arms")}
+          />
+          <DenseRow
+            tone={status.proposals.open > 0 ? "warning" : "default"}
+            label="Open Proposals"
+            detail={status.proposals.open > 0 ? "Awaiting review" : "None pending"}
+            chipLabel={String(status.proposals.open)}
+            chipColor={status.proposals.open > 0 ? "warning" : "default"}
+            onClick={() => onNavigate("/proposals")}
+          />
+          <DenseRow
+            tone="default"
+            label="Activity (24h)"
+            detail="Events recorded in the last 24 hours"
+            chipLabel={String(status.activity.last24h)}
+            chipColor="default"
+            onClick={() => onNavigate("/activity")}
+          />
+          <DenseRow
+            tone="default"
+            label="Uptime"
+            detail={`v${status.version}`}
+            chipLabel={formatUptime(status.uptime)}
+            chipColor="default"
+          />
+        </>
       )}
-    </div>
-  );
-}
 
-function ArmAnalysisSection({ analysis, isLoading }: { analysis?: AllArmsAnalysis, isLoading: boolean }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <span>Arm Activity Analysis</span>
-          <span className="text-xs font-normal text-muted-foreground">
-            Event-based health monitoring
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <div className="grid grid-cols-7 gap-4 mb-4">
-            {["productive", "idle", "starting", "waiting", "looping", "silent", "error"].map((key) => (
-              <div key={key} className="text-center p-2 rounded bg-secondary/50">
-                <Skeleton className="h-6 w-8 mx-auto mb-1 rounded" />
-                <Skeleton className="h-3 w-12 mx-auto rounded" />
-              </div>
-            ))}
-          </div>
-        ) : !analysis || analysis.arms.length === 0 ? null : (
-          <>
-            <div className="grid grid-cols-7 gap-4 mb-4">
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-success">{analysis.summary.productive}</p>
-                <p className="text-xs text-muted-foreground">Productive</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-default">{analysis.summary.idle}</p>
-                <p className="text-xs text-muted-foreground">Idle</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-warning">{analysis.summary.starting}</p>
-                <p className="text-xs text-muted-foreground">Starting</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-warning">{analysis.summary.waiting}</p>
-                <p className="text-xs text-muted-foreground">Waiting</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-accent">{analysis.summary.looping}</p>
-                <p className="text-xs text-muted-foreground">Looping</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-default">{analysis.summary.silent}</p>
-                <p className="text-xs text-muted-foreground">Silent</p>
-              </Surface>
-              <Surface variant="secondary" className="text-center p-2 rounded">
-                <p className="text-lg font-bold text-danger">{analysis.summary.error}</p>
-                <p className="text-xs text-muted-foreground">Error</p>
-              </Surface>
-            </div>
+      {brainLoading ? (
+        <>
+          <DenseRowSkeleton />
+          <DenseRowSkeleton />
+        </>
+      ) : brain ? (
+        <>
+          <DenseRow
+            tone={brain.status === "running" ? "success" : "default"}
+            label="Brain"
+            detail={`${brain.activeArmsCount} active arms · lastPoll ${formatLastSeen(brain.lastPollAt)}`}
+            chipLabel={brain.status}
+            chipColor={brain.status === "running" ? "success" : "default"}
+            sub={`interval=${brain.pollIntervalMs}ms`}
+            onClick={() => onNavigate("/brain")}
+          />
+          <DenseRow
+            tone={brain.pendingTasksCount > 0 ? "warning" : "default"}
+            label="Pending Tasks"
+            detail={`${brain.completedToday} completed today`}
+            chipLabel={String(brain.pendingTasksCount)}
+            chipColor={brain.pendingTasksCount > 0 ? "warning" : "default"}
+            onClick={() => onNavigate("/tasks")}
+          />
+        </>
+      ) : null}
 
-            {analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).length > 0 && (
-              <Disclosure>
-                <Disclosure.Trigger>
-                  <Button variant="secondary" className="w-full justify-between">
-                    <span>Needs Attention ({analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).length})</span>
-                    <Disclosure.Indicator />
-                  </Button>
-                </Disclosure.Trigger>
-                <Disclosure.Content>
-                  <Surface variant="secondary" className="mt-2 p-4 rounded">
-                    <div className="space-y-2">
-                      {analysis.arms.filter((a) => a.state === "looping" || a.state === "silent" || a.state === "error" || a.hasPermissionPending).map((arm) => (
-                        <div key={arm.armId} className="flex items-center justify-between">
-                          <span className="text-sm font-mono">{arm.armId.slice(0, 12)}...</span>
-                          <div className="flex items-center gap-2">
-                            <Chip size="sm" variant="soft" color={stateColorMap[arm.state]}>
-                              {arm.state}
-                            </Chip>
-                            {arm.hasPermissionPending && (
-                              <Chip size="sm" variant="soft" color="warning">
-                                permission pending
-                              </Chip>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+      {analysis && analysis.arms.length > 0 && (
+        <DenseRow
+          tone="default"
+          label="Arm Activity"
+          detail={
+            <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <span className="text-success">{analysis.summary.productive} productive</span>
+              <span className="text-muted-foreground">{analysis.summary.idle} idle</span>
+              <span className="text-warning">{analysis.summary.starting} starting</span>
+              <span className="text-warning">{analysis.summary.waiting} waiting</span>
+              <span className="text-accent">{analysis.summary.looping} looping</span>
+              <span className="text-muted-foreground">{analysis.summary.silent} silent</span>
+              <span className="text-danger">{analysis.summary.error} error</span>
+            </span>
+          }
+          onClick={() => onNavigate("/arms")}
+        />
+      )}
+
+      {attentionArms.length > 0 && (
+        <div className="px-4 py-2">
+          <Disclosure>
+            <Disclosure.Heading>
+              <Button slot="trigger" variant="secondary" size="sm" className="w-full justify-between gap-2 text-warning">
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Needs attention · {attentionArms.length}
+                </span>
+                <Disclosure.Indicator />
+              </Button>
+            </Disclosure.Heading>
+            <Disclosure.Content>
+              <div className="mt-2 divide-y divide-border rounded-md border border-border">
+                {attentionArms.map((arm) => (
+                  <button
+                    key={arm.armId}
+                    type="button"
+                    onClick={() => onNavigate("/viewer", `?arm=${encodeURIComponent(arm.armId)}`)}
+                    className="flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors hover:bg-default-100/60"
+                  >
+                    <span className="font-mono text-xs">{arm.armId.slice(0, 12)}...</span>
+                    <div className="flex items-center gap-2">
+                      <Chip size="sm" variant="soft" color={stateColorMap[arm.state]}>
+                        {arm.state}
+                      </Chip>
+                      {arm.hasPermissionPending && (
+                        <Chip size="sm" variant="soft" color="warning">
+                          permission pending
+                        </Chip>
+                      )}
                     </div>
-                  </Surface>
-                </Disclosure.Content>
-              </Disclosure>
-            )}
-          </>
-        )}
-      </CardContent>
-    </Card>
+                  </button>
+                ))}
+              </div>
+            </Disclosure.Content>
+          </Disclosure>
+        </div>
+      )}
+    </DenseSection>
   );
 }
 
-function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, arms: Arm[], isLoading: boolean }) {
+function ArmsListSection({
+  status,
+  arms,
+  isLoading,
+  onNavigate,
+}: {
+  status?: SystemStatus;
+  arms: Arm[];
+  isLoading: boolean;
+  onNavigate: Navigate;
+}) {
   const hasDetails = status?.arms.details && status.arms.details.length > 0;
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Arms</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <button
+          type="button"
+          onClick={() => onNavigate("/arms")}
+          className="group flex items-center gap-1 hover:text-accent"
+        >
+          <CardTitle className="group-hover:text-accent">Arms</CardTitle>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
+        </button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -529,32 +472,38 @@ function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, a
             ))}
           </div>
         ) : hasDetails ? (
-          <div className="space-y-3">
+          <div className="rounded-md border border-border divide-y divide-border overflow-hidden">
             {status.arms.details.map((arm) => (
-              <Surface key={arm.id} variant="secondary" className="p-3 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">{arm.name}</p>
-                    <p className="text-xs text-muted-foreground">{arm.domain}</p>
+              <button
+                key={arm.id}
+                type="button"
+                onClick={() => onNavigate("/viewer", `?arm=${encodeURIComponent(arm.id)}`)}
+                className="w-full px-3 py-2 text-left transition-colors hover:bg-default-100/60"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{arm.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{arm.domain}</p>
                   </div>
                   <Chip
                     size="sm"
                     variant="soft"
                     color={healthColorMap[arm.health] || "default"}
+                    className="shrink-0"
                   >
                     {arm.health}
                   </Chip>
                 </div>
                 {arm.currentTask && (
-                  <p className="text-xs text-muted-foreground mt-2">
+                  <p className="text-xs text-muted-foreground mt-1 truncate">
                     Task: <span className="font-medium">{arm.currentTask}</span>
                   </p>
                 )}
-                <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
+                <div className="flex gap-3 mt-1 text-[11px] text-muted-foreground">
                   <span>Heartbeat: {formatLastSeen(arm.lastHeartbeat)}</span>
                   <span>Activity: {formatLastSeen(arm.lastActivity)}</span>
                 </div>
-              </Surface>
+              </button>
             ))}
           </div>
         ) : arms.length === 0 ? (
@@ -565,18 +514,20 @@ function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, a
             </code>
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="rounded-md border border-border divide-y divide-border overflow-hidden">
             {arms.map((arm) => (
-              <div
+              <button
                 key={arm.id}
-                className="flex items-center justify-between p-3 rounded-lg bg-secondary/50"
+                type="button"
+                onClick={() => onNavigate("/viewer", `?arm=${encodeURIComponent(arm.id)}`)}
+                className="flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-default-100/60"
               >
-                <div>
-                  <p className="font-medium">{arm.name}</p>
-                  <p className="text-xs text-muted-foreground">{arm.harness}</p>
+                <div className="min-w-0">
+                  <p className="font-medium truncate">{arm.name}</p>
+                  <p className="text-xs text-muted-foreground truncate">{arm.harness}</p>
                 </div>
                 <StatusBadge status={arm.status} />
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -585,11 +536,30 @@ function ArmsListSection({ status, arms, isLoading }: { status?: SystemStatus, a
   );
 }
 
-function ActivitySection({ activity, isLoading }: { activity: ActivityEntry[], isLoading: boolean }) {
+function ActivitySection({
+  activity,
+  isLoading,
+  arms,
+  onNavigate,
+}: {
+  activity: ActivityEntry[];
+  isLoading: boolean;
+  arms: Arm[];
+  onNavigate: Navigate;
+}) {
+  const armIds = useMemo(() => new Set(arms.map((arm) => arm.id)), [arms]);
+
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Recent Activity</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <button
+          type="button"
+          onClick={() => onNavigate("/activity")}
+          className="group flex items-center gap-1 hover:text-accent"
+        >
+          <CardTitle className="group-hover:text-accent">Recent Activity</CardTitle>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
+        </button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -607,24 +577,42 @@ function ActivitySection({ activity, isLoading }: { activity: ActivityEntry[], i
         ) : activity.length === 0 ? (
           <p className="text-muted-foreground text-sm">No recent activity</p>
         ) : (
-          <div className="space-y-3">
-            {activity.map((entry) => (
-              <div key={entry.id} className="flex items-start gap-3 text-sm">
-                <div className="h-2 w-2 rounded-full bg-accent mt-1.5" />
-                <div>
-                  <p>
-                    <span className="font-medium">{entry.actor}</span>{' '}
-                    <span className="text-muted-foreground">{entry.action}</span>
-                    {entry.target && (
-                      <span className="text-muted-foreground"> on {entry.target}</span>
-                    )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(entry.timestamp).toLocaleString()}
-                  </p>
+          <div className="space-y-1">
+            {activity.map((entry) => {
+              const isArm = armIds.has(entry.actor);
+              const rowContent = (
+                <>
+                  <div className="h-2 w-2 rounded-full bg-accent mt-1.5" />
+                  <div>
+                    <p>
+                      <span className="font-medium">{entry.actor}</span>{' '}
+                      <span className="text-muted-foreground">{entry.action}</span>
+                      {entry.target && (
+                        <span className="text-muted-foreground"> on {entry.target}</span>
+                      )}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </>
+              );
+
+              return isArm ? (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => onNavigate("/viewer", `?arm=${encodeURIComponent(entry.actor)}`)}
+                  className="flex w-full items-start gap-3 rounded-md px-1 py-1 text-left text-sm transition-colors hover:bg-default-100/60"
+                >
+                  {rowContent}
+                </button>
+              ) : (
+                <div key={entry.id} className="flex items-start gap-3 px-1 py-1 text-sm">
+                  {rowContent}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>
@@ -632,11 +620,28 @@ function ActivitySection({ activity, isLoading }: { activity: ActivityEntry[], i
   );
 }
 
-function NotableEventsSection({ events, isLoading, error }: { events: RecentEvent[], isLoading: boolean, error: string | null }) {
+function NotableEventsSection({
+  events,
+  isLoading,
+  error,
+  onNavigate,
+}: {
+  events: RecentEvent[];
+  isLoading: boolean;
+  error: string | null;
+  onNavigate: Navigate;
+}) {
   return (
     <Card>
-      <CardHeader>
-        <CardTitle>Notable Events</CardTitle>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <button
+          type="button"
+          onClick={() => onNavigate("/activity")}
+          className="group flex items-center gap-1 hover:text-accent"
+        >
+          <CardTitle className="group-hover:text-accent">Notable Events</CardTitle>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
+        </button>
       </CardHeader>
       <CardContent>
         {isLoading ? (
@@ -659,11 +664,22 @@ function NotableEventsSection({ events, isLoading, error }: { events: RecentEven
         ) : events.length === 0 ? (
           <p className="text-muted-foreground text-sm">No notable events yet</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-1">
             {events.map((event, index) => {
               const meta = formatEventMeta(event);
-              return (
-                <div key={`${event.type}-${event.timestamp}-${index}`} className="flex items-start gap-3 text-sm">
+              const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
+              const bugId = getDataString(event.data, ['bugId', 'bug_id']);
+              const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
+              const target = taskId
+                ? { pathname: '/tasks', search: `?task=${encodeURIComponent(taskId)}&view=details` }
+                : bugId
+                  ? { pathname: '/bugs', search: '' }
+                  : armId
+                    ? { pathname: '/viewer', search: `?arm=${encodeURIComponent(armId)}` }
+                    : null;
+
+              const rowContent = (
+                <>
                   <div className={`h-2 w-2 rounded-full mt-1.5 ${getEventDotClass(event)}`} />
                   <div className="flex-1">
                     <p className="font-medium">{formatEventTitle(event)}</p>
@@ -672,6 +688,21 @@ function NotableEventsSection({ events, isLoading, error }: { events: RecentEven
                       {new Date(event.timestamp).toLocaleString()}
                     </p>
                   </div>
+                </>
+              );
+
+              return target ? (
+                <button
+                  key={`${event.type}-${event.timestamp}-${index}`}
+                  type="button"
+                  onClick={() => onNavigate(target.pathname, target.search)}
+                  className="flex w-full items-start gap-3 rounded-md px-1 py-1 text-left text-sm transition-colors hover:bg-default-100/60"
+                >
+                  {rowContent}
+                </button>
+              ) : (
+                <div key={`${event.type}-${event.timestamp}-${index}`} className="flex items-start gap-3 px-1 py-1 text-sm">
+                  {rowContent}
                 </div>
               );
             })}
@@ -682,19 +713,13 @@ function NotableEventsSection({ events, isLoading, error }: { events: RecentEven
   );
 }
 
-const formatLastSeen = (timestamp?: string) => {
-  if (!timestamp) return 'Never';
-  const ms = Date.now() - new Date(timestamp).getTime();
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  return `${hours}h ago`;
-};
-
 export function DashboardPage() {
   usePageTitle('Coleo Observatory - Dashboard');
+
+  const openWorkspaceRoute = useWorkspaceOpenRoute();
+  const navigate = useCallback<Navigate>((pathname, search = '') => {
+    openWorkspaceRoute({ pathname, search }, pathname === '/viewer' ? 'tab' : 'focus');
+  }, [openWorkspaceRoute]);
 
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
@@ -702,11 +727,13 @@ export function DashboardPage() {
   const [notableEvents, setNotableEvents] = useState<RecentEvent[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
+  const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [indexerLoading, setIndexerLoading] = useState(true);
+  const [brainLoading, setBrainLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
 
   const loadCriticalData = useCallback(async () => {
@@ -744,6 +771,18 @@ export function DashboardPage() {
       });
     } finally {
       setIndexerLoading(false);
+    }
+  }, []);
+
+  const loadBrainStatus = useCallback(async () => {
+    setBrainLoading(true);
+    try {
+      const res = await api.getBrainStatus();
+      setBrainStatus(res.brain);
+    } catch {
+      setBrainStatus(null);
+    } finally {
+      setBrainLoading(false);
     }
   }, []);
 
@@ -796,10 +835,13 @@ export function DashboardPage() {
       loadNotableEvents();
       loadIndexerHealth();
     }
+    if (msg.channel === 'brain') {
+      loadBrainStatus();
+    }
     if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
       api.status().then((res) => setStatus(res)).catch(console.error);
     }
-  }, [loadIndexerHealth, loadNotableEvents]);
+  }, [loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
 
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain', 'arm-events'],
@@ -813,15 +855,17 @@ export function DashboardPage() {
     loadAnalysis();
     loadNotableEvents();
     loadIndexerHealth();
+    loadBrainStatus();
 
     const interval = setInterval(() => {
       loadCriticalData();
       loadDetails();
       loadNotableEvents();
       loadIndexerHealth();
+      loadBrainStatus();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents]);
+  }, [loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
 
   if (error && !status) {
     return (
@@ -839,7 +883,7 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6 px-6 py-6">
+    <div className="space-y-4 px-6 py-6">
       <div className="flex items-center justify-between border-b border-border pb-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
@@ -860,18 +904,27 @@ export function DashboardPage() {
         </div>
       </div>
 
-      <InfrastructureCard infrastructure={status?.infrastructure} isLoading={statusLoading} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <InfrastructureSection
+          infrastructure={status?.infrastructure}
+          indexerHealth={indexerHealth}
+          isLoading={statusLoading}
+          indexerLoading={indexerLoading}
+        />
+        <PlanStatusSection
+          status={status ?? undefined}
+          brain={brainStatus}
+          analysis={armsAnalysis ?? undefined}
+          isLoading={statusLoading}
+          brainLoading={brainLoading}
+          onNavigate={navigate}
+        />
+      </div>
 
-      <TranscriptIndexerCard health={indexerHealth} isLoading={indexerLoading} />
-
-      <StatsGrid status={status ?? undefined} isLoading={statusLoading} />
-
-      <ArmAnalysisSection analysis={armsAnalysis ?? undefined} isLoading={detailsLoading} />
-
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} />
-        <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} />
-        <ActivitySection activity={activity} isLoading={detailsLoading} />
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />
+        <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} onNavigate={navigate} />
+        <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
       </div>
     </div>
   );

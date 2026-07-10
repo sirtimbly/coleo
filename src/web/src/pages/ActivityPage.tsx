@@ -12,7 +12,7 @@ export function ActivityPage() {
     try {
       const res = await api.listActivity({ limit: 50, offset });
       setActivity(res.activity);
-      setPagination(res.pagination);
+      setPagination(res.pagination ?? { limit: 50, offset, total: res.activity.length });
     } catch (err) {
       console.error('Failed to load activity:', err);
     } finally {
