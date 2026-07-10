@@ -190,10 +190,12 @@ export class StatusEventsConsumer {
 	 */
 	private async processMessage(msg: JsMsg): Promise<void> {
 		try {
-			const data = JSON.parse(msg.string()) as EventData;
+			const raw = JSON.parse(msg.string()) as unknown;
+			const subject = msg.subject;
+			const data = normalizeToEventData(raw, subject);
 
 			// Convert to StatusEvent
-			const statusEvent = this.parseStatusEvent(data);
+			const statusEvent = this.parseStatusEvent(data, subject);
 			if (!statusEvent) return;
 
 			// Filter by entity ID if specified
@@ -209,60 +211,174 @@ export class StatusEventsConsumer {
 	}
 
 	/**
-	 * Parse EventData into StatusEvent
+	 * Parse EventData into StatusEvent.
+	 * Accepts:
+	 * - EventData envelope: { type, armId?, data: {...}, timestamp }
+	 * - Flat agent events: { type, armId, newStatus, oldStatus, ... } (newStatus top-level)
+	 * - Subject-derived entity ids: coleo.events.arm.<id>.status_changed
 	 */
-	parseStatusEvent(data: EventData): StatusEvent | null {
-		// Determine event type and extract status info
-		const eventType = data.type === "status_changed" ? "arm.status_changed" : data.type;
-		if (!isStatusEventType(eventType)) return null;
+	parseStatusEvent(data: EventData, subject?: string): StatusEvent | null {
+		const subjectParts = subject ? parseEventSubject(subject) : null;
+		const payload = flattenEventPayload(data);
+
+		// Determine event type from envelope type, payload type, or subject
+		let eventType =
+			data.type === "status_changed"
+				? "arm.status_changed"
+				: isStatusEventType(data.type)
+					? data.type
+					: subjectParts?.statusType;
+
+		if (!eventType || !isStatusEventType(eventType)) {
+			// Flat agent publish sometimes uses type arm.status_changed only in subject
+			if (subjectParts?.statusType) {
+				eventType = subjectParts.statusType;
+			} else {
+				return null;
+			}
+		}
 
 		if (eventType === "arm.status_changed") {
-			const newStatus = valueAsString(data.data.to) ?? valueAsString(data.data.newStatus);
+			const newStatus =
+				valueAsString(payload.newStatus) ??
+				valueAsString(payload.to) ??
+				valueAsString(payload.status);
 			if (!newStatus) return null;
+
+			const entityId =
+				data.armId ||
+				valueAsString(payload.armId) ||
+				subjectParts?.entityId ||
+				"unknown";
 
 			return {
 				type: "arm.status_changed",
-				entityId: data.armId || valueAsString(data.data.armId) || "unknown",
-				oldStatus: valueAsString(data.data.from) ?? valueAsString(data.data.oldStatus),
+				entityId,
+				oldStatus:
+					valueAsString(payload.oldStatus) ?? valueAsString(payload.from),
 				newStatus,
-				timestamp: data.timestamp,
-				data: data.data,
+				timestamp: data.timestamp || new Date().toISOString(),
+				data: payload,
 			};
 		}
 
 		if (eventType === "task.status_changed") {
-			const taskId = valueAsString(data.data.taskId) ?? valueAsString(data.data.id);
+			const taskId =
+				valueAsString(payload.taskId) ??
+				valueAsString(payload.id) ??
+				subjectParts?.entityId;
 			const newStatus =
-				valueAsString(data.data.to) ??
-				valueAsString(data.data.newStatus) ??
-				valueAsString(data.data.status);
+				valueAsString(payload.newStatus) ??
+				valueAsString(payload.to) ??
+				valueAsString(payload.status);
 			if (!taskId || !newStatus) return null;
 
 			return {
 				type: "task.status_changed",
 				entityId: taskId,
-				oldStatus: valueAsString(data.data.from) ?? valueAsString(data.data.oldStatus),
+				oldStatus:
+					valueAsString(payload.oldStatus) ?? valueAsString(payload.from),
 				newStatus,
-				timestamp: data.timestamp,
-				data: data.data,
+				timestamp: data.timestamp || new Date().toISOString(),
+				data: payload,
 			};
 		}
 
 		if (eventType === "system.status") {
-			const newStatus = valueAsString(data.data.status) ?? valueAsString(data.data.newStatus);
+			const newStatus =
+				valueAsString(payload.status) ?? valueAsString(payload.newStatus);
 			if (!newStatus) return null;
 
 			return {
 				type: "system.status",
 				entityId: "system",
 				newStatus,
-				timestamp: data.timestamp,
-				data: data.data,
+				timestamp: data.timestamp || new Date().toISOString(),
+				data: payload,
 			};
 		}
 
 		return null;
 	}
+}
+
+/**
+ * Parse coleo.events.{arm|task|system}.{entityId?}.{status_changed|status}
+ */
+export function parseEventSubject(subject: string): {
+	entityType?: "arm" | "task" | "system";
+	entityId?: string;
+	statusType?: StatusEventType;
+} | null {
+	const parts = subject.split(".");
+	// coleo.events.arm.<id>.status_changed  OR  coleo.events.system.status
+	if (parts.length < 4 || parts[0] !== "coleo" || parts[1] !== "events") {
+		return null;
+	}
+	const entityType = parts[2];
+	if (entityType === "system" && parts[3] === "status") {
+		return { entityType: "system", entityId: "system", statusType: "system.status" };
+	}
+	if ((entityType === "arm" || entityType === "task") && parts.length >= 5) {
+		const entityId = parts[3];
+		const leaf = parts.slice(4).join(".");
+		if (leaf === "status_changed") {
+			return {
+				entityType,
+				entityId,
+				statusType: entityType === "arm" ? "arm.status_changed" : "task.status_changed",
+			};
+		}
+	}
+	return null;
+}
+
+/**
+ * Normalize raw JetStream payloads (EventData envelope or flat agent event) into EventData.
+ */
+export function normalizeToEventData(raw: unknown, subject?: string): EventData {
+	const obj = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	const subjectParts = subject ? parseEventSubject(subject) : null;
+
+	// Already an EventData-like envelope with nested data object
+	if (
+		typeof obj.type === "string" &&
+		obj.data &&
+		typeof obj.data === "object" &&
+		!Array.isArray(obj.data)
+	) {
+		const armFromSubject =
+			subjectParts?.entityType === "arm" ? subjectParts.entityId : undefined;
+		return {
+			type: obj.type,
+			armId: valueAsString(obj.armId) ?? armFromSubject,
+			sessionId: valueAsString(obj.sessionId),
+			data: obj.data as Record<string, unknown>,
+			timestamp: valueAsString(obj.timestamp) || new Date().toISOString(),
+		};
+	}
+
+	// Flat agent event: status fields live top-level next to type/armId
+	const type =
+		valueAsString(obj.type) ||
+		subjectParts?.statusType ||
+		"unknown";
+	const { type: _t, armId, sessionId, timestamp, ...rest } = obj;
+	return {
+		type,
+		armId:
+			valueAsString(armId) ||
+			(subjectParts?.entityType === "arm" ? subjectParts.entityId : undefined),
+		sessionId: valueAsString(sessionId),
+		data: rest as Record<string, unknown>,
+		timestamp: valueAsString(timestamp) || new Date().toISOString(),
+	};
+}
+
+function flattenEventPayload(data: EventData): Record<string, unknown> {
+	// Prefer nested data, but also surface top-level status keys if present on envelope
+	const nested = data.data && typeof data.data === "object" ? { ...data.data } : {};
+	return nested;
 }
 
 /**
