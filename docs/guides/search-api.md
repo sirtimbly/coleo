@@ -116,6 +116,26 @@ bun run test:qdrant
 bun run test:embedding
 ```
 
+## Retention policy
+
+Status-history points in Qdrant are purged by event type:
+
+| Type | Default | Env override |
+|------|---------|--------------|
+| `task_completion`, `task_created`, `discovery`, `bug_report` | forever | `COLEO_STATUS_HISTORY_RETENTION_<TYPE>=forever` |
+| `status_report`, `task_updated` | 90 days | e.g. `COLEO_STATUS_HISTORY_RETENTION_STATUS_REPORT=60` |
+| `arm_event` (heartbeats-like) | 7 days | `COLEO_STATUS_HISTORY_RETENTION_ARM_EVENT=7` |
+
+```bash
+# Dry-run plan
+bun run retention:status-history -- --dry-run
+
+# Apply deletes in Qdrant
+bun run retention:status-history
+```
+
+Implementation: `src/vector/retention.ts`, `src/scripts/status-history-retention.ts`
+
 ## MCP tools (brain/arms)
 
 Registered on the Coleo MCP server (`src/mcp/server.ts`):

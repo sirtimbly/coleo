@@ -189,8 +189,24 @@ export class QdrantVectorStore {
 	async deletePoints(collectionName: string, ids: string[]): Promise<void> {
 		const client = await this.ensureInitialized();
 
+		if (ids.length === 0) return;
+
 		await client.delete(collectionName, {
 			points: ids,
+		});
+	}
+
+	/**
+	 * Delete points matching a Qdrant filter (e.g. retention by timestamp range).
+	 */
+	async deleteByFilter(
+		collectionName: string,
+		filter: Record<string, unknown>,
+	): Promise<void> {
+		const client = await this.ensureInitialized();
+
+		await client.delete(collectionName, {
+			filter,
 		});
 	}
 
