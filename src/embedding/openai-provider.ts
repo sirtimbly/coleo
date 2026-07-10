@@ -24,18 +24,23 @@ interface OpenAIEmbeddingResponse {
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 	readonly name = "openai";
 	readonly defaultModel = "text-embedding-3-small";
-	readonly vectorSize = 1536; // text-embedding-3-small
 
 	private apiKey: string;
 	private baseUrl: string;
+	private model: string;
 
-	constructor(apiKey?: string, baseUrl?: string) {
+	constructor(apiKey?: string, baseUrl?: string, model?: string) {
 		this.apiKey = apiKey || process.env.OPENAI_API_KEY || "";
 		this.baseUrl = baseUrl || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		this.model = model || process.env.OPENAI_EMBEDDING_MODEL || this.defaultModel;
 
 		if (!this.apiKey) {
 			console.warn("[OpenAI Embedding] No API key provided. Set OPENAI_API_KEY environment variable.");
 		}
+	}
+
+	get vectorSize(): number {
+		return this.getVectorSize(this.model);
 	}
 
 	private getVectorSize(model: string): number {
@@ -56,7 +61,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 			throw new Error("OpenAI API key not configured. Set OPENAI_API_KEY environment variable.");
 		}
 
-		const model = options?.model || this.defaultModel;
+		const model = options?.model || this.model;
 		const timeout = options?.timeout || 30000;
 
 		try {
@@ -111,7 +116,7 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 			return { embeddings: [], model: options?.model || this.defaultModel };
 		}
 
-		const model = options?.model || this.defaultModel;
+		const model = options?.model || this.model;
 		const batchSize = options?.batchSize || 100; // OpenAI supports up to 2048, but we use smaller batches
 		const timeout = options?.timeout || 60000;
 
