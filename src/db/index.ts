@@ -128,6 +128,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["052_bugs_fts", MIGRATION_052],
     ["053_fix_bugs_fts_external_content", MIGRATION_053],
     ["054_arm_runtime_metadata", MIGRATION_054, { table: "arms", columns: MIGRATION_054_COLUMNS }],
+    ["055_tasks_fts", MIGRATION_055],
 	];
 
 
@@ -1418,6 +1419,37 @@ const MIGRATION_054_COLUMNS = [
 const MIGRATION_054 = `
 CREATE INDEX IF NOT EXISTS idx_arms_workdir ON arms(workdir);
 CREATE INDEX IF NOT EXISTS idx_arms_last_output_at ON arms(last_output_at);
+`;
+
+// Migration 055: FTS5 index over tasks (subject + description), mirroring the
+// bugs_fts external-content pattern so the search API can find real tasks.
+const MIGRATION_055 = `
+CREATE VIRTUAL TABLE IF NOT EXISTS tasks_fts USING fts5(
+  subject,
+  description,
+  content = 'tasks',
+  content_rowid = 'rowid',
+  tokenize = 'porter unicode61'
+);
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_ai AFTER INSERT ON tasks BEGIN
+  INSERT INTO tasks_fts(rowid, subject, description)
+  VALUES (new.rowid, new.subject, new.description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_ad AFTER DELETE ON tasks BEGIN
+  INSERT INTO tasks_fts(tasks_fts, rowid, subject, description)
+  VALUES ('delete', old.rowid, old.subject, old.description);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_fts_au AFTER UPDATE ON tasks BEGIN
+  INSERT INTO tasks_fts(tasks_fts, rowid, subject, description)
+  VALUES ('delete', old.rowid, old.subject, old.description);
+  INSERT INTO tasks_fts(rowid, subject, description)
+  VALUES (new.rowid, new.subject, new.description);
+END;
+
+INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild');
 `;
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)

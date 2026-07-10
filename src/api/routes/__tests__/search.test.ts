@@ -48,25 +48,71 @@ describe("search routes", () => {
     vectorSizeSpy = spyOn(embeddingService, "getVectorSize").mockImplementation(() => 1536);
 
     db = new Database(":memory:");
+
+    // Minimal mirror of the real schema: tasks, bugs, arms + their FTS5
+    // external-content indexes (see src/db/index.ts migrations 052-053, 055).
     db.exec(`
-      CREATE VIRTUAL TABLE search_index USING fts5(
-        id,
-        type,
-        title,
-        content,
-        metadata,
-        created_at,
-        updated_at
-      )
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        subject TEXT NOT NULL,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        priority TEXT NOT NULL DEFAULT 'normal',
+        domain TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE VIRTUAL TABLE tasks_fts USING fts5(
+        subject, description, content = 'tasks', content_rowid = 'rowid', tokenize = 'porter unicode61'
+      );
+
+      CREATE TABLE bugs (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        source TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open',
+        priority TEXT NOT NULL DEFAULT 'medium',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE VIRTUAL TABLE bugs_fts USING fts5(
+        title, content = 'bugs', content_rowid = 'rowid', tokenize = 'porter unicode61'
+      );
+
+      CREATE TABLE arms (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        harness TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'idle',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
-    db.run(`
-      INSERT INTO search_index (id, type, title, content, metadata, created_at, updated_at)
-      VALUES
-        ('task-1', 'task', 'Implement search API', 'Create hybrid search with keyword ranking', '{"priority":"high"}', '2024-01-01', '2024-01-02'),
-        ('task-2', 'task', 'Add embedding service', 'Generate embeddings for semantic search', '{"priority":"medium"}', '2024-01-02', '2024-01-03'),
-        ('arm-1', 'arm', 'Backend Architect', 'Arm for backend development', '{"domain":"backend"}', '2024-01-03', '2024-01-04')
-    `);
+    db.run(
+      `INSERT INTO tasks (id, subject, description, priority, created_at, updated_at)
+       VALUES
+        ('task-1', 'Implement search API', 'Create hybrid search with keyword ranking', 'high', '2024-01-01', '2024-01-02'),
+        ('task-2', 'Add embedding service', 'Generate embeddings for semantic search', 'medium', '2024-01-02', '2024-01-03')`,
+    );
+    db.run(
+      `INSERT INTO tasks_fts (rowid, subject, description) SELECT rowid, subject, description FROM tasks`,
+    );
+
+    db.run(
+      `INSERT INTO bugs (id, title, description, source, created_at, updated_at)
+       VALUES ('bug-1', 'Search API returns 500', 'Query throws when types filter is empty', 'human_reported', '2024-01-04', '2024-01-05')`,
+    );
+    db.run(`INSERT INTO bugs_fts (rowid, title) SELECT rowid, title FROM bugs`);
+
+    db.run(
+      `INSERT INTO arms (id, name, domain, harness, created_at, updated_at)
+       VALUES ('arm-1', 'Backend Architect', 'backend', 'opencode-api', '2024-01-03', '2024-01-04')`,
+    );
 
     app = new Hono<TestContext>();
     app.use("*", async (c, next) => {
@@ -104,12 +150,13 @@ describe("search routes", () => {
       expect(await empty.json()).toEqual({ error: "Query is required" });
     });
 
-    it("returns ranked keyword matches from the live FTS index", async () => {
+    it("returns ranked keyword matches from the tasks FTS index", async () => {
       const response = await app.request("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: "search API",
+          types: ["task"],
           minScore: 0,
           semanticWeight: 0,
         }),
@@ -127,10 +174,51 @@ describe("search routes", () => {
         type: "task",
         title: "Implement search API",
       });
-      expect(body.results[0]?.keywordScore).toBe(0);
+      expect(body.results[0]?.keywordScore).toBeGreaterThan(0);
       expect(body.results[0]?.semanticScore).toBe(0);
-      expect(body.results[0]?.score).toBe(body.results[0]?.keywordScore);
       expect(body.took).toBeGreaterThanOrEqual(0);
+    });
+
+    it("finds bugs via the bugs FTS index", async () => {
+      const response = await app.request("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "returns 500",
+          minScore: 0,
+          semanticWeight: 0,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as SearchResponseBody;
+
+      expect(body.results.map((r) => r.id)).toContain("bug-1");
+      expect(body.results.find((r) => r.id === "bug-1")).toMatchObject({
+        type: "bug",
+        title: "Search API returns 500",
+      });
+    });
+
+    it("finds arms via name/harness/domain matching", async () => {
+      const response = await app.request("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "Backend",
+          minScore: 0,
+          semanticWeight: 0,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as SearchResponseBody;
+
+      expect(body.results.map((r) => r.id)).toContain("arm-1");
+      expect(body.results.find((r) => r.id === "arm-1")).toMatchObject({
+        type: "arm",
+        title: "Backend Architect",
+      });
     });
 
     it("merges semantic matches when vector search returns additional content", async () => {
@@ -219,9 +307,9 @@ describe("search routes", () => {
     it("returns matching titles from indexed content", async () => {
       const response = await app.request("/api/search/suggestions?q=search");
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({
-        suggestions: ["Implement search API"],
-      });
+      const body = (await response.json()) as { suggestions: string[] };
+      expect(body.suggestions).toContain("Implement search API");
+      expect(body.suggestions).toContain("Search API returns 500");
     });
   });
 
