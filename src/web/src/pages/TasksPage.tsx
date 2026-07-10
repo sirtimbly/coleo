@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef, useId } from "react";
+import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
 	Plus,
 	Clock,
@@ -187,6 +187,131 @@ function TaskPriorityBadge({
 	);
 }
 
+function formatAbsoluteDateTime(iso: string): string {
+	return new Date(iso).toLocaleString(undefined, {
+		dateStyle: "medium",
+		timeStyle: "short",
+	});
+}
+
+function formatRelativeAge(iso: string): string {
+	const diffMs = Date.now() - new Date(iso).getTime();
+	const diffSeconds = Math.floor(diffMs / 1000);
+	if (diffSeconds < 60) return "just now";
+	const diffMinutes = Math.floor(diffSeconds / 60);
+	if (diffMinutes < 60) return `${diffMinutes}m ago`;
+	const diffHours = Math.floor(diffMinutes / 60);
+	if (diffHours < 24) return `${diffHours}h ago`;
+	const diffDays = Math.floor(diffHours / 24);
+	if (diffDays < 30) return `${diffDays}d ago`;
+	const diffMonths = Math.floor(diffDays / 30);
+	if (diffMonths < 12) return `${diffMonths}mo ago`;
+	const diffYears = Math.floor(diffMonths / 12);
+	return `${diffYears}y ago`;
+}
+
+function TaskCreatedAt({ createdAt }: { createdAt: string }) {
+	return (
+		<span
+			className="inline-flex items-center gap-1 text-xs text-foreground-500"
+			title={formatAbsoluteDateTime(createdAt)}
+		>
+			<Clock className="h-3 w-3" />
+			Created {formatRelativeAge(createdAt)}
+		</span>
+	);
+}
+
+/**
+ * Description field that shows an explicit empty state (instead of silently
+ * rendering nothing) and lets you add/edit the description inline.
+ */
+function TaskDescriptionField({
+	taskId,
+	description,
+	onSave,
+}: {
+	taskId: string;
+	description: string;
+	onSave: (taskId: string, description: string) => void;
+}) {
+	const [isEditing, setIsEditing] = useState(false);
+	const [draft, setDraft] = useState(description);
+
+	useEffect(() => {
+		if (!isEditing) setDraft(description);
+	}, [description, isEditing]);
+
+	const handleSave = () => {
+		const trimmed = draft.trim();
+		setIsEditing(false);
+		if (trimmed !== description) {
+			onSave(taskId, trimmed);
+		}
+	};
+
+	const handleCancel = () => {
+		setDraft(description);
+		setIsEditing(false);
+	};
+
+	if (isEditing) {
+		return (
+			<div className="space-y-2">
+				<textarea
+					autoFocus
+					value={draft}
+					onChange={(event) => setDraft(event.target.value)}
+					onKeyDown={(event) => {
+						if (event.key === "Escape") {
+							event.preventDefault();
+							handleCancel();
+						} else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+							event.preventDefault();
+							handleSave();
+						}
+					}}
+					placeholder="Add a description for this task..."
+					rows={4}
+					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+				/>
+				<div className="flex items-center gap-2">
+					<Button size="sm" variant="primary" onPress={handleSave}>
+						Save
+					</Button>
+					<Button size="sm" variant="ghost" onPress={handleCancel}>
+						Cancel
+					</Button>
+					<span className="text-xs text-foreground-500">⌘⏎ to save · Esc to cancel</span>
+				</div>
+			</div>
+		);
+	}
+
+	if (!description.trim()) {
+		return (
+			<button
+				type="button"
+				onClick={() => setIsEditing(true)}
+				className="w-full rounded-md border border-dashed border-border/70 px-3 py-3 text-left text-sm text-foreground-500 transition-colors hover:border-accent hover:text-foreground"
+			>
+				No description yet — click to add one
+			</button>
+		);
+	}
+
+	return (
+		<button
+			type="button"
+			onClick={() => setIsEditing(true)}
+			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
+			title="Click to edit"
+		>
+			<p className="whitespace-pre-wrap">{description}</p>
+		</button>
+	);
+}
+
 export function TasksPage() {
 	usePageTitle('Coleo Observatory - Tasks');
 	const queryClient = useQueryClient();
@@ -248,8 +373,8 @@ export function TasksPage() {
 		task: Task | null;
 	}>({ show: false, task: null });
 	const [newTaskId, setNewTaskId] = useState<string | null>(null);
-	const detailsTabId = useId();
-	const discussionsTabId = useId();
+	const detailsTabId: SidebarTab = "details";
+	const discussionsTabId: SidebarTab = "discussions";
 
 	const taskModal = (
 		<TaskModal
@@ -687,10 +812,17 @@ export function TasksPage() {
 
 					<Tabs.Panel id={detailsTabId} className="flex-1 overflow-auto p-4">
 							<div className="space-y-4">
-								<div className="text-xs text-muted-foreground">ID: {selectedTask.id}</div>
+								<div className="flex items-center justify-between">
+									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
+									<TaskCreatedAt createdAt={selectedTask.createdAt} />
+								</div>
 								<div>
 									<h5 className="mb-1 text-sm font-medium text-foreground-500">Description</h5>
-									<p className="text-sm">{selectedTask.description}</p>
+									<TaskDescriptionField
+										taskId={selectedTask.id}
+										description={selectedTask.description}
+										onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
+									/>
 								</div>
 								<div className="grid grid-cols-2 gap-4 text-sm">
 									<div>
@@ -967,10 +1099,11 @@ export function TasksPage() {
 						<Tabs.Panel id={detailsTabId} className="flex-1 p-0">
 								<div className="p-4 overflow-auto h-full">
 									<div className="space-y-4">
-										<div>
+										<div className="flex items-center justify-between">
 											<span className="text-xs text-foreground-500 font-mono">
 												ID: {selectedTask.id}
 											</span>
+											<TaskCreatedAt createdAt={selectedTask.createdAt} />
 										</div>
 
 										<div>
@@ -985,7 +1118,11 @@ export function TasksPage() {
 											<h5 className="text-sm font-medium text-foreground-500 mb-1">
 												Description
 											</h5>
-											<p className="text-sm">{selectedTask.description}</p>
+											<TaskDescriptionField
+												taskId={selectedTask.id}
+												description={selectedTask.description}
+												onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
+											/>
 										</div>
 
 										<div className="grid grid-cols-2 gap-4 text-sm">
@@ -1093,11 +1230,6 @@ export function TasksPage() {
 												</p>
 											</div>
 										)}
-
-										<div className="text-xs text-foreground-500">
-											Created{" "}
-											{new Date(selectedTask.createdAt).toLocaleString()}
-										</div>
 									</div>
 								</div>
 							</Tabs.Panel>

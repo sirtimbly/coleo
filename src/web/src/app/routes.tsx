@@ -93,6 +93,10 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     icon: ListTodo,
     component: TasksPage,
     showInNav: true,
+    getTitle: (searchParams) => {
+      const taskId = searchParams.get('task');
+      return taskId ? `Task: ${taskId}` : 'Tasks';
+    },
   },
   {
     id: 'status-reports',
@@ -111,6 +115,10 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     icon: Bug,
     component: BugsPage,
     showInNav: true,
+    getTitle: (searchParams) => {
+      const bugId = searchParams.get('bug');
+      return bugId ? `Bug: ${bugId}` : 'Bugs';
+    },
   },
   {
     id: 'garden',

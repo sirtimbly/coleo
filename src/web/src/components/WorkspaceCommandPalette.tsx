@@ -68,9 +68,9 @@ function routeForSearchResult(type: string, id: string): { pathname: string; sea
 		case "arm":
 			return { pathname: "/viewer", search: `?arm=${encodeURIComponent(id)}` };
 		case "bug":
-			return { pathname: "/bugs" };
+			return { pathname: "/bugs", search: `?bug=${encodeURIComponent(id)}` };
 		case "task":
-			return { pathname: "/tasks" };
+			return { pathname: "/tasks", search: `?task=${encodeURIComponent(id)}` };
 		case "discovery":
 			return { pathname: "/grid" };
 		case "mail":
