@@ -15,6 +15,8 @@ import {
 	Search,
 	FileText,
 	MessageSquare,
+	ScrollText,
+	GitCommitHorizontal,
 } from "lucide-react";
 import { Button, Chip, Card, Tabs } from "@heroui/react";
 import {
@@ -24,7 +26,7 @@ import {
 	type TaskUiMetadata,
 	cn,
 } from "@/lib";
-import { TaskModal, TaskDiscussionPanel } from "@/components";
+import { TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel } from "@/components";
 import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
@@ -39,7 +41,7 @@ import {
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
 
-type SidebarTab = "details" | "discussions";
+type SidebarTab = "details" | "summary" | "diff" | "discussions";
 
 // Status configuration
 const STATUS_CONFIG: Record<
@@ -374,6 +376,8 @@ export function TasksPage() {
 	}>({ show: false, task: null });
 	const [newTaskId, setNewTaskId] = useState<string | null>(null);
 	const detailsTabId: SidebarTab = "details";
+	const summaryTabId: SidebarTab = "summary";
+	const diffTabId: SidebarTab = "diff";
 	const discussionsTabId: SidebarTab = "discussions";
 
 	const taskModal = (
@@ -789,7 +793,7 @@ export function TasksPage() {
 					<Tabs
 						selectedKey={sidebarTab}
 						onSelectionChange={(key) => {
-							if (key === "details" || key === "discussions") {
+							if (key === "details" || key === "summary" || key === "diff" || key === "discussions") {
 								setSidebarTab(key);
 							}
 						}}
@@ -800,6 +804,16 @@ export function TasksPage() {
 							<Tabs.Tab id={detailsTabId}>
 								<FileText className="h-4 w-4" />
 								<span className="px-2">Details</span>
+								<Tabs.Indicator />
+							</Tabs.Tab>
+							<Tabs.Tab id={summaryTabId}>
+								<ScrollText className="h-4 w-4" />
+								<span className="px-2">Summary</span>
+								<Tabs.Indicator />
+							</Tabs.Tab>
+							<Tabs.Tab id={diffTabId}>
+								<GitCommitHorizontal className="h-4 w-4" />
+								<span className="px-2">Diff</span>
 								<Tabs.Indicator />
 							</Tabs.Tab>
 							<Tabs.Tab id={discussionsTabId}>
@@ -844,6 +858,14 @@ export function TasksPage() {
 									</div>
 								</div>
 							</div>
+						</Tabs.Panel>
+
+					<Tabs.Panel id={summaryTabId} className="flex-1 p-0">
+							<TaskSummaryPanel taskId={selectedTask.id} className="h-full" />
+						</Tabs.Panel>
+
+					<Tabs.Panel id={diffTabId} className="flex-1 p-0">
+							<TaskDiffPanel taskId={selectedTask.id} className="h-full" />
 						</Tabs.Panel>
 
 					<Tabs.Panel id={discussionsTabId} className="flex-1 p-0">
@@ -1070,7 +1092,7 @@ export function TasksPage() {
 						<Tabs
 							selectedKey={sidebarTab}
 							onSelectionChange={(key) => {
-								if (key === "details" || key === "discussions") {
+								if (key === "details" || key === "summary" || key === "diff" || key === "discussions") {
 									setSidebarTab(key);
 								}
 							}}
@@ -1081,6 +1103,16 @@ export function TasksPage() {
 									<Tabs.Tab id={detailsTabId} className="flex-1">
 										<FileText className="h-4 w-4" />
 										<span className="px-2">Details</span>
+										<Tabs.Indicator />
+									</Tabs.Tab>
+									<Tabs.Tab id={summaryTabId} className="flex-1">
+										<ScrollText className="h-4 w-4" />
+										<span className="px-2">Summary</span>
+										<Tabs.Indicator />
+									</Tabs.Tab>
+									<Tabs.Tab id={diffTabId} className="flex-1">
+										<GitCommitHorizontal className="h-4 w-4" />
+										<span className="px-2">Diff</span>
 										<Tabs.Indicator />
 									</Tabs.Tab>
 									<Tabs.Tab id={discussionsTabId} className="flex-1">
@@ -1232,6 +1264,14 @@ export function TasksPage() {
 										)}
 									</div>
 								</div>
+							</Tabs.Panel>
+
+						<Tabs.Panel id={summaryTabId} className="flex-1 p-0">
+								<TaskSummaryPanel taskId={selectedTask.id} className="h-full" />
+							</Tabs.Panel>
+
+						<Tabs.Panel id={diffTabId} className="flex-1 p-0">
+								<TaskDiffPanel taskId={selectedTask.id} className="h-full" />
 							</Tabs.Panel>
 
 						<Tabs.Panel

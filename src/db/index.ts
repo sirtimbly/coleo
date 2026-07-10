@@ -129,6 +129,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["053_fix_bugs_fts_external_content", MIGRATION_053],
     ["054_arm_runtime_metadata", MIGRATION_054, { table: "arms", columns: MIGRATION_054_COLUMNS }],
     ["055_tasks_fts", MIGRATION_055],
+    ["056_task_summaries_and_diffs", MIGRATION_056],
 	];
 
 
@@ -1451,6 +1452,53 @@ END;
 
 INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild');
 `;
+
+// Migration 056: Task work summaries and diffs, so arms/brain can record
+// progress summaries and code diffs on a task as they work, and viewers can
+// track what they've already seen (mirrors task_comments/task_comment_reads).
+const MIGRATION_056 = `
+CREATE TABLE IF NOT EXISTS task_summaries (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  content TEXT NOT NULL,
+  author_type TEXT NOT NULL DEFAULT 'arm' CHECK (author_type IN ('arm', 'brain', 'human')),
+  author_id TEXT NOT NULL,
+  author_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_summaries_task ON task_summaries(task_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS task_diffs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  title TEXT,
+  file_path TEXT,
+  diff TEXT NOT NULL,
+  additions INTEGER NOT NULL DEFAULT 0,
+  deletions INTEGER NOT NULL DEFAULT 0,
+  author_type TEXT NOT NULL DEFAULT 'arm' CHECK (author_type IN ('arm', 'brain', 'human')),
+  author_id TEXT NOT NULL,
+  author_name TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_diffs_task ON task_diffs(task_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS task_diff_views (
+  task_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  last_viewed_diff_id TEXT,
+  viewed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, user_id),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+`;
+
 
 // Migration 035: Fix sort_order to use ascending order (0 = top, 1 = next, etc.)
 // Previously used descending order where higher values appeared first

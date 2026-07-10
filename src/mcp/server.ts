@@ -2687,6 +2687,161 @@ export function createMcpServer(): McpServer {
 		},
 	);
 
+	// update_task_summary: record a work-in-progress summary on a task as
+	// the arm/brain makes progress
+	server.registerTool(
+		"update_task_summary",
+		{
+			description:
+				"Record a work-in-progress summary on a task. Call this as you make " +
+				"progress so the task's Summary tab shows an up-to-date account of " +
+				"what's been done. Each call appends a new entry; the most recent one " +
+				"is shown as the current summary.",
+			inputSchema: {
+				task_id: z.string().describe("ID of the task to summarize"),
+				content: z.string().describe("Summary of progress/work done so far"),
+			},
+		},
+		async ({ task_id, content }) => {
+			try {
+				const response = await fetch(
+					`${API_BASE_URL}/api/tasks/${encodeURIComponent(task_id)}/summaries`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-API-Key": API_KEY,
+						},
+						body: JSON.stringify({
+							content,
+							authorType: "arm",
+							authorId: ARM_ID,
+						}),
+					},
+				);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Failed to record summary: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				logActivity(ARM_ID, "update_task_summary", task_id, {
+					contentLength: content.length,
+				});
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Summary recorded on task ${task_id}.`,
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{ type: "text" as const, text: `Failed to record summary: ${errorMsg}` },
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// record_task_diff: record a unified diff of changes made while working
+	// on a task
+	server.registerTool(
+		"record_task_diff",
+		{
+			description:
+				"Record a unified diff of code changes made while working on a task. " +
+				"Call this after making meaningful edits so the task's Diff tab shows " +
+				"what changed. Additions/deletions are auto-computed from the diff if " +
+				"not provided.",
+			inputSchema: {
+				task_id: z.string().describe("ID of the task these changes belong to"),
+				diff: z.string().describe("Unified diff text (e.g. `git diff` output)"),
+				title: z
+					.string()
+					.optional()
+					.describe("Short label for this diff (e.g. the change summary)"),
+				file_path: z
+					.string()
+					.optional()
+					.describe("Primary file path this diff touches, if a single file"),
+				additions: z
+					.number()
+					.optional()
+					.describe("Explicit added-line count (auto-computed if omitted)"),
+				deletions: z
+					.number()
+					.optional()
+					.describe("Explicit removed-line count (auto-computed if omitted)"),
+			},
+		},
+		async ({ task_id, diff, title, file_path, additions, deletions }) => {
+			try {
+				const payload: Record<string, unknown> = {
+					diff,
+					authorType: "arm",
+					authorId: ARM_ID,
+				};
+				if (title) payload.title = title;
+				if (file_path) payload.filePath = file_path;
+				if (additions !== undefined) payload.additions = additions;
+				if (deletions !== undefined) payload.deletions = deletions;
+
+				const response = await fetch(
+					`${API_BASE_URL}/api/tasks/${encodeURIComponent(task_id)}/diffs`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-API-Key": API_KEY,
+						},
+						body: JSON.stringify(payload),
+					},
+				);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Failed to record diff: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					diff: { additions: number; deletions: number };
+				};
+
+				logActivity(ARM_ID, "record_task_diff", task_id, {
+					additions: data.diff.additions,
+					deletions: data.diff.deletions,
+				});
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Diff recorded on task ${task_id} (+${data.diff.additions}/-${data.diff.deletions}).`,
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{ type: "text" as const, text: `Failed to record diff: ${errorMsg}` },
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
 	return server;
 }
 

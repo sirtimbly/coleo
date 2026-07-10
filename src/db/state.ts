@@ -6,7 +6,7 @@
  */
 
 import type { Database } from "bun:sqlite";
-import type { TaskComment } from "../types";
+import type { TaskComment, TaskSummary, TaskDiff, TaskWorkAuthorType } from "../types";
 
 // ============================================
 // Brain State
@@ -929,6 +929,254 @@ function rowToTaskComment(row: TaskCommentRow): TaskComment {
     client: row.client,
     edited: row.edited === 1,
     deleted: row.deleted === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// ============================================
+// Task Summaries (work-in-progress log)
+// ============================================
+
+export interface TaskSummaryRow {
+  id: string;
+  task_id: string;
+  content: string;
+  author_type: TaskWorkAuthorType;
+  author_id: string;
+  author_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createTaskSummary(
+  db: Database,
+  summary: {
+    id: string;
+    taskId: string;
+    content: string;
+    authorType: TaskWorkAuthorType;
+    authorId: string;
+    authorName?: string;
+  }
+): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO task_summaries (id, task_id, content, author_type, author_id, author_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      summary.id,
+      summary.taskId,
+      summary.content,
+      summary.authorType,
+      summary.authorId,
+      summary.authorName || null,
+      now,
+      now,
+    ]
+  );
+}
+
+export function getTaskSummaries(
+  db: Database,
+  taskId: string,
+  options?: { limit?: number; offset?: number }
+): TaskSummary[] {
+  let query = `SELECT * FROM task_summaries WHERE task_id = ? ORDER BY created_at DESC`;
+  const params: (string | number)[] = [taskId];
+
+  if (options?.limit) {
+    query += ` LIMIT ?`;
+    params.push(options.limit);
+  }
+  if (options?.offset) {
+    query += ` OFFSET ?`;
+    params.push(options.offset);
+  }
+
+  const rows = db.query(query).all(...params) as TaskSummaryRow[];
+  return rows.map(rowToTaskSummary);
+}
+
+export function getLatestTaskSummary(db: Database, taskId: string): TaskSummary | null {
+  const row = db
+    .query(`SELECT * FROM task_summaries WHERE task_id = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(taskId) as TaskSummaryRow | null;
+  return row ? rowToTaskSummary(row) : null;
+}
+
+export function getTaskSummary(db: Database, summaryId: string): TaskSummary | null {
+  const row = db.query("SELECT * FROM task_summaries WHERE id = ?").get(summaryId) as TaskSummaryRow | null;
+  return row ? rowToTaskSummary(row) : null;
+}
+
+export function updateTaskSummary(db: Database, summaryId: string, content: string): void {
+  db.run(
+    "UPDATE task_summaries SET content = ?, updated_at = ? WHERE id = ?",
+    [content, new Date().toISOString(), summaryId]
+  );
+}
+
+function rowToTaskSummary(row: TaskSummaryRow): TaskSummary {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    content: row.content,
+    authorType: row.author_type,
+    authorId: row.author_id,
+    authorName: row.author_name || undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+// ============================================
+// Task Diffs (work-in-progress diff log)
+// ============================================
+
+export interface TaskDiffRow {
+  id: string;
+  task_id: string;
+  title: string | null;
+  file_path: string | null;
+  diff: string;
+  additions: number;
+  deletions: number;
+  author_type: TaskWorkAuthorType;
+  author_id: string;
+  author_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createTaskDiff(
+  db: Database,
+  diff: {
+    id: string;
+    taskId: string;
+    title?: string;
+    filePath?: string;
+    diff: string;
+    additions?: number;
+    deletions?: number;
+    authorType: TaskWorkAuthorType;
+    authorId: string;
+    authorName?: string;
+  }
+): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO task_diffs (id, task_id, title, file_path, diff, additions, deletions, author_type, author_id, author_name, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      diff.id,
+      diff.taskId,
+      diff.title || null,
+      diff.filePath || null,
+      diff.diff,
+      diff.additions || 0,
+      diff.deletions || 0,
+      diff.authorType,
+      diff.authorId,
+      diff.authorName || null,
+      now,
+      now,
+    ]
+  );
+}
+
+export function getTaskDiffs(
+  db: Database,
+  taskId: string,
+  options?: { limit?: number; offset?: number }
+): TaskDiff[] {
+  let query = `SELECT * FROM task_diffs WHERE task_id = ? ORDER BY created_at DESC`;
+  const params: (string | number)[] = [taskId];
+
+  if (options?.limit) {
+    query += ` LIMIT ?`;
+    params.push(options.limit);
+  }
+  if (options?.offset) {
+    query += ` OFFSET ?`;
+    params.push(options.offset);
+  }
+
+  const rows = db.query(query).all(...params) as TaskDiffRow[];
+  return rows.map(rowToTaskDiff);
+}
+
+export function getTaskDiff(db: Database, diffId: string): TaskDiff | null {
+  const row = db.query("SELECT * FROM task_diffs WHERE id = ?").get(diffId) as TaskDiffRow | null;
+  return row ? rowToTaskDiff(row) : null;
+}
+
+export function getTaskDiffCount(db: Database, taskId: string): number {
+  const result = db.query("SELECT COUNT(*) as count FROM task_diffs WHERE task_id = ?").get(taskId) as {
+    count: number;
+  };
+  return result.count;
+}
+
+/**
+ * Mark diffs viewed for a user (mirrors markTaskCommentsRead)
+ */
+export function markTaskDiffsViewed(
+  db: Database,
+  taskId: string,
+  userId: string,
+  lastViewedDiffId: string
+): void {
+  const now = new Date().toISOString();
+  db.run(
+    `INSERT INTO task_diff_views (task_id, user_id, last_viewed_diff_id, viewed_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(task_id, user_id) DO UPDATE SET
+       last_viewed_diff_id = excluded.last_viewed_diff_id,
+       viewed_at = excluded.viewed_at`,
+    [taskId, userId, lastViewedDiffId, now]
+  );
+}
+
+/**
+ * Count diffs newer than the user's last-viewed diff (mirrors getUnreadCommentCount)
+ */
+export function getUnviewedDiffCount(db: Database, taskId: string, userId: string): number {
+  const view = db
+    .query("SELECT last_viewed_diff_id FROM task_diff_views WHERE task_id = ? AND user_id = ?")
+    .get(taskId, userId) as { last_viewed_diff_id: string | null } | null;
+
+  if (!view || !view.last_viewed_diff_id) {
+    return getTaskDiffCount(db, taskId);
+  }
+
+  const lastViewed = db
+    .query("SELECT created_at FROM task_diffs WHERE id = ?")
+    .get(view.last_viewed_diff_id) as { created_at: string } | null;
+
+  if (!lastViewed) {
+    return getTaskDiffCount(db, taskId);
+  }
+
+  const result = db
+    .query("SELECT COUNT(*) as count FROM task_diffs WHERE task_id = ? AND created_at > ?")
+    .get(taskId, lastViewed.created_at) as { count: number };
+
+  return result.count;
+}
+
+function rowToTaskDiff(row: TaskDiffRow): TaskDiff {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    title: row.title || undefined,
+    filePath: row.file_path || undefined,
+    diff: row.diff,
+    additions: row.additions,
+    deletions: row.deletions,
+    authorType: row.author_type,
+    authorId: row.author_id,
+    authorName: row.author_name || undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

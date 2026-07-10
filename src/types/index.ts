@@ -535,3 +535,37 @@ export interface TaskComment {
   updatedAt: string;
   replies?: TaskComment[];
 }
+
+// Task work summaries - append-only log of progress summaries written by
+// arms/brain as they work on a task. The most recent entry is the "current"
+// summary shown in the UI; older entries form a history/timeline.
+export type TaskWorkAuthorType = "arm" | "brain" | "human";
+
+export interface TaskSummary {
+  id: string;
+  taskId: string;
+  content: string;
+  authorType: TaskWorkAuthorType;
+  authorId: string;
+  authorName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Task diffs - append-only log of unified diffs recorded as work is done on
+// a task, plus lightweight per-user "viewed" tracking (mirrors task comment
+// read receipts) so the UI can badge unseen diffs.
+export interface TaskDiff {
+  id: string;
+  taskId: string;
+  title?: string;
+  filePath?: string;
+  diff: string;
+  additions: number;
+  deletions: number;
+  authorType: TaskWorkAuthorType;
+  authorId: string;
+  authorName?: string;
+  createdAt: string;
+  updatedAt: string;
+}

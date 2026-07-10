@@ -10,6 +10,8 @@ export { createGardenRoutes } from "./garden";
 export { createProposalsRoutes } from "./proposals";
 export { createTasksRoutes } from "./tasks";
 export { createTaskDiscussionsRoutes } from "./task-discussions";
+export { createTaskSummariesRoutes } from "./task-summaries";
+export { createTaskDiffsRoutes } from "./task-diffs";
 export { createAgentsRoutes } from "./agents";
 export { createDiscoveriesRoutes } from "./discoveries";
 export { createBugsRoutes } from "./bugs";

@@ -9,6 +9,9 @@ import type {
   StatusReport as SharedStatusReport,
   TaskAttachment as SharedTaskAttachment,
   TaskComment as SharedTaskComment,
+  TaskSummary as SharedTaskSummary,
+  TaskDiff as SharedTaskDiff,
+  TaskWorkAuthorType as SharedTaskWorkAuthorType,
 } from '../../../types';
 
 const API_BASE = '/api';
@@ -847,6 +850,83 @@ class ApiClient {
     return this.request<{ unreadCount: number }>(`/tasks/${taskId}/discussions/unread?userId=${encodeURIComponent(userId)}`);
   }
 
+  // Task Summaries (work-in-progress log)
+  async getTaskSummaries(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ summaries: TaskSummary[]; latest: TaskSummary | null }>(
+      `/tasks/${taskId}/summaries${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getLatestTaskSummary(taskId: string) {
+    return this.request<{ summary: TaskSummary | null }>(`/tasks/${taskId}/summaries/latest`);
+  }
+
+  async createTaskSummary(
+    taskId: string,
+    data: { content: string; authorType: TaskWorkAuthorType; authorId: string; authorName?: string }
+  ) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTaskSummary(taskId: string, summaryId: string, content: string) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries/${summaryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  // Task Diffs (work-in-progress diff log)
+  async getTaskDiffs(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ diffs: TaskDiff[]; totalCount: number }>(
+      `/tasks/${taskId}/diffs${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getTaskDiff(taskId: string, diffId: string) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs/${diffId}`);
+  }
+
+  async createTaskDiff(
+    taskId: string,
+    data: {
+      title?: string;
+      filePath?: string;
+      diff: string;
+      additions?: number;
+      deletions?: number;
+      authorType: TaskWorkAuthorType;
+      authorId: string;
+      authorName?: string;
+    }
+  ) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markTaskDiffsViewed(taskId: string, userId: string, lastViewedDiffId: string) {
+    return this.request<{ marked: boolean }>(`/tasks/${taskId}/diffs/mark-viewed`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, lastViewedDiffId }),
+    });
+  }
+
+  async getUnviewedDiffCount(taskId: string, userId: string) {
+    return this.request<{ unviewedCount: number }>(`/tasks/${taskId}/diffs/unviewed?userId=${encodeURIComponent(userId)}`);
+  }
+
   async removeTaskFromPlan(id: string) {
     return this.request<{ deleted: boolean; removedFromPlan: boolean }>(`/tasks/${id}/remove-from-plan`, {
       method: 'POST',
@@ -1365,6 +1445,11 @@ export interface Discovery {
 
 // Task comment/discussion
 export type TaskComment = SharedTaskComment;
+
+// Task work summary/diff log entries
+export type TaskWorkAuthorType = SharedTaskWorkAuthorType;
+export type TaskSummary = SharedTaskSummary;
+export type TaskDiff = SharedTaskDiff;
 
 // Brain-managed task
 export interface Task {
