@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-07-09T23:03:53.743Z",
+  "fetchedAt": "2026-07-10T21:21:19.954Z",
   "providers": [
     {
       "id": "github-copilot",
@@ -108,6 +108,18 @@
         {
           "id": "gpt-5.5",
           "name": "gpt-5.5"
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "gpt-5.6-luna"
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol"
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "gpt-5.6-terra"
         },
         {
           "id": "kimi-k2.7-code",
@@ -390,6 +402,10 @@
           "name": "gpt-image-2"
         },
         {
+          "id": "gpt-realtime-2.1",
+          "name": "gpt-realtime-2.1"
+        },
+        {
           "id": "o1",
           "name": "o1"
         },
@@ -590,6 +606,18 @@
         {
           "id": "gpt-5.5-pro",
           "name": "gpt-5.5-pro"
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "name": "gpt-5.6-luna"
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "name": "gpt-5.6-sol"
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "name": "gpt-5.6-terra"
         },
         {
           "id": "grok-4.5",

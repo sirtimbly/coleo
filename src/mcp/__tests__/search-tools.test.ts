@@ -44,7 +44,7 @@ describe("MCP search tools", () => {
 		const handler = getHandler(tools.search!);
 		expect(handler).toBeDefined();
 
-		fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
 			expect(String(input)).toContain("/api/search");
 			expect(init?.method).toBe("POST");
 			const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -63,7 +63,7 @@ describe("MCP search tools", () => {
 				}),
 				{ status: 200, headers: { "Content-Type": "application/json" } },
 			);
-		});
+		}) as typeof fetch);
 
 		const result = await handler!({
 			query: "authentication issues",
@@ -82,7 +82,7 @@ describe("MCP search tools", () => {
 		const handler = getHandler(tools.search_status_history!);
 		expect(handler).toBeDefined();
 
-		fetchSpy = spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
 			expect(String(input)).toContain("/api/status-history/search");
 			expect(init?.method).toBe("POST");
 			const body = JSON.parse(String(init?.body ?? "{}")) as {
@@ -111,7 +111,7 @@ describe("MCP search tools", () => {
 				}),
 				{ status: 200, headers: { "Content-Type": "application/json" } },
 			);
-		});
+		}) as typeof fetch);
 
 		const result = await handler!({
 			query: "database migrations",

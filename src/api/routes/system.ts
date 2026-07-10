@@ -58,13 +58,8 @@ export function createSystemRoutes() {
       // A coarse stream metric is enough for the dashboard badge.
       if (eventStore.isInitialized()) {
         try {
-          const store = eventStore as {
-            getStreamMetrics?: () => Promise<{ messages: number }>;
-          };
-          if (typeof store.getStreamMetrics === "function") {
-            const metrics = await store.getStreamMetrics();
-            activityCount = Math.min(metrics.messages, 1000);
-          }
+          const metrics = await eventStore.getStreamMetrics();
+          activityCount = Math.min(metrics.messages, 1000);
         } catch {
           // Fall back to 0 if JetStream query fails
         }
