@@ -262,6 +262,43 @@ describe("search routes", () => {
       expect(searchSpy).toHaveBeenCalledTimes(1);
     });
 
+    it("combines keyword and semantic scores for the same document id", async () => {
+      searchSpy.mockImplementationOnce(async () => [
+        {
+          id: "task-1",
+          score: 0.7,
+          payload: {
+            type: "task",
+            title: "Implement search API",
+            content: "Create hybrid search with keyword ranking",
+            metadata: {},
+            created_at: "2024-01-01",
+          },
+        },
+      ]);
+
+      const response = await app.request("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "search API",
+          types: ["task"],
+          minScore: 0,
+          keywordWeight: 0.5,
+          semanticWeight: 0.5,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as SearchResponseBody;
+      const hit = body.results.find((r) => r.id === "task-1");
+      expect(hit).toBeDefined();
+      expect(hit!.keywordScore).toBeGreaterThan(0);
+      expect(hit!.semanticScore).toBe(0.7);
+      expect(hit!.score).toBeCloseTo(hit!.keywordScore * 0.5 + 0.7 * 0.5, 5);
+      expect(body.semanticUsed).toBe(true);
+    });
+
     it("applies type filters before returning results", async () => {
       const response = await app.request("/api/search", {
         method: "POST",
