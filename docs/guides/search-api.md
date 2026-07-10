@@ -136,6 +136,27 @@ bun run retention:status-history
 
 Implementation: `src/vector/retention.ts`, `src/scripts/status-history-retention.ts`
 
+## Backfill existing status reports
+
+Import rows from SQLite `status_reports` into the Qdrant `status-history` collection
+(embeds via configured embedding provider):
+
+```bash
+# Preview
+bun run backfill:status-history -- --dry-run --limit 20
+
+# Apply
+bun run backfill:status-history
+
+# Custom DB path
+bun run backfill:status-history -- --db ~/.coleo/coleo.db
+```
+
+Ids are deterministic (`status-report-<reportId>`) so re-runs upsert safely.
+
+Note: CLI `coleo status-reports backfill` imports `.project/status-*.md` **into SQLite**.
+`bun run backfill:status-history` indexes SQLite → **Qdrant**.
+
 ## MCP tools (brain/arms)
 
 Registered on the Coleo MCP server (`src/mcp/server.ts`):
