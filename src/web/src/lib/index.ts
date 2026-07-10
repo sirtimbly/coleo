@@ -40,6 +40,9 @@ export {
   type RecentEventsResponse,
   type SearchResult,
   type SearchResponse,
+  type StatusHistoryEvent,
+  type StatusHistorySearchHit,
+  type StatusHistorySearchResponse,
 } from './api';
 export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';

@@ -542,6 +542,54 @@ class ApiClient {
     }>('/status-reports/stats');
   }
 
+  // Status history (Qdrant hybrid semantic search)
+  async searchStatusHistory(params: {
+    query: string;
+    armIds?: string[];
+    eventTypes?: string[];
+    taskId?: string;
+    bugId?: string;
+    from?: string;
+    to?: string;
+    daysBack?: number;
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    const filters: Record<string, unknown> = {};
+    if (params.armIds?.length) filters.arm_ids = params.armIds;
+    if (params.eventTypes?.length) filters.event_types = params.eventTypes;
+    if (params.taskId) filters.task_id = params.taskId;
+    if (params.bugId) filters.bug_id = params.bugId;
+    if (params.from) {
+      filters.from = params.from;
+    } else if (params.daysBack !== undefined) {
+      filters.from = new Date(Date.now() - params.daysBack * 24 * 60 * 60 * 1000).toISOString();
+    }
+    if (params.to) filters.to = params.to;
+
+    return this.request<StatusHistorySearchResponse>('/status-history/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        filters,
+        limit: params.limit ?? 20,
+        keywordWeight: params.keywordWeight,
+        semanticWeight: params.semanticWeight,
+        include_context: true,
+      }),
+    });
+  }
+
+  async getStatusHistoryStats(period = 'all') {
+    return this.request<{
+      period: string;
+      healthy: boolean;
+      collectionExists: boolean;
+      pointsCount: number;
+    }>(`/status-history/stats?period=${encodeURIComponent(period)}`);
+  }
+
   // Bugs
   async listBugs(params?: {
     source?: string;
@@ -946,6 +994,38 @@ export interface SearchResponse {
   query: string;
   semanticUsed: boolean;
   took: number;
+}
+
+export interface StatusHistoryEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  source: string;
+  title: string;
+  content: string;
+  taskId?: string;
+  bugId?: string;
+  discoveryId?: string;
+  armId?: string;
+  status?: string;
+  priority?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface StatusHistorySearchHit {
+  event: StatusHistoryEvent;
+  score: number;
+  keywordScore: number;
+  semanticScore: number;
+  highlights: string[];
+}
+
+export interface StatusHistorySearchResponse {
+  results: StatusHistorySearchHit[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  query_time_ms: number;
 }
 
 export interface OpenCodeProvider {
