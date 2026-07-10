@@ -38,6 +38,8 @@ describe("createMcpServer", () => {
         "claim_bug",
         "prepare_task",
         "service_status",
+        "search",
+        "search_status_history",
       ]),
     );
   });

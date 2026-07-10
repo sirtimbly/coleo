@@ -116,6 +116,29 @@ bun run test:qdrant
 bun run test:embedding
 ```
 
+## MCP tools (brain/arms)
+
+Registered on the Coleo MCP server (`src/mcp/server.ts`):
+
+| Tool | Backend |
+|------|---------|
+| `search` | `POST /api/search` — hybrid keyword + semantic over tasks/bugs/arms/index |
+| `search_status_history` | `POST /api/status-history/search` — hybrid over status history collection |
+
+Example arm call shape (status history):
+
+```json
+{
+  "query": "previous attempts at database migration",
+  "filters": {
+    "arm_ids": ["arm-alpha"],
+    "event_types": ["status_report", "task_completion"],
+    "days_back": 30
+  },
+  "limit": 10
+}
+```
+
 ## Dependencies
 
 - Embeddings: [embeddings.md](./embeddings.md)

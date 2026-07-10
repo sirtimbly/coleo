@@ -1122,6 +1122,133 @@ export function createMcpServer(): McpServer {
 		},
 	);
 
+	// Search historical status reports / completions (hybrid semantic + keyword)
+	server.registerTool(
+		"search_status_history",
+		{
+			description:
+				"Search historical status reports and completions from all arms (semantic + keyword hybrid over Qdrant status-history).",
+			inputSchema: {
+				query: z.string().describe("Natural language search query"),
+				filters: z
+					.object({
+						arm_ids: z.array(z.string()).optional().describe("Filter by arm IDs"),
+						event_types: z
+							.array(
+								z.enum([
+									"status_report",
+									"task_completion",
+									"discovery",
+									"bug_report",
+									"task_created",
+									"task_updated",
+									"arm_event",
+								]),
+							)
+							.optional()
+							.describe("Filter by event type"),
+						days_back: z
+							.number()
+							.optional()
+							.describe("Only include events from the last N days (default: 30)"),
+						task_id: z.string().optional().describe("Related task ID"),
+						bug_id: z.string().optional().describe("Related bug ID"),
+						source: z.string().optional().describe("Event source (arm id / system)"),
+						from: z.string().optional().describe("ISO start time (overrides days_back)"),
+						to: z.string().optional().describe("ISO end time"),
+					})
+					.optional(),
+				limit: z.number().optional().describe("Max results (default: 10)"),
+				keyword_weight: z
+					.number()
+					.optional()
+					.describe("Keyword score weight 0-1 (default: 0.35)"),
+				semantic_weight: z
+					.number()
+					.optional()
+					.describe("Semantic score weight 0-1 (default: 0.65)"),
+			},
+		},
+		async ({ query, filters, limit, keyword_weight, semantic_weight }) => {
+			if (!query || query.trim().length === 0) {
+				return {
+					content: [{ type: "text" as const, text: "Query is required." }],
+				};
+			}
+
+			try {
+				const apiFilters: Record<string, unknown> = {};
+				if (filters?.arm_ids) apiFilters.arm_ids = filters.arm_ids;
+				if (filters?.event_types) apiFilters.event_types = filters.event_types;
+				if (filters?.task_id) apiFilters.task_id = filters.task_id;
+				if (filters?.bug_id) apiFilters.bug_id = filters.bug_id;
+				if (filters?.source) apiFilters.source = filters.source;
+				if (filters?.from) {
+					apiFilters.from = filters.from;
+				} else if (filters?.days_back !== undefined || filters?.days_back === undefined) {
+					const days = filters?.days_back ?? 30;
+					const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+					apiFilters.from = since.toISOString();
+				}
+				if (filters?.to) apiFilters.to = filters.to;
+
+				const payload: Record<string, unknown> = {
+					query,
+					limit: limit ?? 10,
+					include_context: true,
+					filters: apiFilters,
+				};
+				if (keyword_weight !== undefined) payload.keywordWeight = keyword_weight;
+				if (semantic_weight !== undefined) payload.semanticWeight = semantic_weight;
+
+				const response = await fetch(`${API_BASE_URL}/api/status-history/search`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": API_KEY,
+					},
+					body: JSON.stringify(payload),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Status history search failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					results: Array<Record<string, unknown>>;
+					total: number;
+					query: string;
+					semanticUsed: boolean;
+					query_time_ms: number;
+				};
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Status history for "${data.query}" (total: ${data.total}, returned: ${data.results.length}, semanticUsed: ${data.semanticUsed}, took: ${data.query_time_ms}ms)\n\n` +
+								JSON.stringify(data, null, 2),
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Status history search failed: ${errorMsg}`,
+						},
+					],
+				};
+			}
+		},
+	);
+
 	// ============================================
 	// DEV SERVER MANAGEMENT TOOLS
 	// ============================================
