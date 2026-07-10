@@ -65,7 +65,8 @@ export class QdrantVectorStore {
 			try {
 				// Dynamic import to avoid bundling issues
 				const { QdrantClient } = await import("@qdrant/js-client-rest");
-				this.client = new QdrantClient({ url: this.url });
+				// Skip strict client/server minor checks so local/dev images can lag the npm client.
+				this.client = new QdrantClient({ url: this.url, checkCompatibility: false });
 
 				// Test connection
 				await this.client.getCollections();
