@@ -319,6 +319,26 @@ describe("search routes", () => {
       expect(body.results.map((result) => result.id)).not.toContain("arm-1");
     });
 
+    it("excludes keyword results missing a requested metadata filter key", async () => {
+      const response = await app.request("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query: "API",
+          minScore: 0,
+          semanticWeight: 0,
+          filters: { harness: "opencode-api" },
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as SearchResponseBody;
+
+      expect(body.results.map((result) => result.id)).toContain("arm-1");
+      expect(body.results.map((result) => result.id)).not.toContain("task-1");
+      expect(body.results.every((result) => result.type === "arm")).toBe(true);
+    });
+
     it("sanitizes punctuation-only queries into empty result sets instead of FTS errors", async () => {
       const response = await app.request("/api/search", {
         method: "POST",

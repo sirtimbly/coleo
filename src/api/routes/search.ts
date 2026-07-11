@@ -411,9 +411,10 @@ function searchArms(
 }
 
 /**
- * Convert a metadata filter map into a plain object, dropping keys whose
- * requested value doesn't match (acts as a post-filter for the small
- * per-type queries above, which don't build dynamic SQL per filter key).
+ * Convert a metadata filter map into a plain object, marking results whose
+ * requested value doesn't match or whose metadata lacks the requested key as
+ * filtered out (acts as a post-filter for the per-type queries above, which
+ * don't build dynamic SQL per filter key).
  */
 function applyFilters(
 	metadata: Record<string, unknown>,
@@ -421,7 +422,7 @@ function applyFilters(
 ): Record<string, unknown> {
 	if (!filters) return metadata;
 	for (const [key, value] of Object.entries(filters)) {
-		if (key in metadata && String(metadata[key]) !== String(value)) {
+		if (!(key in metadata) || String(metadata[key]) !== String(value)) {
 			return { ...metadata, __filteredOut: true };
 		}
 	}

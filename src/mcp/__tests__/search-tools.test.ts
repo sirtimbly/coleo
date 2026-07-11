@@ -44,7 +44,7 @@ describe("MCP search tools", () => {
 		const handler = getHandler(tools.search!);
 		expect(handler).toBeDefined();
 
-		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
+		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
 			expect(String(input)).toContain("/api/search");
 			expect(init?.method).toBe("POST");
 			const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
@@ -82,7 +82,7 @@ describe("MCP search tools", () => {
 		const handler = getHandler(tools.search_status_history!);
 		expect(handler).toBeDefined();
 
-		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: RequestInfo | URL, init?: RequestInit) => {
+		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
 			expect(String(input)).toContain("/api/status-history/search");
 			expect(init?.method).toBe("POST");
 			const body = JSON.parse(String(init?.body ?? "{}")) as {
