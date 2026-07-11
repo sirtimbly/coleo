@@ -1,0 +1,8 @@
+.git
+.github
+.coleo
+node_modules
+src/web/node_modules
+dist
+docs/.vitepress/cache
+docs/.vitepress/dist
