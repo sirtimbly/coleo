@@ -1122,6 +1122,133 @@ export function createMcpServer(): McpServer {
 		},
 	);
 
+	// Search historical status reports / completions (hybrid semantic + keyword)
+	server.registerTool(
+		"search_status_history",
+		{
+			description:
+				"Search historical status reports and completions from all arms (semantic + keyword hybrid over Qdrant status-history).",
+			inputSchema: {
+				query: z.string().describe("Natural language search query"),
+				filters: z
+					.object({
+						arm_ids: z.array(z.string()).optional().describe("Filter by arm IDs"),
+						event_types: z
+							.array(
+								z.enum([
+									"status_report",
+									"task_completion",
+									"discovery",
+									"bug_report",
+									"task_created",
+									"task_updated",
+									"arm_event",
+								]),
+							)
+							.optional()
+							.describe("Filter by event type"),
+						days_back: z
+							.number()
+							.optional()
+							.describe("Only include events from the last N days (default: 30)"),
+						task_id: z.string().optional().describe("Related task ID"),
+						bug_id: z.string().optional().describe("Related bug ID"),
+						source: z.string().optional().describe("Event source (arm id / system)"),
+						from: z.string().optional().describe("ISO start time (overrides days_back)"),
+						to: z.string().optional().describe("ISO end time"),
+					})
+					.optional(),
+				limit: z.number().optional().describe("Max results (default: 10)"),
+				keyword_weight: z
+					.number()
+					.optional()
+					.describe("Keyword score weight 0-1 (default: 0.35)"),
+				semantic_weight: z
+					.number()
+					.optional()
+					.describe("Semantic score weight 0-1 (default: 0.65)"),
+			},
+		},
+		async ({ query, filters, limit, keyword_weight, semantic_weight }) => {
+			if (!query || query.trim().length === 0) {
+				return {
+					content: [{ type: "text" as const, text: "Query is required." }],
+				};
+			}
+
+			try {
+				const apiFilters: Record<string, unknown> = {};
+				if (filters?.arm_ids) apiFilters.arm_ids = filters.arm_ids;
+				if (filters?.event_types) apiFilters.event_types = filters.event_types;
+				if (filters?.task_id) apiFilters.task_id = filters.task_id;
+				if (filters?.bug_id) apiFilters.bug_id = filters.bug_id;
+				if (filters?.source) apiFilters.source = filters.source;
+				if (filters?.from) {
+					apiFilters.from = filters.from;
+				} else if (filters?.days_back !== undefined || filters?.days_back === undefined) {
+					const days = filters?.days_back ?? 30;
+					const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+					apiFilters.from = since.toISOString();
+				}
+				if (filters?.to) apiFilters.to = filters.to;
+
+				const payload: Record<string, unknown> = {
+					query,
+					limit: limit ?? 10,
+					include_context: true,
+					filters: apiFilters,
+				};
+				if (keyword_weight !== undefined) payload.keywordWeight = keyword_weight;
+				if (semantic_weight !== undefined) payload.semanticWeight = semantic_weight;
+
+				const response = await fetch(`${API_BASE_URL}/api/status-history/search`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": API_KEY,
+					},
+					body: JSON.stringify(payload),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Status history search failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					results: Array<Record<string, unknown>>;
+					total: number;
+					query: string;
+					semanticUsed: boolean;
+					query_time_ms: number;
+				};
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Status history for "${data.query}" (total: ${data.total}, returned: ${data.results.length}, semanticUsed: ${data.semanticUsed}, took: ${data.query_time_ms}ms)\n\n` +
+								JSON.stringify(data, null, 2),
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Status history search failed: ${errorMsg}`,
+						},
+					],
+				};
+			}
+		},
+	);
+
 	// ============================================
 	// DEV SERVER MANAGEMENT TOOLS
 	// ============================================
@@ -2557,6 +2684,161 @@ export function createMcpServer(): McpServer {
 					},
 				],
 			};
+		},
+	);
+
+	// update_task_summary: record a work-in-progress summary on a task as
+	// the arm/brain makes progress
+	server.registerTool(
+		"update_task_summary",
+		{
+			description:
+				"Record a work-in-progress summary on a task. Call this as you make " +
+				"progress so the task's Summary tab shows an up-to-date account of " +
+				"what's been done. Each call appends a new entry; the most recent one " +
+				"is shown as the current summary.",
+			inputSchema: {
+				task_id: z.string().describe("ID of the task to summarize"),
+				content: z.string().describe("Summary of progress/work done so far"),
+			},
+		},
+		async ({ task_id, content }) => {
+			try {
+				const response = await fetch(
+					`${API_BASE_URL}/api/tasks/${encodeURIComponent(task_id)}/summaries`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-API-Key": API_KEY,
+						},
+						body: JSON.stringify({
+							content,
+							authorType: "arm",
+							authorId: ARM_ID,
+						}),
+					},
+				);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Failed to record summary: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				logActivity(ARM_ID, "update_task_summary", task_id, {
+					contentLength: content.length,
+				});
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Summary recorded on task ${task_id}.`,
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{ type: "text" as const, text: `Failed to record summary: ${errorMsg}` },
+					],
+					isError: true,
+				};
+			}
+		},
+	);
+
+	// record_task_diff: record a unified diff of changes made while working
+	// on a task
+	server.registerTool(
+		"record_task_diff",
+		{
+			description:
+				"Record a unified diff of code changes made while working on a task. " +
+				"Call this after making meaningful edits so the task's Diff tab shows " +
+				"what changed. Additions/deletions are auto-computed from the diff if " +
+				"not provided.",
+			inputSchema: {
+				task_id: z.string().describe("ID of the task these changes belong to"),
+				diff: z.string().describe("Unified diff text (e.g. `git diff` output)"),
+				title: z
+					.string()
+					.optional()
+					.describe("Short label for this diff (e.g. the change summary)"),
+				file_path: z
+					.string()
+					.optional()
+					.describe("Primary file path this diff touches, if a single file"),
+				additions: z
+					.number()
+					.optional()
+					.describe("Explicit added-line count (auto-computed if omitted)"),
+				deletions: z
+					.number()
+					.optional()
+					.describe("Explicit removed-line count (auto-computed if omitted)"),
+			},
+		},
+		async ({ task_id, diff, title, file_path, additions, deletions }) => {
+			try {
+				const payload: Record<string, unknown> = {
+					diff,
+					authorType: "arm",
+					authorId: ARM_ID,
+				};
+				if (title) payload.title = title;
+				if (file_path) payload.filePath = file_path;
+				if (additions !== undefined) payload.additions = additions;
+				if (deletions !== undefined) payload.deletions = deletions;
+
+				const response = await fetch(
+					`${API_BASE_URL}/api/tasks/${encodeURIComponent(task_id)}/diffs`,
+					{
+						method: "POST",
+						headers: {
+							"Content-Type": "application/json",
+							"X-API-Key": API_KEY,
+						},
+						body: JSON.stringify(payload),
+					},
+				);
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Failed to record diff: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					diff: { additions: number; deletions: number };
+				};
+
+				logActivity(ARM_ID, "record_task_diff", task_id, {
+					additions: data.diff.additions,
+					deletions: data.diff.deletions,
+				});
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Diff recorded on task ${task_id} (+${data.diff.additions}/-${data.diff.deletions}).`,
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{ type: "text" as const, text: `Failed to record diff: ${errorMsg}` },
+					],
+					isError: true,
+				};
+			}
 		},
 	);
 

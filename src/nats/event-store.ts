@@ -306,7 +306,7 @@ export class EventStore implements IEventStore {
           break;
 
         case 'arm.status_changed':
-          state.status = event.data.to as ArmState['status'];
+          state.status = (event.data.to ?? event.data.newStatus) as ArmState['status'];
           if (event.data.taskId) {
             state.currentTaskId = event.data.taskId as string;
           }

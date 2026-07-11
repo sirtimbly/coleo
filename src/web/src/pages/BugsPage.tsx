@@ -4,10 +4,10 @@
  * Displays bug reports and allows tracking and management
  * Uses React Query for data fetching with optimistic updates
  */
-import React, { useMemo, useState, useCallback, useId } from 'react';
-import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon } from 'lucide-react';
+import React, { useMemo, useState, useCallback } from 'react';
+import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon, Clock } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
-import { type Bug, type BugMetadata, type UiMetadata, cn } from '@/lib';
+import { type Bug, type BugMetadata, type UiMetadata, cn, api } from '@/lib';
 import { BugGrid, BugModal } from '@/components';
 import type { BugUpdate } from '@/components/BugGridRow';
 import { useBugs } from '@/hooks/useBugs';
@@ -15,6 +15,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
+import { useIsWorkspacePanel, useWorkspaceSearchParams } from '@/workspace/route-context';
 
 type SidebarTab = 'details';
 
@@ -41,17 +42,144 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 const isBugStatus = (value: string): value is Bug["status"] =>
 	value in STATUS_CONFIG;
 
+function formatAbsoluteDateTime(iso: string): string {
+	return new Date(iso).toLocaleString(undefined, {
+		dateStyle: 'medium',
+		timeStyle: 'short',
+	});
+}
+
+function formatRelativeAge(iso: string): string {
+	const diffMs = Date.now() - new Date(iso).getTime();
+	const diffSeconds = Math.floor(diffMs / 1000);
+	if (diffSeconds < 60) return 'just now';
+	const diffMinutes = Math.floor(diffSeconds / 60);
+	if (diffMinutes < 60) return `${diffMinutes}m ago`;
+	const diffHours = Math.floor(diffMinutes / 60);
+	if (diffHours < 24) return `${diffHours}h ago`;
+	const diffDays = Math.floor(diffHours / 24);
+	if (diffDays < 30) return `${diffDays}d ago`;
+	const diffMonths = Math.floor(diffDays / 30);
+	if (diffMonths < 12) return `${diffMonths}mo ago`;
+	const diffYears = Math.floor(diffMonths / 12);
+	return `${diffYears}y ago`;
+}
+
+function BugCreatedAt({ createdAt }: { createdAt: string }) {
+	return (
+		<span
+			className="inline-flex items-center gap-1 text-xs text-foreground-500"
+			title={formatAbsoluteDateTime(createdAt)}
+		>
+			<Clock className="h-3 w-3" />
+			Created {formatRelativeAge(createdAt)}
+		</span>
+	);
+}
+
+/**
+ * Description field that shows an explicit empty state (instead of silently
+ * rendering nothing) and lets you add/edit the description inline.
+ */
+function BugDescriptionField({
+	bugId,
+	description,
+	onSave,
+}: {
+	bugId: string;
+	description: string;
+	onSave: (bugId: string, description: string) => void;
+}) {
+	const [isEditing, setIsEditing] = useState(false);
+	const [draft, setDraft] = useState(description);
+
+	React.useEffect(() => {
+		if (!isEditing) setDraft(description);
+	}, [description, isEditing]);
+
+	const handleSave = () => {
+		const trimmed = draft.trim();
+		setIsEditing(false);
+		if (trimmed !== description) {
+			onSave(bugId, trimmed);
+		}
+	};
+
+	const handleCancel = () => {
+		setDraft(description);
+		setIsEditing(false);
+	};
+
+	if (isEditing) {
+		return (
+			<div className="space-y-2">
+				<textarea
+					autoFocus
+					value={draft}
+					onChange={(event) => setDraft(event.target.value)}
+					onKeyDown={(event) => {
+						if (event.key === 'Escape') {
+							event.preventDefault();
+							handleCancel();
+						} else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+							event.preventDefault();
+							handleSave();
+						}
+					}}
+					placeholder="Add a description for this bug..."
+					rows={4}
+					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+				/>
+				<div className="flex items-center gap-2">
+					<Button size="sm" variant="primary" onPress={handleSave}>
+						Save
+					</Button>
+					<Button size="sm" variant="ghost" onPress={handleCancel}>
+						Cancel
+					</Button>
+					<span className="text-xs text-foreground-500">⌘⏎ to save · Esc to cancel</span>
+				</div>
+			</div>
+		);
+	}
+
+	if (!description.trim()) {
+		return (
+			<button
+				type="button"
+				onClick={() => setIsEditing(true)}
+				className="w-full rounded-md border border-dashed border-border/70 px-3 py-3 text-left text-sm text-foreground-500 transition-colors hover:border-accent hover:text-foreground"
+			>
+				No description yet — click to add one
+			</button>
+		);
+	}
+
+	return (
+		<button
+			type="button"
+			onClick={() => setIsEditing(true)}
+			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
+			title="Click to edit"
+		>
+			<p className="whitespace-pre-wrap">{description}</p>
+		</button>
+	);
+}
+
 export function BugsPage() {
   usePageTitle('Coleo Observatory - Bugs');
 
   const queryClient = useQueryClient();
+	const isWorkspacePanel = useIsWorkspacePanel();
+	const [searchParams] = useWorkspaceSearchParams();
 	const [filter, setFilter] = useState<{ status?: string; priority?: string; source?: string }>({});
 	const [tagFilter, setTagFilter] = useState<string[]>([]);
 	const [searchText, setSearchText] = useState('');
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
-	const detailsTabId = useId();
+	const detailsTabId: SidebarTab = "details";
 
 	// Use React Query hook for bugs
 	const {
@@ -180,12 +308,45 @@ export function BugsPage() {
 		);
 	}, []);
 
-	// Update selected bug when bugs change
+	// Update selected bug when bugs change (keep fields fresh). If the selected
+	// bug isn't in the currently loaded list (e.g. it was opened via a deep
+	// link and is filtered out or archived), leave it alone instead of closing
+	// the sidebar.
 	React.useEffect(() => {
 		if (!selectedBug) return;
-		const latest = bugs.find((bug) => bug.id === selectedBug.id) || null;
-		setSelectedBug(latest);
+		const latest = bugs.find((bug) => bug.id === selectedBug.id);
+		if (latest) setSelectedBug(latest);
 	}, [bugs, selectedBug]);
+
+	// Deep-link support: `/bugs?bug=<id>` (e.g. from the command palette search
+	// results) opens the details sidebar for that bug directly. Falls back to a
+	// direct fetch when the bug isn't part of the currently loaded/filtered list
+	// (e.g. it's archived or excluded by the active status filter).
+	React.useEffect(() => {
+		if (!isWorkspacePanel) return;
+
+		const bugId = searchParams.get('bug');
+		if (!bugId) return;
+
+		const fromList = bugs.find((bug) => bug.id === bugId);
+		if (fromList) {
+			setSelectedBug(fromList);
+			return;
+		}
+
+		let cancelled = false;
+		api
+			.getBug(bugId)
+			.then((response) => {
+				if (!cancelled) setSelectedBug(response.bug);
+			})
+			.catch(() => {
+				// Bug no longer exists or failed to load; leave selection as-is.
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [bugs, isWorkspacePanel, searchParams]);
 
 	// Handle WebSocket messages for real-time updates
 	const handleWSMessage = useCallback(
@@ -413,10 +574,11 @@ export function BugsPage() {
 								>
 									<div className="space-y-4"
 									>
-										<div>
+										<div className="flex items-center justify-between">
 											<span className="text-xs text-foreground-500 font-mono">
 												ID: {selectedBug.id}
 											</span>
+											<BugCreatedAt createdAt={selectedBug.createdAt} />
 										</div>
 
 										<div>
@@ -435,7 +597,11 @@ export function BugsPage() {
 											<h5 className="text-sm font-medium text-foreground-500 mb-1">
 												Description
 											</h5>
-											<p className="text-sm">{selectedBug.description}</p>
+											<BugDescriptionField
+												bugId={selectedBug.id}
+												description={selectedBug.description}
+												onSave={(bugId, description) => handleUpdateBug(bugId, { description })}
+											/>
 										</div>
 
 										<div className="grid grid-cols-2 gap-4 text-sm"
@@ -472,12 +638,6 @@ export function BugsPage() {
 												</p>
 											</div>
 										)}
-
-										<div className="text-xs text-foreground-500"
-										>
-											Created{' '}
-											{new Date(selectedBug.createdAt).toLocaleString()}
-										</div>
 									</div>
 								</div>
 							</Tabs.Panel>

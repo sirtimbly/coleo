@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useId } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { RefreshCw, Settings, Grid3x3, ListTodo, Search, Lightbulb } from 'lucide-react';
 import { Button, Tabs, Chip } from '@heroui/react';
 import { TaskGrid } from './TaskGrid';
@@ -16,9 +16,9 @@ interface UnifiedGridViewProps {
 }
 
 export function UnifiedGridView({ className }: UnifiedGridViewProps) {
-  const tasksId = useId();
-  const bugsId = useId();
-  const discoveriesId = useId();
+  const tasksId: TabType = 'tasks';
+  const bugsId: TabType = 'bugs';
+  const discoveriesId: TabType = 'discoveries';
   const [activeTab, setActiveTab] = useState<TabType>('tasks');
   const [searchText, setSearchText] = useState('');
   const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();

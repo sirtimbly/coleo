@@ -35,7 +35,24 @@ export class EmbeddingService {
 	 * Auto-detect configuration from environment variables
 	 */
 	private detectConfig(): EmbeddingConfig {
-		// Check for OpenAI API key first
+		const forced = process.env.COLEO_EMBEDDING_PROVIDER?.toLowerCase();
+		if (forced === "local" || forced === "mock") {
+			return {
+				provider: forced,
+				localModel: process.env.LOCAL_EMBEDDING_MODEL,
+				model: process.env.OPENAI_EMBEDDING_MODEL,
+			};
+		}
+		if (forced === "openai") {
+			return {
+				provider: "openai",
+				apiKey: process.env.OPENAI_API_KEY,
+				baseUrl: process.env.OPENAI_BASE_URL,
+				model: process.env.OPENAI_EMBEDDING_MODEL,
+			};
+		}
+
+		// Prefer OpenAI when a key is present; otherwise local/mock path.
 		if (process.env.OPENAI_API_KEY) {
 			return {
 				provider: "openai",
@@ -45,7 +62,6 @@ export class EmbeddingService {
 			};
 		}
 
-		// Fall back to local provider
 		return {
 			provider: "local",
 			localModel: process.env.LOCAL_EMBEDDING_MODEL,
@@ -61,8 +77,10 @@ export class EmbeddingService {
 				this.provider = new OpenAIEmbeddingProvider(
 					this.config.apiKey,
 					this.config.baseUrl,
+					this.config.model,
 				);
 				break;
+			case "mock":
 			case "local":
 			default:
 				this.provider = new LocalEmbeddingProvider(this.config.localModel);
@@ -81,6 +99,9 @@ export class EmbeddingService {
 	 * Get the current model name
 	 */
 	getModel(): string {
+		if (this.config.provider === "local" || this.config.provider === "mock") {
+			return this.config.localModel || this.provider?.defaultModel || "unknown";
+		}
 		return this.config.model || this.provider?.defaultModel || "unknown";
 	}
 

@@ -10,3 +10,4 @@ export * from './command-stream';
 export * from './server';
 export * from './client';
 export * from './arm-client';
+export * from './status-consumer';

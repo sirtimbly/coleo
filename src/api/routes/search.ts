@@ -81,20 +81,6 @@ export interface SearchResponse {
 }
 
 /**
- * Searchable entity from database
- */
-interface SearchableEntity {
-	id: string;
-	type: string;
-	title: string;
-	content: string;
-	metadata: string;
-	created_at: string;
-	updated_at?: string;
-	score?: number;
-}
-
-/**
  * Create search routes
  */
 export function createSearchRoutes(): Hono<SearchContext> {
@@ -235,7 +221,10 @@ export function createSearchRoutes(): Hono<SearchContext> {
 }
 
 /**
- * Perform keyword search using SQLite FTS
+ * Perform keyword search using SQLite FTS over real content tables
+ * (bugs, tasks) plus a simple LIKE scan over arms. There is no longer a
+ * generic `search_index` table to keep in sync — we query the tables the
+ * rest of the app already writes to directly.
  */
 async function performKeywordSearch(
 	db: Database,
@@ -244,59 +233,215 @@ async function performKeywordSearch(
 	filters?: Record<string, unknown>,
 	limit = 50,
 ): Promise<SearchResult[]> {
-	// Build a valid FTS5 query from user input.
-	const searchTerms = buildFtsPrefixQuery(query);
-	if (!searchTerms) {
+	const ftsQuery = buildFtsPrefixQuery(query);
+	if (!ftsQuery) {
 		return [];
 	}
 
-	let sql = `
-		SELECT 
-			id,
-			type,
-			title,
-			content,
-			metadata,
-			created_at,
-			updated_at,
-			rank as score
-		FROM search_index
-		WHERE search_index MATCH ?
-	`;
+	const wantedTypes = types && types.length > 0 ? new Set(types) : null;
+	const wantsType = (type: string) => !wantedTypes || wantedTypes.has(type);
 
-	const params: (string | number)[] = [searchTerms];
+	const results: SearchResult[] = [];
 
-	// Add type filter
-	if (types && types.length > 0) {
-		sql += ` AND type IN (${types.map(() => "?").join(", ")})`;
-		params.push(...types);
+	if (wantsType("bug")) {
+		results.push(...searchBugs(db, ftsQuery, filters, limit));
 	}
 
-	// Add custom filters
-	if (filters) {
-		for (const [key, value] of Object.entries(filters)) {
-			sql += ` AND json_extract(metadata, '$.${key}') = ?`;
-			params.push(String(value));
+	if (wantsType("task")) {
+		results.push(...searchTasks(db, ftsQuery, filters, limit));
+	}
+
+	if (wantsType("arm")) {
+		results.push(...searchArms(db, query, filters, limit));
+	}
+
+	return results;
+}
+
+interface BugRow {
+	id: string;
+	title: string;
+	description: string;
+	status: string;
+	priority: string;
+	source: string;
+	created_at: string;
+	updated_at: string;
+	rank: number;
+}
+
+function searchBugs(
+	db: Database,
+	ftsQuery: string,
+	filters: Record<string, unknown> | undefined,
+	limit: number,
+): SearchResult[] {
+	try {
+		const rows = db
+			.query(
+				`SELECT b.id, b.title, b.description, b.status, b.priority, b.source,
+					b.created_at, b.updated_at, bugs_fts.rank as rank
+				FROM bugs_fts
+				JOIN bugs b ON b.rowid = bugs_fts.rowid
+				WHERE bugs_fts MATCH ?
+				ORDER BY bugs_fts.rank
+				LIMIT ?`,
+			)
+			.all(ftsQuery, limit) as BugRow[];
+
+		return rankedRowsToResults(rows, (row, keywordScore) => ({
+			id: row.id,
+			type: "bug",
+			title: row.title,
+			content: row.description,
+			score: 0,
+			keywordScore,
+			semanticScore: 0,
+			metadata: applyFilters(
+				{ status: row.status, priority: row.priority, source: row.source },
+				filters,
+			),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}));
+	} catch (err) {
+		console.warn("[Search] Bug FTS query failed:", err);
+		return [];
+	}
+}
+
+interface TaskRow {
+	id: string;
+	subject: string;
+	description: string;
+	status: string;
+	priority: string;
+	domain: string | null;
+	created_at: string;
+	updated_at: string;
+	rank: number;
+}
+
+function searchTasks(
+	db: Database,
+	ftsQuery: string,
+	filters: Record<string, unknown> | undefined,
+	limit: number,
+): SearchResult[] {
+	try {
+		const rows = db
+			.query(
+				`SELECT t.id, t.subject, t.description, t.status, t.priority, t.domain,
+					t.created_at, t.updated_at, tasks_fts.rank as rank
+				FROM tasks_fts
+				JOIN tasks t ON t.rowid = tasks_fts.rowid
+				WHERE tasks_fts MATCH ?
+				ORDER BY tasks_fts.rank
+				LIMIT ?`,
+			)
+			.all(ftsQuery, limit) as TaskRow[];
+
+		return rankedRowsToResults(rows, (row, keywordScore) => ({
+			id: row.id,
+			type: "task",
+			title: row.subject,
+			content: row.description,
+			score: 0,
+			keywordScore,
+			semanticScore: 0,
+			metadata: applyFilters(
+				{ status: row.status, priority: row.priority, domain: row.domain },
+				filters,
+			),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}));
+	} catch (err) {
+		console.warn("[Search] Task FTS query failed:", err);
+		return [];
+	}
+}
+
+interface ArmRow {
+	id: string;
+	name: string;
+	domain: string;
+	harness: string;
+	status: string;
+	created_at: string;
+	updated_at: string;
+}
+
+function searchArms(
+	db: Database,
+	query: string,
+	filters: Record<string, unknown> | undefined,
+	limit: number,
+): SearchResult[] {
+	// Arms are a small table; a plain LIKE scan is fine and avoids needing an
+	// FTS index that would need to stay in sync with frequent status updates.
+	try {
+		const like = `%${query.trim()}%`;
+		const rows = db
+			.query(
+				`SELECT id, name, domain, harness, status, created_at, updated_at
+				FROM arms
+				WHERE id LIKE ? OR name LIKE ? OR harness LIKE ? OR domain LIKE ?
+				ORDER BY updated_at DESC
+				LIMIT ?`,
+			)
+			.all(like, like, like, like, limit) as ArmRow[];
+
+		return rows.map((row, index) => ({
+			id: row.id,
+			type: "arm",
+			title: row.name,
+			content: `${row.harness} · ${row.status}`,
+			score: 0,
+			keywordScore: normalizeScore(1 - index / Math.max(rows.length, 1)),
+			semanticScore: 0,
+			metadata: applyFilters({ status: row.status, harness: row.harness, domain: row.domain }, filters),
+			createdAt: row.created_at,
+			updatedAt: row.updated_at,
+		}));
+	} catch (err) {
+		console.warn("[Search] Arm search query failed:", err);
+		return [];
+	}
+}
+
+/**
+ * Convert a metadata filter map into a plain object, marking results whose
+ * requested value doesn't match or whose metadata lacks the requested key as
+ * filtered out (acts as a post-filter for the per-type queries above, which
+ * don't build dynamic SQL per filter key).
+ */
+function applyFilters(
+	metadata: Record<string, unknown>,
+	filters: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+	if (!filters) return metadata;
+	for (const [key, value] of Object.entries(filters)) {
+		if (!(key in metadata) || String(metadata[key]) !== String(value)) {
+			return { ...metadata, __filteredOut: true };
 		}
 	}
+	return metadata;
+}
 
-	sql += ` ORDER BY rank LIMIT ?`;
-	params.push(limit);
-
-	const results = db.query(sql).all(...params) as SearchableEntity[];
-
-	return results.map((row) => ({
-		id: row.id,
-		type: row.type,
-		title: row.title,
-		content: row.content,
-		score: 0, // Will be calculated during merge
-		keywordScore: normalizeScore(row.score || 0),
-		semanticScore: 0,
-		metadata: JSON.parse(row.metadata || "{}"),
-		createdAt: row.created_at,
-		updatedAt: row.updated_at,
-	}));
+/**
+ * FTS5 `rank` is a negative bm25-style score where values closer to zero are
+ * *worse* matches (i.e. more negative = better). Convert the already-sorted
+ * row order into a normalized 0..1 keyword score.
+ */
+function rankedRowsToResults<T>(
+	rows: T[],
+	toResult: (row: T, keywordScore: number) => SearchResult,
+): SearchResult[] {
+	const total = rows.length;
+	return rows
+		.map((row, index) => toResult(row, normalizeScore(1 - index / Math.max(total, 1))))
+		.filter((result) => result.metadata.__filteredOut !== true);
 }
 
 /**
@@ -306,6 +451,7 @@ function buildFtsPrefixQuery(query: string): string {
 	const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
 	return terms.map((term) => `${term}*`).join(" ");
 }
+
 
 /**
  * Perform semantic search using Qdrant
@@ -419,16 +565,22 @@ async function getSearchSuggestions(
 	query: string,
 	limit: number,
 ): Promise<string[]> {
-	const sql = `
-		SELECT DISTINCT title
-		FROM search_index
-		WHERE title LIKE ?
-		ORDER BY created_at DESC
-		LIMIT ?
-	`;
+	const like = `%${query}%`;
+	const rows = db
+		.query(
+			`SELECT title, created_at FROM (
+				SELECT title, created_at FROM bugs WHERE title LIKE ?
+				UNION ALL
+				SELECT subject as title, created_at FROM tasks WHERE subject LIKE ?
+				UNION ALL
+				SELECT name as title, created_at FROM arms WHERE name LIKE ?
+			)
+			ORDER BY created_at DESC
+			LIMIT ?`,
+		)
+		.all(like, like, like, limit) as { title: string }[];
 
-	const results = db.query(sql).all(`%${query}%`, limit) as { title: string }[];
-	return results.map((r) => r.title);
+	return [...new Set(rows.map((r) => r.title))];
 }
 
 /**

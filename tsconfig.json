@@ -9,6 +9,10 @@
     "jsx": "react-jsx",
     "allowJs": true,
 
+    // TypeScript 7 defaults "types" to [] instead of auto-including every
+    // @types/* package; list the ambient/global type packages we rely on.
+    "types": ["bun"],
+
     // Bundler mode
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

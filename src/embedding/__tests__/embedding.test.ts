@@ -119,6 +119,14 @@ describe("EmbeddingService", () => {
 		expect(service.getProviderName()).toBe("local");
 	});
 
+	it("should honor COLEO_EMBEDDING_PROVIDER=local even when OpenAI key exists", () => {
+		process.env.OPENAI_API_KEY = "test-key";
+		process.env.COLEO_EMBEDDING_PROVIDER = "local";
+		const service = new EmbeddingService();
+		expect(service.getProviderName()).toBe("local");
+		delete process.env.COLEO_EMBEDDING_PROVIDER;
+	});
+
 	it("should generate embeddings through service", async () => {
 		const service = new EmbeddingService({ provider: "local" });
 		const result = await service.embed("Test text");

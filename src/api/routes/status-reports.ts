@@ -25,6 +25,13 @@ function isStatusReportStatus(value: string): value is StatusReport["status"] {
   );
 }
 
+function requireTask(db: Database, taskId: string): void {
+  const exists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
+  if (!exists) {
+    throw HttpError.notFound(`Task not found: ${taskId}`);
+  }
+}
+
 export function createStatusReportsRoutes() {
   const app = new Hono<StatusReportsContext>();
 
@@ -49,6 +56,7 @@ export function createStatusReportsRoutes() {
     if (!body.taskId || !body.armId || !body.status || !body.summary) {
       throw HttpError.badRequest("taskId, armId, status, and summary are required");
     }
+    requireTask(db, body.taskId);
 
     const id = `${body.taskId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const now = new Date().toISOString();

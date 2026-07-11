@@ -16,7 +16,8 @@ services:
   # Qdrant - Vector database for embeddings
   # ============================================
   qdrant:
-    image: qdrant/qdrant:latest
+    # Pin major.minor for reproducible local stacks; bump intentionally with client.
+    image: qdrant/qdrant:v1.13.2
     container_name: coleo-qdrant
     ports:
       # REST API
@@ -28,12 +29,8 @@ services:
     environment:
       - QDRANT__SERVICE__HTTP_PORT=6333
       - QDRANT__SERVICE__GRPC_PORT=6334
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
+    # Upstream Qdrant image has no curl/wget; avoid command healthchecks that
+    # report perpetual unhealthy. Dependents use service_started instead.
     restart: unless-stopped
 
   # ============================================
@@ -89,7 +86,7 @@ services:
       gitea:
         condition: service_healthy
       qdrant:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     # Keep container running for SSH access
     tty: true

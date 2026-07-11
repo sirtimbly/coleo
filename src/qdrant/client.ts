@@ -65,7 +65,8 @@ export class QdrantVectorStore {
 			try {
 				// Dynamic import to avoid bundling issues
 				const { QdrantClient } = await import("@qdrant/js-client-rest");
-				this.client = new QdrantClient({ url: this.url });
+				// Skip strict client/server minor checks so local/dev images can lag the npm client.
+				this.client = new QdrantClient({ url: this.url, checkCompatibility: false });
 
 				// Test connection
 				await this.client.getCollections();
@@ -188,8 +189,24 @@ export class QdrantVectorStore {
 	async deletePoints(collectionName: string, ids: string[]): Promise<void> {
 		const client = await this.ensureInitialized();
 
+		if (ids.length === 0) return;
+
 		await client.delete(collectionName, {
 			points: ids,
+		});
+	}
+
+	/**
+	 * Delete points matching a Qdrant filter (e.g. retention by timestamp range).
+	 */
+	async deleteByFilter(
+		collectionName: string,
+		filter: Record<string, unknown>,
+	): Promise<void> {
+		const client = await this.ensureInitialized();
+
+		await client.delete(collectionName, {
+			filter,
 		});
 	}
 

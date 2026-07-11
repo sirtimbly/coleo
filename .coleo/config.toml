@@ -1,5 +1,5 @@
 # Coleo Configuration
-# Generated on 2026-02-05T15:23:25.477Z
+# Updated: 2026-07-10T21:37:27.917Z
 
 version = 1
 
@@ -8,16 +8,39 @@ poll_interval_ms = 30000
 max_arms = 8
 arm_grace_period_minutes = 2
 
+[refactoring]
+file_size_threshold = 400
+enabled = true
+
+[automations]
+enabled = true
+
+[automations.refactor_large_files]
+enabled = true
+min_interval_hours = 24
+require_empty_queue = true
+
 [mail]
 from_address = "brain@coleo.local"
+to_address = ""
 digest_schedule = "immediate"
 
 [terminal]
 emulator = "auto"
 
-# Gitea configuration (optional)
-# [gitea]
-# url = "http://localhost:3000"
-# token = "your-token-here"
-# default_org = "coleo"
-# default_repo = "workspace"
+[docs]
+update_file_threshold = 10
+update_poll_interval = 10
+update_enabled = true
+
+[defaults]
+harness = "opencode"
+provider = "github-copilot"
+model = "claude-sonnet-5"
+context_budget = 100000
+
+[compression]
+warning_threshold = 80
+critical_threshold = 95
+max_threshold = 100
+enabled = true

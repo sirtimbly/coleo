@@ -12,12 +12,14 @@ import {
 } from "golden-layout";
 import {
 	Bot,
+	Command,
 	LayoutPanelTop,
 	MailPlus,
 	MoreHorizontal,
 	Plus,
 	RotateCcw,
 	Save,
+	Search,
 	SquareStack,
 } from "lucide-react";
 import { createPortal } from "react-dom";
@@ -27,7 +29,11 @@ import {
 	findAppRoute,
 	getAppRouteTitle,
 } from "@/app/routes";
-import { WorkspaceArmRail } from "@/components/WorkspaceArmRail";
+import {
+	WorkspaceCommandPalette,
+	type CommandPaletteMode,
+	type WorkspaceCommandAction,
+} from "@/components/WorkspaceCommandPalette";
 import { useMessage } from "@/lib";
 import {
 	WorkspaceRouteProvider,
@@ -187,6 +193,9 @@ export function GoldenWorkspace() {
 	>({});
 	const [launcherOpen, setLauncherOpen] = useState(false);
 	const [paneMenuOpen, setPaneMenuOpen] = useState(false);
+	const [paletteMode, setPaletteMode] = useState<CommandPaletteMode | null>(
+		null,
+	);
 
 	const persistWorkspaceLayout = useCallback(() => {
 		if (!layoutRef.current) {
@@ -477,6 +486,21 @@ export function GoldenWorkspace() {
 		[focusOrOpenRoute],
 	);
 
+	const closeMenus = useCallback(() => {
+		setLauncherOpen(false);
+		setPaneMenuOpen(false);
+	}, []);
+
+	const openPalette = useCallback((mode: CommandPaletteMode) => {
+		setLauncherOpen(false);
+		setPaneMenuOpen(false);
+		setPaletteMode(mode);
+	}, []);
+
+	const closePalette = useCallback(() => {
+		setPaletteMode(null);
+	}, []);
+
 	useEffect(() => {
 		if (!launcherOpen && !paneMenuOpen) {
 			return;
@@ -491,14 +515,12 @@ export function GoldenWorkspace() {
 				return;
 			}
 
-			setLauncherOpen(false);
-			setPaneMenuOpen(false);
+			closeMenus();
 		}
 
 		function handleEscape(event: KeyboardEvent) {
 			if (event.key === "Escape") {
-				setLauncherOpen(false);
-				setPaneMenuOpen(false);
+				closeMenus();
 			}
 		}
 
@@ -509,7 +531,7 @@ export function GoldenWorkspace() {
 			document.removeEventListener("mousedown", handlePointerDown);
 			document.removeEventListener("keydown", handleEscape);
 		};
-	}, [launcherOpen, paneMenuOpen]);
+	}, [closeMenus, launcherOpen, paneMenuOpen]);
 
 	const resetWorkspace = useCallback(() => {
 		window.localStorage.removeItem(STORAGE_KEY);
@@ -524,6 +546,109 @@ export function GoldenWorkspace() {
 	const saveWorkspace = useCallback(() => {
 		persistWorkspaceLayout();
 	}, [persistWorkspaceLayout]);
+
+	const commandActions = useMemo((): WorkspaceCommandAction[] => {
+		return [
+			{
+				id: "spawn-arm",
+				label: "Spawn Arm",
+				description: "Open the arm spawn flow",
+				group: "Commands",
+				icon: Bot,
+				run: () => openRouteAsTab("/arms", "?spawn=1"),
+			},
+			{
+				id: "new-message",
+				label: "New Message",
+				description: "Compose a message to brain or an arm",
+				group: "Commands",
+				icon: MailPlus,
+				shortcut: "N",
+				run: () => openNewMessage(),
+			},
+			{
+				id: "search",
+				label: "Search workspace",
+				description: "Find arms, bugs, tasks, and more",
+				group: "Commands",
+				icon: Search,
+				shortcut: "⌘P",
+				run: () => openPalette("search"),
+			},
+			{
+				id: "duplicate-pane",
+				label: "Duplicate Pane",
+				description: "Open the active view in a new tab",
+				group: "Layout",
+				icon: Plus,
+				run: () => {
+					const active =
+						(activePanelIdRef.current &&
+							panelInstancesRef.current.get(activePanelIdRef.current)?.route) ||
+						Array.from(panelInstancesRef.current.values())[0]?.route;
+					if (!active) return;
+					openRouteAsTab(active.pathname, active.search);
+				},
+			},
+			{
+				id: "save-layout",
+				label: "Save Layout",
+				description: "Persist the current multi-pane layout",
+				group: "Layout",
+				icon: Save,
+				run: () => saveWorkspace(),
+			},
+			{
+				id: "reset-layout",
+				label: "Reset Layout",
+				description: "Restore the default single-pane workspace",
+				group: "Layout",
+				icon: RotateCcw,
+				run: () => resetWorkspace(),
+			},
+		];
+	}, [openNewMessage, openPalette, openRouteAsTab, resetWorkspace, saveWorkspace]);
+
+	useEffect(() => {
+		function handleGlobalKeydown(event: KeyboardEvent) {
+			const target = event.target as HTMLElement | null;
+			const tag = target?.tagName;
+			const isTypingTarget =
+				tag === "INPUT" ||
+				tag === "TEXTAREA" ||
+				tag === "SELECT" ||
+				target?.isContentEditable === true;
+
+			const meta = event.metaKey || event.ctrlKey;
+			const key = event.key.toLowerCase();
+
+			// ⌘P → entity search, ⌘⇧P → command palette (VS Code style)
+			if (meta && key === "p") {
+				event.preventDefault();
+				openPalette(event.shiftKey ? "actions" : "search");
+				return;
+			}
+
+			if (meta && key === "k" && !event.shiftKey) {
+				event.preventDefault();
+				openPalette("actions");
+				return;
+			}
+
+			if (event.key === "Escape" && paletteMode) {
+				event.preventDefault();
+				closePalette();
+				return;
+			}
+
+			if (isTypingTarget || paletteMode) {
+				return;
+			}
+		}
+
+		document.addEventListener("keydown", handleGlobalKeydown);
+		return () => document.removeEventListener("keydown", handleGlobalKeydown);
+	}, [closePalette, openPalette, paletteMode]);
 
 	useEffect(() => {
 		document.title = "Coleo Observatory - Workspace";
@@ -671,22 +796,25 @@ export function GoldenWorkspace() {
 	return (
 		<div className="golden-workspace-shell flex h-screen">
 			<div className="flex-1 min-w-0 flex flex-col">
-				<header className="golden-workspace-dock px-3 py-3">
+				<header className="golden-workspace-dock px-3 pt-3 pb-2">
 					<div className="golden-workspace-dock-inner">
 						<div className="golden-dock-left">
 							<div className="golden-launcher" ref={launcherRef}>
 								<button
 									type="button"
-									className="golden-launcher-button py-2"
+									className="golden-launcher-button"
 									onClick={() => {
 										setPaneMenuOpen(false);
+										setPaletteMode(null);
 										setLauncherOpen((current) => !current);
 									}}
 									aria-haspopup="menu"
 									aria-expanded={launcherOpen}
+									aria-label="Open launcher"
+									title="Open a view"
 								>
 									<span className="golden-launcher-badge" aria-hidden="true">
-										<img src="favicon.svg" width="24" height="24" alt="" />
+										<img src="favicon.svg" width="20" height="20" alt="" />
 									</span>
 									<LayoutPanelTop
 										className="h-4 w-4 opacity-60"
@@ -705,8 +833,7 @@ export function GoldenWorkspace() {
 												Open a view
 											</div>
 											<div className="text-xs text-muted-foreground">
-												Open in the current stack or split beside the active
-												pane.
+												Tab opens in the current stack · + splits beside it
 											</div>
 										</div>
 
@@ -748,13 +875,51 @@ export function GoldenWorkspace() {
 												</div>
 											))}
 										</div>
+
+										<div className="golden-launcher-menu-footer">
+											<button
+												type="button"
+												className="golden-launcher-menu-secondary"
+												onClick={() => {
+													setLauncherOpen(false);
+													openPalette("search");
+												}}
+											>
+												<Search className="h-3.5 w-3.5" />
+												<span>Search arms & records</span>
+												<kbd className="workspace-palette-kbd">⌘P</kbd>
+											</button>
+											<button
+												type="button"
+												className="golden-launcher-menu-secondary"
+												onClick={() => {
+													setLauncherOpen(false);
+													openPalette("actions");
+												}}
+											>
+												<Command className="h-3.5 w-3.5" />
+												<span>Command palette</span>
+												<kbd className="workspace-palette-kbd">⌘⇧P</kbd>
+											</button>
+										</div>
 									</div>
 								) : null}
 							</div>
 						</div>
 
 						<div className="golden-dock-center">
-							<WorkspaceArmRail onOpenViewer={openViewerForArm} />
+							<button
+								type="button"
+								className="golden-dock-search"
+								onClick={() => openPalette("search")}
+								title="Search (⌘P)"
+							>
+								<Search className="h-4 w-4 shrink-0 opacity-60" />
+								<span className="golden-dock-search-label">
+									Search arms, bugs, tasks…
+								</span>
+								<kbd className="workspace-palette-kbd">⌘P</kbd>
+							</button>
 						</div>
 
 						<div
@@ -766,17 +931,28 @@ export function GoldenWorkspace() {
 								type="button"
 								className="golden-dock-button golden-dock-button--primary"
 								onClick={() => openRouteAsTab("/arms", "?spawn=1")}
+								title="Spawn Arm"
 							>
-								<Bot className="h-4 w-4 mr-2" />
-								Spawn Arm
+								<Bot className="h-4 w-4" />
+								<span className="golden-dock-button-label">Spawn</span>
 							</button>
 							<button
 								type="button"
 								className="golden-dock-button"
 								onClick={openNewMessage}
+								title="New Message"
 							>
-								<MailPlus className="h-4 w-4 mr-2" />
-								New Message
+								<MailPlus className="h-4 w-4" />
+								<span className="golden-dock-button-label">Message</span>
+							</button>
+							<button
+								type="button"
+								className="golden-dock-icon-button"
+								onClick={() => openPalette("actions")}
+								aria-label="Command palette"
+								title="Command palette (⌘⇧P)"
+							>
+								<Command className="h-4 w-4" />
 							</button>
 							<div className="golden-pane-menu" ref={paneMenuRef}>
 								<button
@@ -784,11 +960,13 @@ export function GoldenWorkspace() {
 									className="golden-dock-icon-button"
 									onClick={() => {
 										setLauncherOpen(false);
+										setPaletteMode(null);
 										setPaneMenuOpen((current) => !current);
 									}}
 									aria-haspopup="menu"
 									aria-expanded={paneMenuOpen}
-									aria-label="Pane actions"
+									aria-label="Layout actions"
+									title="Layout"
 								>
 									<MoreHorizontal className="h-4 w-4" />
 								</button>
@@ -797,16 +975,22 @@ export function GoldenWorkspace() {
 									<div
 										className="golden-pane-menu-dropdown"
 										role="menu"
-										aria-label="Pane actions"
+										aria-label="Layout actions"
 									>
 										<button
 											type="button"
 											className="golden-pane-menu-action"
 											onClick={() => {
-												openRouteFromHref(
-													location.pathname + location.search,
-													"tab",
-												);
+												const active =
+													(activePanelIdRef.current &&
+														panelInstancesRef.current.get(
+															activePanelIdRef.current,
+														)?.route) ||
+													Array.from(panelInstancesRef.current.values())[0]
+														?.route;
+												if (active) {
+													openRouteAsTab(active.pathname, active.search);
+												}
 												setPaneMenuOpen(false);
 											}}
 										>
@@ -842,10 +1026,20 @@ export function GoldenWorkspace() {
 					</div>
 				</header>
 
-				<div className="flex-1 min-h-0 p-3">
+				<div className="flex-1 min-h-0 px-3 pb-3">
 					<div ref={layoutHostRef} className="golden-workspace-layout h-full" />
 				</div>
 			</div>
+
+			<WorkspaceCommandPalette
+				mode={paletteMode}
+				onClose={closePalette}
+				actions={commandActions}
+				onOpenRoute={(pathname, search = "") =>
+					focusOrOpenRoute(pathname, search)
+				}
+				onOpenArm={openViewerForArm}
+			/>
 
 			{panelPortals}
 		</div>

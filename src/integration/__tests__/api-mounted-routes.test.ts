@@ -4,7 +4,6 @@ import { mkdir, mkdtemp, rm } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
-import { qdrantStore } from "../../qdrant";
 import { eventStore } from "../../nats/jetstream";
 import { createApp } from "../../api/server";
 import { loadApiConfig, type ApiConfig } from "../../api/config";
@@ -17,7 +16,7 @@ describe("mounted API server routes", () => {
   let apiKey: string;
   let tempDir: string;
   let originalColeoDir: string | undefined;
-  let qdrantSpy: ReturnType<typeof spyOn>;
+  let fetchSpy: ReturnType<typeof spyOn>;
   let serviceStatusSpy: ReturnType<typeof spyOn>;
   let eventStoreSpy: ReturnType<typeof spyOn>;
 
@@ -31,7 +30,15 @@ describe("mounted API server routes", () => {
     process.env.COLEO_DIR = tempDir;
 
     eventStoreSpy = spyOn(eventStore, "isInitialized").mockReturnValue(false);
-    qdrantSpy = spyOn(qdrantStore, "listCollections").mockImplementation(async () => []);
+    // /api/status probes Qdrant with a raw HTTP fetch (not the qdrant client) so it
+    // can't be blocked by the client's slow version-check on connection refused.
+    fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: string | URL | Request) => {
+      const url = input.toString();
+      if (url.endsWith("/collections")) {
+        return new Response(JSON.stringify({ result: { collections: [] } }), { status: 200 });
+      }
+      throw new Error(`Unexpected fetch call in test: ${url}`);
+    }) as typeof fetch);
     serviceStatusSpy = spyOn(daemonModule, "getServiceStatus").mockImplementation(async () => ({
       type: "indexer",
       running: false,
@@ -50,7 +57,7 @@ describe("mounted API server routes", () => {
 
   afterEach(async () => {
     eventStoreSpy.mockRestore();
-    qdrantSpy.mockRestore();
+    fetchSpy.mockRestore();
     serviceStatusSpy.mockRestore();
     db.close();
 
@@ -112,7 +119,7 @@ describe("mounted API server routes", () => {
     expect(body.arms.total).toBe(1);
     expect(body.infrastructure.qdrant.healthy).toBe(true);
     expect(body.infrastructure.indexer.running).toBe(false);
-    expect(qdrantSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
     expect(serviceStatusSpy).toHaveBeenCalledWith("indexer");
   });
 

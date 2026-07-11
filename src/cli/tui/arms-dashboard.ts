@@ -82,7 +82,7 @@ function buildVerticalScrollbar(height: number, scrollY: number, maxScrollY: num
   );
 
   return Array.from({ length: height }, (_, index) =>
-    index >= thumbStart && index < thumbStart + thumbSize ? "█" : "│"
+    index >= thumbStart && index < thumbStart + thumbSize ? "▐" : " "
   ).join("\n");
 }
 
@@ -114,7 +114,7 @@ class ArmsDashboardTui {
   private inputMode: InputMode = null;
   private confirmAction: ConfirmAction | null = null;
   private interruptBeforeSend = false;
-  private notice = "Loading dashboard...";
+  private notice = "Ready";
   private searchQuery = "";
   private searchLinesOverride: string[] | null = null;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
@@ -129,6 +129,8 @@ class ArmsDashboardTui {
   private refreshRequestId = 0;
   private footerInputEnterHandler: (() => void) | null = null;
   private keypressHandler: ((key: KeyEvent) => void) | null = null;
+  /** When true, body content auto-follows the bottom as new lines arrive. */
+  private bodyStickToBottom = true;
 
   async run(): Promise<void> {
     try {
@@ -154,11 +156,13 @@ class ArmsDashboardTui {
     this.wireEvents();
 
     this.setFocus("nav");
+    // Initial open: pin log-heavy views (brain default) to bottom.
+    this.bodyStickToBottom = this.isLogHeavyNode(this.currentNode());
     this.render(true);
     this.renderer.start();
 
     this.refreshTimer = setInterval(() => {
-      void this.refresh(false);
+      void this.refresh(false, { quiet: true });
     }, 3000);
 
     await new Promise<void>((resolve) => {
@@ -176,10 +180,10 @@ class ArmsDashboardTui {
     this.renderer.root.add(this.root);
 
     this.sidebarBox = new BoxRenderable(this.renderer, {
-      width: 32,
+      width: 28,
       height: "100%",
       border: true,
-      title: "Navigator",
+      title: " Navigator ",
       flexDirection: "column",
       padding: 0,
       borderColor: "#34515e",
@@ -207,7 +211,7 @@ class ArmsDashboardTui {
       width: "100%",
       height: 1,
       wrapMode: "none",
-      truncate: false,
+      truncate: true,
       fg: "#f2f7f9",
       bg: "#0b0f10",
     });
@@ -236,6 +240,9 @@ class ArmsDashboardTui {
       height: "100%",
       wrapMode: "word",
       truncate: false,
+      selectable: true,
+      selectionBg: "#2b617c",
+      selectionFg: "#ffffff",
       fg: "#d7e3e8",
       bg: "#0b0f10",
     });
@@ -246,7 +253,8 @@ class ArmsDashboardTui {
       height: "100%",
       wrapMode: "none",
       truncate: false,
-      fg: "#9fb9c6",
+      selectable: false,
+      fg: "#6b8794",
       bg: "#0b0f10",
       content: "",
     });
@@ -255,7 +263,7 @@ class ArmsDashboardTui {
     this.statusBox = new BoxRenderable(this.renderer, {
       height: 3,
       border: true,
-      title: "Status",
+      title: " Status ",
       borderColor: "#34515e",
       padding: 0,
       marginTop: 0,
@@ -269,15 +277,15 @@ class ArmsDashboardTui {
       height: 1,
       wrapMode: "none",
       truncate: true,
-      fg: "#f6d365",
+      fg: "#9fb9c6",
       bg: "#0b0f10",
     });
     this.statusBox.add(this.footerStatusText);
 
     this.footerBox = new BoxRenderable(this.renderer, {
-      height: 5,
+      height: 3,
       border: true,
-      title: "Commands",
+      title: " Commands ",
       borderColor: "#34515e",
       padding: 0,
       marginTop: 0,
@@ -291,7 +299,7 @@ class ArmsDashboardTui {
       height: 1,
       wrapMode: "none",
       truncate: true,
-      fg: "#9fb9c6",
+      fg: "#7f9aa7",
       bg: "#0b0f10",
     });
     this.footerBox.add(this.footerControlsText);
@@ -303,6 +311,7 @@ class ArmsDashboardTui {
       truncate: true,
       fg: "#d7e3e8",
       bg: "#0b0f10",
+      visible: false,
     });
     this.footerBox.add(this.footerPromptText);
 
@@ -315,6 +324,7 @@ class ArmsDashboardTui {
       focusedBackgroundColor: "#17313f",
       focusedTextColor: "#ffffff",
       placeholderColor: "#6b8794",
+      visible: false,
     });
     this.footerBox.add(this.footerInput);
   }
@@ -333,6 +343,88 @@ class ArmsDashboardTui {
       }
     };
     this.renderer.keyInput.on("keypress", this.keypressHandler);
+  }
+
+  private getSelectedText(): string {
+    const selection = this.renderer.getSelection?.();
+    if (selection?.getSelectedText) {
+      return selection.getSelectedText().trimEnd();
+    }
+    if (this.renderer.hasSelection && this.bodyText.getSelectedText) {
+      return this.bodyText.getSelectedText().trimEnd();
+    }
+    return "";
+  }
+
+  private async copyTextToClipboard(text: string): Promise<boolean> {
+    if (!text) {
+      return false;
+    }
+
+    // Prefer OSC-52 so remote/tmux terminals can receive clipboard updates.
+    try {
+      if (this.renderer.copyToClipboardOSC52?.(text)) {
+        return true;
+      }
+    } catch {
+      // Fall through to platform clipboard tools.
+    }
+
+    if (process.platform === "darwin") {
+      try {
+        const proc = Bun.spawn(["pbcopy"], { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+        proc.stdin.write(text);
+        proc.stdin.end();
+        const code = await proc.exited;
+        return code === 0;
+      } catch {
+        return false;
+      }
+    }
+
+    if (process.platform === "linux") {
+      for (const cmd of [
+        ["xclip", "-selection", "clipboard"],
+        ["xsel", "--clipboard", "--input"],
+        ["wl-copy"],
+      ] as string[][]) {
+        try {
+          const proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "ignore", stderr: "ignore" });
+          proc.stdin.write(text);
+          proc.stdin.end();
+          if ((await proc.exited) === 0) {
+            return true;
+          }
+        } catch {
+          // try next tool
+        }
+      }
+    }
+
+    return false;
+  }
+
+  private async copySelectionOrView(): Promise<void> {
+    const selected = this.getSelectedText();
+    const text = selected || this.bodyText.plainText || String(this.bodyText.content || "");
+    if (!text.trim()) {
+      this.notice = "Nothing to copy";
+      this.render(false);
+      return;
+    }
+
+    const ok = await this.copyTextToClipboard(text);
+    if (ok) {
+      this.notice = selected
+        ? `Copied selection (${text.length} chars)`
+        : `Copied view (${text.length} chars)`;
+      if (selected) {
+        this.renderer.clearSelection?.();
+      }
+    } else {
+      this.notice = "Copy failed (clipboard unavailable)";
+    }
+    this.render(false);
   }
 
   private currentNode(): DashboardNode {
@@ -380,6 +472,10 @@ class ArmsDashboardTui {
     return index >= 0 ? index : 0;
   }
 
+  private isLogHeavyNode(node: DashboardNode = this.currentNode()): boolean {
+    return node.kind === "brain" || node.kind === "arm" || node.kind === "api";
+  }
+
   private selectNode(node: DashboardNode, resetScroll: boolean): void {
     if (this.selectedNodeId === node.id) {
       return;
@@ -391,6 +487,8 @@ class ArmsDashboardTui {
     this.selectedArmDetail = node.kind === "arm" && node.armId
       ? (this.armDetailCache.get(node.armId) || null)
       : null;
+    // Log views open pinned to the bottom (tail); other views open at the top.
+    this.bodyStickToBottom = this.isLogHeavyNode(node);
     this.ensureNavSelectionVisible();
     this.render(resetScroll);
 
@@ -474,8 +572,8 @@ class ArmsDashboardTui {
     for (const rowData of rows) {
       const navFocused = this.focusArea === "nav";
       const rowBg = rowData.selected
-        ? (navFocused ? "#2b617c" : "#21485c")
-        : "#0b0f10";
+        ? (navFocused ? "#1e4d63" : "#163848")
+        : (navFocused ? "#0d161b" : "#0b0f10");
 
       const row = new BoxRenderable(this.renderer, {
         width: "100%",
@@ -489,7 +587,7 @@ class ArmsDashboardTui {
         height: 1,
         wrapMode: "none",
         truncate: true,
-        fg: rowData.selected ? "#ffffff" : "#d7e3e8",
+        fg: rowData.selected ? "#f5fbff" : "#b7c9d1",
         bg: rowBg,
         content: rowData.content,
       });
@@ -546,15 +644,18 @@ class ArmsDashboardTui {
     }
   }
 
-  private async refresh(resetScroll: boolean): Promise<void> {
+  private async refresh(resetScroll: boolean, options: { quiet?: boolean } = {}): Promise<void> {
     if (this.refreshInFlight || this.destroyed) {
       return;
     }
 
+    const quiet = options.quiet === true;
     const requestId = ++this.refreshRequestId;
     this.refreshInFlight = true;
-    this.notice = "Refreshing dashboard...";
-    this.render(false);
+    if (!quiet) {
+      this.notice = "Refreshing dashboard...";
+      this.render(false);
+    }
 
     try {
       const selectionAtStart = this.selectedNodeId;
@@ -584,7 +685,9 @@ class ArmsDashboardTui {
         return;
       }
 
-      this.notice = `Refreshed ${new Date().toLocaleTimeString()}`;
+      if (!quiet || this.notice.startsWith("Refreshing") || this.notice.startsWith("Loading")) {
+        this.notice = `Updated ${new Date().toLocaleTimeString()}`;
+      }
       this.render(resetScroll);
     } catch (error) {
       this.notice = `Refresh failed: ${truncateLine(formatErrorMessage(error), 100)}`;
@@ -660,81 +763,134 @@ class ArmsDashboardTui {
     const bodyFocused = this.focusArea === "body";
     const inputFocused = this.focusArea === "input" || this.confirmAction !== null;
 
-    this.sidebarBox.title = navFocused ? "Navigator *" : "Navigator";
-    this.bodyBox.title = undefined;
-    this.footerBox.title = inputFocused ? "Command *" : "Command";
+    // ◉ = focused pane marker (no "focused" text)
+    this.sidebarBox.title = navFocused ? " ◉ Navigator " : " Navigator ";
+    this.bodyBox.title = bodyFocused ? " ◉ Details " : " Details ";
+    this.footerBox.title = inputFocused ? " ◉ Commands " : " Commands ";
 
-    this.sidebarBox.borderColor = navFocused ? "#63b3d6" : "#34515e";
-    this.bodyBox.borderColor = bodyFocused ? "#63b3d6" : "#34515e";
-    this.statusBox.borderColor = this.notice.toLowerCase().includes("failed") ? "#b85c5c" : "#34515e";
-    this.footerBox.borderColor = inputFocused ? "#63b3d6" : "#34515e";
-    this.sidebarBox.backgroundColor = navFocused ? "#10222d" : "#0b0f10";
-    this.sidebarListBox.backgroundColor = navFocused ? "#10222d" : "#0b0f10";
-    this.bodyBox.backgroundColor = bodyFocused ? "#10222d" : "#0b0f10";
-    this.bodyContentBox.backgroundColor = bodyFocused ? "#10222d" : "#0b0f10";
+    this.sidebarBox.borderColor = navFocused ? "#5aa8c8" : "#2c4652";
+    this.bodyBox.borderColor = bodyFocused ? "#5aa8c8" : "#2c4652";
+    this.statusBox.borderColor = this.notice.toLowerCase().includes("failed") ? "#b85c5c" : "#2c4652";
+    this.footerBox.borderColor = inputFocused ? "#5aa8c8" : "#2c4652";
+    this.sidebarBox.backgroundColor = "#0b0f10";
+    this.sidebarListBox.backgroundColor = "#0b0f10";
+    this.bodyBox.backgroundColor = "#0b0f10";
+    this.bodyContentBox.backgroundColor = "#0b0f10";
     this.statusBox.backgroundColor = "#0b0f10";
-    this.footerBox.backgroundColor = inputFocused ? "#10222d" : "#0b0f10";
-    this.titleText.bg = bodyFocused ? "#10222d" : "#0b0f10";
-    this.titleText.fg = bodyFocused ? "#ffffff" : "#f2f7f9";
+    this.footerBox.backgroundColor = "#0b0f10";
+    this.titleText.bg = "#0b0f10";
+    this.titleText.fg = bodyFocused ? "#ffffff" : "#e8f1f5";
 
-    this.titleText.content = this.showHelp ? `${view.title} - ${baseView.title}` : view.title;
+    const titleBase = this.showHelp ? `Help · ${baseView.title}` : view.title;
+    const titleMeta = view.subtitle ? `  ·  ${view.subtitle}` : "";
+    this.titleText.content = truncateLine(`${titleBase}${titleMeta}`, 160);
 
-    this.bodyText.bg = bodyFocused ? "#10222d" : "#0b0f10";
-    this.bodyText.content = lines.join("\n");
+    this.bodyText.bg = "#0b0f10";
+    // Log-heavy views (brain / arm / api) stick to the bottom by default and
+    // re-pin when content grows. Manual scroll up clears the stick flag until
+    // the user hits End / scrolls back to bottom.
     if (resetScroll) {
-      this.bodyText.scrollY = 0;
-    } else {
-      this.bodyText.scrollY = Math.min(this.bodyText.scrollY, this.bodyText.maxScrollY);
+      this.bodyStickToBottom = this.isLogHeavyNode(node) && !this.showHelp;
+      if (!this.bodyStickToBottom) {
+        this.bodyText.scrollY = 0;
+      }
+    } else if (this.bodyText.maxScrollY > 0) {
+      this.bodyStickToBottom = this.bodyText.scrollY >= this.bodyText.maxScrollY;
     }
 
-    if (bodyFocused && this.bodyText.maxScrollY > 0) {
-      this.bodyScrollbarText.bg = "#10222d";
+    this.bodyText.content = lines.join("\n");
+    this.applyBodyScroll();
+
+    if (this.bodyText.maxScrollY > 0) {
+      this.bodyScrollbarText.bg = "#0b0f10";
       this.bodyScrollbarText.content = buildVerticalScrollbar(
         this.bodyScrollbarText.height,
         this.bodyText.scrollY,
         this.bodyText.maxScrollY,
       );
     } else {
-      this.bodyScrollbarText.bg = bodyFocused ? "#10222d" : "#0b0f10";
+      this.bodyScrollbarText.bg = "#0b0f10";
       this.bodyScrollbarText.content = "";
     }
 
     this.footerStatusText.content = truncateLine(this.notice, 240);
-    this.footerStatusText.fg = this.notice.toLowerCase().includes("failed") ? "#ff9b9b" : "#f6d365";
+    this.footerStatusText.fg = this.notice.toLowerCase().includes("failed")
+      ? "#ff9b9b"
+      : this.notice.toLowerCase().includes("refreshing")
+        ? "#f6d365"
+        : "#8fa8b4";
     this.footerControlsText.content = truncateLine(
       this.buildFooterControls(node),
       240,
     );
 
     const activeArmLabel = node.label;
+    const showInput = this.confirmAction !== null
+      || this.inputMode === "search"
+      || this.inputMode === "brain-message"
+      || this.inputMode === "arm-message";
+    let prompt = "";
 
     if (this.confirmAction) {
-      this.footerPromptText.content = this.confirmAction.prompt;
+      prompt = this.confirmAction.prompt;
       this.footerInput.value = "";
       this.footerInput.placeholder = "";
       this.footerInput.blur();
     } else if (this.inputMode === "search") {
-      this.footerPromptText.content = "Search the current view.";
-      this.footerInput.placeholder = "Search text";
+      prompt = "Search current view";
+      this.footerInput.placeholder = "type to filter…";
     } else if (this.inputMode === "brain-message") {
-      this.footerPromptText.content = "Send a message to the brain.";
-      this.footerInput.placeholder = "Brain message";
+      prompt = "Message brain";
+      this.footerInput.placeholder = "message…";
     } else if (this.inputMode === "arm-message") {
-      this.footerPromptText.content = `Send a message to ${activeArmLabel}. Interrupt=${this.interruptBeforeSend ? "on" : "off"}`;
-      this.footerInput.placeholder = "Arm message";
+      prompt = `Message ${activeArmLabel} · interrupt ${this.interruptBeforeSend ? "on" : "off"}`;
+      this.footerInput.placeholder = "message…";
     } else if (this.showHelp) {
-      this.footerPromptText.content = "Help is open. Press ? or Esc to close.";
+      prompt = "Help open · press ? or Esc to close";
+      this.footerInput.value = "";
+      this.footerInput.placeholder = "";
+    } else if (this.searchQuery) {
+      prompt = `Search: ${this.searchQuery}`;
       this.footerInput.value = "";
       this.footerInput.placeholder = "";
     } else {
-      this.footerPromptText.content = this.searchQuery
-        ? `Active search: ${this.searchQuery}`
-        : "Press ? for help.";
       this.footerInput.value = "";
       this.footerInput.placeholder = "";
     }
 
+    const showPrompt = prompt.length > 0;
+    this.footerPromptText.visible = showPrompt;
+    this.footerPromptText.content = prompt;
+    this.footerInput.visible = showInput;
+    // 1 content row (controls) + optional prompt + optional input + 2 border rows
+    this.footerBox.height = 3 + (showPrompt ? 1 : 0) + (showInput ? 1 : 0);
+
     this.renderer.requestRender();
+  }
+
+  private applyBodyScroll(): void {
+    if (this.bodyStickToBottom) {
+      // Clamp via setter; use a large value so we land on the true max even if
+      // wrap metrics settle one frame late (re-applied after requestRender).
+      this.bodyText.scrollY = Number.MAX_SAFE_INTEGER;
+      // Defer a second pin after layout so wrapped line counts are final.
+      queueMicrotask(() => {
+        if (!this.destroyed && this.bodyStickToBottom) {
+          this.bodyText.scrollY = Number.MAX_SAFE_INTEGER;
+          if (this.bodyText.maxScrollY > 0) {
+            this.bodyScrollbarText.content = buildVerticalScrollbar(
+              this.bodyScrollbarText.height,
+              this.bodyText.scrollY,
+              this.bodyText.maxScrollY,
+            );
+          }
+          this.renderer.requestRender();
+        }
+      });
+      return;
+    }
+
+    this.bodyText.scrollY = Math.min(this.bodyText.scrollY, this.bodyText.maxScrollY);
   }
 
   private async handleKeyPress(key: KeyEvent): Promise<void> {
@@ -742,7 +898,20 @@ class ArmsDashboardTui {
       return;
     }
 
-    if (key.ctrl && key.name === "c") {
+    // Ctrl/Cmd+C copies selection (or full detail view if nothing selected).
+    // Use q / Ctrl+Q to quit so copy works like a normal terminal app.
+    if ((key.ctrl || key.meta) && key.name === "c") {
+      key.preventDefault();
+      key.stopPropagation();
+      if (this.inputMode && this.focusArea === "input") {
+        // Let the input field handle its own copy behavior when typing.
+        return;
+      }
+      await this.copySelectionOrView();
+      return;
+    }
+
+    if (key.ctrl && key.name === "q") {
       key.preventDefault();
       key.stopPropagation();
       this.close();
@@ -814,6 +983,13 @@ class ArmsDashboardTui {
       key.preventDefault();
       key.stopPropagation();
       this.close();
+      return;
+    }
+
+    if (key.name === "y" && !key.ctrl && !key.meta && !key.shift && !this.inputMode && !this.confirmAction) {
+      key.preventDefault();
+      key.stopPropagation();
+      await this.copySelectionOrView();
       return;
     }
 
@@ -943,6 +1119,7 @@ class ArmsDashboardTui {
         key.preventDefault();
         key.stopPropagation();
         closeHelpForCommand();
+        this.bodyStickToBottom = false;
         this.bodyText.scrollY = 0;
         this.render(false);
         return;
@@ -952,7 +1129,8 @@ class ArmsDashboardTui {
         key.preventDefault();
         key.stopPropagation();
         closeHelpForCommand();
-        this.bodyText.scrollY = this.bodyText.maxScrollY;
+        this.bodyStickToBottom = true;
+        this.bodyText.scrollY = Number.MAX_SAFE_INTEGER;
         this.render(false);
         return;
       }
@@ -1077,6 +1255,7 @@ class ArmsDashboardTui {
   private scrollBody(delta: number): void {
     const next = Math.max(0, Math.min(this.bodyText.maxScrollY, this.bodyText.scrollY + delta));
     this.bodyText.scrollY = next;
+    this.bodyStickToBottom = next >= this.bodyText.maxScrollY;
     this.render(false);
   }
 
@@ -1281,41 +1460,26 @@ class ArmsDashboardTui {
 
     for (const root of roots) {
       const children = this.nodes.filter((node) => this.parentNodeId(node) === root.id);
-
-      if (children.length === 0) {
-        rows.push({
-          nodeId: root.id,
-          content: padRight(root.label, contentWidth),
-          selected: root.id === this.selectedNodeId,
-        });
-        continue;
-      }
-
-      const expanded = this.isExpanded(root);
-      const headerLabel = ` ${expanded ? "▾" : "▸"} ${root.label} `;
-      const headerFill = Math.max(0, contentWidth - 2 - headerLabel.length);
+      const hasChildren = children.length > 0;
+      const expanded = hasChildren && this.isExpanded(root);
+      const caret = !hasChildren ? " " : expanded ? "▾" : "▸";
       rows.push({
         nodeId: root.id,
-        content: `┌${headerLabel}${"─".repeat(headerFill)}┐`,
+        content: padRight(`${caret} ${root.label}`, contentWidth),
         selected: root.id === this.selectedNodeId,
       });
 
       if (expanded) {
         for (const child of children) {
-          const childLabel = `${child.id === this.selectedNodeId ? "▸" : "•"} ${child.label}`;
+          const isSelected = child.id === this.selectedNodeId;
+          const marker = isSelected ? "▸" : "·";
           rows.push({
             nodeId: child.id,
-            content: `│${padRight(` ${childLabel} `, contentWidth - 2)}│`,
-            selected: child.id === this.selectedNodeId,
+            content: padRight(`  ${marker} ${child.label}`, contentWidth),
+            selected: isSelected,
           });
         }
       }
-
-      rows.push({
-        nodeId: null,
-        content: `└${"─".repeat(Math.max(0, contentWidth - 2))}┘`,
-        selected: false,
-      });
     }
 
     return rows;
@@ -1331,35 +1495,35 @@ class ArmsDashboardTui {
 
   private buildFooterControls(node: DashboardNode): string {
     if (this.showHelp) {
-      return "? close help  tab change focus  j/k scroll  q quit";
+      return "? close · tab focus · j/k scroll · y copy · q quit";
     }
 
-    const global = "? help  / search  r refresh  q quit";
+    const global = "? help · / search · r refresh · y copy · q quit";
 
     if (this.focusArea === "nav") {
       const navActions = this.nodeHasChildren(node)
-        ? "j/k move  enter open  h/l collapse-expand  tab details"
-        : "j/k move  enter details  tab details";
-      const nodeActions = node.kind === "arms-root" || node.kind === "arm" ? "  n spawn arm" : "";
-      return `${navActions}  ${global}${nodeActions}`;
+        ? "j/k move · enter open · h/l fold · tab details"
+        : "j/k move · enter open · tab details";
+      const nodeActions = node.kind === "arms-root" || node.kind === "arm" ? " · n spawn" : "";
+      return `${navActions} · ${global}${nodeActions}`;
     }
 
     if (this.focusArea === "body") {
-      const bodyActions = "j/k scroll  pgup/pgdn page  home/end jump  h nav";
+      const bodyActions = "j/k scroll · pgup/pgdn · home/end · h nav";
 
       if (node.kind === "brain") {
-        return `${bodyActions}  ${global}  m message brain  R restart brain`;
+        return `${bodyActions} · ${global} · m message · R restart`;
       }
 
       if (node.kind === "arm") {
-        return `${bodyActions}  ${global}  m message  i interrupt=${this.interruptBeforeSend ? "on" : "off"}  s stuck  x kill  d delete`;
+        return `${bodyActions} · ${global} · m message · i interrupt=${this.interruptBeforeSend ? "on" : "off"} · s stuck · x kill · d delete`;
       }
 
-      return `${bodyActions}  ${global}  e export`;
+      return `${bodyActions} · ${global} · e export`;
     }
 
     if (this.focusArea === "input") {
-      return "enter submit  esc cancel  ? help";
+      return "enter submit · esc cancel · ? help";
     }
 
     return global;
@@ -1376,7 +1540,8 @@ class ArmsDashboardTui {
       "r            Refresh dashboard",
       "e            Export current detail view to $EDITOR",
       "n            Launch arm spawn flow",
-      "q            Quit dashboard",
+      "y / ctrl+c   Copy selection (or full view)",
+      "q / ctrl+q   Quit dashboard",
       "",
       "Navigator",
       "---------",
@@ -1392,6 +1557,7 @@ class ArmsDashboardTui {
       "k / up       Scroll detail view up",
       "pgup/pgdn    Scroll by page",
       "home/end     Jump to top or bottom",
+      "mouse drag   Select text to copy",
       "h / left     Return focus to navigator",
     ];
 

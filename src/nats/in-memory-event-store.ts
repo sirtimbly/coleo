@@ -1,4 +1,4 @@
-import type { EventData, QueryOptions, IEventStore } from './jetstream-types';
+import type { EventData, QueryOptions, StreamMetrics, IEventStore } from './jetstream-types';
 
 export class InMemoryEventStore implements IEventStore {
   private events: Array<{ subject: string; data: EventData }> = [];
@@ -61,6 +61,19 @@ export class InMemoryEventStore implements IEventStore {
       limit,
       since,
     });
+  }
+
+  async getStreamMetrics(): Promise<StreamMetrics> {
+    const messages = this.events.length;
+    const subjects = Array.from(new Set(this.events.map(event => event.subject)));
+    return {
+      messages,
+      bytes: 0,
+      firstSequence: messages > 0 ? 1 : 0,
+      lastSequence: messages,
+      consumerCount: 0,
+      subjects,
+    };
   }
 
   isInitialized(): boolean {

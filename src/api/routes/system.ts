@@ -7,7 +7,6 @@ import { join } from "path";
 import { eventStore } from "../../nats/jetstream";
 import { getServiceStatus } from "../../daemon";
 import { getNatsManager } from "../../nats/server";
-import { qdrantStore } from "../../qdrant";
 import { Maildir } from "../../mail";
 import { getColeoDir } from "../../config";
 
@@ -52,12 +51,15 @@ export function createSystemRoutes() {
       armCount = armRow?.count ?? 0;
       proposalCount = proposalRow?.count ?? 0;
       
-      // Get activity count from JetStream (approximate - last 24h worth of events)
+      // Approximate activity count for the status payload.
+      // Do NOT call eventStore.getRecentEvents() here — its JetStream fetch uses
+      // expires:5000 and blocks /api/status for ~5s when the stream is quiet,
+      // which made the brain treat a slow status response as "database unhealthy".
+      // A coarse stream metric is enough for the dashboard badge.
       if (eventStore.isInitialized()) {
         try {
-          const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const events = await eventStore.getRecentEvents(1000, since);
-          activityCount = events.length;
+          const metrics = await eventStore.getStreamMetrics();
+          activityCount = Math.min(metrics.messages, 1000);
         } catch {
           // Fall back to 0 if JetStream query fails
         }
@@ -250,14 +252,31 @@ export function createSystemRoutes() {
       infrastructure.maildir.error = err instanceof Error ? err.message : "Maildir status check failed";
     }
 
-    // Live Qdrant connectivity check
+    // Live Qdrant connectivity check (optional service — must not block /api/status).
+    // Avoid qdrantStore.listCollections() here: the JS client version-check can hang
+    // ~5s on ConnectionRefused, which made /api/status exceed the brain's timeout and
+    // incorrectly mark SQLite as unhealthy. Use a short-timeout HTTP probe instead.
     try {
-      await qdrantStore.listCollections();
-      infrastructure.qdrant.healthy = true;
-      infrastructure.qdrant.error = undefined;
+      const qdrantUrl = (process.env.COLEO_QDRANT_URL || "http://localhost:6333").replace(/\/$/, "");
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 400);
+      try {
+        const res = await fetch(`${qdrantUrl}/collections`, { signal: controller.signal });
+        if (!res.ok) {
+          throw new Error(`Qdrant responded ${res.status}`);
+        }
+        infrastructure.qdrant.healthy = true;
+        infrastructure.qdrant.error = undefined;
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch (err) {
       infrastructure.qdrant.healthy = false;
-      infrastructure.qdrant.error = err instanceof Error ? err.message : "Qdrant status check failed";
+      if (err instanceof Error && err.name === "AbortError") {
+        infrastructure.qdrant.error = "Qdrant health check timed out";
+      } else {
+        infrastructure.qdrant.error = err instanceof Error ? err.message : "Qdrant status check failed";
+      }
     }
 
     // Check transcript indexer service status (daemon-managed background process)

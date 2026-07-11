@@ -110,6 +110,9 @@ import {
 	formatBugReport,
 } from "./brain-bug-handler";
 
+const HIGH_PRIORITY_FILE_THRESHOLD_LINES = 600;
+const CRITICAL_FILE_THRESHOLD_LINES = 800;
+
 export class Brain {
 	private options: BrainOptions;
 	private state: BrainState;
@@ -2943,8 +2946,12 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			// Normal priority files (400-600 lines) are checked every 5 completed tasks
 			const highPriorityFiles = await findLargeFilesUtil({
 				rootDir: process.cwd(),
-				minLines: 600,
-				thresholds: { normal: 400, high: 600, critical: 800 },
+				minLines: HIGH_PRIORITY_FILE_THRESHOLD_LINES,
+				thresholds: {
+					normal: this.refactorFileThresholdLines,
+					high: HIGH_PRIORITY_FILE_THRESHOLD_LINES,
+					critical: CRITICAL_FILE_THRESHOLD_LINES,
+				},
 				includeGitStatus: true,
 			});
 
@@ -2956,7 +2963,11 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 				const normalPriorityFiles = await findLargeFilesUtil({
 					rootDir: process.cwd(),
 					minLines: this.refactorFileThresholdLines,
-					thresholds: { normal: this.refactorFileThresholdLines },
+					thresholds: {
+						normal: this.refactorFileThresholdLines,
+						high: HIGH_PRIORITY_FILE_THRESHOLD_LINES,
+						critical: CRITICAL_FILE_THRESHOLD_LINES,
+					},
 					includeGitStatus: true,
 				});
 				if (normalPriorityFiles.length > 0) {
@@ -6349,6 +6360,9 @@ Report findings using bug resolution workflow.`;
 	}> {
 		const now = new Date();
 		const issues: string[] = [];
+		// Give /api/status more headroom than the default 2s — it probes optional
+		// services (Qdrant) and previously timed out at 5s when Qdrant was down,
+		// which left database stuck unhealthy even though SQLite was fine.
 		const systemStatus = await this.apiRequest<{
 			status?: string;
 			infrastructure?: {
@@ -6356,7 +6370,7 @@ Report findings using bug resolution workflow.`;
 				nats?: { healthy: boolean; optional?: boolean; error?: string };
 				maildir?: { healthy: boolean; error?: string };
 			};
-		}>("/api/status", {}, 5000);
+		}>("/api/status", {}, 8000);
 		const infrastructureFromApi = systemStatus?.infrastructure;
 
 		if (!systemStatus || !infrastructureFromApi) {
@@ -6393,32 +6407,32 @@ Report findings using bug resolution workflow.`;
 
 				issues.push(`API server unavailable at ${this.apiBaseUrl} (health endpoint)`);
 			} else {
-				// API is up but /api/status is slow/unavailable.
-				// The API server is healthy, but we can't verify other components.
-				// Keep last-known values for other components - don't mark as healthy with errors.
+				// API is up but /api/status is slow/unavailable (e.g. optional Qdrant
+				// probe hanging). The API process itself is healthy; SQLite lives in
+				// that process, so if /api/health answers the database is usable.
+				// Always refresh lastCheck and clear sticky "API health unavailable"
+				// marks from earlier failed cycles — otherwise a single status timeout
+				// permanently freezes database.healthy=false and skips every poll.
 				this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
-
-				// Only initialize components if they haven't been checked before.
-				// Don't mark them as healthy/unhealthy - we simply don't know their status.
-				if (!this.infrastructureHealth.database.lastCheck) {
-					this.infrastructureHealth.database = {
-						healthy: true, // Assume healthy since API is working (API needs DB)
-						lastCheck: now,
-					};
-				}
-				if (!this.infrastructureHealth.nats.lastCheck) {
-					this.infrastructureHealth.nats = {
-						healthy: true, // NATS is optional, assume healthy
-						lastCheck: now,
-						optional: true,
-					};
-				}
-				if (!this.infrastructureHealth.maildir.lastCheck) {
-					this.infrastructureHealth.maildir = {
-						healthy: true, // Assume healthy since API is working
-						lastCheck: now,
-					};
-				}
+				this.infrastructureHealth.database = {
+					healthy: true,
+					lastCheck: now,
+				};
+				this.infrastructureHealth.nats = {
+					healthy: this.infrastructureHealth.nats.lastCheck
+						? this.infrastructureHealth.nats.healthy
+						: true,
+					lastCheck: now,
+					optional: true,
+					error: this.infrastructureHealth.nats.error,
+				};
+				this.infrastructureHealth.maildir = {
+					healthy: this.infrastructureHealth.maildir.lastCheck
+						? this.infrastructureHealth.maildir.healthy
+						: true,
+					lastCheck: now,
+					error: this.infrastructureHealth.maildir.error,
+				};
 			}
 		} else {
 			this.infrastructureHealth.apiServer = { healthy: true, lastCheck: now };
@@ -8692,17 +8706,25 @@ ${originalTask.id}`;
 			.map((f) => {
 				const relPath = f.path.replace(process.cwd() + "/", "");
 				let priority = "normal";
-				if (f.lines > 600) priority = "high";
-				if (f.lines > 800) priority = "critical";
+				if (f.lines > HIGH_PRIORITY_FILE_THRESHOLD_LINES) priority = "high";
+				if (f.lines > CRITICAL_FILE_THRESHOLD_LINES) priority = "critical";
 				return `| \`${relPath}\` | ${f.lines} | **${priority}** | ${formatGitStatus(f.gitStatus)} |`;
 			})
 			.join("\n");
 
-		const hasCriticalFiles = files.some((f) => f.lines > 800);
-		const hasHighPriorityFiles = files.some(
-			(f) => f.lines > 600 && f.lines <= 800,
+		const hasCriticalFiles = files.some(
+			(f) => f.lines > CRITICAL_FILE_THRESHOLD_LINES,
 		);
-		const hasMediumFiles = files.some((f) => f.lines > 400 && f.lines <= 600);
+		const hasHighPriorityFiles = files.some(
+			(f) =>
+				f.lines > HIGH_PRIORITY_FILE_THRESHOLD_LINES &&
+				f.lines <= CRITICAL_FILE_THRESHOLD_LINES,
+		);
+		const hasMediumFiles = files.some(
+			(f) =>
+				f.lines > this.refactorFileThresholdLines &&
+				f.lines <= HIGH_PRIORITY_FILE_THRESHOLD_LINES,
+		);
 
 		return `## Refactoring Task
 
@@ -8852,9 +8874,9 @@ When refactoring large files:
 
 			const maxLines = Math.max(...files.map((f) => f.lines));
 			let priority: "critical" | "high" | "normal" | "low" = "normal";
-			if (maxLines > 800) priority = "critical";
-			else if (maxLines > 600) priority = "high";
-			else if (maxLines > 400) priority = "normal";
+			if (maxLines > CRITICAL_FILE_THRESHOLD_LINES) priority = "critical";
+			else if (maxLines > HIGH_PRIORITY_FILE_THRESHOLD_LINES) priority = "high";
+			else if (maxLines > this.refactorFileThresholdLines) priority = "normal";
 
 			const description = this.buildRefactoringDescription(files);
 

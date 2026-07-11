@@ -9,6 +9,9 @@ import type {
   StatusReport as SharedStatusReport,
   TaskAttachment as SharedTaskAttachment,
   TaskComment as SharedTaskComment,
+  TaskSummary as SharedTaskSummary,
+  TaskDiff as SharedTaskDiff,
+  TaskWorkAuthorType as SharedTaskWorkAuthorType,
 } from '../../../types';
 
 const API_BASE = '/api';
@@ -114,6 +117,26 @@ class ApiClient {
   // Health & Status
   async health() {
     return this.request<{ status: string; timestamp: string }>('/health');
+  }
+
+  async search(params: {
+    query: string;
+    types?: string[];
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    return this.request<SearchResponse>('/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        types: params.types,
+        limit: params.limit ?? 20,
+        // Prefer keyword for command-palette snappiness; semantic is optional/slow.
+        keywordWeight: params.keywordWeight ?? 0.85,
+        semanticWeight: params.semanticWeight ?? 0.15,
+      }),
+    });
   }
 
   async status() {
@@ -522,6 +545,54 @@ class ApiClient {
     }>('/status-reports/stats');
   }
 
+  // Status history (Qdrant hybrid semantic search)
+  async searchStatusHistory(params: {
+    query: string;
+    armIds?: string[];
+    eventTypes?: string[];
+    taskId?: string;
+    bugId?: string;
+    from?: string;
+    to?: string;
+    daysBack?: number;
+    limit?: number;
+    keywordWeight?: number;
+    semanticWeight?: number;
+  }) {
+    const filters: Record<string, unknown> = {};
+    if (params.armIds?.length) filters.arm_ids = params.armIds;
+    if (params.eventTypes?.length) filters.event_types = params.eventTypes;
+    if (params.taskId) filters.task_id = params.taskId;
+    if (params.bugId) filters.bug_id = params.bugId;
+    if (params.from) {
+      filters.from = params.from;
+    } else if (params.daysBack !== undefined) {
+      filters.from = new Date(Date.now() - params.daysBack * 24 * 60 * 60 * 1000).toISOString();
+    }
+    if (params.to) filters.to = params.to;
+
+    return this.request<StatusHistorySearchResponse>('/status-history/search', {
+      method: 'POST',
+      body: JSON.stringify({
+        query: params.query,
+        filters,
+        limit: params.limit ?? 20,
+        keywordWeight: params.keywordWeight,
+        semanticWeight: params.semanticWeight,
+        include_context: true,
+      }),
+    });
+  }
+
+  async getStatusHistoryStats(period = 'all') {
+    return this.request<{
+      period: string;
+      healthy: boolean;
+      collectionExists: boolean;
+      pointsCount: number;
+    }>(`/status-history/stats?period=${encodeURIComponent(period)}`);
+  }
+
   // Bugs
   async listBugs(params?: {
     source?: string;
@@ -779,6 +850,83 @@ class ApiClient {
     return this.request<{ unreadCount: number }>(`/tasks/${taskId}/discussions/unread?userId=${encodeURIComponent(userId)}`);
   }
 
+  // Task Summaries (work-in-progress log)
+  async getTaskSummaries(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ summaries: TaskSummary[]; latest: TaskSummary | null }>(
+      `/tasks/${taskId}/summaries${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getLatestTaskSummary(taskId: string) {
+    return this.request<{ summary: TaskSummary | null }>(`/tasks/${taskId}/summaries/latest`);
+  }
+
+  async createTaskSummary(
+    taskId: string,
+    data: { content: string; authorType: TaskWorkAuthorType; authorId: string; authorName?: string }
+  ) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateTaskSummary(taskId: string, summaryId: string, content: string) {
+    return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries/${summaryId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  // Task Diffs (work-in-progress diff log)
+  async getTaskDiffs(taskId: string, params?: { limit?: number; offset?: number }) {
+    const query = new URLSearchParams();
+    if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
+    const queryStr = query.toString();
+    return this.request<{ diffs: TaskDiff[]; totalCount: number }>(
+      `/tasks/${taskId}/diffs${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getTaskDiff(taskId: string, diffId: string) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs/${diffId}`);
+  }
+
+  async createTaskDiff(
+    taskId: string,
+    data: {
+      title?: string;
+      filePath?: string;
+      diff: string;
+      additions?: number;
+      deletions?: number;
+      authorType: TaskWorkAuthorType;
+      authorId: string;
+      authorName?: string;
+    }
+  ) {
+    return this.request<{ diff: TaskDiff }>(`/tasks/${taskId}/diffs`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markTaskDiffsViewed(taskId: string, userId: string, lastViewedDiffId: string) {
+    return this.request<{ marked: boolean }>(`/tasks/${taskId}/diffs/mark-viewed`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, lastViewedDiffId }),
+    });
+  }
+
+  async getUnviewedDiffCount(taskId: string, userId: string) {
+    return this.request<{ unviewedCount: number }>(`/tasks/${taskId}/diffs/unviewed?userId=${encodeURIComponent(userId)}`);
+  }
+
   async removeTaskFromPlan(id: string) {
     return this.request<{ deleted: boolean; removedFromPlan: boolean }>(`/tasks/${id}/remove-from-plan`, {
       method: 'POST',
@@ -906,6 +1054,59 @@ export interface OpenCodeModel {
 }
 
 export type TaskAttachment = SharedTaskAttachment;
+
+export interface SearchResult {
+  id: string;
+  type: string;
+  title: string;
+  content: string;
+  score: number;
+  keywordScore?: number;
+  semanticScore?: number;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  took: number;
+}
+
+export interface StatusHistoryEvent {
+  id: string;
+  type: string;
+  timestamp: string;
+  source: string;
+  title: string;
+  content: string;
+  taskId?: string;
+  bugId?: string;
+  discoveryId?: string;
+  armId?: string;
+  status?: string;
+  priority?: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface StatusHistorySearchHit {
+  event: StatusHistoryEvent;
+  score: number;
+  keywordScore: number;
+  semanticScore: number;
+  highlights: string[];
+}
+
+export interface StatusHistorySearchResponse {
+  results: StatusHistorySearchHit[];
+  total: number;
+  query: string;
+  semanticUsed: boolean;
+  query_time_ms: number;
+}
 
 export interface OpenCodeProvider {
   id: string;
@@ -1244,6 +1445,11 @@ export interface Discovery {
 
 // Task comment/discussion
 export type TaskComment = SharedTaskComment;
+
+// Task work summary/diff log entries
+export type TaskWorkAuthorType = SharedTaskWorkAuthorType;
+export type TaskSummary = SharedTaskSummary;
+export type TaskDiff = SharedTaskDiff;
 
 // Brain-managed task
 export interface Task {

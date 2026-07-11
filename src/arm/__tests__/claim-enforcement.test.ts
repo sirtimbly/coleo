@@ -118,6 +118,14 @@ describe("claim-enforcement", () => {
       getArmEvents: async () => [],
       getEventsByType: async () => [],
       getRecentEvents: async () => [],
+      getStreamMetrics: async () => ({
+        messages: 0,
+        bytes: 0,
+        firstSequence: 0,
+        lastSequence: 0,
+        consumerCount: 0,
+        subjects: [],
+      }),
       isInitialized: () => true,
     });
 
@@ -138,6 +146,14 @@ describe("claim-enforcement", () => {
       getArmEvents: async () => [],
       getEventsByType: async () => [],
       getRecentEvents: async () => [],
+      getStreamMetrics: async () => ({
+        messages: 0,
+        bytes: 0,
+        firstSequence: 0,
+        lastSequence: 0,
+        consumerCount: 0,
+        subjects: [],
+      }),
       isInitialized: () => false,
     });
 
