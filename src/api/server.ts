@@ -6,7 +6,8 @@
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { dirname } from "path";
+import { existsSync, statSync } from "fs";
+import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
@@ -27,6 +28,38 @@ import type { ServerContext } from "./server-context";
 
 export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
+
+function findWebDist(): string | null {
+  const candidates = [
+    resolve(process.cwd(), "dist/web"),
+    resolve(process.cwd(), "src/web/dist"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(join(candidate, "index.html")) && existsSync(join(candidate, "assets"))) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function resolveWebAsset(webDist: string, pathname: string): string | null {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(pathname);
+  } catch {
+    return null;
+  }
+
+  const requested = resolve(webDist, `.${decodedPath}`);
+  const relativePath = relative(webDist, requested);
+  if (relativePath.startsWith("..") || relativePath === "") {
+    return null;
+  }
+
+  return requested;
+}
 
 function shouldAutostartTranscriptIndexer(): boolean {
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
@@ -191,8 +224,23 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/status-history", createStatusHistoryRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
 
-  // Root redirect to health
-  app.get("/", (c) => c.redirect("/api/health"));
+  // Serve the production SPA on the same origin as the API and WebSocket.
+  const webDist = findWebDist();
+  if (webDist) {
+    app.get("*", (c) => {
+      const pathname = new URL(c.req.url).pathname;
+      if (pathname.startsWith("/api/") || pathname === "/api" || pathname.startsWith("/uploads/")) {
+        return c.notFound();
+      }
+
+      const assetPath = resolveWebAsset(webDist, pathname);
+      if (assetPath && existsSync(assetPath) && statSync(assetPath).isFile()) {
+        return new Response(Bun.file(assetPath));
+      }
+
+      return new Response(Bun.file(join(webDist, "index.html")));
+    });
+  }
 
   return app;
 }
