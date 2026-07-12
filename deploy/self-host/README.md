@@ -4,6 +4,7 @@ This folder provides a production-friendly bootstrap for new hosts that need Col
 
 - Observatory web app and API
 - Brain service
+- OpenCode arm agent for headless hosted arms
 - NATS (JetStream)
 - Qdrant
 - Optional edge overlay for Traefik, Authelia, and Tailscale
@@ -40,6 +41,17 @@ Defaults in `.env.hosting`:
 - `COLEO_BIND_HOST=127.0.0.1`
 - `COLEO_PUBLIC_ORIGIN=http://localhost`
 - `COLEO_WEB_PORT=80`
+
+For a hosted OpenCode workspace, also set:
+
+```bash
+COLEO_GIT_REPO_URL=https://github.com/your-org/your-repo.git
+COLEO_GIT_REF=main
+OPENCODE_API_KEY=<your-opencode-key>
+GITHUB_TOKEN=<optional-token-for-private-repos>
+```
+
+The image includes Bun, Node/npm, Git/OpenSSH, common CLI/dev tools, and the current `opencode-ai` CLI. On startup the arm-agent container clones `COLEO_GIT_REPO_URL` into `/home/coleo/projects/app` when it is set, then starts `coleo agent start` from that checkout so the web UI can spawn `opencode-api` arms against the repository.
 
 Files in this folder:
 - `docker-compose.hosting.yml`: default local/private stack
@@ -90,7 +102,7 @@ Only add the edge overlay when you want TLS, hostname routing, and browser auth 
 ## Initialization model (`.coleo` state)
 
 This deployment **does not run `coleo init` inside the image build**.
-Initialization should happen on the runtime where you want persistent Coleo state to live.
+By default, the container entrypoint runs `coleo init --non-interactive` on first startup when `/home/coleo/.coleo/config.toml` is missing. Initialization should happen on the runtime where you want persistent Coleo state to live.
 
 - If API + Brain run on this host, run init in the running container once and keep the split `coleo-*` volumes (especially `coleo-root`, `coleo-db`, and `coleo-mail`).
 - If you split deployment (for example laptop arms + remote API/observatory), initialize on each runtime that owns its own `.coleo` state.
@@ -114,6 +126,7 @@ The Compose profile now separates `.coleo` into dedicated volumes so API/brain d
 - `coleo-logs`: server and arm logs
 - `coleo-arms`: arm config files
 - `coleo-mcp`: generated MCP manifests
+- `coleo-projects`: hosted Git checkout(s), including `/home/coleo/projects/app`
 
 This keeps hosted API dependencies explicit while still preserving compatibility with components that read `COLEO_DIR`.
 

@@ -11,6 +11,7 @@ It runs:
 
 - `observatory` (web UI + API)
 - `brain`
+- `arm-agent` (headless OpenCode arms)
 - `nats`
 - `qdrant`
 
@@ -77,6 +78,34 @@ The edge overlay adds:
 
 Most home-server users should use the base stack over Tailscale or another VPN before introducing the public edge overlay.
 
+## Hosted OpenCode Image Requirements
+
+The Coleo Docker image is built for the hosted web UI/API path and includes:
+
+- Bun and Node/npm for Coleo, Vite, and JavaScript/TypeScript projects
+- Git, OpenSSH, curl/wget, jq, ripgrep, tmux, Python, and build tools for common repository work
+- the current `opencode-ai` CLI from npm, available as `opencode`
+- a production web UI build served by `coleo web` instead of the Vite dev server
+- a hosting entrypoint that can initialize `.coleo`, clone a target repository, and start the API, web UI, brain, and OpenCode arm agent
+
+For OpenCode-only hosted arms, set these environment variables in `deploy/self-host/.env.hosting`:
+
+```bash
+# Repository the arm agent should work in.
+COLEO_GIT_REPO_URL=https://github.com/your-org/your-repo.git
+COLEO_GIT_REF=main
+COLEO_GIT_PULL_ON_START=1
+
+# Coleo API auth and provider credentials.
+COLEO_API_KEY=<generated-by-bootstrap-host>
+OPENCODE_API_KEY=<your-opencode-key>
+
+# Optional, for private GitHub clones or GitHub API access from arms.
+GITHUB_TOKEN=<github-token>
+```
+
+The repository is cloned into `/home/coleo/projects/app`. The `arm-agent` service starts from that directory and advertises OpenCode capabilities over NATS, so arms created from the web UI can run headlessly through the `opencode-api` harness.
+
 ## Bootstrap Behavior
 
 `./deploy/self-host/bin/bootstrap-host.sh` is safe to rerun.
@@ -91,8 +120,9 @@ It will:
 
 ## Initialization
 
-The hosting image does not run `coleo init` during image build.
-Initialize runtime state on the host where you want persistent Coleo data to live:
+The hosting image does not run `coleo init` during image build. By default, the container entrypoint runs a non-interactive `coleo init` on first startup when `/home/coleo/.coleo/config.toml` is missing.
+
+If you disable that behavior with `COLEO_INIT_ON_START=0`, initialize runtime state on the host where you want persistent Coleo data to live:
 
 ```bash
 docker compose \
