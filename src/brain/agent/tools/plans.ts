@@ -2,12 +2,10 @@
  * Plan Reading Tool
  */
 
-import { readFile } from "fs/promises";
-import { join } from "path";
-import fg from "fast-glob";
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
 import type { PlanDocument } from "../types";
+import { LocalWorkspaceAccess, type WorkspaceAccess } from "../../../workspace";
 
 export class ReadPlanTool extends BrainTool {
   name = "readPlan";
@@ -23,59 +21,65 @@ export class ReadPlanTool extends BrainTool {
 
   async execute(input: { planId?: string }): Promise<ToolResult<PlanDocument>> {
     try {
+      const workspace = this.context.workspace
+        ?? new LocalWorkspaceAccess(this.context.projectRoot);
+
       // If specific planId is requested, try to find it
       if (input.planId) {
-        // First check .project/plans/ directory
-        const plansDir = join(this.context.projectRoot, ".project", "plans");
-        let planFiles = await fg("*.md", { cwd: plansDir });
-        planFiles = planFiles.filter(f => f.includes(input.planId!));
+        const planFiles = await this.listPlanFiles(workspace);
+        const matchingPlan = planFiles.find((file) => file.includes(input.planId!));
 
-        if (planFiles.length > 0) {
-          const content = await readFile(join(plansDir, planFiles[0]!), "utf-8");
+        if (matchingPlan) {
+          const file = await workspace.readText(matchingPlan);
+          if (!file) throw new Error(`Plan disappeared while reading: ${matchingPlan}`);
           return {
             success: true,
-            data: this.parsePlanContent(planFiles[0]!, content),
+            data: this.parsePlanContent(this.filename(matchingPlan), file.content),
           };
         }
       }
 
       // Otherwise, prioritize main plan.md
-      const mainPlanPath = join(this.context.projectRoot, ".project", "plan.md");
-      try {
-        const content = await readFile(mainPlanPath, "utf-8");
+      const mainPlan = await workspace.readText(".project/plan.md");
+      if (mainPlan) {
         return {
           success: true,
-          data: this.parsePlanContent("plan.md", content),
-        };
-      } catch {
-        // Only fall back to .project/plans/ if plan.md doesn't exist
-        const plansDir = join(this.context.projectRoot, ".project", "plans");
-        let planFiles = await fg("*.md", { cwd: plansDir });
-
-        if (planFiles.length === 0) {
-          return {
-            success: false,
-            error: "No plan documents found",
-          };
-        }
-
-        // Sort alphabetically, get latest
-        planFiles.sort((a, b) => b.localeCompare(a));
-
-        const latestPlan = planFiles[0]!;
-        const content = await readFile(join(plansDir, latestPlan), "utf-8");
-
-        return {
-          success: true,
-          data: this.parsePlanContent(latestPlan, content),
+          data: this.parsePlanContent("plan.md", mainPlan.content),
         };
       }
+
+      // Only fall back to .project/plans/ if plan.md doesn't exist
+      const planFiles = await this.listPlanFiles(workspace);
+      if (planFiles.length === 0) {
+        return {
+          success: false,
+          error: "No plan documents found",
+        };
+      }
+
+      const latestPlan = planFiles.sort((a, b) => b.localeCompare(a))[0]!;
+      const file = await workspace.readText(latestPlan);
+      if (!file) throw new Error(`Plan disappeared while reading: ${latestPlan}`);
+
+      return {
+        success: true,
+        data: this.parsePlanContent(this.filename(latestPlan), file.content),
+      };
     } catch (error) {
       return {
         success: false,
         error: `Failed to read plan: ${error}`,
       };
     }
+  }
+
+  private async listPlanFiles(workspace: WorkspaceAccess): Promise<string[]> {
+    return (await workspace.scan([".project/plans/*.md"], { maxFiles: 500 }))
+      .map((file) => file.path);
+  }
+
+  private filename(path: string): string {
+    return path.split("/").at(-1) || path;
   }
 
   private parsePlanContent(filename: string, content: string): PlanDocument {

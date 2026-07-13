@@ -41,6 +41,11 @@ import {
   validateAndRecordCommandEnvelope,
   type CommandIngressSource,
 } from "../brain-command-ingress";
+import {
+  executeWorkspaceOperation,
+  parseWorkspaceOperation,
+} from "../../workspace";
+import { getServerWorkspaceAccess } from "../workspace-access";
 
 interface BrainContext {
   Variables: {
@@ -108,6 +113,20 @@ export function createBrainRoutes() {
     }
     return { sql: body.sql, params: (body.params || []) as SQLQueryBindings[] };
   };
+
+  app.post("/internal/workspace", async (c) => {
+    const body = await c.req.json<{ operation?: unknown }>();
+    let operation;
+    try {
+      operation = parseWorkspaceOperation(body.operation);
+    } catch (error) {
+      throw HttpError.badRequest(error instanceof Error ? error.message : "Invalid workspace operation");
+    }
+
+    return c.json({
+      result: await executeWorkspaceOperation(getServerWorkspaceAccess(), operation),
+    });
+  });
 
   const publishCommandToJetStream = async (
     envelope: ReturnType<typeof normalizeCommandEnvelope>,

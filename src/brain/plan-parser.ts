@@ -5,9 +5,9 @@
  * Supports the plan format used in Octopai.
  */
 
-import { readFile, stat } from "fs/promises";
 import { dirname, join, resolve, sep } from "path";
 import { createHash } from "crypto";
+import type { WorkspaceAccess } from "../workspace";
 
 export interface ParsedTask {
   id: string;
@@ -30,16 +30,36 @@ export interface PlanParseResult {
   errors: string[];
 }
 
+async function readPlanText(filePath: string, workspace?: WorkspaceAccess): Promise<{
+  content: string;
+  contentHash: string | null;
+}> {
+  if (workspace) {
+    const file = await workspace.readText(filePath);
+    if (!file) {
+      const error = new Error(`Plan file does not exist: ${filePath}`) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    }
+    return { content: file.content, contentHash: file.contentHash };
+  }
+  const content = await import("fs/promises").then(({ readFile }) => readFile(filePath, "utf-8"));
+  return { content, contentHash: null };
+}
+
 /**
  * Parse a plan.md file and extract tasks
  */
-export async function parsePlanFile(filePath: string): Promise<PlanParseResult> {
+export async function parsePlanFile(
+  filePath: string,
+  workspace?: WorkspaceAccess,
+): Promise<PlanParseResult> {
   const errors: string[] = [];
   const tasks: ParsedTask[] = [];
   const phases: Set<string> = new Set();
   
   try {
-    const content = await readFile(filePath, "utf-8");
+    const { content } = await readPlanText(filePath, workspace);
     const fileHash = createHash("sha256").update(content).digest("hex");
     const lines = content.split("\n");
     
@@ -203,13 +223,16 @@ function extractTags(phase: string, content: string): string[] {
 /**
  * Find all plan files in a directory
  */
-export async function findPlanFiles(projectRoot: string): Promise<string[]> {
+export async function findPlanFiles(
+  projectRoot: string,
+  workspace?: WorkspaceAccess,
+): Promise<string[]> {
   const mainPlanPath = join(projectRoot, ".project", "plan.md");
   const files = new Set<string>();
 
   let mainPlanContent: string | null = null;
   try {
-    mainPlanContent = await readFile(mainPlanPath, "utf-8");
+    mainPlanContent = (await readPlanText(mainPlanPath, workspace)).content;
     files.add(mainPlanPath);
   } catch {
     mainPlanContent = null;
@@ -220,6 +243,7 @@ export async function findPlanFiles(projectRoot: string): Promise<string[]> {
       mainPlanContent,
       mainPlanPath,
       projectRoot,
+      workspace,
     );
     referenced.forEach((filePath) => files.add(filePath));
     return [...files];
@@ -232,6 +256,7 @@ async function collectReferencedPlanFiles(
   content: string,
   mainPlanPath: string,
   projectRoot: string,
+  workspace?: WorkspaceAccess,
 ): Promise<string[]> {
   const results: string[] = [];
   const planDir = dirname(mainPlanPath);
@@ -259,8 +284,12 @@ async function collectReferencedPlanFiles(
     }
 
     try {
-      await stat(resolvedPath);
-      results.push(resolvedPath);
+      if (workspace) {
+        if (await workspace.readText(resolvedPath)) results.push(resolvedPath);
+      } else {
+        await import("fs/promises").then(({ stat }) => stat(resolvedPath));
+        results.push(resolvedPath);
+      }
     } catch {
       continue;
     }
@@ -273,13 +302,14 @@ async function collectReferencedPlanFiles(
  * Parse all plan files and return combined tasks
  */
 export async function parseAllPlanFiles(
-  projectRoot: string
+  projectRoot: string,
+  workspace?: WorkspaceAccess,
 ): Promise<PlanParseResult[]> {
-  const planFiles = await findPlanFiles(projectRoot);
+  const planFiles = await findPlanFiles(projectRoot, workspace);
   const results: PlanParseResult[] = [];
   
   for (const filePath of planFiles) {
-    const result = await parsePlanFile(filePath);
+    const result = await parsePlanFile(filePath, workspace);
     results.push(result);
   }
   
@@ -352,11 +382,12 @@ function insertUidInLine(line: string, uid: string): string {
  */
 export async function removeTaskLineFromPlan(
   filePath: string,
-  uid: string
+  uid: string,
+  workspace?: WorkspaceAccess,
 ): Promise<boolean> {
   try {
-    const { readFile, writeFile } = await import("fs/promises");
-    const content = await readFile(filePath, "utf-8");
+    const source = await readPlanText(filePath, workspace);
+    const content = source.content;
     const lines = content.split("\n");
     
     // Find the line with the matching UID
@@ -369,7 +400,11 @@ export async function removeTaskLineFromPlan(
     lines.splice(matchingIndex, 1);
     
     // Write back the modified content
-    await writeFile(filePath, lines.join("\n"), "utf-8");
+    if (workspace) {
+      await workspace.writeText(filePath, lines.join("\n"), { expectedHash: source.contentHash });
+    } else {
+      await import("fs/promises").then(({ writeFile }) => writeFile(filePath, lines.join("\n"), "utf-8"));
+    }
     return true;
   } catch (err) {
     console.error(`Failed to remove task line from ${filePath}:`, err);

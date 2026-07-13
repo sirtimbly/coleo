@@ -22,6 +22,7 @@ import type {
   GetTodosResponse,
 } from './types';
 import type { TaskAttachment } from "../types";
+import type { WorkspaceOperation, WorkspaceOperationResult } from "../workspace";
 
 export interface ArmClientOptions {
   natsUrl: string;
@@ -407,6 +408,21 @@ export class ArmClient {
     }
 
     return response;
+  }
+
+  /**
+   * Execute a workspace filesystem operation on the selected Arm Host.
+   */
+  async executeWorkspaceOperation(
+    agentId: string,
+    operation: WorkspaceOperation,
+    timeoutMs = 30000,
+  ): Promise<CommandResponse<WorkspaceOperationResult>> {
+    return this.natsClient.sendCommand<WorkspaceOperationResult>(agentId, {
+      type: 'workspace',
+      requestId: generateRequestId(),
+      operation,
+    }, timeoutMs);
   }
 
   // ============================================

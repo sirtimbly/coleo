@@ -1,4 +1,5 @@
 import type { TaskAttachment } from "../types";
+import type { WorkspaceOperation } from "../workspace";
 
 /**
  * NATS Message Types for Octopai Distributed Arm Management
@@ -121,6 +122,12 @@ export interface GetTodosCommand {
   armId: string;
 }
 
+export interface WorkspaceCommand {
+  type: 'workspace';
+  requestId: string;
+  operation: WorkspaceOperation;
+}
+
 export type AgentCommand = 
   | SpawnArmCommand 
   | KillArmCommand 
@@ -129,7 +136,8 @@ export type AgentCommand =
   | ListArmsCommand
   | AbortCommand
   | GetMessagesCommand
-  | GetTodosCommand;
+  | GetTodosCommand
+  | WorkspaceCommand;
 
 // ============================================
 // Responses (Agent -> API Server)

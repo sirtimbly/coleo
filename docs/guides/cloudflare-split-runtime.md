@@ -15,6 +15,7 @@ COLEO_NATS_TOKEN=<workspace-token>
 COLEO_AUTO_START_AGENT=0
 COLEO_REMOTE_ARMS_ONLY=1
 COLEO_REMOTE_WORKDIR=/home/coleo/runtime/workspace
+COLEO_WORKSPACE_AGENT_ID=<workspace-arm-host-id>
 ```
 
 The Arm Host image uses its local TCP NATS listener:
@@ -37,6 +38,31 @@ Arm Host and local fallback is disabled. The control container therefore never
 spawns or signals a harness PID itself. `COLEO_REMOTE_WORKDIR` is the path sent
 in spawn requests; `COLEO_AGENT_WORKDIR` pins it to the corresponding checkout
 inside the Arm Host container.
+
+## Workspace access
+
+The Arm Host is the only runtime that owns the customer Git checkout. Brain
+features that inspect or update that checkout use the `WorkspaceAccess`
+boundary instead of opening repository paths directly:
+
+```text
+Brain -> authenticated Coleo API -> NATS request/reply -> Arm Host -> checkout
+```
+
+The API targets `COLEO_WORKSPACE_AGENT_ID`, which must match the Arm Host's
+stable `COLEO_AGENT_ID`. The protocol intentionally exposes a small set of
+path-confined operations: read a text file, compare-and-swap a text file, scan
+file metadata, and read Git porcelain status. The Arm Host rejects traversal,
+symlink escapes, oversized text payloads, and unbounded scans.
+
+This keeps plan synchronization, inbox parsing, documentation tracking, prompt
+context, and large-file discovery working when the Brain and Arm Host run in
+different containers. It also avoids trying to synchronize two live Git
+checkouts.
+
+For a normal local deployment, `COLEO_REMOTE_ARMS_ONLY` remains unset and the
+same interface uses `LocalWorkspaceAccess` directly. No API or NATS round trip
+is introduced for local development.
 
 The Arm Host exposes TCP `4222`, monitoring `8222`, and WebSocket `9222`. Only the
 monitor and WebSocket ports need to be made reachable through the Cloudflare

@@ -7,9 +7,8 @@
 
 import type { BrainDb, BrainTaskRecord } from "./db-client";
 import { join } from "path";
-import { readFile } from "fs/promises";
-import fg from "fast-glob";
 import type { Discovery, Task } from "../types";
+import { LocalWorkspaceAccess, type WorkspaceAccess } from "../workspace";
 import {
 	DiscoverySummarizer,
 	formatDiscoverySummary,
@@ -26,6 +25,7 @@ export interface PromptContext {
 	projectRoot: string;
 	coleoDir: string;
 	db: BrainDb;
+	workspace?: WorkspaceAccess;
 }
 
 export interface TaskDeterminationResult {
@@ -869,7 +869,7 @@ export async function generateContextBundle(
 	const completedTasks = await getCompletedTasks(db);
 
 	// 5. Read plan
-	const plan = await readCurrentPlan(projectRoot);
+	const plan = await readCurrentPlan(projectRoot, ctx.workspace);
 
 	// 6. Generate instructions based on task classification
 	const instructions = generateInstructions(task);
@@ -910,7 +910,7 @@ export async function generateContextBundle(
 // NOT for task selection. Task determination reads exclusively from the
 // tasks API (database). Plan → task syncing is handled by syncPlanTasks.
 
-async function readCurrentPlan(projectRoot: string): Promise<{
+async function readCurrentPlan(projectRoot: string, workspace?: WorkspaceAccess): Promise<{
 	content: string;
 	goals: string[];
 	bullets: string[];
@@ -925,7 +925,10 @@ async function readCurrentPlan(projectRoot: string): Promise<{
 	let currentPhase = "";
 	
 	try {
-		allContent = await readFile(mainPlanPath, "utf-8");
+		const access = workspace || new LocalWorkspaceAccess(projectRoot);
+		const file = await access.readText(mainPlanPath);
+		if (!file) throw new Error("plan file does not exist");
+		allContent = file.content;
 	} catch (err) {
 		allContent = "# Plan not found or unreadable. Task determination requires the database tasks API for accurate information.";
 		console.warn(`Could not read plan file ${mainPlanPath}: ${err}`);

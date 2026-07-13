@@ -1,8 +1,5 @@
-import fg from "fast-glob";
-import { readFile } from "fs/promises";
-import { existsSync } from "fs";
-import { execSync } from "child_process";
 import { join, relative, sep } from "path";
+import { LocalWorkspaceAccess, type WorkspaceAccess } from "../../workspace";
 
 export interface GitStatus {
 	staged: boolean;
@@ -35,6 +32,7 @@ export interface FindLargeFilesOptions {
 	extensions?: string[];
 	ignore?: string[];
 	includeGitStatus?: boolean;
+	workspace?: WorkspaceAccess;
 }
 
 const DEFAULT_THRESHOLDS: LargeFileThresholds = {
@@ -57,9 +55,7 @@ function normalizeRelativePath(path: string): string {
 }
 
 function getDomainFromRelativePath(relativePath: string): string {
-	const normalized = normalizeRelativePath(relativePath);
-	const parts = normalized.split("/");
-	return parts[0] || "unknown";
+	return normalizeRelativePath(relativePath).split("/")[0] || "unknown";
 }
 
 function getBucket(lines: number, thresholds: LargeFileThresholds): LargeFileBucket {
@@ -68,47 +64,29 @@ function getBucket(lines: number, thresholds: LargeFileThresholds): LargeFileBuc
 	return "normal";
 }
 
-function getGitStatusMap(rootDir: string): Map<string, GitStatus> {
-	try {
-		const output = execSync("git status --porcelain", {
-			cwd: rootDir,
-			encoding: "utf-8",
+function getGitStatusMap(output: string): Map<string, GitStatus> {
+	const map = new Map<string, GitStatus>();
+	for (const rawLine of output.split("\n")) {
+		const line = rawLine.trimEnd();
+		if (!line) continue;
+		const status = line.slice(0, 2);
+		const filePart = line.slice(3).trim();
+		const filePath = filePart.includes(" -> ")
+			? filePart.split(" -> ")[1] ?? filePart
+			: filePart;
+		map.set(normalizeRelativePath(filePath), {
+			staged: status[0] !== " " && status[0] !== "?",
+			modified: status[1] !== " " && status[1] !== "?",
+			untracked: status === "??",
 		});
-		const map = new Map<string, GitStatus>();
-		for (const rawLine of output.split("\n")) {
-			const line = rawLine.trimEnd();
-			if (!line) continue;
-			const status = line.slice(0, 2);
-			const filePart = line.slice(3).trim();
-			const filePath = filePart.includes(" -> ")
-				? filePart.split(" -> ")[1] ?? filePart
-				: filePart;
-			const staged = status[0] !== " " && status[0] !== "?";
-			const modified = status[1] !== " " && status[1] !== "?";
-			const untracked = status === "??";
-			map.set(normalizeRelativePath(filePath), {
-				staged,
-				modified,
-				untracked,
-			});
-		}
-		return map;
-	} catch {
-		return new Map();
 	}
+	return map;
 }
 
-async function countLines(filePath: string): Promise<number> {
-	const contents = await readFile(filePath, "utf-8");
-	if (contents.length === 0) return 0;
-	return contents.split(/\r\n|\r|\n/).length;
-}
-
-async function loadGitIgnorePatterns(rootDir: string): Promise<string[]> {
-	const filePath = join(rootDir, ".gitignore");
-	if (!existsSync(filePath)) return [];
-	const contents = await readFile(filePath, "utf-8");
-	return contents
+async function loadGitIgnorePatterns(workspace: WorkspaceAccess): Promise<string[]> {
+	const file = await workspace.readText(".gitignore");
+	if (!file) return [];
+	return file.content
 		.split(/\r\n|\r|\n/)
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0 && !line.startsWith("#") && !line.startsWith("!"));
@@ -118,6 +96,7 @@ export async function findLargeFiles(
 	options: FindLargeFilesOptions = {},
 ): Promise<LargeFileInfo[]> {
 	const rootDir = options.rootDir ?? process.cwd();
+	const workspace = options.workspace || new LocalWorkspaceAccess(rootDir);
 	const scanRoot = options.srcDir ?? join(rootDir, "src");
 	const scanRelative = normalizeRelativePath(relative(rootDir, scanRoot));
 	const thresholds: LargeFileThresholds = {
@@ -126,46 +105,30 @@ export async function findLargeFiles(
 	};
 	const minLines = options.minLines ?? thresholds.normal;
 	const extensions = options.extensions ?? DEFAULT_EXTENSIONS;
-	const gitIgnore = await loadGitIgnorePatterns(rootDir);
+	const gitIgnore = await loadGitIgnorePatterns(workspace);
 	const ignore = [...DEFAULT_IGNORE, ...gitIgnore, ...(options.ignore ?? [])];
-	const gitStatusMap = options.includeGitStatus ? getGitStatusMap(rootDir) : null;
-	const patterns = extensions.map((ext) => `${scanRelative}/**/*.${ext}`);
-
-	const files = await fg(patterns, {
-		cwd: rootDir,
-		absolute: true,
-		onlyFiles: true,
-		followSymbolicLinks: false,
-		ignore,
-	});
+	const gitStatusMap = options.includeGitStatus
+		? getGitStatusMap(await workspace.gitStatus())
+		: null;
+	const patterns = extensions.map((extension) => `${scanRelative}/**/*.${extension}`);
+	const files = await workspace.scan(patterns, { ignore, includeLineCount: true });
 
 	const results: LargeFileInfo[] = [];
-
-	for (const filePath of files) {
-		const lines = await countLines(filePath);
+	for (const file of files) {
+		const lines = file.lineCount ?? 0;
 		if (lines <= minLines) continue;
-		const relativePath = normalizeRelativePath(relative(rootDir, filePath));
-		const bucket = getBucket(lines, thresholds);
-		const domain = getDomainFromRelativePath(
-			relativePath.replace(`${scanRelative}/`, ""),
-		);
-		const gitStatus = gitStatusMap?.get(relativePath);
-
+		const relativePath = normalizeRelativePath(file.path);
 		results.push({
-			path: filePath,
+			path: join(rootDir, relativePath),
 			relativePath,
 			lines,
-			domain,
-			bucket,
-			gitStatus,
+			domain: getDomainFromRelativePath(relativePath.replace(`${scanRelative}/`, "")),
+			bucket: getBucket(lines, thresholds),
+			gitStatus: gitStatusMap?.get(relativePath),
 		});
 	}
 
-	results.sort((a, b) => {
-		if (b.lines !== a.lines) return b.lines - a.lines;
-		return a.relativePath.localeCompare(b.relativePath);
-	});
-
+	results.sort((a, b) => b.lines - a.lines || a.relativePath.localeCompare(b.relativePath));
 	return results;
 }
 

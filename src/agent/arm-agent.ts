@@ -31,6 +31,7 @@ import {
   type ArmEventCallback,
 } from '../harness';
 import { truncateLargeFields } from '../harness/event-stream';
+import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
 
 const execAsync = promisify(exec);
 const MAX_DISTRIBUTED_MESSAGES = 100;
@@ -57,6 +58,7 @@ export interface ArmAgentOptions {
   natsUrl: string;
   natsToken?: string;
   coleoDir: string;
+  workspaceRoot?: string;
   maxArms?: number;
   heartbeatIntervalMs?: number;
   debug?: boolean;
@@ -81,6 +83,7 @@ export class ArmAgent {
   private agentId: string;
   private natsClient: NatsClient;
   private coleoDir: string;
+  private workspace: LocalWorkspaceAccess;
   private maxArms: number;
   private heartbeatIntervalMs: number;
   private debug: boolean;
@@ -94,6 +97,9 @@ export class ArmAgent {
   constructor(options: ArmAgentOptions) {
     this.agentId = options.agentId || `agent-${hostname()}-${process.pid}`;
     this.coleoDir = options.coleoDir;
+    this.workspace = new LocalWorkspaceAccess(
+      options.workspaceRoot || process.env.COLEO_AGENT_WORKDIR || process.cwd(),
+    );
     this.maxArms = options.maxArms || 10;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs || 30000;
     this.debug = options.debug || false;
@@ -169,7 +175,7 @@ export class ArmAgent {
       platform: process.platform,
       startedAt: this.startedAt,
       version: '0.2.0',
-      capabilities: harnessRegistry.list(),
+      capabilities: [...harnessRegistry.list(), 'workspace-rpc'],
       maxArms: this.maxArms,
     };
   }
@@ -212,6 +218,12 @@ export class ArmAgent {
           return await this.handleGetMessages(command);
         case 'get_todos':
           return await this.handleGetTodos(command);
+        case 'workspace':
+          return {
+            requestId: command.requestId,
+            success: true,
+            data: await executeWorkspaceOperation(this.workspace, command.operation),
+          };
         default:
           return {
             requestId: (command as AgentCommand).requestId,

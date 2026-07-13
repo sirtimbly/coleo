@@ -103,7 +103,7 @@ fi
 
 cd "$COLEO_WORKDIR"
 setsid coleo agent start \
-  --id "reef-${COLEO_PROJECT_ID:-workspace}" \
+  --id "${COLEO_AGENT_ID:-reef-${COLEO_PROJECT_ID:-workspace}}" \
   --nats-url "$COLEO_NATS_URL" \
   --max-arms "${COLEO_AGENT_MAX_ARMS:-10}" &
 AGENT_PID=$!

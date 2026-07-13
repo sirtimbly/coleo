@@ -8,10 +8,8 @@
  * - Record doc update attempts for history
  */
 
-import { join } from "path";
-import { readdir, readFile } from "fs/promises";
-import fg from "fast-glob";
 import { loadConfig } from "../config";
+import { LocalWorkspaceAccess, type WorkspaceAccess } from "../workspace";
 
 interface DocUpdateContext {
   filesChanged: string[];
@@ -24,7 +22,7 @@ export class DocUpdateTracker {
   private apiBaseUrl: string;
   private apiKey: string;
   private coleoDir: string;
-  private projectRoot: string;
+  private workspace: WorkspaceAccess;
   private pollCount: number = 0;
 
   constructor(
@@ -32,11 +30,12 @@ export class DocUpdateTracker {
     apiKey: string,
     coleoDir: string,
     projectRoot: string,
+    workspace?: WorkspaceAccess,
   ) {
     this.apiBaseUrl = apiBaseUrl.replace(/\/$/, "");
     this.apiKey = apiKey;
     this.coleoDir = coleoDir;
-    this.projectRoot = projectRoot;
+    this.workspace = workspace || new LocalWorkspaceAccess(projectRoot);
   }
 
   private async apiRequest<T>(path: string, options: RequestInit = {}): Promise<T | null> {
@@ -113,13 +112,7 @@ export class DocUpdateTracker {
       "docs/capabilities/**/*.md",
     ];
 
-    const files: string[] = [];
-    for (const pattern of patterns) {
-      const matches = await fg(pattern, { cwd: this.projectRoot });
-      files.push(...matches);
-    }
-
-    return files;
+    return (await this.workspace.scan(patterns)).map((file) => file.path);
   }
 
   /**
@@ -193,10 +186,15 @@ export class DocUpdateTracker {
 
     // Find plan document for "future work" notes
     // Brain should only read the main plan.md, not individual plan files in .project/plans/
-    const mainPlanPath = join(this.projectRoot, ".project", "plan.md");
+    const mainPlanPath = ".project/plan.md";
     let planDocument: string | undefined;
     try {
-      await readFile(mainPlanPath, "utf-8");
+      const plan = await this.workspace.readText(mainPlanPath);
+      if (!plan) return {
+        filesChanged: codeFiles,
+        changedFilesCount: codeFiles.length,
+        featureDocsToUpdate: affectedDocs,
+      };
       planDocument = mainPlanPath;
     } catch {
       // Main plan.md doesn't exist, don't use any plan document

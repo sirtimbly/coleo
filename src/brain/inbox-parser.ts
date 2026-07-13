@@ -5,9 +5,9 @@
  * Items are deduplicated against existing tasks before creation.
  */
 
-import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { createHash } from "crypto";
+import type { WorkspaceAccess } from "../workspace";
 
 /** Configuration for deduplication similarity threshold (0.0 - 1.0) */
 export const DEDUPLICATION_CONFIG = {
@@ -55,16 +55,32 @@ After processing, items are removed from this file.
 
 `;
 
+async function readInboxText(path: string, workspace?: WorkspaceAccess): Promise<string> {
+  if (workspace) {
+    const file = await workspace.readText(path);
+    if (!file) {
+      const error = new Error(`Inbox does not exist: ${path}`) as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      throw error;
+    }
+    return file.content;
+  }
+  return import("fs/promises").then(({ readFile }) => readFile(path, "utf-8"));
+}
+
 /**
  * Parse inbox.md and extract items
  */
-export async function parseInbox(projectRoot: string): Promise<InboxParseResult> {
+export async function parseInbox(
+  projectRoot: string,
+  workspace?: WorkspaceAccess,
+): Promise<InboxParseResult> {
   const inboxPath = join(projectRoot, ".project", "inbox.md");
   const errors: string[] = [];
   const items: InboxItem[] = [];
 
   try {
-    const content = await readFile(inboxPath, "utf-8");
+    const content = await readInboxText(inboxPath, workspace);
     const lines = content.split("\n");
 
     // Find content after the separator
@@ -158,9 +174,17 @@ export async function parseInbox(projectRoot: string): Promise<InboxParseResult>
 /**
  * Clear the inbox after processing
  */
-export async function clearInbox(projectRoot: string): Promise<void> {
+export async function clearInbox(
+  projectRoot: string,
+  workspace?: WorkspaceAccess,
+): Promise<void> {
   const inboxPath = join(projectRoot, ".project", "inbox.md");
-  await writeFile(inboxPath, INBOX_HEADER, "utf-8");
+  if (workspace) {
+    const existing = await workspace.readText(inboxPath);
+    await workspace.writeText(inboxPath, INBOX_HEADER, { expectedHash: existing?.contentHash ?? null });
+    return;
+  }
+  await import("fs/promises").then(({ writeFile }) => writeFile(inboxPath, INBOX_HEADER, "utf-8"));
 }
 
 /**
