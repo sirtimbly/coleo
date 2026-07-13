@@ -764,8 +764,9 @@ export function TasksPage() {
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
 						{workspaceListHeader}
-						<div className="min-h-0 flex-1 overflow-auto p-3">
+						<div className="min-h-0 flex-1 overflow-auto">
 							<TaskGrid
+								className="rounded-none border-0"
 								tasks={filteredTasks}
 								totalTasks={pagination?.total}
 								availableTags={availableTags}
