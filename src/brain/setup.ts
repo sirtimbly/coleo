@@ -19,12 +19,15 @@ import {
 } from "./health-monitor";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
 import type { ArmStateStore } from "./db-client";
+import type { WorkspaceAccess } from "../workspace";
 
 export interface BrainSetupOptions {
 	coleoDir: string;
 	apiBaseUrl: string;
 	apiKey: string;
 	refactorFileThresholdDefault: number;
+	projectRoot?: string;
+	workspace?: WorkspaceAccess;
 }
 
 export interface BrainSetupResult {
@@ -107,8 +110,9 @@ export function initDocTracker(
 	apiKey: string,
 	coleoDir: string,
 	projectRoot: string,
+	workspace?: WorkspaceAccess,
 ): DocUpdateTracker {
-	return new DocUpdateTracker(apiBaseUrl, apiKey, coleoDir, projectRoot);
+	return new DocUpdateTracker(apiBaseUrl, apiKey, coleoDir, projectRoot, workspace);
 }
 
 /**
@@ -207,10 +211,11 @@ export async function setupDocWatcher(
 	projectRoot: string,
 	log: (msg: string) => void,
 	reqDocsChangeCallback: (event: { relativePath: string; type: string }) => void,
+	workspace?: WorkspaceAccess,
 ): Promise<{ stop: () => void }> {
 	try {
 		const { getDocWatcher } = await import("../docs/watcher");
-		const docWatcher = getDocWatcher(projectRoot);
+		const docWatcher = getDocWatcher(projectRoot, workspace);
 		docWatcher.onChange(reqDocsChangeCallback);
 		await docWatcher.start();
 		return { stop: () => docWatcher.stop() };
@@ -244,7 +249,8 @@ export async function initializeBrainComponents(
 		options.apiBaseUrl,
 		options.apiKey,
 		options.coleoDir,
-		process.cwd(),
+		options.projectRoot || process.cwd(),
+		options.workspace,
 	);
 
 	// Initialize arm state machine

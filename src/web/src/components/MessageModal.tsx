@@ -213,12 +213,12 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
 
   const getStatusColor = (status: Arm['status']) => {
     switch (status) {
-      case 'idle': return 'text-green-400';
-      case 'busy': return 'text-yellow-400';
-      case 'paused': return 'text-blue-400';
-      case 'error': return 'text-red-400';
-      case 'stopped': return 'text-zinc-500';
-      default: return 'text-zinc-400';
+      case 'idle': return 'text-success';
+      case 'busy': return 'text-warning';
+      case 'paused': return 'text-accent';
+      case 'error': return 'text-danger';
+      case 'stopped': return 'text-muted-foreground';
+      default: return 'text-muted-foreground';
     }
   };
 
@@ -232,7 +232,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <div 
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -240,18 +240,18 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
       />
       
       {/* Modal */}
-      <div className="relative w-full max-w-2xl mx-4 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl">
+      <div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-3">
             {/* Mode selector */}
-            <div className="flex items-center bg-zinc-800 rounded-lg p-1">
+            <div className="flex items-center rounded-lg bg-surface-secondary p-1">
               <button
                 onClick={() => setMode('brain')}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   mode === 'brain'
                     ? 'bg-purple-600 text-white'
-                    : 'text-zinc-400 hover:text-white'
+                    : 'text-muted-foreground hover:bg-surface-tertiary hover:text-foreground'
                 }`}
               >
                 <Brain className="w-4 h-4" />
@@ -262,7 +262,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   mode === 'arm'
                     ? 'bg-cyan-600 text-white'
-                    : 'text-zinc-400 hover:text-white'
+                    : 'text-muted-foreground hover:bg-surface-tertiary hover:text-foreground'
                 }`}
               >
                 <Cpu className="w-4 h-4" />
@@ -276,25 +276,25 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                 <button
                   onClick={() => setShowDropdown(!showDropdown)}
                   disabled={isLoading}
-                  className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 rounded-lg text-sm transition-colors"
+                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-secondary px-3 py-1.5 text-sm transition-colors hover:bg-surface-tertiary"
                 >
                   {isLoading ? (
-                    <span className="text-zinc-400">Loading...</span>
+                    <span className="text-muted-foreground">Loading...</span>
                   ) : selectedArm ? (
                     <>
                       {getStatusDot(selectedArm.status)}
-                      <span className="text-white">{selectedArm.name}</span>
+                      <span className="text-foreground">{selectedArm.name}</span>
                     </>
                   ) : (
-                    <span className="text-zinc-400">Select arm...</span>
+                    <span className="text-muted-foreground">Select arm...</span>
                   )}
-                  <ChevronDown className="w-4 h-4 text-zinc-400" />
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
                 </button>
                 
                 {showDropdown && (
-                  <div className="absolute top-full left-0 mt-1 w-64 bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl overflow-hidden z-10">
+                  <div className="absolute left-0 top-full z-10 mt-1 w-64 overflow-hidden rounded-lg border border-border bg-overlay shadow-xl">
                     {arms.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-zinc-400">No arms available</div>
+                      <div className="px-3 py-2 text-sm text-muted-foreground">No arms available</div>
                     ) : (
                       <div className="max-h-48 overflow-y-auto">
                         {arms.map(arm => (
@@ -304,12 +304,12 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                               setSelectedArmId(arm.id);
                               setShowDropdown(false);
                             }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-zinc-700 transition-colors ${
-                              selectedArmId === arm.id ? 'bg-zinc-700' : ''
+                            className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-surface-secondary ${
+                              selectedArmId === arm.id ? 'bg-surface-secondary' : ''
                             }`}
                           >
                             {getStatusDot(arm.status)}
-                            <span className="text-white flex-1">{arm.name}</span>
+                            <span className="flex-1 text-foreground">{arm.name}</span>
                             <span className={`text-xs ${getStatusColor(arm.status)}`}>
                               {arm.status}
                             </span>
@@ -325,18 +325,18 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           
           <button
             onClick={onClose}
-            className="p-1 text-zinc-400 hover:text-white rounded transition-colors"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
         
         {/* Body */}
-        <div className="p-4">
+        <div className="min-h-0 overflow-y-auto p-4">
           {/* Description */}
-          <p className="text-sm text-zinc-400 mb-3">
+          <p className="mb-3 text-sm text-muted-foreground">
             {isReply ? (
-              <>Replying to: <span className="text-white font-medium">{replyTo?.subject}</span></>
+              <>Replying to: <span className="font-medium text-foreground">{replyTo?.subject}</span></>
             ) : mode === 'brain' ? (
               <>Send a message to the Brain. It will parse your intent and route to the appropriate arm(s).</>
             ) : (
@@ -354,7 +354,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
               ? "Describe your task, feature request, or instruction..."
               : "Enter a prompt for the selected arm..."
             }
-            className="w-full h-40 px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+            className="h-40 w-full resize-none rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
           />
 
           <input
@@ -384,15 +384,15 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
               void handleDrop(e);
             }}
             className={`mt-3 rounded-lg border border-dashed px-3 py-3 transition-colors ${
-              isDragOver ? 'border-cyan-400 bg-cyan-500/10' : 'border-zinc-600 bg-zinc-800/60'
+              isDragOver ? 'border-accent bg-accent/10' : 'border-border bg-surface-secondary/60'
             }`}
           >
             <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm text-zinc-300">
+              <div className="flex items-center gap-2 text-sm text-foreground">
                 {isUploading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-cyan-300" />
+                  <Loader2 className="h-4 w-4 animate-spin text-accent" />
                 ) : (
-                  <ImagePlus className="w-4 h-4 text-cyan-300" />
+                  <ImagePlus className="h-4 w-4 text-accent" />
                 )}
                 <span>Drag screenshots here or upload images to include with the prompt.</span>
               </div>
@@ -400,7 +400,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="shrink-0 rounded-md border border-zinc-500 px-3 py-1.5 text-sm text-white transition-colors hover:border-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="shrink-0 rounded-md border border-border px-3 py-1.5 text-sm text-foreground transition-colors hover:border-accent hover:bg-surface-tertiary disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Choose images
               </button>
@@ -409,7 +409,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
             {attachments.length > 0 && (
               <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {attachments.map((attachment) => (
-                  <div key={attachment.uploadId} className="overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900">
+                  <div key={attachment.uploadId} className="overflow-hidden rounded-lg border border-border bg-surface">
                     <img
                       src={attachment.contentUrl}
                       alt={attachment.filename}
@@ -417,13 +417,13 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
                     />
                     <div className="flex items-center justify-between gap-2 px-2 py-2">
                       <div className="min-w-0">
-                        <p className="truncate text-xs font-medium text-white">{attachment.filename}</p>
-                        <p className="text-[11px] text-zinc-500">{Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB</p>
+                        <p className="truncate text-xs font-medium text-foreground">{attachment.filename}</p>
+                        <p className="text-[11px] text-muted-foreground">{Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeAttachment(attachment.uploadId)}
-                        className="rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-red-300"
+                        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-danger"
                         aria-label={`Remove ${attachment.filename}`}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -437,14 +437,14 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           
           {/* Error message */}
           {error && (
-            <p className="mt-2 text-sm text-red-400">{error}</p>
+            <p className="mt-2 text-sm text-danger">{error}</p>
           )}
         </div>
         
         {/* Footer */}
-        <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-700 bg-zinc-800/50 rounded-b-lg">
-          <span className="text-xs text-zinc-500">
-            Press <kbd className="px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-300">Cmd</kbd>+<kbd className="px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-300">Enter</kbd> to send
+        <div className="flex shrink-0 items-center justify-between border-t border-border bg-surface-secondary/60 px-4 py-3">
+          <span className="text-xs text-muted-foreground">
+            Press <kbd className="rounded bg-surface-tertiary px-1.5 py-0.5 text-foreground">Cmd</kbd>+<kbd className="rounded bg-surface-tertiary px-1.5 py-0.5 text-foreground">Enter</kbd> to send
           </span>
           
           <button

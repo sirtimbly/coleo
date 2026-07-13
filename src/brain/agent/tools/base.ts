@@ -3,11 +3,13 @@
  */
 
 import type { BrainDb } from "../../db-client";
+import type { WorkspaceAccess } from "../../../workspace";
 
 export interface ToolContext {
   db: BrainDb;
   projectRoot: string;
   coleoDir: string;
+  workspace?: WorkspaceAccess;
 }
 
 export interface ToolResult<T = unknown> {

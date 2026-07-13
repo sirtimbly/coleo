@@ -12,11 +12,11 @@ import {
   AckPolicy,
   DeliverPolicy,
   ReplayPolicy,
-  connect,
 } from "nats";
 import type { JsMsg } from "nats";
 import { embeddingService } from "../embedding";
 import { qdrantStore } from "../qdrant";
+import { connectToNats } from "../nats/transport";
 import type { EventData } from "../nats/jetstream";
 
 const STREAM_NAME = process.env.COLEO_EVENT_STREAM || "coleo-events";
@@ -24,6 +24,7 @@ const FILTER_SUBJECT = process.env.COLEO_TRANSCRIPT_INDEX_SUBJECT || "coleo.even
 const CONSUMER_DURABLE = process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v1";
 const COLLECTION_NAME = process.env.COLEO_TRANSCRIPT_COLLECTION || "search-index";
 const NATS_URL = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+const NATS_TOKEN = process.env.COLEO_NATS_TOKEN;
 const BATCH_SIZE = parsePositiveInt(process.env.COLEO_TRANSCRIPT_INDEX_BATCH, 24, 200);
 const FETCH_EXPIRES_MS = parsePositiveInt(process.env.COLEO_TRANSCRIPT_INDEX_FETCH_EXPIRES_MS, 5000, 60000);
 
@@ -140,7 +141,7 @@ function buildIndexableEvent(msg: JsMsg, event: EventData): IndexableEvent {
 }
 
 async function ensureDurableConsumer(): Promise<void> {
-  const nc = await connect({ servers: NATS_URL });
+  const nc = await connectToNats({ servers: NATS_URL, token: NATS_TOKEN });
   try {
     const jsm = await nc.jetstreamManager();
     try {
@@ -176,7 +177,7 @@ async function main(): Promise<void> {
   await qdrantStore.createCollection(COLLECTION_NAME, embeddingService.getVectorSize(), "Cosine");
   await ensureDurableConsumer();
 
-  const nc = await connect({ servers: NATS_URL });
+  const nc = await connectToNats({ servers: NATS_URL, token: NATS_TOKEN });
   const js = nc.jetstream();
   const consumer = await js.consumers.get(STREAM_NAME, CONSUMER_DURABLE);
 

@@ -12,6 +12,8 @@ import { readdir, stat } from "fs/promises";
 import { HttpError } from "../middleware/error";
 import { eventStore } from "../../nats/jetstream";
 import { normalizePostmarkInbound, sendPostmarkMessage } from "../../mail/postmark-gateway";
+import { sendCloudflareMessage } from "../../mail/cloudflare-gateway";
+import { loadConfig } from "../../config";
 
 interface MailContext {
   Variables: {
@@ -572,6 +574,88 @@ export function createMailRoutes() {
       return c.json({ message }, 201);
     } catch (err) {
       throw HttpError.internal(`Failed to persist Postmark inbound message: ${err}`);
+    }
+  });
+
+  app.post("/gateway/send", async (c) => {
+    const coleoDir = c.get("coleoDir");
+    const sent = new Maildir(join(coleoDir, "mail", "sent"));
+    const config = await loadConfig(coleoDir);
+    const body = await c.req.json<{
+      to: string;
+      subject: string;
+      body: string;
+      from?: string;
+      replyTo?: string;
+      headers?: Record<string, string>;
+    }>();
+
+    if (!body.from || !body.to || !body.subject || !body.body) {
+      throw HttpError.badRequest("from, to, subject, and body are required");
+    }
+
+    try {
+      let providerResult: unknown;
+      let providerHeaders: Record<string, string>;
+
+      if (config.mail.provider === "postmark") {
+        const apiToken = process.env.COLEO_POSTMARK_SERVER_TOKEN;
+        if (!apiToken) {
+          throw new Error("COLEO_POSTMARK_SERVER_TOKEN is not configured");
+        }
+        const result = await sendPostmarkMessage({
+          apiToken,
+          from: body.from,
+          to: body.to,
+          subject: body.subject,
+          textBody: body.body,
+          replyTo: body.replyTo,
+          headers: body.headers,
+        });
+        providerResult = result;
+        providerHeaders = {
+          "x-mail-provider": "postmark",
+          "x-postmark-message-id": result.messageId,
+        };
+      } else {
+        const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+        const apiToken = process.env.CLOUDFLARE_EMAIL_API_TOKEN;
+        if (!accountId || !apiToken) {
+          throw new Error("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_EMAIL_API_TOKEN must be configured");
+        }
+        const result = await sendCloudflareMessage({
+          accountId,
+          apiToken,
+          from: body.from,
+          to: body.to,
+          subject: body.subject,
+          textBody: body.body,
+          replyTo: body.replyTo,
+          headers: body.headers,
+        });
+        providerResult = result;
+        providerHeaders = { "x-mail-provider": "cloudflare" };
+      }
+
+      const message = await sent.write({
+        from: body.from,
+        to: body.to,
+        subject: body.subject,
+        date: new Date(),
+        body: body.body,
+        headers: { ...(body.headers ?? {}), ...providerHeaders },
+      });
+
+      broadcastMailEvent("sent", {
+        messageId: message.id,
+        from: body.from,
+        to: body.to,
+        subject: body.subject,
+      });
+
+      return c.json({ message, provider: config.mail.provider, providerResult }, 202);
+    } catch (err) {
+      throw HttpError.internal(`Failed to send message via ${config.mail.provider}: ${err}`);
     }
   });
 

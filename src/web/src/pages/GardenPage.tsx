@@ -52,8 +52,8 @@ function StatChip({
   accent: string;
 }) {
   return (
-    <div className="rounded-full border border-cyan-400/15 bg-slate-950/75 px-3 py-2">
-      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100/55">{label}</div>
+    <div className="rounded-full border border-border bg-surface-secondary px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</div>
       <div className={`mt-1 text-sm font-semibold ${accent}`}>{value}</div>
     </div>
   );
@@ -112,41 +112,55 @@ export function GardenPage() {
   }, [selection]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,#0f2840_0%,#040b14_46%,#02060c_100%)] text-foreground">
-      <div className="border-b border-cyan-400/10 bg-slate-950/40 px-4 py-3 backdrop-blur lg:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <h1 className="text-2xl font-semibold tracking-tight text-cyan-50">Garden</h1>
-            <p className="mt-1 text-xs leading-5 text-cyan-100/65 sm:text-sm">
-              A submerged operations map of the shared workspace. Bright arm tips move through active work while
-              translucent tentacles keep the brain visible without taking over the frame.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm text-cyan-100/75">
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-full border border-cyan-400/15 bg-slate-950/75 px-3 py-1.5 text-xs font-medium text-cyan-50 transition hover:border-cyan-300/30 hover:bg-slate-900/85"
-              onClick={() => setHudOpen((current) => !current)}
-            >
-              {hudOpen ? <X className="h-3.5 w-3.5" /> : <BarChart3 className="h-3.5 w-3.5" />}
-              {hudOpen ? 'Hide stats' : 'Show stats'}
-            </button>
-            <div className="font-medium">{selectedSummary}</div>
-            <div className="text-xs text-cyan-100/55">
-              Mouse orbit/pan/zoom. WASD or arrows move.
-            </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
+      <div className="border-b border-border bg-surface px-4 py-2 lg:px-5">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <button
+            type="button"
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-surface-secondary px-3 py-1.5 text-xs font-medium text-foreground transition hover:border-accent/50 hover:bg-surface-tertiary"
+            onClick={() => setHudOpen((current) => !current)}
+          >
+            {hudOpen ? <X className="h-3.5 w-3.5" /> : <BarChart3 className="h-3.5 w-3.5" />}
+            {hudOpen ? 'Hide stats' : 'Show stats'}
+          </button>
+          <div className="font-medium text-foreground">{selectedSummary}</div>
+          <div className="text-xs text-muted-foreground">
+            Mouse orbit/pan/zoom. WASD or arrows move.
           </div>
         </div>
 
         {hudOpen ? (
           <div className="mt-3 flex flex-wrap gap-2">
-            <StatChip label="Active Arms" value={scene?.stats.activeArms ?? '—'} accent="text-cyan-300" />
-            <StatChip label="Tasks" value={scene?.stats.visibleTasks ?? '—'} accent="text-emerald-300" />
-            <StatChip label="Bugs" value={scene?.stats.visibleBugs ?? '—'} accent="text-amber-300" />
-            <StatChip label="Discoveries" value={scene?.stats.visibleDiscoveries ?? '—'} accent="text-sky-300" />
-            <StatChip label="Proposals" value={scene?.stats.openProposals ?? '—'} accent="text-fuchsia-300" />
-            <StatChip label="Conflicts" value={scene?.stats.conflictZones ?? '—'} accent="text-rose-300" />
+            <StatChip
+              label="Active Arms"
+              value={scene?.stats.activeArms ?? '—'}
+              accent="text-cyan-600 dark:text-cyan-300"
+            />
+            <StatChip
+              label="Tasks"
+              value={scene?.stats.visibleTasks ?? '—'}
+              accent="text-emerald-600 dark:text-emerald-300"
+            />
+            <StatChip
+              label="Bugs"
+              value={scene?.stats.visibleBugs ?? '—'}
+              accent="text-amber-600 dark:text-amber-300"
+            />
+            <StatChip
+              label="Discoveries"
+              value={scene?.stats.visibleDiscoveries ?? '—'}
+              accent="text-sky-600 dark:text-sky-300"
+            />
+            <StatChip
+              label="Proposals"
+              value={scene?.stats.openProposals ?? '—'}
+              accent="text-fuchsia-600 dark:text-fuchsia-300"
+            />
+            <StatChip
+              label="Conflicts"
+              value={scene?.stats.conflictZones ?? '—'}
+              accent="text-rose-600 dark:text-rose-300"
+            />
           </div>
         ) : null}
       </div>
@@ -154,20 +168,20 @@ export function GardenPage() {
       <div className="flex-1 overflow-hidden p-3 lg:p-4">
         <div className="relative h-full">
           {isLoading ? (
-            <Card className="border-cyan-400/15 bg-slate-950/75 backdrop-blur">
+            <Card className="border-border bg-surface">
               <CardHeader>
-                <CardTitle className="text-cyan-50">Loading Garden</CardTitle>
+                <CardTitle>Loading Garden</CardTitle>
               </CardHeader>
               <CardContent className="text-sm text-muted-foreground">
                 Building the scene from current arms, tasks, bugs, discoveries, and ownership links…
               </CardContent>
             </Card>
           ) : isError || !scene ? (
-            <Card className="border-rose-400/20 bg-slate-950/75 backdrop-blur">
+            <Card className="border-danger/30 bg-surface">
               <CardHeader>
-                <CardTitle className="text-rose-100">Unable to Load Garden</CardTitle>
+                <CardTitle className="text-danger">Unable to Load Garden</CardTitle>
               </CardHeader>
-              <CardContent className="text-sm text-rose-100/80">
+              <CardContent className="text-sm text-danger">
                 {error instanceof Error ? error.message : 'Unknown scene error'}
               </CardContent>
             </Card>

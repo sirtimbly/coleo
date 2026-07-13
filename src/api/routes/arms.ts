@@ -447,6 +447,9 @@ async function ensureDaemonAgentAvailable(
   if (armClient.findBestAgent(harness)) {
     return;
   }
+  if (process.env.COLEO_AUTO_START_AGENT === "0") {
+    return;
+  }
 
   if (!autoStartAgentPromise) {
     autoStartAgentPromise = startLocalArmAgentDaemonIfNeeded().catch((err) => {
@@ -1463,7 +1466,7 @@ export function createArmsRoutes() {
     // Fall back to config defaults if still not set
     provider = provider || defaults.provider;
     model = model || defaults.model;
-    const workdir = body.workdir || row.workdir || process.cwd();
+    const workdir = body.workdir || row.workdir || process.env.COLEO_REMOTE_WORKDIR || process.cwd();
 
     if (row.harness === "opencode-api" || row.harness === "opencode") {
       try {
@@ -1486,12 +1489,15 @@ export function createArmsRoutes() {
       ? `${systemPrompt}\n\n---\n\n## Additional Instructions\n\n${body.initialPrompt}`
       : systemPrompt;
 
-    const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
+    // Hosted control runtimes can require every harness to execute on a remote
+    // arm agent, including harnesses that normally support a local fallback.
+    const remoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY === "1";
+    const daemonManagedHarness = remoteArmsOnly || row.harness === "opencode-api" || row.harness === "opencode";
     const localFallbackEnabled =
-      body.allowLocalFallback === true ||
+      !remoteArmsOnly && (body.allowLocalFallback === true ||
       (body.allowLocalFallback !== false &&
         (process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
-          process.env.NODE_ENV === "test"));
+          process.env.NODE_ENV === "test")));
 
     // Try distributed spawning via ArmClient if available
     const armClient = getArmClient();
@@ -1993,13 +1999,14 @@ export function createArmsRoutes() {
     const config = await loadConfig();
     const provider = body.provider || row.provider || config.defaults.provider;
     const model = body.model || row.model || config.defaults.model;
-    const workdir = body.workdir || row.workdir || process.cwd();
-    const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
+    const workdir = body.workdir || row.workdir || process.env.COLEO_REMOTE_WORKDIR || process.cwd();
+    const remoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY === "1";
+    const daemonManagedHarness = remoteArmsOnly || row.harness === "opencode-api" || row.harness === "opencode";
     const localFallbackEnabled =
-      body.allowLocalFallback === true ||
+      !remoteArmsOnly && (body.allowLocalFallback === true ||
       (body.allowLocalFallback !== false &&
         (process.env.COLEO_ALLOW_LOCAL_HARNESS_FALLBACK === "1" ||
-          process.env.NODE_ENV === "test"));
+          process.env.NODE_ENV === "test")));
 
     let runtimeSummary = deriveArmRuntime({
       status: row.status,

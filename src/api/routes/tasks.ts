@@ -10,6 +10,7 @@ import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
 import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
+import { getServerWorkspaceAccess } from "../workspace-access";
 
 interface TasksContext {
 	Variables: {
@@ -1190,14 +1191,15 @@ export function createTasksRoutes() {
 		if (typeof planLineUidValue === "string" && taskRow.source_ref) {
 			// Extract file path from source_ref (format: "/path/to/file:lineNumber")
 			const sourceRefMatch = taskRow.source_ref.match(/^(.+):\d+$/);
-			if (sourceRefMatch) {
+			if (sourceRefMatch?.[1]) {
 				const planFilePath = sourceRefMatch[1];
 				try {
 					const mod = await import("../../brain/plan-parser");
-					const removeFn: (path: string, uid: string) => Promise<boolean> =
-						mod.removeTaskLineFromPlan;
-					// @ts-expect-error - TypeScript doesn't properly narrow the type here
-					removedFromPlan = await removeFn(planFilePath, planLineUidValue);
+					removedFromPlan = await mod.removeTaskLineFromPlan(
+						planFilePath,
+						planLineUidValue,
+						getServerWorkspaceAccess(),
+					);
 				} catch (err) {
 					console.error(`Failed to remove line from plan file: ${err}`);
 					// Continue with deletion even if plan file removal fails
@@ -1284,14 +1286,15 @@ export function createTasksRoutes() {
 		if (typeof planLineUidValue === "string" && taskRow.source_ref) {
 			// Extract file path from source_ref (format: "/path/to/file:lineNumber")
 			const sourceRefMatch = taskRow.source_ref.match(/^(.+):\d+$/);
-			if (sourceRefMatch) {
+			if (sourceRefMatch?.[1]) {
 				const planFilePath = sourceRefMatch[1];
 				try {
 					const mod = await import("../../brain/plan-parser");
-					const removeFn: (path: string, uid: string) => Promise<boolean> =
-						mod.removeTaskLineFromPlan;
-					// @ts-expect-error - TypeScript doesn't properly narrow the type here
-					await removeFn(planFilePath, planLineUidValue);
+					await mod.removeTaskLineFromPlan(
+						planFilePath,
+						planLineUidValue,
+						getServerWorkspaceAccess(),
+					);
 				} catch (err) {
 					console.error(`Failed to remove line from plan file: ${err}`);
 					// Continue with deletion even if plan file removal fails

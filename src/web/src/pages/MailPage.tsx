@@ -431,52 +431,54 @@ export function MailPage() {
 	}
 
 	if (isWorkspacePanel) {
-		const toolbar = (
-			<>
-				<Button variant="ghost" onPress={loadMail} aria-label="Refresh" size="sm" isIconOnly>
-					<RefreshCw className="h-4 w-4" />
-				</Button>
-				<Button size="sm" variant="primary" onPress={openNewMessage}>
-					<Send className="h-3.5 w-3.5 mr-1.5" />
-					New
-				</Button>
-			</>
-		);
-
-		const filters = (
-			<div className="flex flex-wrap items-center gap-2">
-				{(["inbox", "sent", "archive"] as const).map((tab) => (
-					<Button
-						key={tab}
-						variant={activeTab === tab ? "primary" : "ghost"}
-						size="sm"
-						onPress={() => setMailbox(tab)}
-						className="capitalize"
-					>
-						{tab === "inbox" ? <Inbox className="h-3 w-3 mr-1" /> : null}
-						{tab === "sent" ? <Send className="h-3 w-3 mr-1" /> : null}
-						{tab === "archive" ? <Archive className="h-3 w-3 mr-1" /> : null}
-						<span>{tab}</span>
-						{tab === "inbox" ? (
-							<Chip size="sm" color="danger" className="ml-1">
-								{threads.reduce((sum, t) => sum + t.unreadCount, 0)}
-							</Chip>
-						) : null}
+		const mailboxToolbar = (
+			<div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+				<div className="flex items-stretch" role="tablist" aria-label="Mailbox">
+					{(["inbox", "sent", "archive"] as const).map((tab) => (
+						<button
+							key={tab}
+							type="button"
+							role="tab"
+							aria-selected={activeTab === tab}
+							onClick={() => setMailbox(tab)}
+							className={`inline-flex h-9 items-center gap-1.5 border-b-2 px-2.5 text-sm capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+								activeTab === tab
+									? "border-accent font-medium text-foreground"
+									: "border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+							}`}
+						>
+							{tab === "inbox" ? <Inbox className="h-3.5 w-3.5" /> : null}
+							{tab === "sent" ? <Send className="h-3.5 w-3.5" /> : null}
+							{tab === "archive" ? <Archive className="h-3.5 w-3.5" /> : null}
+							<span>{tab}</span>
+							{tab === "inbox" ? (
+								<Chip size="sm" color="danger" className="ml-0.5">
+									{threads.reduce((sum, t) => sum + t.unreadCount, 0)}
+								</Chip>
+							) : null}
+						</button>
+					))}
+				</div>
+				<div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
+					<div className="text-xs text-muted-foreground">{threads.length} threads</div>
+					<Button variant="ghost" onPress={loadMail} aria-label="Refresh" size="sm" isIconOnly>
+						<RefreshCw className="h-4 w-4" />
 					</Button>
-				))}
-				<div className="ml-auto text-xs text-muted-foreground">{threads.length} threads</div>
+					<Button size="sm" variant="primary" onPress={openNewMessage}>
+						<Send className="mr-1.5 h-3.5 w-3.5" />
+						New
+					</Button>
+				</div>
 			</div>
 		);
 
 		if (!selectedThread) {
 			return (
-				<WorkspacePageShell
-					title="Mail"
-					subtitle="Compact mailbox view"
-					toolbar={toolbar}
-					filters={filters}
-				>
-					<div className="h-full overflow-auto">
+				<div className="flex h-full min-h-0 flex-col bg-background">
+					<header className="flex items-center border-b border-border px-3 py-2">
+						{mailboxToolbar}
+					</header>
+					<div className="min-h-0 flex-1 overflow-auto">
 						{threads.length === 0 ? (
 							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
 								No messages
@@ -513,7 +515,7 @@ export function MailPage() {
 							</div>
 						)}
 					</div>
-				</WorkspacePageShell>
+				</div>
 			);
 		}
 

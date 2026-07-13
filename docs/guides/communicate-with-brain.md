@@ -108,9 +108,34 @@ Body: What's everyone working on? Any blockers?
 The Brain compiles real-time information about all arms, their tasks, and recent activity.
 
 
-## Required Email Gateway (Postmark Example)
+## Required Email Gateway
 
-Coleo email workflows now require a managed email gateway. Postmark is the recommended setup.
+Coleo supports Cloudflare Email Service and Postmark. Select the provider in the
+Observatory settings or in `.coleo/config.toml`:
+
+```toml
+[mail]
+provider = "cloudflare" # or "postmark"
+from_address = "brain@example.com"
+to_address = "you@example.com"
+```
+
+Cloudflare is the default. Because Coleo runs outside a Cloudflare Worker, it uses
+the Email Sending REST API. Onboard the sender domain in Cloudflare Email Sending,
+create an API token with email-sending permission, and set:
+
+```bash
+export CLOUDFLARE_ACCOUNT_ID=your-account-id
+export CLOUDFLARE_EMAIL_API_TOKEN=your-email-sending-token
+```
+
+Cloudflare Email Routing inbound processing requires a Worker email handler and is
+not handled by Coleo's Postmark webhook endpoint. Postmark remains available for
+both the existing inbound webhook and outbound sending flow.
+
+### Postmark setup
+
+For Postmark, configure the existing server and inbound webhook tokens.
 
 1. Configure environment variables on the API server:
 

@@ -8,6 +8,14 @@ import { join } from "path";
 import { createArmsRoutes } from "../routes/arms";
 import * as serverModule from "../server";
 
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 function createTestDb(): Database {
   const db = new Database(":memory:");
   db.exec(`
@@ -51,6 +59,9 @@ describe("arms spawn route auto-creation", () => {
   let originalColeoDir: string | undefined;
   let originalHome: string | undefined;
   let originalPath: string | undefined;
+  let originalRemoteArmsOnly: string | undefined;
+  let originalRemoteWorkdir: string | undefined;
+  let originalAutoStartAgent: string | undefined;
   let getArmClientSpy: ReturnType<typeof spyOn>;
 
   beforeEach(async () => {
@@ -59,6 +70,9 @@ describe("arms spawn route auto-creation", () => {
     originalColeoDir = process.env.COLEO_DIR;
     originalHome = process.env.HOME;
     originalPath = process.env.PATH;
+    originalRemoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY;
+    originalRemoteWorkdir = process.env.COLEO_REMOTE_WORKDIR;
+    originalAutoStartAgent = process.env.COLEO_AUTO_START_AGENT;
     process.env.COLEO_DIR = tempDir;
     process.env.HOME = tempDir;
     const binDir = join(tempDir, "bin");
@@ -98,6 +112,9 @@ describe("arms spawn route auto-creation", () => {
     } else {
       process.env.PATH = originalPath;
     }
+    restoreEnv("COLEO_REMOTE_ARMS_ONLY", originalRemoteArmsOnly);
+    restoreEnv("COLEO_REMOTE_WORKDIR", originalRemoteWorkdir);
+    restoreEnv("COLEO_AUTO_START_AGENT", originalAutoStartAgent);
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -339,6 +356,44 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.pid).toBe(4242);
     expect(updated?.port).toBe(19300);
     expect(updated?.session_id).toBe("ses_retry");
+  });
+
+  it("routes every harness to the remote agent and uses its configured workdir in hosted mode", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, provider, model, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["remote-only", "Remote Only", "research", "kimi-cli", "starting", 100000, 0, now, now, "kimi", "default", JSON.stringify({})],
+    );
+    process.env.COLEO_REMOTE_ARMS_ONLY = "1";
+    process.env.COLEO_REMOTE_WORKDIR = "/srv/tenant/workspace";
+    process.env.COLEO_AUTO_START_AGENT = "0";
+
+    const spawnCalls: Array<{ agentId: string; options: { workDir?: string } }> = [];
+    const mockArmClient = {
+      findBestAgent: () => ({ agentId: "remote-agent", hostname: "agent-host", capabilities: ["kimi-cli"], maxArms: 10 }),
+      getAgent: () => ({ agentId: "remote-agent", hostname: "agent-host" }),
+      spawnArm: async (agentId: string, _armId: string, options: { workDir?: string }) => {
+        spawnCalls.push({ agentId, options });
+        return { requestId: "req-remote", success: true, data: { armId: "remote-only", pid: 44, port: 18888, sessionId: "ses_remote" } };
+      },
+      listArmsOnAgent: async () => ({ requestId: "probe", success: true }),
+      markAgentUnavailable: () => undefined,
+    };
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(() => mockArmClient as never);
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request("http://coleo.test/api/arms/remote-only/spawn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ allowLocalFallback: true }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ distributed: true, agentId: "remote-agent" });
+    expect(spawnCalls).toEqual([{ agentId: "remote-agent", options: expect.objectContaining({ workDir: "/srv/tenant/workspace" }) }]);
   });
 
   it("reattaches to an existing distributed runtime when recover is requested", async () => {

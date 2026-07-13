@@ -101,7 +101,15 @@
 .golden-launcher-button {
   gap: 8px;
   padding: 0 10px 0 8px;
+  background: var(--surface-secondary);
+}
+
+.dark .golden-launcher-button {
   background: linear-gradient(130deg, #1e213a 0%, #5d496d 90%);
+}
+
+.dark .golden-launcher-button:hover {
+  background: linear-gradient(130deg, #292d4c 0%, #705983 90%);
 }
 
 .golden-launcher-badge {
@@ -443,29 +451,31 @@
     border-color 140ms ease;
 }
 
-.golden-workspace-layout .lm_tab::after {
-  content: '';
-  position: absolute;
-  left: 11px;
-  right: 11px;
-  bottom: 5px;
-  height: 2px;
-  border-radius: 999px;
-  background: transparent;
-  transition: background-color 140ms ease;
-}
-
 .golden-workspace-layout .lm_tab .lm_title {
+  position: relative;
   display: inline-block;
   overflow: hidden;
   max-width: 100%;
+  height: 100%;
   font-size: 0.78rem;
   font-weight: 650;
-  line-height: 1;
+  line-height: 26px;
   padding-top: 0 !important;
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: nowrap;
+}
+
+.golden-workspace-layout .lm_tab .lm_title::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 3px;
+  left: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: transparent;
+  transition: background-color 140ms ease;
 }
 
 .golden-workspace-layout .lm_tab:hover {
@@ -474,7 +484,7 @@
   border-color: color-mix(in oklch, var(--border) 84%, transparent) !important;
 }
 
-.golden-workspace-layout .lm_tab:hover::after {
+.golden-workspace-layout .lm_tab:hover .lm_title::after {
   background: color-mix(in oklch, var(--accent) 28%, transparent);
 }
 
@@ -484,7 +494,7 @@
   border-color: color-mix(in oklch, var(--border) 92%, transparent) !important;
 }
 
-.golden-workspace-layout .lm_tab.lm_active::after {
+.golden-workspace-layout .lm_tab.lm_active .lm_title::after {
   background: color-mix(in oklch, var(--accent) 92%, white 8%);
 }
 
@@ -496,14 +506,23 @@
   margin-left: 0;
   border-radius: 999px;
   background-color: transparent !important;
-  background-position: center center !important;
-  background-size: 10px 10px !important;
-  color: color-mix(in oklch, var(--foreground) 36%, transparent) !important;
+  background-image: none !important;
+  color: color-mix(in oklch, var(--foreground) 56%, transparent) !important;
+  font-size: 16px;
+  font-weight: 500;
   line-height: 1;
   transform: translateY(-50%);
   transition:
     color 140ms ease,
     background-color 140ms ease;
+}
+
+.golden-workspace-layout .lm_tab .lm_close_tab::before {
+  content: '\00d7';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
 }
 
 .golden-workspace-layout .lm_tab .lm_close_tab:hover {

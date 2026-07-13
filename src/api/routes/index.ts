@@ -19,3 +19,4 @@ export { createEventsRoutes } from "./events";
 export { createSearchRoutes } from "./search";
 export { createStatusHistoryRoutes } from "./status-history";
 export { createUploadApiRoutes, createUploadContentRoutes } from "./uploads";
+export { createOnboardingRoutes } from "./onboarding";

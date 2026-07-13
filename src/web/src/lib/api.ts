@@ -64,6 +64,20 @@ interface ApiError {
   message?: string;
 }
 
+export interface OnboardingStatus {
+  ready: boolean;
+  projectDir: string;
+  repository: {
+    checkedOut: boolean;
+    remoteUrl: string | null;
+    branch: string | null;
+  };
+  ssh: {
+    configured: boolean;
+    publicKey: string | null;
+  };
+}
+
 class ApiClient {
   private apiKey: string | null = null;
 
@@ -117,6 +131,23 @@ class ApiClient {
   // Health & Status
   async health() {
     return this.request<{ status: string; timestamp: string }>('/health');
+  }
+
+  async getOnboardingStatus() {
+    return this.request<OnboardingStatus>('/onboarding');
+  }
+
+  async generateOnboardingSshKey() {
+    return this.request<OnboardingStatus>('/onboarding/ssh-key', {
+      method: 'POST',
+    });
+  }
+
+  async cloneOnboardingRepository(data: { repositoryUrl: string; branch?: string }) {
+    return this.request<OnboardingStatus>('/onboarding/clone', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async search(params: {

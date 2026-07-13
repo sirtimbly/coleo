@@ -1,4 +1,5 @@
 import type { Arm, Task, Discovery, QueueMessage, TaskAttachment } from "../types";
+import type { WorkspaceAccess } from "../workspace";
 
 export interface BrainOptions {
 	coleoDir: string;
@@ -6,6 +7,8 @@ export interface BrainOptions {
 	verbose: boolean;
 	apiBaseUrl?: string;
 	apiKey?: string;
+	projectRoot?: string;
+	workspace?: WorkspaceAccess;
 }
 
 export interface TaskClaimContext {
@@ -267,4 +270,3 @@ export function buildVerificationTaskDescription(
 		artifactList,
 	].join("\n");
 }
-

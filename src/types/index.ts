@@ -368,6 +368,7 @@ export interface ColeoConfig {
 		armGracePeriodMinutes: number;
 	};
   mail: {
+    provider: "cloudflare" | "postmark";
     fromAddress: string;
     toAddress: string;
     digestSchedule: "immediate" | "hourly" | "daily";
@@ -424,6 +425,7 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		armGracePeriodMinutes: 2,
 	},
   mail: {
+    provider: "cloudflare",
     fromAddress: "brain@coleo.dev",
     toAddress: "",
     digestSchedule: "immediate",

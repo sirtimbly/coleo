@@ -9,7 +9,7 @@
  */
 
 import { readFile, mkdir } from "fs/promises";
-import { join } from "path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { createHash } from "crypto";
 import { Maildir, type MailMessage } from "../mail";
 import { getDocWatcher, stopDocWatcher } from "../docs/watcher";
@@ -109,6 +109,11 @@ import {
 	determineBugPriority,
 	formatBugReport,
 } from "./brain-bug-handler";
+import {
+	createWorkspaceAccess,
+	LocalWorkspaceAccess,
+	type WorkspaceAccess,
+} from "../workspace";
 
 const HIGH_PRIORITY_FILE_THRESHOLD_LINES = 600;
 const CRITICAL_FILE_THRESHOLD_LINES = 800;
@@ -129,6 +134,8 @@ export class Brain {
 	private armStateDb: ArmStateStore | null = null;
 	private apiBaseUrl: string;
 	private apiKey: string;
+	private projectRoot: string;
+	private workspace: WorkspaceAccess;
 	private refactorFileThresholdLines = 400;
 	private templates: BrainTemplateManager;
 	private mailProcessor: MailProcessor;
@@ -184,7 +191,7 @@ export class Brain {
 	private resolveClaimsActive = false; // Config flag for active claim resolution (default: false)
 
 	// Mail config for external email sending
-	private mailConfig: { fromAddress: string; toAddress: string } | null = null;
+	private mailConfig: { provider: "cloudflare" | "postmark"; fromAddress: string; toAddress: string } | null = null;
 
 	/**
 	 * Log an activity entry via API (API handles JetStream persistence).
@@ -275,6 +282,17 @@ export class Brain {
 			process.env.COLEO_API_URL ||
 			"http://localhost:8080";
 		this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
+		this.projectRoot = options.projectRoot
+			|| process.env.COLEO_PROJECT_DIR
+			|| process.env.OCTOPAI_PROJECT_ROOT
+			|| process.env.COLEO_REMOTE_WORKDIR
+			|| process.cwd();
+		this.workspace = options.workspace || createWorkspaceAccess({
+			projectRoot: this.projectRoot,
+			apiBaseUrl: this.apiBaseUrl,
+			apiKey: this.apiKey,
+			remote: process.env.COLEO_REMOTE_ARMS_ONLY === "1",
+		});
 		this.state = {
 			status: "stopped",
 			pollIntervalMs: options.pollIntervalMs,
@@ -313,14 +331,15 @@ export class Brain {
 	private async loadMailConfig(): Promise<void> {
 		try {
 			const response = await this.apiRequest<{
-				mail: { fromAddress: string; toAddress: string };
+				mail: { provider: "cloudflare" | "postmark"; fromAddress: string; toAddress: string };
 			}>("/api/config/mail", {}, 5000);
 			if (response?.mail?.toAddress) {
 				this.mailConfig = {
+					provider: response.mail.provider || "cloudflare",
 					fromAddress: response.mail.fromAddress || "brain@coleo.dev",
 					toAddress: response.mail.toAddress,
 				};
-				this.log(`Mail config loaded: ${this.mailConfig.fromAddress} -> ${this.mailConfig.toAddress}`);
+				this.log(`Mail config loaded (${this.mailConfig.provider}): ${this.mailConfig.fromAddress} -> ${this.mailConfig.toAddress}`);
 			}
 		} catch (err) {
 			this.log(`Failed to load mail config: ${err}`);
@@ -608,7 +627,8 @@ export class Brain {
 			this.apiBaseUrl,
 			this.apiKey,
 			this.options.coleoDir,
-			process.cwd(),
+			this.projectRoot,
+			this.workspace,
 		);
 
 		// Initialize arm state machine
@@ -705,8 +725,7 @@ export class Brain {
 
 		// Start documentation watcher for project docs
 		try {
-			const projectRoot = process.cwd();
-			const docWatcher = getDocWatcher(projectRoot);
+			const docWatcher = getDocWatcher(this.projectRoot, this.workspace);
 			docWatcher.onChange(async (event) => {
 				// Log doc changes
 				this.log(
@@ -1800,7 +1819,19 @@ export class Brain {
 			const { removeTaskLineFromPlan } = await import("./plan-parser");
 			
 			// Attempt to remove the line - this is idempotent (returns false if not found)
-			const removed = await removeTaskLineFromPlan(planFilePath, featureId);
+			let workspace = this.workspace;
+			if (workspace instanceof LocalWorkspaceAccess && isAbsolute(planFilePath)) {
+				const relativePath = relative(workspace.root, resolve(planFilePath));
+				const outsideWorkspace = relativePath === ".."
+					|| relativePath.startsWith(`..${sep}`)
+					|| isAbsolute(relativePath);
+				if (outsideWorkspace) {
+					// Source refs can point at another local checkout during development.
+					// Keep that compatibility without relaxing hosted Arm Host confinement.
+					workspace = new LocalWorkspaceAccess(dirname(planFilePath));
+				}
+			}
+			const removed = await removeTaskLineFromPlan(planFilePath, featureId, workspace);
 			
 			return removed;
 		} catch (err) {
@@ -2945,7 +2976,8 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			// Priority escalation: Check for high/critical priority files (>600 lines) immediately
 			// Normal priority files (400-600 lines) are checked every 5 completed tasks
 			const highPriorityFiles = await findLargeFilesUtil({
-				rootDir: process.cwd(),
+				rootDir: this.projectRoot,
+				workspace: this.workspace,
 				minLines: HIGH_PRIORITY_FILE_THRESHOLD_LINES,
 				thresholds: {
 					normal: this.refactorFileThresholdLines,
@@ -2961,7 +2993,8 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 			} else if (this.completedTaskCount % 5 === 0) {
 				// Regular cycle for normal priority files (400-600 lines)
 				const normalPriorityFiles = await findLargeFilesUtil({
-					rootDir: process.cwd(),
+					rootDir: this.projectRoot,
+					workspace: this.workspace,
 					minLines: this.refactorFileThresholdLines,
 					thresholds: {
 						normal: this.refactorFileThresholdLines,
@@ -7851,10 +7884,10 @@ ${conflictList}
 			headers: message.headers || {},
 		});
 
-		// Also send via Postmark if configured
+		// Also send through the configured external mail provider.
 		if (this.mailConfig?.toAddress) {
 			try {
-				await this.apiRequest("/api/mail/gateway/postmark/send", {
+				await this.apiRequest("/api/mail/gateway/send", {
 					method: "POST",
 					body: JSON.stringify({
 						from: this.mailConfig.fromAddress,
@@ -7941,7 +7974,7 @@ ${conflictList}
 	private async syncPlanTasks(): Promise<void> {
 		try {
 			// Get project root (current working directory or configured)
-			const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+			const projectRoot = this.projectRoot;
 
 			// Check if task auto-discover is enabled
 			const autoDiscover = await this.getBrainConfigBoolean(
@@ -7953,7 +7986,7 @@ ${conflictList}
 			}
 
 			// Find and parse all plan files
-			const planFiles = await findPlanFiles(projectRoot);
+			const planFiles = await findPlanFiles(projectRoot, this.workspace);
 
 			if (planFiles.length === 0) {
 				return; // No plan files found
@@ -7965,7 +7998,7 @@ ${conflictList}
 			const existingById = new Map(existingTasks.map((task) => [task.id, task]));
 
 			for (const filePath of planFiles) {
-				const result = await parsePlanFile(filePath);
+				const result = await parsePlanFile(filePath, this.workspace);
 
 				if (result.errors.length > 0) {
 					this.log(
@@ -8057,10 +8090,10 @@ ${conflictList}
 	 */
 	private async processInbox(): Promise<void> {
 		try {
-			const projectRoot = process.env.OCTOPAI_PROJECT_ROOT || process.cwd();
+			const projectRoot = this.projectRoot;
 
 			// Parse inbox
-			const result = await parseInbox(projectRoot);
+			const result = await parseInbox(projectRoot, this.workspace);
 
 			if (result.wasEmpty) {
 				return; // Nothing to process
@@ -8091,7 +8124,7 @@ ${conflictList}
 
 			if (newItems.length === 0) {
 				// All items were duplicates, clear inbox anyway
-				await clearInbox(projectRoot);
+				await clearInbox(projectRoot, this.workspace);
 				this.log(
 					`Inbox: ${result.items.length} items were duplicates, cleared inbox`,
 				);
@@ -8117,7 +8150,7 @@ ${conflictList}
 			}
 
 			// Clear the inbox
-			await clearInbox(projectRoot);
+			await clearInbox(projectRoot, this.workspace);
 
 			this.log(`Inbox: created ${created} tasks, cleared inbox`);
 			this.logActivity("brain", "inbox_processed", undefined, {
@@ -8648,31 +8681,17 @@ ${originalTask.id}`;
 		threshold: number,
 	): Promise<Array<{ path: string; lines: number }>> {
 		try {
-			const { execSync } = await import("child_process");
-
-			const cwd = process.cwd();
-
-			const output = execSync(
-				`find "${cwd}/src" -type f \\( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \\) ! -path "*/node_modules/*" ! -path "*/.git/*" ! -path "*/dist/*" -exec wc -l {} + 2>/dev/null | sort -rn`,
-				{ encoding: "utf-8" },
+			const files = await this.workspace.scan(
+				["src/**/*.ts", "src/**/*.tsx", "src/**/*.js", "src/**/*.jsx"],
+				{
+					ignore: ["**/node_modules/**", "**/.git/**", "**/dist/**"],
+					includeLineCount: true,
+				},
 			);
-
-			const lines = output.trim().split("\n");
-			const largeFiles: Array<{ path: string; lines: number }> = [];
-
-			for (const line of lines) {
-				const match = line.match(/^\s*(\d+)\s+(.+)$/);
-				if (match && match[1] && match[2]) {
-					const lineCount = parseInt(match[1], 10);
-					const filePath = match[2].trim();
-
-					if (lineCount > threshold) {
-						largeFiles.push({ path: filePath, lines: lineCount });
-					}
-				}
-			}
-
-			return largeFiles;
+			return files
+				.filter((file) => (file.lineCount ?? 0) > threshold)
+				.map((file) => ({ path: join(this.projectRoot, file.path), lines: file.lineCount ?? 0 }))
+				.sort((a, b) => b.lines - a.lines);
 		} catch (err) {
 			this.log(`Error finding large files: ${err}`);
 			return [];
@@ -8704,7 +8723,7 @@ ${originalTask.id}`;
 
 		const tableRows = files
 			.map((f) => {
-				const relPath = f.path.replace(process.cwd() + "/", "");
+				const relPath = f.path.replace(this.projectRoot + "/", "");
 				let priority = "normal";
 				if (f.lines > HIGH_PRIORITY_FILE_THRESHOLD_LINES) priority = "high";
 				if (f.lines > CRITICAL_FILE_THRESHOLD_LINES) priority = "critical";

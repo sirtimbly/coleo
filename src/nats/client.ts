@@ -5,7 +5,8 @@
  * for communication between API server and agents.
  */
 
-import { connect, type NatsConnection, JSONCodec, type Subscription, type Msg, type JetStreamClient } from 'nats';
+import { type NatsConnection, JSONCodec, type Subscription, type Msg, type JetStreamClient } from 'nats';
+import { connectToNats } from './transport';
 import {
   TOPICS,
   type AgentCommand,
@@ -25,6 +26,7 @@ const jc = JSONCodec<unknown>();
 export interface NatsClientOptions {
   serverUrl: string;
   clientId: string;
+  token?: string;
   debug?: boolean;
 }
 
@@ -49,6 +51,7 @@ export class NatsClient {
   private subscriptions: Subscription[] = [];
   private serverUrl: string;
   private clientId: string;
+  private token?: string;
   private debug: boolean;
   private isConnected = false;
   private jetStream: JetStreamClient | null = null;
@@ -56,6 +59,7 @@ export class NatsClient {
   constructor(options: NatsClientOptions) {
     this.serverUrl = options.serverUrl;
     this.clientId = options.clientId;
+    this.token = options.token;
     this.debug = options.debug || false;
   }
 
@@ -66,9 +70,10 @@ export class NatsClient {
     if (this.isConnected) return;
 
     try {
-      this.connection = await connect({
+      this.connection = await connectToNats({
         servers: this.serverUrl,
         name: this.clientId,
+        token: this.token,
         timeout: 5000,
         reconnect: true,
         maxReconnectAttempts: -1,

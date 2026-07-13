@@ -100,6 +100,16 @@ const STATUS_CONFIG: Record<
 const isTaskStatus = (value: string): value is Task["status"] =>
 	value in STATUS_CONFIG;
 
+const TASK_STATUS_FILTERS: readonly Task["status"][] = [
+	"pending",
+	"in_progress",
+	"blocked",
+	"completed",
+	"claimed",
+	"failed",
+	"cancelled",
+];
+
 // Priority configuration
 const PRIORITY_CONFIG: Record<
 	Task["priority"],
@@ -676,84 +686,85 @@ export function TasksPage() {
 	};
 
 	if (isWorkspacePanel) {
-		const toolbar = (
-			<>
-				<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
-					<RefreshCw className="h-4 w-4" />
-				</Button>
-				<Button
-					size="sm"
-					variant="primary"
-					onPress={() => {
-						setEditingTask(undefined);
-						setIsModalOpen(true);
-					}}
-				>
-					<Plus className="h-4 w-4 mr-1.5" />
-					New
-				</Button>
-			</>
-		);
-
-		const filters = (
-			<div className="space-y-2">
-				<div className="flex flex-wrap items-center gap-2">
-					<div className="relative min-w-[220px] flex-1 max-w-sm">
+		const workspaceListHeader = (
+			<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
+				<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+					<div className="relative w-48 shrink-0">
 						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
 						<input
 							type="text"
 							placeholder="Search tasks..."
 							value={searchText}
 							onChange={(e) => setSearchText(e.target.value)}
-							className="w-full rounded-md border border-border/70 bg-content2 px-8 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+							className="h-9 w-full rounded-md border border-border bg-surface-secondary px-8 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 						/>
 					</div>
-					<div className="text-xs text-muted-foreground">
+					<div className="shrink-0 text-xs text-muted-foreground">
 						{counts?.total ?? 0} total
 					</div>
-				</div>
-
-				<div className="flex flex-wrap items-center gap-2">
-					{Object.entries(counts?.byStatus ?? {}).map(([status, count]) => (
-						<Button
+					<div className="h-4 w-px shrink-0 bg-border" />
+					{TASK_STATUS_FILTERS.map((status) => (
+						<button
 							key={status}
-							size="sm"
-							variant={filter.status === status ? "primary" : "ghost"}
-							onPress={() =>
+							type="button"
+							aria-pressed={filter.status === status}
+							onClick={() =>
 								setFilter((current) =>
 									current.status === status ? {} : { ...current, status },
 								)
 							}
+							className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+								filter.status === status
+									? "border-accent/50 bg-accent/10 text-accent"
+									: "border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+							}`}
 						>
-							<span>{status.replace("_", " ")}</span>
-							<span>{count}</span>
-						</Button>
+							<span>{STATUS_CONFIG[status].label}</span>
+							<span>{counts?.byStatus?.[status] ?? 0}</span>
+						</button>
 					))}
+					{availableTags.length > 0 ? <div className="h-4 w-px shrink-0 bg-border" /> : null}
 					{availableTags.slice(0, 8).map((tag) => (
-						<Chip
+						<button
 							key={tag}
-							size="sm"
-							variant={tagFilter.includes(tag) ? "primary" : "soft"}
+							type="button"
+							aria-pressed={tagFilter.includes(tag)}
 							onClick={() => toggleTagFilter(tag)}
-							className="cursor-pointer"
+							className={`h-8 shrink-0 rounded-md border px-2.5 text-xs transition-colors ${
+								tagFilter.includes(tag)
+									? "border-accent/50 bg-accent/10 text-accent"
+									: "border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+							}`}
 						>
 							{tag}
-						</Chip>
+						</button>
 					))}
 				</div>
-			</div>
+				<div className="flex shrink-0 items-center gap-2">
+					<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
+						<RefreshCw className="h-4 w-4" />
+					</Button>
+					<Button
+						size="sm"
+						variant="primary"
+						onPress={() => {
+							setEditingTask(undefined);
+							setIsModalOpen(true);
+						}}
+					>
+						<Plus className="mr-1.5 h-4 w-4" />
+						New
+					</Button>
+				</div>
+			</header>
 		);
 
 		if (!selectedTask) {
 			return (
 				<>
-					<WorkspacePageShell
-						title="Tasks"
-						subtitle="Compact task queue"
-						toolbar={toolbar}
-						filters={filters}
-					>
-						<div className="h-full overflow-auto p-3">
+					<div className="flex h-full min-h-0 flex-col bg-background">
+						{workspaceListHeader}
+						<div className="min-h-0 flex-1 overflow-auto p-3">
 							<TaskGrid
 								tasks={filteredTasks}
 								totalTasks={pagination?.total}
@@ -769,7 +780,7 @@ export function TasksPage() {
 								onReorder={handleReorder}
 							/>
 						</div>
-					</WorkspacePageShell>
+					</div>
 					{taskModal}
 				</>
 			);

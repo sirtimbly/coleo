@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { logger, createAuthMiddleware } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -241,6 +241,7 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/search", createSearchRoutes());
   app.route("/api/status-history", createStatusHistoryRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
+  app.route("/api/onboarding", createOnboardingRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.
   const webDist = options.webDist === undefined ? findWebDist() : options.webDist;
@@ -323,6 +324,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     
     nats = new NatsManager({ 
       url: natsUrl,
+      token: process.env.COLEO_NATS_TOKEN,
       debug: config.logLevel === "verbose",
       retryAttempts: 2,
       retryDelayMs: 500,
@@ -346,6 +348,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
       // Initialize ArmClient
       armClient = new ArmClient({
         natsUrl,
+        token: process.env.COLEO_NATS_TOKEN,
         debug: config.logLevel === "verbose",
         onAgentConnected: (agent) => {
           log(`[NATS] Agent connected: ${agent.agentId} (${agent.hostname})`, "normal");

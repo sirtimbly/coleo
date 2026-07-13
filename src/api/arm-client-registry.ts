@@ -6,6 +6,6 @@ export function getArmClient(): ArmClient | null {
   return globalArmClient;
 }
 
-export function setArmClient(client: ArmClient): void {
+export function setArmClient(client: ArmClient | null): void {
   globalArmClient = client;
 }

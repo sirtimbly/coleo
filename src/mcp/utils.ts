@@ -165,6 +165,7 @@ export async function getNatsClient(): Promise<NatsClient | null> {
 		natsClient = new NatsClient({
 			serverUrl: natsUrl,
 			clientId: `arm-${ARM_ID}`,
+			token: process.env.COLEO_NATS_TOKEN,
 			debug: false,
 		});
 
