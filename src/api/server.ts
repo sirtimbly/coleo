@@ -29,6 +29,10 @@ import type { ServerContext } from "./server-context";
 export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
+interface CreateAppOptions {
+  webDist?: string | null;
+}
+
 function findWebDist(): string | null {
   const candidates = [
     resolve(process.cwd(), "dist/web"),
@@ -59,6 +63,17 @@ function resolveWebAsset(webDist: string, pathname: string): string | null {
   }
 
   return requested;
+}
+
+function webFileResponse(path: string, cacheControl: string): Response {
+  const file = Bun.file(path);
+  return new Response(file, {
+    headers: {
+      "Cache-Control": cacheControl,
+      "Content-Type": file.type,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
 }
 
 function shouldAutostartTranscriptIndexer(): boolean {
@@ -172,7 +187,7 @@ function mapHarnessEventStatus(event: string, data: unknown): string | null {
 /**
  * Create and configure the Hono app
  */
-export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> {
+export function createApp(db: Database, config: ApiConfig, options: CreateAppOptions = {}): Hono<ServerContext> {
   const app = new Hono<ServerContext>();
   const startedAt = new Date();
 
@@ -186,14 +201,17 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   // Global error handler (Hono-native path for route exceptions)
   app.onError((err, c) => formatErrorResponse(c, err));
 
-  // Global middleware
+  // Global request logging. CORS is intentionally limited to the API and
+  // signed-upload routes so it does not reconstruct Bun's static file responses.
   app.use("*", logger);
-  app.use("*", cors({
+  const corsMiddleware = cors({
     origin: config.corsOrigins,
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "X-API-Key"],
     credentials: true,
-  }));
+  });
+  app.use("/api/*", corsMiddleware);
+  app.use("/uploads/*", corsMiddleware);
 
   // Auth middleware (skips /api/health)
   app.use("/api/*", createAuthMiddleware(config.apiKey));
@@ -225,7 +243,7 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
   app.route("/api/uploads", createUploadApiRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.
-  const webDist = findWebDist();
+  const webDist = options.webDist === undefined ? findWebDist() : options.webDist;
   if (webDist) {
     app.get("*", (c) => {
       const pathname = new URL(c.req.url).pathname;
@@ -235,10 +253,13 @@ export function createApp(db: Database, config: ApiConfig): Hono<ServerContext> 
 
       const assetPath = resolveWebAsset(webDist, pathname);
       if (assetPath && existsSync(assetPath) && statSync(assetPath).isFile()) {
-        return new Response(Bun.file(assetPath));
+        const cacheControl = pathname.startsWith("/assets/")
+          ? "public, max-age=31536000, immutable"
+          : "no-cache";
+        return webFileResponse(assetPath, cacheControl);
       }
 
-      return new Response(Bun.file(join(webDist, "index.html")));
+      return webFileResponse(join(webDist, "index.html"), "no-cache");
     });
   }
 
