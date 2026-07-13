@@ -23,7 +23,9 @@ export function SettingsPage() {
   const apiKeyLabelId = useId();
   const fromAddressLabelId = useId();
   const toAddressLabelId = useId();
+  const providerLabelId = useId();
   
+  const [mailProvider, setMailProvider] = useState<'cloudflare' | 'postmark'>('cloudflare');
   const [fromAddress, setFromAddress] = useState('');
   const [toAddress, setToAddress] = useState('');
   const [mailSaved, setMailSaved] = useState(false);
@@ -35,6 +37,7 @@ export function SettingsPage() {
     
     api.getMailConfig().then((res) => {
       if (res.mail) {
+        setMailProvider(res.mail.provider || 'cloudflare');
         setFromAddress(res.mail.fromAddress || '');
         setToAddress(res.mail.toAddress || '');
       }
@@ -58,6 +61,7 @@ export function SettingsPage() {
   const handleSaveMail = async () => {
     try {
       await api.updateMailConfig({
+        provider: mailProvider,
         fromAddress,
         toAddress,
       });
@@ -174,10 +178,25 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>Email Configuration</CardTitle>
           <CardDescription>
-            Configure email settings for brain communication via Postmark
+            Configure the email provider used for brain communication
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div>
+            <label htmlFor={providerLabelId} className="block text-sm font-medium mb-2">
+              Provider
+            </label>
+            <select
+              id={providerLabelId}
+              value={mailProvider}
+              onChange={(event) => setMailProvider(event.target.value as 'cloudflare' | 'postmark')}
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="cloudflare">Cloudflare Email Service</option>
+              <option value="postmark">Postmark</option>
+            </select>
+          </div>
+
           <div>
             <label htmlFor={fromAddressLabelId} className="block text-sm font-medium mb-2">
               From Address
@@ -191,7 +210,7 @@ export function SettingsPage() {
               className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              The email address the brain sends from (verified in Postmark)
+              The sender address verified with the selected provider
             </p>
           </div>
 

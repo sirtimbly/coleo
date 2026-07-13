@@ -204,6 +204,7 @@ max_arms = ${config.brain.maxArms}
 arm_grace_period_minutes = ${config.brain.armGracePeriodMinutes}
 
 [mail]
+provider = "${config.mail.provider}"
 from_address = "${config.mail.fromAddress}"
 digest_schedule = "${config.mail.digestSchedule}"
 

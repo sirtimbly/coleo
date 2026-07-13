@@ -25,6 +25,7 @@ import type { TaskAttachment } from "../types";
 
 export interface ArmClientOptions {
   natsUrl: string;
+  token?: string;
   debug?: boolean;
   onAgentConnected?: (agent: AgentInfo) => void;
   onAgentDisconnected?: (agentId: string) => void;
@@ -62,6 +63,7 @@ export class ArmClient {
     this.natsClient = new NatsClient({
       serverUrl: options.natsUrl,
       clientId: 'api-server',
+      token: options.token,
       debug: options.debug,
     });
   }

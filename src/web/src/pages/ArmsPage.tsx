@@ -960,29 +960,29 @@ export function ArmsPage() {
 
 			{spawnModal.isOpen &&
 				createPortal(
-					<div className="fixed inset-0 z-50 flex items-center justify-center">
+					<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
 						<div
 							className="absolute inset-0 bg-black/60 backdrop-blur-sm"
 							onClick={closeSpawnModal}
 						/>
-						<div className="relative mx-4 w-full max-w-2xl rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl">
-							<div className="flex items-center justify-between border-b border-zinc-700 px-4 py-3">
+						<div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-2xl">
+							<div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
 								<div>
-									<h2 className="text-lg font-semibold text-white">Spawn New Arm</h2>
-									<p className="text-sm text-zinc-400">
+									<h2 className="text-lg font-semibold text-foreground">Spawn New Arm</h2>
+									<p className="text-sm text-muted-foreground">
 										Create a new arm record and start it on a connected arm agent host.
 									</p>
 								</div>
 								<button
 									onClick={closeSpawnModal}
-									className="rounded p-1 text-zinc-400 transition-colors hover:text-white"
+									className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
 								>
 									<X className="h-5 w-5" />
 								</button>
 							</div>
 
-							<div className="space-y-5 p-4">
-								<div className="rounded-lg border border-cyan-900/60 bg-cyan-950/30 p-3 text-sm text-cyan-100">
+							<div className="min-h-0 space-y-5 overflow-y-auto p-4">
+								<div className="rounded-lg border border-accent/40 bg-accent/10 p-3 text-sm text-foreground">
 									The API server is the control plane. Spawn sends a command to a connected
 									arm agent. If that agent is running on another host, the arm will start on
 									that host rather than on the API server machine.
@@ -990,7 +990,7 @@ export function ArmsPage() {
 
 								<div className="grid gap-4 md:grid-cols-2">
 									<div>
-										<label className="mb-2 block text-sm font-medium text-zinc-300">
+										<label className="mb-2 block text-sm font-medium text-foreground">
 											Arm name
 										</label>
 										<input
@@ -1002,11 +1002,11 @@ export function ArmsPage() {
 												}))
 											}
 											placeholder="e.g. explorer-2"
-											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 										/>
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-zinc-300">
+										<label className="mb-2 block text-sm font-medium text-foreground">
 											Template
 										</label>
 										<select
@@ -1027,7 +1027,7 @@ export function ArmsPage() {
 													};
 												})
 											}
-											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 										>
 											<option value="">Custom arm (no template)</option>
 											{compatibleTemplates.map((template) => (
@@ -1040,7 +1040,7 @@ export function ArmsPage() {
 								</div>
 
 								{selectedTemplate && (
-									<p className="text-sm text-zinc-400">
+									<p className="text-sm text-muted-foreground">
 										Using <code>{selectedTemplate.filename}</code> from{" "}
 										<code>.coleo/templates</code> to prefill harness and model settings.
 									</p>
@@ -1048,7 +1048,7 @@ export function ArmsPage() {
 
 								<div className="grid gap-4 md:grid-cols-3">
 									<div>
-										<label className="mb-2 block text-sm font-medium text-zinc-300">
+										<label className="mb-2 block text-sm font-medium text-foreground">
 											Harness
 										</label>
 										<select
@@ -1060,7 +1060,7 @@ export function ArmsPage() {
 												}))
 											}
 											disabled={availableHarnesses.length === 0}
-											className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white disabled:opacity-50 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+											className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground disabled:opacity-50 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 										>
 											{availableHarnesses.length === 0 ? (
 												<option value="">No compatible harnesses available</option>
@@ -1074,7 +1074,7 @@ export function ArmsPage() {
 										</select>
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-zinc-300">
+										<label className="mb-2 block text-sm font-medium text-foreground">
 											Provider
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
@@ -1096,7 +1096,7 @@ export function ArmsPage() {
 														};
 													})
 												}
-												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+												className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 											>
 												{openCodeProviders.map((provider) => (
 													<option key={provider.id} value={provider.id}>
@@ -1114,12 +1114,12 @@ export function ArmsPage() {
 													}))
 												}
 												placeholder={spawnDefaults.provider || "Use server default"}
-												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+												className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 											/>
 										)}
 									</div>
 									<div>
-										<label className="mb-2 block text-sm font-medium text-zinc-300">
+										<label className="mb-2 block text-sm font-medium text-foreground">
 											Model
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
@@ -1133,7 +1133,7 @@ export function ArmsPage() {
 														model: e.target.value,
 													}))
 												}
-												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+												className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 											>
 												{selectedOpenCodeModels.map((model) => (
 													<option key={model.id} value={model.id}>
@@ -1151,28 +1151,28 @@ export function ArmsPage() {
 													}))
 												}
 												placeholder={spawnDefaults.model || "Use server default"}
-												className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white placeholder:text-zinc-500 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+												className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 											/>
 										)}
 									</div>
 								</div>
 
 								{usesOpenCodeCatalog(spawnModal.harness) && hasCachedOpenCodeCatalog && openCodeProviders.length > 0 && (
-									<p className="text-sm text-zinc-400">
+									<p className="text-sm text-muted-foreground">
 										Provider and model options come from the cached authenticated OpenCode
 										catalog in <code>.coleo/cache/opencode-models.json</code>.
 									</p>
 								)}
 
 								{usesOpenCodeCatalog(spawnModal.harness) && !hasCachedOpenCodeCatalog && (
-									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
 										{openCodeCatalog.message ||
 											"No cached authenticated OpenCode catalog is available yet. Spawn one OpenCode arm after restarting the API server, or enter provider/model manually for now."}
 									</div>
 								)}
 
 								{spawnModal.name.trim() && arms.some((arm) => arm.id === spawnModal.name.trim()) && (
-									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
 										An arm named <code>{spawnModal.name.trim()}</code> already exists. Pick a
 										new name for a brand new spawn, or use the row-level Recover/Spawn action
 										on the existing arm card.
@@ -1180,7 +1180,7 @@ export function ArmsPage() {
 								)}
 
 								<div>
-									<label className="mb-2 block text-sm font-medium text-zinc-300">
+									<label className="mb-2 block text-sm font-medium text-foreground">
 										Arm agent host
 									</label>
 									<select
@@ -1192,7 +1192,7 @@ export function ArmsPage() {
 											}))
 										}
 										disabled={agents.length === 0}
-										className="w-full rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-white disabled:opacity-50 focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+										className="w-full rounded-lg border border-border bg-surface-secondary px-3 py-2 text-foreground disabled:opacity-50 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
 									>
 										{agents.length === 0 ? (
 											<option value="">No arm agents connected</option>
@@ -1204,13 +1204,13 @@ export function ArmsPage() {
 											))
 										)}
 									</select>
-									<p className="mt-2 text-sm text-zinc-400">
+									<p className="mt-2 text-sm text-muted-foreground">
 										This defaults to the first connected arm agent host.
 									</p>
 								</div>
 
 								{spawnModal.harness && isDaemonManagedHarness(spawnModal.harness) && (
-									<div className="rounded-lg border border-amber-900/60 bg-amber-950/30 p-3 text-sm text-amber-100">
+									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
 										<div className="flex items-start gap-2">
 											<Server className="mt-0.5 h-4 w-4 shrink-0" />
 											<p>
@@ -1229,14 +1229,14 @@ export function ArmsPage() {
 								)}
 
 								{selectedSpawnAgent && (
-									<p className="text-sm text-zinc-400">
+									<p className="text-sm text-muted-foreground">
 										Selected host capabilities: {selectedSpawnAgent.capabilities.join(", ")}
 									</p>
 								)}
 							</div>
 
-							<div className="flex items-center justify-between border-t border-zinc-700 bg-zinc-800/50 px-4 py-3">
-								<span className="text-xs text-zinc-500">
+							<div className="flex shrink-0 items-center justify-between border-t border-border bg-surface-secondary/60 px-4 py-3">
+								<span className="text-xs text-muted-foreground">
 									The runtime host is chosen from the connected arm agents and returned by
 									the API after spawn.
 								</span>

@@ -70,7 +70,7 @@ describe("config loader", () => {
     const toml = configToToml({
       version: 2,
       brain: { pollIntervalMs: 5000, maxArms: 3, armGracePeriodMinutes: 10 },
-      mail: { fromAddress: "bot@example.test", toAddress: "human@example.test", digestSchedule: "daily" },
+      mail: { provider: "postmark", fromAddress: "bot@example.test", toAddress: "human@example.test", digestSchedule: "daily" },
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
       refactoring: { fileSizeThreshold: 500, enabled: true },
@@ -80,6 +80,7 @@ describe("config loader", () => {
     expect(toml.version).toBe(2);
     expect(toml.brain?.poll_interval_ms).toBe(5000);
     expect(toml.mail?.from_address).toBe("bot@example.test");
+    expect(toml.mail?.provider).toBe("postmark");
     expect(toml.gitea?.default_org).toBe("org");
     expect(toml.terminal?.emulator).toBe("tmux");
     expect(toml.refactoring?.file_size_threshold).toBe(500);

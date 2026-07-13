@@ -1,0 +1,39 @@
+# Coleo control-plane runtime for Cloudflare Containers.
+FROM oven/bun:1.3-debian AS builder
+
+WORKDIR /app
+COPY package.json bun.lock ./
+COPY src/web/package.json ./src/web/package.json
+RUN bun install --frozen-lockfile
+COPY . .
+RUN bun run build
+
+FROM oven/bun:1.3-debian
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    git \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir awscli \
+    && ln -s /opt/venv/bin/aws /usr/local/bin/aws
+
+RUN useradd -m -s /bin/bash coleo
+WORKDIR /home/coleo/coleo
+COPY --from=builder /app /home/coleo/coleo
+RUN chown -R coleo:coleo /home/coleo/coleo \
+    && printf '#!/bin/sh\nexec bun /home/coleo/coleo/src/cli/index.ts "$@"\n' > /usr/local/bin/coleo \
+    && chmod +x /usr/local/bin/coleo
+
+COPY --chown=coleo:coleo docker/cloudflare-control-entrypoint.sh /home/coleo/control-entrypoint.sh
+RUN chmod +x /home/coleo/control-entrypoint.sh
+
+USER coleo
+ENV COLEO_DIR=/home/coleo/.coleo
+EXPOSE 3000
+ENTRYPOINT ["/home/coleo/control-entrypoint.sh"]

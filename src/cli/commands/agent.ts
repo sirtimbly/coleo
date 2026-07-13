@@ -20,6 +20,7 @@ export function registerAgentCommands(program: Command): void {
       const agent = new ArmAgent({
         agentId: options.id,
         natsUrl: options.natsUrl,
+        natsToken: process.env.COLEO_NATS_TOKEN,
         coleoDir,
         maxArms: parseInt(options.maxArms, 10),
         heartbeatIntervalMs: parseInt(options.heartbeatInterval, 10),

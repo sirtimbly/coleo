@@ -184,7 +184,7 @@ export class Brain {
 	private resolveClaimsActive = false; // Config flag for active claim resolution (default: false)
 
 	// Mail config for external email sending
-	private mailConfig: { fromAddress: string; toAddress: string } | null = null;
+	private mailConfig: { provider: "cloudflare" | "postmark"; fromAddress: string; toAddress: string } | null = null;
 
 	/**
 	 * Log an activity entry via API (API handles JetStream persistence).
@@ -313,14 +313,15 @@ export class Brain {
 	private async loadMailConfig(): Promise<void> {
 		try {
 			const response = await this.apiRequest<{
-				mail: { fromAddress: string; toAddress: string };
+				mail: { provider: "cloudflare" | "postmark"; fromAddress: string; toAddress: string };
 			}>("/api/config/mail", {}, 5000);
 			if (response?.mail?.toAddress) {
 				this.mailConfig = {
+					provider: response.mail.provider || "cloudflare",
 					fromAddress: response.mail.fromAddress || "brain@coleo.dev",
 					toAddress: response.mail.toAddress,
 				};
-				this.log(`Mail config loaded: ${this.mailConfig.fromAddress} -> ${this.mailConfig.toAddress}`);
+				this.log(`Mail config loaded (${this.mailConfig.provider}): ${this.mailConfig.fromAddress} -> ${this.mailConfig.toAddress}`);
 			}
 		} catch (err) {
 			this.log(`Failed to load mail config: ${err}`);
@@ -7851,10 +7852,10 @@ ${conflictList}
 			headers: message.headers || {},
 		});
 
-		// Also send via Postmark if configured
+		// Also send through the configured external mail provider.
 		if (this.mailConfig?.toAddress) {
 			try {
-				await this.apiRequest("/api/mail/gateway/postmark/send", {
+				await this.apiRequest("/api/mail/gateway/send", {
 					method: "POST",
 					body: JSON.stringify({
 						from: this.mailConfig.fromAddress,

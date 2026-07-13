@@ -5,13 +5,15 @@
  * Falls back gracefully if NATS is not available.
  */
 
-import { connect, type NatsConnection } from 'nats';
+import type { NatsConnection } from 'nats';
+import { connectToNats } from './transport';
 
 export interface NatsManagerOptions {
   url?: string;
   debug?: boolean;
   retryAttempts?: number;
   retryDelayMs?: number;
+  token?: string;
 }
 
 export class NatsManager {
@@ -20,6 +22,7 @@ export class NatsManager {
   private debug: boolean;
   private retryAttempts: number;
   private retryDelayMs: number;
+  private token?: string;
   private isConnected = false;
 
   constructor(options: NatsManagerOptions = {}) {
@@ -27,6 +30,7 @@ export class NatsManager {
     this.debug = options.debug || false;
     this.retryAttempts = options.retryAttempts ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 1000;
+    this.token = options.token;
   }
 
   /**
@@ -43,8 +47,9 @@ export class NatsManager {
           console.log(`[NATS] Connecting to ${this.url} (attempt ${attempt}/${this.retryAttempts})...`);
         }
 
-        this.connection = await connect({
+        this.connection = await connectToNats({
           servers: this.url,
+          token: this.token,
           timeout: 5000,
           reconnect: true,
           maxReconnectAttempts: 10,

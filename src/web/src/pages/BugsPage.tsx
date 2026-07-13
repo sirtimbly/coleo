@@ -371,9 +371,74 @@ export function BugsPage() {
 		onMessage: handleWSMessage,
 	});
 
+	const workspaceHeader = (
+		<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
+			<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
+				<div className="relative w-48 shrink-0">
+					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
+					<input
+						type="text"
+						placeholder="Search bugs..."
+						value={searchText}
+						onChange={(event) => setSearchText(event.target.value)}
+						className="h-9 w-full rounded-md border border-border bg-surface-secondary px-8 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+					/>
+				</div>
+				<div className="shrink-0 text-xs text-muted-foreground">{bugs.length} total</div>
+				<div className="h-4 w-px shrink-0 bg-border" />
+				{Object.entries(STATUS_CONFIG).map(([status, statusConfig]) => (
+					<button
+						key={status}
+						type="button"
+						aria-pressed={filter.status === status}
+						onClick={() =>
+							setFilter((current) => (
+								current.status === status ? {} : { ...current, status }
+							))
+						}
+						className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+							filter.status === status
+								? 'border-accent/50 bg-accent/10 text-accent'
+								: 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+						}`}
+					>
+						<span>{statusConfig.label}</span>
+						<span>{stats?.byStatus?.[status] ?? 0}</span>
+					</button>
+				))}
+				{availableTags.length > 0 ? <div className="h-4 w-px shrink-0 bg-border" /> : null}
+				{availableTags.slice(0, 8).map((tag) => (
+					<button
+						key={tag}
+						type="button"
+						aria-pressed={tagFilter.includes(tag)}
+						onClick={() => toggleTagFilter(tag)}
+						className={`h-8 shrink-0 rounded-md border px-2.5 text-xs transition-colors ${
+							tagFilter.includes(tag)
+								? 'border-accent/50 bg-accent/10 text-accent'
+								: 'border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+						}`}
+					>
+						{tag}
+					</button>
+				))}
+			</div>
+			<div className="flex shrink-0 items-center gap-2">
+				<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
+					<RefreshCw className="h-4 w-4" />
+				</Button>
+				<Button size="sm" variant="primary" onPress={() => setIsModalOpen(true)}>
+					<Plus className="mr-1.5 h-4 w-4" />
+					New
+				</Button>
+			</div>
+		</header>
+	);
+
 	return (
 		<div className="flex flex-col h-full">
 			{/* Header with filters and actions */}
+			{isWorkspacePanel ? workspaceHeader : (
 			<div className="border-b px-4 py-3 bg-content2">
 				<div className="flex items-center justify-between mb-3">
 					<div className="flex items-center space-x-2">
@@ -483,6 +548,7 @@ export function BugsPage() {
 					)}
 				</div>
 			</div>
+			)}
 
 			{isError && error && (
 				<div className="p-4 bg-danger/10 text-danger border-b border-danger/20">

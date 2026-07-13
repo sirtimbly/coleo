@@ -55,6 +55,7 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
 export interface ArmAgentOptions {
   agentId?: string;
   natsUrl: string;
+  natsToken?: string;
   coleoDir: string;
   maxArms?: number;
   heartbeatIntervalMs?: number;
@@ -101,6 +102,7 @@ export class ArmAgent {
     this.natsClient = new NatsClient({
       serverUrl: options.natsUrl,
       clientId: this.agentId,
+      token: options.natsToken,
       debug: options.debug,
     });
   }
@@ -261,7 +263,9 @@ export class ArmAgent {
 
     // Spawn the arm
     const spawnConfig: SpawnConfig = {
-      workdir: workDir || process.cwd(),
+      // A remote agent owns its filesystem namespace. Hosted agents pin arms to
+      // their mounted checkout instead of trusting a path from the control host.
+      workdir: process.env.COLEO_AGENT_WORKDIR || workDir || process.cwd(),
       env: {
         COLEO_ARM_ID: armId,
         COLEO_DIR: this.coleoDir,
