@@ -31,9 +31,11 @@ describe("WebSocket proxy authentication", () => {
     const { socket, sent } = createSocket(handlers, true);
 
     handlers.open(socket);
+    handlers.message(socket, JSON.stringify({ type: "auth", apiKey: "stale-browser-key" }));
 
     expect(socket.data.authenticated).toBe(true);
     expect(sent.map((message) => JSON.parse(message))).toEqual([
+      { type: "auth", success: true },
       { type: "auth", success: true },
     ]);
     handlers.close(socket);

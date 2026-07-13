@@ -46,6 +46,23 @@ export function createProxyAwareWebSocketHandlers(
         ws.send(JSON.stringify({ type: "auth", success: true }));
       }
     },
+    message(
+      ws: Parameters<typeof handlers.message>[0],
+      message: Parameters<typeof handlers.message>[1],
+    ) {
+      if (ws.data.authenticated) {
+        try {
+          const parsed = JSON.parse(message.toString()) as { type?: unknown };
+          if (parsed.type === "auth") {
+            ws.send(JSON.stringify({ type: "auth", success: true }));
+            return;
+          }
+        } catch {
+          // Let the standard handler return its existing invalid-message error.
+        }
+      }
+      handlers.message(ws, message);
+    },
   };
 }
 
