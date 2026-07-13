@@ -15,7 +15,12 @@ if [[ -z "${COLEO_NATS_TOKEN:-}" ]]; then
   exit 1
 fi
 
-mkdir -p "$COLEO_DIR" "$COLEO_WORKDIR" "$COLEO_NATS_STORE_DIR"
+mkdir -p \
+  "$COLEO_DIR/state/arms" \
+  "$COLEO_DIR/mcp" \
+  "$COLEO_DIR/logs" \
+  "$COLEO_WORKDIR" \
+  "$COLEO_NATS_STORE_DIR"
 
 if [[ -n "${COLEO_R2_BUCKET:-}" ]]; then
   export AWS_ACCESS_KEY_ID=${COLEO_R2_ACCESS_KEY_ID:-}
@@ -50,10 +55,6 @@ if [[ -n "${COLEO_GIT_REPO_URL:-}" && ! -d "$COLEO_WORKDIR/.git" ]]; then
   fi
 fi
 
-if [[ ! -f "$COLEO_DIR/config.toml" ]]; then
-  coleo init --dir "$COLEO_DIR" --non-interactive
-fi
-
 NATS_CONFIG=${COLEO_RUNTIME_DIR}/nats.conf
 cat > "$NATS_CONFIG" <<EOF
 port: ${COLEO_NATS_PORT}
@@ -76,6 +77,7 @@ export COLEO_API_URL=${COLEO_API_URL:?COLEO_API_URL is required}
 
 NATS_PID=""
 AGENT_PID=""
+# shellcheck disable=SC2329 # Invoked indirectly by the signal/exit trap below.
 cleanup() {
   trap - TERM INT EXIT
   [[ -n "$AGENT_PID" ]] && kill -TERM -- "-$AGENT_PID" 2>/dev/null || true
@@ -102,7 +104,7 @@ if ! curl -fsS "http://127.0.0.1:${COLEO_NATS_MONITOR_PORT}/healthz" >/dev/null;
 fi
 
 cd "$COLEO_WORKDIR"
-setsid coleo agent start \
+setsid coleo-agent \
   --id "${COLEO_AGENT_ID:-reef-${COLEO_PROJECT_ID:-workspace}}" \
   --nats-url "$COLEO_NATS_URL" \
   --max-arms "${COLEO_AGENT_MAX_ARMS:-10}" &

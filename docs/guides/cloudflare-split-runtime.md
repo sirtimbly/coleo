@@ -5,7 +5,26 @@ in separate images:
 
 - `Dockerfile.cloudflare-control` runs `coleo serve` and `coleo brain run`.
 - `Dockerfile.cloudflare-agent` runs the Arm Host: NATS/JetStream and the
-  internal `coleo agent start` process.
+  dedicated Arm Host process plus the MCP server used by spawned arms.
+
+The images have independent immutable tags:
+
+- `coleo-control:<commit-sha>` identifies the complete control-plane source
+  revision.
+- `coleo-agent:runtime-<sha256>` identifies only the Arm Host runtime inputs.
+
+`src/scripts/cloudflare-agent-image-tag.ts` asks Bun for the dedicated Arm Host
+bundle's transitive input graph, adds the container entrypoint and native
+`bun-pty` runtime, and hashes the contents. The publication workflow checks the
+Cloudflare registry before building. If that exact content tag already exists,
+it does not build or push the Arm Host image. Changes confined to the web UI,
+control API, Brain, documentation, or unrelated repository files therefore do
+not create a new Arm Host image or roll its Cloudflare Container application.
+
+The Arm Host image intentionally contains the dedicated bundle rather than the
+full Coleo checkout. The same bundle runs in host mode at container startup and
+in `mcp serve` mode for spawned arms, keeping both execution paths in the hashed
+runtime boundary.
 
 This is a real remote Arm Host topology. The control image must set:
 
