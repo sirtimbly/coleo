@@ -13,8 +13,11 @@ import {
 import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
 import { type Bug, type BugMetadata, type BugUiMetadata } from "@/lib";
 import { cn } from "@/lib";
-import { COLOR_OPTIONS, COLOR_CLASSES, getValidColor } from "./grid-shared";
+import { COLOR_OPTIONS, COLOR_CLASSES_LIGHT, getValidColor } from "./grid-shared";
 import { STATUS_OPTIONS, STATUS_STYLES, PRIORITY_OPTIONS, PRIORITY_STYLES, SOURCE_STYLES } from "./bug-styles";
+
+export const BUG_GRID_COLUMNS_CLASS =
+	"grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_132px_150px_120px]";
 
 export type BugUiMeta = BugUiMetadata;
 
@@ -80,9 +83,9 @@ export const BugGridRow = memo(function BugGridRow({
 	const displayRowNumber = index + 1;
 
 	const uiMeta: BugRowUiMeta = {
-		tags: [],
-		color: "slate",
-		bold: false,
+		tags: bug.metadata?.ui?.tags ?? [],
+		color: getValidColor(bug.metadata?.ui?.color),
+		bold: bug.metadata?.ui?.bold ?? false,
 	};
 
 	const [open, setOpen] = useState(false);
@@ -178,12 +181,13 @@ export const BugGridRow = memo(function BugGridRow({
   return (
     <li
       className={cn(
-        "grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_110px_160px_120px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        "grid min-w-[860px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        BUG_GRID_COLUMNS_CLASS,
         "rounded-md ",
         !isDragging &&
           (uiMeta.bold
-            ? COLOR_CLASSES[colorKey]?.rowBold
-            : COLOR_CLASSES[colorKey]?.row),
+            ? COLOR_CLASSES_LIGHT[colorKey].rowBold
+            : COLOR_CLASSES_LIGHT[colorKey].row),
         !isSelected &&
           !isDragging &&
           "hover:bg-accent/20 hover:border-accent",
@@ -459,7 +463,7 @@ export const BugGridRow = memo(function BugGridRow({
 											onMouseLeave={() => setPreviewColor(null)}
 											className={cn(
 												"h-5 w-5 rounded-full border-2 transition-all cursor-pointer",
-												COLOR_CLASSES[color].dot,
+								COLOR_CLASSES_LIGHT[color].dot,
 												savedColor === color
 													? "border-accent ring-2 ring-accent/30 scale-110"
 													: "border-white shadow-sm hover:scale-110 hover:shadow-md",

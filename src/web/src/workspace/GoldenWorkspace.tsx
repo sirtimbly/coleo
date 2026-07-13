@@ -665,12 +665,20 @@ export function GoldenWorkspace() {
 		layout.registerComponentFactoryFunction(
 			WORKSPACE_COMPONENT_TYPE,
 			(container, state) => {
-				const route = isRoutePanelState(state)
+				const restoredRoute = isRoutePanelState(state)
 					? state
 					: createRoutePanelState("/", "");
+				const route =
+					restoredRoute.pathname === "/status-reports" &&
+					restoredRoute.title === "Status History"
+						? { ...restoredRoute, title: undefined }
+						: restoredRoute;
 				const hostElement = document.createElement("div");
 				hostElement.className = "golden-workspace-panel-host";
 				container.element.appendChild(hostElement);
+				container.setTitle(
+					route.title ?? getAppRouteTitle(route.pathname, route.search),
+				);
 				container.stateRequestEvent = () =>
 					panelInstancesRef.current.get(route.panelId)?.route ?? route;
 

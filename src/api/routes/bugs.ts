@@ -378,6 +378,54 @@ export function createBugsRoutes() {
     }
   });
 
+  // Register static GET routes before /:id so Hono does not interpret "stats" as a bug ID.
+  app.get("/stats", async (c) => {
+    const db = c.get("db");
+
+    try {
+      const bySource = db.query(`
+        SELECT source, COUNT(*) as count
+        FROM bugs
+        GROUP BY source
+      `).all() as Array<{ source: string; count: number }>;
+
+      const byStatus = db.query(`
+        SELECT status, COUNT(*) as count
+        FROM bugs
+        GROUP BY status
+      `).all() as Array<{ status: string; count: number }>;
+
+      const byPriority = db.query(`
+        SELECT priority, COUNT(*) as count
+        FROM bugs
+        GROUP BY priority
+      `).all() as Array<{ priority: string; count: number }>;
+
+      const recentCount = db.query(`
+        SELECT COUNT(*) as count
+        FROM bugs
+        WHERE created_at > datetime('now', '-24 hours')
+      `).get() as { count: number };
+
+      const unresolvedCount = db.query(`
+        SELECT COUNT(*) as count
+        FROM bugs
+        WHERE status NOT IN ('resolved', 'closed')
+      `).get() as { count: number };
+
+      return c.json({
+        bySource: bySource.reduce((acc, source) => ({ ...acc, [source.source]: source.count }), {}),
+        byStatus: byStatus.reduce((acc, status) => ({ ...acc, [status.status]: status.count }), {}),
+        byPriority: byPriority.reduce((acc, priority) => ({ ...acc, [priority.priority]: priority.count }), {}),
+        recent24h: recentCount.count,
+        unresolved: unresolvedCount.count,
+      });
+    } catch (err) {
+      console.error("[BUGS STATS ERROR]", err);
+      throw HttpError.internal("Failed to get bug stats");
+    }
+  });
+
   // Get a single bug
   app.get("/:id", async (c) => {
     const db = c.get("db");
@@ -608,54 +656,6 @@ export function createBugsRoutes() {
     } catch (err) {
       if (err instanceof HttpError) throw err;
       throw HttpError.internal("Failed to delete bug");
-    }
-  });
-
-  // Get bug statistics
-  app.get("/stats", async (c) => {
-    const db = c.get("db");
-
-    try {
-      const bySource = db.query(`
-        SELECT source, COUNT(*) as count
-        FROM bugs
-        GROUP BY source
-      `).all() as Array<{ source: string; count: number }>;
-
-      const byStatus = db.query(`
-        SELECT status, COUNT(*) as count
-        FROM bugs
-        GROUP BY status
-      `).all() as Array<{ status: string; count: number }>;
-
-      const byPriority = db.query(`
-        SELECT priority, COUNT(*) as count
-        FROM bugs
-        GROUP BY priority
-      `).all() as Array<{ priority: string; count: number }>;
-
-      const recentCount = db.query(`
-        SELECT COUNT(*) as count
-        FROM bugs
-        WHERE created_at > datetime('now', '-24 hours')
-      `).get() as { count: number };
-
-      const unresolvedCount = db.query(`
-        SELECT COUNT(*) as count
-        FROM bugs
-        WHERE status NOT IN ('resolved', 'closed')
-      `).get() as { count: number };
-
-      return c.json({
-        bySource: bySource.reduce((acc, s) => ({ ...acc, [s.source]: s.count }), {}),
-        byStatus: byStatus.reduce((acc, s) => ({ ...acc, [s.status]: s.count }), {}),
-        byPriority: byPriority.reduce((acc, p) => ({ ...acc, [p.priority]: p.count }), {}),
-        recent24h: recentCount.count,
-        unresolved: unresolvedCount.count,
-      });
-    } catch (err) {
-      console.error("[BUGS STATS ERROR]", err);
-      throw HttpError.internal("Failed to get bug stats");
     }
   });
 

@@ -57,6 +57,58 @@ afterEach(() => {
 });
 
 describe("Activity transcript route", () => {
+  it("persists activity entries for repeatable chronological reads", async () => {
+    const createResponse = await app.request(
+      new Request("http://localhost/api/activity", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": apiKey,
+        },
+        body: JSON.stringify({
+          actor: "arm-ui",
+          action: "layout_reviewed",
+          target: "history",
+          details: { message: "Compact history grid verified" },
+        }),
+      }),
+    );
+
+    expect(createResponse.status).toBe(201);
+
+    const readActivity = async () => {
+      const response = await app.request(
+        new Request("http://localhost/api/activity?limit=10", {
+          headers: { "X-API-Key": apiKey },
+        }),
+      );
+      expect(response.status).toBe(200);
+      return response.json() as Promise<{
+        activity: Array<{
+          id: number;
+          actor: string;
+          action: string;
+          target: string | null;
+          details: Record<string, unknown>;
+        }>;
+        pagination: { total: number };
+      }>;
+    };
+
+    const firstRead = await readActivity();
+    const secondRead = await readActivity();
+
+    expect(firstRead.pagination.total).toBe(1);
+    expect(firstRead.activity).toEqual(secondRead.activity);
+    expect(firstRead.activity[0]).toMatchObject({
+      actor: "arm-ui",
+      action: "layout_reviewed",
+      target: "history",
+      details: { message: "Compact history grid verified" },
+    });
+    expect(firstRead.activity[0]?.id).toBeNumber();
+  });
+
   it("returns oldest-first transcript entries across selected arms", async () => {
     const store = createTestEventStore();
     setEventStore(store);

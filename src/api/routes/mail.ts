@@ -510,6 +510,7 @@ export function createMailRoutes() {
     }
 
     try {
+      await sent.init();
       const message = await sent.write({
         from: body.from,
         to: body.to,

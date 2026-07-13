@@ -1,8 +1,8 @@
 /**
  * Activity log routes
  *
- * Activity is now stored in JetStream, not SQLite.
- * This provides event sourcing with the stream as the single source of truth.
+ * Activity events are published to JetStream and retained in SQLite for
+ * non-destructive, paginated history reads.
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
@@ -17,11 +17,23 @@ interface ActivityContext {
 }
 
 export interface ActivityEntry {
+  id?: number;
   timestamp: string;
   actor: string;
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+function parseActivityDetails(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 interface ArmMetadata {
@@ -539,42 +551,48 @@ export function createActivityRoutes() {
   });
 
   /**
-   * List activity entries from JetStream
-   * GET /api/activity?limit=50&actor=arm-123
+   * List persisted activity entries without consuming the event stream.
+   * GET /api/activity?limit=50&offset=0&actor=arm-123
    */
-  app.get("/", async (c) => {
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+  app.get("/", (c) => {
+    const db = c.get("db");
+    const limit = parseLimit(c.req.query("limit"), 50, 100);
+    const offset = Math.max(parseInt(c.req.query("offset") || "0", 10) || 0, 0);
     const actor = c.req.query("actor");
 
-    if (!eventStore.isInitialized()) {
-      return c.json({ 
-        activity: [],
-        message: "JetStream not available - start the API server with NATS",
-      });
-    }
-
     try {
-      let events;
-      if (actor) {
-        // Filter by specific arm
-        events = await eventStore.getArmEvents(actor, limit);
-      } else {
-        // Get all recent events
-        events = await eventStore.getRecentEvents(limit);
-      }
+      const whereClause = actor ? "WHERE actor = ?" : "";
+      const filterParams = actor ? [actor] : [];
+      const rows = db.query(`
+        SELECT id, timestamp, actor, action, target, details
+        FROM activity
+        ${whereClause}
+        ORDER BY timestamp DESC, id DESC
+        LIMIT ? OFFSET ?
+      `).all(...filterParams, limit, offset) as Array<{
+        id: number;
+        timestamp: string;
+        actor: string;
+        action: string;
+        target: string | null;
+        details: string;
+      }>;
+      const totalRow = db.query(`
+        SELECT COUNT(*) AS total
+        FROM activity
+        ${whereClause}
+      `).get(...filterParams) as { total: number };
 
-      const activity = events.map(event => ({
-        timestamp: event.timestamp,
-        actor: event.armId || (event.data.actor as string) || "brain",
-        action: event.type,
-        target: event.armId || null,
-        details: event.data,
-      }));
-
-      return c.json({ activity });
+      return c.json({
+        activity: rows.map((row) => ({
+          ...row,
+          details: parseActivityDetails(row.details),
+        })),
+        pagination: { limit, offset, total: totalRow.total },
+      });
     } catch (err) {
       console.error("Activity query error:", err);
-      return c.json({ error: "JetStream error" }, 500);
+      return c.json({ error: "Failed to load activity" }, 500);
     }
   });
 
@@ -639,6 +657,7 @@ export function createActivityRoutes() {
    * POST /api/activity
    */
   app.post("/", async (c) => {
+    const db = c.get("db");
     const body = await c.req.json<{
       actor: string;
       action: string;
@@ -667,8 +686,20 @@ export function createActivityRoutes() {
         timestamp: now,
       });
 
+      const result = db.run(`
+        INSERT INTO activity (timestamp, actor, action, target, details)
+        VALUES (?, ?, ?, ?, ?)
+      `, [
+        now,
+        body.actor,
+        body.action,
+        body.target || null,
+        JSON.stringify(body.details || {}),
+      ]);
+
       return c.json({
         entry: {
+          id: Number(result.lastInsertRowid),
           timestamp: now,
           actor: body.actor,
           action: body.action,

@@ -401,6 +401,30 @@ describe("bugs API", () => {
     });
   });
 
+  describe("GET /api/bugs/stats", () => {
+    it("returns aggregate counts instead of treating stats as a bug ID", async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at)
+        VALUES
+          ('bug-stats-open', 'Open stats bug', 'Description', 'human_reported', 'open', 'high', 0, ?, ?),
+          ('bug-stats-resolved', 'Resolved stats bug', 'Description', 'system_detected', 'resolved', 'low', 1, ?, ?)
+      `, [now, now, now, now]);
+
+      const response = await app.request("/api/bugs/stats");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        byStatus: Record<string, number>;
+        bySource: Record<string, number>;
+        unresolved: number;
+      };
+      expect(body.byStatus).toEqual({ open: 1, resolved: 1 });
+      expect(body.bySource).toEqual({ human_reported: 1, system_detected: 1 });
+      expect(body.unresolved).toBe(1);
+    });
+  });
+
   describe("DELETE /api/bugs/:id", () => {
     beforeEach(async () => {
       const now = new Date().toISOString();
