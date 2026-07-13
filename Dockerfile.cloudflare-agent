@@ -45,8 +45,9 @@ RUN curl -fsSL \
     && rm -rf /tmp/nats-server*
 
 ENV BUN_INSTALL=/usr/local
-ARG OPENCODE_VERSION=1.17.19
-RUN bun install --global "opencode-ai@${OPENCODE_VERSION}" && opencode --version
+# Upgrade OpenCode deliberately here. This version participates in the Arm Host
+# content tag through this Dockerfile; do not replace it with latest or a build arg.
+RUN bun install --global "opencode-ai@1.17.19" && opencode --version
 
 RUN useradd -m -s /bin/bash coleo
 WORKDIR /home/coleo

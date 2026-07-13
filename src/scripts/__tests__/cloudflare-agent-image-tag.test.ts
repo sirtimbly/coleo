@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   collectCloudflareAgentInputs,
   computeCloudflareAgentImageTag,
@@ -22,5 +24,15 @@ describe("Cloudflare Arm Host image tag", () => {
     const second = await computeCloudflareAgentImageTag();
     expect(first).toMatch(/^runtime-[a-f0-9]{64}$/);
     expect(second).toBe(first);
+  });
+
+  it("requires an explicitly pinned OpenCode version", async () => {
+    const dockerfile = await readFile(
+      resolve(import.meta.dir, "../../../Dockerfile.cloudflare-agent"),
+      "utf8",
+    );
+    expect(dockerfile).toMatch(/bun install --global "opencode-ai@\d+\.\d+\.\d+"/);
+    expect(dockerfile).not.toContain("opencode-ai@latest");
+    expect(dockerfile).not.toContain("OPENCODE_VERSION");
   });
 });

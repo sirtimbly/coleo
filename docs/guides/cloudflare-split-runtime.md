@@ -26,6 +26,11 @@ full Coleo checkout. The same bundle runs in host mode at container startup and
 in `mcp serve` mode for spawned arms, keeping both execution paths in the hashed
 runtime boundary.
 
+OpenCode is pinned to an exact version directly in
+`Dockerfile.cloudflare-agent`. Upgrading it is a deliberate source change, not
+a build argument or `latest` resolution. Because the Dockerfile participates in
+the Arm Host content hash, that edit produces a new immutable runtime tag.
+
 This is a real remote Arm Host topology. The control image must set:
 
 ```text
