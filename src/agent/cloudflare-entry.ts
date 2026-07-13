@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 
-import { ArmAgent } from "./arm-agent";
-import { runMcpServer } from "../mcp";
+import { loadEnvFile } from "../config/env";
 
 export interface CloudflareAgentOptions {
   agentId?: string;
@@ -9,6 +8,11 @@ export interface CloudflareAgentOptions {
   maxArms: number;
   heartbeatIntervalMs: number;
   verbose: boolean;
+}
+
+export interface CloudflareRuntimeHandlers {
+  startAgent(argv: string[]): Promise<void>;
+  serveMcp(): Promise<void>;
 }
 
 function valueAfter(argv: string[], flag: string): string | undefined {
@@ -47,6 +51,7 @@ export function parseCloudflareAgentOptions(argv: string[]): CloudflareAgentOpti
 }
 
 async function runAgent(argv: string[]): Promise<void> {
+  const { ArmAgent } = await import("./arm-agent");
   const options = parseCloudflareAgentOptions(argv);
   const agent = new ArmAgent({
     agentId: options.agentId,
@@ -75,12 +80,31 @@ async function runAgent(argv: string[]): Promise<void> {
   await new Promise(() => {});
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<void> {
+async function serveMcp(): Promise<void> {
+  const { runMcpServer } = await import("../mcp");
+  await runMcpServer();
+}
+
+const DEFAULT_RUNTIME_HANDLERS: CloudflareRuntimeHandlers = {
+  startAgent: runAgent,
+  serveMcp,
+};
+
+export async function main(
+  argv = process.argv.slice(2),
+  handlers = DEFAULT_RUNTIME_HANDLERS,
+): Promise<void> {
+  // R2 restore can provide provider credentials in $COLEO_DIR/.env. Load them
+  // before importing either runtime so module-level environment reads and all
+  // spawned processes see the complete environment. Explicit container values
+  // retain precedence because loadEnvFile only fills missing keys.
+  await loadEnvFile();
+
   if (argv[0] === "mcp" && argv[1] === "serve") {
-    await runMcpServer();
+    await handlers.serveMcp();
     return;
   }
-  await runAgent(argv);
+  await handlers.startAgent(argv);
 }
 
 if (import.meta.main) {
