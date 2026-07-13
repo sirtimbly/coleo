@@ -3,6 +3,12 @@
  */
 import type { Context, Next } from "hono";
 
+export const REEF_PROXY_API_KEY_HEADER = "X-Coleo-API-Key";
+
+export function apiKeyMatches(providedKey: string | null | undefined, apiKey: string): boolean {
+  return typeof providedKey === "string" && providedKey.length > 0 && providedKey === apiKey;
+}
+
 /**
  * Create auth middleware with the given API key
  */
@@ -18,8 +24,13 @@ export function createAuthMiddleware(apiKey: string) {
       return next();
     }
 
-    // Check header first, then query param (for SSE endpoints that can't send headers)
-    const providedKey = c.req.header("X-API-Key") || c.req.query("api_key");
+    // Reef authenticates the user with WorkOS, then supplies its private
+    // service-to-service credential. Direct/self-hosted clients continue to use
+    // X-API-Key, while query auth remains available for direct SSE clients.
+    const providedKey =
+      c.req.header(REEF_PROXY_API_KEY_HEADER) ||
+      c.req.header("X-API-Key") ||
+      c.req.query("api_key");
 
     if (!providedKey) {
       return c.json(
@@ -31,8 +42,7 @@ export function createAuthMiddleware(apiKey: string) {
       );
     }
 
-    if (providedKey !== apiKey) {
-      console.log(`[Auth] Mismatch! Expected: '${apiKey}', Got: '${providedKey}'`);
+    if (!apiKeyMatches(providedKey, apiKey)) {
       return c.json(
         {
           error: "Unauthorized",
