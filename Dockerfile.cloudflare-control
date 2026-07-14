@@ -38,6 +38,8 @@ COPY --chown=coleo:coleo docker/cloudflare-control-entrypoint.sh /home/coleo/con
 RUN chmod +x /home/coleo/control-entrypoint.sh
 
 USER coleo
-ENV COLEO_DIR=/home/coleo/.coleo
+ENV COLEO_DIR=/home/coleo/.coleo \
+    COLEO_REMOTE_ARMS_ONLY=1 \
+    COLEO_REMOTE_WORKDIR=/home/coleo/runtime/workspace
 EXPOSE 3000
 ENTRYPOINT ["/home/coleo/control-entrypoint.sh"]
