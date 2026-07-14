@@ -10,6 +10,21 @@ interface SetupFileTreeProps {
 
 type TreeModel = ReturnType<typeof useFileTree>['model'];
 
+// Trees detects overflow with a height container query. Fractional browser scaling can
+// make a single 24px line measure slightly above 24px, so allow a pixel of rounding
+// tolerance before showing its truncation marker.
+const TRUNCATION_TOLERANCE_CSS = `
+  [data-truncate-marker] {
+    opacity: 0;
+  }
+
+  @container measure (height > calc(1lh + 1px)) {
+    [data-truncate-marker] {
+      opacity: 1;
+    }
+  }
+`;
+
 export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect }: SetupFileTreeProps) {
   const modelRef = useRef<TreeModel | null>(null);
   const selectedPathRef = useRef(selectedPath);
@@ -24,6 +39,7 @@ export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect }: Setu
     icons: { set: 'minimal', colored: false },
     initialExpansion: 2,
     initialSelectedPaths: paths.includes(selectedPath) ? [selectedPath] : [],
+    unsafeCSS: TRUNCATION_TOLERANCE_CSS,
     onSelectionChange: (selectedPaths) => {
       const nextPath = [...selectedPaths].reverse().find((path) => paths.includes(path));
       if (!nextPath || nextPath === selectedPathRef.current) return;
