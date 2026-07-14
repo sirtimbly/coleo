@@ -51,9 +51,11 @@ describe("project setup routes", () => {
 		app.route("/api/project-setup", createProjectSetupRoutes({
 			workspace: new LocalWorkspaceAccess(root),
 			coleoDir: join(root, ".coleo"),
-			formatter: async () => ({
+			formatter: async (content) => ({
 				mode: "structured",
-				content: "# Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n",
+				content: content.includes("### Deliverables")
+					? content
+					: `${content.trimEnd()}\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n`,
 			}),
 		}));
 	});
@@ -134,41 +136,46 @@ describe("project setup routes", () => {
 			.toBe(editedContent);
 	});
 
-	it("prepares the canonical plan and imports its tasks immediately", async () => {
+	it("preserves verbose context, adds checklist items, and leaves import to the Brain", async () => {
+		const verbosePlan = `# Project Plan
+
+We are building the first release for small engineering teams. It must preserve
+their existing workflow and ship with clear operational documentation.
+`;
 		const response = await app.request("http://localhost/api/project-setup/prepare", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				sourcePath: ".project/plan.md",
-				content: "Build the first release",
+				content: verbosePlan,
 				expectedHash: null,
 			}),
 		});
 		const body = await response.json() as {
 			taskCount: number;
-			createdTaskCount: number;
 			canonicalPlan: { content: string; contentHash: string };
 		};
 
 		expect(response.status).toBe(200);
 		expect(body.taskCount).toBe(1);
-		expect(body.createdTaskCount).toBe(1);
-		const task = db.query("SELECT subject, source_type FROM tasks").get() as { subject: string; source_type: string };
-		expect(task).toEqual({ subject: "Build the first release", source_type: "plan" });
+		expect(body.canonicalPlan.content).toContain(verbosePlan.trimEnd());
+		expect(body.canonicalPlan.content).toContain("- [ ] Build the first release");
+		expect(await readFile(join(root, ".project", "plan.md"), "utf-8")).toBe(body.canonicalPlan.content);
+		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(0);
 
 		const repeatedResponse = await app.request("http://localhost/api/project-setup/prepare", {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				sourcePath: ".project/plan.md",
-				content: body.canonicalPlan.content,
+				content: verbosePlan,
 				expectedHash: body.canonicalPlan.contentHash,
 			}),
 		});
-		const repeated = await repeatedResponse.json() as { createdTaskCount: number };
+		const repeated = await repeatedResponse.json() as { taskCount: number };
 		expect(repeatedResponse.status).toBe(200);
-		expect(repeated.createdTaskCount).toBe(0);
-		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(1);
+		expect(repeated.taskCount).toBe(1);
+		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(0);
 	});
 
 	it("rejects writes outside the plan directories", async () => {

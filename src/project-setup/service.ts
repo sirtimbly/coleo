@@ -14,7 +14,7 @@ personality:
 `;
 export const DEFAULT_PLAN_TEMPLATE = `# Project Plan
 
-Describe what you want to build, who it is for, and the important constraints. You can write prose or a checklist; Coleo will turn it into a structured plan before creating tasks.
+Describe what you want to build, who it is for, and the important constraints. You can write prose or a checklist; Coleo will organize the plan and add task checkboxes without losing your commentary.
 
 ## Goals
 
@@ -64,6 +64,22 @@ export function hasStructuredPlanTasks(content: string): boolean {
 	return /^##\s+Phase\s+\d/im.test(content)
 		&& /^###\s+(?:Deliverables|Tasks)\s*$/im.test(content)
 		&& /^-\s+\[[ xX]\]\s+\S+/m.test(content);
+}
+
+export function preservesPlanContext(source: string, formatted: string): boolean {
+	const words = (value: string): string[] => value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+	const sourceWords = words(source);
+	if (sourceWords.length === 0) return true;
+	const formattedWords = words(formatted);
+	if (formattedWords.length < sourceWords.length * 0.75) return false;
+
+	const sourceVocabulary = new Set(sourceWords);
+	const formattedVocabulary = new Set(formattedWords);
+	let preservedWords = 0;
+	for (const word of sourceVocabulary) {
+		if (formattedVocabulary.has(word)) preservedWords += 1;
+	}
+	return preservedWords / sourceVocabulary.size >= 0.9;
 }
 
 export function validateEditablePlanPath(path: string): string {
@@ -179,7 +195,7 @@ function cleanTaskText(value: string): string {
 		.slice(0, 180);
 }
 
-export function formatPlanWithoutModel(content: string, sourcePath: string): string {
+export function formatPlanWithoutModel(content: string, _sourcePath: string): string {
 	if (hasStructuredPlanTasks(content)) {
 		return content.trimEnd() + "\n";
 	}
@@ -217,9 +233,7 @@ export function formatPlanWithoutModel(content: string, sourcePath: string): str
 		throw new Error("Add at least one goal, requirement, heading, or checklist item before creating tasks");
 	}
 
-	return `# Project Plan
-
-> Prepared from \`${sourcePath}\` during Coleo project setup.
+	return `${content.trimEnd()}
 
 ## Phase 1: Initial Project Work
 
@@ -256,7 +270,7 @@ export async function formatPlanWithConfiguredModel(
 				messages: [
 					{
 						role: "system",
-						content: "Convert the user's project notes into an actionable Markdown project plan. Preserve requirements and constraints. Use one or more '## Phase N: Name' sections, each with a '### Deliverables' subsection containing '- [ ] Task' checklist items. Return Markdown only. Do not add work that is not supported by the source.",
+						content: "Clean up and organize the user's Markdown project plan while preserving every requirement, constraint, decision, explanation, caveat, and piece of commentary from the source. Do not summarize away or omit context. Add actionable checklist items inline using one or more '## Phase N: Name' sections with '### Deliverables' subsections containing '- [ ] Task' items. Existing prose should remain as prose in appropriate sections. Return the complete revised plan as Markdown only. Do not add work unsupported by the source.",
 					},
 					{
 						role: "user",
@@ -272,6 +286,9 @@ export async function formatPlanWithConfiguredModel(
 		if (!formatted) throw new Error("Plan formatter returned an empty plan");
 		if (!hasStructuredPlanTasks(formatted)) {
 			throw new Error("Plan formatter returned an unsupported plan structure");
+		}
+		if (!preservesPlanContext(content, formatted)) {
+			throw new Error("Plan formatter omitted source context");
 		}
 		return { content: formatted.trimEnd() + "\n", mode: "ai" };
 	} catch {

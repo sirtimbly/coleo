@@ -85,7 +85,7 @@ export function SetupPage() {
   const [preparing, setPreparing] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number; createdTaskCount: number } | null>(null);
+  const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -229,7 +229,6 @@ export function SetupPage() {
       setResult({
         mode: response.mode,
         taskCount: response.taskCount,
-        createdTaskCount: response.createdTaskCount,
       });
       setEditor({
         kind: 'plan',
@@ -244,7 +243,7 @@ export function SetupPage() {
         completed: true,
         canonicalPlan: response.canonicalPlan,
         canonicalTaskCount: response.taskCount,
-        taskCount: current.taskCount + response.createdTaskCount,
+        taskCount: current.taskCount,
       } : current);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to prepare tasks from the plan');
@@ -420,15 +419,17 @@ export function SetupPage() {
                 <div>
                   <p className="font-medium">Project plan prepared</p>
                   <p className="mt-1 text-foreground/80">
-                    {result.taskCount} tasks found; {result.createdTaskCount} new tasks created using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting.
+                    {result.taskCount} checklist items added using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting. The Brain will analyze this file and create the tasks during its next poll.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
-                    className="mt-2 inline-block font-medium underline"
-                  >
-                    Review tasks
-                  </button>
+                  {status.taskCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
+                      className="mt-2 inline-block font-medium underline"
+                    >
+                      Review existing tasks
+                    </button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -437,15 +438,19 @@ export function SetupPage() {
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
               <div className="flex items-center gap-2 text-success">
                 <Check className="h-4 w-4" />
-                <span>{status.taskCount || status.canonicalTaskCount} project tasks are ready for review.</span>
+                <span>{status.taskCount > 0
+                  ? `${status.taskCount} project tasks are ready for review.`
+                  : `${status.canonicalTaskCount} checklist items found. The Brain will create tasks during its next poll.`}</span>
               </div>
-              <button
-                type="button"
-                onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
-                className="font-medium text-foreground underline"
-              >
-                Review tasks
-              </button>
+              {status.taskCount > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
+                  className="font-medium text-foreground underline"
+                >
+                  Review tasks
+                </button>
+              ) : null}
             </div>
           ) : null}
         </section>
