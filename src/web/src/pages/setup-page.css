@@ -51,16 +51,17 @@
 .setup-file-tree-container {
   height: 13rem;
   overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background: var(--surface-secondary);
-  padding: 0.25rem;
 }
 
 .setup-file-tree {
   display: block;
   height: 100%;
   width: 100%;
+  --trees-bg-override: transparent;
+}
+
+.setup-file-browser {
+  min-height: 0;
 }
 
 .setup-file-editor {

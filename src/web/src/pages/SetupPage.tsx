@@ -352,7 +352,7 @@ export function SetupPage() {
 
       <div className="setup-file-workspace">
         <aside className="setup-file-sidebar">
-          <section className="rounded-md border border-border bg-surface p-3">
+          <section className="setup-file-browser">
             <div>
               {activeKind === 'plan' && status.candidates.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
@@ -377,7 +377,7 @@ export function SetupPage() {
             <button
               type="button"
               onClick={activeKind === 'plan' ? createPlan : createTemplate}
-              className="mt-2.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium hover:bg-surface-secondary"
+              className="mt-1 inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
             >
               <FilePlus2 className="h-3.5 w-3.5" /> New {activeKind === 'plan' ? 'plan' : 'template'}
             </button>
