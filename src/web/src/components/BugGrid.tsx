@@ -7,7 +7,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { type Bug } from '@/lib';
 import { cn } from '@/lib';
-import { BugGridRow, type BugUiMeta, type BugUpdate } from './BugGridRow';
+import { BUG_GRID_COLUMNS_CLASS, BugGridRow, type BugUiMeta, type BugUpdate } from './BugGridRow';
 
 interface BugGridProps {
   bugs: Bug[];
@@ -256,7 +256,7 @@ export function BugGrid({
   const sortableItems = bugIds;
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-border bg-card', className)}>
+    <div className={cn('overflow-x-auto rounded-md border border-border bg-card', className)}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -264,7 +264,10 @@ export function BugGrid({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_110px_160px_48px_48px_48px] items-center gap-3 border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        <div className={cn(
+          'mx-2 grid min-w-[860px] items-center gap-3 border-b border-border px-3 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground',
+          BUG_GRID_COLUMNS_CLASS,
+        )}>
           <div className="text-right pr-1">Order</div>
           <div className="flex items-center justify-end">
             <Button

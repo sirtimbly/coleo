@@ -572,8 +572,9 @@ export function BugsPage() {
 							))}
 						</div>
 					) : (
-						<div className="p-4">
+						<div className={isWorkspacePanel ? undefined : "p-4"}>
 							<BugGrid
+								className={isWorkspacePanel ? "rounded-none border-0" : undefined}
 								bugs={filteredBugs}
 								totalBugs={bugs.length}
 								availableTags={availableTags}

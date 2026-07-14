@@ -10,12 +10,12 @@ export const STATUS_OPTIONS: Bug["status"][] = [
 ];
 
 export const STATUS_STYLES: Record<Bug["status"], string> = {
-	open: "bg-red-900/30 text-red-300 border-red-800",
-	investigating: "bg-yellow-900/30 text-yellow-300 border-yellow-800",
-	fixing: "bg-blue-900/30 text-blue-300 border-blue-800",
-	verifying: "bg-purple-900/30 text-purple-300 border-purple-800",
-	resolved: "bg-green-900/30 text-green-300 border-green-800",
-	closed: "bg-gray-800 text-gray-300 border-gray-700",
+	open: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900",
+	investigating: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900",
+	fixing: "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900",
+	verifying: "bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-900",
+	resolved: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900",
+	closed: "bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-900/50 dark:text-slate-400 dark:border-slate-800",
 };
 
 export const PRIORITY_OPTIONS: Bug["priority"][] = [
@@ -26,14 +26,14 @@ export const PRIORITY_OPTIONS: Bug["priority"][] = [
 ];
 
 export const PRIORITY_STYLES: Record<Bug["priority"], string> = {
-	low: "bg-emerald-900/30 text-emerald-300 border-emerald-800",
-	medium: "bg-sky-900/30 text-sky-300 border-sky-800",
-	high: "bg-amber-900/30 text-amber-300 border-amber-800",
-	critical: "bg-rose-900/30 text-rose-300 border-rose-800",
+	low: "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-900",
+	medium: "bg-sky-50 text-sky-700 border-sky-100 dark:bg-sky-950/30 dark:text-sky-400 dark:border-sky-900",
+	high: "bg-amber-50 text-amber-700 border-amber-100 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-900",
+	critical: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900",
 };
 
 export const SOURCE_STYLES: Record<Bug["source"], string> = {
-	arm_reported: "bg-blue-900/30 text-blue-300 border-blue-800",
-	human_reported: "bg-purple-900/30 text-purple-300 border-purple-800",
-	system_detected: "bg-red-900/30 text-red-300 border-red-800",
+	arm_reported: "bg-blue-50 text-blue-700 border-blue-100 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-900",
+	human_reported: "bg-violet-50 text-violet-700 border-violet-100 dark:bg-violet-950/30 dark:text-violet-400 dark:border-violet-900",
+	system_detected: "bg-rose-50 text-rose-700 border-rose-100 dark:bg-rose-950/30 dark:text-rose-400 dark:border-rose-900",
 };

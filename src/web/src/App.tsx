@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { APP_ROUTES } from '@/app/routes';
 import { AppMessageOverlay } from '@/components/AppMessageOverlay';
+import { InterfaceTypography } from '@/components/InterfaceTypography';
 import { ProjectOnboardingGate } from '@/components/ProjectOnboarding';
 import { Layout } from '@/components';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
@@ -28,6 +29,7 @@ function App() {
         <MessageProvider>
           <BrowserRouter>
             <ProjectOnboardingGate>
+              <InterfaceTypography />
               <AppMessageOverlay />
               <Routes>
                 <Route path="/" element={<AppShell />}>

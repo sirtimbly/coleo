@@ -102,7 +102,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'status-reports',
     href: '/status-reports',
     path: 'status-reports',
-    label: 'Status History',
+    label: 'History',
     icon: FileText,
     component: StatusReportsPage,
     showInNav: true,

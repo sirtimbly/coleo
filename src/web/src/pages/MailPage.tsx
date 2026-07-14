@@ -30,6 +30,8 @@ import {
 	useWorkspaceSearchParams,
 } from "@/workspace/route-context";
 
+const MAIL_REFRESH_INTERVAL_MS = 10_000;
+
 export function MailPage() {
 	usePageTitle('Coleo Observatory - Mail');
 	const isWorkspacePanel = useIsWorkspacePanel();
@@ -55,6 +57,7 @@ export function MailPage() {
 	const { openReply, openNewMessage } = useMessage();
 	const threadListRef = useRef<HTMLDivElement>(null);
 	const unreadMessageRef = useRef<HTMLDivElement>(null);
+	const mailRefreshPromiseRef = useRef<Promise<void> | null>(null);
 
 	useEffect(() => {
 		if (!isWorkspacePanel) return;
@@ -67,22 +70,32 @@ export function MailPage() {
 		setSelectedThreadId(searchParams.get("thread"));
 	}, [isWorkspacePanel, searchParams]);
 
-	const loadMail = useCallback(async () => {
-		try {
-			const [inboxRes, sentRes, archiveRes] = await Promise.all([
-				api.listInbox({ limit: 50 }),
-				api.listSent({ limit: 50 }),
-				api.listArchive({ limit: 50 }),
-			]);
-			setInbox(inboxRes);
-			setSent(sentRes);
-			setArchive(archiveRes);
-			setError(null);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load mail");
-		} finally {
-			setLoading(false);
+	const loadMail = useCallback((): Promise<void> => {
+		if (mailRefreshPromiseRef.current) {
+			return mailRefreshPromiseRef.current;
 		}
+
+		const refreshPromise = Promise.all([
+			api.listInbox({ limit: 50 }),
+			api.listSent({ limit: 50 }),
+			api.listArchive({ limit: 50 }),
+		])
+			.then(([inboxRes, sentRes, archiveRes]) => {
+				setInbox(inboxRes);
+				setSent(sentRes);
+				setArchive(archiveRes);
+				setError(null);
+			})
+			.catch((err: unknown) => {
+				setError(err instanceof Error ? err.message : "Failed to load mail");
+			})
+			.finally(() => {
+				mailRefreshPromiseRef.current = null;
+				setLoading(false);
+			});
+
+		mailRefreshPromiseRef.current = refreshPromise;
+		return refreshPromise;
 	}, []);
 
 	const handleWSMessage = useCallback(
@@ -103,7 +116,31 @@ export function MailPage() {
 	});
 
 	useEffect(() => {
-		loadMail();
+		void loadMail();
+
+		const refreshWhenFocused = () => {
+			if (document.visibilityState === "visible") {
+				void loadMail();
+			}
+		};
+		const refreshWhenVisible = () => {
+			if (document.visibilityState === "visible") {
+				void loadMail();
+			}
+		};
+		const interval = window.setInterval(
+			refreshWhenFocused,
+			MAIL_REFRESH_INTERVAL_MS,
+		);
+
+		window.addEventListener("focus", refreshWhenFocused);
+		document.addEventListener("visibilitychange", refreshWhenVisible);
+
+		return () => {
+			window.clearInterval(interval);
+			window.removeEventListener("focus", refreshWhenFocused);
+			document.removeEventListener("visibilitychange", refreshWhenVisible);
+		};
 	}, [loadMail]);
 
 	// Auto-scroll to first unread message when thread is selected
