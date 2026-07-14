@@ -94,7 +94,7 @@ export async function parsePlanFile(
       
       // Detect checkbox items (tasks) in deliverables sections
       const checkboxMatch = line.match(/^-\s+\[([ x])\]\s+(.+)/);
-      if (checkboxMatch && (currentSection === "Deliverables" || currentSection === "Tasks")) {
+      if (checkboxMatch && /^(?:Deliverables|Tasks)$/i.test(currentSection)) {
         const isCompleted = checkboxMatch[1]?.toLowerCase() === "x";
         const taskContent = checkboxMatch[2]?.trim() ?? "";
         

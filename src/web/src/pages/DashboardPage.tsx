@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
@@ -6,6 +6,8 @@ import { Chip, Skeleton, Disclosure, Button } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
+import { RefreshGate } from '@/lib/refresh-gate';
+import { hasOpenedProjectSetup, markProjectSetupOpened } from '@/lib/project-setup-visit';
 
 type Navigate = (pathname: string, search?: string) => void;
 
@@ -754,93 +756,136 @@ export function DashboardPage() {
   const [indexerLoading, setIndexerLoading] = useState(true);
   const [brainLoading, setBrainLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
+  const [showProjectSetup, setShowProjectSetup] = useState(false);
+  const refreshGate = useRef(new RefreshGate());
 
   const loadCriticalData = useCallback(async () => {
-    try {
-      const statusRes = await api.status();
-      setStatus(statusRes);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load status');
-    } finally {
-      setStatusLoading(false);
-    }
+    await refreshGate.current.run('status', async () => {
+      try {
+        const statusRes = await api.status();
+        setStatus(statusRes);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load status');
+      } finally {
+        setStatusLoading(false);
+      }
+    }, 1_000);
   }, []);
 
   const loadIndexerHealth = useCallback(async () => {
-    setIndexerLoading(true);
-    try {
-      const healthRes = await api.getTranscriptIndexerHealth();
-      setIndexerHealth(healthRes);
-    } catch {
-      setIndexerHealth({
-        status: "error",
-        stream: "coleo-events",
-        durable: "transcript-indexer-v1",
-        consumerFound: false,
-        lagMessages: null,
-        ackPending: null,
-        streamLastSeq: null,
-        consumerStreamSeq: null,
-        consumerSeq: null,
-        lastActive: null,
-        staleThresholdMs: 120000,
-        updatedAt: new Date().toISOString(),
-        message: "Failed to load indexer health",
-      });
-    } finally {
-      setIndexerLoading(false);
-    }
+    await refreshGate.current.run('indexer', async () => {
+      try {
+        const healthRes = await api.getTranscriptIndexerHealth();
+        setIndexerHealth(healthRes);
+      } catch {
+        setIndexerHealth((current) => current ?? {
+          status: "error",
+          stream: "coleo-events",
+          durable: "transcript-indexer-v1",
+          consumerFound: false,
+          lagMessages: null,
+          ackPending: null,
+          streamLastSeq: null,
+          consumerStreamSeq: null,
+          consumerSeq: null,
+          lastActive: null,
+          staleThresholdMs: 120000,
+          updatedAt: new Date().toISOString(),
+          message: "Failed to load indexer health",
+        });
+      } finally {
+        setIndexerLoading(false);
+      }
+    }, 5_000);
   }, []);
 
   const loadBrainStatus = useCallback(async () => {
-    setBrainLoading(true);
-    try {
-      const res = await api.getBrainStatus();
-      setBrainStatus(res.brain);
-    } catch {
-      setBrainStatus(null);
-    } finally {
-      setBrainLoading(false);
-    }
+    await refreshGate.current.run('brain', async () => {
+      try {
+        const res = await api.getBrainStatus();
+        setBrainStatus(res.brain);
+      } catch {
+        // Preserve the last successful snapshot during a transient failure.
+      } finally {
+        setBrainLoading(false);
+      }
+    }, 5_000);
   }, []);
 
   const loadDetails = useCallback(async () => {
-    setDetailsLoading(true);
-    try {
-      const [armsRes, activityRes] = await Promise.all([
-        api.listArms(),
-        api.listActivity({ limit: 5 }),
-      ]);
-      setArms(armsRes.arms);
-      setActivity(activityRes.activity);
-    } catch {
-      // Details might fail - that's OK, we show what we can
-    } finally {
-      setDetailsLoading(false);
-    }
+    await refreshGate.current.run('details', async () => {
+      try {
+        const [armsRes, activityRes] = await Promise.all([
+          api.listArms(),
+          api.listActivity({ limit: 5 }),
+        ]);
+        setArms(armsRes.arms);
+        setActivity(activityRes.activity);
+      } catch {
+        // Preserve the last successful snapshot during a transient failure.
+      } finally {
+        setDetailsLoading(false);
+      }
+    }, 5_000);
   }, []);
 
   const loadAnalysis = useCallback(async () => {
-    try {
-      const analysisRes = await api.getAllArmsAnalysis();
-      setArmsAnalysis(analysisRes);
-    } catch {
-      setArmsAnalysis(null);
-    }
+    await refreshGate.current.run('analysis', async () => {
+      try {
+        const analysisRes = await api.getAllArmsAnalysis();
+        setArmsAnalysis(analysisRes);
+      } catch {
+        // Analysis is optional; keep the last successful snapshot.
+      }
+    }, 5_000);
   }, []);
 
   const loadNotableEvents = useCallback(async () => {
-    setEventsLoading(true);
-    try {
-      // Prefer live event stream; fall back to high-signal status reports so the
-      // widget still has content when JetStream is empty/unavailable.
-      const eventsRes = await api.getRecentEvents({ limit: 80, sinceMs: 1000 * 60 * 60 * 24 });
-      let filtered = eventsRes.events.filter(isNotableEvent);
+    await refreshGate.current.run('events', async () => {
+      try {
+        // Prefer live event stream; fall back to high-signal status reports so the
+        // widget still has content when JetStream is empty/unavailable.
+        const eventsRes = await api.getRecentEvents({ limit: 80, sinceMs: 1000 * 60 * 60 * 24 });
+        let filtered = eventsRes.events.filter(isNotableEvent);
 
-      if (filtered.length < 6) {
+        if (filtered.length < 6) {
+          try {
+            const reportsRes = await api.listStatusReports({ limit: 20 });
+            const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
+            const reportEvents: RecentEvent[] = reportsRes.reports
+              .filter((r) => HIGH_SIGNAL.has(r.status))
+              .map((r) => ({
+                type: 'task.status_reported',
+                timestamp: r.createdAt,
+                armId: r.armId,
+                data: {
+                  taskId: r.taskId,
+                  status: r.status,
+                  summary: r.summary,
+                },
+              }));
+            const seen = new Set(filtered.map((e) => `${e.type}-${e.timestamp}-${e.armId}`));
+            for (const re of reportEvents) {
+              const key = `${re.type}-${re.timestamp}-${re.armId}`;
+              if (!seen.has(key)) {
+                filtered.push(re);
+                seen.add(key);
+              }
+            }
+            filtered = filtered
+              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          } catch {
+            // status reports optional
+          }
+        }
+
+        setNotableEvents(filtered.slice(0, 8));
+        setEventsError(null);
+      } catch (err) {
+        // Full fallback: status reports only
         try {
-          const reportsRes = await api.listStatusReports({ limit: 20 });
+          const reportsRes = await api.listStatusReports({ limit: 8 });
           const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
           const reportEvents: RecentEvent[] = reportsRes.reports
             .filter((r) => HIGH_SIGNAL.has(r.status))
@@ -854,67 +899,32 @@ export function DashboardPage() {
                 summary: r.summary,
               },
             }));
-          const seen = new Set(filtered.map((e) => `${e.type}-${e.timestamp}-${e.armId}`));
-          for (const re of reportEvents) {
-            const key = `${re.type}-${re.timestamp}-${re.armId}`;
-            if (!seen.has(key)) {
-              filtered.push(re);
-              seen.add(key);
-            }
-          }
-          filtered = filtered
-            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+          setNotableEvents(reportEvents.slice(0, 8));
+          setEventsError(null);
         } catch {
-          // status reports optional
+          setEventsError(err instanceof Error ? err.message : 'Failed to load events');
         }
+      } finally {
+        setEventsLoading(false);
       }
-
-      setNotableEvents(filtered.slice(0, 8));
-      setEventsError(null);
-    } catch (err) {
-      // Full fallback: status reports only
-      try {
-        const reportsRes = await api.listStatusReports({ limit: 8 });
-        const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
-        const reportEvents: RecentEvent[] = reportsRes.reports
-          .filter((r) => HIGH_SIGNAL.has(r.status))
-          .map((r) => ({
-            type: 'task.status_reported',
-            timestamp: r.createdAt,
-            armId: r.armId,
-            data: {
-              taskId: r.taskId,
-              status: r.status,
-              summary: r.summary,
-            },
-          }));
-        setNotableEvents(reportEvents.slice(0, 8));
-        setEventsError(null);
-      } catch {
-        setEventsError(err instanceof Error ? err.message : 'Failed to load events');
-      }
-    } finally {
-      setEventsLoading(false);
-    }
+    }, 5_000);
   }, []);
 
   const handleWSMessage = useCallback((msg: WebSocketMessage) => {
-    if (msg.channel === 'arms') {
-      api.listArms().then((res) => setArms(res.arms)).catch(console.error);
-    } else if (msg.channel === 'activity') {
-      api.listActivity({ limit: 5 }).then((res) => setActivity(res.activity)).catch(console.error);
+    if (msg.channel === 'arms' || msg.channel === 'activity') {
+      void loadDetails();
     }
     if (msg.channel === 'arm-events') {
-      loadNotableEvents();
-      loadIndexerHealth();
+      void loadNotableEvents();
+      void loadIndexerHealth();
     }
     if (msg.channel === 'brain') {
-      loadBrainStatus();
+      void loadBrainStatus();
     }
     if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
-      api.status().then((res) => setStatus(res)).catch(console.error);
+      void loadCriticalData();
     }
-  }, [loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
+  }, [loadBrainStatus, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents]);
 
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain', 'arm-events'],
@@ -931,6 +941,7 @@ export function DashboardPage() {
     loadBrainStatus();
 
     const interval = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
       loadCriticalData();
       loadDetails();
       loadNotableEvents();
@@ -939,6 +950,30 @@ export function DashboardPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, [loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
+
+  useEffect(() => {
+    let active = true;
+    const updateBanner = () => {
+      if (hasOpenedProjectSetup()) {
+        setShowProjectSetup(false);
+        return;
+      }
+      void api.getProjectSetupStatus()
+        .then((projectSetup) => {
+          if (active) setShowProjectSetup(projectSetup.required);
+        })
+        .catch(() => {
+          // Project setup is helpful but must not block the dashboard.
+        });
+    };
+
+    updateBanner();
+    window.addEventListener('focus', updateBanner);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', updateBanner);
+    };
+  }, []);
 
   if (error && !status) {
     return (
@@ -976,6 +1011,30 @@ export function DashboardPage() {
           )}
         </div>
       </div>
+
+      {showProjectSetup ? (
+        <section className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-semibold text-foreground">Give the Brain a project plan</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              This repository has no tasks or structured project plan yet. Review any plan files Coleo found,
+              or write a new one, before starting the first arm.
+            </p>
+          </div>
+          <a
+            href="/setup"
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => {
+              markProjectSetupOpened();
+              setShowProjectSetup(false);
+            }}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
+          >
+            Open setup <ChevronRight className="h-4 w-4" />
+          </a>
+        </section>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <InfrastructureSection
