@@ -18,7 +18,7 @@ import {
 	ScrollText,
 	GitCommitHorizontal,
 } from "lucide-react";
-import { Button, Chip, Card, Tabs } from "@heroui/react";
+import { Button, Chip, Card } from "@heroui/react";
 import {
 	type Task,
 	type TaskLlmMetadata,
@@ -27,7 +27,6 @@ import {
 	cn,
 } from "@/lib";
 import { TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel } from "@/components";
-import { WorkspacePageShell } from "@/components/WorkspacePageShell";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
@@ -199,6 +198,87 @@ function TaskPriorityBadge({
 	);
 }
 
+const TASK_DETAILS_TABS: ReadonlyArray<{
+	id: SidebarTab;
+	label: string;
+	icon: React.ComponentType<{ className?: string }>;
+}> = [
+	{ id: "details", label: "Details", icon: FileText },
+	{ id: "summary", label: "Summary", icon: ScrollText },
+	{ id: "diff", label: "Diff", icon: GitCommitHorizontal },
+	{ id: "discussions", label: "Discussions", icon: MessageSquare },
+];
+
+function TaskDetailsToolbar({
+	activeTab,
+	onTabChange,
+	discussionCount,
+	priority,
+	taskId,
+	onPriorityChange,
+	onClose,
+}: {
+	activeTab: SidebarTab;
+	onTabChange: (tab: SidebarTab) => void;
+	discussionCount: number;
+	priority: Task["priority"];
+	taskId: string;
+	onPriorityChange: (taskId: string, priority: Task["priority"]) => void;
+	onClose?: () => void;
+}) {
+	return (
+		<header className="flex min-h-11 shrink-0 items-center gap-2 border-b border-border px-3">
+			<div className="min-w-0 flex-1 overflow-x-auto">
+				<div className="flex items-stretch" role="tablist" aria-label="Task details">
+					{TASK_DETAILS_TABS.map((tab) => {
+						const Icon = tab.icon;
+						return (
+							<button
+								key={tab.id}
+								type="button"
+								role="tab"
+								aria-selected={activeTab === tab.id}
+								onClick={() => onTabChange(tab.id)}
+								className={cn(
+									"inline-flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-2.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+									activeTab === tab.id
+										? "border-accent font-medium text-foreground"
+										: "border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground",
+								)}
+							>
+								<Icon className="h-3.5 w-3.5" />
+								<span>{tab.label}</span>
+								{tab.id === "discussions" && discussionCount > 0 ? (
+									<Chip color="accent" size="sm" variant="soft">
+										{discussionCount}
+									</Chip>
+								) : null}
+							</button>
+						);
+					})}
+				</div>
+			</div>
+			<div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+			<TaskPriorityBadge
+				priority={priority}
+				taskId={taskId}
+				onPriorityChange={onPriorityChange}
+			/>
+			{onClose ? (
+				<Button
+					isIconOnly
+					size="sm"
+					variant="ghost"
+					onPress={onClose}
+					aria-label="Close task details"
+				>
+					<X className="h-4 w-4" />
+				</Button>
+			) : null}
+		</header>
+	);
+}
+
 function formatAbsoluteDateTime(iso: string): string {
 	return new Date(iso).toLocaleString(undefined, {
 		dateStyle: "medium",
@@ -285,7 +365,7 @@ function TaskDescriptionField({
 					}}
 					placeholder="Add a description for this task..."
 					rows={4}
-					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
+					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 font-body text-sm font-normal tracking-normal focus:outline-none focus:ring-1 focus:ring-accent"
 				/>
 				<div className="flex items-center gap-2">
 					<Button size="sm" variant="primary" onPress={handleSave}>
@@ -319,7 +399,9 @@ function TaskDescriptionField({
 			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
 			title="Click to edit"
 		>
-			<p className="whitespace-pre-wrap">{description}</p>
+			<p className="whitespace-pre-wrap font-body font-normal leading-relaxed tracking-normal">
+				{description}
+			</p>
 		</button>
 	);
 }
@@ -789,68 +871,33 @@ export function TasksPage() {
 
 		return (
 			<>
-				<WorkspacePageShell
-					title={selectedTask.subject}
-					subtitle={sidebarTab === "discussions" ? "Task discussion" : "Task details"}
-					toolbar={
-						<div className="flex items-center gap-2">
-							<TaskPriorityBadge
-								priority={selectedTask.priority}
-								taskId={selectedTask.id}
-								onPriorityChange={handlePriorityChange}
-							/>
-						</div>
-					}
-				>
-					<Tabs
-						selectedKey={sidebarTab}
-						onSelectionChange={(key) => {
-							if (key === "details" || key === "summary" || key === "diff" || key === "discussions") {
-								setSidebarTab(key);
-							}
-						}}
-						className="flex h-full flex-col"
-					>
-						<Tabs.ListContainer className="border-b border-border/70 px-3 py-2">
-							<Tabs.List aria-label="Task tabs">
-							<Tabs.Tab id={detailsTabId}>
-								<FileText className="h-4 w-4" />
-								<span className="px-2">Details</span>
-								<Tabs.Indicator />
-							</Tabs.Tab>
-							<Tabs.Tab id={summaryTabId}>
-								<ScrollText className="h-4 w-4" />
-								<span className="px-2">Summary</span>
-								<Tabs.Indicator />
-							</Tabs.Tab>
-							<Tabs.Tab id={diffTabId}>
-								<GitCommitHorizontal className="h-4 w-4" />
-								<span className="px-2">Diff</span>
-								<Tabs.Indicator />
-							</Tabs.Tab>
-							<Tabs.Tab id={discussionsTabId}>
-								<MessageSquare className="h-4 w-4" />
-								<span className="px-2">Discussions</span>
-								<Tabs.Indicator />
-							</Tabs.Tab>
-						</Tabs.List>
-					</Tabs.ListContainer>
+				<div className="flex h-full min-h-0 flex-col bg-background">
+					<TaskDetailsToolbar
+						activeTab={sidebarTab}
+						onTabChange={setSidebarTab}
+						discussionCount={discussionCount}
+						priority={selectedTask.priority}
+						taskId={selectedTask.id}
+						onPriorityChange={handlePriorityChange}
+					/>
 
-					<Tabs.Panel id={detailsTabId} className="flex-1 overflow-auto p-4">
-							<div className="space-y-4">
+					{sidebarTab === detailsTabId ? (
+						<div className="flex-1 overflow-auto p-3" role="tabpanel">
+							<div className="space-y-3">
 								<div className="flex items-center justify-between">
 									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
 									<TaskCreatedAt createdAt={selectedTask.createdAt} />
 								</div>
 								<div>
-									<h5 className="mb-1 text-sm font-medium text-foreground-500">Description</h5>
+									<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">Description</h5>
+									<p className="mb-1.5 text-sm font-medium text-foreground">{selectedTask.subject}</p>
 									<TaskDescriptionField
 										taskId={selectedTask.id}
 										description={selectedTask.description}
 										onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
 									/>
 								</div>
-								<div className="grid grid-cols-2 gap-4 text-sm">
+								<div className="grid grid-cols-2 gap-3 text-sm">
 									<div>
 										<span className="text-foreground-500">Status</span>
 										<div className="mt-1 flex items-center gap-1">
@@ -870,25 +917,31 @@ export function TasksPage() {
 									</div>
 								</div>
 							</div>
-						</Tabs.Panel>
+						</div>
+					) : null}
 
-					<Tabs.Panel id={summaryTabId} className="flex-1 p-0">
+					{sidebarTab === summaryTabId ? (
+						<div className="flex-1 p-0" role="tabpanel">
 							<TaskSummaryPanel taskId={selectedTask.id} className="h-full" />
-						</Tabs.Panel>
+						</div>
+					) : null}
 
-					<Tabs.Panel id={diffTabId} className="flex-1 p-0">
+					{sidebarTab === diffTabId ? (
+						<div className="flex-1 p-0" role="tabpanel">
 							<TaskDiffPanel taskId={selectedTask.id} className="h-full" />
-						</Tabs.Panel>
+						</div>
+					) : null}
 
-					<Tabs.Panel id={discussionsTabId} className="flex-1 p-0">
+					{sidebarTab === discussionsTabId ? (
+						<div className="flex-1 p-0" role="tabpanel">
 							<TaskDiscussionPanel
 								taskId={selectedTask.id}
 								onCommentCountChange={setDiscussionCount}
 								className="h-full"
 							/>
-						</Tabs.Panel>
-					</Tabs>
-				</WorkspacePageShell>
+						</div>
+					) : null}
+				</div>
 				{taskModal}
 			</>
 		);
@@ -1080,69 +1133,21 @@ export function TasksPage() {
 
 				{/* Task details sidebar */}
 				{selectedTask && (
-					<Card className="w-128 overflow-auto border-l rounded-none shadow-none flex flex-col">
-						{/* Header with close button */}
-						<div className="p-3 border-b flex items-center justify-between flex-shrink-0">
-							<h3
-								className="font-semibold text-sm max-w-[280px]"
-								title={selectedTask.subject}
-							>
-								{selectedTask.subject}
-							</h3>
-							<Button
-								isIconOnly
-								size="sm"
-								variant="ghost"
-								onPress={() => setSelectedTask(null)}
-								aria-label="Close"
-							>
-								<X className="h-4 w-4" />
-							</Button>
-						</div>
+					<Card className="w-128 overflow-hidden border-l rounded-none shadow-none flex flex-col">
+						<TaskDetailsToolbar
+							activeTab={sidebarTab}
+							onTabChange={setSidebarTab}
+							discussionCount={discussionCount}
+							priority={selectedTask.priority}
+							taskId={selectedTask.id}
+							onPriorityChange={handlePriorityChange}
+							onClose={() => setSelectedTask(null)}
+						/>
 
-						{/* Tabs */}
-						<Tabs
-							selectedKey={sidebarTab}
-							onSelectionChange={(key) => {
-								if (key === "details" || key === "summary" || key === "diff" || key === "discussions") {
-									setSidebarTab(key);
-								}
-							}}
-							className="flex-1 flex flex-col"
-						>
-							<Tabs.ListContainer className="flex-shrink-0">
-								<Tabs.List aria-label="Task tabs" className="w-full">
-									<Tabs.Tab id={detailsTabId} className="flex-1">
-										<FileText className="h-4 w-4" />
-										<span className="px-2">Details</span>
-										<Tabs.Indicator />
-									</Tabs.Tab>
-									<Tabs.Tab id={summaryTabId} className="flex-1">
-										<ScrollText className="h-4 w-4" />
-										<span className="px-2">Summary</span>
-										<Tabs.Indicator />
-									</Tabs.Tab>
-									<Tabs.Tab id={diffTabId} className="flex-1">
-										<GitCommitHorizontal className="h-4 w-4" />
-										<span className="px-2">Diff</span>
-										<Tabs.Indicator />
-									</Tabs.Tab>
-									<Tabs.Tab id={discussionsTabId} className="flex-1">
-										<MessageSquare className="h-4 w-4" />
-										<span className="px-2">Discussions</span>
-										<Tabs.Indicator />
-										{discussionCount > 0 && (
-											<Chip color="accent" size="sm" variant="soft">
-												{discussionCount}
-											</Chip>
-										)}
-									</Tabs.Tab>
-								</Tabs.List>
-							</Tabs.ListContainer>
-
-						<Tabs.Panel id={detailsTabId} className="flex-1 p-0">
-								<div className="p-4 overflow-auto h-full">
-									<div className="space-y-4">
+						{sidebarTab === detailsTabId ? (
+							<div className="flex-1 p-0" role="tabpanel">
+								<div className="p-3 overflow-auto h-full">
+									<div className="space-y-3">
 										<div className="flex items-center justify-between">
 											<span className="text-xs text-foreground-500 font-mono">
 												ID: {selectedTask.id}
@@ -1151,17 +1156,12 @@ export function TasksPage() {
 										</div>
 
 										<div>
-											<TaskPriorityBadge
-												priority={selectedTask.priority}
-												taskId={selectedTask.id}
-												onPriorityChange={handlePriorityChange}
-											/>
-										</div>
-
-										<div>
-											<h5 className="text-sm font-medium text-foreground-500 mb-1">
+											<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">
 												Description
 											</h5>
+											<p className="mb-1.5 text-sm font-medium text-foreground">
+												{selectedTask.subject}
+											</p>
 											<TaskDescriptionField
 												taskId={selectedTask.id}
 												description={selectedTask.description}
@@ -1169,7 +1169,7 @@ export function TasksPage() {
 											/>
 										</div>
 
-										<div className="grid grid-cols-2 gap-4 text-sm">
+										<div className="grid grid-cols-2 gap-3 text-sm">
 											<div>
 												<span className="text-foreground-500">Status:</span>
 												<div className="flex items-center gap-1 mt-1">
@@ -1185,13 +1185,9 @@ export function TasksPage() {
 												</div>
 											</div>
 											<div>
-												<span className="text-foreground-500">Priority:</span>
-												<div className="mt-1">
-													<TaskPriorityBadge
-														priority={selectedTask.priority}
-														taskId={selectedTask.id}
-														onPriorityChange={handlePriorityChange}
-													/>
+												<span className="text-foreground-500">Assigned</span>
+												<div className="mt-1 text-sm">
+													{selectedTask.assignedArmName ?? "Unassigned"}
 												</div>
 											</div>
 										</div>
@@ -1276,27 +1272,30 @@ export function TasksPage() {
 										)}
 									</div>
 								</div>
-							</Tabs.Panel>
+								</div>
+						) : null}
 
-						<Tabs.Panel id={summaryTabId} className="flex-1 p-0">
+						{sidebarTab === summaryTabId ? (
+							<div className="flex-1 p-0" role="tabpanel">
 								<TaskSummaryPanel taskId={selectedTask.id} className="h-full" />
-							</Tabs.Panel>
+							</div>
+						) : null}
 
-						<Tabs.Panel id={diffTabId} className="flex-1 p-0">
+						{sidebarTab === diffTabId ? (
+							<div className="flex-1 p-0" role="tabpanel">
 								<TaskDiffPanel taskId={selectedTask.id} className="h-full" />
-							</Tabs.Panel>
+							</div>
+						) : null}
 
-						<Tabs.Panel
-							id={discussionsTabId}
-							className="flex-1 p-0"
-						>
+						{sidebarTab === discussionsTabId ? (
+							<div className="flex-1 p-0" role="tabpanel">
 								<TaskDiscussionPanel
 									taskId={selectedTask.id}
 									onCommentCountChange={setDiscussionCount}
 									className="h-full"
 								/>
-							</Tabs.Panel>
-						</Tabs>
+							</div>
+						) : null}
 					</Card>
 				)}
 			</div>

@@ -201,7 +201,6 @@ class ApiClient {
       mode: 'ai' | 'structured';
       canonicalPlan: WorkspaceTextFile;
       taskCount: number;
-      createdTaskCount: number;
     }>('/project-setup/prepare', {
       method: 'POST',
       body: JSON.stringify(data),

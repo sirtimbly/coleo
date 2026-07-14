@@ -6,7 +6,6 @@ import { Hono } from "hono";
 
 import { parsePlanFile } from "../../brain/plan-parser";
 import { BrainTemplateManager } from "../../brain/template-manager";
-import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 import {
 	CANONICAL_PLAN_PATH,
 	DEFAULT_ARM_TEMPLATE,
@@ -186,7 +185,6 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 
 	app.post("/prepare", async (c) => {
 		const workspace = getWorkspace();
-		const db = c.get("db");
 		const body = await c.req.json<{
 			sourcePath?: unknown;
 			content?: unknown;
@@ -227,34 +225,11 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				throw new Error("The prepared plan did not contain any tasks. Add concrete goals or checklist items and try again.");
 			}
 
-			const brainDb = createSqliteBrainDb(db);
-			const existingTaskIds = new Set(brainDb.listTasks({ limit: 10_000 }).map((task) => task.id));
-			let createdTaskCount = 0;
-			const createTasks = db.transaction(() => {
-				for (const task of parsed.tasks) {
-					if (existingTaskIds.has(task.id)) continue;
-					brainDb.createTask({
-						id: task.id,
-						subject: task.subject,
-						description: task.description,
-						status: task.status,
-						priority: task.priority,
-						sourceType: "plan",
-						sourceRef: task.sourceRef,
-						phase: task.phase || null,
-					});
-					existingTaskIds.add(task.id);
-					createdTaskCount += 1;
-				}
-			});
-			createTasks();
-
 			return c.json({
 				completed: true,
 				mode: formatted.mode,
 				canonicalPlan,
 				taskCount: parsed.tasks.length,
-				createdTaskCount,
 			});
 		} catch (error) {
 			throw badRequestFrom(error, "Unable to prepare the project plan");

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
 	discoverProjectPlans,
 	formatPlanWithoutModel,
+	preservesPlanContext,
 	validateEditablePlanPath,
 	validateEditableTemplatePath,
 } from "../service";
@@ -33,16 +34,24 @@ describe("project setup service", () => {
 		expect(candidates[0]?.reasons).toContain("plan-like filename");
 	});
 
-	it("turns prose and bullets into the canonical task format without a model", () => {
+	it("preserves prose and adds checklist items without a model", () => {
+		const source = "# Product brief\n\nThis context must remain in the plan.\n\n## Requirements\n- Support team accounts\n- Add an audit log\n";
 		const plan = formatPlanWithoutModel(
-			"# Product brief\n\n## Requirements\n- Support team accounts\n- Add an audit log\n",
+			source,
 			"docs/brief.md",
 		);
 
+		expect(plan).toContain("This context must remain in the plan.");
 		expect(plan).toContain("## Phase 1: Initial Project Work");
 		expect(plan).toContain("### Deliverables");
 		expect(plan).toContain("- [ ] Support team accounts");
 		expect(plan).toContain("- [ ] Add an audit log");
+	});
+
+	it("detects formatter output that drops substantial project context", () => {
+		const source = "The billing workflow must retain audit history, support regional taxes, and explain migration constraints.";
+		expect(preservesPlanContext(source, `${source}\n\n- [ ] Implement billing`)).toBe(true);
+		expect(preservesPlanContext(source, "- [ ] Implement billing")).toBe(false);
 	});
 
 	it("only allows editable plan paths in the configured project directories", () => {
