@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { Hono } from "hono";
 
 import { parsePlanFile } from "../../brain/plan-parser";
+import { BrainTemplateManager } from "../../brain/template-manager";
 import { createSqliteBrainDb } from "../../db/brain-db-adapter";
 import {
 	CANONICAL_PLAN_PATH,
@@ -34,16 +35,17 @@ export interface ProjectSetupRouteOptions {
 	coleoDir?: string;
 }
 
-interface ArmTemplateFile extends WorkspaceTextFile {
-	format: "yaml" | "toml";
+interface SetupTemplateFile extends WorkspaceTextFile {
+	format: "yaml" | "toml" | "jinja";
 }
 
-async function listArmTemplateFiles(coleoDir: string): Promise<ArmTemplateFile[]> {
+async function listSetupTemplateFiles(coleoDir: string): Promise<SetupTemplateFile[]> {
 	const locations = [
 		{ directory: "templates", extension: /\.ya?ml$/i, format: "yaml" as const },
 		{ directory: "arms", extension: /\.toml$/i, format: "toml" as const },
+		{ directory: "src/brain/templates", extension: /\.jinja$/i, format: "jinja" as const },
 	];
-	const files: ArmTemplateFile[] = [];
+	const files: SetupTemplateFile[] = [];
 	for (const location of locations) {
 		let names: string[];
 		try {
@@ -67,12 +69,12 @@ async function listArmTemplateFiles(coleoDir: string): Promise<ArmTemplateFile[]
 	return files;
 }
 
-async function writeArmTemplateFile(
+async function writeSetupTemplateFile(
 	coleoDir: string,
 	path: string,
 	content: string,
 	expectedHash?: string | null,
-): Promise<ArmTemplateFile> {
+): Promise<SetupTemplateFile> {
 	const validated = validateEditableTemplatePath(path);
 	const relativePath = validated.replace(/^\.coleo\//, "");
 	const absolutePath = join(coleoDir, relativePath);
@@ -95,7 +97,7 @@ async function writeArmTemplateFile(
 		contentHash: createHash("sha256").update(content).digest("hex"),
 		size: metadata.size,
 		modifiedAt: metadata.mtime.toISOString(),
-		format: validated.endsWith(".toml") ? "toml" : "yaml",
+		format: validated.endsWith(".toml") ? "toml" : validated.endsWith(".jinja") ? "jinja" : "yaml",
 	};
 }
 
@@ -112,14 +114,16 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 	const getWorkspace = (): WorkspaceAccess => options.workspace ?? getServerWorkspaceAccess();
 	const formatter = options.formatter ?? formatPlanWithConfiguredModel;
 	const coleoDir = options.coleoDir ?? getColeoDir();
+	const brainTemplates = new BrainTemplateManager(coleoDir, () => {});
 
 	app.get("/", async (c) => {
 		const workspace = getWorkspace();
 		const db = c.get("db");
+		await brainTemplates.ensureTemplatesExist();
 		const [candidates, canonical, templateFiles] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
-			listArmTemplateFiles(coleoDir),
+			listSetupTemplateFiles(coleoDir),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
 		const tasks = taskCount(db);
@@ -162,7 +166,7 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 
 		try {
 			if (body.kind === "template") {
-				const file = await writeArmTemplateFile(
+				const file = await writeSetupTemplateFile(
 					coleoDir,
 					body.path,
 					body.content,

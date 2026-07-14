@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { Brain } from "../brain";
 import { BrainTemplateManager } from "../template-manager";
@@ -27,6 +27,18 @@ describe("Brain template manager", () => {
     const result = await templates.renderTemplate("test-template.jinja", { name: "Octopai" });
 
     expect(result).toBe("Hello Octopai!");
+  });
+
+  it("copies every packaged Brain prompt without overwriting local edits", async () => {
+    const templates = new BrainTemplateManager(testDir, () => {});
+    const promptPath = join(testDir, "src", "brain", "templates", "arm-prompt-complete-task.jinja");
+
+    await templates.ensureTemplatesExist();
+    expect((await readFile(promptPath, "utf-8")).length).toBeGreaterThan(0);
+
+    await writeFile(promptPath, "custom prompt", "utf-8");
+    await templates.ensureTemplatesExist();
+    expect(await readFile(promptPath, "utf-8")).toBe("custom prompt");
   });
 });
 

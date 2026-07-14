@@ -51,9 +51,11 @@ describe("project setup service", () => {
 		expect(() => validateEditablePlanPath("src/index.ts")).toThrow();
 	});
 
-	it("only allows YAML and legacy TOML Arm template paths", () => {
+	it("only allows Arm templates and Brain prompt template paths", () => {
 		expect(validateEditableTemplatePath(".coleo/templates/reviewer.yml")).toBe(".coleo/templates/reviewer.yml");
 		expect(validateEditableTemplatePath(".coleo/arms/reviewer.toml")).toBe(".coleo/arms/reviewer.toml");
+		expect(validateEditableTemplatePath(".coleo/src/brain/templates/initial-arm-prompt.jinja"))
+			.toBe(".coleo/src/brain/templates/initial-arm-prompt.jinja");
 		expect(() => validateEditableTemplatePath(".coleo/templates/reviewer.md")).toThrow();
 		expect(() => validateEditableTemplatePath("../templates/reviewer.yml")).toThrow();
 	});

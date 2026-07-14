@@ -83,8 +83,9 @@ export function validateEditableTemplatePath(path: string): string {
 		throw new Error("Choose a template file inside the Coleo configuration directory");
 	}
 	if (!/^\.coleo\/templates\/[^/]+\.ya?ml$/i.test(normalized)
-		&& !/^\.coleo\/arms\/[^/]+\.toml$/i.test(normalized)) {
-		throw new Error("Arm templates must be YAML in .coleo/templates or legacy TOML in .coleo/arms");
+		&& !/^\.coleo\/arms\/[^/]+\.toml$/i.test(normalized)
+		&& !/^\.coleo\/src\/brain\/templates\/[^/]+\.jinja$/i.test(normalized)) {
+		throw new Error("Templates must be Arm YAML in .coleo/templates, legacy TOML in .coleo/arms, or Brain Jinja prompts in .coleo/src/brain/templates");
 	}
 	return normalized;
 }

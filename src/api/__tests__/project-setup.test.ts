@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
@@ -83,9 +83,8 @@ describe("project setup routes", () => {
 		const status = await statusResponse.json() as {
 			templateFiles: Array<{ path: string; content: string; contentHash: string; format: string }>;
 		};
-		expect(status.templateFiles).toHaveLength(1);
-		expect(status.templateFiles[0]?.path).toBe(".coleo/templates/reviewer.yml");
-		expect(status.templateFiles[0]?.format).toBe("yaml");
+		const reviewer = status.templateFiles.find((file) => file.path === ".coleo/templates/reviewer.yml");
+		expect(reviewer?.format).toBe("yaml");
 
 		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
 			method: "PUT",
@@ -94,12 +93,45 @@ describe("project setup routes", () => {
 				kind: "template",
 				path: ".coleo/templates/reviewer.yml",
 				content: "arm:\n  name: careful-reviewer\n",
-				expectedHash: status.templateFiles[0]?.contentHash,
+				expectedHash: reviewer?.contentHash,
 			}),
 		});
 		const saved = await saveResponse.json() as { file: { content: string } };
 		expect(saveResponse.status).toBe(200);
 		expect(saved.file.content).toContain("careful-reviewer");
+	});
+
+	it("seeds, lists, and edits packaged Brain prompt templates", async () => {
+		const statusResponse = await app.request("http://localhost/api/project-setup");
+		const status = await statusResponse.json() as {
+			templateFiles: Array<{ path: string; content: string; contentHash: string; format: string }>;
+		};
+		const prompt = status.templateFiles.find(
+			(file) => file.path === ".coleo/src/brain/templates/arm-prompt-complete-task.jinja",
+		);
+
+		expect(statusResponse.status).toBe(200);
+		expect(prompt?.format).toBe("jinja");
+		expect(prompt?.content.length).toBeGreaterThan(0);
+
+		const editedContent = `${prompt?.content ?? ""}\n{# Customized from setup #}\n`;
+		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: "template",
+				path: prompt?.path,
+				content: editedContent,
+				expectedHash: prompt?.contentHash,
+			}),
+		});
+		const saved = await saveResponse.json() as { file: { format: string; content: string } };
+
+		expect(saveResponse.status).toBe(200);
+		expect(saved.file.format).toBe("jinja");
+		expect(saved.file.content).toBe(editedContent);
+		expect(await readFile(join(root, ".coleo", "src", "brain", "templates", "arm-prompt-complete-task.jinja"), "utf-8"))
+			.toBe(editedContent);
 	});
 
 	it("prepares the canonical plan and imports its tasks immediately", async () => {

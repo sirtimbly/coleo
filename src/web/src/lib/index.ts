@@ -48,7 +48,7 @@ export {
   type TaskSummary,
   type TaskDiff,
   type ProjectPlanCandidate,
-  type ArmTemplateFile,
+  type SetupTemplateFile,
   type ProjectSetupStatus,
   type WorkspaceTextFile,
 } from './api';

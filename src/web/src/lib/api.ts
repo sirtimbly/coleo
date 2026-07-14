@@ -91,8 +91,8 @@ export interface ProjectPlanCandidate extends WorkspaceTextFile {
   reasons: string[];
 }
 
-export interface ArmTemplateFile extends WorkspaceTextFile {
-  format: 'yaml' | 'toml';
+export interface SetupTemplateFile extends WorkspaceTextFile {
+  format: 'yaml' | 'toml' | 'jinja';
 }
 
 export interface ProjectSetupStatus {
@@ -102,7 +102,7 @@ export interface ProjectSetupStatus {
   canonicalPlan: WorkspaceTextFile | null;
   canonicalTaskCount: number;
   candidates: ProjectPlanCandidate[];
-  templateFiles: ArmTemplateFile[];
+  templateFiles: SetupTemplateFile[];
   recommendedPath: string;
   defaultContent: string;
   defaultTemplateContent: string;

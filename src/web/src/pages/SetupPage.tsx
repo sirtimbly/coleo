@@ -3,7 +3,7 @@ import { Check, CircleHelp, FileCode2, FilePlus2, FileText, Info, LoaderCircle, 
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { api, type ArmTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
+import { api, type SetupTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import './setup-page.css';
@@ -57,7 +57,7 @@ function editorFromCandidate(candidate: ProjectPlanCandidate): EditorState {
   };
 }
 
-function editorFromTemplate(template: ArmTemplateFile): EditorState {
+function editorFromTemplate(template: SetupTemplateFile): EditorState {
   return {
     kind: 'template',
     path: template.path,
@@ -67,7 +67,7 @@ function editorFromTemplate(template: ArmTemplateFile): EditorState {
   };
 }
 
-function nextTemplatePath(templates: ArmTemplateFile[]): string {
+function nextTemplatePath(templates: SetupTemplateFile[]): string {
   const paths = new Set(templates.map((template) => template.path));
   let suffix = 1;
   while (paths.has(`.coleo/templates/new-arm${suffix === 1 ? '' : `-${suffix}`}.yml`)) suffix += 1;
@@ -142,7 +142,7 @@ export function SetupPage() {
     setError(null);
   };
 
-  const selectCandidate = (candidate: ProjectPlanCandidate | ArmTemplateFile): boolean => {
+  const selectCandidate = (candidate: ProjectPlanCandidate | SetupTemplateFile): boolean => {
     if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return false;
     setEditor('format' in candidate ? editorFromTemplate(candidate) : editorFromCandidate(candidate));
     setResult(null);
@@ -196,7 +196,12 @@ export function SetupPage() {
       } : current);
       setStatus((current) => {
         if (!current || editor.kind !== 'template') return current;
-        const file = { ...response.file, format: response.file.path.endsWith('.toml') ? 'toml' as const : 'yaml' as const };
+        const format = response.file.path.endsWith('.toml')
+          ? 'toml' as const
+          : response.file.path.endsWith('.jinja')
+            ? 'jinja' as const
+            : 'yaml' as const;
+        const file = { ...response.file, format };
         return {
           ...current,
           templateFiles: [...current.templateFiles.filter((entry) => entry.path !== file.path), file]
@@ -294,7 +299,7 @@ export function SetupPage() {
             onClick={() => switchKind('template')}
             className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'template' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
           >
-            <FileCode2 className="h-3.5 w-3.5" /> Arm templates
+            <FileCode2 className="h-3.5 w-3.5" /> Templates
           </button>
         </div>
 
@@ -335,8 +340,8 @@ export function SetupPage() {
         <div className="setup-help-bar" role="status">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
           <p className="min-w-0 flex-1">
-            Choose a plan or Arm template from the tree, edit it, then save. Preparing a plan creates project tasks;
-            YAML templates appear when spawning an Arm, while legacy TOML templates remain editable here.
+            Choose a plan or template from the tree, edit it, then save. Preparing a plan creates project tasks;
+            Arm YAML templates appear when spawning an Arm, while Brain Jinja prompts and legacy TOML templates are editable here.
           </p>
           <button
             type="button"
@@ -360,13 +365,13 @@ export function SetupPage() {
                 </p>
               ) : activeKind === 'template' && status.templateFiles.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  No Arm templates were found. Create one to prefill settings when spawning an arm.
+                  No templates were found. Create an Arm template to prefill settings when spawning an Arm.
                 </p>
               ) : (
                 <div className="setup-file-tree-container">
                   <SetupFileTree
                     key={activeKind}
-                    ariaLabel={activeKind === 'plan' ? 'Project plan files' : 'Arm template files'}
+                    ariaLabel={activeKind === 'plan' ? 'Project plan files' : 'Coleo template files'}
                     paths={activePaths}
                     selectedPath={editor.path}
                     onSelect={selectPath}
@@ -379,7 +384,7 @@ export function SetupPage() {
               onClick={activeKind === 'plan' ? createPlan : createTemplate}
               className="mt-1 inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
             >
-              <FilePlus2 className="h-3.5 w-3.5" /> New {activeKind === 'plan' ? 'plan' : 'template'}
+              <FilePlus2 className="h-3.5 w-3.5" /> {activeKind === 'plan' ? 'New plan' : 'New Arm template'}
             </button>
           </section>
 
@@ -394,7 +399,11 @@ export function SetupPage() {
           </div>
 
           <textarea
-            aria-label={activeKind === 'plan' ? 'Project plan content' : 'Arm template content'}
+            aria-label={activeKind === 'plan'
+              ? 'Project plan content'
+              : editor.path.endsWith('.jinja')
+                ? 'Brain prompt template content'
+                : 'Arm template content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
             className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"

@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, readdir, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { existsSync, realpathSync } from "fs";
 import { fileURLToPath } from "url";
@@ -130,42 +130,15 @@ export class BrainTemplateManager {
     const templateDir = join(this.coleoDir, "src", "brain", "templates");
     const packageTemplatesDir = getPackageTemplatesDir();
     
-    // Get list of templates from the package
-    const templateFiles = [
-      "mail-processor-system-prompt.jinja",
-      "arm-output-processor-system-prompt.jinja",
-      "initial-arm-prompt.jinja",
-      "bug-assignment-prompt.jinja",
-      "arm-api-restart-prompt.jinja",
-      "arm-tasks-available-prompt.jinja",
-      "arm-loop-compact-nudge.jinja",
-      "arm-generic-nudge.jinja",
-      "stuck-analyzer-system-prompt.jinja",
-      "stuck-analyzer-user-prompt.jinja",
-      "human-task-queued-busy.jinja",
-      "human-mail-escalate.jinja",
-      "human-bug-report-confirmation.jinja",
-      "human-task-completed.jinja",
-      "human-task-deferred.jinja",
-      "human-task-blocked.jinja",
-      "human-issues-found.jinja",
-      "human-review-needed.jinja",
-      "human-verification-needed.jinja",
-      "human-discovery.jinja",
-      "human-approval-request.jinja",
-      "human-status-report.jinja",
-      "human-tool-discovered.jinja",
-      "human-doc-updated.jinja",
-      "human-bug-high-priority.jinja",
-      "human-task-resumed.jinja",
-      "human-bug-medium-escalation.jinja",
-      "human-file-change.jinja",
-      "human-infra-issues.jinja",
-      "human-arm-stuck.jinja",
-      "human-arm-idle-loop.jinja",
-      "human-arm-zombie-killed.jinja",
-      "human-task-blocked-by-bugs.jinja",
-    ];
+    let templateFiles: string[];
+    try {
+      templateFiles = (await readdir(packageTemplatesDir))
+        .filter((templateName) => templateName.endsWith(".jinja"))
+        .sort();
+    } catch (error) {
+      this.logger(`Could not list packaged Brain templates: ${error}`);
+      return;
+    }
 
     for (const templateName of templateFiles) {
       const destPath = join(templateDir, templateName);
