@@ -188,4 +188,12 @@ describe("mounted API server routes", () => {
     const health = await app.request(new Request("http://localhost/api/health"));
     expect(health.status).toBe(200);
   });
+
+  it("accepts Reef's private proxy credential on protected routes", async () => {
+    const response = await app.request(new Request("http://localhost/api/arms", {
+      headers: { "X-Coleo-API-Key": apiKey },
+    }));
+
+    expect(response.status).toBe(200);
+  });
 });

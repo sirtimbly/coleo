@@ -9,7 +9,7 @@ import { cors } from "hono/cors";
 import { existsSync, statSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
-import { logger, createAuthMiddleware } from "./middleware";
+import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
@@ -31,6 +31,39 @@ const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
 interface CreateAppOptions {
   webDist?: string | null;
+}
+
+export function createProxyAwareWebSocketHandlers(
+  handlers: ReturnType<typeof createWebSocketHandlers>,
+) {
+  return {
+    ...handlers,
+    open(ws: Parameters<typeof handlers.open>[0]) {
+      const proxyAuthenticated = ws.data.authenticated;
+      handlers.open(ws);
+      if (proxyAuthenticated) {
+        ws.data.authenticated = true;
+        ws.send(JSON.stringify({ type: "auth", success: true }));
+      }
+    },
+    message(
+      ws: Parameters<typeof handlers.message>[0],
+      message: Parameters<typeof handlers.message>[1],
+    ) {
+      if (ws.data.authenticated) {
+        try {
+          const parsed = JSON.parse(message.toString()) as { type?: unknown };
+          if (parsed.type === "auth") {
+            ws.send(JSON.stringify({ type: "auth", success: true }));
+            return;
+          }
+        } catch {
+          // Let the standard handler return its existing invalid-message error.
+        }
+      }
+      handlers.message(ws, message);
+    },
+  };
 }
 
 function findWebDist(): string | null {
@@ -207,7 +240,7 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   const corsMiddleware = cors({
     origin: config.corsOrigins,
     allowMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "X-API-Key"],
+    allowHeaders: ["Content-Type", "X-API-Key", REEF_PROXY_API_KEY_HEADER],
     credentials: true,
   });
   app.use("/api/*", corsMiddleware);
@@ -642,7 +675,9 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   }
 
   // Create WebSocket handlers
-  const wsHandlers = createWebSocketHandlers(config.apiKey, config.logLevel);
+  const wsHandlers = createProxyAwareWebSocketHandlers(
+    createWebSocketHandlers(config.apiKey, config.logLevel),
+  );
   enableHeartbeat(); // Start WebSocket cleanup heartbeat
 
   const server = Bun.serve({
@@ -652,9 +687,16 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
       // Handle WebSocket upgrade
       const url = new URL(req.url);
       if (url.pathname === "/ws") {
+        // Browsers cannot attach a custom header to a WebSocket upgrade. Reef
+        // authenticates the dashboard session and injects this private header
+        // while proxying the upgrade, so hosted clients never receive the key.
+        const authenticated = apiKeyMatches(
+          req.headers.get(REEF_PROXY_API_KEY_HEADER),
+          config.apiKey,
+        );
         const upgraded = server.upgrade(req, {
           data: {
-            authenticated: false,
+            authenticated,
             subscriptions: new Set(),
             lastPing: Date.now(),
           },

@@ -28,11 +28,6 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
 
   const connect = useCallback(() => {
     const apiKey = api.getApiKey();
-    if (!apiKey) {
-      console.warn('[WS] No API key available');
-      return;
-    }
-
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -44,8 +39,12 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
       setConnected(true);
       reconnectAttempts.current = 0;
 
-      // Authenticate
-      ws.send(JSON.stringify({ type: 'auth', apiKey }));
+      // Direct/self-hosted clients authenticate in-band. In Reef, the reverse
+      // proxy authenticates the upgrade and the server sends the same success
+      // message without exposing its private credential to this browser.
+      if (apiKey) {
+        ws.send(JSON.stringify({ type: 'auth', apiKey }));
+      }
     };
 
     ws.onmessage = (event) => {
@@ -119,7 +118,7 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
   }, []);
 
   useEffect(() => {
-    if (autoConnect && api.getApiKey()) {
+    if (autoConnect) {
       connect();
     }
 
