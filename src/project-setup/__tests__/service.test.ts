@@ -7,6 +7,7 @@ import {
 	discoverProjectPlans,
 	formatPlanWithoutModel,
 	validateEditablePlanPath,
+	validateEditableTemplatePath,
 } from "../service";
 import { LocalWorkspaceAccess } from "../../workspace";
 
@@ -48,5 +49,12 @@ describe("project setup service", () => {
 		expect(validateEditablePlanPath("docs/plan.md")).toBe("docs/plan.md");
 		expect(() => validateEditablePlanPath("../secrets.txt")).toThrow();
 		expect(() => validateEditablePlanPath("src/index.ts")).toThrow();
+	});
+
+	it("only allows YAML and legacy TOML Arm template paths", () => {
+		expect(validateEditableTemplatePath(".coleo/templates/reviewer.yml")).toBe(".coleo/templates/reviewer.yml");
+		expect(validateEditableTemplatePath(".coleo/arms/reviewer.toml")).toBe(".coleo/arms/reviewer.toml");
+		expect(() => validateEditableTemplatePath(".coleo/templates/reviewer.md")).toThrow();
+		expect(() => validateEditableTemplatePath("../templates/reviewer.yml")).toThrow();
 	});
 });

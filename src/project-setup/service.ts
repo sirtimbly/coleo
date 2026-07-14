@@ -1,6 +1,17 @@
 import type { WorkspaceAccess, WorkspaceTextFile } from "../workspace";
 
 export const CANONICAL_PLAN_PATH = ".project/plan.md";
+export const DEFAULT_ARM_TEMPLATE = `arm:
+  name: new-arm
+  domain: general
+  harness: opencode-api
+
+context:
+  budget: 100000
+
+personality:
+  traits: Thoughtful, practical, and curious.
+`;
 export const DEFAULT_PLAN_TEMPLATE = `# Project Plan
 
 Describe what you want to build, who it is for, and the important constraints. You can write prose or a checklist; Coleo will turn it into a structured plan before creating tasks.
@@ -62,6 +73,18 @@ export function validateEditablePlanPath(path: string): string {
 	}
 	if (!EDITABLE_PLAN_PATH.test(normalized) && !ROOT_PLAN_PATH.test(normalized)) {
 		throw new Error("Plan files must be Markdown or text in .project, .coleo, .plans, plans, planning, docs, or documentation");
+	}
+	return normalized;
+}
+
+export function validateEditableTemplatePath(path: string): string {
+	const normalized = path.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+	if (!normalized || normalized.includes("\0") || normalized.split("/").includes("..")) {
+		throw new Error("Choose a template file inside the Coleo configuration directory");
+	}
+	if (!/^\.coleo\/templates\/[^/]+\.ya?ml$/i.test(normalized)
+		&& !/^\.coleo\/arms\/[^/]+\.toml$/i.test(normalized)) {
+		throw new Error("Arm templates must be YAML in .coleo/templates or legacy TOML in .coleo/arms");
 	}
 	return normalized;
 }

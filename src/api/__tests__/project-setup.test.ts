@@ -50,6 +50,7 @@ describe("project setup routes", () => {
 		app.onError((error, c) => formatErrorResponse(c, error));
 		app.route("/api/project-setup", createProjectSetupRoutes({
 			workspace: new LocalWorkspaceAccess(root),
+			coleoDir: join(root, ".coleo"),
 			formatter: async () => ({
 				mode: "structured",
 				content: "# Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n",
@@ -72,6 +73,33 @@ describe("project setup routes", () => {
 		expect(response.status).toBe(200);
 		expect(body.required).toBe(true);
 		expect(body.candidates[0]?.path).toBe("docs/project-plan.md");
+	});
+
+	it("lists and edits Arm templates separately from project plans", async () => {
+		await mkdir(join(root, ".coleo", "templates"), { recursive: true });
+		await writeFile(join(root, ".coleo", "templates", "reviewer.yml"), "arm:\n  name: reviewer\n");
+
+		const statusResponse = await app.request("http://localhost/api/project-setup");
+		const status = await statusResponse.json() as {
+			templateFiles: Array<{ path: string; content: string; contentHash: string; format: string }>;
+		};
+		expect(status.templateFiles).toHaveLength(1);
+		expect(status.templateFiles[0]?.path).toBe(".coleo/templates/reviewer.yml");
+		expect(status.templateFiles[0]?.format).toBe("yaml");
+
+		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: "template",
+				path: ".coleo/templates/reviewer.yml",
+				content: "arm:\n  name: careful-reviewer\n",
+				expectedHash: status.templateFiles[0]?.contentHash,
+			}),
+		});
+		const saved = await saveResponse.json() as { file: { content: string } };
+		expect(saveResponse.status).toBe(200);
+		expect(saved.file.content).toContain("careful-reviewer");
 	});
 
 	it("prepares the canonical plan and imports its tasks immediately", async () => {

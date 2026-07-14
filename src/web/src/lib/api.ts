@@ -91,6 +91,10 @@ export interface ProjectPlanCandidate extends WorkspaceTextFile {
   reasons: string[];
 }
 
+export interface ArmTemplateFile extends WorkspaceTextFile {
+  format: 'yaml' | 'toml';
+}
+
 export interface ProjectSetupStatus {
   required: boolean;
   completed: boolean;
@@ -98,8 +102,10 @@ export interface ProjectSetupStatus {
   canonicalPlan: WorkspaceTextFile | null;
   canonicalTaskCount: number;
   candidates: ProjectPlanCandidate[];
+  templateFiles: ArmTemplateFile[];
   recommendedPath: string;
   defaultContent: string;
+  defaultTemplateContent: string;
 }
 
 class ApiClient {
@@ -178,11 +184,15 @@ class ApiClient {
     return this.request<ProjectSetupStatus>('/project-setup');
   }
 
-  async saveProjectPlanFile(data: { path: string; content: string; expectedHash?: string | null }) {
+  async saveProjectSetupFile(data: { path: string; content: string; expectedHash?: string | null; kind: 'plan' | 'template' }) {
     return this.request<{ file: WorkspaceTextFile }>('/project-setup/file', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
+  }
+
+  async saveProjectPlanFile(data: { path: string; content: string; expectedHash?: string | null }) {
+    return this.saveProjectSetupFile({ ...data, kind: 'plan' });
   }
 
   async prepareProjectPlan(data: { sourcePath: string; content: string; expectedHash?: string | null }) {
