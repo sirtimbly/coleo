@@ -35,6 +35,10 @@ const AUTO_AGENT_WAIT_MS_DEFAULT = 8000;
 const DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS = 8000;
 let autoStartAgentPromise: Promise<void> | null = null;
 
+function getDefaultWorkdir(): string {
+  return process.env.COLEO_PROJECT_DIR || process.env.COLEO_WORKDIR || process.cwd();
+}
+
 interface ArmClientLookup {
   findBestAgent: (harness: string) => unknown;
   listArmsOnAgent?: (agentId: string, timeoutMs?: number) => Promise<{ success: boolean }>;
@@ -409,7 +413,7 @@ async function startLocalArmAgentDaemonIfNeeded(): Promise<void> {
   const shellCommand = command.map(shellQuote).join(" ");
   const launchCommand = `nohup ${shellCommand} >> ${shellQuote(logFile)} 2>&1 & echo $!`;
   const pidOutput = execSync(launchCommand, {
-    cwd: process.cwd(),
+    cwd: getDefaultWorkdir(),
     env: {
       ...process.env,
       COLEO_SELF_MODIFY: undefined,
@@ -1463,7 +1467,7 @@ export function createArmsRoutes() {
     // Fall back to config defaults if still not set
     provider = provider || defaults.provider;
     model = model || defaults.model;
-    const workdir = body.workdir || row.workdir || process.cwd();
+    const workdir = body.workdir || row.workdir || getDefaultWorkdir();
 
     if (row.harness === "opencode-api" || row.harness === "opencode") {
       try {
@@ -1993,7 +1997,7 @@ export function createArmsRoutes() {
     const config = await loadConfig();
     const provider = body.provider || row.provider || config.defaults.provider;
     const model = body.model || row.model || config.defaults.model;
-    const workdir = body.workdir || row.workdir || process.cwd();
+    const workdir = body.workdir || row.workdir || getDefaultWorkdir();
     const daemonManagedHarness = row.harness === "opencode-api" || row.harness === "opencode";
     const localFallbackEnabled =
       body.allowLocalFallback === true ||

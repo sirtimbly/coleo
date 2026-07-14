@@ -20,6 +20,8 @@ interface SystemContext {
 export function createSystemRoutes() {
   const app = new Hono<SystemContext>();
 
+  const getProjectDir = (): string => process.env.COLEO_PROJECT_DIR || process.env.COLEO_WORKDIR || process.cwd();
+
   /**
    * Health check - no auth required
    * GET /api/health
@@ -325,7 +327,7 @@ export function createSystemRoutes() {
     return c.json({
       status: overallHealth ? "ok" : "degraded",
       version: "0.2.0",
-      cwd: process.cwd(),
+      cwd: getProjectDir(),
       uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       brain: brainStatus,
       arms: {

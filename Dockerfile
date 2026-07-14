@@ -17,6 +17,9 @@ RUN bun install --frozen-lockfile
 # Copy source
 COPY . .
 
+# Build the production CLI and web UI bundle used by the hosted image.
+RUN bun run build
+
 # ============================================
 # Runtime image
 # ============================================
@@ -24,9 +27,19 @@ FROM oven/bun:1.3-debian
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
+    bash \
+    ca-certificates \
     openssh-server \
     git \
     curl \
+    wget \
+    gnupg \
+    jq \
+    ripgrep \
+    procps \
+    build-essential \
+    nodejs \
+    npm \
     vim \
     less \
     sudo \
@@ -36,6 +49,12 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install the current OpenCode CLI for headless opencode-api arms.
+# OpenCode documents npm/bun/curl install paths; npm gives a simple,
+# reproducible PATH location in this Debian-based runtime image.
+RUN npm install -g opencode-ai@latest \
+    && opencode --version
 
 # Configure SSH
 RUN mkdir -p /var/run/sshd \
@@ -56,15 +75,16 @@ WORKDIR /home/coleo
 COPY --from=builder /app /home/coleo/coleo
 RUN chown -R coleo:coleo /home/coleo/coleo
 
+# Runtime bootstrap for hosted API + web UI + brain + OpenCode arm agent.
+COPY docker/hosting-entrypoint.sh /usr/local/bin/coleo-hosting-entrypoint
+RUN chmod 0755 /usr/local/bin/coleo-hosting-entrypoint
+
 # Create convenience symlink for CLI (if present)
 RUN ln -s /home/coleo/coleo/bin/coleo.ts /usr/local/bin/coleo-cli || true
 
 # Create wrapper script that uses bun
 RUN echo '#!/bin/bash\nbun /home/coleo/coleo/src/cli/index.ts "$@"' > /usr/local/bin/coleo \
     && chmod +x /usr/local/bin/coleo
-
-# Install OpenCode (if available) - commented out until we have install method
-# RUN curl -fsSL https://opencode.ai/install.sh | bash
 
 # Create projects directory
 RUN mkdir -p /home/coleo/projects \
@@ -98,8 +118,7 @@ echo ""\n\
 # Switch back to root for sshd
 USER root
 
-# Expose SSH port
-EXPOSE 22
+# Expose API, web UI, and SSH ports
+EXPOSE 8080 5173 22
 
-# Start SSH server
-CMD ["/usr/sbin/sshd", "-D"]
+ENTRYPOINT ["/usr/local/bin/coleo-hosting-entrypoint"]
