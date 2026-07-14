@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Check, FileCode2, FilePlus2, FileText, LoaderCircle, RefreshCw, Save, Sparkles } from 'lucide-react';
+import { Check, CircleHelp, FileCode2, FilePlus2, FileText, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ArmTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
-import { markProjectSetupOpened } from '@/lib/project-setup-visit';
+import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import './setup-page.css';
 
@@ -83,6 +83,7 @@ export function SetupPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number; createdTaskCount: number } | null>(null);
 
@@ -116,6 +117,11 @@ export function SetupPage() {
     [activeKind, status],
   );
   const activePaths = useMemo(() => activeFiles.map((file) => file.path), [activeFiles]);
+
+  const dismissHelp = () => {
+    dismissProjectSetupHelp();
+    setHelpOpen(false);
+  };
 
   const switchKind = (kind: SetupFileKind) => {
     if (!status || kind === activeKind) return;
@@ -270,35 +276,84 @@ export function SetupPage() {
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3" role="tablist" aria-label="Setup file group">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeKind === 'plan'}
-          onClick={() => switchKind('plan')}
-          className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'plan' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
-        >
-          <FileText className="h-3.5 w-3.5" /> Project plans
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeKind === 'template'}
-          onClick={() => switchKind('template')}
-          className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'template' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
-        >
-          <FileCode2 className="h-3.5 w-3.5" /> Arm templates
-        </button>
+      <div className="setup-page-toolbar">
+        <div className="flex items-center gap-1" role="tablist" aria-label="Setup file group">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeKind === 'plan'}
+            onClick={() => switchKind('plan')}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'plan' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
+          >
+            <FileText className="h-3.5 w-3.5" /> Project plans
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeKind === 'template'}
+            onClick={() => switchKind('template')}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'template' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
+          >
+            <FileCode2 className="h-3.5 w-3.5" /> Arm templates
+          </button>
+        </div>
+
+        <div className="setup-toolbar-actions">
+          <button
+            type="button"
+            aria-label="Show setup help"
+            title="Show setup help"
+            onClick={() => setHelpOpen(true)}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+          >
+            <CircleHelp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || saving || preparing}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+          {activeKind === 'plan' ? (
+            <button
+              type="button"
+              onClick={() => void prepare()}
+              disabled={!editor.content.trim() || saving || preparing}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {preparing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {preparing ? 'Preparing…' : 'Prepare tasks'}
+            </button>
+          ) : null}
+        </div>
       </div>
 
+      {helpOpen ? (
+        <div className="setup-help-bar" role="status">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+          <p className="min-w-0 flex-1">
+            Choose a plan or Arm template from the tree, edit it, then save. Preparing a plan creates project tasks;
+            YAML templates appear when spawning an Arm, while legacy TOML templates remain editable here.
+          </p>
+          <button
+            type="button"
+            aria-label="Dismiss setup help"
+            title="Dismiss"
+            onClick={dismissHelp}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ) : null}
+
       <div className="setup-file-workspace">
-        <aside className="setup-file-sidebar space-y-3">
+        <aside className="setup-file-sidebar">
           <section className="rounded-md border border-border bg-surface p-3">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="font-semibold">{activeKind === 'plan' ? 'Plans found' : 'Templates found'}</h2>
-              <span className="text-xs text-muted-foreground">{activeKind === 'plan' ? status.candidates.length : status.templateFiles.length}</span>
-            </div>
-            <div className="mt-2">
+            <div>
               {activeKind === 'plan' && status.candidates.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
                   No likely plan files were found. Start a new plan and write in plain language.
@@ -328,30 +383,11 @@ export function SetupPage() {
             </button>
           </section>
 
-          <section className="rounded-md border border-border bg-surface p-3 text-xs">
-            <h2 className="font-semibold">{activeKind === 'plan' ? 'What happens next' : 'How templates are used'}</h2>
-            {activeKind === 'plan' ? (
-              <ol className="mt-2 space-y-1.5 leading-5 text-muted-foreground">
-                <li>1. Your edited source file is saved.</li>
-                <li>2. The Brain structures it as <code className="text-foreground">.project/plan.md</code>.</li>
-                <li>3. Plan checklist items become pending tasks.</li>
-                <li>4. You review Tasks before starting an arm.</li>
-              </ol>
-            ) : (
-              <p className="mt-2 leading-5 text-muted-foreground">
-                YAML templates in <code className="text-foreground">.coleo/templates</code> appear in the Spawn Arm flow.
-                Legacy TOML files in <code className="text-foreground">.coleo/arms</code> remain editable here too.
-              </p>
-            )}
-          </section>
         </aside>
 
         <section className="setup-file-editor min-w-0 rounded-md border border-border bg-surface p-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="font-semibold">Review {activeKind === 'plan' ? 'plan' : 'Arm template'}</h2>
-              <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
             <span className={`rounded px-2 py-0.5 text-[11px] ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
               {dirty ? 'Unsaved changes' : 'Saved'}
             </span>
@@ -361,7 +397,7 @@ export function SetupPage() {
             aria-label={activeKind === 'plan' ? 'Project plan content' : 'Arm template content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
-            className="setup-file-textarea mt-3 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+            className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             spellCheck
           />
 
@@ -403,29 +439,6 @@ export function SetupPage() {
               </button>
             </div>
           ) : null}
-
-          <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => void save()}
-              disabled={!dirty || saving || preparing}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {saving ? 'Saving…' : `Save ${activeKind === 'plan' ? 'draft' : 'template'}`}
-            </button>
-            {activeKind === 'plan' ? (
-              <button
-                type="button"
-                onClick={() => void prepare()}
-                disabled={!editor.content.trim() || saving || preparing}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-3 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {preparing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                {preparing ? 'Preparing tasks…' : 'Prepare plan and create tasks'}
-              </button>
-            ) : null}
-          </div>
         </section>
       </div>
     </div>
