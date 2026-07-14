@@ -53,6 +53,11 @@
   z-index: 60;
 }
 
+.golden-launcher {
+  width: 64px;
+  height: var(--golden-control-height);
+}
+
 .golden-launcher-button,
 .golden-dock-button,
 .golden-dock-icon-button,
@@ -99,26 +104,60 @@
 }
 
 .golden-launcher-button {
-  gap: 8px;
-  padding: 0 10px 0 8px;
-  background: var(--surface-secondary);
+  position: absolute;
+  left: 0;
+  bottom: -8px;
+  width: 64px;
+  height: 56px;
+  overflow: hidden;
+  gap: 0;
+  padding: 0;
+  border-radius: 0;
+  border-color: transparent;
+  background: transparent;
+  cursor: pointer;
 }
 
-.dark .golden-launcher-button {
-  background: linear-gradient(130deg, #1e213a 0%, #5d496d 90%);
-}
-
+.golden-launcher-button:hover,
+.dark .golden-launcher-button,
 .dark .golden-launcher-button:hover {
-  background: linear-gradient(130deg, #292d4c 0%, #705983 90%);
+  border-color: transparent;
+  background: transparent;
 }
 
 .golden-launcher-badge {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.golden-launcher-badge img {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  display: block;
+  max-width: none;
+  pointer-events: none;
+  transition:
+    transform 160ms ease,
+    filter 160ms ease;
+}
+
+.golden-launcher-button:hover .golden-launcher-badge img,
+.golden-launcher-button:focus-visible .golden-launcher-badge img {
+  transform: translateY(-4px);
+  filter: hue-rotate(-12deg) saturate(1.25) brightness(1.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .golden-launcher-badge img {
+    transition: filter 160ms ease;
+  }
+
+  .golden-launcher-button:hover .golden-launcher-badge img,
+  .golden-launcher-button:focus-visible .golden-launcher-badge img {
+    transform: none;
+  }
 }
 
 .golden-launcher-title {

@@ -13,7 +13,6 @@ import {
 import {
 	Bot,
 	Command,
-	LayoutPanelTop,
 	MailPlus,
 	MoreHorizontal,
 	Plus,
@@ -832,12 +831,13 @@ export function GoldenWorkspace() {
 									title="Open a view"
 								>
 									<span className="golden-launcher-badge" aria-hidden="true">
-										<img src="favicon.svg" width="20" height="20" alt="" />
+										<img
+											src="/brand/coleo-pet-v2.png"
+											width="64"
+											height="64"
+											alt=""
+										/>
 									</span>
-									<LayoutPanelTop
-										className="h-4 w-4 opacity-60"
-										aria-hidden="true"
-									/>
 								</button>
 
 								{launcherOpen ? (
