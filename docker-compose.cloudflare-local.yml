@@ -1,0 +1,63 @@
+name: coleo-cloudflare-local
+
+services:
+  arm-host:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cloudflare-agent
+    environment:
+      COLEO_AGENT_ID: reef-local-workspace
+      COLEO_AGENT_WORKDIR: /home/coleo/runtime/workspace
+      COLEO_API_KEY: local-reef-api-key
+      COLEO_API_URL: http://control:3000
+      COLEO_DIR: /home/coleo/runtime/coleo
+      COLEO_NATS_TOKEN: local-reef-nats-token
+      COLEO_PROJECT_ID: local-workspace
+      COLEO_WORKDIR: /home/coleo/runtime/workspace
+    ports:
+      - "127.0.0.1:18222:8222"
+      - "127.0.0.1:19222:9222"
+    volumes:
+      - arm-runtime:/home/coleo/runtime
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8222/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+  control:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile.cloudflare-control
+    depends_on:
+      arm-host:
+        condition: service_healthy
+    environment:
+      COLEO_API_KEY: local-reef-api-key
+      COLEO_API_URL: http://127.0.0.1:3000
+      COLEO_AUTO_START_AGENT: "0"
+      COLEO_DIR: /home/coleo/.coleo
+      COLEO_NATS_TOKEN: local-reef-nats-token
+      COLEO_NATS_URL: ws://arm-host:9222
+      COLEO_PROJECT_ID: local-workspace
+      COLEO_REMOTE_ARMS_ONLY: "1"
+      COLEO_REMOTE_WORKDIR: /home/coleo/runtime/workspace
+      COLEO_WORKSPACE_AGENT_ID: reef-local-workspace
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:13000:3000"
+    volumes:
+      - control-state:/home/coleo/.coleo
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/api/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+
+volumes:
+  arm-runtime:
+  control-state:

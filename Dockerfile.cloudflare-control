@@ -30,7 +30,8 @@ RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws \
 RUN useradd -m -s /bin/bash coleo
 WORKDIR /home/coleo/coleo
 COPY --from=builder /app /home/coleo/coleo
-RUN chown -R coleo:coleo /home/coleo/coleo \
+RUN mkdir -p /home/coleo/.coleo \
+    && chown -R coleo:coleo /home/coleo \
     && printf '#!/bin/sh\nexec bun /home/coleo/coleo/src/cli/index.ts "$@"\n' > /usr/local/bin/coleo \
     && chmod +x /usr/local/bin/coleo
 

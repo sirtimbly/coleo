@@ -54,7 +54,8 @@ RUN useradd -m -s /bin/bash coleo
 WORKDIR /home/coleo
 COPY --from=builder /app/dist/cloudflare-agent.js /home/coleo/cloudflare-agent.js
 COPY --from=builder /app/dist/node_modules /home/coleo/node_modules
-RUN chown -R coleo:coleo /home/coleo \
+RUN mkdir -p /home/coleo/runtime \
+	&& chown -R coleo:coleo /home/coleo \
 	&& printf '#!/bin/sh\nexec bun /home/coleo/cloudflare-agent.js "$@"\n' > /usr/local/bin/coleo-agent \
 	&& chmod +x /usr/local/bin/coleo-agent
 

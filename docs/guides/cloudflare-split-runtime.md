@@ -96,3 +96,32 @@ the edge Worker before port `9222`.
 Both images synchronize state to separate R2 prefixes. The control image uses
 `control/`; the Arm Host uses the stable internal `agent/` prefix and uploads
 its JetStream store only during a graceful shutdown.
+
+## Local production-topology test
+
+`docker-compose.cloudflare-local.yml` runs the production Control and Arm Host
+Dockerfiles together with the same environment contract used by Reef. NATS is
+reached by Control over WebSocket, just as it is through the Cloudflare Worker,
+while the Arm Host uses its local TCP listener.
+
+The customer checkout volume is mounted only into the Arm Host. Control has a
+separate state volume and cannot read the checkout directly. This makes local
+testing exercise the remote onboarding and workspace-access paths instead of
+silently falling back to a shared filesystem.
+
+Start from empty persistent state and run the onboarding smoke test:
+
+```bash
+bash bin/cloudflare-split-local.sh reset
+bash bin/cloudflare-split-local.sh up
+bash bin/cloudflare-split-local.sh smoke
+```
+
+The smoke test calls Control's authenticated onboarding API, clones a small
+public repository through the Arm Host, and verifies that `.git` exists only in
+the Arm Host container. The dashboard is available at
+`http://127.0.0.1:13000`; use `local-reef-api-key` if it asks for an API key.
+
+Use `status`, `logs`, `down`, or `reset` for the corresponding lifecycle
+operation. Run `build` after changing code that belongs in either image. Set
+`COLEO_LOCAL_TEST_REPOSITORY` to exercise a different HTTPS repository.
