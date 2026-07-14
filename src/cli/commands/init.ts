@@ -9,6 +9,7 @@ import { initMaildir } from "../../mail";
 import { TEMPLATES_DIR, getBrainTemplatesDir } from "../context";
 import { getCliEntrypoint } from "../entrypoint";
 import { createInterface } from "readline";
+import { ensureDefaultArmTemplates } from "../../config";
 
 /**
  * Generate a secure random API token
@@ -55,6 +56,7 @@ export function registerInitCommand(program: Command): void {
         "mcp",
         "logs",
         "arms",
+        "templates",
       ];
 
       for (const dir of dirs) {
@@ -70,6 +72,8 @@ export function registerInitCommand(program: Command): void {
 
       await writeFile(join(coleoDir, "config.toml"), generateConfigToml(config), "utf-8");
       await copyBrainTemplates(coleoDir);
+      const seededTemplates = await ensureDefaultArmTemplates(coleoDir);
+      console.log(`  ✓ ${seededTemplates.created.length} default Arm templates ready in ${join(coleoDir, "templates")}`);
       const defaultArmPath = await copyDefaultArmTemplate(coleoDir);
       console.log(`  ✓ Default arm config: ${defaultArmPath}`);
 
@@ -173,6 +177,7 @@ COLEO_API_TOKEN=${apiToken}
     ├── state/         # Persistent state
     ├── arms/          # Arm configurations
     │   └── default.toml  # Default arm config
+    ├── templates/     # Arm templates shown in Setup and Spawn Arm
     ├── mcp/           # MCP configurations
     ├── logs/          # Log files
     ├── .env           # API token and secrets${envInfo}

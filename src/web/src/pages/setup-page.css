@@ -5,8 +5,12 @@
 
 .setup-file-workspace {
   display: grid;
-  gap: 1.25rem;
+  flex: 1;
+  gap: 0.75rem;
   grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow: auto;
+  padding: 0.75rem;
 }
 
 .setup-file-workspace > * {
@@ -14,16 +18,41 @@
 }
 
 .setup-file-list {
-  max-height: 16rem;
+  max-height: 13rem;
   overflow-y: auto;
+}
+
+.setup-file-editor {
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-file-textarea {
+  min-height: 20rem;
 }
 
 @container setup-page (min-width: 58rem) {
   .setup-file-workspace {
-    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+    grid-template-columns: minmax(15rem, 19rem) minmax(0, 1fr);
+    overflow: hidden;
+  }
+
+  .setup-file-sidebar {
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .setup-file-list {
-    max-height: 30rem;
+    max-height: 26rem;
+  }
+
+  .setup-file-editor {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .setup-file-textarea {
+    flex: 1;
+    min-height: 16rem;
   }
 }

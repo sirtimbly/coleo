@@ -19,6 +19,7 @@ import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { loadEnvFile } from "../config/env";
+import { ensureDefaultArmTemplates, getColeoDir } from "../config";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
@@ -325,6 +326,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
       console.log(msg);
     }
   };
+
+  const seededTemplates = await ensureDefaultArmTemplates(getColeoDir());
+  if (seededTemplates.created.length > 0) {
+    log(`[startup] Seeded ${seededTemplates.created.length} default Arm templates`, "normal");
+  }
 
   log("Initializing database...", "verbose");
   const db = await initDatabase(config.dbPath);

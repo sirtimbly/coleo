@@ -60,10 +60,11 @@ coleo init --dir ~/.coleo
 
 **What happens:**
 1. Creates directory structure (`./.coleo/` by default)
-2. Copies `default.toml` to `./.coleo/arms/`
-3. Creates `config.toml`
-4. Initializes maildir directories
-5. Prompts to generate an API token in `.coleo/.env`
+2. Seeds the editable YAML Arm templates in `./.coleo/templates/`
+3. Copies the legacy `default.toml` profile to `./.coleo/arms/`
+4. Creates `config.toml`
+5. Initializes maildir directories
+6. Prompts to generate an API token in `.coleo/.env`
 
 **After initialization:**
 ```bash
@@ -72,6 +73,9 @@ coleo config arms
 
 # Edit an arm configuration
 vim ./.coleo/arms/default.toml
+
+# Edit a Spawn Arm template
+vim ./.coleo/templates/balanced.yml
 ```
 
 ---
