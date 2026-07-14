@@ -258,15 +258,6 @@ export function SetupPage() {
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
-      <header className="shrink-0 border-b border-border px-3 py-2">
-        <div className="flex min-w-0 items-baseline gap-2">
-          <h1 className="shrink-0 text-lg font-semibold tracking-tight">Setup</h1>
-          <p className="truncate text-sm text-muted-foreground">
-            Review project plans and configure the templates used when spawning arms.
-          </p>
-        </div>
-      </header>
-
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3" role="tablist" aria-label="Setup file group">
         <button
           type="button"
