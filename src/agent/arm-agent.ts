@@ -31,6 +31,8 @@ import {
   type ArmEventCallback,
 } from '../harness';
 import { truncateLargeFields } from '../harness/event-stream';
+import { LocalRepositoryOnboarding } from '../onboarding/local';
+import { parseRepositoryOnboardingOperation } from '../onboarding/types';
 import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
 
 const execAsync = promisify(exec);
@@ -84,6 +86,7 @@ export class ArmAgent {
   private natsClient: NatsClient;
   private coleoDir: string;
   private workspace: LocalWorkspaceAccess;
+  private repositoryOnboarding: LocalRepositoryOnboarding;
   private maxArms: number;
   private heartbeatIntervalMs: number;
   private debug: boolean;
@@ -97,9 +100,12 @@ export class ArmAgent {
   constructor(options: ArmAgentOptions) {
     this.agentId = options.agentId || `agent-${hostname()}-${process.pid}`;
     this.coleoDir = options.coleoDir;
-    this.workspace = new LocalWorkspaceAccess(
-      options.workspaceRoot || process.env.COLEO_AGENT_WORKDIR || process.cwd(),
-    );
+    const workspaceRoot = options.workspaceRoot || process.env.COLEO_AGENT_WORKDIR || process.cwd();
+    this.workspace = new LocalWorkspaceAccess(workspaceRoot);
+    this.repositoryOnboarding = new LocalRepositoryOnboarding({
+      projectDir: workspaceRoot,
+      coleoDir: options.coleoDir,
+    });
     this.maxArms = options.maxArms || 10;
     this.heartbeatIntervalMs = options.heartbeatIntervalMs || 30000;
     this.debug = options.debug || false;
@@ -175,7 +181,7 @@ export class ArmAgent {
       platform: process.platform,
       startedAt: this.startedAt,
       version: '0.2.0',
-      capabilities: [...harnessRegistry.list(), 'workspace-rpc'],
+      capabilities: [...harnessRegistry.list(), 'workspace-rpc', 'repository-onboarding'],
       maxArms: this.maxArms,
     };
   }
@@ -223,6 +229,14 @@ export class ArmAgent {
             requestId: command.requestId,
             success: true,
             data: await executeWorkspaceOperation(this.workspace, command.operation),
+          };
+        case 'repository_onboarding':
+          return {
+            requestId: command.requestId,
+            success: true,
+            data: await this.repositoryOnboarding.execute(
+              parseRepositoryOnboardingOperation(command.operation),
+            ),
           };
         default:
           return {

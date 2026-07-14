@@ -22,6 +22,10 @@ import type {
   GetTodosResponse,
 } from './types';
 import type { TaskAttachment } from "../types";
+import type {
+  RepositoryOnboardingOperation,
+  RepositoryOnboardingStatus,
+} from "../onboarding/types";
 import type { WorkspaceOperation, WorkspaceOperationResult } from "../workspace";
 
 export interface ArmClientOptions {
@@ -420,6 +424,21 @@ export class ArmClient {
   ): Promise<CommandResponse<WorkspaceOperationResult>> {
     return this.natsClient.sendCommand<WorkspaceOperationResult>(agentId, {
       type: 'workspace',
+      requestId: generateRequestId(),
+      operation,
+    }, timeoutMs);
+  }
+
+  /**
+   * Execute repository onboarding inside the selected Arm Host workspace.
+   */
+  async executeRepositoryOnboarding(
+    agentId: string,
+    operation: RepositoryOnboardingOperation,
+    timeoutMs = 120000,
+  ): Promise<CommandResponse<RepositoryOnboardingStatus>> {
+    return this.natsClient.sendCommand<RepositoryOnboardingStatus>(agentId, {
+      type: 'repository_onboarding',
       requestId: generateRequestId(),
       operation,
     }, timeoutMs);

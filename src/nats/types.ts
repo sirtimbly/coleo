@@ -1,4 +1,5 @@
 import type { TaskAttachment } from "../types";
+import type { RepositoryOnboardingOperation } from "../onboarding/types";
 import type { WorkspaceOperation } from "../workspace";
 
 /**
@@ -128,6 +129,12 @@ export interface WorkspaceCommand {
   operation: WorkspaceOperation;
 }
 
+export interface RepositoryOnboardingCommand {
+  type: 'repository_onboarding';
+  requestId: string;
+  operation: RepositoryOnboardingOperation;
+}
+
 export type AgentCommand = 
   | SpawnArmCommand 
   | KillArmCommand 
@@ -137,7 +144,8 @@ export type AgentCommand =
   | AbortCommand
   | GetMessagesCommand
   | GetTodosCommand
-  | WorkspaceCommand;
+  | WorkspaceCommand
+  | RepositoryOnboardingCommand;
 
 // ============================================
 // Responses (Agent -> API Server)

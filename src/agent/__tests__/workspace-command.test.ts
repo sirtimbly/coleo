@@ -47,4 +47,33 @@ describe("Arm Host workspace commands", () => {
 		expect(escaped.success).toBe(false);
 		expect(escaped.error).toContain("escapes");
 	});
+
+	it("reports repository onboarding status for the Arm Host workspace", async () => {
+		const root = join("/tmp", `coleo-arm-host-onboarding-${crypto.randomUUID()}`);
+		roots.push(root);
+		await mkdir(root, { recursive: true });
+
+		const agent = new ArmAgent({
+			agentId: "arm-host-test",
+			natsUrl: "nats://127.0.0.1:4222",
+			coleoDir: join(root, ".coleo"),
+			workspaceRoot: root,
+		});
+		const handleCommand = (agent as unknown as {
+			handleCommand(command: AgentCommand): Promise<CommandResponse>;
+		}).handleCommand.bind(agent);
+
+		const response = await handleCommand({
+			type: "repository_onboarding",
+			requestId: "repository-status",
+			operation: { type: "status" },
+		});
+
+		expect(response.success).toBe(true);
+		expect(response.data).toMatchObject({
+			ready: false,
+			projectDir: root,
+			repository: { checkedOut: false },
+		});
+	});
 });

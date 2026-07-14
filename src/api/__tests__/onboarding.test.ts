@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Hono } from "hono";
 
 import { formatErrorResponse } from "../middleware/error";
+import { setArmClient } from "../arm-client-registry";
 import { createOnboardingRoutes } from "../routes/onboarding";
 
 import type { OnboardingStatus } from "../routes/onboarding";
@@ -14,14 +15,27 @@ describe("onboarding routes", () => {
   let rootDir: string;
   let projectDir: string;
   let coleoDir: string;
+  const originalRemoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY;
+  const originalWorkspaceAgentId = process.env.COLEO_WORKSPACE_AGENT_ID;
+
+  const restoreEnv = (name: string, value: string | undefined): void => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
 
   beforeEach(async () => {
+    delete process.env.COLEO_REMOTE_ARMS_ONLY;
+    delete process.env.COLEO_WORKSPACE_AGENT_ID;
+    setArmClient(null);
     rootDir = await mkdtemp(join(tmpdir(), "coleo-onboarding-"));
     projectDir = join(rootDir, "project");
     coleoDir = join(rootDir, ".coleo");
   });
 
   afterEach(async () => {
+    restoreEnv("COLEO_REMOTE_ARMS_ONLY", originalRemoteArmsOnly);
+    restoreEnv("COLEO_WORKSPACE_AGENT_ID", originalWorkspaceAgentId);
+    setArmClient(null);
     await rm(rootDir, { recursive: true, force: true });
   });
 
@@ -136,5 +150,90 @@ describe("onboarding routes", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ error: "Enter a valid HTTPS or SSH Git repository URL" });
+  });
+
+  it("clears a partial clone while preserving the configured workspace directory", async () => {
+    const app = new Hono();
+    app.onError((error, c) => formatErrorResponse(c, error));
+    app.route("/api/onboarding", createOnboardingRoutes({
+      projectDir,
+      coleoDir,
+      runCommand: async (command) => {
+        if (command[0] === "git" && command[1] === "clone") {
+          await writeFile(join(projectDir, "partial-clone"), "partial");
+          return { exitCode: 1, stdout: "", stderr: "network interrupted" };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    }));
+
+    const response = await app.request("http://localhost/api/onboarding/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "https://example.com/team/project.git" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await readdir(projectDir)).toEqual([]);
+  });
+
+  it("executes onboarding operations in the configured remote Arm Host", async () => {
+    process.env.COLEO_REMOTE_ARMS_ONLY = "1";
+    process.env.COLEO_WORKSPACE_AGENT_ID = "reef-project";
+    const operations: unknown[] = [];
+    const remoteStatus: OnboardingStatus = {
+      ready: false,
+      projectDir: "/home/coleo/runtime/workspace",
+      repository: { checkedOut: false, remoteUrl: null, branch: null },
+      ssh: { configured: true, publicKey: "ssh-ed25519 remote-key" },
+    };
+    setArmClient({
+      getAgent: (agentId: string) => agentId === "reef-project" ? {
+        agentId,
+        capabilities: ["repository-onboarding"],
+      } : undefined,
+      executeRepositoryOnboarding: async (agentId: string, operation: unknown) => {
+        expect(agentId).toBe("reef-project");
+        operations.push(operation);
+        return {
+          requestId: "remote-onboarding",
+          success: true,
+          data: operation && typeof operation === "object" && "type" in operation && operation.type === "clone"
+            ? {
+                ...remoteStatus,
+                ready: true,
+                repository: {
+                  checkedOut: true,
+                  remoteUrl: "git@example.com:team/project.git",
+                  branch: "main",
+                },
+              }
+            : remoteStatus,
+        };
+      },
+    } as never);
+
+    const app = new Hono();
+    app.onError((error, c) => formatErrorResponse(c, error));
+    app.route("/api/onboarding", createOnboardingRoutes({ projectDir, coleoDir }));
+
+    const statusResponse = await app.request("http://localhost/api/onboarding");
+    expect((await statusResponse.json() as OnboardingStatus).projectDir).toBe("/home/coleo/runtime/workspace");
+
+    const keyResponse = await app.request("http://localhost/api/onboarding/ssh-key", { method: "POST" });
+    expect(keyResponse.status).toBe(200);
+
+    const cloneResponse = await app.request("http://localhost/api/onboarding/clone", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ repositoryUrl: "git@example.com:team/project.git", branch: "main" }),
+    });
+    expect(cloneResponse.status).toBe(200);
+    expect((await cloneResponse.json() as OnboardingStatus).ready).toBe(true);
+    expect(operations).toEqual([
+      { type: "status" },
+      { type: "generate_ssh_key" },
+      { type: "clone", repositoryUrl: "git@example.com:team/project.git", branch: "main" },
+    ]);
   });
 });
