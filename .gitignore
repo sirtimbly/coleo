@@ -43,6 +43,7 @@ gitea-data/
 .coleo/bin
 .coleo/queue
 .coleo/state
+.coleo/templates
 .coleo/coleo.db
 .coleo/coleo.db-shm
 .coleo/coleo.db-wal

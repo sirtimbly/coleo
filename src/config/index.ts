@@ -21,3 +21,9 @@ export {
   formatModelSpec,
   type ModelSpec,
 } from "./models";
+
+export {
+  DEFAULT_ARM_TEMPLATES,
+  ensureDefaultArmTemplates,
+  type DefaultArmTemplateSeedResult,
+} from "./default-arm-templates";

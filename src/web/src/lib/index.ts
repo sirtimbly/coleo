@@ -47,6 +47,10 @@ export {
   type TaskWorkAuthorType,
   type TaskSummary,
   type TaskDiff,
+  type ProjectPlanCandidate,
+  type SetupTemplateFile,
+  type ProjectSetupStatus,
+  type WorkspaceTextFile,
 } from './api';
 export { useToast, ToastProvider, ToastContainer } from './toast';
 export { useMessage, MessageProvider, type ReplyContext } from './message-context';

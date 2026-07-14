@@ -7,6 +7,7 @@ import {
   Flower2,
   LayoutDashboard,
   ListTodo,
+  ClipboardCheck,
   Mail,
   MessageSquareMore,
   Settings,
@@ -30,6 +31,7 @@ import {
   StatusReportsPage,
   TasksPage,
   UnifiedGridPage,
+  SetupPage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -52,6 +54,15 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Dashboard',
     icon: LayoutDashboard,
     component: DashboardPage,
+    showInNav: true,
+  },
+  {
+    id: 'setup',
+    href: '/setup',
+    path: 'setup',
+    label: 'Setup',
+    icon: ClipboardCheck,
+    component: SetupPage,
     showInNav: true,
   },
   {

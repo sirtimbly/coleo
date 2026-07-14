@@ -78,6 +78,36 @@ export interface OnboardingStatus {
   };
 }
 
+export interface WorkspaceTextFile {
+  path: string;
+  content: string;
+  contentHash: string;
+  size: number;
+  modifiedAt: string;
+}
+
+export interface ProjectPlanCandidate extends WorkspaceTextFile {
+  score: number;
+  reasons: string[];
+}
+
+export interface SetupTemplateFile extends WorkspaceTextFile {
+  format: 'yaml' | 'toml' | 'jinja';
+}
+
+export interface ProjectSetupStatus {
+  required: boolean;
+  completed: boolean;
+  taskCount: number;
+  canonicalPlan: WorkspaceTextFile | null;
+  canonicalTaskCount: number;
+  candidates: ProjectPlanCandidate[];
+  templateFiles: SetupTemplateFile[];
+  recommendedPath: string;
+  defaultContent: string;
+  defaultTemplateContent: string;
+}
+
 class ApiClient {
   private apiKey: string | null = null;
 
@@ -145,6 +175,34 @@ class ApiClient {
 
   async cloneOnboardingRepository(data: { repositoryUrl: string; branch?: string }) {
     return this.request<OnboardingStatus>('/onboarding/clone', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getProjectSetupStatus() {
+    return this.request<ProjectSetupStatus>('/project-setup');
+  }
+
+  async saveProjectSetupFile(data: { path: string; content: string; expectedHash?: string | null; kind: 'plan' | 'template' }) {
+    return this.request<{ file: WorkspaceTextFile }>('/project-setup/file', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async saveProjectPlanFile(data: { path: string; content: string; expectedHash?: string | null }) {
+    return this.saveProjectSetupFile({ ...data, kind: 'plan' });
+  }
+
+  async prepareProjectPlan(data: { sourcePath: string; content: string; expectedHash?: string | null }) {
+    return this.request<{
+      completed: boolean;
+      mode: 'ai' | 'structured';
+      canonicalPlan: WorkspaceTextFile;
+      taskCount: number;
+      createdTaskCount: number;
+    }>('/project-setup/prepare', {
       method: 'POST',
       body: JSON.stringify(data),
     });

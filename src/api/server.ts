@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -19,6 +19,7 @@ import { truncateLargeFields } from "../harness/event-stream";
 import { NatsManager, setNatsManager, ArmClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { loadEnvFile } from "../config/env";
+import { ensureDefaultArmTemplates, getColeoDir } from "../config";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
@@ -275,6 +276,7 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/status-history", createStatusHistoryRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
   app.route("/api/onboarding", createOnboardingRoutes());
+  app.route("/api/project-setup", createProjectSetupRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.
   const webDist = options.webDist === undefined ? findWebDist() : options.webDist;
@@ -324,6 +326,11 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
       console.log(msg);
     }
   };
+
+  const seededTemplates = await ensureDefaultArmTemplates(getColeoDir());
+  if (seededTemplates.created.length > 0) {
+    log(`[startup] Seeded ${seededTemplates.created.length} default Arm templates`, "normal");
+  }
 
   log("Initializing database...", "verbose");
   const db = await initDatabase(config.dbPath);

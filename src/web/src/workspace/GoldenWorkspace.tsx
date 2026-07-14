@@ -717,8 +717,18 @@ export function GoldenWorkspace() {
 			persistWorkspaceLayout();
 		});
 
+		const requestedPathname = window.location.pathname;
+		const requestedSearch = window.location.search;
+		const requestedRoute = findAppRoute(requestedPathname)
+			&& (requestedPathname !== "/" || requestedSearch)
+			? createRoutePanelState(requestedPathname, requestedSearch)
+			: null;
 		const savedLayout = window.localStorage.getItem(STORAGE_KEY);
-		if (savedLayout) {
+		if (requestedRoute) {
+			// A deep link represents an explicit view request. Start a focused
+			// workspace for it instead of allowing a saved layout to obscure it.
+			layout.loadLayout(createDefaultLayout(requestedRoute));
+		} else if (savedLayout) {
 			try {
 				const parsedLayout = JSON.parse(savedLayout) as LayoutConfig & {
 					resolved?: boolean;
