@@ -17,9 +17,19 @@
   min-width: 0;
 }
 
-.setup-file-list {
-  max-height: 13rem;
-  overflow-y: auto;
+.setup-file-tree-container {
+  height: 13rem;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--surface-secondary);
+  padding: 0.25rem;
+}
+
+.setup-file-tree {
+  display: block;
+  height: 100%;
+  width: 100%;
 }
 
 .setup-file-editor {
@@ -42,8 +52,8 @@
     overflow-y: auto;
   }
 
-  .setup-file-list {
-    max-height: 26rem;
+  .setup-file-tree-container {
+    height: 26rem;
   }
 
   .setup-file-editor {

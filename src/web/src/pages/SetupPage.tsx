@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, FileCode2, FilePlus2, FileText, LoaderCircle, RefreshCw, Save, Sparkles } from 'lucide-react';
 
+import { SetupFileTree } from '@/components/SetupFileTree';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ArmTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
 import { markProjectSetupOpened } from '@/lib/project-setup-visit';
@@ -110,6 +111,11 @@ export function SetupPage() {
   }, [load]);
 
   const dirty = useMemo(() => editor ? editor.content !== editor.savedContent : false, [editor]);
+  const activeFiles = useMemo(
+    () => activeKind === 'plan' ? status?.candidates ?? [] : status?.templateFiles ?? [],
+    [activeKind, status],
+  );
+  const activePaths = useMemo(() => activeFiles.map((file) => file.path), [activeFiles]);
 
   const switchKind = (kind: SetupFileKind) => {
     if (!status || kind === activeKind) return;
@@ -130,11 +136,12 @@ export function SetupPage() {
     setError(null);
   };
 
-  const selectCandidate = (candidate: ProjectPlanCandidate | ArmTemplateFile) => {
-    if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return;
+  const selectCandidate = (candidate: ProjectPlanCandidate | ArmTemplateFile): boolean => {
+    if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return false;
     setEditor('format' in candidate ? editorFromTemplate(candidate) : editorFromCandidate(candidate));
     setResult(null);
     setError(null);
+    return true;
   };
 
   const createPlan = () => {
@@ -256,6 +263,11 @@ export function SetupPage() {
     );
   }
 
+  const selectPath = (path: string): boolean => {
+    const file = activeFiles.find((entry) => entry.path === path);
+    return file ? selectCandidate(file) : false;
+  };
+
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
       <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-3" role="tablist" aria-label="Setup file group">
@@ -286,7 +298,7 @@ export function SetupPage() {
               <h2 className="font-semibold">{activeKind === 'plan' ? 'Plans found' : 'Templates found'}</h2>
               <span className="text-xs text-muted-foreground">{activeKind === 'plan' ? status.candidates.length : status.templateFiles.length}</span>
             </div>
-            <div className="setup-file-list mt-2 space-y-1.5">
+            <div className="mt-2">
               {activeKind === 'plan' && status.candidates.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
                   No likely plan files were found. Start a new plan and write in plain language.
@@ -295,27 +307,17 @@ export function SetupPage() {
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
                   No Arm templates were found. Create one to prefill settings when spawning an arm.
                 </p>
-              ) : activeKind === 'plan' ? status.candidates.map((candidate) => (
-                <button
-                  key={candidate.path}
-                  type="button"
-                  onClick={() => selectCandidate(candidate)}
-                  className={`w-full rounded-md border px-2.5 py-2 text-left transition ${editor.path === candidate.path ? 'border-accent bg-accent/10' : 'border-border hover:bg-surface-secondary'}`}
-                >
-                  <span className="block truncate font-mono text-xs text-foreground">{candidate.path}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{candidate.reasons.join(' · ')}</span>
-                </button>
-              )) : status.templateFiles.map((template) => (
-                <button
-                  key={template.path}
-                  type="button"
-                  onClick={() => selectCandidate(template)}
-                  className={`w-full rounded-md border px-2.5 py-2 text-left transition ${editor.path === template.path ? 'border-accent bg-accent/10' : 'border-border hover:bg-surface-secondary'}`}
-                >
-                  <span className="block truncate font-mono text-xs text-foreground">{template.path}</span>
-                  <span className="mt-1 block text-xs text-muted-foreground">{template.format.toUpperCase()} Arm template</span>
-                </button>
-              ))}
+              ) : (
+                <div className="setup-file-tree-container">
+                  <SetupFileTree
+                    key={activeKind}
+                    ariaLabel={activeKind === 'plan' ? 'Project plan files' : 'Arm template files'}
+                    paths={activePaths}
+                    selectedPath={editor.path}
+                    onSelect={selectPath}
+                  />
+                </div>
+              )}
             </div>
             <button
               type="button"
