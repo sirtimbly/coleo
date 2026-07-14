@@ -17,6 +17,7 @@ describe("onboarding routes", () => {
   let coleoDir: string;
   const originalRemoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY;
   const originalWorkspaceAgentId = process.env.COLEO_WORKSPACE_AGENT_ID;
+  const originalProjectId = process.env.COLEO_PROJECT_ID;
 
   const restoreEnv = (name: string, value: string | undefined): void => {
     if (value === undefined) delete process.env[name];
@@ -26,6 +27,7 @@ describe("onboarding routes", () => {
   beforeEach(async () => {
     delete process.env.COLEO_REMOTE_ARMS_ONLY;
     delete process.env.COLEO_WORKSPACE_AGENT_ID;
+    delete process.env.COLEO_PROJECT_ID;
     setArmClient(null);
     rootDir = await mkdtemp(join(tmpdir(), "coleo-onboarding-"));
     projectDir = join(rootDir, "project");
@@ -35,6 +37,7 @@ describe("onboarding routes", () => {
   afterEach(async () => {
     restoreEnv("COLEO_REMOTE_ARMS_ONLY", originalRemoteArmsOnly);
     restoreEnv("COLEO_WORKSPACE_AGENT_ID", originalWorkspaceAgentId);
+    restoreEnv("COLEO_PROJECT_ID", originalProjectId);
     setArmClient(null);
     await rm(rootDir, { recursive: true, force: true });
   });
@@ -235,5 +238,27 @@ describe("onboarding routes", () => {
       { type: "generate_ssh_key" },
       { type: "clone", repositoryUrl: "git@example.com:team/project.git", branch: "main" },
     ]);
+  });
+
+  it("fails closed instead of cloning in the control container when the Arm Host is unavailable", async () => {
+    process.env.COLEO_REMOTE_ARMS_ONLY = "1";
+    process.env.COLEO_PROJECT_ID = "project-123";
+    const commands: string[][] = [];
+    const app = new Hono();
+    app.onError((error, c) => formatErrorResponse(c, error));
+    app.route("/api/onboarding", createOnboardingRoutes({
+      projectDir,
+      coleoDir,
+      runCommand: async (command) => {
+        commands.push(command);
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    }));
+
+    const response = await app.request("http://localhost/api/onboarding");
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "Arm Host connection is not available" });
+    expect(commands).toEqual([]);
   });
 });
