@@ -18,6 +18,7 @@ export {
   type OpenCodeProvider,
   type OpenCodeModel,
   type AgentInfo,
+  type AgentProviderStatus,
   type ArmMessage,
   type ArmMessagePart,
   type ArmTodo,

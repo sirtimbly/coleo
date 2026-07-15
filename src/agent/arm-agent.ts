@@ -5,9 +5,11 @@
  * Communicates via NATS for commands and events.
  */
 
-import { hostname } from 'os';
-import { exec } from 'child_process';
+import { homedir, hostname } from 'os';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
+import { chmod, mkdir, readFile, rename, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
 import { 
   NatsClient, 
   type AgentInfo, 
@@ -20,6 +22,8 @@ import {
   type ListArmsResponse,
   type GetMessagesResponse,
   type GetTodosResponse,
+  type OpenCodeProviderInfo,
+  type OpenCodeProvidersResponse,
 } from '../nats';
 import {
   harnessRegistry,
@@ -36,9 +40,108 @@ import { parseRepositoryOnboardingOperation } from '../onboarding/types';
 import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const MAX_DISTRIBUTED_MESSAGES = 100;
 const MAX_DISTRIBUTED_TODOS = 200;
 const DISTRIBUTED_OBSERVABILITY_TIMEOUT_MS = 7000;
+
+const API_KEY_PROVIDER_ENV = {
+  'anthropic': 'ANTHROPIC_API_KEY',
+  'cerebras': 'CEREBRAS_API_KEY',
+  'deepinfra': 'DEEPINFRA_API_KEY',
+  'friendli': 'FRIENDLI_API_KEY',
+  'google': 'GOOGLE_API_KEY',
+  'groq': 'GROQ_API_KEY',
+  'kimi-for-coding': 'KIMI_FOR_CODING_API_KEY',
+  'moonshotai': 'MOONSHOTAI_API_KEY',
+  'openai': 'OPENAI_API_KEY',
+  'openrouter': 'OPENROUTER_API_KEY',
+  'opencode': 'OPENCODE_API_KEY',
+  'perplexity': 'PERPLEXITY_API_KEY',
+  'xai': 'XAI_API_KEY',
+} as const;
+
+const API_KEY_PROVIDER_IDS = new Set<string>(Object.keys(API_KEY_PROVIDER_ENV));
+
+function humanizeIdentifier(value: string): string {
+  return value
+    .split(/[-_/]+/g)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function getOpenCodeAuthFilePath(): string {
+  return join(process.env.HOME || homedir(), '.local', 'share', 'opencode', 'auth.json');
+}
+
+async function readOpenCodeAuth(): Promise<Record<string, unknown>> {
+  try {
+    const parsed = JSON.parse(await readFile(getOpenCodeAuthFilePath(), 'utf8')) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function listOpenCodeProviders(): Promise<OpenCodeProvidersResponse> {
+  const [{ stdout }, auth] = await Promise.all([
+    execFileAsync('opencode', ['models'], { env: process.env, maxBuffer: 1024 * 1024 * 8 }),
+    readOpenCodeAuth(),
+  ]);
+  const providerModels = new Map<string, Set<string>>();
+
+  for (const rawLine of stdout.split(/\r?\n/g)) {
+    const line = rawLine.replace(/\u001b\[[0-9;]*m/g, '').trim();
+    const separatorIndex = line.indexOf('/');
+    if (separatorIndex <= 0) continue;
+    const providerId = line.slice(0, separatorIndex).trim();
+    const modelId = line.slice(separatorIndex + 1).trim();
+    if (!providerId || !modelId) continue;
+    const models = providerModels.get(providerId) || new Set<string>();
+    models.add(modelId);
+    providerModels.set(providerId, models);
+  }
+
+  const providers: OpenCodeProviderInfo[] = [...providerModels.entries()]
+    .map(([providerId, models]) => ({
+      id: providerId,
+      name: humanizeIdentifier(providerId),
+      models: [...models].sort().map((modelId) => ({ id: modelId, name: modelId })),
+      connected:
+        Object.hasOwn(auth, providerId) ||
+        (API_KEY_PROVIDER_IDS.has(providerId) &&
+          Boolean(process.env[API_KEY_PROVIDER_ENV[providerId as keyof typeof API_KEY_PROVIDER_ENV]]?.trim())),
+      authMethod: API_KEY_PROVIDER_IDS.has(providerId)
+        ? 'api-key' as const
+        : providerId === 'github-copilot'
+          ? 'oauth' as const
+          : 'external' as const,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { providers };
+}
+
+async function setOpenCodeApiKey(providerId: string, apiKey: string): Promise<void> {
+  if (!API_KEY_PROVIDER_IDS.has(providerId)) {
+    throw new Error(`${providerId} does not support API-key setup in Coleo`);
+  }
+  if (!apiKey.trim()) {
+    throw new Error('API key is required');
+  }
+
+  const authPath = getOpenCodeAuthFilePath();
+  const auth = await readOpenCodeAuth();
+  auth[providerId] = { type: 'api', key: apiKey.trim() };
+  await mkdir(dirname(authPath), { recursive: true, mode: 0o700 });
+  const temporaryPath = `${authPath}.${process.pid}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
+  await chmod(temporaryPath, 0o600);
+  await rename(temporaryPath, authPath);
+}
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -181,7 +284,7 @@ export class ArmAgent {
       platform: process.platform,
       startedAt: this.startedAt,
       version: '0.2.0',
-      capabilities: [...harnessRegistry.list(), 'workspace-rpc', 'repository-onboarding'],
+      capabilities: [...harnessRegistry.list(), 'workspace-rpc', 'repository-onboarding', 'opencode-provider-auth'],
       maxArms: this.maxArms,
     };
   }
@@ -237,6 +340,19 @@ export class ArmAgent {
             data: await this.repositoryOnboarding.execute(
               parseRepositoryOnboardingOperation(command.operation),
             ),
+          };
+        case 'get_opencode_providers':
+          return {
+            requestId: command.requestId,
+            success: true,
+            data: await listOpenCodeProviders(),
+          };
+        case 'set_opencode_api_key':
+          await setOpenCodeApiKey(command.providerId, command.apiKey);
+          return {
+            requestId: command.requestId,
+            success: true,
+            data: await listOpenCodeProviders(),
           };
         default:
           return {

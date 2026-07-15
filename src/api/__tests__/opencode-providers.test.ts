@@ -9,6 +9,8 @@ import {
   createOpenCodeRoutes,
   refreshOpenCodeProvidersCache,
 } from "../routes/opencode";
+import { setArmClient } from "../arm-client-registry";
+import type { ArmClient } from "../../nats/arm-client";
 
 function createFetchMock(
   impl: (...args: Parameters<typeof fetch>) => Promise<Response>,
@@ -45,6 +47,7 @@ describe("opencode providers API", () => {
   });
 
   afterEach(async () => {
+    setArmClient(null);
     db.close();
     globalThis.fetch = originalFetch;
     if (originalColeoDir === undefined) {
@@ -166,5 +169,56 @@ describe("opencode providers API", () => {
     expect(body.cached).toBe(false);
     expect(body.source).toBe("fallback");
     expect(body.message).toContain("No cached OpenCode model catalog yet");
+  });
+
+  it("lists providers and saves API keys on the selected arm host", async () => {
+    let savedProviderId = "";
+    let savedApiKey = "";
+    const providers = [{
+      id: "openai",
+      name: "OpenAI",
+      models: [{ id: "gpt-5", name: "gpt-5" }],
+      connected: false,
+      authMethod: "api-key" as const,
+    }];
+    const mockArmClient = {
+      getAgent: (agentId: string) => agentId === "reef-1"
+        ? { capabilities: ["opencode-api", "opencode-provider-auth"] }
+        : undefined,
+      getOpenCodeProviders: async () => ({
+        requestId: "list-1",
+        success: true,
+        data: { providers },
+      }),
+      setOpenCodeApiKey: async (_agentId: string, providerId: string, apiKey: string) => {
+        savedProviderId = providerId;
+        savedApiKey = apiKey;
+        return {
+          requestId: "save-1",
+          success: true,
+          data: { providers: [{ ...providers[0]!, connected: true }] },
+        };
+      },
+    };
+    setArmClient(mockArmClient as unknown as ArmClient);
+
+    const listResponse = await app.request(
+      "http://coleo.test/api/opencode/agents/reef-1/providers",
+    );
+    expect(listResponse.status).toBe(200);
+    expect(await listResponse.json()).toEqual({ providers });
+
+    const saveResponse = await app.request(
+      "http://coleo.test/api/opencode/agents/reef-1/providers/openai/api-key",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ apiKey: "sk-secret" }),
+      },
+    );
+    expect(saveResponse.status).toBe(200);
+    expect(savedProviderId).toBe("openai");
+    expect(savedApiKey).toBe("sk-secret");
+    expect(JSON.stringify(await saveResponse.json())).not.toContain("sk-secret");
   });
 });

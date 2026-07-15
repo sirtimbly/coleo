@@ -135,6 +135,18 @@ export interface RepositoryOnboardingCommand {
   operation: RepositoryOnboardingOperation;
 }
 
+export interface GetOpenCodeProvidersCommand {
+  type: 'get_opencode_providers';
+  requestId: string;
+}
+
+export interface SetOpenCodeApiKeyCommand {
+  type: 'set_opencode_api_key';
+  requestId: string;
+  providerId: string;
+  apiKey: string;
+}
+
 export type AgentCommand = 
   | SpawnArmCommand 
   | KillArmCommand 
@@ -145,7 +157,9 @@ export type AgentCommand =
   | GetMessagesCommand
   | GetTodosCommand
   | WorkspaceCommand
-  | RepositoryOnboardingCommand;
+  | RepositoryOnboardingCommand
+  | GetOpenCodeProvidersCommand
+  | SetOpenCodeApiKeyCommand;
 
 // ============================================
 // Responses (Agent -> API Server)
@@ -176,6 +190,23 @@ export interface GetMessagesResponse {
 
 export interface GetTodosResponse {
   todos: unknown[];
+}
+
+export interface OpenCodeProviderModel {
+  id: string;
+  name: string;
+}
+
+export interface OpenCodeProviderInfo {
+  id: string;
+  name: string;
+  models: OpenCodeProviderModel[];
+  connected: boolean;
+  authMethod: 'api-key' | 'oauth' | 'external';
+}
+
+export interface OpenCodeProvidersResponse {
+  providers: OpenCodeProviderInfo[];
 }
 
 // ============================================
