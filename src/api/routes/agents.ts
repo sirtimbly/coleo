@@ -33,6 +33,67 @@ export function createAgentsRoutes(): Hono<ServerContext> {
   });
 
   /**
+   * GET /api/agents/providers - List configured OpenCode providers on every host.
+   */
+  app.get("/providers", async (c) => {
+    const armClient = getArmClient();
+    if (!armClient) {
+      throw new HttpError(503, "NATS/ArmClient not available");
+    }
+
+    const hosts = await Promise.all(armClient.getAgents().map(async (agent) => {
+      const base = {
+        agentId: agent.agentId,
+        hostname: agent.hostname,
+        version: agent.version,
+      };
+
+      if (!agent.capabilities.includes("opencode-provider-auth")) {
+        return {
+          ...base,
+          configuredProviders: [],
+          availableProviderCount: 0,
+          error: "Update this arm host to detect configured providers",
+        };
+      }
+
+      try {
+        const response = await armClient.getOpenCodeProviders(agent.agentId);
+        if (!response.success || !response.data) {
+          return {
+            ...base,
+            configuredProviders: [],
+            availableProviderCount: 0,
+            error: response.error || "Provider detection failed",
+          };
+        }
+
+        return {
+          ...base,
+          configuredProviders: response.data.providers
+            .filter((provider) => provider.connected)
+            .map((provider) => ({
+              id: provider.id,
+              name: provider.name,
+              authMethod: provider.authMethod,
+            })),
+          availableProviderCount: response.data.providers.length,
+          error: null,
+        };
+      } catch (err) {
+        return {
+          ...base,
+          configuredProviders: [],
+          availableProviderCount: 0,
+          error: err instanceof Error ? err.message : "Provider detection failed",
+        };
+      }
+    }));
+
+    return c.json({ hosts });
+  });
+
+  /**
    * GET /api/agents/:id - Get a specific agent
    */
   app.get("/:id", (c) => {

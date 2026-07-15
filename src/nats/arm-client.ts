@@ -20,6 +20,7 @@ import type {
   ListArmsResponse,
   GetMessagesResponse,
   GetTodosResponse,
+  OpenCodeProvidersResponse,
 } from './types';
 import type { TaskAttachment } from "../types";
 import type {
@@ -226,6 +227,38 @@ export class ArmClient {
     }
 
     return response;
+  }
+
+  async getOpenCodeProviders(
+    agentId: string,
+    timeoutMs = 15000,
+  ): Promise<CommandResponse<OpenCodeProvidersResponse>> {
+    return this.natsClient.sendCommand<OpenCodeProvidersResponse>(
+      agentId,
+      {
+        type: 'get_opencode_providers',
+        requestId: generateRequestId(),
+      },
+      timeoutMs,
+    );
+  }
+
+  async setOpenCodeApiKey(
+    agentId: string,
+    providerId: string,
+    apiKey: string,
+    timeoutMs = 15000,
+  ): Promise<CommandResponse<OpenCodeProvidersResponse>> {
+    return this.natsClient.sendCommand<OpenCodeProvidersResponse>(
+      agentId,
+      {
+        type: 'set_opencode_api_key',
+        requestId: generateRequestId(),
+        providerId,
+        apiKey,
+      },
+      timeoutMs,
+    );
   }
 
   /**

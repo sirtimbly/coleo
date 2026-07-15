@@ -16,6 +16,8 @@ import { homedir } from "os";
 import { join } from "path";
 
 import { getColeoDir } from "../../config";
+import { getArmClient } from "../arm-client-registry";
+import { HttpError } from "../middleware";
 
 interface OpenCodeContext {
   Variables: {
@@ -277,6 +279,67 @@ export function createOpenCodeRoutes() {
         source: "fallback",
       });
     }
+  });
+
+  /**
+   * List every provider installed in OpenCode on a selected arm host.
+   * GET /api/opencode/agents/:agentId/providers
+   */
+  app.get("/agents/:agentId/providers", async (c) => {
+    const armClient = getArmClient();
+    if (!armClient) {
+      throw new HttpError(503, "Arm host connection is not available");
+    }
+
+    const agentId = c.req.param("agentId");
+    const agent = armClient.getAgent(agentId);
+    if (!agent) {
+      throw new HttpError(404, `Arm host ${agentId} is not connected`);
+    }
+    if (!agent.capabilities.includes("opencode-provider-auth")) {
+      throw new HttpError(409, "This arm host must be updated before providers can be configured");
+    }
+
+    const response = await armClient.getOpenCodeProviders(agentId);
+    if (!response.success || !response.data) {
+      throw new HttpError(502, response.error || "Unable to list OpenCode providers on the arm host");
+    }
+    return c.json(response.data);
+  });
+
+  /**
+   * Store an API key in OpenCode's auth file on a selected arm host.
+   * POST /api/opencode/agents/:agentId/providers/:providerId/api-key
+   */
+  app.post("/agents/:agentId/providers/:providerId/api-key", async (c) => {
+    const armClient = getArmClient();
+    if (!armClient) {
+      throw new HttpError(503, "Arm host connection is not available");
+    }
+
+    const agentId = c.req.param("agentId");
+    const providerId = c.req.param("providerId");
+    if (!/^[a-z0-9][a-z0-9-]*$/i.test(providerId)) {
+      throw new HttpError(400, "Invalid OpenCode provider ID");
+    }
+    const body = await c.req.json<{ apiKey?: unknown }>();
+    if (typeof body.apiKey !== "string" || !body.apiKey.trim()) {
+      throw new HttpError(400, "API key is required");
+    }
+
+    const agent = armClient.getAgent(agentId);
+    if (!agent) {
+      throw new HttpError(404, `Arm host ${agentId} is not connected`);
+    }
+    if (!agent.capabilities.includes("opencode-provider-auth")) {
+      throw new HttpError(409, "This arm host must be updated before providers can be configured");
+    }
+
+    const response = await armClient.setOpenCodeApiKey(agentId, providerId, body.apiKey);
+    if (!response.success || !response.data) {
+      throw new HttpError(502, response.error || "Unable to save the OpenCode API key");
+    }
+    return c.json(response.data);
   });
 
   /**

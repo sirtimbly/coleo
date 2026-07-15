@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import {
 	AlertTriangle,
 	Coins,
+	KeyRound,
 	LoaderCircle,
 	Play,
 	Plus,
@@ -25,6 +26,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from '@/workspace/route-context';
+import { ProviderSetupModal } from "@/components/ProviderSetupModal";
 
 interface ArmEventData {
 	arm?: Arm;
@@ -410,6 +412,8 @@ export function ArmsPage() {
 	const [spawnModal, setSpawnModal] = useState<NewArmModalState>(
 		DEFAULT_SPAWN_MODAL_STATE,
 	);
+	const [providerSetupProviderId, setProviderSetupProviderId] = useState<string | null>(null);
+	const [loadingAgentProviders, setLoadingAgentProviders] = useState(false);
 	const { showError, showSuccess } = useToast();
 
 	const loadArms = useCallback(async () => {
@@ -431,7 +435,14 @@ export function ArmsPage() {
 			const catalogIsCacheBacked =
 				providersRes.source === "cache" &&
 				providersRes.fallback !== true;
-			setOpenCodeProviders(catalogIsCacheBacked ? providersRes.providers : []);
+			setOpenCodeProviders(
+				catalogIsCacheBacked
+					? providersRes.providers.map((provider) => ({
+							...provider,
+							connected: providersRes.connected.includes(provider.id),
+						}))
+					: [],
+			);
 			setOpenCodeCatalog({
 				source: providersRes.source || "unknown",
 				message:
@@ -640,7 +651,8 @@ export function ArmsPage() {
 		);
 	}, [armTemplates, availableHarnesses]);
 
-	const hasCachedOpenCodeCatalog = openCodeCatalog.source === "cache";
+	const hasOpenCodeCatalog =
+		openCodeCatalog.source === "cache" || openCodeCatalog.source === "live";
 
 	const openSpawnModal = useCallback(() => {
 		const initialAgentId = agents[0]?.agentId || "";
@@ -668,6 +680,11 @@ export function ArmsPage() {
 
 	const closeSpawnModal = useCallback(() => {
 		setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
+		setProviderSetupProviderId(null);
+	}, []);
+
+	const openProviderSetupModal = useCallback((providerId: string) => {
+		setProviderSetupProviderId(providerId);
 	}, []);
 
 	const openArmViewer = useCallback(
@@ -713,6 +730,11 @@ export function ArmsPage() {
 			return;
 		}
 
+		if (selectedOpenCodeProvider?.connected === false) {
+			openProviderSetupModal(selectedOpenCodeProvider.id);
+			return;
+		}
+
 		setSpawningArmId(name);
 
 		try {
@@ -738,7 +760,16 @@ export function ArmsPage() {
 		} finally {
 			setSpawningArmId(null);
 		}
-	}, [agents.length, arms, loadArms, showError, showSuccess, spawnModal]);
+	}, [
+		agents.length,
+		arms,
+		loadArms,
+		openProviderSetupModal,
+		selectedOpenCodeProvider,
+		showError,
+		showSuccess,
+		spawnModal,
+	]);
 
 	useEffect(() => {
 		if (searchParams.get("spawn") !== "1") {
@@ -748,6 +779,35 @@ export function ArmsPage() {
 		openSpawnModal();
 		setSearchParams({});
 	}, [openSpawnModal, searchParams, setSearchParams]);
+
+	useEffect(() => {
+		if (!spawnModal.isOpen || !spawnModal.agentId || !usesOpenCodeCatalog(spawnModal.harness)) {
+			return;
+		}
+
+		let cancelled = false;
+		setLoadingAgentProviders(true);
+		void api.getAgentOpenCodeProviders(spawnModal.agentId)
+			.then((response) => {
+				if (cancelled) return;
+				setOpenCodeProviders(response.providers);
+				setOpenCodeCatalog({ source: "live", message: null });
+			})
+			.catch((err: unknown) => {
+				if (cancelled) return;
+				setOpenCodeCatalog((current) => ({
+					...current,
+					message: err instanceof Error ? err.message : "Unable to load providers from the arm host",
+				}));
+			})
+			.finally(() => {
+				if (!cancelled) setLoadingAgentProviders(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [spawnModal.agentId, spawnModal.harness, spawnModal.isOpen]);
 
 	useEffect(() => {
 		if (!spawnModal.isOpen) {
@@ -796,7 +856,7 @@ export function ArmsPage() {
 					? nextTemplate?.model || spawnDefaults.model
 					: current.model;
 
-			if (usesOpenCodeCatalog(nextHarness) && hasCachedOpenCodeCatalog && openCodeProviders.length > 0) {
+			if (usesOpenCodeCatalog(nextHarness) && hasOpenCodeCatalog && openCodeProviders.length > 0) {
 				const providerExists = openCodeProviders.some(
 					(provider) => provider.id === current.provider,
 				);
@@ -841,7 +901,7 @@ export function ArmsPage() {
 	}, [
 		agents,
 		armTemplates,
-		hasCachedOpenCodeCatalog,
+		hasOpenCodeCatalog,
 		openCodeProviders,
 		spawnDefaults.harness,
 		spawnDefaults.model,
@@ -1078,7 +1138,7 @@ export function ArmsPage() {
 											Provider
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
-										hasCachedOpenCodeCatalog &&
+										hasOpenCodeCatalog &&
 										openCodeProviders.length > 0 ? (
 											<select
 												value={spawnModal.provider}
@@ -1100,7 +1160,7 @@ export function ArmsPage() {
 											>
 												{openCodeProviders.map((provider) => (
 													<option key={provider.id} value={provider.id}>
-														{provider.name}
+													{provider.name}{provider.connected === false ? " · setup required" : ""}
 													</option>
 												))}
 											</select>
@@ -1123,7 +1183,7 @@ export function ArmsPage() {
 											Model
 										</label>
 										{usesOpenCodeCatalog(spawnModal.harness) &&
-										hasCachedOpenCodeCatalog &&
+										hasOpenCodeCatalog &&
 										selectedOpenCodeModels.length > 0 ? (
 											<select
 												value={spawnModal.model}
@@ -1157,16 +1217,32 @@ export function ArmsPage() {
 									</div>
 								</div>
 
-								{usesOpenCodeCatalog(spawnModal.harness) && hasCachedOpenCodeCatalog && openCodeProviders.length > 0 && (
+								{usesOpenCodeCatalog(spawnModal.harness) && hasOpenCodeCatalog && openCodeProviders.length > 0 && (
 									<p className="text-sm text-muted-foreground">
-										Provider and model options come from the cached authenticated OpenCode
-										catalog in <code>.coleo/cache/opencode-models.json</code>.
+										Provider and model options come from OpenCode on the selected arm host.
 									</p>
 								)}
 
-								{usesOpenCodeCatalog(spawnModal.harness) && !hasCachedOpenCodeCatalog && (
+								{usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeProvider?.connected === false && (
+									<div className="flex items-center justify-between gap-3 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
+										<div className="flex items-start gap-2">
+											<KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
+											<p>
+												{selectedOpenCodeProvider.name} needs to be connected on {selectedSpawnAgent?.hostname || "this arm host"} before spawning.
+											</p>
+										</div>
+										<Button
+											variant="secondary"
+											onPress={() => openProviderSetupModal(selectedOpenCodeProvider.id)}
+										>
+											Set up
+										</Button>
+									</div>
+								)}
+
+								{usesOpenCodeCatalog(spawnModal.harness) && !hasOpenCodeCatalog && (
 									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
-										{openCodeCatalog.message ||
+										{loadingAgentProviders ? "Loading providers from the selected arm host…" : openCodeCatalog.message ||
 											"No cached authenticated OpenCode catalog is available yet. Spawn one OpenCode arm after restarting the API server, or enter provider/model manually for now."}
 									</div>
 								)}
@@ -1251,6 +1327,7 @@ export function ArmsPage() {
 											!spawnModal.name.trim() ||
 											!spawnModal.harness ||
 											agents.length === 0 ||
+											selectedOpenCodeProvider?.connected === false ||
 											spawningArmId !== null ||
 											arms.some((arm) => arm.id === spawnModal.name.trim())
 										}
@@ -1269,6 +1346,18 @@ export function ArmsPage() {
 					</div>,
 					document.body,
 				)}
+
+			<ProviderSetupModal
+				agentId={spawnModal.agentId}
+				agentHostname={selectedSpawnAgent?.hostname || "the selected arm host"}
+				initialProviderId={providerSetupProviderId}
+				providers={openCodeProviders}
+				onClose={() => setProviderSetupProviderId(null)}
+				onSaved={(providers) => {
+					setOpenCodeProviders(providers);
+					setOpenCodeCatalog({ source: "live", message: null });
+				}}
+			/>
 		</div>
 	);
 }

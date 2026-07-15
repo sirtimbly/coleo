@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { api, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
+import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 import { Chip, Skeleton, Disclosure, Button } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
@@ -8,6 +8,7 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import { RefreshGate } from '@/lib/refresh-gate';
 import { hasOpenedProjectSetup, markProjectSetupOpened } from '@/lib/project-setup-visit';
+import { ArmHostProvidersSection } from '@/components/ArmHostProvidersSection';
 
 type Navigate = (pathname: string, search?: string) => void;
 
@@ -749,12 +750,14 @@ export function DashboardPage() {
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null);
+  const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [indexerLoading, setIndexerLoading] = useState(true);
   const [brainLoading, setBrainLoading] = useState(true);
+  const [armHostsLoading, setArmHostsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [showProjectSetup, setShowProjectSetup] = useState(false);
   const refreshGate = useRef(new RefreshGate());
@@ -809,6 +812,19 @@ export function DashboardPage() {
         // Preserve the last successful snapshot during a transient failure.
       } finally {
         setBrainLoading(false);
+      }
+    }, 5_000);
+  }, []);
+
+  const loadArmHosts = useCallback(async () => {
+    await refreshGate.current.run('arm-host-providers', async () => {
+      try {
+        const response = await api.getAgentProviderStatus();
+        setArmHosts(response.hosts);
+      } catch {
+        // Preserve the last successful host snapshot during a transient failure.
+      } finally {
+        setArmHostsLoading(false);
       }
     }, 5_000);
   }, []);
@@ -939,6 +955,7 @@ export function DashboardPage() {
     loadNotableEvents();
     loadIndexerHealth();
     loadBrainStatus();
+    loadArmHosts();
 
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
@@ -947,9 +964,10 @@ export function DashboardPage() {
       loadNotableEvents();
       loadIndexerHealth();
       loadBrainStatus();
+      loadArmHosts();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
+  }, [loadArmHosts, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
 
   useEffect(() => {
     let active = true;
@@ -1052,6 +1070,12 @@ export function DashboardPage() {
           onNavigate={navigate}
         />
       </div>
+
+      <ArmHostProvidersSection
+        hosts={armHosts}
+        isLoading={armHostsLoading}
+        onOpenArms={() => navigate("/arms")}
+      />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />

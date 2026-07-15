@@ -354,8 +354,28 @@ class ApiClient {
     }>('/opencode/providers');
   }
 
+  async getAgentOpenCodeProviders(agentId: string) {
+    return this.request<{ providers: OpenCodeProvider[] }>(
+      `/opencode/agents/${encodeURIComponent(agentId)}/providers`,
+    );
+  }
+
+  async setAgentOpenCodeApiKey(agentId: string, providerId: string, apiKey: string) {
+    return this.request<{ providers: OpenCodeProvider[] }>(
+      `/opencode/agents/${encodeURIComponent(agentId)}/providers/${encodeURIComponent(providerId)}/api-key`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ apiKey }),
+      },
+    );
+  }
+
   async listAgents() {
     return this.request<{ agents: AgentInfo[] }>('/agents');
+  }
+
+  async getAgentProviderStatus() {
+    return this.request<{ hosts: AgentProviderStatus[] }>('/agents/providers');
   }
 
   async listArmTemplates() {
@@ -1200,6 +1220,8 @@ export interface OpenCodeProvider {
   id: string;
   name: string;
   models: OpenCodeModel[];
+  connected?: boolean;
+  authMethod?: 'api-key' | 'oauth' | 'external';
 }
 
 export interface AgentInfo {
@@ -1210,6 +1232,19 @@ export interface AgentInfo {
   version: string;
   capabilities: string[];
   maxArms: number;
+}
+
+export interface AgentProviderStatus {
+  agentId: string;
+  hostname: string;
+  version: string;
+  configuredProviders: Array<{
+    id: string;
+    name: string;
+    authMethod: 'api-key' | 'oauth' | 'external';
+  }>;
+  availableProviderCount: number;
+  error: string | null;
 }
 
 export interface Arm {
