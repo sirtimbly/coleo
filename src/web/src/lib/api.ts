@@ -341,7 +341,7 @@ class ApiClient {
 
   // OpenCode Providers (served from the API's cached local OpenCode catalog)
   async getOpenCodeProviders() {
-    return this.request<{ 
+    return this.request<{
       providers: OpenCodeProvider[];
       connected: string[];
       default?: Record<string, string>;
@@ -426,7 +426,7 @@ class ApiClient {
   }
 
   async getArmMessages(id: string, limit = 50) {
-    return this.request<{ 
+    return this.request<{
       messages: ArmMessage[];
       sessionId?: string;
       error?: string;
@@ -489,7 +489,7 @@ class ApiClient {
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     if (params?.actor) query.set('actor', params.actor);
-    
+
     const queryStr = query.toString();
     return this.request<{
       activity: ActivityEntry[];
@@ -820,12 +820,12 @@ class ApiClient {
 
   // Tasks
   async listTasks(params?: {
-    status?: string; 
-    priority?: string; 
+    status?: string;
+    priority?: string;
     domain?: string;
     assignedTo?: string;
     phase?: string;
-    limit?: number; 
+    limit?: number;
     offset?: number;
   }) {
     const query = new URLSearchParams();
@@ -890,6 +890,34 @@ class ApiClient {
     return this.request<{ deleted: boolean }>(`/tasks/${id}`, {
       method: 'DELETE',
     });
+  }
+
+  async getTaskStats() {
+    return this.request<{
+      total: number;
+      byStatus: Record<string, number>;
+      completionRate: number;
+      active: number;
+      blocked: number;
+    }>('/tasks/stats');
+  }
+
+  async getTaskBlockingBugs(taskId: string) {
+    return this.request<{
+      taskId: string;
+      blockingBugs: Array<{
+        id: string;
+        title: string;
+        description: string;
+        source: string;
+        status: string;
+        priority: string;
+        assigneeArmId?: string;
+        createdAt: string;
+        updatedAt: string;
+      }>;
+      count: number;
+    }>(`/tasks/${taskId}/blocking-bugs`);
   }
 
   // Task Discussions
@@ -982,6 +1010,21 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+  // Task Checklists
+  async getTaskChecklist(taskId: string) {
+    return this.request<{ items: ChecklistItem[] }>(`/tasks/${taskId}/checklist`);
+  }
+
+  async createChecklistItem(taskId: string, data: {
+    text: string;
+    completed?: boolean;
+    sortOrder?: number;
+  }) {
+    return this.request<{ item: ChecklistItem }>(`/tasks/${taskId}/checklist`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
 
   async updateTaskSummary(taskId: string, summaryId: string, content: string) {
     return this.request<{ summary: TaskSummary }>(`/tasks/${taskId}/summaries/${summaryId}`, {
@@ -1023,6 +1066,16 @@ class ApiClient {
       body: JSON.stringify(data),
     });
   }
+  async updateChecklistItem(taskId: string, itemId: number, data: {
+    text?: string;
+    completed?: boolean;
+    sortOrder?: number;
+  }) {
+    return this.request<{ item: ChecklistItem }>(`/tasks/${taskId}/checklist/${itemId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
 
   async markTaskDiffsViewed(taskId: string, userId: string, lastViewedDiffId: string) {
     return this.request<{ marked: boolean }>(`/tasks/${taskId}/diffs/mark-viewed`, {
@@ -1033,6 +1086,18 @@ class ApiClient {
 
   async getUnviewedDiffCount(taskId: string, userId: string) {
     return this.request<{ unviewedCount: number }>(`/tasks/${taskId}/diffs/unviewed?userId=${encodeURIComponent(userId)}`);
+  }
+  async deleteChecklistItem(taskId: string, itemId: number) {
+    return this.request<{ success: boolean }>(`/tasks/${taskId}/checklist/${itemId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async reorderChecklistItems(taskId: string, itemIds: number[]) {
+    return this.request<{ success: boolean }>(`/tasks/${taskId}/checklist/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ itemIds }),
+    });
   }
 
   async removeTaskFromPlan(id: string) {
@@ -1573,6 +1638,16 @@ export type TaskComment = SharedTaskComment;
 export type TaskWorkAuthorType = SharedTaskWorkAuthorType;
 export type TaskSummary = SharedTaskSummary;
 export type TaskDiff = SharedTaskDiff;
+// Task checklist item
+export interface ChecklistItem {
+  id: number;
+  taskId: string;
+  text: string;
+  completed: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
 // Brain-managed task
 export interface Task {
@@ -1600,6 +1675,7 @@ export interface Task {
   metadata: TaskMetadata;
   commentCount?: number;
   lastCommentAt?: string | null;
+  checklist?: ChecklistItem[];
 }
 
 // OpenCode SSE event types

@@ -4,6 +4,7 @@ import {
 	buildCommitTaskSubject,
 	buildValidationTaskSubject,
 	buildVerificationTaskSubject,
+	containsCommitTaskKeyword,
 	isCommitTaskSubject,
 	isFollowUpTaskSubject,
 	isValidationTaskSubject,
@@ -28,5 +29,12 @@ describe("task subjects", () => {
 		expect(isVerificationTaskSubject("Verify & Polish: Implement endpoint")).toBe(true);
 		expect(isCommitTaskSubject("Commit changes for: Implement endpoint")).toBe(true);
 		expect(isFollowUpTaskSubject("Implement endpoint")).toBe(false);
+	});
+
+	it("recognizes commit work embedded in non-canonical subjects", () => {
+		expect(containsCommitTaskKeyword("Retry commit changes for API cleanup")).toBe(
+			true,
+		);
+		expect(containsCommitTaskKeyword("Implement endpoint")).toBe(false);
 	});
 });

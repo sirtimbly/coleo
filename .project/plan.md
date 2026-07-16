@@ -229,6 +229,8 @@ These are useful Observatory improvements that build on Phase 1 but do not retro
 
 **Goal**: Brain dynamically determines next task based on plan, history, and status reports.
 
+> **Planning note (2026-05-26)**: Task determination is driven by `.project/plan.md` and the sub-plan files that are explicitly referenced from it. Any other plan fragments (e.g., `.project/plans/git-worktree-isolation.md`) should only be consulted when the canonical plan links to them; the Brain should not treat standalone plan files as authoritative without that linkage.
+
 ### Progressive Task Determination
 
 See [progressive-planning.md](./progressive-planning.md) for full design.
@@ -1121,6 +1123,12 @@ server.registerTool(
 - [ ] Dashboard widget for notable events
 - [ ] Retention policy implementation
 - [ ] Backfill script for existing status reports
+
+### Tracking & Status (2026-05-26)
+
+- Progress is being tracked through the status history feature tasks (e.g., `task-1770847399287` and `task-1770847399288` for the Qdrant/collection work and `phase28g-e1f53f` plus related UI tasks for the search page). These tasks encode the deliverables above.
+- Additional validation/commit tasks (e.g., `task-1774902988664`, `task-1774902988665`) capture ongoing reviews of the ingestion and API layers mentioned in this phase.
+- Until the series of status history search tasks closes and the consumer/UI deliverables land, this phase remains in progress; the plan above records the current scope so future arms know where to resume.
 
 ### Dependencies
 

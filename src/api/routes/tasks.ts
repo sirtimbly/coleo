@@ -12,6 +12,16 @@ import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
 
+interface ChecklistItem {
+	id: number;
+	taskId: string;
+	text: string;
+	completed: boolean;
+	sortOrder: number;
+	createdAt: string;
+	updatedAt: string;
+}
+
 interface TasksContext {
 	Variables: {
 		db: Database;
@@ -51,12 +61,14 @@ export interface Task {
 	createdAt: string;
 	updatedAt: string;
 	completedAt: string | null;
+	blockedAt?: string | null;
 	claimedAt: string | null;
 	startedAt: string | null;
 	dueDate: string | null;
 	artifacts: string[];
 	context: Record<string, unknown>;
 	metadata: Record<string, unknown>;
+	checklist?: ChecklistItem[];
 }
 
 interface TaskRow {
@@ -86,6 +98,7 @@ interface TaskRow {
 	completed_at: string | null;
 	claimed_at: string | null;
 	started_at: string | null;
+	blocked_at: string | null;
 	due_date: string | null;
 	artifacts: string;
 	context: string | null;
@@ -119,6 +132,7 @@ function parseTaskRow(row: TaskRow): Task {
 		createdAt: row.created_at,
 		updatedAt: row.updated_at,
 		completedAt: row.completed_at,
+		blockedAt: row.blocked_at,
 		claimedAt: row.claimed_at,
 		startedAt: row.started_at,
 		dueDate: row.due_date,
@@ -138,7 +152,7 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
         t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       WHERE t.id = ?
@@ -332,7 +346,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -405,6 +419,7 @@ export function createTasksRoutes() {
 		const id = c.req.param("id");
 		const include = c.req.query("include") || "";
 		const includeDiscussions = include.split(",").includes("discussions");
+		const includeChecklist = include.split(",").includes("checklist");
 
 		const row = db
 			.query(`
@@ -416,7 +431,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -441,6 +456,33 @@ export function createTasksRoutes() {
 			task,
 			dependencies: deps.map((d) => d.depends_on_task_id),
 		};
+
+		// Include checklist if requested
+		if (includeChecklist) {
+			const checklistRows = db
+				.query(
+					"SELECT id, task_id, text, completed, sort_order, created_at, updated_at FROM task_checklist_items WHERE task_id = ? ORDER BY sort_order, created_at",
+				)
+				.all(id) as Array<{
+					id: number;
+					task_id: string;
+					text: string;
+					completed: number;
+					sort_order: number;
+					created_at: string;
+					updated_at: string;
+				}>;
+
+			task.checklist = checklistRows.map((row) => ({
+				id: row.id,
+				taskId: row.task_id,
+				text: row.text,
+				completed: row.completed === 1,
+				sortOrder: row.sort_order,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}));
+		}
 
 		// Include discussions if requested
 		if (includeDiscussions) {
@@ -669,7 +711,7 @@ export function createTasksRoutes() {
 					.query("SELECT MAX(order_key) as max_key FROM tasks WHERE order_key IS NOT NULL")
 					.get() as { max_key: string | null };
 				const maxOrderKey = maxOrderKeyRow?.max_key ?? null;
-				
+
 				// Generate new order_key after the current max
 				// If no tasks exist, start with "a"
 				const newOrderKey = generateKeyBetween(maxOrderKey, null);
@@ -829,7 +871,7 @@ export function createTasksRoutes() {
 			updates.push("status = ?");
 			values.push(body.status);
 
-			// Set timestamp fields based on status change
+			// Set lifecycle timestamps based on status transitions.
 			if (body.status === "claimed" && existing.status === "pending") {
 				updates.push("claimed_at = ?");
 				values.push(now);
@@ -846,6 +888,14 @@ export function createTasksRoutes() {
 			) {
 				updates.push("completed_at = ?");
 				values.push(now);
+			}
+
+			if (body.status === "blocked" && existing.status !== "blocked") {
+				updates.push("blocked_at = ?");
+				values.push(now);
+			}
+			if (existing.status === "blocked" && body.status !== "blocked") {
+				updates.push("blocked_at = NULL");
 			}
 		}
 
@@ -943,7 +993,7 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -1317,7 +1367,7 @@ export function createTasksRoutes() {
 	 * Reorder a task to a specific position using fractional indexing
 	 * POST /api/tasks/reorder
 	 * Body: { taskId: string, toIndex: number, prevTaskId?: string, nextTaskId?: string }
-	 * 
+	 *
 	 * Supports two modes:
 	 * 1. Legacy: { taskId, toIndex } - moves to 0-based position
 	 * 2. Drag-and-drop: { taskId, prevTaskId?, nextTaskId? } - moves between neighbors
@@ -1404,11 +1454,11 @@ export function createTasksRoutes() {
 		// sort_order is deprecated - we only use order_key (fractional indexing) for ordering.
 		// Updating sort_order for all 300+ tasks was causing 2-3 second delays on every reorder.
 
-		logActivity(db, "api", "task_reordered", taskId, { 
+		logActivity(db, "api", "task_reordered", taskId, {
 			newOrderKey,
 			prevTaskId,
 			nextTaskId,
-			toIndex 
+			toIndex
 		});
 
 		// Broadcast task updated
@@ -1418,6 +1468,113 @@ export function createTasksRoutes() {
 		});
 
 		return c.json({ success: true, orderKey: newOrderKey });
+	});
+
+	/**
+	 * Get task statistics for progress visualization
+	 * GET /api/tasks/stats
+	 */
+	app.get("/stats", async (c) => {
+		const db = c.get("db");
+
+		const totalResult = db
+			.query("SELECT COUNT(*) as count FROM tasks")
+			.get() as { count: number };
+
+		const statusRows = db
+			.query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status")
+			.all() as Array<{ status: string; count: number }>;
+
+		const byStatus: Record<string, number> = {};
+		for (const row of statusRows) {
+			byStatus[row.status] = row.count;
+		}
+
+		const completed = byStatus["completed"] ?? 0;
+		const failed = byStatus["failed"] ?? 0;
+		const total = totalResult.count;
+		const completionRate = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
+
+		return c.json({
+			total,
+			byStatus,
+			completionRate,
+			active: (byStatus["claimed"] ?? 0) + (byStatus["in_progress"] ?? 0) + (byStatus["completing"] ?? 0),
+			blocked: byStatus["blocked"] ?? 0,
+		});
+	});
+
+	/**
+	 * Get blocking bugs for a task
+	 * GET /api/tasks/:id/blocking-bugs
+	 */
+	app.get("/:id/blocking-bugs", async (c) => {
+		const db = c.get("db");
+		const id = c.req.param("id");
+
+		// Check if task exists
+		const taskExists = db
+			.query("SELECT 1 FROM tasks WHERE id = ?")
+			.get(id) as { "1": number } | null;
+		if (!taskExists) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		// Find unresolved bugs that block this task
+		const rows = db
+			.query(`
+				SELECT id, title, description, source, source_arm_id, source_task_id,
+				       status, priority, assignee_arm_id, blockers, error_details,
+				       resolution, created_at, updated_at, resolved_at
+				FROM bugs
+				WHERE status IN ('open', 'investigating', 'fixing', 'verifying')
+				  AND blockers LIKE ?
+			`)
+			.all(`%${id}%`) as Array<{
+				id: string;
+				title: string;
+				description: string;
+				source: string;
+				source_arm_id: string | null;
+				source_task_id: string | null;
+				status: string;
+				priority: string;
+				assignee_arm_id: string | null;
+				blockers: string;
+				error_details: string | null;
+				resolution: string | null;
+				created_at: string;
+				updated_at: string;
+				resolved_at: string | null;
+			}>;
+
+		// Filter to only bugs that actually have this task in their blockers
+		const blockingBugs = rows
+			.filter((row) => {
+				try {
+					const blockers = JSON.parse(row.blockers || "[]") as string[];
+					return blockers.includes(id);
+				} catch {
+					return false;
+				}
+			})
+			.map((row) => ({
+				id: row.id,
+				title: row.title,
+				description: row.description,
+				source: row.source,
+				status: row.status,
+				priority: row.priority,
+				assigneeArmId: row.assignee_arm_id || undefined,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			}));
+
+		return c.json({
+			taskId: id,
+			blockingBugs,
+			count: blockingBugs.length,
+		});
 	});
 
 	return app;

@@ -19,12 +19,24 @@ export interface Arm {
 }
 
 // Task representation
+export interface ChecklistItem {
+  id: number;
+  taskId: string;
+  text: string;
+  completed: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Task {
   id: string;
   subject: string;
   description: string;
   status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked";
   priority: "critical" | "high" | "normal" | "low";
+  sourceType?: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
+  sourceRef?: string | null;
   assignedTo?: string; // arm id
   /** True when task is blocked by unmet dependencies. */
   dependencyBlocked?: boolean;
@@ -43,6 +55,7 @@ export interface Task {
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
+  blockedAt?: Date;
   artifacts?: string[]; // commit hashes, file paths, etc.
   mailThreadId?: string; // link back to mail conversation
   context?: {
@@ -58,6 +71,8 @@ export interface Task {
     }>;
     notes?: string;
   };
+  /** Sub-task checklist items for progress breakdown */
+  checklist?: ChecklistItem[];
 }
 
 export interface TaskAttachment {
@@ -400,6 +415,11 @@ export interface ColeoConfig {
       requireEmptyQueue: boolean;
     };
   };
+  maintenance: {
+    enabled: boolean;
+    taskPrefix: string;
+    tasks: MaintenanceTaskConfig[];
+  };
   defaults: {
     harness: string;
     provider: string;
@@ -412,6 +432,29 @@ export interface ColeoConfig {
     maxThreshold: number;
     enabled: boolean;
   };
+}
+
+export interface MaintenanceTaskConfig {
+  id: string;
+  enabled: boolean;
+  title: string;
+  description?: string;
+  slices: string[];
+  instructions?: string;
+  instructionsFile?: string;
+  priority: "critical" | "high" | "normal" | "low";
+  domain: string;
+  classification: string;
+  requireEmptyQueue: boolean;
+  triggers: {
+    everyHours?: number;
+    everyCompletedTasks?: number;
+    onMainCommit?: boolean;
+    branches?: string[];
+  };
+  lastRunAt: string | null;
+  lastCompletedTaskCount: number | null;
+  lastMainCommit: string | null;
 }
 
 // Default config
@@ -450,6 +493,11 @@ export const DEFAULT_CONFIG: ColeoConfig = {
       lastRunAt: null,
       requireEmptyQueue: true,
     },
+  },
+  maintenance: {
+    enabled: true,
+    taskPrefix: "Maintenance",
+    tasks: [],
   },
   defaults: {
     harness: "opencode-api",

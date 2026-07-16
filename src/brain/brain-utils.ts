@@ -29,6 +29,17 @@ function isTaskPriority(value: string): value is Task["priority"] {
 	);
 }
 
+function isTaskSourceType(value: string): value is NonNullable<Task["sourceType"]> {
+	return (
+		value === "manual" ||
+		value === "plan" ||
+		value === "email" ||
+		value === "discovery" ||
+		value === "proposal" ||
+		value === "system"
+	);
+}
+
 export interface SessionMessageInfo {
 	id?: string;
 	role?: string;
@@ -294,6 +305,8 @@ export function mapApiTask(task: {
 	description: string;
 	status: string;
 	priority: string;
+	sourceType?: string | null;
+	sourceRef?: string | null;
 	domain?: string | null;
 	classification?: string | null;
 	assignedTo?: string | null;
@@ -302,12 +315,14 @@ export function mapApiTask(task: {
 	createdAt: string;
 	updatedAt: string;
 	completedAt?: string | null;
+	blockedAt?: string | null;
 	artifacts?: string[];
 	mailThreadId?: string | null;
 	context?: Task["context"];
 }): Task {
 	const status = isTaskStatus(task.status) ? task.status : "pending";
 	const priority = isTaskPriority(task.priority) ? task.priority : "normal";
+	const sourceType = task.sourceType && isTaskSourceType(task.sourceType) ? task.sourceType : undefined;
 
 	return {
 		id: task.id,
@@ -315,6 +330,8 @@ export function mapApiTask(task: {
 		description: task.description,
 		status,
 		priority,
+		sourceType,
+		sourceRef: task.sourceRef || undefined,
 		domain: task.domain || undefined,
 		classification: task.classification || undefined,
 		assignedTo: task.assignedTo || undefined,
@@ -323,6 +340,7 @@ export function mapApiTask(task: {
 		createdAt: new Date(task.createdAt),
 		updatedAt: new Date(task.updatedAt),
 		completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
+		blockedAt: task.blockedAt ? new Date(task.blockedAt) : undefined,
 		artifacts: task.artifacts || [],
 		mailThreadId: task.mailThreadId || undefined,
 		context: task.context || undefined,

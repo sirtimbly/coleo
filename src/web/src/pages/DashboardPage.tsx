@@ -2,7 +2,9 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
-import { Chip, Skeleton, Disclosure, Button } from '@heroui/react';
+// import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
+import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
+import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
@@ -751,6 +753,8 @@ export function DashboardPage() {
   const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null);
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
+  const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
+  const [taskStatsLoading, setTaskStatsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
@@ -857,6 +861,18 @@ export function DashboardPage() {
     }, 5_000);
   }, []);
 
+  const loadTaskStats = useCallback(async () => {
+    setTaskStatsLoading(true);
+    try {
+      const stats = await api.getTaskStats();
+      setTaskStats(stats);
+    } catch {
+      setTaskStats(null);
+    } finally {
+      setTaskStatsLoading(false);
+    }
+  }, []);
+
   const loadNotableEvents = useCallback(async () => {
     await refreshGate.current.run('events', async () => {
       try {
@@ -940,10 +956,13 @@ export function DashboardPage() {
     if (msg.channel === 'arms' || msg.channel === 'activity' || msg.channel === 'brain') {
       void loadCriticalData();
     }
-  }, [loadBrainStatus, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents]);
+    if (msg.channel === 'tasks') {
+      void loadTaskStats();
+    }
+  }, [loadBrainStatus, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents, loadTaskStats]);
 
   const { connected, authenticated } = useWebSocket({
-    channels: ['arms', 'activity', 'brain', 'arm-events'],
+    channels: ['arms', 'activity', 'brain', 'arm-events', 'tasks'],
     onMessage: handleWSMessage,
     autoConnect: true,
   });
@@ -956,6 +975,7 @@ export function DashboardPage() {
     loadIndexerHealth();
     loadBrainStatus();
     loadArmHosts();
+    loadTaskStats();
 
     const interval = setInterval(() => {
       if (document.visibilityState !== 'visible') return;
@@ -965,9 +985,10 @@ export function DashboardPage() {
       loadIndexerHealth();
       loadBrainStatus();
       loadArmHosts();
+      loadTaskStats();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadArmHosts, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus]);
+  }, [loadArmHosts, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus, loadTaskStats]);
 
   useEffect(() => {
     let active = true;
@@ -987,11 +1008,14 @@ export function DashboardPage() {
 
     updateBanner();
     window.addEventListener('focus', updateBanner);
+    loadTaskStats();
     return () => {
       active = false;
       window.removeEventListener('focus', updateBanner);
     };
-  }, []);
+
+
+  }, [loadTaskStats]);
 
   if (error && !status) {
     return (
@@ -1081,6 +1105,9 @@ export function DashboardPage() {
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />
         <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} onNavigate={navigate} />
         <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
+
+        <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
+
       </div>
     </div>
   );

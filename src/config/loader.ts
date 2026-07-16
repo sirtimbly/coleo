@@ -13,7 +13,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { parse, stringify } from "smol-toml";
-import type { ColeoConfig } from "../types";
+import type { ColeoConfig, MaintenanceTaskConfig } from "../types";
 import { DEFAULT_CONFIG } from "../types";
 
 /**
@@ -60,6 +60,11 @@ interface TomlConfig {
       require_empty_queue?: boolean;
     };
   };
+  maintenance?: {
+    enabled?: boolean;
+    task_prefix?: string;
+    tasks?: TomlMaintenanceTask[];
+  };
   defaults?: {
     harness?: string;
     provider?: string;
@@ -72,6 +77,29 @@ interface TomlConfig {
     max_threshold?: number;
     enabled?: boolean;
   };
+}
+
+interface TomlMaintenanceTask {
+  id?: string;
+  enabled?: boolean;
+  title?: string;
+  description?: string;
+  slices?: string[];
+  instructions?: string;
+  instructions_file?: string;
+  priority?: MaintenanceTaskConfig["priority"];
+  domain?: string;
+  classification?: string;
+  require_empty_queue?: boolean;
+  triggers?: {
+    every_hours?: number;
+    every_completed_tasks?: number;
+    on_main_commit?: boolean;
+    branches?: string[];
+  };
+  last_run_at?: string | null;
+  last_completed_task_count?: number | null;
+  last_main_commit?: string | null;
 }
 
 /**
@@ -196,6 +224,35 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
     };
   }
 
+  if (toml.maintenance) {
+    config.maintenance = {
+      enabled: toml.maintenance.enabled ?? DEFAULT_CONFIG.maintenance.enabled,
+      taskPrefix: toml.maintenance.task_prefix ?? DEFAULT_CONFIG.maintenance.taskPrefix,
+      tasks: (toml.maintenance.tasks ?? []).map((task) => ({
+        id: task.id ?? "",
+        enabled: task.enabled ?? true,
+        title: task.title ?? task.id ?? "Maintenance",
+        description: task.description,
+        slices: task.slices ?? [],
+        instructions: task.instructions,
+        instructionsFile: task.instructions_file,
+        priority: task.priority ?? "normal",
+        domain: task.domain ?? "general",
+        classification: task.classification ?? "maintenance",
+        requireEmptyQueue: task.require_empty_queue ?? false,
+        triggers: {
+          everyHours: task.triggers?.every_hours,
+          everyCompletedTasks: task.triggers?.every_completed_tasks,
+          onMainCommit: task.triggers?.on_main_commit,
+          branches: task.triggers?.branches,
+        },
+        lastRunAt: task.last_run_at ?? null,
+        lastCompletedTaskCount: task.last_completed_task_count ?? null,
+        lastMainCommit: task.last_main_commit ?? null,
+      })),
+    };
+  }
+
   if (toml.defaults) {
     config.defaults = {
       harness: toml.defaults.harness ?? DEFAULT_CONFIG.defaults.harness,
@@ -251,6 +308,35 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 			},
 		};
 	}
+
+  if (config.maintenance) {
+    toml.maintenance = {
+      enabled: config.maintenance.enabled,
+      task_prefix: config.maintenance.taskPrefix,
+      tasks: config.maintenance.tasks.map((task) => ({
+        id: task.id,
+        enabled: task.enabled,
+        title: task.title,
+        description: task.description,
+        slices: task.slices,
+        instructions: task.instructions,
+        instructions_file: task.instructionsFile,
+        priority: task.priority,
+        domain: task.domain,
+        classification: task.classification,
+        require_empty_queue: task.requireEmptyQueue,
+        triggers: {
+          every_hours: task.triggers.everyHours,
+          every_completed_tasks: task.triggers.everyCompletedTasks,
+          on_main_commit: task.triggers.onMainCommit,
+          branches: task.triggers.branches,
+        },
+        last_run_at: task.lastRunAt,
+        last_completed_task_count: task.lastCompletedTaskCount,
+        last_main_commit: task.lastMainCommit,
+      })),
+    };
+  }
 
   if (config.mail) {
     toml.mail = {
@@ -351,6 +437,9 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
         },
       };
     }
+    if (tomlConfig.maintenance) {
+      config.maintenance = { ...config.maintenance, ...tomlConfig.maintenance };
+    }
     if (tomlConfig.compression) {
       config.compression = { ...config.compression, ...tomlConfig.compression };
     }
@@ -397,7 +486,7 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 /**
  * Update configuration in TOML file
  */
-type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea" | "automations" | "compression"> & {
+type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "terminal" | "defaults" | "gitea" | "automations" | "maintenance" | "compression"> & {
   brain?: Partial<ColeoConfig["brain"]>;
   mail?: Partial<ColeoConfig["mail"]>;
   terminal?: Partial<ColeoConfig["terminal"]>;
@@ -408,6 +497,7 @@ type ColeoConfigUpdates = Omit<Partial<ColeoConfig>, "brain" | "mail" | "termina
     enabled?: boolean;
     refactorLargeFiles?: Partial<ColeoConfig["automations"]["refactorLargeFiles"]>;
   };
+  maintenance?: Partial<ColeoConfig["maintenance"]>;
   compression?: Partial<ColeoConfig["compression"]>;
 };
 
@@ -420,7 +510,7 @@ export async function updateConfig(
   // Load current config
   const current = await loadConfig(dir);
 
-  const { gitea, automations, compression, ...rest } = updates;
+  const { gitea, automations, maintenance, compression, ...rest } = updates;
   
   // Merge updates
   const updated: ColeoConfig = {
@@ -431,6 +521,7 @@ export async function updateConfig(
     terminal: updates.terminal ? { ...current.terminal, ...updates.terminal } : current.terminal,
     docs: updates.docs ? { ...current.docs, ...updates.docs } : current.docs,
     defaults: updates.defaults ? { ...current.defaults, ...updates.defaults } : current.defaults,
+    maintenance: maintenance ? { ...current.maintenance, ...maintenance } : current.maintenance,
     compression: compression ? { ...current.compression, ...compression } : current.compression,
   };
 

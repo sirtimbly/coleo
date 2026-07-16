@@ -130,6 +130,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["054_arm_runtime_metadata", MIGRATION_054, { table: "arms", columns: MIGRATION_054_COLUMNS }],
     ["055_tasks_fts", MIGRATION_055],
     ["056_task_summaries_and_diffs", MIGRATION_056],
+    ["057_task_checklist_items", MIGRATION_057],
+    ["058_task_blocked_at", MIGRATION_058, { table: "tasks", columns: MIGRATION_058_COLUMNS }],
 	];
 
 
@@ -140,12 +142,12 @@ async function runMigrations(db: Database): Promise<void> {
     if (shouldLogMigrations) {
       console.log(`Applying migration: ${name}`);
     }
-    
+
     // First add any columns that need to be added (before running main SQL)
     if (columnDefs) {
       addColumnsIfNotExist(columnDefs.table, columnDefs.columns);
     }
-    
+
     db.exec(sql);
     db.run("INSERT INTO _migrations (name) VALUES (?)", [name]);
   }
@@ -314,7 +316,7 @@ CREATE TABLE arms_new (
 );
 
 -- Copy data from old table
-INSERT INTO arms_new SELECT 
+INSERT INTO arms_new SELECT
   id, name, domain, harness, status, context_budget, current_context_used,
   created_at, updated_at, last_activity_at, config, personality, convictions,
   reputation, generation, parent_arm_id, NULL, NULL, NULL
@@ -354,7 +356,7 @@ CREATE TABLE IF NOT EXISTS arms_new (
 );
 
 -- Copy data from old table
-INSERT OR IGNORE INTO arms_new SELECT 
+INSERT OR IGNORE INTO arms_new SELECT
   id, name, domain, harness, status, context_budget, current_context_used,
   created_at, updated_at, last_activity_at, config, personality, convictions,
   reputation, generation, parent_arm_id, pid, provider, model
@@ -905,7 +907,7 @@ const MIGRATION_025 = `
 CREATE TABLE IF NOT EXISTS arm_state_machine (
   arm_id TEXT PRIMARY KEY,
   state TEXT NOT NULL DEFAULT 'spawning' CHECK (state IN (
-    'spawning', 'starting', 'idle', 'task_assigned', 'working', 
+    'spawning', 'starting', 'idle', 'task_assigned', 'working',
     'completing', 'disconnected', 'stopped', 'error'
   )),
   previous_state TEXT,
@@ -1169,7 +1171,7 @@ const MIGRATION_042_COLUMNS = [
 const MIGRATION_042 = `
   -- Add index for prepared task queries
   CREATE INDEX IF NOT EXISTS idx_tasks_prepared_by ON tasks(prepared_by_arm_id);
-  
+
   -- Add index for prepared tasks (not null = prepared)
   CREATE INDEX IF NOT EXISTS idx_tasks_prepared_at ON tasks(prepared_at);
 `;
@@ -1237,7 +1239,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_order_key ON tasks(order_key);
 -- Backfill order_key from existing sort_order using fractional indexing
 -- Generate base62 keys: a, b, c, ... za, zb, zc, etc.
 WITH ordered_tasks AS (
-  SELECT 
+  SELECT
     id,
     ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num,
     COUNT(*) OVER () as total_count
@@ -1248,17 +1250,17 @@ WITH ordered_tasks AS (
 -- Using a simple base62 encoding: position 1 -> 'a', 2 -> 'b', etc.
 -- For positions > 62, we use two characters: 'aa', 'ab', etc.
 key_mapping AS (
-  SELECT 
+  SELECT
     id,
-    CASE 
-      WHEN row_num <= 62 THEN 
+    CASE
+      WHEN row_num <= 62 THEN
         -- Single character: a-z (26), A-Z (26), 0-9 (10) = 62 total
         SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', row_num, 1)
       ELSE
         -- Two characters for larger lists
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 
+        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                ((row_num - 1) / 62) + 1, 1) ||
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 
+        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
                ((row_num - 1) % 62) + 1, 1)
     END as new_order_key
   FROM ordered_tasks
@@ -1422,6 +1424,7 @@ CREATE INDEX IF NOT EXISTS idx_arms_workdir ON arms(workdir);
 CREATE INDEX IF NOT EXISTS idx_arms_last_output_at ON arms(last_output_at);
 `;
 
+
 // Migration 055: FTS5 index over tasks (subject + description), mirroring the
 // bugs_fts external-content pattern so the search API can find real tasks.
 const MIGRATION_055 = `
@@ -1468,7 +1471,6 @@ CREATE TABLE IF NOT EXISTS task_summaries (
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
-
 CREATE INDEX IF NOT EXISTS idx_task_summaries_task ON task_summaries(task_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS task_diffs (
@@ -1497,6 +1499,28 @@ CREATE TABLE IF NOT EXISTS task_diff_views (
   PRIMARY KEY (task_id, user_id),
   FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 );
+`;
+
+// Migration 055: Add task checklist items for progress visualization and sub-task breakdown
+const MIGRATION_057 = `
+-- Checklist items table for task sub-task breakdown
+CREATE TABLE IF NOT EXISTS task_checklist_items (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  text TEXT NOT NULL,
+  completed INTEGER NOT NULL DEFAULT 0,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+
+-- Index for fast lookup by task
+CREATE INDEX IF NOT EXISTS idx_checklist_task ON task_checklist_items(task_id);
+
+-- Index for ordering within a task
+CREATE INDEX IF NOT EXISTS idx_checklist_sort ON task_checklist_items(task_id, sort_order);
 `;
 
 
@@ -1910,5 +1934,36 @@ export async function seedDatabase(db: Database): Promise<void> {
 
   console.log("Database seeded with development data");
 }
+
+// Migration 056: Add blocked_at timestamp to tasks for tracking when tasks become blocked
+const MIGRATION_058_COLUMNS = [
+  { name: 'blocked_at', sql: "ALTER TABLE tasks ADD COLUMN blocked_at TEXT" },
+];
+
+const MIGRATION_058 = `
+-- Create index for finding blocked tasks by time
+CREATE INDEX IF NOT EXISTS idx_tasks_blocked_at ON tasks(blocked_at);
+
+-- Create escalation_tracking table for bug-blocking escalation state
+CREATE TABLE IF NOT EXISTS escalation_tracking (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  bug_id TEXT NOT NULL,
+  escalation_level INTEGER NOT NULL DEFAULT 0,
+  last_escalated_at TEXT,
+  notified_human INTEGER DEFAULT 0,
+  auto_assigned_bug INTEGER DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (bug_id) REFERENCES bugs(id) ON DELETE CASCADE
+);
+
+-- Index for fast lookup of escalations by task
+CREATE INDEX IF NOT EXISTS idx_escalation_task ON escalation_tracking(task_id);
+
+-- Index for fast lookup of escalations by bug
+CREATE INDEX IF NOT EXISTS idx_escalation_bug ON escalation_tracking(bug_id);
+`;
 
 export { Database };

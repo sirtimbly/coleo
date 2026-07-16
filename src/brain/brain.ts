@@ -21,7 +21,7 @@ import {
 } from "./plan-parser";
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
-import { loadConfig } from "../config";
+import { loadConfig, updateConfig } from "../config";
 import {
 	ArmStateMachine,
 	type ArmState,
@@ -42,6 +42,11 @@ import { StuckArmAnalyzer, type StuckAnalysis } from "./activity-analyzer";
 import { TerminalDashboard, type ArmStatusRow } from "./terminal-dashboard";
 import { createArmStateApiDatabase } from "./arm-state-api-db";
 import { findLargeFiles as findLargeFilesUtil } from "./utils/find-large-files";
+import {
+	buildMaintenanceTaskDescription,
+	getGitCommitState,
+	shouldRunMaintenanceTask,
+} from "./maintenance-tasks";
 import {
 	stripTerminalArtifacts,
 	getDomainPatterns,
@@ -71,6 +76,7 @@ import {
 	buildCommitTaskSubject,
 	buildValidationTaskSubject,
 	buildVerificationTaskSubject,
+	containsCommitTaskKeyword,
 	isFollowUpTaskSubject,
 	isValidationTaskSubject,
 	isVerificationTaskSubject,
@@ -834,14 +840,16 @@ export class Brain {
 				// Optionally run an immediate check during poll for faster response
 				// This is in addition to the periodic checks the monitor runs on its own
 				// await this.healthMonitor.runHealthCheck();
-			} else {
-				// Fallback to legacy methods if health monitor not initialized
-				await this.checkStuckArms();
-				await this.checkIdleArmStuckLoops();
 			}
+			// Always run legacy stuck detection (includes silent completion)
+			await this.checkStuckArms();
+			await this.checkIdleArmStuckLoops();
 
 			// Step 5: Maintain task queue state (no push assignment; arms pull tasks)
 			await this.assignTasks();
+
+			// Step 5.5: Check and escalate blocked tasks
+			await this.checkAndEscalateBlockedTasks();
 
 			// Step 6: Assign initial tasks to arms that are still idle
 			await this.assignInitialTasks();
@@ -858,7 +866,10 @@ export class Brain {
 		// Step 8b: Check for documentation update triggers
 		await this.checkDocUpdateTrigger();
 
-		// Step 8c: Re-evaluate plan progress (progressive planning)
+		// Step 8c: Check project-local maintenance task triggers
+		await this.checkMaintenanceTaskTriggers();
+
+		// Step 8d: Re-evaluate plan progress (progressive planning)
 		// Creates verification tasks for completed work with issues
 		await this.reEvaluatePlanProgress();
 
@@ -2260,6 +2271,8 @@ export class Brain {
 				description: string;
 				status: string;
 				priority: string;
+				sourceType?: string | null;
+				sourceRef?: string | null;
 				domain?: string | null;
 				classification?: string | null;
 				assignedTo?: string | null;
@@ -2268,6 +2281,7 @@ export class Brain {
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
+				blockedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: {
@@ -2296,7 +2310,9 @@ export class Brain {
 			this.state.pendingTasks = response.counts.byStatus.pending;
 		}
 
-		return response.tasks.map((task) => mapApiTask(task));
+		return response.tasks
+			.map((task) => mapApiTask(task))
+			.filter((task) => !containsCommitTaskKeyword(task.subject));
 	}
 
 	private async listBugsFromApi(
@@ -2424,6 +2440,8 @@ export class Brain {
 				description: string;
 				status: string;
 				priority: string;
+				sourceType?: string | null;
+				sourceRef?: string | null;
 				domain?: string | null;
 				classification?: string | null;
 				assignedTo?: string | null;
@@ -2432,6 +2450,7 @@ export class Brain {
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
+				blockedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
@@ -2477,6 +2496,7 @@ export class Brain {
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
+				blockedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
@@ -2509,6 +2529,7 @@ export class Brain {
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
+				blockedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
@@ -2766,6 +2787,14 @@ export class Brain {
 		const task = taskContext || (await this.getTaskFromApi(taskId));
 		if (!task) {
 			this.log(`[initiateTaskValidation] Task ${taskId} not found`);
+			return;
+		}
+
+		if (isFollowUpTaskSubject(task.subject)) {
+			this.log(
+				`Skipping validation follow-up generation for follow-up task ${taskId} (${task.subject})`,
+			);
+			await this.finalizeTaskCompletion(taskId, summary, artifacts);
 			return;
 		}
 
@@ -3048,6 +3077,13 @@ When you have fixed the issues, call \`complete_task\` again with an updated sum
 		taskSubject: string,
 		taskSummary: string,
 	): Promise<void> {
+		if (containsCommitTaskKeyword(taskSubject)) {
+			this.log(
+				`Skipping commit task creation for ${taskId} (${taskSubject}) because subject already references commit work`,
+			);
+			return;
+		}
+
 		// Defense-in-depth: never create commit tasks for follow-up tasks
 		if (isFollowUpTaskSubject(taskSubject)) {
 			this.log(
@@ -3983,7 +4019,7 @@ ${originalTask.id}`;
 					},
 				});
 
-			await this.handleBugReport("system", {
+			const bugResult = await this.handleBugReport("system", {
 				id: `bug-${discovery.id}`,
 				title: discovery.title,
 				description: [
@@ -3996,7 +4032,35 @@ ${originalTask.id}`;
 				source: "system_detected",
 				sourceTaskId: discovery.taskId || undefined,
 			});
+			if (bugResult) {
+				await this.recordDiscoveryHandlingComment(discovery.id, {
+					status: "acknowledged",
+					linkedBugId: bugResult.bugId,
+					comment: bugResult.deduplicated
+						? `Matched existing bug ${bugResult.bugId} for this discovery.`
+						: `Created bug ${bugResult.bugId} to address this discovery.`,
+				});
+			}
 		}
+	}
+
+	private async recordDiscoveryHandlingComment(
+		discoveryId: string,
+		input: {
+			status?: "acknowledged" | "resolved" | "dismissed";
+			comment: string;
+			linkedTaskId?: string;
+			linkedBugId?: string;
+			resolutionReason?: string;
+		},
+	): Promise<void> {
+		await this.apiRequest(`/api/discoveries/${encodeURIComponent(discoveryId)}`, {
+			method: "PATCH",
+			body: JSON.stringify({
+				...input,
+				handledBy: "brain",
+			}),
+		});
 	}
 
 	/**
@@ -7021,8 +7085,27 @@ Report findings using bug resolution workflow.`;
 			}
 
 			case "prompt_complete_task": {
-				// Arm has silently completed task - prompt to call complete_task
-				await this.promptArmToCompleteTask(arm, analysis);
+				// Arm has silently completed task - auto-complete if confidence is high
+				if (
+					analysis.confidence >= 0.85 &&
+					analysis.silentCompletion?.isReadyForCompletion
+				) {
+					this.log(
+						`Arm ${arm.name}: auto-completing task ${arm.currentTask} (confidence: ${analysis.confidence})`,
+					);
+					this.logActivity("brain", "silent_completion_auto_completed", arm.id, {
+						taskId: arm.currentTask,
+						confidence: analysis.confidence,
+						reasoning: analysis.reasoning,
+					});
+					await this.completeTask(
+						arm.currentTask!,
+						`Auto-completed: ${analysis.reasoning}`,
+						analysis.silentCompletion.filesChanged || [],
+					);
+				} else {
+					await this.promptArmToCompleteTask(arm, analysis);
+				}
 				break;
 			}
 
@@ -7662,6 +7745,120 @@ Report findings using bug resolution workflow.`;
 					},
 				});
 			}
+		}
+	}
+
+	/**
+	 * Check for blocked tasks and apply escalation policy
+	 */
+	private async checkAndEscalateBlockedTasks(): Promise<void> {
+		try {
+			const blockedTasks = this.tasks.filter((t) => t.status === "blocked" && t.blockedAt);
+			if (blockedTasks.length === 0) return;
+
+			const unresolvedBugs = await this.listBugsFromApi(500);
+
+			const blockedTaskInfos = blockedTasks.map((task) => ({
+				taskId: task.id,
+				taskSubject: task.subject,
+				blockedAt: new Date(task.blockedAt!),
+				blockingBugs: unresolvedBugs.filter((bug) =>
+					bug.blockers.includes(task.id),
+				),
+			}));
+
+			const { evaluateEscalations, shouldAutoAssignBug, shouldBumpPriority, bumpPriority, formatEscalationMessage } = await import("./bug-escalation");
+
+			// Load previous escalation levels from database
+			const previousEscalations = new Map<string, number>();
+			try {
+				const response = await this.apiRequest<{
+					escalations: Array<{ taskId: string; bugId: string; escalationLevel: number }>;
+				}>("/api/escalations");
+				for (const esc of response?.escalations || []) {
+					const key = `${esc.taskId}:${esc.bugId}`;
+					previousEscalations.set(key, esc.escalationLevel);
+				}
+			} catch {
+				// Database may not have escalation_tracking table yet
+			}
+
+			const escalations = evaluateEscalations(
+				blockedTaskInfos,
+				previousEscalations,
+			);
+
+			for (const escalation of escalations) {
+				this.log(
+					`Escalating task ${escalation.taskId} to level ${escalation.escalationLevel}: ${escalation.action}`,
+				);
+
+				// Persist escalation state to database
+				try {
+					await this.apiRequest("/api/escalations", {
+						method: "POST",
+						body: JSON.stringify({
+							taskId: escalation.taskId,
+							bugId: escalation.bugId,
+							escalationLevel: escalation.escalationLevel,
+							notifiedHuman: escalation.notifyHuman,
+						}),
+					});
+				} catch (err) {
+					this.log(`Failed to persist escalation: ${err}`);
+				}
+
+				// Execute action
+				switch (escalation.action) {
+					case "auto_assign_bug": {
+						const bug = unresolvedBugs.find((b) => b.id === escalation.bugId);
+						if (bug && shouldAutoAssignBug(bug, escalation.minutesBlocked)) {
+							// Find an available arm
+							const availableArms = Array.from(this.arms.values()).filter(
+								(a) => a.status === "idle" || a.status === "running",
+							);
+							const arm = availableArms[0];
+							if (arm) {
+								await this.apiRequest(`/api/bugs/${escalation.bugId}/claim`, {
+									method: "POST",
+									body: JSON.stringify({ armId: arm.id }),
+								});
+								this.log(`Auto-assigned bug ${escalation.bugId} to arm ${arm.id}`);
+							}
+						}
+						break;
+					}
+					case "bump_priority": {
+						const bug = unresolvedBugs.find((b) => b.id === escalation.bugId);
+						if (bug && shouldBumpPriority(bug, escalation.minutesBlocked)) {
+							const newPriority = bumpPriority(bug.priority);
+							await this.apiRequest(`/api/bugs/${escalation.bugId}`, {
+								method: "PATCH",
+								body: JSON.stringify({ priority: newPriority }),
+							});
+							this.log(`Bumped bug ${escalation.bugId} priority from ${bug.priority} to ${newPriority}`);
+						}
+						break;
+					}
+				}
+
+				// Notify human if required
+				if (escalation.notifyHuman) {
+					const message = formatEscalationMessage(escalation);
+					await this.sendToHuman({
+						subject: `[coleo] Task Escalation: ${escalation.taskId}`,
+						body: message,
+						headers: {
+							"X-Coleo-Type": "task-escalation",
+							"X-Coleo-Task-Id": escalation.taskId,
+							"X-Coleo-Bug-Id": escalation.bugId,
+							"X-Coleo-Escalation-Level": String(escalation.escalationLevel),
+						},
+					});
+				}
+			}
+		} catch (err) {
+			this.log(`Error checking escalations: ${err}`);
 		}
 	}
 
@@ -8672,6 +8869,120 @@ ${originalTask.id}`;
 			filesChanged: context.changedFilesCount,
 			docsToUpdate: context.featureDocsToUpdate.length,
 		});
+	}
+
+	private async checkMaintenanceTaskTriggers(): Promise<void> {
+		try {
+			const config = await loadConfig(this.options.coleoDir);
+			if (!config.maintenance.enabled || config.maintenance.tasks.length === 0) {
+				return;
+			}
+
+			const projectRoot = process.cwd();
+			const gitState = getGitCommitState(projectRoot);
+			const now = new Date();
+			let changed = false;
+
+			for (const taskConfig of config.maintenance.tasks) {
+				const decision = shouldRunMaintenanceTask(taskConfig, {
+					now,
+					completedTaskCount: this.state.completedTaskCount,
+					currentBranch: gitState.branch,
+					currentCommit: gitState.commit,
+				});
+
+				if (!decision.shouldRun) {
+					continue;
+				}
+
+				if (taskConfig.requireEmptyQueue && !(await this.isMaintenanceQueueReady(taskConfig.id))) {
+					this.log(`Skipping maintenance task ${taskConfig.id}: active queue work exists`);
+					continue;
+				}
+
+				if (await this.hasActiveMaintenanceTask(taskConfig.id)) {
+					this.log(`Skipping maintenance task ${taskConfig.id}: task already active`);
+					continue;
+				}
+
+				const taskId = `maint-${taskConfig.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+				const description = await buildMaintenanceTaskDescription(taskConfig, {
+					coleoDir: this.options.coleoDir,
+					triggerReasons: decision.reasons,
+					completedTaskCount: this.state.completedTaskCount,
+					currentBranch: gitState.branch,
+					currentCommit: gitState.commit,
+				});
+
+				const createdTask = await this.createTaskViaApi({
+					id: taskId,
+					subject: `${config.maintenance.taskPrefix}: ${taskConfig.title}`,
+					description,
+					status: "pending",
+					priority: taskConfig.priority,
+					domain: taskConfig.domain,
+					classification: taskConfig.classification,
+					sourceType: "system",
+					sourceRef: `maintenance:${taskConfig.id}`,
+					context: {
+						notes: JSON.stringify({
+							maintenanceTaskId: taskConfig.id,
+							slices: taskConfig.slices,
+							triggerReasons: decision.reasons,
+						}),
+					},
+				});
+
+				if (!createdTask) {
+					this.log(`Failed to create maintenance task ${taskConfig.id}`);
+					continue;
+				}
+
+				taskConfig.lastRunAt = now.toISOString();
+				taskConfig.lastCompletedTaskCount = this.state.completedTaskCount;
+				if (decision.mainCommit) {
+					taskConfig.lastMainCommit = decision.mainCommit;
+				}
+				changed = true;
+
+				this.log(`Created maintenance task: ${createdTask.id} (${taskConfig.id})`);
+				this.logActivity("brain", "maintenance_task_created", createdTask.id, {
+					maintenanceTaskId: taskConfig.id,
+					reasons: decision.reasons,
+					slices: taskConfig.slices,
+				});
+			}
+
+			if (changed) {
+				await updateConfig(
+					{
+						maintenance: {
+							tasks: config.maintenance.tasks,
+						},
+					},
+					this.options.coleoDir,
+				);
+			}
+		} catch (err) {
+			this.log(`Failed to check maintenance task triggers: ${err}`);
+		}
+	}
+
+	private async hasActiveMaintenanceTask(maintenanceTaskId: string): Promise<boolean> {
+		const activeTasks = await this.listTasksFromApi({
+			status: ["pending", "claimed", "in_progress", "completing", "blocked"],
+			limit: 200,
+		});
+		const sourceRef = `maintenance:${maintenanceTaskId}`;
+		return activeTasks.some((task) => task.sourceRef === sourceRef);
+	}
+
+	private async isMaintenanceQueueReady(_maintenanceTaskId: string): Promise<boolean> {
+		const activeTasks = await this.listTasksFromApi({
+			status: ["pending", "claimed", "in_progress", "completing"],
+			limit: 20,
+		});
+		return activeTasks.length === 0;
 	}
 
 	/**
