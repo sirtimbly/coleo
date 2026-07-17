@@ -228,6 +228,111 @@ export async function updateArmStatusWithActivity(
 }
 
 /**
+ * Resolve the claim top-K policy.
+ *
+ * K is the number of top-ranked pending tasks that are eligible for claim at
+ * any moment. A fixed K can be configured via the `claim_top_k` config key
+ * (integer >= 1). Otherwise K defaults dynamically to the number of active
+ * (non-stopped) arms so concurrent arms can each claim their rank-ordered
+ * task without rejecting legitimate in-order claims.
+ *
+ * Returns null when the schema cannot evaluate the policy (missing tables) -
+ * callers should treat that as "guard not enforceable" and skip enforcement.
+ */
+function resolveClaimTopK(db: Database): number | null {
+  try {
+    const configRow = db
+      .query("SELECT value FROM config WHERE key = 'claim_top_k'")
+      .get() as { value: string } | null;
+    const fixed = Number.parseInt(configRow?.value ?? "", 10);
+    if (Number.isFinite(fixed) && fixed >= 1) {
+      return fixed;
+    }
+  } catch {
+    // config table missing - fall through to dynamic default
+  }
+
+  try {
+    const armsRow = db
+      .query("SELECT COUNT(*) as count FROM arms WHERE status != 'stopped'")
+      .get() as { count: number } | null;
+    return Math.max(1, armsRow?.count ?? 1);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enforce that a claim targets a task within the top-K claimable tasks.
+ *
+ * The claimable set mirrors task determination: status 'pending', unassigned,
+ * and not dependency-blocked, ranked by order_key (fractional indexing) with
+ * created_at as tiebreak. Re-claiming a task already assigned to the same arm
+ * is allowed (idempotent). Must run inside the assignment transaction so the
+ * rank check and the claim update are atomic.
+ */
+function enforceTopKClaim(db: Database, taskId: string, armId: string): void {
+  const task = db
+    .query("SELECT status, assigned_to FROM tasks WHERE id = ?")
+    .get(taskId) as { status: string; assigned_to: string | null } | null;
+
+  if (task?.assigned_to === armId) {
+    return;
+  }
+
+  const k = resolveClaimTopK(db);
+  if (k === null) {
+    console.warn(
+      `[transactions] claim top-K guard skipped: schema cannot evaluate policy`,
+    );
+    return;
+  }
+
+  let orderBy = "created_at ASC";
+  try {
+    const columns = db
+      .query("PRAGMA table_info(tasks)")
+      .all() as Array<{ name: string }>;
+    if (columns.some((column) => column.name === "order_key")) {
+      orderBy = "order_key ASC NULLS LAST, created_at ASC";
+    }
+  } catch {
+    // keep created_at fallback ordering
+  }
+
+  let eligibleIds: string[];
+  try {
+    const rows = db
+      .query(
+        `SELECT id FROM tasks
+         WHERE status = 'pending'
+           AND (assigned_to IS NULL OR assigned_to = '')
+           AND COALESCE(dependency_blocked, 0) = 0
+         ORDER BY ${orderBy}`,
+      )
+      .all() as Array<{ id: string }>;
+    eligibleIds = rows.map((row) => row.id);
+  } catch (err) {
+    console.warn(
+      `[transactions] claim top-K guard skipped: eligibility query failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return;
+  }
+
+  const rank = eligibleIds.indexOf(taskId);
+  if (rank === -1) {
+    throw new Error(
+      `Task not claimable: ${taskId} is not a pending, unassigned, unblocked task (status: ${task?.status ?? "unknown"})`,
+    );
+  }
+  if (rank >= k) {
+    throw new Error(
+      `Task ${taskId} is rank ${rank + 1} in the claimable queue; only the top ${k} task(s) may be claimed (claim_top_k policy)`,
+    );
+  }
+}
+
+/**
  * Update task assignment with consensus tracking atomically
  */
 export async function assignTaskToArm(
@@ -244,6 +349,12 @@ export async function assignTaskToArm(
     const taskExists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
     if (!taskExists) {
       throw new Error(`Task not found: ${taskId} - the task may have been deleted or never existed in this database`);
+    }
+
+    // Claims must target a top-ranked claimable task. Enforced inside the
+    // transaction so the rank check and assignment update are atomic.
+    if (isClaim) {
+      enforceTopKClaim(db, taskId, armId);
     }
 
     // Update task assignment

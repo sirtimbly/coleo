@@ -22,6 +22,7 @@ import {
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { loadConfig, updateConfig } from "../config";
+import { resolveBrainModelConfig } from "./model-config";
 import {
 	ArmStateMachine,
 	type ArmState,
@@ -621,6 +622,14 @@ export class Brain {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
+		const modelConfig = resolveBrainModelConfig(config.brain);
+		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfig);
+		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfig);
+		this.stuckArmAnalyzer = new StuckArmAnalyzer(
+			(msg) => this.log(msg),
+			this.options.coleoDir,
+			modelConfig,
+		);
 
 		// Load mail config for external email sending
 		await this.loadMailConfig();

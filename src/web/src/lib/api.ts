@@ -78,6 +78,15 @@ export interface OnboardingStatus {
   };
 }
 
+export type BrainConfigResponse = Omit<ColeoConfig['brain'], 'apiKey'> & {
+  apiKeyConfigured: boolean;
+};
+
+export interface BrainModel {
+  id: string;
+  name: string;
+}
+
 export interface WorkspaceTextFile {
   path: string;
   content: string;
@@ -299,10 +308,18 @@ class ApiClient {
   }
 
   async updateBrainConfig(data: Partial<ColeoConfig['brain']>) {
-    return this.request<{ brain: ColeoConfig['brain'] }>('/config/brain', {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  async getBrainModelConfig() {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain');
+  }
+
+  async getBrainModels() {
+    return this.request<{ models: BrainModel[] }>('/config/brain/models');
   }
 
   // Mail Config

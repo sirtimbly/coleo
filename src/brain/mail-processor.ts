@@ -1,3 +1,6 @@
+import { resolveBrainModelConfig } from "./model-config";
+import type { BrainModelConfig } from "./model-config";
+
 interface ProcessedIntent {
 	type:
 		| "new_task"
@@ -31,12 +34,17 @@ export class MailProcessor {
 	private logger: (message: string) => void;
 	private systemPrompt: string;
 
-	constructor(logger: (message: string) => void, systemPrompt: string) {
+	constructor(
+		logger: (message: string) => void,
+		systemPrompt: string,
+		modelConfig?: BrainModelConfig,
+	) {
 		this.logger = logger;
 		this.systemPrompt = systemPrompt;
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		const config = modelConfig || resolveBrainModelConfig();
+		this.apiKey = config.apiKey;
+		this.model = config.model;
+		this.baseUrl = config.baseUrl;
 	}
 
 	async processMessage(

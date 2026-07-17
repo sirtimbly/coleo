@@ -1,3 +1,6 @@
+import { resolveBrainModelConfig } from "./model-config";
+import type { BrainModelConfig } from "./model-config";
+
 export type ArmOutputAction =
 	| "no_action"
 	| "create_task"
@@ -44,11 +47,12 @@ export class ArmOutputProcessor {
 	private baseUrl: string;
 	private logger: (message: string) => void;
 
-	constructor(logger: (message: string) => void) {
+	constructor(logger: (message: string) => void, modelConfig?: BrainModelConfig) {
 		this.logger = logger;
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		const config = modelConfig || resolveBrainModelConfig();
+		this.apiKey = config.apiKey;
+		this.model = config.model;
+		this.baseUrl = config.baseUrl;
 	}
 
 	async processOutput(

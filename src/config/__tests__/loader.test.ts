@@ -69,7 +69,14 @@ describe("config loader", () => {
   it("configToToml maps camelCase to snake_case", () => {
     const toml = configToToml({
       version: 2,
-      brain: { pollIntervalMs: 5000, maxArms: 3, armGracePeriodMinutes: 10 },
+      brain: {
+        pollIntervalMs: 5000,
+        maxArms: 3,
+        armGracePeriodMinutes: 10,
+        provider: "openai",
+        model: "gpt-5",
+        apiKey: "brain-key",
+      },
       mail: { provider: "postmark", fromAddress: "bot@example.test", toAddress: "human@example.test", digestSchedule: "daily" },
       gitea: { url: "https://gitea.test", token: "tok", defaultOrg: "org", defaultRepo: "repo" },
       terminal: { emulator: "tmux" },
@@ -79,6 +86,9 @@ describe("config loader", () => {
 
     expect(toml.version).toBe(2);
     expect(toml.brain?.poll_interval_ms).toBe(5000);
+    expect(toml.brain?.provider).toBe("openai");
+    expect(toml.brain?.model).toBe("gpt-5");
+    expect(toml.brain?.api_key).toBe("brain-key");
     expect(toml.mail?.from_address).toBe("bot@example.test");
     expect(toml.mail?.provider).toBe("postmark");
     expect(toml.gitea?.default_org).toBe("org");
@@ -96,13 +106,30 @@ describe("config loader", () => {
       COLEO_DEFAULT_HARNESS: process.env.COLEO_DEFAULT_HARNESS,
       COLEO_DEFAULT_PROVIDER: process.env.COLEO_DEFAULT_PROVIDER,
       COLEO_DEFAULT_MODEL: process.env.COLEO_DEFAULT_MODEL,
+      COLEO_BRAIN_PROVIDER: process.env.COLEO_BRAIN_PROVIDER,
+      COLEO_BRAIN_MODEL: process.env.COLEO_BRAIN_MODEL,
+      COLEO_BRAIN_API_KEY: process.env.COLEO_BRAIN_API_KEY,
+      OPENAI_MODEL: process.env.OPENAI_MODEL,
+      OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     };
 
     try {
+      delete process.env.COLEO_BRAIN_PROVIDER;
+      delete process.env.COLEO_BRAIN_MODEL;
+      delete process.env.COLEO_BRAIN_API_KEY;
+      process.env.OPENAI_MODEL = "legacy-openai-model";
+      process.env.OPENAI_API_KEY = "legacy-openai-key";
       await writeTomlConfig(
         {
           version: 1,
-          brain: { poll_interval_ms: 1000, max_arms: 2, arm_grace_period_minutes: 5 },
+          brain: {
+            poll_interval_ms: 1000,
+            max_arms: 2,
+            arm_grace_period_minutes: 5,
+            provider: "openai",
+            model: "gpt-5",
+            api_key: "brain-key",
+          },
           defaults: { harness: "opencode", provider: "openai", model: "gpt-4o" },
         },
         dir
@@ -117,7 +144,16 @@ describe("config loader", () => {
       expect(loaded.brain.pollIntervalMs).toBe(2000);
       expect(loaded.brain.maxArms).toBe(4);
       expect(loaded.brain.armGracePeriodMinutes).toBe(8);
+      expect(loaded.brain.provider).toBe("openai");
+      expect(loaded.brain.model).toBe("gpt-5");
+      expect(loaded.brain.apiKey).toBe("brain-key");
       expect(loaded.defaults.model).toBe("gpt-4o-mini");
+
+      process.env.COLEO_BRAIN_MODEL = "forced-brain-model";
+      process.env.COLEO_BRAIN_API_KEY = "forced-brain-key";
+      const overridden = await loadConfig(dir);
+      expect(overridden.brain.model).toBe("forced-brain-model");
+      expect(overridden.brain.apiKey).toBe("forced-brain-key");
     } finally {
       for (const [key, value] of Object.entries(envSnapshot)) {
         if (value === undefined) {

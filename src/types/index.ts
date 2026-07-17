@@ -383,6 +383,9 @@ export interface ColeoConfig {
 		pollIntervalMs: number;
 		maxArms: number;
 		armGracePeriodMinutes: number;
+		provider: string;
+		model: string;
+		apiKey: string;
 	};
   mail: {
     provider: "cloudflare" | "postmark";
@@ -468,6 +471,9 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		pollIntervalMs: 30000,
 		maxArms: 8,
 		armGracePeriodMinutes: 2,
+		provider: "openai",
+		model: "gpt-5-mini",
+		apiKey: "",
 	},
   mail: {
     provider: "cloudflare",

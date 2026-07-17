@@ -18,10 +18,14 @@ export function SettingsPage() {
 
   const [apiKey, setApiKey] = useState(api.getApiKey() || '');
   const [saved, setSaved] = useState(false);
+  const [brainApiKey, setBrainApiKey] = useState('');
+  const [brainApiKeyConfigured, setBrainApiKeyConfigured] = useState(false);
+  const [brainApiKeySaved, setBrainApiKeySaved] = useState(false);
   const { theme, setTheme } = useTheme();
   const { layoutMode, setLayoutMode } = useLayoutMode();
   const themeLabelId = useId();
   const apiKeyLabelId = useId();
+  const brainApiKeyLabelId = useId();
   const fromAddressLabelId = useId();
   const toAddressLabelId = useId();
   const providerLabelId = useId();
@@ -36,12 +40,13 @@ export function SettingsPage() {
     const key = api.getApiKey();
     if (key) setApiKey(key);
     
-    api.getMailConfig().then((res) => {
-      if (res.mail) {
-        setMailProvider(res.mail.provider || 'cloudflare');
-        setFromAddress(res.mail.fromAddress || '');
-        setToAddress(res.mail.toAddress || '');
+    Promise.all([api.getMailConfig(), api.getBrainModelConfig()]).then(([mailRes, brainRes]) => {
+      if (mailRes.mail) {
+        setMailProvider(mailRes.mail.provider || 'cloudflare');
+        setFromAddress(mailRes.mail.fromAddress || '');
+        setToAddress(mailRes.mail.toAddress || '');
       }
+      setBrainApiKeyConfigured(brainRes.brain.apiKeyConfigured);
       setLoading(false);
     }).catch(() => {
       setLoading(false);
@@ -57,6 +62,31 @@ export function SettingsPage() {
   const handleClear = () => {
     api.clearApiKey();
     setApiKey('');
+  };
+
+  const handleSaveBrainApiKey = async () => {
+    const key = brainApiKey.trim();
+    if (!key) return;
+
+    try {
+      const response = await api.updateBrainConfig({ apiKey: key });
+      setBrainApiKey('');
+      setBrainApiKeyConfigured(response.brain.apiKeyConfigured);
+      setBrainApiKeySaved(true);
+      setTimeout(() => setBrainApiKeySaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save brain API key:', err);
+    }
+  };
+
+  const handleClearBrainApiKey = async () => {
+    try {
+      const response = await api.updateBrainConfig({ apiKey: '' });
+      setBrainApiKey('');
+      setBrainApiKeyConfigured(response.brain.apiKeyConfigured);
+    } catch (err) {
+      console.error('Failed to clear brain API key:', err);
+    }
   };
 
   const handleSaveMail = async () => {
@@ -235,6 +265,45 @@ export function SettingsPage() {
           <div className="flex gap-2">
             <Button variant="primary" onPress={handleSaveMail}>
               {mailSaved ? 'Saved!' : 'Save Email Settings'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Brain Model Credentials</CardTitle>
+          <CardDescription>
+            Manage the API key used by the brain model. Arm provider credentials are configured separately.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <label htmlFor={brainApiKeyLabelId} className="block text-sm font-medium mb-2">
+              OpenAI API Key
+            </label>
+            <input
+              id={brainApiKeyLabelId}
+              type="password"
+              value={brainApiKey}
+              onChange={(event) => setBrainApiKey(event.target.value)}
+              placeholder={brainApiKeyConfigured ? 'API key configured' : 'Enter an OpenAI API key'}
+              autoComplete="off"
+              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              {brainApiKeyConfigured
+                ? 'A key is configured. Enter a new key to replace it.'
+                : 'Required for model-powered brain analysis. The saved value is not shown here.'}
+            </p>
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="primary" onPress={handleSaveBrainApiKey} isDisabled={!brainApiKey.trim()}>
+              {brainApiKeySaved ? 'Saved!' : brainApiKeyConfigured ? 'Replace Key' : 'Save Key'}
+            </Button>
+            <Button variant="secondary" onPress={handleClearBrainApiKey} isDisabled={!brainApiKeyConfigured}>
+              Clear
             </Button>
           </div>
         </CardContent>

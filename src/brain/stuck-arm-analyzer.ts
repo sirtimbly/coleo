@@ -10,6 +10,8 @@ import { join } from "path";
 import nunjucks from "nunjucks";
 import type { StuckAnalysis } from "./activity-types";
 import { resolveLogFn } from "./activity-types";
+import { resolveBrainModelConfig } from "./model-config";
+import type { BrainModelConfig } from "./model-config";
 
 /**
  * LLM-based Stuck Arm Analyzer
@@ -25,11 +27,13 @@ export class StuckArmAnalyzer {
 	constructor(
 		logger: (message: string) => void,
 		coleoDir: string = process.cwd(),
+		modelConfig?: BrainModelConfig,
 	) {
 		this.logger = resolveLogFn(logger);
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		const config = modelConfig || resolveBrainModelConfig();
+		this.apiKey = config.apiKey;
+		this.model = config.model;
+		this.baseUrl = config.baseUrl;
 		this.templateDir = join(coleoDir, "src", "brain", "templates");
 	}
 
