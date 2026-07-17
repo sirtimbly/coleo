@@ -977,4 +977,43 @@ describe("Brain runtime flows", () => {
       ),
     ).toBe(true);
   });
+
+  it("finalizes a task through the completion path only after human review approval", async () => {
+    const task = {
+      id: "task-human-review",
+      subject: "Human review task",
+      description: "Awaiting approval",
+      status: "completing",
+      priority: "normal",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      artifacts: ["abc123"],
+      metadata: { humanReview: { status: "pending" } },
+    } satisfies Task;
+    const finalized: Array<{ taskId: string; summary: string; artifacts: string[] }> = [];
+
+    (brain as any).getTaskFromApi = async () => task;
+    (brain as any).finalizeTaskCompletion = async (
+      taskId: string,
+      summary: string,
+      artifacts: string[],
+    ) => {
+      finalized.push({ taskId, summary, artifacts });
+    };
+    (brain as any).appendTaskComment = async () => undefined;
+
+    await (brain as any).handleApprovalResponse(
+      task.id,
+      true,
+      "Looks good.",
+    );
+
+    expect(finalized).toEqual([
+      {
+        taskId: task.id,
+        summary: "Looks good.",
+        artifacts: ["abc123"],
+      },
+    ]);
+  });
 });
