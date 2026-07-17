@@ -622,13 +622,16 @@ export class Brain {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
-		const modelConfig = resolveBrainModelConfig(config.brain);
-		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfig);
-		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfig);
+		const modelConfigSource = async () => {
+			const current = await loadConfig(this.options.coleoDir);
+			return resolveBrainModelConfig(current.brain);
+		};
+		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfigSource);
+		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfigSource);
 		this.stuckArmAnalyzer = new StuckArmAnalyzer(
 			(msg) => this.log(msg),
 			this.options.coleoDir,
-			modelConfig,
+			modelConfigSource,
 		);
 
 		// Load mail config for external email sending
@@ -5027,8 +5030,16 @@ Report findings using bug resolution workflow.`;
 				this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
 
 				const now = new Date().toISOString();
+				// A restarted brain must not turn a live worker back into an idle arm.
+				// Preserve active persisted states so the idle-prompt loop cannot interrupt it.
+				const detectedStatus =
+					arm.status === "busy" ||
+					arm.status === "running" ||
+					arm.status === "starting"
+						? "busy"
+						: "idle";
 				await this.patchArmViaApi(arm.id, {
-					status: "idle",
+					status: detectedStatus,
 					lastHeartbeat: now,
 					lastActivityAt: now,
 				});
@@ -5065,7 +5076,7 @@ Report findings using bug resolution workflow.`;
 					id: arm.id,
 					name: arm.name,
 					agent: "opencode",
-					status: "idle",
+					status: detectedStatus,
 					pid: arm.pid,
 					startedAt: new Date(),
 				};
