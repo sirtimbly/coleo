@@ -902,6 +902,36 @@ class ApiClient {
     }>('/tasks/stats');
   }
 
+  async getTaskBurndown(params: {
+    start: string;
+    end: string;
+    bin: 'hour' | 'day';
+    timeZone: string;
+    status?: string;
+    priority?: string;
+    domain?: string;
+    assignedTo?: string;
+    phase?: string;
+  }) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value) search.set(key, value);
+    }
+    return this.request<{
+      bin: 'hour' | 'day';
+      timeZone: string;
+      start: string;
+      end: string;
+      buckets: Array<{
+        bucket: string;
+        created: number;
+        completed: number;
+        cumulativeCreated: number;
+        cumulativeCompleted: number;
+      }>;
+    }>(`/tasks/burndown?${search}`);
+  }
+
   async getTaskBlockingBugs(taskId: string) {
     return this.request<{
       taskId: string;

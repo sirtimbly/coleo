@@ -4,6 +4,7 @@ import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllAr
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
+import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -755,6 +756,7 @@ export function DashboardPage() {
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [taskStatsLoading, setTaskStatsLoading] = useState(true);
+  const [burndownRefresh, setBurndownRefresh] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
@@ -866,6 +868,7 @@ export function DashboardPage() {
     try {
       const stats = await api.getTaskStats();
       setTaskStats(stats);
+      setBurndownRefresh((current) => current + 1);
     } catch {
       setTaskStats(null);
     } finally {
@@ -1107,6 +1110,7 @@ export function DashboardPage() {
         <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
 
         <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
+        <TaskBurndownWidget refreshKey={burndownRefresh} />
 
       </div>
     </div>

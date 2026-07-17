@@ -160,6 +160,20 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
 		.get(id) as TaskRow | null;
 }
 
+function getBurndownBucket(timestamp: string, bin: "hour" | "day", timeZone: string): string {
+	const parts = new Intl.DateTimeFormat("en-CA", {
+		timeZone,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: bin === "hour" ? "2-digit" : undefined,
+		hourCycle: "h23",
+	}).formatToParts(new Date(timestamp));
+	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+	const date = `${values.year}-${values.month}-${values.day}`;
+	return bin === "hour" ? `${date} ${values.hour}:00` : date;
+}
+
 function isTaskIdUniqueConstraintError(err: unknown): boolean {
 	if (!(err instanceof Error)) {
 		return false;
@@ -406,6 +420,67 @@ export function createTasksRoutes() {
 			},
 			counts,
 		});
+	});
+
+	/**
+	 * Get created and completed task counts grouped by a user-local time bucket.
+	 * This must precede /:id so the generic task lookup cannot capture it.
+	 */
+	app.get("/burndown", (c) => {
+		const db = c.get("db");
+		const bin = c.req.query("bin") === "hour" ? "hour" : "day";
+		const timeZone = c.req.query("timeZone") || "UTC";
+		const end = new Date(c.req.query("end") || Date.now());
+		const defaultRangeMs = bin === "hour" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
+		const start = new Date(c.req.query("start") || end.getTime() - defaultRangeMs);
+
+		try {
+			new Intl.DateTimeFormat("en-CA", { timeZone }).format();
+		} catch {
+			throw HttpError.badRequest("timeZone must be a valid IANA timezone");
+		}
+		if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
+			throw HttpError.badRequest("start and end must be valid dates with start before end");
+		}
+		const maxRangeMs = bin === "hour" ? 31 * 24 * 60 * 60 * 1000 : 366 * 24 * 60 * 60 * 1000;
+		if (end.getTime() - start.getTime() > maxRangeMs) {
+			throw HttpError.badRequest(`The selected ${bin} range is too large`);
+		}
+
+		const conditions: string[] = ["(t.created_at >= ? AND t.created_at < ? OR t.completed_at >= ? AND t.completed_at < ?)"];
+		const startIso = start.toISOString();
+		const endIso = end.toISOString();
+		const params: string[] = [startIso, endIso, startIso, endIso];
+		const filters = [["status", "t.status"], ["priority", "t.priority"], ["domain", "t.domain"], ["assignedTo", "t.assigned_to"], ["phase", "t.phase"]] as const;
+		for (const [queryName, column] of filters) {
+			const value = c.req.query(queryName)?.trim();
+			if (value) {
+				const values = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+				conditions.push(`${column} IN (${values.map(() => "?").join(",")})`);
+				params.push(...values);
+			}
+		}
+
+		const rows = db.query(`SELECT created_at, completed_at FROM tasks t WHERE ${conditions.join(" AND ")}`).all(...params) as Array<{ created_at: string; completed_at: string | null }>;
+		const counts = new Map<string, { created: number; completed: number }>();
+		const increment = (timestamp: string, key: "created" | "completed") => {
+			const bucket = getBurndownBucket(timestamp, bin, timeZone);
+			const value = counts.get(bucket) ?? { created: 0, completed: 0 };
+			value[key] += 1;
+			counts.set(bucket, value);
+		};
+		for (const row of rows) {
+			if (row.created_at >= startIso && row.created_at < endIso) increment(row.created_at, "created");
+			if (row.completed_at && row.completed_at >= startIso && row.completed_at < endIso) increment(row.completed_at, "completed");
+		}
+		let cumulativeCreated = 0;
+		let cumulativeCompleted = 0;
+		const buckets = [...counts.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([bucket, value]) => {
+			cumulativeCreated += value.created;
+			cumulativeCompleted += value.completed;
+			return { bucket, ...value, cumulativeCreated, cumulativeCompleted };
+		});
+		return c.json({ bin, timeZone, start: startIso, end: endIso, buckets });
 	});
 
 	/**

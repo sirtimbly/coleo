@@ -673,6 +673,44 @@ describe("tasks API", () => {
     });
   });
 
+  describe("GET /api/tasks/burndown", () => {
+    beforeEach(() => {
+      db.run(`
+        INSERT INTO tasks (id, subject, description, status, priority, source_type, domain, created_at, updated_at, completed_at)
+        VALUES
+          ('burndown-a', 'Created', 'Created task', 'completed', 'normal', 'manual', 'backend', '2026-01-01T10:15:00.000Z', '2026-01-01T10:15:00.000Z', '2026-01-02T11:00:00.000Z'),
+          ('burndown-b', 'Other domain', 'Other task', 'pending', 'normal', 'manual', 'frontend', '2026-01-02T10:30:00.000Z', '2026-01-02T10:30:00.000Z', NULL)
+      `);
+    });
+
+    it("groups created and completed tasks by user-local day and applies filters", async () => {
+      const response = await app.request(
+        "/api/tasks/burndown?start=2026-01-01T00:00:00.000Z&end=2026-01-03T00:00:00.000Z&bin=day&timeZone=America/New_York&domain=backend",
+      );
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        buckets: Array<{ bucket: string; created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }>;
+      };
+      expect(body.buckets).toEqual([
+        { bucket: "2026-01-01", created: 1, completed: 0, cumulativeCreated: 1, cumulativeCompleted: 0 },
+        { bucket: "2026-01-02", created: 0, completed: 1, cumulativeCreated: 1, cumulativeCompleted: 1 },
+      ]);
+    });
+
+    it("rejects invalid timezone and oversized hourly ranges", async () => {
+      const badTimezone = await app.request(
+        "/api/tasks/burndown?start=2026-01-01T00:00:00.000Z&end=2026-01-02T00:00:00.000Z&timeZone=Not/AZone",
+      );
+      expect(badTimezone.status).toBe(400);
+
+      const oversized = await app.request(
+        "/api/tasks/burndown?start=2026-01-01T00:00:00.000Z&end=2026-02-02T00:00:00.000Z&bin=hour",
+      );
+      expect(oversized.status).toBe(400);
+    });
+  });
+
   describe("POST /api/tasks/reorder", () => {
     beforeEach(async () => {
       const now = new Date().toISOString();

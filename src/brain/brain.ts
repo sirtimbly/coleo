@@ -2278,6 +2278,7 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
+				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
@@ -7694,11 +7695,14 @@ Report findings using bug resolution workflow.`;
 			.filter(
 				(t) => t.status === "pending" && !t.assignedTo && !t.dependencyBlocked,
 			)
-			.sort(
-				(a, b) =>
-					(a.sortOrder ?? Number.MAX_SAFE_INTEGER) -
-					(b.sortOrder ?? Number.MAX_SAFE_INTEGER),
-			);
+			.sort((a, b) => {
+				if (!a.orderKey && !b.orderKey) return 0;
+				if (!a.orderKey) return 1;
+				if (!b.orderKey) return -1;
+				if (a.orderKey < b.orderKey) return -1;
+				if (a.orderKey > b.orderKey) return 1;
+				return 0;
+			});
 
 		// Check for file claim conflicts before bug blocking
 		await this.checkAndBlockTasksForClaimConflicts(pendingTasks);

@@ -52,6 +52,8 @@ export interface Task {
   domain?: string;
   /** Manual sort order for task prioritization (lower = higher priority) */
   sortOrder?: number;
+  /** Fractional-indexing rank key driving the visible task-list order */
+  orderKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;

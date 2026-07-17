@@ -359,7 +359,7 @@ function getNextPendingTask(
 			dependencyBlocked: false,
 			phase: phaseValue || undefined,
 			excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-			sort: "priority_then_created_asc",
+			sort: "order_key_asc",
 			limit: 200,
 		})
 		.find((candidate) => !shouldExcludeTask(candidate, options));

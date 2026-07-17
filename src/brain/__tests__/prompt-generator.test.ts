@@ -24,6 +24,7 @@ function createTestDb(): Database {
       dependency_blocked INTEGER DEFAULT 0,
       source_type TEXT,
       source_ref TEXT,
+      order_key TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -50,10 +51,11 @@ function insertTask(db: Database, options: {
   phase?: string | null;
   consensus_status?: string | null;
   source_ref?: string | null;
+  order_key?: string | null;
 }) {
   db.run(
-    `INSERT INTO tasks (id, subject, description, status, priority, domain, phase, assigned_arms, consensus_status, dependency_blocked, source_type, source_ref, created_at, updated_at)
-     VALUES (?, ?, 'desc', ?, ?, ?, ?, '[]', ?, 0, 'plan', ?, ?, ?)`,
+    `INSERT INTO tasks (id, subject, description, status, priority, domain, phase, assigned_arms, consensus_status, dependency_blocked, source_type, source_ref, order_key, created_at, updated_at)
+     VALUES (?, ?, 'desc', ?, ?, ?, ?, '[]', ?, 0, 'plan', ?, ?, ?, ?)`,
     [
       options.id,
       options.subject,
@@ -63,6 +65,7 @@ function insertTask(db: Database, options: {
       options.phase ?? null,
       options.consensus_status ?? null,
       options.source_ref ?? "test",
+      options.order_key ?? null,
       NOW,
       NOW,
     ]
@@ -171,18 +174,20 @@ describe("prompt-generator dependencies", () => {
     const brainDb = createSqliteBrainDb(db);
 
     insertTask(db, {
-      id: "pending-normal",
-      subject: "Normal pending work",
-      status: "pending",
-      priority: "normal",
-      phase: "Phase 1",
-    });
-    insertTask(db, {
       id: "pending-high",
       subject: "High priority pending work",
       status: "pending",
       priority: "high",
       phase: "Phase 1",
+      order_key: "b",
+    });
+    insertTask(db, {
+      id: "pending-normal",
+      subject: "Normal pending work",
+      status: "pending",
+      priority: "normal",
+      phase: "Phase 1",
+      order_key: "a",
     });
 
     const result = await generateTaskDetermination({
@@ -191,7 +196,7 @@ describe("prompt-generator dependencies", () => {
       db: brainDb,
     });
 
-    expect(result.task?.id).toBe("pending-high");
+    expect(result.task?.id).toBe("pending-normal");
     expect(result.reasoning).toContain("Returning next pending task from database");
 
     db.close();
