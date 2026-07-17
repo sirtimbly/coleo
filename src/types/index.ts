@@ -52,6 +52,8 @@ export interface Task {
   domain?: string;
   /** Manual sort order for task prioritization (lower = higher priority) */
   sortOrder?: number;
+  /** Fractional-indexing rank key driving the visible task-list order */
+  orderKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
@@ -381,6 +383,9 @@ export interface ColeoConfig {
 		pollIntervalMs: number;
 		maxArms: number;
 		armGracePeriodMinutes: number;
+		provider: string;
+		model: string;
+		apiKey: string;
 	};
   mail: {
     provider: "cloudflare" | "postmark";
@@ -466,6 +471,9 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		pollIntervalMs: 30000,
 		maxArms: 8,
 		armGracePeriodMinutes: 2,
+		provider: "openai",
+		model: "gpt-5-mini",
+		apiKey: "",
 	},
   mail: {
     provider: "cloudflare",

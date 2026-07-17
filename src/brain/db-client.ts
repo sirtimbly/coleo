@@ -24,6 +24,7 @@ export interface BrainTaskRecord {
   dependencyBlocked: boolean;
   consensusStatus: string | null;
   sortOrder: number | null;
+  orderKey: string | null;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
@@ -49,7 +50,8 @@ export interface BrainTaskListFilters {
     | "updated_desc"
     | "completed_desc"
     | "priority_then_created_asc"
-    | "sort_order_asc";
+    | "sort_order_asc"
+    | "order_key_asc";
 }
 
 export interface BrainTaskCreateInput {

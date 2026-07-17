@@ -25,6 +25,9 @@ interface TomlConfig {
 		poll_interval_ms?: number;
 		max_arms?: number;
 		arm_grace_period_minutes?: number;
+		provider?: string;
+		model?: string;
+		api_key?: string;
 		refactor_file_threshold_lines?: number;
 	};
   mail?: {
@@ -161,6 +164,9 @@ function tomlToConfig(toml: TomlConfig, coleoDir: string): Partial<ColeoConfig> 
 			pollIntervalMs: toml.brain.poll_interval_ms ?? DEFAULT_CONFIG.brain.pollIntervalMs,
 			maxArms: toml.brain.max_arms ?? DEFAULT_CONFIG.brain.maxArms,
 			armGracePeriodMinutes: toml.brain.arm_grace_period_minutes ?? DEFAULT_CONFIG.brain.armGracePeriodMinutes,
+			provider: toml.brain.provider ?? DEFAULT_CONFIG.brain.provider,
+			model: toml.brain.model ?? DEFAULT_CONFIG.brain.model,
+			apiKey: toml.brain.api_key ?? DEFAULT_CONFIG.brain.apiKey,
 		};
 		if (toml.brain.refactor_file_threshold_lines !== undefined) {
 			config.refactoring = {
@@ -287,6 +293,9 @@ export function configToToml(config: Partial<ColeoConfig>): TomlConfig {
 			poll_interval_ms: config.brain.pollIntervalMs,
 			max_arms: config.brain.maxArms,
 			arm_grace_period_minutes: config.brain.armGracePeriodMinutes,
+			provider: config.brain.provider,
+			model: config.brain.model,
+			api_key: config.brain.apiKey,
 		};
 	}
 
@@ -398,7 +407,11 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
   const dir = coleoDir || getColeoDir();
   
   // Start with defaults
-  const config: ColeoConfig = { ...DEFAULT_CONFIG, coleoDir: dir };
+	const config: ColeoConfig = {
+		...DEFAULT_CONFIG,
+		coleoDir: dir,
+		brain: { ...DEFAULT_CONFIG.brain },
+	};
 
   // Load TOML file
   const toml = await readTomlConfig(dir);
@@ -454,6 +467,19 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
   }
 	if (process.env.COLEO_ARM_GRACE_PERIOD_MINUTES) {
 		config.brain.armGracePeriodMinutes = parseInt(process.env.COLEO_ARM_GRACE_PERIOD_MINUTES, 10);
+	}
+	if (process.env.COLEO_BRAIN_PROVIDER) {
+		config.brain.provider = process.env.COLEO_BRAIN_PROVIDER;
+	}
+	if (process.env.COLEO_BRAIN_MODEL) {
+		config.brain.model = process.env.COLEO_BRAIN_MODEL;
+	} else if (toml?.brain?.model === undefined && process.env.OPENAI_MODEL) {
+		config.brain.model = process.env.OPENAI_MODEL;
+	}
+	if (process.env.COLEO_BRAIN_API_KEY) {
+		config.brain.apiKey = process.env.COLEO_BRAIN_API_KEY;
+	} else if (toml?.brain?.api_key === undefined && process.env.OPENAI_API_KEY) {
+		config.brain.apiKey = process.env.OPENAI_API_KEY;
 	}
 	if (process.env.COLEO_FILE_SIZE_THRESHOLD) {
 		config.refactoring.fileSizeThreshold = parseInt(process.env.COLEO_FILE_SIZE_THRESHOLD, 10);

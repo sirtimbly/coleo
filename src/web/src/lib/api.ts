@@ -78,6 +78,15 @@ export interface OnboardingStatus {
   };
 }
 
+export type BrainConfigResponse = Omit<ColeoConfig['brain'], 'apiKey'> & {
+  apiKeyConfigured: boolean;
+};
+
+export interface BrainModel {
+  id: string;
+  name: string;
+}
+
 export interface WorkspaceTextFile {
   path: string;
   content: string;
@@ -299,10 +308,18 @@ class ApiClient {
   }
 
   async updateBrainConfig(data: Partial<ColeoConfig['brain']>) {
-    return this.request<{ brain: ColeoConfig['brain'] }>('/config/brain', {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  async getBrainModelConfig() {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain');
+  }
+
+  async getBrainModels() {
+    return this.request<{ models: BrainModel[] }>('/config/brain/models');
   }
 
   // Mail Config
@@ -900,6 +917,36 @@ class ApiClient {
       active: number;
       blocked: number;
     }>('/tasks/stats');
+  }
+
+  async getTaskBurndown(params: {
+    start: string;
+    end: string;
+    bin: 'hour' | 'day';
+    timeZone: string;
+    status?: string;
+    priority?: string;
+    domain?: string;
+    assignedTo?: string;
+    phase?: string;
+  }) {
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value) search.set(key, value);
+    }
+    return this.request<{
+      bin: 'hour' | 'day';
+      timeZone: string;
+      start: string;
+      end: string;
+      buckets: Array<{
+        bucket: string;
+        created: number;
+        completed: number;
+        cumulativeCreated: number;
+        cumulativeCompleted: number;
+      }>;
+    }>(`/tasks/burndown?${search}`);
   }
 
   async getTaskBlockingBugs(taskId: string) {

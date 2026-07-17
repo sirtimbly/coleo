@@ -109,6 +109,7 @@ describe("prompt generator attachments", () => {
         dependencyBlocked: false,
         consensusStatus: null,
         sortOrder: null,
+        orderKey: null,
         createdAt: "2026-02-01T00:00:00.000Z",
         updatedAt: "2026-02-01T00:00:00.000Z",
         completedAt: null,

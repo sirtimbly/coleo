@@ -1,3 +1,6 @@
+import { resolveBrainModelConfigSource } from "./model-config";
+import type { BrainModelConfigSource } from "./model-config";
+
 interface ProcessedIntent {
 	type:
 		| "new_task"
@@ -25,18 +28,18 @@ interface ProcessedIntent {
 }
 
 export class MailProcessor {
-	private apiKey: string;
-	private model: string;
-	private baseUrl: string;
 	private logger: (message: string) => void;
 	private systemPrompt: string;
+	private modelConfigSource?: BrainModelConfigSource;
 
-	constructor(logger: (message: string) => void, systemPrompt: string) {
+	constructor(
+		logger: (message: string) => void,
+		systemPrompt: string,
+		modelConfigSource?: BrainModelConfigSource,
+	) {
 		this.logger = logger;
 		this.systemPrompt = systemPrompt;
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		this.modelConfigSource = modelConfigSource;
 	}
 
 	async processMessage(
@@ -44,7 +47,8 @@ export class MailProcessor {
 		body: string,
 		systemPrompt: string,
 	): Promise<ProcessedIntent> {
-		if (!this.apiKey) {
+		const { apiKey, baseUrl, model } = await resolveBrainModelConfigSource(this.modelConfigSource);
+		if (!apiKey) {
 			return this.fallbackParse(subject, body);
 		}
 
@@ -54,14 +58,14 @@ Body:
 ${body}`;
 
 		try {
-			const response = await fetch(`${this.baseUrl}/chat/completions`, {
+			const response = await fetch(`${baseUrl}/chat/completions`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.apiKey}`,
+					Authorization: `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({
-					model: this.model,
+					model,
 					messages: [
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: userMessage },

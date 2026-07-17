@@ -3,6 +3,46 @@ import { Brain } from "../brain";
 import type { Arm } from "../../types";
 
 describe("Brain idle prompt guards", () => {
+	it("preserves a discovered busy arm state after a brain restart", async () => {
+		const brain = new Brain({
+			coleoDir: "/tmp",
+			pollIntervalMs: 1000,
+			verbose: false,
+		});
+		const patches: Array<Record<string, unknown>> = [];
+
+		(
+			brain as unknown as {
+				listArmsFromApi: (_includeStopped?: boolean) => Promise<Array<Record<string, unknown>>>;
+			}
+		).listArmsFromApi = async () => [
+			{
+				id: "arm-1",
+				name: "arm-1",
+				pid: process.pid,
+				status: "busy",
+				domain: "general",
+				harness: "manual",
+			},
+		];
+		(
+			brain as unknown as {
+				patchArmViaApi: (_armId: string, patch: Record<string, unknown>) => Promise<void>;
+			}
+		).patchArmViaApi = async (_armId, patch) => {
+			patches.push(patch);
+		};
+		(brain as unknown as { armStateMachine: unknown }).armStateMachine = null;
+
+		await (brain as unknown as { scanForRunningArms: () => Promise<void> }).scanForRunningArms();
+
+		expect(patches).toHaveLength(1);
+		expect(patches[0]?.status).toBe("busy");
+		expect(
+			(brain as unknown as { arms: Map<string, Arm> }).arms.get("arm-1")?.status,
+		).toBe("busy");
+	});
+
 	it("does not prompt an idle arm when harness reports processing", async () => {
 		const brain = new Brain({
 			coleoDir: "/tmp",

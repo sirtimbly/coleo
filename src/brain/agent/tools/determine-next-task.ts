@@ -208,7 +208,7 @@ export class DetermineNextTaskTool extends BrainTool {
       dependencyBlocked: false,
       unassignedOnly: true,
       excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-      sort: "priority_then_created_asc",
+      sort: "order_key_asc",
       limit: 20,
     });
 
@@ -454,7 +454,7 @@ ${taskWithIssues.id}`,
         dependencyBlocked: false,
         unassignedOnly: true,
         excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-        sort: "sort_order_asc",
+        sort: "order_key_asc",
         limit: 1,
       })[0];
 
@@ -471,10 +471,10 @@ ${taskWithIssues.id}`,
         priority: row.priority || "normal",
       },
       context: {
-        planExcerpt: `Plan step ${row.sortOrder ?? "?"}`,
+        planExcerpt: `Plan step ${row.orderKey ?? "?"}`,
         history: await this.getRecentHistory(3),
       },
-      reasoning: `Next task from plan (step ${row.sortOrder ?? "?"}).`,
+      reasoning: `Next task from plan (step ${row.orderKey ?? "?"}).`,
     };
   }
 

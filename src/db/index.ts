@@ -132,6 +132,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["056_task_summaries_and_diffs", MIGRATION_056],
     ["057_task_checklist_items", MIGRATION_057],
     ["058_task_blocked_at", MIGRATION_058, { table: "tasks", columns: MIGRATION_058_COLUMNS }],
+		["059_normalize_task_order_keys", MIGRATION_059],
 	];
 
 
@@ -1236,33 +1237,18 @@ const MIGRATION_047 = `
 -- Create index for ordering tasks by their order_key
 CREATE INDEX IF NOT EXISTS idx_tasks_order_key ON tasks(order_key);
 
--- Backfill order_key from existing sort_order using fractional indexing
--- Generate base62 keys: a, b, c, ... za, zb, zc, etc.
+-- Backfill order_key from existing sort_order using fixed-width ASCII-sortable keys.
 WITH ordered_tasks AS (
   SELECT
     id,
-    ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num,
-    COUNT(*) OVER () as total_count
+    ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num
   FROM tasks
   WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
 ),
--- Generate fractional keys for each position
--- Using a simple base62 encoding: position 1 -> 'a', 2 -> 'b', etc.
--- For positions > 62, we use two characters: 'aa', 'ab', etc.
 key_mapping AS (
   SELECT
     id,
-    CASE
-      WHEN row_num <= 62 THEN
-        -- Single character: a-z (26), A-Z (26), 0-9 (10) = 62 total
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', row_num, 1)
-      ELSE
-        -- Two characters for larger lists
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-               ((row_num - 1) / 62) + 1, 1) ||
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-               ((row_num - 1) % 62) + 1, 1)
-    END as new_order_key
+    printf('a%010d', row_num) as new_order_key
   FROM ordered_tasks
 )
 UPDATE tasks
@@ -1964,6 +1950,32 @@ CREATE INDEX IF NOT EXISTS idx_escalation_task ON escalation_tracking(task_id);
 
 -- Index for fast lookup of escalations by bug
 CREATE INDEX IF NOT EXISTS idx_escalation_bug ON escalation_tracking(bug_id);
+`;
+
+const MIGRATION_059 = `
+-- Migration 047 used a lowercase-uppercase-digit alphabet that does not match
+-- SQLite BINARY collation. Re-key active queues from their preserved numeric
+-- order so every order_key consumer observes the same sequence.
+WITH ordered_tasks AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      ORDER BY COALESCE(sort_order, 2147483647) ASC, created_at ASC, id ASC
+    ) as row_num
+  FROM tasks
+  WHERE status IN ('pending', 'claimed', 'in_progress', 'completing', 'blocked')
+),
+key_mapping AS (
+  SELECT id, printf('a%010d', row_num) as new_order_key
+  FROM ordered_tasks
+)
+UPDATE tasks
+SET order_key = (
+  SELECT new_order_key
+  FROM key_mapping
+  WHERE key_mapping.id = tasks.id
+)
+WHERE id IN (SELECT id FROM key_mapping);
 `;
 
 export { Database };

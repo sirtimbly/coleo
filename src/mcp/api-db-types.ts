@@ -32,6 +32,7 @@ export interface ApiTask {
 	dependencyBlocked: boolean;
 	consensusStatus?: string;
 	sortOrder?: number | null;
+	orderKey?: string | null;
 	createdAt: string;
 	updatedAt: string;
 	completedAt: string | null;

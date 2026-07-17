@@ -22,6 +22,7 @@ import {
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { loadConfig, updateConfig } from "../config";
+import { resolveBrainModelConfig } from "./model-config";
 import {
 	ArmStateMachine,
 	type ArmState,
@@ -621,6 +622,17 @@ export class Brain {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
+		const modelConfigSource = async () => {
+			const current = await loadConfig(this.options.coleoDir);
+			return resolveBrainModelConfig(current.brain);
+		};
+		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfigSource);
+		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfigSource);
+		this.stuckArmAnalyzer = new StuckArmAnalyzer(
+			(msg) => this.log(msg),
+			this.options.coleoDir,
+			modelConfigSource,
+		);
 
 		// Load mail config for external email sending
 		await this.loadMailConfig();
@@ -2278,6 +2290,7 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
+				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
@@ -5017,8 +5030,16 @@ Report findings using bug resolution workflow.`;
 				this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
 
 				const now = new Date().toISOString();
+				// A restarted brain must not turn a live worker back into an idle arm.
+				// Preserve active persisted states so the idle-prompt loop cannot interrupt it.
+				const detectedStatus =
+					arm.status === "busy" ||
+					arm.status === "running" ||
+					arm.status === "starting"
+						? "busy"
+						: "idle";
 				await this.patchArmViaApi(arm.id, {
-					status: "idle",
+					status: detectedStatus,
 					lastHeartbeat: now,
 					lastActivityAt: now,
 				});
@@ -5055,7 +5076,7 @@ Report findings using bug resolution workflow.`;
 					id: arm.id,
 					name: arm.name,
 					agent: "opencode",
-					status: "idle",
+					status: detectedStatus,
 					pid: arm.pid,
 					startedAt: new Date(),
 				};
@@ -7694,11 +7715,14 @@ Report findings using bug resolution workflow.`;
 			.filter(
 				(t) => t.status === "pending" && !t.assignedTo && !t.dependencyBlocked,
 			)
-			.sort(
-				(a, b) =>
-					(a.sortOrder ?? Number.MAX_SAFE_INTEGER) -
-					(b.sortOrder ?? Number.MAX_SAFE_INTEGER),
-			);
+			.sort((a, b) => {
+				if (!a.orderKey && !b.orderKey) return 0;
+				if (!a.orderKey) return 1;
+				if (!b.orderKey) return -1;
+				if (a.orderKey < b.orderKey) return -1;
+				if (a.orderKey > b.orderKey) return 1;
+				return 0;
+			});
 
 		// Check for file claim conflicts before bug blocking
 		await this.checkAndBlockTasksForClaimConflicts(pendingTasks);

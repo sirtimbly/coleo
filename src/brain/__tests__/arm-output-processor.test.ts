@@ -129,4 +129,32 @@ describe("ArmOutputProcessor", () => {
 		expect(decision.armPrompt).toContain("Do not wait for user input");
 		expect(decision.confidence).toBeGreaterThan(0.4);
 	});
+
+	it("resolves current model configuration for every inference", async () => {
+		let model = "gpt-first";
+		const requestedModels: string[] = [];
+		globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+			const body = JSON.parse(String(init?.body)) as { model: string };
+			requestedModels.push(body.model);
+			return Response.json({
+				choices: [{ message: { content: JSON.stringify({ action: "no_action", reasoning: "done" }) } }],
+			});
+		}) as unknown as typeof fetch;
+
+		const processor = new ArmOutputProcessor(
+			() => {},
+			async () => ({
+				provider: "openai",
+				model,
+				apiKey: "current-key",
+				baseUrl: "https://provider.example/v1",
+			}),
+		);
+
+		await processor.processOutput("arm-1", "arm-1", "First", "System");
+		model = "gpt-second";
+		await processor.processOutput("arm-1", "arm-1", "Second", "System");
+
+		expect(requestedModels).toEqual(["gpt-first", "gpt-second"]);
+	});
 });

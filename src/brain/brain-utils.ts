@@ -312,6 +312,7 @@ export function mapApiTask(task: {
 	assignedTo?: string | null;
 	dependencyBlocked?: boolean;
 	sortOrder?: number | null;
+	orderKey?: string | null;
 	createdAt: string;
 	updatedAt: string;
 	completedAt?: string | null;
@@ -337,6 +338,7 @@ export function mapApiTask(task: {
 		assignedTo: task.assignedTo || undefined,
 		dependencyBlocked: task.dependencyBlocked === true,
 		sortOrder: task.sortOrder ?? undefined,
+		orderKey: task.orderKey ?? undefined,
 		createdAt: new Date(task.createdAt),
 		updatedAt: new Date(task.updatedAt),
 		completedAt: task.completedAt ? new Date(task.completedAt) : undefined,

@@ -9,11 +9,13 @@ import type { BrainDb, BrainTaskRecord } from "./db-client";
 import { join } from "path";
 import type { Discovery, Task } from "../types";
 import { LocalWorkspaceAccess, type WorkspaceAccess } from "../workspace";
+import { loadConfig } from "../config";
 import {
 	DiscoverySummarizer,
 	formatDiscoverySummary,
 	type DiscoverySummary,
 } from "./discovery-summarizer";
+import { resolveBrainModelConfig } from "./model-config";
 
 import { formatTaskAttachmentList } from "../lib/prompt-attachments";
 import {
@@ -359,7 +361,7 @@ function getNextPendingTask(
 			dependencyBlocked: false,
 			phase: phaseValue || undefined,
 			excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-			sort: "priority_then_created_asc",
+			sort: "order_key_asc",
 			limit: 200,
 		})
 		.find((candidate) => !shouldExcludeTask(candidate, options));
@@ -858,7 +860,8 @@ export async function generateContextBundle(
 	const taskDiscoveries = await getTaskRelatedDiscoveries(db, task.id);
 
 	// 3c. Use LLM to summarize discoveries for this task's context
-	const summarizer = new DiscoverySummarizer();
+	const config = await loadConfig(ctx.coleoDir);
+	const summarizer = new DiscoverySummarizer(undefined, resolveBrainModelConfig(config.brain));
 	const discoverySummary = await summarizer.summarize({
 		task,
 		globalDiscoveries: discoveries,
