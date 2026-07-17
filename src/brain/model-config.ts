@@ -12,6 +12,10 @@ export interface BrainModel {
 	name: string;
 }
 
+export type BrainModelConfigSource =
+	| BrainModelConfig
+	| (() => BrainModelConfig | Promise<BrainModelConfig>);
+
 type BrainModelFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 export function resolveBrainModelConfig(
@@ -25,6 +29,15 @@ export function resolveBrainModelConfig(
 		apiKey: config?.apiKey || process.env.COLEO_BRAIN_API_KEY || process.env.OPENAI_API_KEY || "",
 		baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
 	};
+}
+
+export async function resolveBrainModelConfigSource(
+	source?: BrainModelConfigSource,
+): Promise<BrainModelConfig> {
+	if (typeof source === "function") {
+		return source();
+	}
+	return source || resolveBrainModelConfig();
 }
 
 export async function listBrainModels(

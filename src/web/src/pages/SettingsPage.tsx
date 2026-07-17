@@ -2,6 +2,7 @@ import { useState, useEffect, useId } from 'react';
 import { Button, Select, Label, ListBox } from '@heroui/react';
 import { LayoutPanelTop, Monitor, Moon, PanelsTopLeft, Sun } from 'lucide-react';
 import { api, useTheme } from '@/lib';
+import type { ColeoConfig, OpenCodeProvider } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -13,6 +14,8 @@ const themeOptions = [
   { value: 'system', label: 'System', icon: Monitor },
 ] as const;
 
+const armHarnesses = ['opencode', 'opencode-api', 'opencode-tui'] as const;
+
 export function SettingsPage() {
   usePageTitle('Coleo Observatory - Settings');
 
@@ -21,11 +24,23 @@ export function SettingsPage() {
   const [brainApiKey, setBrainApiKey] = useState('');
   const [brainApiKeyConfigured, setBrainApiKeyConfigured] = useState(false);
   const [brainApiKeySaved, setBrainApiKeySaved] = useState(false);
+  const [armDefaults, setArmDefaults] = useState<ColeoConfig['defaults']>({
+    harness: 'opencode-api',
+    provider: '',
+    model: '',
+    contextBudget: 100000,
+  });
+  const [armDefaultsSaved, setArmDefaultsSaved] = useState(false);
+  const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
   const { theme, setTheme } = useTheme();
   const { layoutMode, setLayoutMode } = useLayoutMode();
   const themeLabelId = useId();
   const apiKeyLabelId = useId();
   const brainApiKeyLabelId = useId();
+  const armHarnessLabelId = useId();
+  const armProviderLabelId = useId();
+  const armModelLabelId = useId();
+  const armContextBudgetLabelId = useId();
   const fromAddressLabelId = useId();
   const toAddressLabelId = useId();
   const providerLabelId = useId();
@@ -40,13 +55,20 @@ export function SettingsPage() {
     const key = api.getApiKey();
     if (key) setApiKey(key);
     
-    Promise.all([api.getMailConfig(), api.getBrainModelConfig()]).then(([mailRes, brainRes]) => {
+    Promise.all([
+      api.getMailConfig(),
+      api.getBrainModelConfig(),
+      api.getDefaults(),
+      api.getOpenCodeProviders().catch(() => ({ providers: [], connected: [] })),
+    ]).then(([mailRes, brainRes, defaultsRes, providersRes]) => {
       if (mailRes.mail) {
         setMailProvider(mailRes.mail.provider || 'cloudflare');
         setFromAddress(mailRes.mail.fromAddress || '');
         setToAddress(mailRes.mail.toAddress || '');
       }
       setBrainApiKeyConfigured(brainRes.brain.apiKeyConfigured);
+      setArmDefaults(defaultsRes.defaults);
+      setOpenCodeProviders(providersRes.providers);
       setLoading(false);
     }).catch(() => {
       setLoading(false);
@@ -78,6 +100,21 @@ export function SettingsPage() {
       console.error('Failed to save brain API key:', err);
     }
   };
+
+  const handleSaveArmDefaults = async () => {
+    try {
+      const response = await api.updateDefaults(armDefaults);
+      setArmDefaults(response.defaults);
+      setArmDefaultsSaved(true);
+      setTimeout(() => setArmDefaultsSaved(false), 2000);
+    } catch (err) {
+      console.error('Failed to save arm defaults:', err);
+    }
+  };
+
+  const selectedArmProvider = openCodeProviders.find((provider) => provider.id === armDefaults.provider);
+  const armModels = selectedArmProvider?.models || [];
+  const usesOpenCodeCatalog = armDefaults.harness.startsWith('opencode');
 
   const handleClearBrainApiKey = async () => {
     try {
@@ -202,6 +239,113 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Arm Spawn Defaults</CardTitle>
+          <CardDescription>
+            Fallback harness and model settings used when a new arm or template does not specify them.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor={armHarnessLabelId} className="block text-sm font-medium mb-2">
+                Harness
+              </label>
+              <select
+                id={armHarnessLabelId}
+                value={armDefaults.harness}
+                onChange={(event) => setArmDefaults((current) => ({ ...current, harness: event.target.value }))}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+              >
+                {armHarnesses.map((harness) => <option key={harness} value={harness}>{harness}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor={armProviderLabelId} className="block text-sm font-medium mb-2">
+                Provider
+              </label>
+              {usesOpenCodeCatalog && openCodeProviders.length > 0 ? (
+                <select
+                  id={armProviderLabelId}
+                  value={armDefaults.provider}
+                  onChange={(event) => {
+                    const provider = event.target.value;
+                    const firstModel = openCodeProviders.find((item) => item.id === provider)?.models[0]?.id || '';
+                    setArmDefaults((current) => ({ ...current, provider, model: firstModel }));
+                  }}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {!openCodeProviders.some((provider) => provider.id === armDefaults.provider) && (
+                    <option value={armDefaults.provider}>{armDefaults.provider || 'Not set'}</option>
+                  )}
+                  {openCodeProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>{provider.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  id={armProviderLabelId}
+                  value={armDefaults.provider}
+                  onChange={(event) => setArmDefaults((current) => ({ ...current, provider: event.target.value }))}
+                  placeholder="Provider ID"
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              )}
+            </div>
+
+            <div>
+              <label htmlFor={armModelLabelId} className="block text-sm font-medium mb-2">
+                Model
+              </label>
+              {usesOpenCodeCatalog && armModels.length > 0 ? (
+                <select
+                  id={armModelLabelId}
+                  value={armDefaults.model}
+                  onChange={(event) => setArmDefaults((current) => ({ ...current, model: event.target.value }))}
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {!armModels.some((model) => model.id === armDefaults.model) && (
+                    <option value={armDefaults.model}>{armDefaults.model || 'Not set'}</option>
+                  )}
+                  {armModels.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}
+                </select>
+              ) : (
+                <input
+                  id={armModelLabelId}
+                  value={armDefaults.model}
+                  onChange={(event) => setArmDefaults((current) => ({ ...current, model: event.target.value }))}
+                  placeholder="Model ID"
+                  className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              )}
+            </div>
+
+            <div>
+              <label htmlFor={armContextBudgetLabelId} className="block text-sm font-medium mb-2">
+                Context Budget
+              </label>
+              <input
+                id={armContextBudgetLabelId}
+                type="number"
+                min={1}
+                value={armDefaults.contextBudget}
+                onChange={(event) => setArmDefaults((current) => ({
+                  ...current,
+                  contextBudget: Number.parseInt(event.target.value, 10) || 100000,
+                }))}
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <Button variant="primary" onPress={handleSaveArmDefaults}>
+            {armDefaultsSaved ? 'Saved!' : 'Save Arm Defaults'}
+          </Button>
         </CardContent>
       </Card>
 
