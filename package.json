@@ -18,8 +18,7 @@
 	],
 	"license": "BUSL-1.1",
 	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/sirtimbly/coleo.git"
+		"url": "https://github.com/sirtimbly/coleo"
 	},
 	"bugs": {
 		"url": "https://github.com/sirtimbly/coleo/issues"
