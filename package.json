@@ -8,9 +8,7 @@
 	"engines": {
 		"bun": ">=1.1.0"
 	},
-	"bin": {
-		"coleo": "./dist/index.js"
-	},
+	"bin": "dist/index.js",
 	"files": [
 		"dist",
 		"README.md",
