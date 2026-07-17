@@ -42,4 +42,4 @@ jobs:
       - name: Update npm for trusted publishing
         run: npm install --global npm@latest
       - name: Publish package
-        run: npm publish --ignore-scripts --access public --provenance
+        run: npm publish --access public --provenance
