@@ -6,6 +6,7 @@ import { NAVIGATION_ROUTES, normalizeAppPathname } from '@/app/routes';
 import type { AppLayoutMode } from '@/hooks/useLayoutMode';
 import { api, cn, useMessage, useToast } from '@/lib';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { VERSION } from '@/version';
 
 interface AppSidebarProps {
   layoutMode: AppLayoutMode;
@@ -208,7 +209,7 @@ export function AppSidebar({
       </div>
 
       <div className="border-t border-sidebar-border px-5 py-4 text-[0.68rem] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        v0.2.0
+        v{VERSION}
       </div>
     </aside>
   );

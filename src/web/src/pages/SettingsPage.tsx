@@ -5,6 +5,7 @@ import { api, useTheme } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePageTitle } from '@/hooks/usePageTitle';
+import { VERSION } from '@/version';
 
 const themeOptions = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -282,7 +283,7 @@ export function SettingsPage() {
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Version</span>
-            <span>0.2.0</span>
+            <span>{VERSION}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Documentation</span>
