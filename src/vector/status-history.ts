@@ -56,6 +56,9 @@ export interface StatusHistoryEvent {
   
   /** Priority (for tasks/bugs) */
   priority?: "critical" | "high" | "normal" | "low";
+
+  /** Task or event classification (for example, development or bug_fix). */
+  classification?: string;
   
   /** Additional metadata */
   metadata: Record<string, unknown>;
@@ -126,17 +129,32 @@ export function getRetentionDaysForType(type: StatusHistoryEventType): number | 
  * Convert a status history event to searchable text
  */
 export function eventToText(event: StatusHistoryEvent): string {
-  const parts = [
+  const { vector: _vector, ...eventData } = event;
+  return [
     event.title,
     event.content,
-    event.type,
-    event.source,
-  ];
-  
-  if (event.status) parts.push(`Status: ${event.status}`);
-  if (event.priority) parts.push(`Priority: ${event.priority}`);
-  
-  return parts.filter(Boolean).join("\n\n");
+    event.status ? `Status: ${event.status}` : undefined,
+    event.priority ? `Priority: ${event.priority}` : undefined,
+    `Complete event: ${stableStringify(eventData)}`,
+  ].filter(Boolean).join("\n\n");
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sortJsonValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortJsonValue(nested)]),
+  );
 }
 
 /**

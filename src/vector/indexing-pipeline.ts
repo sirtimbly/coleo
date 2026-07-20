@@ -22,7 +22,7 @@ import {
 export async function initializeStatusHistoryCollection(): Promise<void> {
   await qdrantStore.createCollection(
     STATUS_HISTORY_CONFIG.collectionName,
-    STATUS_HISTORY_CONFIG.vectorSize,
+    embeddingService.getVectorSize(),
     STATUS_HISTORY_CONFIG.distance,
   );
   console.log("[StatusHistory] Collection initialized");

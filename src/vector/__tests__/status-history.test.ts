@@ -77,6 +77,38 @@ describe("status-history", () => {
       const text = eventToText(event);
       expect(text).toContain("Priority: high");
     });
+
+    it("should serialize the complete event deterministically", () => {
+      const event: StatusHistoryEvent = {
+        id: "event-1",
+        type: "bug_report",
+        timestamp: "2026-07-20T18:00:00.000Z",
+        source: "arm-1",
+        title: "Indexer failed",
+        content: "Qdrant rejected the point",
+        taskId: "task-1",
+        bugId: "bug-1",
+        armId: "arm-1",
+        classification: "bug_fix",
+        metadata: {
+          originalEvent: {
+            type: "report_bug",
+            data: { errorDetails: "dimension mismatch", title: "Indexer failed" },
+          },
+          stream: { subject: "coleo.events.bug", streamSequence: 42 },
+        },
+      };
+
+      const text = eventToText(event);
+
+      expect(text).toContain('\"classification\":\"bug_fix\"');
+      expect(text).toContain('\"taskId\":\"task-1\"');
+      expect(text).toContain('\"bugId\":\"bug-1\"');
+      expect(text).toContain('\"errorDetails\":\"dimension mismatch\"');
+      expect(text).toContain('\"streamSequence\":42');
+      expect(eventToText({ ...event, metadata: { ...event.metadata } })).toBe(text);
+      expect(text).not.toContain('\"vector\"');
+    });
   });
 
   describe("createEventId", () => {
