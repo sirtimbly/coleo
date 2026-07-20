@@ -273,6 +273,51 @@ describe("bugs API", () => {
     });
   });
 
+  describe("GET /api/bugs/stats", () => {
+    beforeEach(async () => {
+      const now = new Date().toISOString();
+      db.run(`
+        INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+        VALUES
+          ('bug-stats-open', 'Open Bug', 'Description', 'arm_reported', 'open', 'high', 0, ?, ?, 0),
+          ('bug-stats-investigating', 'Investigating Bug', 'Description', 'human_reported', 'investigating', 'medium', 1, ?, ?, 0),
+          ('bug-stats-resolved', 'Resolved Bug', 'Description', 'system_detected', 'resolved', 'low', 2, ?, ?, 0),
+          ('bug-stats-archived-open', 'Archived Open', 'Description', 'human_reported', 'open', 'low', 3, ?, ?, 1)
+      `, [now, now, now, now, now, now, now, now]);
+    });
+
+    it("should return aggregated counts for non-archived bugs", async () => {
+      const response = await app.request("/api/bugs/stats");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bySource: Record<string, number>;
+        byStatus: Record<string, number>;
+        byPriority: Record<string, number>;
+        recent24h: number;
+        unresolved: number;
+      };
+
+      expect(body.bySource).toEqual({
+        arm_reported: 1,
+        human_reported: 1,
+        system_detected: 1,
+      });
+      expect(body.byStatus).toEqual({
+        open: 1,
+        investigating: 1,
+        resolved: 1,
+      });
+      expect(body.byPriority).toEqual({
+        high: 1,
+        medium: 1,
+        low: 1,
+      });
+      expect(body.recent24h).toBe(3);
+      expect(body.unresolved).toBe(2);
+    });
+  });
+
   describe("PATCH /api/bugs/:id (update)", () => {
     beforeEach(async () => {
       const now = new Date().toISOString();
