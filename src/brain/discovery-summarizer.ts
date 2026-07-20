@@ -7,6 +7,8 @@
  */
 
 import type { Discovery, Task } from "../types";
+import { resolveBrainModelConfig } from "./model-config";
+import type { BrainModelConfig } from "./model-config";
 
 export interface DiscoverySummary {
 	/** Summarized insights relevant to the task */
@@ -40,11 +42,12 @@ export class DiscoverySummarizer {
 	private baseUrl: string;
 	private logger: (message: string) => void;
 
-	constructor(logger?: (message: string) => void) {
+	constructor(logger?: (message: string) => void, modelConfig?: BrainModelConfig) {
 		this.logger = logger || (() => {});
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		const config = modelConfig || resolveBrainModelConfig();
+		this.apiKey = config.apiKey;
+		this.model = config.model;
+		this.baseUrl = config.baseUrl;
 	}
 
 	/**

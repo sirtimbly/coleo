@@ -2,6 +2,7 @@ import { spawnSync } from "child_process";
 import { Database } from "bun:sqlite";
 import { join } from "path";
 import { getColeoDir } from "../config";
+import { compareKeys } from "../lib/fractional-indexing";
 import type {
 	BrainArmListFilters,
 	BrainArmRecord,
@@ -381,9 +382,10 @@ export class ApiDatabase implements McpDb, BrainDb {
 			classification: task.classification ?? null,
 			assignedTo: task.assignedTo ?? null,
 			dependencyBlocked: task.dependencyBlocked === true,
-			consensusStatus: task.consensusStatus ?? null,
-			sortOrder: task.sortOrder ?? null,
-			createdAt: task.createdAt,
+		consensusStatus: task.consensusStatus ?? null,
+		sortOrder: task.sortOrder ?? null,
+		orderKey: task.orderKey ?? null,
+		createdAt: task.createdAt,
 			updatedAt: task.updatedAt,
 			completedAt: task.completedAt ?? null,
 			context: task.context,
@@ -482,16 +484,34 @@ export class ApiDatabase implements McpDb, BrainDb {
 					return a.createdAt.localeCompare(b.createdAt);
 				});
 				return rows;
-			case "sort_order_asc":
-				rows.sort((a, b) => {
-					const left = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
-					const right = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
-					if (left !== right) {
-						return left - right;
-					}
+		case "sort_order_asc":
+			rows.sort((a, b) => {
+				const left = a.sortOrder ?? Number.MAX_SAFE_INTEGER;
+				const right = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
+				if (left !== right) {
+					return left - right;
+				}
+				return a.createdAt.localeCompare(b.createdAt);
+			});
+			return rows;
+		case "order_key_asc":
+			rows.sort((a, b) => {
+				if (a.orderKey === null && b.orderKey === null) {
 					return a.createdAt.localeCompare(b.createdAt);
-				});
-				return rows;
+				}
+				if (a.orderKey === null) {
+					return 1;
+				}
+				if (b.orderKey === null) {
+					return -1;
+				}
+				const diff = compareKeys(a.orderKey, b.orderKey);
+				if (diff !== 0) {
+					return diff;
+				}
+				return a.createdAt.localeCompare(b.createdAt);
+			});
+			return rows;
 			case "created_desc":
 			default:
 				rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));

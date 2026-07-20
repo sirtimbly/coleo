@@ -9,6 +9,7 @@ import { getServiceStatus } from "../../daemon";
 import { getNatsManager } from "../../nats/server";
 import { Maildir } from "../../mail";
 import { getColeoDir } from "../../config";
+import { VERSION } from "../../version";
 
 interface SystemContext {
   Variables: {
@@ -324,7 +325,7 @@ export function createSystemRoutes() {
 
     return c.json({
       status: overallHealth ? "ok" : "degraded",
-      version: "0.2.0",
+      version: VERSION,
       cwd: process.cwd(),
       uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       brain: brainStatus,
@@ -369,7 +370,7 @@ export function createSystemRoutes() {
         pollIntervalMs: parseInt(config.brain_poll_interval_ms || "30000", 10),
         maxArms: parseInt(config.brain_max_arms || "8", 10),
       },
-      version: "0.2.0",
+      version: VERSION,
     });
   });
 

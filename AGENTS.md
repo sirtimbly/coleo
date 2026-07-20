@@ -35,6 +35,14 @@ This document orients agentic contributors working on Coleo, an AI agent orchest
 - `bun run build` - Full production build (setup + web + CLI)
 - `bun run setup` - Install dependencies for all workspaces
 
+### Git Commits
+- Use Conventional Commits for every commit: `<type>(optional-scope): <description>`
+- Use `feat` for new user-facing behavior, `fix` for bug fixes, and `docs`, `refactor`, `test`, `build`, `ci`, `perf`, `style`, `chore`, or `revert` where appropriate
+- Keep the description imperative, lowercase, and concise; for example, `fix(web): prevent websocket reconnect leaks`
+- Mark breaking changes with `!` after the type/scope and include a `BREAKING CHANGE:` footer
+- Release Please derives versions and changelog entries from these commits: `fix` produces a patch, `feat` a minor, and breaking changes a major release
+- Pull request titles must also use Conventional Commit format because squash merges use the PR title as the release commit
+
 ### Documentation
 - `bun run docs:dev` - Start VitePress dev server
 - `bun run docs:build` - Build static documentation

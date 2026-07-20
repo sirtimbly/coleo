@@ -1,6 +1,7 @@
 import type { Database } from "bun:sqlite";
 
 import type { BrainTaskListFilters, BrainTaskRecord } from "../brain/db-client";
+import { compareKeys } from "../lib/fractional-indexing";
 
 export function getTableColumns(db: Database, table: string): Set<string> {
 	try {
@@ -33,11 +34,12 @@ export function mapTaskRows(rows: Array<Record<string, unknown>>): BrainTaskReco
 		dependencyBlocked:
 			Number(row.dependency_blocked || 0) === 1 || row.dependency_blocked === true,
 		consensusStatus: (row.consensus_status as string | null) ?? null,
-		sortOrder:
-			row.sort_order === null || row.sort_order === undefined
-				? null
-				: Number(row.sort_order),
-		createdAt: String(row.created_at || new Date(0).toISOString()),
+	sortOrder:
+		row.sort_order === null || row.sort_order === undefined
+			? null
+			: Number(row.sort_order),
+	orderKey: (row.order_key as string | null) ?? null,
+	createdAt: String(row.created_at || new Date(0).toISOString()),
 		updatedAt: String(row.updated_at || row.created_at || new Date(0).toISOString()),
 		completedAt: (row.completed_at as string | null) ?? null,
 	}));
@@ -87,6 +89,24 @@ export function sortTasks(
 				const right = b.sortOrder ?? Number.MAX_SAFE_INTEGER;
 				if (left !== right) {
 					return left - right;
+				}
+				return a.createdAt.localeCompare(b.createdAt);
+			});
+			return tasks;
+		case "order_key_asc":
+			tasks.sort((a, b) => {
+				if (a.orderKey === null && b.orderKey === null) {
+					return a.createdAt.localeCompare(b.createdAt);
+				}
+				if (a.orderKey === null) {
+					return 1;
+				}
+				if (b.orderKey === null) {
+					return -1;
+				}
+				const diff = compareKeys(a.orderKey, b.orderKey);
+				if (diff !== 0) {
+					return diff;
 				}
 				return a.createdAt.localeCompare(b.createdAt);
 			});

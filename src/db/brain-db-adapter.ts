@@ -52,6 +52,7 @@ export function createSqliteBrainDb(db: Database): BrainDb {
 					? "consensus_status"
 					: "NULL as consensus_status",
 				hasColumn(columns, "sort_order") ? "sort_order" : "NULL as sort_order",
+			hasColumn(columns, "order_key") ? "order_key" : "NULL as order_key",
 				hasColumn(columns, "created_at")
 					? "created_at"
 					: "datetime('now') as created_at",

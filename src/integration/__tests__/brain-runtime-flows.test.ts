@@ -56,6 +56,16 @@ describe("Brain runtime flows", () => {
         created_at: string;
         updated_at: string;
         completed_at: string | null;
+        blocked_at: string | null;
+        blocked_reason: string | null;
+        blocked_category: string | null;
+        blocked_recheck_at: string | null;
+        blocked_last_checked_at: string | null;
+        blocked_review_count: number | null;
+        blocked_needs_human: number | null;
+        blocked_human_notified_at: string | null;
+        blocked_review_arm_id: string | null;
+        blocked_review_started_at: string | null;
         artifacts: string | null;
         mail_thread_id?: string | null;
         context?: string | null;
@@ -73,6 +83,16 @@ describe("Brain runtime flows", () => {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         completedAt: row.completed_at,
+        blockedAt: row.blocked_at,
+        blockedReason: row.blocked_reason,
+        blockedCategory: row.blocked_category,
+        blockedRecheckAt: row.blocked_recheck_at,
+        blockedLastCheckedAt: row.blocked_last_checked_at,
+        blockedReviewCount: row.blocked_review_count ?? 0,
+        blockedNeedsHuman: row.blocked_needs_human === 1,
+        blockedHumanNotifiedAt: row.blocked_human_notified_at,
+        blockedReviewArmId: row.blocked_review_arm_id,
+        blockedReviewStartedAt: row.blocked_review_started_at,
         artifacts: row.artifacts ? JSON.parse(row.artifacts) : [],
         mailThreadId: row.mail_thread_id || null,
         context: row.context ? JSON.parse(row.context) : {},
@@ -109,7 +129,11 @@ describe("Brain runtime flows", () => {
               .query(`
                 SELECT id, subject, description, status, priority, domain, classification,
                        assigned_to, dependency_blocked, sort_order,
-                       created_at, updated_at, completed_at, artifacts, mail_thread_id, context
+                       created_at, updated_at, completed_at, blocked_at, blocked_reason,
+                       blocked_category, blocked_recheck_at, blocked_last_checked_at,
+                       blocked_review_count, blocked_needs_human, blocked_human_notified_at,
+                       blocked_review_arm_id, blocked_review_started_at,
+                       artifacts, mail_thread_id, context
                 FROM tasks
                 WHERE status IN (${statuses.map(() => "?").join(",")})
                 ORDER BY created_at DESC
@@ -119,7 +143,11 @@ describe("Brain runtime flows", () => {
               .query(`
                 SELECT id, subject, description, status, priority, domain, classification,
                        assigned_to, dependency_blocked, sort_order,
-                       created_at, updated_at, completed_at, artifacts, mail_thread_id, context
+                       created_at, updated_at, completed_at, blocked_at, blocked_reason,
+                       blocked_category, blocked_recheck_at, blocked_last_checked_at,
+                       blocked_review_count, blocked_needs_human, blocked_human_notified_at,
+                       blocked_review_arm_id, blocked_review_started_at,
+                       artifacts, mail_thread_id, context
                 FROM tasks
                 ORDER BY created_at DESC
               `)
@@ -137,6 +165,16 @@ describe("Brain runtime flows", () => {
           created_at: string;
           updated_at: string;
           completed_at: string | null;
+          blocked_at: string | null;
+          blocked_reason: string | null;
+          blocked_category: string | null;
+          blocked_recheck_at: string | null;
+          blocked_last_checked_at: string | null;
+          blocked_review_count: number | null;
+          blocked_needs_human: number | null;
+          blocked_human_notified_at: string | null;
+          blocked_review_arm_id: string | null;
+          blocked_review_started_at: string | null;
           artifacts: string | null;
           mail_thread_id: string | null;
           context: string | null;
@@ -223,6 +261,15 @@ describe("Brain runtime flows", () => {
             dependencyBlocked?: boolean;
             artifacts?: string[];
             context?: Record<string, unknown>;
+            blockedReason?: string;
+            blockedCategory?: string;
+            blockedRecheckAt?: string | null;
+            blockedLastCheckedAt?: string | null;
+            blockedReviewCount?: number;
+            blockedNeedsHuman?: boolean;
+            blockedHumanNotifiedAt?: string | null;
+            blockedReviewArmId?: string | null;
+            blockedReviewStartedAt?: string | null;
           };
           const updates: string[] = [];
           const values: unknown[] = [];
@@ -231,6 +278,19 @@ describe("Brain runtime flows", () => {
             values.push(body.status);
             if (body.status === "completed") {
               updates.push("completed_at = ?");
+              values.push(nowIso());
+            }
+            if (body.status !== "blocked") {
+              updates.push(
+                "blocked_at = NULL",
+                "blocked_reason = NULL",
+                "blocked_category = NULL",
+                "blocked_recheck_at = NULL",
+                "blocked_review_arm_id = NULL",
+                "blocked_review_started_at = NULL",
+              );
+            } else {
+              updates.push("blocked_at = COALESCE(blocked_at, ?)");
               values.push(nowIso());
             }
           }
@@ -250,6 +310,23 @@ describe("Brain runtime flows", () => {
             updates.push("context = ?");
             values.push(JSON.stringify(body.context));
           }
+          const blockedFields: Array<[keyof typeof body, string, (value: unknown) => unknown]> = [
+            ["blockedReason", "blocked_reason", (value) => value],
+            ["blockedCategory", "blocked_category", (value) => value],
+            ["blockedRecheckAt", "blocked_recheck_at", (value) => value],
+            ["blockedLastCheckedAt", "blocked_last_checked_at", (value) => value],
+            ["blockedReviewCount", "blocked_review_count", (value) => value],
+            ["blockedNeedsHuman", "blocked_needs_human", (value) => value ? 1 : 0],
+            ["blockedHumanNotifiedAt", "blocked_human_notified_at", (value) => value],
+            ["blockedReviewArmId", "blocked_review_arm_id", (value) => value],
+            ["blockedReviewStartedAt", "blocked_review_started_at", (value) => value],
+          ];
+          for (const [field, column, transform] of blockedFields) {
+            if (body[field] !== undefined) {
+              updates.push(`${column} = ?`);
+              values.push(transform(body[field]));
+            }
+          }
           updates.push("updated_at = ?");
           values.push(nowIso());
           values.push(taskId);
@@ -260,7 +337,11 @@ describe("Brain runtime flows", () => {
           SELECT
             t.id, t.subject, t.description, t.status, t.priority, t.domain, t.classification,
             t.assigned_to, t.dependency_blocked, t.sort_order,
-            t.created_at, t.updated_at, t.completed_at, t.artifacts, t.mail_thread_id, t.context
+            t.created_at, t.updated_at, t.completed_at, t.blocked_at, t.blocked_reason,
+            t.blocked_category, t.blocked_recheck_at, t.blocked_last_checked_at,
+            t.blocked_review_count, t.blocked_needs_human, t.blocked_human_notified_at,
+            t.blocked_review_arm_id, t.blocked_review_started_at,
+            t.artifacts, t.mail_thread_id, t.context
           FROM tasks t
           WHERE t.id = ?
         `).get(taskId) as {
@@ -277,6 +358,16 @@ describe("Brain runtime flows", () => {
           created_at: string;
           updated_at: string;
           completed_at: string | null;
+          blocked_at: string | null;
+          blocked_reason: string | null;
+          blocked_category: string | null;
+          blocked_recheck_at: string | null;
+          blocked_last_checked_at: string | null;
+          blocked_review_count: number | null;
+          blocked_needs_human: number | null;
+          blocked_human_notified_at: string | null;
+          blocked_review_arm_id: string | null;
+          blocked_review_started_at: string | null;
           artifacts: string | null;
           mail_thread_id: string | null;
           context: string | null;
@@ -962,7 +1053,7 @@ describe("Brain runtime flows", () => {
     );
   });
 
-  it("completes tasks even when they are missing from in-memory cache", async () => {
+  it("queues validation for tasks missing from the in-memory cache", async () => {
     const now = nowIso();
     db.run(
       "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -974,8 +1065,8 @@ describe("Brain runtime flows", () => {
     const row = db
       .query("SELECT status, completed_at FROM tasks WHERE id = ?")
       .get("task-db-only") as { status: string; completed_at: string | null };
-    expect(row.status).toBe("completed");
-    expect(row.completed_at).toBeTruthy();
+    expect(row.status).toBe("completing");
+    expect(row.completed_at).toBeNull();
   });
 
   it("does not create recursive commit tasks for commit follow-ups", async () => {
@@ -1056,9 +1147,9 @@ describe("Brain runtime flows", () => {
         completed_at: string | null;
       };
 
-    expect(completed.status).toBe("completed");
+    expect(completed.status).toBe("completing");
     expect(completed.assigned_to).toBeNull();
-    expect(completed.completed_at).toBeTruthy();
+    expect(completed.completed_at).toBeNull();
     expect((brain as any).arms.get("arm-1")?.status).toBe("idle");
     expect(resetCount).toBe(1);
     expect(prompts.some((prompt) => prompt.includes("get_full_briefing"))).toBe(true);
@@ -1155,8 +1246,9 @@ describe("Brain runtime flows", () => {
     const now = nowIso();
     db.run(
       `INSERT INTO tasks (
-        id, subject, description, status, priority, dependency_blocked, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, subject, description, status, priority, dependency_blocked,
+        blocked_reason, blocked_category, blocked_recheck_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "task-blocked-non-dependency",
         "Blocked without dependency",
@@ -1164,14 +1256,18 @@ describe("Brain runtime flows", () => {
         "blocked",
         "normal",
         0,
+        "Blocked without a dependency reason",
+        "unknown",
+        now,
         now,
         now,
       ],
     );
     db.run(
       `INSERT INTO tasks (
-        id, subject, description, status, priority, dependency_blocked, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        id, subject, description, status, priority, dependency_blocked,
+        blocked_reason, blocked_category, blocked_recheck_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "task-blocked-dependency",
         "Blocked with dependency flag",
@@ -1179,6 +1275,9 @@ describe("Brain runtime flows", () => {
         "blocked",
         "normal",
         1,
+        "Waiting for dependency",
+        "dependency",
+        now,
         now,
         now,
       ],

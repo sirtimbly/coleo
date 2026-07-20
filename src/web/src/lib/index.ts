@@ -10,6 +10,8 @@ export {
   type ActivityEntry,
   type TranscriptIndexerHealth,
   type ColeoConfig,
+  type BrainModel,
+  type BrainConfigResponse,
   type ArmConfig,
   type ArmConfigSummary,
   type ArmTemplateSummary,

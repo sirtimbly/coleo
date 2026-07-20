@@ -53,7 +53,7 @@ export interface TaskMetadata extends JsonObject {
   ui?: TaskUiMetadata;
 }
 
-export type BugUiMetadata = UiMetadata;
+export interface BugUiMetadata extends UiMetadata {}
 
 export interface BugMetadata extends JsonObject {
   ui?: BugUiMetadata;
@@ -76,6 +76,15 @@ export interface OnboardingStatus {
     configured: boolean;
     publicKey: string | null;
   };
+}
+
+export type BrainConfigResponse = Omit<ColeoConfig['brain'], 'apiKey'> & {
+  apiKeyConfigured: boolean;
+};
+
+export interface BrainModel {
+  id: string;
+  name: string;
 }
 
 export interface WorkspaceTextFile {
@@ -207,6 +216,18 @@ class ApiClient {
     });
   }
 
+  async regenerateAllTasks(explanation: string) {
+    return this.request<{
+      deletedCount: number;
+      createdCount: number;
+      preservedCompletedCount: number;
+      mode: 'ai' | 'structured';
+    }>('/project-setup/regenerate-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ explanation }),
+    });
+  }
+
   async search(params: {
     query: string;
     types?: string[];
@@ -299,10 +320,18 @@ class ApiClient {
   }
 
   async updateBrainConfig(data: Partial<ColeoConfig['brain']>) {
-    return this.request<{ brain: ColeoConfig['brain'] }>('/config/brain', {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain', {
       method: 'PATCH',
       body: JSON.stringify(data),
     });
+  }
+
+  async getBrainModelConfig() {
+    return this.request<{ brain: BrainConfigResponse }>('/config/brain');
+  }
+
+  async getBrainModels() {
+    return this.request<{ models: BrainModel[] }>('/config/brain/models');
   }
 
   // Mail Config
@@ -879,6 +908,15 @@ class ApiClient {
     progress: number;
     artifacts: string[];
     metadata: TaskMetadata;
+    blockedReason: string;
+    blockedCategory: Task['blockedCategory'];
+    blockedRecheckAt: string | null;
+    blockedLastCheckedAt: string | null;
+    blockedReviewCount: number;
+    blockedNeedsHuman: boolean;
+    blockedHumanNotifiedAt: string | null;
+    blockedReviewArmId: string | null;
+    blockedReviewStartedAt: string | null;
   }>) {
     return this.request<{ task: Task }>(`/tasks/${id}`, {
       method: 'PATCH',
@@ -906,25 +944,22 @@ class ApiClient {
     start: string;
     end: string;
     bin?: 'hour' | 'day' | 'week' | 'month';
+    timeZone: string;
     status?: string;
-    assignedTo?: string;
+    priority?: string;
     domain?: string;
-    timeZone?: string;
+    assignedTo?: string;
+    phase?: string;
   }) {
-    const query = new URLSearchParams();
-    query.set('start', params.start);
-    query.set('end', params.end);
-    if (params.bin) query.set('bin', params.bin);
-    if (params.status?.trim()) query.set('status', params.status);
-    if (params.assignedTo?.trim()) query.set('assignedTo', params.assignedTo);
-    if (params.domain?.trim()) query.set('domain', params.domain);
-    if (params.timeZone?.trim()) query.set('timeZone', params.timeZone);
-
+    const search = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value) search.set(key, value);
+    }
     return this.request<{
-      start: string;
-      end: string;
       bin: 'hour' | 'day' | 'week' | 'month';
       timeZone: string;
+      start: string;
+      end: string;
       buckets: Array<{
         bucket: string;
         created: number;
@@ -932,7 +967,7 @@ class ApiClient {
         cumulativeCreated: number;
         cumulativeCompleted: number;
       }>;
-    }>(`/tasks/burndown?${query.toString()}`);
+    }>(`/tasks/burndown?${search}`);
   }
 
   async getTaskBlockingBugs(taskId: string) {
@@ -1687,13 +1722,14 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: 'pending' | 'claimed' | 'in_progress' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  status: 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   priority: 'critical' | 'high' | 'normal' | 'low';
-  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal';
+  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
   sourceRef: string | null;
   phase: string | null;
   domain: string | null;
   assignedTo: string | null;
+  dependencyBlocked?: boolean;
   assignedArmName?: string;
   planLineUid?: string | null;
   sortOrder?: number | null;
@@ -1703,6 +1739,16 @@ export interface Task {
   completedAt: string | null;
   claimedAt: string | null;
   startedAt: string | null;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'unknown' | null;
+  blockedRecheckAt?: string | null;
+  blockedLastCheckedAt?: string | null;
+  blockedReviewCount?: number;
+  blockedNeedsHuman?: boolean;
+  blockedHumanNotifiedAt?: string | null;
+  blockedReviewArmId?: string | null;
+  blockedReviewStartedAt?: string | null;
   dueDate: string | null;
   artifacts: string[];
   metadata: TaskMetadata;

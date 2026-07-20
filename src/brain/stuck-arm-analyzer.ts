@@ -10,26 +10,25 @@ import { join } from "path";
 import nunjucks from "nunjucks";
 import type { StuckAnalysis } from "./activity-types";
 import { resolveLogFn } from "./activity-types";
+import { resolveBrainModelConfigSource } from "./model-config";
+import type { BrainModelConfigSource } from "./model-config";
 
 /**
  * LLM-based Stuck Arm Analyzer
  * Analyzes PTY output to determine if an arm is stuck and suggests actions
  */
 export class StuckArmAnalyzer {
-	private apiKey: string;
-	private model: string;
-	private baseUrl: string;
 	private logger: (message: string) => void;
 	private templateDir: string;
+	private modelConfigSource?: BrainModelConfigSource;
 
 	constructor(
 		logger: (message: string) => void,
 		coleoDir: string = process.cwd(),
+		modelConfigSource?: BrainModelConfigSource,
 	) {
 		this.logger = resolveLogFn(logger);
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		this.modelConfigSource = modelConfigSource;
 		this.templateDir = join(coleoDir, "src", "brain", "templates");
 	}
 
@@ -65,7 +64,8 @@ export class StuckArmAnalyzer {
 		}
 
 		// Use LLM for deeper analysis
-		if (!this.apiKey) {
+		const { apiKey, baseUrl, model } = await resolveBrainModelConfigSource(this.modelConfigSource);
+		if (!apiKey) {
 			return this.fallbackAnalysis(recentOutput);
 		}
 
@@ -90,14 +90,14 @@ export class StuckArmAnalyzer {
 		}
 
 		try {
-			const response = await fetch(`${this.baseUrl}/chat/completions`, {
+			const response = await fetch(`${baseUrl}/chat/completions`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.apiKey}`,
+					Authorization: `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({
-					model: this.model,
+					model,
 					messages: [
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: userMessage },

@@ -6,6 +6,7 @@ export const BRAIN_INBOX_MESSAGE_TYPES = [
 	"task_validation",
 	"task_acknowledge",
 	"task_validate",
+	"blocked_task_review",
 	"task_deleted",
 	"discovery",
 	"dependency_discovery",
@@ -54,6 +55,10 @@ function hasOptionalStringArray(value: Record<string, unknown>, key: string): bo
 	return value[key] === undefined || isStringArray(value[key]);
 }
 
+function hasOptionalBoolean(value: Record<string, unknown>, key: string): boolean {
+	return value[key] === undefined || typeof value[key] === "boolean";
+}
+
 export function validateBrainInboxPayload(type: BrainInboxMessageType, payload: unknown): string | null {
 	if (!isRecord(payload)) {
 		return "payload must be an object";
@@ -77,6 +82,26 @@ export function validateBrainInboxPayload(type: BrainInboxMessageType, payload: 
 			return null;
 		case "task_acknowledge":
 			if (!hasString(payload, "taskId")) return "task_acknowledge requires payload.taskId";
+			return null;
+		case "blocked_task_review":
+			if (!hasString(payload, "taskId")) return "blocked_task_review requires payload.taskId";
+			if (!["unblocked", "still_blocked", "irrelevant"].includes(String(payload.outcome))) {
+				return "blocked_task_review payload.outcome must be unblocked, still_blocked, or irrelevant";
+			}
+			if (!hasString(payload, "summary")) return "blocked_task_review requires payload.summary";
+			if (payload.outcome === "still_blocked" && !hasString(payload, "reason")) {
+				return "blocked_task_review with still_blocked outcome requires payload.reason";
+			}
+			if (
+				payload.category !== undefined
+				&& !["dependency", "bug", "file_claim", "environment", "human", "arm", "unknown"]
+					.includes(String(payload.category))
+			) {
+				return "blocked_task_review payload.category is invalid";
+			}
+			if (!hasOptionalBoolean(payload, "needsHuman")) {
+				return "blocked_task_review payload.needsHuman must be boolean";
+			}
 			return null;
 		case "discovery":
 			if (!hasString(payload, "title")) return "discovery requires payload.title";

@@ -312,13 +312,24 @@ export function mapApiTask(task: {
 	assignedTo?: string | null;
 	dependencyBlocked?: boolean;
 	sortOrder?: number | null;
+	orderKey?: string | null;
 	createdAt: string;
 	updatedAt: string;
 	completedAt?: string | null;
 	blockedAt?: string | null;
+	blockedReason?: string | null;
+	blockedCategory?: Task["blockedCategory"] | null;
+	blockedRecheckAt?: string | null;
+	blockedLastCheckedAt?: string | null;
+	blockedReviewCount?: number;
+	blockedNeedsHuman?: boolean;
+	blockedHumanNotifiedAt?: string | null;
+	blockedReviewArmId?: string | null;
+	blockedReviewStartedAt?: string | null;
 	artifacts?: string[];
 	mailThreadId?: string | null;
 	context?: Task["context"];
+	metadata?: Record<string, unknown>;
 }): Task {
 	const status = isTaskStatus(task.status) ? task.status : "pending";
 	const priority = isTaskPriority(task.priority) ? task.priority : "normal";
@@ -337,12 +348,29 @@ export function mapApiTask(task: {
 		assignedTo: task.assignedTo || undefined,
 		dependencyBlocked: task.dependencyBlocked === true,
 		sortOrder: task.sortOrder ?? undefined,
+		orderKey: task.orderKey ?? undefined,
 		createdAt: new Date(task.createdAt),
 		updatedAt: new Date(task.updatedAt),
 		completedAt: task.completedAt ? new Date(task.completedAt) : undefined,
 		blockedAt: task.blockedAt ? new Date(task.blockedAt) : undefined,
+		blockedReason: task.blockedReason || undefined,
+		blockedCategory: task.blockedCategory || undefined,
+		blockedRecheckAt: task.blockedRecheckAt ? new Date(task.blockedRecheckAt) : undefined,
+		blockedLastCheckedAt: task.blockedLastCheckedAt
+			? new Date(task.blockedLastCheckedAt)
+			: undefined,
+		blockedReviewCount: task.blockedReviewCount ?? 0,
+		blockedNeedsHuman: task.blockedNeedsHuman === true,
+		blockedHumanNotifiedAt: task.blockedHumanNotifiedAt
+			? new Date(task.blockedHumanNotifiedAt)
+			: undefined,
+		blockedReviewArmId: task.blockedReviewArmId || undefined,
+		blockedReviewStartedAt: task.blockedReviewStartedAt
+			? new Date(task.blockedReviewStartedAt)
+			: undefined,
 		artifacts: task.artifacts || [],
 		mailThreadId: task.mailThreadId || undefined,
 		context: task.context || undefined,
+		metadata: task.metadata || undefined,
 	};
 }

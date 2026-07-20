@@ -17,8 +17,12 @@ import {
 	MessageSquare,
 	ScrollText,
 	GitCommitHorizontal,
+	MoreHorizontal,
+	Pencil,
+	RotateCcw,
+	Ban,
 } from "lucide-react";
-import { Button, Chip, Card } from "@heroui/react";
+import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import {
 	type Task,
 	type TaskLlmMetadata,
@@ -26,7 +30,7 @@ import {
 	type TaskUiMetadata,
 	cn,
 } from "@/lib";
-import { TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel } from "@/components";
+import { RegenerateTasksModal, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
@@ -57,6 +61,12 @@ const STATUS_CONFIG: Record<
 		bgColor: "bg-yellow-500/10",
 		icon: Clock,
 		label: "In Progress",
+	},
+	completing: {
+		color: "text-violet-500",
+		bgColor: "bg-violet-500/10",
+		icon: Clock,
+		label: "Completing",
 	},
 	claimed: {
 		color: "text-blue-500",
@@ -102,6 +112,7 @@ const isTaskStatus = (value: string): value is Task["status"] =>
 const TASK_STATUS_FILTERS: readonly Task["status"][] = [
 	"pending",
 	"in_progress",
+	"completing",
 	"blocked",
 	"completed",
 	"claimed",
@@ -216,6 +227,9 @@ function TaskDetailsToolbar({
 	priority,
 	taskId,
 	onPriorityChange,
+	task,
+	onEdit,
+	onStatusChange,
 	onClose,
 }: {
 	activeTab: SidebarTab;
@@ -224,6 +238,9 @@ function TaskDetailsToolbar({
 	priority: Task["priority"];
 	taskId: string;
 	onPriorityChange: (taskId: string, priority: Task["priority"]) => void;
+	task: Task;
+	onEdit: (status?: Task["status"]) => void;
+	onStatusChange: (status: Task["status"]) => void;
 	onClose?: () => void;
 }) {
 	return (
@@ -264,6 +281,48 @@ function TaskDetailsToolbar({
 				taskId={taskId}
 				onPriorityChange={onPriorityChange}
 			/>
+			<TaskWorkflowHelp />
+			<Dropdown>
+				<Button isIconOnly size="sm" variant="ghost" aria-label="Edit task or change status">
+					<MoreHorizontal className="h-4 w-4" />
+				</Button>
+				<Dropdown.Popover placement="bottom end" className="min-w-[220px]">
+					<Dropdown.Menu
+						onAction={(key) => {
+							if (key === "edit" || key === "blocked") {
+								onEdit(key === "blocked" ? "blocked" : undefined);
+								return;
+							}
+							if (typeof key === "string" && key.startsWith("status:")) {
+								const status = key.slice("status:".length);
+								if (isTaskStatus(status)) onStatusChange(status);
+							}
+						}}
+					>
+						<Dropdown.Item id="edit" textValue="Edit task">
+							<Pencil className="h-4 w-4 text-muted-foreground" />
+							<Label>Edit task</Label>
+						</Dropdown.Item>
+						<Separator />
+						<Dropdown.Item id="status:pending" textValue="Move to pending">
+							<RotateCcw className="h-4 w-4 text-muted-foreground" />
+							<Label>{task.status === "blocked" ? "Unblock to pending" : "Move to pending"}</Label>
+						</Dropdown.Item>
+						<Dropdown.Item id="blocked" textValue="Mark blocked">
+							<Pause className="h-4 w-4 text-amber-500" />
+							<Label>Mark blocked...</Label>
+						</Dropdown.Item>
+						<Dropdown.Item id="status:failed" textValue="Mark failed">
+							<AlertTriangle className="h-4 w-4 text-danger" />
+							<Label>Mark failed</Label>
+						</Dropdown.Item>
+						<Dropdown.Item id="status:cancelled" textValue="Cancel task" variant="danger">
+							<Ban className="h-4 w-4 text-danger" />
+							<Label>Cancel task</Label>
+						</Dropdown.Item>
+					</Dropdown.Menu>
+				</Dropdown.Popover>
+			</Dropdown>
 			{onClose ? (
 				<Button
 					isIconOnly
@@ -311,6 +370,30 @@ function TaskCreatedAt({ createdAt }: { createdAt: string }) {
 			<Clock className="h-3 w-3" />
 			Created {formatRelativeAge(createdAt)}
 		</span>
+	);
+}
+
+function BlockedTaskNotice({ task }: { task: Task }) {
+	if (task.status !== "blocked") return null;
+
+	return (
+		<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
+			<div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+				<Pause className="h-3.5 w-3.5" />
+				Current blocker
+			</div>
+			<p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-foreground">
+				{task.blockedReason || "No reason was recorded. The next review must add one."}
+			</p>
+			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+				<span>Category: {(task.blockedCategory || "unknown").replace("_", " ")}</span>
+				{task.blockedRecheckAt ? (
+					<span>Next review: {formatAbsoluteDateTime(task.blockedRecheckAt)}</span>
+				) : null}
+				{task.blockedReviewCount ? <span>Reviews: {task.blockedReviewCount}</span> : null}
+				{task.blockedNeedsHuman ? <span className="font-medium text-amber-700 dark:text-amber-300">Waiting for human input</span> : null}
+			</div>
+		</div>
 	);
 }
 
@@ -458,7 +541,9 @@ export function TasksPage() {
 	}, [filter, setSearchParams]);
 	const [searchText, setSearchText] = useState("");
 	const [isModalOpen, setIsModalOpen] = useState(false);
+	const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
 	const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
+	const [editingStatus, setEditingStatus] = useState<Task["status"] | undefined>(undefined);
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
@@ -478,9 +563,24 @@ export function TasksPage() {
 			onClose={() => {
 				setIsModalOpen(false);
 				setEditingTask(undefined);
+				setEditingStatus(undefined);
 			}}
-			onSaved={() => refetch()}
+			onSaved={(savedTask) => {
+				setSelectedTask(savedTask);
+				refetch();
+			}}
 			task={editingTask}
+			initialStatus={editingStatus}
+		/>
+	);
+	const regenerateTasksModal = (
+		<RegenerateTasksModal
+			isOpen={isRegenerateModalOpen}
+			onClose={() => setIsRegenerateModalOpen(false)}
+			onRegenerated={() => {
+				setSelectedTask(null);
+				queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
+			}}
 		/>
 	);
 
@@ -567,6 +667,30 @@ export function TasksPage() {
 			updateTask({ id: taskId, updates });
 		},
 		[updateTask],
+	);
+
+	const handleEditSelectedTask = useCallback((status?: Task["status"]) => {
+		if (!selectedTask) return;
+		setEditingTask(selectedTask);
+		setEditingStatus(status);
+		setIsModalOpen(true);
+	}, [selectedTask]);
+
+	const handleStatusChange = useCallback(
+		(status: Task["status"]) => {
+			if (!selectedTask || status === selectedTask.status) return;
+			if (status === "blocked") {
+				setEditingTask(selectedTask);
+				setEditingStatus("blocked");
+				setIsModalOpen(true);
+				return;
+			}
+			if (status === "cancelled" && !window.confirm("Cancel this task? It will be removed from the runnable queue.")) {
+				return;
+			}
+			updateTask({ id: selectedTask.id, updates: { status } });
+		},
+		[selectedTask, updateTask],
 	);
 
 	const handleUpdateUi = useCallback(
@@ -746,6 +870,7 @@ export function TasksPage() {
 				case "task.created":
 				case "task.updated":
 				case "task.deleted":
+				case "tasks.regenerated":
 					// Invalidate queries to trigger refetch
 					queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
 					break;
@@ -823,14 +948,20 @@ export function TasksPage() {
 					))}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
+					<TaskWorkflowHelp />
 					<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
 						<RefreshCw className="h-4 w-4" />
+					</Button>
+					<Button size="sm" variant="primary" onPress={() => setIsRegenerateModalOpen(true)}>
+						<RefreshCw className="mr-1.5 h-4 w-4" />
+						Regenerate All Tasks
 					</Button>
 					<Button
 						size="sm"
 						variant="primary"
 						onPress={() => {
 							setEditingTask(undefined);
+							setEditingStatus(undefined);
 							setIsModalOpen(true);
 						}}
 					>
@@ -865,6 +996,7 @@ export function TasksPage() {
 						</div>
 					</div>
 					{taskModal}
+					{regenerateTasksModal}
 				</>
 			);
 		}
@@ -879,6 +1011,9 @@ export function TasksPage() {
 						priority={selectedTask.priority}
 						taskId={selectedTask.id}
 						onPriorityChange={handlePriorityChange}
+						task={selectedTask}
+						onEdit={handleEditSelectedTask}
+						onStatusChange={handleStatusChange}
 					/>
 
 					{sidebarTab === detailsTabId ? (
@@ -916,6 +1051,7 @@ export function TasksPage() {
 										</div>
 									</div>
 								</div>
+								<BlockedTaskNotice task={selectedTask} />
 							</div>
 						</div>
 					) : null}
@@ -943,6 +1079,7 @@ export function TasksPage() {
 					) : null}
 				</div>
 				{taskModal}
+				{regenerateTasksModal}
 			</>
 		);
 	}
@@ -960,6 +1097,7 @@ export function TasksPage() {
 					</div>
 
 					<div className="flex items-center gap-2">
+						<TaskWorkflowHelp />
 						<Button
 							isIconOnly
 							variant="ghost"
@@ -970,8 +1108,16 @@ export function TasksPage() {
 						</Button>
 						<Button
 							variant="primary"
+							onPress={() => setIsRegenerateModalOpen(true)}
+						>
+							<RefreshCw className="h-4 w-4 mr-2" />
+							Regenerate All Tasks
+						</Button>
+						<Button
+							variant="primary"
 							onPress={() => {
 								setEditingTask(undefined);
+								setEditingStatus(undefined);
 								setIsModalOpen(true);
 							}}
 						>
@@ -1141,6 +1287,9 @@ export function TasksPage() {
 							priority={selectedTask.priority}
 							taskId={selectedTask.id}
 							onPriorityChange={handlePriorityChange}
+							task={selectedTask}
+							onEdit={handleEditSelectedTask}
+							onStatusChange={handleStatusChange}
 							onClose={() => setSelectedTask(null)}
 						/>
 
@@ -1154,6 +1303,7 @@ export function TasksPage() {
 											</span>
 											<TaskCreatedAt createdAt={selectedTask.createdAt} />
 										</div>
+										<BlockedTaskNotice task={selectedTask} />
 
 										<div>
 											<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">
@@ -1300,16 +1450,8 @@ export function TasksPage() {
 				)}
 			</div>
 
-				{/* Task Modal */}
-				<TaskModal
-					isOpen={isModalOpen}
-					onClose={() => {
-						setIsModalOpen(false);
-						setEditingTask(undefined);
-					}}
-					onSaved={() => refetch()}
-					task={editingTask}
-				/>
+				{taskModal}
+				{regenerateTasksModal}
 
 				{/* Delete Confirmation Dialog */}
 				{deleteConfirm.show &&

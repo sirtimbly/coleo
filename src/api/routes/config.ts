@@ -22,10 +22,29 @@ import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { readdir, readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import { listBrainModels, resolveBrainModelConfig } from "../../brain/model-config";
 
 interface ConfigContext {
   Variables: {
     db: Database;
+  };
+}
+
+function sanitizeConfig(config: ColeoConfig): ColeoConfig {
+  return {
+    ...config,
+    brain: {
+      ...config.brain,
+      apiKey: "",
+    },
+  };
+}
+
+function brainConfigResponse(config: ColeoConfig) {
+  const { apiKey, ...brain } = config.brain;
+  return {
+    ...brain,
+    apiKeyConfigured: Boolean(apiKey),
   };
 }
 
@@ -39,7 +58,7 @@ export function createConfigRoutes() {
   app.get("/", async (c) => {
     try {
       const config = await loadConfig();
-      return c.json({ config });
+      return c.json({ config: sanitizeConfig(config) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to load config: ${message}`);
@@ -56,7 +75,7 @@ export function createConfigRoutes() {
     try {
       const updates = await c.req.json<Partial<ColeoConfig>>();
       const config = await updateConfig(updates);
-      return c.json({ config });
+      return c.json({ config: sanitizeConfig(config) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to update config: ${message}`);
@@ -135,10 +154,25 @@ export function createConfigRoutes() {
   app.get("/brain", async (c) => {
     try {
       const config = await loadConfig();
-      return c.json({ brain: config.brain });
+      return c.json({ brain: brainConfigResponse(config) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       throw HttpError.internal(`Failed to load config: ${message}`);
+    }
+  });
+
+  /**
+   * List models available from the configured brain provider.
+   * GET /api/config/brain/models
+   */
+  app.get("/brain/models", async (c) => {
+    try {
+      const config = await loadConfig();
+      const models = await listBrainModels(resolveBrainModelConfig(config.brain));
+      return c.json({ models });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw HttpError.badRequest(message);
     }
   });
 
@@ -150,7 +184,7 @@ export function createConfigRoutes() {
     try {
       const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
       const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
-      return c.json({ brain: config.brain });
+      return c.json({ brain: brainConfigResponse(config) });
     } catch (err) {
       if (err instanceof HttpError) throw err;
       const message = err instanceof Error ? err.message : String(err);

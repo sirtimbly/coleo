@@ -16,7 +16,7 @@
 
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
-import type { NextTaskResult, StatusReportItem } from "../types";
+import type { NextTaskResult } from "../types";
 import {
 	VALIDATION_TASK_SUBJECT_PREFIX,
 	buildVerificationTaskSubject,
@@ -208,7 +208,7 @@ export class DetermineNextTaskTool extends BrainTool {
       dependencyBlocked: false,
       unassignedOnly: true,
       excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-      sort: "priority_then_created_asc",
+      sort: "order_key_asc",
       limit: 20,
     });
 
@@ -300,10 +300,21 @@ export class DetermineNextTaskTool extends BrainTool {
     const reports = this.context.db.listStatusReports({
       limit: 500,
     });
-    const verificationReports = reports.filter((report) =>
-      ["issues_found", "completed_with_issues", "needs_review"].includes(
-        report.status,
-      ),
+    // A task can have many reports over its lifetime. Only its most recent
+    // report represents the current state; older issue reports must not keep
+    // producing verification work after the arm has recovered.
+    const latestReportByTask = new Map<string, (typeof reports)[number]>();
+    for (const report of reports) {
+      const existing = latestReportByTask.get(report.taskId);
+      if (!existing || report.createdAt > existing.createdAt) {
+        latestReportByTask.set(report.taskId, report);
+      }
+    }
+    const verificationReports = Array.from(latestReportByTask.values()).filter(
+      (report) =>
+        ["issues_found", "completed_with_issues", "needs_review"].includes(
+          report.status,
+        ),
     );
     const taskMap = new Map(completedTasks.map((task) => [task.id, task]));
     const existingVerifyTasks = this.context.db.listTasks({
@@ -454,7 +465,7 @@ ${taskWithIssues.id}`,
         dependencyBlocked: false,
         unassignedOnly: true,
         excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
-        sort: "sort_order_asc",
+        sort: "order_key_asc",
         limit: 1,
       })[0];
 
@@ -471,10 +482,10 @@ ${taskWithIssues.id}`,
         priority: row.priority || "normal",
       },
       context: {
-        planExcerpt: `Plan step ${row.sortOrder ?? "?"}`,
+        planExcerpt: `Plan step ${row.orderKey ?? "?"}`,
         history: await this.getRecentHistory(3),
       },
-      reasoning: `Next task from plan (step ${row.sortOrder ?? "?"}).`,
+      reasoning: `Next task from plan (step ${row.orderKey ?? "?"}).`,
     };
   }
 

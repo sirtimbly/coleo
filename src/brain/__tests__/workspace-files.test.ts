@@ -20,7 +20,16 @@ describe("Brain workspace files", () => {
 		await mkdir(join(localRoot, ".project"), { recursive: true });
 		await writeFile(
 			join(localRoot, ".project", "plan.md"),
-			["# Plan", "", "## Phase 1: Build", "### Deliverables", "- [ ] Remote plan task <!--octopai:task1234-->", ""].join("\n"),
+			[
+				"# Plan",
+				"",
+				"## Phase 1: Interactive Garden",
+				"Let users explore the 3D garden by selecting plants and moving between visualization items.",
+				"",
+				"### Deliverables",
+				"- [ ] Add interactive navigation <!--octopai:task1234-->",
+				"",
+			].join("\n"),
 			"utf-8",
 		);
 		await writeFile(
@@ -53,7 +62,14 @@ describe("Brain workspace files", () => {
 		const planFiles = await findPlanFiles(logicalRoot, workspace);
 		expect(planFiles).toEqual([join(logicalRoot, ".project", "plan.md")]);
 		const parsed = await parsePlanFile(planFiles[0]!, workspace);
-		expect(parsed.tasks[0]).toMatchObject({ subject: "Remote plan task", planLineUid: "task1234" });
+		expect(parsed.tasks[0]).toMatchObject({
+			subject: "Add interactive navigation",
+			planLineUid: "task1234",
+			phase: "Phase 1: Interactive Garden",
+		});
+		expect(parsed.tasks[0]?.description).toContain("Plan phase: Phase 1: Interactive Garden.");
+		expect(parsed.tasks[0]?.description).toContain("explore the 3D garden");
+		expect(parsed.tasks[0]?.description).toContain("Task objective: Add interactive navigation.");
 		expect(await removeTaskLineFromPlan(planFiles[0]!, "task1234", workspace)).toBe(true);
 		expect((await workspace.readText(".project/plan.md"))?.content).not.toContain("task1234");
 	});

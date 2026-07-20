@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, CircleHelp, FileCode2, FilePlus2, FileText, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
+import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type SetupTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
@@ -83,6 +84,7 @@ export function SetupPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number } | null>(null);
@@ -178,8 +180,8 @@ export function SetupPage() {
     setError(null);
   };
 
-  const save = async () => {
-    if (!editor) return;
+  const save = async (): Promise<boolean> => {
+    if (!editor) return false;
     setSaving(true);
     setError(null);
     try {
@@ -208,11 +210,18 @@ export function SetupPage() {
             .sort((left, right) => left.path.localeCompare(right.path)),
         };
       });
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to save the ${editor.kind}`);
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const openRegeneration = async () => {
+    if (dirty && !(await save())) return;
+    setRegenerateOpen(true);
   };
 
   const prepare = async () => {
@@ -303,6 +312,14 @@ export function SetupPage() {
         </div>
 
         <div className="setup-toolbar-actions">
+          <button
+            type="button"
+            onClick={() => void openRegeneration()}
+            disabled={saving || preparing}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
+          </button>
           <button
             type="button"
             aria-label="Show setup help"
@@ -455,6 +472,11 @@ export function SetupPage() {
           ) : null}
         </section>
       </div>
+      <RegenerateTasksModal
+        isOpen={regenerateOpen}
+        onClose={() => setRegenerateOpen(false)}
+        onRegenerated={() => void load()}
+      />
     </div>
   );
 }

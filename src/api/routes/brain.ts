@@ -1149,8 +1149,9 @@ export function createBrainRoutes() {
       SELECT td.task_id as taskId, t.subject
       FROM task_dependencies td
       JOIN tasks t ON td.task_id = t.id
-      WHERE td.depends_on_task_id = ?
-      AND t.status IN ('pending', 'blocked')
+       WHERE td.depends_on_task_id = ?
+       AND t.status IN ('pending', 'blocked')
+       AND (t.dependency_blocked = 1 OR t.blocked_category = 'dependency')
     `).all(body.completedTaskId) as Array<{ taskId: string; subject: string }>;
 
     const unblocked: Array<{ taskId: string; subject: string }> = [];
@@ -1171,7 +1172,22 @@ export function createBrainRoutes() {
 
       if ((unmetDeps?.count || 0) === 0) {
         db.run(
-          "UPDATE tasks SET dependency_blocked = 0, status = 'pending', updated_at = ? WHERE id = ?",
+          `UPDATE tasks
+           SET dependency_blocked = 0,
+               status = 'pending',
+               assigned_to = NULL,
+               blocked_at = NULL,
+               blocked_reason = NULL,
+               blocked_category = NULL,
+               blocked_recheck_at = NULL,
+               blocked_last_checked_at = NULL,
+               blocked_review_count = 0,
+               blocked_needs_human = 0,
+               blocked_human_notified_at = NULL,
+               blocked_review_arm_id = NULL,
+               blocked_review_started_at = NULL,
+               updated_at = ?
+           WHERE id = ?`,
           [now, row.taskId],
         );
         unblocked.push({ taskId: row.taskId, subject: row.subject });

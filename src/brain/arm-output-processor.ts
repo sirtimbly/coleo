@@ -1,3 +1,6 @@
+import { resolveBrainModelConfigSource } from "./model-config";
+import type { BrainModelConfigSource } from "./model-config";
+
 export type ArmOutputAction =
 	| "no_action"
 	| "create_task"
@@ -39,16 +42,12 @@ export interface ArmOutputDecision {
 }
 
 export class ArmOutputProcessor {
-	private apiKey: string;
-	private model: string;
-	private baseUrl: string;
 	private logger: (message: string) => void;
+	private modelConfigSource?: BrainModelConfigSource;
 
-	constructor(logger: (message: string) => void) {
+	constructor(logger: (message: string) => void, modelConfigSource?: BrainModelConfigSource) {
 		this.logger = logger;
-		this.apiKey = process.env.OPENAI_API_KEY || "";
-		this.model = process.env.OPENAI_MODEL || "gpt-5-mini";
-		this.baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
+		this.modelConfigSource = modelConfigSource;
 	}
 
 	async processOutput(
@@ -57,21 +56,22 @@ export class ArmOutputProcessor {
 		outputText: string,
 		systemPrompt: string,
 	): Promise<ArmOutputDecision> {
-		if (!this.apiKey) {
+		const { apiKey, baseUrl, model } = await resolveBrainModelConfigSource(this.modelConfigSource);
+		if (!apiKey) {
 			return this.fallbackParse(outputText);
 		}
 
 		const userMessage = `Arm ID: ${armId}\nArm Name: ${armName}\n\nAssistant output:\n${outputText}`;
 
 		try {
-			const response = await fetch(`${this.baseUrl}/chat/completions`, {
+			const response = await fetch(`${baseUrl}/chat/completions`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
-					Authorization: `Bearer ${this.apiKey}`,
+					Authorization: `Bearer ${apiKey}`,
 				},
 				body: JSON.stringify({
-					model: this.model,
+					model,
 					messages: [
 						{ role: "system", content: systemPrompt },
 						{ role: "user", content: userMessage },

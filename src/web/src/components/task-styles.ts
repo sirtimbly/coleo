@@ -18,6 +18,7 @@ export const STATUS_LABELS: Record<Task["status"], string> = {
 	pending: "Pending",
 	claimed: "Claimed",
 	in_progress: "In Progress",
+	completing: "Completing",
 	completed: "Completed",
 	blocked: "Blocked",
 	failed: "Failed",

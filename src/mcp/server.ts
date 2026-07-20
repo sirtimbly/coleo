@@ -87,6 +87,7 @@ import {
 	type TaskReferenceRow,
 	type BugReferenceRow,
 } from "./utils";
+import { VERSION } from "../version";
 
 /**
  * Create and configure the MCP server
@@ -94,7 +95,7 @@ import {
 export function createMcpServer(): McpServer {
 	const server = new McpServer({
 		name: "coleo-brain",
-		version: "0.2.0",
+		version: VERSION,
 	});
 
 	// ============================================

@@ -6,6 +6,7 @@
  */
 
 import { Command } from "commander";
+import { VERSION } from "../version";
 import { loadEnvFile } from "./context";
 import { registerInitCommand } from "./commands/init";
 import { registerServeCommand } from "./commands/serve";
@@ -34,7 +35,7 @@ const program = new Command();
 program
   .name("coleo")
   .description("AI agent orchestrator using the Octopus Model")
-  .version("0.2.0");
+  .version(VERSION);
 
 // Register all command modules
 registerInitCommand(program);

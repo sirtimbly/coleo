@@ -132,6 +132,8 @@ async function runMigrations(db: Database): Promise<void> {
     ["056_task_summaries_and_diffs", MIGRATION_056],
     ["057_task_checklist_items", MIGRATION_057],
     ["058_task_blocked_at", MIGRATION_058, { table: "tasks", columns: MIGRATION_058_COLUMNS }],
+		["059_normalize_task_order_keys", MIGRATION_059],
+		["060_blocked_task_workflow", MIGRATION_060, { table: "tasks", columns: MIGRATION_060_COLUMNS }],
 	];
 
 
@@ -1236,33 +1238,18 @@ const MIGRATION_047 = `
 -- Create index for ordering tasks by their order_key
 CREATE INDEX IF NOT EXISTS idx_tasks_order_key ON tasks(order_key);
 
--- Backfill order_key from existing sort_order using fractional indexing
--- Generate base62 keys: a, b, c, ... za, zb, zc, etc.
+-- Backfill order_key from existing sort_order using fixed-width ASCII-sortable keys.
 WITH ordered_tasks AS (
   SELECT
     id,
-    ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num,
-    COUNT(*) OVER () as total_count
+    ROW_NUMBER() OVER (ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC) as row_num
   FROM tasks
   WHERE status IN ('pending', 'claimed', 'in_progress', 'blocked')
 ),
--- Generate fractional keys for each position
--- Using a simple base62 encoding: position 1 -> 'a', 2 -> 'b', etc.
--- For positions > 62, we use two characters: 'aa', 'ab', etc.
 key_mapping AS (
   SELECT
     id,
-    CASE
-      WHEN row_num <= 62 THEN
-        -- Single character: a-z (26), A-Z (26), 0-9 (10) = 62 total
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', row_num, 1)
-      ELSE
-        -- Two characters for larger lists
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-               ((row_num - 1) / 62) + 1, 1) ||
-        SUBSTR('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-               ((row_num - 1) % 62) + 1, 1)
-    END as new_order_key
+    printf('a%010d', row_num) as new_order_key
   FROM ordered_tasks
 )
 UPDATE tasks
@@ -1964,6 +1951,72 @@ CREATE INDEX IF NOT EXISTS idx_escalation_task ON escalation_tracking(task_id);
 
 -- Index for fast lookup of escalations by bug
 CREATE INDEX IF NOT EXISTS idx_escalation_bug ON escalation_tracking(bug_id);
+`;
+
+const MIGRATION_059 = `
+-- Migration 047 used a lowercase-uppercase-digit alphabet that does not match
+-- SQLite BINARY collation. Re-key active queues from their preserved numeric
+-- order so every order_key consumer observes the same sequence.
+WITH ordered_tasks AS (
+  SELECT
+    id,
+    ROW_NUMBER() OVER (
+      ORDER BY COALESCE(sort_order, 2147483647) ASC, created_at ASC, id ASC
+    ) as row_num
+  FROM tasks
+  WHERE status IN ('pending', 'claimed', 'in_progress', 'completing', 'blocked')
+),
+key_mapping AS (
+  SELECT id, printf('a%010d', row_num) as new_order_key
+  FROM ordered_tasks
+)
+UPDATE tasks
+SET order_key = (
+  SELECT new_order_key
+  FROM key_mapping
+  WHERE key_mapping.id = tasks.id
+)
+WHERE id IN (SELECT id FROM key_mapping);
+`;
+
+const MIGRATION_060_COLUMNS = [
+	{ name: "blocked_reason", sql: "ALTER TABLE tasks ADD COLUMN blocked_reason TEXT" },
+	{ name: "blocked_category", sql: "ALTER TABLE tasks ADD COLUMN blocked_category TEXT" },
+	{ name: "blocked_recheck_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_recheck_at TEXT" },
+	{ name: "blocked_last_checked_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_last_checked_at TEXT" },
+	{ name: "blocked_review_count", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_count INTEGER NOT NULL DEFAULT 0" },
+	{ name: "blocked_needs_human", sql: "ALTER TABLE tasks ADD COLUMN blocked_needs_human INTEGER NOT NULL DEFAULT 0" },
+	{ name: "blocked_human_notified_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_human_notified_at TEXT" },
+	{ name: "blocked_review_arm_id", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_arm_id TEXT" },
+	{ name: "blocked_review_started_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_started_at TEXT" },
+];
+
+const MIGRATION_060 = `
+-- Old blocked rows predate the reason invariant. Give them an explicit legacy
+-- reason and make them immediately eligible for review.
+UPDATE tasks
+SET blocked_reason = COALESCE(NULLIF(TRIM(blocked_reason), ''), 'Blocked before reasons were required'),
+    blocked_category = COALESCE(NULLIF(TRIM(blocked_category), ''), 'unknown'),
+    blocked_at = COALESCE(blocked_at, updated_at, datetime('now')),
+    blocked_recheck_at = COALESCE(blocked_recheck_at, datetime('now'))
+WHERE status = 'blocked';
+
+CREATE INDEX IF NOT EXISTS idx_tasks_blocked_recheck
+ON tasks(status, blocked_recheck_at, blocked_at);
+
+CREATE TRIGGER IF NOT EXISTS tasks_blocked_reason_insert
+BEFORE INSERT ON tasks
+WHEN NEW.status = 'blocked' AND TRIM(COALESCE(NEW.blocked_reason, '')) = ''
+BEGIN
+  SELECT RAISE(ABORT, 'blocked tasks require a reason');
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_blocked_reason_update
+BEFORE UPDATE ON tasks
+WHEN NEW.status = 'blocked' AND TRIM(COALESCE(NEW.blocked_reason, '')) = ''
+BEGIN
+  SELECT RAISE(ABORT, 'blocked tasks require a reason');
+END;
 `;
 
 export { Database };

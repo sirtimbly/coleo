@@ -77,6 +77,10 @@ describe("Brain poll order", () => {
 			async () => {
 				record("assignTasks");
 			};
+		(brain as unknown as { reviewBlockedTasks: () => Promise<void> }).reviewBlockedTasks =
+			async () => {
+				record("reviewBlockedTasks");
+			};
 		(
 			brain as unknown as { assignInitialTasks: () => Promise<void> }
 		).assignInitialTasks = async () => {
@@ -139,6 +143,7 @@ describe("Brain poll order", () => {
 			"processArmAssistantOutputs",
 			"loadTasks",
 			"assignTasks",
+			"reviewBlockedTasks",
 			"assignInitialTasks",
 			"syncPlanTasks",
 			"processInbox",
