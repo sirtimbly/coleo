@@ -33,7 +33,7 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked";
+  status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked" | "cancelled";
   priority: "critical" | "high" | "normal" | "low";
   sourceType?: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
   sourceRef?: string | null;
@@ -52,11 +52,24 @@ export interface Task {
   domain?: string;
   /** Manual sort order for task prioritization (lower = higher priority) */
   sortOrder?: number;
+	/** Fractional-indexing rank key driving the visible task-list order */
+	orderKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
   blockedAt?: Date;
+	blockedReason?: string;
+	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "unknown";
+	blockedRecheckAt?: Date;
+	blockedLastCheckedAt?: Date;
+	blockedReviewCount?: number;
+	blockedNeedsHuman?: boolean;
+	blockedHumanNotifiedAt?: Date;
+	blockedReviewArmId?: string;
+	blockedReviewStartedAt?: Date;
   artifacts?: string[]; // commit hashes, file paths, etc.
+  /** System-owned workflow state (for example human approval gates). */
+	metadata?: Record<string, unknown>;
   mailThreadId?: string; // link back to mail conversation
   context?: {
     attachments?: TaskAttachment[];
@@ -263,6 +276,7 @@ export type MessageType =
   | "task_acknowledge"
   | "task_validate"
   | "task_failed"
+	| "blocked_task_review"
   | "task_deleted"
   | "discovery"
   | "dependency_discovery"
@@ -382,6 +396,9 @@ export interface ColeoConfig {
 		pollIntervalMs: number;
 		maxArms: number;
 		armGracePeriodMinutes: number;
+		provider: string;
+		model: string;
+		apiKey: string;
 	};
   mail: {
     provider: "cloudflare" | "postmark";
@@ -467,6 +484,9 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		pollIntervalMs: 30000,
 		maxArms: 8,
 		armGracePeriodMinutes: 2,
+		provider: "openai",
+		model: "gpt-5.6-luna",
+		apiKey: "",
 	},
   mail: {
     provider: "cloudflare",

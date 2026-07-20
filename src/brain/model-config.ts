@@ -25,7 +25,7 @@ export function resolveBrainModelConfig(
 
 	return {
 		provider,
-		model: config?.model || process.env.COLEO_BRAIN_MODEL || process.env.OPENAI_MODEL || "gpt-5-mini",
+		model: config?.model || process.env.COLEO_BRAIN_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-luna",
 		apiKey: config?.apiKey || process.env.COLEO_BRAIN_API_KEY || process.env.OPENAI_API_KEY || "",
 		baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
 	};

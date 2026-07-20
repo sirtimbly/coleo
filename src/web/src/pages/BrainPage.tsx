@@ -145,7 +145,7 @@ function BrainConfigSection({
   const [pollIntervalMs, setPollIntervalMs] = useState(config?.pollIntervalMs || 30000);
   const [maxArms, setMaxArms] = useState(config?.maxArms || 8);
   const [provider, setProvider] = useState(config?.provider || 'openai');
-  const [model, setModel] = useState(config?.model || 'gpt-5-mini');
+  const [model, setModel] = useState(config?.model || 'gpt-5.6-luna');
   const modelOptions = models.some((option) => option.id === model)
     ? models
     : [{ id: model, name: model }, ...models];
@@ -155,7 +155,7 @@ function BrainConfigSection({
       setPollIntervalMs(config?.pollIntervalMs || 30000);
       setMaxArms(config?.maxArms || 8);
       setProvider(config?.provider || 'openai');
-      setModel(config?.model || 'gpt-5-mini');
+      setModel(config?.model || 'gpt-5.6-luna');
     }
   }, [config, isEditing]);
 
