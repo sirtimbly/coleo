@@ -35,6 +35,15 @@ function createTestDb(): Database {
        claimed_at TEXT,
        started_at TEXT,
        blocked_at TEXT,
+       blocked_reason TEXT,
+       blocked_category TEXT,
+       blocked_recheck_at TEXT,
+       blocked_last_checked_at TEXT,
+       blocked_review_count INTEGER NOT NULL DEFAULT 0,
+       blocked_needs_human INTEGER NOT NULL DEFAULT 0,
+       blocked_human_notified_at TEXT,
+       blocked_review_arm_id TEXT,
+       blocked_review_started_at TEXT,
        due_date TEXT,
       artifacts TEXT DEFAULT '[]',
       context TEXT DEFAULT '{}',
@@ -43,7 +52,11 @@ function createTestDb(): Database {
 
     CREATE TABLE arms (
       id TEXT PRIMARY KEY,
-      name TEXT
+      name TEXT,
+      status TEXT DEFAULT 'idle',
+      current_task_id TEXT,
+      current_task_subject TEXT,
+      updated_at TEXT
     );
 
     CREATE TABLE task_dependencies (
@@ -562,16 +575,32 @@ describe("tasks API", () => {
 		expect(completedBody.task.completedAt).not.toBeNull();
      });
 
-		it("sets and clears blocked_at across blocked transitions", async () => {
-			const blockedRes = await app.request("/api/tasks/task-123", {
+		it("requires a reason and sets blocked review state across transitions", async () => {
+			const missingReasonRes = await app.request("/api/tasks/task-123", {
 				method: "PATCH",
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify({ status: "blocked" }),
+			});
+			expect(missingReasonRes.status).toBe(400);
+
+			const blockedRes = await app.request("/api/tasks/task-123", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					status: "blocked",
+					blockedReason: "Waiting for production credentials",
+					blockedCategory: "human",
+					blockedNeedsHuman: true,
+				}),
 			});
 
 			expect(blockedRes.status).toBe(200);
 			const blockedBody = (await blockedRes.json()) as { task: Task };
 			expect(blockedBody.task.blockedAt).not.toBeNull();
+			expect(blockedBody.task.blockedReason).toBe("Waiting for production credentials");
+			expect(blockedBody.task.blockedCategory).toBe("human");
+			expect(blockedBody.task.blockedNeedsHuman).toBe(true);
+			expect(blockedBody.task.blockedRecheckAt).not.toBeNull();
 
 			const resumedRes = await app.request("/api/tasks/task-123", {
 				method: "PATCH",
@@ -582,7 +611,49 @@ describe("tasks API", () => {
 			expect(resumedRes.status).toBe(200);
 			const resumedBody = (await resumedRes.json()) as { task: Task };
 			expect(resumedBody.task.blockedAt).toBeNull();
+			expect(resumedBody.task.blockedReason).toBeNull();
 			expect(resumedBody.task.startedAt).not.toBeNull();
+		});
+
+		it("rejects creating a blocked task without a reason", async () => {
+			const response = await app.request("/api/tasks", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					subject: "Blocked task",
+					description: "Cannot proceed",
+					status: "blocked",
+				}),
+			});
+
+			expect(response.status).toBe(400);
+		});
+
+		it("releases an assignment when manually returning a task to pending", async () => {
+			const now = new Date().toISOString();
+			db.run(
+				`INSERT INTO arms (id, name, status, current_task_id, current_task_subject, updated_at)
+				 VALUES ('arm-1', 'Arm 1', 'busy', 'task-123', 'Original Subject', ?)`,
+				[now],
+			);
+			db.run("UPDATE tasks SET status = 'in_progress', assigned_to = 'arm-1' WHERE id = 'task-123'");
+
+			const response = await app.request("/api/tasks/task-123", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ status: "pending" }),
+			});
+
+			expect(response.status).toBe(200);
+			const taskRow = db.query("SELECT assigned_to FROM tasks WHERE id = 'task-123'").get() as {
+				assigned_to: string | null;
+			};
+			const armRow = db.query("SELECT status, current_task_id FROM arms WHERE id = 'arm-1'").get() as {
+				status: string;
+				current_task_id: string | null;
+			};
+			expect(taskRow.assigned_to).toBeNull();
+			expect(armRow).toEqual({ status: "idle", current_task_id: null });
 		});
 
     it("should update metadata", async () => {

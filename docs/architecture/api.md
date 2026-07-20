@@ -292,7 +292,7 @@ GET /api/tasks
 List all tasks.
 
 Query params:
-- `status`: "pending" | "claimed" | "in_progress" | "completed" | "failed" | "blocked" | "cancelled" (comma-separated for multiple)
+- `status`: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked" | "cancelled" (comma-separated for multiple)
 - `priority`: "critical" | "high" | "normal" | "low"
 - `domain`: filter by domain
 - `assignedTo`: filter by assigned arm

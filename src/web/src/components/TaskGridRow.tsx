@@ -31,6 +31,9 @@ export type TaskUpdate = Partial<{
 	progress: number;
 	artifacts: string[];
 	metadata: TaskMetadata;
+	blockedReason: string;
+	blockedCategory: Task["blockedCategory"];
+	blockedNeedsHuman: boolean;
 }>;
 
 interface TaskGridRowProps {
@@ -227,7 +230,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 					className={cn(
 						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all resize-none overflow-hidden",
 						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
+						"focus:border-accent focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent/20",
 						uiMeta.bold && "font-semibold",
 						"w-full",
 					)}
@@ -252,7 +255,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 					className={cn(
 						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all",
 						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
+						"focus:border-accent focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent/20",
 						uiMeta.bold && "font-semibold",
 					)}
 					aria-label="Task subject (click to edit)"

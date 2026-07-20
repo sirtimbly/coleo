@@ -16,6 +16,7 @@ export default defineConfig({
 					text: "Guides",
 					items: [
 						{ text: "Getting Started", link: "/guides/getting-started" },
+						{ text: "Task Workflow", link: "/guides/task-workflow" },
 						{ text: "CLI", link: "/guides/cli" },
 						{ text: "Docker", link: "/guides/docker" },
 						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },

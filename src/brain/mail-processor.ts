@@ -118,7 +118,8 @@ ${body}`;
 				lowerBody.includes("approve") ||
 				lowerBody.includes("yes") ||
 				lowerBody.includes("ok");
-			const originalIdMatch = subject.match(/\[([^\]]+)\]/);
+			const ids = [...subject.matchAll(/\[([^\]]+)\]/g)];
+			const originalIdMatch = ids.at(-1);
 			return {
 				type: "approval_response",
 				originalId: originalIdMatch?.[1] || "",

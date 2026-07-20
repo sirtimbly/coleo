@@ -28,19 +28,55 @@ interface TasksContext {
 	};
 }
 
+const TASK_STATUSES = [
+	"pending",
+	"claimed",
+	"in_progress",
+	"completing",
+	"completed",
+	"failed",
+	"blocked",
+	"cancelled",
+] as const;
+
+const BLOCKED_CATEGORIES = [
+	"dependency",
+	"bug",
+	"file_claim",
+	"environment",
+	"human",
+	"arm",
+	"unknown",
+] as const;
+
+const BLOCKED_RECHECK_DELAY_MS = 15 * 60 * 1000;
+
+type TaskStatus = (typeof TASK_STATUSES)[number];
+export type BlockedTaskCategory = (typeof BLOCKED_CATEGORIES)[number];
+
+function isTaskStatus(value: unknown): value is TaskStatus {
+	return typeof value === "string" && TASK_STATUSES.includes(value as TaskStatus);
+}
+
+function isBlockedTaskCategory(value: unknown): value is BlockedTaskCategory {
+	return (
+		typeof value === "string" &&
+		BLOCKED_CATEGORIES.includes(value as BlockedTaskCategory)
+	);
+}
+
+function requireIsoDate(value: string, field: string): string {
+	if (Number.isNaN(new Date(value).getTime())) {
+		throw HttpError.badRequest(`${field} must be a valid date`);
+	}
+	return value;
+}
+
 export interface Task {
 	id: string;
 	subject: string;
 	description: string;
-	status:
-		| "pending"
-		| "claimed"
-		| "in_progress"
-		| "completing"
-		| "completed"
-		| "failed"
-		| "blocked"
-		| "cancelled";
+	status: TaskStatus;
 	priority: "critical" | "high" | "normal" | "low";
 	sourceType: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
 	sourceRef: string | null;
@@ -62,6 +98,15 @@ export interface Task {
 	updatedAt: string;
 	completedAt: string | null;
 	blockedAt?: string | null;
+	blockedReason?: string | null;
+	blockedCategory?: BlockedTaskCategory | null;
+	blockedRecheckAt?: string | null;
+	blockedLastCheckedAt?: string | null;
+	blockedReviewCount?: number;
+	blockedNeedsHuman?: boolean;
+	blockedHumanNotifiedAt?: string | null;
+	blockedReviewArmId?: string | null;
+	blockedReviewStartedAt?: string | null;
 	claimedAt: string | null;
 	startedAt: string | null;
 	dueDate: string | null;
@@ -99,6 +144,15 @@ interface TaskRow {
 	claimed_at: string | null;
 	started_at: string | null;
 	blocked_at: string | null;
+	blocked_reason: string | null;
+	blocked_category: string | null;
+	blocked_recheck_at: string | null;
+	blocked_last_checked_at: string | null;
+	blocked_review_count: number | null;
+	blocked_needs_human: number | null;
+	blocked_human_notified_at: string | null;
+	blocked_review_arm_id: string | null;
+	blocked_review_started_at: string | null;
 	due_date: string | null;
 	artifacts: string;
 	context: string | null;
@@ -133,6 +187,15 @@ function parseTaskRow(row: TaskRow): Task {
 		updatedAt: row.updated_at,
 		completedAt: row.completed_at,
 		blockedAt: row.blocked_at,
+		blockedReason: row.blocked_reason,
+		blockedCategory: row.blocked_category as BlockedTaskCategory | null,
+		blockedRecheckAt: row.blocked_recheck_at,
+		blockedLastCheckedAt: row.blocked_last_checked_at,
+		blockedReviewCount: row.blocked_review_count ?? 0,
+		blockedNeedsHuman: row.blocked_needs_human === 1,
+		blockedHumanNotifiedAt: row.blocked_human_notified_at,
+		blockedReviewArmId: row.blocked_review_arm_id,
+		blockedReviewStartedAt: row.blocked_review_started_at,
 		claimedAt: row.claimed_at,
 		startedAt: row.started_at,
 		dueDate: row.due_date,
@@ -152,7 +215,10 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
         t.dependency_blocked, t.consensus_status, t.plan_line_uid, t.sort_order, t.order_key,
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress, t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.blocked_reason, t.blocked_category,
+        t.blocked_recheck_at, t.blocked_last_checked_at, t.blocked_review_count,
+        t.blocked_needs_human, t.blocked_human_notified_at, t.blocked_review_arm_id,
+        t.blocked_review_started_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       WHERE t.id = ?
@@ -360,7 +426,10 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.blocked_reason, t.blocked_category,
+        t.blocked_recheck_at, t.blocked_last_checked_at, t.blocked_review_count,
+        t.blocked_needs_human, t.blocked_human_notified_at, t.blocked_review_arm_id,
+        t.blocked_review_started_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -506,7 +575,10 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.blocked_reason, t.blocked_category,
+        t.blocked_recheck_at, t.blocked_last_checked_at, t.blocked_review_count,
+        t.blocked_needs_human, t.blocked_human_notified_at, t.blocked_review_arm_id,
+        t.blocked_review_started_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -763,6 +835,10 @@ export function createTasksRoutes() {
 			dueDate?: string;
 			progress?: number;
 			metadata?: Record<string, unknown>;
+			blockedReason?: string;
+			blockedCategory?: BlockedTaskCategory;
+			blockedNeedsHuman?: boolean;
+			blockedRecheckAt?: string;
 		}>();
 
 		if (!body.subject?.trim()) {
@@ -772,6 +848,26 @@ export function createTasksRoutes() {
 		if (!body.description?.trim()) {
 			throw HttpError.badRequest("description is required");
 		}
+		if (body.status !== undefined && !isTaskStatus(body.status)) {
+			throw HttpError.badRequest(`status must be one of: ${TASK_STATUSES.join(", ")}`);
+		}
+		if (
+			body.blockedCategory !== undefined &&
+			!isBlockedTaskCategory(body.blockedCategory)
+		) {
+			throw HttpError.badRequest(
+				`blockedCategory must be one of: ${BLOCKED_CATEGORIES.join(", ")}`,
+			);
+		}
+
+		const initialStatus = body.status || "pending";
+		const blockedReason = body.blockedReason?.trim() || null;
+		if (initialStatus === "blocked" && !blockedReason) {
+			throw HttpError.badRequest("blockedReason is required when status is blocked");
+		}
+		if (initialStatus !== "blocked" && body.blockedReason !== undefined) {
+			throw HttpError.badRequest("blockedReason can only be set on a blocked task");
+		}
 
 		const providedId = body.id?.trim();
 		const normalizedSubject = body.subject.trim();
@@ -779,6 +875,16 @@ export function createTasksRoutes() {
 		const normalizedProgress = Math.min(Math.max(body.progress ?? 0, 0), 100);
 		const insertTask = (taskId: string): void => {
 			const now = new Date().toISOString();
+			const blockedAt = initialStatus === "blocked" ? now : null;
+			const completedAt = ["completed", "failed", "cancelled"].includes(initialStatus)
+				? now
+				: null;
+			const blockedRecheckAt =
+				initialStatus === "blocked"
+					? body.blockedRecheckAt
+						? requireIsoDate(body.blockedRecheckAt, "blockedRecheckAt")
+						: new Date(Date.now() + BLOCKED_RECHECK_DELAY_MS).toISOString()
+					: null;
 			const transaction = db.transaction(() => {
 				// Get the max order_key to place new task at the end
 				// Using fractional indexing, we generate a key after the current max
@@ -793,14 +899,20 @@ export function createTasksRoutes() {
 
 				db.run(
 					`
-	          INSERT INTO tasks (id, subject, description, status, priority, source_type, source_ref, phase, domain, classification, mail_thread_id, context, due_date, order_key, progress, metadata, created_at, updated_at)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	          INSERT INTO tasks (
+	            id, subject, description, status, priority, source_type, source_ref,
+	            phase, domain, classification, mail_thread_id, context, due_date,
+	            order_key, progress, metadata, created_at, updated_at, completed_at,
+	            blocked_at, blocked_reason, blocked_category, blocked_recheck_at,
+	            blocked_needs_human
+	          )
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	        `,
 					[
 						taskId,
 						normalizedSubject,
 						normalizedDescription,
-						body.status || "pending",
+						initialStatus,
 						body.priority || "normal",
 						body.sourceType || "manual",
 						body.sourceRef || null,
@@ -815,6 +927,12 @@ export function createTasksRoutes() {
 						JSON.stringify(body.metadata || {}),
 						now,
 						now,
+						completedAt,
+						blockedAt,
+						blockedReason,
+						initialStatus === "blocked" ? body.blockedCategory || "unknown" : null,
+						blockedRecheckAt,
+						initialStatus === "blocked" && body.blockedNeedsHuman ? 1 : 0,
 					],
 				);
 			});
@@ -918,19 +1036,79 @@ export function createTasksRoutes() {
 			progress?: number;
 			artifacts?: string[];
 			metadata?: Record<string, unknown>;
+			blockedReason?: string;
+			blockedCategory?: BlockedTaskCategory;
+			blockedRecheckAt?: string | null;
+			blockedLastCheckedAt?: string | null;
+			blockedReviewCount?: number;
+			blockedNeedsHuman?: boolean;
+			blockedHumanNotifiedAt?: string | null;
+			blockedReviewArmId?: string | null;
+			blockedReviewStartedAt?: string | null;
 		}>();
 
 		// Check task exists
 		const existing = db
-			.query("SELECT id, status, domain FROM tasks WHERE id = ?")
-			.get(id) as { id: string; status: string; domain: string | null } | null;
+			.query(
+				`SELECT id, status, domain, assigned_to, blocked_reason, blocked_category,
+				        blocked_at, blocked_recheck_at, blocked_review_count
+				 FROM tasks WHERE id = ?`,
+			)
+			.get(id) as {
+				id: string;
+				status: TaskStatus;
+				domain: string | null;
+				assigned_to: string | null;
+				blocked_reason: string | null;
+				blocked_category: string | null;
+				blocked_at: string | null;
+				blocked_recheck_at: string | null;
+				blocked_review_count: number | null;
+			} | null;
 		if (!existing) {
 			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+		if (body.status !== undefined && !isTaskStatus(body.status)) {
+			throw HttpError.badRequest(`status must be one of: ${TASK_STATUSES.join(", ")}`);
+		}
+		if (
+			body.blockedCategory !== undefined &&
+			!isBlockedTaskCategory(body.blockedCategory)
+		) {
+			throw HttpError.badRequest(
+				`blockedCategory must be one of: ${BLOCKED_CATEGORIES.join(", ")}`,
+			);
+		}
+		if (
+			body.blockedReviewCount !== undefined &&
+			(!Number.isInteger(body.blockedReviewCount) || body.blockedReviewCount < 0)
+		) {
+			throw HttpError.badRequest("blockedReviewCount must be a non-negative integer");
 		}
 
 		const updates: string[] = [];
 		const values: unknown[] = [];
 		const now = new Date().toISOString();
+		const targetStatus = body.status ?? existing.status;
+		const blockedFieldsProvided = [
+			body.blockedReason,
+			body.blockedCategory,
+			body.blockedRecheckAt,
+			body.blockedLastCheckedAt,
+			body.blockedReviewCount,
+			body.blockedNeedsHuman,
+			body.blockedHumanNotifiedAt,
+			body.blockedReviewArmId,
+			body.blockedReviewStartedAt,
+		].some((value) => value !== undefined);
+		if (blockedFieldsProvided && targetStatus !== "blocked") {
+			throw HttpError.badRequest("blocked task fields can only be set while status is blocked");
+		}
+
+		const releaseAssignment =
+			body.status !== undefined &&
+			["pending", "blocked", "completed", "failed", "cancelled"].includes(body.status) &&
+			body.assignedTo == null;
 
 		if (body.subject !== undefined) {
 			updates.push("subject = ?");
@@ -963,14 +1141,97 @@ export function createTasksRoutes() {
 			) {
 				updates.push("completed_at = ?");
 				values.push(now);
+			} else if (["completed", "failed", "cancelled"].includes(existing.status)) {
+				updates.push("completed_at = NULL");
 			}
 
-			if (body.status === "blocked" && existing.status !== "blocked") {
-				updates.push("blocked_at = ?");
+			if (existing.status === "blocked" && body.status !== "blocked") {
+				updates.push(
+					"blocked_at = NULL",
+					"blocked_reason = NULL",
+					"blocked_category = NULL",
+					"blocked_recheck_at = NULL",
+					"blocked_last_checked_at = NULL",
+					"blocked_review_count = 0",
+					"blocked_needs_human = 0",
+					"blocked_human_notified_at = NULL",
+					"blocked_review_arm_id = NULL",
+					"blocked_review_started_at = NULL",
+				);
+			}
+
+			if (body.status === "pending" && body.dependencyBlocked === undefined) {
+				updates.push("dependency_blocked = 0");
+			}
+		}
+
+		if (targetStatus === "blocked" && (body.status !== undefined || blockedFieldsProvided)) {
+			const blockedReason = body.blockedReason?.trim() || existing.blocked_reason?.trim();
+			if (!blockedReason) {
+				throw HttpError.badRequest("blockedReason is required when status is blocked");
+			}
+
+			updates.push("blocked_reason = ?");
+			values.push(blockedReason);
+
+			if (existing.status !== "blocked") {
+				updates.push("blocked_at = ?", "blocked_last_checked_at = NULL");
 				values.push(now);
 			}
-			if (existing.status === "blocked" && body.status !== "blocked") {
-				updates.push("blocked_at = NULL");
+
+			updates.push("blocked_category = ?");
+			values.push(
+				body.blockedCategory ||
+					(isBlockedTaskCategory(existing.blocked_category)
+						? existing.blocked_category
+						: "unknown"),
+			);
+
+			const recheckAt = body.blockedRecheckAt
+				? requireIsoDate(body.blockedRecheckAt, "blockedRecheckAt")
+				: body.blockedRecheckAt === null
+					? new Date(Date.now() + BLOCKED_RECHECK_DELAY_MS).toISOString()
+					: existing.status === "blocked" && existing.blocked_recheck_at
+						? existing.blocked_recheck_at
+						: new Date(Date.now() + BLOCKED_RECHECK_DELAY_MS).toISOString();
+			updates.push("blocked_recheck_at = ?");
+			values.push(recheckAt);
+
+			if (body.blockedLastCheckedAt !== undefined) {
+				updates.push("blocked_last_checked_at = ?");
+				values.push(
+					body.blockedLastCheckedAt
+						? requireIsoDate(body.blockedLastCheckedAt, "blockedLastCheckedAt")
+						: null,
+				);
+			}
+			if (body.blockedReviewCount !== undefined || existing.status !== "blocked") {
+				updates.push("blocked_review_count = ?");
+				values.push(body.blockedReviewCount ?? 0);
+			}
+			if (body.blockedNeedsHuman !== undefined || existing.status !== "blocked") {
+				updates.push("blocked_needs_human = ?");
+				values.push(body.blockedNeedsHuman ? 1 : 0);
+			}
+			if (body.blockedHumanNotifiedAt !== undefined) {
+				updates.push("blocked_human_notified_at = ?");
+				values.push(
+					body.blockedHumanNotifiedAt
+						? requireIsoDate(body.blockedHumanNotifiedAt, "blockedHumanNotifiedAt")
+						: null,
+				);
+			}
+			if (body.blockedReviewArmId !== undefined || existing.status !== "blocked") {
+				updates.push("blocked_review_arm_id = ?");
+				values.push(body.blockedReviewArmId ?? null);
+			}
+			if (body.blockedReviewStartedAt !== undefined || existing.status !== "blocked") {
+				updates.push("blocked_review_started_at = ?");
+				values.push(
+					body.blockedReviewStartedAt
+						? requireIsoDate(body.blockedReviewStartedAt, "blockedReviewStartedAt")
+						: null,
+				);
 			}
 		}
 
@@ -994,7 +1255,9 @@ export function createTasksRoutes() {
 			values.push(body.phase);
 		}
 
-		if (body.assignedTo !== undefined) {
+		if (releaseAssignment) {
+			updates.push("assigned_to = NULL");
+		} else if (body.assignedTo !== undefined) {
 			updates.push("assigned_to = ?");
 			values.push(body.assignedTo);
 		}
@@ -1052,6 +1315,33 @@ export function createTasksRoutes() {
 			values as (string | number | null)[],
 		);
 
+		if (releaseAssignment && existing.assigned_to) {
+			db.run(
+				`UPDATE arms
+				 SET current_task_id = NULL,
+				     current_task_subject = NULL,
+				     status = CASE WHEN status IN ('busy', 'running') THEN 'idle' ELSE status END,
+				     updated_at = ?
+				 WHERE id = ? AND current_task_id = ?`,
+				[now, existing.assigned_to, id],
+			);
+			try {
+				db.run(
+					`UPDATE arm_state_machine
+					 SET current_task_id = NULL,
+					     current_task_subject = NULL,
+					     state = CASE
+					       WHEN state IN ('task_assigned', 'working', 'completing', 'disconnected') THEN 'idle'
+					       ELSE state
+					     END
+					 WHERE arm_id = ? AND current_task_id = ?`,
+					[existing.assigned_to, id],
+				);
+			} catch {
+				// Minimal and legacy schemas may not include the state-machine projection.
+			}
+		}
+
 		logActivity(db, "api", "task_updated", id, body);
 
 		// Broadcast task updated
@@ -1068,7 +1358,10 @@ export function createTasksRoutes() {
         t.comment_count, t.last_comment_at,
         t.mail_thread_id, t.progress,
         t.created_at, t.updated_at, t.completed_at,
-        t.claimed_at, t.started_at, t.blocked_at, t.due_date,
+        t.claimed_at, t.started_at, t.blocked_at, t.blocked_reason, t.blocked_category,
+        t.blocked_recheck_at, t.blocked_last_checked_at, t.blocked_review_count,
+        t.blocked_needs_human, t.blocked_human_notified_at, t.blocked_review_arm_id,
+        t.blocked_review_started_at, t.due_date,
         t.artifacts, t.context, t.metadata
       FROM tasks t
       LEFT JOIN arms a ON t.assigned_to = a.id
@@ -1100,12 +1393,14 @@ export function createTasksRoutes() {
 					taskId: id,
 					status: body.status,
 					previousStatus: existing.status,
+					reason: body.status === "blocked" ? row.blocked_reason : undefined,
+					category: body.status === "blocked" ? row.blocked_category : undefined,
 				};
 
 				eventStore
 					.publishEvent(`coleo.events.task.${id}.${eventType}`, {
 						type: eventType,
-						armId: row.assigned_to || undefined,
+						armId: row.assigned_to || existing.assigned_to || undefined,
 						data,
 						timestamp,
 					})
@@ -1113,11 +1408,12 @@ export function createTasksRoutes() {
 						// Best-effort
 					});
 
-				if (row.assigned_to) {
+				const eventArmId = row.assigned_to || existing.assigned_to;
+				if (eventArmId) {
 					eventStore
-						.publishEvent(`coleo.events.arm.${row.assigned_to}.${eventType}`, {
+						.publishEvent(`coleo.events.arm.${eventArmId}.${eventType}`, {
 							type: eventType,
-							armId: row.assigned_to,
+							armId: eventArmId,
 							data,
 							timestamp,
 						})

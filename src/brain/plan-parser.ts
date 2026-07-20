@@ -62,10 +62,26 @@ export async function parsePlanFile(
     const { content } = await readPlanText(filePath, workspace);
     const fileHash = createHash("sha256").update(content).digest("hex");
     const lines = content.split("\n");
+    const phaseDescriptions = new Map<string, string>();
+    let describedPhase = "";
+    for (const line of lines) {
+      const phaseMatch = line.match(/^##\s+(Phase\s+\d+(?:\.\d+)?(?::\s*[^$]+)?)/i);
+      if (phaseMatch?.[1]) {
+        describedPhase = phaseMatch[1].trim();
+        continue;
+      }
+      if (/^##\s+/.test(line)) {
+        describedPhase = "";
+        continue;
+      }
+      const prose = line.trim();
+      if (!describedPhase || !prose || /^#/.test(prose) || /^-\s+\[[ x]\]/i.test(prose)) continue;
+      const existing = phaseDescriptions.get(describedPhase) || "";
+      phaseDescriptions.set(describedPhase, `${existing} ${prose}`.trim());
+    }
     
     let currentPhase = "";
     let currentSection = "";
-    let sectionDescription = "";
     
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] ?? "";
@@ -75,6 +91,7 @@ export async function parsePlanFile(
       const phaseMatch = line.match(/^##\s+(Phase\s+\d+(?:\.\d+)?(?::\s*[^$]+)?)/i);
       if (phaseMatch && phaseMatch[1]) {
         currentPhase = phaseMatch[1].trim();
+        currentSection = "";
         phases.add(currentPhase);
         continue;
       }
@@ -83,13 +100,7 @@ export async function parsePlanFile(
       const sectionMatch = line.match(/^###\s+(.+)/);
       if (sectionMatch && sectionMatch[1]) {
         currentSection = sectionMatch[1].trim();
-        sectionDescription = "";
         continue;
-      }
-      
-      // Track section description (accumulate text after header)
-      if (currentSection && line.trim() && !line.startsWith("##") && !line.startsWith("###") && !line.startsWith("- [")) {
-        sectionDescription += line.trim() + " ";
       }
       
       // Detect checkbox items (tasks) in deliverables sections
@@ -105,12 +116,18 @@ export async function parsePlanFile(
         
         // Extract task details
         const taskId = generateTaskId(currentPhase, cleanContent);
-        const { priority, subject, description } = parseTaskContent(cleanContent, sectionDescription);
+        const { priority, subject } = parseTaskContent(cleanContent);
+        const phaseDescription = phaseDescriptions.get(currentPhase)?.replace(/\s+/g, " ").trim();
+        const description = [
+          currentPhase ? `Plan phase: ${currentPhase}.` : null,
+          phaseDescription ? `Phase context: ${phaseDescription.slice(0, 1_200)}` : null,
+          `Task objective: ${subject}${/[.!?]$/.test(subject) ? "" : "."}`,
+        ].filter((part): part is string => Boolean(part)).join("\n\n");
         
         tasks.push({
           id: taskId,
           subject,
-          description: description || sectionDescription.slice(0, 200),
+          description,
           phase: currentPhase,
           priority,
           status: isCompleted ? "completed" : "pending",
@@ -163,8 +180,7 @@ function generateTaskId(phase: string, content: string): string {
  */
 function parseTaskContent(
   content: string,
-  context: string
-): { priority: ParsedTask["priority"]; subject: string; description: string } {
+): { priority: ParsedTask["priority"]; subject: string } {
   // Check for priority indicators
   let priority: ParsedTask["priority"] = "normal";
   if (/\b(critical|urgent|blocker)\b/i.test(content)) {
@@ -181,10 +197,7 @@ function parseTaskContent(
     .replace(/\s+/g, " ")
     .trim();
   
-  // Extract description (look for additional context after task name)
-  const description = content;
-  
-  return { priority, subject, description };
+  return { priority, subject };
 }
 
 /**
