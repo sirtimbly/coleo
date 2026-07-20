@@ -66,6 +66,16 @@ function createTestDb(): Database {
       completed_at TEXT,
       claimed_at TEXT,
       started_at TEXT,
+      blocked_at TEXT,
+      blocked_reason TEXT,
+      blocked_category TEXT,
+      blocked_recheck_at TEXT,
+      blocked_last_checked_at TEXT,
+      blocked_review_count INTEGER NOT NULL DEFAULT 0,
+      blocked_needs_human INTEGER NOT NULL DEFAULT 0,
+      blocked_human_notified_at TEXT,
+      blocked_review_arm_id TEXT,
+      blocked_review_started_at TEXT,
       due_date TEXT,
       artifacts TEXT DEFAULT '[]',
       metadata TEXT DEFAULT '{}'
@@ -271,6 +281,70 @@ describe("Task Discussions API", () => {
 
       expect(taskRow.comment_count).toBe(1);
       expect(taskRow.last_comment_at).not.toBeNull();
+    });
+
+    it("requeues a blocked task when a human replies", async () => {
+      const future = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      db.run(
+        `UPDATE tasks
+         SET status = 'blocked', blocked_reason = 'Waiting for an answer',
+             blocked_needs_human = 1, blocked_recheck_at = ?
+         WHERE id = 'task-1'`,
+        [future],
+      );
+
+      const before = Date.now();
+      const response = await app.request("/api/tasks/task-1/discussions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: "The credentials are available now.",
+          authorType: "human",
+          authorId: "user-1",
+          client: "web",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const task = db
+        .query("SELECT blocked_recheck_at, blocked_needs_human FROM tasks WHERE id = 'task-1'")
+        .get() as { blocked_recheck_at: string; blocked_needs_human: number };
+      expect(new Date(task.blocked_recheck_at).getTime()).toBeGreaterThanOrEqual(before);
+      expect(new Date(task.blocked_recheck_at).getTime()).toBeLessThan(Date.now() + 1000);
+      expect(task.blocked_needs_human).toBe(0);
+    });
+
+    it("preserves an active blocked-review lease when a human replies", async () => {
+      const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      db.run(
+        `UPDATE tasks
+         SET status = 'blocked', blocked_reason = 'Waiting for an answer',
+             blocked_needs_human = 1, blocked_recheck_at = ?, blocked_review_arm_id = 'reviewer-1'
+         WHERE id = 'task-1'`,
+        [leaseExpiresAt],
+      );
+
+      const response = await app.request("/api/tasks/task-1/discussions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          content: "Additional context for the active reviewer.",
+          authorType: "human",
+          authorId: "user-1",
+          client: "web",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      expect(
+        db.query(
+          "SELECT blocked_recheck_at, blocked_needs_human, blocked_review_arm_id FROM tasks WHERE id = 'task-1'",
+        ).get(),
+      ).toEqual({
+        blocked_recheck_at: leaseExpiresAt,
+        blocked_needs_human: 0,
+        blocked_review_arm_id: "reviewer-1",
+      });
     });
 
     it("should reject empty content", async () => {

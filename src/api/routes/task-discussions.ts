@@ -110,7 +110,14 @@ export function createTaskDiscussionsRoutes() {
     const taskId = taskIdParam;
 
     // Check task exists
-    const taskExists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
+    const taskExists = db.query(
+      "SELECT id, status, blocked_recheck_at, blocked_review_arm_id FROM tasks WHERE id = ?",
+    ).get(taskId) as {
+      id: string;
+      status: string;
+      blocked_recheck_at: string | null;
+      blocked_review_arm_id: string | null;
+    } | null;
     if (!taskExists) {
       throw HttpError.notFound(`Task not found: ${taskId}`);
     }
@@ -175,7 +182,14 @@ export function createTaskDiscussionsRoutes() {
     const taskId = taskIdParam;
 
     // Check task exists
-    const taskExists = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
+    const taskExists = db.query(
+      "SELECT id, status, blocked_recheck_at, blocked_review_arm_id FROM tasks WHERE id = ?",
+    ).get(taskId) as {
+      id: string;
+      status: string;
+      blocked_recheck_at: string | null;
+      blocked_review_arm_id: string | null;
+    } | null;
     if (!taskExists) {
       throw HttpError.notFound(`Task not found: ${taskId}`);
     }
@@ -228,6 +242,23 @@ export function createTaskDiscussionsRoutes() {
 
     // Update task stats
     updateTaskCommentStats(db, taskId);
+
+    // A human reply is actionable input, not just history. Make a blocked task
+    // immediately eligible for the brain's orderly review queue.
+    if (body.authorType === "human" && taskExists.status === "blocked") {
+      const now = new Date().toISOString();
+      const recheckAt = taskExists.blocked_review_arm_id ? taskExists.blocked_recheck_at : now;
+      db.run(
+        `UPDATE tasks
+         SET blocked_recheck_at = ?, blocked_needs_human = 0, updated_at = ?
+         WHERE id = ? AND status = 'blocked'`,
+        [recheckAt, now, taskId],
+      );
+      broadcast("tasks", "task.updated", {
+        taskId,
+        changes: { blockedRecheckAt: recheckAt, blockedNeedsHuman: false },
+      });
+    }
 
     // Get the created comment
     const comment = getTaskComment(db, commentId);

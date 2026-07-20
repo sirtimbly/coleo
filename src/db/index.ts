@@ -133,6 +133,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["057_task_checklist_items", MIGRATION_057],
     ["058_task_blocked_at", MIGRATION_058, { table: "tasks", columns: MIGRATION_058_COLUMNS }],
 		["059_normalize_task_order_keys", MIGRATION_059],
+		["060_blocked_task_workflow", MIGRATION_060, { table: "tasks", columns: MIGRATION_060_COLUMNS }],
 	];
 
 
@@ -1976,6 +1977,46 @@ SET order_key = (
   WHERE key_mapping.id = tasks.id
 )
 WHERE id IN (SELECT id FROM key_mapping);
+`;
+
+const MIGRATION_060_COLUMNS = [
+	{ name: "blocked_reason", sql: "ALTER TABLE tasks ADD COLUMN blocked_reason TEXT" },
+	{ name: "blocked_category", sql: "ALTER TABLE tasks ADD COLUMN blocked_category TEXT" },
+	{ name: "blocked_recheck_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_recheck_at TEXT" },
+	{ name: "blocked_last_checked_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_last_checked_at TEXT" },
+	{ name: "blocked_review_count", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_count INTEGER NOT NULL DEFAULT 0" },
+	{ name: "blocked_needs_human", sql: "ALTER TABLE tasks ADD COLUMN blocked_needs_human INTEGER NOT NULL DEFAULT 0" },
+	{ name: "blocked_human_notified_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_human_notified_at TEXT" },
+	{ name: "blocked_review_arm_id", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_arm_id TEXT" },
+	{ name: "blocked_review_started_at", sql: "ALTER TABLE tasks ADD COLUMN blocked_review_started_at TEXT" },
+];
+
+const MIGRATION_060 = `
+-- Old blocked rows predate the reason invariant. Give them an explicit legacy
+-- reason and make them immediately eligible for review.
+UPDATE tasks
+SET blocked_reason = COALESCE(NULLIF(TRIM(blocked_reason), ''), 'Blocked before reasons were required'),
+    blocked_category = COALESCE(NULLIF(TRIM(blocked_category), ''), 'unknown'),
+    blocked_at = COALESCE(blocked_at, updated_at, datetime('now')),
+    blocked_recheck_at = COALESCE(blocked_recheck_at, datetime('now'))
+WHERE status = 'blocked';
+
+CREATE INDEX IF NOT EXISTS idx_tasks_blocked_recheck
+ON tasks(status, blocked_recheck_at, blocked_at);
+
+CREATE TRIGGER IF NOT EXISTS tasks_blocked_reason_insert
+BEFORE INSERT ON tasks
+WHEN NEW.status = 'blocked' AND TRIM(COALESCE(NEW.blocked_reason, '')) = ''
+BEGIN
+  SELECT RAISE(ABORT, 'blocked tasks require a reason');
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_blocked_reason_update
+BEFORE UPDATE ON tasks
+WHEN NEW.status = 'blocked' AND TRIM(COALESCE(NEW.blocked_reason, '')) = ''
+BEGIN
+  SELECT RAISE(ABORT, 'blocked tasks require a reason');
+END;
 `;
 
 export { Database };

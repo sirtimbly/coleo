@@ -192,6 +192,17 @@ export function registerTaskTools(server: McpServer): void {
 			tests_status,
 			screenshot_path,
 		}) => {
+			if (status === "blocked" && !blockers?.some((blocker) => blocker.trim())) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "A blocked status report requires at least one concrete blocker.",
+						},
+					],
+					isError: true,
+				};
+			}
 			const resolution = resolveTaskReferenceForTool(task_id);
 			if ("error" in resolution) {
 				return {
@@ -236,6 +247,83 @@ export function registerTaskTools(server: McpServer): void {
 					{
 						type: "text" as const,
 						text: `${resolution.note ? `${resolution.note}\n\n` : ""}Status report ${reportId} submitted for task ${resolvedTaskId} (message: ${messageId}).`,
+					},
+				],
+			};
+		},
+	);
+
+	server.registerTool(
+		"review_blocked_task",
+		{
+			description:
+				"Report the result of a brain-requested blocked-task review. Decide whether the task can resume, is still blocked for a concrete reason, or is no longer relevant.",
+			inputSchema: {
+				task_id: z.string().describe("ID of the blocked task being reviewed"),
+				outcome: z
+					.enum(["unblocked", "still_blocked", "irrelevant"])
+					.describe("unblocked resumes the task; irrelevant cancels it; still_blocked schedules another review"),
+				summary: z.string().min(1).describe("Evidence and conclusion from the review"),
+				reason: z
+					.string()
+					.optional()
+					.describe("Updated concrete blocker; required for still_blocked"),
+				category: z
+					.enum(["dependency", "bug", "file_claim", "environment", "human", "arm", "unknown"])
+					.optional()
+					.describe("Category for an updated blocker"),
+				needs_human: z
+					.boolean()
+					.optional()
+					.describe("Whether progress now requires a human response or decision"),
+			},
+		},
+		async ({ task_id, outcome, summary, reason, category, needs_human }) => {
+			if (outcome === "still_blocked" && !reason?.trim()) {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: "still_blocked requires a concrete reason.",
+						},
+					],
+					isError: true,
+				};
+			}
+
+			const resolution = resolveTaskReferenceForTool(task_id);
+			if ("error" in resolution) {
+				return {
+					content: [{ type: "text" as const, text: resolution.error }],
+					isError: true,
+				};
+			}
+
+			const messageId = await sendToBrain({
+				from: ARM_ID,
+				to: "brain",
+				type: "blocked_task_review",
+				payload: {
+					taskId: resolution.taskId,
+					outcome,
+					summary: summary.trim(),
+					reason: reason?.trim(),
+					category,
+					needsHuman: needs_human === true,
+				},
+			});
+
+			logActivity(ARM_ID, "review_blocked_task", resolution.taskId, {
+				messageId,
+				outcome,
+				needsHuman: needs_human === true,
+			});
+
+			return {
+				content: [
+					{
+						type: "text" as const,
+						text: `Blocked-task review submitted for ${resolution.taskId}: ${outcome}.`,
 					},
 				],
 			};

@@ -107,4 +107,51 @@ describe("Brain human mail processing", () => {
     expect(seenMessage).toBeTruthy();
     expect(seenMessage?.flags.seen).toBe(true);
   });
+
+  it("records a task-thread reply as actionable discussion input", async () => {
+    const brain = new Brain({
+      coleoDir: testDir,
+      pollIntervalMs: 1000,
+      verbose: false,
+    });
+    const sent = new Maildir(join(testDir, "mail", "sent"));
+    await sent.write({
+      from: "human@coleo.local",
+      to: "brain@coleo.local",
+      subject: "Re: Task blocked",
+      date: new Date(),
+      body: "The requested access is available now.",
+      headers: {
+        "Message-ID": "<task-reply@example.test>",
+        "X-Coleo-Type": "human-message",
+        "X-Coleo-Task-Id": "task-42",
+      },
+    });
+
+    (brain as any).getTaskFromApi = async () => ({ id: "task-42", status: "blocked" });
+    const requests: Array<{ path: string; body?: string }> = [];
+    (brain as any).apiRequest = async (path: string, options?: RequestInit) => {
+      requests.push({ path, body: options?.body?.toString() });
+      return { comment: { id: "comment-1" } };
+    };
+    (brain as any).sendToHuman = async () => undefined;
+    (brain as any).mailProcessor = {
+      processMessage: async () => {
+        throw new Error("task replies should bypass intent parsing");
+      },
+    };
+    (brain as any).templates = {
+      loadMailProcessorSystemPrompt: async () => "system prompt",
+    };
+    (brain as any).listRecentActivitySummary = async () => [];
+
+    await (brain as any).processHumanMail();
+
+    expect(requests[0]?.path).toBe("/api/tasks/task-42/discussions");
+    expect(JSON.parse(requests[0]?.body || "{}")).toMatchObject({
+      content: "The requested access is available now.",
+      authorType: "human",
+      client: "mail",
+    });
+  });
 });

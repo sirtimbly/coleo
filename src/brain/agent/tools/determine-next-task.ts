@@ -16,7 +16,7 @@
 
 import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
-import type { NextTaskResult, StatusReportItem } from "../types";
+import type { NextTaskResult } from "../types";
 import {
 	VALIDATION_TASK_SUBJECT_PREFIX,
 	buildVerificationTaskSubject,
@@ -300,10 +300,21 @@ export class DetermineNextTaskTool extends BrainTool {
     const reports = this.context.db.listStatusReports({
       limit: 500,
     });
-    const verificationReports = reports.filter((report) =>
-      ["issues_found", "completed_with_issues", "needs_review"].includes(
-        report.status,
-      ),
+    // A task can have many reports over its lifetime. Only its most recent
+    // report represents the current state; older issue reports must not keep
+    // producing verification work after the arm has recovered.
+    const latestReportByTask = new Map<string, (typeof reports)[number]>();
+    for (const report of reports) {
+      const existing = latestReportByTask.get(report.taskId);
+      if (!existing || report.createdAt > existing.createdAt) {
+        latestReportByTask.set(report.taskId, report);
+      }
+    }
+    const verificationReports = Array.from(latestReportByTask.values()).filter(
+      (report) =>
+        ["issues_found", "completed_with_issues", "needs_review"].includes(
+          report.status,
+        ),
     );
     const taskMap = new Map(completedTasks.map((task) => [task.id, task]));
     const existingVerifyTasks = this.context.db.listTasks({
