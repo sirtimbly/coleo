@@ -89,8 +89,11 @@ export function registerReportingTools(server: McpServer): void {
 				messageId,
 				kind,
 				title,
+				details,
 				severity,
 				file,
+				line,
+				taskId: task_id,
 				phase,
 			});
 
@@ -371,6 +374,10 @@ export function registerReportingTools(server: McpServer): void {
 				messageId,
 				bugId: bugPayload.id,
 				title,
+				description,
+				source,
+				sourceTaskId: source_task_id,
+				errorDetails: error_details,
 			});
 
 			return {

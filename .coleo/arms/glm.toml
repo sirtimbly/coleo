@@ -3,7 +3,7 @@
 # Copy this to create your own arm configurations in the .coleo/arms/ directory
 
 [arm]
-name = "minimax-opencode"
+name = "glm5-friendli"
 domain = "development"
 # Recommended: opencode-api for headless API-driven arms
 # Alternative: opencode-tui for visible terminal sessions
@@ -11,8 +11,8 @@ harness = "opencode-api"
 
 [model]
 # Configure your AI model provider
-provider = "opencode"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
-model = "opencode/minimax-m2.5-free"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
+provider = "friendli"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
+model = "zai-org/GLM-5.2"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
 
 # Optional: Custom model configuration
 # [model.config]

@@ -226,7 +226,12 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
 		.get(id) as TaskRow | null;
 }
 
-function getBurndownBucket(timestamp: string, bin: "hour" | "day", timeZone: string): string {
+function taskTimestampMs(timestamp: string): number {
+	const normalized = timestamp.includes("T") ? timestamp : `${timestamp.replace(" ", "T")}Z`;
+	return new Date(normalized).getTime();
+}
+
+function getBurndownBucket(timestamp: string, bin: "hour" | "day" | "week" | "month", timeZone: string): string {
 	const parts = new Intl.DateTimeFormat("en-CA", {
 		timeZone,
 		year: "numeric",
@@ -234,10 +239,18 @@ function getBurndownBucket(timestamp: string, bin: "hour" | "day", timeZone: str
 		day: "2-digit",
 		hour: bin === "hour" ? "2-digit" : undefined,
 		hourCycle: "h23",
-	}).formatToParts(new Date(timestamp));
+	}).formatToParts(new Date(taskTimestampMs(timestamp)));
 	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
 	const date = `${values.year}-${values.month}-${values.day}`;
-	return bin === "hour" ? `${date} ${values.hour}:00` : date;
+	if (bin === "hour") return `${date} ${values.hour}:00`;
+	if (bin === "day") return date;
+	if (bin === "month") return date.slice(0, 7);
+
+	const start = new Date(Date.UTC(Number(values.year), Number(values.month) - 1, Number(values.day)));
+	start.setUTCDate(start.getUTCDate() - start.getUTCDay());
+	const end = new Date(start);
+	end.setUTCDate(end.getUTCDate() + 6);
+	return `${start.toISOString().slice(0, 10)}..${end.toISOString().slice(0, 10)}`;
 }
 
 function isTaskIdUniqueConstraintError(err: unknown): boolean {
@@ -497,11 +510,19 @@ export function createTasksRoutes() {
 	 */
 	app.get("/burndown", (c) => {
 		const db = c.get("db");
-		const bin = c.req.query("bin") === "hour" ? "hour" : "day";
+		const bin = c.req.query("bin") || "day";
 		const timeZone = c.req.query("timeZone") || "UTC";
-		const end = new Date(c.req.query("end") || Date.now());
-		const defaultRangeMs = bin === "hour" ? 24 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-		const start = new Date(c.req.query("start") || end.getTime() - defaultRangeMs);
+		const startValue = c.req.query("start");
+		const endValue = c.req.query("end");
+		if (!startValue || !endValue) {
+			throw HttpError.badRequest("start and end are required and must be valid ISO timestamps");
+		}
+		if (!["hour", "day", "week", "month"].includes(bin)) {
+			throw HttpError.badRequest(`Invalid bin: ${bin}`);
+		}
+		const typedBin = bin as "hour" | "day" | "week" | "month";
+		const start = new Date(startValue);
+		const end = new Date(endValue);
 
 		try {
 			new Intl.DateTimeFormat("en-CA", { timeZone }).format();
@@ -511,12 +532,14 @@ export function createTasksRoutes() {
 		if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start >= end) {
 			throw HttpError.badRequest("start and end must be valid dates with start before end");
 		}
-		const maxRangeMs = bin === "hour" ? 31 * 24 * 60 * 60 * 1000 : 366 * 24 * 60 * 60 * 1000;
+		const maxRangeMs = typedBin === "hour" ? 31 * 24 * 60 * 60 * 1000 : 366 * 24 * 60 * 60 * 1000;
 		if (end.getTime() - start.getTime() > maxRangeMs) {
-			throw HttpError.badRequest(`The selected ${bin} range is too large`);
+			throw HttpError.badRequest(`The selected ${typedBin} range is too large`);
 		}
 
-		const conditions: string[] = ["(t.created_at >= ? AND t.created_at < ? OR t.completed_at >= ? AND t.completed_at < ?)"];
+		const conditions: string[] = [
+			"(julianday(t.created_at) >= julianday(?) AND julianday(t.created_at) < julianday(?) OR julianday(t.completed_at) >= julianday(?) AND julianday(t.completed_at) < julianday(?))",
+		];
 		const startIso = start.toISOString();
 		const endIso = end.toISOString();
 		const params: string[] = [startIso, endIso, startIso, endIso];
@@ -533,14 +556,18 @@ export function createTasksRoutes() {
 		const rows = db.query(`SELECT created_at, completed_at FROM tasks t WHERE ${conditions.join(" AND ")}`).all(...params) as Array<{ created_at: string; completed_at: string | null }>;
 		const counts = new Map<string, { created: number; completed: number }>();
 		const increment = (timestamp: string, key: "created" | "completed") => {
-			const bucket = getBurndownBucket(timestamp, bin, timeZone);
+			const bucket = getBurndownBucket(timestamp, typedBin, timeZone);
 			const value = counts.get(bucket) ?? { created: 0, completed: 0 };
 			value[key] += 1;
 			counts.set(bucket, value);
 		};
 		for (const row of rows) {
-			if (row.created_at >= startIso && row.created_at < endIso) increment(row.created_at, "created");
-			if (row.completed_at && row.completed_at >= startIso && row.completed_at < endIso) increment(row.completed_at, "completed");
+			const createdAt = taskTimestampMs(row.created_at);
+			if (createdAt >= start.getTime() && createdAt < end.getTime()) increment(row.created_at, "created");
+			if (row.completed_at) {
+				const completedAt = taskTimestampMs(row.completed_at);
+				if (completedAt >= start.getTime() && completedAt < end.getTime()) increment(row.completed_at, "completed");
+			}
 		}
 		let cumulativeCreated = 0;
 		let cumulativeCompleted = 0;
@@ -549,7 +576,7 @@ export function createTasksRoutes() {
 			cumulativeCompleted += value.completed;
 			return { bucket, ...value, cumulativeCreated, cumulativeCompleted };
 		});
-		return c.json({ bin, timeZone, start: startIso, end: endIso, buckets });
+		return c.json({ bin: typedBin, timeZone, start: startIso, end: endIso, buckets });
 	});
 
 	/**

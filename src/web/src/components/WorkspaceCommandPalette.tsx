@@ -48,6 +48,7 @@ interface PaletteItem {
 	id: string;
 	label: string;
 	description?: string;
+	status?: string;
 	group: string;
 	icon?: ComponentType<{ className?: string }>;
 	shortcut?: string;
@@ -93,6 +94,11 @@ function filterByQuery<T extends { label: string; description?: string }>(
 		const hay = `${item.label} ${item.description ?? ""}`.toLowerCase();
 		return hay.includes(q);
 	});
+}
+
+function searchResultStatus(result: { type: string; metadata: Record<string, unknown> }): string | undefined {
+	if (result.type !== "bug" && result.type !== "task") return undefined;
+	return typeof result.metadata.status === "string" ? result.metadata.status : undefined;
 }
 
 export function WorkspaceCommandPalette({
@@ -190,15 +196,27 @@ export function WorkspaceCommandPalette({
 
 		const filteredArms = filterByQuery(armItems, query);
 
-		const remoteItems: PaletteItem[] = (searchResponse?.results ?? [])
+		const remoteItems: PaletteItem[] = [...(searchResponse?.results ?? [])]
 			.filter((result) => result.type !== "arm")
+			.sort((left, right) => {
+				const leftStatus = searchResultStatus(left);
+				const rightStatus = searchResultStatus(right);
+				if (leftStatus && rightStatus) {
+					const statusOrder = leftStatus.localeCompare(rightStatus);
+					if (statusOrder !== 0) return statusOrder;
+				}
+				if (leftStatus !== rightStatus) return leftStatus ? -1 : 1;
+				return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+			})
 			.map((result) => {
 				const Icon = TYPE_ICONS[result.type] ?? Search;
 				const route = routeForSearchResult(result.type, result.id);
+				const status = searchResultStatus(result);
 				return {
 					id: `search:${result.type}:${result.id}`,
 					label: result.title || result.id,
 					description: `${result.type}${result.content ? ` · ${result.content.slice(0, 90)}` : ""}`,
+					status,
 					group: "Results",
 					icon: Icon,
 					run: () => {
@@ -368,6 +386,11 @@ export function WorkspaceCommandPalette({
 											</span>
 											{item.shortcut ? (
 												<kbd className="workspace-palette-kbd">{item.shortcut}</kbd>
+											) : null}
+											{item.status ? (
+												<span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+													{item.status.replaceAll("_", " ")}
+												</span>
 											) : null}
 										</button>
 									);

@@ -53,7 +53,7 @@ export interface TaskMetadata extends JsonObject {
   ui?: TaskUiMetadata;
 }
 
-export interface BugUiMetadata extends UiMetadata {}
+export type BugUiMetadata = UiMetadata;
 
 export interface BugMetadata extends JsonObject {
   ui?: BugUiMetadata;
@@ -943,7 +943,7 @@ class ApiClient {
   async getTaskBurndown(params: {
     start: string;
     end: string;
-    bin: 'hour' | 'day';
+    bin?: 'hour' | 'day' | 'week' | 'month';
     timeZone: string;
     status?: string;
     priority?: string;
@@ -956,7 +956,7 @@ class ApiClient {
       if (value) search.set(key, value);
     }
     return this.request<{
-      bin: 'hour' | 'day';
+      bin: 'hour' | 'day' | 'week' | 'month';
       timeZone: string;
       start: string;
       end: string;

@@ -750,6 +750,8 @@ describe("tasks API", () => {
         INSERT INTO tasks (id, subject, description, status, priority, source_type, domain, created_at, updated_at, completed_at)
         VALUES
           ('burndown-a', 'Created', 'Created task', 'completed', 'normal', 'manual', 'backend', '2026-01-01T10:15:00.000Z', '2026-01-01T10:15:00.000Z', '2026-01-02T11:00:00.000Z'),
+          ('burndown-c', 'Schema timestamp', 'Created by schema default', 'pending', 'normal', 'manual', 'backend', '2026-01-01 20:15:00', '2026-01-01 20:15:00', NULL),
+          ('burndown-d', 'Local date', 'Created before local midnight', 'pending', 'normal', 'manual', 'backend', '2026-01-02T01:30:00.000Z', '2026-01-02T01:30:00.000Z', NULL),
           ('burndown-b', 'Other domain', 'Other task', 'pending', 'normal', 'manual', 'frontend', '2026-01-02T10:30:00.000Z', '2026-01-02T10:30:00.000Z', NULL)
       `);
     });
@@ -764,8 +766,8 @@ describe("tasks API", () => {
         buckets: Array<{ bucket: string; created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }>;
       };
       expect(body.buckets).toEqual([
-        { bucket: "2026-01-01", created: 1, completed: 0, cumulativeCreated: 1, cumulativeCompleted: 0 },
-        { bucket: "2026-01-02", created: 0, completed: 1, cumulativeCreated: 1, cumulativeCompleted: 1 },
+        { bucket: "2026-01-01", created: 3, completed: 0, cumulativeCreated: 3, cumulativeCompleted: 0 },
+        { bucket: "2026-01-02", created: 0, completed: 1, cumulativeCreated: 3, cumulativeCompleted: 1 },
       ]);
     });
 
@@ -867,6 +869,85 @@ describe("tasks API", () => {
       expect(response.status).toBe(404);
       const body = await response.json() as { error: string };
       expect(body.error).toContain("Task not found");
+    });
+  });
+
+  describe("GET /api/tasks/burndown", () => {
+    beforeEach(async () => {
+      const createdOne = new Date(Date.UTC(2026, 0, 8, 11, 10, 0)).toISOString();
+      const completedOne = new Date(Date.UTC(2026, 0, 8, 11, 50, 0)).toISOString();
+      const createdTwo = new Date(Date.UTC(2026, 0, 8, 12, 5, 0)).toISOString();
+      const completedTwo = new Date(Date.UTC(2026, 0, 8, 13, 20, 0)).toISOString();
+      const createdThree = new Date(Date.UTC(2026, 0, 8, 13, 35, 0)).toISOString();
+
+      db.run(`
+        INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at, completed_at, assigned_to, domain)
+        VALUES
+          ('task-burndown-1', 'Created 1', 'Description', 'completed', 'normal', 'manual', ?, ?, ?, 'arm-a', 'backend'),
+          ('task-burndown-2', 'Created 2', 'Description', 'pending', 'normal', 'manual', ?, ?, NULL, 'arm-b', 'backend'),
+          ('task-burndown-3', 'Created 3', 'Description', 'completed', 'normal', 'manual', ?, ?, ?, 'arm-a', 'infra')
+      `, [createdOne, createdOne, completedOne, createdTwo, createdTwo, createdThree, createdThree, completedTwo]);
+    });
+
+    it("returns day buckets with cumulative values", async () => {
+      const response = await app.request("/api/tasks/burndown?start=2026-01-08T00:00:00.000Z&end=2026-01-10T00:00:00.000Z&bin=day");
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        bin: "hour" | "day" | "week" | "month";
+        buckets: Array<{ bucket: string; created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }>;
+      };
+
+      expect(body.bin).toBe("day");
+      expect(body.buckets.length).toBeGreaterThan(0);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.created, 0)).toBe(3);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.completed, 0)).toBe(2);
+      const lastBucket = body.buckets.at(-1);
+      expect(lastBucket?.cumulativeCreated).toBe(3);
+      expect(lastBucket?.cumulativeCompleted).toBe(2);
+    });
+
+    it("supports status filter and week bin", async () => {
+      const response = await app.request("/api/tasks/burndown?start=2026-01-08T00:00:00.000Z&end=2026-01-31T00:00:00.000Z&bin=week&status=completed");
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { bin: "week"; buckets: Array<{ created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }> };
+
+      expect(body.bin).toBe("week");
+      expect(body.buckets.length).toBeGreaterThan(0);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.created, 0)).toBe(2);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.completed, 0)).toBe(2);
+      expect(body.buckets.at(-1)?.cumulativeCompleted).toBe(2);
+    });
+
+    it("supports month bin and assignee filter", async () => {
+      const response = await app.request("/api/tasks/burndown?start=2026-01-01T00:00:00.000Z&end=2026-02-01T00:00:00.000Z&bin=month&assignedTo=arm-a");
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        bin: "month";
+        buckets: Array<{ created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }>;
+      };
+
+      expect(body.bin).toBe("month");
+      expect(body.buckets.length).toBeGreaterThan(0);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.created, 0)).toBe(2);
+      expect(body.buckets.reduce((sum, bucket) => sum + bucket.completed, 0)).toBe(2);
+      expect(body.buckets.at(-1)?.cumulativeCreated).toBe(2);
+    });
+
+    it("returns 400 for missing range", async () => {
+      const response = await app.request("/api/tasks/burndown?bin=day");
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("start and end are required");
+    });
+
+    it("returns 400 for invalid bin", async () => {
+      const response = await app.request("/api/tasks/burndown?start=2026-01-08T00:00:00.000Z&end=2026-01-09T00:00:00.000Z&bin=invalid");
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("Invalid bin");
     });
   });
 });

@@ -52,24 +52,24 @@ export interface Task {
   domain?: string;
   /** Manual sort order for task prioritization (lower = higher priority) */
   sortOrder?: number;
-  /** Fractional-indexing rank key driving the visible task-list order */
-  orderKey?: string | null;
+	/** Fractional-indexing rank key driving the visible task-list order */
+	orderKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
   completedAt?: Date;
   blockedAt?: Date;
-  blockedReason?: string;
-  blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "unknown";
-  blockedRecheckAt?: Date;
-  blockedLastCheckedAt?: Date;
-  blockedReviewCount?: number;
-  blockedNeedsHuman?: boolean;
-  blockedHumanNotifiedAt?: Date;
-  blockedReviewArmId?: string;
-  blockedReviewStartedAt?: Date;
+	blockedReason?: string;
+	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "unknown";
+	blockedRecheckAt?: Date;
+	blockedLastCheckedAt?: Date;
+	blockedReviewCount?: number;
+	blockedNeedsHuman?: boolean;
+	blockedHumanNotifiedAt?: Date;
+	blockedReviewArmId?: string;
+	blockedReviewStartedAt?: Date;
   artifacts?: string[]; // commit hashes, file paths, etc.
   /** System-owned workflow state (for example human approval gates). */
-  metadata?: Record<string, unknown>;
+	metadata?: Record<string, unknown>;
   mailThreadId?: string; // link back to mail conversation
   context?: {
     attachments?: TaskAttachment[];
@@ -83,6 +83,7 @@ export interface Task {
       severity: string;
     }>;
     notes?: string;
+    [key: string]: unknown;
   };
   /** Sub-task checklist items for progress breakdown */
   checklist?: ChecklistItem[];
@@ -274,8 +275,8 @@ export type MessageType =
   | "task_validation"
   | "task_acknowledge"
   | "task_validate"
-  | "blocked_task_review"
   | "task_failed"
+	| "blocked_task_review"
   | "task_deleted"
   | "discovery"
   | "dependency_discovery"
@@ -484,7 +485,7 @@ export const DEFAULT_CONFIG: ColeoConfig = {
 		maxArms: 8,
 		armGracePeriodMinutes: 2,
 		provider: "openai",
-		model: "gpt-5-mini",
+		model: "gpt-5.6-luna",
 		apiKey: "",
 	},
   mail: {
