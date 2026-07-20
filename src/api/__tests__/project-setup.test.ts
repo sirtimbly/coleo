@@ -308,6 +308,39 @@ their existing workflow and ship with clear operational documentation.
 		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(1);
 	});
 
+	it("refuses to regenerate while a disconnected arm retains active work", async () => {
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(
+			join(root, ".project", "plan.md"),
+			"# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the replacement queue\n",
+		);
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at)
+			 VALUES ('disconnected-task', 'Disconnected work', '', 'in_progress', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+		db.run(
+			`INSERT INTO arms (id, status, current_task_id, current_task_subject)
+			 VALUES ('disconnected-arm', 'error', 'disconnected-task', 'Disconnected work')`,
+		);
+		db.run(
+			`INSERT INTO arm_state_machine (arm_id, state, current_task_id, current_task_subject)
+			 VALUES ('disconnected-arm', 'disconnected', 'disconnected-task', 'Disconnected work')`,
+		);
+
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "Rebuild the queue with broader tasks." }),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain("Stop all arms working on active tasks");
+		expect(db.query("SELECT status FROM tasks WHERE id = 'disconnected-task'").get())
+			.toEqual({ status: "in_progress" });
+	});
+
 	it("refuses to delete work claimed while the plan formatter is running", async () => {
 		await mkdir(join(root, ".project"), { recursive: true });
 		await writeFile(
@@ -353,15 +386,20 @@ their existing workflow and ship with clear operational documentation.
 			.toEqual({ status: "in_progress", assigned_to: "late-arm" });
 	});
 
-	it("does not recreate a plan task that already exists as completed", async () => {
+	it("does not recreate completed work after the formatter moves it to another phase", async () => {
 		const workspace = new LocalWorkspaceAccess(root);
 		await mkdir(join(root, ".project"), { recursive: true });
+		const completedPlan = "# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Keep the completed queue migration\n";
+		const regeneratedPlan = "# Project Plan\n\n## Phase 2: Polish\n\n### Deliverables\n\n- [ ] Keep the completed queue migration\n";
 		await writeFile(
 			join(root, ".project", "plan.md"),
-			"# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Keep the completed queue migration\n",
+			completedPlan,
 		);
 		const parsed = await parsePlanFile(".project/plan.md", workspace);
 		const completedTask = parsed.tasks[0]!;
+		await writeFile(join(root, ".project", "plan.md"), regeneratedPlan);
+		const regeneratedTask = (await parsePlanFile(".project/plan.md", workspace)).tasks[0]!;
+		expect(regeneratedTask.id).not.toBe(completedTask.id);
 		const now = new Date().toISOString();
 		db.run(
 			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at, completed_at)

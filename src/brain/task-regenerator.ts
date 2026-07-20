@@ -42,7 +42,7 @@ export async function regenerateTasksFromPlan(options: {
 		const activeStateCount = (options.db
 			.query(`SELECT COUNT(*) AS count
 				FROM arm_state_machine
-				WHERE state IN ('task_assigned', 'working', 'completing')
+				WHERE state NOT IN ('idle', 'stopped', 'error')
 					AND current_task_id IN (SELECT id FROM tasks WHERE status != 'completed')`)
 			.get() as { count: number } | null)?.count ?? 0;
 		if (activeArmCount > 0 || activeStateCount > 0) {
@@ -64,14 +64,22 @@ export async function regenerateTasksFromPlan(options: {
 	}
 
 	const completedTasks = options.db
-		.query("SELECT id, subject FROM tasks WHERE status = 'completed'")
-		.all() as Array<{ id: string; subject: string }>;
+		.query("SELECT id, subject, plan_line_uid FROM tasks WHERE status = 'completed'")
+		.all() as Array<{ id: string; subject: string; plan_line_uid: string | null }>;
+	const normalizeSubject = (subject: string) => subject.trim().replace(/\s+/g, " ").toLowerCase();
 	const usedSubjectsById = new Map(
-		completedTasks.map((task) => [task.id, task.subject.trim().replace(/\s+/g, " ").toLowerCase()]),
+		completedTasks.map((task) => [task.id, normalizeSubject(task.subject)]),
+	);
+	const completedSubjects = new Set(completedTasks.map((task) => normalizeSubject(task.subject)));
+	const completedPlanLineUids = new Set(
+		completedTasks.flatMap((task) => task.plan_line_uid ? [task.plan_line_uid] : []),
 	);
 	const tasks = tasksToDatabaseFormat(parsed.tasks).flatMap((task) => {
-		const normalizedSubject = task.subject.trim().replace(/\s+/g, " ").toLowerCase();
-		if (usedSubjectsById.get(task.id) === normalizedSubject) return [];
+		const normalizedSubject = normalizeSubject(task.subject);
+		if (
+			completedSubjects.has(normalizedSubject)
+			|| (task.plan_line_uid && completedPlanLineUids.has(task.plan_line_uid))
+		) return [];
 
 		let id = task.id;
 		if (usedSubjectsById.has(id)) {
