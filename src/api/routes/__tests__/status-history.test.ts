@@ -88,6 +88,23 @@ describe("status-history routes", () => {
 		expect(searchSpy).toHaveBeenCalled();
 	});
 
+	it("passes a classification filter to Qdrant search", async () => {
+		const res = await app.request("/api/status-history/search", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				query: "database migration",
+				filters: { classification: "development" },
+			}),
+		});
+
+		expect(res.status).toBe(200);
+		expect(searchSpy).toHaveBeenCalledWith(
+			"database migration",
+			expect.objectContaining({ classification: "development" }),
+		);
+	});
+
 	it("returns collection stats", async () => {
 		const res = await app.request("/api/status-history/stats?period=week");
 		expect(res.status).toBe(200);
@@ -116,6 +133,7 @@ describe("status-history routes", () => {
 				content: "Finished hybrid search API",
 				type: "task_completion",
 				source: "arm-beta",
+				classification: "engineering",
 			}),
 		});
 		expect(res.status).toBe(200);
@@ -123,5 +141,13 @@ describe("status-history routes", () => {
 		expect(body.success).toBe(true);
 		expect(body.id).toBeTruthy();
 		expect(indexSpy).toHaveBeenCalledTimes(1);
+		expect(indexSpy).toHaveBeenCalledWith(
+			expect.objectContaining({
+				classification: "engineering",
+				type: "task_completion",
+				source: "arm-beta",
+				title: "Task done",
+			}),
+		);
 	});
 });

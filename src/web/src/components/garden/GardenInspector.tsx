@@ -33,6 +33,10 @@ function renderKeyValue(label: string, value: string | number | null | undefined
   );
 }
 
+function truncateLabel(value: string, maxLength = 72): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 1)}…` : value;
+}
+
 function resolveSelection(
   scene: GardenScene,
   selection: GardenSelection,
@@ -74,21 +78,17 @@ function resolveSelection(
     case 'arm': {
       const arm: GardenSceneArm | undefined = scene.arms.find((item) => item.id === selection.id);
       if (!arm) return null;
+      const currentTask =
+        arm.currentTaskSubject ?? scene.tasks.find((task) => task.id === arm.currentTaskId)?.label ?? 'Unassigned';
+      const currentBug = arm.currentBugTitle ?? scene.bugs.find((bug) => bug.id === arm.currentBugId)?.label ?? 'None';
       return {
         title: arm.label,
-        subtitle: 'Arm swimmer',
+        subtitle: 'Arm',
         body: (
           <div className="space-y-2">
-            {renderKeyValue('Legacy status', arm.legacyStatus)}
-            {renderKeyValue('Lifecycle state', arm.lifecycleState)}
-            {renderKeyValue('Domain', arm.domain)}
-            {renderKeyValue('Current task', arm.currentTaskId)}
-            {renderKeyValue('Current bug', arm.currentBugId)}
-            {renderKeyValue('Workspace anchor', arm.targetAnchorId)}
+            {renderKeyValue('Current task', truncateLabel(currentTask))}
+            {renderKeyValue('Current bug', truncateLabel(currentBug))}
             {renderKeyValue('Last activity', formatTimestamp(arm.lastActivityAt))}
-            {renderKeyValue('Last heartbeat', formatTimestamp(arm.lastHeartbeatAt))}
-            {renderKeyValue('Last output', formatTimestamp(arm.lastOutputAt))}
-            {renderKeyValue('Workdir', arm.workdir)}
           </div>
         ),
       };

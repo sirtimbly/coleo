@@ -430,6 +430,16 @@ function scaleForDistance(cameraPosition: THREE.Vector3, target: GardenVec3, nea
   return THREE.MathUtils.lerp(nearScale, farScale, normalized);
 }
 
+function brainIsFrowning(brain: GardenSceneBrain, arms: GardenSceneArm[]): boolean {
+  if (brain.status === 'stopped') return true;
+  if (arms.length === 0) return false;
+
+  return arms.every((arm) => {
+    const states = [arm.lifecycleState, arm.legacyStatus].filter((state): state is string => Boolean(state));
+    return states.some((state) => ['stuck', 'dead'].includes(state.toLowerCase()));
+  });
+}
+
 function BrainNode({
   brain,
   scene,
@@ -451,6 +461,7 @@ function BrainNode({
   const leftEyeRef = useRef<THREE.Group>(null);
   const rightEyeRef = useRef<THREE.Group>(null);
   const { camera } = useThree();
+  const isFrowning = brainIsFrowning(brain, scene.arms);
   
   // Eye tracking state
   const lookTargetRef = useRef<THREE.Vector3>(new THREE.Vector3(10, 0, 10));
@@ -609,8 +620,8 @@ function BrainNode({
           </mesh>
         </group>
         
-        {/* Smiling mouth - protruding from sphere surface */}
-        <mesh position={[0, -0.4, 2.35]} rotation={[0.2, 0, 0]}>
+        {/* Infrastructure health bubbles do not affect the brain's expression. */}
+        <mesh position={[0, -0.4, 2.35]} rotation={[0.2, 0, isFrowning ? 0 : Math.PI]}>
           <torusGeometry args={[0.4, 0.09, 8, 16, Math.PI]} />
           <meshStandardMaterial color="#ff6b8a" emissive="#ff4d6d" emissiveIntensity={0.4} />
         </mesh>

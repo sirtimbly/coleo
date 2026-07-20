@@ -1511,7 +1511,9 @@ export interface GardenSceneArm {
   legacyStatus: string;
   lifecycleState: string | null;
   currentTaskId: string | null;
+  currentTaskSubject: string | null;
   currentBugId: string | null;
+  currentBugTitle: string | null;
   targetAnchorId: string | null;
   lastActivityAt: string | null;
   lastHeartbeatAt: string | null;

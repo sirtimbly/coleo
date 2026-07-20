@@ -37,7 +37,9 @@ export interface GardenSceneArm {
   legacyStatus: string;
   lifecycleState: string | null;
   currentTaskId: string | null;
+  currentTaskSubject: string | null;
   currentBugId: string | null;
+  currentBugTitle: string | null;
   targetAnchorId: string | null;
   lastActivityAt: string | null;
   lastHeartbeatAt: string | null;
@@ -121,7 +123,9 @@ interface ArmSceneRow {
   domain: string | null;
   status: string;
   current_task_id: string | null;
+  current_task_subject: string | null;
   current_bug_id: string | null;
+  current_bug_title: string | null;
   last_activity_at: string | null;
   last_heartbeat: string | null;
   last_output_at: string | null;
@@ -383,7 +387,9 @@ export async function buildGardenScene(db: Database): Promise<GardenScene> {
         a.domain,
         a.status,
         a.current_task_id,
+        a.current_task_subject,
         a.current_bug_id,
+        a.current_bug_title,
         a.last_activity_at,
         a.last_heartbeat,
         a.last_output_at,
@@ -719,7 +725,9 @@ export async function buildGardenScene(db: Database): Promise<GardenScene> {
       legacyStatus: arm.status,
       lifecycleState: arm.lifecycle_state,
       currentTaskId: arm.current_task_id,
+      currentTaskSubject: arm.current_task_subject,
       currentBugId: arm.current_bug_id,
+      currentBugTitle: arm.current_bug_title,
       targetAnchorId,
       lastActivityAt: arm.last_activity_at,
       lastHeartbeatAt: arm.last_heartbeat,
