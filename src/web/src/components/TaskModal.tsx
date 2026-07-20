@@ -11,6 +11,7 @@ interface TaskModalProps {
   onClose: () => void;
   onSaved?: (task: Task) => void;
   task?: Task; // If provided, we're editing
+  initialStatus?: Task['status'];
 }
 
 type TaskStatus = Task['status'];
@@ -19,10 +20,7 @@ type TaskSourceType = Task['sourceType'];
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
   { value: 'pending', label: 'Pending' },
-  { value: 'claimed', label: 'Claimed' },
-  { value: 'in_progress', label: 'In Progress' },
   { value: 'blocked', label: 'Blocked' },
-  { value: 'completed', label: 'Completed' },
   { value: 'failed', label: 'Failed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
@@ -51,7 +49,7 @@ const isTaskPriority = (value: string): value is TaskPriority =>
 const isTaskSourceType = (value: string): value is TaskSourceType =>
   SOURCE_TYPE_OPTIONS.some((option) => option.value === value);
 
-export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
+export function TaskModal({ isOpen, onClose, onSaved, task, initialStatus }: TaskModalProps) {
   const isEditing = Boolean(task);
   
   // Form state
@@ -64,6 +62,9 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
   const [sourceType, setSourceType] = useState<TaskSourceType>('manual');
   const [sourceRef, setSourceRef] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [blockedReason, setBlockedReason] = useState('');
+  const [blockedCategory, setBlockedCategory] = useState<NonNullable<Task['blockedCategory']>>('unknown');
+  const [blockedNeedsHuman, setBlockedNeedsHuman] = useState(false);
   
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,12 +78,15 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
         setSubject(task.subject);
         setDescription(task.description);
         setPriority(task.priority);
-        setStatus(task.status);
+        setStatus(initialStatus || task.status);
         setDomain(task.domain || '');
         setPhase(task.phase || '');
         setSourceType(task.sourceType);
         setSourceRef(task.sourceRef || '');
         setDueDate(task.dueDate ? task.dueDate.slice(0, 10) : '');
+        setBlockedReason(task.blockedReason || '');
+        setBlockedCategory(task.blockedCategory || 'unknown');
+        setBlockedNeedsHuman(task.blockedNeedsHuman === true);
       } else {
         // Reset for new task
         setSubject('');
@@ -94,11 +98,14 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
         setSourceType('manual');
         setSourceRef('');
         setDueDate('');
+        setBlockedReason('');
+        setBlockedCategory('unknown');
+        setBlockedNeedsHuman(false);
       }
       setError(null);
       setTimeout(() => subjectRef.current?.focus(), 100);
     }
-  }, [isOpen, task]);
+  }, [initialStatus, isOpen, task]);
 
   // Handle escape key
   useEffect(() => {
@@ -123,6 +130,11 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
       setError('Description is required');
       return;
     }
+
+    if (isEditing && status === 'blocked' && !blockedReason.trim()) {
+      setError('A concrete blocked reason is required');
+      return;
+    }
     
     setIsSaving(true);
     setError(null);
@@ -139,6 +151,11 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
           domain: domain.trim() || undefined,
           phase: phase.trim() || undefined,
           dueDate: dueDate || null,
+          ...(status === 'blocked' ? {
+            blockedReason: blockedReason.trim(),
+            blockedCategory,
+            blockedNeedsHuman,
+          } : {}),
         });
         savedTask = result.task;
       } else {
@@ -300,6 +317,57 @@ export function TaskModal({ isOpen, onClose, onSaved, task }: TaskModalProps) {
                 </div>
               )}
             </div>
+
+            {isEditing && status === 'blocked' && (
+              <div className="rounded-lg border border-amber-700/60 bg-amber-950/25 p-3 space-y-3">
+                <div>
+                  <label htmlFor="task-blocked-reason" className="block text-sm font-medium text-amber-100 mb-1">
+                    Blocked reason <span className="text-red-400">*</span>
+                  </label>
+                  <textarea
+                    id="task-blocked-reason"
+                    value={blockedReason}
+                    onChange={(e) => setBlockedReason(e.target.value)}
+                    placeholder="What specifically prevents this task from continuing?"
+                    rows={3}
+                    className="w-full px-3 py-2 bg-zinc-800 border border-amber-700/60 rounded-lg text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
+                  <div>
+                    <label htmlFor="task-blocked-category" className="block text-sm font-medium text-zinc-300 mb-1">
+                      Blocker category
+                    </label>
+                    <select
+                      id="task-blocked-category"
+                      value={blockedCategory}
+                      onChange={(e) => setBlockedCategory(e.currentTarget.value as NonNullable<Task['blockedCategory']>)}
+                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                    >
+                      <option value="dependency">Dependency</option>
+                      <option value="bug">Bug</option>
+                      <option value="file_claim">File claim</option>
+                      <option value="environment">Environment</option>
+                      <option value="human">Human decision</option>
+                      <option value="arm">Arm/runtime</option>
+                      <option value="unknown">Other</option>
+                    </select>
+                  </div>
+                  <label className="flex min-h-10 items-center gap-2 text-sm text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={blockedNeedsHuman}
+                      onChange={(e) => setBlockedNeedsHuman(e.currentTarget.checked)}
+                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800"
+                    />
+                    Needs a human response
+                  </label>
+                </div>
+                <p className="text-xs leading-5 text-amber-200/75">
+                  The brain will schedule an arm to recheck this blocker. A human reply in Discussions or by task email requeues the check immediately.
+                </p>
+              </div>
+            )}
             
             {/* Phase */}
             <div className="grid grid-cols-2 gap-4">

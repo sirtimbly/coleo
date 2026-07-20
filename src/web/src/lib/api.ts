@@ -908,6 +908,15 @@ class ApiClient {
     progress: number;
     artifacts: string[];
     metadata: TaskMetadata;
+    blockedReason: string;
+    blockedCategory: Task['blockedCategory'];
+    blockedRecheckAt: string | null;
+    blockedLastCheckedAt: string | null;
+    blockedReviewCount: number;
+    blockedNeedsHuman: boolean;
+    blockedHumanNotifiedAt: string | null;
+    blockedReviewArmId: string | null;
+    blockedReviewStartedAt: string | null;
   }>) {
     return this.request<{ task: Task }>(`/tasks/${id}`, {
       method: 'PATCH',
@@ -1713,13 +1722,14 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: 'pending' | 'claimed' | 'in_progress' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  status: 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   priority: 'critical' | 'high' | 'normal' | 'low';
-  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal';
+  sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
   sourceRef: string | null;
   phase: string | null;
   domain: string | null;
   assignedTo: string | null;
+  dependencyBlocked?: boolean;
   assignedArmName?: string;
   planLineUid?: string | null;
   sortOrder?: number | null;
@@ -1729,6 +1739,16 @@ export interface Task {
   completedAt: string | null;
   claimedAt: string | null;
   startedAt: string | null;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'unknown' | null;
+  blockedRecheckAt?: string | null;
+  blockedLastCheckedAt?: string | null;
+  blockedReviewCount?: number;
+  blockedNeedsHuman?: boolean;
+  blockedHumanNotifiedAt?: string | null;
+  blockedReviewArmId?: string | null;
+  blockedReviewStartedAt?: string | null;
   dueDate: string | null;
   artifacts: string[];
   metadata: TaskMetadata;

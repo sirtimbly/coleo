@@ -31,6 +31,9 @@ export type TaskUpdate = Partial<{
 	progress: number;
 	artifacts: string[];
 	metadata: TaskMetadata;
+	blockedReason: string;
+	blockedCategory: Task["blockedCategory"];
+	blockedNeedsHuman: boolean;
 }>;
 
 interface TaskGridRowProps {
