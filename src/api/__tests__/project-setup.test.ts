@@ -225,6 +225,8 @@ their existing workflow and ship with clear operational documentation.
 
 ## Phase 1: Launch
 
+Replace the duplicated queue with broader work units that preserve launch context.
+
 ### Deliverables
 
 - [ ] Build the replacement queue
@@ -259,8 +261,8 @@ their existing workflow and ship with clear operational documentation.
 		});
 		const body = await response.json() as { deletedCount: number; createdCount: number };
 		const tasks = db
-			.query("SELECT subject, status, metadata FROM tasks ORDER BY subject")
-			.all() as Array<{ subject: string; status: string; metadata: string }>;
+			.query("SELECT subject, description, status, metadata FROM tasks ORDER BY subject")
+			.all() as Array<{ subject: string; description: string; status: string; metadata: string }>;
 
 		expect(response.status).toBe(200);
 		expect(body.deletedCount).toBe(1);
@@ -274,6 +276,10 @@ their existing workflow and ship with clear operational documentation.
 		expect(tasks.find((task) => task.subject === "Keep me")?.status).toBe("completed");
 		expect(tasks.find((task) => task.subject === "Build the replacement queue")?.metadata)
 			.toContain("clean, broader units");
+		expect(tasks.find((task) => task.subject === "Build the replacement queue")?.description)
+			.toContain("Plan phase: Phase 1: Launch.");
+		expect(tasks.find((task) => task.subject === "Build the replacement queue")?.description)
+			.toContain("preserve launch context");
 		expect(db.query("SELECT current_task_id, current_task_subject FROM arms WHERE id = 'idle-arm'").get())
 			.toEqual({ current_task_id: null, current_task_subject: null });
 		expect(db.query("SELECT current_task_id, current_task_subject FROM arm_state_machine WHERE arm_id = 'idle-arm'").get())
