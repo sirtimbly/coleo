@@ -750,6 +750,8 @@ describe("tasks API", () => {
         INSERT INTO tasks (id, subject, description, status, priority, source_type, domain, created_at, updated_at, completed_at)
         VALUES
           ('burndown-a', 'Created', 'Created task', 'completed', 'normal', 'manual', 'backend', '2026-01-01T10:15:00.000Z', '2026-01-01T10:15:00.000Z', '2026-01-02T11:00:00.000Z'),
+          ('burndown-c', 'Schema timestamp', 'Created by schema default', 'pending', 'normal', 'manual', 'backend', '2026-01-01 20:15:00', '2026-01-01 20:15:00', NULL),
+          ('burndown-d', 'Local date', 'Created before local midnight', 'pending', 'normal', 'manual', 'backend', '2026-01-02T01:30:00.000Z', '2026-01-02T01:30:00.000Z', NULL),
           ('burndown-b', 'Other domain', 'Other task', 'pending', 'normal', 'manual', 'frontend', '2026-01-02T10:30:00.000Z', '2026-01-02T10:30:00.000Z', NULL)
       `);
     });
@@ -764,8 +766,8 @@ describe("tasks API", () => {
         buckets: Array<{ bucket: string; created: number; completed: number; cumulativeCreated: number; cumulativeCompleted: number }>;
       };
       expect(body.buckets).toEqual([
-        { bucket: "2026-01-01", created: 1, completed: 0, cumulativeCreated: 1, cumulativeCompleted: 0 },
-        { bucket: "2026-01-02", created: 0, completed: 1, cumulativeCreated: 1, cumulativeCompleted: 1 },
+        { bucket: "2026-01-01", created: 3, completed: 0, cumulativeCreated: 3, cumulativeCompleted: 0 },
+        { bucket: "2026-01-02", created: 0, completed: 1, cumulativeCreated: 3, cumulativeCompleted: 1 },
       ]);
     });
 

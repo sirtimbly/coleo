@@ -226,6 +226,11 @@ function getTaskRowById(db: Database, id: string): TaskRow | null {
 		.get(id) as TaskRow | null;
 }
 
+function taskTimestampMs(timestamp: string): number {
+	const normalized = timestamp.includes("T") ? timestamp : `${timestamp.replace(" ", "T")}Z`;
+	return new Date(normalized).getTime();
+}
+
 function getBurndownBucket(timestamp: string, bin: "hour" | "day" | "week" | "month", timeZone: string): string {
 	const parts = new Intl.DateTimeFormat("en-CA", {
 		timeZone,
@@ -234,7 +239,7 @@ function getBurndownBucket(timestamp: string, bin: "hour" | "day" | "week" | "mo
 		day: "2-digit",
 		hour: bin === "hour" ? "2-digit" : undefined,
 		hourCycle: "h23",
-	}).formatToParts(new Date(timestamp));
+	}).formatToParts(new Date(taskTimestampMs(timestamp)));
 	const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
 	const date = `${values.year}-${values.month}-${values.day}`;
 	if (bin === "hour") return `${date} ${values.hour}:00`;
@@ -532,7 +537,9 @@ export function createTasksRoutes() {
 			throw HttpError.badRequest(`The selected ${typedBin} range is too large`);
 		}
 
-		const conditions: string[] = ["(t.created_at >= ? AND t.created_at < ? OR t.completed_at >= ? AND t.completed_at < ?)"];
+		const conditions: string[] = [
+			"(julianday(t.created_at) >= julianday(?) AND julianday(t.created_at) < julianday(?) OR julianday(t.completed_at) >= julianday(?) AND julianday(t.completed_at) < julianday(?))",
+		];
 		const startIso = start.toISOString();
 		const endIso = end.toISOString();
 		const params: string[] = [startIso, endIso, startIso, endIso];
@@ -555,8 +562,12 @@ export function createTasksRoutes() {
 			counts.set(bucket, value);
 		};
 		for (const row of rows) {
-			if (row.created_at >= startIso && row.created_at < endIso) increment(row.created_at, "created");
-			if (row.completed_at && row.completed_at >= startIso && row.completed_at < endIso) increment(row.completed_at, "completed");
+			const createdAt = taskTimestampMs(row.created_at);
+			if (createdAt >= start.getTime() && createdAt < end.getTime()) increment(row.created_at, "created");
+			if (row.completed_at) {
+				const completedAt = taskTimestampMs(row.completed_at);
+				if (completedAt >= start.getTime() && completedAt < end.getTime()) increment(row.completed_at, "completed");
+			}
 		}
 		let cumulativeCreated = 0;
 		let cumulativeCompleted = 0;
