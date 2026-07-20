@@ -33,10 +33,12 @@ project-repo/
 ## Implementation Phases
 
 ### Phase 1: Core Worktree Infrastructure
+
 **Dependencies**: None (foundational)
 **Estimated Effort**: 2-3 days
 
 #### 1.1 Database Schema
+
 Add worktree tracking to SQLite:
 
 ```sql
@@ -48,7 +50,7 @@ CREATE TABLE worktrees (
   path TEXT NOT NULL,
   branch TEXT NOT NULL,
   base_commit TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'active' 
+  status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'merging', 'merged', 'abandoned')),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -61,9 +63,11 @@ CREATE INDEX idx_worktrees_status ON worktrees(status);
 ```
 
 **Files to modify**:
+
 - `src/db/index.ts` - Add migration
 
 #### 1.2 Worktree Service
+
 Create worktree management service:
 
 ```typescript
@@ -95,10 +99,12 @@ export class WorktreeService {
 ```
 
 **Files to create**:
+
 - `src/services/worktree.ts`
 - `src/services/__tests__/worktree.test.ts`
 
 #### 1.3 Git Operations
+
 Wrapper for git worktree commands:
 
 ```typescript
@@ -124,19 +130,23 @@ export async function mergeWorktreeBranch(
 ```
 
 **Files to create**:
+
 - `src/lib/git/worktree.ts`
 - `src/lib/git/__tests__/worktree.test.ts`
 
 **Dependencies for Phase 1**:
+
 - None - this is foundational
 
 ---
 
 ### Phase 2: MCP Tools for Arms
+
 **Dependencies**: Phase 1 (WorktreeService)
 **Estimated Effort**: 1-2 days
 
 #### 2.1 Worktree MCP Tools
+
 Add tools to MCP server:
 
 ```typescript
@@ -184,9 +194,11 @@ Add tools to MCP server:
 ```
 
 **Files to modify**:
+
 - `src/mcp/server.ts` - Add tool definitions and handlers
 
 #### 2.2 Worktree Context in Prompts
+
 Update arm prompts to include worktree context:
 
 ```typescript
@@ -214,7 +226,7 @@ You are working in a git worktree: ${context.currentWorktree.name}
 Branch: ${context.currentWorktree.branch}
 Base commit: ${context.currentWorktree.baseCommit}
 
-Your changes are isolated from the main branch. When ready, use the 
+Your changes are isolated from the main branch. When ready, use the
 'request_merge' tool to propose merging your work back.
 
 Other active worktrees:
@@ -224,19 +236,23 @@ ${context.otherWorktrees.map(w => `- ${w.name} (${w.armId}): ${w.branch}`).join(
 ```
 
 **Files to modify**:
+
 - `src/arm/prompts.ts`
 - `src/brain/prompt-generator.ts` - Include worktree context in bundles
 
 **Dependencies for Phase 2**:
+
 - ✅ Phase 1 (WorktreeService must exist)
 
 ---
 
 ### Phase 3: Brain Worktree Orchestration
+
 **Dependencies**: Phase 1, Phase 2
 **Estimated Effort**: 2-3 days
 
 #### 3.1 Brain Worktree Manager
+
 Add worktree coordination to Brain:
 
 ```typescript
@@ -266,7 +282,7 @@ export class BrainWorktreeManager {
 
     // Auto-generate name if not provided
     const worktreeName = name || this.generateWorktreeName(armId);
-    
+
     // Create the worktree
     const worktree = await this.worktreeService.createWorktree({
       armId,
@@ -288,10 +304,10 @@ export class BrainWorktreeManager {
   ): Promise<MergeRequestResult> {
     // Get worktree info
     const worktree = await this.worktreeService.getWorktree(worktreeId);
-    
+
     // Check for conflicts with other worktrees
     const conflicts = await this.detectInterWorktreeConflicts(worktree);
-    
+
     if (conflicts.length > 0) {
       return {
         canMerge: false,
@@ -302,7 +318,7 @@ export class BrainWorktreeManager {
 
     // Create proposal for merge
     const proposal = await this.createMergeProposal(worktree, strategy);
-    
+
     return {
       canMerge: true,
       proposalId: proposal.id,
@@ -319,9 +335,11 @@ export class BrainWorktreeManager {
 ```
 
 **Files to create**:
+
 - `src/brain/worktree-manager.ts`
 
 #### 3.2 Worktree Lifecycle Integration
+
 Integrate with existing Brain lifecycle:
 
 ```typescript
@@ -338,14 +356,14 @@ export class Brain {
           message.reason,
           message.name
         );
-      
+
       case 'merge_request':
         return this.worktreeManager.handleMergeRequest(
           armId,
           message.worktreeId,
           message.strategy
         );
-      
+
       // ... existing message types
     }
   }
@@ -356,22 +374,25 @@ export class Brain {
       const worktree = await this.worktreeManager.createWorktreeForArm(options);
       options.workdir = worktree.path;
     }
-    
+
     return super.spawnArm(options);
   }
 }
 ```
 
 **Files to modify**:
+
 - `src/brain/brain.ts` - Integrate worktree manager
 
 **Dependencies for Phase 3**:
+
 - ✅ Phase 1 (WorktreeService)
 - ✅ Phase 2 (MCP tools for arms to request worktrees)
 
 ---
 
 ### Phase 4: CLI Commands
+
 **Dependencies**: Phase 1, Phase 2, Phase 3
 **Estimated Effort**: 1-2 days
 
@@ -417,12 +438,15 @@ program
 ```
 
 **Files to create**:
+
 - `src/cli/commands/worktree.ts`
 
 **Files to modify**:
+
 - `src/cli/index.ts` - Register new commands
 
 #### 4.2 Arm Spawn with Worktree
+
 Update arm spawn command:
 
 ```typescript
@@ -443,12 +467,14 @@ armCmd
 ```
 
 **Dependencies for Phase 4**:
+
 - ✅ Phase 1 (WorktreeService)
 - ✅ Phase 3 (Brain orchestration)
 
 ---
 
 ### Phase 5: Web UI Integration
+
 **Dependencies**: Phase 1, Phase 2, Phase 3, Phase 4
 **Estimated Effort**: 2-3 days
 
@@ -466,9 +492,11 @@ armCmd
 ```
 
 **Files to create**:
+
 - `src/api/routes/worktrees.ts`
 
 **Files to modify**:
+
 - `src/api/server.ts` - Register routes
 
 #### 5.2 React Components
@@ -488,6 +516,7 @@ armCmd
 ```
 
 **Files to create**:
+
 - `src/web/src/components/WorktreeList.tsx`
 - `src/web/src/components/WorktreeCard.tsx`
 - `src/web/src/components/CreateWorktreeDialog.tsx`
@@ -495,6 +524,7 @@ armCmd
 - `src/web/src/pages/WorktreesPage.tsx`
 
 #### 5.3 Garden Visualization Update
+
 Update the 3D garden view to show worktrees:
 
 ```typescript
@@ -505,16 +535,19 @@ Update the 3D garden view to show worktrees:
 ```
 
 **Dependencies for Phase 5**:
+
 - ✅ Phase 1 (WorktreeService)
 - ✅ Phase 4 (CLI commands - reuse API endpoints)
 
 ---
 
 ### Phase 6: Advanced Features
+
 **Dependencies**: All previous phases
 **Estimated Effort**: 3-5 days (optional)
 
 #### 6.1 Inter-Worktree Conflict Detection
+
 Detect when two worktrees modify the same files:
 
 ```typescript
@@ -529,10 +562,11 @@ export async function detectWorktreeConflicts(
 ```
 
 #### 6.2 Worktree Sync Strategies
+
 Multiple strategies for keeping worktrees updated:
 
 ```typescript
-export type SyncStrategy = 
+export type SyncStrategy =
   | 'manual'      // Arm must explicitly sync
   | 'auto-pull'   // Auto-pull main changes (safe)
   | 'auto-rebase' // Auto-rebase on main (risky)
@@ -540,6 +574,7 @@ export type SyncStrategy =
 ```
 
 #### 6.3 Worktree Templates
+
 Pre-configured worktrees for common scenarios:
 
 ```typescript
@@ -550,6 +585,7 @@ Pre-configured worktrees for common scenarios:
 ```
 
 #### 6.4 Worktree Archival
+
 Archive merged worktrees instead of deleting:
 
 ```typescript
@@ -558,6 +594,7 @@ Archive merged worktrees instead of deleting:
 ```
 
 **Dependencies for Phase 6**:
+
 - ✅ All previous phases
 
 ---
@@ -565,16 +602,19 @@ Archive merged worktrees instead of deleting:
 ## Testing Strategy
 
 ### Unit Tests
+
 - `src/services/__tests__/worktree.test.ts` - Worktree service
 - `src/lib/git/__tests__/worktree.test.ts` - Git operations
 - `src/brain/__tests__/worktree-manager.test.ts` - Brain coordination
 
 ### Integration Tests
+
 - Create worktree → Make changes → Merge → Verify on main
 - Multiple worktrees → Detect conflicts → Resolve
 - Worktree lifecycle (create, sync, merge, destroy)
 
 ### Regression Tests
+
 - Existing shared branch workflow still works
 - Arms without worktrees unaffected
 - Claims system works across worktrees
@@ -582,22 +622,26 @@ Archive merged worktrees instead of deleting:
 ## Migration Path
 
 ### For Existing Projects
+
 1. No changes required - shared branch remains default
 2. Arms can opt-in to worktrees via MCP tools
 3. Existing claims system continues to work
 
 ### For New Projects
+
 1. Consider worktrees for long-running tasks from day 1
 2. Document when to use worktrees vs shared branch
 
 ## Documentation Updates
 
 ### Files to Update
+
 - `docs/architecture/overview.md` - Add worktree section
 - `docs/guides/getting-started.md` - Document worktree usage
 - `AGENTS.md` - Add worktree coordination guidelines
 
 ### New Documentation
+
 - `docs/guides/worktrees.md` - Complete worktree guide
 - `.project/decisions/012-git-worktrees.md` - ADR
 
