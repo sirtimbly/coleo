@@ -216,6 +216,18 @@ class ApiClient {
     });
   }
 
+  async regenerateAllTasks(explanation: string) {
+    return this.request<{
+      deletedCount: number;
+      createdCount: number;
+      preservedCompletedCount: number;
+      mode: 'ai' | 'structured';
+    }>('/project-setup/regenerate-tasks', {
+      method: 'POST',
+      body: JSON.stringify({ explanation }),
+    });
+  }
+
   async search(params: {
     query: string;
     types?: string[];
