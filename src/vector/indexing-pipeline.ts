@@ -155,9 +155,14 @@ export async function processStatusEvent(eventData: EventData): Promise<void> {
   // Map event types to status history event types
   const typeMap: Record<string, StatusHistoryEventType> = {
     "status.report": "status_report",
+    "status_report.submitted": "status_report",
+    "task.status_reported": "status_report",
     "task.completed": "task_completion",
     "discovery.created": "discovery",
+    "task.discovery_reported": "discovery",
     "bug.reported": "bug_report",
+    "bug_report": "bug_report",
+    "report_bug": "bug_report",
     "task.created": "task_created",
     "task.updated": "task_updated",
     "arm.event": "arm_event",

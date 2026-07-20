@@ -119,6 +119,8 @@ export function registerTaskTools(server: McpServer): void {
 
 			logActivity(ARM_ID, "complete_task", resolvedTaskId, {
 				messageId,
+				summary,
+				artifacts: artifacts || [],
 				artifactCount: (artifacts || []).length,
 			});
 
@@ -240,6 +242,13 @@ export function registerTaskTools(server: McpServer): void {
 				messageId,
 				reportId,
 				status,
+				summary,
+				issues: issues || [],
+				blockers: blockers || [],
+				nextSteps: next_steps,
+				filesChanged: files_changed || [],
+				testsStatus: tests_status,
+				screenshotPath: screenshot_path,
 			});
 
 			return {

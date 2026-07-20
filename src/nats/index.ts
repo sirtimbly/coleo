@@ -11,3 +11,4 @@ export * from './server';
 export * from './client';
 export * from './arm-client';
 export * from './status-consumer';
+export * from './status-history-consumer';
