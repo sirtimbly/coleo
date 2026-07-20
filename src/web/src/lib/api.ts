@@ -53,7 +53,7 @@ export interface TaskMetadata extends JsonObject {
   ui?: TaskUiMetadata;
 }
 
-export interface BugUiMetadata extends UiMetadata {}
+export type BugUiMetadata = UiMetadata;
 
 export interface BugMetadata extends JsonObject {
   ui?: BugUiMetadata;

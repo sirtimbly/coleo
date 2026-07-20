@@ -22,7 +22,6 @@ import {
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { loadConfig, updateConfig } from "../config";
-import { resolveBrainModelConfig } from "./model-config";
 import {
 	ArmStateMachine,
 	type ArmState,
@@ -48,10 +47,6 @@ import {
 	getGitCommitState,
 	shouldRunMaintenanceTask,
 } from "./maintenance-tasks";
-import {
-	getNextBlockedReviewAt,
-	selectBlockedTasksForReview,
-} from "./blocked-task-workflow";
 import {
 	stripTerminalArtifacts,
 	getDomainPatterns,
@@ -626,17 +621,6 @@ export class Brain {
 		const config = await loadConfig(this.options.coleoDir);
 		this.refactorFileThresholdLines =
 			config.refactoring.fileSizeThreshold ?? 400;
-		const modelConfigSource = async () => {
-			const current = await loadConfig(this.options.coleoDir);
-			return resolveBrainModelConfig(current.brain);
-		};
-		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfigSource);
-		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfigSource);
-		this.stuckArmAnalyzer = new StuckArmAnalyzer(
-			(msg) => this.log(msg),
-			this.options.coleoDir,
-			modelConfigSource,
-		);
 
 		// Load mail config for external email sending
 		await this.loadMailConfig();
@@ -863,9 +847,6 @@ export class Brain {
 
 			// Step 5: Maintain task queue state (no push assignment; arms pull tasks)
 			await this.assignTasks();
-
-			// Step 5.25: Work the due blocked-task queue before normal idle prompting.
-			await this.reviewBlockedTasks();
 
 			// Step 5.5: Check and escalate blocked tasks
 			await this.checkAndEscalateBlockedTasks();
@@ -1159,51 +1140,6 @@ export class Brain {
 				message.body,
 				attachments,
 			);
-			const taskReplyId =
-				this.getMailHeader(message, "x-coleo-task-id") ??
-				(threadId.startsWith("task-") ? threadId : undefined);
-			if (taskReplyId) {
-				const repliedTask = await this.getTaskFromApi(taskReplyId);
-				if (repliedTask) {
-					const approvalMatch = messageBody.trim().match(/^(APPROVE|REJECT)\b(?:\s*\[([^\]]+)\])?/i);
-					const humanReview = repliedTask.metadata?.humanReview;
-					const hasPendingReview = humanReview
-						&& typeof humanReview === "object"
-						&& (humanReview as { status?: string }).status === "pending";
-					const explicitTaskId = approvalMatch?.[2]?.trim();
-					if (approvalMatch && hasPendingReview && (!explicitTaskId || explicitTaskId === taskReplyId)) {
-						await this.handleApprovalResponse(
-							taskReplyId,
-							approvalMatch[1]?.toUpperCase() === "APPROVE",
-							messageBody,
-						);
-						await mailbox.markSeen(message.id);
-						continue;
-					}
-					await this.apiRequest(
-						`/api/tasks/${encodeURIComponent(taskReplyId)}/discussions`,
-						{
-							method: "POST",
-							body: JSON.stringify({
-								content: messageBody,
-								authorType: "human",
-								authorId: message.from,
-								authorName: message.from,
-								client: "mail",
-							}),
-						},
-					);
-					await this.sendToHuman({
-						subject: `Re: ${message.subject}`,
-						body: `Your reply was added to task ${taskReplyId}. If it is blocked, it is now eligible for immediate re-evaluation.`,
-						headers: this.buildMailReplyHeaders(message, "task-reply-recorded", {
-							"X-Coleo-Task-Id": taskReplyId,
-						}),
-					});
-					await mailbox.markSeen(message.id);
-					continue;
-				}
-			}
 
 			// Use LLM to determine intent
 			const intent = await this.mailProcessor.processMessage(
@@ -1718,19 +1654,6 @@ export class Brain {
 				break;
 			}
 
-			case "blocked_task_review": {
-				const payload = message.payload as {
-					taskId: string;
-					outcome: "unblocked" | "still_blocked" | "irrelevant";
-					summary: string;
-					reason?: string;
-					category?: Task["blockedCategory"];
-					needsHuman?: boolean;
-				};
-				await this.handleBlockedTaskReview(message.from, payload);
-				break;
-			}
-
 			case "task_validation": {
 				// Validator arm reports validation result
 				const payload = message.payload as {
@@ -2208,20 +2131,10 @@ export class Brain {
 			} else if (status === "claimed") {
 				dbStatus = "claimed";
 			}
-			if (dbStatus === "blocked" && !message?.trim()) {
-				this.log(`Rejected blocked status for ${taskId}: a concrete reason is required`);
-				return;
-			}
 
 			await this.patchTaskViaApi(taskId, {
 				status: dbStatus as Task["status"],
-				assignedTo: dbStatus === "blocked" ? null : armId,
-				...(dbStatus === "blocked"
-					? {
-							blockedReason: message!.trim(),
-							blockedCategory: "unknown" as const,
-						}
-					: {}),
+				assignedTo: armId,
 			});
 
 			const now = new Date().toISOString();
@@ -2271,9 +2184,6 @@ export class Brain {
 				.filter((part): part is string => Boolean(part))
 				.join("\n\n");
 			await this.appendTaskComment(taskId, content, { armId, screenshotPath });
-			if (dbStatus === "blocked") {
-				await this.clearArmTaskAssignment(armId);
-			}
 		} catch (err) {
 			this.log(`Error updating task ${taskId} status: ${err}`);
 		}
@@ -2340,7 +2250,6 @@ export class Brain {
 		phase?: string;
 		limit?: number;
 		offset?: number;
-		includeHousekeeping?: boolean;
 	}): Promise<Task[]> {
 		const params = new URLSearchParams();
 		if (options?.status && options.status.length > 0) {
@@ -2369,20 +2278,10 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
-				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
 				blockedAt?: string | null;
-				blockedReason?: string | null;
-				blockedCategory?: Task["blockedCategory"] | null;
-				blockedRecheckAt?: string | null;
-				blockedLastCheckedAt?: string | null;
-				blockedReviewCount?: number;
-				blockedNeedsHuman?: boolean;
-				blockedHumanNotifiedAt?: string | null;
-				blockedReviewArmId?: string | null;
-				blockedReviewStartedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: {
@@ -2411,10 +2310,9 @@ export class Brain {
 			this.state.pendingTasks = response.counts.byStatus.pending;
 		}
 
-		const tasks = response.tasks.map((task) => mapApiTask(task));
-		return options?.includeHousekeeping
-			? tasks
-			: tasks.filter((task) => !containsCommitTaskKeyword(task.subject));
+		return response.tasks
+			.map((task) => mapApiTask(task))
+			.filter((task) => !containsCommitTaskKeyword(task.subject));
 	}
 
 	private async listBugsFromApi(
@@ -2519,10 +2417,6 @@ export class Brain {
 		context?: Task["context"];
 		metadata?: Record<string, unknown>;
 		sortOrder?: number;
-		blockedReason?: string;
-		blockedCategory?: Task["blockedCategory"];
-		blockedNeedsHuman?: boolean;
-		blockedRecheckAt?: string;
 		sourceType?:
 			| "manual"
 			| "plan"
@@ -2557,19 +2451,9 @@ export class Brain {
 				updatedAt: string;
 				completedAt?: string | null;
 				blockedAt?: string | null;
-				blockedReason?: string | null;
-				blockedCategory?: Task["blockedCategory"] | null;
-				blockedRecheckAt?: string | null;
-				blockedLastCheckedAt?: string | null;
-				blockedReviewCount?: number;
-				blockedNeedsHuman?: boolean;
-				blockedHumanNotifiedAt?: string | null;
-				blockedReviewArmId?: string | null;
-				blockedReviewStartedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
-				metadata?: Record<string, unknown>;
 			};
 		}>("/api/tasks", {
 			method: "POST",
@@ -2595,15 +2479,6 @@ export class Brain {
 			metadata?: Record<string, unknown>;
 			artifacts?: string[];
 			context?: Task["context"];
-			blockedReason?: string;
-			blockedCategory?: Task["blockedCategory"];
-			blockedRecheckAt?: string | null;
-			blockedLastCheckedAt?: string | null;
-			blockedReviewCount?: number;
-			blockedNeedsHuman?: boolean;
-			blockedHumanNotifiedAt?: string | null;
-			blockedReviewArmId?: string | null;
-			blockedReviewStartedAt?: string | null;
 		},
 	): Promise<Task | null> {
 		const response = await this.apiRequest<{
@@ -2622,19 +2497,9 @@ export class Brain {
 				updatedAt: string;
 				completedAt?: string | null;
 				blockedAt?: string | null;
-				blockedReason?: string | null;
-				blockedCategory?: Task["blockedCategory"] | null;
-				blockedRecheckAt?: string | null;
-				blockedLastCheckedAt?: string | null;
-				blockedReviewCount?: number;
-				blockedNeedsHuman?: boolean;
-				blockedHumanNotifiedAt?: string | null;
-				blockedReviewArmId?: string | null;
-				blockedReviewStartedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
-				metadata?: Record<string, unknown>;
 			};
 		}>(`/api/tasks/${encodeURIComponent(taskId)}`, {
 			method: "PATCH",
@@ -2665,15 +2530,6 @@ export class Brain {
 				updatedAt: string;
 				completedAt?: string | null;
 				blockedAt?: string | null;
-				blockedReason?: string | null;
-				blockedCategory?: Task["blockedCategory"] | null;
-				blockedRecheckAt?: string | null;
-				blockedLastCheckedAt?: string | null;
-				blockedReviewCount?: number;
-				blockedNeedsHuman?: boolean;
-				blockedHumanNotifiedAt?: string | null;
-				blockedReviewArmId?: string | null;
-				blockedReviewStartedAt?: string | null;
 				artifacts?: string[];
 				mailThreadId?: string | null;
 				context?: Task["context"];
@@ -2695,25 +2551,6 @@ export class Brain {
 			dependencies?: string[];
 		}>(`/api/tasks/${encodeURIComponent(taskId)}`);
 		return response?.dependencies || [];
-	}
-
-	private async listTaskCommentsFromApi(taskId: string): Promise<
-		Array<{
-			content: string;
-			authorType: "human" | "arm" | "brain";
-			authorName?: string;
-			createdAt: string;
-		}>
-	> {
-		const response = await this.apiRequest<{
-			discussions: Array<{
-				content: string;
-				authorType: "human" | "arm" | "brain";
-				authorName?: string;
-				createdAt: string;
-			}>;
-		}>(`/api/tasks/${encodeURIComponent(taskId)}/discussions?limit=10`);
-		return response?.discussions || [];
 	}
 
 	private async listStatusReportsFromApi(options?: {
@@ -2937,7 +2774,8 @@ export class Brain {
 
 	/**
 	 * Initiate peer validation for a task completion
-	 * Validation is pull-based: finalize the task and queue a follow-up validation task
+	 * The task enters the "completing" state while a validator arm reviews it.
+	 * finalizeTaskCompletion is only called after the validator approves.
 	 */
 	private async initiateTaskValidation(
 		taskId: string,
@@ -2945,7 +2783,7 @@ export class Brain {
 		artifacts: string[],
 		taskContext?: Task,
 	): Promise<void> {
-		this.log(`Moving task ${taskId} to completing and queuing validation follow-up...`);
+		this.log(`Initiating peer validation for task ${taskId}...`);
 
 		const task = taskContext || (await this.getTaskFromApi(taskId));
 		if (!task) {
@@ -2961,24 +2799,26 @@ export class Brain {
 			return;
 		}
 
-		const workerArmId = task.assignedTo || null;
+		const workerArmId = task.assignedTo;
+		const originalWorkerArmId = workerArmId || task.context?.originalWorkerArmId;
+
+		// Mark task as completing and release the worker arm so it can pick up other work.
+		await this.patchTaskViaApi(taskId, {
+			status: "completing",
+			assignedTo: null,
+			dependencyBlocked: false,
+			artifacts,
+			context: {
+				...task.context,
+				originalWorkerArmId,
+				validationRequestedAt: new Date().toISOString(),
+				validationSummary: summary,
+			},
+		});
+
 		if (workerArmId) {
 			await this.markArmTaskCompletedAndRelease(workerArmId, taskId);
 		}
-		await this.patchTaskViaApi(taskId, {
-			status: "completing",
-			artifacts,
-			assignedTo: null,
-			dependencyBlocked: false,
-			metadata: {
-				...(task.metadata || {}),
-				completion: {
-					summary,
-					workerArmId,
-					reportedAt: new Date().toISOString(),
-				},
-			},
-		});
 
 		const validationDescription = buildVerificationTaskDescription(
 			task.subject,
@@ -2998,6 +2838,7 @@ export class Brain {
 			sourceRef: task.id,
 			context: {
 				notes: `Validation follow-up queued after completion of ${task.id}.`,
+				originalTaskId: task.id,
 			},
 		});
 
@@ -3024,92 +2865,101 @@ export class Brain {
 			`Task ${taskId} validation result from ${validatorArmId}: ${approved}`,
 		);
 
-		const reportedTask = await this.getTaskFromApi(taskId);
-		const assignedTaskId = this.arms.get(validatorArmId)?.currentTask;
-		const assignedTask = assignedTaskId && assignedTaskId !== taskId
-			? await this.getTaskFromApi(assignedTaskId)
-			: null;
-		const validationTask = reportedTask && isFollowUpTaskSubject(reportedTask.subject)
-			? reportedTask
-			: assignedTask
-				&& isFollowUpTaskSubject(assignedTask.subject)
-				&& assignedTask.sourceRef === taskId
-					? assignedTask
-					: null;
-		const originalTaskId = validationTask?.sourceRef || taskId;
-		const originalTask = originalTaskId === reportedTask?.id
-			? reportedTask
-			: await this.getTaskFromApi(originalTaskId);
-		if (!originalTask) {
-			this.log(`Validation result references unknown original task ${originalTaskId}`);
-			if (validationTask) await this.finalizeTaskCompletion(validationTask.id, notes, []);
-			return;
-		}
+		const task = await this.getTaskFromApi(taskId);
+		const taskSubject = task?.subject || taskId;
 
-		if (validationTask) {
-			await this.finalizeTaskCompletion(validationTask.id, notes, []);
-		} else {
-			await this.clearArmTaskAssignment(validatorArmId);
-		}
-
-		const armLabel = this.getArmDisplayName(validatorArmId);
 		if (approved) {
-			await this.requestHumanTaskApproval(originalTask, notes, originalTask.artifacts || []);
-			this.logActivity("brain", "task_validation_approved", originalTaskId, {
+			// validation succeeded - mark task as completed
+			if (task?.status === "completed") {
+				this.log(`Task ${taskId} already finalized; skipping duplicate finalization`);
+				return;
+			}
+
+			if (task?.status !== "completing") {
+				this.log(
+					`[handleTaskValidation] Task ${taskId} is not in completing state (status: ${task?.status}); awaiting validation result before finalizing`,
+				);
+				return;
+			}
+
+			await this.finalizeTaskCompletion(taskId, notes, task.artifacts || []);
+
+			this.logActivity("brain", "task_validation_approved", taskId, {
 				validatorArmId,
 			});
-			await this.appendTaskComment(
-				originalTaskId,
-				[`Task validated and approved by ${armLabel}`, notes ? `Notes:\n${notes}` : null]
-					.filter((part): part is string => Boolean(part))
-					.join("\n\n"),
-				{ armId: validatorArmId, screenshotPath },
-			);
-			this.log(`Task ${originalTask.subject} validated; human approval requested`);
-		} else {
-			await this.patchTaskViaApi(originalTaskId, {
-				status: "pending",
-				assignedTo: null,
-			});
-			await this.appendTaskComment(
-				originalTaskId,
-				[`Validation rejected by ${armLabel}; task returned to pending`, notes ? `Feedback:\n${notes}` : null]
-					.filter((part): part is string => Boolean(part))
-					.join("\n\n"),
-				{ armId: validatorArmId, screenshotPath },
-			);
-			this.log(`Task ${originalTask.subject} returned to pending after validation rejection`);
-		}
-	}
 
-	/** Put validated work behind an explicit, auditable human approval gate. */
-	private async requestHumanTaskApproval(
-		task: Task,
-		notes: string,
-		artifacts: string[],
-	): Promise<void> {
-		const metadata = {
-			...(task.metadata || {}),
-			humanReview: {
-				status: "pending",
-				requestedAt: new Date().toISOString(),
-				artifacts,
-				validationNotes: notes,
-			},
-		};
-		await this.patchTaskViaApi(task.id, { status: "completing", metadata });
-		const artifactList = artifacts.length > 0 ? artifacts.map((item) => `- ${item}`).join("\n") : "- No artifacts listed";
-		await this.sendToHuman({
-			subject: `[coleo] Approval required: ${task.subject} [${task.id}]`,
-			body: `Peer validation passed for **${task.subject}** (task ${task.id}).\n\n${notes ? `Validator notes:\n${notes}\n\n` : ""}Artifacts and diff references:\n${artifactList}\n\nReply with **APPROVE [${task.id}]** to accept these changes, or **REJECT [${task.id}]** followed by feedback to send the work back to the arm.`,
-			headers: {
-				"X-Coleo-Type": "task-review-request",
-				"X-Coleo-Task-Id": task.id,
-				"X-Coleo-Approval-Token": task.id,
-				Priority: "high",
-			},
-		});
-		this.logActivity("brain", "task_human_review_requested", task.id, { artifacts });
+			// Add comment about approval
+			const armLabel = this.getArmDisplayName(validatorArmId);
+			const parts: Array<string | null> = [
+				`Task validated and approved by ${armLabel}`,
+				notes ? `Notes:\n${notes}` : null,
+			];
+			const content = parts
+				.filter((part): part is string => Boolean(part))
+				.join("\n\n");
+			await this.appendTaskComment(taskId, content, {
+				armId: validatorArmId,
+				screenshotPath,
+			});
+
+			this.log(`Task ${taskSubject} approved and completed`);
+		} else {
+			// validation failed - return task to in_progress with feedback
+			// Get the original worker arm from context so we can reassign it.
+			const contextWorkerId = task?.context?.originalWorkerArmId;
+			const originalWorkerId =
+				typeof contextWorkerId === "string"
+					? contextWorkerId
+					: task?.assignedTo || null;
+
+			if (originalWorkerId) {
+				await this.patchTaskViaApi(taskId, {
+					status: "in_progress",
+					assignedTo: originalWorkerId,
+				});
+
+				// Add comment about rejection
+				const armLabel = this.getArmDisplayName(validatorArmId);
+				const parts: Array<string | null> = [
+					`Validation rejected by ${armLabel}`,
+					notes ? `Feedback:\n${notes}` : null,
+				];
+				const content = parts
+					.filter((part): part is string => Boolean(part))
+					.join("\n\n");
+				await this.appendTaskComment(taskId, content, {
+					armId: validatorArmId,
+					screenshotPath,
+				});
+
+				// Notify original worker arm to address issues
+				const feedbackPrompt = `# Task Validation Feedback
+
+**Task ID**: ${taskId}
+**Subject**: ${taskSubject}
+
+## Validation Result: REJECTED
+
+**Validator**: ${validatorArmId}
+
+**Feedback**:
+${notes}
+
+${screenshotPath ? `**Screenshot**: ${screenshotPath}` : ""}
+
+## Next Steps
+
+Please address the issues mentioned in the feedback and resubmit for validation.
+
+When you have fixed the issues, call \`complete_task\` again with an updated summary.`;
+
+				await this.sendPromptToArm(originalWorkerId, feedbackPrompt);
+
+				this.log(
+					`Task ${taskSubject} returned to in_progress for ${originalWorkerId} to address feedback`,
+				);
+			}
+		}
 	}
 
 	private async markArmTaskCompletedAndRelease(
@@ -3796,18 +3646,14 @@ export class Brain {
 		// Handle based on status
 		switch (report.status) {
 			case "blocked": {
-				const blockedReason = blockers.map((blocker) => blocker.trim()).filter(Boolean).join("; ") ||
-					trimmedSummary ||
-					"The reporting arm could not continue";
-				await this.clearArmTaskAssignment(report.armId);
 				if (forwardDecision.action === "defer_task") {
 					// Defer the task and notify user - arm will move to other work
+					// Clear the reporting arm so it can pull other work
+					await this.clearArmTaskAssignment(report.armId);
+
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
 						dependencyBlocked: false,
-						blockedReason,
-						blockedCategory: "unknown",
-						blockedNeedsHuman: true,
 					});
 
 					const body = await this.templates.renderTemplate(
@@ -3829,12 +3675,6 @@ export class Brain {
 							"X-Coleo-Type": "task-deferred",
 						},
 					});
-					await this.patchTaskViaApi(task.id, {
-						status: "blocked",
-						blockedReason,
-						blockedCategory: "unknown",
-						blockedHumanNotifiedAt: now,
-					});
 					this.log(
 						`Task ${task.subject} deferred. Arm ${report.armId} will be assigned to other work.`,
 					);
@@ -3843,9 +3683,6 @@ export class Brain {
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
 						dependencyBlocked: false,
-						blockedReason,
-						blockedCategory: "unknown",
-						blockedNeedsHuman: true,
 					});
 
 					const body = await this.templates.renderTemplate(
@@ -3867,12 +3704,6 @@ export class Brain {
 							"X-Coleo-Task-Id": report.taskId,
 							"X-Coleo-Type": "task-blocked",
 						},
-					});
-					await this.patchTaskViaApi(task.id, {
-						status: "blocked",
-						blockedReason,
-						blockedCategory: "unknown",
-						blockedHumanNotifiedAt: now,
 					});
 					this.log(`Task ${task.subject} blocked. Notified human.`);
 				}
@@ -4469,36 +4300,6 @@ ${originalTask.id}`;
 		this.log(
 			`Approval response for ${originalId}: ${approved ? "approved" : "rejected"}`,
 		);
-		const task = await this.getTaskFromApi(originalId);
-		if (!task) {
-			this.log(`Approval response references unknown task ${originalId}`);
-			return;
-		}
-		const review = task.metadata?.humanReview;
-		if (!review || typeof review !== "object" || (review as { status?: string }).status !== "pending") {
-			this.log(`Ignoring approval response for task ${originalId} without a pending human review`);
-			return;
-		}
-		await this.patchTaskViaApi(task.id, {
-			status: approved ? undefined : "pending",
-			assignedTo: approved ? undefined : null,
-			metadata: {
-				...(task.metadata || {}),
-				humanReview: {
-					...(review as Record<string, unknown>),
-					status: approved ? "approved" : "rejected",
-					resolvedAt: new Date().toISOString(),
-					comment,
-				},
-			},
-		});
-		await this.appendTaskComment(task.id, approved ? `Human approval granted.\n\n${comment}` : `Human approval rejected.\n\n${comment}`, {
-			authorType: "brain",
-		});
-		if (approved) {
-			await this.finalizeTaskCompletion(task.id, comment, task.artifacts || []);
-		}
-		this.logActivity("brain", approved ? "task_human_review_approved" : "task_human_review_rejected", task.id, { comment });
 	}
 
 	/**
@@ -4877,26 +4678,14 @@ ${originalTask.id}`;
 				if (new Date(bug.resolvedAt).getTime() <= oneHourAgo) return false;
 				return bug.blockers.length > 0;
 			});
-			const unresolvedBugs = await this.listBugsFromApi(500);
 
 			for (const bug of recentlyResolvedBugs) {
 				const blockedTaskIds = bug.blockers;
 
 				for (const taskId of blockedTaskIds) {
 					const task = await this.getTaskFromApi(taskId);
-					const hasOtherBlockingBug = unresolvedBugs.some((candidate) =>
-						candidate.blockers.includes(taskId),
-					);
-					if (
-						task &&
-						task.status === "blocked" &&
-						task.blockedCategory === "bug" &&
-						!hasOtherBlockingBug
-					) {
-						await this.patchTaskViaApi(taskId, {
-							status: "pending",
-							assignedTo: null,
-						});
+					if (task && task.status === "blocked") {
+						await this.patchTaskViaApi(taskId, { status: "pending" });
 
 						this.log(
 							`Resuming blocked task ${taskId} after bug ${bug.id} resolution`,
@@ -5265,16 +5054,8 @@ Report findings using bug resolution workflow.`;
 				this.log(`  ${arm.name}: PROCESS ALIVE (PID ${arm.pid}), detecting...`);
 
 				const now = new Date().toISOString();
-				// A restarted brain must not turn a live worker back into an idle arm.
-				// Preserve active persisted states so the idle-prompt loop cannot interrupt it.
-				const detectedStatus =
-					arm.status === "busy" ||
-					arm.status === "running" ||
-					arm.status === "starting"
-						? "busy"
-						: "idle";
 				await this.patchArmViaApi(arm.id, {
-					status: detectedStatus,
+					status: "idle",
 					lastHeartbeat: now,
 					lastActivityAt: now,
 				});
@@ -5311,7 +5092,7 @@ Report findings using bug resolution workflow.`;
 					id: arm.id,
 					name: arm.name,
 					agent: "opencode",
-					status: detectedStatus,
+					status: "idle",
 					pid: arm.pid,
 					startedAt: new Date(),
 				};
@@ -7318,8 +7099,6 @@ Report findings using bug resolution workflow.`;
 				if (arm.currentTask) {
 					await this.patchTaskViaApi(arm.currentTask, {
 						status: "blocked",
-						blockedReason: `Assigned arm ${arm.name} requires a restart: ${analysis.reasoning}`,
-						blockedCategory: "arm",
 					});
 				}
 				await this.escalateStuckArm(arm, analysis);
@@ -7921,8 +7700,6 @@ Report findings using bug resolution workflow.`;
 			if (arm.currentTask) {
 				await this.patchTaskViaApi(arm.currentTask, {
 					status: "blocked",
-					blockedReason: `Assigned arm ${arm.name} was stopped after zombie detection`,
-					blockedCategory: "arm",
 				});
 				this.log(
 					`Marked task ${arm.currentTask} as blocked due to zombie arm kill`,
@@ -7936,205 +7713,6 @@ Report findings using bug resolution workflow.`;
 		} catch (err) {
 			this.log(`Error killing zombie arm ${arm.name}: ${err}`);
 		}
-	}
-
-	/**
-	 * Assign due blocked-task reviews to idle arms in persisted queue order.
-	 */
-	private async reviewBlockedTasks(): Promise<void> {
-		const blockedTasks = await this.listTasksFromApi({
-			status: ["blocked"],
-			limit: 500,
-			includeHousekeeping: true,
-		});
-		if (blockedTasks.length === 0) return;
-
-		const now = new Date();
-		const reservedArmIds = new Set(
-			blockedTasks
-				.filter(
-					(task) =>
-						task.blockedReviewArmId &&
-						task.blockedRecheckAt &&
-						task.blockedRecheckAt.getTime() > now.getTime(),
-				)
-				.map((task) => task.blockedReviewArmId!),
-		);
-		const idleArms = Array.from(this.arms.values())
-			.filter((arm) => arm.status === "idle" && !reservedArmIds.has(arm.id))
-			.sort((left, right) => left.id.localeCompare(right.id));
-		if (idleArms.length === 0) return;
-
-		const dueTasks = selectBlockedTasksForReview(blockedTasks, now, idleArms.length);
-		for (let index = 0; index < dueTasks.length; index++) {
-			const task = dueTasks[index]!;
-			const arm = idleArms[index]!;
-			const startedAt = new Date().toISOString();
-			const leaseExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-			const reason = task.blockedReason || "Blocked before a concrete reason was recorded";
-			const category = task.blockedCategory || "unknown";
-
-			await this.patchTaskViaApi(task.id, {
-				status: "blocked",
-				blockedReason: reason,
-				blockedCategory: category,
-				blockedReviewArmId: arm.id,
-				blockedReviewStartedAt: startedAt,
-				blockedRecheckAt: leaseExpiresAt,
-			});
-
-			const comments = await this.listTaskCommentsFromApi(task.id);
-			const recentDiscussion = comments.length
-				? comments
-						.slice()
-						.reverse()
-						.map(
-							(comment) =>
-								`- ${comment.authorName || humanizeStatus(comment.authorType)}: ${comment.content}`,
-						)
-						.join("\n")
-				: "No discussion has been recorded.";
-			const prompt = await this.templates.renderTemplate(
-				"arm-review-blocked-task.jinja",
-				{
-					task_id: task.id,
-					task_subject: task.subject,
-					task_description: task.description,
-					blocker_reason: reason,
-					blocker_category: humanizeStatus(category),
-					recent_discussion: recentDiscussion,
-				},
-			);
-
-			const prompted = await this.sendPromptToArm(arm.name || arm.id, prompt);
-			if (!prompted) {
-				await this.patchTaskViaApi(task.id, {
-					status: "blocked",
-					blockedReason: reason,
-					blockedCategory: category,
-					blockedReviewArmId: null,
-					blockedReviewStartedAt: null,
-					blockedRecheckAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-				});
-				continue;
-			}
-
-			await this.patchArmViaApi(arm.id, {
-				status: "busy",
-				currentTaskId: task.id,
-				currentTaskSubject: `Review blocked: ${task.subject}`,
-				lastActivityAt: startedAt,
-			});
-			arm.status = "busy";
-			arm.currentTask = task.id;
-			arm.lastActivity = new Date(startedAt);
-			this.logActivity("brain", "blocked_task_review_assigned", task.id, {
-				armId: arm.id,
-				reviewCount: task.blockedReviewCount || 0,
-			});
-		}
-	}
-
-	private async handleBlockedTaskReview(
-		armId: string,
-		payload: {
-			taskId: string;
-			outcome: "unblocked" | "still_blocked" | "irrelevant";
-			summary: string;
-			reason?: string;
-			category?: Task["blockedCategory"];
-			needsHuman?: boolean;
-		},
-	): Promise<void> {
-		const task = await this.getTaskFromApi(payload.taskId);
-		if (!task || task.status !== "blocked") {
-			this.log(`Ignoring blocked-task review for non-blocked task ${payload.taskId}`);
-			if (this.arms.get(armId)?.currentTask === payload.taskId) {
-				await this.clearArmTaskAssignment(armId);
-			}
-			return;
-		}
-		if (task.blockedReviewArmId !== armId) {
-			this.log(
-				`Ignoring blocked-task review for ${task.id} from ${armId}; assigned to ${task.blockedReviewArmId}`,
-			);
-			if (this.arms.get(armId)?.currentTask === task.id) {
-				await this.clearArmTaskAssignment(armId);
-			}
-			return;
-		}
-
-		const summary = payload.summary.trim();
-		const now = new Date();
-		let comment: string;
-		if (payload.outcome === "unblocked") {
-			await this.patchTaskViaApi(task.id, {
-				status: "pending",
-				assignedTo: null,
-				dependencyBlocked: false,
-			});
-			comment = `Blocked-task review from ${this.getArmDisplayName(armId)}: ready to resume.\n\n${summary}`;
-		} else if (payload.outcome === "irrelevant") {
-			await this.patchTaskViaApi(task.id, {
-				status: "cancelled",
-				assignedTo: null,
-				dependencyBlocked: false,
-			});
-			comment = `Blocked-task review from ${this.getArmDisplayName(armId)}: task is no longer relevant and was cancelled.\n\n${summary}`;
-		} else {
-			const reason = payload.reason?.trim();
-			if (!reason) {
-				this.log(`Blocked-task review for ${task.id} omitted a reason`);
-				await this.patchTaskViaApi(task.id, {
-					status: "blocked",
-					blockedReason: task.blockedReason || "Blocked before a concrete reason was recorded",
-					blockedReviewArmId: null,
-					blockedReviewStartedAt: null,
-					blockedRecheckAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-				});
-				await this.clearArmTaskAssignment(armId);
-				return;
-			}
-			const reviewCount = (task.blockedReviewCount || 0) + 1;
-			const needsHuman = payload.needsHuman === true;
-			await this.patchTaskViaApi(task.id, {
-				status: "blocked",
-				blockedReason: reason,
-				blockedCategory: payload.category || task.blockedCategory || "unknown",
-				blockedLastCheckedAt: now.toISOString(),
-				blockedReviewCount: reviewCount,
-				blockedNeedsHuman: needsHuman,
-				blockedReviewArmId: null,
-				blockedReviewStartedAt: null,
-				blockedRecheckAt: getNextBlockedReviewAt(reviewCount, needsHuman, now),
-			});
-			comment = `Blocked-task review from ${this.getArmDisplayName(armId)}: still blocked.\n\nReason: ${reason}\n\n${summary}`;
-
-			if (needsHuman) {
-				await this.sendToHuman({
-					subject: `[coleo] Human input needed: ${task.subject}`,
-					body: `Task ${task.id} remains blocked and an arm determined that human input is required.\n\nBlocker: ${reason}\n\nReview: ${summary}\n\nReply in the task discussion to requeue it immediately.`,
-					headers: {
-						"X-Coleo-Type": "task-blocked-human",
-						"X-Coleo-Task-Id": task.id,
-					},
-				});
-				await this.patchTaskViaApi(task.id, {
-					status: "blocked",
-					blockedReason: reason,
-					blockedCategory: payload.category || task.blockedCategory || "unknown",
-					blockedHumanNotifiedAt: now.toISOString(),
-				});
-			}
-		}
-
-		await this.appendTaskComment(task.id, comment, { armId });
-		await this.clearArmTaskAssignment(armId);
-		this.logActivity("brain", "blocked_task_review_completed", task.id, {
-			armId,
-			outcome: payload.outcome,
-			needsHuman: payload.needsHuman === true,
-		});
 	}
 
 	/**
@@ -8153,14 +7731,11 @@ Report findings using bug resolution workflow.`;
 			.filter(
 				(t) => t.status === "pending" && !t.assignedTo && !t.dependencyBlocked,
 			)
-			.sort((a, b) => {
-				if (!a.orderKey && !b.orderKey) return 0;
-				if (!a.orderKey) return 1;
-				if (!b.orderKey) return -1;
-				if (a.orderKey < b.orderKey) return -1;
-				if (a.orderKey > b.orderKey) return 1;
-				return 0;
-			});
+			.sort(
+				(a, b) =>
+					(a.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+					(b.sortOrder ?? Number.MAX_SAFE_INTEGER),
+			);
 
 		// Check for file claim conflicts before bug blocking
 		await this.checkAndBlockTasksForClaimConflicts(pendingTasks);
@@ -8178,16 +7753,14 @@ Report findings using bug resolution workflow.`;
 				`Task ${task.id} blocked by ${blockingBugs.length} unresolved bug(s)`,
 			);
 
+			await this.patchTaskViaApi(task.id, {
+				status: "blocked",
+			});
+
 			const criticalBugs = blockingBugs.filter(
 				(b) => b.priority === "critical",
 			);
 			const highBugs = blockingBugs.filter((b) => b.priority === "high");
-			await this.patchTaskViaApi(task.id, {
-				status: "blocked",
-				blockedReason: `Unresolved bugs: ${blockingBugs.map((bug) => `${bug.id} (${bug.title})`).join(", ")}`,
-				blockedCategory: "bug",
-				blockedNeedsHuman: criticalBugs.length > 0 || highBugs.length > 0,
-			});
 
 			if (criticalBugs.length > 0 || highBugs.length > 0) {
 				const body = await this.templates.renderTemplate(
@@ -8357,10 +7930,6 @@ Report findings using bug resolution workflow.`;
 					// Mark task as blocked
 					await this.patchTaskViaApi(task.id, {
 						status: "blocked",
-						blockedReason: `Active file claims: ${conflicts
-							.map((conflict) => `${conflict.filePath} by ${conflict.armId}`)
-							.join(", ")}`,
-						blockedCategory: "file_claim",
 					});
 
 					// Notify human about the conflict

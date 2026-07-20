@@ -24,16 +24,6 @@ interface TaskRow {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
-  blocked_at: string | null;
-  blocked_reason: string | null;
-  blocked_category: string | null;
-  blocked_recheck_at: string | null;
-  blocked_last_checked_at: string | null;
-  blocked_review_count: number | null;
-  blocked_needs_human: number | null;
-  blocked_human_notified_at: string | null;
-  blocked_review_arm_id: string | null;
-  blocked_review_started_at: string | null;
   artifacts: string | null;
   mail_thread_id: string | null;
   context: string | null;
@@ -54,16 +44,6 @@ function mapTaskRow(row: TaskRow): Task {
     createdAt: new Date(row.created_at),
     updatedAt: new Date(row.updated_at),
     completedAt: row.completed_at ? new Date(row.completed_at) : undefined,
-    blockedAt: row.blocked_at ? new Date(row.blocked_at) : undefined,
-    blockedReason: row.blocked_reason || undefined,
-    blockedCategory: (row.blocked_category as Task["blockedCategory"]) || undefined,
-    blockedRecheckAt: row.blocked_recheck_at ? new Date(row.blocked_recheck_at) : undefined,
-    blockedLastCheckedAt: row.blocked_last_checked_at ? new Date(row.blocked_last_checked_at) : undefined,
-    blockedReviewCount: row.blocked_review_count ?? 0,
-    blockedNeedsHuman: row.blocked_needs_human === 1,
-    blockedHumanNotifiedAt: row.blocked_human_notified_at ? new Date(row.blocked_human_notified_at) : undefined,
-    blockedReviewArmId: row.blocked_review_arm_id || undefined,
-    blockedReviewStartedAt: row.blocked_review_started_at ? new Date(row.blocked_review_started_at) : undefined,
     artifacts: row.artifacts ? JSON.parse(row.artifacts) : [],
     mailThreadId: row.mail_thread_id || undefined,
     context: row.context ? JSON.parse(row.context) : {},
@@ -134,11 +114,7 @@ describe("Brain runtime flows", () => {
               .query(
                 `SELECT id, subject, description, status, priority, domain, classification,
                         assigned_to, dependency_blocked, sort_order,
-                        created_at, updated_at, completed_at, blocked_at, blocked_reason,
-                        blocked_category, blocked_recheck_at, blocked_last_checked_at,
-                        blocked_review_count, blocked_needs_human, blocked_human_notified_at,
-                        blocked_review_arm_id, blocked_review_started_at,
-                        artifacts, mail_thread_id, context
+                        created_at, updated_at, completed_at, artifacts, mail_thread_id, context
                  FROM tasks
                  WHERE status IN (${statuses.map(() => "?").join(",")})
                  ORDER BY created_at DESC`,
@@ -148,11 +124,7 @@ describe("Brain runtime flows", () => {
               .query(
                 `SELECT id, subject, description, status, priority, domain, classification,
                         assigned_to, dependency_blocked, sort_order,
-                        created_at, updated_at, completed_at, blocked_at, blocked_reason,
-                        blocked_category, blocked_recheck_at, blocked_last_checked_at,
-                        blocked_review_count, blocked_needs_human, blocked_human_notified_at,
-                        blocked_review_arm_id, blocked_review_started_at,
-                        artifacts, mail_thread_id, context
+                        created_at, updated_at, completed_at, artifacts, mail_thread_id, context
                  FROM tasks
                  ORDER BY created_at DESC`,
               )
@@ -205,11 +177,7 @@ describe("Brain runtime flows", () => {
           .query(
             `SELECT id, subject, description, status, priority, domain, classification,
                     assigned_to, dependency_blocked, sort_order,
-                    created_at, updated_at, completed_at, blocked_at, blocked_reason,
-                    blocked_category, blocked_recheck_at, blocked_last_checked_at,
-                    blocked_review_count, blocked_needs_human, blocked_human_notified_at,
-                    blocked_review_arm_id, blocked_review_started_at,
-                    artifacts, mail_thread_id, context
+                    created_at, updated_at, completed_at, artifacts, mail_thread_id, context
              FROM tasks WHERE id = ?`,
           )
           .get(id) as TaskRow;
@@ -226,15 +194,6 @@ describe("Brain runtime flows", () => {
             dependencyBlocked?: boolean;
             artifacts?: string[];
             context?: Record<string, unknown>;
-            blockedReason?: string;
-            blockedCategory?: string;
-            blockedRecheckAt?: string | null;
-            blockedLastCheckedAt?: string | null;
-            blockedReviewCount?: number;
-            blockedNeedsHuman?: boolean;
-            blockedHumanNotifiedAt?: string | null;
-            blockedReviewArmId?: string | null;
-            blockedReviewStartedAt?: string | null;
           };
           const updates: string[] = [];
           const values: unknown[] = [];
@@ -243,19 +202,6 @@ describe("Brain runtime flows", () => {
             values.push(body.status);
             if (body.status === "completed") {
               updates.push("completed_at = ?");
-              values.push(nowIso());
-            }
-            if (body.status !== "blocked") {
-              updates.push(
-                "blocked_at = NULL",
-                "blocked_reason = NULL",
-                "blocked_category = NULL",
-                "blocked_recheck_at = NULL",
-                "blocked_review_arm_id = NULL",
-                "blocked_review_started_at = NULL",
-              );
-            } else {
-              updates.push("blocked_at = COALESCE(blocked_at, ?)");
               values.push(nowIso());
             }
           }
@@ -275,23 +221,6 @@ describe("Brain runtime flows", () => {
             updates.push("context = ?");
             values.push(JSON.stringify(body.context));
           }
-          const blockedFields: Array<[keyof typeof body, string, (value: unknown) => unknown]> = [
-            ["blockedReason", "blocked_reason", (value) => value],
-            ["blockedCategory", "blocked_category", (value) => value],
-            ["blockedRecheckAt", "blocked_recheck_at", (value) => value],
-            ["blockedLastCheckedAt", "blocked_last_checked_at", (value) => value],
-            ["blockedReviewCount", "blocked_review_count", (value) => value],
-            ["blockedNeedsHuman", "blocked_needs_human", (value) => value ? 1 : 0],
-            ["blockedHumanNotifiedAt", "blocked_human_notified_at", (value) => value],
-            ["blockedReviewArmId", "blocked_review_arm_id", (value) => value],
-            ["blockedReviewStartedAt", "blocked_review_started_at", (value) => value],
-          ];
-          for (const [field, column, transform] of blockedFields) {
-            if (body[field] !== undefined) {
-              updates.push(`${column} = ?`);
-              values.push(transform(body[field]));
-            }
-          }
           updates.push("updated_at = ?");
           values.push(nowIso());
           values.push(taskId);
@@ -302,11 +231,7 @@ describe("Brain runtime flows", () => {
           .query(
             `SELECT id, subject, description, status, priority, domain, classification,
                     assigned_to, dependency_blocked, sort_order,
-                    created_at, updated_at, completed_at, blocked_at, blocked_reason,
-                    blocked_category, blocked_recheck_at, blocked_last_checked_at,
-                    blocked_review_count, blocked_needs_human, blocked_human_notified_at,
-                    blocked_review_arm_id, blocked_review_started_at,
-                    artifacts, mail_thread_id, context
+                    created_at, updated_at, completed_at, artifacts, mail_thread_id, context
              FROM tasks WHERE id = ?`,
           )
           .get(taskId) as TaskRow | null;
@@ -878,7 +803,7 @@ describe("Brain runtime flows", () => {
     ).toBe(true);
   });
 
-  it("moves uncached tasks to validation and does not recurse commit follow-up tasks", async () => {
+  it("completes uncached tasks and does not recurse commit follow-up tasks", async () => {
     const now = nowIso();
     db.run(
       "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -903,6 +828,9 @@ describe("Brain runtime flows", () => {
     expect(
       (db.query("SELECT status FROM tasks WHERE id = ?").get("task-db-only") as { status: string }).status,
     ).toBe("completing");
+    expect(
+      (db.query("SELECT status FROM tasks WHERE id = ?").get("task-commit-followup") as { status: string }).status,
+    ).toBe("completed");
     expect(
       (db.query("SELECT COUNT(*) AS count FROM tasks WHERE subject LIKE 'Commit changes for: Commit changes for:%'").get() as { count: number }).count,
     ).toBe(0);
@@ -988,9 +916,8 @@ describe("Brain runtime flows", () => {
     const now = nowIso();
     db.run(
       `INSERT INTO tasks (
-         id, subject, description, status, priority, dependency_blocked,
-         blocked_reason, blocked_category, blocked_recheck_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         id, subject, description, status, priority, dependency_blocked, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "task-blocked-non-dependency",
         "Blocked without dependency",
@@ -998,18 +925,14 @@ describe("Brain runtime flows", () => {
         "blocked",
         "normal",
         0,
-        "Blocked without a dependency reason",
-        "unknown",
-        now,
         now,
         now,
       ],
     );
     db.run(
       `INSERT INTO tasks (
-         id, subject, description, status, priority, dependency_blocked,
-         blocked_reason, blocked_category, blocked_recheck_at, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         id, subject, description, status, priority, dependency_blocked, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         "task-blocked-dependency",
         "Blocked with dependency flag",
@@ -1017,9 +940,6 @@ describe("Brain runtime flows", () => {
         "blocked",
         "normal",
         1,
-        "Waiting for dependency",
-        "dependency",
-        now,
         now,
         now,
       ],
@@ -1061,66 +981,69 @@ describe("Brain runtime flows", () => {
     ).toBe(true);
   });
 
-  it("finalizes completing work exactly once after human approval", async () => {
-    const task = {
-      id: "task-human-review",
-      subject: "Human review task",
-      description: "Awaiting approval",
-      status: "completing",
-      priority: "normal",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      artifacts: ["abc123"],
-      metadata: { humanReview: { status: "pending" } },
-    } satisfies Task;
-    const finalized: Array<{ taskId: string; summary: string; artifacts: string[] }> = [];
+  it("does not finalize a task until peer validation approves it", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-peer-validation", "Peer validation task", "needs validation", "in_progress", "normal", "arm-1", now, now],
+    );
 
-    (brain as any).getTaskFromApi = async () => task;
-    (brain as any).patchTaskViaApi = async () => task;
-    (brain as any).appendTaskComment = async () => undefined;
-    (brain as any).finalizeTaskCompletion = async (
-      taskId: string,
-      summary: string,
-      artifacts: string[],
-    ) => finalized.push({ taskId, summary, artifacts });
+    await (brain as any).completeTask("task-peer-validation", "Done", ["src/fix.ts"]);
 
-    await (brain as any).handleApprovalResponse(task.id, true, "Looks good.");
+    const originalTask = db
+      .query("SELECT status, assigned_to FROM tasks WHERE id = ?")
+      .get("task-peer-validation") as { status: string; assigned_to: string | null };
+    expect(originalTask.status).toBe("completing");
+    expect(originalTask.assigned_to).toBeNull();
 
-    expect(finalized).toEqual([{
-      taskId: task.id,
-      summary: "Looks good.",
-      artifacts: ["abc123"],
-    }]);
+    const validationTask = db
+      .query("SELECT id, subject, status FROM tasks WHERE subject = 'Validate completion: Peer validation task' ORDER BY created_at DESC LIMIT 1")
+      .get() as { id: string; subject: string; status: string } | null;
+    expect(validationTask).not.toBeNull();
+
+    await (brain as any).handleTaskValidation(
+      "task-peer-validation",
+      "arm-1",
+      true,
+      "Looks good",
+    );
+
+    expect(
+      (db.query("SELECT status FROM tasks WHERE id = ?").get("task-peer-validation") as { status: string }).status,
+    ).toBe("completed");
   });
 
-  it("returns human-rejected work to the claimable queue", async () => {
-    const task = {
-      id: "task-human-rejected",
-      subject: "Rejected task",
-      description: "Needs another pass",
-      status: "completing",
-      priority: "normal",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      artifacts: [],
-      metadata: { humanReview: { status: "pending" } },
-    } satisfies Task;
-    const patches: Array<Record<string, unknown>> = [];
-    let finalized = false;
+  it("returns a completing task to in_progress when peer validation rejects it", async () => {
+    const now = nowIso();
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-peer-reject", "Peer reject task", "needs validation", "in_progress", "normal", "arm-1", now, now],
+    );
 
-    (brain as any).getTaskFromApi = async () => task;
-    (brain as any).patchTaskViaApi = async (_taskId: string, patch: Record<string, unknown>) => {
-      patches.push(patch);
-      return task;
-    };
-    (brain as any).appendTaskComment = async () => undefined;
-    (brain as any).finalizeTaskCompletion = async () => {
-      finalized = true;
+    await (brain as any).completeTask("task-peer-reject", "Done", []);
+
+    expect(
+      (db.query("SELECT status FROM tasks WHERE id = ?").get("task-peer-reject") as { status: string }).status,
+    ).toBe("completing");
+
+    const prompts: string[] = [];
+    (brain as any).sendPromptToArm = async (_armId: string, message: string) => {
+      prompts.push(message);
+      return true;
     };
 
-    await (brain as any).handleApprovalResponse(task.id, false, "Please revise it.");
+    await (brain as any).handleTaskValidation(
+      "task-peer-reject",
+      "arm-1",
+      false,
+      "Missing tests",
+    );
 
-    expect(patches[0]).toMatchObject({ status: "pending", assignedTo: null });
-    expect(finalized).toBe(false);
+    const task = db
+      .query("SELECT status, assigned_to FROM tasks WHERE id = ?")
+      .get("task-peer-reject") as { status: string; assigned_to: string | null };
+    expect(task.status).toBe("in_progress");
+    expect(task.assigned_to).toBe("arm-1");
+    expect(prompts.some((p) => p.includes("Validation Result: REJECTED"))).toBe(true);
   });
 });
