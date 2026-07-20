@@ -53,7 +53,7 @@ export interface TaskMetadata extends JsonObject {
   ui?: TaskUiMetadata;
 }
 
-export interface BugUiMetadata extends UiMetadata {}
+export type BugUiMetadata = UiMetadata;
 
 export interface BugMetadata extends JsonObject {
   ui?: BugUiMetadata;
@@ -900,6 +900,39 @@ class ApiClient {
       active: number;
       blocked: number;
     }>('/tasks/stats');
+  }
+
+  async getTaskBurndown(params: {
+    start: string;
+    end: string;
+    bin?: 'hour' | 'day' | 'week' | 'month';
+    status?: string;
+    assignedTo?: string;
+    domain?: string;
+    timeZone?: string;
+  }) {
+    const query = new URLSearchParams();
+    query.set('start', params.start);
+    query.set('end', params.end);
+    if (params.bin) query.set('bin', params.bin);
+    if (params.status?.trim()) query.set('status', params.status);
+    if (params.assignedTo?.trim()) query.set('assignedTo', params.assignedTo);
+    if (params.domain?.trim()) query.set('domain', params.domain);
+    if (params.timeZone?.trim()) query.set('timeZone', params.timeZone);
+
+    return this.request<{
+      start: string;
+      end: string;
+      bin: 'hour' | 'day' | 'week' | 'month';
+      timeZone: string;
+      buckets: Array<{
+        bucket: string;
+        created: number;
+        completed: number;
+        cumulativeCreated: number;
+        cumulativeCompleted: number;
+      }>;
+    }>(`/tasks/burndown?${query.toString()}`);
   }
 
   async getTaskBlockingBugs(taskId: string) {

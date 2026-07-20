@@ -3,7 +3,7 @@ import { Download, ImageDown } from 'lucide-react';
 import { api } from '@/lib';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/Card';
 
-type Bin = 'hour' | 'day';
+type Bin = 'hour' | 'day' | 'week' | 'month';
 type Range = '7d' | '30d' | 'custom';
 type Bucket = Awaited<ReturnType<typeof api.getTaskBurndown>>['buckets'][number];
 
@@ -12,6 +12,7 @@ interface TaskBurndownWidgetProps {
 }
 
 const toDateValue = (date: Date) => date.toISOString().slice(0, 10);
+const clampBucketSpan = (length: number) => Math.max(1, length);
 
 export function TaskBurndownWidget({ refreshKey }: TaskBurndownWidgetProps) {
   const [bin, setBin] = useState<Bin>('day');
@@ -76,7 +77,7 @@ export function TaskBurndownWidget({ refreshKey }: TaskBurndownWidgetProps) {
 
   const max = Math.max(1, ...buckets.flatMap((bucket) => [bucket.created, bucket.completed]));
   const point = (bucket: Bucket, index: number, value: 'created' | 'completed') => {
-    const x = buckets.length < 2 ? 450 : 42 + index * 816 / (buckets.length - 1);
+    const x = 42 + index * 816 / clampBucketSpan(buckets.length - 1);
     return `${x},${226 - bucket[value] / max * 184}`;
   };
   const line = (value: 'created' | 'completed') => buckets.map((bucket, index) => point(bucket, index, value)).join(' ');
@@ -95,7 +96,10 @@ export function TaskBurndownWidget({ refreshKey }: TaskBurndownWidgetProps) {
           <option value="7d">Last 7 days</option><option value="30d">Last 30 days</option><option value="custom">Custom range</option>
         </select>
         <select value={bin} onChange={(event) => setBin(event.target.value as Bin)} className="rounded border border-border bg-background px-2 py-1">
-          <option value="day">Daily</option><option value="hour">Hourly</option>
+          <option value="hour">Hourly</option>
+          <option value="day">Daily</option>
+          <option value="week">Weekly</option>
+          <option value="month">Monthly</option>
         </select>
         {range === 'custom' && <><input aria-label="Burndown start date" type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="rounded border border-border bg-background px-2 py-1" /><input aria-label="Burndown end date" type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="rounded border border-border bg-background px-2 py-1" /></>}
         <input aria-label="Filter task status" placeholder="Status" value={status} onChange={(event) => setStatus(event.target.value)} className="w-24 rounded border border-border bg-background px-2 py-1" />
@@ -105,24 +109,97 @@ export function TaskBurndownWidget({ refreshKey }: TaskBurndownWidgetProps) {
         <button type="button" onClick={exportPng} className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 hover:bg-default-100"><ImageDown className="h-3 w-3" />PNG</button>
       </div>
       <div className="flex gap-4 text-xs">
-        <button type="button" onClick={() => setShowCreated(!showCreated)} className={showCreated ? 'text-blue-600' : 'text-muted-foreground line-through'}><span className="mr-1 inline-block h-2 w-2 rounded-full bg-blue-500" />Created</button>
-        <button type="button" onClick={() => setShowCompleted(!showCompleted)} className={showCompleted ? 'text-green-600' : 'text-muted-foreground line-through'}><span className="mr-1 inline-block h-2 w-2 rounded-full bg-green-500" />Completed</button>
+        <button
+          type="button"
+          onClick={() => setShowCreated(!showCreated)}
+          className={showCreated ? 'text-blue-600' : 'text-muted-foreground line-through'}
+        >
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-blue-500" />
+          Created
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowCompleted(!showCompleted)}
+          className={showCompleted ? 'text-green-600' : 'text-muted-foreground line-through'}
+        >
+          <span className="mr-1 inline-block h-2 w-2 rounded-full bg-green-500" />
+          Completed
+        </button>
       </div>
-      {loading ? <div className="h-56 animate-pulse rounded bg-secondary" /> : buckets.length === 0 ? <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">No task activity for the selected range.</div> : <div className="relative">
-        <svg ref={svgRef} viewBox="0 0 900 260" className="h-56 w-full" role="img" aria-label="Tasks created and completed over time" onMouseLeave={() => setHovered(null)} onMouseMove={(event) => {
-          const rect = event.currentTarget.getBoundingClientRect();
-          const x = (event.clientX - rect.left) / rect.width * 900;
-           setHovered(Math.max(0, Math.min(buckets.length - 1, Math.round((x - 42) / 816 * (buckets.length - 1)))));
-        }}>
-          {[42, 88, 134, 180, 226].map((y) => <line key={y} x1="42" x2="858" y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />)}
-          <text x="4" y="46" fill="#6b7280" fontSize="11">{max}</text><text x="12" y="230" fill="#6b7280" fontSize="11">0</text>
-          {showCreated && <polyline points={line('created')} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinejoin="round" />}
-          {showCompleted && <polyline points={line('completed')} fill="none" stroke="#22c55e" strokeWidth="3" strokeLinejoin="round" />}
-          {hovered !== null && <line x1={point(buckets[hovered], hovered, 'created').split(',')[0]} x2={point(buckets[hovered], hovered, 'created').split(',')[0]} y1="42" y2="226" stroke="#9ca3af" strokeDasharray="3 3" />}
-          <text x="42" y="252" fill="#6b7280" fontSize="11">{buckets[0]?.bucket}</text><text x="858" y="252" textAnchor="end" fill="#6b7280" fontSize="11">{buckets.at(-1)?.bucket}</text>
-        </svg>
-        {selected && <div className="pointer-events-none absolute right-2 top-2 rounded border border-border bg-background/95 px-2 py-1 text-xs shadow"><strong>{selected.bucket}</strong><br />Created: {selected.created} ({selected.cumulativeCreated} cumulative)<br />Completed: {selected.completed} ({selected.cumulativeCompleted} cumulative)</div>}
-      </div>}
+      {loading
+        ? <div className="h-56 animate-pulse rounded bg-secondary" />
+        : buckets.length === 0
+          ? <div className="flex h-56 items-center justify-center text-sm text-muted-foreground">No task activity for the selected range.</div>
+          : <div className="relative">
+            <svg
+              ref={svgRef}
+              viewBox="0 0 900 260"
+              className="h-56 w-full"
+              role="img"
+              aria-label="Tasks created and completed over time"
+              onMouseLeave={() => setHovered(null)}
+              onMouseMove={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                const x = (event.clientX - rect.left) / rect.width * 900;
+                const pointX = Math.round((x - 42) / 816 * clampBucketSpan(buckets.length - 1));
+                setHovered(Math.max(0, Math.min(buckets.length - 1, pointX)));
+              }}
+            >
+              {[42, 88, 134, 180, 226].map((y) => (
+                <line
+                  key={y}
+                  x1="42"
+                  x2="858"
+                  y1={y}
+                  y2={y}
+                  stroke="#e5e7eb"
+                  strokeWidth="1"
+                />
+              ))}
+              <text x="4" y="46" fill="#6b7280" fontSize="11">{max}</text>
+              <text x="12" y="230" fill="#6b7280" fontSize="11">0</text>
+              {showCreated && (
+                <polyline
+                  points={line('created')}
+                  fill="none"
+                  stroke="#3b82f6"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                />
+              )}
+              {showCompleted && (
+                <polyline
+                  points={line('completed')}
+                  fill="none"
+                  stroke="#22c55e"
+                  strokeWidth="3"
+                  strokeLinejoin="round"
+                />
+              )}
+              {hovered !== null && (
+                <line
+                  x1={point(buckets[hovered], hovered, 'created').split(',')[0]}
+                  x2={point(buckets[hovered], hovered, 'created').split(',')[0]}
+                  y1="42"
+                  y2="226"
+                  stroke="#9ca3af"
+                  strokeDasharray="3 3"
+                />
+              )}
+              <text x="42" y="252" fill="#6b7280" fontSize="11">{buckets[0]?.bucket}</text>
+              <text x="858" y="252" textAnchor="end" fill="#6b7280" fontSize="11">{buckets.at(-1)?.bucket}</text>
+            </svg>
+            {selected && (
+              <div className="pointer-events-none absolute right-2 top-2 rounded border border-border bg-background/95 px-2 py-1 text-xs shadow">
+                <strong>{selected.bucket}</strong>
+                <br />
+                Created: {selected.created} ({selected.cumulativeCreated} cumulative)
+                <br />
+                Completed: {selected.completed} ({selected.cumulativeCompleted} cumulative)
+              </div>
+            )}
+          </div>
+      }
     </CardContent>
   </Card>;
 }

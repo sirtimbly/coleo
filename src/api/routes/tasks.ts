@@ -280,6 +280,69 @@ function determineConsensusStatus(entries: ConsensusEntry[]): ConsensusState {
 export function createTasksRoutes() {
 	const app = new Hono<TasksContext>();
 
+	const toISODate = (value: string): string | null => {
+		const date = new Date(value);
+		return Number.isNaN(date.getTime()) ? null : date.toISOString();
+	};
+
+	const clampToBucketStart = (iso: string, bin: "hour" | "day" | "week" | "month"): Date => {
+		const value = new Date(iso);
+		if (bin === "hour") {
+			value.setMinutes(0, 0, 0);
+			return value;
+		}
+		if (bin === "day") {
+			value.setHours(0, 0, 0, 0);
+			return value;
+		}
+		if (bin === "week") {
+			// Use Sunday as the start of the week for continuity with SQLite date bucketing.
+			const day = value.getDay();
+			const diff = value.getDate() - day;
+			value.setDate(diff);
+			value.setHours(0, 0, 0, 0);
+			return value;
+		}
+
+		value.setDate(1);
+		value.setHours(0, 0, 0, 0);
+		return value;
+	};
+
+	const formatBucket = (date: Date, bin: "hour" | "day" | "week" | "month"): string => {
+		if (bin === "hour") {
+			return date.toISOString().slice(0, 13).replace("T", " ") + ":00";
+		}
+		if (bin === "day") {
+			return date.toISOString().slice(0, 10);
+		}
+		if (bin === "week") {
+			const sunday = date.toISOString().slice(0, 10);
+			const next = new Date(date);
+			next.setDate(next.getDate() + 6);
+			return `${sunday}..${next.toISOString().slice(0, 10)}`;
+		}
+		return date.toISOString().slice(0, 7);
+	};
+
+	const nextBucket = (date: Date, bin: "hour" | "day" | "week" | "month"): Date => {
+		const next = new Date(date);
+		switch (bin) {
+			case "hour":
+				next.setHours(next.getHours() + 1);
+				return next;
+			case "day":
+				next.setDate(next.getDate() + 1);
+				return next;
+			case "week":
+				next.setDate(next.getDate() + 7);
+				return next;
+			case "month":
+				next.setMonth(next.getMonth() + 1);
+				return next;
+		}
+	};
+
 	/**
 	 * List all tasks
 	 * GET /api/tasks
@@ -405,6 +468,135 @@ export function createTasksRoutes() {
 				total: countRow.count,
 			},
 			counts,
+		});
+	});
+
+	/**
+	 * Get task burndown data for a date range
+	 * GET /api/tasks/burndown
+	 * Query params:
+	 *   - start: ISO start timestamp (required)
+	 *   - end: ISO end timestamp (required)
+	 *   - bin: hour | day | week | month (default: day)
+	 *   - status: filter by exact status
+	 *   - assignedTo: filter by assigned arm id
+	 *   - domain: filter by task domain
+	 */
+	app.get("/burndown", async (c) => {
+		const db = c.get("db");
+
+		const start = toISODate(c.req.query("start") || "");
+		const end = toISODate(c.req.query("end") || "");
+		const bin = (c.req.query("bin") as "hour" | "day" | "week" | "month" | undefined) || "day";
+		const statusFilter = c.req.query("status")?.trim();
+		const assignedToFilter = c.req.query("assignedTo")?.trim();
+		const domainFilter = c.req.query("domain")?.trim();
+		const timeZone = c.req.query("timeZone");
+
+		const validBins = new Set(["hour", "day", "week", "month"]);
+		if (!validBins.has(bin)) {
+			throw HttpError.badRequest(`Invalid bin: ${bin}`);
+		}
+
+		if (start === null || end === null) {
+			throw HttpError.badRequest("start and end are required and must be valid ISO timestamps");
+		}
+
+		const startDate = new Date(start);
+		const endDate = new Date(end);
+		if (startDate >= endDate) {
+			throw HttpError.badRequest("start must be before end");
+		}
+
+		const conditions: string[] = ["1 = 1"];
+		const params: Array<string> = [];
+
+		if (statusFilter) {
+			conditions.push("t.status = ?");
+			params.push(statusFilter);
+		}
+		if (assignedToFilter) {
+			conditions.push("t.assigned_to = ?");
+			params.push(assignedToFilter);
+		}
+		if (domainFilter) {
+			conditions.push("t.domain = ?");
+			params.push(domainFilter);
+		}
+
+		const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+		const baseParams = [...params, start, end];
+		const createdRows = db
+			.query(`
+					SELECT created_at, status, assigned_to, domain
+					FROM tasks t
+					${whereClause}
+					  AND created_at BETWEEN ? AND ?
+					ORDER BY created_at ASC
+				`)
+				.all(...baseParams) as Array<{
+					created_at: string;
+					status: string;
+					assigned_to: string | null;
+					domain: string | null;
+				}>;
+
+		const completedRows = db
+			.query(`
+					SELECT completed_at
+					FROM tasks t
+					${whereClause}
+					  AND completed_at IS NOT NULL
+					  AND completed_at BETWEEN ? AND ?
+					ORDER BY completed_at ASC
+				`)
+				.all(...baseParams) as Array<{ completed_at: string }>;
+
+		const bucketStart = clampToBucketStart(startDate.toISOString(), bin);
+		const bucketEnd = clampToBucketStart(endDate.toISOString(), bin);
+
+		const buckets = new Map<string, { created: number; completed: number }>();
+		for (let current = bucketStart; current <= bucketEnd; current = nextBucket(current, bin)) {
+			buckets.set(formatBucket(current, bin), { created: 0, completed: 0 });
+		}
+
+		for (const row of createdRows) {
+			const bucket = formatBucket(clampToBucketStart(row.created_at, bin), bin);
+			const bucketRow = buckets.get(bucket);
+			if (bucketRow) {
+				bucketRow.created += 1;
+			}
+		}
+
+		for (const row of completedRows) {
+			const bucket = formatBucket(clampToBucketStart(row.completed_at, bin), bin);
+			const bucketRow = buckets.get(bucket);
+			if (bucketRow) {
+				bucketRow.completed += 1;
+			}
+		}
+
+		let cumulativeCreated = 0;
+		let cumulativeCompleted = 0;
+		const orderedBuckets = [...buckets.entries()].map(([bucket, counts]) => {
+			cumulativeCreated += counts.created;
+			cumulativeCompleted += counts.completed;
+			return {
+				bucket,
+				created: counts.created,
+				completed: counts.completed,
+				cumulativeCreated,
+				cumulativeCompleted,
+			};
+		});
+
+		return c.json({
+			start: startDate.toISOString(),
+			end: endDate.toISOString(),
+			bin,
+			timeZone: timeZone || "UTC",
+			buckets: orderedBuckets,
 		});
 	});
 

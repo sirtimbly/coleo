@@ -73,7 +73,9 @@ export function TaskDiscussionPanel({
     try {
       const result = await api.getUnreadDiscussionCount(taskId, currentUserId);
       setUnreadCount(result.unreadCount);
-    } catch {}
+    } catch {
+      setUnreadCount(0);
+    }
   }, [taskId, currentUserId]);
 
   const handleWSMessage = useCallback((msg: WebSocketMessage) => {

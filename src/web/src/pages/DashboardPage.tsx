@@ -11,6 +11,7 @@ import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import { RefreshGate } from '@/lib/refresh-gate';
 import { hasOpenedProjectSetup, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { ArmHostProvidersSection } from '@/components/ArmHostProvidersSection';
+import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
 
 type Navigate = (pathname: string, search?: string) => void;
 
@@ -755,6 +756,7 @@ export function DashboardPage() {
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [taskStatsLoading, setTaskStatsLoading] = useState(true);
+  const [taskBurndownRefreshKey, setTaskBurndownRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
@@ -870,6 +872,7 @@ export function DashboardPage() {
       setTaskStats(null);
     } finally {
       setTaskStatsLoading(false);
+      setTaskBurndownRefreshKey((current) => current + 1);
     }
   }, []);
 
@@ -1107,6 +1110,7 @@ export function DashboardPage() {
         <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
 
         <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
+        <TaskBurndownWidget refreshKey={taskBurndownRefreshKey} />
 
       </div>
     </div>
