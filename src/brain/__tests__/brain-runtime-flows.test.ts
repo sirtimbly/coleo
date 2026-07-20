@@ -75,6 +75,7 @@ describe("Brain runtime flows", () => {
   let db: Database;
   let brain: Brain;
   let sentToHuman: Array<{ subject: string; body: string }>;
+  let apiCalls: Array<{ path: string; options: RequestInit }>;
 
   beforeEach(async () => {
     testDir = join(
@@ -97,6 +98,7 @@ describe("Brain runtime flows", () => {
     await (brain as any).templates.ensureTemplatesExist();
 
     sentToHuman = [];
+    apiCalls = [];
     (brain as any).sendToHuman = async (message: { subject: string; body: string }) => {
       sentToHuman.push(message);
     };
@@ -105,6 +107,7 @@ describe("Brain runtime flows", () => {
     (brain as any).inbox.list = async () => [];
 
     (brain as any).apiRequest = async <T>(path: string, options: RequestInit = {}) => {
+      apiCalls.push({ path, options });
       if (path === "/api/status") {
         return {
           infrastructure: {
@@ -804,6 +807,76 @@ describe("Brain runtime flows", () => {
         expect.stringContaining("Approval needed: delete file"),
       ]),
     );
+  });
+
+  it("applies priority-specific responses when bugs are reported", async () => {
+    const arms = (brain as any).arms as Map<string, Arm>;
+    arms.set("arm-busy", {
+      id: "arm-busy",
+      name: "Busy arm",
+      status: "busy",
+      currentTask: "task-review",
+    } as Arm);
+    arms.set("arm-idle", {
+      id: "arm-idle",
+      name: "Idle arm",
+      status: "idle",
+    } as Arm);
+
+    const prompts: Array<{ armId: string; message: string }> = [];
+    (brain as any).sendPromptToArm = async (armId: string, message: string) => {
+      prompts.push({ armId, message });
+      return true;
+    };
+
+    await (brain as any).applyBugPriorityResponse("bug-critical", "critical", {
+      title: "Service down",
+      description: "Infrastructure unavailable",
+      source: "system_detected",
+    });
+    expect((brain as any).state.status).toBe("paused");
+    expect(prompts).toEqual([
+      expect.objectContaining({ armId: "arm-busy" }),
+    ]);
+    await (brain as any).checkResolvedBugsAndResumeTasks();
+    expect((brain as any).state.status).toBe("running");
+
+    await (brain as any).applyBugPriorityResponse("bug-high", "high", {
+      title: "Build fail",
+      description: "Compilation is failing",
+      source: "arm_reported",
+    });
+    const highClaim = apiCalls.find(
+      ({ path }) => path === "/api/bugs/bug-high/claim",
+    );
+    expect(highClaim).toBeDefined();
+    const claimedArmId = JSON.parse(
+      String(highClaim?.options.body || "{}"),
+    ).armId as string;
+    expect(arms.get(claimedArmId)?.status).toBe("idle");
+    expect(arms.get(claimedArmId)?.currentTask).toBeUndefined();
+
+    db.run(
+      "UPDATE tasks SET status = 'in_progress', assigned_to = 'arm-busy' WHERE id = 'task-review'",
+    );
+    await (brain as any).applyBugPriorityResponse("bug-medium", "medium", {
+      title: "Feature should improve",
+      description: "An isolated improvement should be made",
+      source: "arm_reported",
+      sourceTaskId: "task-review",
+    });
+    expect(
+      db.query("SELECT status, assigned_to FROM tasks WHERE id = 'task-review'").get(),
+    ).toEqual({ status: "pending", assigned_to: null });
+
+    await (brain as any).applyBugPriorityResponse("bug-low", "low", {
+      title: "Minor spacing",
+      description: "Cosmetic alignment",
+      source: "human_reported",
+    });
+    expect(
+      apiCalls.some(({ path }) => path === "/api/bugs/bug-low/claim"),
+    ).toBe(false);
   });
 
   it("creates follow-up tasks used by human mail and status-report workflows", async () => {

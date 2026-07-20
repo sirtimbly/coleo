@@ -829,6 +829,12 @@ export class Brain {
 
 		// Step 2.5: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
+		if (this.state.status === "paused") {
+			await this.saveState();
+			await this.notifyObservatory("paused");
+			this.log("Brain work remains paused while a critical bug is unresolved");
+			return;
+		}
 
 		// Steps 3-6 require API server for arm communication
 		if (infraHealth.canWorkWithArms) {
@@ -4838,15 +4844,7 @@ ${originalTask.id}`;
 					body: JSON.stringify({ humanNotified: true }),
 				});
 			}
-
-			// Handle escalation based on priority and impact
-			if (priority === "medium") {
-				// For medium priority bugs, evaluate impacted active tasks and log for resolution
-				await this.handleMediumPriorityBugEscalation(storedBugId, payload);
-			} else if (priority === "low") {
-				// For low priority bugs, continue work but track for later resolution
-				this.log(`Low priority bug ${storedBugId} logged for later resolution`);
-			}
+			await this.applyBugPriorityResponse(storedBugId, priority, payload);
 
 			// If bug blocks a task, try to assign an arm to investigate
 			if (payload.sourceTaskId) {
@@ -4860,6 +4858,68 @@ ${originalTask.id}`;
 		} catch (err) {
 			this.log(`Error handling bug report: ${err}`);
 			return null;
+		}
+	}
+
+	private async applyBugPriorityResponse(
+		bugId: string,
+		priority: "low" | "medium" | "high" | "critical",
+		payload: {
+			title: string;
+			description: string;
+			source: string;
+			sourceTaskId?: string;
+		},
+	): Promise<void> {
+		switch (priority) {
+			case "critical": {
+				this.state.status = "paused";
+				await this.saveState();
+				for (const arm of this.arms.values()) {
+					if (arm.status === "busy" || arm.status === "running") {
+						await this.sendPromptToArm(
+							arm.id,
+							`Critical bug ${bugId} (${payload.title}) paused project work. Stop at a safe point and wait for resolution.`,
+						);
+					}
+				}
+				this.logActivity("brain", "critical_bug_paused_work", bugId, {
+					title: payload.title,
+				});
+				break;
+			}
+			case "high": {
+				const arm = Array.from(this.arms.values()).find(
+					(candidate) => candidate.status === "idle" && !candidate.currentTask,
+				);
+				if (arm) {
+					await this.apiRequest(`/api/bugs/${encodeURIComponent(bugId)}/claim`, {
+						method: "POST",
+						body: JSON.stringify({ armId: arm.id }),
+					});
+					this.log(`Escalated high priority bug ${bugId} to available arm ${arm.id}`);
+				} else {
+					this.log(`High priority bug ${bugId} is waiting for an available arm`);
+				}
+				break;
+			}
+			case "medium": {
+				if (payload.sourceTaskId) {
+					const task = await this.getTaskFromApi(payload.sourceTaskId);
+					if (task && task.status !== "completed" && task.status !== "failed") {
+						await this.patchTaskViaApi(task.id, {
+							status: "pending",
+							assignedTo: null,
+						});
+						this.log(`Released task ${task.id} for reassignment after medium priority bug ${bugId}`);
+					}
+				}
+				await this.handleMediumPriorityBugEscalation(bugId, payload);
+				break;
+			}
+			case "low":
+				this.log(`Low priority bug ${bugId} logged for later resolution`);
+				break;
 		}
 	}
 
@@ -4878,6 +4938,15 @@ ${originalTask.id}`;
 				return bug.blockers.length > 0;
 			});
 			const unresolvedBugs = await this.listBugsFromApi(500);
+			if (
+				this.state.status === "paused" &&
+				!unresolvedBugs.some((bug) => bug.priority === "critical")
+			) {
+				this.state.status = "running";
+				await this.saveState();
+				await this.notifyObservatory("resumed");
+				this.log("Resuming Brain work after all critical bugs were resolved");
+			}
 
 			for (const bug of recentlyResolvedBugs) {
 				const blockedTaskIds = bug.blockers;
