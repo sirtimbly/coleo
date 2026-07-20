@@ -202,6 +202,54 @@ describe("prompt-generator dependencies", () => {
     db.close();
   });
 
+  it("selects validation follow-ups instead of unassigned completing work", async () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    insertTask(db, {
+      id: "original-task",
+      subject: "Original task",
+      status: "completing",
+      phase: "Phase 1",
+    });
+    insertTask(db, {
+      id: "validation-task",
+      subject: "Validate completion: Original task",
+      status: "pending",
+      priority: "high",
+      phase: "Phase 1",
+      source_ref: "original-task",
+      order_key: "a",
+    });
+    insertTask(db, {
+      id: "next-task",
+      subject: "Next implementation task",
+      status: "pending",
+      phase: "Phase 1",
+      order_key: "b",
+    });
+
+    const validation = await generateTaskDetermination({
+      projectRoot: process.cwd(),
+      coleoDir: process.cwd(),
+      db: brainDb,
+    });
+    expect(validation.task?.id).toBe("validation-task");
+    expect(validation.reasoning).toContain("Returning next pending task");
+
+    const sameWorker = await generateTaskDetermination(
+      {
+        projectRoot: process.cwd(),
+        coleoDir: process.cwd(),
+        db: brainDb,
+      },
+      { excludeVerificationForTaskIds: ["original-task"] },
+    );
+    expect(sameWorker.task?.id).toBe("next-task");
+
+    db.close();
+  });
+
   it("falls back across phases when dominant phase has no assignable work", async () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);

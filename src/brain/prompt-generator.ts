@@ -19,7 +19,7 @@ import { resolveBrainModelConfig } from "./model-config";
 
 import { formatTaskAttachmentList } from "../lib/prompt-attachments";
 import {
-	VALIDATION_TASK_SUBJECT_PREFIX,
+	isValidationTaskSubject,
 	isVerificationTaskSubject,
 } from "./task-subjects";
 
@@ -244,7 +244,7 @@ function pickExistingActiveTask(
 	const phaseValue = phaseLabel || "";
 	const activeTasks = db
 		.listTasks({
-			statuses: ["claimed", "in_progress", "completing", "verification_pending"],
+			statuses: ["claimed", "in_progress"],
 			phase: phaseValue || undefined,
 			sort: "updated_desc",
 			limit: 200,
@@ -360,7 +360,6 @@ function getNextPendingTask(
 			statuses: ["pending"],
 			dependencyBlocked: false,
 			phase: phaseValue || undefined,
-			excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
 			sort: "order_key_asc",
 			limit: 200,
 		})
@@ -497,6 +496,7 @@ function shouldExcludeTask(
 
 function isVerificationFollowupTask(task: BrainTaskRecord): boolean {
 	if (task.id.startsWith("verify-")) return true;
+	if (isValidationTaskSubject(task.subject)) return true;
 	if (isVerificationTaskSubject(task.subject)) return true;
 	if (task.classification === "qa") return true;
 	return false;

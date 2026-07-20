@@ -18,7 +18,6 @@ import { BrainTool } from "./base";
 import type { ToolResult } from "./base";
 import type { NextTaskResult } from "../types";
 import {
-	VALIDATION_TASK_SUBJECT_PREFIX,
 	buildVerificationTaskSubject,
 } from "../../task-subjects";
 
@@ -207,7 +206,6 @@ export class DetermineNextTaskTool extends BrainTool {
       statuses: ["pending"],
       dependencyBlocked: false,
       unassignedOnly: true,
-      excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
       sort: "order_key_asc",
       limit: 20,
     });
@@ -464,7 +462,6 @@ ${taskWithIssues.id}`,
         statuses: ["pending"],
         dependencyBlocked: false,
         unassignedOnly: true,
-        excludeSubjectPrefix: VALIDATION_TASK_SUBJECT_PREFIX,
         sort: "order_key_asc",
         limit: 1,
       })[0];
