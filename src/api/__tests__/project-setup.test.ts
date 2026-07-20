@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Hono } from "hono";
 
+import { parsePlanFile } from "../../brain/plan-parser";
 import { LocalWorkspaceAccess } from "../../workspace";
 import { formatErrorResponse } from "../middleware/error";
 import { createProjectSetupRoutes } from "../routes/project-setup";
@@ -26,9 +27,25 @@ function createTestDb(): Database {
 			assigned_to TEXT,
 			dependency_blocked INTEGER DEFAULT 0,
 			sort_order INTEGER,
+			order_key TEXT,
+			plan_line_uid TEXT,
+			tags TEXT DEFAULT '[]',
+			metadata TEXT DEFAULT '{}',
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL,
 			completed_at TEXT
+		);
+		CREATE TABLE arms (
+			id TEXT PRIMARY KEY,
+			status TEXT NOT NULL,
+			current_task_id TEXT,
+			current_task_subject TEXT
+		);
+		CREATE TABLE arm_state_machine (
+			arm_id TEXT PRIMARY KEY,
+			state TEXT NOT NULL,
+			current_task_id TEXT,
+			current_task_subject TEXT
 		);
 	`);
 	return db;
@@ -38,10 +55,12 @@ describe("project setup routes", () => {
 	let root: string;
 	let db: Database;
 	let app: Hono<{ Variables: { db: Database } }>;
+	let formatterGuidance: string | undefined;
 
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "coleo-project-setup-api-"));
 		db = createTestDb();
+		formatterGuidance = undefined;
 		app = new Hono<{ Variables: { db: Database } }>();
 		app.use("*", async (c, next) => {
 			c.set("db", db);
@@ -51,12 +70,15 @@ describe("project setup routes", () => {
 		app.route("/api/project-setup", createProjectSetupRoutes({
 			workspace: new LocalWorkspaceAccess(root),
 			coleoDir: join(root, ".coleo"),
-			formatter: async (content) => ({
+			formatter: async (content, _sourcePath, guidance) => {
+				formatterGuidance = guidance;
+				return {
 				mode: "structured",
 				content: content.includes("### Deliverables")
 					? content
 					: `${content.trimEnd()}\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n`,
-			}),
+				};
+			},
 		}));
 	});
 
@@ -186,5 +208,198 @@ their existing workflow and ship with clear operational documentation.
 		});
 
 		expect(response.status).toBe(400);
+	});
+
+	it("requires an explanation before regenerating tasks", async () => {
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "" }),
+		});
+
+		expect(response.status).toBe(400);
+	});
+
+	it("preserves completed tasks and regenerates every other task with human guidance", async () => {
+		const canonicalPlan = `# Project Plan
+
+## Phase 1: Launch
+
+### Deliverables
+
+- [ ] Build the replacement queue
+- [ ] Verify the replacement queue
+`;
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(join(root, ".project", "plan.md"), canonicalPlan);
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at)
+			 VALUES ('completed-task', 'Keep me', '', 'completed', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at)
+			 VALUES ('stale-task', 'Delete me', '', 'pending', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+		db.run(
+			`INSERT INTO arms (id, status, current_task_id, current_task_subject)
+			 VALUES ('idle-arm', 'idle', 'stale-task', 'Delete me')`,
+		);
+		db.run(
+			`INSERT INTO arm_state_machine (arm_id, state, current_task_id, current_task_subject)
+			 VALUES ('idle-arm', 'idle', 'stale-task', 'Delete me')`,
+		);
+
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "The old tasks were duplicated; create clean, broader units." }),
+		});
+		const body = await response.json() as { deletedCount: number; createdCount: number };
+		const tasks = db
+			.query("SELECT subject, status, metadata FROM tasks ORDER BY subject")
+			.all() as Array<{ subject: string; status: string; metadata: string }>;
+
+		expect(response.status).toBe(200);
+		expect(body.deletedCount).toBe(1);
+		expect(body.createdCount).toBe(2);
+		expect(formatterGuidance).toBe("The old tasks were duplicated; create clean, broader units.");
+		expect(tasks.map((task) => task.subject)).toEqual([
+			"Build the replacement queue",
+			"Keep me",
+			"Verify the replacement queue",
+		]);
+		expect(tasks.find((task) => task.subject === "Keep me")?.status).toBe("completed");
+		expect(tasks.find((task) => task.subject === "Build the replacement queue")?.metadata)
+			.toContain("clean, broader units");
+		expect(db.query("SELECT current_task_id, current_task_subject FROM arms WHERE id = 'idle-arm'").get())
+			.toEqual({ current_task_id: null, current_task_subject: null });
+		expect(db.query("SELECT current_task_id, current_task_subject FROM arm_state_machine WHERE arm_id = 'idle-arm'").get())
+			.toEqual({ current_task_id: null, current_task_subject: null });
+	});
+
+	it("refuses to regenerate while an arm is working on a deletable task", async () => {
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(
+			join(root, ".project", "plan.md"),
+			"# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the replacement queue\n",
+		);
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at)
+			 VALUES ('active-task', 'Active work', '', 'in_progress', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+		db.run(
+			`INSERT INTO arms (id, status, current_task_id, current_task_subject)
+			 VALUES ('active-arm', 'busy', 'active-task', 'Active work')`,
+		);
+
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "Rebuild the queue with broader tasks." }),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain("Stop all arms working on active tasks");
+		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(1);
+	});
+
+	it("refuses to delete work claimed while the plan formatter is running", async () => {
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(
+			join(root, ".project", "plan.md"),
+			"# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the replacement queue\n",
+		);
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at)
+			 VALUES ('claimed-during-format', 'Claimed work', '', 'pending', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+
+		const formatter = async (content: string) => {
+			db.run("UPDATE tasks SET status = 'in_progress', assigned_to = 'late-arm' WHERE id = 'claimed-during-format'");
+			db.run(
+				`INSERT INTO arms (id, status, current_task_id, current_task_subject)
+				 VALUES ('late-arm', 'busy', 'claimed-during-format', 'Claimed work')`,
+			);
+			return { mode: "structured" as const, content };
+		};
+		const raceApp = new Hono<{ Variables: { db: Database } }>();
+		raceApp.use("*", async (c, next) => {
+			c.set("db", db);
+			await next();
+		});
+		raceApp.onError((error, c) => formatErrorResponse(c, error));
+		raceApp.route("/api/project-setup", createProjectSetupRoutes({
+			workspace: new LocalWorkspaceAccess(root),
+			coleoDir: join(root, ".coleo"),
+			formatter,
+		}));
+
+		const response = await raceApp.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "Rebuild the queue with broader tasks." }),
+		});
+
+		expect(response.status).toBe(400);
+		expect(await response.text()).toContain("Stop all arms working on active tasks");
+		expect(db.query("SELECT status, assigned_to FROM tasks WHERE id = 'claimed-during-format'").get())
+			.toEqual({ status: "in_progress", assigned_to: "late-arm" });
+	});
+
+	it("does not recreate a plan task that already exists as completed", async () => {
+		const workspace = new LocalWorkspaceAccess(root);
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(
+			join(root, ".project", "plan.md"),
+			"# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Keep the completed queue migration\n",
+		);
+		const parsed = await parsePlanFile(".project/plan.md", workspace);
+		const completedTask = parsed.tasks[0]!;
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, priority, source_type, created_at, updated_at, completed_at)
+			 VALUES (?, ?, '', 'completed', 'normal', 'plan', ?, ?, ?)`,
+			[completedTask.id, completedTask.subject, now, now, now],
+		);
+
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "Rebuild the remaining queue." }),
+		});
+		const body = await response.json() as { createdCount: number; preservedCompletedCount: number };
+
+		expect(response.status).toBe(200);
+		expect(body.createdCount).toBe(0);
+		expect(body.preservedCompletedCount).toBe(1);
+		expect((db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number }).count).toBe(1);
+	});
+
+	it("assigns distinct IDs when different plan tasks share the same ID prefix", async () => {
+		const sharedPrefix = "Implement the complete regeneration workflow with safeguards ";
+		await mkdir(join(root, ".project"), { recursive: true });
+		await writeFile(
+			join(root, ".project", "plan.md"),
+			`# Project Plan\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] ${sharedPrefix}for the API\n- [ ] ${sharedPrefix}for the web UI\n`,
+		);
+
+		const response = await app.request("http://localhost/api/project-setup/regenerate-tasks", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ explanation: "Keep both distinct deliverables." }),
+		});
+		const body = await response.json() as { createdCount: number };
+		const ids = db.query("SELECT id FROM tasks ORDER BY subject").all() as Array<{ id: string }>;
+
+		expect(response.status).toBe(200);
+		expect(body.createdCount).toBe(2);
+		expect(new Set(ids.map((task) => task.id)).size).toBe(2);
 	});
 });

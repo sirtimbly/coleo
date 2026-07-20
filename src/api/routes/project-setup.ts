@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { Hono } from "hono";
 
 import { parsePlanFile } from "../../brain/plan-parser";
+import { regenerateTasksFromPlan } from "../../brain/task-regenerator";
 import { BrainTemplateManager } from "../../brain/template-manager";
 import {
 	CANONICAL_PLAN_PATH,
@@ -21,6 +22,7 @@ import { getColeoDir } from "../../config";
 import type { WorkspaceAccess, WorkspaceTextFile } from "../../workspace";
 import { HttpError } from "../middleware";
 import { getServerWorkspaceAccess } from "../workspace-access";
+import { broadcast } from "../websocket";
 
 interface ProjectSetupContext {
 	Variables: {
@@ -233,6 +235,29 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			});
 		} catch (error) {
 			throw badRequestFrom(error, "Unable to prepare the project plan");
+		}
+	});
+
+	app.post("/regenerate-tasks", async (c) => {
+		const body = await c.req.json<{ explanation?: unknown }>();
+		if (typeof body.explanation !== "string" || !body.explanation.trim()) {
+			throw HttpError.badRequest("Explain why the task list needs to be regenerated");
+		}
+		if (body.explanation.length > 4_000) {
+			throw HttpError.badRequest("The regeneration explanation must be 4,000 characters or fewer");
+		}
+
+		try {
+			const result = await regenerateTasksFromPlan({
+				db: c.get("db"),
+				workspace: getWorkspace(),
+				explanation: body.explanation,
+				formatter,
+			});
+			broadcast("tasks", "tasks.regenerated", result);
+			return c.json(result);
+		} catch (error) {
+			throw badRequestFrom(error, "Unable to regenerate tasks from the project plan");
 		}
 	});
 

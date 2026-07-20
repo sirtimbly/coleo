@@ -1,4 +1,6 @@
 import type { WorkspaceAccess, WorkspaceTextFile } from "../workspace";
+import { loadConfig } from "../config";
+import { resolveBrainModelConfig } from "../brain/model-config";
 
 export const CANONICAL_PLAN_PATH = ".project/plan.md";
 export const DEFAULT_ARM_TEMPLATE = `arm:
@@ -58,6 +60,7 @@ export interface PlanFormatterResult {
 export type PlanFormatter = (
 	content: string,
 	sourcePath: string,
+	guidance?: string,
 ) => Promise<PlanFormatterResult>;
 
 export function hasStructuredPlanTasks(content: string): boolean {
@@ -250,14 +253,23 @@ function stripMarkdownFence(value: string): string {
 export async function formatPlanWithConfiguredModel(
 	content: string,
 	sourcePath: string,
+	guidance?: string,
 ): Promise<PlanFormatterResult> {
-	const apiKey = process.env.OPENAI_API_KEY?.trim();
+	const config = resolveBrainModelConfig((await loadConfig()).brain);
+	const apiKey = config.apiKey.trim();
 	if (!apiKey) {
+		if (guidance?.trim()) {
+			throw new Error("Configure a Brain model API key before regenerating tasks");
+		}
 		return { content: formatPlanWithoutModel(content, sourcePath), mode: "structured" };
 	}
 
-	const baseUrl = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
-	const model = process.env.OPENAI_MODEL || "gpt-5-mini";
+	const baseUrl = config.baseUrl.replace(/\/$/, "");
+	const model = config.model;
+	const completionTokenBudget = Math.min(
+		64_000,
+		Math.max(8_000, Math.ceil(content.length / 3) + 4_000),
+	);
 	try {
 		const response = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
@@ -270,20 +282,32 @@ export async function formatPlanWithConfiguredModel(
 				messages: [
 					{
 						role: "system",
-						content: "Clean up and organize the user's Markdown project plan while preserving every requirement, constraint, decision, explanation, caveat, and piece of commentary from the source. Do not summarize away or omit context. Add actionable checklist items inline using one or more '## Phase N: Name' sections with '### Deliverables' subsections containing '- [ ] Task' items. Existing prose should remain as prose in appropriate sections. Return the complete revised plan as Markdown only. Do not add work unsupported by the source.",
+						content: "Clean up and organize the user's Markdown project plan while preserving every requirement, constraint, decision, explanation, caveat, and piece of commentary from the source. Do not summarize away or omit context. Add actionable checklist items inline using one or more '## Phase N: Name' sections with '### Deliverables' subsections containing '- [ ] Task' items. Existing prose should remain as prose in appropriate sections. Return the complete revised plan as Markdown only. Do not add work unsupported by the source. When regeneration guidance is provided, use it to adjust task boundaries, granularity, grouping, and duplication without overriding the source plan.",
 					},
 					{
 						role: "user",
-						content: `Source file: ${sourcePath}\n\n${content}`,
+						content: `Source file: ${sourcePath}\n\nHuman regeneration guidance:\n${guidance?.trim() || "No additional guidance."}\n\nProject plan:\n${content}`,
 					},
 				],
-				max_completion_tokens: 4_000,
+				max_completion_tokens: completionTokenBudget,
 			}),
 		});
 		if (!response.ok) throw new Error(`Plan formatter returned ${response.status}`);
-		const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+		const body = await response.json() as {
+			choices?: Array<{
+				finish_reason?: string | null;
+				message?: { content?: string | null };
+			}>;
+		};
 		const formatted = stripMarkdownFence(body.choices?.[0]?.message?.content || "");
-		if (!formatted) throw new Error("Plan formatter returned an empty plan");
+		if (!formatted) {
+			const finishReason = body.choices?.[0]?.finish_reason;
+			throw new Error(
+				finishReason
+					? `Plan formatter returned no text (finish reason: ${finishReason})`
+					: "Plan formatter returned no text",
+			);
+		}
 		if (!hasStructuredPlanTasks(formatted)) {
 			throw new Error("Plan formatter returned an unsupported plan structure");
 		}
@@ -291,7 +315,8 @@ export async function formatPlanWithConfiguredModel(
 			throw new Error("Plan formatter omitted source context");
 		}
 		return { content: formatted.trimEnd() + "\n", mode: "ai" };
-	} catch {
+	} catch (error) {
+		if (guidance?.trim()) throw error;
 		return { content: formatPlanWithoutModel(content, sourcePath), mode: "structured" };
 	}
 }
