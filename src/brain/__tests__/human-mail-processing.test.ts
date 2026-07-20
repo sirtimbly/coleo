@@ -154,4 +154,57 @@ describe("Brain human mail processing", () => {
       client: "mail",
     });
   });
+
+  it("routes task-thread approval replies through the human review gate", async () => {
+    const brain = new Brain({
+      coleoDir: testDir,
+      pollIntervalMs: 1000,
+      verbose: false,
+    });
+    const sent = new Maildir(join(testDir, "mail", "sent"));
+    await sent.write({
+      from: "human@coleo.local",
+      to: "brain@coleo.local",
+      subject: "Re: Approval required: Interactive garden",
+      date: new Date(),
+      body: "APPROVE [task-garden]\n\nThe navigation works as expected.",
+      headers: {
+        "Message-ID": "<task-approval@example.test>",
+        "X-Coleo-Type": "human-message",
+        "X-Coleo-Task-Id": "task-garden",
+      },
+    });
+
+    (brain as any).getTaskFromApi = async () => ({
+      id: "task-garden",
+      status: "completing",
+      metadata: { humanReview: { status: "pending" } },
+    });
+    const approvals: Array<{ taskId: string; approved: boolean; comment: string }> = [];
+    (brain as any).handleApprovalResponse = async (
+      taskId: string,
+      approved: boolean,
+      comment: string,
+    ) => approvals.push({ taskId, approved, comment });
+    (brain as any).apiRequest = async () => {
+      throw new Error("approval replies must not be recorded as ordinary discussions");
+    };
+    (brain as any).mailProcessor = {
+      processMessage: async () => {
+        throw new Error("approval replies should bypass intent parsing");
+      },
+    };
+    (brain as any).templates = {
+      loadMailProcessorSystemPrompt: async () => "system prompt",
+    };
+    (brain as any).listRecentActivitySummary = async () => [];
+
+    await (brain as any).processHumanMail();
+
+    expect(approvals).toEqual([{
+      taskId: "task-garden",
+      approved: true,
+      comment: "APPROVE [task-garden]\n\nThe navigation works as expected.",
+    }]);
+  });
 });

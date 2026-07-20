@@ -1165,6 +1165,21 @@ export class Brain {
 			if (taskReplyId) {
 				const repliedTask = await this.getTaskFromApi(taskReplyId);
 				if (repliedTask) {
+					const approvalMatch = messageBody.trim().match(/^(APPROVE|REJECT)\b(?:\s*\[([^\]]+)\])?/i);
+					const humanReview = repliedTask.metadata?.humanReview;
+					const hasPendingReview = humanReview
+						&& typeof humanReview === "object"
+						&& (humanReview as { status?: string }).status === "pending";
+					const explicitTaskId = approvalMatch?.[2]?.trim();
+					if (approvalMatch && hasPendingReview && (!explicitTaskId || explicitTaskId === taskReplyId)) {
+						await this.handleApprovalResponse(
+							taskReplyId,
+							approvalMatch[1]?.toUpperCase() === "APPROVE",
+							messageBody,
+						);
+						await mailbox.markSeen(message.id);
+						continue;
+					}
 					await this.apiRequest(
 						`/api/tasks/${encodeURIComponent(taskReplyId)}/discussions`,
 						{
