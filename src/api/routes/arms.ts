@@ -22,6 +22,7 @@ import { getCliEntrypoint } from "../../cli/entrypoint";
 import { hostname } from "os";
 import { appendTaskAttachmentsToPromptText } from "../../lib/prompt-attachments";
 import { supportsInputModality } from "../../harness/model-resolver";
+import { searchStatusHistory } from "../../vector/indexing-pipeline";
 import type { TaskAttachment } from "../../types";
 
 interface ArmsContext {
@@ -1003,6 +1004,36 @@ export function createArmsRoutes() {
   app.get("/templates", async (c) => {
     const templates = await listArmTemplateSummaries();
     return c.json({ templates });
+  });
+
+  /**
+   * Get semantic status-history results for one arm.
+   * GET /api/arms/:id/status-history
+   */
+  app.get("/:id/status-history", async (c) => {
+    const armId = c.req.param("id");
+    const from = c.req.query("from");
+    const to = c.req.query("to");
+    const limit = Number.parseInt(c.req.query("limit") || "100", 10);
+
+    try {
+      const hits = await searchStatusHistory(armId, {
+        limit,
+        armId,
+        since: from ? new Date(from) : undefined,
+        until: to ? new Date(to) : undefined,
+      });
+      return c.json({
+        armId,
+        events: hits.map((hit) => hit.event),
+        total: hits.length,
+      });
+    } catch (err) {
+      return c.json(
+        { error: err instanceof Error ? err.message : "Arm status history failed" },
+        500,
+      );
+    }
   });
 
   /**
