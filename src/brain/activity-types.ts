@@ -142,6 +142,7 @@ export const ACTIVE_EVENT_TYPES = new Set([
 	"session.status",
 	"session.updated",
 	"message.part.updated",
+	"prompt_sent",
 	"arm.heartbeat",
 	"file.read",
 	"file.reads",

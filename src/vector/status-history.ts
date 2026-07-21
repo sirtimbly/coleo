@@ -55,7 +55,7 @@ export interface StatusHistoryEvent {
   status?: "on_track" | "blocked" | "issues_found" | "needs_review" | "completed_with_issues";
   
   /** Priority (for tasks/bugs) */
-  priority?: "critical" | "high" | "normal" | "low";
+  priority?: "critical" | "high" | "medium" | "low" | "normal";
 
   /** Task or event classification (for example, development or bug_fix). */
   classification?: string;
@@ -91,6 +91,7 @@ export const STATUS_HISTORY_CONFIG = {
     "status",
     "priority",
     "timestamp",
+    "classification",
   ],
 };
 

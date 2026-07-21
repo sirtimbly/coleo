@@ -189,6 +189,7 @@ export function createEventsRoutes() {
             type: e.type,
             timestamp: e.timestamp,
             data: sanitizeEventData(e.data),
+            sequence: e.sequence,
           })),
           lastEventAt: window.lastEventAt?.toISOString() ?? null,
           silentDurationMs: window.silentDurationMs,

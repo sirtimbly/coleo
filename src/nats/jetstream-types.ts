@@ -6,6 +6,7 @@ export interface EventData {
   sessionId?: string;
   data: Record<string, unknown>;
   timestamp: string;
+  sequence?: number;
 }
 
 export interface QueryOptions {
@@ -15,6 +16,7 @@ export interface QueryOptions {
   since?: Date;
   until?: Date;
   eventType?: string;
+  latest?: boolean;
 }
 
 export interface StateReconstructionOptions {
@@ -55,7 +57,7 @@ export interface ArmState {
 export interface IEventStore {
   publishEvent(subject: string, data: EventData): Promise<void>;
   queryEvents(options: QueryOptions): Promise<EventData[]>;
-  getArmEvents(armId: string, limit?: number): Promise<EventData[]>;
+  getArmEvents(armId: string, limit?: number, since?: Date): Promise<EventData[]>;
   getEventsByType(eventType: string, limit?: number): Promise<EventData[]>;
   getRecentEvents(limit?: number, since?: Date): Promise<EventData[]>;
   getStreamMetrics(): Promise<StreamMetrics>;

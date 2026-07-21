@@ -446,6 +446,80 @@ describe("bugs API", () => {
     });
   });
 
+  describe("POST /api/bugs/:id/claim", () => {
+    beforeEach(() => {
+      const now = new Date().toISOString();
+      db.run(
+        `
+          INSERT INTO bugs (id, title, description, source, status, priority, sort_order, created_at, updated_at, archived)
+          VALUES ('bug-to-claim', 'Claim Bug', 'Description', 'human_reported', 'open', 'high', 0, ?, ? , 0)
+        `,
+        [now, now],
+      );
+      db.run(`INSERT INTO arms (id, name) VALUES ('arm-1', 'Worker One')`);
+    });
+
+    it("should claim an unassigned bug to an idle arm", async () => {
+      const response = await app.request("/api/bugs/bug-to-claim/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ armId: "arm-1" }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as {
+        success: boolean;
+        bug: { bugId: string; assigneeArmId: string | null; previousAssigneeArmId?: string; status: string };
+      };
+      expect(body.success).toBe(true);
+      expect(body.bug.bugId).toBe("bug-to-claim");
+      expect(body.bug.assigneeArmId).toBe("arm-1");
+      expect(body.bug.status).toBe("investigating");
+
+      const row = db.query(
+        "SELECT assignee_arm_id, status FROM bugs WHERE id = 'bug-to-claim'",
+      ).get() as { assignee_arm_id: string; status: string };
+      expect(row.assignee_arm_id).toBe("arm-1");
+      expect(row.status).toBe("investigating");
+    });
+
+    it("should reject missing armId", async () => {
+      const response = await app.request("/api/bugs/bug-to-claim/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("Invalid armId");
+    });
+
+    it("should return 400 for unknown arm", async () => {
+      const response = await app.request("/api/bugs/bug-to-claim/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ armId: "arm-missing" }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("Invalid armId");
+    });
+
+    it("should return 404 for missing bug", async () => {
+      const response = await app.request("/api/bugs/bug-missing/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ armId: "arm-1" }),
+      });
+
+      expect(response.status).toBe(404);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("Bug not found");
+    });
+  });
+
   describe("DELETE /api/bugs/:id", () => {
     beforeEach(async () => {
       const now = new Date().toISOString();

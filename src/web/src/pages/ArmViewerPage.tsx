@@ -55,29 +55,12 @@ import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
-
-// Activity item types for the log
-type ActivityType =
-	| "message"
-	| "tool"
-	| "file"
-	| "session"
-	| "error"
-	| "todo"
-	| "step"
-	| "terminal"
-	| "branch";
-
-interface ActivityItem {
-	id: string;
-	type: ActivityType;
-	title: string;
-	subtitle?: string;
-	status: "pending" | "running" | "completed" | "error" | "info";
-	timestamp: number;
-	details?: JsonObject;
-	expanded?: boolean;
-}
+import {
+	getViewerEventActivityId,
+	upsertViewerActivity,
+	type ViewerActivityItem as ActivityItem,
+	type ViewerActivityType as ActivityType,
+} from "./arm-viewer-activity";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -220,11 +203,30 @@ const activityIcons: Record<ActivityType, typeof Wrench> = {
 	branch: GitBranch,
 };
 
+const HANDLED_EVENT_TYPES = new Set([
+	"connected",
+	"arm.heartbeat",
+	"server-heartbeat",
+	"server.heartbeat",
+	"message.updated",
+	"message.part.updated",
+	"message.part.created",
+	"file.edited",
+	"session.status",
+	"session.error",
+	"todo.updated",
+	"pty.created",
+	"pty.updated",
+	"pty.exited",
+	"vcs.branch.updated",
+	"lsp.client.diagnostics",
+]);
+
 const SESSION_STATUS_LABELS: Record<string, string> = {
 	busy: "Working",
 	idle: "Idle",
 	retry: "Retrying",
-	unknown: "Waiting",
+	unknown: "Checking",
 };
 
 function formatViewerSessionStatus(status: string): string {
@@ -322,13 +324,20 @@ export function ArmViewerPage() {
 	const [messages, setMessages] = useState<ArmMessage[]>([]);
 	const [logsLoading, setLogsLoading] = useState(false);
 	const [logsError, setLogsError] = useState<string | null>(null);
+	const [logsLoadedArmId, setLogsLoadedArmId] = useState<string | null>(null);
+	const [eventsLoading, setEventsLoading] = useState(false);
+	const [markingStuck, setMarkingStuck] = useState(false);
 
 	const feedContainerRef = useRef<HTMLDivElement>(null);
 	const workspaceContainerRef = useRef<HTMLDivElement>(null);
 	const autoScrollEnabledRef = useRef(true);
-	const activityIdCounter = useRef(0);
 	const lastLogsRefreshAt = useRef(0);
+	const messageRequestId = useRef(0);
+	const selectedArmIdRef = useRef(selectedArmId);
+	const activeTabRef = useRef(activeTab);
 	const [workspaceWidth, setWorkspaceWidth] = useState(0);
+	selectedArmIdRef.current = selectedArmId;
+	activeTabRef.current = activeTab;
 
 	const isAtBottom = useCallback((container: HTMLDivElement) => {
 		const bottomOffset =
@@ -355,24 +364,15 @@ export function ArmViewerPage() {
 		[],
 	);
 
-	// Generate unique activity ID
-	const genId = () => `act-${++activityIdCounter.current}-${Date.now()}`;
-
 	// Add or update activity
 	const upsertActivity = useCallback(
 		(
 			id: string,
 			updates: Partial<ActivityItem> & { type: ActivityType; title: string },
 		) => {
-			setActivities((prev) => {
-				const idx = prev.findIndex((a) => a.id === id);
-				if (idx >= 0) {
-					const updated = [...prev];
-					updated[idx] = { ...updated[idx], ...updates };
-					return updated;
-				}
-				return [
-					...prev,
+			setActivities((previous) =>
+				upsertViewerActivity(
+					previous,
 					{
 						id,
 						status: "info",
@@ -380,8 +380,9 @@ export function ArmViewerPage() {
 						expanded: false,
 						...updates,
 					},
-				];
-			});
+					MAX_HISTORY_ITEMS,
+				),
+			);
 		},
 		[],
 	);
@@ -412,34 +413,87 @@ export function ArmViewerPage() {
 	};
 
 	// Load analysis for selected arm
-	const loadAnalysis = async (armId: string) => {
-		setAnalysisLoading(true);
+	const loadAnalysis = useCallback(async (armId: string, silent = false) => {
+		if (!silent) setAnalysisLoading(true);
 		try {
 			const res = await api.getArmAnalysis(armId);
-			setArmAnalysis(res);
+			if (selectedArmIdRef.current === armId) setArmAnalysis(res);
 		} catch (err) {
 			// Analysis might not be available if NATS isn't running
 			console.error("Failed to load analysis:", err);
-			setArmAnalysis(null);
+			if (selectedArmIdRef.current === armId) setArmAnalysis(null);
 		} finally {
-			setAnalysisLoading(false);
+			if (!silent && selectedArmIdRef.current === armId) setAnalysisLoading(false);
 		}
-	};
+	}, []);
+
+	const loadSessionState = useCallback(async (armId: string) => {
+		try {
+			const response = await api.getArmState(armId);
+			if (selectedArmIdRef.current !== armId) return;
+			const normalizedSessionStatus =
+				response.state === "processing" || response.state === "executing"
+					? "busy"
+					: response.state;
+			setSessionStatus(normalizedSessionStatus);
+			const normalizedArmStatus: Arm["status"] =
+				normalizedSessionStatus === "busy" || normalizedSessionStatus === "retry"
+					? "busy"
+					: normalizedSessionStatus === "idle" ||
+						  normalizedSessionStatus === "starting" ||
+						  normalizedSessionStatus === "error" ||
+						  normalizedSessionStatus === "stopped"
+						? normalizedSessionStatus
+						: "running";
+			setArms((previous) =>
+				previous.map((arm) =>
+					arm.id === armId && arm.status !== normalizedArmStatus
+						? { ...arm, status: normalizedArmStatus }
+						: arm,
+				),
+			);
+		} catch {
+			// Live events and arm lifecycle status remain available as fallbacks.
+		}
+	}, []);
 
 	const loadMessages = useCallback(async (armId: string, silent = false) => {
+		const requestId = ++messageRequestId.current;
 		if (!silent) {
 			setLogsLoading(true);
 		}
 		try {
-			const res = await api.getArmMessages(armId, 200);
-			setMessages(res.messages || []);
+			let res = await api.getArmMessages(armId, 200);
+			if (!silent && (res.messages?.length || 0) === 0 && !res.error) {
+				await new Promise((resolve) => setTimeout(resolve, 500));
+				res = await api.getArmMessages(armId, 200);
+			}
+			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
+			const nextMessages = res.messages || [];
+			setMessages((previous) =>
+				silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages,
+			);
+			if (nextMessages.length > 0) {
+				let input = 0;
+				let output = 0;
+				let cost = 0;
+				for (const message of nextMessages) {
+					input += message.info.tokens?.input || 0;
+					output += message.info.tokens?.output || 0;
+					cost += message.info.cost || 0;
+				}
+				setTotalTokens({ input, output });
+				setTotalCost(cost);
+			}
+			setLogsLoadedArmId(armId);
 			setLogsError(res.error || null);
 		} catch (err) {
+			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
 			setLogsError(
 				err instanceof Error ? err.message : "Failed to load message logs",
 			);
 		} finally {
-			if (!silent) {
+			if (!silent && requestId === messageRequestId.current && selectedArmIdRef.current === armId) {
 				setLogsLoading(false);
 			}
 		}
@@ -459,8 +513,15 @@ export function ArmViewerPage() {
 
 	// Handle SSE events from arm
 	const handleArmEvent = useCallback(
-		(event: OpenCodeEvent) => {
+		(event: OpenCodeEvent, options?: { historical?: boolean }) => {
 			const { type, properties: props } = event;
+			const parsedTimestamp = event.timestamp ? new Date(event.timestamp).getTime() : Date.now();
+			const eventTimestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
+			const eventActivityId = (suffix: string) => getViewerEventActivityId(event, suffix);
+			const recordActivity = (
+				id: string,
+				updates: Partial<ActivityItem> & { type: ActivityType; title: string },
+			) => upsertActivity(id, { timestamp: eventTimestamp, ...updates });
 
 			// Message events
 			if (type === "message.updated") {
@@ -473,15 +534,19 @@ export function ArmViewerPage() {
 							: role === "user"
 								? "User"
 								: "System";
-					upsertActivity(`msg-${info.id}`, {
+					recordActivity(`msg-${info.id}`, {
 						type: "message",
 						title: `${roleLabel} message`,
 						status: "running",
 						details: { role, messageId: info.id },
 					});
 				}
-				if (selectedArmId && activeTab === "logs") {
-					refreshMessagesThrottled(selectedArmId);
+				if (
+					!options?.historical &&
+					selectedArmIdRef.current &&
+					activeTabRef.current === "logs"
+				) {
+					refreshMessagesThrottled(selectedArmIdRef.current);
 				}
 			}
 
@@ -507,7 +572,7 @@ export function ArmViewerPage() {
 
 				if (part) {
 					// Text content - use delta for updates, full text for creates
-					if (part.type === "text") {
+					if (!options?.historical && part.type === "text") {
 						if (delta) {
 							// Append delta to current text
 							setCurrentText((prev) => prev + delta);
@@ -523,14 +588,14 @@ export function ArmViewerPage() {
 						const status = state?.status || "pending";
 						const title = state?.title || part.tool;
 						// Use part.id if available for stable key, otherwise generate one
-						const toolId = part.id || `tool-${part.tool}-${Date.now()}`;
+						const toolId = part.id || eventActivityId("tool");
 
 						let actStatus: ActivityItem["status"] = "pending";
 						if (status === "running") actStatus = "running";
 						else if (status === "completed") actStatus = "completed";
 						else if (status === "error") actStatus = "error";
 
-							upsertActivity(toolId, {
+							recordActivity(toolId, {
 								type: "tool",
 								title: title,
 								subtitle: part.tool,
@@ -560,17 +625,17 @@ export function ArmViewerPage() {
 							reason?: string;
 						};
 
-						if (stepPart.cost) {
+						if (!options?.historical && stepPart.cost) {
 							setTotalCost((prev) => prev + stepPart.cost!);
 						}
-						if (stepPart.tokens) {
+						if (!options?.historical && stepPart.tokens) {
 							setTotalTokens((prev) => ({
 								input: prev.input + stepPart.tokens!.input,
 								output: prev.output + stepPart.tokens!.output,
 							}));
 						}
 
-							upsertActivity(genId(), {
+							recordActivity(eventActivityId("step"), {
 								type: "step",
 								title: "Step completed",
 								subtitle: stepPart.reason || "done",
@@ -588,7 +653,7 @@ export function ArmViewerPage() {
 							filename?: string;
 							mime?: string;
 						};
-						upsertActivity(genId(), {
+						recordActivity(eventActivityId("file"), {
 							type: "file",
 							title: filePart.filename || "File",
 							subtitle: filePart.mime,
@@ -596,8 +661,12 @@ export function ArmViewerPage() {
 						});
 					}
 
-					if (selectedArmId && activeTab === "logs") {
-						refreshMessagesThrottled(selectedArmId);
+					if (
+						!options?.historical &&
+						selectedArmIdRef.current &&
+						activeTabRef.current === "logs"
+					) {
+						refreshMessagesThrottled(selectedArmIdRef.current);
 					}
 				}
 			}
@@ -606,7 +675,7 @@ export function ArmViewerPage() {
 			if (type === "file.edited") {
 				const file = typeof props.file === "string" ? props.file : undefined;
 				if (file) {
-					upsertActivity(genId(), {
+					recordActivity(eventActivityId("file-edited"), {
 						type: "file",
 						title: "File edited",
 						subtitle: file.split("/").pop() || file,
@@ -622,9 +691,11 @@ export function ArmViewerPage() {
 					| { type: string; attempt?: number; message?: string }
 					| undefined;
 				if (status?.type) {
-					setSessionStatus(status.type);
+					if (!options?.historical) {
+						setSessionStatus(status.type);
+					}
 
-					if (status.type === "idle") {
+					if (!options?.historical && status.type === "idle") {
 						// Mark all running activities as completed
 						setActivities((prev) =>
 							prev.map((a) =>
@@ -634,18 +705,18 @@ export function ArmViewerPage() {
 						setCurrentText("");
 
 						// Refresh todos
-						if (selectedArmId) {
-							loadTodos(selectedArmId);
-							refreshMessagesThrottled(selectedArmId);
+						if (selectedArmIdRef.current) {
+							void loadTodos(selectedArmIdRef.current);
+							refreshMessagesThrottled(selectedArmIdRef.current);
 						}
 					} else if (status.type === "busy") {
-						upsertActivity("session-busy", {
+						recordActivity("session-busy", {
 							type: "session",
 							title: "Processing",
 							status: "running",
 						});
 					} else if (status.type === "retry") {
-						upsertActivity(genId(), {
+						recordActivity(eventActivityId("retry"), {
 							type: "session",
 							title: "Retrying",
 							subtitle: `Attempt ${status.attempt}: ${status.message}`,
@@ -661,7 +732,7 @@ export function ArmViewerPage() {
 					| { name?: string; data?: { message?: string } }
 					| undefined;
 				const message = error?.data?.message || error?.name || "Unknown error";
-					upsertActivity(genId(), {
+					recordActivity(eventActivityId("error"), {
 						type: "error",
 						title: "Error",
 						subtitle: message,
@@ -673,11 +744,13 @@ export function ArmViewerPage() {
 				// Todo updates - only update if this is for the currently selected arm
 				if (type === "todo.updated") {
 					const todos = Array.isArray(props.todos) ? (props.todos as unknown as ArmTodo[]) : undefined;
-				if (todos && selectedArmId) {
+				if (todos) {
 					// Only update todos if the event is from the currently selected arm
 					// The SSE connection should already be filtered by arm, but this adds extra safety
-					setTodos(todos);
-					upsertActivity("todos-updated", {
+					if (!options?.historical) {
+						setTodos(todos);
+					}
+					recordActivity("todos-updated", {
 						type: "todo",
 						title: "Todos updated",
 						subtitle: `${todos.filter((t) => t.status === "completed").length}/${todos.length} complete`,
@@ -690,7 +763,7 @@ export function ArmViewerPage() {
 			// PTY (terminal) events
 			if (type === "pty.created" || type === "pty.updated") {
 				const ptyId = typeof props.id === "string" ? props.id : undefined;
-				upsertActivity(`pty-${ptyId}`, {
+				recordActivity(ptyId ? `pty-${ptyId}` : eventActivityId("pty"), {
 					type: "terminal",
 					title: "Terminal",
 					subtitle: type === "pty.created" ? "Created" : "Updated",
@@ -701,7 +774,7 @@ export function ArmViewerPage() {
 			if (type === "pty.exited") {
 				const ptyId = typeof props.id === "string" ? props.id : undefined;
 				const code = typeof props.code === "number" ? props.code : undefined;
-				upsertActivity(`pty-${ptyId}`, {
+				recordActivity(ptyId ? `pty-${ptyId}` : eventActivityId("pty-exited"), {
 					type: "terminal",
 					title: "Terminal exited",
 					subtitle: `Exit code: ${code}`,
@@ -712,7 +785,7 @@ export function ArmViewerPage() {
 			// VCS branch
 			if (type === "vcs.branch.updated") {
 				const branch = typeof props.branch === "string" ? props.branch : undefined;
-				upsertActivity(genId(), {
+				recordActivity(eventActivityId("branch"), {
 					type: "branch",
 					title: "Branch updated",
 					subtitle: branch,
@@ -730,7 +803,7 @@ export function ArmViewerPage() {
 				const warnCount =
 					diagnostics?.filter((d) => d.severity === 2).length || 0;
 				if (errorCount > 0 || warnCount > 0) {
-					upsertActivity(genId(), {
+					recordActivity(eventActivityId("diagnostics"), {
 						type: errorCount > 0 ? "error" : "session",
 						title: "Diagnostics",
 						subtitle: `${errorCount} errors, ${warnCount} warnings`,
@@ -738,8 +811,54 @@ export function ArmViewerPage() {
 					});
 				}
 			}
+
+			if (!HANDLED_EVENT_TYPES.has(type)) {
+				recordActivity(eventActivityId("generic"), {
+					type: "session",
+					title: formatStatusLayerLabel(type),
+					status: "info",
+					details: props,
+				});
+			}
 		},
-		[activeTab, refreshMessagesThrottled, selectedArmId, upsertActivity],
+		[refreshMessagesThrottled, upsertActivity],
+	);
+
+	const loadEvents = useCallback(
+		async (armId: string) => {
+			setEventsLoading(true);
+			try {
+				const response = await api.getArmEventWindow(armId, {
+					windowMs: 30 * 60 * 1000,
+					limit: 200,
+				});
+				if (selectedArmIdRef.current !== armId) return;
+				const historyWatermark = response.summary.lastEventAt
+					? new Date(response.summary.lastEventAt).getTime()
+					: null;
+				if (historyWatermark !== null && Number.isFinite(historyWatermark)) {
+					setActivities((previous) =>
+						previous.filter((activity) => activity.timestamp > historyWatermark),
+					);
+				}
+				for (const event of response.window.events) {
+					handleArmEvent(
+						{
+							type: event.type,
+							properties: event.data,
+							timestamp: event.timestamp,
+							sequence: event.sequence,
+						},
+						{ historical: true },
+					);
+				}
+			} catch (err) {
+				console.error("Failed to load event history:", err);
+			} finally {
+				if (selectedArmIdRef.current === armId) setEventsLoading(false);
+			}
+		},
+		[handleArmEvent],
 	);
 
 	// Subscribe to arm events
@@ -768,6 +887,11 @@ export function ArmViewerPage() {
 	// Reset or restore state when arm changes
 	useEffect(() => {
 		if (selectedArmId) {
+			messageRequestId.current++;
+			setLogsLoadedArmId(null);
+			setMessages([]);
+			setLogsError(null);
+			setArmAnalysis(null);
 			autoScrollEnabledRef.current = true;
 			// Try to restore from localStorage first
 			const saved = loadArmHistory(selectedArmId);
@@ -779,7 +903,6 @@ export function ArmViewerPage() {
 				setTotalCost(saved.totalCost);
 				setTotalTokens(saved.totalTokens);
 				setSessionStatus(saved.sessionStatus);
-				// Note: We don't restore activityIdCounter as it's just for generating IDs
 			} else {
 				// No saved history - start fresh
 				setActivities([]);
@@ -788,19 +911,21 @@ export function ArmViewerPage() {
 				setCurrentText("");
 				setTotalCost(0);
 				setTotalTokens({ input: 0, output: 0 });
-				activityIdCounter.current = 0;
 			}
-			// Always fetch fresh todos and analysis
-			loadTodos(selectedArmId);
-			loadAnalysis(selectedArmId);
+			// Always fetch fresh runtime data for the selected arm.
+			void loadTodos(selectedArmId);
+			void loadAnalysis(selectedArmId);
+			void loadSessionState(selectedArmId);
+			void loadEvents(selectedArmId);
 			void loadMessages(selectedArmId);
 		} else {
 			// Clear analysis when no arm selected
 			setArmAnalysis(null);
 			setMessages([]);
+			setLogsLoadedArmId(null);
 			setLogsError(null);
 		}
-	}, [loadMessages, selectedArmId]);
+	}, [loadAnalysis, loadEvents, loadMessages, loadSessionState, selectedArmId]);
 
 	// Refresh text logs while viewing the Logs tab
 	useEffect(() => {
@@ -808,14 +933,42 @@ export function ArmViewerPage() {
 			return;
 		}
 
-		void loadMessages(selectedArmId, true);
-
 		const interval = setInterval(() => {
 			void loadMessages(selectedArmId, true);
 		}, 3000);
 
 		return () => clearInterval(interval);
 	}, [activeTab, loadMessages, selectedArmId]);
+
+	useEffect(() => {
+		if (!selectedArmId) return;
+		const interval = setInterval(() => {
+			void loadAnalysis(selectedArmId, true);
+			void loadSessionState(selectedArmId);
+		}, 10_000);
+		return () => clearInterval(interval);
+	}, [loadAnalysis, loadSessionState, selectedArmId]);
+
+	useEffect(() => {
+		if (!selectedArmId) return;
+		const timeout = setTimeout(() => {
+			try {
+				const history: ArmHistoryState = {
+					activities: activities.slice(-MAX_HISTORY_ITEMS),
+					todos: [],
+					currentText,
+					totalCost,
+					totalTokens,
+					sessionStatus,
+					lastUpdated: Date.now(),
+				};
+				localStorage.setItem(getStorageKey(selectedArmId), JSON.stringify(history));
+			} catch {
+				// Storage is a best-effort bridge until persisted event history loads.
+			}
+		}, 500);
+		return () => clearTimeout(timeout);
+	}, [activities, currentText, selectedArmId, sessionStatus, totalCost, totalTokens]);
 
 	// Handle panel resizing
 	useEffect(() => {
@@ -904,7 +1057,6 @@ export function ArmViewerPage() {
 			setTotalCost(0);
 			setTotalTokens({ input: 0, output: 0 });
 			setSessionStatus("unknown");
-			activityIdCounter.current = 0;
 		}
 	}, [selectedArmId]);
 
@@ -915,6 +1067,21 @@ export function ArmViewerPage() {
 	};
 
 	const selectedArm = arms.find((a) => a.id === selectedArmId);
+	const handleMarkStuck = async () => {
+		if (!selectedArm) return;
+		setMarkingStuck(true);
+		try {
+			const { arm: updatedArm } = await api.markArmStuck(selectedArm.id);
+			setArms((previous) =>
+				previous.map((current) => (current.id === updatedArm.id ? updatedArm : current)),
+			);
+			await loadArms();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to mark arm stuck");
+		} finally {
+			setMarkingStuck(false);
+		}
+	};
 	const selectedWorkItem =
 		selectedArm?.currentBugTitle ?? selectedArm?.currentTaskSubject ?? null;
 	const workItemType = selectedArm?.currentBugTitle
@@ -999,7 +1166,9 @@ export function ArmViewerPage() {
 					currentText={currentText}
 					messages={messages}
 					logsLoading={logsLoading}
+					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
 					onRefresh={() => {
@@ -1018,6 +1187,8 @@ export function ArmViewerPage() {
 						}
 					}}
 					onClearHistory={handleClearHistory}
+					onMarkStuck={handleMarkStuck}
+					markingStuck={markingStuck}
 					feedContainerRef={feedContainerRef}
 					onFeedScroll={handleFeedScroll}
 					onToggleActivity={toggleActivity}
@@ -1106,7 +1277,9 @@ export function ArmViewerPage() {
 					currentText={currentText}
 					messages={messages}
 					logsLoading={logsLoading}
+					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
 					onRefresh={() => {
@@ -1125,6 +1298,8 @@ export function ArmViewerPage() {
 						}
 					}}
 					onClearHistory={handleClearHistory}
+					onMarkStuck={handleMarkStuck}
+					markingStuck={markingStuck}
 					feedContainerRef={feedContainerRef}
 					onFeedScroll={handleFeedScroll}
 					onToggleActivity={toggleActivity}
@@ -1232,12 +1407,16 @@ function ArmViewerConsole({
 	currentText,
 	messages,
 	logsLoading,
+	logsReady,
 	logsError,
+	eventsLoading,
 	analysis,
 	analysisLoading,
 	onRefresh,
 	onRefreshAnalysis,
 	onClearHistory,
+	onMarkStuck,
+	markingStuck,
 	feedContainerRef,
 	onFeedScroll,
 	onToggleActivity,
@@ -1258,28 +1437,39 @@ function ArmViewerConsole({
 	currentText: string;
 	messages: ArmMessage[];
 	logsLoading: boolean;
+	logsReady: boolean;
 	logsError: string | null;
+	eventsLoading: boolean;
 	analysis: ArmAnalysisFull | null;
 	analysisLoading: boolean;
 	onRefresh: () => void;
 	onRefreshAnalysis: () => void;
 	onClearHistory: () => void;
+	onMarkStuck: () => void;
+	markingStuck: boolean;
 	feedContainerRef: { current: HTMLDivElement | null };
 	onFeedScroll: () => void;
 	onToggleActivity: (id: string) => void;
 }) {
 	const arm = selectedArm ?? null;
 	const sessionLabel = formatViewerSessionStatus(sessionStatus);
-	const analysisState = analysis?.analysis.state.replaceAll("_", " ") ?? null;
+	const hasEventTelemetry = (analysis?.analysis.metrics.eventCount || 0) > 0;
+	const analysisState = hasEventTelemetry
+		? analysis?.analysis.state.replaceAll("_", " ") ?? null
+		: null;
 	const totalTokenCount = totalTokens.input + totalTokens.output;
 	const streamCount = activeTab === "logs" ? messages.length : activities.length;
+	const streamValue = activeTab === "logs" && !logsReady
+		? "Loading logs"
+		: `${formatCompactNumber(streamCount)} ${activeTab}`;
 	const activityStateTone =
-		analysis?.analysis.state === "error"
+		hasEventTelemetry && analysis?.analysis.state === "error"
 			? "danger"
-			: analysis?.analysis.state === "waiting_permission" ||
-				 analysis?.analysis.state === "starting"
+			: hasEventTelemetry &&
+					(analysis?.analysis.state === "waiting_permission" ||
+						analysis?.analysis.state === "starting")
 				? "warning"
-				: analysis?.analysis.state === "productive"
+				: hasEventTelemetry && analysis?.analysis.state === "productive"
 					? "success"
 					: "neutral";
 	const sessionTone =
@@ -1288,7 +1478,7 @@ function ArmViewerConsole({
 	const statusNarrative = arm
 		? getViewerStatusNarrative({
 				armStatus: arm.status,
-				analysisState: analysis?.analysis.state ?? null,
+				analysisState: hasEventTelemetry ? analysis?.analysis.state ?? null : null,
 				sessionLabel,
 				connected,
 			})
@@ -1320,6 +1510,12 @@ function ArmViewerConsole({
 											<span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success" : "bg-danger")} />
 											{connected ? "Live" : "Offline"}
 										</span>
+										{arm.recoveryRequestedAt ? (
+											<span className="inline-flex items-center gap-1 text-warning">
+												<AlertTriangle className="h-3 w-3" />
+												Recovery requested
+											</span>
+										) : null}
 									</div>
 								</div>
 							</div>
@@ -1341,6 +1537,22 @@ function ArmViewerConsole({
 								totalCost={totalCost}
 								totalTokens={totalTokens}
 							/>
+						) : null}
+						{arm && arm.status !== "stopped" ? (
+							<Button
+								variant="ghost"
+								size="sm"
+								onPress={onMarkStuck}
+								isDisabled={markingStuck}
+								className="gap-1.5 text-warning"
+							>
+								<AlertTriangle className="h-4 w-4" />
+								{markingStuck
+									? "Reporting…"
+									: arm.recoveryRequestedAt
+										? "Recovery requested"
+										: "Mark stuck"}
+							</Button>
 						) : null}
 						<Button
 							variant="ghost"
@@ -1368,7 +1580,7 @@ function ArmViewerConsole({
 							<ViewerToolbarPill
 								label={analysisState ?? arm.status}
 								tone={activityStateTone}
-								icon={<PulseStateIcon analysis={analysis} armStatus={arm.status} />}
+								icon={<PulseStateIcon analysis={hasEventTelemetry ? analysis : null} armStatus={arm.status} />}
 								compact
 							/>
 							<span className="min-w-0 truncate text-sm text-muted-foreground">
@@ -1382,7 +1594,7 @@ function ArmViewerConsole({
 							sessionLabel={sessionLabel}
 							sessionStatus={sessionStatus}
 							connected={connected}
-							streamLabel={`${formatCompactNumber(streamCount)} ${activeTab}`}
+							streamLabel={streamValue}
 						/>
 
 						<div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
@@ -1391,7 +1603,7 @@ function ArmViewerConsole({
 							) : (
 								<Zap className="h-3.5 w-3.5" />
 							)}
-							<span>{formatCompactNumber(streamCount)}</span>
+							<span>{activeTab === "logs" && !logsReady ? "—" : formatCompactNumber(streamCount)}</span>
 						</div>
 
 						<Button
@@ -1436,20 +1648,20 @@ function ArmViewerConsole({
 								/>
 								<ViewerMetricCard
 									label="Activity State"
-									value={analysisState ?? arm.status}
+									value={analysisState ?? (analysisLoading ? "Checking" : "No event data")}
 									detail={
-										analysis?.analysis.confidence
+										hasEventTelemetry && analysis?.analysis.confidence
 											? `${analysis.analysis.confidence} confidence`
-											: "Awaiting analysis"
+											: "Waiting for structured events"
 									}
 									tone={activityStateTone}
-									icon={<PulseStateIcon analysis={analysis} armStatus={arm.status} />}
+									icon={<PulseStateIcon analysis={hasEventTelemetry ? analysis : null} armStatus={arm.status} />}
 									compact={compactSummary}
 								/>
 								<ViewerMetricCard
 									label="Session"
 									value={sessionLabel}
-									detail={connected ? "Receiving events" : "History only"}
+									detail={connected ? "Event stream connected" : "History only"}
 									tone={sessionTone}
 									icon={
 										sessionStatus === "busy" ? (
@@ -1462,7 +1674,7 @@ function ArmViewerConsole({
 								/>
 								<ViewerMetricCard
 									label="Stream"
-									value={`${formatCompactNumber(streamCount)} ${activeTab}`}
+									value={streamValue}
 									detail={activeTab === "logs" ? "Captured messages" : "Structured events"}
 									tone="neutral"
 									icon={
@@ -1585,7 +1797,12 @@ function ArmViewerConsole({
 									</div>
 								) : null}
 
-								{activities.length === 0 && !currentText ? (
+								{eventsLoading && activities.length === 0 ? (
+									<div className="flex items-center gap-2 text-sm text-muted-foreground">
+										<Loader2 className="h-4 w-4 animate-spin" />
+										<span>Loading event history...</span>
+									</div>
+								) : activities.length === 0 && !currentText ? (
 									<ViewerEmptyState
 										icon={<Zap className="h-8 w-8" />}
 										title="No activity yet"
@@ -1615,14 +1832,14 @@ function ArmViewerConsole({
 									</div>
 								) : null}
 
-								{logsLoading && messages.length === 0 ? (
+								{(logsLoading || !logsReady) && messages.length === 0 ? (
 									<div className="flex items-center gap-2 text-sm text-muted-foreground">
 										<Loader2 className="h-4 w-4 animate-spin" />
 										<span>Loading logs...</span>
 									</div>
 								) : null}
 
-								{messages.length === 0 && !logsLoading ? (
+								{messages.length === 0 && logsReady && !logsLoading ? (
 									<ViewerEmptyState
 										icon={<Terminal className="h-8 w-8" />}
 										title="No message logs yet"
@@ -2338,6 +2555,34 @@ function ArmAnalysisPanel({
 
 	if (!analysis) {
 		return null;
+	}
+
+	if (analysis.analysis.metrics.eventCount === 0) {
+		return (
+			<div
+				className={cn(
+					embedded ? "pt-2.5" : "border-b border-border px-5",
+					compact ? "py-3" : "py-4",
+				)}
+			>
+				<div className="flex items-start gap-3 rounded-md border border-border bg-surface-secondary/60 px-3 py-2.5">
+					<Radio className="mt-0.5 h-4 w-4 text-muted-foreground" />
+					<div className="min-w-0 flex-1">
+						<p className="text-sm font-medium">No structured event telemetry yet</p>
+						<p className="mt-1 text-xs leading-5 text-muted-foreground">
+							Message logs remain available; health confidence and trend appear after events arrive.
+						</p>
+					</div>
+					<button
+						onClick={onRefresh}
+						className="text-muted-foreground transition-colors hover:text-foreground"
+						aria-label="Refresh analysis"
+					>
+						<RefreshCw className="h-3.5 w-3.5" />
+					</button>
+				</div>
+			</div>
+		);
 	}
 
 	const state = analysis.analysis.state;

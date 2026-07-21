@@ -212,24 +212,29 @@ interface ArmRowProps {
 	arm: Arm;
 	attention: boolean;
 	spawningArmId: string | null;
+	markingStuckArmId: string | null;
 	onOpen: () => void;
 	onDelete: () => void;
 	onSpawn: () => void;
 	onRecover: () => void;
+	onMarkStuck: () => void;
 }
 
 function ArmRow({
 	arm,
 	attention,
 	spawningArmId,
+	markingStuckArmId,
 	onOpen,
 	onDelete,
 	onSpawn,
 	onRecover,
+	onMarkStuck,
 }: ArmRowProps) {
 	const action = armActionFor(arm);
 	const isRecover = action?.kind === "recover";
 	const isSpawning = spawningArmId === arm.id;
+	const isMarkingStuck = markingStuckArmId === arm.id;
 	const contextPct = arm.contextBudget
 		? Math.min((arm.currentContextUsed / arm.contextBudget) * 100, 100)
 		: 0;
@@ -284,6 +289,11 @@ function ArmRow({
 					aria-hidden
 				/>
 				<span className="font-medium shrink-0">{arm.name}</span>
+				{arm.recoveryRequestedAt && (
+					<Chip size="sm" variant="soft" color="warning" className="shrink-0">
+						Recovery requested
+					</Chip>
+				)}
 				<span className="text-xs text-muted-foreground shrink-0">{arm.harness}</span>
 				{arm.provider && (
 					<Chip size="sm" variant="soft" className="shrink-0">
@@ -359,6 +369,22 @@ function ArmRow({
 							{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
 						</Button>
 					)}
+					{arm.status !== "stopped" && (
+						<Button
+							variant="ghost"
+							size="sm"
+							onPress={onMarkStuck}
+							isDisabled={markingStuckArmId !== null}
+							className="gap-1.5 text-warning"
+						>
+							<AlertTriangle className="h-3.5 w-3.5" />
+							{isMarkingStuck
+								? "Reporting…"
+								: arm.recoveryRequestedAt
+									? "Recovery requested"
+									: "Mark stuck"}
+						</Button>
+					)}
 					<Button
 						isIconOnly
 						variant="ghost"
@@ -409,6 +435,7 @@ export function ArmsPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [spawningArmId, setSpawningArmId] = useState<string | null>(null);
+	const [markingStuckArmId, setMarkingStuckArmId] = useState<string | null>(null);
 	const [spawnModal, setSpawnModal] = useState<NewArmModalState>(
 		DEFAULT_SPAWN_MODAL_STATE,
 	);
@@ -608,6 +635,25 @@ export function ArmsPage() {
 				);
 			} finally {
 				setSpawningArmId(null);
+			}
+		},
+		[loadArms, showError, showSuccess],
+	);
+
+	const handleMarkStuck = useCallback(
+		async (arm: Arm) => {
+			setMarkingStuckArmId(arm.id);
+			try {
+				const { arm: updatedArm } = await api.markArmStuck(arm.id);
+				setArms((previous) =>
+					previous.map((current) => (current.id === updatedArm.id ? updatedArm : current)),
+				);
+				await loadArms();
+				showSuccess(`${arm.name} will be checked for recovery on the next brain pass.`, "Arm Marked Stuck");
+			} catch (err) {
+				showError(err instanceof Error ? err.message : "Failed to mark arm stuck", "Mark Stuck Failed");
+			} finally {
+				setMarkingStuckArmId(null);
 			}
 		},
 		[loadArms, showError, showSuccess],
@@ -978,10 +1024,12 @@ export function ArmsPage() {
 										arm={arm}
 										attention
 										spawningArmId={spawningArmId}
+										markingStuckArmId={markingStuckArmId}
 										onOpen={() => openArmViewer(arm.id)}
 										onDelete={() => handleDelete(arm.id)}
 										onSpawn={() => handleSpawn(arm)}
 										onRecover={() => handleRecover(arm)}
+										onMarkStuck={() => handleMarkStuck(arm)}
 									/>
 								))}
 							</div>
@@ -1006,10 +1054,12 @@ export function ArmsPage() {
 										arm={arm}
 										attention={false}
 										spawningArmId={spawningArmId}
+										markingStuckArmId={markingStuckArmId}
 										onOpen={() => openArmViewer(arm.id)}
 										onDelete={() => handleDelete(arm.id)}
 										onSpawn={() => handleSpawn(arm)}
 										onRecover={() => handleRecover(arm)}
+										onMarkStuck={() => handleMarkStuck(arm)}
 									/>
 								))
 							)}

@@ -100,6 +100,10 @@ export interface ProjectPlanCandidate extends WorkspaceTextFile {
   reasons: string[];
 }
 
+export interface ProjectPlanDocument extends WorkspaceTextFile {
+  recentlyChanged: boolean;
+}
+
 export interface SetupTemplateFile extends WorkspaceTextFile {
   format: 'yaml' | 'toml' | 'jinja';
 }
@@ -111,6 +115,7 @@ export interface ProjectSetupStatus {
   canonicalPlan: WorkspaceTextFile | null;
   canonicalTaskCount: number;
   candidates: ProjectPlanCandidate[];
+  projectDocuments: ProjectPlanDocument[];
   templateFiles: SetupTemplateFile[];
   recommendedPath: string;
   defaultContent: string;
@@ -441,6 +446,13 @@ class ApiClient {
     });
   }
 
+  async markArmStuck(id: string) {
+    return this.request<{ arm: Arm }>(`/arms/${encodeURIComponent(id)}/mark-stuck`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  }
+
   async updateArm(id: string, data: Partial<Arm>) {
     return this.request<{ arm: Arm }>(`/arms/${id}`, {
       method: 'PATCH',
@@ -459,7 +471,15 @@ class ApiClient {
       messages: ArmMessage[];
       sessionId?: string;
       error?: string;
-    }>(`/arms/${id}/messages?limit=${limit}`);
+    }>(`/arms/${encodeURIComponent(id)}/messages?limit=${limit}`);
+  }
+
+  async getArmState(id: string) {
+    return this.request<{
+      state: string;
+      hasSession: boolean;
+      distributed?: boolean;
+    }>(`/arms/${encodeURIComponent(id)}/state`);
   }
 
   async getArmTodos(id: string) {
@@ -689,6 +709,7 @@ class ApiClient {
     eventTypes?: string[];
     taskId?: string;
     bugId?: string;
+    classification?: string;
     from?: string;
     to?: string;
     daysBack?: number;
@@ -701,6 +722,7 @@ class ApiClient {
     if (params.eventTypes?.length) filters.event_types = params.eventTypes;
     if (params.taskId) filters.task_id = params.taskId;
     if (params.bugId) filters.bug_id = params.bugId;
+    if (params.classification) filters.classification = params.classification;
     if (params.from) {
       filters.from = params.from;
     } else if (params.daysBack !== undefined) {
@@ -1188,7 +1210,7 @@ class ApiClient {
     if (options?.limit) query.set('limit', options.limit.toString());
     const queryStr = query.toString();
     return this.request<EventWindowResponse>(
-      `/events/arms/${armId}/window${queryStr ? `?${queryStr}` : ''}`
+      `/events/arms/${encodeURIComponent(armId)}/window${queryStr ? `?${queryStr}` : ''}`
     );
   }
 
@@ -1197,7 +1219,7 @@ class ApiClient {
     if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
     const queryStr = query.toString();
     return this.request<ArmAnalysisFull>(
-      `/events/arms/${armId}/analysis${queryStr ? `?${queryStr}` : ''}`
+      `/events/arms/${encodeURIComponent(armId)}/analysis${queryStr ? `?${queryStr}` : ''}`
     );
   }
 
@@ -1330,6 +1352,7 @@ export interface StatusHistoryEvent {
   armId?: string;
   status?: string;
   priority?: string;
+  classification?: string;
   metadata: Record<string, unknown>;
 }
 
@@ -1391,6 +1414,7 @@ export interface Arm {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
+  recoveryRequestedAt?: string;
   lastHeartbeat?: string | null;
   lastOutputAt?: string | null;
   config: JsonObject;
@@ -1647,6 +1671,11 @@ export interface ArmMessage {
     id: string;
     role: 'user' | 'assistant' | 'system';
     time?: JsonValue;
+    cost?: number;
+    tokens?: {
+      input?: number;
+      output?: number;
+    };
     error?: { name: string; data?: { message: string } };
   };
   parts: ArmMessagePart[];
@@ -1763,6 +1792,8 @@ export interface Task {
 export interface OpenCodeEvent extends JsonObject {
   type: string;
   properties: JsonObject;
+  timestamp?: string;
+  sequence?: number;
 }
 
 export function isOpenCodeEvent(value: JsonValue | undefined): value is OpenCodeEvent {
@@ -1845,6 +1876,7 @@ export interface EventWindowResponse {
       type: string;
       timestamp: string;
       data: JsonObject;
+      sequence?: number;
     }>;
     lastEventAt: string | null;
     silentDurationMs: number;

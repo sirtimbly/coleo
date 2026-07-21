@@ -210,6 +210,7 @@ describe("MCP Server - Stdio Integration", () => {
         env: {
           ...process.env,
           COLEO_DIR: coleoDir,
+          COLEO_DB_PATH: dbPath,
           COLEO_ARM_ID: armId,
           COLEO_PROJECT_ROOT: testDir,
           COLEO_NATS_URL: "nats://127.0.0.1:65535",

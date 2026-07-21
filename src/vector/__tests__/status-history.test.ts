@@ -5,6 +5,7 @@ import {
   eventToText,
   createEventId,
 } from "../status-history";
+import { resolveStatusHistoryEventIdentifiers } from "../indexing-pipeline";
 
 describe("status-history", () => {
   describe("STATUS_HISTORY_CONFIG", () => {
@@ -24,6 +25,7 @@ describe("status-history", () => {
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("type");
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("source");
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("timestamp");
+      expect(STATUS_HISTORY_CONFIG.filterFields).toContain("classification");
     });
   });
 
@@ -101,13 +103,13 @@ describe("status-history", () => {
 
       const text = eventToText(event);
 
-      expect(text).toContain('\"classification\":\"bug_fix\"');
-      expect(text).toContain('\"taskId\":\"task-1\"');
-      expect(text).toContain('\"bugId\":\"bug-1\"');
-      expect(text).toContain('\"errorDetails\":\"dimension mismatch\"');
-      expect(text).toContain('\"streamSequence\":42');
+      expect(text).toContain('"classification":"bug_fix"');
+      expect(text).toContain('"taskId":"task-1"');
+      expect(text).toContain('"bugId":"bug-1"');
+      expect(text).toContain('"errorDetails":"dimension mismatch"');
+      expect(text).toContain('"streamSequence":42');
       expect(eventToText({ ...event, metadata: { ...event.metadata } })).toBe(text);
-      expect(text).not.toContain('\"vector\"');
+      expect(text).not.toContain('"vector"');
     });
   });
 
@@ -128,6 +130,32 @@ describe("status-history", () => {
       expect(id).toContain("discovery");
       expect(id).toContain("arm-2");
       expect(id).toContain(date.toISOString());
+    });
+  });
+
+  describe("resolveStatusHistoryEventIdentifiers", () => {
+    it("should fallback taskId from sourceTaskId fields", () => {
+      const ids = resolveStatusHistoryEventIdentifiers(
+        {
+          sourceTaskId: "task-123",
+          source_task_id: "ignored-legacy",
+        },
+        "bug_report",
+      );
+
+      expect(ids.taskId).toBe("task-123");
+      expect(ids.discoveryId).toBeUndefined();
+    });
+
+    it("should use event id as bugId for bug_report events", () => {
+      const ids = resolveStatusHistoryEventIdentifiers(
+        {
+          id: "bug-77",
+        },
+        "bug_report",
+      );
+
+      expect(ids.bugId).toBe("bug-77");
     });
   });
 });

@@ -28,6 +28,7 @@ export interface StatusEventStreamMetadata {
 
 export interface ConsumedStatusEvent {
   type: ConsumedStatusEventType;
+  classification?: string;
   event: EventData;
   rawPayload: string;
   metadata: StatusEventStreamMetadata;
@@ -86,6 +87,7 @@ export function decodeStatusHistoryMessage(msg: JsMsg): ConsumedStatusEvent | nu
   const info = messageInfo(msg);
   return {
     type,
+    classification: classifyEvent(parsed),
     event: parsed,
     rawPayload,
     metadata: {
@@ -98,6 +100,21 @@ export function decodeStatusHistoryMessage(msg: JsMsg): ConsumedStatusEvent | nu
       receivedAt: new Date().toISOString(),
     },
   };
+}
+
+function classifyEvent(event: EventData): string | undefined {
+  const direct = event.data.classification;
+  if (typeof direct === "string" && direct.length > 0) {
+    return direct;
+  }
+  const task = event.data.task;
+  if (task && typeof task === "object" && !Array.isArray(task)) {
+    const classification = (task as Record<string, unknown>).classification;
+    return typeof classification === "string" && classification.length > 0
+      ? classification
+      : undefined;
+  }
+  return undefined;
 }
 
 export async function processStatusHistoryMessage(

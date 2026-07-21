@@ -38,6 +38,7 @@ describe("QdrantVectorStore", () => {
 		const fakeClient = {
 			getCollections: mock(async () => ({ collections: [] })),
 			createCollection: mock(async () => ({})),
+			createPayloadIndex: mock(async () => ({})),
 			deleteCollection: mock(async () => ({})),
 			upsert: mock(async () => ({})),
 			search: mock(async () => [
@@ -59,6 +60,12 @@ describe("QdrantVectorStore", () => {
 		await store.createCollection("demo", 8, "Cosine");
 		expect(fakeClient.createCollection).toHaveBeenCalledWith("demo", {
 			vectors: { size: 8, distance: "Cosine" },
+		});
+
+		await store.createPayloadIndex("demo", "timestamp", "datetime");
+		expect(fakeClient.createPayloadIndex).toHaveBeenCalledWith("demo", {
+			field_name: "timestamp",
+			field_schema: "datetime",
 		});
 
 		await store.upsertPoints("demo", [

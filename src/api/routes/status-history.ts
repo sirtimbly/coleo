@@ -124,6 +124,7 @@ export function createStatusHistoryRoutes(): Hono {
 								taskId: filters.task_id,
 								bugId: filters.bug_id,
 								source: filters.source,
+								classification: filters.classification,
 								since: filters.from ? new Date(filters.from) : undefined,
 								until: filters.to ? new Date(filters.to) : undefined,
 							});
@@ -142,6 +143,7 @@ export function createStatusHistoryRoutes(): Hono {
 						taskId: filters.task_id,
 						bugId: filters.bug_id,
 						source: filters.source,
+						classification: filters.classification,
 						since: filters.from ? new Date(filters.from) : undefined,
 						until: filters.to ? new Date(filters.to) : undefined,
 					});
@@ -258,6 +260,7 @@ export function createStatusHistoryRoutes(): Hono {
 				armId: body.armId,
 				status: body.status,
 				priority: body.priority,
+				classification: body.classification,
 				metadata: body.metadata || {},
 			};
 

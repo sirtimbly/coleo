@@ -431,15 +431,11 @@ export async function sendBrainMessage(message: string): Promise<void> {
 }
 
 export async function markArmStuck(armId: string): Promise<void> {
-  const now = new Date().toISOString();
   await apiRequest(
-    `/api/arms/${encodeURIComponent(armId)}`,
+    `/api/arms/${encodeURIComponent(armId)}/mark-stuck`,
     {
-      method: "PATCH",
-      body: JSON.stringify({
-        status: "idle",
-        lastActivityAt: now,
-      }),
+      method: "POST",
+      body: JSON.stringify({}),
     },
   );
 }

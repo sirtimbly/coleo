@@ -99,6 +99,24 @@ describe("project setup routes", () => {
 		expect(body.candidates[0]?.path).toBe("docs/project-plan.md");
 	});
 
+	it("lists the complete project document tree with modification metadata", async () => {
+		await mkdir(join(root, ".project", "acceptance"), { recursive: true });
+		await writeFile(join(root, ".project", "README.md"), "# Overview\n");
+		await writeFile(join(root, ".project", "acceptance", "phase-1.md"), "# Acceptance\n");
+
+		const response = await app.request("http://localhost/api/project-setup");
+		const body = await response.json() as {
+			projectDocuments: Array<{ path: string; modifiedAt: string; recentlyChanged: boolean }>;
+		};
+
+		expect(response.status).toBe(200);
+		expect(body.projectDocuments.map((document) => document.path)).toEqual([
+			".project/acceptance/phase-1.md",
+			".project/README.md",
+		]);
+		expect(body.projectDocuments.every((document) => document.modifiedAt && document.recentlyChanged)).toBe(true);
+	});
+
 	it("lists and edits Arm templates separately from project plans", async () => {
 		await mkdir(join(root, ".coleo", "templates"), { recursive: true });
 		await writeFile(join(root, ".coleo", "templates", "reviewer.yml"), "arm:\n  name: reviewer\n");

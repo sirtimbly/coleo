@@ -43,7 +43,7 @@ describe("Brain idle prompt guards", () => {
 		).toBe("busy");
 	});
 
-	it("does not prompt an idle arm when harness reports processing", async () => {
+	it("prompts an idle API arm when processing state has no recent progress", async () => {
 		const brain = new Brain({
 			coleoDir: "/tmp",
 			pollIntervalMs: 1000,
@@ -115,7 +115,102 @@ describe("Brain idle prompt guards", () => {
 			brain as unknown as { promptIdleArms: () => Promise<void> }
 		).promptIdleArms();
 
-		expect(promptCount).toBe(0);
-		expect(syncCalls).toBe(1);
+		expect(promptCount).toBe(1);
+		expect(syncCalls).toBe(0);
+	});
+
+	it("marks a busy API arm idle when processing state has gone stale", async () => {
+		const brain = new Brain({
+			coleoDir: "/tmp",
+			pollIntervalMs: 1000,
+			verbose: false,
+		});
+		const arm: Arm = {
+			id: "arm-stale",
+			name: "Stale arm",
+			agent: "opencode-api",
+			status: "busy",
+			startedAt: new Date(Date.now() - 20 * 60 * 1000),
+		};
+		(brain as unknown as { arms: Map<string, Arm> }).arms = new Map([[arm.id, arm]]);
+		(
+			brain as unknown as {
+				getArmHarnessState: (_armId: string) => Promise<{ state: string; hasSession: boolean }>;
+			}
+		).getArmHarnessState = async () => ({ state: "processing", hasSession: true });
+		(brain as unknown as { isApiHarness: (_armId: string) => Promise<boolean> }).isApiHarness =
+			async () => true;
+		(
+			brain as unknown as {
+				getBrainConfigNumber: (_key: string, defaultValue: number) => Promise<number>;
+			}
+		).getBrainConfigNumber = async (_key, defaultValue) => defaultValue;
+		(
+			brain as unknown as {
+				getRecentArmActivitySignal: (_armId: string, _thresholdMs: number) => Promise<{ recent: boolean }>;
+			}
+		).getRecentArmActivitySignal = async () => ({ recent: false });
+		const statuses: string[] = [];
+		(
+			brain as unknown as {
+				syncArmStatus: (_armId: string, status: "idle" | "busy" | "stopped") => Promise<void>;
+			}
+		).syncArmStatus = async (_armId, status) => {
+			statuses.push(status);
+		};
+
+		await (brain as unknown as { checkStuckArms: () => Promise<void> }).checkStuckArms();
+
+		expect(statuses).toEqual(["idle"]);
+		expect(arm.status).toBe("idle");
+	});
+
+	it("keeps a processing API arm busy while message progress is recent", async () => {
+		const brain = new Brain({
+			coleoDir: "/tmp",
+			pollIntervalMs: 1000,
+			verbose: false,
+		});
+		const arm: Arm = {
+			id: "arm-active",
+			name: "Active arm",
+			agent: "opencode-api",
+			status: "busy",
+			startedAt: new Date(Date.now() - 20 * 60 * 1000),
+		};
+		(brain as unknown as { arms: Map<string, Arm> }).arms = new Map([[arm.id, arm]]);
+		(
+			brain as unknown as {
+				getArmHarnessState: (_armId: string) => Promise<{ state: string; hasSession: boolean }>;
+			}
+		).getArmHarnessState = async () => ({ state: "processing", hasSession: true });
+		(brain as unknown as { isApiHarness: (_armId: string) => Promise<boolean> }).isApiHarness =
+			async () => true;
+		(
+			brain as unknown as {
+				getBrainConfigNumber: (_key: string, defaultValue: number) => Promise<number>;
+			}
+		).getBrainConfigNumber = async (_key, defaultValue) => defaultValue;
+		(
+			brain as unknown as {
+				getRecentArmActivitySignal: (_armId: string, _thresholdMs: number) => Promise<{ recent: boolean; reason: string }>;
+			}
+		).getRecentArmActivitySignal = async () => ({
+			recent: true,
+			reason: "recent session message 12s ago",
+		});
+		const statuses: string[] = [];
+		(
+			brain as unknown as {
+				syncArmStatus: (_armId: string, status: "idle" | "busy" | "stopped") => Promise<void>;
+			}
+		).syncArmStatus = async (_armId, status) => {
+			statuses.push(status);
+		};
+
+		await (brain as unknown as { checkStuckArms: () => Promise<void> }).checkStuckArms();
+
+		expect(statuses).toEqual([]);
+		expect(arm.status).toBe("busy");
 	});
 });

@@ -13,14 +13,23 @@ export class InMemoryEventStore implements IEventStore {
   }
 
   async publishEvent(subject: string, data: EventData): Promise<void> {
-    this.events.push({ subject, data });
+    this.events.push({
+      subject,
+      data: {
+        ...data,
+        sequence: data.sequence ?? this.events.length + 1,
+      },
+    });
   }
 
   async queryEvents(options: QueryOptions): Promise<EventData[]> {
     let results = this.events.map(e => e.data);
     
     if (options.subject) {
-      const pattern = options.subject.replace(/>/g, '.*').replace(/\*/g, '[^.]*');
+      const pattern = options.subject
+        .replace(/\./g, '\\.')
+        .replace(/\*/g, '[^.]*')
+        .replace(/>/g, '.*');
       const regex = new RegExp(`^${pattern}$`);
       results = this.events
         .filter(e => regex.test(e.subject))
@@ -39,13 +48,15 @@ export class InMemoryEventStore implements IEventStore {
     }
     
     const limit = options.limit ?? 100;
-    return results.slice(0, limit);
+    return options.latest ? results.slice(-limit) : results.slice(0, limit);
   }
 
-  async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
+  async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {
     return this.queryEvents({
       subject: `coleo.events.arm.${armId}.>`,
       limit,
+      since,
+      latest: true,
     });
   }
 
@@ -60,6 +71,7 @@ export class InMemoryEventStore implements IEventStore {
     return this.queryEvents({
       limit,
       since,
+      latest: true,
     });
   }
 

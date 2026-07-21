@@ -51,6 +51,7 @@ function event(type: string) {
       taskId: "task-1",
       summary: "Preserve this complete payload",
       issues: ["example"],
+      classification: "development",
     },
     timestamp: "2026-07-20T11:59:00.000Z",
   };
@@ -108,6 +109,7 @@ describe("status history consumer", () => {
 
     expect(decoded).not.toBeNull();
     expect(decoded?.type).toBe("status_report");
+    expect(decoded?.classification).toBe("development");
     expect(decoded?.event).toEqual(original);
     expect(JSON.parse(decoded?.rawPayload || "{}")).toEqual(original);
     expect(decoded?.metadata).toMatchObject({

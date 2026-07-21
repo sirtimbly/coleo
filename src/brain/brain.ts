@@ -1344,7 +1344,7 @@ export class Brain {
 							});
 						} else {
 							// Arm is idle, can prompt directly
-							await this.sendPromptToArm(intent.armName, intent.instruction, {
+							await this.sendPromptToArm(targetArm.id, intent.instruction, {
 								attachments,
 							});
 							this.log(`Prompted arm ${intent.armName} directly`);
@@ -5516,7 +5516,7 @@ Report findings using bug resolution workflow.`;
 							const prompt = await this.templates.renderTemplate(
 								"arm-api-restart-prompt.jinja",
 							);
-							await this.sendPromptToArm(arm.name, prompt);
+							await this.sendPromptToArm(armId, prompt);
 							continue;
 						}
 					} else {
@@ -5797,13 +5797,25 @@ Report findings using bug resolution workflow.`;
 					continue;
 				}
 				if (isActiveHarnessState(harnessState.state)) {
-					this.log(
-						`Arm ${arm.id} [${armDomain}]: harness state is "${harnessState.state}", skipping idle prompt`,
-					);
-					if (arm.status !== "busy") {
-						await this.syncArmStatus(arm.id, "busy");
+					const requiresProgressEvidence =
+						harnessState.state === "processing" ||
+						harnessState.state === "executing" ||
+						harnessState.state === "busy";
+					const activity = requiresProgressEvidence
+						? await this.getApiHarnessActivityEvidence(arm.id)
+						: null;
+					if (!activity || activity.recent) {
+						this.log(
+							`Arm ${arm.id} [${armDomain}]: harness state is "${harnessState.state}"${activity?.reason ? ` with ${activity.reason}` : ""}, skipping idle prompt`,
+						);
+						if (arm.status !== "busy") {
+							await this.syncArmStatus(arm.id, "busy");
+						}
+						continue;
 					}
-					continue;
+					this.log(
+						`Arm ${arm.id} [${armDomain}]: harness reports "${harnessState.state}" but no event or message progress was recorded for ${activity.staleMinutes}m; treating it as stale`,
+					);
 				}
 			}
 
@@ -5923,7 +5935,7 @@ Report findings using bug resolution workflow.`;
 			},
 		);
 
-		const promptSuccess = await this.sendPromptToArm(armName, prompt);
+		const promptSuccess = await this.sendPromptToArm(armId, prompt);
 
 		if (promptSuccess) {
 			this.logActivity("brain", "arm_prompted", armId, {
@@ -6057,6 +6069,20 @@ Report findings using bug resolution workflow.`;
 		}
 
 		return { recent: false };
+	}
+
+	private async getApiHarnessActivityEvidence(
+		armId: string,
+	): Promise<{ recent: boolean; reason?: string; staleMinutes: number }> {
+		const staleMinutes = await this.getBrainConfigNumber(
+			"brain_api_arm_stale_activity_minutes",
+			5,
+		);
+		const signal = await this.getRecentArmActivitySignal(
+			armId,
+			staleMinutes * 60 * 1000,
+		);
+		return { ...signal, staleMinutes };
 	}
 
 	private extractSessionMessageId(
@@ -6220,16 +6246,15 @@ Report findings using bug resolution workflow.`;
 			if (!promptText) {
 				return;
 			}
-			const armTarget = arm.name || arm.id;
-			const prompted = await this.sendPromptToArm(armTarget, promptText);
+			const prompted = await this.sendPromptToArm(arm.id, promptText);
 			if (!prompted) {
 				this.log(
-					`Arm output follow-up prompt failed for ${armTarget} after action ${action}`,
+					`Arm output follow-up prompt failed for ${arm.id} after action ${action}`,
 				);
 				return;
 			}
 			this.log(
-				`Arm output action no_action_with_prompt: prompted ${armTarget} to continue without waiting`,
+				`Arm output action no_action_with_prompt: prompted ${arm.id} to continue without waiting`,
 			);
 			this.logActivity("brain", "arm_output_action", arm.id, {
 				action: "no_action_with_prompt",
@@ -6403,11 +6428,10 @@ Report findings using bug resolution workflow.`;
 				`I updated task ${task.id} (${task.status}). Continue with the next concrete step and report progress.`;
 		}
 
-		const armTarget = arm.name || arm.id;
-		const prompted = await this.sendPromptToArm(armTarget, followupPrompt);
+		const prompted = await this.sendPromptToArm(arm.id, followupPrompt);
 		if (!prompted) {
 			this.log(
-				`Arm output follow-up prompt failed for ${armTarget} after action ${action}`,
+				`Arm output follow-up prompt failed for ${arm.id} after action ${action}`,
 			);
 		}
 	}
@@ -6507,12 +6531,12 @@ Report findings using bug resolution workflow.`;
 	 * Send a prompt to an arm via the API server
 	 */
 	private async sendPromptToArm(
-		armName: string,
+		armId: string,
 		message: string,
 		options?: { interrupt?: boolean; attachments?: TaskAttachment[] },
 	): Promise<boolean> {
 		try {
-			const url = `${this.apiBaseUrl}/api/arms/${armName}/prompt`;
+			const url = `${this.apiBaseUrl}/api/arms/${encodeURIComponent(armId)}/prompt`;
 			const response = await fetch(url, {
 				method: "POST",
 				headers: {
@@ -6527,8 +6551,8 @@ Report findings using bug resolution workflow.`;
 			});
 
 			if (response.ok) {
-				this.healthMonitor?.recordPromptSent(armName);
-				const arm = this.arms.get(armName);
+				this.healthMonitor?.recordPromptSent(armId);
+				const arm = this.arms.get(armId);
 				if (arm) {
 					this.lastStuckState.delete(arm.id);
 				}
@@ -6536,7 +6560,7 @@ Report findings using bug resolution workflow.`;
 
 			return response.ok;
 		} catch (err) {
-			this.log(`Failed to send prompt to arm ${armName}: ${err}`);
+			this.log(`Failed to send prompt to arm ${armId}: ${err}`);
 			return false;
 		}
 	}
@@ -7166,16 +7190,23 @@ Report findings using bug resolution workflow.`;
 					);
 					// Fall through to log analysis
 				} else if (harnessState.state === "processing") {
-					// Arm is actively processing - check how long
-					// If it's been processing for too long, it might be stuck
+					// A harness can retain processing after its turn has completed, so require
+					// independent event or message progress before treating it as active.
 					this.log(`Arm ${arm.name}: harness confirms "processing" state`);
-					// For API harnesses, trust the processing state - don't override to idle
-					// even if there's no recent activity signal (long-running tasks are valid)
 					const isApi = await this.isApiHarness(arm.id);
 					if (isApi) {
+						const activity = await this.getApiHarnessActivityEvidence(arm.id);
+						if (activity.recent) {
+							this.log(
+								`Arm ${arm.name}: API harness reports processing with ${activity.reason || "recent progress"}, keeping busy`,
+							);
+							continue;
+						}
 						this.log(
-							`Arm ${arm.name}: API harness confirmed processing, keeping busy`,
+							`Arm ${arm.name}: API harness reports processing but no event or message progress was recorded for ${activity.staleMinutes}m; marking idle so the next poll can nudge it`,
 						);
+						await this.syncArmStatus(arm.id, "idle");
+						arm.status = "idle";
 						continue;
 					}
 					// Fall through to log analysis to check if it's stuck
@@ -7325,7 +7356,7 @@ Report findings using bug resolution workflow.`;
 						`Answering ${arm.name}'s question: "${analysis.suggestedResponse.slice(0, 50)}..."`,
 					);
 					const success = await this.sendPromptToArm(
-						arm.name,
+						arm.id,
 						analysis.suggestedResponse,
 					);
 					if (success) {
@@ -7347,7 +7378,7 @@ Report findings using bug resolution workflow.`;
 						analysis.suggestedResponse || "Yes, proceed.";
 					this.log(`Auto-approving for ${arm.name}: "${approvalResponse}"`);
 					const success = await this.sendPromptToArm(
-						arm.name,
+						arm.id,
 						approvalResponse,
 					);
 					if (success) {
@@ -7365,14 +7396,14 @@ Report findings using bug resolution workflow.`;
 			case "compact":
 				// Arm is looping - send /compact command and retry
 				this.log(`Sending /compact to ${arm.name} due to looping`);
-				await this.sendPromptToArm(arm.name, "/compact");
+				await this.sendPromptToArm(arm.id, "/compact");
 
 				// Wait a bit then send a nudge to continue
 				setTimeout(async () => {
 					const prompt = await this.templates.renderTemplate(
 						"arm-loop-compact-nudge.jinja",
 					);
-					await this.sendPromptToArm(arm.name, prompt);
+					await this.sendPromptToArm(arm.id, prompt);
 				}, 2000);
 
 				this.logActivity("brain", "arm_unstuck", arm.id, {
@@ -7403,7 +7434,7 @@ Report findings using bug resolution workflow.`;
 				this.log(
 					`Prompting ${arm.name} to continue: "${nudgeMessage.slice(0, 50)}..."`,
 				);
-				await this.sendPromptToArm(arm.name, nudgeMessage);
+				await this.sendPromptToArm(arm.id, nudgeMessage);
 				this.logActivity("brain", "arm_unstuck", arm.id, {
 					action: "prompted",
 					response: nudgeMessage.slice(0, 100),
@@ -7566,7 +7597,7 @@ Report findings using bug resolution workflow.`;
 		);
 
 		// Send prompt to arm
-		const success = await this.sendPromptToArm(arm.name, promptText);
+		const success = await this.sendPromptToArm(arm.id, promptText);
 
 		if (success) {
 			this.logActivity("brain", "arm_prompted_complete_task", arm.id, {
@@ -7868,7 +7899,7 @@ Report findings using bug resolution workflow.`;
 				promptCount: tracker.promptCount,
 				intervention: "interrupt",
 			});
-			await this.sendPromptToArm(arm.name, "/interrupt", { interrupt: true });
+			await this.sendPromptToArm(arm.id, "/interrupt", { interrupt: true });
 			tracker.escalationLevel = 1;
 			tracker.promptCount = 0; // Reset after intervention
 		} else if (tracker.escalationLevel === 1) {
@@ -7880,7 +7911,7 @@ Report findings using bug resolution workflow.`;
 				promptCount: tracker.promptCount,
 				intervention: "compact",
 			});
-			await this.sendPromptToArm(arm.name, "/compact");
+			await this.sendPromptToArm(arm.id, "/compact");
 			tracker.escalationLevel = 2;
 			tracker.promptCount = 0;
 		} else if (tracker.escalationLevel === 2) {
@@ -8075,7 +8106,7 @@ Report findings using bug resolution workflow.`;
 				},
 			);
 
-			const prompted = await this.sendPromptToArm(arm.name || arm.id, prompt);
+			const prompted = await this.sendPromptToArm(arm.id, prompt);
 			if (!prompted) {
 				await this.patchTaskViaApi(task.id, {
 					status: "blocked",

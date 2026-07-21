@@ -9,8 +9,10 @@ import {
 	Archive,
 	ChevronDown,
 	ChevronUp,
+	Bot,
 	MessageCircle,
 	Reply,
+	UserRound,
 } from "lucide-react";
 import { api, type MailMessage, useMessage } from "@/lib";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components";
@@ -32,6 +34,66 @@ import {
 
 const MAIL_REFRESH_INTERVAL_MS = 10_000;
 
+interface MailThreadGridProps {
+	threads: MailThread[];
+	expandedThreadIds: ReadonlySet<string>;
+	sentMessageIds: ReadonlySet<string>;
+	formatDate: (date: string) => string;
+	onToggle: (threadId: string) => void;
+	onReply: (thread: MailThread) => void;
+	onOpenThread?: (threadId: string) => void;
+}
+
+function MailThreadGrid({
+	threads,
+	expandedThreadIds,
+	sentMessageIds,
+	formatDate,
+	onToggle,
+	onReply,
+	onOpenThread,
+}: MailThreadGridProps) {
+	if (threads.length === 0) {
+		return <div className="flex flex-1 items-center justify-center p-12 text-sm text-muted-foreground"><Mail className="mr-2 h-4 w-4" />No messages</div>;
+	}
+
+	return <div className="overflow-auto"><div className="min-w-[44rem] divide-y divide-border">
+		<div className="grid grid-cols-[minmax(18rem,2fr)_minmax(11rem,1fr)_7rem] gap-3 bg-surface-secondary px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+			<span>Conversation</span><span>Participants</span><span className="text-right">Updated</span>
+		</div>
+		{threads.map((thread) => {
+			const expanded = expandedThreadIds.has(thread.id);
+			const hasOpenAction = typeof onOpenThread === "function";
+			return <div key={thread.id}>
+				<button type="button" onClick={() => onToggle(thread.id)} aria-expanded={expanded} className={`grid w-full grid-cols-[minmax(18rem,2fr)_minmax(11rem,1fr)_7rem] gap-3 px-4 py-3 text-left hover:bg-accent/5 ${thread.unreadCount ? 'bg-accent/5' : ''}`}>
+					<div className="min-w-0"><div className="flex items-center gap-2">{expanded ? <ChevronUp className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />}<span className="truncate text-sm font-medium">{thread.subject}</span>{thread.unreadCount ? <Chip size="sm" color="danger" variant="soft">{thread.unreadCount}</Chip> : null}</div><p className="mt-1 pl-6 text-xs text-muted-foreground">{thread.messages.length} {thread.messages.length === 1 ? 'message' : 'messages'}</p></div>
+						{hasOpenAction && (
+							<button
+								type="button"
+								onClick={(event) => {
+									event.stopPropagation();
+									onOpenThread?.(thread.id);
+								}}
+								className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent/15 hover:text-foreground"
+							>
+								<Eye className="h-3.5 w-3.5" />
+								Open
+							</button>
+						)}
+						<span className="truncate text-sm text-muted-foreground">{thread.messages.at(-1)?.message.from}</span><time className="text-right text-xs text-muted-foreground">{formatDate(thread.lastMessageDate.toISOString())}</time>
+					</button>
+				{expanded ? <div className="border-t border-border/70 bg-background/50">{thread.messages.map((threadMessage, index) => {
+					const message = threadMessage.message;
+					const sent = sentMessageIds.has(message.id);
+					const automated = /\b(?:brain|arm|coleo)\b/i.test(message.from);
+					const reply = index > 0;
+					return <article key={message.id} className="grid grid-cols-[minmax(18rem,2fr)_minmax(11rem,1fr)_7rem] gap-3 border-b border-border/60 px-4 py-3 last:border-b-0" style={{ paddingLeft: `${1 + Math.min(index, 4) * 1.25}rem` }}><div className="col-span-2 min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`inline-flex h-6 w-6 items-center justify-center rounded-full ${sent ? 'bg-accent/15 text-accent' : 'bg-secondary text-muted-foreground'}`}>{sent || !automated ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}</span><span className="text-sm font-medium">{message.from}</span><Chip size="sm" variant="secondary">{sent ? 'You sent' : automated ? 'Brain or arm' : 'Received'}</Chip>{reply ? <Chip size="sm" variant="soft"><Reply className="mr-1 h-3 w-3" />Reply</Chip> : <Chip size="sm" variant="soft">New message</Chip>}</div><p className="mt-2 whitespace-pre-wrap pl-8 text-sm leading-6 text-foreground-600">{message.body}</p></div><div className="flex flex-col items-end gap-2"><time className="text-right text-xs text-muted-foreground">{formatDate(message.date)}</time><button type="button" onClick={() => onReply(thread)} className="inline-flex items-center text-xs text-accent hover:underline"><Reply className="mr-1 h-3.5 w-3.5" />Reply</button></div></article>;
+				})}</div> : null}
+			</div>;
+		})}
+	</div></div>;
+}
+
 export function MailPage() {
 	usePageTitle('Coleo Observatory - Mail');
 	const isWorkspacePanel = useIsWorkspacePanel();
@@ -52,6 +114,9 @@ export function MailPage() {
 		"inbox",
 	);
 	const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(
+		new Set(),
+	);
+	const [expandedThreadIds, setExpandedThreadIds] = useState<Set<string>>(
 		new Set(),
 	);
 	const { openReply, openNewMessage } = useMessage();
@@ -177,6 +242,15 @@ export function MailPage() {
 		});
 	};
 
+	const toggleThreadExpansion = (threadId: string) => {
+		setExpandedThreadIds((current) => {
+			const next = new Set(current);
+			if (next.has(threadId)) next.delete(threadId);
+			else next.add(threadId);
+			return next;
+		});
+	};
+
 	const formatDate = (dateStr: string) => {
 		const date = new Date(dateStr);
 		const now = new Date();
@@ -210,6 +284,10 @@ export function MailPage() {
 	);
 
 	const selectedThread = threads.find((t) => t.id === selectedThreadId);
+	const sentMessageIds = useMemo(
+		() => new Set(sent?.messages.map((message) => message.id)),
+		[sent?.messages],
+	);
 
 	// Find first unread message index in selected thread
 	const firstUnreadIndex = selectedThread
@@ -516,41 +594,19 @@ export function MailPage() {
 						{mailboxToolbar}
 					</header>
 					<div className="min-h-0 flex-1 overflow-auto">
-						{threads.length === 0 ? (
-							<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-								No messages
-							</div>
-						) : (
-							<div className="divide-y divide-border/70">
-								{threads.map((thread) => (
-									<button
-										key={thread.id}
-										type="button"
-										className="flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-accent/5"
-										onClick={() => openThreadDetail(thread.id)}
-									>
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2">
-												<span className="truncate text-sm font-medium">
-													{thread.subject}
-												</span>
-												{thread.unreadCount > 0 ? (
-													<Chip size="sm" color="danger" variant="soft">
-														{thread.unreadCount}
-													</Chip>
-												) : null}
-											</div>
-											<div className="mt-1 text-xs text-muted-foreground">
-												{thread.messages.length} messages
-											</div>
-										</div>
-										<div className="shrink-0 text-xs text-muted-foreground">
-											{formatDate(thread.lastMessageDate.toISOString())}
-										</div>
-									</button>
-								))}
-							</div>
-						)}
+						<Card className="rounded-none h-full">
+							<CardContent className="p-0">
+								<MailThreadGrid
+									threads={threads}
+									expandedThreadIds={expandedThreadIds}
+									sentMessageIds={sentMessageIds}
+									formatDate={formatDate}
+									onToggle={toggleThreadExpansion}
+									onReply={replyToThread}
+									onOpenThread={openThreadDetail}
+								/>
+							</CardContent>
+						</Card>
 					</div>
 				</div>
 			);
@@ -610,6 +666,22 @@ export function MailPage() {
 					</div>
 				</div>
 			</WorkspacePageShell>
+		);
+	}
+
+	if (!isWorkspacePanel) {
+		return (
+			<div className="flex h-full min-h-0 flex-col bg-background">
+				<header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+					<div><h1 className="text-lg font-semibold">Mail</h1><p className="text-xs text-muted-foreground">Open a conversation to read its complete thread.</p></div>
+					<div className="ml-auto flex items-center gap-1" role="tablist" aria-label="Mailbox">
+						{(["inbox", "sent", "archive"] as const).map((tab) => <Button key={tab} size="sm" variant={activeTab === tab ? "primary" : "ghost"} onPress={() => { setActiveTab(tab); setExpandedThreadIds(new Set()); }}>{tab === "inbox" ? <Inbox className="mr-1 h-3.5 w-3.5" /> : tab === "sent" ? <Send className="mr-1 h-3.5 w-3.5" /> : <Archive className="mr-1 h-3.5 w-3.5" />}{tab}{tab === "inbox" && inbox?.pagination.unread ? <Chip size="sm" color="danger" className="ml-1">{inbox.pagination.unread}</Chip> : null}</Button>)}
+						<Button size="sm" variant="ghost" onPress={loadMail} isIconOnly aria-label="Refresh"><RefreshCw className="h-4 w-4" /></Button>
+						<Button size="sm" variant="primary" onPress={openNewMessage}><Send className="mr-1.5 h-3.5 w-3.5" />New</Button>
+					</div>
+				</header>
+				<div className="min-h-0 flex-1 overflow-auto p-4"><Card className="min-h-full rounded-lg"><CardContent className="p-0"><MailThreadGrid threads={threads} expandedThreadIds={expandedThreadIds} sentMessageIds={sentMessageIds} formatDate={formatDate} onToggle={toggleThreadExpansion} onReply={replyToThread} /></CardContent></Card></div>
+			</div>
 		);
 	}
 

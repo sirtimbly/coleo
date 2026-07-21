@@ -16,13 +16,17 @@ import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./confi
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
 import { truncateLargeFields } from "../harness/event-stream";
-import { NatsManager, setNatsManager, ArmClient } from "../nats";
+import { NatsManager, setNatsManager, ArmClient, startStatusHistoryConsumer } from "../nats";
 import { eventStore } from "../nats/jetstream";
 import { loadEnvFile } from "../config/env";
 import { ensureDefaultArmTemplates, getColeoDir } from "../config";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
+import {
+  initializeStatusHistoryCollection,
+  processConsumedStatusHistoryEvent,
+} from "../vector/indexing-pipeline";
 import { getServiceStatus, startService } from "../daemon";
 import { setArmClient } from "./arm-client-registry";
 import type { ServerContext } from "./server-context";
@@ -182,7 +186,7 @@ async function maybeStartTranscriptIndexer(
   }
 }
 
-function mapHarnessEventStatus(event: string, data: unknown): string | null {
+export function mapHarnessEventStatus(event: string, data: unknown): string | null {
   if (event === "session.idle") {
     return "idle";
   }
@@ -196,7 +200,11 @@ function mapHarnessEventStatus(event: string, data: unknown): string | null {
   }
 
   if (event === "session.status" || event === "session.updated") {
-    const status = (data as { status?: unknown } | null)?.status;
+    const rawStatus = (data as { status?: unknown } | null)?.status;
+    const status =
+      rawStatus && typeof rawStatus === "object"
+        ? (rawStatus as { type?: unknown }).type
+        : rawStatus;
     if (typeof status !== "string") {
       return null;
     }
@@ -384,6 +392,18 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
           db,
           log: (message) => log(message, "verbose"),
         });
+        if (qdrantStore.isInitialized()) {
+          try {
+            await initializeStatusHistoryCollection();
+            await startStatusHistoryConsumer({
+              connection,
+              onEvent: processConsumedStatusHistoryEvent,
+              log: (message) => log(message, "verbose"),
+            });
+          } catch (err) {
+            log(`[startup] Status history indexer unavailable: ${err}`, "normal");
+          }
+        }
       }
       
       // Initialize ArmClient
@@ -691,6 +711,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   const server = Bun.serve({
     port: config.port,
     hostname: config.host,
+    idleTimeout: 255,
     fetch(req, server) {
       // Handle WebSocket upgrade
       const url = new URL(req.url);

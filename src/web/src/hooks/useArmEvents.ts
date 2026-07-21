@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { api, isOpenCodeEvent, type OpenCodeEvent } from '@/lib';
+import { api, isJsonObject, isOpenCodeEvent, type JsonValue, type OpenCodeEvent } from '@/lib';
 
 interface UseArmEventsOptions {
   armId: string | null;
@@ -15,11 +15,16 @@ interface ArmEventsState {
 
 export function useArmEvents({ armId, onEvent, autoConnect = true }: UseArmEventsOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
+  const onEventRef = useRef(onEvent);
   const [state, setState] = useState<ArmEventsState>({
     connected: false,
     error: null,
     lastEventTime: null,
   });
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
 
   const connect = useCallback(() => {
     if (!armId) {
@@ -39,6 +44,7 @@ export function useArmEvents({ armId, onEvent, autoConnect = true }: UseArmEvent
     eventSourceRef.current = eventSource;
 
     eventSource.onopen = () => {
+      if (eventSourceRef.current !== eventSource) return;
       console.log('[ArmEvents] Connected');
       setState({
         connected: true,
@@ -48,41 +54,53 @@ export function useArmEvents({ armId, onEvent, autoConnect = true }: UseArmEvent
     };
 
     eventSource.onmessage = (event) => {
+      if (eventSourceRef.current !== eventSource) return;
       try {
-        const data = JSON.parse(event.data);
-        if (!isOpenCodeEvent(data)) {
+        const parsed = JSON.parse(event.data) as JsonValue;
+        const data = isOpenCodeEvent(parsed)
+          ? parsed
+          : isJsonObject(parsed) &&
+              typeof parsed.type === 'string' &&
+              isJsonObject(parsed.data)
+            ? {
+                type: parsed.type,
+                properties: parsed.data,
+                timestamp: typeof parsed.timestamp === 'string' ? parsed.timestamp : undefined,
+                sequence: typeof parsed.sequence === 'number' ? parsed.sequence : undefined,
+              }
+            : null;
+        if (!data) {
           throw new Error('Invalid arm event payload');
         }
         setState(s => ({ ...s, lastEventTime: Date.now() }));
         
         if (data.type === 'error') {
           setState(s => ({ ...s, error: String(data.properties?.error || 'Unknown error') }));
-        } else if (onEvent) {
-          onEvent(data);
+        } else {
+          onEventRef.current?.(data);
         }
       } catch (err) {
         console.error('[ArmEvents] Failed to parse event:', err);
       }
     };
 
-    eventSource.onerror = (err) => {
-      console.error('[ArmEvents] Error:', err);
+    eventSource.onerror = () => {
+      if (eventSourceRef.current !== eventSource) return;
       setState(s => ({
         ...s,
         connected: false,
-        error: 'Connection error',
+        error: eventSource.readyState === EventSource.CONNECTING ? null : 'Connection error',
       }));
       
-      // EventSource will auto-reconnect, but we might want to handle this
-      eventSource.close();
-      eventSourceRef.current = null;
+      // Keep the EventSource open so its native reconnect behavior can recover.
     };
-  }, [armId, onEvent]);
+  }, [armId]);
 
   const disconnect = useCallback(() => {
-    if (eventSourceRef.current) {
+    const eventSource = eventSourceRef.current;
+    if (eventSource) {
       console.log('[ArmEvents] Disconnecting');
-      eventSourceRef.current.close();
+      eventSource.close();
       eventSourceRef.current = null;
     }
     setState({

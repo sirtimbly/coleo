@@ -69,7 +69,7 @@ export class EventStore implements IEventStore {
         'coleo.events.system.>',
       ],
       retention: RetentionPolicy.Limits,
-      max_age: 7 * 24 * 60 * 60 * 1000,
+      max_age: 7 * 24 * 60 * 60 * 1_000_000_000,
       max_msgs: 100000,
       max_bytes: 500 * 1024 * 1024,
       storage: StorageType.File,
@@ -78,14 +78,21 @@ export class EventStore implements IEventStore {
 
     try {
       const existingStream = await this.jsm.streams.info('coleo-events');
-      const existingSubjects = existingStream.config.subjects || [];
       const expectedSubjects = streamConfig.subjects;
+      const configChanged =
+        JSON.stringify(existingStream.config.subjects || []) !== JSON.stringify(expectedSubjects) ||
+        existingStream.config.max_age !== streamConfig.max_age ||
+        existingStream.config.max_msgs !== streamConfig.max_msgs ||
+        existingStream.config.max_bytes !== streamConfig.max_bytes;
 
-      if (JSON.stringify(existingSubjects) !== JSON.stringify(expectedSubjects)) {
-        console.log(`[EventStore] Updating stream subjects from ${existingSubjects} to ${expectedSubjects}`);
+      if (configChanged) {
+        console.log('[EventStore] Updating coleo-events stream configuration');
         await this.jsm.streams.update('coleo-events', {
           ...existingStream.config,
           subjects: expectedSubjects,
+          max_age: streamConfig.max_age,
+          max_msgs: streamConfig.max_msgs,
+          max_bytes: streamConfig.max_bytes,
         });
         console.log('[EventStore] Updated coleo-events stream configuration');
       }
@@ -109,48 +116,78 @@ export class EventStore implements IEventStore {
 
     const events: EventData[] = [];
     const limit = options.limit ?? 100;
+    const scanLimit = options.since || options.latest ? Math.max(limit, 5000) : limit;
 
     try {
-      let filterSubject = options.subject ?? 'coleo.events.>';
+      const filterSubject = options.subject ?? 'coleo.events.>';
+
+      let latestStartSequence: number | undefined;
+      if (options.latest && !options.since) {
+        const streamInfo = await this.jsm.streams.info('coleo-events');
+        latestStartSequence = Math.max(
+          streamInfo.state.first_seq,
+          streamInfo.state.last_seq - scanLimit + 1,
+        );
+      }
 
       const consumer = await this.js.consumers.get('coleo-events', {
         filterSubjects: [filterSubject],
+        ...(options.since
+          ? {
+              deliver_policy: DeliverPolicy.StartTime,
+              opt_start_time: options.since.toISOString(),
+            }
+          : latestStartSequence !== undefined
+            ? {
+                deliver_policy: DeliverPolicy.StartSequence,
+                opt_start_seq: latestStartSequence,
+              }
+            : {}),
+        inactive_threshold: 10 * 1_000_000_000,
       });
 
-      const messages = await consumer.fetch({ max_messages: limit, expires: 5000 });
+      try {
+        const messages = await consumer.fetch({ max_messages: scanLimit, expires: 1000 });
 
-      for await (const msg of messages) {
-        try {
-          const data = JSON.parse(msg.string()) as EventData;
+        for await (const msg of messages) {
+          try {
+            const data = JSON.parse(msg.string()) as EventData;
+            const streamSequence = (msg.info as { streamSequence?: number }).streamSequence;
 
-          if (options.since) {
-            const eventTime = new Date(data.timestamp);
-            if (eventTime < options.since) continue;
+            if (options.since) {
+              const eventTime = new Date(data.timestamp);
+              if (eventTime < options.since) continue;
+            }
+            if (options.until) {
+              const eventTime = new Date(data.timestamp);
+              if (eventTime > options.until) continue;
+            }
+
+            if (options.eventType && data.type !== options.eventType) continue;
+
+            events.push({
+              ...data,
+              sequence: data.sequence ?? streamSequence,
+            });
+          } catch {
           }
-          if (options.until) {
-            const eventTime = new Date(data.timestamp);
-            if (eventTime > options.until) continue;
-          }
-
-          if (options.eventType && data.type !== options.eventType) continue;
-
-          events.push(data);
-
-          if (events.length >= limit) break;
-        } catch {
         }
+      } finally {
+        await consumer.delete().catch(() => false);
       }
     } catch (err) {
       console.error('[EventStore] Failed to query events:', err);
     }
 
-    return events;
+    return options.since || options.latest ? events.slice(-limit) : events;
   }
 
-  async getArmEvents(armId: string, limit: number = 50): Promise<EventData[]> {
+  async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {
     return this.queryEvents({
       subject: `coleo.events.arm.${armId}.>`,
       limit,
+      since,
+      latest: true,
     });
   }
 
@@ -165,6 +202,7 @@ export class EventStore implements IEventStore {
     return this.queryEvents({
       limit,
       since,
+      latest: true,
     });
   }
 
@@ -306,6 +344,7 @@ export class EventStore implements IEventStore {
           break;
 
         case 'arm.status_changed':
+        case 'status_changed':
           state.status = (event.data.to ?? event.data.newStatus) as ArmState['status'];
           if (event.data.taskId) {
             state.currentTaskId = event.data.taskId as string;

@@ -14,6 +14,7 @@ import {
 	discoverProjectPlans,
 	formatPlanWithConfiguredModel,
 	hasStructuredPlanTasks,
+	listProjectPlanDocuments,
 	validateEditablePlanPath,
 	validateEditableTemplatePath,
 	type PlanFormatter,
@@ -121,9 +122,10 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const db = c.get("db");
 		await brainTemplates.ensureTemplatesExist();
-		const [candidates, canonical, templateFiles] = await Promise.all([
+		const [candidates, canonical, projectDocuments, templateFiles] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
+			listProjectPlanDocuments(workspace),
 			listSetupTemplateFiles(coleoDir),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
@@ -137,6 +139,7 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			canonicalPlan: canonical,
 			canonicalTaskCount,
 			candidates,
+			projectDocuments,
 			templateFiles,
 			recommendedPath: candidates[0]?.path ?? CANONICAL_PLAN_PATH,
 			defaultContent: DEFAULT_PLAN_TEMPLATE,

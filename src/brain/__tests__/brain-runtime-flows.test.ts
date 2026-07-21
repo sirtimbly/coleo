@@ -905,9 +905,9 @@ describe("Brain runtime flows", () => {
   });
 
   it("auto-recovers stuck arms when it can and escalates when it cannot", async () => {
-    const prompts: string[] = [];
-    (brain as any).sendPromptToArm = async (_armName: string, message: string) => {
-      prompts.push(message);
+    const prompts: Array<{ armId: string; message: string }> = [];
+    (brain as any).sendPromptToArm = async (armId: string, message: string) => {
+      prompts.push({ armId, message });
       return true;
     };
 
@@ -944,7 +944,11 @@ describe("Brain runtime flows", () => {
     });
 
     expect(prompts).toEqual(
-      expect.arrayContaining(["Here is the answer", "Yes, proceed.", "/compact"]),
+      expect.arrayContaining([
+        { armId: "arm-1", message: "Here is the answer" },
+        { armId: "arm-1", message: "Yes, proceed." },
+        { armId: "arm-1", message: "/compact" },
+      ]),
     );
     expect(
       sentToHuman.some((message) => message.subject === "[coleo] Arm ArmOne needs help (error)"),

@@ -303,6 +303,7 @@ export class ArmClient {
     armId: string,
     prompt: string,
     attachments?: TaskAttachment[],
+    interrupt?: boolean,
     timeoutMs = 30000,
   ): Promise<CommandResponse> {
     const agentId = this.armToAgent.get(armId);
@@ -319,6 +320,7 @@ export class ArmClient {
       requestId: generateRequestId(),
       armId,
       prompt,
+      interrupt,
       attachments,
     };
 

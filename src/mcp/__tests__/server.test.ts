@@ -40,6 +40,7 @@ describe("createMcpServer", () => {
         "service_status",
         "search",
         "search_status_history",
+        "historical_search",
       ]),
     );
   });

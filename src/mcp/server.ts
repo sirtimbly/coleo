@@ -1154,6 +1154,10 @@ export function createMcpServer(): McpServer {
 						task_id: z.string().optional().describe("Related task ID"),
 						bug_id: z.string().optional().describe("Related bug ID"),
 						source: z.string().optional().describe("Event source (arm id / system)"),
+						classification: z
+							.string()
+							.optional()
+							.describe("Event classification (for example, development, bug_fix)"),
 						from: z.string().optional().describe("ISO start time (overrides days_back)"),
 						to: z.string().optional().describe("ISO end time"),
 					})
@@ -1183,6 +1187,7 @@ export function createMcpServer(): McpServer {
 				if (filters?.task_id) apiFilters.task_id = filters.task_id;
 				if (filters?.bug_id) apiFilters.bug_id = filters.bug_id;
 				if (filters?.source) apiFilters.source = filters.source;
+				if (filters?.classification) apiFilters.classification = filters.classification;
 				if (filters?.from) {
 					apiFilters.from = filters.from;
 				} else if (filters?.days_back !== undefined || filters?.days_back === undefined) {
@@ -1191,6 +1196,149 @@ export function createMcpServer(): McpServer {
 					apiFilters.from = since.toISOString();
 				}
 				if (filters?.to) apiFilters.to = filters.to;
+
+				const payload: Record<string, unknown> = {
+					query,
+					limit: limit ?? 10,
+					include_context: true,
+					filters: apiFilters,
+				};
+				if (keyword_weight !== undefined) payload.keywordWeight = keyword_weight;
+				if (semantic_weight !== undefined) payload.semanticWeight = semantic_weight;
+
+				const response = await fetch(`${API_BASE_URL}/api/status-history/search`, {
+					method: "POST",
+					headers: {
+						"Content-Type": "application/json",
+						"X-API-Key": API_KEY,
+					},
+					body: JSON.stringify(payload),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					throw new Error(
+						`Status history search failed: ${response.status} ${response.statusText}${errorText ? ` - ${errorText}` : ""}`,
+					);
+				}
+
+				const data = (await response.json()) as {
+					results: Array<Record<string, unknown>>;
+					total: number;
+					query: string;
+					semanticUsed: boolean;
+					query_time_ms: number;
+				};
+
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Status history for "${data.query}" (total: ${data.total}, returned: ${data.results.length}, semanticUsed: ${data.semanticUsed}, took: ${data.query_time_ms}ms)\n\n` +
+								JSON.stringify(data, null, 2),
+						},
+					],
+				};
+			} catch (err) {
+				const errorMsg = err instanceof Error ? err.message : String(err);
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `Status history search failed: ${errorMsg}`,
+						},
+					],
+				};
+			}
+		},
+	);
+
+	// Search historical task history with direct filters for arms / event types / time range.
+	server.registerTool(
+		"historical_search",
+		{
+			description:
+				"Search historical status reports and completions with common filters for arms, event type, and date range.",
+			inputSchema: {
+				query: z.string().describe("Natural language search query"),
+				arm_id: z.string().optional().describe("Filter by a single arm ID"),
+				event_type: z
+					.enum([
+						"status_report",
+						"task_completion",
+						"discovery",
+						"bug_report",
+						"task_created",
+						"task_updated",
+						"arm_event",
+					])
+					.optional()
+					.describe("Filter by event type"),
+				days_back: z
+					.number()
+					.optional()
+					.describe("Only include events from the last N days"),
+				from: z.string().optional().describe("ISO start time (overrides days_back)"),
+				to: z.string().optional().describe("ISO end time"),
+				task_id: z.string().optional().describe("Related task ID"),
+				bug_id: z.string().optional().describe("Related bug ID"),
+				source: z.string().optional().describe("Event source (arm id / system)"),
+				classification: z
+					.string()
+					.optional()
+					.describe("Event classification (for example, development, bug_fix)"),
+				limit: z.number().optional().describe("Max results (default: 10)"),
+				keyword_weight: z
+					.number()
+					.optional()
+					.describe("Keyword score weight 0-1 (default: 0.35)"),
+				semantic_weight: z
+					.number()
+					.optional()
+					.describe("Semantic score weight 0-1 (default: 0.65)"),
+			},
+		},
+		async ({
+			query,
+			arm_id,
+			event_type,
+			days_back,
+			from,
+			to,
+			task_id,
+			bug_id,
+			source,
+			classification,
+			limit,
+			keyword_weight,
+			semantic_weight,
+		}) => {
+			if (!query || query.trim().length === 0) {
+				return {
+					content: [{ type: "text" as const, text: "Query is required." }],
+				};
+			}
+
+			try {
+				const apiFilters: Record<string, unknown> = {};
+				if (arm_id) apiFilters.arm_ids = [arm_id];
+				if (event_type) apiFilters.event_types = [event_type];
+
+				if (task_id) apiFilters.task_id = task_id;
+				if (bug_id) apiFilters.bug_id = bug_id;
+				if (source) apiFilters.source = source;
+				if (classification) apiFilters.classification = classification;
+
+				if (from) {
+					apiFilters.from = from;
+				} else {
+					const back = days_back ?? 30;
+					const since = new Date(Date.now() - back * 24 * 60 * 60 * 1000);
+					apiFilters.from = since.toISOString();
+				}
+
+				if (to) apiFilters.to = to;
 
 				const payload: Record<string, unknown> = {
 					query,

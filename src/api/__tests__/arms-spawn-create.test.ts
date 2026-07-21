@@ -118,6 +118,50 @@ describe("arms spawn route auto-creation", () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  it("marks an active arm busy with stale activity so the brain can recover it", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, last_activity_at, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "recoverable-arm",
+        "Recoverable arm",
+        "development",
+        "opencode-api",
+        "idle",
+        100000,
+        0,
+        now,
+        now,
+        now,
+        "{}",
+      ],
+    );
+
+    const response = await app.request(
+      "http://coleo.test/api/arms/recoverable-arm/mark-stuck",
+      { method: "POST" },
+    );
+
+    expect(response.status).toBe(200);
+    const row = db
+      .query("SELECT status, last_activity_at, config FROM arms WHERE id = ?")
+      .get("recoverable-arm") as {
+        status: string;
+        last_activity_at: string;
+        config: string;
+      };
+    expect(row.status).toBe("busy");
+    expect(Date.now() - new Date(row.last_activity_at).getTime()).toBeGreaterThanOrEqual(
+      9 * 60 * 1000,
+    );
+    expect(JSON.parse(row.config)).toMatchObject({
+      recoveryRequestedAt: expect.any(String),
+    });
+  });
+
   it("creates a missing arm record with provided name and domain before agent spawn", async () => {
     await mkdir(join(tempDir, ".local", "share", "opencode"), { recursive: true });
     await writeFile(
@@ -763,5 +807,69 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.session_id).toBe("ses_live_agent");
     expect(updated?.agent_id).toBe("live-agent");
     expect(updated?.host).toBe("recover-host");
+  });
+
+  it("forwards interrupt when prompting a distributed arm", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, agent_id, host, session_id, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "distributed-arm",
+        "Distributed Arm",
+        "development",
+        "opencode-api",
+        "busy",
+        100000,
+        0,
+        now,
+        now,
+        "agent-1",
+        "agent-host",
+        "ses_live",
+        JSON.stringify({}),
+      ],
+    );
+
+    const promptCalls: unknown[][] = [];
+    const mockArmClient = {
+      getAgentForArm: () => "agent-1",
+      getAgent: () => ({
+        agentId: "agent-1",
+        hostname: "agent-host",
+        capabilities: ["opencode-api"],
+        maxArms: 10,
+      }),
+      getAgents: () => [],
+      getArmState: async () => ({
+        requestId: "req-state",
+        success: true,
+        data: { status: "busy", sessionId: "ses_live" },
+      }),
+      sendPrompt: async (...args: unknown[]) => {
+        promptCalls.push(args);
+        return { requestId: "req-prompt", success: true };
+      },
+    };
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
+      () => mockArmClient as never,
+    );
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request(
+      "http://coleo.test/api/arms/distributed-arm/prompt",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "Replacement prompt", interrupt: true }),
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(promptCalls).toEqual([
+      ["distributed-arm", "Replacement prompt", undefined, true],
+    ]);
   });
 });

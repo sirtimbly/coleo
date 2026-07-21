@@ -74,6 +74,13 @@ docker volume rm coleo-qdrant-data
 Application code treats Qdrant as optional infrastructure: API status reports
 `infrastructure.qdrant.optional: true` when the service is down.
 
+## Status-history filters
+
+The `status-history` collection creates Qdrant payload indexes for event type,
+source, task, arm, timestamp, and classification. The server's durable
+JetStream consumer stores the original event envelope and delivery metadata,
+then acknowledges only after the vector upsert succeeds.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |

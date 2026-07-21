@@ -36,6 +36,11 @@ const ACTIVE_ARM_STATUSES = new Set([
 	"working",
 	"in_progress",
 ]);
+const PASSIVE_TELEMETRY_EVENT_TYPES = new Set([
+	"arm.heartbeat",
+	"server-heartbeat",
+	"server.heartbeat",
+]);
 
 export {
 	type ArmActivityState,
@@ -51,9 +56,6 @@ export { StuckArmAnalyzer } from "./stuck-arm-analyzer";
 export class ArmActivityAnalyzer {
 	private config: AnalyzerConfig;
 	private logFn: (msg: string) => void;
-
-	// Track when arms were first seen (for grace period)
-	private armFirstSeen: Map<string, Date> = new Map();
 
 	// Track previous states for trend detection
 	private previousStates: Map<string, ArmActivityState[]> = new Map();
@@ -71,14 +73,10 @@ export class ArmActivityAnalyzer {
 	 */
 	analyze(window: ArmEventWindow): ArmAnalysis {
 		const armId = window.armId;
-
-		// Track first seen for grace period
-		if (!this.armFirstSeen.has(armId)) {
-			this.armFirstSeen.set(armId, new Date());
-		}
+		const currentWindow = this.scopeToLatestLifecycle(window);
 
 		// Calculate basic metrics
-		const metrics = this.calculateMetrics(window);
+		const metrics = this.calculateMetrics(currentWindow);
 
 		// Check for unknown event types and log warnings
 		const unknownEventTypes = window.unknownEventTypes;
@@ -90,7 +88,7 @@ export class ArmActivityAnalyzer {
 		}
 
 		// Determine state through a priority-based decision tree
-		const analysis = this.classifyState(window, metrics);
+		const analysis = this.classifyState(currentWindow, metrics);
 
 		// Track state history
 		const history = this.previousStates.get(armId) || [];
@@ -123,25 +121,111 @@ export class ArmActivityAnalyzer {
 	 * Calculate metrics from an event window
 	 */
 	private calculateMetrics(window: ArmEventWindow): ArmAnalysis["metrics"] {
+		const activityEvents = window.events.filter(
+			(event) => !PASSIVE_TELEMETRY_EVENT_TYPES.has(event.type),
+		);
 		const recentMessageCount =
-			(window.byType.get("message.updated")?.length || 0) +
-			(window.byType.get("message.part.updated")?.length || 0);
+			activityEvents.filter(
+				(event) => event.type === "message.updated" || event.type === "message.part.updated",
+			).length;
 
-		const recentToolCount = window.events.filter(
-			(e) =>
-				e.type === "message.part.updated" &&
-				(e.data as Record<string, unknown>)?.partType === "tool-invocation",
+		const recentToolCount = activityEvents.filter(
+			(e) => {
+				if (e.type !== "message.part.updated") return false;
+				const data = e.data as Record<string, unknown>;
+				const part = data.part;
+				const partType =
+					typeof data.partType === "string"
+						? data.partType
+						: part && typeof part === "object"
+							? (part as Record<string, unknown>).type
+							: null;
+				return partType === "tool" || partType === "tool-invocation";
+			},
 		).length;
 
-		const recentFileEditCount = window.byType.get("file.edited")?.length || 0;
+		const recentFileEditCount = activityEvents.filter(
+			(event) => event.type === "file.edited",
+		).length;
+		const lastActivityEvent = activityEvents.reduce<EventData | null>((latest, event) => {
+			if (!latest) return event;
+			return new Date(event.timestamp) > new Date(latest.timestamp) ? event : latest;
+		}, null);
+		const lastEventAt = lastActivityEvent ? new Date(lastActivityEvent.timestamp) : null;
 
 		return {
-			eventCount: window.events.length,
-			silentDurationMs: window.silentDurationMs,
-			lastEventAt: window.lastEventAt,
+			eventCount: activityEvents.length,
+			silentDurationMs: lastEventAt ? Date.now() - lastEventAt.getTime() : Infinity,
+			lastEventAt,
 			recentMessageCount,
 			recentToolCount,
 			recentFileEditCount,
+		};
+	}
+
+	private getLifecycleStatus(event: EventData): string | null {
+		if (event.type === "arm.spawned") return "starting";
+		if (event.type === "session.idle") return "idle";
+		if (event.type === "session.error") return "error";
+		if (event.type === "arm.killed" || event.type === "arm.stopped") return "stopped";
+		if (
+			event.type !== "session.status" &&
+			event.type !== "session.updated" &&
+			event.type !== "status_changed" &&
+			event.type !== "arm.status_changed" &&
+			event.type !== "arm_status_synced"
+		) {
+			return null;
+		}
+
+		const data = event.data as Record<string, unknown>;
+		const rawStatus = data.newStatus ?? data.to ?? data.status;
+		const status =
+			rawStatus && typeof rawStatus === "object"
+				? (rawStatus as Record<string, unknown>).type
+				: rawStatus;
+		return typeof status === "string" ? status.toLowerCase() : null;
+	}
+
+	private getLatestLifecycleEvent(window: ArmEventWindow): EventData | null {
+		return window.events.reduce<EventData | null>((latest, event) => {
+			if (!this.getLifecycleStatus(event)) return latest;
+			if (!latest) return event;
+			return new Date(event.timestamp) >= new Date(latest.timestamp) ? event : latest;
+		}, null);
+	}
+
+	private scopeToLatestLifecycle(window: ArmEventWindow): ArmEventWindow {
+		const latestLifecycle = this.getLatestLifecycleEvent(window);
+		if (!latestLifecycle) return window;
+
+		const cutoff = new Date(latestLifecycle.timestamp).getTime();
+		const events = window.events.filter(
+			(event) => new Date(event.timestamp).getTime() >= cutoff,
+		);
+		const byType = new Map<string, EventData[]>();
+		const latestByType = new Map<string, EventData>();
+		let lastEventAt: Date | null = null;
+
+		for (const event of events) {
+			const grouped = byType.get(event.type) ?? [];
+			grouped.push(event);
+			byType.set(event.type, grouped);
+			const existing = latestByType.get(event.type);
+			if (!existing || new Date(event.timestamp) >= new Date(existing.timestamp)) {
+				latestByType.set(event.type, event);
+			}
+			const eventAt = new Date(event.timestamp);
+			if (!lastEventAt || eventAt > lastEventAt) lastEventAt = eventAt;
+		}
+
+		return {
+			...window,
+			events,
+			byType,
+			latestByType,
+			lastEventAt,
+			silentDurationMs: lastEventAt ? Date.now() - lastEventAt.getTime() : Infinity,
 		};
 	}
 
@@ -152,13 +236,14 @@ export class ArmActivityAnalyzer {
 		window: ArmEventWindow,
 		metrics: ArmAnalysis["metrics"],
 	): Omit<ArmAnalysis, "armId" | "metrics" | "unknownEventTypes"> {
-		const armId = window.armId;
-
-		// Check 1: Is this a newly started arm in grace period?
-		const firstSeen = this.armFirstSeen.get(armId);
-		if (firstSeen) {
-			const timeSinceFirstSeen = Date.now() - firstSeen.getTime();
-			if (timeSinceFirstSeen < this.config.startupGracePeriodMs) {
+		// Check 1: Is the latest lifecycle transition a recent startup?
+		const latestLifecycle = this.getLatestLifecycleEvent(window);
+		const lifecycleStatus = latestLifecycle
+			? this.getLifecycleStatus(latestLifecycle)
+			: null;
+		if (latestLifecycle && lifecycleStatus === "starting") {
+			const timeSinceStartup = Date.now() - new Date(latestLifecycle.timestamp).getTime();
+			if (timeSinceStartup < this.config.startupGracePeriodMs) {
 				return {
 					state: "starting",
 					confidence: "high",
@@ -168,11 +253,34 @@ export class ArmActivityAnalyzer {
 			}
 		}
 
+		if (latestLifecycle && (lifecycleStatus === "idle" || lifecycleStatus === "stopped")) {
+			const transitionAt = new Date(latestLifecycle.timestamp).getTime();
+			const hasNewerActivity = window.events.some(
+				(event) =>
+					new Date(event.timestamp).getTime() > transitionAt &&
+					!PASSIVE_TELEMETRY_EVENT_TYPES.has(event.type),
+			);
+			if (!hasNewerActivity) {
+				return {
+					state: "idle",
+					confidence: "high",
+					reason: `Latest lifecycle status is ${lifecycleStatus}`,
+					recommendedAction: "none",
+				};
+			}
+		}
+
 		// Check 2: Is the arm completely silent?
-		if (
-			window.events.length === 0 ||
-			window.silentDurationMs > this.config.silentThresholdMs
-		) {
+		if (metrics.eventCount === 0) {
+			return {
+				state: "silent",
+				confidence: "low",
+				reason: "No event telemetry was received in the analysis window",
+				recommendedAction: "none",
+			};
+		}
+
+		if (metrics.silentDurationMs > this.config.silentThresholdMs) {
 			return {
 				state: "silent",
 				confidence: "high",
@@ -249,7 +357,9 @@ export class ArmActivityAnalyzer {
 		);
 		const activeEvents = window.events.filter(
 			(e) =>
-				ACTIVE_EVENT_TYPES.has(e.type) || PRODUCTIVE_EVENT_TYPES.has(e.type),
+				(e.type === "session.status" || e.type === "session.updated"
+					? this.isActiveStatusChangeEvent(e)
+					: ACTIVE_EVENT_TYPES.has(e.type) || PRODUCTIVE_EVENT_TYPES.has(e.type)),
 		);
 		const totalActiveEvents =
 			activeEvents.length + statusChangedActiveEvents.length;
@@ -315,19 +425,17 @@ export class ArmActivityAnalyzer {
 	}
 
 	private isActiveStatusChangeEvent(event: EventData): boolean {
-		if (event.type !== "status_changed" && event.type !== "arm.status_changed") {
+		if (
+			event.type !== "session.status" &&
+			event.type !== "session.updated" &&
+			event.type !== "status_changed" &&
+			event.type !== "arm.status_changed" &&
+			event.type !== "arm_status_synced"
+		) {
 			return false;
 		}
 
-		const data = event.data as Record<string, unknown>;
-		const nextStatus =
-			typeof data.newStatus === "string"
-				? data.newStatus
-				: typeof data.to === "string"
-					? data.to
-					: typeof data.status === "string"
-						? data.status
-						: null;
+		const nextStatus = this.getLifecycleStatus(event);
 
 		if (!nextStatus) {
 			return false;
@@ -371,7 +479,9 @@ export class ArmActivityAnalyzer {
 			.filter((x) =>
 				!x.startsWith("lsp-") &&
 				x !== "session.updated" &&
-				x !== "arm.heartbeat"
+				x !== "arm.heartbeat" &&
+				x !== "server-heartbeat" &&
+				x !== "server.heartbeat"
 			);
 
 		// Try to find repeating patterns of length 1-5
@@ -481,7 +591,6 @@ export class ArmActivityAnalyzer {
 	 * Reset tracking state for an arm
 	 */
 	resetArm(armId: string): void {
-		this.armFirstSeen.delete(armId);
 		this.previousStates.delete(armId);
 	}
 

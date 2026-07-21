@@ -41,6 +41,7 @@ const PLAN_PATTERNS = [
 const EDITABLE_PLAN_PATH = /^(?:\.project|\.coleo|\.plans|plans|planning|docs|documentation)\/(?:[^/]+\/)*[^/]+\.(?:md|markdown|txt)$/i;
 const ROOT_PLAN_PATH = /^[^/]*(?:plan|roadmap|requirements|spec)[^/]*\.(?:md|markdown|txt)$/i;
 const MAX_CANDIDATE_BYTES = 512 * 1024;
+const RECENT_CHANGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ProjectPlanCandidate {
 	path: string;
@@ -50,6 +51,10 @@ export interface ProjectPlanCandidate {
 	modifiedAt: string;
 	score: number;
 	reasons: string[];
+}
+
+export interface ProjectPlanDocument extends WorkspaceTextFile {
+	recentlyChanged: boolean;
 }
 
 export interface PlanFormatterResult {
@@ -186,6 +191,26 @@ export async function discoverProjectPlans(workspace: WorkspaceAccess): Promise<
 	return candidates
 		.sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
 		.slice(0, 20);
+}
+
+/** Lists the bounded, human-facing project documentation workspace for the plan viewer. */
+export async function listProjectPlanDocuments(workspace: WorkspaceAccess): Promise<ProjectPlanDocument[]> {
+	const metadata = await workspace.scan([
+		".project/*.{md,markdown,txt}",
+		".project/**/*.{md,markdown,txt}",
+	], { maxFiles: 300 });
+	const recentAfter = Date.now() - RECENT_CHANGE_MS;
+	const documents: ProjectPlanDocument[] = [];
+	for (const entry of metadata) {
+		if (entry.size > MAX_CANDIDATE_BYTES) continue;
+		const file = await workspace.readText(entry.path);
+		if (!file) continue;
+		documents.push({
+			...file,
+			recentlyChanged: Date.parse(file.modifiedAt) >= recentAfter,
+		});
+	}
+	return documents.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function cleanTaskText(value: string): string {

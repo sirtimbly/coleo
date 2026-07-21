@@ -12,6 +12,7 @@ import { createApiDatabase } from "../api-db";
 import type { MessageType, QueueMessage, Task } from "../../types";
 import { createCommandEnvelope, getMcpCommandPublishMode } from "../../nats/command-types";
 import { NatsClient } from "../../nats";
+import { eventStore } from "../../nats/jetstream";
 
 // Get coleo directory from env or default (project-local)
 export const COLEO_DIR = getColeoDir();
@@ -471,15 +472,74 @@ async function sendToBrainFile(message: QueueMessage): Promise<void> {
 /**
  * Log activity
  */
+const TASK_ACTION_EVENT_TYPES: Record<string, string> = {
+	claim_task: "task.claimed",
+	complete_task: "task.completed",
+	acknowledge_task: "task.claimed",
+	submit_status_report: "task.status_reported",
+	validate_task: "task.validated",
+	report_dependency: "task.dependency_reported",
+	report_discovery: "task.discovery_reported",
+	context_compression: "task.context_compressed",
+	get_task_determination: "task.determination_requested",
+	get_context_bundle: "task.context_bundle_requested",
+	get_full_briefing: "task.briefing_requested",
+};
+
 export function logActivity(
 	armId: string,
 	action: string,
 	target?: string,
 	details?: Record<string, unknown>,
 ): void {
-	console.error(`[MCP] Activity: ${armId} ${action}${target ? ` ${target}` : ""}`,
-		details ? JSON.stringify(details) : "",
-	);
+	if (!eventStore.isInitialized()) {
+		return;
+	}
+
+	const now = new Date().toISOString();
+	const eventType = TASK_ACTION_EVENT_TYPES[action] ?? action;
+	const data = { actor: armId, action, target, ...details };
+
+	// Always publish to the arm stream for the actor (correct arm attribution)
+	eventStore
+		.publishEvent(`coleo.events.arm.${armId}.${eventType}`, {
+			type: eventType,
+			armId,
+			data,
+			timestamp: now,
+		})
+		.catch(() => {
+			// Activity logging is best-effort.
+		});
+
+	// If this is a task-related action with a target, also publish to task stream.
+	if (target && TASK_ACTION_EVENT_TYPES[action]) {
+		eventStore
+			.publishEvent(`coleo.events.task.${target}.${eventType}`, {
+				type: eventType,
+				armId,
+				data,
+				timestamp: now,
+			})
+			.catch(() => {
+				// Activity logging is best-effort.
+			});
+		return;
+	}
+
+	// Otherwise, also publish to the MCP stream for general visibility.
+	if (!target) {
+		eventStore
+			.publishEvent(`coleo.events.mcp.${action}`, {
+				type: action,
+				armId,
+				data,
+				timestamp: now,
+			})
+			.catch(() => {
+				// Activity logging is best-effort.
+			});
+	}
 }
 
 /**

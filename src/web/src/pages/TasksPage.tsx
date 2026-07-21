@@ -38,6 +38,7 @@ import { useTasks } from "@/hooks/useTasks";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
 import { tasksKeys } from "@/lib/queryKeys";
+import { formatTimelineTime, selectTaskTimeline } from "./task-timeline";
 import {
 	useIsWorkspacePanel,
 	useWorkspaceOpenRoute,
@@ -142,6 +143,28 @@ const PRIORITY_CONFIG: Record<
 	},
 	low: { color: "text-gray-500", bgColor: "bg-gray-500/20", label: "Low" },
 };
+
+function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
+	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
+
+	return (
+		<section aria-label="Task timeline" className="border-b border-border bg-surface-secondary/40 px-4 py-3">
+			<div className="mb-3 flex items-center justify-between gap-3">
+				<div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Live timeline</p><p className="mt-0.5 text-sm text-muted-foreground">What is active now, what the Brain can take next, and recent completed work.</p></div>
+				<span className="shrink-0 text-xs text-muted-foreground">Updates live</span>
+			</div>
+			<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
+				<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
+				<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
+				<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
+			</div>
+		</section>
+	);
+}
+
+function TimelineTaskCard({ label, task, timestamp, empty, tone, onOpenTask }: { label: string; task: Task | undefined; timestamp: string | null | undefined; empty: string; tone: "accent" | "default"; onOpenTask: (task: Task) => void }) {
+	return <div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><Clock className={`h-4 w-4 ${tone === "accent" ? "text-accent" : "text-muted-foreground"}`} /><span className="text-sm font-medium">{label}</span></div>{task ? <button type="button" onClick={() => onOpenTask(task)} className="block w-full rounded text-left hover:bg-accent/5"><p className="truncate text-sm font-medium">{task.subject}</p><div className="mt-1 flex items-center justify-between gap-2"><Chip size="sm" variant="secondary">{STATUS_CONFIG[task.status].label}</Chip><time className="truncate text-xs text-muted-foreground">{formatTimelineTime(timestamp)}</time></div></button> : <p className="text-sm text-muted-foreground">{empty}</p>}</div>;
+}
 
 function TaskPriorityBadge({
 	priority,
@@ -977,6 +1000,7 @@ export function TasksPage() {
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
 						{workspaceListHeader}
+						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
 						<div className="min-h-0 flex-1 overflow-auto">
 							<TaskGrid
 								className="rounded-none border-0"
@@ -1216,6 +1240,8 @@ export function TasksPage() {
 					</div>
 				</div>
 			)}
+
+			<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
 
 			{/* Content area */}
 			<div className="flex-1 flex overflow-hidden">

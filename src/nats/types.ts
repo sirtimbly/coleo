@@ -90,6 +90,7 @@ export interface SendPromptCommand {
   requestId: string;
   armId: string;
   prompt: string;
+  interrupt?: boolean;
   attachments?: TaskAttachment[];
 }
 

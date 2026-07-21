@@ -42,7 +42,7 @@ import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
-const MAX_DISTRIBUTED_MESSAGES = 100;
+const MAX_DISTRIBUTED_MESSAGES = 200;
 const MAX_DISTRIBUTED_TODOS = 200;
 const DISTRIBUTED_OBSERVABILITY_TIMEOUT_MS = 7000;
 
@@ -197,7 +197,6 @@ export class ArmAgent {
   
   private managedArms: Map<string, ManagedArm> = new Map();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  private harnessCallbacksRegistered: Set<string> = new Set();
   private isRunning = false;
   private startedAt: string;
 
@@ -242,8 +241,6 @@ export class ArmAgent {
 
     // Start heartbeat
     this.startHeartbeat();
-
-    this.registerHarnessEventCallbacks();
 
     // Recover any existing arms that are still running
     await this.recoverExistingArms();
@@ -402,7 +399,7 @@ export class ArmAgent {
     }
 
     const harnessInstance = harnessRegistry.get(harness);
-    this.registerHarnessEventCallbacks();
+    this.registerHarnessEventCallback(harness, harnessInstance);
 
     // Spawn the arm
     const spawnConfig: SpawnConfig = {
@@ -524,7 +521,7 @@ export class ArmAgent {
   }
 
   private async handlePrompt(command: AgentCommand & { type: 'prompt' }): Promise<CommandResponse> {
-    const { armId, prompt, attachments } = command;
+    const { armId, prompt, interrupt, attachments } = command;
 
     const managedArm = this.managedArms.get(armId);
     if (!managedArm) {
@@ -537,6 +534,7 @@ export class ArmAgent {
 
     // Send prompt
     await managedArm.harness.sendPrompt(managedArm.session, prompt, {
+      interrupt,
       attachments,
     });
 
@@ -570,6 +568,19 @@ export class ArmAgent {
         success: false,
         error: `Arm ${armId} not found on this agent`,
       };
+    }
+
+    try {
+      const harnessState = await managedArm.harness.getState(managedArm.session);
+      const status = this.mapHarnessState(harnessState);
+      if (status) {
+        managedArm.status = status;
+      }
+    } catch (err) {
+      this.log(
+        `Failed to refresh harness state for ${armId}: ${err instanceof Error ? err.message : String(err)}`,
+        'warn',
+      );
     }
 
     return {
@@ -699,19 +710,43 @@ export class ArmAgent {
   // Helper Methods
   // ============================================
 
-  private registerHarnessEventCallbacks(): void {
+  private registerHarnessEventCallback(harnessName: string, harness: AgentHarness): void {
     const callback: ArmEventCallback = (armId, event, data) => {
       void this.handleHarnessEvent(armId, event, data);
     };
 
-    if (!this.harnessCallbacksRegistered.has('opencode-api') && harnessRegistry.has('opencode-api')) {
-      (harnessRegistry.get('opencode-api') as OpenCodeApiHarness).setEventCallback(callback);
-      this.harnessCallbacksRegistered.add('opencode-api');
+    if (harnessName === 'opencode-api') {
+      (harness as OpenCodeApiHarness).setEventCallback(callback);
+    } else if (harnessName === 'opencode-tui') {
+      (harness as OpenCodeTuiHarness).setEventCallback(callback);
+    }
+  }
+
+  private mapHarnessState(state: unknown): ArmStatus | null {
+    if (typeof state !== 'string') {
+      return null;
     }
 
-    if (!this.harnessCallbacksRegistered.has('opencode-tui') && harnessRegistry.has('opencode-tui')) {
-      (harnessRegistry.get('opencode-tui') as OpenCodeTuiHarness).setEventCallback(callback);
-      this.harnessCallbacksRegistered.add('opencode-tui');
+    switch (state.toLowerCase()) {
+      case 'idle':
+        return 'idle';
+      case 'initializing':
+        return 'starting';
+      case 'busy':
+      case 'processing':
+      case 'executing':
+      case 'running':
+      case 'retry':
+      case 'waiting_approval':
+        return 'busy';
+      case 'error':
+      case 'failed':
+        return 'error';
+      case 'dead':
+      case 'stopped':
+        return 'stopped';
+      default:
+        return null;
     }
   }
 
@@ -729,15 +764,12 @@ export class ArmAgent {
     }
 
     if (event === 'session.status' || event === 'session.updated') {
-      const status = (data as { status?: unknown } | null)?.status;
-      if (typeof status === 'string') {
-        const normalized = status.toLowerCase();
-        if (normalized === 'idle') return 'idle';
-        if (normalized === 'busy' || normalized === 'processing' || normalized === 'executing' || normalized === 'running' || normalized === 'retry') {
-          return 'busy';
-        }
-        if (normalized === 'error' || normalized === 'failed') return 'error';
-      }
+      const rawStatus = (data as { status?: unknown } | null)?.status;
+      const status =
+        rawStatus && typeof rawStatus === 'object'
+          ? (rawStatus as { type?: unknown }).type
+          : rawStatus;
+      return this.mapHarnessState(status);
     }
 
     return null;
@@ -901,6 +933,7 @@ export class ArmAgent {
               continue;
             }
 
+            this.registerHarnessEventCallback('opencode-api', harness);
             const session = await harness.recover(armId, info.port, info.pid);
             
             if (session) {

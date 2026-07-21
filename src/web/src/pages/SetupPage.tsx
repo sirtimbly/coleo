@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Check, CircleHelp, FileCode2, FilePlus2, FileText, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { api, type SetupTemplateFile, type ProjectPlanCandidate, type ProjectSetupStatus } from '@/lib';
+import { api, type SetupTemplateFile, type ProjectPlanDocument, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import './setup-page.css';
@@ -28,8 +28,8 @@ interface EditorState {
 
 function editorFromStatus(status: ProjectSetupStatus): EditorState {
   const selected = status.canonicalPlan
-    ?? status.candidates.find((candidate) => candidate.path === status.recommendedPath)
-    ?? status.candidates[0];
+    ?? status.projectDocuments.find((document) => document.path === status.recommendedPath)
+    ?? status.projectDocuments[0];
   if (selected) {
     return {
       kind: 'plan',
@@ -48,13 +48,13 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
   };
 }
 
-function editorFromCandidate(candidate: ProjectPlanCandidate): EditorState {
+function editorFromDocument(document: ProjectPlanDocument): EditorState {
   return {
     kind: 'plan',
-    path: candidate.path,
-    content: candidate.content,
-    expectedHash: candidate.contentHash,
-    savedContent: candidate.content,
+    path: document.path,
+    content: document.content,
+    expectedHash: document.contentHash,
+    savedContent: document.content,
   };
 }
 
@@ -73,6 +73,47 @@ function nextTemplatePath(templates: SetupTemplateFile[]): string {
   let suffix = 1;
   while (paths.has(`.coleo/templates/new-arm${suffix === 1 ? '' : `-${suffix}`}.yml`)) suffix += 1;
   return `.coleo/templates/new-arm${suffix === 1 ? '' : `-${suffix}`}.yml`;
+}
+
+function formatLastUpdated(value: string | undefined): string {
+  if (!value) return 'Not saved yet';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+}
+
+function MarkdownPreview({ content }: { content: string }) {
+  const blocks: ReactNode[] = [];
+  const lines = content.split(/\r?\n/);
+  let paragraph: string[] = [];
+  const flushParagraph = () => {
+    if (paragraph.length > 0) {
+      blocks.push(<p key={`p-${blocks.length}`} className="setup-markdown-paragraph">{paragraph.join(' ')}</p>);
+      paragraph = [];
+    }
+  };
+
+  for (const line of lines) {
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const task = line.match(/^\s*-\s+\[([ xX])\]\s+(.+)$/);
+    const listItem = line.match(/^\s*[-*+]\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      const Tag = `h${heading[1].length}` as 'h1' | 'h2' | 'h3';
+      blocks.push(<Tag key={`h-${blocks.length}`} className="setup-markdown-heading">{heading[2]}</Tag>);
+    } else if (task) {
+      flushParagraph();
+      blocks.push(<div key={`t-${blocks.length}`} className="setup-markdown-task"><Check className={`h-3.5 w-3.5 ${task[1].trim() ? 'text-success' : 'text-muted-foreground'}`} />{task[2]}</div>);
+    } else if (listItem) {
+      flushParagraph();
+      blocks.push(<div key={`l-${blocks.length}`} className="setup-markdown-list">{listItem[1]}</div>);
+    } else if (!line.trim()) {
+      flushParagraph();
+    } else {
+      paragraph.push(line.trim());
+    }
+  }
+  flushParagraph();
+  return <div className="setup-markdown-preview">{blocks.length ? blocks : <p className="text-muted-foreground">No content yet.</p>}</div>;
 }
 
 export function SetupPage() {
@@ -96,6 +137,7 @@ export function SetupPage() {
       const response = await api.getProjectSetupStatus();
       const nextStatus: ProjectSetupStatus = {
         ...response,
+        projectDocuments: response.projectDocuments ?? [],
         templateFiles: response.templateFiles ?? [],
         defaultTemplateContent: response.defaultTemplateContent ?? FALLBACK_ARM_TEMPLATE,
       };
@@ -115,7 +157,7 @@ export function SetupPage() {
 
   const dirty = useMemo(() => editor ? editor.content !== editor.savedContent : false, [editor]);
   const activeFiles = useMemo(
-    () => activeKind === 'plan' ? status?.candidates ?? [] : status?.templateFiles ?? [],
+    () => activeKind === 'plan' ? status?.projectDocuments ?? [] : status?.templateFiles ?? [],
     [activeKind, status],
   );
   const activePaths = useMemo(() => activeFiles.map((file) => file.path), [activeFiles]);
@@ -144,9 +186,9 @@ export function SetupPage() {
     setError(null);
   };
 
-  const selectCandidate = (candidate: ProjectPlanCandidate | SetupTemplateFile): boolean => {
+  const selectCandidate = (candidate: ProjectPlanDocument | SetupTemplateFile): boolean => {
     if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return false;
-    setEditor('format' in candidate ? editorFromTemplate(candidate) : editorFromCandidate(candidate));
+    setEditor('format' in candidate ? editorFromTemplate(candidate) : editorFromDocument(candidate));
     setResult(null);
     setError(null);
     return true;
@@ -197,7 +239,16 @@ export function SetupPage() {
         savedContent: response.file.content,
       } : current);
       setStatus((current) => {
-        if (!current || editor.kind !== 'template') return current;
+        if (!current) return current;
+        if (editor.kind === 'plan') {
+          const file = { ...response.file, recentlyChanged: true };
+          return {
+            ...current,
+            canonicalPlan: file.path === '.project/plan.md' ? file : current.canonicalPlan,
+            projectDocuments: [...current.projectDocuments.filter((entry) => entry.path !== file.path), file]
+              .sort((left, right) => left.path.localeCompare(right.path)),
+          };
+        }
         const format = response.file.path.endsWith('.toml')
           ? 'toml' as const
           : response.file.path.endsWith('.jinja')
@@ -375,9 +426,9 @@ export function SetupPage() {
         <aside className="setup-file-sidebar">
           <section className="setup-file-browser">
             <div>
-              {activeKind === 'plan' && status.candidates.length === 0 ? (
+              {activeKind === 'plan' && status.projectDocuments.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  No likely plan files were found. Start a new plan and write in plain language.
+                  No project documents were found. Start a new plan and write in plain language.
                 </p>
               ) : activeKind === 'template' && status.templateFiles.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
@@ -395,6 +446,16 @@ export function SetupPage() {
                 </div>
               )}
             </div>
+            {activeKind === 'plan' ? (
+              <div className="setup-recent-documents" aria-label="Recently changed project documents">
+                <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recently changed</p>
+                {status.projectDocuments.filter((document) => document.recentlyChanged).slice(0, 5).map((document) => (
+                  <button key={document.path} type="button" onClick={() => selectCandidate(document)} className="block w-full truncate rounded px-2 py-1 text-left text-xs text-accent hover:bg-accent/10">
+                    {document.path.replace('.project/', '')}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={activeKind === 'plan' ? createPlan : createTemplate}
@@ -408,12 +469,16 @@ export function SetupPage() {
 
         <section className="setup-file-editor min-w-0 rounded-md border border-border bg-surface p-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
+            <div className="min-w-0">
+              <p className="truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
+              {activeKind === 'plan' ? <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(status.projectDocuments.find((document) => document.path === editor.path)?.modifiedAt)}</p> : null}
+            </div>
             <span className={`rounded px-2 py-0.5 text-[11px] ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
               {dirty ? 'Unsaved changes' : 'Saved'}
             </span>
           </div>
 
+          <div className="setup-document-panes mt-2">
           <textarea
             aria-label={activeKind === 'plan'
               ? 'Project plan content'
@@ -425,6 +490,8 @@ export function SetupPage() {
             className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             spellCheck
           />
+          {activeKind === 'plan' ? <MarkdownPreview content={editor.content} /> : null}
+          </div>
 
           {error ? (
             <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>

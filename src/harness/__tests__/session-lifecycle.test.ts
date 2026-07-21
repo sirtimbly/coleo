@@ -1,7 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 import { OpenCodeApiHarness } from "../opencode-api";
-import { isColeoSessionForArm, shouldPruneSession } from "../session-lifecycle";
+import {
+  isColeoSessionForArm,
+  selectSessionForRecovery,
+  shouldPruneSession,
+} from "../session-lifecycle";
 
 interface SessionFixture {
   id?: string;
@@ -67,6 +71,16 @@ describe("session lifecycle helpers", () => {
     expect(shouldPruneSession({ id: "stale", title: "Coleo Arm: Qorol (x)" }, "Qorol", "keep")).toBe(true);
     expect(shouldPruneSession({ id: "manual", title: "My Scratch Session" }, "Qorol", "keep")).toBe(false);
     expect(shouldPruneSession({ id: "other", title: "Coleo Arm: Vorate (x)" }, "Qorol", "keep")).toBe(false);
+  });
+
+  it("reattaches to the most recently updated same-arm session", () => {
+    const selected = selectSessionForRecovery([
+      { id: "old", title: "Coleo Arm: Qorol (old)", time: { updated: 10 } },
+      { id: "other", title: "Coleo Arm: Vorate (new)", time: { updated: 30 } },
+      { id: "latest", title: "Coleo Arm: Qorol (latest)", time: { updated: 20 } },
+    ], "Qorol");
+
+    expect(selected?.id).toBe("latest");
   });
 });
 

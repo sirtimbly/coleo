@@ -1406,12 +1406,15 @@ export class OpenCodeTuiHarness implements AgentHarness {
       const response = await tuiSession.client.session.abort({
         path: { id: tuiSession.sessionId },
       });
-      
-      if (!response.error) {
-        console.log(`[harness-tui] Aborted session ${session.id}`);
+
+      if (response.error) {
+        throw new Error(formatSdkError(response.error));
       }
+
+      console.log(`[harness-tui] Aborted session ${session.id}`);
     } catch (err) {
       console.log(`[harness-tui] Failed to abort session: ${err}`);
+      throw err;
     }
   }
 

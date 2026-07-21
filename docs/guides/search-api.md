@@ -47,7 +47,8 @@ Tests: `src/api/routes/__tests__/search.test.ts`
     "event_types": ["status_report", "task_completion"],
     "from": "2026-07-01T00:00:00Z",
     "to": "2026-07-10T23:59:59Z",
-    "task_id": "phase28g-d4c3d1"
+    "task_id": "phase28g-d4c3d1",
+    "classification": "development"
   },
   "limit": 20,
   "keywordWeight": 0.35,

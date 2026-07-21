@@ -37,6 +37,7 @@ describe("MCP search tools", () => {
 		const tools = getTools();
 		expect(tools.search?.description).toMatch(/Search across indexed/i);
 		expect(tools.search_status_history?.description).toMatch(/historical status/i);
+		expect(tools.historical_search?.description).toMatch(/historical status/i);
 	});
 
 	it("search tool posts hybrid query to /api/search", async () => {
@@ -88,12 +89,13 @@ describe("MCP search tools", () => {
 			const body = JSON.parse(String(init?.body ?? "{}")) as {
 				query: string;
 				limit: number;
-				filters: { arm_ids?: string[]; event_types?: string[]; from?: string };
+				filters: { arm_ids?: string[]; event_types?: string[]; from?: string; classification?: string };
 			};
 			expect(body.query).toBe("database migrations");
 			expect(body.limit).toBe(5);
 			expect(body.filters.arm_ids).toEqual(["arm-alpha"]);
 			expect(body.filters.event_types).toEqual(["status_report"]);
+			expect(body.filters.classification).toBe("discovery");
 			expect(body.filters.from).toBeDefined();
 
 			return new Response(
@@ -120,11 +122,62 @@ describe("MCP search tools", () => {
 				arm_ids: ["arm-alpha"],
 				event_types: ["status_report"],
 				days_back: 7,
+				classification: "discovery",
 			},
 		});
 
 		expect(result.content[0]?.text).toContain("database migrations");
 		expect(result.content[0]?.text).toContain("evt-1");
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("historical_search tool posts to /api/status-history/search with direct filters", async () => {
+		const tools = getTools();
+		const handler = getHandler(tools.historical_search!);
+		expect(handler).toBeDefined();
+
+		fetchSpy = spyOn(globalThis, "fetch").mockImplementation((async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+			expect(String(input)).toContain("/api/status-history/search");
+			expect(init?.method).toBe("POST");
+			const body = JSON.parse(String(init?.body ?? "{}")) as {
+				query: string;
+				filters: {
+					arm_ids?: string[];
+					event_types?: string[];
+					from?: string;
+				};
+			};
+			expect(body.query).toBe("deployment failures");
+			expect(body.filters.arm_ids).toEqual(["arm-bravo"]);
+			expect(body.filters.event_types).toEqual(["task_completion"]);
+			expect(body.filters.from).toBeDefined();
+
+			return new Response(
+				JSON.stringify({
+					results: [
+						{
+							event: { id: "evt-2", title: "Deploy finished" },
+							score: 0.93,
+						},
+					],
+					total: 1,
+					query: "deployment failures",
+					semanticUsed: true,
+					query_time_ms: 15,
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+		}) as typeof fetch);
+
+		const result = await handler!({
+			query: "deployment failures",
+			arm_id: "arm-bravo",
+			event_type: "task_completion",
+			days_back: 14,
+		});
+
+		expect(result.content[0]?.text).toContain("deployment failures");
+		expect(result.content[0]?.text).toContain("evt-2");
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
 

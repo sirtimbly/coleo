@@ -186,9 +186,7 @@ export class OpenCodeEventStream {
             sessionId: sourceSessionId || this.sessionId,
           },
         };
-        if (event.type !== "message.part.updated") {
-          this.onEvent(event);
-        }        
+        this.onEvent(event);
       } catch {
         console.log(`[event-stream] ${this.armId} RAW EVENT: ${eventType} - ${data.slice(0, 500)}`);
         this.onEvent({

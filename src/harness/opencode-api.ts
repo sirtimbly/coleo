@@ -14,12 +14,12 @@ import { randomBytes } from "crypto";
 import { join } from "node:path";
 import { getColeoDir } from "../config";
 import { getCliEntrypoint } from "../cli/entrypoint";
-import { OpenCodeEventStream, filterEvent, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
+import { OpenCodeEventStream, truncateLargeFields, shouldPersistEvent, type OpenCodeEvent } from "./event-stream";
 import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 import { buildHarnessPromptParts } from "./prompt-parts";
-import { shouldPruneSession } from "./session-lifecycle";
+import { selectSessionForRecovery, shouldPruneSession } from "./session-lifecycle";
 
 /**
  * Format an SDK error for display
@@ -543,22 +543,24 @@ export class OpenCodeApiHarness implements AgentHarness {
     // Create SDK client for recovered session
     const client = createOpencodeClient({ baseUrl: serverUrl });
 
-    // Always create a NEW session for recovered arm to prevent stale context
-    // Previous sessions may have old task IDs that no longer exist in the database
     try {
-      console.log(`[harness-api] Creating new session for recovered arm ${armId}`);
-      const newSessionResponse = await client.session.create({
-        body: { title: this.createSessionTitle(armId, "recover") },
-      });
-      const recoveredSession = newSessionResponse.data;
+      const sessionsResponse = await client.session.list();
+      let recoveredSession = selectSessionForRecovery(sessionsResponse.data || [], armId);
+
+      if (!recoveredSession?.id) {
+        console.log(`[harness-api] No existing session found; creating one for recovered arm ${armId}`);
+        const newSessionResponse = await client.session.create({
+          body: { title: this.createSessionTitle(armId, "recover") },
+        });
+        recoveredSession = newSessionResponse.data || null;
+      }
       
       if (!recoveredSession?.id) {
-        console.log(`[harness-api] Failed to create session for recovered arm`);
+        console.log(`[harness-api] Failed to find or create session for recovered arm`);
         return null;
       }
       
-      console.log(`[harness-api] Created new session ${recoveredSession.id} for recovered arm ${armId}`);
-      await this.pruneOtherSessions(client, armId, recoveredSession.id);
+      console.log(`[harness-api] Reattaching ${armId} to session ${recoveredSession.id}`);
       
       const sessionId = `opencode-api-recovered-${armId}-${Date.now().toString(36)}`;
       
@@ -591,10 +593,11 @@ export class OpenCodeApiHarness implements AgentHarness {
           armId,
           sessionId: recoveredSession.id,
           onEvent: (event: OpenCodeEvent) => {
-            const { shouldBroadcast, eventName, data } = filterEvent(event);
-            if (shouldBroadcast) {
-              this.emitEvent(armId, eventName, data);
-            }
+            this.emitEvent(
+              armId,
+              event.type,
+              truncateLargeFields(event.properties || {}) as Record<string, unknown>,
+            );
           },
           onError: (error) => {
             console.error(`[harness-api] ${armId} event stream error:`, error.message);
@@ -706,10 +709,11 @@ export class OpenCodeApiHarness implements AgentHarness {
           armId,
           sessionId: newSession.id,
           onEvent: (event: OpenCodeEvent) => {
-            const { shouldBroadcast, eventName, data } = filterEvent(event);
-            if (shouldBroadcast) {
-              this.emitEvent(armId, eventName, data);
-            }
+            this.emitEvent(
+              armId,
+              event.type,
+              truncateLargeFields(event.properties || {}) as Record<string, unknown>,
+            );
           },
           onError: (error) => {
             console.error(`[harness-api] ${session.id} event stream error:`, error.message);
@@ -1013,12 +1017,15 @@ export class OpenCodeApiHarness implements AgentHarness {
       const response = await apiSession.client.session.abort({
         path: { id: apiSession.sessionId },
       });
-      
-      if (!response.error) {
-        console.log(`[harness-api] Aborted session ${session.id}`);
+
+      if (response.error) {
+        throw new Error(formatSdkError(response.error));
       }
+
+      console.log(`[harness-api] Aborted session ${session.id}`);
     } catch (err) {
       console.log(`[harness-api] Failed to abort session: ${err}`);
+      throw err;
     }
   }
 

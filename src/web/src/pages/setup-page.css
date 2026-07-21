@@ -64,6 +64,34 @@
   min-height: 0;
 }
 
+.setup-recent-documents {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.setup-document-panes {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.setup-markdown-preview {
+  min-height: 20rem;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  background: var(--surface-secondary);
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.setup-markdown-heading { margin: 1rem 0 0.5rem; font-weight: 650; }
+.setup-markdown-heading:first-child { margin-top: 0; }
+.setup-markdown-paragraph { margin: 0.5rem 0; }
+.setup-markdown-task, .setup-markdown-list { display: flex; gap: 0.5rem; margin: 0.35rem 0; }
+.setup-markdown-list::before { content: '-'; color: var(--muted-foreground); }
+
 .setup-file-editor {
   display: flex;
   flex-direction: column;
@@ -95,6 +123,16 @@
 
   .setup-file-textarea {
     flex: 1;
+    min-height: 16rem;
+  }
+
+  .setup-document-panes {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    min-height: 0;
+    flex: 1;
+  }
+
+  .setup-markdown-preview {
     min-height: 16rem;
   }
 }

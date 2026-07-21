@@ -547,6 +547,7 @@ export interface ArmProfile {
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string | null;
+  recoveryRequestedAt?: string;
   lastHeartbeat?: string | null;
   lastOutputAt?: string | null;
   config: Record<string, unknown>;
@@ -565,6 +566,17 @@ export interface ArmProfile {
   sessionId?: string;
   workdir?: string;
   runtime?: ArmRuntimeSummary;
+}
+
+function parseArmConfig(config: string | null | undefined): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(config || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
 
 export interface ArmTemplate {
@@ -1217,7 +1229,7 @@ export function createArmsRoutes() {
       updates.push("status = ?");
       values.push(body.status);
       // Log status change
-      logActivity(db, id, "status_changed", undefined, { newStatus: body.status });
+      logActivity(db, id, "arm.status_changed", undefined, { newStatus: body.status });
     }
     if (body.contextBudget !== undefined) {
       updates.push("context_budget = ?");
@@ -1340,6 +1352,61 @@ export function createArmsRoutes() {
     // Broadcast arm update
     broadcast("arms", "arm.updated", { arm, changes: body });
 
+    return c.json({ arm });
+  });
+
+  /**
+   * Flag an active arm for recovery on the brain's next health pass.
+   * POST /api/arms/:id/mark-stuck
+   */
+  app.post("/:id/mark-stuck", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const existing = db.query("SELECT id, status, config FROM arms WHERE id = ?").get(id) as {
+      id: string;
+      status: string;
+      config: string;
+    } | null;
+
+    if (!existing) {
+      throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+    if (existing.status === "stopped") {
+      throw HttpError.badRequest(`Arm ${id} is stopped. Spawn it before marking it stuck.`);
+    }
+
+    // Keep the arm eligible for the brain's busy-arm recovery path without faking fresh activity.
+    const staleAt = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const recoveryRequestedAt = new Date().toISOString();
+    const config = parseArmConfig(existing.config);
+    db.run("UPDATE arms SET status = ?, last_activity_at = ?, updated_at = ?, config = ? WHERE id = ?", [
+      "busy",
+      staleAt,
+      recoveryRequestedAt,
+      JSON.stringify({ ...config, recoveryRequestedAt }),
+      id,
+    ]);
+    logActivity(db, "api", "arm.manual_stuck", undefined, {
+      armId: id,
+      previousStatus: existing.status,
+      recoveryRequestedAt,
+    });
+    console.info(`[arms-api] Recovery requested for stuck arm ${id} at ${recoveryRequestedAt}`);
+
+    const row = db.query(`
+      SELECT id, name, domain, harness, status,
+        context_budget as contextBudget, current_context_used as currentContextUsed,
+        created_at as createdAt, updated_at as updatedAt, last_activity_at as lastActivityAt,
+        last_heartbeat as lastHeartbeat, last_output_at as lastOutputAt,
+        current_task_id as currentTaskId, pid, port, provider, model,
+        total_tokens as totalTokens, total_cost as totalCost,
+        current_task_subject as currentTaskSubject, current_bug_id as currentBugId,
+        current_bug_title as currentBugTitle, agent_id as agentId, host, session_id as sessionId,
+        workdir, config
+      FROM arms WHERE id = ?
+    `).get(id) as ArmRow;
+    const arm = parseArmRow(row);
+    broadcast("arms", "arm.updated", { arm });
     return c.json({ arm });
   });
 
@@ -2729,7 +2796,7 @@ export function createArmsRoutes() {
     const db = c.get("db");
     const id = c.req.param("id");
     const parsedLimit = Number.parseInt(c.req.query("limit") || "50", 10);
-    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 100) : 50;
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
 
     const row = db.query("SELECT id, status, pid, port, session_id, agent_id, harness, host FROM arms WHERE id = ?").get(id) as {
       id: string;
@@ -3040,7 +3107,8 @@ export function createArmsRoutes() {
     }
 
     let closed = false;
-    let intervalHandle: ReturnType<typeof setInterval> | null = null;
+    let pollTimeout: ReturnType<typeof setTimeout> | null = null;
+    let heartbeatHandle: ReturnType<typeof setInterval> | null = null;
     let closeStreamRef: (() => void) | null = null;
     const requestSignal = c.req.raw.signal;
 
@@ -3048,26 +3116,32 @@ export function createArmsRoutes() {
       start(controller) {
         const encoder = new TextEncoder();
         let lastPollTime = new Date(Date.now() - 2_000);
+        let lastSequence = 0;
 
-        const writeEvent = (eventName: string, data: unknown): boolean => {
+        const writeChunk = (value: string): boolean => {
           if (closed) {
             return false;
           }
 
           try {
-            controller.enqueue(
-              encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`),
-            );
+            controller.enqueue(encoder.encode(value));
             return true;
           } catch {
-            // Stream may already be closed/cancelled by the client.
             closed = true;
-            if (intervalHandle) {
-              clearInterval(intervalHandle);
-              intervalHandle = null;
+            if (pollTimeout) {
+              clearTimeout(pollTimeout);
+              pollTimeout = null;
+            }
+            if (heartbeatHandle) {
+              clearInterval(heartbeatHandle);
+              heartbeatHandle = null;
             }
             return false;
           }
+        };
+
+        const writeEvent = (_eventName: string, data: unknown): boolean => {
+          return writeChunk(`data: ${JSON.stringify(data)}\n\n`);
         };
 
         const poll = async (): Promise<void> => {
@@ -3076,32 +3150,48 @@ export function createArmsRoutes() {
           }
 
           try {
+            const pollUntil = new Date();
             const events = await eventStore.queryEvents({
               subject: `coleo.events.arm.${id}.>`,
               since: lastPollTime,
+              until: pollUntil,
               limit: 100,
             });
-            lastPollTime = new Date();
+            lastPollTime = pollUntil;
 
             events
               .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime())
               .forEach((event) => {
-                writeEvent(event.type, {
-                  ...event,
+                if (typeof event.sequence === "number" && event.sequence <= lastSequence) {
+                  return;
+                }
+                const written = writeEvent(event.type, {
+                  type: event.type,
+                  properties: event.data,
+                  timestamp: event.timestamp,
                   armId: event.armId || id,
+                  sequence: event.sequence,
                 });
+                if (written && typeof event.sequence === "number") {
+                  lastSequence = event.sequence;
+                }
               });
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
-            writeEvent("error", { error: message });
+            writeEvent("error", { type: "error", properties: { error: message } });
+          } finally {
+            if (!closed) {
+              pollTimeout = setTimeout(() => {
+                void poll();
+              }, 1000);
+            }
           }
         };
 
-        intervalHandle = setInterval(() => {
-          void poll();
-        }, 1000);
-
-        writeEvent("connected", { armId: id });
+        writeEvent("connected", { type: "connected", properties: { armId: id } });
+        heartbeatHandle = setInterval(() => {
+          writeChunk(`: keepalive ${Date.now()}\n\n`);
+        }, 5000);
         void poll();
 
         const closeStream = (): void => {
@@ -3109,9 +3199,13 @@ export function createArmsRoutes() {
             return;
           }
           closed = true;
-          if (intervalHandle) {
-            clearInterval(intervalHandle);
-            intervalHandle = null;
+          if (pollTimeout) {
+            clearTimeout(pollTimeout);
+            pollTimeout = null;
+          }
+          if (heartbeatHandle) {
+            clearInterval(heartbeatHandle);
+            heartbeatHandle = null;
           }
           try {
             controller.close();
@@ -3129,9 +3223,13 @@ export function createArmsRoutes() {
           return;
         }
         closed = true;
-        if (intervalHandle) {
-          clearInterval(intervalHandle);
-          intervalHandle = null;
+        if (pollTimeout) {
+          clearTimeout(pollTimeout);
+          pollTimeout = null;
+        }
+        if (heartbeatHandle) {
+          clearInterval(heartbeatHandle);
+          heartbeatHandle = null;
         }
       },
     });
@@ -3139,8 +3237,9 @@ export function createArmsRoutes() {
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
       },
     });
   });
@@ -3234,7 +3333,12 @@ export function createArmsRoutes() {
       );
 
       try {
-        const response = await armClient.sendPrompt(id, promptText, promptAttachments);
+        const response = await armClient.sendPrompt(
+          id,
+          promptText,
+          promptAttachments,
+          body.interrupt,
+        );
         if (!response.success) {
           return c.json(
             { error: `Arm ${id} is currently unreachable on distributed agent ${distributedAgentId}. Retry shortly.` },
@@ -3399,6 +3503,10 @@ interface ArmRow {
 }
 
 function parseArmRow(row: ArmRow): ArmProfile {
+  const config = parseArmConfig(row.config);
+  const recoveryRequestedAt =
+    typeof config.recoveryRequestedAt === "string" ? config.recoveryRequestedAt : undefined;
+
   return {
     ...row,
     status: row.status as ArmProfile["status"],
@@ -3417,6 +3525,7 @@ function parseArmRow(row: ArmRow): ArmProfile {
     sessionId: row.sessionId ?? undefined,
     workdir: row.workdir ?? undefined,
     lastOutputAt: row.lastOutputAt,
+    recoveryRequestedAt,
     runtime: deriveArmRuntime({
       status: row.status,
       pid: row.pid,
@@ -3430,6 +3539,6 @@ function parseArmRow(row: ArmRow): ArmProfile {
       lastHeartbeat: row.lastHeartbeat,
       lastOutputAt: row.lastOutputAt,
     }),
-    config: JSON.parse(row.config || "{}"),
+    config,
   };
 }

@@ -86,11 +86,7 @@ export class BrainEventWindow {
     let events: EventData[] = [];
     if (this.store.isInitialized()) {
       try {
-        events = await this.store.getArmEvents(armId, limit);
-        // Filter to events within the time window
-        events = events.filter(
-          (e) => new Date(e.timestamp) >= since
-        );
+        events = await this.store.getArmEvents(armId, limit, since);
       } catch (err) {
         this.logFn(`[EventWindow] Failed to fetch events for arm ${armId}: ${err}`);
       }

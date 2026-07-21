@@ -51,6 +51,7 @@ export {
   type TaskSummary,
   type TaskDiff,
   type ProjectPlanCandidate,
+  type ProjectPlanDocument,
   type SetupTemplateFile,
   type ProjectSetupStatus,
   type WorkspaceTextFile,

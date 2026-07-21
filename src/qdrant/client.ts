@@ -28,6 +28,8 @@ export interface SearchOptions {
 	with_vector?: boolean;
 }
 
+export type PayloadIndexSchema = "keyword" | "datetime";
+
 /**
  * QdrantVectorStore provides vector storage and search capabilities
  */
@@ -125,6 +127,25 @@ export class QdrantVectorStore {
 		} catch (err) {
 			// Collection might already exist
 			console.log(`[Qdrant] Collection ${name} may already exist`);
+		}
+	}
+
+	/** Create a payload index used by filtered vector searches. */
+	async createPayloadIndex(
+		collectionName: string,
+		fieldName: string,
+		fieldSchema: PayloadIndexSchema,
+	): Promise<void> {
+		const client = await this.ensureInitialized();
+
+		try {
+			await client.createPayloadIndex(collectionName, {
+				field_name: fieldName,
+				field_schema: fieldSchema,
+			});
+		} catch (err) {
+			// Qdrant returns a conflict when an index already exists.
+			console.log(`[Qdrant] Payload index ${collectionName}.${fieldName} may already exist`);
 		}
 	}
 

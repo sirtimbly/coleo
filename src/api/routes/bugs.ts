@@ -642,6 +642,65 @@ export function createBugsRoutes() {
     }
   });
 
+  // Claim a bug for a specific arm
+  // POST /api/bugs/:id/claim
+  // Body: { armId: string }
+  app.post("/:id/claim", async (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const body = await c.req.json<{ armId?: string }>();
+
+    if (!body.armId || typeof body.armId !== "string" || !body.armId.trim()) {
+      throw HttpError.badRequest("Invalid armId");
+    }
+
+    const armId = body.armId.trim();
+
+    const bug = db
+      .query("SELECT id, status, assignee_arm_id FROM bugs WHERE id = ?")
+      .get(id) as { id: string; status: string; assignee_arm_id: string | null } | null;
+
+    if (!bug) {
+      throw HttpError.notFound("Bug not found");
+    }
+
+    if (!resolveOptionalFk(db, "arms", armId)) {
+      throw HttpError.badRequest("Invalid armId");
+    }
+
+    const status = bug.status === "open" ? "investigating" : bug.status;
+
+    try {
+      db.run(
+        "UPDATE bugs SET assignee_arm_id = ?, status = ?, updated_at = datetime('now') WHERE id = ?",
+        [armId, status, id],
+      );
+
+      const current = db
+        .query("SELECT id, assignee_arm_id FROM bugs WHERE id = ?")
+        .get(id) as { id: string; assignee_arm_id: string | null } | null;
+
+      // Broadcast bug update
+      broadcast("bugs", "bug.updated", {
+        bugId: id,
+        changes: { assigneeArmId: current?.assignee_arm_id },
+      });
+
+      return c.json({
+        success: true,
+        bug: {
+          bugId: id,
+          assigneeArmId: current?.assignee_arm_id || undefined,
+          previousAssigneeArmId: bug.assignee_arm_id || undefined,
+          status,
+        },
+      });
+    } catch (err) {
+      if (err instanceof HttpError) throw err;
+      throw HttpError.internal("Failed to claim bug");
+    }
+  });
+
   // Delete a bug
   app.delete("/:id", async (c) => {
     const db = c.get("db");

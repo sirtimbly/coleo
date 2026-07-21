@@ -12,6 +12,7 @@ export const KNOWN_EVENT_TYPES = new Set([
 	"session.error",
 	"session.updated",
 	"session.diff",
+	"session.compacted",
 
 	// Message events
 	"message.updated",
@@ -39,7 +40,10 @@ export const KNOWN_EVENT_TYPES = new Set([
 	"arm.spawned",
 	"arm.status_changed",
 	"status_changed",
+	"arm_status_synced",
 	"arm.heartbeat",
+	"server-heartbeat",
+	"server.heartbeat",
 	"arm.killed",
 	"arm.stopped",
 
@@ -53,6 +57,7 @@ export const KNOWN_EVENT_TYPES = new Set([
 
 	// Brain events
 	"arm_prompted",
+	"prompt_sent",
 	"event-status",
 	"event-message-created",
 	"event-message-updated",
