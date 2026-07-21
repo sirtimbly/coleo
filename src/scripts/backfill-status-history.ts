@@ -32,6 +32,16 @@ interface StatusReportRow {
 	created_at: string;
 }
 
+interface CompletedTaskRow {
+  id: string;
+  subject: string;
+  description: string;
+  assigned_to: string | null;
+  completed_at: string;
+  artifacts: string | null;
+  metadata: string | null;
+}
+
 function parseArgs(argv: string[]): {
 	dryRun: boolean;
 	limit: number | null;
@@ -110,6 +120,25 @@ export function statusReportToHistoryEvent(row: StatusReportRow): StatusHistoryE
 	};
 }
 
+export function completedTaskToHistoryEvent(row: CompletedTaskRow): StatusHistoryEvent {
+  const artifacts = parseJsonArray(row.artifacts);
+  const metadata = row.metadata ? JSON.parse(row.metadata) as Record<string, unknown> : {};
+  const timestamp = row.completed_at.includes("T")
+    ? row.completed_at
+    : new Date(row.completed_at.replace(" ", "T") + "Z").toISOString();
+  return {
+    id: `task-completion-${row.id}`,
+    type: "task_completion",
+    timestamp,
+    source: row.assigned_to || "system",
+    title: row.subject,
+    content: row.description,
+    taskId: row.id,
+    armId: row.assigned_to || undefined,
+    metadata: { task: row, artifacts, taskMetadata: metadata, backfill: true },
+  };
+}
+
 async function main(): Promise<void> {
 	const opts = parseArgs(process.argv.slice(2));
 	const dbPath = opts.dbPath || join(getColeoDir(), "coleo.db");
@@ -130,19 +159,28 @@ async function main(): Promise<void> {
 	}
 
 	const limitSql = opts.limit && opts.limit > 0 ? ` LIMIT ${opts.limit}` : "";
-	const rows = db
+  const rows = db
 		.query(
 			`SELECT id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at
        FROM status_reports
        ORDER BY created_at ASC${limitSql}`,
 		)
-		.all() as StatusReportRow[];
+    .all() as StatusReportRow[];
+
+  const completionRows = db.query(
+    `SELECT id, subject, description, assigned_to, completed_at, artifacts, metadata
+     FROM tasks WHERE status = 'completed' AND completed_at IS NOT NULL
+     ORDER BY completed_at ASC${limitSql}`,
+  ).all() as CompletedTaskRow[];
 
 	db.close();
 
-	console.log(`[backfill] found ${rows.length} status reports`);
+  console.log(`[backfill] found ${rows.length} status reports and ${completionRows.length} completed tasks`);
 
-	if (rows.length === 0) {
+  const events = [...rows.map(statusReportToHistoryEvent), ...completionRows.map(completedTaskToHistoryEvent)]
+    .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  if (events.length === 0) {
 		console.log("[backfill] done (empty)");
 		return;
 	}
@@ -154,9 +192,8 @@ async function main(): Promise<void> {
 	let indexed = 0;
 	let failed = 0;
 
-	for (let i = 0; i < rows.length; i++) {
-		const row = rows[i]!;
-		const event = statusReportToHistoryEvent(row);
+  for (let i = 0; i < events.length; i++) {
+    const event = events[i]!;
 
 		if (opts.dryRun) {
 			console.log(
@@ -170,7 +207,7 @@ async function main(): Promise<void> {
 			await indexStatusHistoryEvent(event);
 			indexed++;
 			if (indexed % opts.batchSize === 0) {
-				console.log(`[backfill] indexed ${indexed}/${rows.length}`);
+        console.log(`[backfill] indexed ${indexed}/${events.length}`);
 			}
 		} catch (err) {
 			failed++;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { statusReportToHistoryEvent } from "../../scripts/backfill-status-history";
+import { completedTaskToHistoryEvent, statusReportToHistoryEvent } from "../../scripts/backfill-status-history";
 
 describe("statusReportToHistoryEvent", () => {
 	it("maps SQLite status_reports row to StatusHistoryEvent", () => {
@@ -50,4 +50,20 @@ describe("statusReportToHistoryEvent", () => {
 		expect(event.content).toBe("All good");
 		expect(event.metadata.issues).toEqual([]);
 	});
+});
+
+describe("completedTaskToHistoryEvent", () => {
+  it("preserves authoritative completed task fields without inventing a completion summary", () => {
+    const event = completedTaskToHistoryEvent({
+      id: "task-9", subject: "Ship search", description: "Implement the search endpoint.",
+      assigned_to: "arm-alpha", completed_at: "2026-07-10T15:00:00.000Z",
+      artifacts: '["src/search.ts"]', metadata: '{"classification":"development"}',
+    });
+    expect(event.id).toBe("task-completion-task-9");
+    expect(event.type).toBe("task_completion");
+    expect(event.taskId).toBe("task-9");
+    expect(event.content).toBe("Implement the search endpoint.");
+    expect(event.metadata.artifacts).toEqual(["src/search.ts"]);
+    expect(event.metadata.backfill).toBe(true);
+  });
 });
