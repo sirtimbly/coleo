@@ -9,6 +9,7 @@ export { ActivityPage } from './ActivityPage';
 export { SettingsPage } from './SettingsPage';
 export { TasksPage } from './TasksPage';
 export { StatusReportsPage } from './StatusReportsPage';
+export { StatusHistorySearchPage } from './StatusHistorySearchPage';
 export { BugsPage } from './BugsPage';
 export { MessagingPage } from './MessagingPage';
 export { UnifiedGridPage } from './UnifiedGridPage';
