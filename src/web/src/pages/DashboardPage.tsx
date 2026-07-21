@@ -567,7 +567,7 @@ function ActivitySection({
       <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <button
           type="button"
-          onClick={() => onNavigate("/activity")}
+          onClick={() => onNavigate("/history-search")}
           className="group flex items-center gap-1 hover:text-accent"
         >
           <CardTitle className="group-hover:text-accent">Recent Activity</CardTitle>
@@ -652,15 +652,15 @@ function NotableEventsSection({
           onClick={() => onNavigate("/activity")}
           className="group flex items-center gap-1 hover:text-accent"
         >
-          <CardTitle className="group-hover:text-accent">Notable Events</CardTitle>
+          <CardTitle className="group-hover:text-accent">Recent Notable Events</CardTitle>
           <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
         </button>
         <button
           type="button"
-          onClick={() => onNavigate("/status-reports")}
+          onClick={() => onNavigate("/history-search")}
           className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground hover:text-accent"
         >
-          Search history
+          Search complete history
         </button>
       </CardHeader>
       <CardContent>
@@ -686,10 +686,10 @@ function NotableEventsSection({
             <p className="text-muted-foreground text-sm">No notable events yet</p>
             <button
               type="button"
-              onClick={() => onNavigate("/status-reports")}
+              onClick={() => onNavigate("/history-search")}
               className="text-xs text-accent hover:underline"
             >
-              Open status history search
+              Open complete search page
             </button>
           </div>
         ) : (
@@ -705,7 +705,7 @@ function NotableEventsSection({
                   ? { pathname: '/bugs', search: `?bug=${encodeURIComponent(bugId)}` }
                   : armId
                     ? { pathname: '/viewer', search: `?arm=${encodeURIComponent(armId)}` }
-                    : { pathname: '/status-reports', search: '' };
+                    : { pathname: '/history-search', search: '' };
 
               const rowContent = (
                 <>
