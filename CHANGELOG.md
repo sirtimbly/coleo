@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.0...coleo-v0.4.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* **release:** align release tags and changelog sections ([6df281a](https://github.com/sirtimbly/coleo/commit/6df281a8a271172143ddccffc28a627315d733d2))
+* **release:** align release tags and changelog sections ([f56386e](https://github.com/sirtimbly/coleo/commit/f56386e91618e9bee3ff2fa3962e51c9f3322962))
+
+
+### Code Refactoring
+
+* **web:** mail ui selection and modals ([bfc4716](https://github.com/sirtimbly/coleo/commit/bfc4716c559aa30ef59136b549c04a529bb67c5a))
+
 ## [0.4.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.3.0...coleo-v0.4.0) (2026-07-22)
 
 
