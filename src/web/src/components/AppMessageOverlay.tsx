@@ -1,14 +1,25 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { useMessage } from '@/lib';
-import { MessageModal } from './MessageModal';
 
 export function AppMessageOverlay() {
+  const navigate = useNavigate();
+  const { layoutMode } = useLayoutMode();
   const {
     isMessageModalOpen,
-    replyContext,
     openNewMessage,
-    closeMessageModal,
+    markMessageOpened,
   } = useMessage();
+
+  useEffect(() => {
+    if (!isMessageModalOpen || layoutMode === 'golden') {
+      return;
+    }
+
+    navigate('/compose');
+    markMessageOpened();
+  }, [isMessageModalOpen, layoutMode, markMessageOpened, navigate]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -32,11 +43,5 @@ export function AppMessageOverlay() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [openNewMessage]);
 
-  return (
-    <MessageModal
-      isOpen={isMessageModalOpen}
-      onClose={closeMessageModal}
-      replyTo={replyContext}
-    />
-  );
+  return null;
 }

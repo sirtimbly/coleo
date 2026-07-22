@@ -168,7 +168,7 @@ function SummaryCard({ summary, highlighted }: { summary: TaskSummary; highlight
           <span className="text-xs text-foreground-400">(edited)</span>
         )}
       </div>
-      <p className="text-sm whitespace-pre-wrap">{summary.content}</p>
+      <p className="readable-copy whitespace-pre-wrap">{summary.content}</p>
     </article>
   );
 }

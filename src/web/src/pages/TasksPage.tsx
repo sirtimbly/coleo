@@ -405,7 +405,7 @@ function BlockedTaskNotice({ task }: { task: Task }) {
 				<Pause className="h-3.5 w-3.5" />
 				Current blocker
 			</div>
-			<p className="mt-1.5 whitespace-pre-wrap text-sm leading-5 text-foreground">
+			<p className="readable-copy mt-1.5 whitespace-pre-wrap">
 				{task.blockedReason || "No reason was recorded. The next review must add one."}
 			</p>
 			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -471,7 +471,7 @@ function TaskDescriptionField({
 					}}
 					placeholder="Add a description for this task..."
 					rows={4}
-					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 font-body text-sm font-normal tracking-normal focus:outline-none focus:ring-1 focus:ring-accent"
+					className="readable-copy w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent"
 				/>
 				<div className="flex items-center gap-2">
 					<Button size="sm" variant="primary" onPress={handleSave}>
@@ -505,7 +505,7 @@ function TaskDescriptionField({
 			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
 			title="Click to edit"
 		>
-			<p className="whitespace-pre-wrap font-body font-normal leading-relaxed tracking-normal">
+			<p className="readable-copy whitespace-pre-wrap">
 				{description}
 			</p>
 		</button>
@@ -1426,7 +1426,7 @@ export function TasksPage() {
 												<h5 className="text-sm font-medium text-foreground-500 mb-1">
 													Original one-liner
 												</h5>
-												<p className="text-sm">
+												<p className="readable-copy">
 													{getTaskUiMeta(selectedTask).llm?.originalPrompt}
 												</p>
 											</div>
@@ -1438,7 +1438,7 @@ export function TasksPage() {
 													<Sparkles className="h-3.5 w-3.5" />
 													LLM-generated description
 												</h5>
-												<p className="text-sm">
+												<p className="readable-copy whitespace-pre-wrap">
 													{
 														getTaskUiMeta(selectedTask).llm
 															?.generatedDescription

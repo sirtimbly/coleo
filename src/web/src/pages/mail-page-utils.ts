@@ -15,6 +15,24 @@ export interface MailThread {
   lastMessageDate: Date;
 }
 
+export interface MailListState {
+  focusedThreadId: string | null;
+  expandedThreadIds: ReadonlySet<string>;
+}
+
+export type MailListAction =
+  | { type: "sync"; threadIds: readonly string[] }
+  | { type: "focus"; threadId: string }
+  | { type: "move"; threadIds: readonly string[]; direction: "next" | "previous" }
+  | { type: "toggle"; threadId: string }
+  | { type: "archive"; threadId: string; fallbackThreadId: string | null }
+  | { type: "reset" };
+
+export const INITIAL_MAIL_LIST_STATE: MailListState = {
+  focusedThreadId: null,
+  expandedThreadIds: new Set(),
+};
+
 export interface BuildMailThreadsOptions {
   inboxMessages?: MailMessage[];
   sentMessages?: MailMessage[];
@@ -149,4 +167,116 @@ export function getSelectedInboxUnreadMessageIds(
     .map((threadMessage) => threadMessage.message)
     .filter((message) => !message.flags.seen && inboxMessageIds.has(message.id))
     .map((message) => message.id);
+}
+
+export function getAdjacentThreadId(
+  threads: readonly MailThread[],
+  focusedThreadId: string | null,
+  direction: "next" | "previous",
+): string | null {
+  if (threads.length === 0) return null;
+
+  const currentIndex = focusedThreadId
+    ? threads.findIndex((thread) => thread.id === focusedThreadId)
+    : -1;
+  const nextIndex = direction === "next"
+    ? currentIndex === -1
+      ? 0
+      : Math.min(currentIndex + 1, threads.length - 1)
+    : currentIndex === -1
+      ? threads.length - 1
+      : Math.max(currentIndex - 1, 0);
+
+  return threads[nextIndex]?.id ?? null;
+}
+
+export function reduceMailListState(
+  state: MailListState,
+  action: MailListAction,
+): MailListState {
+  switch (action.type) {
+    case "sync": {
+      const validThreadIds = new Set(action.threadIds);
+      const focusedThreadId = state.focusedThreadId && validThreadIds.has(state.focusedThreadId)
+        ? state.focusedThreadId
+        : action.threadIds[0] ?? null;
+      const expandedThreadIds = new Set(
+        [...state.expandedThreadIds].filter((threadId) => validThreadIds.has(threadId)),
+      );
+      if (
+        focusedThreadId === state.focusedThreadId &&
+        expandedThreadIds.size === state.expandedThreadIds.size
+      ) {
+        return state;
+      }
+      return { focusedThreadId, expandedThreadIds };
+    }
+    case "focus":
+      return action.threadId === state.focusedThreadId
+        ? state
+        : { ...state, focusedThreadId: action.threadId };
+    case "move": {
+      const currentIndex = state.focusedThreadId
+        ? action.threadIds.indexOf(state.focusedThreadId)
+        : -1;
+      const nextIndex = action.direction === "next"
+        ? currentIndex === -1
+          ? 0
+          : Math.min(currentIndex + 1, action.threadIds.length - 1)
+        : currentIndex === -1
+          ? action.threadIds.length - 1
+          : Math.max(currentIndex - 1, 0);
+      const focusedThreadId = action.threadIds[nextIndex] ?? null;
+      return focusedThreadId === state.focusedThreadId
+        ? state
+        : { ...state, focusedThreadId };
+    }
+    case "toggle": {
+      const expandedThreadIds = new Set(state.expandedThreadIds);
+      if (expandedThreadIds.has(action.threadId)) expandedThreadIds.delete(action.threadId);
+      else expandedThreadIds.add(action.threadId);
+      return { ...state, focusedThreadId: action.threadId, expandedThreadIds };
+    }
+    case "archive": {
+      const expandedThreadIds = new Set(state.expandedThreadIds);
+      expandedThreadIds.delete(action.threadId);
+      return {
+        focusedThreadId: action.fallbackThreadId,
+        expandedThreadIds,
+      };
+    }
+    case "reset":
+      return INITIAL_MAIL_LIST_STATE;
+  }
+}
+
+export function getInboxMessageIdsForThread(
+  thread: MailThread,
+  inboxMessages?: readonly MailMessage[],
+): string[] {
+  const inboxMessageIds = new Set((inboxMessages ?? []).map((message) => message.id));
+  return thread.messages
+    .map((threadMessage) => threadMessage.message.id)
+    .filter((messageId) => inboxMessageIds.has(messageId));
+}
+
+export function getConsecutiveReplyLevels(
+  thread: MailThread,
+  maxDepth: number,
+): number[] {
+  let previousDepth = 0;
+
+  return thread.messages.map((threadMessage, index) => {
+    const previousMessage = thread.messages[index - 1]?.message;
+    const inReplyTo = getMailHeader(threadMessage.message, "in-reply-to");
+    const repliesToPrevious = Boolean(
+      previousMessage &&
+      inReplyTo?.includes(getMailMessageId(previousMessage)),
+    );
+    const depth = repliesToPrevious
+      ? Math.min(previousDepth + 1, maxDepth)
+      : 0;
+    previousDepth = depth;
+    return depth;
+  });
 }

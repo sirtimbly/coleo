@@ -1,17 +1,15 @@
 /**
- * MessageModal - Global modal for sending messages to Brain or Arms
+ * MessageComposer - Panel for sending messages to Brain or Arms
  * 
  * Opens with 'N' key globally
  * - Default mode: Send message to Brain for task distribution
  * - Direct mode: Send prompt directly to a specific arm
  */
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { X, Send, Brain, Cpu, ChevronDown, Reply, ImagePlus, Loader2, Trash2 } from 'lucide-react';
 import { api, type Arm, type TaskAttachment } from '@/lib/api';
 
-interface MessageModalProps {
-  isOpen: boolean;
+interface MessageComposerProps {
   onClose: () => void;
   replyTo?: {
     messageId: string;
@@ -31,7 +29,7 @@ interface ArmOption {
   domain: string;
 }
 
-export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
+export function MessageComposer({ onClose, replyTo }: MessageComposerProps) {
   const [mode, setMode] = useState<MessageMode>('brain');
   const [message, setMessage] = useState('');
   const [selectedArmId, setSelectedArmId] = useState<string>('');
@@ -49,9 +47,9 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Set up reply context when modal opens with replyTo
+  // Set up reply context when the composer opens with replyTo
   useEffect(() => {
-    if (isOpen && replyTo) {
+    if (replyTo) {
       setIsReply(true);
       setMode('brain'); // Replies go to brain
       setAttachments([]);
@@ -62,22 +60,20 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
         .map(line => `> ${line}`)
         .join('\n');
       setMessage(`\n\n---\nIn reply to: ${replyTo.subject}\nFrom: ${replyTo.from}\n\n${quotedBody}`);
-    } else if (isOpen) {
+    } else {
       setIsReply(false);
       setMessage('');
       setAttachments([]);
       setError(null);
     }
-  }, [isOpen, replyTo]);
+  }, [replyTo]);
 
-  // Load arms when modal opens
+  // Load arms when the composer opens
   useEffect(() => {
-    if (isOpen) {
-      loadArms();
-      // Focus textarea after a brief delay for animation
-      setTimeout(() => textareaRef.current?.focus(), 100);
-    }
-  }, [isOpen]);
+    void loadArms();
+    const focusTimer = window.setTimeout(() => textareaRef.current?.focus(), 100);
+    return () => window.clearTimeout(focusTimer);
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -93,13 +89,13 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
   // Handle escape key
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
         onClose();
       }
     }
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [onClose]);
 
   const loadArms = async () => {
     setIsLoading(true);
@@ -229,21 +225,12 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
 
   const selectedArm = arms.find(a => a.id === selectedArmId);
 
-  if (!isOpen) return null;
-
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-2xl">
+  return (
+    <div className="flex min-h-full w-full items-start justify-center bg-surface p-3 sm:p-5">
+      <div className="flex min-h-[min(42rem,100%)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-xl">
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-          <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border px-4 py-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             {/* Mode selector */}
             <div className="flex items-center rounded-lg bg-surface-secondary p-1">
               <button
@@ -272,18 +259,18 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
             
             {/* Arm selector (only in arm mode) */}
             {mode === 'arm' && (
-              <div className="relative" ref={dropdownRef}>
+              <div className="relative min-w-0" ref={dropdownRef}>
                 <button
                   onClick={() => setShowDropdown(!showDropdown)}
                   disabled={isLoading}
-                  className="flex items-center gap-2 rounded-lg border border-border bg-surface-secondary px-3 py-1.5 text-sm transition-colors hover:bg-surface-tertiary"
+                  className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-surface-secondary px-3 py-1.5 text-sm transition-colors hover:bg-surface-tertiary"
                 >
                   {isLoading ? (
                     <span className="text-muted-foreground">Loading...</span>
                   ) : selectedArm ? (
                     <>
                       {getStatusDot(selectedArm.status)}
-                      <span className="text-foreground">{selectedArm.name}</span>
+                      <span className="truncate text-foreground">{selectedArm.name}</span>
                     </>
                   ) : (
                     <span className="text-muted-foreground">Select arm...</span>
@@ -324,8 +311,10 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           </div>
           
           <button
+            type="button"
             onClick={onClose}
             className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
+            aria-label="Close new message"
           >
             <X className="w-5 h-5" />
           </button>
@@ -387,7 +376,7 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
               isDragOver ? 'border-accent bg-accent/10' : 'border-border bg-surface-secondary/60'
             }`}
           >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
               <div className="flex items-center gap-2 text-sm text-foreground">
                 {isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin text-accent" />
@@ -442,8 +431,8 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
         </div>
         
         {/* Footer */}
-        <div className="flex shrink-0 items-center justify-between border-t border-border bg-surface-secondary/60 px-4 py-3">
-          <span className="text-xs text-muted-foreground">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border bg-surface-secondary/60 px-4 py-3">
+          <span className="hidden text-xs text-muted-foreground sm:inline">
             Press <kbd className="rounded bg-surface-tertiary px-1.5 py-0.5 text-foreground">Cmd</kbd>+<kbd className="rounded bg-surface-tertiary px-1.5 py-0.5 text-foreground">Enter</kbd> to send
           </span>
           
@@ -472,7 +461,6 @@ export function MessageModal({ isOpen, onClose, replyTo }: MessageModalProps) {
           </button>
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }

@@ -16,6 +16,7 @@ interface MessageContextValue {
   replyContext: ReplyContext | undefined;
   openNewMessage: () => void;
   openReply: (context: ReplyContext) => void;
+  markMessageOpened: () => void;
   closeMessageModal: () => void;
 }
 
@@ -35,6 +36,10 @@ export function MessageProvider({ children }: { children: ReactNode }) {
     setIsMessageModalOpen(true);
   };
 
+  const markMessageOpened = () => {
+    setIsMessageModalOpen(false);
+  };
+
   const closeMessageModal = () => {
     setIsMessageModalOpen(false);
     setReplyContext(undefined);
@@ -46,6 +51,7 @@ export function MessageProvider({ children }: { children: ReactNode }) {
       replyContext,
       openNewMessage,
       openReply,
+      markMessageOpened,
       closeMessageModal,
     }}>
       {children}

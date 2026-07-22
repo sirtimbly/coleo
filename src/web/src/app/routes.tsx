@@ -34,6 +34,7 @@ import {
   TasksPage,
   UnifiedGridPage,
   SetupPage,
+  ComposeMessagePage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -84,6 +85,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     icon: Bot,
     component: ArmsPage,
     showInNav: true,
+    getTitle: (searchParams) => searchParams.get('spawn') === '1' ? 'Spawn Arm' : 'Arms',
   },
   {
     id: 'viewer',
@@ -186,6 +188,14 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     icon: Settings,
     component: SettingsPage,
     showInNav: true,
+  },
+  {
+    id: 'compose',
+    href: '/compose',
+    path: 'compose',
+    label: 'New Message',
+    icon: MessageSquareMore,
+    component: ComposeMessagePage,
   },
   {
     id: 'messaging',

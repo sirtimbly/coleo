@@ -131,6 +131,7 @@ function renderRoutePanel(
 	route: RoutePanelState,
 	onRouteChange: (route: WorkspaceRouteState) => void,
 	onOpenRoute: (route: WorkspaceRouteState, mode?: WorkspaceOpenMode) => void,
+	onCloseRoute: () => void,
 ) {
 	const matchedRoute = findAppRoute(route.pathname);
 	if (!matchedRoute) {
@@ -153,6 +154,7 @@ function renderRoutePanel(
 				route={route}
 				onRouteChange={onRouteChange}
 				onOpenRoute={onOpenRoute}
+				onCloseRoute={onCloseRoute}
 			>
 				<RouteComponent />
 			</WorkspaceRouteProvider>
@@ -180,7 +182,7 @@ function findFirstStack(item: ContentItem | undefined): Stack | null {
 }
 
 export function GoldenWorkspace() {
-	const { openNewMessage } = useMessage();
+	const { isMessageModalOpen, markMessageOpened, openNewMessage } = useMessage();
 	const layoutHostRef = useRef<HTMLDivElement>(null);
 	const layoutRef = useRef<GoldenLayout | null>(null);
 	const launcherRef = useRef<HTMLDivElement>(null);
@@ -459,9 +461,101 @@ export function GoldenWorkspace() {
 		[focusPanelByRoute, getTargetStack],
 	);
 
+	const openActionRoute = useCallback(
+		(pathname: string, search: string, title?: string) => {
+			const layout = layoutRef.current;
+			if (!layout) {
+				return;
+			}
+
+			const panelState = createRoutePanelState(
+				pathname,
+				search,
+				createPanelId(),
+				title,
+			);
+			const panelTitle = title ?? getAppRouteTitle(pathname, search);
+			const rootItem = layout.rootItem;
+
+			if (rootItem && ContentItem.isStack(rootItem)) {
+				const currentStackContent = rootItem.contentItems.map((item) => ({
+					type: "component" as const,
+					componentType: WORKSPACE_COMPONENT_TYPE,
+					title: (item as ComponentItem).title,
+					componentState: (item as ComponentItem).container.state,
+				}));
+				const activeComponentItem = rootItem.getActiveComponentItem();
+				const activeItemIndex = activeComponentItem
+					? rootItem.contentItems.indexOf(activeComponentItem)
+					: 0;
+
+				layout.loadLayout({
+					root: {
+						type: "row",
+						content: [
+							{
+								type: "stack",
+								content: currentStackContent,
+								activeItemIndex: Math.max(0, activeItemIndex),
+							},
+							createStackConfig(panelState),
+						],
+					} as unknown as RootItemConfig,
+					settings: {
+						reorderEnabled: true,
+						popoutWholeStack: false,
+					},
+				});
+				focusPanelByRoute(panelState);
+				return;
+			}
+
+			const rightStack = (() => {
+				const findRightmostStack = (item: ContentItem | undefined): Stack | null => {
+					if (!item) return null;
+					if (ContentItem.isStack(item)) return item;
+					for (let index = item.contentItems.length - 1; index >= 0; index--) {
+						const stack = findRightmostStack(item.contentItems[index]);
+						if (stack) return stack;
+					}
+					return null;
+				};
+
+				return findRightmostStack(rootItem);
+			})();
+
+			if (rightStack) {
+				rightStack.addComponent(WORKSPACE_COMPONENT_TYPE, panelState, panelTitle);
+			} else {
+				layout.addComponentAtLocation(
+					WORKSPACE_COMPONENT_TYPE,
+					panelState,
+					panelTitle,
+					[{ typeId: 7 }],
+				);
+			}
+
+			focusPanelByRoute(panelState);
+		},
+		[focusPanelByRoute],
+	);
+
+	useEffect(() => {
+		if (!isMessageModalOpen) {
+			return;
+		}
+
+		openActionRoute("/compose", "", "New Message");
+		markMessageOpened();
+	}, [isMessageModalOpen, markMessageOpened, openActionRoute]);
+
 	const openRouteFromHref = useCallback(
-		(href: string, mode: "focus" | "tab" | "split") => {
+		(href: string, mode: WorkspaceOpenMode) => {
 			const url = new URL(href, window.location.origin);
+			if (mode === "action") {
+				openActionRoute(url.pathname, url.search);
+				return;
+			}
 
 			if (mode === "split") {
 				splitRouteHorizontally(url.pathname, url.search, undefined);
@@ -475,7 +569,7 @@ export function GoldenWorkspace() {
 
 			focusOrOpenRoute(url.pathname, url.search);
 		},
-		[focusOrOpenRoute, openRouteAsTab, splitRouteHorizontally],
+		[focusOrOpenRoute, openActionRoute, openRouteAsTab, splitRouteHorizontally],
 	);
 
 	const openViewerForArm = useCallback(
@@ -554,7 +648,7 @@ export function GoldenWorkspace() {
 				description: "Open the arm spawn flow",
 				group: "Commands",
 				icon: Bot,
-				run: () => openRouteAsTab("/arms", "?spawn=1"),
+				run: () => openActionRoute("/arms", "?spawn=1", "Spawn Arm"),
 			},
 			{
 				id: "new-message",
@@ -606,7 +700,7 @@ export function GoldenWorkspace() {
 				run: () => resetWorkspace(),
 			},
 		];
-	}, [openNewMessage, openPalette, openRouteAsTab, resetWorkspace, saveWorkspace]);
+	}, [openActionRoute, openNewMessage, openPalette, openRouteAsTab, resetWorkspace, saveWorkspace]);
 
 	useEffect(() => {
 		function handleGlobalKeydown(event: KeyboardEvent) {
@@ -789,6 +883,15 @@ export function GoldenWorkspace() {
 								return;
 							}
 
+							if (mode === "action") {
+								openActionRoute(
+									nextRoute.pathname,
+									nextRoute.search,
+									nextRoute.title,
+								);
+								return;
+							}
+
 							if (mode === "tab") {
 								openRouteAsTab(nextRoute.pathname, nextRoute.search);
 								return;
@@ -796,6 +899,7 @@ export function GoldenWorkspace() {
 
 							focusOrOpenRoute(nextRoute.pathname, nextRoute.search);
 						},
+						() => panel.container.close(),
 					),
 					panel.hostElement,
 					panel.route.panelId,
@@ -803,6 +907,7 @@ export function GoldenWorkspace() {
 			),
 		[
 			focusOrOpenRoute,
+			openActionRoute,
 			openRouteAsTab,
 			panelInstances,
 			splitRouteHorizontally,
@@ -948,7 +1053,7 @@ export function GoldenWorkspace() {
 							<button
 								type="button"
 								className="golden-dock-button golden-dock-button--primary"
-								onClick={() => openRouteAsTab("/arms", "?spawn=1")}
+								onClick={() => openActionRoute("/arms", "?spawn=1", "Spawn Arm")}
 								title="Spawn Arm"
 							>
 								<Bot className="h-4 w-4" />

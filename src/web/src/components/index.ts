@@ -1,7 +1,7 @@
 export { Layout } from './Layout';
 export { StatusBadge } from './StatusBadge';
 export { Card, CardHeader, CardTitle, CardContent, CardDescription } from './Card';
-export { MessageModal } from './MessageModal';
+export { MessageComposer } from './MessageModal';
 export { TaskModal } from './TaskModal';
 export { RegenerateTasksModal } from './RegenerateTasksModal';
 export { BugModal } from './BugModal';

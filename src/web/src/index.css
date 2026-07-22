@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Pathway+Extreme:wght@300;400;500;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Pathway+Extreme:wght@300;400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @import "@heroui/styles";
 
@@ -134,40 +134,40 @@
   color-scheme: dark;
   --radius: 0.6rem;
   /* Base Colors */
-  --background: oklch(0.125 0.003 280);
-  --foreground: oklch(0.9911 0 0);
+  --background: oklch(0.2 0.01 270);
+  --foreground: oklch(0.9 0.006 270);
   
   /* Surface Colors */
-  --surface: oklch(0.165 0.004 280);
-  --surface-foreground: oklch(0.9911 0 0);
-  --surface-secondary: oklch(0.195 0.004 280);
-  --surface-secondary-foreground: oklch(0.9911 0 0);
-  --surface-tertiary: oklch(0.23 0.004 280);
-  --surface-tertiary-foreground: oklch(0.9911 0 0);
+  --surface: oklch(0.235 0.01 270);
+  --surface-foreground: var(--foreground);
+  --surface-secondary: oklch(0.265 0.01 270);
+  --surface-secondary-foreground: var(--foreground);
+  --surface-tertiary: oklch(0.3 0.01 270);
+  --surface-tertiary-foreground: var(--foreground);
   
   /* Card */
-  --card: oklch(0.165 0.004 280);
-  --card-foreground: oklch(0.9911 0 0);
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
   
   /* Overlay */
-  --overlay: oklch(0.19 0.004 280);
-  --overlay-foreground: oklch(0.9911 0 0);
+  --overlay: oklch(0.255 0.01 270);
+  --overlay-foreground: var(--foreground);
   
   /* Accent - keep the same for brand consistency */
   --accent: oklch(0.6204 0.195 253.83);
   --accent-foreground: oklch(0.9911 0 0);
   
   /* Muted */
-  --muted: oklch(0.67 0.012 280);
-  --muted-foreground: oklch(0.67 0.012 280);
+  --muted: oklch(0.69 0.012 270);
+  --muted-foreground: var(--muted);
   
   /* Border */
-  --border: oklch(0.27 0.004 280);
-  --border-foreground: oklch(0.9911 0 0);
+  --border: oklch(0.34 0.01 270);
+  --border-foreground: var(--foreground);
   
   /* Ring */
   --ring: oklch(0.6204 0.195 253.83);
-  --ring-offset: oklch(0.125 0.003 280);
+  --ring-offset: var(--background);
   
   /* Status Colors - adjusted for dark mode */
   --success: oklch(0.7329 0.1935 150.81);
@@ -178,11 +178,21 @@
   --danger-foreground: oklch(0.9911 0 0);
   
   /* Sidebar */
-  --sidebar: oklch(0.11 0.003 280);
-  --sidebar-foreground: oklch(0.9911 0 0);
-  --sidebar-border: oklch(0.22 0.004 280);
-  --sidebar-accent: oklch(0.18 0.004 280);
-  --sidebar-accent-foreground: oklch(0.9911 0 0);
+  --sidebar: oklch(0.185 0.01 270);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: oklch(0.3 0.01 270);
+  --sidebar-accent: oklch(0.25 0.01 270);
+  --sidebar-accent-foreground: var(--foreground);
+
+  /* Keep HeroUI surfaces aligned with the application palette. */
+  --default: var(--surface-secondary);
+  --default-foreground: var(--foreground);
+  --field-background: var(--surface);
+  --field-foreground: var(--foreground);
+  --separator: oklch(0.31 0.01 270);
+  --scrollbar: oklch(0.5 0.012 270);
+  --segment: var(--surface-tertiary);
+  --segment-foreground: var(--foreground);
   
   /* Shadows - softer in dark mode */
   --shadow-sm: 0 0 0 0 transparent;
@@ -199,6 +209,15 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.readable-copy {
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 400;
+  line-height: 1.7;
+  letter-spacing: 0.0025em;
+  color: color-mix(in oklch, var(--foreground) 90%, var(--muted));
 }
 
 /* Display typography mirrors the docs site while preserving the body face for paragraphs and form entry. */
@@ -270,4 +289,18 @@ body {
 .no-transitions *::before,
 .no-transitions *::after {
   transition: none !important;
+}
+
+.spawn-arm-panel {
+  container-type: inline-size;
+}
+
+@container (min-width: 34rem) {
+  .spawn-arm-panel__identity {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .spawn-arm-panel__runtime {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }

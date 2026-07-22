@@ -3,10 +3,16 @@ import { describe, expect, it } from "bun:test";
 import type { MailMessage } from "../src/lib/api";
 import {
   buildMailThreads,
+  getAdjacentThreadId,
+  getConsecutiveReplyLevels,
+  getInboxMessageIdsForThread,
   getMailMessageId,
   getMailThreadId,
   getSelectedInboxUnreadMessageIds,
+  INITIAL_MAIL_LIST_STATE,
   normalizeMailSubject,
+  reduceMailListState,
+  type MailThread,
 } from "../src/pages/mail-page-utils";
 
 function createMailMessage(
@@ -211,5 +217,110 @@ describe("mail-page-utils", () => {
     expect(
       getSelectedInboxUnreadMessageIds(thread, "archive", [inboxUnread, inboxRead]),
     ).toEqual([]);
+  });
+
+  it("moves the keyboard cursor through threads without opening a detail view", () => {
+    const threads = [
+      { id: "first" },
+      { id: "second" },
+      { id: "third" },
+    ] as MailThread[];
+
+    expect(getAdjacentThreadId(threads, null, "next")).toBe("first");
+    expect(getAdjacentThreadId(threads, "first", "next")).toBe("second");
+    expect(getAdjacentThreadId(threads, "third", "next")).toBe("third");
+    expect(getAdjacentThreadId(threads, null, "previous")).toBe("third");
+    expect(getAdjacentThreadId(threads, "second", "previous")).toBe("first");
+  });
+
+  it("applies mail list transitions once and keeps sync idempotent", () => {
+    const threadIds = ["first", "second", "third"];
+    const synced = reduceMailListState(INITIAL_MAIL_LIST_STATE, {
+      type: "sync",
+      threadIds,
+    });
+    expect(synced.focusedThreadId).toBe("first");
+    expect(reduceMailListState(synced, { type: "sync", threadIds })).toBe(synced);
+
+    const moved = reduceMailListState(synced, {
+      type: "move",
+      threadIds,
+      direction: "next",
+    });
+    expect(moved.focusedThreadId).toBe("second");
+
+    const expanded = reduceMailListState(moved, {
+      type: "toggle",
+      threadId: "second",
+    });
+    expect(expanded.expandedThreadIds.has("second")).toBe(true);
+
+    const archived = reduceMailListState(expanded, {
+      type: "archive",
+      threadId: "second",
+      fallbackThreadId: "third",
+    });
+    expect(archived.focusedThreadId).toBe("third");
+    expect(archived.expandedThreadIds.has("second")).toBe(false);
+  });
+
+  it("archives only inbox messages from a mixed-folder thread", () => {
+    const inboxMessage = createMailMessage({
+      id: "inbox-1",
+      subject: "Deploy status",
+      date: "2026-04-20T09:00:00.000Z",
+    });
+    const sentMessage = createMailMessage({
+      id: "sent-1",
+      subject: "Re: Deploy status",
+      date: "2026-04-20T10:00:00.000Z",
+    });
+    const [thread] = buildMailThreads({
+      inboxMessages: [inboxMessage],
+      sentMessages: [sentMessage],
+      archiveMessages: [],
+      activeTab: "inbox",
+      collapsedThreads: new Set(),
+    });
+
+    expect(getInboxMessageIdsForThread(thread!, [inboxMessage])).toEqual(["inbox-1"]);
+  });
+
+  it("indents only consecutive direct replies", () => {
+    const root = createMailMessage({
+      id: "root",
+      subject: "Deploy status",
+      date: "2026-04-20T09:00:00.000Z",
+      headers: { "message-id": "<root@example.test>" },
+    });
+    const directReply = createMailMessage({
+      id: "reply",
+      subject: "Re: Deploy status",
+      date: "2026-04-20T10:00:00.000Z",
+      headers: {
+        "message-id": "<reply@example.test>",
+        "in-reply-to": "<root@example.test>",
+      },
+    });
+    const nestedReply = createMailMessage({
+      id: "nested",
+      subject: "Re: Deploy status",
+      date: "2026-04-20T11:00:00.000Z",
+      headers: { "in-reply-to": "<reply@example.test>" },
+    });
+    const unrelated = createMailMessage({
+      id: "unrelated",
+      subject: "Deploy status",
+      date: "2026-04-20T12:00:00.000Z",
+    });
+    const [thread] = buildMailThreads({
+      inboxMessages: [root, directReply, nestedReply, unrelated],
+      sentMessages: [],
+      archiveMessages: [],
+      activeTab: "inbox",
+      collapsedThreads: new Set(),
+    });
+
+    expect(getConsecutiveReplyLevels(thread!, 4)).toEqual([0, 1, 2, 0]);
   });
 });

@@ -12,7 +12,6 @@ import {
 	X,
 	Zap,
 } from "lucide-react";
-import { createPortal } from "react-dom";
 import { Card, Chip, Button } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
 import {
@@ -25,7 +24,11 @@ import {
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { useWorkspaceOpenRoute, useWorkspaceSearchParams } from '@/workspace/route-context';
+import {
+	useWorkspaceCloseRoute,
+	useWorkspaceOpenRoute,
+	useWorkspaceSearchParams,
+} from '@/workspace/route-context';
 import { ProviderSetupModal } from "@/components/ProviderSetupModal";
 
 interface ArmEventData {
@@ -419,9 +422,11 @@ function ArmRow({
 }
 
 export function ArmsPage() {
-	usePageTitle('Coleo Observatory - Arms');
-	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
+	const [searchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
+	const closeWorkspaceRoute = useWorkspaceCloseRoute('/arms');
+	const isSpawnPage = searchParams.get("spawn") === "1";
+	usePageTitle(isSpawnPage ? 'Coleo Observatory - Spawn Arm' : 'Coleo Observatory - Arms');
 	const [arms, setArms] = useState<Arm[]>([]);
 	const [agents, setAgents] = useState<AgentInfo[]>([]);
 	const [armTemplates, setArmTemplates] = useState<ArmTemplateSummary[]>([]);
@@ -724,10 +729,20 @@ export function ArmsPage() {
 		});
 	}, [agents, allAgentHarnesses, armTemplates, arms, spawnDefaults]);
 
+	const openSpawnPanel = useCallback(() => {
+		openWorkspaceRoute(
+			{ pathname: "/arms", search: "?spawn=1", title: "Spawn Arm" },
+			"action",
+		);
+	}, [openWorkspaceRoute]);
+
 	const closeSpawnModal = useCallback(() => {
 		setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
 		setProviderSetupProviderId(null);
-	}, []);
+		if (isSpawnPage) {
+			closeWorkspaceRoute();
+		}
+	}, [closeWorkspaceRoute, isSpawnPage]);
 
 	const openProviderSetupModal = useCallback((providerId: string) => {
 		setProviderSetupProviderId(providerId);
@@ -747,6 +762,7 @@ export function ArmsPage() {
 		const name = spawnModal.name.trim();
 		const provider = spawnModal.provider.trim();
 		const model = spawnModal.model.trim();
+		let didSpawn = false;
 
 		if (!name) {
 			showError("Enter a name for the new arm", "Spawn Failed");
@@ -797,7 +813,7 @@ export function ArmsPage() {
 
 			const target = response.host || response.agentId || "remote arm agent host";
 			showSuccess(`Spawned ${name} on ${target}`, "Arm Started");
-			setSpawnModal(DEFAULT_SPAWN_MODAL_STATE);
+			didSpawn = true;
 		} catch (err) {
 			showError(
 				err instanceof Error ? err.message : "Failed to spawn arm",
@@ -805,10 +821,14 @@ export function ArmsPage() {
 			);
 		} finally {
 			setSpawningArmId(null);
+			if (didSpawn) {
+				closeSpawnModal();
+			}
 		}
 	}, [
 		agents.length,
 		arms,
+		closeSpawnModal,
 		loadArms,
 		openProviderSetupModal,
 		selectedOpenCodeProvider,
@@ -823,8 +843,7 @@ export function ArmsPage() {
 		}
 
 		openSpawnModal();
-		setSearchParams({});
-	}, [openSpawnModal, searchParams, setSearchParams]);
+	}, [openSpawnModal, searchParams]);
 
 	useEffect(() => {
 		if (!spawnModal.isOpen || !spawnModal.agentId || !usesOpenCodeCatalog(spawnModal.harness)) {
@@ -977,22 +996,30 @@ export function ArmsPage() {
 	}
 
 	return (
-		<div className="p-8 space-y-8 overflow-auto">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-2xl font-bold">Arms</h1>
-					<p className="text-muted-foreground">Manage your AI agents</p>
-				</div>
-				<Button
-					variant="primary"
-					className="gap-2"
-					onPress={openSpawnModal}
-					isDisabled={loading}
-				>
-					<Plus className="h-4 w-4" />
-					Spawn Arm
-				</Button>
-			</div>
+		<div
+			className={
+				isSpawnPage
+					? "min-h-full overflow-auto bg-surface p-3 sm:p-5"
+					: "p-8 space-y-8 overflow-auto"
+			}
+		>
+			{!isSpawnPage ? (
+				<>
+					<div className="flex items-center justify-between">
+						<div>
+							<h1 className="text-2xl font-bold">Arms</h1>
+							<p className="text-muted-foreground">Manage your AI agents</p>
+						</div>
+						<Button
+							variant="primary"
+							className="gap-2"
+							onPress={openSpawnPanel}
+							isDisabled={loading}
+						>
+							<Plus className="h-4 w-4" />
+							Spawn Arm
+						</Button>
+					</div>
 
 			{loading ? (
 				<div className="space-y-2">
@@ -1067,15 +1094,12 @@ export function ArmsPage() {
 					</div>
 				</div>
 			)}
+					</>
+			) : null}
 
-			{spawnModal.isOpen &&
-				createPortal(
-					<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-						<div
-							className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-							onClick={closeSpawnModal}
-						/>
-						<div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-2xl">
+			{isSpawnPage && spawnModal.isOpen ? (
+				<div className="flex min-h-full w-full items-start justify-center">
+					<div className="spawn-arm-panel flex min-h-[min(44rem,100%)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border bg-overlay text-foreground shadow-xl">
 							<div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
 								<div>
 									<h2 className="text-lg font-semibold text-foreground">Spawn New Arm</h2>
@@ -1084,8 +1108,10 @@ export function ArmsPage() {
 									</p>
 								</div>
 								<button
+									type="button"
 									onClick={closeSpawnModal}
 									className="rounded p-1 text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
+									aria-label="Close spawn arm"
 								>
 									<X className="h-5 w-5" />
 								</button>
@@ -1098,7 +1124,7 @@ export function ArmsPage() {
 									that host rather than on the API server machine.
 								</div>
 
-								<div className="grid gap-4 md:grid-cols-2">
+								<div className="spawn-arm-panel__identity grid gap-4">
 									<div>
 										<label className="mb-2 block text-sm font-medium text-foreground">
 											Arm name
@@ -1156,7 +1182,7 @@ export function ArmsPage() {
 									</p>
 								)}
 
-								<div className="grid gap-4 md:grid-cols-3">
+								<div className="spawn-arm-panel__runtime grid gap-4">
 									<div>
 										<label className="mb-2 block text-sm font-medium text-foreground">
 											Harness
@@ -1350,7 +1376,7 @@ export function ArmsPage() {
 								{agents.length === 0 && (
 									<div className="rounded-lg border border-danger/50 bg-danger/10 p-3 text-sm text-danger">
 										No arm agents are currently connected. Start <code>coleo agent start</code>{" "}
-										on a host you want to run arms on, then reopen this modal.
+										on a host you want to run arms on, then reopen this panel.
 									</div>
 								)}
 
@@ -1392,10 +1418,9 @@ export function ArmsPage() {
 									</Button>
 								</div>
 							</div>
-						</div>
-					</div>,
-					document.body,
-				)}
+					</div>
+				</div>
+			) : null}
 
 			<ProviderSetupModal
 				agentId={spawnModal.agentId}

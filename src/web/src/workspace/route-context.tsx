@@ -12,13 +12,14 @@ export interface WorkspaceRouteState {
   title?: string;
 }
 
-export type WorkspaceOpenMode = 'focus' | 'tab' | 'split';
+export type WorkspaceOpenMode = 'focus' | 'tab' | 'split' | 'action';
 
 interface WorkspaceRouteContextValue {
   route: WorkspaceRouteState;
   searchParams: URLSearchParams;
   setSearchParams: SetURLSearchParams;
   openRoute: (route: WorkspaceRouteState, mode?: WorkspaceOpenMode) => void;
+  closeRoute: () => void;
 }
 
 const WorkspaceRouteContext = createContext<WorkspaceRouteContextValue | null>(null);
@@ -28,6 +29,7 @@ interface WorkspaceRouteProviderProps {
   route: WorkspaceRouteState;
   onRouteChange: (route: WorkspaceRouteState) => void;
   onOpenRoute: (route: WorkspaceRouteState, mode?: WorkspaceOpenMode) => void;
+  onCloseRoute: () => void;
 }
 
 export function WorkspaceRouteProvider({
@@ -35,6 +37,7 @@ export function WorkspaceRouteProvider({
   route,
   onRouteChange,
   onOpenRoute,
+  onCloseRoute,
 }: WorkspaceRouteProviderProps) {
   const searchParams = useMemo(() => new URLSearchParams(route.search), [route.search]);
 
@@ -61,8 +64,9 @@ export function WorkspaceRouteProvider({
       searchParams,
       setSearchParams,
       openRoute: onOpenRoute,
+      closeRoute: onCloseRoute,
     }),
-    [onOpenRoute, route, searchParams, setSearchParams],
+    [onCloseRoute, onOpenRoute, route, searchParams, setSearchParams],
   );
 
   return (
@@ -102,4 +106,18 @@ export function useWorkspaceOpenRoute() {
     },
     [navigate, workspaceRoute],
   );
+}
+
+export function useWorkspaceCloseRoute(fallback = '/') {
+  const workspaceRoute = useContext(WorkspaceRouteContext);
+  const navigate = useNavigate();
+
+  return useCallback(() => {
+    if (workspaceRoute) {
+      workspaceRoute.closeRoute();
+      return;
+    }
+
+    navigate(fallback);
+  }, [fallback, navigate, workspaceRoute]);
 }
