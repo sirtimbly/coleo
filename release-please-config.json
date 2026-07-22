@@ -3,7 +3,23 @@
   "packages": {
     ".": {
       "package-name": "coleo",
-      "release-type": "node"
+      "release-type": "node",
+      "changelog-sections": [
+        { "type": "feat", "section": "Features" },
+        { "type": "fix", "section": "Bug Fixes" },
+        { "type": "perf", "section": "Performance Improvements" },
+        { "type": "refactor", "section": "Code Refactoring" },
+        { "type": "refact", "section": "Code Refactoring" },
+        { "type": "build", "section": "Build System" },
+        { "type": "ci", "section": "Continuous Integration" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "test", "section": "Tests" },
+        { "type": "style", "section": "Styles" },
+        { "type": "chore", "section": "Miscellaneous Chores" },
+        { "type": "deps", "section": "Dependencies" },
+        { "type": "deps-dev", "section": "Development Dependencies" },
+        { "type": "revert", "section": "Reverts" }
+      ]
     }
   }
 }

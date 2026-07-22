@@ -5,11 +5,11 @@ on:
     branches:
       - master
     tags:
-      - "v*"
+      - "coleo-v*"
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing vX.Y.Z tag to publish or backfill; leave empty for an unreleased master build
+        description: Existing coleo-vX.Y.Z tag to publish or backfill; leave empty for an unreleased master build
         required: false
         type: string
 
@@ -51,8 +51,8 @@ jobs:
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          version="${tag#v}"
-          [[ "$tag" == "v$version" ]]
+          version="${tag#coleo-v}"
+          [[ "$tag" == "coleo-v$version" ]]
           [[ "$version" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
           echo "is_release=true" >> "$GITHUB_OUTPUT"
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
