@@ -7,26 +7,73 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing vX.Y.Z tag to publish or backfill; leave empty for an unreleased master build
+        required: false
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: publish-cloudflare-container-${{ github.ref }}
+  group: publish-cloudflare-container-${{ inputs.release_tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      is_release: ${{ steps.release.outputs.is_release }}
+      control_tag: ${{ steps.release.outputs.control_tag }}
+      arm_tag: ${{ steps.arm-image.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.sha }}
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.6"
 
+      - name: Resolve source and release metadata
+        id: release
+        env:
+          PUSH_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          REQUESTED_TAG: ${{ inputs.release_tag }}
+        run: |
+          control_tag="$(git rev-parse HEAD)"
+          echo "control_tag=$control_tag" >> "$GITHUB_OUTPUT"
+          tag="${PUSH_TAG:-$REQUESTED_TAG}"
+          if [[ -z "$tag" ]]; then
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${tag#v}"
+          [[ "$tag" == "v$version" ]]
+          [[ "$version" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          echo "is_release=true" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Install runtime dependencies
         run: bun install --frozen-lockfile --production
+
+      - name: Resolve control image tag
+        id: control-image
+        env:
+          TAG: ${{ steps.release.outputs.control_tag }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if bunx wrangler@4.110.0 containers images list --json \
+            | jq -e --arg tag "$TAG" '.[] | select(.name == "coleo-control") | .tags | index($tag)' >/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Resolve Arm Host image tag
         id: arm-image
@@ -45,14 +92,16 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Build control image
-        run: docker build --platform linux/amd64 --file Dockerfile.cloudflare-control --tag coleo-control:${GITHUB_SHA} .
+        if: steps.control-image.outputs.exists != 'true' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
+        run: docker build --platform linux/amd64 --file Dockerfile.cloudflare-control --tag coleo-control:${{ steps.release.outputs.control_tag }} .
 
       - name: Build Arm Host image
         if: steps.arm-image.outputs.exists != 'true'
         run: docker build --platform linux/amd64 --file Dockerfile.cloudflare-agent --tag coleo-agent:${{ steps.arm-image.outputs.tag }} .
 
       - name: Push immutable control image
-        run: bunx wrangler@4.110.0 containers push coleo-control:${GITHUB_SHA}
+        if: steps.control-image.outputs.exists != 'true'
+        run: bunx wrangler@4.110.0 containers push coleo-control:${{ steps.release.outputs.control_tag }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -65,19 +114,45 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Push latest control image
-        if: github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: |
-          docker tag coleo-control:${GITHUB_SHA} coleo-control:latest
+          docker tag coleo-control:${{ steps.release.outputs.control_tag }} coleo-control:latest
           bunx wrangler@4.110.0 containers push coleo-control:latest
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
       - name: Push latest Arm Host image
-        if: github.ref == 'refs/heads/master' && steps.arm-image.outputs.exists != 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && steps.arm-image.outputs.exists != 'true'
         run: |
           docker tag coleo-agent:${{ steps.arm-image.outputs.tag }} coleo-agent:latest
           bunx wrangler@4.110.0 containers push coleo-agent:latest
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  publish-manifest:
+    if: needs.publish.outputs.is_release == 'true'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish Reef release manifest
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+          CONTROL_TAG: ${{ needs.publish.outputs.control_tag }}
+          ARM_TAG: ${{ needs.publish.outputs.arm_tag }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          jq -n \
+            --arg version "$VERSION" \
+            --arg controlImage "registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/coleo-control:$CONTROL_TAG" \
+            --arg armImage "registry.cloudflare.com/$CLOUDFLARE_ACCOUNT_ID/coleo-agent:$ARM_TAG" \
+            --arg publishedAt "$(date --utc +%Y-%m-%dT%H:%M:%SZ)" \
+            '{version: $version, controlImage: $controlImage, armImage: $armImage, publishedAt: $publishedAt}' \
+            > reef-release.json
+          gh release upload "$RELEASE_TAG" reef-release.json
