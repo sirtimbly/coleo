@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.4.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.3.0...coleo-v0.4.0) (2026-07-22)
+
+
+### Features
+
+* add brain model configuration and task coordination updates ([#36](https://github.com/sirtimbly/coleo/issues/36)) ([6f0d342](https://github.com/sirtimbly/coleo/commit/6f0d3425878307c5e7d5097f608b806456244079))
+* **api:** add arm status history endpoint ([c1c4bd7](https://github.com/sirtimbly/coleo/commit/c1c4bd7969fd5a7eb37f036d562cfa5c11c34767))
+* arm interrupt ([343e2d6](https://github.com/sirtimbly/coleo/commit/343e2d682078e20e4d5455909b7683c49f04a7dd))
+* **brain:** apply bug priority responses ([bcfbe4d](https://github.com/sirtimbly/coleo/commit/bcfbe4dc5afa430bbd541491436c36c0e31eb071))
+* **nats:** consume status history events ([8b1d07c](https://github.com/sirtimbly/coleo/commit/8b1d07cf9ee553417ae1020384e52fe670484922))
+* **tasks:** add blocked task review workflow ([bbe82a1](https://github.com/sirtimbly/coleo/commit/bbe82a168e2b621da64a5979b3ab07cd7ed979d3))
+* **tasks:** regenerate queue from project plan ([439a793](https://github.com/sirtimbly/coleo/commit/439a793f5e3f0b83db498c657de3bddeb1351b50))
+* **tasks:** regenerate queue from project plan ([42497ae](https://github.com/sirtimbly/coleo/commit/42497aea9644610b6410775ed6c98e17a348e6f6))
+* **vector:** backfill completed tasks ([a7d5c08](https://github.com/sirtimbly/coleo/commit/a7d5c089953796886286bf496ddd91548a4da89d))
+* **vector:** embed complete status events ([aed0259](https://github.com/sirtimbly/coleo/commit/aed0259b96a8daf36d6db7b83371922aa8c8a571))
+* **web:** add status history search page ([c8ac126](https://github.com/sirtimbly/coleo/commit/c8ac126d5cb6666f558422ad71cab0e35a577e9b))
+* **web:** add task burndown analytics ([81fcd10](https://github.com/sirtimbly/coleo/commit/81fcd106c91ab1862d90a2300a58ceb61d7d7c7b))
+* **web:** add task regeneration dialog ([3493049](https://github.com/sirtimbly/coleo/commit/3493049d1ef58261d96222604f0bb6b3681891f2))
+* **web:** add task to arm in garden ([cda9de6](https://github.com/sirtimbly/coleo/commit/cda9de634bbbfdf9e74915e8a197827d2f3ac35f))
+* **web:** expose task workflow controls ([0ce6345](https://github.com/sirtimbly/coleo/commit/0ce63457d5c098d49694d05d766d431d098ae296))
+* **web:** link notable events to history search ([7cddf2d](https://github.com/sirtimbly/coleo/commit/7cddf2da1c6a03984c9932f1ba4015e786aecf93))
+
+
+### Bug Fixes
+
+* **brain:** advance past completing tasks ([3b89984](https://github.com/sirtimbly/coleo/commit/3b899848feccb28afa1fea15a7f6ffd0edacdce0))
+* **brain:** default to gpt-5.6-luna ([31de47c](https://github.com/sirtimbly/coleo/commit/31de47cb81f18f1a65006ee3716876e1aa86395b))
+* **brain:** route task approval mail correctly ([40b9d33](https://github.com/sirtimbly/coleo/commit/40b9d332c9ba964f865de9e95599df0cf6d0f435))
+* exclude archived bugs from stats ([f7f8e6e](https://github.com/sirtimbly/coleo/commit/f7f8e6e3a1ef78ba47e9ce75e2ec3afc7e3c4f51))
+* **release:** build package before publishing ([#30](https://github.com/sirtimbly/coleo/issues/30)) ([9067a8d](https://github.com/sirtimbly/coleo/commit/9067a8df550517893c2c2421bb50ec9f1d4654c8))
+* **release:** match npm trusted repository ([#34](https://github.com/sirtimbly/coleo/issues/34)) ([a5deb3c](https://github.com/sirtimbly/coleo/commit/a5deb3cdfa551d274d9472e1b1f307426b686a46))
+* **release:** normalize cli bin metadata ([#35](https://github.com/sirtimbly/coleo/issues/35)) ([778a2cf](https://github.com/sirtimbly/coleo/commit/778a2cfcc8243abe5bfa0256a94e9947ddba6b47))
+* **release:** preserve executable cli bin ([#32](https://github.com/sirtimbly/coleo/issues/32)) ([4730f74](https://github.com/sirtimbly/coleo/commit/4730f7496b9c743104bb9c7db4c5c7d40d751b54))
+* **release:** retain npm bin entry ([#33](https://github.com/sirtimbly/coleo/issues/33)) ([7ca9b12](https://github.com/sirtimbly/coleo/commit/7ca9b12b47a0f0c723cfacdc12e45f5d525d87d4))
+* restore brain workflows and burndown timestamps ([002a9a1](https://github.com/sirtimbly/coleo/commit/002a9a1027003372124a3d8ea3d3caf8a755d3f2))
+* **tasks:** preserve phase context in descriptions ([a633a8a](https://github.com/sirtimbly/coleo/commit/a633a8a6a7b00859c407d6e563bdcb1d21f04d65))
+* **tasks:** preserve resumable and completed work ([38965c0](https://github.com/sirtimbly/coleo/commit/38965c02a8e34c4b0f9c3ad122a073e43a6a2738))
+* **web:** preserve task editor theme on focus ([054eff7](https://github.com/sirtimbly/coleo/commit/054eff77355b623f1a4ee9efceb92f3de19c6d48))
+
 ## [0.3.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.2.0...coleo-v0.3.0) (2026-07-17)
 
 
