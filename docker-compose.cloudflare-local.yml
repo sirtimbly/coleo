@@ -40,6 +40,9 @@ services:
       COLEO_API_URL: http://127.0.0.1:3000
       COLEO_AUTO_START_AGENT: "0"
       COLEO_DIR: /home/coleo/.coleo
+      COLEO_MAIL_PROVIDER: ${COLEO_MAIL_PROVIDER:-cloudflare}
+      COLEO_MAIL_FROM_ADDRESS: ${COLEO_MAIL_FROM_ADDRESS:-}
+      COLEO_MAIL_TO_ADDRESS: ${COLEO_MAIL_TO_ADDRESS:-}
       COLEO_NATS_TOKEN: local-reef-nats-token
       COLEO_NATS_URL: ws://arm-host:9222
       COLEO_PROJECT_ID: local-workspace

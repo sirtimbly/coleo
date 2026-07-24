@@ -120,6 +120,15 @@ from_address = "brain@example.com"
 to_address = "you@example.com"
 ```
 
+Hosted deployments can inject the same values without modifying workspace state.
+Environment variables take precedence over `.coleo/config.toml`:
+
+```bash
+export COLEO_MAIL_PROVIDER=cloudflare # or postmark
+export COLEO_MAIL_FROM_ADDRESS=workspace-name@brain.coleo.app
+export COLEO_MAIL_TO_ADDRESS=you@example.com
+```
+
 Cloudflare is the default. Because Coleo runs outside a Cloudflare Worker, it uses
 the Email Sending REST API. Onboard the sender domain in Cloudflare Email Sending,
 create an API token with email-sending permission, and set:

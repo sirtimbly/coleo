@@ -411,6 +411,7 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 		...DEFAULT_CONFIG,
 		coleoDir: dir,
 		brain: { ...DEFAULT_CONFIG.brain },
+		mail: { ...DEFAULT_CONFIG.mail },
 	};
 
   // Load TOML file
@@ -480,6 +481,18 @@ export async function loadConfig(coleoDir?: string): Promise<ColeoConfig> {
 		config.brain.apiKey = process.env.COLEO_BRAIN_API_KEY;
 	} else if (toml?.brain?.api_key === undefined && process.env.OPENAI_API_KEY) {
 		config.brain.apiKey = process.env.OPENAI_API_KEY;
+	}
+	if (
+		process.env.COLEO_MAIL_PROVIDER === "cloudflare" ||
+		process.env.COLEO_MAIL_PROVIDER === "postmark"
+	) {
+		config.mail.provider = process.env.COLEO_MAIL_PROVIDER;
+	}
+	if (process.env.COLEO_MAIL_FROM_ADDRESS) {
+		config.mail.fromAddress = process.env.COLEO_MAIL_FROM_ADDRESS;
+	}
+	if (process.env.COLEO_MAIL_TO_ADDRESS) {
+		config.mail.toAddress = process.env.COLEO_MAIL_TO_ADDRESS;
 	}
 	if (process.env.COLEO_FILE_SIZE_THRESHOLD) {
 		config.refactoring.fileSizeThreshold = parseInt(process.env.COLEO_FILE_SIZE_THRESHOLD, 10);

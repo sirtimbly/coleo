@@ -82,6 +82,7 @@ describe("Task Deletion Handler", () => {
   });
 
   afterEach(async () => {
+    db.close();
     await rm(testDir, { recursive: true, force: true });
   });
 

@@ -109,6 +109,9 @@ describe("config loader", () => {
       COLEO_BRAIN_PROVIDER: process.env.COLEO_BRAIN_PROVIDER,
       COLEO_BRAIN_MODEL: process.env.COLEO_BRAIN_MODEL,
       COLEO_BRAIN_API_KEY: process.env.COLEO_BRAIN_API_KEY,
+      COLEO_MAIL_PROVIDER: process.env.COLEO_MAIL_PROVIDER,
+      COLEO_MAIL_FROM_ADDRESS: process.env.COLEO_MAIL_FROM_ADDRESS,
+      COLEO_MAIL_TO_ADDRESS: process.env.COLEO_MAIL_TO_ADDRESS,
       OPENAI_MODEL: process.env.OPENAI_MODEL,
       OPENAI_API_KEY: process.env.OPENAI_API_KEY,
     };
@@ -117,6 +120,9 @@ describe("config loader", () => {
       delete process.env.COLEO_BRAIN_PROVIDER;
       delete process.env.COLEO_BRAIN_MODEL;
       delete process.env.COLEO_BRAIN_API_KEY;
+      delete process.env.COLEO_MAIL_PROVIDER;
+      delete process.env.COLEO_MAIL_FROM_ADDRESS;
+      delete process.env.COLEO_MAIL_TO_ADDRESS;
       process.env.OPENAI_MODEL = "legacy-openai-model";
       process.env.OPENAI_API_KEY = "legacy-openai-key";
       await writeTomlConfig(
@@ -129,6 +135,11 @@ describe("config loader", () => {
             provider: "openai",
             model: "gpt-5",
             api_key: "brain-key",
+          },
+          mail: {
+            provider: "postmark",
+            from_address: "toml-sender@example.test",
+            to_address: "toml-recipient@example.test",
           },
           defaults: { harness: "opencode", provider: "openai", model: "gpt-4o" },
         },
@@ -147,13 +158,26 @@ describe("config loader", () => {
       expect(loaded.brain.provider).toBe("openai");
       expect(loaded.brain.model).toBe("gpt-5");
       expect(loaded.brain.apiKey).toBe("brain-key");
+      expect(loaded.mail).toMatchObject({
+        provider: "postmark",
+        fromAddress: "toml-sender@example.test",
+        toAddress: "toml-recipient@example.test",
+      });
       expect(loaded.defaults.model).toBe("gpt-4o-mini");
 
       process.env.COLEO_BRAIN_MODEL = "forced-brain-model";
       process.env.COLEO_BRAIN_API_KEY = "forced-brain-key";
+      process.env.COLEO_MAIL_PROVIDER = "cloudflare";
+      process.env.COLEO_MAIL_FROM_ADDRESS = "reef-brain@brain.coleo.app";
+      process.env.COLEO_MAIL_TO_ADDRESS = "reef-user@example.test";
       const overridden = await loadConfig(dir);
       expect(overridden.brain.model).toBe("forced-brain-model");
       expect(overridden.brain.apiKey).toBe("forced-brain-key");
+      expect(overridden.mail).toMatchObject({
+        provider: "cloudflare",
+        fromAddress: "reef-brain@brain.coleo.app",
+        toAddress: "reef-user@example.test",
+      });
     } finally {
       for (const [key, value] of Object.entries(envSnapshot)) {
         if (value === undefined) {

@@ -9,6 +9,7 @@ import { createApp } from "../../api/server";
 import { loadApiConfig, type ApiConfig } from "../../api/config";
 import { initDatabase } from "../../db";
 import * as daemonModule from "../../daemon";
+import { VERSION } from "../../version";
 
 describe("mounted API server routes", () => {
   let db: Database;
@@ -77,6 +78,32 @@ describe("mounted API server routes", () => {
     expect(await response.json()).toMatchObject({
       status: "ok",
     });
+  });
+
+  it("reports the package version and environment-managed API key state", async () => {
+    const originalApiKey = process.env.COLEO_API_KEY;
+    const environmentApiKey = "environment-secret-not-for-response";
+    process.env.COLEO_API_KEY = environmentApiKey;
+
+    try {
+      const response = await app.request(new Request("http://localhost/api/config", {
+        headers: { "X-API-Key": apiKey },
+      }));
+
+      expect(response.status).toBe(200);
+      const responseText = await response.text();
+      expect(responseText).not.toContain(environmentApiKey);
+      expect(JSON.parse(responseText)).toMatchObject({
+        version: VERSION,
+        apiKeyManagedByEnvironment: true,
+      });
+    } finally {
+      if (originalApiKey === undefined) {
+        delete process.env.COLEO_API_KEY;
+      } else {
+        process.env.COLEO_API_KEY = originalApiKey;
+      }
+    }
   });
 
   it("reports mounted system status using live database counts", async () => {

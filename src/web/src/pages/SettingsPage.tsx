@@ -20,6 +20,8 @@ export function SettingsPage() {
   usePageTitle('Coleo Observatory - Settings');
 
   const [apiKey, setApiKey] = useState(api.getApiKey() || '');
+  const [apiKeyManagedByEnvironment, setApiKeyManagedByEnvironment] = useState(false);
+  const [version, setVersion] = useState(VERSION);
   const [saved, setSaved] = useState(false);
   const [brainApiKey, setBrainApiKey] = useState('');
   const [brainApiKeyConfigured, setBrainApiKeyConfigured] = useState(false);
@@ -60,7 +62,12 @@ export function SettingsPage() {
       api.getBrainModelConfig(),
       api.getDefaults(),
       api.getOpenCodeProviders().catch(() => ({ providers: [], connected: [] })),
-    ]).then(([mailRes, brainRes, defaultsRes, providersRes]) => {
+      api.config().catch(() => ({
+        brain: { pollIntervalMs: 30000, maxArms: 8 },
+        version: VERSION,
+        apiKeyManagedByEnvironment: false,
+      })),
+    ]).then(([mailRes, brainRes, defaultsRes, providersRes, systemConfig]) => {
       if (mailRes.mail) {
         setMailProvider(mailRes.mail.provider || 'cloudflare');
         setFromAddress(mailRes.mail.fromAddress || '');
@@ -69,6 +76,8 @@ export function SettingsPage() {
       setBrainApiKeyConfigured(brainRes.brain.apiKeyConfigured);
       setArmDefaults(defaultsRes.defaults);
       setOpenCodeProviders(providersRes.providers);
+      setVersion(systemConfig.version);
+      setApiKeyManagedByEnvironment(systemConfig.apiKeyManagedByEnvironment);
       setLoading(false);
     }).catch(() => {
       setLoading(false);
@@ -453,41 +462,43 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>API Configuration</CardTitle>
-          <CardDescription>
-            Set your API key to authenticate with the Coleo server
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label htmlFor={apiKeyLabelId} className="block text-sm font-medium mb-2">
-              API Key
-            </label>
-            <input
-              id={apiKeyLabelId}
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter your API key"
-              className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-            <p className="text-xs text-muted-foreground mt-1">
-              Get your API key from the server startup output
-            </p>
-          </div>
+      {!apiKeyManagedByEnvironment && (
+        <Card>
+          <CardHeader>
+            <CardTitle>API Configuration</CardTitle>
+            <CardDescription>
+              Set your API key to authenticate with the Coleo server
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <label htmlFor={apiKeyLabelId} className="block text-sm font-medium mb-2">
+                API Key
+              </label>
+              <input
+                id={apiKeyLabelId}
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="Enter your API key"
+                className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Get your API key from the server startup output
+              </p>
+            </div>
 
-          <div className="flex gap-2">
-            <Button variant="primary" onPress={handleSave}>
-              {saved ? 'Saved!' : 'Save'}
-            </Button>
-            <Button variant="secondary" onPress={handleClear}>
-              Clear
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+            <div className="flex gap-2">
+              <Button variant="primary" onPress={handleSave}>
+                {saved ? 'Saved!' : 'Save'}
+              </Button>
+              <Button variant="secondary" onPress={handleClear}>
+                Clear
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -496,7 +507,7 @@ export function SettingsPage() {
         <CardContent className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Version</span>
-            <span>{VERSION}</span>
+            <span>{version}</span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Documentation</span>

@@ -298,6 +298,7 @@ class ApiClient {
     return this.request<{
       brain: { pollIntervalMs: number; maxArms: number };
       version: string;
+      apiKeyManagedByEnvironment: boolean;
     }>('/config');
   }
 

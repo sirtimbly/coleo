@@ -371,6 +371,9 @@ export function createSystemRoutes() {
         maxArms: parseInt(config.brain_max_arms || "8", 10),
       },
       version: VERSION,
+      apiKeyManagedByEnvironment: Boolean(
+        process.env.COLEO_API_KEY || process.env.COLEO_API_TOKEN,
+      ),
     });
   });
 
