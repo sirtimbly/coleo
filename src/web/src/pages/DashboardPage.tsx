@@ -6,6 +6,7 @@ import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, De
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
 import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
 import { ArmActivityChart } from '@/components/ArmActivityChart';
+import { ArmContextUsageChart } from '@/components/ArmContextUsageChart';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -1153,6 +1154,10 @@ function ArmActivitySection({
       <ArmActivityChart
         armId={mostRecentArm.id}
         title={`Arm Activity - ${mostRecentArm.name}`}
+      />
+      <ArmContextUsageChart
+        armId={mostRecentArm.id}
+        title={`Context Usage - ${mostRecentArm.name}`}
       />
       <div className="flex justify-end">
         <button
