@@ -95,6 +95,29 @@ title: Coleo — Multi-Agent Development Coordination
     </div>
   </section>
 
+  <section id="hosted" class="section-glass dark-1">
+    <div class="container">
+      <div class="lg:grid lg:grid-cols-2 gap-16 items-center">
+        <div>
+          <span class="text-sm font-semibold uppercase tracking-widest text-accent">Hosted Coleo</span>
+          <h2 class="font-display font-bold text-4xl mt-4 mb-6">Want Coleo without running the infrastructure?</h2>
+          <p class="text-lg opacity-80 leading-relaxed max-w-2xl mb-8">
+            Coleo remains self-hostable and source-available. Coleo Reef offers the same coordination system as a managed private workspace for people who would rather start working than operate containers, storage, routing, and updates.
+          </p>
+          <a href="https://coleo.app" class="bg-accent text-white px-8 py-4 rounded-full text-sm font-semibold transition-all duration-300 shadow-lg inline-flex items-center justify-center gap-2 text-center no-underline">
+            <span>Join the hosted preview</span>
+            <span aria-hidden="true">→</span>
+          </a>
+        </div>
+        <div class="ui-box inverted p-8 rounded-2xl mt-10 lg:mt-0">
+          <h3 class="font-display font-bold text-2xl mb-4">Choose how you run it</h3>
+          <p class="opacity-70 leading-relaxed mb-4"><strong>Self-hosted:</strong> install from GitHub, keep the runtime on your own hardware, and control every part of the stack.</p>
+          <p class="opacity-70 leading-relaxed"><strong>Hosted preview:</strong> get an isolated workspace with managed infrastructure while the hosted service is in private beta.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="philosophy" class="section-glass light-1">
     <div class="container">
       <div class="text-center max-w-3xl mx-auto mb-16">
