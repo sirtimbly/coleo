@@ -71,6 +71,16 @@ export interface OnboardingStatus {
     checkedOut: boolean;
     remoteUrl: string | null;
     branch: string | null;
+    commit: {
+      hash: string;
+      shortHash: string;
+      author: string;
+      date: string;
+      subject: string;
+    } | null;
+    trackedFileCount: number | null;
+    dirtyFileCount: number | null;
+    topLevelEntries: string[];
   };
   ssh: {
     configured: boolean;
@@ -117,6 +127,7 @@ export interface ProjectSetupStatus {
   candidates: ProjectPlanCandidate[];
   projectDocuments: ProjectPlanDocument[];
   templateFiles: SetupTemplateFile[];
+  projectTree: string[];
   recommendedPath: string;
   defaultContent: string;
   defaultTemplateContent: string;
@@ -198,7 +209,11 @@ class ApiClient {
     return this.request<ProjectSetupStatus>('/project-setup');
   }
 
-  async saveProjectSetupFile(data: { path: string; content: string; expectedHash?: string | null; kind: 'plan' | 'template' }) {
+  async getProjectSetupFile(path: string) {
+    return this.request<{ file: WorkspaceTextFile }>(`/project-setup/file?path=${encodeURIComponent(path)}`);
+  }
+
+  async saveProjectSetupFile(data: { path: string; content: string; expectedHash?: string | null; kind: 'plan' | 'template' | 'document' }) {
     return this.request<{ file: WorkspaceTextFile }>('/project-setup/file', {
       method: 'PUT',
       body: JSON.stringify(data),
