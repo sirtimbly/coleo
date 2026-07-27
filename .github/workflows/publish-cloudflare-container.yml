@@ -30,7 +30,7 @@ jobs:
       control_tag: ${{ steps.release.outputs.control_tag }}
       arm_tag: ${{ steps.arm-image.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.release_tag || github.sha }}
 
