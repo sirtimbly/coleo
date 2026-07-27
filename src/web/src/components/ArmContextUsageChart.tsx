@@ -59,7 +59,8 @@ function saveStoredSamples(armId: string, samples: ContextSample[]): void {
     const payload = samples.slice(-MAX_STORED_SAMPLES);
     localStorage.setItem(getStorageKey(armId), JSON.stringify(payload));
   } catch {
-    // Storage is a best-effort bridge.
+    // Storage is best-effort; ignore quota/security errors.
+    void armId;
   }
 }
 
@@ -82,15 +83,12 @@ export function ArmContextUsageChart({
     if (armId) saveStoredSamples(armId, storedRef.current);
   }, [armId]);
 
-  // Expose an imperative push callback so parent components can add higher-resolution
-  // samples (e.g. via step-finish token events in the SSE stream).
   useEffect(() => {
     if (!registerSamplePush) return;
     registerSamplePush(recordSample);
     return () => registerSamplePush(null);
   }, [recordSample, registerSamplePush]);
 
-  // Restore stored history when the arm changes; clear when no arm.
   useEffect(() => {
     if (!armId) {
       setSamples([]);
@@ -102,7 +100,6 @@ export function ArmContextUsageChart({
     setSamples(restored);
   }, [armId]);
 
-  // Poll the context endpoint on a 12-second cadence.
   useEffect(() => {
     if (!armId) return;
     let cancelled = false;
@@ -139,9 +136,12 @@ export function ArmContextUsageChart({
   const windowStart = windowEnd - SAMPLE_WINDOW_MS;
   const visibleSamples = samples.filter((s) => s.timestamp >= windowStart);
 
-  const budget = visibleSamples.length === 0 ? 0 : visibleSamples[visibleSamples.length - 1]!.budget;
+  const budget = visibleSamples.length === 0
+    ? 0
+    : Math.max(...visibleSamples.map((s) => s.budget));
   const maxUsed = visibleSamples.length === 0 ? 0 : Math.max(...visibleSamples.map((s) => s.used));
-  const chartMax = Math.max(budget, maxUsed);
+  const headroom = Math.max(1, Math.floor(budget * 0.1));
+  const chartMax = Math.max(budget, maxUsed + headroom);
   const threshold = budget * COMPRESSION_THRESHOLD_PCT;
 
   const width = 600;
@@ -188,6 +188,7 @@ export function ArmContextUsageChart({
   const lineColor = '#3b82f6';
   const areaFill = 'rgba(59, 130, 246, 0.12)';
   const thresholdColor = '#f97316';
+  const budgetLineColor = '#ef4444';
 
   const formatTokens = (value: number): string => {
     if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
@@ -215,6 +216,10 @@ export function ArmContextUsageChart({
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: thresholdColor }} />
           80% compression threshold
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: budgetLineColor }} />
+          Context limit (budget)
         </span>
         <span className="inline-flex items-center gap-1.5">
           <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: warningZoneFill }} />
@@ -266,15 +271,6 @@ export function ArmContextUsageChart({
               setHovered(nearestIndex >= 0 ? nearestIndex : null);
             }}
           >
-            {budget > 0 ? (
-              <rect
-                x={padLeft}
-                y={budgetY}
-                width={plotWidth}
-                height={Math.max(0, thresholdY - budgetY)}
-                fill={warningZoneFill}
-              />
-            ) : null}
             {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
               const y = padTop + (1 - fraction) * plotHeight;
               return (
@@ -290,27 +286,46 @@ export function ArmContextUsageChart({
               );
             })}
             <text x={4} y={padTop + 8} fill={labelColor} fontSize={10}>
-              {formatTokens(budget)}
+              {formatTokens(chartMax)}
             </text>
             <text x={6} y={padTop + plotHeight - 2} fill={labelColor} fontSize={10}>
               0
             </text>
             {budget > 0 && (
-              <line
-                x1={padLeft}
-                x2={width - padRight}
-                y1={thresholdY}
-                y2={thresholdY}
-                stroke={thresholdColor}
-                strokeWidth={2}
-                strokeDasharray="6 4"
-              />
+              <>
+                <rect
+                  x={padLeft}
+                  y={budgetY}
+                  width={plotWidth}
+                  height={Math.max(0, thresholdY - budgetY)}
+                  fill={warningZoneFill}
+                />
+                <line
+                  x1={padLeft}
+                  x2={width - padRight}
+                  y1={budgetY}
+                  y2={budgetY}
+                  stroke={budgetLineColor}
+                  strokeWidth={2}
+                  strokeDasharray="4 3"
+                />
+                <line
+                  x1={padLeft}
+                  x2={width - padRight}
+                  y1={thresholdY}
+                  y2={thresholdY}
+                  stroke={thresholdColor}
+                  strokeWidth={2}
+                  strokeDasharray="6 4"
+                />
+                <text x={padLeft + 4} y={Math.max(padTop + 10, thresholdY - 4)} fill={thresholdColor} fontSize={10}>
+                  80% threshold
+                </text>
+                <text x={width - padRight - 4} y={Math.max(padTop + 10, budgetY - 4)} textAnchor="end" fill={budgetLineColor} fontSize={10}>
+                  Budget
+                </text>
+              </>
             )}
-            {budget > 0 ? (
-              <text x={padLeft + 4} y={thresholdY - 4} fill={thresholdColor} fontSize={10}>
-                80% threshold
-              </text>
-            ) : null}
             {visibleSamples.length === 0 ? null : (
               <>
                 <path d={areaPath} fill={areaFill} />
