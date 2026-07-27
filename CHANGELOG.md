@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.5.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.1...coleo-v0.5.0) (2026-07-27)
+
+
+### Features
+
+* advanced grid ui tasks and bugs ([bc62679](https://github.com/sirtimbly/coleo/commit/bc62679b81e589ad7449a046f0e9d1af71f74836))
+* manually complete tasks ([4af8d80](https://github.com/sirtimbly/coleo/commit/4af8d80805f2472986caa65947a69b73ffed9df1))
+
+
+### Bug Fixes
+
+* **web:** align setup API client contracts ([87ccad8](https://github.com/sirtimbly/coleo/commit/87ccad88ddd8a60cf592744face7f92eeee12438))
+
+
+### Continuous Integration
+
+* upgrade actions and release notes ([c350c7a](https://github.com/sirtimbly/coleo/commit/c350c7a0cf3b8dc8266d59071aee6aa49f56f5a6))
+* upgrade actions and release notes ([7d24d85](https://github.com/sirtimbly/coleo/commit/7d24d853ed37c659c3912225eca2f035a3c1c99d))
+
 ## [0.4.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.0...coleo-v0.4.1) (2026-07-22)
 
 
