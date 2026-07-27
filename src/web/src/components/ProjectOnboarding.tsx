@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Clipboard, GitBranch, KeyRound, LoaderCircle, RefreshCw } from 'lucide-react';
+import { ArrowRight, Check, Clipboard, FolderGit2, GitBranch, KeyRound, LoaderCircle, RefreshCw } from 'lucide-react';
 
 import { api } from '@/lib/api';
 
@@ -15,6 +15,100 @@ interface ProjectOnboardingGateProps {
   children: ReactNode;
 }
 
+const MAX_LISTED_ENTRIES = 15;
+
+function CloneSummary({ status, onContinue }: { status: OnboardingStatus; onContinue: () => void }) {
+  const { repository } = status;
+  const listedEntries = repository.topLevelEntries.slice(0, MAX_LISTED_ENTRIES);
+  const hiddenEntryCount = repository.topLevelEntries.length - listedEntries.length;
+
+  return (
+    <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 lg:py-12">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-8">
+          <div className="mb-3 inline-flex rounded-full border border-success/25 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
+            Clone complete
+          </div>
+          <h1 className="text-3xl font-semibold tracking-tight">Repository verified</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            The repository was cloned into <code className="text-foreground">{status.projectDir}</code>.
+            Review the checkout below to confirm everything you expected was downloaded.
+          </p>
+        </div>
+
+        <section className="rounded-xl border border-border bg-surface p-5 shadow-sm">
+          <dl className="space-y-3 text-sm">
+            <div className="flex items-start justify-between gap-4">
+              <dt className="shrink-0 text-muted-foreground">Remote</dt>
+              <dd className="min-w-0 break-all text-right font-mono text-xs leading-5">{repository.remoteUrl ?? 'Unknown'}</dd>
+            </div>
+            <div className="flex items-start justify-between gap-4">
+              <dt className="shrink-0 text-muted-foreground">Branch</dt>
+              <dd className="inline-flex items-center gap-1.5 font-medium">
+                <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                {repository.branch ?? 'Detached HEAD'}
+              </dd>
+            </div>
+            {repository.commit ? (
+              <div className="flex items-start justify-between gap-4">
+                <dt className="shrink-0 text-muted-foreground">Latest commit</dt>
+                <dd className="min-w-0 text-right">
+                  <span className="font-mono text-xs">{repository.commit.shortHash}</span>{' '}
+                  <span className="font-medium">{repository.commit.subject}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {repository.commit.author} · {new Date(repository.commit.date).toLocaleString()}
+                  </span>
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex items-start justify-between gap-4">
+              <dt className="shrink-0 text-muted-foreground">Tracked files</dt>
+              <dd className="font-medium">
+                {repository.trackedFileCount ?? 'Unknown'}
+                {repository.dirtyFileCount ? (
+                  <span className="ml-2 text-xs font-normal text-warning">
+                    {repository.dirtyFileCount} uncommitted
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          </dl>
+
+          {repository.topLevelEntries.length > 0 ? (
+            <div className="mt-5 rounded-lg border border-border bg-surface-secondary p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <FolderGit2 className="h-3.5 w-3.5" />
+                Top-level contents ({repository.topLevelEntries.length})
+              </div>
+              <ul className="grid grid-cols-2 gap-x-4 gap-y-1 font-mono text-xs leading-5 sm:grid-cols-3">
+                {listedEntries.map((entry) => (
+                  <li key={entry} className="truncate">{entry}</li>
+                ))}
+              </ul>
+              {hiddenEntryCount > 0 ? (
+                <p className="mt-2 text-xs text-muted-foreground">…and {hiddenEntryCount} more</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-warning">
+              The checkout appears to be empty. Verify the repository URL and branch, then clone again.
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={onContinue}
+            className="mt-5 inline-flex items-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-foreground transition hover:opacity-90"
+          >
+            Continue to Coleo
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
   const [repositoryUrl, setRepositoryUrl] = useState('');
   const [branch, setBranch] = useState('');
@@ -22,6 +116,7 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
   const [isCloning, setIsCloning] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [clonedStatus, setClonedStatus] = useState<OnboardingStatus | null>(null);
 
   const generateKey = async () => {
     setIsGeneratingKey(true);
@@ -51,7 +146,7 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
     setIsCloning(true);
     setError(null);
     try {
-      onStatusChange(await api.cloneOnboardingRepository({
+      setClonedStatus(await api.cloneOnboardingRepository({
         repositoryUrl: repositoryUrl.trim(),
         branch: branch.trim() || undefined,
       }));
@@ -61,6 +156,12 @@ function ProjectOnboarding({ status, onStatusChange }: ProjectOnboardingProps) {
       setIsCloning(false);
     }
   };
+
+  if (clonedStatus) {
+    return (
+      <CloneSummary status={clonedStatus} onContinue={() => onStatusChange(clonedStatus)} />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background px-4 py-8 text-foreground sm:px-6 lg:py-12">

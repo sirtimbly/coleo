@@ -24,3 +24,21 @@ export const STATUS_LABELS: Record<Task["status"], string> = {
 	failed: "Failed",
 	cancelled: "Cancelled",
 };
+
+export const STATUS_DOT_STYLES: Record<Task["status"], string> = {
+	pending: "bg-slate-500",
+	claimed: "bg-sky-500",
+	in_progress: "bg-blue-500",
+	completing: "bg-violet-500",
+	completed: "bg-emerald-500",
+	blocked: "bg-amber-500",
+	failed: "bg-rose-500",
+	cancelled: "bg-slate-500",
+};
+
+export const PRIORITY_DOT_STYLES: Record<Task["priority"], string> = {
+	low: "bg-emerald-500",
+	normal: "bg-sky-500",
+	high: "bg-amber-500",
+	critical: "bg-rose-500",
+};

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import {
 	Plus,
 	Clock,
@@ -10,7 +10,6 @@ import {
 	ChevronUp,
 	ChevronDown,
 	Sparkles,
-	Tag,
 	X,
 	Search,
 	FileText,
@@ -41,6 +40,7 @@ import { tasksKeys } from "@/lib/queryKeys";
 import { formatTimelineTime, selectTaskTimeline } from "./task-timeline";
 import {
 	useIsWorkspacePanel,
+	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
@@ -110,17 +110,6 @@ const STATUS_CONFIG: Record<
 const isTaskStatus = (value: string): value is Task["status"] =>
 	value in STATUS_CONFIG;
 
-const TASK_STATUS_FILTERS: readonly Task["status"][] = [
-	"pending",
-	"in_progress",
-	"completing",
-	"blocked",
-	"completed",
-	"claimed",
-	"failed",
-	"cancelled",
-];
-
 // Priority configuration
 const PRIORITY_CONFIG: Record<
 	Task["priority"],
@@ -146,18 +135,39 @@ const PRIORITY_CONFIG: Record<
 
 function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
 	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
+	const [isExpanded, setIsExpanded] = useState(true);
 
 	return (
 		<section aria-label="Task timeline" className="border-b border-border bg-surface-secondary/40 px-4 py-3">
-			<div className="mb-3 flex items-center justify-between gap-3">
-				<div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Live timeline</p><p className="mt-0.5 text-sm text-muted-foreground">What is active now, what the Brain can take next, and recent completed work.</p></div>
-				<span className="shrink-0 text-xs text-muted-foreground">Updates live</span>
+			<div className={cn("flex items-center justify-between gap-3", isExpanded && "mb-3")}>
+				<div>
+					<p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Live timeline</p>
+					{isExpanded ? (
+						<p className="mt-0.5 text-sm text-muted-foreground">
+							What is active now, what the Brain can take next, and recent completed work.
+						</p>
+					) : null}
+				</div>
+				<div className="flex shrink-0 items-center gap-2">
+					<span className="text-xs text-muted-foreground">Updates live</span>
+					<Button
+						isIconOnly
+						size="sm"
+						variant="ghost"
+						onPress={() => setIsExpanded((current) => !current)}
+						aria-label={isExpanded ? "Collapse live timeline" : "Expand live timeline"}
+						aria-expanded={isExpanded}
+						className="h-7 w-7 min-w-7"
+					>
+						<ChevronDown className={cn("h-4 w-4 transition-transform", !isExpanded && "-rotate-90")} />
+					</Button>
+				</div>
 			</div>
-			<div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
+			{isExpanded ? <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
 				<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
 				<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
 				<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
-			</div>
+			</div> : null}
 		</section>
 	);
 }
@@ -513,55 +523,14 @@ function TaskDescriptionField({
 }
 
 export function TasksPage() {
-	usePageTitle('Coleo Observatory - Tasks');
 	const queryClient = useQueryClient();
 	const isWorkspacePanel = useIsWorkspacePanel();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
-	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
-	
-	// Initialize filter from localStorage and URL (during component initialization, not in useEffect)
-	const [filter, setFilter] = useState<{ status?: string; priority?: string }>(() => {
-		const saved = localStorage.getItem("task-filter");
-		const initialFilter = saved ? JSON.parse(saved) : {};
-		
-		// Check URL params and merge with localStorage
-		const statusFromUrl = searchParams.get("status");
-		if (statusFromUrl) {
-			initialFilter.status = statusFromUrl;
-		}
-		
-		return initialFilter;
-	});
-	
-	const [tagFilter, setTagFilter] = useState<string[]>([]);
-	
-	// Track previous filter value to avoid unnecessary updates
-	const prevFilterRef = useRef(filter);
+	const closeWorkspaceRoute = useWorkspaceCloseRoute('/tasks');
+	const [searchParams] = useWorkspaceSearchParams();
+	const isNewTaskPage = searchParams.get("new") === "1";
+	usePageTitle(isNewTaskPage ? 'Coleo Observatory - New Task' : 'Coleo Observatory - Tasks');
 
-	// Save filter to localStorage and URL when it changes (but not on initial mount)
-	useEffect(() => {
-		// Only save if filter has actually changed from previous value
-		if (JSON.stringify(prevFilterRef.current) === JSON.stringify(filter)) {
-			return;
-		}
-		
-		prevFilterRef.current = filter;
-		localStorage.setItem("task-filter", JSON.stringify(filter));
-
-		if (filter.status) {
-			setSearchParams((current) => {
-				const next = new URLSearchParams(current);
-				next.set("status", filter.status!);
-				return next;
-			});
-		} else {
-			setSearchParams((current) => {
-				const next = new URLSearchParams(current);
-				next.delete("status");
-				return next;
-			});
-		}
-	}, [filter, setSearchParams]);
 	const [searchText, setSearchText] = useState("");
 	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
@@ -579,6 +548,12 @@ export function TasksPage() {
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
 	const discussionsTabId: SidebarTab = "discussions";
+	const openNewTaskPanel = useCallback(() => {
+		openWorkspaceRoute(
+			{ pathname: "/tasks", search: "?new=1", title: "New Task" },
+			"action",
+		);
+	}, [openWorkspaceRoute]);
 
 	const taskModal = (
 		<TaskModal
@@ -624,7 +599,7 @@ export function TasksPage() {
 		hasNextPage,
 		isFetchingNextPage,
 		fetchNextPage,
-	} = useTasks(filter);
+	} = useTasks();
 
 	const getTaskUiMeta = useCallback((task: Task): TaskUiMetadata => {
 		const ui = task.metadata.ui;
@@ -659,15 +634,8 @@ export function TasksPage() {
 			);
 		}
 
-		if (tagFilter.length > 0) {
-			result = result.filter((task) => {
-				const tags = getTaskUiMeta(task).tags ?? [];
-				return tagFilter.some((tag) => tags.includes(tag));
-			});
-		}
-
 		return result;
-	}, [tasks, tagFilter, searchText, getTaskUiMeta]);
+	}, [tasks, searchText]);
 
 	useEffect(() => {
 		if (!isWorkspacePanel) return;
@@ -848,12 +816,6 @@ export function TasksPage() {
     );
   }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
 
-	const toggleTagFilter = useCallback((tag: string) => {
-		setTagFilter((prev) =>
-			prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
-		);
-	}, []);
-
 	const handleRemoveTagFromTask = useCallback(
 		(taskId: string, tagToRemove: string) => {
 			const target = tasks.find((task) => task.id === taskId);
@@ -908,6 +870,19 @@ export function TasksPage() {
 		onMessage: handleWSMessage,
 	});
 
+	if (isNewTaskPage) {
+		return (
+			<TaskModal
+				isOpen
+				presentation="panel"
+				onClose={closeWorkspaceRoute}
+				onSaved={() => {
+					void refetch();
+				}}
+			/>
+		);
+	}
+
 	const handlePriorityChange = async (
 		taskId: string,
 		newPriority: Task["priority"],
@@ -932,43 +907,6 @@ export function TasksPage() {
 					<div className="shrink-0 text-xs text-muted-foreground">
 						{counts?.total ?? 0} total
 					</div>
-					<div className="h-4 w-px shrink-0 bg-border" />
-					{TASK_STATUS_FILTERS.map((status) => (
-						<button
-							key={status}
-							type="button"
-							aria-pressed={filter.status === status}
-							onClick={() =>
-								setFilter((current) =>
-									current.status === status ? {} : { ...current, status },
-								)
-							}
-							className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-								filter.status === status
-									? "border-accent/50 bg-accent/10 text-accent"
-									: "border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
-							}`}
-						>
-							<span>{STATUS_CONFIG[status].label}</span>
-							<span>{counts?.byStatus?.[status] ?? 0}</span>
-						</button>
-					))}
-					{availableTags.length > 0 ? <div className="h-4 w-px shrink-0 bg-border" /> : null}
-					{availableTags.slice(0, 8).map((tag) => (
-						<button
-							key={tag}
-							type="button"
-							aria-pressed={tagFilter.includes(tag)}
-							onClick={() => toggleTagFilter(tag)}
-							className={`h-8 shrink-0 rounded-md border px-2.5 text-xs transition-colors ${
-								tagFilter.includes(tag)
-									? "border-accent/50 bg-accent/10 text-accent"
-									: "border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
-							}`}
-						>
-							{tag}
-						</button>
-					))}
 				</div>
 				<div className="flex shrink-0 items-center gap-2">
 					<TaskWorkflowHelp />
@@ -982,11 +920,7 @@ export function TasksPage() {
 					<Button
 						size="sm"
 						variant="primary"
-						onPress={() => {
-							setEditingTask(undefined);
-							setEditingStatus(undefined);
-							setIsModalOpen(true);
-						}}
+						onPress={openNewTaskPanel}
 					>
 						<Plus className="mr-1.5 h-4 w-4" />
 						New
@@ -1001,9 +935,9 @@ export function TasksPage() {
 					<div className="flex h-full min-h-0 flex-col bg-background">
 						{workspaceListHeader}
 						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-						<div className="min-h-0 flex-1 overflow-auto">
+						<div className="min-h-0 flex-1 overflow-hidden">
 							<TaskGrid
-								className="rounded-none border-0"
+								className="h-full rounded-none border-0"
 								tasks={filteredTasks}
 								totalTasks={pagination?.total}
 								availableTags={availableTags}
@@ -1016,6 +950,9 @@ export function TasksPage() {
 								onDelete={handleDeleteTask}
 								onCreateTaskAt={handleCreateTaskAt}
 								onReorder={handleReorder}
+								hasNextPage={hasNextPage}
+								isFetchingNextPage={isFetchingNextPage}
+								onLoadMore={fetchNextPage}
 							/>
 						</div>
 					</div>
@@ -1139,11 +1076,7 @@ export function TasksPage() {
 						</Button>
 						<Button
 							variant="primary"
-							onPress={() => {
-								setEditingTask(undefined);
-								setEditingStatus(undefined);
-								setIsModalOpen(true);
-							}}
+							onPress={openNewTaskPanel}
 						>
 							<Plus className="h-4 w-4 mr-2" />
 							New Task
@@ -1168,67 +1101,6 @@ export function TasksPage() {
 						<span className="text-foreground-500">Total:</span>
 						<span className="font-medium">{counts?.total ?? 0}</span>
 					</div>
-					<div className="h-4 w-px bg-divider" />
-					<div className="flex items-center gap-2 flex-wrap">
-						{Object.entries(counts?.byStatus ?? {}).map(([status, count]) => (
-							<Button
-								key={status}
-								size="sm"
-								variant={filter.status === status ? "primary" : "ghost"}
-								onPress={() =>
-									setFilter((f) =>
-										f.status === status ? {} : { ...f, status },
-									)
-								}
-								className="h-7"
-							>
-							<span
-								className={
-									filter.status === status
-										? ""
-										: isTaskStatus(status)
-											? STATUS_CONFIG[status].color
-											: "text-foreground-500"
-								}
-							>
-									{status.replace("_", " ")}
-								</span>
-								<span>{count}</span>
-							</Button>
-						))}
-						{filter.status && (
-							<Button size="sm" variant="ghost" onPress={() => setFilter({})}>
-								Clear filter
-							</Button>
-						)}
-					</div>
-				</div>
-
-				<div className="mt-3 flex items-center gap-2 flex-wrap">
-					<div className="flex items-center gap-1 text-xs text-foreground-500">
-						<Tag className="h-3.5 w-3.5" />
-						<span>Tags</span>
-					</div>
-					{availableTags.length === 0 ? (
-						<span className="text-xs text-foreground-500">No tags yet</span>
-					) : (
-						availableTags.map((tag) => (
-							<Chip
-								key={tag}
-								size="sm"
-								variant={tagFilter.includes(tag) ? "primary" : "soft"}
-								onClick={() => toggleTagFilter(tag)}
-								className="cursor-pointer"
-							>
-								{tag}
-							</Chip>
-						))
-					)}
-					{tagFilter.length > 0 && (
-						<Button size="sm" variant="ghost" onPress={() => setTagFilter([])}>
-							Clear tags
-						</Button>
-					)}
 				</div>
 			</div>
 
@@ -1246,7 +1118,7 @@ export function TasksPage() {
 			{/* Content area */}
 			<div className="flex-1 flex overflow-hidden">
 				{/* Task list */}
-				<div className="flex-1 overflow-auto">
+				<div className="min-w-0 flex-1 overflow-hidden">
 					{isLoading ? (
 						<div className="p-4 space-y-4">
 							{[1, 2, 3].map((i) => (
@@ -1256,8 +1128,9 @@ export function TasksPage() {
 							))}
 						</div>
 					) : (
-						<div className="p-4">
+						<div className="h-full p-4">
 							<TaskGrid
+								className="h-full"
 								tasks={filteredTasks}
 								totalTasks={pagination?.total}
 								availableTags={availableTags}
@@ -1270,35 +1143,10 @@ export function TasksPage() {
 								onDelete={handleDeleteTask}
 								onCreateTaskAt={handleCreateTaskAt}
 								onReorder={handleReorder}
+								hasNextPage={hasNextPage}
+								isFetchingNextPage={isFetchingNextPage}
+								onLoadMore={fetchNextPage}
 							/>
-							{/* Load More Button */}
-							{hasNextPage && (
-								<div className="mt-4 flex justify-center">
-									<Button
-										variant="secondary"
-										onPress={() => fetchNextPage()}
-										isDisabled={isFetchingNextPage}
-										className="w-full max-w-md"
-									>
-										{isFetchingNextPage ? (
-											<>
-												<RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-												Loading more...
-											</>
-										) : (
-											<>
-												<ChevronDown className="h-4 w-4 mr-2" />
-												Load more tasks ({tasks.length} loaded)
-											</>
-										)}
-									</Button>
-								</div>
-							)}
-							{!hasNextPage && tasks.length > 0 && (
-								<div className="mt-4 text-center text-sm text-muted-foreground">
-									All {tasks.length} tasks loaded
-								</div>
-							)}
 						</div>
 					)}
 				</div>

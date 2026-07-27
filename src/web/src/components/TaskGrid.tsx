@@ -1,13 +1,82 @@
 import { useState, useCallback, useRef, useMemo, useEffect, memo } from 'react';
-import { Plus, Maximize2, Minimize2 } from 'lucide-react';
+import { LoaderCircle, Plus } from 'lucide-react';
 import { Button, Card } from '@heroui/react';
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from '@tanstack/react-table';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
 import { type Task } from '@/lib';
 import { cn } from '@/lib';
-import { TaskGridRow, type TaskUiMeta, type TaskUpdate } from './TaskGridRow';
+import { TASK_GRID_COLUMNS_CLASS, TaskGridRow, type TaskUiMeta, type TaskUpdate } from './TaskGridRow';
+import { FilterableGridHeader, SortableGridHeader, type GridFilterOption } from './GridColumnHeader';
+import { useGridPreferences } from './grid-preferences';
+import { selectedTagsFilter, selectedValuesFilter } from './grid-table';
+import { PRIORITY_OPTIONS, STATUS_LABELS } from './task-styles';
+
+const TASK_STATUS_OPTIONS = Object.keys(STATUS_LABELS) as Task['status'][];
+const TASK_SOURCE_OPTIONS: Task['sourceType'][] = ['manual', 'plan', 'email', 'discovery', 'proposal', 'system'];
+const TASK_GRID_COLUMN_IDS = new Set(['order', 'subject', 'createdAt', 'status', 'priority', 'sourceType', 'tags']);
+const TASK_GRID_DEFAULT_SORTING: SortingState = [{ id: 'order', desc: false }];
+const TASK_GRID_PREFERENCES_KEY = 'coleo:tasks-grid-preferences';
+
+const TASK_COLUMNS: ColumnDef<Task>[] = [
+  {
+    id: 'order',
+    accessorFn: (_task, index) => index,
+    sortingFn: 'basic',
+  },
+  {
+    id: 'subject',
+    accessorKey: 'subject',
+    sortingFn: 'alphanumeric',
+  },
+  {
+    id: 'createdAt',
+    accessorFn: (task) => new Date(task.createdAt).getTime(),
+    sortingFn: 'basic',
+  },
+  {
+    id: 'status',
+    accessorKey: 'status',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'priority',
+    accessorKey: 'priority',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'sourceType',
+    accessorKey: 'sourceType',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'tags',
+    accessorFn: (task) => task.metadata.ui?.tags ?? [],
+    filterFn: selectedTagsFilter,
+  },
+];
+
+function labelGridValue(value: string): string {
+  return value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function buildFilterOptions(values: readonly string[], rows: Task[], readValue: (task: Task) => string): GridFilterOption[] {
+  return values.map((value) => ({
+    value,
+    label: labelGridValue(value),
+    count: rows.filter((task) => readValue(task) === value).length,
+  }));
+}
 
 interface TaskGridProps {
   tasks: Task[];
@@ -22,6 +91,9 @@ interface TaskGridProps {
   onDelete?: (task: Task) => void;
   onCreateTaskAt?: (index: number, subject: string) => void;
   onReorder?: (taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  onLoadMore?: () => void | Promise<unknown>;
   className?: string;
 }
 
@@ -31,6 +103,9 @@ interface SortableTaskRowProps {
   availableTags?: string[];
   isSelected?: boolean;
   isExpanded?: boolean;
+  orderNumber: number;
+  canReorder: boolean;
+  onToggleExpanded: (taskId: string) => void;
   onOpenDetails?: (task: Task) => void;
   onOpenDiscussions?: (task: Task) => void;
   onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
@@ -46,6 +121,9 @@ const SortableTaskRow = memo(function SortableTaskRow({
   availableTags,
   isSelected,
   isExpanded,
+  orderNumber,
+  canReorder,
+  onToggleExpanded,
   onOpenDetails,
   onOpenDiscussions,
   onUpdateTask,
@@ -60,7 +138,7 @@ const SortableTaskRow = memo(function SortableTaskRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: task.id });
+  } = useSortable({ id: task.id, disabled: !canReorder });
 
   const style = {
     transform: isDragging ? CSS.Transform.toString(transform) : undefined,
@@ -78,13 +156,16 @@ const SortableTaskRow = memo(function SortableTaskRow({
         isSelected={isSelected}
         isDragging={isDragging}
         isExpanded={isExpanded}
+        orderNumber={orderNumber}
+        canReorder={canReorder}
+        onToggleExpanded={onToggleExpanded}
         onOpenDetails={onOpenDetails}
         onOpenDiscussions={onOpenDiscussions}
         onUpdateTask={onUpdateTask}
         onUpdateUi={onUpdateUi}
         onDelete={onDelete}
         onReorderToSortOrder={onReorderToSortOrder}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        dragHandleProps={canReorder ? { ...attributes, ...listeners } : undefined}
       />
     </div>
   );
@@ -132,24 +213,98 @@ export function TaskGrid({
   onDelete,
   onCreateTaskAt,
   onReorder,
+  hasNextPage = false,
+  isFetchingNextPage = false,
+  onLoadMore,
   className,
 }: TaskGridProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draftIndex, setDraftIndex] = useState<number | null>(null);
   const [draftPosition, setDraftPosition] = useState<{ top: number; left: number } | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const { sorting, columnFilters, setSorting, setColumnFilters } = useGridPreferences(
+    TASK_GRID_PREFERENCES_KEY,
+    TASK_GRID_COLUMN_IDS,
+    TASK_GRID_DEFAULT_SORTING,
+  );
   const draftRef = useRef<HTMLInputElement>(null);
   const hoverIndexRef = useRef<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const newTaskRef = useRef<HTMLDivElement>(null);
+
+  // TanStack Table intentionally exposes non-memoizable callbacks; React Compiler safely skips this component.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: tasks,
+    columns: TASK_COLUMNS,
+    getRowId: (task) => task.id,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const statusOptions = useMemo(
+    () => buildFilterOptions(TASK_STATUS_OPTIONS, tasks, (task) => task.status),
+    [tasks],
+  );
+  const priorityOptions = useMemo(
+    () => buildFilterOptions(PRIORITY_OPTIONS, tasks, (task) => task.priority),
+    [tasks],
+  );
+  const sourceOptions = useMemo(
+    () => buildFilterOptions(TASK_SOURCE_OPTIONS, tasks, (task) => task.sourceType),
+    [tasks],
+  );
+  const tagOptions = useMemo(() => {
+    const tags = availableTags ?? [];
+    return tags.map((tag) => ({
+      value: tag,
+      label: tag,
+      count: tasks.filter((task) => task.metadata.ui?.tags?.includes(tag)).length,
+    }));
+  }, [availableTags, tasks]);
+
+  const displayRows = table.getRowModel().rows;
+  const hasActiveFilters = columnFilters.length > 0;
+  const hasCanonicalSorting =
+    sorting.length === 0 || (sorting.length === 1 && sorting[0]?.id === 'order' && sorting[0].desc === false);
+  const canReorder = !hasActiveFilters && hasCanonicalSorting;
+  const virtualItemCount = displayRows.length > 0 || hasNextPage ? displayRows.length + 1 : 0;
+  const rowVirtualizer = useVirtualizer({
+    count: virtualItemCount,
+    getScrollElement: () => containerRef.current,
+    estimateSize: (index) => index < displayRows.length ? 56 : 48,
+    getItemKey: (index) => displayRows[index]?.id ?? 'task-grid-end',
+    overscan: 10,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1;
+
+  const handleToggleExpanded = useCallback((taskId: string) => {
+    setExpandedTaskId((current) => current === taskId ? null : taskId);
+  }, []);
+
+  useEffect(() => {
+    if (
+      hasNextPage &&
+      !isFetchingNextPage &&
+      lastVirtualIndex >= Math.max(0, displayRows.length - 10)
+    ) {
+      void onLoadMore?.();
+    }
+  }, [displayRows.length, hasNextPage, isFetchingNextPage, lastVirtualIndex, onLoadMore]);
 
   // Scroll to newly created task
   useEffect(() => {
-    if (newTaskId && newTaskRef.current && containerRef.current) {
-      newTaskRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!newTaskId) return;
+    const newTaskIndex = displayRows.findIndex((row) => row.id === newTaskId);
+    if (newTaskIndex >= 0) {
+      rowVirtualizer.scrollToIndex(newTaskIndex, { align: 'center', behavior: 'smooth' });
     }
-  }, [newTaskId]);
+  }, [displayRows, newTaskId, rowVirtualizer]);
 
   // Memoize task lookup map for O(1) access
   const taskMap = useMemo(() => {
@@ -169,7 +324,7 @@ export function TaskGrid({
   }, [tasks]);
 
   // Memoize task IDs for SortableContext
-  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks]);
+  const taskIds = displayRows.map((row) => row.id);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -191,12 +346,14 @@ export function TaskGrid({
   };
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (!canReorder) return;
     setActiveId(event.active.id as string);
     setHoverIndex(null);
     hoverIndexRef.current = null;
-  }, []);
+  }, [canReorder]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
+    if (!canReorder) return;
     const { over } = event;
     if (!over) return;
 
@@ -207,7 +364,7 @@ export function TaskGrid({
       hoverIndexRef.current = overIndex;
       setHoverIndex(overIndex);
     }
-  }, [taskIndexMap]);
+  }, [canReorder, taskIndexMap]);
 
   useEffect(() => {
     if (draftIndex !== null) {
@@ -216,6 +373,7 @@ export function TaskGrid({
   }, [draftIndex]);
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
+	if (!canReorder) return;
     const { active, over } = event;
     
     // Capture the hover index BEFORE resetting the ref
@@ -233,7 +391,7 @@ export function TaskGrid({
     const draggedTask = tasks.find(t => t.id === active.id);
     if (!draggedTask) return;
 
-    const fromSortOrder = draggedTask.sortOrder ?? 0;
+    const fromSortOrder = taskIndexMap.get(draggedTask.id) ?? 0;
     
     const finalIndex = hoverIndexAtDrop ?? taskIndexMap.get(over.id as string) ?? null;
     if (finalIndex === null) return;
@@ -263,7 +421,7 @@ export function TaskGrid({
     if (fromSortOrder !== toSortOrder) {
       onReorder?.(draggedTask.id, fromSortOrder, toSortOrder, prevTaskId, nextTaskId);
     }
-  }, [tasks, onReorder, taskIndexMap]);
+  }, [canReorder, tasks, onReorder, taskIndexMap]);
 
   const handleReorderToSortOrder = useCallback((taskId: string, fromSortOrder: number, toSortOrder: number) => {
     if (fromSortOrder === toSortOrder) return;
@@ -304,11 +462,10 @@ export function TaskGrid({
     }),
   };
 
-  const displayTasks = tasks;
   const sortableItems = taskIds;
 
   return (
-    <div className={cn('overflow-hidden rounded-md border border-border bg-card', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col overflow-x-auto rounded-md border border-border bg-card', className)}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -316,68 +473,122 @@ export function TaskGrid({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="grid grid-cols-[24px_minmax(0,1fr)_96px_120px_110px_160px_120px] items-center gap-3 border-b border-border px-4 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          <div className="flex items-center justify-end">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              className="h-5 w-5"
-              onPress={() => setIsExpanded(!isExpanded)}
-              aria-label={isExpanded ? "Collapse rows" : "Expand rows"}
-            >
-              {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-            </Button>
-          </div>
-          <div>Subject</div>
-          <div>Status</div>
+        <div
+          className={cn(
+            "mx-2 grid min-w-[1396px] items-center gap-2 border-b border-border px-3 py-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground",
+            TASK_GRID_COLUMNS_CLASS,
+          )}
+        >
+          <div aria-hidden="true" />
+          <SortableGridHeader
+            label="Order"
+            column={table.getColumn('order')!}
+            className="justify-end"
+          />
+          <div aria-hidden="true" />
+          <SortableGridHeader label="Subject" column={table.getColumn('subject')!} />
+          <SortableGridHeader label="Created" column={table.getColumn('createdAt')!} />
+          <FilterableGridHeader
+            label="Status"
+            column={table.getColumn('status')!}
+            options={statusOptions}
+          />
           <div>Progress</div>
-          <div>Priority</div>
-          <div>Tags</div>
-          <div className="text-right">Actions</div>
+          <FilterableGridHeader
+            label="Priority"
+            column={table.getColumn('priority')!}
+            options={priorityOptions}
+          />
+          <FilterableGridHeader
+            label="Type"
+            column={table.getColumn('sourceType')!}
+            options={sourceOptions}
+          />
+          <FilterableGridHeader
+            label="Tags"
+            column={table.getColumn('tags')!}
+            options={tagOptions}
+          />
+          <div className="border-l border-border/60 pl-3 text-right">Actions</div>
         </div>
-        <div ref={containerRef} className="flex-1 overflow-y-auto p-2">
-          {displayTasks.length === 0 ? (
-            <div className="p-6 text-center text-muted-foreground text-sm">No tasks found</div>
+        <div ref={containerRef} className="min-h-0 min-w-[1396px] flex-1 overflow-y-auto overflow-x-hidden p-2">
+          {displayRows.length === 0 && !hasNextPage ? (
+            <div className="p-6 text-center text-muted-foreground text-sm">
+              {tasks.length > 0 ? 'No tasks match the selected column filters' : 'No tasks found'}
+            </div>
           ) : (
             <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-              {displayTasks.map((task, index) => (
-                <div 
-                  key={task.id} 
-                  ref={task.id === newTaskId ? newTaskRef : undefined}
-                  className="relative -mt-2"
-                >
-                   <InsertRow
-                     isActive={activeId !== null && hoverIndex === index}
-                     onClick={(e) => {
-                       const rect = e.currentTarget.getBoundingClientRect();
-                       setDraftPosition({ top: rect.top, left: rect.left });
-                       setDraftIndex(index);
-                     }}
-                   />
-                  <SortableTaskRow
-                    task={task}
-                    index={index}
-                    availableTags={availableTags}
-                    isSelected={task.id === selectedTaskId}
-                    isExpanded={isExpanded}
-                    onOpenDetails={onOpenDetails}
-                    onOpenDiscussions={onOpenDiscussions}
-                    onUpdateTask={onUpdateTask}
-                    onUpdateUi={onUpdateUi}
-                    onDelete={onDelete}
-                    onReorderToSortOrder={handleReorderToSortOrder}
-                  />
-                </div>
-              ))}
-               <InsertRow
-                 isActive={activeId !== null && hoverIndex === displayTasks.length}
-                 onClick={(e) => {
-                   const rect = e.currentTarget.getBoundingClientRect();
-                   setDraftPosition({ top: rect.top, left: rect.left });
-                   setDraftIndex(displayTasks.length);
-                 }}
-               />
+              <div
+                className="relative w-full"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {virtualItems.map((virtualRow) => {
+                  if (virtualRow.index >= displayRows.length) {
+                    return (
+                      <div
+                        key="task-grid-end"
+                        ref={rowVirtualizer.measureElement}
+                        data-index={virtualRow.index}
+                        className="absolute left-0 top-0 w-full"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      >
+                        {hasNextPage ? (
+                          <div className="flex h-12 items-center justify-center gap-2 text-xs text-muted-foreground">
+                            <LoaderCircle className={cn('h-4 w-4', isFetchingNextPage && 'animate-spin')} />
+                            {isFetchingNextPage ? 'Loading more tasks...' : 'Loading more tasks'}
+                          </div>
+                        ) : (
+                          <InsertRow
+                            isActive={activeId !== null && hoverIndex === displayRows.length}
+                            onClick={(event) => {
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setDraftPosition({ top: rect.top, left: rect.left });
+                              setDraftIndex(displayRows.length);
+                            }}
+                          />
+                        )}
+                      </div>
+                    );
+                  }
+
+                  const row = displayRows[virtualRow.index];
+                  const task = row.original;
+                  return (
+                    <div
+                      key={task.id}
+                      ref={rowVirtualizer.measureElement}
+                      data-index={virtualRow.index}
+                      className="absolute left-0 top-0 w-full"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <InsertRow
+                        isActive={activeId !== null && hoverIndex === virtualRow.index}
+                        onClick={(event) => {
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          setDraftPosition({ top: rect.top, left: rect.left });
+                          setDraftIndex(virtualRow.index);
+                        }}
+                      />
+                      <SortableTaskRow
+                        task={task}
+                        index={virtualRow.index}
+                        orderNumber={row.index + 1}
+                        canReorder={canReorder}
+                        onToggleExpanded={handleToggleExpanded}
+                        availableTags={availableTags}
+                        isSelected={task.id === selectedTaskId}
+                        isExpanded={expandedTaskId === task.id}
+                        onOpenDetails={onOpenDetails}
+                        onOpenDiscussions={onOpenDiscussions}
+                        onUpdateTask={onUpdateTask}
+                        onUpdateUi={onUpdateUi}
+                        onDelete={onDelete}
+                        onReorderToSortOrder={handleReorderToSortOrder}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </SortableContext>
           )}
         </div>
@@ -387,8 +598,11 @@ export function TaskGrid({
               <TaskGridRow
                 task={activeTask}
                 index={0}
+                orderNumber={(taskIndexMap.get(activeTask.id) ?? 0) + 1}
+                canReorder={canReorder}
+                onToggleExpanded={handleToggleExpanded}
                 availableTags={availableTags ?? []}
-                isExpanded={isExpanded}
+                isExpanded={false}
                 onOpenDetails={onOpenDetails}
                 onUpdateTask={onUpdateTask}
                 onUpdateUi={onUpdateUi}

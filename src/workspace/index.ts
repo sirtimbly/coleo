@@ -87,6 +87,12 @@ export class RemoteWorkspaceAccess implements WorkspaceAccess {
 		if (result.type !== "git_status") throw new Error("Unexpected remote workspace response");
 		return result.porcelain;
 	}
+
+	async gitFiles(): Promise<string[]> {
+		const result = await this.execute({ type: "git_files" });
+		if (result.type !== "git_files") throw new Error("Unexpected remote workspace response");
+		return result.files;
+	}
 }
 
 export async function executeWorkspaceOperation(
@@ -107,6 +113,8 @@ export async function executeWorkspaceOperation(
 			return { type: "scan", files: await workspace.scan(operation.patterns, operation.options) };
 		case "git_status":
 			return { type: "git_status", porcelain: await workspace.gitStatus() };
+		case "git_files":
+			return { type: "git_files", files: await workspace.gitFiles() };
 	}
 }
 

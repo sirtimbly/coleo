@@ -62,11 +62,27 @@ describe("onboarding routes", () => {
     app.route("/api/onboarding", createOnboardingRoutes({
       projectDir,
       coleoDir,
-      runCommand: async (command) => ({
-        exitCode: 0,
-        stdout: command.includes("get-url") ? "git@example.com:team/project.git" : "main",
-        stderr: "",
-      }),
+      runCommand: async (command) => {
+        if (command.includes("get-url")) {
+          return { exitCode: 0, stdout: "git@example.com:team/project.git", stderr: "" };
+        }
+        if (command.includes("--show-current")) {
+          return { exitCode: 0, stdout: "main", stderr: "" };
+        }
+        if (command.includes("log")) {
+          return { exitCode: 0, stdout: "abc123def456\x00abc123\x00Jane Doe\x002024-01-02T03:04:05+00:00\x00Initial commit", stderr: "" };
+        }
+        if (command.includes("ls-files")) {
+          return { exitCode: 0, stdout: "README.md\nsrc/index.ts\npackage.json", stderr: "" };
+        }
+        if (command.includes("--porcelain")) {
+          return { exitCode: 0, stdout: "", stderr: "" };
+        }
+        if (command.includes("ls-tree")) {
+          return { exitCode: 0, stdout: "100644 blob aaaa\tREADME.md\n040000 tree bbbb\tsrc\n100644 blob cccc\tpackage.json", stderr: "" };
+        }
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
     }));
 
     const response = await app.request("http://localhost/api/onboarding");
@@ -77,6 +93,16 @@ describe("onboarding routes", () => {
       checkedOut: true,
       remoteUrl: "git@example.com:team/project.git",
       branch: "main",
+      commit: {
+        hash: "abc123def456",
+        shortHash: "abc123",
+        author: "Jane Doe",
+        date: "2024-01-02T03:04:05+00:00",
+        subject: "Initial commit",
+      },
+      trackedFileCount: 3,
+      dirtyFileCount: 0,
+      topLevelEntries: ["README.md", "src/", "package.json"],
     });
   });
 
@@ -187,7 +213,7 @@ describe("onboarding routes", () => {
     const remoteStatus: OnboardingStatus = {
       ready: false,
       projectDir: "/home/coleo/runtime/workspace",
-      repository: { checkedOut: false, remoteUrl: null, branch: null },
+      repository: { checkedOut: false, remoteUrl: null, branch: null, commit: null, trackedFileCount: null, dirtyFileCount: null, topLevelEntries: [] },
       ssh: { configured: true, publicKey: "ssh-ed25519 remote-key" },
     };
     setArmClient({
@@ -209,6 +235,10 @@ describe("onboarding routes", () => {
                   checkedOut: true,
                   remoteUrl: "git@example.com:team/project.git",
                   branch: "main",
+                  commit: null,
+                  trackedFileCount: null,
+                  dirtyFileCount: null,
+                  topLevelEntries: [],
                 },
               }
             : remoteStatus,

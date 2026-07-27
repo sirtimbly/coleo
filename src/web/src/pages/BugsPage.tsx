@@ -15,7 +15,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
-import { useIsWorkspacePanel, useWorkspaceSearchParams } from '@/workspace/route-context';
+import {
+	useIsWorkspacePanel,
+	useWorkspaceCloseRoute,
+	useWorkspaceOpenRoute,
+	useWorkspaceSearchParams,
+} from '@/workspace/route-context';
 
 type SidebarTab = 'details';
 
@@ -38,9 +43,6 @@ const PRIORITY_CONFIG: Record<Bug['priority'], { color: string; bgColor: string;
 	medium: { color: 'text-yellow-500', bgColor: 'bg-yellow-500/20', label: 'Medium' },
 	low: { color: 'text-gray-500', bgColor: 'bg-gray-500/20', label: 'Low' },
 };
-
-const isBugStatus = (value: string): value is Bug["status"] =>
-	value in STATUS_CONFIG;
 
 function formatAbsoluteDateTime(iso: string): string {
 	return new Date(iso).toLocaleString(undefined, {
@@ -168,15 +170,15 @@ function BugDescriptionField({
 }
 
 export function BugsPage() {
-  usePageTitle('Coleo Observatory - Bugs');
-
-  const queryClient = useQueryClient();
+	const queryClient = useQueryClient();
 	const isWorkspacePanel = useIsWorkspacePanel();
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
+	const closeWorkspaceRoute = useWorkspaceCloseRoute('/bugs');
 	const [searchParams] = useWorkspaceSearchParams();
-	const [filter, setFilter] = useState<{ status?: string; priority?: string; source?: string }>({});
+	const isNewBugPage = searchParams.get('new') === '1';
+	usePageTitle(isNewBugPage ? 'Coleo Observatory - New Bug' : 'Coleo Observatory - Bugs');
 	const [tagFilter, setTagFilter] = useState<string[]>([]);
 	const [searchText, setSearchText] = useState('');
-	const [isModalOpen, setIsModalOpen] = useState(false);
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
 	const detailsTabId: SidebarTab = "details";
@@ -184,7 +186,6 @@ export function BugsPage() {
 	// Use React Query hook for bugs
 	const {
 		bugs,
-		stats,
 		isLoading,
 		isError,
 		error,
@@ -193,7 +194,7 @@ export function BugsPage() {
 		createBug,
 		deleteBug,
 		reorderBug,
-	} = useBugs(filter);
+	} = useBugs();
 
 	const getBugUiMeta = useCallback((bug: Bug): BugUiMeta => {
 		const ui = bug.metadata?.ui;
@@ -320,8 +321,8 @@ export function BugsPage() {
 
 	// Deep-link support: `/bugs?bug=<id>` (e.g. from the command palette search
 	// results) opens the details sidebar for that bug directly. Falls back to a
-	// direct fetch when the bug isn't part of the currently loaded/filtered list
-	// (e.g. it's archived or excluded by the active status filter).
+	// direct fetch when the bug isn't part of the currently loaded list (e.g. it
+	// is archived).
 	React.useEffect(() => {
 		if (!isWorkspacePanel) return;
 
@@ -371,6 +372,26 @@ export function BugsPage() {
 		onMessage: handleWSMessage,
 	});
 
+	const openNewBugPanel = () => {
+		openWorkspaceRoute(
+			{ pathname: '/bugs', search: '?new=1', title: 'New Bug' },
+			'action',
+		);
+	};
+
+	if (isNewBugPage) {
+		return (
+			<BugModal
+				isOpen
+				presentation="panel"
+				onClose={closeWorkspaceRoute}
+				onSaved={() => {
+					void refetch();
+				}}
+			/>
+		);
+	}
+
 	const workspaceHeader = (
 		<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
 			<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
@@ -385,27 +406,6 @@ export function BugsPage() {
 					/>
 				</div>
 				<div className="shrink-0 text-xs text-muted-foreground">{bugs.length} total</div>
-				<div className="h-4 w-px shrink-0 bg-border" />
-				{Object.entries(STATUS_CONFIG).map(([status, statusConfig]) => (
-					<button
-						key={status}
-						type="button"
-						aria-pressed={filter.status === status}
-						onClick={() =>
-							setFilter((current) => (
-								current.status === status ? {} : { ...current, status }
-							))
-						}
-						className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-							filter.status === status
-								? 'border-accent/50 bg-accent/10 text-accent'
-								: 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
-						}`}
-					>
-						<span>{statusConfig.label}</span>
-						<span>{stats?.byStatus?.[status] ?? 0}</span>
-					</button>
-				))}
 				{availableTags.length > 0 ? <div className="h-4 w-px shrink-0 bg-border" /> : null}
 				{availableTags.slice(0, 8).map((tag) => (
 					<button
@@ -427,7 +427,7 @@ export function BugsPage() {
 				<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
 					<RefreshCw className="h-4 w-4" />
 				</Button>
-				<Button size="sm" variant="primary" onPress={() => setIsModalOpen(true)}>
+				<Button size="sm" variant="primary" onPress={openNewBugPanel}>
 					<Plus className="mr-1.5 h-4 w-4" />
 					New
 				</Button>
@@ -458,9 +458,7 @@ export function BugsPage() {
 						</Button>
 						<Button
 							variant="primary"
-							onPress={() => {
-								setIsModalOpen(true);
-							}}
+							onPress={openNewBugPanel}
 						>
 							<Plus className="h-4 w-4 mr-2" />
 							New Bug
@@ -484,40 +482,6 @@ export function BugsPage() {
 					<div className="flex items-center gap-2 text-sm">
 						<span className="text-foreground-500">Total:</span>
 						<span className="font-medium">{bugs.length}</span>
-					</div>
-					<div className="h-4 w-px bg-divider" />
-					<div className="flex items-center gap-2 flex-wrap">
-						{Object.entries(stats?.byStatus ?? {}).map(([status, count]) => (
-							<Button
-								key={status}
-								size="sm"
-								variant={filter.status === status ? 'primary' : 'ghost'}
-								onPress={() =>
-									setFilter((f) =>
-										f.status === status ? {} : { ...f, status }
-									)
-								}
-								className="h-7"
-							>
-								<span
-									className={
-										filter.status === status
-								? ''
-											: isBugStatus(status)
-												? STATUS_CONFIG[status].color
-												: 'text-foreground-500'
-								}
-							>
-									{status.replace('_', ' ')}
-								</span>
-								<span>{count}</span>
-							</Button>
-						))}
-						{filter.status && (
-							<Button size="sm" variant="ghost" onPress={() => setFilter({})}>
-								Clear filter
-							</Button>
-						)}
 					</div>
 				</div>
 
@@ -713,11 +677,6 @@ export function BugsPage() {
 			)}
 		</div>
 
-		<BugModal
-			isOpen={isModalOpen}
-			onClose={() => setIsModalOpen(false)}
-			onSaved={() => refetch()}
-		/>
 	</div>
 	);
 }

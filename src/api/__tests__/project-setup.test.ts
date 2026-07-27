@@ -117,8 +117,65 @@ describe("project setup routes", () => {
 		expect(body.projectDocuments.every((document) => document.modifiedAt && document.recentlyChanged)).toBe(true);
 	});
 
-	it("lists and edits Arm templates separately from project plans", async () => {
-		await mkdir(join(root, ".coleo", "templates"), { recursive: true });
+	it("returns the full checkout tree including dotfiles but excluding .git and node_modules", async () => {
+		await mkdir(join(root, "src"), { recursive: true });
+		await mkdir(join(root, ".project"), { recursive: true });
+		await mkdir(join(root, "node_modules", "pkg"), { recursive: true });
+		await writeFile(join(root, ".env"), "SECRET=1\n");
+		await writeFile(join(root, "src", "index.ts"), "export {};\n");
+		await writeFile(join(root, ".project", "plan.md"), "# Plan\n");
+		await writeFile(join(root, "node_modules", "pkg", "index.js"), "module.exports = {};\n");
+
+		const response = await app.request("http://localhost/api/project-setup");
+		const body = await response.json() as { projectTree: string[] };
+		const paths = body.projectTree;
+
+		expect(response.status).toBe(200);
+		expect(paths).toContain(".env");
+		expect(paths).toContain("src/index.ts");
+		expect(paths).toContain(".project/plan.md");
+		expect(paths.some((path) => path.startsWith(".git/"))).toBe(false);
+		expect(paths.some((path) => path.startsWith("node_modules/"))).toBe(false);
+	});
+
+	it("reads and edits any markdown or text file in the checkout", async () => {
+		await mkdir(join(root, "notes"), { recursive: true });
+		await writeFile(join(root, "notes", "design.txt"), "original\n");
+		await writeFile(join(root, "src.ts"), "export {};\n");
+
+		const readResponse = await app.request("http://localhost/api/project-setup/file?path=notes/design.txt");
+		const readBody = await readResponse.json() as { file: { content: string; contentHash: string } };
+		expect(readResponse.status).toBe(200);
+		expect(readBody.file.content).toBe("original\n");
+
+		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: "document",
+				path: "notes/design.txt",
+				content: "updated\n",
+				expectedHash: readBody.file.contentHash,
+			}),
+		});
+		expect(saveResponse.status).toBe(200);
+		expect(await readFile(join(root, "notes", "design.txt"), "utf-8")).toBe("updated\n");
+
+		const rejectedRead = await app.request("http://localhost/api/project-setup/file?path=src.ts");
+		expect(rejectedRead.status).toBe(400);
+
+		const missingRead = await app.request("http://localhost/api/project-setup/file?path=notes/missing.md");
+		expect(missingRead.status).toBe(404);
+
+		const rejectedWrite = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ kind: "document", path: "src.ts", content: "export {};\n" }),
+		});
+		expect(rejectedWrite.status).toBe(400);
+	});
+
+	it("lists and edits Arm templates separately from project plans", async () => {		await mkdir(join(root, ".coleo", "templates"), { recursive: true });
 		await writeFile(join(root, ".coleo", "templates", "reviewer.yml"), "arm:\n  name: reviewer\n");
 
 		const statusResponse = await app.request("http://localhost/api/project-setup");

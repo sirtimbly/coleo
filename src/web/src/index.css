@@ -304,3 +304,14 @@ body {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+.grid-metadata-option {
+  font-weight: 450;
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+}
+
+.grid-metadata-option[data-single-word='true'] {
+  letter-spacing: 0.01em;
+  text-transform: capitalize;
+}

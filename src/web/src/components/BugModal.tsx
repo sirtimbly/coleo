@@ -10,6 +10,7 @@ interface BugModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSaved?: (bug: Bug) => void;
+  presentation?: 'modal' | 'panel';
 }
 
 type BugSource = Bug['source'];
@@ -28,7 +29,7 @@ const PRIORITY_OPTIONS: { value: BugPriority; label: string }[] = [
   { value: 'low', label: 'Low' },
 ];
 
-export function BugModal({ isOpen, onClose, onSaved }: BugModalProps) {
+export function BugModal({ isOpen, onClose, onSaved, presentation = 'modal' }: BugModalProps) {
   const fieldId = useId();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -99,22 +100,19 @@ export function BugModal({ isOpen, onClose, onSaved }: BugModalProps) {
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <button
-        type="button"
-        aria-label="Close modal"
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-
-      <div className="relative w-full max-w-2xl mx-4 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+  const content = (
+    <div className={`flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 ${
+        presentation === 'panel'
+          ? 'min-h-[min(36rem,100%)] shadow-xl'
+          : 'relative mx-4 max-h-[90vh] shadow-2xl'
+      }`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-white">New Bug</h2>
           <button
             type="button"
             onClick={onClose}
             className="p-1 text-zinc-400 hover:text-white rounded transition-colors"
+            aria-label="Close new bug"
           >
             <X className="w-5 h-5" />
           </button>
@@ -251,8 +249,27 @@ export function BugModal({ isOpen, onClose, onSaved }: BugModalProps) {
             </div>
           </div>
         </form>
+    </div>
+  );
+
+  if (presentation === 'panel') {
+    return (
+      <div className="flex min-h-full w-full items-start justify-center bg-surface p-3 sm:p-5">
+        {content}
       </div>
+    );
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <button
+        type="button"
+        aria-label="Close bug dialog"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {content}
     </div>,
-    document.body
+    document.body,
   );
 }

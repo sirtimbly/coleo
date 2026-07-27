@@ -1,11 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { FileTree, useFileTree } from '@pierre/trees/react';
 
+import type { FileTreeDirectoryHandle, FileTreeRowDecoration } from '@pierre/trees';
+
 interface SetupFileTreeProps {
   ariaLabel: string;
   paths: readonly string[];
   selectedPath: string;
   onSelect: (path: string) => boolean;
+  expandedPaths?: readonly string[];
+  decoratePath?: (path: string, kind: 'directory' | 'file') => FileTreeRowDecoration | null;
 }
 
 type TreeModel = ReturnType<typeof useFileTree>['model'];
@@ -23,23 +27,45 @@ const TRUNCATION_TOLERANCE_CSS = `
       opacity: 1;
     }
   }
+
+  [data-item-section="decoration"] span[title="coleo-plan"] {
+    color: var(--accent);
+    font-size: 0.65rem;
+    line-height: 1;
+  }
+
+  [data-item-section="decoration"] span[title="coleo-template"] {
+    color: var(--success);
+    font-size: 0.65rem;
+    line-height: 1;
+  }
+
+  [data-item-section="decoration"] span[title="coleo-config"] {
+    color: var(--warning);
+    font-size: 0.65rem;
+    line-height: 1;
+  }
 `;
 
-export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect }: SetupFileTreeProps) {
+export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect, expandedPaths, decoratePath }: SetupFileTreeProps) {
   const modelRef = useRef<TreeModel | null>(null);
   const selectedPathRef = useRef(selectedPath);
   const onSelectRef = useRef(onSelect);
+  const decoratePathRef = useRef(decoratePath);
   selectedPathRef.current = selectedPath;
   onSelectRef.current = onSelect;
+  decoratePathRef.current = decoratePath;
 
   const { model } = useFileTree({
     paths,
     density: 'compact',
     flattenEmptyDirectories: true,
     icons: { set: 'minimal', colored: false },
-    initialExpansion: 2,
+    initialExpansion: 1,
+    initialExpandedPaths: expandedPaths,
     initialSelectedPaths: paths.includes(selectedPath) ? [selectedPath] : [],
     unsafeCSS: TRUNCATION_TOLERANCE_CSS,
+    renderRowDecoration: ({ row }) => decoratePathRef.current?.(row.path, row.kind) ?? null,
     onSelectionChange: (selectedPaths) => {
       const nextPath = [...selectedPaths].reverse().find((path) => paths.includes(path));
       if (!nextPath || nextPath === selectedPathRef.current) return;
@@ -58,6 +84,16 @@ export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect }: Setu
   useEffect(() => {
     model.resetPaths(paths);
   }, [model, paths]);
+
+  useEffect(() => {
+    if (!expandedPaths) return;
+    for (const path of expandedPaths) {
+      const item = model.getItem(path);
+      if (!item?.isDirectory()) continue;
+      const directory = item as FileTreeDirectoryHandle;
+      if (!directory.isExpanded()) directory.expand();
+    }
+  }, [model, paths, expandedPaths]);
 
   useEffect(() => {
     if (!paths.includes(selectedPath)) return;

@@ -107,8 +107,32 @@ function taskCount(db: Database): number {
 	return (db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number } | null)?.count ?? 0;
 }
 
+const EDITABLE_DOCUMENT_PATH = /^(?:[^/]+\/)*[^/]+\.(?:md|markdown|txt)$/i;
+
+function validateEditableDocumentPath(path: string): string {
+	const normalized = path.trim().replaceAll("\\", "/").replace(/^\.\//, "");
+	if (!normalized || normalized.includes("\0") || normalized.split("/").includes("..")) {
+		throw new Error("Choose a file inside the project workspace");
+	}
+	if (!EDITABLE_DOCUMENT_PATH.test(normalized)) {
+		throw new Error("Only Markdown (.md) and text (.txt) files can be viewed and edited here");
+	}
+	return normalized;
+}
+
 function badRequestFrom(error: unknown, fallback: string): HttpError {
 	return HttpError.badRequest(error instanceof Error ? error.message : fallback);
+}
+
+async function listProjectTreePaths(workspace: WorkspaceAccess): Promise<string[]> {
+	const tracked = await workspace.gitFiles();
+	if (tracked.length > 0) return tracked.sort();
+	try {
+		const scanned = await workspace.scan(["**/*"], { dot: true });
+		return scanned.map((file) => file.path);
+	} catch {
+		return [];
+	}
 }
 
 export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {}) {
@@ -122,11 +146,12 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const db = c.get("db");
 		await brainTemplates.ensureTemplatesExist();
-		const [candidates, canonical, projectDocuments, templateFiles] = await Promise.all([
+		const [candidates, canonical, projectDocuments, templateFiles, projectTree] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
 			listProjectPlanDocuments(workspace),
 			listSetupTemplateFiles(coleoDir),
+			listProjectTreePaths(workspace),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
 		const tasks = taskCount(db);
@@ -141,10 +166,27 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			candidates,
 			projectDocuments,
 			templateFiles,
+			projectTree,
 			recommendedPath: candidates[0]?.path ?? CANONICAL_PLAN_PATH,
 			defaultContent: DEFAULT_PLAN_TEMPLATE,
 			defaultTemplateContent: DEFAULT_ARM_TEMPLATE,
 		});
+	});
+
+	app.get("/file", async (c) => {
+		const workspace = getWorkspace();
+		const rawPath = c.req.query("path");
+		if (!rawPath) throw HttpError.badRequest("path is required");
+
+		try {
+			const path = validateEditableDocumentPath(rawPath);
+			const file = await workspace.readText(path);
+			if (!file) throw HttpError.notFound("File not found in the project workspace");
+			return c.json({ file });
+		} catch (error) {
+			if (error instanceof HttpError) throw error;
+			throw badRequestFrom(error, "Unable to read the file");
+		}
 	});
 
 	app.put("/file", async (c) => {
@@ -161,8 +203,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		if (body.expectedHash !== undefined && body.expectedHash !== null && typeof body.expectedHash !== "string") {
 			throw HttpError.badRequest("expectedHash must be a string or null");
 		}
-		if (body.kind !== undefined && body.kind !== "plan" && body.kind !== "template") {
-			throw HttpError.badRequest("kind must be plan or template");
+		if (body.kind !== undefined && body.kind !== "plan" && body.kind !== "template" && body.kind !== "document") {
+			throw HttpError.badRequest("kind must be plan, template, or document");
 		}
 		if (Buffer.byteLength(body.content, "utf-8") > 512 * 1024) {
 			throw HttpError.badRequest("Setup files must be smaller than 512 KiB");
@@ -178,7 +220,9 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				);
 				return c.json({ file });
 			}
-			const path = validateEditablePlanPath(body.path);
+			const path = body.kind === "document"
+				? validateEditableDocumentPath(body.path)
+				: validateEditablePlanPath(body.path);
 			const file = await workspace.writeText(path, body.content, {
 				expectedHash: body.expectedHash as string | null | undefined,
 			});

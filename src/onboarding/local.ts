@@ -9,6 +9,7 @@ import {
 } from "./types";
 
 import type {
+  RepositoryCheckoutCommit,
   RepositoryOnboardingOperation,
   RepositoryOnboardingStatus,
 } from "./types";
@@ -93,24 +94,55 @@ export class LocalRepositoryOnboarding implements RepositoryOnboardingService {
     let publicKey: string | null = null;
     let remoteUrl: string | null = null;
     let branch: string | null = null;
+    let commit: RepositoryCheckoutCommit | null = null;
+    let trackedFileCount: number | null = null;
+    let dirtyFileCount: number | null = null;
+    let topLevelEntries: string[] = [];
 
     if (configured) {
       publicKey = (await Bun.file(this.publicKeyPath).text()).trim();
     }
 
     if (checkedOut) {
-      const [remoteResult, branchResult] = await Promise.all([
+      const [remoteResult, branchResult, logResult, filesResult, porcelainResult, treeResult] = await Promise.all([
         this.runCommand(["git", "-C", this.projectDir, "remote", "get-url", "origin"]),
         this.runCommand(["git", "-C", this.projectDir, "branch", "--show-current"]),
+        this.runCommand(["git", "-C", this.projectDir, "log", "-1", "--format=%H%x00%h%x00%an%x00%aI%x00%s"]),
+        this.runCommand(["git", "-C", this.projectDir, "ls-files"]),
+        this.runCommand(["git", "-C", this.projectDir, "status", "--porcelain"]),
+        this.runCommand(["git", "-C", this.projectDir, "ls-tree", "HEAD"]),
       ]);
       remoteUrl = remoteResult.exitCode === 0 && remoteResult.stdout ? remoteResult.stdout : null;
       branch = branchResult.exitCode === 0 && branchResult.stdout ? branchResult.stdout : null;
+
+      if (logResult.exitCode === 0 && logResult.stdout) {
+        const [hash, shortHash, author, date, subject] = logResult.stdout.split("\0");
+        if (hash && shortHash) {
+          commit = { hash, shortHash, author: author ?? "", date: date ?? "", subject: subject ?? "" };
+        }
+      }
+
+      if (filesResult.exitCode === 0) {
+        trackedFileCount = filesResult.stdout ? filesResult.stdout.split("\n").length : 0;
+      }
+
+      if (porcelainResult.exitCode === 0) {
+        dirtyFileCount = porcelainResult.stdout ? porcelainResult.stdout.split("\n").length : 0;
+      }
+
+      if (treeResult.exitCode === 0 && treeResult.stdout) {
+        topLevelEntries = treeResult.stdout.split("\n").map((line) => {
+          const match = line.match(/^\d+ (\w+) [0-9a-f]+\t(.+)$/);
+          if (!match) return null;
+          return match[1] === "tree" ? `${match[2]}/` : match[2];
+        }).filter((entry): entry is string => entry !== null);
+      }
     }
 
     return {
       ready: checkedOut,
       projectDir: this.projectDir,
-      repository: { checkedOut, remoteUrl, branch },
+      repository: { checkedOut, remoteUrl, branch, commit, trackedFileCount, dirtyFileCount, topLevelEntries },
       ssh: { configured, publicKey },
     };
   }

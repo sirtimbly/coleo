@@ -5,19 +5,34 @@ import {
 	SlidersHorizontal,
 	ChevronDown,
 	ChevronRight,
+	ExternalLink,
 	Trash2,
 	ArrowUpDown,
+	MoreHorizontal,
 	Check,
-	Bug as BugIcon,
 } from "lucide-react";
-import { Chip, Button, Dropdown, Checkbox } from "@heroui/react";
+import { Chip, Button, Dropdown, Checkbox, Label, type Selection } from "@heroui/react";
 import { type Bug, type BugMetadata, type BugUiMetadata } from "@/lib";
 import { cn } from "@/lib";
-import { COLOR_OPTIONS, COLOR_CLASSES_LIGHT, getValidColor } from "./grid-shared";
-import { STATUS_OPTIONS, STATUS_STYLES, PRIORITY_OPTIONS, PRIORITY_STYLES, SOURCE_STYLES } from "./bug-styles";
+import {
+	COLOR_OPTIONS,
+	COLOR_CLASSES_LIGHT,
+	GRID_ACTION_BUTTON_CLASS,
+	GRID_METADATA_CONTROL_CLASS,
+	GRID_METADATA_VALUE_CLASS,
+	getValidColor,
+} from "./grid-shared";
+import {
+	PRIORITY_DOT_STYLES,
+	PRIORITY_OPTIONS,
+	SOURCE_DOT_STYLES,
+	STATUS_DOT_STYLES,
+	STATUS_OPTIONS,
+} from "./bug-styles";
+import { formatGridDate } from "./grid-table";
 
 export const BUG_GRID_COLUMNS_CLASS =
-	"grid-cols-[48px_24px_minmax(0,1fr)_96px_110px_132px_150px_120px]";
+	"grid-cols-[24px_80px_32px_minmax(260px,1fr)_112px_128px_108px_150px_140px_144px]";
 
 export type BugUiMeta = BugUiMetadata;
 
@@ -40,6 +55,9 @@ interface BugGridRowProps {
 	isSelected?: boolean;
 	isDragging?: boolean;
 	isExpanded?: boolean;
+	orderNumber: number;
+	canReorder: boolean;
+	onToggleExpanded: (bugId: string) => void;
 	onOpenDetails?: (bug: Bug) => void;
 	onUpdateBug?: (bugId: string, updates: BugUpdate) => void;
 	onUpdateUi?: (bugId: string, updates: BugUiMeta) => void;
@@ -71,6 +89,9 @@ export const BugGridRow = memo(function BugGridRow({
 	isSelected,
 	isDragging,
 	isExpanded,
+	orderNumber,
+	canReorder,
+	onToggleExpanded,
 	onOpenDetails,
 	onUpdateBug,
 	onUpdateUi,
@@ -80,8 +101,6 @@ export const BugGridRow = memo(function BugGridRow({
 	onGridKeyDown,
 	className,
 }: BugGridRowProps) {
-	const displayRowNumber = index + 1;
-
 	const uiMeta: BugRowUiMeta = {
 		tags: bug.metadata?.ui?.tags ?? [],
 		color: getValidColor(bug.metadata?.ui?.color),
@@ -109,9 +128,9 @@ export const BugGridRow = memo(function BugGridRow({
 	const savedColor = getValidColor(uiMeta.color);
 	const colorKey = previewColor ?? savedColor;
 
-	const statusClasses = STATUS_STYLES[bug.status];
-	const priorityClasses = PRIORITY_STYLES[bug.priority];
-	const sourceClasses = SOURCE_STYLES[bug.source];
+	const statusDotClass = STATUS_DOT_STYLES[bug.status];
+	const priorityDotClass = PRIORITY_DOT_STYLES[bug.priority];
+	const sourceDotClass = SOURCE_DOT_STYLES[bug.source];
 
 	const handleTitleBlur = () => {
 		const next = titleValue.trim();
@@ -124,6 +143,14 @@ export const BugGridRow = memo(function BugGridRow({
 
 	const handleTagSelection = (tags: string[]) => {
 		onUpdateUi?.(bug.id, { tags });
+	};
+
+	const handlePrioritySelection = (selection: Selection) => {
+		if (selection === "all") return;
+		const [priority] = Array.from(selection);
+		if (typeof priority === "string" && isBugPriority(priority) && priority !== bug.priority) {
+			onUpdateBug?.(bug.id, { priority });
+		}
 	};
 
 	const handleCreateTag = (value: string) => {
@@ -181,73 +208,80 @@ export const BugGridRow = memo(function BugGridRow({
   return (
     <li
       className={cn(
-        "grid min-w-[860px] -translate-y-1 items-center gap-3 px-3 py-1 text-sm transition-all cursor-pointer",
+        "grid min-h-12 min-w-[1220px] gap-2 border-b border-border/50 px-3 py-1.5 text-sm transition-colors cursor-pointer",
         BUG_GRID_COLUMNS_CLASS,
-        "rounded-md ",
-        !isDragging &&
-          (uiMeta.bold
-            ? COLOR_CLASSES_LIGHT[colorKey].rowBold
-            : COLOR_CLASSES_LIGHT[colorKey].row),
-        !isSelected &&
-          !isDragging &&
-          "hover:bg-accent/20 hover:border-accent",
-        isSelected && "bg-accent shadow-md shadow-accent/20",
+		isExpanded ? "items-start" : "items-center",
+        "rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50",
+        !isDragging && colorKey !== "slate" && COLOR_CLASSES_LIGHT[colorKey].row,
+        !isSelected && !isDragging && "hover:bg-surface-secondary/70",
+        isSelected && "bg-accent/10 ring-1 ring-inset ring-accent/30",
         isDragging &&
           "opacity-40 bg-default-100 border-dashed border-default-300",
         className,
       )}
       onClick={handleRowClick}
       onKeyDown={handleRowKeyDown}
+      tabIndex={0}
+      aria-label={`Open bug details: ${bug.title}`}
     >
-		{/* Row number */}
-      <div className="text-xs text-muted-foreground font-mono text-right pr-1">
-        {displayRowNumber}
-      </div>
       <div
-        className="p-1 text-default-500 hover:text-default-700 rounded cursor-move"
+        className={cn(
+		  "rounded p-1 text-default-500",
+		  canReorder ? "cursor-move hover:text-default-700" : "cursor-default opacity-35",
+		)}
         {...dragHandleProps}
         data-cell
         data-row={index}
         data-col={0}
-        title="Drag to reorder"
+        title={canReorder ? "Drag to reorder" : "Clear filters and sort by Order to reorder"}
       >
         <GripVertical className="h-4 w-4" />
       </div>
+	  <div className="pr-1 text-right font-mono text-xs tabular-nums text-muted-foreground">
+		{orderNumber}
+	  </div>
+	  <button
+		type="button"
+		onClick={() => onToggleExpanded(bug.id)}
+		aria-expanded={isExpanded}
+		aria-label={isExpanded ? "Collapse bug row" : "Expand bug row"}
+		className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+	  >
+		<ChevronRight className={cn("h-4 w-4 transition-transform", isExpanded && "rotate-90")} />
+	  </button>
 
 			{isExpanded ? (
-				<textarea
-					ref={(el) => {
-						if (el) el.style.height = "auto";
-						el?.style.setProperty("height", el?.scrollHeight + "px");
-					}}
-					value={titleValue}
-					onChange={(event) => setTitleValue(event.target.value)}
-					onBlur={handleTitleBlur}
-					onKeyDown={(event) => {
-						onGridKeyDown?.(event);
-						if (event.key === "Enter" && !event.shiftKey) {
-							event.currentTarget.blur();
-						}
-					}}
-					onClick={(event) => {
-						event.preventDefault();
-						event.stopPropagation();
-					}}
-					data-cell
-					data-row={index}
-					data-col={1}
-					rows={1}
-					className={cn(
-						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all resize-none overflow-hidden",
-						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
-						uiMeta.bold && "font-semibold",
-						"w-full",
-					)}
-					aria-label="Bug title (click to edit)"
-					title="Click to edit bug title"
-					style={{ height: "auto", minHeight: "28px" }}
-				/>
+				<div className="min-w-0 px-2 py-2">
+					<textarea
+						ref={(element) => {
+							if (element) element.style.height = "auto";
+							element?.style.setProperty("height", `${element.scrollHeight}px`);
+						}}
+						value={titleValue}
+						onChange={(event) => setTitleValue(event.target.value)}
+						onBlur={handleTitleBlur}
+						onKeyDown={(event) => {
+							onGridKeyDown?.(event);
+							if (event.key === "Enter" && !event.shiftKey) event.currentTarget.blur();
+						}}
+						onClick={(event) => event.stopPropagation()}
+						data-cell
+						data-row={index}
+						data-col={1}
+						rows={1}
+						className={cn(
+							"w-full min-w-0 resize-none overflow-hidden rounded-md border border-transparent bg-transparent px-0 py-1 transition-colors",
+							"hover:border-default-300 hover:bg-default-50 hover:px-2",
+							"focus:border-accent focus:bg-surface-secondary focus:px-2 focus:outline-none focus:ring-2 focus:ring-accent/20",
+							uiMeta.bold && "font-semibold",
+						)}
+						aria-label="Bug title (click to edit)"
+						title="Click to edit bug title"
+					/>
+					<div className="mt-2 h-[200px] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-surface-secondary/40 p-3 text-xs leading-5 text-muted-foreground">
+						{bug.description.trim() || "No detail text provided."}
+					</div>
+				</div>
 			) : (
 				<input
 					value={titleValue}
@@ -263,9 +297,9 @@ export const BugGridRow = memo(function BugGridRow({
 					data-row={index}
 					data-col={1}
 					className={cn(
-						"min-w-0 bg-transparent border border-transparent rounded-md px-2 py-1 transition-all",
+						"w-full min-w-0 truncate whitespace-nowrap rounded-md border border-transparent bg-transparent px-2 py-1 transition-colors",
 						"hover:border-default-300 hover:bg-default-50",
-						"focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/20",
+						"focus-visible:border-accent focus-visible:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/20",
 						uiMeta.bold && "font-semibold",
 					)}
 					aria-label="Bug title (click to edit)"
@@ -273,22 +307,25 @@ export const BugGridRow = memo(function BugGridRow({
 				/>
 			)}
 
+			<div
+				className="truncate px-2 text-xs tabular-nums text-muted-foreground"
+				title={new Date(bug.createdAt).toLocaleString()}
+			>
+				{formatGridDate(bug.createdAt)}
+			</div>
+
 			{/* Status dropdown */}
 			<Dropdown>
-				<Dropdown.Trigger>
-					<div
-						className={cn(
-							"flex items-center justify-between min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold transition cursor-pointer select-none",
-							"hover:shadow-sm",
-							statusClasses,
-						)}
-						data-cell
-						data-row={index}
-						data-col={2}
-					>
-						<span className="capitalize">{bug.status.replace("_", " ")}</span>
-						<ChevronDown className="h-3 w-3 opacity-50" />
-					</div>
+				<Dropdown.Trigger
+					className={GRID_METADATA_CONTROL_CLASS}
+					data-cell
+					data-row={index}
+					data-col={2}
+					aria-label={`Change status from ${bug.status.replace("_", " ")}`}
+				>
+					<span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", statusDotClass)} aria-hidden="true" />
+					<span className="min-w-0 flex-1 truncate capitalize">{bug.status.replace("_", " ")}</span>
+					<ChevronDown className="h-3 w-3 shrink-0 opacity-40" aria-hidden="true" />
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
@@ -299,7 +336,9 @@ export const BugGridRow = memo(function BugGridRow({
 						}}
 					>
 						{STATUS_OPTIONS.map((status) => (
-							<Dropdown.Item key={status}>{status.replace("_", " ")}</Dropdown.Item>
+							<Dropdown.Item key={status} className="grid-metadata-option capitalize">
+								{status.replace("_", " ")}
+							</Dropdown.Item>
 						))}
 					</Dropdown.Menu>
 				</Dropdown.Popover>
@@ -307,31 +346,33 @@ export const BugGridRow = memo(function BugGridRow({
 
 			{/* Priority dropdown */}
 			<Dropdown>
-				<Dropdown.Trigger>
-					<div
-						className={cn(
-							"flex items-center justify-between min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold transition cursor-pointer select-none",
-							"hover:shadow-sm",
-							priorityClasses,
-						)}
-						data-cell
-						data-row={index}
-						data-col={3}
-					>
-						<span className="capitalize">{bug.priority}</span>
-						<ChevronDown className="h-3 w-3 opacity-50" />
-					</div>
+				<Dropdown.Trigger
+					className={GRID_METADATA_CONTROL_CLASS}
+					data-cell
+					data-row={index}
+					data-col={3}
+					aria-label={`Change priority from ${bug.priority}`}
+				>
+					<span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", priorityDotClass)} aria-hidden="true" />
+					<span className="min-w-0 flex-1 truncate capitalize">{bug.priority}</span>
+					<ChevronDown className="h-3 w-3 shrink-0 opacity-40" aria-hidden="true" />
 				</Dropdown.Trigger>
 				<Dropdown.Popover>
 					<Dropdown.Menu
-						onAction={(key) => {
-							if (typeof key === "string" && isBugPriority(key)) {
-								onUpdateBug?.(bug.id, { priority: key });
-							}
-						}}
+						selectionMode="single"
+						selectedKeys={new Set([bug.priority])}
+						onSelectionChange={handlePrioritySelection}
 					>
 						{PRIORITY_OPTIONS.map((priority) => (
-							<Dropdown.Item key={priority}>{priority}</Dropdown.Item>
+							<Dropdown.Item
+								key={priority}
+								id={priority}
+								textValue={priority}
+								className="grid-metadata-option capitalize"
+							>
+								<Dropdown.ItemIndicator />
+								<Label>{priority}</Label>
+							</Dropdown.Item>
 						))}
 					</Dropdown.Menu>
 				</Dropdown.Popover>
@@ -339,45 +380,40 @@ export const BugGridRow = memo(function BugGridRow({
 
 			{/* Source/Type display */}
 			<div
-				className={cn(
-					"flex items-center justify-center min-w-[96px] rounded-full border px-3 py-1 text-xs font-semibold",
-					sourceClasses,
-				)}
+				className={GRID_METADATA_VALUE_CLASS}
 				data-cell
 				data-row={index}
 				data-col={4}
+				title={bug.source.replace("_", " ")}
 			>
-				<BugIcon className="h-3 w-3 mr-1" />
-				<span className="capitalize">{bug.source.replace("_", " ")}</span>
+				<span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", sourceDotClass)} aria-hidden="true" />
+				<span className="min-w-0 truncate capitalize">{bug.source.replace("_", " ")}</span>
 			</div>
 
 			{/* Tags dropdown */}
 			<Dropdown onOpenChange={setIsTagDropdownOpen}>
-				<Dropdown.Trigger>
-					<div
-						className="flex items-center justify-start min-w-32 px-3 py-1 text-sm cursor-pointer select-none hover:bg-default-100 rounded-md"
-						data-cell
-						data-row={index}
-						data-col={5}
-					>
-						<div className="flex flex-wrap items-center gap-1 flex-1">
-							{uiMeta.tags.length === 0 ? (
-								<span className="text-xs text-default-400">tags</span>
-							) : (
-								uiMeta.tags.slice(0, 2).map((tag) => (
-									<Chip key={tag} size="sm" variant="soft" className="text-xs">
-										{tag}
-									</Chip>
-								))
-							)}
-							{uiMeta.tags.length > 2 && (
-								<span className="text-xs text-default-400">
-									+{uiMeta.tags.length - 2}
-								</span>
-							)}
-						</div>
-						<ChevronDown className="h-3 w-3 opacity-50 ml-1" />
+				<Dropdown.Trigger
+					className={GRID_METADATA_CONTROL_CLASS}
+					data-cell
+					data-row={index}
+					data-col={5}
+					aria-label="Edit bug tags"
+				>
+					<div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden whitespace-nowrap">
+						{uiMeta.tags.length === 0 ? (
+							<span className="text-xs text-muted-foreground/70">No tags</span>
+						) : (
+							<Chip size="sm" variant="soft" className="max-w-24 shrink truncate text-xs">
+								{uiMeta.tags[0]}
+							</Chip>
+						)}
+						{uiMeta.tags.length > 1 && (
+							<span className="text-xs text-default-400">
+								+{uiMeta.tags.length - 1}
+							</span>
+						)}
 					</div>
+					<ChevronDown className="ml-1 h-3 w-3 shrink-0 opacity-40" aria-hidden="true" />
 				</Dropdown.Trigger>
 				<Dropdown.Popover className="min-w-64">
 					<div className="px-2 py-2">
@@ -419,19 +455,18 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown.Popover>
 			</Dropdown>
 
-			<div className="flex items-center justify-end gap-2">
+			<div className="ml-2 flex items-center justify-end border-l border-border/60 pl-3 whitespace-nowrap">
+				<div className="inline-flex h-9 items-center gap-0.5 rounded-lg border border-border/70 bg-surface-secondary/50 p-0.5">
 				{/* Formatting dropdown */}
 				<Dropdown>
-					<Dropdown.Trigger>
-						<div
-							className="p-1 text-default-500 hover:text-default-700 rounded cursor-pointer"
-							data-cell
-							data-row={index}
-							data-col={6}
-							title="Formatting & appearance"
-						>
-							<SlidersHorizontal className="h-4 w-4" />
-						</div>
+					<Dropdown.Trigger
+						className={GRID_ACTION_BUTTON_CLASS}
+						data-cell
+						data-row={index}
+						data-col={6}
+						aria-label="Formatting and appearance"
+					>
+						<SlidersHorizontal className="h-4 w-4" />
 					</Dropdown.Trigger>
 					<Dropdown.Popover>
 						<div className="p-2">
@@ -478,46 +513,59 @@ export const BugGridRow = memo(function BugGridRow({
 				</Dropdown>
 
 				<Button
-					variant="ghost"
+					variant={isSelected ? "secondary" : "ghost"}
 					size="sm"
 					isIconOnly
-					onPress={() => onDelete?.(bug)}
+					onPress={() => onOpenDetails?.(bug)}
 					data-cell
 					data-row={index}
 					data-col={7}
-					aria-label="Delete bug"
+					aria-label="Open details"
+					className={GRID_ACTION_BUTTON_CLASS}
 				>
-					<Trash2 className="h-4 w-4" />
+					<ExternalLink className={cn("h-4 w-4", isSelected ? "" : "text-accent-700")} />
 				</Button>
 
         <Dropdown isOpen={open} onOpenChange={setOpen}>
-          <Dropdown.Trigger>
-            <div
-              className="p-1 text-default-500 hover:text-default-700 rounded cursor-pointer"
+		  <Dropdown.Trigger
+			  className={GRID_ACTION_BUTTON_CLASS}
               data-cell
               data-row={index}
               data-col={8}
-              title="More actions"
-            >
-              <ArrowUpDown className="h-4 w-4" />
-            </div>
+			  aria-label="More bug actions"
+		  >
+			  <MoreHorizontal className="h-4 w-4" />
           </Dropdown.Trigger>
           <Dropdown.Popover>
             <div className="p-2 min-w-[200px]">
               <Dropdown.Menu
+				disabledKeys={canReorder ? [] : ["top", "bottom"]}
                 onAction={(key) => {
-                  const currentSortOrder = index;
+				  const currentSortOrder = index;
                   if (key === "top") {
                     onReorderToSortOrder?.(bug.id, currentSortOrder, 0);
                   } else if (key === "bottom") {
                     onReorderToSortOrder?.(bug.id, currentSortOrder, -1);
+				  } else if (key === "delete") {
+					onDelete?.(bug);
                   }
                 }}
               >
-                <Dropdown.Item key="top">Move to Top</Dropdown.Item>
-                <Dropdown.Item key="bottom">Move to Bottom</Dropdown.Item>
+				<Dropdown.Item id="top" textValue="Move to top">
+					<ArrowUpDown className="h-4 w-4" />
+					<Label>Move to Top</Label>
+				</Dropdown.Item>
+				<Dropdown.Item id="bottom" textValue="Move to bottom">
+					<ArrowUpDown className="h-4 w-4" />
+					<Label>Move to Bottom</Label>
+				</Dropdown.Item>
+				<Dropdown.Item id="delete" textValue="Delete bug" variant="danger">
+					<Trash2 className="h-4 w-4" />
+					<Label>Delete Bug</Label>
+				</Dropdown.Item>
               </Dropdown.Menu>
-              <div className="mt-3 pt-2 border-t border-default-200">
+			  {canReorder ? (
+			  <div className="mt-3 pt-2 border-t border-default-200">
                 <form 
                   className="flex items-center gap-2"
                   onSubmit={(e) => {
@@ -530,7 +578,7 @@ export const BugGridRow = memo(function BugGridRow({
                     const targetRowNumber = parseInt(input.value, 10);
                     if (!isNaN(targetRowNumber) && targetRowNumber >= 1) {
                       const targetSortOrder = targetRowNumber - 1;
-                      const currentSortOrder = index;
+					  const currentSortOrder = index;
                       onReorderToSortOrder?.(bug.id, currentSortOrder, targetSortOrder);
                       input.value = '';
                     }
@@ -549,25 +597,15 @@ export const BugGridRow = memo(function BugGridRow({
                   </Button>
                 </form>
               </div>
+			  ) : (
+				<p className="mt-2 border-t border-border px-2 pt-2 text-xs text-muted-foreground">
+					Clear column filters and sort by Order to move this bug.
+				</p>
+			  )}
             </div>
           </Dropdown.Popover>
         </Dropdown>
-
-				<Button
-					variant={isSelected ? "secondary" : "ghost"}
-					size="sm"
-					isIconOnly
-					onPress={() => onOpenDetails?.(bug)}
-					data-cell
-					data-row={index}
-					data-col={9}
-					aria-label="Open details"
-				>
-					<ChevronRight
-						className={cn("h-4 w-4", isSelected ? "" : "text-accent-700")}
-					/>
-				</Button>
-
+				</div>
 		</div>
 	</li>
 );

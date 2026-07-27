@@ -145,6 +145,7 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 			onlyFiles: true,
 			followSymbolicLinks: false,
 			unique: true,
+			dot: options.dot ?? false,
 			ignore,
 		});
 		if (matches.length > maxFiles) {
@@ -179,6 +180,21 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 		} catch (error) {
 			const code = (error as { code?: unknown }).code;
 			if (code === 128) return "";
+			throw error;
+		}
+	}
+
+	async gitFiles(): Promise<string[]> {
+		try {
+			const { stdout } = await execFileAsync("git", ["ls-files"], {
+				cwd: this.root,
+				encoding: "utf-8",
+				maxBuffer: MAX_GIT_STATUS_BYTES,
+			});
+			return stdout.split("\n").filter((path) => path.length > 0);
+		} catch (error) {
+			const code = (error as { code?: unknown }).code;
+			if (code === 128) return [];
 			throw error;
 		}
 	}

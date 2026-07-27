@@ -57,6 +57,12 @@ class ArmHostWorkspaceAccess implements WorkspaceAccess {
 		if (result.type !== "git_status") throw new Error("Unexpected Arm Host workspace response");
 		return result.porcelain;
 	}
+
+	async gitFiles(): Promise<string[]> {
+		const result = await this.execute({ type: "git_files" });
+		if (result.type !== "git_files") throw new Error("Unexpected Arm Host workspace response");
+		return result.files;
+	}
 }
 
 export function getServerWorkspaceAccess(): WorkspaceAccess {

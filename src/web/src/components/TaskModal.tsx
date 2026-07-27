@@ -12,6 +12,7 @@ interface TaskModalProps {
   onSaved?: (task: Task) => void;
   task?: Task; // If provided, we're editing
   initialStatus?: Task['status'];
+  presentation?: 'modal' | 'panel';
 }
 
 type TaskStatus = Task['status'];
@@ -49,7 +50,14 @@ const isTaskPriority = (value: string): value is TaskPriority =>
 const isTaskSourceType = (value: string): value is TaskSourceType =>
   SOURCE_TYPE_OPTIONS.some((option) => option.value === value);
 
-export function TaskModal({ isOpen, onClose, onSaved, task, initialStatus }: TaskModalProps) {
+export function TaskModal({
+  isOpen,
+  onClose,
+  onSaved,
+  task,
+  initialStatus,
+  presentation = 'modal',
+}: TaskModalProps) {
   const isEditing = Boolean(task);
   
   // Form state
@@ -191,24 +199,22 @@ export function TaskModal({ isOpen, onClose, onSaved, task, initialStatus }: Tas
 
   if (!isOpen) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* Backdrop */}
-      <div 
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-        onClick={onClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative w-full max-w-2xl mx-4 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+  const content = (
+    <div className={`flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 ${
+        presentation === 'panel'
+          ? 'min-h-[min(42rem,100%)] shadow-xl'
+          : 'relative mx-4 max-h-[90vh] shadow-2xl'
+      }`}>
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
           <h2 className="text-lg font-semibold text-white">
             {isEditing ? 'Edit Task' : 'New Task'}
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 text-zinc-400 hover:text-white rounded transition-colors"
+            aria-label={`Close ${isEditing ? 'edit task' : 'new task'}`}
           >
             <X className="w-5 h-5" />
           </button>
@@ -456,8 +462,27 @@ export function TaskModal({ isOpen, onClose, onSaved, task, initialStatus }: Tas
             </div>
           </div>
         </form>
+    </div>
+  );
+
+  if (presentation === 'panel') {
+    return (
+      <div className="flex min-h-full w-full items-start justify-center bg-surface p-3 sm:p-5">
+        {content}
       </div>
+    );
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <button
+        type="button"
+        aria-label="Close task dialog"
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      {content}
     </div>,
-    document.body
+    document.body,
   );
 }

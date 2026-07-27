@@ -4,6 +4,15 @@ import type { KeyboardEvent } from "react";
 export const COLOR_OPTIONS = ["slate", "blue", "emerald", "amber", "rose"] as const;
 export type ColorOption = (typeof COLOR_OPTIONS)[number];
 
+export const GRID_METADATA_CONTROL_CLASS =
+	"flex h-8 w-full min-w-0 items-center gap-2 rounded-md px-2 text-left text-xs font-normal text-muted-foreground whitespace-nowrap transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
+
+export const GRID_METADATA_VALUE_CLASS =
+	"flex h-8 w-full min-w-0 items-center gap-2 px-2 text-xs font-normal text-muted-foreground whitespace-nowrap";
+
+export const GRID_ACTION_BUTTON_CLASS =
+	"h-7 w-7 min-w-7 rounded-md text-muted-foreground hover:bg-surface-secondary hover:text-foreground";
+
 export const COLOR_CLASSES: Record<
 	ColorOption,
 	{ dot: string; row: string; rowBold: string }

@@ -37,6 +37,10 @@ class MemoryWorkspace implements WorkspaceAccess {
 	async gitStatus(): Promise<string> {
 		return "";
 	}
+
+	async gitFiles(): Promise<string[]> {
+		return [];
+	}
 }
 
 describe("BrainAgent workspace tools", () => {

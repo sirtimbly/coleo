@@ -18,6 +18,7 @@ export interface WorkspaceScanOptions {
 	ignore?: string[];
 	includeLineCount?: boolean;
 	maxFiles?: number;
+	dot?: boolean;
 }
 
 export interface WorkspaceWriteOptions {
@@ -30,19 +31,22 @@ export interface WorkspaceAccess {
 	writeText(path: string, content: string, options?: WorkspaceWriteOptions): Promise<WorkspaceTextFile>;
 	scan(patterns: string[], options?: WorkspaceScanOptions): Promise<WorkspaceFileMetadata[]>;
 	gitStatus(): Promise<string>;
+	gitFiles(): Promise<string[]>;
 }
 
 export type WorkspaceOperation =
 	| { type: "read_text"; path: string }
 	| { type: "write_text"; path: string; content: string; expectedHash?: string | null }
 	| { type: "scan"; patterns: string[]; options?: WorkspaceScanOptions }
-	| { type: "git_status" };
+	| { type: "git_status" }
+	| { type: "git_files" };
 
 export type WorkspaceOperationResult =
 	| { type: "read_text"; file: WorkspaceTextFile | null }
 	| { type: "write_text"; file: WorkspaceTextFile }
 	| { type: "scan"; files: WorkspaceFileMetadata[] }
-	| { type: "git_status"; porcelain: string };
+	| { type: "git_status"; porcelain: string }
+	| { type: "git_files"; files: string[] };
 
 export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
 	if (!value || typeof value !== "object") {
@@ -84,6 +88,9 @@ export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
 		if (options.maxFiles !== undefined && (typeof options.maxFiles !== "number" || !Number.isInteger(options.maxFiles))) {
 			throw new Error("Workspace scan maxFiles must be an integer");
 		}
+		if (options.dot !== undefined && typeof options.dot !== "boolean") {
+			throw new Error("Workspace scan dot must be a boolean");
+		}
 		return {
 			type: "scan",
 			patterns: input.patterns as string[],
@@ -91,9 +98,11 @@ export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
 				ignore: options.ignore as string[] | undefined,
 				includeLineCount: options.includeLineCount as boolean | undefined,
 				maxFiles: options.maxFiles as number | undefined,
+				dot: options.dot as boolean | undefined,
 			},
 		};
 	}
 	if (input.type === "git_status") return { type: "git_status" };
+	if (input.type === "git_files") return { type: "git_files" };
 	throw new Error(`Unsupported workspace operation: ${String(input.type)}`);
 }

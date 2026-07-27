@@ -1,6 +1,14 @@
 import { useState, useCallback, useRef, useMemo, useEffect, memo } from 'react';
-import { Plus, Maximize2, Minimize2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Button, Card } from '@heroui/react';
+import {
+  getCoreRowModel,
+  getFilteredRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type ColumnDef,
+  type SortingState,
+} from '@tanstack/react-table';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragOverlay, defaultDropAnimationSideEffects } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -8,6 +16,65 @@ import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core'
 import { type Bug } from '@/lib';
 import { cn } from '@/lib';
 import { BUG_GRID_COLUMNS_CLASS, BugGridRow, type BugUiMeta, type BugUpdate } from './BugGridRow';
+import { FilterableGridHeader, SortableGridHeader, type GridFilterOption } from './GridColumnHeader';
+import { useGridPreferences } from './grid-preferences';
+import { selectedTagsFilter, selectedValuesFilter } from './grid-table';
+import { PRIORITY_OPTIONS, STATUS_OPTIONS } from './bug-styles';
+
+const BUG_COLUMNS: ColumnDef<Bug>[] = [
+  {
+    id: 'order',
+    accessorFn: (_bug, index) => index,
+    sortingFn: 'basic',
+  },
+  {
+    id: 'title',
+    accessorKey: 'title',
+    sortingFn: 'alphanumeric',
+  },
+  {
+    id: 'createdAt',
+    accessorFn: (bug) => new Date(bug.createdAt).getTime(),
+    sortingFn: 'basic',
+  },
+  {
+    id: 'status',
+    accessorKey: 'status',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'priority',
+    accessorKey: 'priority',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'source',
+    accessorKey: 'source',
+    filterFn: selectedValuesFilter,
+  },
+  {
+    id: 'tags',
+    accessorFn: (bug) => bug.metadata?.ui?.tags ?? [],
+    filterFn: selectedTagsFilter,
+  },
+];
+
+const BUG_SOURCE_OPTIONS: Bug['source'][] = ['human_reported', 'arm_reported', 'system_detected'];
+const BUG_GRID_COLUMN_IDS = new Set(['order', 'title', 'createdAt', 'status', 'priority', 'source', 'tags']);
+const BUG_GRID_DEFAULT_SORTING: SortingState = [{ id: 'order', desc: false }];
+const BUG_GRID_PREFERENCES_KEY = 'coleo:bugs-grid-preferences';
+
+function labelGridValue(value: string): string {
+  return value.replaceAll('_', ' ').replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function buildFilterOptions(values: readonly string[], rows: Bug[], readValue: (bug: Bug) => string): GridFilterOption[] {
+  return values.map((value) => ({
+    value,
+    label: labelGridValue(value),
+    count: rows.filter((bug) => readValue(bug) === value).length,
+  }));
+}
 
 interface BugGridProps {
   bugs: Bug[];
@@ -29,6 +96,9 @@ interface SortableBugRowProps {
   availableTags?: string[];
   isSelected?: boolean;
   isExpanded?: boolean;
+  orderNumber: number;
+  canReorder: boolean;
+  onToggleExpanded: (bugId: string) => void;
   onOpenDetails?: (bug: Bug) => void;
   onUpdateBug?: (bugId: string, updates: BugUpdate) => void;
   onUpdateUi?: (bugId: string, updates: BugUiMeta) => void;
@@ -43,6 +113,9 @@ const SortableBugRow = memo(function SortableBugRow({
   availableTags,
   isSelected,
   isExpanded,
+  orderNumber,
+  canReorder,
+  onToggleExpanded,
   onOpenDetails,
   onUpdateBug,
   onUpdateUi,
@@ -56,7 +129,7 @@ const SortableBugRow = memo(function SortableBugRow({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: bug.id });
+  } = useSortable({ id: bug.id, disabled: !canReorder });
 
   const style = {
     transform: isDragging ? CSS.Transform.toString(transform) : undefined,
@@ -74,12 +147,15 @@ const SortableBugRow = memo(function SortableBugRow({
         isSelected={isSelected}
         isDragging={isDragging}
         isExpanded={isExpanded}
+        orderNumber={orderNumber}
+        canReorder={canReorder}
+        onToggleExpanded={onToggleExpanded}
         onOpenDetails={onOpenDetails}
         onUpdateBug={onUpdateBug}
         onUpdateUi={onUpdateUi}
         onDelete={onDelete}
         onReorderToSortOrder={onReorderToSortOrder}
-        dragHandleProps={{ ...attributes, ...listeners }}
+        dragHandleProps={canReorder ? { ...attributes, ...listeners } : undefined}
       />
     </div>
   );
@@ -130,10 +206,61 @@ export function BugGrid({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [draftIndex, setDraftIndex] = useState<number | null>(null);
   const [draftPosition, setDraftPosition] = useState<{ top: number; left: number } | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [expandedBugId, setExpandedBugId] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const { sorting, columnFilters, setSorting, setColumnFilters } = useGridPreferences(
+    BUG_GRID_PREFERENCES_KEY,
+    BUG_GRID_COLUMN_IDS,
+    BUG_GRID_DEFAULT_SORTING,
+  );
   const draftRef = useRef<HTMLInputElement>(null);
   const hoverIndexRef = useRef<number | null>(null);
+
+  // TanStack Table intentionally exposes non-memoizable callbacks; React Compiler safely skips this component.
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: bugs,
+    columns: BUG_COLUMNS,
+    getRowId: (bug) => bug.id,
+    state: { sorting, columnFilters },
+    onSortingChange: setSorting,
+    onColumnFiltersChange: setColumnFilters,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
+  const statusOptions = useMemo(
+    () => buildFilterOptions(STATUS_OPTIONS, bugs, (bug) => bug.status),
+    [bugs],
+  );
+  const priorityOptions = useMemo(
+    () => buildFilterOptions(PRIORITY_OPTIONS, bugs, (bug) => bug.priority),
+    [bugs],
+  );
+  const sourceOptions = useMemo(
+    () => buildFilterOptions(BUG_SOURCE_OPTIONS, bugs, (bug) => bug.source),
+    [bugs],
+  );
+  const tagOptions = useMemo(() => {
+    const tags = availableTags ?? [];
+    return tags.map((tag) => ({
+      value: tag,
+      label: tag,
+      count: bugs.filter((bug) => bug.metadata?.ui?.tags?.includes(tag)).length,
+    }));
+  }, [availableTags, bugs]);
+
+  const displayRows = table.getRowModel().rows;
+  const displayBugs = displayRows.map((row) => row.original);
+  const hasActiveFilters = columnFilters.length > 0;
+  const hasCanonicalSorting =
+    sorting.length === 0 || (sorting.length === 1 && sorting[0]?.id === 'order' && sorting[0].desc === false);
+  const canReorder = !hasActiveFilters && hasCanonicalSorting;
+
+  const handleToggleExpanded = useCallback((bugId: string) => {
+    setExpandedBugId((current) => current === bugId ? null : bugId);
+  }, []);
 
   // Memoize bug lookup map for O(1) access
   const bugMap = useMemo(() => {
@@ -153,7 +280,7 @@ export function BugGrid({
   }, [bugs]);
 
   // Memoize bug IDs for SortableContext
-  const bugIds = useMemo(() => bugs.map(t => t.id), [bugs]);
+  const bugIds = displayRows.map((row) => row.id);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -175,12 +302,14 @@ export function BugGrid({
   };
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (!canReorder) return;
     setActiveId(event.active.id as string);
     setHoverIndex(null);
     hoverIndexRef.current = null;
-  }, []);
+  }, [canReorder]);
 
   const handleDragOver = useCallback((event: DragOverEvent) => {
+    if (!canReorder) return;
     const { over } = event;
     if (!over) return;
 
@@ -191,7 +320,7 @@ export function BugGrid({
       hoverIndexRef.current = overIndex;
       setHoverIndex(overIndex);
     }
-  }, [bugIndexMap]);
+  }, [bugIndexMap, canReorder]);
 
   useEffect(() => {
     if (draftIndex !== null) {
@@ -201,6 +330,8 @@ export function BugGrid({
 
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
+    const hoverIndexAtDrop = hoverIndexRef.current;
+
     setActiveId(null);
     setHoverIndex(null);
     hoverIndexRef.current = null;
@@ -216,7 +347,7 @@ export function BugGrid({
     // Bugs don't have sortOrder yet, use index
     const fromSortOrder = bugIndexMap.get(active.id as string) ?? 0;
     
-    const finalIndex = hoverIndexRef.current ?? bugIndexMap.get(over.id as string) ?? null;
+    const finalIndex = hoverIndexAtDrop ?? bugIndexMap.get(over.id as string) ?? null;
     if (finalIndex === null) return;
 
     // The toSortOrder should be the visual index position
@@ -252,7 +383,6 @@ export function BugGrid({
     }),
   };
 
-  const displayBugs = bugs;
   const sortableItems = bugIds;
 
   return (
@@ -264,36 +394,53 @@ export function BugGrid({
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className={cn(
-          'mx-2 grid min-w-[860px] items-center gap-3 border-b border-border px-3 py-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground',
-          BUG_GRID_COLUMNS_CLASS,
-        )}>
-          <div className="text-right pr-1">Order</div>
-          <div className="flex items-center justify-end">
-            <Button
-              isIconOnly
-              size="sm"
-              variant="ghost"
-              className="h-5 w-5"
-              onPress={() => setIsExpanded(!isExpanded)}
-              aria-label={isExpanded ? "Collapse rows" : "Expand rows"}
-            >
-              {isExpanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-            </Button>
-          </div>
-          <div>Title</div>
-          <div>Status</div>
-          <div>Priority</div>
-          <div>Type</div>
-          <div>Tags</div>
-          <div className="text-right">Actions</div>
+        <div
+          className={cn(
+            'mx-2 grid min-w-[1220px] items-center gap-2 border-b border-border px-3 py-2.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground',
+            BUG_GRID_COLUMNS_CLASS,
+          )}
+        >
+          <div aria-hidden="true" />
+          <SortableGridHeader
+            label="Order"
+            column={table.getColumn('order')!}
+            className="justify-end"
+          />
+          <div aria-hidden="true" />
+          <SortableGridHeader label="Title" column={table.getColumn('title')!} />
+          <SortableGridHeader label="Created" column={table.getColumn('createdAt')!} />
+          <FilterableGridHeader
+            label="Status"
+            column={table.getColumn('status')!}
+            options={statusOptions}
+          />
+          <FilterableGridHeader
+            label="Priority"
+            column={table.getColumn('priority')!}
+            options={priorityOptions}
+          />
+          <FilterableGridHeader
+            label="Type"
+            column={table.getColumn('source')!}
+            options={sourceOptions}
+          />
+          <FilterableGridHeader
+            label="Tags"
+            column={table.getColumn('tags')!}
+            options={tagOptions}
+          />
+          <div className="border-l border-border/60 pl-3 text-right">Actions</div>
         </div>
         <div className="flex-1 overflow-y-auto p-2">
-          {displayBugs.length === 0 ? (
-            <div className="p-6 text-center text-muted-foreground text-sm">No bugs found</div>
+          {displayRows.length === 0 ? (
+            <div className="p-6 text-center text-muted-foreground text-sm">
+              {bugs.length > 0 ? 'No bugs match the selected column filters' : 'No bugs found'}
+            </div>
           ) : (
             <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-              {displayBugs.map((bug, index) => (
+              {displayRows.map((row, index) => {
+                const bug = row.original;
+                return (
                 <div key={bug.id} className="relative -mt-2">
                    <InsertRow
                      isActive={activeId !== null && hoverIndex === index}
@@ -306,9 +453,12 @@ export function BugGrid({
                   <SortableBugRow
                     bug={bug}
                     index={index}
+                    orderNumber={row.index + 1}
+                    canReorder={canReorder}
+                    onToggleExpanded={handleToggleExpanded}
                     availableTags={availableTags}
                     isSelected={bug.id === selectedBugId}
-                    isExpanded={isExpanded}
+                    isExpanded={expandedBugId === bug.id}
                     onOpenDetails={onOpenDetails}
                     onUpdateBug={onUpdateBug}
                     onUpdateUi={onUpdateUi}
@@ -316,7 +466,8 @@ export function BugGrid({
                     onReorderToSortOrder={handleReorderToSortOrder}
                   />
                 </div>
-              ))}
+                );
+              })}
                <InsertRow
                  isActive={activeId !== null && hoverIndex === displayBugs.length}
                  onClick={(e) => {
@@ -334,8 +485,11 @@ export function BugGrid({
               <BugGridRow
                 bug={activeBug}
                 index={0}
+                orderNumber={(bugIndexMap.get(activeBug.id) ?? 0) + 1}
+                canReorder={canReorder}
+                onToggleExpanded={handleToggleExpanded}
                 availableTags={availableTags ?? []}
-                isExpanded={isExpanded}
+                isExpanded={false}
                 onOpenDetails={onOpenDetails}
                 onUpdateBug={onUpdateBug}
                 onUpdateUi={onUpdateUi}

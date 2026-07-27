@@ -1,3 +1,11 @@
+export interface RepositoryCheckoutCommit {
+  hash: string;
+  shortHash: string;
+  author: string;
+  date: string;
+  subject: string;
+}
+
 export interface RepositoryOnboardingStatus {
   ready: boolean;
   projectDir: string;
@@ -5,6 +13,10 @@ export interface RepositoryOnboardingStatus {
     checkedOut: boolean;
     remoteUrl: string | null;
     branch: string | null;
+    commit: RepositoryCheckoutCommit | null;
+    trackedFileCount: number | null;
+    dirtyFileCount: number | null;
+    topLevelEntries: string[];
   };
   ssh: {
     configured: boolean;

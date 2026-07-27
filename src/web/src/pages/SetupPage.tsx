@@ -1,25 +1,23 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Check, CircleHelp, FileCode2, FilePlus2, FileText, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { api, type SetupTemplateFile, type ProjectPlanDocument, type ProjectSetupStatus } from '@/lib';
+import { api, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
+
+import type { FileTreeRowDecoration } from '@pierre/trees';
 import './setup-page.css';
 
-type SetupFileKind = 'plan' | 'template';
-
-const FALLBACK_ARM_TEMPLATE = `arm:
-  name: new-arm
-  domain: general
-  harness: opencode-api
-
-`;
+const EDITABLE_FILE = /\.(md|markdown|txt)$/i;
+const MARKDOWN_FILE = /\.(md|markdown)$/i;
+const PLAN_DIRECTORY = '.project';
+const TEMPLATE_DIRECTORY = '.coleo/templates';
+const EXPANDED_DIRECTORIES = [PLAN_DIRECTORY, '.coleo', TEMPLATE_DIRECTORY] as const;
 
 interface EditorState {
-  kind: SetupFileKind;
   path: string;
   content: string;
   expectedHash: string | null;
@@ -32,7 +30,6 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
     ?? status.projectDocuments[0];
   if (selected) {
     return {
-      kind: 'plan',
       path: selected.path,
       content: selected.content,
       expectedHash: selected.contentHash,
@@ -40,45 +37,30 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
     };
   }
   return {
-    kind: 'plan',
-    path: '.project/plan.md',
+    path: `${PLAN_DIRECTORY}/plan.md`,
     content: status.defaultContent,
     expectedHash: null,
     savedContent: '',
   };
 }
 
-function editorFromDocument(document: ProjectPlanDocument): EditorState {
-  return {
-    kind: 'plan',
-    path: document.path,
-    content: document.content,
-    expectedHash: document.contentHash,
-    savedContent: document.content,
-  };
-}
-
-function editorFromTemplate(template: SetupTemplateFile): EditorState {
-  return {
-    kind: 'template',
-    path: template.path,
-    content: template.content,
-    expectedHash: template.contentHash,
-    savedContent: template.content,
-  };
-}
-
-function nextTemplatePath(templates: SetupTemplateFile[]): string {
-  const paths = new Set(templates.map((template) => template.path));
-  let suffix = 1;
-  while (paths.has(`.coleo/templates/new-arm${suffix === 1 ? '' : `-${suffix}`}.yml`)) suffix += 1;
-  return `.coleo/templates/new-arm${suffix === 1 ? '' : `-${suffix}`}.yml`;
-}
-
 function formatLastUpdated(value: string | undefined): string {
   if (!value) return 'Not saved yet';
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? 'Unknown' : date.toLocaleString();
+}
+
+function decorateSetupPath(path: string): FileTreeRowDecoration | null {
+  if (path === PLAN_DIRECTORY || path.startsWith(`${PLAN_DIRECTORY}/`)) {
+    return { text: '●', title: 'coleo-plan' };
+  }
+  if (path === TEMPLATE_DIRECTORY || path.startsWith(`${TEMPLATE_DIRECTORY}/`)) {
+    return { text: '●', title: 'coleo-template' };
+  }
+  if (path === '.coleo' || path.startsWith('.coleo/')) {
+    return { text: '●', title: 'coleo-config' };
+  }
+  return null;
 }
 
 function MarkdownPreview({ content }: { content: string }) {
@@ -121,14 +103,18 @@ export function SetupPage() {
   const openWorkspaceRoute = useWorkspaceOpenRoute();
   const [status, setStatus] = useState<ProjectSetupStatus | null>(null);
   const [editor, setEditor] = useState<EditorState | null>(null);
-  const [activeKind, setActiveKind] = useState<SetupFileKind>('plan');
   const [loading, setLoading] = useState(true);
+  const [editorLoading, setEditorLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
   const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number } | null>(null);
+  const [openedModifiedAt, setOpenedModifiedAt] = useState<Map<string, string>>(() => new Map());
+  const requestedPathRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -138,8 +124,7 @@ export function SetupPage() {
       const nextStatus: ProjectSetupStatus = {
         ...response,
         projectDocuments: response.projectDocuments ?? [],
-        templateFiles: response.templateFiles ?? [],
-        defaultTemplateContent: response.defaultTemplateContent ?? FALLBACK_ARM_TEMPLATE,
+        projectTree: response.projectTree ?? [],
       };
       setStatus(nextStatus);
       setEditor(editorFromStatus(nextStatus));
@@ -156,68 +141,79 @@ export function SetupPage() {
   }, [load]);
 
   const dirty = useMemo(() => editor ? editor.content !== editor.savedContent : false, [editor]);
-  const activeFiles = useMemo(
-    () => activeKind === 'plan' ? status?.projectDocuments ?? [] : status?.templateFiles ?? [],
-    [activeKind, status],
-  );
-  const activePaths = useMemo(() => activeFiles.map((file) => file.path), [activeFiles]);
+  const treePaths = useMemo(() => {
+    const paths = new Set(status?.projectTree ?? []);
+    if (editor && !paths.has(editor.path)) paths.add(editor.path);
+    return [...paths].sort();
+  }, [status, editor]);
+  const modifiedAtByPath = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const document of status?.projectDocuments ?? []) map.set(document.path, document.modifiedAt);
+    for (const [path, modifiedAt] of openedModifiedAt) map.set(path, modifiedAt);
+    return map;
+  }, [status, openedModifiedAt]);
 
   const dismissHelp = () => {
     dismissProjectSetupHelp();
     setHelpOpen(false);
   };
 
-  const switchKind = (kind: SetupFileKind) => {
-    if (!status || kind === activeKind) return;
-    if (dirty && !window.confirm('Discard your unsaved edits and switch file groups?')) return;
-    setActiveKind(kind);
-    setEditor(kind === 'plan'
-      ? editorFromStatus(status)
-      : status.templateFiles[0]
-        ? editorFromTemplate(status.templateFiles[0])
-        : {
-            kind: 'template',
-            path: nextTemplatePath(status.templateFiles),
-            content: status.defaultTemplateContent,
-            expectedHash: null,
-            savedContent: '',
-          });
+  const loadFileIntoEditor = useCallback(async (path: string) => {
+    requestedPathRef.current = path;
+    setEditorLoading(true);
+    try {
+      const { file } = await api.getProjectSetupFile(path);
+      if (requestedPathRef.current !== path) return;
+      setOpenedModifiedAt((current) => new Map(current).set(file.path, file.modifiedAt));
+      setEditor({
+        path: file.path,
+        content: file.content,
+        expectedHash: file.contentHash,
+        savedContent: file.content,
+      });
+    } catch (err) {
+      if (requestedPathRef.current === path) {
+        setError(err instanceof Error ? err.message : 'Failed to open the file');
+      }
+    } finally {
+      if (requestedPathRef.current === path) setEditorLoading(false);
+    }
+  }, []);
+
+  const selectPath = (path: string): boolean => {
+    if (!editor) return false;
+    if (!EDITABLE_FILE.test(path)) {
+      setHint('Only .md and .txt files can be viewed and edited here. Every other file is listed so you can verify the checkout downloaded completely.');
+      return false;
+    }
+    if (path === editor.path) return true;
+    if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return false;
+    setHint(null);
     setResult(null);
     setError(null);
+    void loadFileIntoEditor(path);
+    return true;
   };
 
-  const selectCandidate = (candidate: ProjectPlanDocument | SetupTemplateFile): boolean => {
-    if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return false;
-    setEditor('format' in candidate ? editorFromTemplate(candidate) : editorFromDocument(candidate));
+  const selectDocument = (path: string) => {
+    if (!editor) return;
+    if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return;
+    setHint(null);
     setResult(null);
     setError(null);
-    return true;
+    void loadFileIntoEditor(path);
   };
 
   const createPlan = () => {
     if (!status) return;
     if (dirty && !window.confirm('Discard your unsaved edits and start a new plan?')) return;
     setEditor({
-      kind: 'plan',
-      path: '.project/plan.md',
+      path: `${PLAN_DIRECTORY}/plan.md`,
       content: status.defaultContent,
       expectedHash: status.canonicalPlan?.contentHash ?? null,
       savedContent: status.canonicalPlan?.content ?? '',
     });
-    setResult(null);
-    setError(null);
-  };
-
-  const createTemplate = () => {
-    if (!status) return;
-    if (dirty && !window.confirm('Discard your unsaved edits and start a new template?')) return;
-    setEditor({
-      kind: 'template',
-      path: nextTemplatePath(status.templateFiles),
-      content: status.defaultTemplateContent,
-      expectedHash: null,
-      savedContent: '',
-    });
+    setHint(null);
     setResult(null);
     setError(null);
   };
@@ -231,7 +227,7 @@ export function SetupPage() {
         path: editor.path,
         content: editor.content,
         expectedHash: editor.expectedHash,
-        kind: editor.kind,
+        kind: 'document',
       });
       setEditor((current) => current ? {
         ...current,
@@ -240,30 +236,25 @@ export function SetupPage() {
       } : current);
       setStatus((current) => {
         if (!current) return current;
-        if (editor.kind === 'plan') {
-          const file = { ...response.file, recentlyChanged: true };
-          return {
-            ...current,
-            canonicalPlan: file.path === '.project/plan.md' ? file : current.canonicalPlan,
-            projectDocuments: [...current.projectDocuments.filter((entry) => entry.path !== file.path), file]
-              .sort((left, right) => left.path.localeCompare(right.path)),
-          };
-        }
-        const format = response.file.path.endsWith('.toml')
-          ? 'toml' as const
-          : response.file.path.endsWith('.jinja')
-            ? 'jinja' as const
-            : 'yaml' as const;
-        const file = { ...response.file, format };
+        const file = response.file;
+        const existingDocument = current.projectDocuments.find((entry) => entry.path === file.path);
+        const projectDocuments = existingDocument
+          ? current.projectDocuments.map((entry) => entry.path === file.path ? { ...file, recentlyChanged: true } : entry)
+          : current.projectDocuments;
+        const projectTree = current.projectTree.includes(file.path)
+          ? current.projectTree
+          : [...current.projectTree, file.path].sort();
         return {
           ...current,
-          templateFiles: [...current.templateFiles.filter((entry) => entry.path !== file.path), file]
-            .sort((left, right) => left.path.localeCompare(right.path)),
+          canonicalPlan: file.path === `${PLAN_DIRECTORY}/plan.md` ? file : current.canonicalPlan,
+          projectDocuments,
+          projectTree,
         };
       });
+      setOpenedModifiedAt((current) => new Map(current).set(response.file.path, response.file.modifiedAt));
       return true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : `Failed to save the ${editor.kind}`);
+      setError(err instanceof Error ? err.message : 'Failed to save the file');
       return false;
     } finally {
       setSaving(false);
@@ -276,7 +267,7 @@ export function SetupPage() {
   };
 
   const prepare = async () => {
-    if (!editor || editor.kind !== 'plan') return;
+    if (!editor) return;
     setPreparing(true);
     setError(null);
     setResult(null);
@@ -291,7 +282,6 @@ export function SetupPage() {
         taskCount: response.taskCount,
       });
       setEditor({
-        kind: 'plan',
         path: response.canonicalPlan.path,
         content: response.canonicalPlan.content,
         expectedHash: response.canonicalPlan.contentHash,
@@ -333,34 +323,14 @@ export function SetupPage() {
     );
   }
 
-  const selectPath = (path: string): boolean => {
-    const file = activeFiles.find((entry) => entry.path === path);
-    return file ? selectCandidate(file) : false;
-  };
+  const isMarkdown = MARKDOWN_FILE.test(editor.path);
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
       <div className="setup-page-toolbar">
-        <div className="flex items-center gap-1" role="tablist" aria-label="Setup file group">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeKind === 'plan'}
-            onClick={() => switchKind('plan')}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'plan' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
-          >
-            <FileText className="h-3.5 w-3.5" /> Project plans
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeKind === 'template'}
-            onClick={() => switchKind('template')}
-            className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors ${activeKind === 'template' ? 'border-accent/50 bg-accent/10 text-accent' : 'border-transparent text-muted-foreground hover:bg-surface-secondary hover:text-foreground'}`}
-          >
-            <FileCode2 className="h-3.5 w-3.5" /> Templates
-          </button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {treePaths.length} files in the project checkout
+        </p>
 
         <div className="setup-toolbar-actions">
           <button
@@ -389,7 +359,7 @@ export function SetupPage() {
             {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
-          {activeKind === 'plan' ? (
+          {isMarkdown ? (
             <button
               type="button"
               onClick={() => void prepare()}
@@ -407,8 +377,11 @@ export function SetupPage() {
         <div className="setup-help-bar" role="status">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
           <p className="min-w-0 flex-1">
-            Choose a plan or template from the tree, edit it, then save. Preparing a plan creates project tasks;
-            Arm YAML templates appear when spawning an Arm, while Brain Jinja prompts and legacy TOML templates are editable here.
+            The tree shows the entire project checkout so you can verify every file downloaded. Only .md and .txt
+            files open for editing. <span className="text-accent">●</span> marks <code>{PLAN_DIRECTORY}/</code> plan files,{' '}
+            <span className="text-success">●</span> marks <code>{TEMPLATE_DIRECTORY}/</code> Arm templates, and{' '}
+            <span className="text-warning">●</span> marks the rest of <code>.coleo/</code> configuration.
+            Preparing a plan creates project tasks.
           </p>
           <button
             type="button"
@@ -426,31 +399,33 @@ export function SetupPage() {
         <aside className="setup-file-sidebar">
           <section className="setup-file-browser">
             <div>
-              {activeKind === 'plan' && status.projectDocuments.length === 0 ? (
+              {treePaths.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  No project documents were found. Start a new plan and write in plain language.
-                </p>
-              ) : activeKind === 'template' && status.templateFiles.length === 0 ? (
-                <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  No templates were found. Create an Arm template to prefill settings when spawning an Arm.
+                  The project directory is empty. Clone a repository or start a new plan to get going.
                 </p>
               ) : (
                 <div className="setup-file-tree-container">
                   <SetupFileTree
-                    key={activeKind}
-                    ariaLabel={activeKind === 'plan' ? 'Project plan files' : 'Coleo template files'}
-                    paths={activePaths}
+                    ariaLabel="Project checkout files"
+                    paths={treePaths}
                     selectedPath={editor.path}
                     onSelect={selectPath}
+                    expandedPaths={EXPANDED_DIRECTORIES}
+                    decoratePath={decorateSetupPath}
                   />
                 </div>
               )}
             </div>
-            {activeKind === 'plan' ? (
+            {hint ? (
+              <p className="mt-2 rounded-md border border-border bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground" role="status">
+                {hint}
+              </p>
+            ) : null}
+            {status.projectDocuments.some((document) => document.recentlyChanged) ? (
               <div className="setup-recent-documents" aria-label="Recently changed project documents">
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recently changed</p>
                 {status.projectDocuments.filter((document) => document.recentlyChanged).slice(0, 5).map((document) => (
-                  <button key={document.path} type="button" onClick={() => selectCandidate(document)} className="block w-full truncate rounded px-2 py-1 text-left text-xs text-accent hover:bg-accent/10">
+                  <button key={document.path} type="button" onClick={() => selectDocument(document.path)} className="block w-full truncate rounded px-2 py-1 text-left text-xs text-accent hover:bg-accent/10">
                     {document.path.replace('.project/', '')}
                   </button>
                 ))}
@@ -458,10 +433,10 @@ export function SetupPage() {
             ) : null}
             <button
               type="button"
-              onClick={activeKind === 'plan' ? createPlan : createTemplate}
+              onClick={createPlan}
               className="mt-1 inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
             >
-              <FilePlus2 className="h-3.5 w-3.5" /> {activeKind === 'plan' ? 'New plan' : 'New Arm template'}
+              <FilePlus2 className="h-3.5 w-3.5" /> New plan
             </button>
           </section>
 
@@ -471,32 +446,48 @@ export function SetupPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
-              {activeKind === 'plan' ? <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(status.projectDocuments.find((document) => document.path === editor.path)?.modifiedAt)}</p> : null}
+              <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(modifiedAtByPath.get(editor.path))}</p>
             </div>
-            <span className={`rounded px-2 py-0.5 text-[11px] ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
-              {dirty ? 'Unsaved changes' : 'Saved'}
-            </span>
+            <div className="flex items-center gap-2">
+              {isMarkdown ? (
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen((current) => !current)}
+                  aria-expanded={previewOpen}
+                  title={previewOpen ? 'Hide markdown preview' : 'Show markdown preview'}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
+                >
+                  {previewOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  Preview
+                </button>
+              ) : null}
+              <span className={`rounded px-2 py-0.5 text-[11px] ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
+                {dirty ? 'Unsaved changes' : 'Saved'}
+              </span>
+            </div>
           </div>
 
-          <div className="setup-document-panes mt-2">
+          <div className={`setup-document-panes mt-2 ${previewOpen && isMarkdown ? '' : 'setup-document-panes--single'}`}>
+          {editorLoading ? (
+            <div className="flex min-h-[16rem] items-center justify-center text-sm text-muted-foreground">
+              <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Opening file…
+            </div>
+          ) : (
           <textarea
-            aria-label={activeKind === 'plan'
-              ? 'Project plan content'
-              : editor.path.endsWith('.jinja')
-                ? 'Brain prompt template content'
-                : 'Arm template content'}
+            aria-label={MARKDOWN_FILE.test(editor.path) ? 'Markdown file content' : 'Text file content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
             className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
             spellCheck
           />
-          {activeKind === 'plan' ? <MarkdownPreview content={editor.content} /> : null}
+          )}
+          {previewOpen && isMarkdown && !editorLoading ? <MarkdownPreview content={editor.content} /> : null}
           </div>
 
           {error ? (
             <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
           ) : null}
-          {activeKind === 'plan' && result ? (
+          {result ? (
             <div className="mt-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
               <div className="flex items-start gap-2">
                 <Check className="mt-0.5 h-4 w-4 shrink-0" />
@@ -518,7 +509,7 @@ export function SetupPage() {
               </div>
             </div>
           ) : null}
-          {activeKind === 'plan' && !result && status.completed ? (
+          {!result && status.completed ? (
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
               <div className="flex items-center gap-2 text-success">
                 <Check className="h-4 w-4" />
