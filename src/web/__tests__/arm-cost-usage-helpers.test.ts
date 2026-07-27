@@ -3,10 +3,11 @@ import {
   COST_POLL_INTERVAL_MS,
   COST_RATE_WINDOW_MS,
   COST_WINDOW_MS,
-  appendCostSample,
   buildCostSamplesFromMessages,
   computeCostRatePerHour,
+  mergeCostSamples,
   parseMessageTimestamp,
+  withCumulativeCost,
   type CostSample,
 } from "../src/components/arm-cost-usage-helpers";
 
@@ -36,9 +37,10 @@ describe("ArmCostUsageChart helpers", () => {
     ];
     const samples = buildCostSamplesFromMessages(messages);
     expect(samples).toHaveLength(3);
-    expect(samples[0]!.cumulativeCost).toBeCloseTo(0.001, 6);
-    expect(samples[1]!.cumulativeCost).toBeCloseTo(0.003, 6);
-    expect(samples[2]!.cumulativeCost).toBeCloseTo(0.007, 6);
+    const cumulative = withCumulativeCost(samples);
+    expect(cumulative[0]!.cumulativeCost).toBeCloseTo(0.001, 6);
+    expect(cumulative[1]!.cumulativeCost).toBeCloseTo(0.003, 6);
+    expect(cumulative[2]!.cumulativeCost).toBeCloseTo(0.007, 6);
   });
 
   it("skips messages with zero or undefined cost", () => {
@@ -49,91 +51,90 @@ describe("ArmCostUsageChart helpers", () => {
     ];
     const samples = buildCostSamplesFromMessages(messages);
     expect(samples).toHaveLength(1);
-    expect(samples[0]!.cumulativeCost).toBeCloseTo(0.003, 6);
-  });
-
-  it("appends new samples and dedups near-duplicates", () => {
-    const now = Date.now();
-    let samples: CostSample[] = [];
-    samples = appendCostSample(samples, {
-      timestamp: now,
-      cumulativeCost: 0.1,
-      messageCost: 0.1,
-      inputTokens: 10,
-      outputTokens: 5,
-    });
-    samples = appendCostSample(samples, {
-      timestamp: now + 50,
-      cumulativeCost: 0.1,
-      messageCost: 0.1,
-      inputTokens: 10,
-      outputTokens: 5,
-    });
-    expect(samples).toHaveLength(1);
-  });
-
-  it("prunes samples older than the 30-minute window", () => {
-    const now = Date.now();
-    const oldSample: CostSample = {
-      timestamp: now - COST_WINDOW_MS - 60_000,
-      cumulativeCost: 0.05,
-      messageCost: 0.05,
-      inputTokens: 1,
-      outputTokens: 1,
-    };
-    const freshSample: CostSample = {
-      timestamp: now,
-      cumulativeCost: 0.2,
-      messageCost: 0.2,
-      inputTokens: 2,
-      outputTokens: 1,
-    };
-    let samples: CostSample[] = [];
-    samples = appendCostSample(samples, oldSample);
-    samples = appendCostSample(samples, freshSample);
-    expect(samples.some((s) => s.cumulativeCost === 0.05)).toBe(false);
-    expect(samples.some((s) => s.cumulativeCost === 0.2)).toBe(true);
+    const cumulative = withCumulativeCost(samples);
+    expect(cumulative[0]!.cumulativeCost).toBeCloseTo(0.003, 6);
   });
 
   it("computes a positive cost rate when spend is increasing", () => {
     const now = Date.now();
     const samples: CostSample[] = [
-      { timestamp: now - 60_000, cumulativeCost: 0.05, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
-      { timestamp: now, cumulativeCost: 0.25, messageCost: 0.2, inputTokens: 10, outputTokens: 5 },
+      { messageId: "m1", timestamp: now - 60_000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
+      { messageId: "m2", timestamp: now, messageCost: 0.2, inputTokens: 10, outputTokens: 5 },
     ];
-    const rate = computeCostRatePerHour(samples, now);
+    const cumulative = withCumulativeCost(samples);
+    const rate = computeCostRatePerHour(cumulative, now);
     expect(rate).toBeGreaterThan(0);
   });
 
   it("returns zero rate when there are fewer than two qualifying samples", () => {
     const now = Date.now();
     expect(computeCostRatePerHour([], now)).toBe(0);
-    expect(
-      computeCostRatePerHour(
-        [{ timestamp: now, cumulativeCost: 0.1, messageCost: 0.1, inputTokens: 1, outputTokens: 1 }],
-        now,
-      ),
-    ).toBe(0);
+    const single: CostSample[] = [
+      { messageId: "m1", timestamp: now, messageCost: 0.1, inputTokens: 1, outputTokens: 1 },
+    ];
+    expect(computeCostRatePerHour(withCumulativeCost(single), now)).toBe(0);
   });
 
   it("returns zero rate when no samples are within the recent window", () => {
     const now = Date.now();
     const samples: CostSample[] = [
       {
+        messageId: "m1",
         timestamp: now - COST_RATE_WINDOW_MS - 60_000,
-        cumulativeCost: 0.05,
         messageCost: 0.05,
         inputTokens: 1,
         outputTokens: 0,
       },
       {
+        messageId: "m2",
         timestamp: now - COST_RATE_WINDOW_MS - 30_000,
-        cumulativeCost: 0.25,
         messageCost: 0.2,
         inputTokens: 10,
         outputTokens: 5,
       },
     ];
-    expect(computeCostRatePerHour(samples, now)).toBe(0);
+    expect(computeCostRatePerHour(withCumulativeCost(samples), now)).toBe(0);
+  });
+
+  it("withCumulativeCost totals spend across all samples", () => {
+    const now = Date.now();
+    const samples: CostSample[] = [
+      { messageId: "a", timestamp: now - 2000, messageCost: 0.1, inputTokens: 1, outputTokens: 0 },
+      { messageId: "b", timestamp: now - 1000, messageCost: 0.2, inputTokens: 2, outputTokens: 1 },
+      { messageId: "c", timestamp: now, messageCost: 0.4, inputTokens: 4, outputTokens: 2 },
+    ];
+    const cumulative = withCumulativeCost(samples);
+    expect(cumulative).toHaveLength(3);
+    expect(cumulative[0]!.cumulativeCost).toBeCloseTo(0.1, 6);
+    expect(cumulative[1]!.cumulativeCost).toBeCloseTo(0.3, 6);
+    expect(cumulative[2]!.cumulativeCost).toBeCloseTo(0.7, 6);
+  });
+
+  it("withCumulativeCost orders samples by timestamp before totalling", () => {
+    const now = Date.now();
+    const samples: CostSample[] = [
+      { messageId: "later", timestamp: now + 1000, messageCost: 0.5, inputTokens: 0, outputTokens: 0 },
+      { messageId: "earlier", timestamp: now - 1000, messageCost: 0.1, inputTokens: 0, outputTokens: 0 },
+    ];
+    const cumulative = withCumulativeCost(samples);
+    expect(cumulative[0]!.messageId).toBe("earlier");
+    expect(cumulative[1]!.messageId).toBe("later");
+    expect(cumulative[1]!.cumulativeCost).toBeCloseTo(0.6, 6);
+  });
+
+  it("mergeCostSamples dedups by messageId, favouring the fresh batch", () => {
+    const stored: CostSample[] = [
+      { messageId: "m1", timestamp: 1000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
+      { messageId: "m2", timestamp: 2000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
+    ];
+    const fresh: CostSample[] = [
+      { messageId: "m2", timestamp: 2000, messageCost: 0.08, inputTokens: 2, outputTokens: 1 },
+      { messageId: "m3", timestamp: 3000, messageCost: 0.04, inputTokens: 1, outputTokens: 0 },
+    ];
+    const merged = mergeCostSamples(stored, fresh);
+    expect(merged).toHaveLength(3);
+    const m2 = merged.find((s) => s.messageId === "m2")!;
+    expect(m2.messageCost).toBe(0.08);
+    expect(merged.some((s) => s.messageId === "m3")).toBe(true);
   });
 });

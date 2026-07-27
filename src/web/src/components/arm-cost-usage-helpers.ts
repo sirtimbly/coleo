@@ -8,10 +8,39 @@ export const MAX_STORED_SAMPLES = 240;
 
 export interface CostSample {
   timestamp: number;
-  cumulativeCost: number;
   messageCost: number;
   inputTokens: number;
   outputTokens: number;
+  messageId: string;
+}
+
+export function cumulativeCostAt(samples: CostSample[], index: number): number {
+  let total = 0;
+  for (let i = 0; i <= index; i++) {
+    total += samples[i]!.messageCost;
+  }
+  return total;
+}
+
+export function withCumulativeCost(samples: CostSample[]): Array<CostSample & { cumulativeCost: number }> {
+  let running = 0;
+  return samples
+    .slice()
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .map((sample) => {
+      running += sample.messageCost;
+      return { ...sample, cumulativeCost: running };
+    });
+}
+
+export function mergeCostSamples(
+  stored: CostSample[],
+  freshBuild: Array<Omit<CostSample, 'cumulativeCost'>>,
+): CostSample[] {
+  const byMessage = new Map<string, CostSample>();
+  for (const sample of stored) byMessage.set(sample.messageId, sample);
+  for (const sample of freshBuild) byMessage.set(sample.messageId, sample);
+  return Array.from(byMessage.values());
 }
 
 export function getStorageKey(armId: string): string {
@@ -44,22 +73,6 @@ export function parseMessageTimestamp(timeValue: JsonValue | undefined): number 
   return date.getTime();
 }
 
-export function appendCostSample(prev: CostSample[], sample: CostSample): CostSample[] {
-  const cutoff = Date.now() - COST_WINDOW_MS;
-  const trimmed = prev.filter((s) => s.timestamp >= cutoff);
-  if (trimmed.length > 0) {
-    const last = trimmed[trimmed.length - 1]!;
-    if (
-      Math.abs(last.timestamp - sample.timestamp) < 100 &&
-      last.cumulativeCost === sample.cumulativeCost &&
-      last.messageCost === sample.messageCost
-    ) {
-      return trimmed;
-    }
-  }
-  return [...trimmed, sample].slice(-MAX_STORED_SAMPLES);
-}
-
 export function buildCostSamplesFromMessages(
   messages: Array<{
     info: {
@@ -70,7 +83,7 @@ export function buildCostSamplesFromMessages(
     };
   }>,
 ): CostSample[] {
-  const parsed: Array<CostSample & { messageId: string }> = [];
+  const parsed: CostSample[] = [];
   for (const message of messages) {
     const ts = parseMessageTimestamp(message.info.time);
     const cost = typeof message.info.cost === 'number' ? message.info.cost : 0;
@@ -79,36 +92,33 @@ export function buildCostSamplesFromMessages(
       messageId: message.info.id,
       timestamp: ts,
       messageCost: cost,
-      cumulativeCost: 0,
       inputTokens: message.info.tokens?.input ?? 0,
       outputTokens: message.info.tokens?.output ?? 0,
     });
   }
-
-  parsed.sort((a, b) => a.timestamp - b.timestamp);
-  let running = 0;
-  return parsed.map((sample) => {
-    running += sample.messageCost;
-    return {
-      timestamp: sample.timestamp,
-      cumulativeCost: running,
-      messageCost: sample.messageCost,
-      inputTokens: sample.inputTokens,
-      outputTokens: sample.outputTokens,
-    };
-  });
+  return parsed;
 }
 
-export function computeCostRatePerHour(samples: CostSample[], referenceTime = Date.now()): number {
+export function computeCostRatePerHour(
+  samples: Array<CostSample & { cumulativeCost?: number }>,
+  referenceTime = Date.now(),
+): number {
   if (samples.length < 2) return 0;
   const cutoff = referenceTime - COST_RATE_WINDOW_MS;
-  const qualifyingSamples = samples.filter((s) => s.timestamp >= cutoff);
-  if (qualifyingSamples.length < 2) return 0;
-  const first = qualifyingSamples[0]!;
-  const last = qualifyingSamples[qualifyingSamples.length - 1]!;
-  const elapsedMs = last.timestamp - first.timestamp;
+  const qualifyingIndexes: number[] = [];
+  samples.forEach((sample, index) => {
+    if (sample.timestamp >= cutoff) qualifyingIndexes.push(index);
+  });
+  if (qualifyingIndexes.length < 2) return 0;
+  const firstIndex = qualifyingIndexes[0]!;
+  const lastIndex = qualifyingIndexes[qualifyingIndexes.length - 1]!;
+  let firstCumulative = samples[firstIndex]!.cumulativeCost;
+  if (firstCumulative === undefined) firstCumulative = cumulativeCostAt(samples, firstIndex);
+  let lastCumulative = samples[lastIndex]!.cumulativeCost;
+  if (lastCumulative === undefined) lastCumulative = cumulativeCostAt(samples, lastIndex);
+  const elapsedMs = samples[lastIndex]!.timestamp - samples[firstIndex]!.timestamp;
   if (elapsedMs <= 0) return 0;
-  const costDelta = last.cumulativeCost - first.cumulativeCost;
+  const costDelta = lastCumulative - firstCumulative;
   if (costDelta <= 0) return 0;
   return costDelta / (elapsedMs / 3_600_000);
 }

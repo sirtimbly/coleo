@@ -9,6 +9,8 @@ import {
   COST_WINDOW_MS,
   getStorageKey,
   MAX_STORED_SAMPLES,
+  mergeCostSamples,
+  withCumulativeCost,
   type CostSample,
 } from './arm-cost-usage-helpers';
 
@@ -72,39 +74,18 @@ export function ArmCostUsageChart({
   const recordSnapshot = useCallback(
     (fresh: CostSample[]) => {
       if (!armId) return;
+      const merged = mergeCostSamples(storedRef.current, fresh);
+      const cutoff = Date.now() - COST_WINDOW_MS;
+      const trimmedAndSorted = merged
+        .filter((s) => s.timestamp >= cutoff)
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .slice(-MAX_STORED_SAMPLES);
+      storedRef.current = trimmedAndSorted;
+      saveStoredSamples(armId, trimmedAndSorted);
+      setSamples(trimmedAndSorted);
       if (fresh.length === 0) {
         setLoading(false);
-        return;
       }
-      const stored = storedRef.current;
-      const storedMap = new Map<number, CostSample>();
-      for (const sample of stored) storedMap.set(sample.timestamp, sample);
-      let base = stored.length === 0 ? 0 : stored[stored.length - 1]!.cumulativeCost;
-      for (const sample of stored) {
-        if (sample.cumulativeCost > base) base = sample.cumulativeCost;
-      }
-      const next: CostSample[] = [];
-      for (const sample of fresh) {
-        const existing = storedMap.get(sample.timestamp);
-        if (existing) {
-          next.push(existing);
-        } else {
-          next.push({
-            ...sample,
-            cumulativeCost: base + sample.cumulativeCost,
-          });
-        }
-      }
-      for (const sample of stored) {
-        if (!next.some((n) => n.timestamp === sample.timestamp)) {
-          next.push(sample);
-        }
-      }
-      next.sort((a, b) => a.timestamp - b.timestamp);
-      const trimmed = next.slice(-MAX_STORED_SAMPLES);
-      storedRef.current = trimmed;
-      saveStoredSamples(armId, trimmed);
-      setSamples(trimmed);
     },
     [armId],
   );
@@ -151,13 +132,15 @@ export function ArmCostUsageChart({
 
   const referenceTime = Date.now();
   const windowStart = referenceTime - COST_WINDOW_MS;
-  const visibleSamples = samples.filter((s) => s.timestamp >= windowStart);
+  const visibleWithCumulative = withCumulativeCost(samples).filter((s) => s.timestamp >= windowStart);
+  const visibleForRate = visibleWithCumulative;
+  const visibleSamples = visibleWithCumulative;
   const maxCumulative = visibleSamples.length === 0
     ? 0
     : Math.max(...visibleSamples.map((s) => s.cumulativeCost));
   const maxBudget = typeof costBudget === 'number' && costBudget > 0 ? costBudget : 0;
   const chartMax = maxBudget > maxCumulative ? maxBudget : maxCumulative * 1.15;
-  const costRatePerHour = computeCostRatePerHour(visibleSamples, referenceTime);
+  const costRatePerHour = computeCostRatePerHour(visibleForRate, referenceTime);
 
   const width = 600;
   const height = 140;
