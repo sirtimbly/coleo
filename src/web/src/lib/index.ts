@@ -40,6 +40,7 @@ export {
   type ArmAnalysisFull,
   type AllArmsAnalysis,
   type EventWindowResponse,
+  type ArmContextResponse,
   type RecentEventsResponse,
   type SearchResult,
   type SearchResponse,

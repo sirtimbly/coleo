@@ -1247,6 +1247,12 @@ class ApiClient {
     );
   }
 
+  async getArmContext(armId: string) {
+    return this.request<ArmContextResponse>(
+      `/arms/${encodeURIComponent(armId)}/context`,
+    );
+  }
+
   async getRecentEvents(options?: { limit?: number; sinceMs?: number }) {
     const query = new URLSearchParams();
     if (options?.limit) query.set('limit', options.limit.toString());
@@ -1903,6 +1909,15 @@ export interface EventWindowResponse {
     firstEventAt: string | null;
     lastEventAt: string | null;
     durationMs: number;
+  };
+}
+
+export interface ArmContextResponse {
+  context: {
+    budget: number;
+    used: number;
+    utilization: number;
+    files: Array<{ path: string; claimedAt: string }>;
   };
 }
 

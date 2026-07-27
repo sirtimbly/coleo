@@ -62,6 +62,7 @@ import {
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
+import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -1790,6 +1791,13 @@ function ArmViewerConsole({
 									armId={selectedArm.id}
 									activities={activities}
 									title="Activity & Efficiency"
+									embedded
+								/>
+							) : null}
+							{selectedArm?.id ? (
+								<ArmContextUsageChart
+									armId={selectedArm.id}
+									title="Context Usage"
 									embedded
 								/>
 							) : null}
