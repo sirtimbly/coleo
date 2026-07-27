@@ -31,10 +31,7 @@ interface ArmContextUsageChartProps {
   armId: string | null;
   title?: string;
   className?: string;
-  /** When set, render without the surrounding Card shell (for embedded use). */
   embedded?: boolean;
-  /** Always available imperative handle for higher-resolution external samples. */
-  registerSamplePush?: (push: ((sample: ContextSample) => void) | null) => void;
 }
 
 function getStorageKey(armId: string): string {
@@ -59,7 +56,6 @@ function saveStoredSamples(armId: string, samples: ContextSample[]): void {
     const payload = samples.slice(-MAX_STORED_SAMPLES);
     localStorage.setItem(getStorageKey(armId), JSON.stringify(payload));
   } catch {
-    // Storage is best-effort; ignore quota/security errors.
     void armId;
   }
 }
@@ -69,7 +65,6 @@ export function ArmContextUsageChart({
   title = 'Context Usage',
   className,
   embedded = false,
-  registerSamplePush,
 }: ArmContextUsageChartProps) {
   const [samples, setSamples] = useState<ContextSample[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,12 +77,6 @@ export function ArmContextUsageChart({
     storedRef.current = appendSample(storedRef.current, sample);
     if (armId) saveStoredSamples(armId, storedRef.current);
   }, [armId]);
-
-  useEffect(() => {
-    if (!registerSamplePush) return;
-    registerSamplePush(recordSample);
-    return () => registerSamplePush(null);
-  }, [recordSample, registerSamplePush]);
 
   useEffect(() => {
     if (!armId) {
@@ -326,6 +315,14 @@ export function ArmContextUsageChart({
                 </text>
               </>
             )}
+            <text x={padLeft} y={height - 6} fill={labelColor} fontSize={10}>
+              {new Date(windowStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </text>
+            <text x={width - padRight} y={height - 6} textAnchor="end" fill={labelColor} fontSize={10}>
+              {visibleSamples.length > 0
+                ? formatTime(visibleSamples[visibleSamples.length - 1]!.timestamp)
+                : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </text>
             {visibleSamples.length === 0 ? null : (
               <>
                 <path d={areaPath} fill={areaFill} />
