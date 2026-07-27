@@ -1,6 +1,9 @@
 import { describe, it, beforeEach, afterEach, expect } from "bun:test";
 import { Hono } from "hono";
 import { Database } from "bun:sqlite";
+import { mkdtemp, readFile, rm, writeFile } from "fs/promises";
+import { tmpdir } from "os";
+import { join } from "path";
 import { createTasksRoutes, type Task } from "../routes/tasks";
 import { HttpError } from "../middleware/error";
 
@@ -574,6 +577,55 @@ describe("tasks API", () => {
        expect(completedBody.task.status).toBe("completed");
 		expect(completedBody.task.completedAt).not.toBeNull();
      });
+
+		it("synchronizes completed, cancelled, and reopened plan task statuses", async () => {
+			const projectRoot = await mkdtemp(join(tmpdir(), "coleo-task-plan-status-"));
+			const previousProjectDir = process.env.COLEO_PROJECT_DIR;
+			const planPath = join(projectRoot, "plan.md");
+			try {
+				process.env.COLEO_PROJECT_DIR = projectRoot;
+				await writeFile(planPath, [
+					"# Plan",
+					"",
+					"## Phase 1: Manual status",
+					"",
+					"### Tasks",
+					"- [ ] Original Subject <!--octopai:task1234-->",
+					"",
+				].join("\n"));
+				db.run(
+					`UPDATE tasks
+					 SET source_type = 'plan', source_ref = ?, plan_line_uid = 'task1234'
+					 WHERE id = 'task-123'`,
+					[`${planPath}:6`],
+				);
+
+				const updateStatus = (status: Task["status"]) => app.request("/api/tasks/task-123", {
+					method: "PATCH",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ status }),
+				});
+
+				expect((await updateStatus("completed")).status).toBe(200);
+				expect(await readFile(planPath, "utf-8")).toContain(
+					"- [x] Original Subject <!--octopai:task1234-->",
+				);
+
+				expect((await updateStatus("cancelled")).status).toBe(200);
+				const cancelledPlan = await readFile(planPath, "utf-8");
+				expect(cancelledPlan).toContain("- [ ] ~~Original Subject~~");
+				expect(cancelledPlan).toContain("<!--octopai:status:cancelled-->");
+
+				expect((await updateStatus("pending")).status).toBe(200);
+				const reopenedPlan = await readFile(planPath, "utf-8");
+				expect(reopenedPlan).toContain("- [ ] Original Subject <!--octopai:task1234-->");
+				expect(reopenedPlan).not.toContain("status:cancelled");
+			} finally {
+				if (previousProjectDir === undefined) delete process.env.COLEO_PROJECT_DIR;
+				else process.env.COLEO_PROJECT_DIR = previousProjectDir;
+				await rm(projectRoot, { recursive: true, force: true });
+			}
+		});
 
 		it("requires a reason and sets blocked review state across transitions", async () => {
 			const missingReasonRes = await app.request("/api/tasks/task-123", {

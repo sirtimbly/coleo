@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, memo } from "react";
 import {
 	Bold,
+	Ban,
+	CheckCircle2,
 	GripVertical,
 	MessageSquare,
 	SlidersHorizontal,
@@ -533,7 +535,11 @@ export const TaskGridRow = memo(function TaskGridRow({
           <Dropdown.Popover>
             <div className="p-2 min-w-[200px]">
 				<Dropdown.Menu
-					disabledKeys={canReorder ? [] : [moveTopId, moveBottomId]}
+					disabledKeys={[
+						...(canReorder ? [] : [moveTopId, moveBottomId]),
+						...(task.status === "completed" ? ["complete"] : []),
+						...(task.status === "cancelled" ? ["cancel"] : []),
+					]}
 					onAction={(key) => {
 						const currentSortOrder = index;
 						if (key === moveTopId) {
@@ -542,6 +548,12 @@ export const TaskGridRow = memo(function TaskGridRow({
 							onReorderToSortOrder?.(task.id, currentSortOrder, -1);
 						} else if (key === "delete") {
 							onDelete?.(task);
+						} else if (key === "complete") {
+							onUpdateTask?.(task.id, { status: "completed" });
+						} else if (key === "cancel") {
+							if (window.confirm("Cancel this task? It will be removed from the runnable queue.")) {
+								onUpdateTask?.(task.id, { status: "cancelled" });
+							}
 						}
 					}}
 				>
@@ -556,6 +568,14 @@ export const TaskGridRow = memo(function TaskGridRow({
 				<Dropdown.Item id="delete" textValue="Delete task" variant="danger">
 					<Trash2 className="h-4 w-4" />
 					<Label>Delete Task</Label>
+				</Dropdown.Item>
+				<Dropdown.Item id="complete" textValue="Mark completed">
+					<CheckCircle2 className="h-4 w-4 text-success" />
+					<Label>Mark completed</Label>
+				</Dropdown.Item>
+				<Dropdown.Item id="cancel" textValue="Cancel task" variant="danger">
+					<Ban className="h-4 w-4" />
+					<Label>Cancel task</Label>
 				</Dropdown.Item>
 			</Dropdown.Menu>
 			  {canReorder ? (

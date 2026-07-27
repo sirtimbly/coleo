@@ -345,6 +345,10 @@ function TaskDetailsToolbar({
 							<Pause className="h-4 w-4 text-amber-500" />
 							<Label>Mark blocked...</Label>
 						</Dropdown.Item>
+						<Dropdown.Item id="status:completed" textValue="Mark completed">
+							<CheckCircle2 className="h-4 w-4 text-success" />
+							<Label>Mark completed</Label>
+						</Dropdown.Item>
 						<Dropdown.Item id="status:failed" textValue="Mark failed">
 							<AlertTriangle className="h-4 w-4 text-danger" />
 							<Label>Mark failed</Label>

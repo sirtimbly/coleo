@@ -15,7 +15,7 @@ Tasks are the brain's durable work queue. A status controls whether work can be 
 | `failed` | Work ended unsuccessfully. | `pending` to retry, or `cancelled` |
 | `cancelled` | Work is intentionally closed without completion, including obsolete work. | `pending` to reopen |
 
-The brain manages `claimed`, `in_progress`, `completing`, and `completed`. Human controls can return work to `pending`, record a blocker, mark a failure, or cancel obsolete work. These transitions release stale task assignments.
+The brain manages `claimed`, `in_progress`, and `completing`, and normally completes tasks after validation. Human controls can also mark work completed, return it to `pending`, record a blocker, mark a failure, or cancel obsolete work. These transitions release stale task assignments.
 
 ## Blocking Rules
 
@@ -74,7 +74,10 @@ Open a task and use the `...` action menu to:
 
 - Edit all task fields.
 - Unblock or reopen the task by moving it to `pending`.
-- Mark it failed or cancelled; cancellation requires confirmation.
+- Mark it completed or failed.
+- Cancel it; cancellation requires confirmation.
 - Mark it blocked through the edit form, where a reason is required.
+
+For plan-backed tasks, completing checks the linked plan item, cancelling keeps it as a struck-through cancelled item, and reopening restores an unchecked item.
 
 The blocked notice in task details shows the current reason, category, next review time, review count, and whether human input is needed.

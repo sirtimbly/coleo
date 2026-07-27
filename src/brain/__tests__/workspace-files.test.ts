@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { clearInbox, parseInbox } from "../inbox-parser";
-import { findPlanFiles, parsePlanFile, removeTaskLineFromPlan } from "../plan-parser";
+import {
+	findPlanFiles,
+	parsePlanFile,
+	removeTaskLineFromPlan,
+	updateTaskLineStatusInPlan,
+} from "../plan-parser";
 import {
 	executeWorkspaceOperation,
 	LocalWorkspaceAccess,
@@ -72,6 +77,52 @@ describe("Brain workspace files", () => {
 		expect(parsed.tasks[0]?.description).toContain("Task objective: Add interactive navigation.");
 		expect(await removeTaskLineFromPlan(planFiles[0]!, "task1234", workspace)).toBe(true);
 		expect((await workspace.readText(".project/plan.md"))?.content).not.toContain("task1234");
+	});
+
+	it("round-trips completed, cancelled, and pending plan task statuses", async () => {
+		const workspace = remoteWorkspace();
+		const planPath = join(logicalRoot, ".project", "plan.md");
+		const target = {
+			taskId: "phase1-a6f03b",
+			subject: "Add interactive navigation",
+			planLineUid: "task1234",
+		};
+
+		expect(await updateTaskLineStatusInPlan(planPath, target, "completed", workspace)).toBe(true);
+		expect((await parsePlanFile(planPath, workspace)).tasks[0]?.status).toBe("completed");
+
+		expect(await updateTaskLineStatusInPlan(planPath, target, "cancelled", workspace)).toBe(true);
+		const cancelledContent = (await workspace.readText(planPath))?.content ?? "";
+		expect(cancelledContent).toContain("- [ ] ~~Add interactive navigation~~");
+		expect(cancelledContent).toContain("<!--octopai:status:cancelled-->");
+		expect((await parsePlanFile(planPath, workspace)).tasks[0]?.status).toBe("cancelled");
+
+		expect(await updateTaskLineStatusInPlan(planPath, target, "pending", workspace)).toBe(true);
+		const reopenedContent = (await workspace.readText(planPath))?.content ?? "";
+		expect(reopenedContent).toContain("- [ ] Add interactive navigation <!--octopai:task1234-->");
+		expect(reopenedContent).not.toContain("status:cancelled");
+		expect((await parsePlanFile(planPath, workspace)).tasks[0]?.status).toBe("pending");
+	});
+
+	it("updates a legacy plan line without a UID by its parsed task identity", async () => {
+		const workspace = remoteWorkspace();
+		const planPath = join(logicalRoot, ".project", "plan.md");
+		await workspace.writeText(planPath, [
+			"# Plan",
+			"",
+			"## Phase 1: Interactive Garden",
+			"",
+			"### Deliverables",
+			"- [ ] Add interactive navigation",
+			"",
+		].join("\n"));
+		const task = (await parsePlanFile(planPath, workspace)).tasks[0]!;
+
+		expect(await updateTaskLineStatusInPlan(planPath, {
+			taskId: task.id,
+			subject: task.subject,
+		}, "completed", workspace)).toBe(true);
+		expect((await workspace.readText(planPath))?.content).toContain("- [x] Add interactive navigation");
 	});
 
 	it("processes and clears the inbox through the workspace transport", async () => {

@@ -15,7 +15,7 @@ export interface ParsedTask {
   description: string;
   phase: string;
   priority: "critical" | "high" | "normal" | "low";
-  status: "pending" | "in_progress" | "completed";
+  status: "pending" | "in_progress" | "completed" | "cancelled";
   sourceRef: string;
   lineNumber: number;
   planLineUid?: string;
@@ -104,7 +104,7 @@ export async function parsePlanFile(
       }
       
       // Detect checkbox items (tasks) in deliverables sections
-      const checkboxMatch = line.match(/^-\s+\[([ x])\]\s+(.+)/);
+      const checkboxMatch = line.match(/^-\s+\[([ xX])\]\s+(.+)/);
       if (checkboxMatch && /^(?:Deliverables|Tasks)$/i.test(currentSection)) {
         const isCompleted = checkboxMatch[1]?.toLowerCase() === "x";
         const taskContent = checkboxMatch[2]?.trim() ?? "";
@@ -112,7 +112,12 @@ export async function parsePlanFile(
         // Extract UID from HTML comment if present (e.g., "Task name <!--octopai:abcd1234-->")
         const uidMatch = taskContent.match(/<!--octopai:([a-zA-Z0-9]+)-->$/);
         const planLineUid = uidMatch?.[1];
-        const cleanContent = uidMatch ? taskContent.replace(/<!--octopai:[a-zA-Z0-9]+-->$/, "").trim() : taskContent;
+        const withoutUid = uidMatch ? taskContent.replace(/<!--octopai:[a-zA-Z0-9]+-->$/, "").trim() : taskContent;
+        const isCancelled = /<!--octopai:status:cancelled-->/.test(withoutUid);
+        const withoutStatus = withoutUid.replace(/\s*<!--octopai:status:cancelled-->\s*/, "").trim();
+        const cleanContent = isCancelled && withoutStatus.startsWith("~~") && withoutStatus.endsWith("~~")
+          ? withoutStatus.slice(2, -2).trim()
+          : withoutStatus;
         
         // Extract task details
         const taskId = generateTaskId(currentPhase, cleanContent);
@@ -130,7 +135,7 @@ export async function parsePlanFile(
           description,
           phase: currentPhase,
           priority,
-          status: isCompleted ? "completed" : "pending",
+          status: isCancelled ? "cancelled" : isCompleted ? "completed" : "pending",
           sourceRef: `${filePath}:${lineNumber}`,
           lineNumber,
           planLineUid,
@@ -421,6 +426,75 @@ export async function removeTaskLineFromPlan(
     return true;
   } catch (err) {
     console.error(`Failed to remove task line from ${filePath}:`, err);
+    return false;
+  }
+}
+
+export type PlanTaskLineStatus = "pending" | "completed" | "cancelled";
+
+interface PlanTaskLineTarget {
+  taskId: string;
+  subject: string;
+  planLineUid?: string | null;
+}
+
+/**
+ * Update a plan checklist item while preserving its text and stable UID.
+ * Cancelled work remains visible as a struck-through unchecked item.
+ */
+export async function updateTaskLineStatusInPlan(
+  filePath: string,
+  target: PlanTaskLineTarget,
+  status: PlanTaskLineStatus,
+  workspace?: WorkspaceAccess,
+): Promise<boolean> {
+  try {
+    const source = await readPlanText(filePath, workspace);
+    const lines = source.content.split("\n");
+    let matchingIndex = target.planLineUid
+      ? lines.findIndex((line) => line.includes(`<!--octopai:${target.planLineUid}-->`))
+      : -1;
+
+    if (matchingIndex === -1) {
+      const parsed = await parsePlanFile(filePath, workspace);
+      const idMatch = parsed.tasks.find((task) => task.id === target.taskId);
+      const subjectMatches = parsed.tasks.filter((task) => task.subject === target.subject);
+      const match = idMatch ?? (subjectMatches.length === 1 ? subjectMatches[0] : undefined);
+      matchingIndex = match ? match.lineNumber - 1 : -1;
+    }
+
+    if (matchingIndex < 0) return false;
+    const line = lines[matchingIndex] ?? "";
+    const checkboxMatch = line.match(/^(\s*-\s+\[)([ xX])(\]\s+)(.*)$/);
+    if (!checkboxMatch) return false;
+
+    let taskContent = checkboxMatch[4]?.trim() ?? "";
+    const uidMatch = taskContent.match(/(<!--octopai:[a-zA-Z0-9]+-->)$/);
+    const uidSuffix = uidMatch?.[1];
+    if (uidSuffix) taskContent = taskContent.slice(0, -uidSuffix.length).trim();
+    taskContent = taskContent.replace(/\s*<!--octopai:status:cancelled-->\s*/, "").trim();
+    if (taskContent.startsWith("~~") && taskContent.endsWith("~~")) {
+      taskContent = taskContent.slice(2, -2).trim();
+    }
+
+    const checkbox = status === "completed" ? "x" : " ";
+    const visibleContent = status === "cancelled" ? `~~${taskContent}~~` : taskContent;
+    const suffix = [
+      status === "cancelled" ? "<!--octopai:status:cancelled-->" : null,
+      uidSuffix ?? null,
+    ].filter((value): value is string => Boolean(value)).join(" ");
+    lines[matchingIndex] = `${checkboxMatch[1]}${checkbox}${checkboxMatch[3]}${visibleContent}${suffix ? ` ${suffix}` : ""}`;
+
+    const updatedContent = lines.join("\n");
+    if (updatedContent === source.content) return true;
+    if (workspace) {
+      await workspace.writeText(filePath, updatedContent, { expectedHash: source.contentHash });
+    } else {
+      await import("fs/promises").then(({ writeFile }) => writeFile(filePath, updatedContent, "utf-8"));
+    }
+    return true;
+  } catch (err) {
+    console.error(`Failed to update task status in ${filePath}:`, err);
     return false;
   }
 }

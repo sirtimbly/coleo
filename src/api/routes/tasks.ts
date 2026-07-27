@@ -1077,15 +1077,20 @@ export function createTasksRoutes() {
 		// Check task exists
 		const existing = db
 			.query(
-				`SELECT id, status, domain, assigned_to, blocked_reason, blocked_category,
+				`SELECT id, subject, status, domain, assigned_to, source_type, source_ref, plan_line_uid,
+				        blocked_reason, blocked_category,
 				        blocked_at, blocked_recheck_at, blocked_review_count
 				 FROM tasks WHERE id = ?`,
 			)
 			.get(id) as {
 				id: string;
+				subject: string;
 				status: TaskStatus;
 				domain: string | null;
 				assigned_to: string | null;
+				source_type: string | null;
+				source_ref: string | null;
+				plan_line_uid: string | null;
 				blocked_reason: string | null;
 				blocked_category: string | null;
 				blocked_at: string | null;
@@ -1342,6 +1347,36 @@ export function createTasksRoutes() {
 			values as (string | number | null)[],
 		);
 
+		let planStatusSynced: boolean | null = null;
+		const planStatus = body.status === "pending" || body.status === "completed" || body.status === "cancelled"
+			? body.status
+			: null;
+		if (
+			planStatus &&
+			existing.source_type === "plan" &&
+			existing.source_ref
+		) {
+			const sourceRefMatch = existing.source_ref.match(/^(.+):\d+$/);
+			if (sourceRefMatch?.[1]) {
+				try {
+					const { updateTaskLineStatusInPlan } = await import("../../brain/plan-parser");
+					planStatusSynced = await updateTaskLineStatusInPlan(
+						sourceRefMatch[1],
+						{
+							taskId: existing.id,
+							subject: existing.subject,
+							planLineUid: existing.plan_line_uid,
+						},
+						planStatus,
+						getServerWorkspaceAccess(),
+					);
+				} catch (err) {
+					console.error(`Failed to synchronize task ${id} status to its plan:`, err);
+					planStatusSynced = false;
+				}
+			}
+		}
+
 		if (releaseAssignment && existing.assigned_to) {
 			db.run(
 				`UPDATE arms
@@ -1369,7 +1404,10 @@ export function createTasksRoutes() {
 			}
 		}
 
-		logActivity(db, "api", "task_updated", id, body);
+		logActivity(db, "api", "task_updated", id, {
+			...body,
+			...(planStatusSynced === null ? {} : { planStatusSynced }),
+		});
 
 		// Broadcast task updated
 		broadcast("tasks", "task.updated", { taskId: id, changes: body });
