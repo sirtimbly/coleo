@@ -63,6 +63,7 @@ import {
 } from "./arm-viewer-activity";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
+import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -1798,6 +1799,13 @@ function ArmViewerConsole({
 								<ArmContextUsageChart
 									armId={selectedArm.id}
 									title="Context Usage"
+									embedded
+								/>
+							) : null}
+							{selectedArm?.id ? (
+								<ArmCostUsageChart
+									armId={selectedArm.id}
+									title="Cost Usage"
 									embedded
 								/>
 							) : null}

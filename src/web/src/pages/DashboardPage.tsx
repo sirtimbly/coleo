@@ -7,6 +7,7 @@ import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWid
 import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
 import { ArmActivityChart } from '@/components/ArmActivityChart';
 import { ArmContextUsageChart } from '@/components/ArmContextUsageChart';
+import { ArmCostUsageChart } from '@/components/ArmCostUsageChart';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -1158,6 +1159,10 @@ function ArmActivitySection({
       <ArmContextUsageChart
         armId={mostRecentArm.id}
         title={`Context Usage - ${mostRecentArm.name}`}
+      />
+      <ArmCostUsageChart
+        armId={mostRecentArm.id}
+        title={`Cost Usage - ${mostRecentArm.name}`}
       />
       <div className="flex justify-end">
         <button
