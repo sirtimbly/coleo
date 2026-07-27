@@ -43,22 +43,6 @@ describe("ArmCostUsageChart helpers", () => {
     expect(cumulative[2]!.cumulativeCost).toBeCloseTo(0.007, 6);
   });
 
-  it("merges cost samples by message id, preferring fresh values", () => {
-    const stored: CostSample[] = [
-      { messageId: "m1", timestamp: 1_700_000_000_000, messageCost: 0.001, inputTokens: 1, outputTokens: 0 },
-      { messageId: "m2", timestamp: 1_700_000_001_000, messageCost: 0.002, inputTokens: 2, outputTokens: 1 },
-    ];
-    const fresh: CostSample[] = [
-      { messageId: "m2", timestamp: 1_700_000_001_500, messageCost: 0.003, inputTokens: 3, outputTokens: 2 },
-      { messageId: "m3", timestamp: 1_700_000_002_000, messageCost: 0.004, inputTokens: 4, outputTokens: 3 },
-    ];
-    const merged = mergeCostSamples(stored, fresh);
-    expect(merged).toHaveLength(3);
-    const byId = new Map(merged.map((s) => [s.messageId, s]));
-    expect(byId.get("m2")!.messageCost).toBeCloseTo(0.003, 6);
-    expect(byId.get("m3")!.messageCost).toBeCloseTo(0.004, 6);
-  });
-
   it("skips messages with zero or undefined cost", () => {
     const messages = [
       { info: { id: "m1", cost: 0, time: 1_700_000_000_000 } },
@@ -149,8 +133,8 @@ describe("ArmCostUsageChart helpers", () => {
     ];
     const merged = mergeCostSamples(stored, fresh);
     expect(merged).toHaveLength(3);
-    const m2 = merged.find((s) => s.messageId === "m2")!;
-    expect(m2.messageCost).toBe(0.08);
-    expect(merged.some((s) => s.messageId === "m3")).toBe(true);
+    const byId = new Map(merged.map((s) => [s.messageId, s]));
+    expect(byId.get("m2")!.messageCost).toBe(0.08);
+    expect(byId.get("m3")!.messageCost).toBe(0.04);
   });
 });
