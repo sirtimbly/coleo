@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { api } from '@/lib';
-import type { JsonObject } from '@/lib';
 import {
   type ViewerActivityItem,
   type ViewerActivityType,
 } from '@/pages/arm-viewer-activity';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components';
+import {
+  CATEGORY_STYLES,
+  classifyActivity,
+  type ActivityCategory,
+  type CategoryStyle,
+} from './arm-activity-classify';
+
+export type { ActivityCategory, CategoryStyle };
+export { CATEGORY_STYLES, classifyActivity };
 
 /**
  * ArmActivityChart
@@ -33,60 +41,6 @@ const CHART_BOTTOM_PAD = 28;
 const CHART_HEIGHT_PX = 180;
 const LEGEND_ROW_HEIGHT = 18;
 const HOVER_TOOLTIP_WIDTH = 200;
-
-export type ActivityCategory = 'write' | 'think' | 'tool' | 'complete';
-
-export interface CategoryStyle {
-  key: ActivityCategory;
-  label: string;
-  color: string;
-}
-
-export const CATEGORY_STYLES: CategoryStyle[] = [
-  { key: 'write', label: 'File writes', color: '#3b82f6' },
-  { key: 'think', label: 'Thinking / reasoning', color: '#eab308' },
-  { key: 'tool', label: 'Tool calls', color: '#22c55e' },
-  { key: 'complete', label: 'Completed tasks', color: '#a855f7' },
-];
-
-export function classifyActivity(activity: ViewerActivityItem): ActivityCategory {
-  if (activity.type === 'file') {
-    return 'write';
-  }
-
-  if (activity.type === 'message') {
-    const details = activity.details as JsonObject | undefined;
-    const role = typeof details?.role === 'string' ? details.role : undefined;
-    if (activity.title.toLowerCase().includes('assistant') || role === 'assistant') {
-      return 'think';
-    }
-    return 'think';
-  }
-
-  if (activity.type === 'tool') {
-    return 'tool';
-  }
-
-  if (
-    activity.status === 'completed' &&
-    (activity.type === 'step' ||
-      activity.type === 'todo' ||
-      activity.type === 'session' ||
-      activity.type === 'terminal')
-  ) {
-    return 'complete';
-  }
-
-  if (activity.type === 'step') {
-    return 'complete';
-  }
-
-  if (activity.type === 'session' && activity.status === 'running') {
-    return 'think';
-  }
-
-  return 'tool';
-}
 
 interface MinuteBucket {
   index: number;
