@@ -14,15 +14,7 @@ export interface CostSample {
   messageId: string;
 }
 
-export function cumulativeCostAt(samples: CostSample[], index: number): number {
-  let total = 0;
-  for (let i = 0; i <= index; i++) {
-    total += samples[i]!.messageCost;
-  }
-  return total;
-}
-
-export function withCumulativeCost(samples: CostSample[]): Array<CostSample & { cumulativeCost: number }> {
+export function withCumulativeCost(samples: CostSample[]): CumulativeCostSample[] {
   let running = 0;
   return samples
     .slice()
@@ -35,11 +27,11 @@ export function withCumulativeCost(samples: CostSample[]): Array<CostSample & { 
 
 export function mergeCostSamples(
   stored: CostSample[],
-  freshBuild: Array<Omit<CostSample, 'cumulativeCost'>>,
+  fresh: CostSample[],
 ): CostSample[] {
   const byMessage = new Map<string, CostSample>();
   for (const sample of stored) byMessage.set(sample.messageId, sample);
-  for (const sample of freshBuild) byMessage.set(sample.messageId, sample);
+  for (const sample of fresh) byMessage.set(sample.messageId, sample);
   return Array.from(byMessage.values());
 }
 
@@ -99,26 +91,26 @@ export function buildCostSamplesFromMessages(
   return parsed;
 }
 
+export interface CumulativeCostSample extends CostSample {
+  cumulativeCost: number;
+}
+
 export function computeCostRatePerHour(
-  samples: Array<CostSample & { cumulativeCost?: number }>,
+  samples: CumulativeCostSample[],
   referenceTime = Date.now(),
 ): number {
   if (samples.length < 2) return 0;
   const cutoff = referenceTime - COST_RATE_WINDOW_MS;
-  const qualifyingIndexes: number[] = [];
-  samples.forEach((sample, index) => {
-    if (sample.timestamp >= cutoff) qualifyingIndexes.push(index);
-  });
-  if (qualifyingIndexes.length < 2) return 0;
-  const firstIndex = qualifyingIndexes[0]!;
-  const lastIndex = qualifyingIndexes[qualifyingIndexes.length - 1]!;
-  let firstCumulative = samples[firstIndex]!.cumulativeCost;
-  if (firstCumulative === undefined) firstCumulative = cumulativeCostAt(samples, firstIndex);
-  let lastCumulative = samples[lastIndex]!.cumulativeCost;
-  if (lastCumulative === undefined) lastCumulative = cumulativeCostAt(samples, lastIndex);
-  const elapsedMs = samples[lastIndex]!.timestamp - samples[firstIndex]!.timestamp;
+  const qualifying: CumulativeCostSample[] = [];
+  for (const sample of samples) {
+    if (sample.timestamp >= cutoff) qualifying.push(sample);
+  }
+  if (qualifying.length < 2) return 0;
+  const first = qualifying[0]!;
+  const last = qualifying[qualifying.length - 1]!;
+  const elapsedMs = last.timestamp - first.timestamp;
   if (elapsedMs <= 0) return 0;
-  const costDelta = lastCumulative - firstCumulative;
+  const costDelta = last.cumulativeCost - first.cumulativeCost;
   if (costDelta <= 0) return 0;
   return costDelta / (elapsedMs / 3_600_000);
 }

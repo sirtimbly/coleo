@@ -132,15 +132,13 @@ export function ArmCostUsageChart({
 
   const referenceTime = Date.now();
   const windowStart = referenceTime - COST_WINDOW_MS;
-  const visibleWithCumulative = withCumulativeCost(samples).filter((s) => s.timestamp >= windowStart);
-  const visibleForRate = visibleWithCumulative;
-  const visibleSamples = visibleWithCumulative;
+  const visibleSamples = withCumulativeCost(samples).filter((s) => s.timestamp >= windowStart);
   const maxCumulative = visibleSamples.length === 0
     ? 0
     : Math.max(...visibleSamples.map((s) => s.cumulativeCost));
   const maxBudget = typeof costBudget === 'number' && costBudget > 0 ? costBudget : 0;
   const chartMax = maxBudget > maxCumulative ? maxBudget : maxCumulative * 1.15;
-  const costRatePerHour = computeCostRatePerHour(visibleForRate, referenceTime);
+  const costRatePerHour = computeCostRatePerHour(visibleSamples, referenceTime);
 
   const width = 600;
   const height = 140;
