@@ -1,10 +1,11 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight, ArrowUpRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
 import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
+import { ArmActivityChart } from '@/components/ArmActivityChart';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -1112,6 +1113,56 @@ export function DashboardPage() {
         <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
         <TaskBurndownWidget refreshKey={burndownRefresh} />
 
+      </div>
+
+      <ArmActivitySection status={status} arms={arms} onNavigate={navigate} />
+    </div>
+  );
+}
+
+function ArmActivitySection({
+  status,
+  arms,
+  onNavigate,
+}: {
+  status: SystemStatus | null;
+  arms: Arm[];
+  onNavigate: Navigate;
+}) {
+  const mostRecentArm = useMemo(() => {
+    const details = status?.arms.details ?? [];
+    if (details.length === 0) {
+      return arms[0] ?? null;
+    }
+    const sorted = [...details].sort((a, b) => {
+      const aLast = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
+      const bLast = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
+      return bLast - aLast;
+    });
+    const recentDetail = sorted[0];
+    if (!recentDetail) return arms[0] ?? null;
+    return arms.find((arm) => arm.id === recentDetail.id) ?? null;
+  }, [status?.arms.details, arms]);
+
+  if (!mostRecentArm) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <ArmActivityChart
+        armId={mostRecentArm.id}
+        title={`Arm Activity - ${mostRecentArm.name}`}
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onNavigate('/viewer', `?arm=${encodeURIComponent(mostRecentArm.id)}`)}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-accent"
+        >
+          Open in Arm Viewer
+          <ArrowUpRight className="h-3 w-3" />
+        </button>
       </div>
     </div>
   );
