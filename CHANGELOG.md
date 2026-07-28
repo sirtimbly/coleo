@@ -1,5 +1,56 @@
 # Changelog
 
+## [0.6.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.5.0...coleo-v0.6.0) (2026-07-28)
+
+
+### Features
+
+* arm usage stats and history ([2cdb05a](https://github.com/sirtimbly/coleo/commit/2cdb05a65f5210adb7889a02a159372a6d4010ae))
+* **arms:** surface open-code model and message cost metadata ([864ad53](https://github.com/sirtimbly/coleo/commit/864ad539f9adceb0b8c592b11bf8646db5bba619))
+* **arms:** surface open-code model and message cost metadata ([f6bcfe5](https://github.com/sirtimbly/coleo/commit/f6bcfe5d416ceb6285feb0e80099dd8b71293744))
+* fetch simple data ([6fdc9da](https://github.com/sirtimbly/coleo/commit/6fdc9dad57058ffec9d913fb495f09529b039d14))
+* manually complete tasks ([2d8ab57](https://github.com/sirtimbly/coleo/commit/2d8ab5765c5a7ad56ea38634aa4a5da169b0c2d3))
+* pick stats on arms by datetime ([4914ba7](https://github.com/sirtimbly/coleo/commit/4914ba73bffbd425f025750aaa7ad117b5b7e4f6))
+* **tasks:** add task preparation agent from discussions ([8123e0f](https://github.com/sirtimbly/coleo/commit/8123e0fdcabc14cdcaee12a9b67ae7a924bec56a))
+* **tasks:** show live checklist progress ([cd18c58](https://github.com/sirtimbly/coleo/commit/cd18c5881708293b981dccc6cb5662f5a88398f7))
+* **web:** add arm activity and efficiency visualization ([81e1d68](https://github.com/sirtimbly/coleo/commit/81e1d680553c18d07dd8fd607693860b154657a8))
+* **web:** add context usage visualization with 80% threshold ([46101ac](https://github.com/sirtimbly/coleo/commit/46101ac9daf07239d3e81940c4af0c68e727d9fd))
+* **web:** add cost visualization with $/hr rate and budget threshold ([487973c](https://github.com/sirtimbly/coleo/commit/487973ce62a804218e92e6173fe51b0df28515b5))
+* **web:** add high-performance multi-tabbed grid view with virtualization ([3fbaaae](https://github.com/sirtimbly/coleo/commit/3fbaaaeaa9ed323327641cf2f60af40292516693))
+* **web:** add statistics and cost graphs ([7fc1b3b](https://github.com/sirtimbly/coleo/commit/7fc1b3bf8a12262ca566018908f9eb3966be2627))
+* **web:** pin context chart to dashboard arm activity section ([987e38f](https://github.com/sirtimbly/coleo/commit/987e38fcb09aa136ac815e80853686ee9378aa47))
+
+
+### Bug Fixes
+
+* **web:** align setup API client contracts ([c75840e](https://github.com/sirtimbly/coleo/commit/c75840e64acabf2b00001a2192182ea5f1379cb0))
+
+
+### Code Refactoring
+
+* **web:** deduplicate arm cost samples by message id and compute cumulative on the fly ([a6f01e2](https://github.com/sirtimbly/coleo/commit/a6f01e29f30cb6f8d17f5486d9b73989fc56a44d))
+* **web:** sharpen cost helpers' types ([059fe3f](https://github.com/sirtimbly/coleo/commit/059fe3f3b3eeab66270e9bd0b770091426460e26))
+
+
+### Continuous Integration
+
+* upgrade actions and release notes ([528914a](https://github.com/sirtimbly/coleo/commit/528914a36312b8f645a88667540c7b6ab23aea4d))
+
+
+### Documentation
+
+* link hosted Coleo preview ([11ac7a8](https://github.com/sirtimbly/coleo/commit/11ac7a8445e64d8f4ca69bbf929f41aaa4333377))
+* link hosted Coleo preview ([8238612](https://github.com/sirtimbly/coleo/commit/82386120176c501d2e6cea81b7bae35ab226f939))
+
+
+### Tests
+
+* **web:** cover arm activity chart classifier ([a3818ac](https://github.com/sirtimbly/coleo/commit/a3818ac2ab1681f87f855530e4d37c23a29e2267))
+* **web:** cover mergeCostSamples deduplication behavior ([2ce5d91](https://github.com/sirtimbly/coleo/commit/2ce5d911e061dc0fc6312c8ec257c734ec7737b0))
+* **web:** cover mergeCostSamples deduplication behavior ([88bf545](https://github.com/sirtimbly/coleo/commit/88bf545025fa60de6753f2613084f2f8c29d56ea))
+* **web:** refine mergeCostSamples assertion style ([6d6c392](https://github.com/sirtimbly/coleo/commit/6d6c3925d84e8b6726d4bb679b1dc2b7e5e2cf50))
+* **web:** refine mergeCostSamples assertion style ([d73de1d](https://github.com/sirtimbly/coleo/commit/d73de1d25e27cf27e28ad124e111cecfeda20ca7))
+
 ## [0.5.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.4.1...coleo-v0.5.0) (2026-07-27)
 
 
