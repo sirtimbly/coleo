@@ -393,6 +393,7 @@ export function createTasksRoutes() {
 		const domainFilter = c.req.query("domain");
 		const assignedToFilter = c.req.query("assignedTo");
 		const phaseFilter = c.req.query("phase");
+		const sourceTypeFilter = c.req.query("sourceType");
 		const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 500);
 		const offset = parseInt(c.req.query("offset") || "0", 10);
 
@@ -423,6 +424,11 @@ export function createTasksRoutes() {
 		if (phaseFilter) {
 			conditions.push("t.phase = ?");
 			params.push(phaseFilter);
+		}
+
+		if (sourceTypeFilter) {
+			conditions.push("t.source_type = ?");
+			params.push(sourceTypeFilter);
 		}
 
 		const whereClause =
@@ -698,6 +704,45 @@ export function createTasksRoutes() {
 		}
 
 		return c.json(response);
+	});
+
+	/**
+	 * List the ordered sub-task checklist for a task.
+	 * GET /api/tasks/:id/checklist
+	 */
+	app.get("/:id/checklist", (c) => {
+		const db = c.get("db");
+		const taskId = c.req.param("id");
+		const task = db.query("SELECT id FROM tasks WHERE id = ?").get(taskId) as { id: string } | null;
+		if (!task) {
+			throw HttpError.notFound(`Task not found: ${taskId}`);
+		}
+
+		const rows = db
+			.query(
+				"SELECT id, task_id, text, completed, sort_order, created_at, updated_at FROM task_checklist_items WHERE task_id = ? ORDER BY sort_order, created_at",
+			)
+			.all(taskId) as Array<{
+				id: number;
+				task_id: string;
+				text: string;
+				completed: number;
+				sort_order: number;
+				created_at: string;
+				updated_at: string;
+			}>;
+
+		return c.json({
+			items: rows.map((row) => ({
+				id: row.id,
+				taskId: row.task_id,
+				text: row.text,
+				completed: row.completed === 1,
+				sortOrder: row.sort_order,
+				createdAt: row.created_at,
+				updatedAt: row.updated_at,
+			})),
+		});
 	});
 
 	/**
