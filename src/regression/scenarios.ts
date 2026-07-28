@@ -213,6 +213,7 @@ export const simpleTaskCompletion: TestScenario = {
   name: "simple-task-completion",
   description: "Spawn arm, assign task, verify completion",
   tags: ["core", "e2e", "task"],
+  models: [{ provider: "openai", model: "gpt-5.6-luna-fast" }],
   timeout: 240000, // 4 minutes for full task completion
 
   async setup(ctx: TestContext): Promise<void> {
@@ -255,29 +256,30 @@ When done, mark the task as completed.`,
     );
     checks.push({ name: "task_created", passed: true });
 
-    // Start brain in background
-    const brainProc = await startBrain(ctx);
-    checks.push({ name: "brain_started", passed: true });
-
-    // Wait a moment for brain to initialize
-    await Bun.sleep(2000);
-
     // Spawn an arm
     ctx.timing.mark("arm_spawn");
     let armId: string;
     try {
       const arm = await spawnArm(ctx, "test-arm", {
         domain: "general",
-        // The system prompt already tells arms to immediately get tasks
-        // We just provide context about the workspace
-        prompt: `You are working in a test workspace at ${ctx.workDir}.
-The task involves modifying src/hello.ts. Start by calling 'get_full_briefing' to see the task, then call 'claim_task' with the task ID to claim it.`,
       });
       armId = arm.id;
       checks.push({ name: "arm_spawned", passed: true });
     } catch (error) {
       checks.push({ name: "arm_spawned", passed: false, details: String(error) });
       return createFailedResult(ctx, "Failed to spawn arm", checks);
+    }
+
+    // Run deterministic polls after the arm is ready so the brain can observe and assign the task.
+    const brainProc = await startBrain(ctx, { cycles: 5, intervalMs: 15_000 });
+    const brainExitCode = await brainProc.exited;
+    checks.push({
+      name: "brain_cycles_completed",
+      passed: brainExitCode === 0,
+      details: brainExitCode === 0 ? undefined : `Exit code: ${brainExitCode}`,
+    });
+    if (brainExitCode !== 0) {
+      return createFailedResult(ctx, "Brain cycles failed", checks);
     }
 
     // Wait for task to be claimed

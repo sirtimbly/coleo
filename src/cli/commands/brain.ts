@@ -20,6 +20,7 @@ export function registerBrainCommands(program: Command): void {
     .command("run")
     .description("Run brain polling loop (foreground)")
     .option("-i, --interval <ms>", "Poll interval in milliseconds", "30000")
+    .option("--cycles <count>", "Run an exact number of poll cycles and exit")
     .option("-v, --verbose", "Verbose output", false)
     .option("--once", "Run a single poll cycle and exit")
     .option("--clean", "Kill zombie/stale OpenCode processes before starting")
@@ -27,6 +28,19 @@ export function registerBrainCommands(program: Command): void {
       const coleoDir = getColeoDir();
       const interval = parseInt(options.interval, 10);
       const verbose = options.verbose ?? false;
+
+      if (!Number.isInteger(interval) || interval < 0) {
+        throw new Error("Poll interval must be a non-negative integer");
+      }
+
+      const cycles = options.cycles === undefined ? undefined : parseInt(options.cycles, 10);
+      if (cycles !== undefined && (!Number.isInteger(cycles) || cycles < 1)) {
+        throw new Error("Cycle count must be a positive integer");
+      }
+
+      if (options.once && cycles !== undefined) {
+        throw new Error("Use either --once or --cycles, not both");
+      }
 
       if (options.clean) {
         console.log("Cleaning up zombie OpenCode processes...");
@@ -68,6 +82,9 @@ export function registerBrainCommands(program: Command): void {
 
       if (options.once) {
         await brain.runOnce();
+        await brain.shutdown();
+      } else if (cycles !== undefined) {
+        await brain.runCycles(cycles, interval);
         await brain.shutdown();
       } else {
         await brain.run();

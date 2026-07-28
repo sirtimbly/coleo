@@ -29,6 +29,7 @@ import {
 } from "../vector/indexing-pipeline";
 import { getServiceStatus, startService } from "../daemon";
 import { setArmClient } from "./arm-client-registry";
+import { recordMessageMetrics } from "./arm-metrics";
 import type { ServerContext } from "./server-context";
 
 export { getArmClient, setArmClient } from "./arm-client-registry";
@@ -531,6 +532,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
               event.activity && typeof event.activity.data === "object" && event.activity.data !== null
                 ? event.activity.data as Record<string, unknown>
                 : { value: event.activity?.data };
+            recordMessageMetrics(db, armId, rawType, activityData, now);
             persistDistributedEvent(rawType, {
               ...activityData,
               agentId: event.agentId,
@@ -591,6 +593,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     if (!armExists) {
       console.warn(`[server] Skipping arm event for unknown arm: ${armId}`);
     } else {
+      recordMessageMetrics(db, armId, event, truncatedData, now);
       const nextStatus = mapHarnessEventStatus(event, data);
       if (nextStatus) {
         db.run(

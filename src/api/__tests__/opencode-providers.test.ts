@@ -86,7 +86,7 @@ describe("opencode providers API", () => {
       [
         "#!/bin/sh",
         "if [ \"$1\" = \"models\" ]; then",
-        "  printf '%s\\n' 'opencode/gpt-5.1-codex-mini' 'opencode/claude-opus-4' 'github-copilot/gpt-5.1-codex' 'perplexity/sonar'",
+        "  printf '%s\\n' 'opencode/gpt-5.1-codex-mini' 'opencode/claude-opus-4' 'opencode/custom-unpriced' 'github-copilot/gpt-5.1-codex' 'perplexity/sonar'",
         "  exit 0",
         "fi",
         "exit 1",
@@ -95,6 +95,25 @@ describe("opencode providers API", () => {
     );
     await chmod(scriptPath, 0o755);
     process.env.PATH = `${binDir}:${originalPath || ""}`;
+    globalThis.fetch = createFetchMock(async (input) => {
+      if (String(input) !== "https://openrouter.ai/api/v1/models") {
+        throw new Error(`Unexpected request: ${String(input)}`);
+      }
+      return Response.json({
+        data: [
+          {
+            id: "openai/gpt-5.1-codex-mini",
+            canonical_slug: "openai/gpt-5.1-codex-mini",
+            pricing: { prompt: "0.000002", completion: "0.000008" },
+          },
+          {
+            id: "anthropic/claude-opus-4",
+            canonical_slug: "anthropic/claude-opus-4",
+            pricing: { prompt: "0.000012", completion: "0.00006" },
+          },
+        ],
+      });
+    });
 
     const cache = await refreshOpenCodeProvidersCache();
     expect(cache).not.toBeNull();
@@ -106,7 +125,7 @@ describe("opencode providers API", () => {
     expect(cache?.providers.map((provider) => provider.id)).not.toContain("openai");
     expect(
       cache?.providers.find((provider) => provider.id === "opencode")?.models.map((model) => model.id),
-    ).toEqual(["claude-opus-4", "gpt-5.1-codex-mini"]);
+    ).toEqual(["claude-opus-4", "custom-unpriced", "gpt-5.1-codex-mini"]);
 
     globalThis.fetch = createFetchMock(async () => {
       throw new Error("network should not be used");
@@ -116,7 +135,20 @@ describe("opencode providers API", () => {
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
-      providers: Array<{ id: string; models: Array<{ id: string }> }>;
+      providers: Array<{
+        id: string;
+        models: Array<{
+          id: string;
+          cost?: number;
+          pricing?: {
+            input?: number;
+            output?: number;
+            source?: string;
+            estimated?: boolean;
+            matchedModel?: string;
+          };
+        }>;
+      }>;
       connected: string[];
       cached: boolean;
       cachedAt: string;
@@ -133,11 +165,47 @@ describe("opencode providers API", () => {
 
     const cachePath = join(tempDir, "cache", "opencode-models.json");
     const cacheContents = JSON.parse(await readFile(cachePath, "utf8")) as {
-      providers: Array<{ id: string; models: Array<{ id: string }> }>;
+      providers: Array<{
+        id: string;
+        models: Array<{
+          id: string;
+          cost?: number;
+          pricing?: {
+            input?: number;
+            output?: number;
+          };
+        }>;
+      }>;
     };
     expect(cacheContents.providers.map((provider) => provider.id)).toEqual(
       expect.arrayContaining(["github-copilot", "opencode"]),
     );
+
+    const cachedOpencodeModel = cacheContents.providers
+      .find((provider) => provider.id === "opencode")
+      ?.models.find((model) => model.id === "claude-opus-4");
+    expect(cachedOpencodeModel).toEqual(
+      expect.objectContaining({
+        id: "claude-opus-4",
+      }),
+    );
+
+    const responseOpencodeModel = body.providers
+      .find((provider) => provider.id === "opencode")
+      ?.models.find((model) => model.id === "claude-opus-4");
+    expect(responseOpencodeModel?.cost).toBe(72);
+    expect(responseOpencodeModel?.pricing).toMatchObject({
+      input: 12,
+      output: 60,
+      source: "openrouter",
+      estimated: true,
+      matchedModel: "anthropic/claude-opus-4",
+    });
+    const unpricedModel = body.providers
+      .find((provider) => provider.id === "opencode")
+      ?.models.find((model) => model.id === "custom-unpriced");
+    expect(unpricedModel?.pricing).toBeUndefined();
+    expect(unpricedModel?.cost).toBeUndefined();
   });
 
   it("returns an empty provider list when no cache exists yet", async () => {
@@ -177,7 +245,12 @@ describe("opencode providers API", () => {
     const providers = [{
       id: "openai",
       name: "OpenAI",
-      models: [{ id: "gpt-5", name: "gpt-5" }],
+      models: [{
+        id: "gpt-5",
+        name: "gpt-5",
+        cost: 42,
+        pricing: { input: 3.5, output: 38.5 },
+      }],
       connected: false,
       authMethod: "api-key" as const,
     }];

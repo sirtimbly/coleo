@@ -14,10 +14,111 @@ import { ArmActivityAnalyzer, armActivityAnalyzer } from "../../brain/activity-a
 import { eventStore } from "../../nats/jetstream";
 import { isRecord } from "../../utils/json";
 
+import type { EventData } from "../../nats/jetstream";
+
 interface EventsContext {
   Variables: {
     db: Database;
   };
+}
+
+type ActivityMetricCategory = "write" | "think" | "tool" | "complete";
+
+interface ActivityMetricBucket {
+  start: string;
+  counts: Record<ActivityMetricCategory, number>;
+}
+
+const MAX_TELEMETRY_RANGE_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_ACTIVITY_BUCKETS = 120;
+const MAX_EVENT_SAMPLES = 100_000;
+
+export function parseTelemetryRange(
+  startValue: string | undefined,
+  endValue: string | undefined,
+): { start: Date; end: Date; bucketMs: number } {
+  if (!startValue || !endValue) {
+    throw HttpError.badRequest("start and end are required ISO timestamps");
+  }
+
+  const start = new Date(startValue);
+  const end = new Date(endValue);
+  const rangeMs = end.getTime() - start.getTime();
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || rangeMs <= 0) {
+    throw HttpError.badRequest("start and end must be valid dates with start before end");
+  }
+  if (rangeMs > MAX_TELEMETRY_RANGE_MS) {
+    throw HttpError.badRequest("Telemetry ranges cannot exceed 7 days");
+  }
+
+  const bucketMs = Math.max(
+    60_000,
+    Math.ceil(rangeMs / MAX_ACTIVITY_BUCKETS / 60_000) * 60_000,
+  );
+  return { start, end, bucketMs };
+}
+
+export function buildActivityMetricBuckets(
+  events: EventData[],
+  start: Date,
+  end: Date,
+  bucketMs: number,
+): { buckets: ActivityMetricBucket[]; totalEvents: number; lastEventAt: string | null } {
+  const startMs = start.getTime();
+  const endMs = end.getTime();
+  const bucketCount = Math.ceil((endMs - startMs) / bucketMs);
+  const buckets: ActivityMetricBucket[] = Array.from({ length: bucketCount }, (_, index) => ({
+    start: new Date(startMs + index * bucketMs).toISOString(),
+    counts: { write: 0, think: 0, tool: 0, complete: 0 },
+  }));
+  let totalEvents = 0;
+  let lastEventAt: string | null = null;
+
+  for (const event of events) {
+    const timestamp = new Date(event.timestamp).getTime();
+    if (!Number.isFinite(timestamp) || timestamp < startMs || timestamp > endMs) continue;
+    const category = classifyActivityMetric(event.type, event.data);
+    if (!category) continue;
+    const index = Math.min(bucketCount - 1, Math.floor((timestamp - startMs) / bucketMs));
+    const bucket = buckets[index];
+    if (!bucket) continue;
+    bucket.counts[category] += 1;
+    totalEvents += 1;
+    if (!lastEventAt || timestamp > new Date(lastEventAt).getTime()) {
+      lastEventAt = event.timestamp;
+    }
+  }
+
+  return { buckets, totalEvents, lastEventAt };
+}
+
+export function classifyActivityMetric(
+  type: string,
+  data: Record<string, unknown>,
+): ActivityMetricCategory | null {
+  if (type === "file.edited" || type.startsWith("file.")) {
+    return "write";
+  }
+
+  if (type === "message.part.updated" || type === "message.part.created") {
+    const part = data.part;
+    if (isRecord(part) && (part.type === "text" || part.type === "reasoning")) {
+      return "think";
+    }
+    if (isRecord(part) && part.type === "tool") {
+      return "tool";
+    }
+  }
+
+  if (type === "task.completed" || type === "task.completion" || type === "step.completed") {
+    return "complete";
+  }
+
+  if (type === "tool.call" || type === "tool.invoked" || type === "tool.started") {
+    return "tool";
+  }
+
+  return null;
 }
 
 /**
@@ -206,6 +307,135 @@ export function createEventsRoutes() {
     } catch (err) {
       throw HttpError.internal(`Failed to fetch event window: ${err}`);
     }
+  });
+
+  /**
+   * Aggregate recent arm activity into fixed minute buckets for chart rendering.
+   * GET /api/events/arms/:armId/metrics
+   */
+  app.get("/arms/:armId/metrics", async (c) => {
+    const armId = c.req.param("armId");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 30 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const bucketMs = 60_000;
+    const endMs = Math.ceil(Date.now() / bucketMs) * bucketMs;
+    const startMs = endMs - windowMs;
+    const bucketCount = Math.ceil(windowMs / bucketMs);
+    const buckets: ActivityMetricBucket[] = Array.from({ length: bucketCount }, (_, index) => ({
+      start: new Date(startMs + index * bucketMs).toISOString(),
+      counts: { write: 0, think: 0, tool: 0, complete: 0 },
+    }));
+
+    if (!brainEventWindow.isAvailable()) {
+      return c.json({
+        armId,
+        window: { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), bucketMs },
+        buckets,
+        summary: { totalEvents: 0, lastEventAt: null },
+      });
+    }
+
+    try {
+      const window = await brainEventWindow.getWindowForArm(armId, {
+        windowMs,
+        limit: 1000,
+      });
+      let totalEvents = 0;
+
+      for (const event of window.events) {
+        const timestamp = new Date(event.timestamp).getTime();
+        if (!Number.isFinite(timestamp) || timestamp < startMs || timestamp >= endMs) continue;
+        const index = Math.floor((timestamp - startMs) / bucketMs);
+        const bucket = buckets[index];
+        if (!bucket) continue;
+        const category = classifyActivityMetric(event.type, event.data);
+        if (!category) continue;
+        bucket.counts[category] += 1;
+        totalEvents += 1;
+      }
+
+      return c.json({
+        armId,
+        window: { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), bucketMs },
+        buckets,
+        summary: {
+          totalEvents,
+          lastEventAt: window.lastEventAt?.toISOString() ?? null,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to aggregate arm metrics: ${err}`);
+    }
+  });
+
+  /**
+   * Aggregate persisted telemetry for every arm in an explicit time range.
+   * GET /api/events/telemetry?start=...&end=...
+   */
+  app.get("/telemetry", async (c) => {
+    const db = c.get("db");
+    const { start, end, bucketMs } = parseTelemetryRange(
+      c.req.query("start"),
+      c.req.query("end"),
+    );
+    const startIso = start.toISOString();
+    const endIso = end.toISOString();
+
+    const events = eventStore.isInitialized()
+      ? await eventStore.queryEvents({
+          subject: "coleo.events.arm.>",
+          since: start,
+          until: end,
+          limit: MAX_EVENT_SAMPLES,
+          latest: true,
+        })
+      : [];
+    const activity = buildActivityMetricBuckets(events, start, end, bucketMs);
+
+    const contextSamples = db.query(
+      `SELECT arm_id as armId, timestamp, context_used as used, context_budget as budget
+       FROM arm_metric_history
+       WHERE timestamp >= ? AND timestamp <= ?
+       ORDER BY timestamp`,
+    ).all(startIso, endIso) as Array<{
+      armId: string;
+      timestamp: string;
+      used: number;
+      budget: number;
+    }>;
+    const costSamples = db.query(
+      `SELECT arm_id as armId, timestamp, cost, message_id as messageId,
+              input_tokens as inputTokens, output_tokens as outputTokens,
+              reasoning_tokens as reasoningTokens, cache_read_tokens as cacheReadTokens,
+              cache_write_tokens as cacheWriteTokens
+       FROM arm_message_metrics
+       WHERE timestamp >= ? AND timestamp <= ?
+       ORDER BY timestamp`,
+    ).all(startIso, endIso) as Array<{
+      armId: string;
+      timestamp: string;
+      cost: number;
+      messageId: string;
+      inputTokens: number;
+      outputTokens: number;
+      reasoningTokens: number;
+      cacheReadTokens: number;
+      cacheWriteTokens: number;
+    }>;
+    const armCount = (db.query("SELECT COUNT(*) as count FROM arms").get() as { count: number }).count;
+
+    return c.json({
+      window: { start: startIso, end: endIso, bucketMs },
+      armCount,
+      activity: {
+        buckets: activity.buckets,
+        summary: { totalEvents: activity.totalEvents, lastEventAt: activity.lastEventAt },
+      },
+      contextSamples,
+      costSamples,
+    });
   });
 
   /**

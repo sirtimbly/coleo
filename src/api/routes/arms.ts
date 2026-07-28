@@ -23,6 +23,7 @@ import { hostname } from "os";
 import { appendTaskAttachmentsToPromptText } from "../../lib/prompt-attachments";
 import { supportsInputModality } from "../../harness/model-resolver";
 import { searchStatusHistory } from "../../vector/indexing-pipeline";
+import { recordMetricSnapshot } from "../arm-metrics";
 import type { TaskAttachment } from "../../types";
 
 interface ArmsContext {
@@ -966,6 +967,169 @@ export async function listArmTemplateSummaries(): Promise<ArmTemplateSummary[]> 
 export function createArmsRoutes() {
   const app = new Hono<ArmsContext>();
 
+  function normalizeArmMessage(message: unknown): unknown {
+    if (!message || typeof message !== "object") {
+      return message;
+    }
+
+    const asRecord = message as Record<string, unknown>;
+    const info = asRecord.info;
+    if (!info || typeof info !== "object") {
+      return asRecord;
+    }
+
+    const infoRecord = info as Record<string, unknown>;
+    const tokenData =
+      infoRecord.tokenData &&
+      typeof infoRecord.tokenData === "object" &&
+      !Array.isArray(infoRecord.tokenData)
+        ? (infoRecord.tokenData as Record<string, unknown>)
+        : undefined;
+    const messageData =
+      infoRecord.messageData &&
+      typeof infoRecord.messageData === "object" &&
+      !Array.isArray(infoRecord.messageData)
+        ? (infoRecord.messageData as Record<string, unknown>)
+        : undefined;
+
+    const coerceString = (value: unknown): string | undefined =>
+      typeof value === "string" && value.length > 0 ? value : undefined;
+    const coerceNumber = (value: unknown): number | undefined => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+      }
+
+      return undefined;
+    };
+
+    const normalizedModelId =
+      coerceString(infoRecord.modelId) ||
+      coerceString(infoRecord.modelID) ||
+      coerceString(infoRecord.model) ||
+      coerceString(messageData?.modelId) ||
+      coerceString(messageData?.modelID) ||
+      coerceString(messageData?.model);
+
+    const normalizedProviderId =
+      coerceString(infoRecord.providerId) ||
+      coerceString(infoRecord.providerID) ||
+      coerceString(infoRecord.provider) ||
+      coerceString(messageData?.providerId) ||
+      coerceString(messageData?.providerID) ||
+      coerceString(messageData?.provider);
+
+    const normalizedTokens: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: { read?: number; write?: number };
+    } = {};
+    const tokenSource =
+      infoRecord.tokens &&
+      typeof infoRecord.tokens === "object" &&
+      !Array.isArray(infoRecord.tokens)
+        ? (infoRecord.tokens as Record<string, unknown>)
+        : tokenData;
+
+    const cacheFromNested =
+      tokenSource &&
+      tokenSource.cache &&
+      typeof tokenSource.cache === "object" &&
+      !Array.isArray(tokenSource.cache)
+        ? (tokenSource.cache as Record<string, unknown>)
+        : undefined;
+
+    if (tokenSource) {
+      const input = coerceNumber(tokenSource.input);
+      const output = coerceNumber(tokenSource.output);
+      const reasoning = coerceNumber(tokenSource.reasoning);
+      const cacheRead = coerceNumber(tokenSource.cacheRead) ?? coerceNumber(cacheFromNested?.read);
+      const cacheWrite = coerceNumber(tokenSource.cacheWrite) ?? coerceNumber(cacheFromNested?.write);
+      const hasTokenValues =
+        input !== undefined ||
+        output !== undefined ||
+        reasoning !== undefined ||
+        cacheRead !== undefined ||
+        cacheWrite !== undefined;
+
+      if (hasTokenValues) {
+        if (input !== undefined) normalizedTokens.input = input;
+        if (output !== undefined) normalizedTokens.output = output;
+        if (reasoning !== undefined) normalizedTokens.reasoning = reasoning;
+        if (cacheRead !== undefined) {
+          normalizedTokens.cache = {
+            ...normalizedTokens.cache,
+            read: cacheRead,
+          };
+        }
+        if (cacheWrite !== undefined) {
+          normalizedTokens.cache = {
+            ...normalizedTokens.cache,
+            write: cacheWrite,
+          };
+        }
+      }
+    }
+
+    const existingMessageData = messageData ? { ...messageData } : undefined;
+
+    if (existingMessageData) {
+      if (!existingMessageData.modelId && normalizedModelId) {
+        existingMessageData.modelId = normalizedModelId;
+      }
+      if (!existingMessageData.providerId && normalizedProviderId) {
+        existingMessageData.providerId = normalizedProviderId;
+      }
+    }
+
+    if (normalizedModelId !== undefined) {
+      if (!coerceString(infoRecord.model)) infoRecord.model = normalizedModelId;
+      if (!coerceString(infoRecord.modelId)) infoRecord.modelId = normalizedModelId;
+      if (!coerceString(infoRecord.modelID)) infoRecord.modelID = normalizedModelId;
+    }
+
+    if (normalizedProviderId !== undefined) {
+      if (!coerceString(infoRecord.provider)) infoRecord.provider = normalizedProviderId;
+      if (!coerceString(infoRecord.providerId)) infoRecord.providerId = normalizedProviderId;
+      if (!coerceString(infoRecord.providerID)) infoRecord.providerID = normalizedProviderId;
+    }
+
+    if (Object.keys(normalizedTokens).length > 0) {
+      infoRecord.tokens = normalizedTokens;
+    }
+
+    if (existingMessageData) {
+      infoRecord.messageData = existingMessageData;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(infoRecord, "cost") && tokenData) {
+      const tokenCost = coerceNumber(tokenData.cost);
+      if (tokenCost !== undefined) {
+        infoRecord.cost = tokenCost;
+      }
+    }
+
+    return {
+      ...asRecord,
+      info: {
+        ...infoRecord,
+      },
+    };
+  }
+
+  const normalizeMessagesForCostChart = (messages: unknown) => {
+    if (!Array.isArray(messages)) {
+      return [];
+    }
+
+    return messages.map((message) => normalizeArmMessage(message));
+  };
+
   /**
    * List all arms
    * GET /api/arms
@@ -1314,6 +1478,10 @@ export function createArmsRoutes() {
     values.push(id);
 
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, values as (string | number | null)[]);
+
+    if (body.currentContextUsed !== undefined || body.contextBudget !== undefined) {
+      recordMetricSnapshot(db, id, updatedAt);
+    }
 
     if (body.status === "stopped") {
       const releasedClaims = releaseClaimsForArm(db, id, updatedAt);
@@ -2620,8 +2788,115 @@ export function createArmsRoutes() {
 
     params.push(id);
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, params);
+    if (body.tokens !== undefined || body.cost !== undefined) {
+      recordMetricSnapshot(db, id, now);
+    }
 
     return c.json({ success: true });
+  });
+
+  /**
+   * Get the current arm metrics used by summary and sparkline views.
+   * GET /api/arms/:id/metrics
+   */
+  app.get("/:id/metrics", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const arm = db.query(
+      `SELECT id, status, current_context_used as contextUsed, context_budget as contextBudget,
+              total_tokens as totalTokens, total_cost as totalCost, updated_at as updatedAt
+       FROM arms WHERE id = ?`,
+    ).get(id) as {
+      id: string;
+      status: string;
+      contextUsed: number;
+      contextBudget: number;
+      totalTokens: number | null;
+      totalCost: number | null;
+      updatedAt: string;
+    } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    return c.json({
+      armId: arm.id,
+      status: arm.status,
+      timestamp: arm.updatedAt,
+      context: {
+        used: arm.contextUsed,
+        budget: arm.contextBudget,
+        utilization: arm.contextBudget > 0 ? arm.contextUsed / arm.contextBudget : 0,
+      },
+      tokens: arm.totalTokens ?? 0,
+      cost: arm.totalCost ?? 0,
+    });
+  });
+
+  /**
+   * Get bounded context samples captured while the arm is active.
+   * GET /api/arms/:id/context-history
+   */
+  app.get("/:id/context-history", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 24 * 60 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const since = new Date(Date.now() - windowMs).toISOString();
+    const arm = db.query(
+      "SELECT current_context_used as used, context_budget as budget, updated_at as updatedAt FROM arms WHERE id = ?",
+    ).get(id) as { used: number; budget: number; updatedAt: string } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    let samples: Array<{ timestamp: string; used: number; budget: number }> = [];
+    try {
+      samples = db.query(
+        `SELECT timestamp, context_used as used, context_budget as budget
+         FROM arm_metric_history WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
+      ).all(id, since) as typeof samples;
+    } catch {
+      // The current reading is still useful during a rolling migration.
+    }
+    if (samples.length === 0) samples = [{ timestamp: arm.updatedAt, used: arm.used, budget: arm.budget }];
+
+    return c.json({ armId: id, windowMs, samples });
+  });
+
+  /**
+   * Get bounded cumulative cost samples captured while the arm is active.
+   * GET /api/arms/:id/cost-history
+   */
+  app.get("/:id/cost-history", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 24 * 60 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const since = new Date(Date.now() - windowMs).toISOString();
+    const arm = db.query(
+      "SELECT total_cost as cost, total_tokens as tokens, updated_at as updatedAt FROM arms WHERE id = ?",
+    ).get(id) as { cost: number | null; tokens: number | null; updatedAt: string } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    let samples: Array<{ timestamp: string; cost: number; tokens: number; messageId: string }> = [];
+    let historyAvailable = true;
+    try {
+      samples = db.query(
+        `SELECT timestamp, cost,
+                input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens as tokens,
+                message_id as messageId
+         FROM arm_message_metrics WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
+      ).all(id, since) as typeof samples;
+    } catch {
+      // The current reading is still useful during a rolling migration.
+      historyAvailable = false;
+    }
+    if (!historyAvailable) {
+      samples = [{ timestamp: arm.updatedAt, cost: arm.cost ?? 0, tokens: arm.tokens ?? 0, messageId: "current" }];
+    }
+
+    return c.json({ armId: id, windowMs, samples });
   });
 
   /**
@@ -2731,6 +3006,13 @@ export function createArmsRoutes() {
     if (!newSessionId) {
       throw HttpError.internal(`Failed to reset session for arm ${id}`);
     }
+
+    const resetAt = new Date().toISOString();
+    db.run(
+      "UPDATE arms SET session_id = ?, current_context_used = 0, updated_at = ? WHERE id = ?",
+      [newSessionId, resetAt, id],
+    );
+    recordMetricSnapshot(db, id, resetAt);
 
     // Log the activity
     logActivity(db, id, "session_reset", undefined, { newSessionId });
@@ -2865,7 +3147,7 @@ export function createArmsRoutes() {
       }
 
       return c.json({
-        messages: response.data?.messages || [],
+        messages: normalizeMessagesForCostChart(response.data?.messages),
         sessionId: response.data?.sessionId || row.session_id,
         distributed: true,
       });
@@ -2911,7 +3193,7 @@ export function createArmsRoutes() {
       const sessionId = manager.getSession(id)?.session.id;
 
       return c.json({
-        messages,
+        messages: normalizeMessagesForCostChart(messages),
         sessionId,
       });
     } catch (err) {

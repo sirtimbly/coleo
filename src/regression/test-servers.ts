@@ -98,20 +98,29 @@ export async function startApiServer(ctx: TestContext): Promise<void> {
 /**
  * Start the brain for a test context
  */
-export async function startBrain(ctx: TestContext, options?: { once?: boolean }): Promise<Subprocess> {
+export async function startBrain(
+  ctx: TestContext,
+  options?: { once?: boolean; cycles?: number; intervalMs?: number },
+): Promise<Subprocess> {
   ctx.timing.mark("brain_start");
   
   // Note: We do NOT use --clean here because it would kill OpenCode processes
   // from other arms that might already be running. The test environment is
   // already isolated, so there's no need to clean up zombie processes.
-  const args = ["bun", "run", "src/cli/index.ts", "brain", "run"];
+  const args = ["bun", "run", join(process.cwd(), "src/cli/index.ts"), "brain", "run"];
   if (options?.once) {
     args.push("--once");
+  }
+  if (options?.cycles !== undefined) {
+    args.push("--cycles", String(options.cycles));
+  }
+  if (options?.intervalMs !== undefined) {
+    args.push("--interval", String(options.intervalMs));
   }
 
   const proc = spawn({
     cmd: args,
-    cwd: process.cwd(),
+    cwd: ctx.workDir,
     env: {
       ...process.env,
       COLEO_DIR: ctx.coleoDir,

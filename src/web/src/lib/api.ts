@@ -133,6 +133,19 @@ export interface ProjectSetupStatus {
   defaultTemplateContent: string;
 }
 
+export interface PreparedTaskDefinition {
+  subject: string;
+  description: string;
+  context: string;
+  requirements: string[];
+  acceptanceCriteria: string[];
+  priority: Task['priority'];
+  classification: string;
+  phase: string;
+  estimatedEffort: string;
+  sourceRef?: string;
+}
+
 class ApiClient {
   private apiKey: string | null = null;
 
@@ -851,6 +864,7 @@ class ApiClient {
     severity?: string;
     status?: string;
     limit?: number;
+    offset?: number;
   }) {
     const query = new URLSearchParams();
     if (params?.armId) query.set('armId', params.armId);
@@ -858,8 +872,12 @@ class ApiClient {
     if (params?.severity) query.set('severity', params.severity);
     if (params?.status) query.set('status', params.status);
     if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
     const queryStr = query.toString();
-    return this.request<{ discoveries: Discovery[] }>(`/discoveries${queryStr ? `?${queryStr}` : ''}`);
+    return this.request<{
+      discoveries: Discovery[];
+      pagination: { limit: number; offset: number; total: number };
+    }>(`/discoveries${queryStr ? `?${queryStr}` : ''}`);
   }
 
   async getDiscovery(id: string) {
@@ -891,6 +909,7 @@ class ApiClient {
     domain?: string;
     assignedTo?: string;
     phase?: string;
+    sourceType?: string;
     limit?: number;
     offset?: number;
   }) {
@@ -900,6 +919,7 @@ class ApiClient {
     if (params?.domain) query.set('domain', params.domain);
     if (params?.assignedTo) query.set('assignedTo', params.assignedTo);
     if (params?.phase) query.set('phase', params.phase);
+    if (params?.sourceType) query.set('sourceType', params.sourceType);
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     const queryStr = query.toString();
@@ -930,6 +950,13 @@ class ApiClient {
     return this.request<{ task: Task }>('/tasks', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async prepareTaskFromDiscussion(taskId: string, guidance?: string) {
+    return this.request<{ prepared: PreparedTaskDefinition }>(`/tasks/${taskId}/prepare`, {
+      method: 'POST',
+      body: JSON.stringify({ guidance }),
     });
   }
 
@@ -1229,6 +1256,18 @@ class ApiClient {
     );
   }
 
+  async getArmActivityMetrics(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmActivityMetricsResponse>(
+      `/events/arms/${encodeURIComponent(armId)}/metrics?${query.toString()}`,
+    );
+  }
+
+  async getAllArmsTelemetry(start: string, end: string) {
+    const query = new URLSearchParams({ start, end });
+    return this.request<AllArmsTelemetryResponse>(`/events/telemetry?${query.toString()}`);
+  }
+
   async getArmAnalysis(armId: string, options?: { windowMs?: number }) {
     const query = new URLSearchParams();
     if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
@@ -1244,6 +1283,19 @@ class ApiClient {
     const queryStr = query.toString();
     return this.request<AllArmsAnalysis>(
       `/events/analysis${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
+  async getArmContext(armId: string) {
+    return this.request<ArmContextResponse>(
+      `/arms/${encodeURIComponent(armId)}/context`,
+    );
+  }
+
+  async getArmCostHistory(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmCostHistoryResponse>(
+      `/arms/${encodeURIComponent(armId)}/cost-history?${query.toString()}`,
     );
   }
 
@@ -1328,6 +1380,17 @@ export interface OpenCodeModel {
   modalities?: {
     input: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
     output: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
+  };
+  /** Estimated cost index: sum of input + output price per million tokens (USD). */
+  cost?: number;
+  /** Detailed per-million-token pricing when available. */
+  pricing?: {
+    input?: number;
+    output?: number;
+    source?: 'provider' | 'openrouter' | 'known';
+    estimated?: boolean;
+    fetchedAt?: string;
+    matchedModel?: string;
   };
 }
 
@@ -1687,9 +1750,16 @@ export interface ArmMessage {
     role: 'user' | 'assistant' | 'system';
     time?: JsonValue;
     cost?: number;
+    model?: string;
+    provider?: string;
     tokens?: {
       input?: number;
       output?: number;
+      reasoning?: number;
+      cache?: {
+        read?: number;
+        write?: number;
+      };
     };
     error?: { name: string; data?: { message: string } };
   };
@@ -1904,6 +1974,78 @@ export interface EventWindowResponse {
     lastEventAt: string | null;
     durationMs: number;
   };
+}
+
+export interface ArmActivityMetricsResponse {
+  armId: string;
+  window: {
+    start: string;
+    end: string;
+    bucketMs: number;
+  };
+  buckets: Array<{
+    start: string;
+    counts: {
+      write: number;
+      think: number;
+      tool: number;
+      complete: number;
+    };
+  }>;
+  summary: {
+    totalEvents: number;
+    lastEventAt: string | null;
+  };
+}
+
+export interface AllArmsTelemetryResponse {
+  window: {
+    start: string;
+    end: string;
+    bucketMs: number;
+  };
+  armCount: number;
+  activity: {
+    buckets: ArmActivityMetricsResponse['buckets'];
+    summary: ArmActivityMetricsResponse['summary'];
+  };
+  contextSamples: Array<{
+    armId: string;
+    timestamp: string;
+    used: number;
+    budget: number;
+  }>;
+  costSamples: Array<{
+    armId: string;
+    timestamp: string;
+    cost: number;
+    messageId: string;
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
+  }>;
+}
+
+export interface ArmContextResponse {
+  context: {
+    budget: number;
+    used: number;
+    utilization: number;
+    files: Array<{ path: string; claimedAt: string }>;
+  };
+}
+
+export interface ArmCostHistoryResponse {
+  armId: string;
+  windowMs: number;
+  samples: Array<{
+    timestamp: string;
+    cost: number;
+    tokens: number;
+    messageId: string;
+  }>;
 }
 
 export interface RecentEventsResponse {

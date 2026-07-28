@@ -61,6 +61,9 @@ import {
 	type ViewerActivityItem as ActivityItem,
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
+import { ArmActivityChart } from "@/components/ArmActivityChart";
+import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
+import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -1696,17 +1699,17 @@ function ArmViewerConsole({
 								/>
 							</div>
 
-							<ArmAnalysisPanel
-								analysis={analysis}
-								loading={analysisLoading}
-								onRefresh={onRefreshAnalysis}
-								compact
-								embedded
-							/>
-						</div>
-					) : null}
-				</div>
-			) : null}
+						<ArmAnalysisPanel
+							analysis={analysis}
+							loading={analysisLoading}
+							onRefresh={onRefreshAnalysis}
+							compact
+							embedded
+						/>
+					</div>
+				) : null}
+			</div>
+		) : null}
 
 			<div className="border-b border-border px-5 py-2.5">
 				<div className="flex flex-wrap items-center justify-between gap-3">
@@ -1776,16 +1779,39 @@ function ArmViewerConsole({
 			) : null}
 
 			<div className="min-h-0 flex-1 overflow-hidden">
-				{arm ? (
-					activeTab === "events" ? (
-						<div
-							ref={feedContainerRef}
-							onScroll={onFeedScroll}
-							className="h-full overflow-auto bg-surface/70 p-4"
-						>
-							<div className="mx-auto flex max-w-5xl flex-col gap-3">
-								{currentText ? (
-									<div className="overflow-hidden rounded-md border border-accent/35 bg-accent/8">
+						{arm ? (
+							activeTab === "events" ? (
+							<div
+								ref={feedContainerRef}
+								onScroll={onFeedScroll}
+								className="h-full overflow-auto bg-surface/70 p-4"
+							>
+								<div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+									{selectedArm?.id ? (
+										<div className="grid gap-3 xl:grid-cols-3">
+											<ArmActivityChart
+												armId={selectedArm.id}
+												activities={activities}
+													title="Activity & Efficiency"
+													embedded
+													compact
+												/>
+												<ArmContextUsageChart
+													armId={selectedArm.id}
+													title="Context Usage"
+													embedded
+													compact
+												/>
+												<ArmCostUsageChart
+													armId={selectedArm.id}
+													title="Cost Usage"
+													embedded
+													compact
+												/>
+										</div>
+									) : null}
+									{currentText ? (
+											<div className="overflow-hidden rounded-md border border-accent/35 bg-accent/8">
 										<div className="flex items-center gap-2 border-b border-accent/20 px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-accent">
 											<Bot className="h-3.5 w-3.5" />
 											Live Draft

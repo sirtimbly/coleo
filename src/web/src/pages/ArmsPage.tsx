@@ -6,6 +6,7 @@ import {
 	LoaderCircle,
 	Play,
 	Plus,
+	RefreshCw,
 	RotateCcw,
 	Server,
 	Trash2,
@@ -21,6 +22,7 @@ import {
 	type ArmTemplateSummary,
 	type OpenCodeProvider,
 } from "@/lib";
+import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -689,6 +691,35 @@ export function ArmsPage() {
 		[selectedOpenCodeProvider],
 	);
 
+	const selectedOpenCodeModel = useMemo(
+		() => selectedOpenCodeModels.find((model) => model.id === spawnModal.model) || null,
+		[selectedOpenCodeModels, spawnModal.model],
+	);
+
+	const modelPricing = useMemo(() => {
+		if (!selectedOpenCodeModel?.pricing) return null;
+		const input = selectedOpenCodeModel.pricing.input ?? 0;
+		const output = selectedOpenCodeModel.pricing.output ?? 0;
+		if (input <= 0 && output <= 0) return null;
+		return {
+			input,
+			output,
+			per100k: (input + output) / 20,
+			source: selectedOpenCodeModel.pricing.source,
+			estimated: selectedOpenCodeModel.pricing.estimated ?? true,
+			fetchedAt: selectedOpenCodeModel.pricing.fetchedAt,
+			matchedModel: selectedOpenCodeModel.pricing.matchedModel,
+		};
+	}, [selectedOpenCodeModel]);
+
+	const contextBudgetWarning = useMemo(() => {
+		const modelLimit = selectedOpenCodeModel?.limit?.context;
+		const requestedBudget = selectedTemplate?.contextBudget;
+		return Boolean(modelLimit && requestedBudget && requestedBudget > modelLimit);
+	}, [selectedOpenCodeModel, selectedTemplate]);
+
+	const isHighCostModel = (modelPricing?.per100k ?? 0) >= 2;
+
 	const availableHarnesses = useMemo(() => {
 		return uniqueStrings(selectedSpawnAgent?.capabilities ?? []);
 	}, [selectedSpawnAgent]);
@@ -1021,24 +1052,26 @@ export function ArmsPage() {
 						</Button>
 					</div>
 
-			{loading ? (
-				<div className="space-y-2">
-					{[1, 2, 3, 4].map((i) => (
-						<div key={i} className="h-16 rounded-lg bg-default-100/60 animate-pulse" />
-					))}
-				</div>
-			) : arms.length === 0 ? (
-				<Card>
-					<Card.Content className="py-12 text-center">
-						<p className="text-muted-foreground mb-4">No arms registered yet</p>
-						<code className="block p-4 bg-muted/20 rounded text-sm text-left max-w-md mx-auto">
-							coleo arm spawn
-						</code>
-					</Card.Content>
-				</Card>
-			) : (
-				<div className="space-y-6">
-					{attentionArms.length > 0 && (
+					<AllArmsTelemetryOverview />
+
+					{loading ? (
+						<div className="space-y-2">
+							{[1, 2, 3, 4].map((i) => (
+								<div key={i} className="h-16 rounded-lg bg-default-100/60 animate-pulse" />
+							))}
+						</div>
+					) : arms.length === 0 ? (
+						<Card>
+							<Card.Content className="py-12 text-center">
+								<p className="text-muted-foreground mb-4">No arms registered yet</p>
+								<code className="block p-4 bg-muted/20 rounded text-sm text-left max-w-md mx-auto">
+									coleo arm spawn
+								</code>
+							</Card.Content>
+						</Card>
+					) : (
+						<div className="space-y-6">
+							{attentionArms.length > 0 && (
 						<div className="space-y-2">
 							<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-warning">
 								<AlertTriangle className="h-3.5 w-3.5" />
@@ -1126,10 +1159,27 @@ export function ArmsPage() {
 
 								<div className="spawn-arm-panel__identity grid gap-4">
 									<div>
-										<label className="mb-2 block text-sm font-medium text-foreground">
-											Arm name
-										</label>
+										<div className="mb-2 flex items-center justify-between gap-3">
+											<label className="text-sm font-medium text-foreground" htmlFor="spawn-arm-name">
+												Arm name
+											</label>
+											<Button
+												variant="ghost"
+												size="sm"
+												onPress={() =>
+													setSpawnModal((current) => ({
+														...current,
+														name: generateSuggestedArmName(arms),
+													}))
+												}
+												className="gap-1.5 text-xs"
+											>
+												<RefreshCw className="h-3.5 w-3.5" />
+												Regenerate
+											</Button>
+										</div>
 										<input
+											id="spawn-arm-name"
 											value={spawnModal.name}
 											onChange={(e) =>
 												setSpawnModal((current) => ({
@@ -1298,6 +1348,58 @@ export function ArmsPage() {
 										Provider and model options come from OpenCode on the selected arm host.
 									</p>
 								)}
+
+								{selectedOpenCodeModel ? (
+									<div className="rounded-lg border border-border bg-surface-secondary/45 p-3 text-sm text-muted-foreground">
+										<div className="flex flex-wrap items-center justify-between gap-2">
+											<span className="font-medium text-foreground">Model estimate*</span>
+											{modelPricing ? (
+												<span>
+													${modelPricing.input.toFixed(2)} input / ${modelPricing.output.toFixed(2)} output per 1M tokens
+												</span>
+											) : (
+												<span>Provider did not report pricing.</span>
+											)}
+										</div>
+										{modelPricing ? (
+											<p className="mt-1 text-xs">
+												A balanced 100k-token run is approximately ${modelPricing.per100k.toFixed(2)}.
+											</p>
+										) : null}
+										{modelPricing?.source === "openrouter" ? (
+											<p className="mt-1 text-xs">
+												Approximate market rate via OpenRouter
+												{modelPricing.matchedModel ? ` (${modelPricing.matchedModel})` : ""}.
+											</p>
+										) : modelPricing?.source === "known" ? (
+											<p className="mt-1 text-xs">
+												Approximate catalog rate, not actual provider billing.
+											</p>
+										) : null}
+										{selectedOpenCodeModel.limit?.context ? (
+											<p className="mt-1 text-xs">
+												Context capacity: {selectedOpenCodeModel.limit.context.toLocaleString()} tokens.
+											</p>
+										) : null}
+										{modelPricing ? (
+											<p className="mt-2 text-xs">
+												* Estimate assumes per-token billing. Your provider account or plan may include usage or not charge per token.
+											</p>
+										) : null}
+									</div>
+								) : null}
+
+								{contextBudgetWarning ? (
+									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
+										This template requests {selectedTemplate?.contextBudget.toLocaleString()} context tokens, but the selected model supports only {selectedOpenCodeModel?.limit?.context?.toLocaleString()}. Choose a larger-context model or a different template.
+									</div>
+								) : null}
+
+								{isHighCostModel ? (
+									<div className="rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">
+										This is a high-cost model. Its estimated balanced 100k-token run is ${modelPricing?.per100k.toFixed(2)}; choose a lower-cost model if this arm will run frequently.
+									</div>
+								) : null}
 
 								{usesOpenCodeCatalog(spawnModal.harness) && selectedOpenCodeProvider?.connected === false && (
 									<div className="flex items-center justify-between gap-3 rounded-lg border border-warning/50 bg-warning/10 p-3 text-sm text-foreground">

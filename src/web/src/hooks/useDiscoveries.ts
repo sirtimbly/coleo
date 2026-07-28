@@ -4,7 +4,7 @@
  * Provides queries and mutations for discovery management with optimistic updates.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, type Discovery } from '@/lib/api';
 import { useToast } from '@/hooks/useToast';
 
@@ -15,6 +15,8 @@ interface DiscoveryFilters {
   severity?: string;
   status?: string;
 }
+
+const PAGE_SIZE = 100;
 
 interface UpdateDiscoveryVariables {
   id: string;
@@ -107,6 +109,33 @@ export function useDiscoveries(filters?: DiscoveryFilters) {
     updateDiscovery: updateDiscoveryMutation.mutate,
     updateDiscoveryAsync: updateDiscoveryMutation.mutateAsync,
     isUpdating: updateDiscoveryMutation.isPending,
+  };
+}
+
+export function useInfiniteDiscoveries(filters?: DiscoveryFilters) {
+  const discoveriesQuery = useInfiniteQuery({
+    queryKey: [...discoveriesKeys.list(filters ?? {}), 'infinite'],
+    queryFn: ({ pageParam = 0 }) => api.listDiscoveries({
+      ...filters,
+      limit: PAGE_SIZE,
+      offset: pageParam,
+    }),
+    getNextPageParam: (lastPage) => {
+      const pagination = lastPage.pagination;
+      return pagination.offset + pagination.limit < pagination.total
+        ? pagination.offset + pagination.limit
+        : undefined;
+    },
+    initialPageParam: 0,
+  });
+
+  return {
+    discoveries: discoveriesQuery.data?.pages.flatMap((page) => page.discoveries) ?? [],
+    hasNextPage: discoveriesQuery.hasNextPage,
+    isFetchingNextPage: discoveriesQuery.isFetchingNextPage,
+    isLoading: discoveriesQuery.isLoading,
+    refetch: discoveriesQuery.refetch,
+    fetchNextPage: discoveriesQuery.fetchNextPage,
   };
 }
 

@@ -1,5 +1,6 @@
 [tools]
 bun = "latest"
+python = "latest"
 shellcheck = "latest"
 
 [tasks.dev]

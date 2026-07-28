@@ -33,6 +33,7 @@ import {
 	STATUS_LABELS,
 } from "./task-styles";
 import { formatGridDate } from "./grid-table";
+import { TaskChecklistProgress } from "./TaskChecklistProgress";
 
 export const TASK_GRID_COLUMNS_CLASS =
 	"grid-cols-[24px_80px_32px_minmax(280px,1fr)_112px_132px_112px_96px_124px_140px_180px]";
@@ -293,6 +294,7 @@ export const TaskGridRow = memo(function TaskGridRow({
 					<div className="mt-2 h-[200px] overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border/60 bg-surface-secondary/40 p-3 text-xs leading-5 text-muted-foreground">
 						{task.description.trim() || "No detail text provided."}
 					</div>
+					<TaskChecklistProgress taskId={task.id} className="mt-2" />
 				</div>
 			) : (
 				<input
