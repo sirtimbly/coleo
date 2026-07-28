@@ -11,6 +11,7 @@ import { withTransaction } from "../../db/transactions";
 import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
+import { prepareTaskFromDiscussion } from "../services/task-preparation";
 
 interface ChecklistItem {
 	id: number;
@@ -583,6 +584,28 @@ export function createTasksRoutes() {
 			return { bucket, ...value, cumulativeCreated, cumulativeCompleted };
 		});
 		return c.json({ bin: typedBin, timeZone, start: startIso, end: endIso, buckets });
+	});
+
+	/**
+	 * Prepare a detailed task definition from a task's discussion history.
+	 * POST /api/tasks/:id/prepare
+	 */
+	app.post("/:id/prepare", async (c) => {
+		const db = c.get("db");
+		const id = c.req.param("id");
+		const body = await c.req.json<{ guidance?: string }>();
+
+		const row = getTaskRowById(db, id);
+		if (!row) {
+			throw HttpError.notFound(`Task not found: ${id}`);
+		}
+
+		const task = parseTaskRow(row);
+		const prepared = await prepareTaskFromDiscussion(db, task, {
+			guidance: body.guidance,
+		});
+
+		return c.json({ prepared });
 	});
 
 	/**

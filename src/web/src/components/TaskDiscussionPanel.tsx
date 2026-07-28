@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MessageSquare, ChevronDown } from 'lucide-react';
+import { MessageSquare, ChevronDown, Sparkles } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { api, isJsonObject, type TaskComment } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { DiscussionItem } from './DiscussionItem';
 import { DiscussionComposer } from './DiscussionComposer';
+import { PreparedTaskModal } from './PreparedTaskModal';
 
 interface TaskDiscussionPanelProps {
   taskId: string;
@@ -38,6 +39,11 @@ export function TaskDiscussionPanel({
 
   const [unreadCount, setUnreadCount] = useState(0);
   const [lastReadCommentId, setLastReadCommentId] = useState<string | null>(null);
+
+  const [isPrepareOpen, setIsPrepareOpen] = useState(false);
+  const [preparedTask, setPreparedTask] = useState<import('@/lib/api').PreparedTaskDefinition | null>(null);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   const discussionListRef = useRef<HTMLDivElement>(null);
   const currentUserId = getCurrentUserId();
@@ -186,10 +192,40 @@ export function TaskDiscussionPanel({
     setReplyTo(null);
   };
 
+  const handlePrepareTask = async () => {
+    setIsPrepareOpen(true);
+    setIsPreparing(true);
+    setPrepareError(null);
+    setPreparedTask(null);
+
+    try {
+      const result = await api.prepareTaskFromDiscussion(taskId);
+      setPreparedTask(result.prepared);
+    } catch (err) {
+      setPrepareError(err instanceof Error ? err.message : 'Failed to prepare task');
+    } finally {
+      setIsPreparing(false);
+    }
+  };
+
   const displayDiscussions = [...discussions].reverse();
 
   return (
     <div className={cn('flex flex-col h-full', className)}>
+      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-700 bg-zinc-800/30">
+        <h3 className="text-sm font-medium text-zinc-300">Discussion</h3>
+        <Button
+          size="sm"
+          variant="ghost"
+          onPress={handlePrepareTask}
+          isDisabled={isPreparing}
+          className="text-amber-400 hover:text-amber-300 hover:bg-amber-950/20"
+        >
+          <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+          Prepare task
+        </Button>
+      </div>
+
       {error && (
         <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/30">
           <p className="text-sm text-red-400">{error}</p>
@@ -265,6 +301,15 @@ export function TaskDiscussionPanel({
           />
         )}
       </div>
+
+      <PreparedTaskModal
+        isOpen={isPrepareOpen}
+        onClose={() => setIsPrepareOpen(false)}
+        taskId={taskId}
+        prepared={preparedTask}
+        isLoading={isPreparing}
+        error={prepareError}
+      />
     </div>
   );
 }

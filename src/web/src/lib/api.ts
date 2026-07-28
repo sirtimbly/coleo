@@ -133,6 +133,19 @@ export interface ProjectSetupStatus {
   defaultTemplateContent: string;
 }
 
+export interface PreparedTaskDefinition {
+  subject: string;
+  description: string;
+  context: string;
+  requirements: string[];
+  acceptanceCriteria: string[];
+  priority: Task['priority'];
+  classification: string;
+  phase: string;
+  estimatedEffort: string;
+  sourceRef?: string;
+}
+
 class ApiClient {
   private apiKey: string | null = null;
 
@@ -937,6 +950,13 @@ class ApiClient {
     return this.request<{ task: Task }>('/tasks', {
       method: 'POST',
       body: JSON.stringify(data),
+    });
+  }
+
+  async prepareTaskFromDiscussion(taskId: string, guidance?: string) {
+    return this.request<{ prepared: PreparedTaskDefinition }>(`/tasks/${taskId}/prepare`, {
+      method: 'POST',
+      body: JSON.stringify({ guidance }),
     });
   }
 
