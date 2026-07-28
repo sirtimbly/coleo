@@ -127,6 +127,10 @@ export async function runScenario(
       result = await scenario.evaluate(ctx, result);
     }
 
+    if (!result.passed && options?.keepOnFailure) {
+      keepContext = true;
+    }
+
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     ctx.log(`Scenario failed: ${errorMsg}`);

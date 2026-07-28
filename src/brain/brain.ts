@@ -1005,6 +1005,30 @@ export class Brain {
 	}
 
 	/**
+	 * Run a fixed number of poll cycles, waiting between cycles but not after the last one.
+	 */
+	async runCycles(cycles: number, delayMs: number): Promise<void> {
+		this.running = true;
+		this.shuttingDown = false;
+		this.abortController = new AbortController();
+		this.state.status = "running";
+		this.state.startedAt = this.state.startedAt || new Date().toISOString();
+
+		await this.notifyObservatory("started");
+		for (let cycle = 0; cycle < cycles; cycle++) {
+			await this.poll();
+			if (cycle < cycles - 1) {
+				await Bun.sleep(delayMs);
+			}
+		}
+
+		this.running = false;
+		this.state.status = "stopped";
+		await this.saveState();
+		await this.notifyObservatory("stopped");
+	}
+
+	/**
 	 * Stop the brain - signals to exit the polling loop
 	 */
 	stop(): void {
@@ -5746,6 +5770,7 @@ Report findings using bug resolution workflow.`;
 		for (const arm of idleArms) {
 			const armDomain = (arm as Arm & { domain?: string }).domain || "general";
 			const isApi = await this.isApiHarness(arm.id);
+			const availableTasks = this.getAvailableTasksForArm(taskSnapshot, arm.id);
 
 			// Skip API harnesses if API server is unavailable
 			if (isApi && !apiAvailable) {
@@ -5755,8 +5780,7 @@ Report findings using bug resolution workflow.`;
 				continue;
 			}
 
-			// Grace period: skip prompting arms that were just detected
-			// This prevents interrupting arms that were working autonomously before brain came online
+			// Let newly detected arms continue autonomous work unless there is queued work to dispatch.
 			const detectionTime = this.armDetectionTimes.get(arm.id);
 			if (detectionTime) {
 				const gracePeriod = await this.getBrainConfigNumber(
@@ -5765,7 +5789,7 @@ Report findings using bug resolution workflow.`;
 				);
 				const detectedMinutesAgo =
 					(Date.now() - detectionTime.getTime()) / 1000 / 60;
-				if (detectedMinutesAgo < gracePeriod) {
+				if (detectedMinutesAgo < gracePeriod && availableTasks.length === 0) {
 					this.log(
 						`Arm ${arm.id} [${armDomain}]: recently detected (${detectedMinutesAgo.toFixed(1)}m ago, grace period: ${gracePeriod}m), skipping prompt`,
 					);
@@ -5838,14 +5862,12 @@ Report findings using bug resolution workflow.`;
 				arm.id,
 				160 * 1000,
 			);
-			if (recentSignal.recent) {
+			if (recentSignal.recent && availableTasks.length === 0) {
 				this.log(
 					`Arm ${arm.id} [${armDomain}]: ${recentSignal.reason || "recent activity"}, skipping prompt`,
 				);
 				continue;
 			}
-
-			const availableTasks = this.getAvailableTasksForArm(taskSnapshot, arm.id);
 
 			if (availableTasks.length > 0) {
 				// There are tasks available - prompt the arm to fetch its assignment

@@ -135,6 +135,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["059_normalize_task_order_keys", MIGRATION_059],
 		["060_blocked_task_workflow", MIGRATION_060, { table: "tasks", columns: MIGRATION_060_COLUMNS }],
 		["061_arm_metric_history", MIGRATION_061_ARM_METRIC_HISTORY],
+		["062_arm_message_metrics", MIGRATION_062_ARM_MESSAGE_METRICS],
 	];
 
 
@@ -2034,6 +2035,28 @@ CREATE TABLE IF NOT EXISTS arm_metric_history (
 
 CREATE INDEX IF NOT EXISTS idx_arm_metric_history_arm_time
 ON arm_metric_history(arm_id, timestamp DESC);
+`;
+
+const MIGRATION_062_ARM_MESSAGE_METRICS = `
+CREATE TABLE IF NOT EXISTS arm_message_metrics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  session_id TEXT,
+  timestamp TEXT NOT NULL,
+  context_used INTEGER NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  reasoning_tokens INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL,
+  cache_write_tokens INTEGER NOT NULL,
+  cost REAL NOT NULL,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE,
+  UNIQUE (arm_id, message_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_arm_message_metrics_arm_time
+ON arm_message_metrics(arm_id, timestamp DESC);
 `;
 
 export { Database };

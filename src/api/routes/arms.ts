@@ -23,6 +23,7 @@ import { hostname } from "os";
 import { appendTaskAttachmentsToPromptText } from "../../lib/prompt-attachments";
 import { supportsInputModality } from "../../harness/model-resolver";
 import { searchStatusHistory } from "../../vector/indexing-pipeline";
+import { recordMetricSnapshot } from "../arm-metrics";
 import type { TaskAttachment } from "../../types";
 
 interface ArmsContext {
@@ -533,36 +534,6 @@ function logActivity(_db: Database, actor: string, action: string, target?: stri
     }).catch(err => {
       console.error(`[arms-api] Failed to publish activity event: ${err}`);
     });
-  }
-}
-
-function recordMetricSnapshot(db: Database, armId: string, timestamp = new Date().toISOString()): void {
-  try {
-    const arm = db.query(
-      `SELECT current_context_used, context_budget, total_tokens, total_cost FROM arms WHERE id = ?`,
-    ).get(armId) as {
-      current_context_used: number;
-      context_budget: number;
-      total_tokens: number | null;
-      total_cost: number | null;
-    } | null;
-    if (!arm) return;
-
-    db.run(
-      `INSERT INTO arm_metric_history
-       (arm_id, timestamp, context_used, context_budget, total_tokens, total_cost)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        armId,
-        timestamp,
-        arm.current_context_used,
-        arm.context_budget,
-        arm.total_tokens ?? 0,
-        arm.total_cost ?? 0,
-      ],
-    );
-  } catch {
-    // Older test databases may not have applied the history migration yet.
   }
 }
 
@@ -2817,7 +2788,9 @@ export function createArmsRoutes() {
 
     params.push(id);
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, params);
-    recordMetricSnapshot(db, id, now);
+    if (body.tokens !== undefined || body.cost !== undefined) {
+      recordMetricSnapshot(db, id, now);
+    }
 
     return c.json({ success: true });
   });
@@ -2906,17 +2879,21 @@ export function createArmsRoutes() {
     ).get(id) as { cost: number | null; tokens: number | null; updatedAt: string } | null;
     if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
 
-    let samples: Array<{ timestamp: string; cost: number; tokens: number }> = [];
+    let samples: Array<{ timestamp: string; cost: number; tokens: number; messageId: string }> = [];
+    let historyAvailable = true;
     try {
       samples = db.query(
-        `SELECT timestamp, total_cost as cost, total_tokens as tokens
-         FROM arm_metric_history WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
+        `SELECT timestamp, cost,
+                input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens as tokens,
+                message_id as messageId
+         FROM arm_message_metrics WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
       ).all(id, since) as typeof samples;
     } catch {
       // The current reading is still useful during a rolling migration.
+      historyAvailable = false;
     }
-    if (samples.length === 0) {
-      samples = [{ timestamp: arm.updatedAt, cost: arm.cost ?? 0, tokens: arm.tokens ?? 0 }];
+    if (!historyAvailable) {
+      samples = [{ timestamp: arm.updatedAt, cost: arm.cost ?? 0, tokens: arm.tokens ?? 0, messageId: "current" }];
     }
 
     return c.json({ armId: id, windowMs, samples });
@@ -3029,6 +3006,13 @@ export function createArmsRoutes() {
     if (!newSessionId) {
       throw HttpError.internal(`Failed to reset session for arm ${id}`);
     }
+
+    const resetAt = new Date().toISOString();
+    db.run(
+      "UPDATE arms SET session_id = ?, current_context_used = 0, updated_at = ? WHERE id = ?",
+      [newSessionId, resetAt, id],
+    );
+    recordMetricSnapshot(db, id, resetAt);
 
     // Log the activity
     logActivity(db, id, "session_reset", undefined, { newSessionId });

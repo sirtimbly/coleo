@@ -3,7 +3,6 @@ import { Loader2 } from 'lucide-react';
 import { api } from '@/lib';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components';
 import {
-  buildCostSamplesFromMessages,
   computeCostRatePerHour,
   COST_POLL_INTERVAL_MS,
   COST_WINDOW_MS,
@@ -24,7 +23,7 @@ export type { CostSample };
  * the last 5 minutes of spend, and an optional dashed threshold line when a
  * costBudget prop is supplied.
  *
- * Samples are derived from per-message info.cost on the arm's message log and
+ * Samples come from the server's complete message-cost history and are
  * persisted in localStorage keyed by armId.
  */
 
@@ -111,9 +110,20 @@ export function ArmCostUsageChart({
       if (cancelled) return;
       setLoading(true);
       try {
-        const response = await api.getArmMessages(armId, 200);
+        const response = await api.getArmCostHistory(armId, COST_WINDOW_MS);
         if (cancelled) return;
-        const fresh = buildCostSamplesFromMessages(response.messages);
+        const fresh: CostSample[] = response.samples
+          .map((sample) => ({
+            messageId: sample.messageId,
+            timestamp: new Date(sample.timestamp).getTime(),
+            messageCost: sample.cost,
+            inputTokens: sample.tokens,
+            outputTokens: 0,
+            reasoningTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          }))
+          .filter((sample) => Number.isFinite(sample.timestamp) && sample.messageCost > 0);
         recordSnapshot(fresh);
         setError(null);
       } catch (err) {

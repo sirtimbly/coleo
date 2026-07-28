@@ -103,12 +103,10 @@ const MODEL_PRICING: Record<string, { input: number; output: number }> = {
   "Qwen/Qwen3-32B": { input: 0.1, output: 0.3 },
   "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo": { input: 0.8, output: 2.4 },
 
-  // Default fallback
-  default: { input: 5, output: 20 },
 };
 
-function getModelPricing(modelId: string): { input: number; output: number } {
-  return MODEL_PRICING[modelId] ?? MODEL_PRICING.default!;
+function getModelPricing(modelId: string): { input: number; output: number } | undefined {
+  return MODEL_PRICING[modelId];
 }
 
 function enrichModelWithPricing(model: OpenCodeModel): OpenCodeModel {
@@ -133,6 +131,7 @@ function enrichModelWithPricing(model: OpenCodeModel): OpenCodeModel {
   }
 
   const pricing = getModelPricing(model.id);
+  if (!pricing) return model;
   return {
     ...model,
     pricing,

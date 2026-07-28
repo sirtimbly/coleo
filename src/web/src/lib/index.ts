@@ -42,6 +42,7 @@ export {
   type EventWindowResponse,
   type ArmActivityMetricsResponse,
   type ArmContextResponse,
+  type ArmCostHistoryResponse,
   type RecentEventsResponse,
   type SearchResult,
   type SearchResponse,

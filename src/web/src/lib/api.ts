@@ -1260,6 +1260,13 @@ class ApiClient {
     );
   }
 
+  async getArmCostHistory(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmCostHistoryResponse>(
+      `/arms/${encodeURIComponent(armId)}/cost-history?${query.toString()}`,
+    );
+  }
+
   async getRecentEvents(options?: { limit?: number; sinceMs?: number }) {
     const query = new URLSearchParams();
     if (options?.limit) query.set('limit', options.limit.toString());
@@ -1962,6 +1969,17 @@ export interface ArmContextResponse {
     utilization: number;
     files: Array<{ path: string; claimedAt: string }>;
   };
+}
+
+export interface ArmCostHistoryResponse {
+  armId: string;
+  windowMs: number;
+  samples: Array<{
+    timestamp: string;
+    cost: number;
+    tokens: number;
+    messageId: string;
+  }>;
 }
 
 export interface RecentEventsResponse {

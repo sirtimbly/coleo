@@ -27,7 +27,10 @@ interface ActivityMetricBucket {
   counts: Record<ActivityMetricCategory, number>;
 }
 
-function classifyActivityMetric(type: string, data: Record<string, unknown>): ActivityMetricCategory {
+export function classifyActivityMetric(
+  type: string,
+  data: Record<string, unknown>,
+): ActivityMetricCategory | null {
   if (type === "file.edited" || type.startsWith("file.")) {
     return "write";
   }
@@ -37,13 +40,20 @@ function classifyActivityMetric(type: string, data: Record<string, unknown>): Ac
     if (isRecord(part) && (part.type === "text" || part.type === "reasoning")) {
       return "think";
     }
+    if (isRecord(part) && part.type === "tool") {
+      return "tool";
+    }
   }
 
   if (type === "task.completed" || type === "task.completion" || type === "step.completed") {
     return "complete";
   }
 
-  return "tool";
+  if (type === "tool.call" || type === "tool.invoked" || type === "tool.started") {
+    return "tool";
+  }
+
+  return null;
 }
 
 /**
@@ -275,7 +285,9 @@ export function createEventsRoutes() {
         const index = Math.floor((timestamp - startMs) / bucketMs);
         const bucket = buckets[index];
         if (!bucket) continue;
-        bucket.counts[classifyActivityMetric(event.type, event.data)] += 1;
+        const category = classifyActivityMetric(event.type, event.data);
+        if (!category) continue;
+        bucket.counts[category] += 1;
         totalEvents += 1;
       }
 
