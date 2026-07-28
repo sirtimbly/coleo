@@ -34,6 +34,7 @@ interface ArmCostUsageChartProps {
   title?: string;
   className?: string;
   embedded?: boolean;
+  compact?: boolean;
 }
 
 function loadStoredSamples(armId: string): CostSample[] {
@@ -64,6 +65,7 @@ export function ArmCostUsageChart({
   title = 'Cost Usage',
   className,
   embedded = false,
+  compact = false,
 }: ArmCostUsageChartProps) {
   const [samples, setSamples] = useState<CostSample[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,11 +143,11 @@ export function ArmCostUsageChart({
   const costRatePerHour = computeCostRatePerHour(visibleSamples, referenceTime);
 
   const width = 600;
-  const height = 140;
+  const height = compact ? 105 : 140;
   const padLeft = 52;
-  const padRight = 16;
-  const padTop = 14;
-  const padBottom = 24;
+  const padRight = compact ? 12 : 16;
+  const padTop = compact ? 10 : 14;
+  const padBottom = compact ? 18 : 24;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
@@ -209,34 +211,40 @@ export function ArmCostUsageChart({
   const inner = (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: lineColor }} />
-          Cumulative cost
-        </span>
-        {maxBudget > 0 && (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: budgetLineColor }} />
-            Cost budget
-          </span>
+        {compact ? (
+          <span>{`Cost usage · last ${Math.round(COST_WINDOW_MS / 60_000)}m`}</span>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: lineColor }} />
+              Cumulative cost
+            </span>
+            {maxBudget > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: budgetLineColor }} />
+                Cost budget
+              </span>
+            )}
+            <span className="text-[0.72rem] uppercase tracking-[0.16em] text-muted-foreground">
+              ~{formatCompactCurrency(costRatePerHour)}/hr
+              <span className="ml-1 normal-case tracking-normal">recent 5 min</span>
+            </span>
+            <span className="text-[0.7rem]">Samples every ~{Math.round(COST_POLL_INTERVAL_MS / 1000)}s</span>
+          </>
         )}
-        <span className="text-[0.72rem] uppercase tracking-[0.16em] text-muted-foreground">
-          ~{formatCompactCurrency(costRatePerHour)}/hr
-          <span className="ml-1 normal-case tracking-normal">recent 5 min</span>
-        </span>
-        <span className="text-[0.7rem]">Samples every ~{Math.round(COST_POLL_INTERVAL_MS / 1000)}s</span>
       </div>
 
       {loading && visibleSamples.length === 0 ? (
-        <div className="flex h-[120px] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading cost samples...</span>
         </div>
       ) : error ? (
-        <div className="flex h-[120px] items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger">
+        <div className="flex items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger" style={{ height: compact ? 90 : 120 }}>
           {error}
         </div>
       ) : visibleSamples.length === 0 ? (
-        <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
           No cost samples yet. The first one arrives in ~{Math.round(COST_POLL_INTERVAL_MS / 1000)} seconds.
         </div>
       ) : (
@@ -343,10 +351,10 @@ export function ArmCostUsageChart({
             </text>
           </svg>
           {hoveredSample ? (
-            <div
-              className="pointer-events-none absolute right-2 top-2 z-10 rounded-md border border-border bg-background/95 px-3 py-2 text-xs shadow"
-              style={{ width: 200 }}
-            >
+              <div
+                className="pointer-events-none absolute right-2 top-2 z-10 rounded-md border border-border bg-background/95 px-3 py-2 text-xs shadow"
+                style={{ width: compact ? 180 : 200 }}
+              >
               <div className="font-semibold">{formatTime(hoveredSample.timestamp)}</div>
               <div className="mt-1 grid gap-0.5">
                 <div className="flex justify-between gap-2">

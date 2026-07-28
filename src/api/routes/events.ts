@@ -20,6 +20,32 @@ interface EventsContext {
   };
 }
 
+type ActivityMetricCategory = "write" | "think" | "tool" | "complete";
+
+interface ActivityMetricBucket {
+  start: string;
+  counts: Record<ActivityMetricCategory, number>;
+}
+
+function classifyActivityMetric(type: string, data: Record<string, unknown>): ActivityMetricCategory {
+  if (type === "file.edited" || type.startsWith("file.")) {
+    return "write";
+  }
+
+  if (type === "message.part.updated" || type === "message.part.created") {
+    const part = data.part;
+    if (isRecord(part) && (part.type === "text" || part.type === "reasoning")) {
+      return "think";
+    }
+  }
+
+  if (type === "task.completed" || type === "task.completion" || type === "step.completed") {
+    return "complete";
+  }
+
+  return "tool";
+}
+
 /**
  * Throttle state for SSE connections
  */
@@ -205,6 +231,65 @@ export function createEventsRoutes() {
       });
     } catch (err) {
       throw HttpError.internal(`Failed to fetch event window: ${err}`);
+    }
+  });
+
+  /**
+   * Aggregate recent arm activity into fixed minute buckets for chart rendering.
+   * GET /api/events/arms/:armId/metrics
+   */
+  app.get("/arms/:armId/metrics", async (c) => {
+    const armId = c.req.param("armId");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 30 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const bucketMs = 60_000;
+    const endMs = Math.ceil(Date.now() / bucketMs) * bucketMs;
+    const startMs = endMs - windowMs;
+    const bucketCount = Math.ceil(windowMs / bucketMs);
+    const buckets: ActivityMetricBucket[] = Array.from({ length: bucketCount }, (_, index) => ({
+      start: new Date(startMs + index * bucketMs).toISOString(),
+      counts: { write: 0, think: 0, tool: 0, complete: 0 },
+    }));
+
+    if (!brainEventWindow.isAvailable()) {
+      return c.json({
+        armId,
+        window: { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), bucketMs },
+        buckets,
+        summary: { totalEvents: 0, lastEventAt: null },
+      });
+    }
+
+    try {
+      const window = await brainEventWindow.getWindowForArm(armId, {
+        windowMs,
+        limit: 1000,
+      });
+      let totalEvents = 0;
+
+      for (const event of window.events) {
+        const timestamp = new Date(event.timestamp).getTime();
+        if (!Number.isFinite(timestamp) || timestamp < startMs || timestamp >= endMs) continue;
+        const index = Math.floor((timestamp - startMs) / bucketMs);
+        const bucket = buckets[index];
+        if (!bucket) continue;
+        bucket.counts[classifyActivityMetric(event.type, event.data)] += 1;
+        totalEvents += 1;
+      }
+
+      return c.json({
+        armId,
+        window: { start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString(), bucketMs },
+        buckets,
+        summary: {
+          totalEvents,
+          lastEventAt: window.lastEventAt?.toISOString() ?? null,
+        },
+      });
+    } catch (err) {
+      throw HttpError.internal(`Failed to aggregate arm metrics: ${err}`);
     }
   });
 

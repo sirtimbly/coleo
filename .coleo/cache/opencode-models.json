@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-07-20T18:10:05.401Z",
+  "fetchedAt": "2026-07-28T01:09:34.592Z",
   "providers": [
     {
       "id": "cerebras",
@@ -78,6 +78,10 @@
         {
           "id": "moonshotai/Kimi-K2.7-Code",
           "name": "moonshotai/Kimi-K2.7-Code"
+        },
+        {
+          "id": "moonshotai/Kimi-K3",
+          "name": "moonshotai/Kimi-K3"
         },
         {
           "id": "nvidia/Nemotron-3-Nano-30B-A3B",
@@ -212,6 +216,18 @@
       "name": "Google",
       "models": [
         {
+          "id": "deep-research-max-preview-04-2026",
+          "name": "deep-research-max-preview-04-2026"
+        },
+        {
+          "id": "deep-research-preview-04-2026",
+          "name": "deep-research-preview-04-2026"
+        },
+        {
+          "id": "gemini-2.5-computer-use-preview-10-2025",
+          "name": "gemini-2.5-computer-use-preview-10-2025"
+        },
+        {
           "id": "gemini-2.5-flash",
           "name": "gemini-2.5-flash"
         },
@@ -240,8 +256,16 @@
           "name": "gemini-3-flash-preview"
         },
         {
+          "id": "gemini-3-pro-image",
+          "name": "gemini-3-pro-image"
+        },
+        {
           "id": "gemini-3-pro-image-preview",
           "name": "gemini-3-pro-image-preview"
+        },
+        {
+          "id": "gemini-3.1-flash-image",
+          "name": "gemini-3.1-flash-image"
         },
         {
           "id": "gemini-3.1-flash-image-preview",
@@ -250,6 +274,18 @@
         {
           "id": "gemini-3.1-flash-lite",
           "name": "gemini-3.1-flash-lite"
+        },
+        {
+          "id": "gemini-3.1-flash-lite-image",
+          "name": "gemini-3.1-flash-lite-image"
+        },
+        {
+          "id": "gemini-3.1-flash-live-preview",
+          "name": "gemini-3.1-flash-live-preview"
+        },
+        {
+          "id": "gemini-3.1-flash-tts-preview",
+          "name": "gemini-3.1-flash-tts-preview"
         },
         {
           "id": "gemini-3.1-pro-preview",
@@ -264,8 +300,24 @@
           "name": "gemini-3.5-flash"
         },
         {
+          "id": "gemini-3.5-flash-lite",
+          "name": "gemini-3.5-flash-lite"
+        },
+        {
+          "id": "gemini-3.5-live-translate-preview",
+          "name": "gemini-3.5-live-translate-preview"
+        },
+        {
+          "id": "gemini-3.6-flash",
+          "name": "gemini-3.6-flash"
+        },
+        {
           "id": "gemini-embedding-001",
           "name": "gemini-embedding-001"
+        },
+        {
+          "id": "gemini-embedding-2",
+          "name": "gemini-embedding-2"
         },
         {
           "id": "gemini-flash-latest",
@@ -280,12 +332,36 @@
           "name": "gemini-omni-flash-preview"
         },
         {
+          "id": "gemini-robotics-er-1.6-preview",
+          "name": "gemini-robotics-er-1.6-preview"
+        },
+        {
           "id": "gemma-4-26b-a4b-it",
           "name": "gemma-4-26b-a4b-it"
         },
         {
           "id": "gemma-4-31b-it",
           "name": "gemma-4-31b-it"
+        },
+        {
+          "id": "lyria-3-clip-preview",
+          "name": "lyria-3-clip-preview"
+        },
+        {
+          "id": "lyria-3-pro-preview",
+          "name": "lyria-3-pro-preview"
+        },
+        {
+          "id": "veo-3.1-fast-generate-preview",
+          "name": "veo-3.1-fast-generate-preview"
+        },
+        {
+          "id": "veo-3.1-generate-preview",
+          "name": "veo-3.1-generate-preview"
+        },
+        {
+          "id": "veo-3.1-lite-generate-preview",
+          "name": "veo-3.1-lite-generate-preview"
         }
       ]
     },
@@ -1684,6 +1760,10 @@
           "name": "k3"
         },
         {
+          "id": "k3-256k",
+          "name": "k3-256k"
+        },
+        {
           "id": "kimi-for-coding",
           "name": "kimi-for-coding"
         },
@@ -1834,6 +1914,10 @@
           "name": "claude-opus-4-8"
         },
         {
+          "id": "claude-opus-5",
+          "name": "claude-opus-5"
+        },
+        {
           "id": "claude-sonnet-4",
           "name": "claude-sonnet-4"
         },
@@ -1872,6 +1956,14 @@
         {
           "id": "gemini-3.5-flash",
           "name": "gemini-3.5-flash"
+        },
+        {
+          "id": "gemini-3.5-flash-lite",
+          "name": "gemini-3.5-flash-lite"
+        },
+        {
+          "id": "gemini-3.6-flash",
+          "name": "gemini-3.6-flash"
         },
         {
           "id": "glm-5",
@@ -1974,10 +2066,6 @@
           "name": "grok-build-0.1"
         },
         {
-          "id": "hy3-free",
-          "name": "hy3-free"
-        },
-        {
           "id": "kimi-k2.5",
           "name": "kimi-k2.5"
         },
@@ -1988,6 +2076,18 @@
         {
           "id": "kimi-k2.7-code",
           "name": "kimi-k2.7-code"
+        },
+        {
+          "id": "kimi-k3",
+          "name": "kimi-k3"
+        },
+        {
+          "id": "laguna-s-2.1-free",
+          "name": "laguna-s-2.1-free"
+        },
+        {
+          "id": "ling-3.0-flash-free",
+          "name": "ling-3.0-flash-free"
         },
         {
           "id": "mimo-v2.5-free",

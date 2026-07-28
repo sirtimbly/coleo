@@ -1229,6 +1229,13 @@ class ApiClient {
     );
   }
 
+  async getArmActivityMetrics(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmActivityMetricsResponse>(
+      `/events/arms/${encodeURIComponent(armId)}/metrics?${query.toString()}`,
+    );
+  }
+
   async getArmAnalysis(armId: string, options?: { windowMs?: number }) {
     const query = new URLSearchParams();
     if (options?.windowMs) query.set('windowMs', options.windowMs.toString());
@@ -1923,6 +1930,28 @@ export interface EventWindowResponse {
     firstEventAt: string | null;
     lastEventAt: string | null;
     durationMs: number;
+  };
+}
+
+export interface ArmActivityMetricsResponse {
+  armId: string;
+  window: {
+    start: string;
+    end: string;
+    bucketMs: number;
+  };
+  buckets: Array<{
+    start: string;
+    counts: {
+      write: number;
+      think: number;
+      tool: number;
+      complete: number;
+    };
+  }>;
+  summary: {
+    totalEvents: number;
+    lastEventAt: string | null;
   };
 }
 

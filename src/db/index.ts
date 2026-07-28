@@ -134,6 +134,7 @@ async function runMigrations(db: Database): Promise<void> {
     ["058_task_blocked_at", MIGRATION_058, { table: "tasks", columns: MIGRATION_058_COLUMNS }],
 		["059_normalize_task_order_keys", MIGRATION_059],
 		["060_blocked_task_workflow", MIGRATION_060, { table: "tasks", columns: MIGRATION_060_COLUMNS }],
+		["061_arm_metric_history", MIGRATION_061_ARM_METRIC_HISTORY],
 	];
 
 
@@ -2017,6 +2018,22 @@ WHEN NEW.status = 'blocked' AND TRIM(COALESCE(NEW.blocked_reason, '')) = ''
 BEGIN
   SELECT RAISE(ABORT, 'blocked tasks require a reason');
 END;
+`;
+
+const MIGRATION_061_ARM_METRIC_HISTORY = `
+CREATE TABLE IF NOT EXISTS arm_metric_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  arm_id TEXT NOT NULL,
+  timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+  context_used INTEGER NOT NULL,
+  context_budget INTEGER NOT NULL,
+  total_tokens INTEGER NOT NULL,
+  total_cost REAL NOT NULL,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_arm_metric_history_arm_time
+ON arm_metric_history(arm_id, timestamp DESC);
 `;
 
 export { Database };

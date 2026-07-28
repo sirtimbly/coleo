@@ -536,6 +536,36 @@ function logActivity(_db: Database, actor: string, action: string, target?: stri
   }
 }
 
+function recordMetricSnapshot(db: Database, armId: string, timestamp = new Date().toISOString()): void {
+  try {
+    const arm = db.query(
+      `SELECT current_context_used, context_budget, total_tokens, total_cost FROM arms WHERE id = ?`,
+    ).get(armId) as {
+      current_context_used: number;
+      context_budget: number;
+      total_tokens: number | null;
+      total_cost: number | null;
+    } | null;
+    if (!arm) return;
+
+    db.run(
+      `INSERT INTO arm_metric_history
+       (arm_id, timestamp, context_used, context_budget, total_tokens, total_cost)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        armId,
+        timestamp,
+        arm.current_context_used,
+        arm.context_budget,
+        arm.total_tokens ?? 0,
+        arm.total_cost ?? 0,
+      ],
+    );
+  } catch {
+    // Older test databases may not have applied the history migration yet.
+  }
+}
+
 export interface ArmProfile {
   id: string;
   name: string;
@@ -1477,6 +1507,10 @@ export function createArmsRoutes() {
     values.push(id);
 
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, values as (string | number | null)[]);
+
+    if (body.currentContextUsed !== undefined || body.contextBudget !== undefined) {
+      recordMetricSnapshot(db, id, updatedAt);
+    }
 
     if (body.status === "stopped") {
       const releasedClaims = releaseClaimsForArm(db, id, updatedAt);
@@ -2783,8 +2817,109 @@ export function createArmsRoutes() {
 
     params.push(id);
     db.run(`UPDATE arms SET ${updates.join(", ")} WHERE id = ?`, params);
+    recordMetricSnapshot(db, id, now);
 
     return c.json({ success: true });
+  });
+
+  /**
+   * Get the current arm metrics used by summary and sparkline views.
+   * GET /api/arms/:id/metrics
+   */
+  app.get("/:id/metrics", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const arm = db.query(
+      `SELECT id, status, current_context_used as contextUsed, context_budget as contextBudget,
+              total_tokens as totalTokens, total_cost as totalCost, updated_at as updatedAt
+       FROM arms WHERE id = ?`,
+    ).get(id) as {
+      id: string;
+      status: string;
+      contextUsed: number;
+      contextBudget: number;
+      totalTokens: number | null;
+      totalCost: number | null;
+      updatedAt: string;
+    } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    return c.json({
+      armId: arm.id,
+      status: arm.status,
+      timestamp: arm.updatedAt,
+      context: {
+        used: arm.contextUsed,
+        budget: arm.contextBudget,
+        utilization: arm.contextBudget > 0 ? arm.contextUsed / arm.contextBudget : 0,
+      },
+      tokens: arm.totalTokens ?? 0,
+      cost: arm.totalCost ?? 0,
+    });
+  });
+
+  /**
+   * Get bounded context samples captured while the arm is active.
+   * GET /api/arms/:id/context-history
+   */
+  app.get("/:id/context-history", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 24 * 60 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const since = new Date(Date.now() - windowMs).toISOString();
+    const arm = db.query(
+      "SELECT current_context_used as used, context_budget as budget, updated_at as updatedAt FROM arms WHERE id = ?",
+    ).get(id) as { used: number; budget: number; updatedAt: string } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    let samples: Array<{ timestamp: string; used: number; budget: number }> = [];
+    try {
+      samples = db.query(
+        `SELECT timestamp, context_used as used, context_budget as budget
+         FROM arm_metric_history WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
+      ).all(id, since) as typeof samples;
+    } catch {
+      // The current reading is still useful during a rolling migration.
+    }
+    if (samples.length === 0) samples = [{ timestamp: arm.updatedAt, used: arm.used, budget: arm.budget }];
+
+    return c.json({ armId: id, windowMs, samples });
+  });
+
+  /**
+   * Get bounded cumulative cost samples captured while the arm is active.
+   * GET /api/arms/:id/cost-history
+   */
+  app.get("/:id/cost-history", (c) => {
+    const db = c.get("db");
+    const id = c.req.param("id");
+    const requestedWindowMs = Number.parseInt(c.req.query("windowMs") || "1800000", 10);
+    const windowMs = Number.isFinite(requestedWindowMs)
+      ? Math.min(Math.max(requestedWindowMs, 60_000), 24 * 60 * 60 * 1000)
+      : 30 * 60 * 1000;
+    const since = new Date(Date.now() - windowMs).toISOString();
+    const arm = db.query(
+      "SELECT total_cost as cost, total_tokens as tokens, updated_at as updatedAt FROM arms WHERE id = ?",
+    ).get(id) as { cost: number | null; tokens: number | null; updatedAt: string } | null;
+    if (!arm) throw HttpError.notFound(`Arm not found: ${id}`);
+
+    let samples: Array<{ timestamp: string; cost: number; tokens: number }> = [];
+    try {
+      samples = db.query(
+        `SELECT timestamp, total_cost as cost, total_tokens as tokens
+         FROM arm_metric_history WHERE arm_id = ? AND timestamp >= ? ORDER BY timestamp`,
+      ).all(id, since) as typeof samples;
+    } catch {
+      // The current reading is still useful during a rolling migration.
+    }
+    if (samples.length === 0) {
+      samples = [{ timestamp: arm.updatedAt, cost: arm.cost ?? 0, tokens: arm.tokens ?? 0 }];
+    }
+
+    return c.json({ armId: id, windowMs, samples });
   });
 
   /**

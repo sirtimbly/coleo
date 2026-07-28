@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { api } from '@/lib';
+import { api, type ArmActivityMetricsResponse } from '@/lib';
 import {
   type ViewerActivityItem,
   type ViewerActivityType,
@@ -39,7 +39,9 @@ const CHART_RIGHT_PAD = 12;
 const CHART_TOP_PAD = 12;
 const CHART_BOTTOM_PAD = 28;
 const CHART_HEIGHT_PX = 180;
+const CHART_HEIGHT_PX_COMPACT = 52;
 const LEGEND_ROW_HEIGHT = 18;
+const LEGEND_ROW_HEIGHT_COMPACT = 0;
 const HOVER_TOOLTIP_WIDTH = 200;
 
 interface MinuteBucket {
@@ -89,6 +91,7 @@ interface ArmActivityChartProps {
   limit?: number;
   title?: string;
   className?: string;
+  compact?: boolean;
   /** When set, auto-refresh every N ms (defaults to 60s). Set to 0 to disable. */
   refreshMs?: number;
   /** If true, render without the surrounding Card shell (for embedded use). */
@@ -102,12 +105,14 @@ export function ArmActivityChart({
   limit = 1000,
   title = 'Arm Activity',
   className,
+  compact = false,
   refreshMs = 60_000,
   embedded = false,
 }: ArmActivityChartProps) {
   const [activities, setActivities] = useState<ViewerActivityItem[]>(
     externalActivities ?? [],
   );
+  const [metricBuckets, setMetricBuckets] = useState<MinuteBucket[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
@@ -116,33 +121,22 @@ export function ArmActivityChart({
   useEffect(() => {
     if (externalActivities !== undefined) {
       setActivities(externalActivities);
+      setMetricBuckets(null);
       return;
     }
     if (!armId) {
       setActivities([]);
+      setMetricBuckets(null);
       return;
     }
     let cancelled = false;
     setLoading(true);
     api
-      .getArmEventWindow(armId, { windowMs, limit })
+      .getArmActivityMetrics(armId, windowMs)
       .then((response) => {
         if (cancelled) return;
-        const items: ViewerActivityItem[] = [];
-        for (const event of response.window.events) {
-          const ts = new Date(event.timestamp).getTime();
-          if (!Number.isFinite(ts)) continue;
-          const type = mapEventTypeToActivityType(event.type);
-          items.push({
-            id: `event-${event.sequence ?? event.type}-${ts}-${items.length}`,
-            type,
-            title: event.type,
-            timestamp: ts,
-            status: 'completed',
-            details: event.data,
-          });
-        }
-        setActivities(items);
+        setMetricBuckets(toMinuteBuckets(response));
+        setActivities([]);
         setError(null);
       })
       .catch((err: unknown) => {
@@ -163,7 +157,7 @@ export function ArmActivityChart({
     return () => clearInterval(interval);
   }, [refreshMs]);
 
-  const buckets = buildBuckets(activities, Date.now());
+  const buckets = metricBuckets ?? buildBuckets(activities, Date.now());
 
   const maxStack = useMemo(() => {
     let peak = 0;
@@ -175,7 +169,10 @@ export function ArmActivityChart({
   }, [buckets]);
 
   const chartWidth = WINDOW_MINUTES * (BAR_MAX_WIDTH_PX + BAR_GAP_PX) + CHART_LEFT_PAD + CHART_RIGHT_PAD;
-  const chartHeight = CHART_HEIGHT_PX + CHART_TOP_PAD + CHART_BOTTOM_PAD + LEGEND_ROW_HEIGHT;
+  const legendHeight = compact ? LEGEND_ROW_HEIGHT_COMPACT : LEGEND_ROW_HEIGHT;
+  const topPad = compact ? 10 : CHART_TOP_PAD;
+  const bottomPad = compact ? 20 : CHART_BOTTOM_PAD;
+  const chartHeight = (compact ? CHART_HEIGHT_PX_COMPACT : CHART_HEIGHT_PX) + topPad + bottomPad + legendHeight;
   const labelColor = '#6b7280';
   const gridColor = '#e5e7eb';
 
@@ -183,8 +180,8 @@ export function ArmActivityChart({
   const barSlotWidth = barAreaWidth / WINDOW_MINUTES;
   const barWidth = Math.max(4, barSlotWidth - BAR_GAP_PX);
 
-  const plotTop = CHART_TOP_PAD;
-  const plotBottom = chartHeight - CHART_BOTTOM_PAD - LEGEND_ROW_HEIGHT;
+  const plotTop = topPad;
+  const plotBottom = chartHeight - bottomPad - legendHeight;
   const plotHeight = plotBottom - plotTop;
   const barMaxHeight = plotHeight;
   const unitHeight = maxStack > 0 ? barMaxHeight / maxStack : 0;
@@ -261,35 +258,42 @@ export function ArmActivityChart({
   }, [buckets]);
 
   const selectedBucket = hovered === null ? null : buckets[hovered] ?? null;
+  const hasActivity = buckets.some((bucket) =>
+    bucket.counts.write + bucket.counts.think + bucket.counts.tool + bucket.counts.complete > 0,
+  );
 
   const inner = (
     <div className="space-y-2 text-sm">
-      <div className="flex flex-wrap items-center gap-3">
-        {CATEGORY_STYLES.map((style) => (
-          <div key={style.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span
-              className="inline-block h-2 w-2 rounded-full"
-              style={{ backgroundColor: style.color }}
-            />
-            <span>{style.label}</span>
-          </div>
-        ))}
-        <span className="text-[0.7rem] text-muted-foreground">
-          Last {WINDOW_MINUTES} min
-        </span>
-      </div>
+      {!compact ? (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <>
+            {CATEGORY_STYLES.map((style) => (
+              <div key={style.key} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  className="inline-block h-2 w-2 rounded-full"
+                  style={{ backgroundColor: style.color }}
+                />
+                <span>{style.label}</span>
+              </div>
+            ))}
+            <span className="text-[0.7rem] text-muted-foreground">
+              Last {WINDOW_MINUTES} min
+            </span>
+          </>
+        </div>
+      ) : null}
 
       {loading && activities.length === 0 ? (
-        <div className="flex h-[180px] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground" style={{ height: compact ? 52 : 180 }}>
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading activity...</span>
         </div>
       ) : error ? (
-        <div className="flex h-[180px] items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger">
+        <div className="flex items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger" style={{ height: compact ? 52 : 180 }}>
           {error}
         </div>
-      ) : activities.length === 0 ? (
-        <div className="flex h-[180px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground">
+      ) : !hasActivity ? (
+        <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 52 : 180 }}>
           No activity in the last {WINDOW_MINUTES} minutes.
         </div>
       ) : (
@@ -309,13 +313,13 @@ export function ArmActivityChart({
               setHovered(Math.max(0, Math.min(buckets.length - 1, index)));
             }}
           >
-            {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+            {!compact && [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
               const y = plotBottom - fraction * plotHeight;
               return (
-                <line
-                  key={`grid-${fraction}`}
-                  x1={CHART_LEFT_PAD}
-                  x2={chartWidth - CHART_RIGHT_PAD}
+              <line
+                key={`grid-${fraction}`}
+                x1={CHART_LEFT_PAD}
+                x2={chartWidth - CHART_RIGHT_PAD}
                   y1={y}
                   y2={y}
                   stroke={gridColor}
@@ -323,20 +327,20 @@ export function ArmActivityChart({
                 />
               );
             })}
-            <text x={4} y={plotTop + 10} fill={labelColor} fontSize={10}>
+            {!compact && <text x={4} y={plotTop + 10} fill={labelColor} fontSize={10}>
               {maxStack}
-            </text>
-            <text x={6} y={plotBottom - 2} fill={labelColor} fontSize={10}>
+            </text>}
+            {!compact && <text x={6} y={plotBottom - 2} fill={labelColor} fontSize={10}>
               0
-            </text>
+            </text>}
             {renderBars()}
-            {timeLabels.map(({ index, label }) => {
+            {!compact && timeLabels.map(({ index, label }) => {
               const x = CHART_LEFT_PAD + index * barSlotWidth + barWidth / 2;
               return (
                 <text
                   key={`axis-${index}`}
                   x={x}
-                  y={chartHeight - LEGEND_ROW_HEIGHT - 8}
+                  y={chartHeight - legendHeight - 8}
                   fill={labelColor}
                   fontSize={10}
                   textAnchor="middle"
@@ -345,7 +349,7 @@ export function ArmActivityChart({
                 </text>
               );
             })}
-            {hovered !== null && (
+            {!compact && hovered !== null && (
               <line
                 x1={CHART_LEFT_PAD + hovered * barSlotWidth + barWidth / 2}
                 x2={CHART_LEFT_PAD + hovered * barSlotWidth + barWidth / 2}
@@ -356,11 +360,11 @@ export function ArmActivityChart({
               />
             )}
           </svg>
-          {selectedBucket ? (
-            <div
-              className="pointer-events-none absolute right-2 top-2 z-10 rounded-md border border-border bg-background/95 px-3 py-2 text-xs shadow"
-              style={{ width: HOVER_TOOLTIP_WIDTH }}
-            >
+          {!compact && selectedBucket ? (
+              <div
+                className="pointer-events-none absolute right-2 top-2 z-10 rounded-md border border-border bg-background/95 px-3 py-2 text-xs shadow"
+                style={{ width: compact ? 160 : HOVER_TOOLTIP_WIDTH }}
+              >
               <div className="font-semibold">
                 {new Date(selectedBucket.startMs).toLocaleTimeString([], {
                   hour: '2-digit',
@@ -411,29 +415,18 @@ export function ArmActivityChart({
   );
 }
 
-function mapEventTypeToActivityType(eventType: string): ViewerActivityType {
-  if (eventType === 'message.updated' || eventType === 'message.part.updated' || eventType === 'message.part.created') {
-    return 'message';
-  }
-  if (eventType === 'file.edited') {
-    return 'file';
-  }
-  if (eventType === 'session.status' || eventType === 'session.error') {
-    return 'session';
-  }
-  if (eventType === 'todo.updated') {
-    return 'todo';
-  }
-  if (eventType === 'pty.created' || eventType === 'pty.updated' || eventType === 'pty.exited') {
-    return 'terminal';
-  }
-  if (eventType === 'vcs.branch.updated') {
-    return 'branch';
-  }
-  if (eventType === 'error') {
-    return 'error';
-  }
-  return 'tool';
+function toMinuteBuckets(response: ArmActivityMetricsResponse): MinuteBucket[] {
+  const bucketMs = response.window.bucketMs;
+  return response.buckets.map((bucket, index) => {
+    const startMs = new Date(bucket.start).getTime();
+    return {
+      index,
+      startMs,
+      endMs: startMs + bucketMs,
+      counts: bucket.counts,
+      items: [],
+    };
+  });
 }
 
 export type { ViewerActivityItem, ViewerActivityType };

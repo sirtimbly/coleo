@@ -32,6 +32,7 @@ interface ArmContextUsageChartProps {
   title?: string;
   className?: string;
   embedded?: boolean;
+  compact?: boolean;
 }
 
 function getStorageKey(armId: string): string {
@@ -65,6 +66,7 @@ export function ArmContextUsageChart({
   title = 'Context Usage',
   className,
   embedded = false,
+  compact = false,
 }: ArmContextUsageChartProps) {
   const [samples, setSamples] = useState<ContextSample[]>([]);
   const [loading, setLoading] = useState(false);
@@ -134,11 +136,11 @@ export function ArmContextUsageChart({
   const threshold = budget * COMPRESSION_THRESHOLD_PCT;
 
   const width = 600;
-  const height = 140;
-  const padLeft = 48;
+  const height = compact ? 105 : 140;
+  const padLeft = compact ? 40 : 48;
   const padRight = 16;
-  const padTop = 14;
-  const padBottom = 24;
+  const padTop = compact ? 10 : 14;
+  const padBottom = compact ? 18 : 24;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
 
@@ -198,36 +200,42 @@ export function ArmContextUsageChart({
   const inner = (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: lineColor }} />
-          Context tokens used
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: thresholdColor }} />
-          80% compression threshold
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: budgetLineColor }} />
-          Context limit (budget)
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: warningZoneFill }} />
-          Warning zone
-        </span>
-        <span className="text-[0.7rem]">Samples every ~{Math.round(SAMPLE_INTERVAL_MS / 1000)}s</span>
+        {compact ? (
+          <span>{`Context usage · last ${Math.round(SAMPLE_WINDOW_MS / 60_000)}m`}</span>
+        ) : (
+          <>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: lineColor }} />
+              Context tokens used
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: thresholdColor }} />
+              80% compression threshold
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: budgetLineColor }} />
+              Context limit (budget)
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: warningZoneFill }} />
+              Warning zone
+            </span>
+            <span className="text-[0.7rem]">Samples every ~{Math.round(SAMPLE_INTERVAL_MS / 1000)}s</span>
+          </>
+        )}
       </div>
 
       {loading && visibleSamples.length === 0 ? (
-        <div className="flex h-[120px] items-center justify-center gap-2 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>Loading context samples...</span>
         </div>
       ) : error ? (
-        <div className="flex h-[120px] items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger">
+        <div className="flex items-center justify-center rounded-md border border-danger/30 bg-danger/10 text-sm text-danger" style={{ height: compact ? 90 : 120 }}>
           {error}
         </div>
       ) : visibleSamples.length === 0 ? (
-        <div className="flex h-[120px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground">
+        <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
           No context samples yet. The first one arrives in ~{Math.round(SAMPLE_INTERVAL_MS / 1000)} seconds.
         </div>
       ) : (
@@ -358,7 +366,7 @@ export function ArmContextUsageChart({
           {hoveredSample ? (
             <div
               className="pointer-events-none absolute right-2 top-2 z-10 rounded-md border border-border bg-background/95 px-3 py-2 text-xs shadow"
-              style={{ width: 200 }}
+              style={{ width: compact ? 180 : 200 }}
             >
               <div className="font-semibold">{formatTime(hoveredSample.timestamp)}</div>
               <div className="mt-1 grid gap-0.5">
