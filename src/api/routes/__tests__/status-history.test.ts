@@ -52,6 +52,18 @@ describe("status-history routes", () => {
 		expect(res.status).toBe(400);
 	});
 
+	it("rejects invalid from/to date filters", async () => {
+		const res = await app.request("/api/status-history/search", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				query: "database migration",
+				filters: { from: "not-a-date" },
+			}),
+		});
+		expect(res.status).toBe(400);
+	});
+
 	it("returns hybrid scores and highlights for status history search", async () => {
 		const res = await app.request("/api/status-history/search", {
 			method: "POST",
@@ -122,6 +134,20 @@ describe("status-history routes", () => {
 		expect(body.armId).toBe("arm-alpha");
 		expect(body.total).toBe(1);
 		expect(body.events[0]?.id).toBe("evt-1");
+	});
+
+	it("rejects invalid by-arm date filters", async () => {
+		const res = await app.request("/api/status-history/by-arm/arm-alpha?from=bad-date");
+		expect(res.status).toBe(400);
+	});
+
+	it("caps arm status history limit to 500", async () => {
+		const res = await app.request("/api/status-history/by-arm/arm-alpha?limit=99999");
+		expect(res.status).toBe(200);
+		expect(searchSpy).toHaveBeenCalledWith(
+			"arm-alpha",
+			expect.objectContaining({ limit: 500 }),
+		);
 	});
 
 	it("indexes a status history event", async () => {

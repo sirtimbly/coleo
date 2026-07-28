@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight, ArrowUpRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
+import { Card, CardHeader, CardTitle, CardContent, CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
-import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
+import { StatusBurndownChart } from '@/components/StatusBurndownChart';
 import { ArmActivityChart } from '@/components/ArmActivityChart';
 import { ArmContextUsageChart } from '@/components/ArmContextUsageChart';
 import { ArmCostUsageChart } from '@/components/ArmCostUsageChart';
@@ -1039,12 +1039,9 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">System overview and status</p>
-        </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
+        <span className="text-xs text-muted-foreground">System overview</span>
         <div className="flex items-center gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em]">
           {connected && authenticated ? (
             <div className="flex items-center gap-2 text-success">
@@ -1058,10 +1055,12 @@ export function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-auto">
 
       {showProjectSetup ? (
-        <section className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <section className="m-3 flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-semibold text-foreground">Give the Brain a project plan</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -1084,7 +1083,12 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <CollapsibleSection
+        title="System readiness"
+        description="Infrastructure health and project plan status"
+        className="rounded-none border-x-0 border-t-0"
+        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-2"
+      >
         <InfrastructureSection
           infrastructure={status?.infrastructure}
           indexerHealth={indexerHealth}
@@ -1099,25 +1103,53 @@ export function DashboardPage() {
           brainLoading={brainLoading}
           onNavigate={navigate}
         />
-      </div>
+      </CollapsibleSection>
 
-      <ArmHostProvidersSection
-        hosts={armHosts}
-        isLoading={armHostsLoading}
-        onOpenArms={() => navigate("/arms")}
-      />
+      <CollapsibleSection
+        title="Runtime hosts"
+        description="Arm hosts and configured model providers"
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <ArmHostProvidersSection
+          hosts={armHosts}
+          isLoading={armHostsLoading}
+          onOpenArms={() => navigate("/arms")}
+        />
+      </CollapsibleSection>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <CollapsibleSection
+        title="Operational feed"
+        description="Arms, notable events, and recent activity"
+        className="rounded-none border-x-0 border-t-0"
+        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-3"
+      >
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />
         <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} onNavigate={navigate} />
         <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
+      </CollapsibleSection>
 
-        <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
-        <TaskBurndownWidget refreshKey={burndownRefresh} />
+      <CollapsibleSection
+        title="Task progress"
+        description="Current completion and queue health"
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} embedded />
+      </CollapsibleSection>
 
+      <StatusBurndownChart
+        entity="task"
+        refreshKey={burndownRefresh}
+        className="rounded-none border-x-0 border-t-0"
+      />
+
+      <CollapsibleSection
+        title="Arm telemetry"
+        description="Activity, context usage, and cost for the most recent arm"
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <ArmActivitySection status={status} arms={arms} onNavigate={navigate} />
+      </CollapsibleSection>
       </div>
-
-      <ArmActivitySection status={status} arms={arms} onNavigate={navigate} />
     </div>
   );
 }

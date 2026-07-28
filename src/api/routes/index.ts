@@ -19,6 +19,7 @@ export { createEscalationRoutes } from "./escalations";
 export { createEventsRoutes } from "./events";
 export { createSearchRoutes } from "./search";
 export { createStatusHistoryRoutes } from "./status-history";
+export { createStatusSeriesRoutes } from "./status-series";
 export { createUploadApiRoutes, createUploadContentRoutes } from "./uploads";
 export { createOnboardingRoutes } from "./onboarding";
 export { createProjectSetupRoutes } from "./project-setup";

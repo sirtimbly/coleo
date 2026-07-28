@@ -11,7 +11,7 @@ import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -284,6 +284,7 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/events", createEventsRoutes());
   app.route("/api/search", createSearchRoutes());
   app.route("/api/status-history", createStatusHistoryRoutes());
+  app.route("/api/status-series", createStatusSeriesRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
   app.route("/api/onboarding", createOnboardingRoutes());
   app.route("/api/project-setup", createProjectSetupRoutes());

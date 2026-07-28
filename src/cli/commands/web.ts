@@ -175,9 +175,10 @@ export function registerWebCommand(program: Command): void {
 	webCmd
 		.command("start")
 		.description("Start the web UI server in the background")
-		.option("-p, --port <port>", "Port to listen on", "5173")
-		.option("-h, --host <host>", "Host to bind to", "0.0.0.0")
-		.action(async (options) => {
+		.option("-p, --port <port>", "Port to listen on")
+		.option("-h, --host <host>", "Host to bind to")
+		.action(async (_options, command: Command) => {
+			const options = command.optsWithGlobals() as { port: string; host: string };
 			try {
 				// Set environment variables for the background process
 				process.env.WEB_UI_PORT = options.port;

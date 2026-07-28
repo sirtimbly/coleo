@@ -29,7 +29,7 @@ import {
 	type TaskUiMetadata,
 	cn,
 } from "@/lib";
-import { RegenerateTasksModal, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
+import { CollapsibleSection, RegenerateTasksModal, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
@@ -135,40 +135,19 @@ const PRIORITY_CONFIG: Record<
 
 function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
 	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
-	const [isExpanded, setIsExpanded] = useState(true);
 
 	return (
-		<section aria-label="Task timeline" className="border-b border-border bg-surface-secondary/40 px-4 py-3">
-			<div className={cn("flex items-center justify-between gap-3", isExpanded && "mb-3")}>
-				<div>
-					<p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent">Live timeline</p>
-					{isExpanded ? (
-						<p className="mt-0.5 text-sm text-muted-foreground">
-							What is active now, what the Brain can take next, and recent completed work.
-						</p>
-					) : null}
-				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					<span className="text-xs text-muted-foreground">Updates live</span>
-					<Button
-						isIconOnly
-						size="sm"
-						variant="ghost"
-						onPress={() => setIsExpanded((current) => !current)}
-						aria-label={isExpanded ? "Collapse live timeline" : "Expand live timeline"}
-						aria-expanded={isExpanded}
-						className="h-7 w-7 min-w-7"
-					>
-						<ChevronDown className={cn("h-4 w-4 transition-transform", !isExpanded && "-rotate-90")} />
-					</Button>
-				</div>
-			</div>
-			{isExpanded ? <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
+		<CollapsibleSection
+			title="Live timeline"
+			description="What is active now, what the Brain can take next, and recent completed work."
+			meta="Updates live"
+		className="shrink-0 rounded-none border-x-0 border-t-0 bg-surface-secondary/40"
+			bodyClassName="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
+		>
 				<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
 				<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
 				<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
-			</div> : null}
-		</section>
+		</CollapsibleSection>
 	);
 }
 
@@ -548,6 +527,7 @@ export function TasksPage() {
 		task: Task | null;
 	}>({ show: false, task: null });
 	const [newTaskId, setNewTaskId] = useState<string | null>(null);
+	const [burndownRefresh, setBurndownRefresh] = useState(0);
 	const detailsTabId: SidebarTab = "details";
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
@@ -862,6 +842,7 @@ export function TasksPage() {
 				case "tasks.regenerated":
 					// Invalidate queries to trigger refetch
 					queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
+					setBurndownRefresh((current) => current + 1);
 					break;
 			}
 		},
@@ -938,8 +919,19 @@ export function TasksPage() {
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
 						{workspaceListHeader}
+						<StatusBurndownChart
+							entity="task"
+							refreshKey={burndownRefresh}
+							className="shrink-0 rounded-none border-x-0 border-t-0"
+						/>
 						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-						<div className="min-h-0 flex-1 overflow-hidden">
+						<CollapsibleSection
+							title="Task list"
+							meta={`${pagination?.total ?? filteredTasks.length} tasks`}
+							fill
+							className="rounded-none border-x-0 border-y-0"
+							bodyClassName="p-0"
+						>
 							<TaskGrid
 								className="h-full rounded-none border-0"
 								tasks={filteredTasks}
@@ -958,7 +950,7 @@ export function TasksPage() {
 								isFetchingNextPage={isFetchingNextPage}
 								onLoadMore={fetchNextPage}
 							/>
-						</div>
+						</CollapsibleSection>
 					</div>
 					{taskModal}
 					{regenerateTasksModal}
@@ -1117,10 +1109,21 @@ export function TasksPage() {
 				</div>
 			)}
 
+			<StatusBurndownChart
+				entity="task"
+				refreshKey={burndownRefresh}
+				className="shrink-0 rounded-none border-x-0 border-t-0"
+			/>
+
 			<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
 
-			{/* Content area */}
-			<div className="flex-1 flex overflow-hidden">
+			<CollapsibleSection
+				title="Task list"
+				meta={`${pagination?.total ?? filteredTasks.length} tasks`}
+				fill
+				className="rounded-none border-x-0 border-y-0"
+				bodyClassName="flex h-full min-h-0 p-0"
+			>
 				{/* Task list */}
 				<div className="min-w-0 flex-1 overflow-hidden">
 					{isLoading ? (
@@ -1132,9 +1135,9 @@ export function TasksPage() {
 							))}
 						</div>
 					) : (
-						<div className="h-full p-4">
+						<div className="h-full">
 							<TaskGrid
-								className="h-full"
+								className="h-full rounded-none border-0"
 								tasks={filteredTasks}
 								totalTasks={pagination?.total}
 								availableTags={availableTags}
@@ -1326,7 +1329,7 @@ export function TasksPage() {
 						) : null}
 					</Card>
 				)}
-			</div>
+			</CollapsibleSection>
 
 				{taskModal}
 				{regenerateTasksModal}

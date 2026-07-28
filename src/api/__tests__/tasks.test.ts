@@ -289,6 +289,48 @@ describe("tasks API", () => {
       expect(body.task.phase).toBe("design");
     });
 
+    it("should persist optional classification", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Classified Task",
+          description: "Task with classification",
+          classification: "development",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json() as { task: Task };
+      expect(body.task.classification).toBe("development");
+    });
+
+    it("should persist prepared payload values in metadata", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Prepared Task",
+          description: "Task created from preparation",
+          metadata: {
+            context: "Existing discussion context",
+            requirements: ["Create API", "Add tests"],
+            acceptanceCriteria: ["All tests pass"],
+            estimatedEffort: "2-3 hours",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json() as { task: Task };
+      expect(body.task.metadata).toEqual({
+        context: "Existing discussion context",
+        requirements: ["Create API", "Add tests"],
+        acceptanceCriteria: ["All tests pass"],
+        estimatedEffort: "2-3 hours",
+      });
+    });
+
     it("should accept optional metadata", async () => {
       const metadata = { ui: { tags: ["urgent"], color: "red" } };
       const response = await app.request("/api/tasks", {

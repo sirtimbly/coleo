@@ -20,3 +20,5 @@ export { ArmStatusBar } from './ArmStatusBar';
 export { DenseSection, DenseRow, DenseRowSkeleton, DOT_TONE_CLASS, TEXT_TONE_CLASS, type Tone, type DenseRowProps } from './DenseList';
 export { TaskProgressWidget } from './TaskProgressWidget';
 export { TaskWorkflowHelp } from './TaskWorkflowHelp';
+export { StatusBurndownChart } from './StatusBurndownChart';
+export { CollapsibleSection, type CollapsibleSectionProps } from './CollapsibleSection';

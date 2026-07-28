@@ -125,6 +125,30 @@ function isDistributedRuntimeReattachable(result: DistributedRuntimeRefreshResul
   return !["stopped", "error", "stale"].includes(result.snapshot.status);
 }
 
+function parseDateQuery(raw: string | undefined, label: string): {
+  value?: Date;
+  error?: string;
+} {
+  if (!raw) {
+    return {};
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return { error: `Invalid ${label} date: ${raw}` };
+  }
+
+  return { value: parsed };
+}
+
+function parseLimit(raw: string | undefined, fallback: number, max: number): number {
+  const parsed = Number.parseInt(raw || String(fallback), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return fallback;
+  }
+  return Math.min(parsed, max);
+}
+
 function resolveDistributedAgentId(
   armId: string,
   persistedAgentId: string | null,
@@ -1188,16 +1212,19 @@ export function createArmsRoutes() {
    */
   app.get("/:id/status-history", async (c) => {
     const armId = c.req.param("id");
-    const from = c.req.query("from");
-    const to = c.req.query("to");
-    const limit = Number.parseInt(c.req.query("limit") || "100", 10);
+    const from = parseDateQuery(c.req.query("from"), "from");
+    const to = parseDateQuery(c.req.query("to"), "to");
+    const limit = parseLimit(c.req.query("limit"), 100, 500);
+    if (from.error || to.error) {
+      return c.json({ error: from.error || to.error }, 400);
+    }
 
     try {
       const hits = await searchStatusHistory(armId, {
         limit,
         armId,
-        since: from ? new Date(from) : undefined,
-        until: to ? new Date(to) : undefined,
+        since: from.value,
+        until: to.value,
       });
       return c.json({
         armId,
