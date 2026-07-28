@@ -224,12 +224,12 @@ export function ArmCostUsageChart({
     return `$${value.toFixed(5)}`;
   };
 
-  const formatTime = (timestamp: number): string =>
-    new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+  const formatTime = (timestamp: number): string => {
+    const date = new Date(timestamp);
+    return referenceTime - windowStart >= 24 * 60 * 60 * 1000
+      ? date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
 
   const hoveredSample = hovered === null ? null : visibleSamples[hovered] ?? null;
 
@@ -254,7 +254,11 @@ export function ArmCostUsageChart({
               ~{formatCompactCurrency(costRatePerHour)}/hr
               <span className="ml-1 normal-case tracking-normal">recent 5 min</span>
             </span>
-            <span className="text-[0.7rem]">Samples every ~{Math.round(COST_POLL_INTERVAL_MS / 1000)}s</span>
+            <span className="text-[0.7rem]">
+              {externalSamples
+                ? `${visibleSamples.length} persisted message samples`
+                : `Samples every ~${Math.round(COST_POLL_INTERVAL_MS / 1000)}s`}
+            </span>
           </>
         )}
       </div>

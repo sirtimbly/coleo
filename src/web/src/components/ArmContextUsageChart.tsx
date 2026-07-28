@@ -203,11 +203,10 @@ export function ArmContextUsageChart({
   };
 
   const formatTime = (timestamp: number): string => {
-    return new Date(timestamp).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    });
+    const date = new Date(timestamp);
+    return windowEnd - windowStart >= 24 * 60 * 60 * 1000
+      ? date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   };
 
   const hoveredSample = hovered === null ? null : visibleSamples[hovered] ?? null;
@@ -235,7 +234,11 @@ export function ArmContextUsageChart({
               <span className="inline-block h-3 w-3 rounded-sm" style={{ backgroundColor: warningZoneFill }} />
               Warning zone
             </span>
-            <span className="text-[0.7rem]">Samples every ~{Math.round(SAMPLE_INTERVAL_MS / 1000)}s</span>
+            <span className="text-[0.7rem]">
+              {externalSamples
+                ? `${visibleSamples.length} persisted aggregate samples`
+                : `Samples every ~${Math.round(SAMPLE_INTERVAL_MS / 1000)}s`}
+            </span>
           </>
         )}
       </div>

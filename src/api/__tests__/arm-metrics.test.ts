@@ -81,4 +81,28 @@ describe("arm message metrics", () => {
     expect((db.query("SELECT COUNT(*) as count FROM arm_metric_history").get() as { count: number }).count).toBe(1);
     db.close();
   });
+
+  it("retains context telemetry for the seven-day selectable range", () => {
+    const db = createDb();
+    const now = Date.now();
+    db.run(
+      `INSERT INTO arm_metric_history
+       (arm_id, timestamp, context_used, context_budget, total_tokens, total_cost)
+       VALUES ('arm-1', ?, 10, 100000, 10, 0), ('arm-1', ?, 20, 100000, 20, 0)`,
+      [
+        new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString(),
+        new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      ],
+    );
+    db.run("UPDATE arms SET current_context_used = 30, total_tokens = 30 WHERE id = 'arm-1'");
+
+    recordMetricSnapshot(db, "arm-1", new Date(now).toISOString());
+
+    const timestamps = db.query(
+      "SELECT timestamp FROM arm_metric_history WHERE arm_id = 'arm-1' ORDER BY timestamp",
+    ).all() as Array<{ timestamp: string }>;
+    expect(timestamps).toHaveLength(2);
+    expect(timestamps[0]?.timestamp).toBe(new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString());
+    db.close();
+  });
 });

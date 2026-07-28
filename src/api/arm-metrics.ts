@@ -7,6 +7,8 @@ interface ArmMetricValues {
   totalCost: number;
 }
 
+const ARM_METRIC_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -55,7 +57,7 @@ export function recordMetricSnapshot(
     );
     db.run(
       "DELETE FROM arm_metric_history WHERE arm_id = ? AND timestamp < ?",
-      [armId, new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()],
+      [armId, new Date(Date.now() - ARM_METRIC_RETENTION_MS).toISOString()],
     );
   } catch {
     // Rolling migrations and focused tests may not have metric tables yet.

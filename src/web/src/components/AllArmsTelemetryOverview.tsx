@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import {
   Button,
-  DateField,
-  DateInputGroup,
+  Input,
   Label,
 } from '@heroui/react';
-import { fromDate, getLocalTimeZone, type DateValue } from '@internationalized/date';
 import { Clock3, Loader2 } from 'lucide-react';
 import { api, type AllArmsTelemetryResponse, type ArmActivityMetricsResponse } from '@/lib';
 import { ArmActivityChart } from './ArmActivityChart';
@@ -18,8 +16,8 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_RANGE_MS = 7 * ONE_DAY_MS;
 
 interface DraftRange {
-  start: DateValue;
-  end: DateValue;
+  start: string;
+  end: string;
 }
 
 interface AppliedRange {
@@ -28,69 +26,68 @@ interface AppliedRange {
 }
 
 function createRange(durationMs: number): DraftRange {
-  const timeZone = getLocalTimeZone();
   const end = Date.now();
   return {
-    start: fromDate(new Date(end - durationMs), timeZone),
-    end: fromDate(new Date(end), timeZone),
+    start: toLocalDateTimeValue(new Date(end - durationMs)),
+    end: toLocalDateTimeValue(new Date(end)),
   };
 }
 
+function toLocalDateTimeValue(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 function toAppliedRange(range: DraftRange): AppliedRange {
-  const timeZone = getLocalTimeZone();
   return {
-    start: range.start.toDate(timeZone).toISOString(),
-    end: range.end.toDate(timeZone).toISOString(),
+    start: new Date(range.start).toISOString(),
+    end: new Date(range.end).toISOString(),
   };
 }
 
 function validateRange(range: DraftRange): string | null {
-  const timeZone = getLocalTimeZone();
-  const duration = range.end.toDate(timeZone).getTime() - range.start.toDate(timeZone).getTime();
+  const start = new Date(range.start).getTime();
+  const end = new Date(range.end).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'Enter both start and end date-times.';
+  const duration = end - start;
   if (duration <= 0) return 'Start must be before end.';
   if (duration > MAX_RANGE_MS) return 'Select a range of 7 days or less.';
   return null;
 }
 
-function DateTimeField({
+function DateTimeInput({
   label,
   value,
   isInvalid,
   onChange,
 }: {
   label: string;
-  value: DateValue;
+  value: string;
   isInvalid: boolean;
-  onChange: (value: DateValue) => void;
+  onChange: (value: string) => void;
 }) {
   return (
-    <DateField
-      aria-label={label}
-      className="min-w-0 flex-1"
-      granularity="minute"
-      hideTimeZone
-      hourCycle={24}
-      isInvalid={isInvalid}
-      value={value}
-      onChange={(next) => {
-        if (next) onChange(next);
-      }}
-    >
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
-      <DateInputGroup fullWidth variant="secondary">
-        <DateInputGroup.Input>
-          {(segment) => <DateInputGroup.Segment segment={segment} />}
-        </DateInputGroup.Input>
-      </DateInputGroup>
-    </DateField>
+    <div className="min-w-0 flex-1 space-y-1">
+      <Label htmlFor={`telemetry-${label.toLowerCase()}`} className="text-xs font-medium text-muted-foreground">
+        {label}
+      </Label>
+      <Input
+        id={`telemetry-${label.toLowerCase()}`}
+        aria-invalid={isInvalid}
+        className="w-full"
+        fullWidth
+        type="datetime-local"
+        value={value}
+        variant="secondary"
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
   );
 }
 
 export function AllArmsTelemetryOverview() {
   const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(THIRTY_MINUTES_MS));
-  const [appliedRange, setAppliedRange] = useState<AppliedRange>(() =>
-    toAppliedRange(createRange(THIRTY_MINUTES_MS)),
-  );
+  const [appliedRange, setAppliedRange] = useState<AppliedRange>(() => toAppliedRange(draftRange));
   const [telemetry, setTelemetry] = useState<AllArmsTelemetryResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -157,13 +154,13 @@ export function AllArmsTelemetryOverview() {
 
         <div className="flex w-full flex-col gap-2 xl:max-w-3xl">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <DateTimeField
+            <DateTimeInput
               label="Start"
               value={draftRange.start}
               isInvalid={Boolean(rangeError)}
               onChange={(start) => setDraftRange((current) => ({ ...current, start }))}
             />
-            <DateTimeField
+            <DateTimeInput
               label="End"
               value={draftRange.end}
               isInvalid={Boolean(rangeError)}

@@ -124,6 +124,7 @@ export function ArmActivityChart({
     if (externalMetrics) {
       setMetricBuckets(toMinuteBuckets(externalMetrics));
       setActivities([]);
+      setLoading(false);
       setError(null);
       return;
     }
