@@ -116,7 +116,17 @@ describe("opencode providers API", () => {
     expect(response.status).toBe(200);
 
     const body = (await response.json()) as {
-      providers: Array<{ id: string; models: Array<{ id: string }> }>;
+      providers: Array<{
+        id: string;
+        models: Array<{
+          id: string;
+          cost?: number;
+          pricing?: {
+            input?: number;
+            output?: number;
+          };
+        }>;
+      }>;
       connected: string[];
       cached: boolean;
       cachedAt: string;
@@ -133,11 +143,36 @@ describe("opencode providers API", () => {
 
     const cachePath = join(tempDir, "cache", "opencode-models.json");
     const cacheContents = JSON.parse(await readFile(cachePath, "utf8")) as {
-      providers: Array<{ id: string; models: Array<{ id: string }> }>;
+      providers: Array<{
+        id: string;
+        models: Array<{
+          id: string;
+          cost?: number;
+          pricing?: {
+            input?: number;
+            output?: number;
+          };
+        }>;
+      }>;
     };
     expect(cacheContents.providers.map((provider) => provider.id)).toEqual(
       expect.arrayContaining(["github-copilot", "opencode"]),
     );
+
+    const cachedOpencodeModel = cacheContents.providers
+      .find((provider) => provider.id === "opencode")
+      ?.models.find((model) => model.id === "claude-opus-4");
+    expect(cachedOpencodeModel).toEqual(
+      expect.objectContaining({
+        id: "claude-opus-4",
+      }),
+    );
+
+    const responseOpencodeModel = body.providers
+      .find((provider) => provider.id === "opencode")
+      ?.models.find((model) => model.id === "claude-opus-4");
+    expect(responseOpencodeModel?.cost).toBe(90);
+    expect(responseOpencodeModel?.pricing).toMatchObject({ input: 15, output: 75 });
   });
 
   it("returns an empty provider list when no cache exists yet", async () => {
@@ -177,7 +212,12 @@ describe("opencode providers API", () => {
     const providers = [{
       id: "openai",
       name: "OpenAI",
-      models: [{ id: "gpt-5", name: "gpt-5" }],
+      models: [{
+        id: "gpt-5",
+        name: "gpt-5",
+        cost: 42,
+        pricing: { input: 3.5, output: 38.5 },
+      }],
       connected: false,
       authMethod: "api-key" as const,
     }];

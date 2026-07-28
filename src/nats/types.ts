@@ -196,6 +196,11 @@ export interface GetTodosResponse {
 export interface OpenCodeProviderModel {
   id: string;
   name: string;
+  cost?: number;
+  pricing?: {
+    input?: number;
+    output?: number;
+  };
 }
 
 export interface OpenCodeProviderInfo {

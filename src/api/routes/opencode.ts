@@ -40,6 +40,104 @@ interface OpenCodeModel {
     input: Array<"text" | "audio" | "image" | "video" | "pdf">;
     output: Array<"text" | "audio" | "image" | "video" | "pdf">;
   };
+  /**
+   * Estimated cost index for the model: sum of input and output price per
+   * million tokens (USD). Useful for comparing relative model expense in the UI.
+   */
+  cost?: number;
+  /**
+   * Detailed per-million-token pricing when available.
+   */
+  pricing?: {
+    input?: number;
+    output?: number;
+  };
+}
+
+// Known approximate pricing (USD per million tokens). Used when the OpenCode
+// CLI catalog does not include pricing metadata.
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  // Claude / Anthropic
+  "claude-opus-4": { input: 15, output: 75 },
+  "claude-3-5-sonnet": { input: 3, output: 15 },
+  "claude-3-opus": { input: 15, output: 75 },
+  "claude-sonnet-4-20250514": { input: 3, output: 15 },
+  "claude-opus-4-20250514": { input: 15, output: 75 },
+
+  // OpenAI
+  "gpt-5.1-codex-mini": { input: 3, output: 15 },
+  "gpt-5.1-codex": { input: 3, output: 15 },
+  "gpt-4o": { input: 2.5, output: 10 },
+  "gpt-4o-mini": { input: 0.15, output: 0.6 },
+  "gpt-4-turbo": { input: 10, output: 30 },
+  "o1": { input: 15, output: 60 },
+  "o1-mini": { input: 3, output: 12 },
+  "o3-mini": { input: 1.1, output: 4.4 },
+  "openai/gpt-oss-120b": { input: 0, output: 0 },
+  "openai/gpt-oss-20b": { input: 0, output: 0 },
+
+  // Google / Gemini
+  "gemini-2.5-pro": { input: 1.25, output: 5 },
+  "gemini-2.5-flash": { input: 0.075, output: 0.3 },
+  "gemini-2.0-flash": { input: 0.1, output: 0.4 },
+  "gemini-2.5-flash-thinking": { input: 0.075, output: 0.3 },
+
+  // DeepSeek
+  "deepseek-ai/DeepSeek-R1-0528": { input: 0.55, output: 2.19 },
+  "deepseek-ai/DeepSeek-V3.2": { input: 0.27, output: 1.1 },
+  "deepseek-ai/DeepSeek-V4-Flash": { input: 0.1, output: 0.4 },
+  "deepseek-ai/DeepSeek-V4-Pro": { input: 0.5, output: 2 },
+
+  // Meta
+  "meta-llama/Llama-3.3-70B-Instruct-Turbo": { input: 0.2, output: 0.4 },
+  "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": { input: 0.2, output: 0.8 },
+  "meta-llama/Llama-4-Scout-17B-16E-Instruct": { input: 0.15, output: 0.6 },
+
+  // Kimi / Moonshot
+  "moonshotai/Kimi-K2.5": { input: 1.2, output: 6 },
+  "moonshotai/Kimi-K2.6": { input: 1.2, output: 6 },
+  "moonshotai/Kimi-K2.7-Code": { input: 1.2, output: 6 },
+  "kimi-for-coding/kimi-k2.5": { input: 1.2, output: 6 },
+
+  // Alibaba
+  "Qwen/Qwen3-32B": { input: 0.1, output: 0.3 },
+  "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo": { input: 0.8, output: 2.4 },
+
+  // Default fallback
+  default: { input: 5, output: 20 },
+};
+
+function getModelPricing(modelId: string): { input: number; output: number } {
+  return MODEL_PRICING[modelId] ?? MODEL_PRICING.default!;
+}
+
+function enrichModelWithPricing(model: OpenCodeModel): OpenCodeModel {
+  if (model.pricing) {
+    const inputPrice =
+      typeof model.pricing.input === "number" && Number.isFinite(model.pricing.input)
+        ? model.pricing.input
+        : 0;
+    const outputPrice =
+      typeof model.pricing.output === "number" && Number.isFinite(model.pricing.output)
+        ? model.pricing.output
+        : 0;
+
+    if (typeof model.cost === "number") {
+      return model;
+    }
+
+    return {
+      ...model,
+      cost: inputPrice + outputPrice,
+    };
+  }
+
+  const pricing = getModelPricing(model.id);
+  return {
+    ...model,
+    pricing,
+    cost: pricing.input + pricing.output,
+  };
 }
 
 interface OpenCodeProvider {
@@ -154,7 +252,7 @@ function parseOpencodeModelsOutput(
       name: humanizeIdentifier(providerId),
       models: [...models]
         .sort((a, b) => a.localeCompare(b))
-        .map((modelId) => ({
+        .map((modelId) => enrichModelWithPricing({
           id: modelId,
           name: modelId,
         })),
@@ -180,7 +278,10 @@ export async function readOpenCodeProvidersCache(): Promise<OpenCodeProvidersCac
 
     return {
       fetchedAt: parsed.fetchedAt || new Date(0).toISOString(),
-      providers: parsed.providers as OpenCodeProvider[],
+      providers: (parsed.providers as OpenCodeProvider[]).map((provider) => ({
+        ...provider,
+        models: provider.models.map(enrichModelWithPricing),
+      })),
       connected: Array.isArray(parsed.connected) ? parsed.connected : [],
       default:
         parsed.default && typeof parsed.default === "object"

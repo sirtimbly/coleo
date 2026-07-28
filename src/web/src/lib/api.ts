@@ -1335,6 +1335,13 @@ export interface OpenCodeModel {
     input: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
     output: Array<'text' | 'audio' | 'image' | 'video' | 'pdf'>;
   };
+  /** Estimated cost index: sum of input + output price per million tokens (USD). */
+  cost?: number;
+  /** Detailed per-million-token pricing when available. */
+  pricing?: {
+    input?: number;
+    output?: number;
+  };
 }
 
 export type TaskAttachment = SharedTaskAttachment;
@@ -1693,9 +1700,16 @@ export interface ArmMessage {
     role: 'user' | 'assistant' | 'system';
     time?: JsonValue;
     cost?: number;
+    model?: string;
+    provider?: string;
     tokens?: {
       input?: number;
       output?: number;
+      reasoning?: number;
+      cache?: {
+        read?: number;
+        write?: number;
+      };
     };
     error?: { name: string; data?: { message: string } };
   };

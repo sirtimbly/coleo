@@ -11,7 +11,16 @@ export interface CostSample {
   messageCost: number;
   inputTokens: number;
   outputTokens: number;
+  reasoningTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
   messageId: string;
+  modelId?: string;
+  providerId?: string;
+}
+
+export interface CumulativeCostSample extends CostSample {
+  cumulativeCost: number;
 }
 
 export function withCumulativeCost(samples: CostSample[]): CumulativeCostSample[] {
@@ -70,7 +79,14 @@ export function buildCostSamplesFromMessages(
     info: {
       id: string;
       cost?: number;
-      tokens?: { input?: number; output?: number };
+      model?: string;
+      provider?: string;
+      tokens?: {
+        input?: number;
+        output?: number;
+        reasoning?: number;
+        cache?: { read?: number; write?: number };
+      };
       time?: JsonValue;
     };
   }>,
@@ -80,19 +96,22 @@ export function buildCostSamplesFromMessages(
     const ts = parseMessageTimestamp(message.info.time);
     const cost = typeof message.info.cost === 'number' ? message.info.cost : 0;
     if (ts === null || cost <= 0) continue;
+    const tokens = message.info.tokens ?? {};
+    const cache = tokens.cache ?? {};
     parsed.push({
       messageId: message.info.id,
       timestamp: ts,
       messageCost: cost,
-      inputTokens: message.info.tokens?.input ?? 0,
-      outputTokens: message.info.tokens?.output ?? 0,
+      inputTokens: tokens.input ?? 0,
+      outputTokens: tokens.output ?? 0,
+      reasoningTokens: tokens.reasoning ?? 0,
+      cacheReadTokens: cache.read ?? 0,
+      cacheWriteTokens: cache.write ?? 0,
+      modelId: message.info.model,
+      providerId: message.info.provider,
     });
   }
   return parsed;
-}
-
-export interface CumulativeCostSample extends CostSample {
-  cumulativeCost: number;
 }
 
 export function computeCostRatePerHour(

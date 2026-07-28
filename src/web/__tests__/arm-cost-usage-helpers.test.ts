@@ -58,8 +58,26 @@ describe("ArmCostUsageChart helpers", () => {
   it("computes a positive cost rate when spend is increasing", () => {
     const now = Date.now();
     const samples: CostSample[] = [
-      { messageId: "m1", timestamp: now - 60_000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
-      { messageId: "m2", timestamp: now, messageCost: 0.2, inputTokens: 10, outputTokens: 5 },
+      {
+        messageId: "m1",
+        timestamp: now - 60_000,
+        messageCost: 0.05,
+        inputTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "m2",
+        timestamp: now,
+        messageCost: 0.2,
+        inputTokens: 10,
+        outputTokens: 5,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     const cumulative = withCumulativeCost(samples);
     const rate = computeCostRatePerHour(cumulative, now);
@@ -70,7 +88,16 @@ describe("ArmCostUsageChart helpers", () => {
     const now = Date.now();
     expect(computeCostRatePerHour([], now)).toBe(0);
     const single: CostSample[] = [
-      { messageId: "m1", timestamp: now, messageCost: 0.1, inputTokens: 1, outputTokens: 1 },
+      {
+        messageId: "m1",
+        timestamp: now,
+        messageCost: 0.1,
+        inputTokens: 1,
+        outputTokens: 1,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     expect(computeCostRatePerHour(withCumulativeCost(single), now)).toBe(0);
   });
@@ -78,20 +105,26 @@ describe("ArmCostUsageChart helpers", () => {
   it("returns zero rate when no samples are within the recent window", () => {
     const now = Date.now();
     const samples: CostSample[] = [
-      {
-        messageId: "m1",
-        timestamp: now - COST_RATE_WINDOW_MS - 60_000,
-        messageCost: 0.05,
-        inputTokens: 1,
-        outputTokens: 0,
-      },
-      {
-        messageId: "m2",
-        timestamp: now - COST_RATE_WINDOW_MS - 30_000,
-        messageCost: 0.2,
-        inputTokens: 10,
-        outputTokens: 5,
-      },
+        {
+          messageId: "m1",
+          timestamp: now - COST_RATE_WINDOW_MS - 60_000,
+          messageCost: 0.05,
+          inputTokens: 1,
+          outputTokens: 0,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
+        {
+          messageId: "m2",
+          timestamp: now - COST_RATE_WINDOW_MS - 30_000,
+          messageCost: 0.2,
+          inputTokens: 10,
+          outputTokens: 5,
+          reasoningTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+        },
     ];
     expect(computeCostRatePerHour(withCumulativeCost(samples), now)).toBe(0);
   });
@@ -99,9 +132,36 @@ describe("ArmCostUsageChart helpers", () => {
   it("withCumulativeCost totals spend across all samples", () => {
     const now = Date.now();
     const samples: CostSample[] = [
-      { messageId: "a", timestamp: now - 2000, messageCost: 0.1, inputTokens: 1, outputTokens: 0 },
-      { messageId: "b", timestamp: now - 1000, messageCost: 0.2, inputTokens: 2, outputTokens: 1 },
-      { messageId: "c", timestamp: now, messageCost: 0.4, inputTokens: 4, outputTokens: 2 },
+      {
+        messageId: "a",
+        timestamp: now - 2000,
+        messageCost: 0.1,
+        inputTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "b",
+        timestamp: now - 1000,
+        messageCost: 0.2,
+        inputTokens: 2,
+        outputTokens: 1,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "c",
+        timestamp: now,
+        messageCost: 0.4,
+        inputTokens: 4,
+        outputTokens: 2,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     const cumulative = withCumulativeCost(samples);
     expect(cumulative).toHaveLength(3);
@@ -113,8 +173,26 @@ describe("ArmCostUsageChart helpers", () => {
   it("withCumulativeCost orders samples by timestamp before totalling", () => {
     const now = Date.now();
     const samples: CostSample[] = [
-      { messageId: "later", timestamp: now + 1000, messageCost: 0.5, inputTokens: 0, outputTokens: 0 },
-      { messageId: "earlier", timestamp: now - 1000, messageCost: 0.1, inputTokens: 0, outputTokens: 0 },
+      {
+        messageId: "later",
+        timestamp: now + 1000,
+        messageCost: 0.5,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "earlier",
+        timestamp: now - 1000,
+        messageCost: 0.1,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     const cumulative = withCumulativeCost(samples);
     expect(cumulative[0]!.messageId).toBe("earlier");
@@ -124,12 +202,48 @@ describe("ArmCostUsageChart helpers", () => {
 
   it("mergeCostSamples dedups by messageId, favouring the fresh batch", () => {
     const stored: CostSample[] = [
-      { messageId: "m1", timestamp: 1000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
-      { messageId: "m2", timestamp: 2000, messageCost: 0.05, inputTokens: 1, outputTokens: 0 },
+      {
+        messageId: "m1",
+        timestamp: 1000,
+        messageCost: 0.05,
+        inputTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "m2",
+        timestamp: 2000,
+        messageCost: 0.05,
+        inputTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     const fresh: CostSample[] = [
-      { messageId: "m2", timestamp: 2000, messageCost: 0.08, inputTokens: 2, outputTokens: 1 },
-      { messageId: "m3", timestamp: 3000, messageCost: 0.04, inputTokens: 1, outputTokens: 0 },
+      {
+        messageId: "m2",
+        timestamp: 2000,
+        messageCost: 0.08,
+        inputTokens: 2,
+        outputTokens: 1,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
+      {
+        messageId: "m3",
+        timestamp: 3000,
+        messageCost: 0.04,
+        inputTokens: 1,
+        outputTokens: 0,
+        reasoningTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+      },
     ];
     const merged = mergeCostSamples(stored, fresh);
     expect(merged).toHaveLength(3);

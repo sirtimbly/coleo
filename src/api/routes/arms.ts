@@ -966,6 +966,169 @@ export async function listArmTemplateSummaries(): Promise<ArmTemplateSummary[]> 
 export function createArmsRoutes() {
   const app = new Hono<ArmsContext>();
 
+  function normalizeArmMessage(message: unknown): unknown {
+    if (!message || typeof message !== "object") {
+      return message;
+    }
+
+    const asRecord = message as Record<string, unknown>;
+    const info = asRecord.info;
+    if (!info || typeof info !== "object") {
+      return asRecord;
+    }
+
+    const infoRecord = info as Record<string, unknown>;
+    const tokenData =
+      infoRecord.tokenData &&
+      typeof infoRecord.tokenData === "object" &&
+      !Array.isArray(infoRecord.tokenData)
+        ? (infoRecord.tokenData as Record<string, unknown>)
+        : undefined;
+    const messageData =
+      infoRecord.messageData &&
+      typeof infoRecord.messageData === "object" &&
+      !Array.isArray(infoRecord.messageData)
+        ? (infoRecord.messageData as Record<string, unknown>)
+        : undefined;
+
+    const coerceString = (value: unknown): string | undefined =>
+      typeof value === "string" && value.length > 0 ? value : undefined;
+    const coerceNumber = (value: unknown): number | undefined => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return value;
+      }
+
+      if (typeof value === "string") {
+        const parsed = Number.parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+      }
+
+      return undefined;
+    };
+
+    const normalizedModelId =
+      coerceString(infoRecord.modelId) ||
+      coerceString(infoRecord.modelID) ||
+      coerceString(infoRecord.model) ||
+      coerceString(messageData?.modelId) ||
+      coerceString(messageData?.modelID) ||
+      coerceString(messageData?.model);
+
+    const normalizedProviderId =
+      coerceString(infoRecord.providerId) ||
+      coerceString(infoRecord.providerID) ||
+      coerceString(infoRecord.provider) ||
+      coerceString(messageData?.providerId) ||
+      coerceString(messageData?.providerID) ||
+      coerceString(messageData?.provider);
+
+    const normalizedTokens: {
+      input?: number;
+      output?: number;
+      reasoning?: number;
+      cache?: { read?: number; write?: number };
+    } = {};
+    const tokenSource =
+      infoRecord.tokens &&
+      typeof infoRecord.tokens === "object" &&
+      !Array.isArray(infoRecord.tokens)
+        ? (infoRecord.tokens as Record<string, unknown>)
+        : tokenData;
+
+    const cacheFromNested =
+      tokenSource &&
+      tokenSource.cache &&
+      typeof tokenSource.cache === "object" &&
+      !Array.isArray(tokenSource.cache)
+        ? (tokenSource.cache as Record<string, unknown>)
+        : undefined;
+
+    if (tokenSource) {
+      const input = coerceNumber(tokenSource.input);
+      const output = coerceNumber(tokenSource.output);
+      const reasoning = coerceNumber(tokenSource.reasoning);
+      const cacheRead = coerceNumber(tokenSource.cacheRead) ?? coerceNumber(cacheFromNested?.read);
+      const cacheWrite = coerceNumber(tokenSource.cacheWrite) ?? coerceNumber(cacheFromNested?.write);
+      const hasTokenValues =
+        input !== undefined ||
+        output !== undefined ||
+        reasoning !== undefined ||
+        cacheRead !== undefined ||
+        cacheWrite !== undefined;
+
+      if (hasTokenValues) {
+        if (input !== undefined) normalizedTokens.input = input;
+        if (output !== undefined) normalizedTokens.output = output;
+        if (reasoning !== undefined) normalizedTokens.reasoning = reasoning;
+        if (cacheRead !== undefined) {
+          normalizedTokens.cache = {
+            ...normalizedTokens.cache,
+            read: cacheRead,
+          };
+        }
+        if (cacheWrite !== undefined) {
+          normalizedTokens.cache = {
+            ...normalizedTokens.cache,
+            write: cacheWrite,
+          };
+        }
+      }
+    }
+
+    const existingMessageData = messageData ? { ...messageData } : undefined;
+
+    if (existingMessageData) {
+      if (!existingMessageData.modelId && normalizedModelId) {
+        existingMessageData.modelId = normalizedModelId;
+      }
+      if (!existingMessageData.providerId && normalizedProviderId) {
+        existingMessageData.providerId = normalizedProviderId;
+      }
+    }
+
+    if (normalizedModelId !== undefined) {
+      if (!coerceString(infoRecord.model)) infoRecord.model = normalizedModelId;
+      if (!coerceString(infoRecord.modelId)) infoRecord.modelId = normalizedModelId;
+      if (!coerceString(infoRecord.modelID)) infoRecord.modelID = normalizedModelId;
+    }
+
+    if (normalizedProviderId !== undefined) {
+      if (!coerceString(infoRecord.provider)) infoRecord.provider = normalizedProviderId;
+      if (!coerceString(infoRecord.providerId)) infoRecord.providerId = normalizedProviderId;
+      if (!coerceString(infoRecord.providerID)) infoRecord.providerID = normalizedProviderId;
+    }
+
+    if (Object.keys(normalizedTokens).length > 0) {
+      infoRecord.tokens = normalizedTokens;
+    }
+
+    if (existingMessageData) {
+      infoRecord.messageData = existingMessageData;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(infoRecord, "cost") && tokenData) {
+      const tokenCost = coerceNumber(tokenData.cost);
+      if (tokenCost !== undefined) {
+        infoRecord.cost = tokenCost;
+      }
+    }
+
+    return {
+      ...asRecord,
+      info: {
+        ...infoRecord,
+      },
+    };
+  }
+
+  const normalizeMessagesForCostChart = (messages: unknown) => {
+    if (!Array.isArray(messages)) {
+      return [];
+    }
+
+    return messages.map((message) => normalizeArmMessage(message));
+  };
+
   /**
    * List all arms
    * GET /api/arms
@@ -2865,7 +3028,7 @@ export function createArmsRoutes() {
       }
 
       return c.json({
-        messages: response.data?.messages || [],
+        messages: normalizeMessagesForCostChart(response.data?.messages),
         sessionId: response.data?.sessionId || row.session_id,
         distributed: true,
       });
@@ -2911,7 +3074,7 @@ export function createArmsRoutes() {
       const sessionId = manager.getSession(id)?.session.id;
 
       return c.json({
-        messages,
+        messages: normalizeMessagesForCostChart(messages),
         sessionId,
       });
     } catch (err) {
