@@ -111,8 +111,8 @@ The following Observatory enhancements remain non-blocking and do not retroactiv
 ### Deliverables
 
 - [ ] **Add a high-performance multi-tabbed grid view.** Support sorting and filtering large numbers of plan items, tasks, and discoveries. The grid must remain usable for the scale covered by the acceptance criteria.
-- [ ] **Add progress visualization.** Show real-time progress tracking, completion status, and sub-task breakdown for plan items and tasks.
-- [ ] **Add collaborative discussion UI.** Provide an integrated chat interface for discussing implementation and design for a specific item with an “Architect” agent.
+- [x] **Add progress visualization.** Show real-time progress tracking, completion status, and sub-task breakdown for plan items and tasks.
+- [x] **Add collaborative discussion UI.** Provide an integrated chat interface for discussing implementation and design for a specific item with an “Architect” agent.
 - [ ] **Add the Task Preparation Agent.** Allow the agent to turn a discussion into a detailed task definition containing context, requirements, and acceptance criteria.
 - [ ] **Add the Task Handoff Mechanism.** Queue prepared tasks for execution by other arms and bridge the planning and execution workflows.
 

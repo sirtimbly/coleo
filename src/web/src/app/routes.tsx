@@ -5,6 +5,7 @@ import {
   Eye,
   FileText,
   Flower2,
+  Grid3x3,
   LayoutDashboard,
   ListTodo,
   ClipboardCheck,
@@ -210,8 +211,9 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     href: '/grid',
     path: 'grid',
     label: 'Grid',
-    icon: ListTodo,
+    icon: Grid3x3,
     component: UnifiedGridPage,
+    showInNav: true,
   },
 ];
 

@@ -22,9 +22,7 @@ import {
 	type ArmTemplateSummary,
 	type OpenCodeProvider,
 } from "@/lib";
-import { ArmActivityChart } from "@/components/ArmActivityChart";
-import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
-import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
+import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -448,7 +446,6 @@ export function ArmsPage() {
 	const [spawnModal, setSpawnModal] = useState<NewArmModalState>(
 		DEFAULT_SPAWN_MODAL_STATE,
 	);
-	const [telemetryArmId, setTelemetryArmId] = useState<string | null>(null);
 	const [providerSetupProviderId, setProviderSetupProviderId] = useState<string | null>(null);
 	const [loadingAgentProviders, setLoadingAgentProviders] = useState(false);
 	const { showError, showSuccess } = useToast();
@@ -738,38 +735,6 @@ export function ArmsPage() {
 
 	const hasOpenCodeCatalog =
 		openCodeCatalog.source === "cache" || openCodeCatalog.source === "live";
-
-	const selectedTelemetryArm = useMemo(() => {
-		const sortedByActivity = [...arms].sort((left, right) => {
-			const leftAt = left.lastActivityAt ? new Date(left.lastActivityAt).getTime() : 0;
-			const rightAt = right.lastActivityAt ? new Date(right.lastActivityAt).getTime() : 0;
-			return rightAt - leftAt;
-		});
-
-		if (arms.length === 0) {
-			return null;
-		}
-
-		if (telemetryArmId) {
-			const match = arms.find((arm) => arm.id === telemetryArmId);
-			if (match) {
-				return match;
-			}
-		}
-
-		return sortedByActivity[0]!;
-	}, [arms, telemetryArmId]);
-
-	useEffect(() => {
-		if (arms.length === 0) {
-			setTelemetryArmId(null);
-			return;
-		}
-
-		if (!telemetryArmId || !arms.some((arm) => arm.id === telemetryArmId)) {
-			setTelemetryArmId(selectedTelemetryArm?.id ?? null);
-		}
-	}, [arms, telemetryArmId, selectedTelemetryArm?.id]);
 
 	const openSpawnModal = useCallback(() => {
 		const initialAgentId = agents[0]?.agentId || "";
@@ -1087,49 +1052,7 @@ export function ArmsPage() {
 						</Button>
 					</div>
 
-					{selectedTelemetryArm ? (
-						<div className="space-y-4 rounded-lg border border-border bg-surface/90 p-4">
-							<div className="flex flex-wrap items-center justify-between gap-3">
-								<div className="space-y-1">
-									<div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-										Telemetry Overview
-									</div>
-									<div className="text-sm font-semibold text-foreground">
-										30-minute activity, context, and cost
-									</div>
-								</div>
-								<label className="text-xs text-muted-foreground">
-									<span className="mr-2">Arm</span>
-									<select
-										value={selectedTelemetryArm.id}
-										onChange={(event) => setTelemetryArmId(event.target.value)}
-										className="rounded-md border border-border bg-surface px-2 py-1.5 text-xs text-foreground"
-									>
-										{arms
-											.slice()
-											.sort((left, right) => left.name.localeCompare(right.name))
-											.map((arm) => (
-												<option key={arm.id} value={arm.id}>
-													{arm.name}
-												</option>
-											))}
-									</select>
-								</label>
-							</div>
-
-							<div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-								<ArmActivityChart armId={selectedTelemetryArm.id} />
-								<ArmContextUsageChart
-									armId={selectedTelemetryArm.id}
-									title={`Context Usage - ${selectedTelemetryArm.name}`}
-								/>
-								<ArmCostUsageChart
-									armId={selectedTelemetryArm.id}
-									title={`Cost Usage - ${selectedTelemetryArm.name}`}
-								/>
-							</div>
-						</div>
-					) : null}
+					<AllArmsTelemetryOverview />
 
 					{loading ? (
 						<div className="space-y-2">

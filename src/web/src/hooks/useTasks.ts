@@ -24,6 +24,7 @@ interface TaskFilters {
   domain?: string;
   assignedTo?: string;
   phase?: string;
+  sourceType?: string;
 }
 
 interface UpdateTaskVariables {

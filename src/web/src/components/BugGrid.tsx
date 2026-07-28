@@ -13,8 +13,8 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { DragStartEvent, DragEndEvent, DragOverEvent } from '@dnd-kit/core';
-import { type Bug } from '@/lib';
-import { cn } from '@/lib';
+import { useVirtualizer } from '@tanstack/react-virtual';
+import { type Bug, cn } from '@/lib';
 import { BUG_GRID_COLUMNS_CLASS, BugGridRow, type BugUiMeta, type BugUpdate } from './BugGridRow';
 import { FilterableGridHeader, SortableGridHeader, type GridFilterOption } from './GridColumnHeader';
 import { useGridPreferences } from './grid-preferences';
@@ -215,6 +215,7 @@ export function BugGrid({
   );
   const draftRef = useRef<HTMLInputElement>(null);
   const hoverIndexRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // TanStack Table intentionally exposes non-memoizable callbacks; React Compiler safely skips this component.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -252,11 +253,26 @@ export function BugGrid({
   }, [availableTags, bugs]);
 
   const displayRows = table.getRowModel().rows;
-  const displayBugs = displayRows.map((row) => row.original);
   const hasActiveFilters = columnFilters.length > 0;
   const hasCanonicalSorting =
     sorting.length === 0 || (sorting.length === 1 && sorting[0]?.id === 'order' && sorting[0].desc === false);
   const canReorder = !hasActiveFilters && hasCanonicalSorting;
+
+  const virtualItemCount = displayRows.length > 0 ? displayRows.length + 1 : 0;
+  const rowVirtualizer = useVirtualizer({
+    count: virtualItemCount,
+    getScrollElement: () => containerRef.current,
+    estimateSize: (index) => index < displayRows.length ? 56 : 8,
+    getItemKey: (index) => displayRows[index]?.id ?? 'bug-grid-end',
+    overscan: 10,
+    measureElement: (element) => element.getBoundingClientRect().height,
+  });
+  const virtualItems = rowVirtualizer.getVirtualItems();
+
+  // Re-measure rows when expansion changes
+  useEffect(() => {
+    rowVirtualizer.measure();
+  }, [expandedBugId, rowVirtualizer]);
 
   const handleToggleExpanded = useCallback((bugId: string) => {
     setExpandedBugId((current) => current === bugId ? null : bugId);
@@ -386,7 +402,7 @@ export function BugGrid({
   const sortableItems = bugIds;
 
   return (
-    <div className={cn('overflow-x-auto rounded-md border border-border bg-card', className)}>
+    <div className={cn('flex h-full min-h-0 flex-col overflow-x-auto rounded-md border border-border bg-card', className)}>
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -431,51 +447,76 @@ export function BugGrid({
           />
           <div className="border-l border-border/60 pl-3 text-right">Actions</div>
         </div>
-        <div className="flex-1 overflow-y-auto p-2">
+        <div ref={containerRef} className="min-h-0 min-w-[1220px] flex-1 overflow-y-auto overflow-x-hidden p-2">
           {displayRows.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-sm">
               {bugs.length > 0 ? 'No bugs match the selected column filters' : 'No bugs found'}
             </div>
           ) : (
             <SortableContext items={sortableItems} strategy={verticalListSortingStrategy}>
-              {displayRows.map((row, index) => {
-                const bug = row.original;
-                return (
-                <div key={bug.id} className="relative -mt-2">
-                   <InsertRow
-                     isActive={activeId !== null && hoverIndex === index}
-                     onClick={(e) => {
-                       const rect = e.currentTarget.getBoundingClientRect();
-                       setDraftPosition({ top: rect.top, left: rect.left });
-                       setDraftIndex(index);
-                     }}
-                   />
-                  <SortableBugRow
-                    bug={bug}
-                    index={index}
-                    orderNumber={row.index + 1}
-                    canReorder={canReorder}
-                    onToggleExpanded={handleToggleExpanded}
-                    availableTags={availableTags}
-                    isSelected={bug.id === selectedBugId}
-                    isExpanded={expandedBugId === bug.id}
-                    onOpenDetails={onOpenDetails}
-                    onUpdateBug={onUpdateBug}
-                    onUpdateUi={onUpdateUi}
-                    onDelete={onDelete}
-                    onReorderToSortOrder={handleReorderToSortOrder}
-                  />
-                </div>
-                );
-              })}
-               <InsertRow
-                 isActive={activeId !== null && hoverIndex === displayBugs.length}
-                 onClick={(e) => {
-                   const rect = e.currentTarget.getBoundingClientRect();
-                   setDraftPosition({ top: rect.top, left: rect.left });
-                   setDraftIndex(displayBugs.length);
-                 }}
-               />
+              <div
+                className="relative w-full"
+                style={{ height: `${rowVirtualizer.getTotalSize()}px` }}
+              >
+                {virtualItems.map((virtualRow) => {
+                  if (virtualRow.index >= displayRows.length) {
+                    return (
+                      <div
+                        key="bug-grid-end"
+                        ref={rowVirtualizer.measureElement}
+                        data-index={virtualRow.index}
+                        className="absolute left-0 top-0 w-full"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      >
+                        <InsertRow
+                          isActive={activeId !== null && hoverIndex === displayRows.length}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setDraftPosition({ top: rect.top, left: rect.left });
+                            setDraftIndex(displayRows.length);
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  const row = displayRows[virtualRow.index];
+                  const bug = row.original;
+                  return (
+                    <div
+                      key={bug.id}
+                      ref={rowVirtualizer.measureElement}
+                      data-index={virtualRow.index}
+                      className="absolute left-0 top-0 w-full"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <InsertRow
+                        isActive={activeId !== null && hoverIndex === virtualRow.index}
+                        onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          setDraftPosition({ top: rect.top, left: rect.left });
+                          setDraftIndex(virtualRow.index);
+                        }}
+                      />
+                      <SortableBugRow
+                        bug={bug}
+                        index={virtualRow.index}
+                        orderNumber={row.index + 1}
+                        canReorder={canReorder}
+                        onToggleExpanded={handleToggleExpanded}
+                        availableTags={availableTags}
+                        isSelected={bug.id === selectedBugId}
+                        isExpanded={expandedBugId === bug.id}
+                        onOpenDetails={onOpenDetails}
+                        onUpdateBug={onUpdateBug}
+                        onUpdateUi={onUpdateUi}
+                        onDelete={onDelete}
+                        onReorderToSortOrder={handleReorderToSortOrder}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
             </SortableContext>
           )}
         </div>

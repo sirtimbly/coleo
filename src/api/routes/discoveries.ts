@@ -132,14 +132,20 @@ export function createDiscoveriesRoutes() {
     const status = c.req.query("status") || "open";
     const since = c.req.query("since");
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
     
     let query = `
       SELECT id, arm_id, arm_name, kind, title, details, file_path, line_number, severity, status, task_id, phase, created_at, updated_at
       FROM discoveries
-      WHERE status = ?
+      WHERE 1 = 1
     `;
     
-    const params: (string | number)[] = [status];
+    const params: (string | number)[] = [];
+
+    if (status !== "all") {
+      query += " AND status = ?";
+      params.push(status);
+    }
     
     if (armId) {
       query += " AND arm_id = ?";
@@ -161,8 +167,8 @@ export function createDiscoveriesRoutes() {
       params.push(since);
     }
     
-    query += " ORDER BY created_at DESC LIMIT ?";
-    params.push(limit);
+    query += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    params.push(limit, offset);
     
     try {
       const stmt = db.query(query);
@@ -186,7 +192,34 @@ export function createDiscoveriesRoutes() {
         updatedAt: row.updated_at,
       }));
       
-      return c.json({ discoveries });
+      let countQuery = "SELECT COUNT(*) as count FROM discoveries WHERE 1 = 1";
+      const countParams: (string | number)[] = [];
+      if (status !== "all") {
+        countQuery += " AND status = ?";
+        countParams.push(status);
+      }
+      if (armId) {
+        countQuery += " AND arm_id = ?";
+        countParams.push(armId);
+      }
+      if (kind) {
+        countQuery += " AND kind = ?";
+        countParams.push(kind);
+      }
+      if (severity) {
+        countQuery += " AND severity = ?";
+        countParams.push(severity);
+      }
+      if (since) {
+        countQuery += " AND created_at > ?";
+        countParams.push(since);
+      }
+      const count = (db.query(countQuery).get(...countParams) as { count: number }).count;
+
+      return c.json({
+        discoveries,
+        pagination: { limit, offset, total: count },
+      });
     } catch (err) {
       throw HttpError.internal("Failed to query discoveries");
     }

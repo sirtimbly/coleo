@@ -29,6 +29,8 @@ export type { ContextSample };
 
 interface ArmContextUsageChartProps {
   armId: string | null;
+  samples?: ContextSample[];
+  range?: { start: number; end: number };
   title?: string;
   className?: string;
   embedded?: boolean;
@@ -63,6 +65,8 @@ function saveStoredSamples(armId: string, samples: ContextSample[]): void {
 
 export function ArmContextUsageChart({
   armId,
+  samples: externalSamples,
+  range,
   title = 'Context Usage',
   className,
   embedded = false,
@@ -81,6 +85,14 @@ export function ArmContextUsageChart({
   }, [armId]);
 
   useEffect(() => {
+    if (externalSamples) {
+      const sorted = externalSamples.slice().sort((left, right) => left.timestamp - right.timestamp);
+      storedRef.current = sorted;
+      setSamples(sorted);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     if (!armId) {
       setSamples([]);
       storedRef.current = [];
@@ -89,9 +101,10 @@ export function ArmContextUsageChart({
     const restored = loadStoredSamples(armId);
     storedRef.current = restored.slice(-MAX_STORED_SAMPLES);
     setSamples(restored);
-  }, [armId]);
+  }, [armId, externalSamples]);
 
   useEffect(() => {
+    if (externalSamples) return;
     if (!armId) return;
     let cancelled = false;
 
@@ -121,11 +134,13 @@ export function ArmContextUsageChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [armId, recordSample]);
+  }, [armId, externalSamples, recordSample]);
 
-  const windowEnd = Date.now();
-  const windowStart = windowEnd - SAMPLE_WINDOW_MS;
-  const visibleSamples = samples.filter((s) => s.timestamp >= windowStart);
+  const windowEnd = range?.end ?? Date.now();
+  const windowStart = range?.start ?? windowEnd - SAMPLE_WINDOW_MS;
+  const visibleSamples = samples.filter(
+    (sample) => sample.timestamp >= windowStart && sample.timestamp <= windowEnd,
+  );
 
   const budget = visibleSamples.length === 0
     ? 0
@@ -201,7 +216,7 @@ export function ArmContextUsageChart({
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {compact ? (
-          <span>{`Context usage · last ${Math.round(SAMPLE_WINDOW_MS / 60_000)}m`}</span>
+          <span>{`Context usage · ${new Date(windowStart).toLocaleString()} - ${new Date(windowEnd).toLocaleString()}`}</span>
         ) : (
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -236,7 +251,7 @@ export function ArmContextUsageChart({
         </div>
       ) : visibleSamples.length === 0 ? (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
-          No context samples yet. The first one arrives in ~{Math.round(SAMPLE_INTERVAL_MS / 1000)} seconds.
+          No context samples in the selected range.
         </div>
       ) : (
         <div className="relative">
@@ -245,7 +260,7 @@ export function ArmContextUsageChart({
             className="w-full"
             style={{ maxHeight: height }}
             role="img"
-            aria-label="Arm context token usage over the last 30 minutes"
+            aria-label={`Arm context token usage from ${new Date(windowStart).toLocaleString()} to ${new Date(windowEnd).toLocaleString()}`}
             onMouseLeave={() => setHovered(null)}
             onMouseMove={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();

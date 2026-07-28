@@ -41,6 +41,7 @@ export {
   type AllArmsAnalysis,
   type EventWindowResponse,
   type ArmActivityMetricsResponse,
+  type AllArmsTelemetryResponse,
   type ArmContextResponse,
   type ArmCostHistoryResponse,
   type RecentEventsResponse,

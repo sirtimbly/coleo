@@ -87,6 +87,7 @@ function buildBuckets(
 interface ArmActivityChartProps {
   armId: string | null;
   activities?: ViewerActivityItem[];
+  metrics?: ArmActivityMetricsResponse;
   windowMs?: number;
   limit?: number;
   title?: string;
@@ -101,6 +102,7 @@ interface ArmActivityChartProps {
 export function ArmActivityChart({
   armId,
   activities: externalActivities,
+  metrics: externalMetrics,
   windowMs = WINDOW_MINUTES * MINUTE_MS,
   limit = 1000,
   title = 'Arm Activity',
@@ -119,6 +121,12 @@ export function ArmActivityChart({
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
+    if (externalMetrics) {
+      setMetricBuckets(toMinuteBuckets(externalMetrics));
+      setActivities([]);
+      setError(null);
+      return;
+    }
     if (externalActivities !== undefined) {
       setActivities(externalActivities);
       setMetricBuckets(null);
@@ -149,7 +157,7 @@ export function ArmActivityChart({
     return () => {
       cancelled = true;
     };
-  }, [armId, externalActivities, windowMs, limit, tick]);
+  }, [armId, externalActivities, externalMetrics, windowMs, limit, tick]);
 
   useEffect(() => {
     if (!refreshMs || refreshMs <= 0) return;
@@ -168,6 +176,7 @@ export function ArmActivityChart({
     return peak;
   }, [buckets]);
 
+  const bucketCount = Math.max(1, buckets.length);
   const chartWidth = WINDOW_MINUTES * (BAR_MAX_WIDTH_PX + BAR_GAP_PX) + CHART_LEFT_PAD + CHART_RIGHT_PAD;
   const legendHeight = compact ? LEGEND_ROW_HEIGHT_COMPACT : LEGEND_ROW_HEIGHT;
   const topPad = compact ? 10 : CHART_TOP_PAD;
@@ -177,8 +186,9 @@ export function ArmActivityChart({
   const gridColor = '#e5e7eb';
 
   const barAreaWidth = chartWidth - CHART_LEFT_PAD - CHART_RIGHT_PAD;
-  const barSlotWidth = barAreaWidth / WINDOW_MINUTES;
-  const barWidth = Math.max(4, barSlotWidth - BAR_GAP_PX);
+  const barSlotWidth = barAreaWidth / bucketCount;
+  const barGap = Math.min(BAR_GAP_PX, barSlotWidth * 0.25);
+  const barWidth = Math.max(2, Math.min(BAR_MAX_WIDTH_PX, barSlotWidth - barGap));
 
   const plotTop = topPad;
   const plotBottom = chartHeight - bottomPad - legendHeight;
@@ -244,8 +254,8 @@ export function ArmActivityChart({
   const timeLabels = useMemo(() => {
     if (buckets.length === 0) return [];
     const labels: Array<{ index: number; label: string }> = [];
-    const sampleCount = Math.min(6, WINDOW_MINUTES);
-    const step = Math.max(1, Math.floor(WINDOW_MINUTES / sampleCount));
+    const sampleCount = Math.min(6, buckets.length);
+    const step = Math.max(1, Math.floor(buckets.length / sampleCount));
     for (let i = 0; i < buckets.length; i += step) {
       const bucket = buckets[i]!;
       const date = new Date(bucket.startMs);
@@ -256,6 +266,10 @@ export function ArmActivityChart({
     }
     return labels;
   }, [buckets]);
+
+  const rangeLabel = externalMetrics
+    ? `${new Date(externalMetrics.window.start).toLocaleString()} - ${new Date(externalMetrics.window.end).toLocaleString()}`
+    : `Last ${WINDOW_MINUTES} min`;
 
   const selectedBucket = hovered === null ? null : buckets[hovered] ?? null;
   const hasActivity = buckets.some((bucket) =>
@@ -277,7 +291,7 @@ export function ArmActivityChart({
               </div>
             ))}
             <span className="text-[0.7rem] text-muted-foreground">
-              Last {WINDOW_MINUTES} min
+              {rangeLabel}
             </span>
           </>
         </div>
@@ -294,7 +308,7 @@ export function ArmActivityChart({
         </div>
       ) : !hasActivity ? (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 52 : 180 }}>
-          No activity in the last {WINDOW_MINUTES} minutes.
+          No activity in the selected range.
         </div>
       ) : (
         <div className="relative">
@@ -303,7 +317,7 @@ export function ArmActivityChart({
             className="w-full"
             style={{ maxHeight: chartHeight }}
             role="img"
-            aria-label="Per-minute arm activity for the last 30 minutes"
+            aria-label={`Arm activity from ${rangeLabel}`}
             onMouseLeave={() => setHovered(null)}
             onMouseMove={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();

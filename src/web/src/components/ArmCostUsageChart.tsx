@@ -29,6 +29,8 @@ export type { CostSample };
 
 interface ArmCostUsageChartProps {
   armId: string | null;
+  samples?: CostSample[];
+  range?: { start: number; end: number };
   costBudget?: number;
   title?: string;
   className?: string;
@@ -60,6 +62,8 @@ function saveStoredSamples(armId: string, samples: CostSample[]): void {
 
 export function ArmCostUsageChart({
   armId,
+  samples: externalSamples,
+  range,
   costBudget,
   title = 'Cost Usage',
   className,
@@ -92,6 +96,14 @@ export function ArmCostUsageChart({
   );
 
   useEffect(() => {
+    if (externalSamples) {
+      const sorted = externalSamples.slice().sort((left, right) => left.timestamp - right.timestamp);
+      storedRef.current = sorted;
+      setSamples(sorted);
+      setLoading(false);
+      setError(null);
+      return;
+    }
     if (!armId) {
       setSamples([]);
       storedRef.current = [];
@@ -100,9 +112,10 @@ export function ArmCostUsageChart({
     const restored = loadStoredSamples(armId);
     storedRef.current = restored.slice(-MAX_STORED_SAMPLES);
     setSamples(restored);
-  }, [armId]);
+  }, [armId, externalSamples]);
 
   useEffect(() => {
+    if (externalSamples) return;
     if (!armId) return;
     let cancelled = false;
 
@@ -140,11 +153,13 @@ export function ArmCostUsageChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [armId, recordSnapshot]);
+  }, [armId, externalSamples, recordSnapshot]);
 
-  const referenceTime = Date.now();
-  const windowStart = referenceTime - COST_WINDOW_MS;
-  const visibleSamples = withCumulativeCost(samples).filter((s) => s.timestamp >= windowStart);
+  const referenceTime = range?.end ?? Date.now();
+  const windowStart = range?.start ?? referenceTime - COST_WINDOW_MS;
+  const visibleSamples = withCumulativeCost(samples).filter(
+    (sample) => sample.timestamp >= windowStart && sample.timestamp <= referenceTime,
+  );
   const maxCumulative = visibleSamples.length === 0
     ? 0
     : Math.max(...visibleSamples.map((s) => s.cumulativeCost));
@@ -222,7 +237,7 @@ export function ArmCostUsageChart({
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
         {compact ? (
-          <span>{`Cost usage · last ${Math.round(COST_WINDOW_MS / 60_000)}m`}</span>
+          <span>{`Cost usage · ${new Date(windowStart).toLocaleString()} - ${new Date(referenceTime).toLocaleString()}`}</span>
         ) : (
           <>
             <span className="inline-flex items-center gap-1.5">
@@ -255,7 +270,7 @@ export function ArmCostUsageChart({
         </div>
       ) : visibleSamples.length === 0 ? (
         <div className="flex items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 text-sm text-muted-foreground" style={{ height: compact ? 90 : 120 }}>
-          No cost samples yet. The first one arrives in ~{Math.round(COST_POLL_INTERVAL_MS / 1000)} seconds.
+          No cost samples in the selected range.
         </div>
       ) : (
         <div className="relative">
@@ -264,7 +279,7 @@ export function ArmCostUsageChart({
             className="w-full"
             style={{ maxHeight: height }}
             role="img"
-            aria-label="Arm cumulative cost over the last 30 minutes"
+            aria-label={`Arm cumulative cost from ${new Date(windowStart).toLocaleString()} to ${new Date(referenceTime).toLocaleString()}`}
             onMouseLeave={() => setHovered(null)}
             onMouseMove={(event) => {
               const rect = event.currentTarget.getBoundingClientRect();
