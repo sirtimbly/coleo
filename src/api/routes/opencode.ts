@@ -16,6 +16,11 @@ import { homedir } from "os";
 import { join } from "path";
 
 import { getColeoDir } from "../../config";
+import {
+  getOpenRouterPricingCatalog,
+  resolveOpenRouterPricing,
+  type OpenRouterPricingCatalog,
+} from "../../lib/openrouter-pricing";
 import { getArmClient } from "../arm-client-registry";
 import { HttpError } from "../middleware";
 
@@ -51,6 +56,10 @@ interface OpenCodeModel {
   pricing?: {
     input?: number;
     output?: number;
+    source?: "provider" | "openrouter" | "known";
+    estimated?: boolean;
+    fetchedAt?: string;
+    matchedModel?: string;
   };
 }
 
@@ -109,8 +118,12 @@ function getModelPricing(modelId: string): { input: number; output: number } | u
   return MODEL_PRICING[modelId];
 }
 
-function enrichModelWithPricing(model: OpenCodeModel): OpenCodeModel {
-  if (model.pricing) {
+function enrichModelWithPricing(
+  model: OpenCodeModel,
+  providerId: string,
+  openRouterCatalog: OpenRouterPricingCatalog | null,
+): OpenCodeModel {
+  if (model.pricing && (model.pricing.source === "provider" || model.pricing.estimated === false)) {
     const inputPrice =
       typeof model.pricing.input === "number" && Number.isFinite(model.pricing.input)
         ? model.pricing.input
@@ -126,15 +139,34 @@ function enrichModelWithPricing(model: OpenCodeModel): OpenCodeModel {
 
     return {
       ...model,
+      pricing: { ...model.pricing, source: model.pricing.source ?? "provider", estimated: false },
       cost: inputPrice + outputPrice,
     };
   }
 
+  const openRouterPricing = resolveOpenRouterPricing(openRouterCatalog, providerId, model.id);
+  if (openRouterPricing) {
+    return {
+      ...model,
+      pricing: openRouterPricing,
+      cost: openRouterPricing.input + openRouterPricing.output,
+    };
+  }
+
   const pricing = getModelPricing(model.id);
-  if (!pricing) return model;
+  if (!pricing) {
+    if (!model.pricing) return model;
+    const input = model.pricing.input ?? 0;
+    const output = model.pricing.output ?? 0;
+    return {
+      ...model,
+      pricing: { ...model.pricing, source: model.pricing.source ?? "known", estimated: true },
+      cost: typeof model.cost === "number" ? model.cost : input + output,
+    };
+  }
   return {
     ...model,
-    pricing,
+    pricing: { ...pricing, source: "known", estimated: true },
     cost: pricing.input + pricing.output,
   };
 }
@@ -216,6 +248,7 @@ export async function getLocallyAuthenticatedProviders(): Promise<string[]> {
 function parseOpencodeModelsOutput(
   output: string,
   authenticatedProviderIds: string[],
+  openRouterCatalog: OpenRouterPricingCatalog | null,
 ): OpenCodeProvider[] {
   const allowedProviders = new Set(authenticatedProviderIds);
   const providerModels = new Map<string, Set<string>>();
@@ -254,7 +287,7 @@ function parseOpencodeModelsOutput(
         .map((modelId) => enrichModelWithPricing({
           id: modelId,
           name: modelId,
-        })),
+        }, providerId, openRouterCatalog)),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -268,7 +301,10 @@ async function writeOpenCodeProvidersCache(
 
 export async function readOpenCodeProvidersCache(): Promise<OpenCodeProvidersCache | null> {
   try {
-    const content = await readFile(getOpenCodeModelsCachePath(), "utf8");
+    const [content, openRouterCatalog] = await Promise.all([
+      readFile(getOpenCodeModelsCachePath(), "utf8"),
+      getOpenRouterPricingCatalog(),
+    ]);
     const parsed = JSON.parse(content) as Partial<OpenCodeProvidersCache>;
 
     if (!Array.isArray(parsed.providers)) {
@@ -279,7 +315,9 @@ export async function readOpenCodeProvidersCache(): Promise<OpenCodeProvidersCac
       fetchedAt: parsed.fetchedAt || new Date(0).toISOString(),
       providers: (parsed.providers as OpenCodeProvider[]).map((provider) => ({
         ...provider,
-        models: provider.models.map(enrichModelWithPricing),
+        models: provider.models.map((model) =>
+          enrichModelWithPricing(model, provider.id, openRouterCatalog)
+        ),
       })),
       connected: Array.isArray(parsed.connected) ? parsed.connected : [],
       default:
@@ -293,7 +331,10 @@ export async function readOpenCodeProvidersCache(): Promise<OpenCodeProvidersCac
 }
 
 export async function refreshOpenCodeProvidersCache(): Promise<OpenCodeProvidersCache | null> {
-  const connected = await getLocallyAuthenticatedProviders();
+  const [connected, openRouterCatalog] = await Promise.all([
+    getLocallyAuthenticatedProviders(),
+    getOpenRouterPricingCatalog(),
+  ]);
   if (connected.length === 0) {
     return null;
   }
@@ -303,7 +344,7 @@ export async function refreshOpenCodeProvidersCache(): Promise<OpenCodeProviders
     maxBuffer: 1024 * 1024 * 8,
   });
 
-  const providers = parseOpencodeModelsOutput(stdout, connected);
+  const providers = parseOpencodeModelsOutput(stdout, connected, openRouterCatalog);
   const cache: OpenCodeProvidersCache = {
     fetchedAt: new Date().toISOString(),
     providers,

@@ -1,5 +1,5 @@
 {
-  "fetchedAt": "2026-07-28T01:09:34.592Z",
+  "fetchedAt": "2026-07-28T19:31:32.840Z",
   "providers": [
     {
       "id": "cerebras",
@@ -7,15 +7,30 @@
       "models": [
         {
           "id": "gemma-4-31b",
-          "name": "gemma-4-31b"
+          "name": "gemma-4-31b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-oss-120b",
-          "name": "gpt-oss-120b"
+          "name": "gpt-oss-120b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-glm-4.7",
-          "name": "zai-glm-4.7"
+          "name": "zai-glm-4.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -25,155 +40,345 @@
       "models": [
         {
           "id": "deepseek-ai/DeepSeek-R1-0528",
-          "name": "deepseek-ai/DeepSeek-R1-0528"
+          "name": "deepseek-ai/DeepSeek-R1-0528",
+          "pricing": {
+            "input": 0.55,
+            "output": 2.19
+          },
+          "cost": 2.74
         },
         {
           "id": "deepseek-ai/DeepSeek-V3.2",
-          "name": "deepseek-ai/DeepSeek-V3.2"
+          "name": "deepseek-ai/DeepSeek-V3.2",
+          "pricing": {
+            "input": 0.27,
+            "output": 1.1
+          },
+          "cost": 1.37
         },
         {
           "id": "deepseek-ai/DeepSeek-V4-Flash",
-          "name": "deepseek-ai/DeepSeek-V4-Flash"
+          "name": "deepseek-ai/DeepSeek-V4-Flash",
+          "pricing": {
+            "input": 0.1,
+            "output": 0.4
+          },
+          "cost": 0.5
         },
         {
           "id": "deepseek-ai/DeepSeek-V4-Pro",
-          "name": "deepseek-ai/DeepSeek-V4-Pro"
+          "name": "deepseek-ai/DeepSeek-V4-Pro",
+          "pricing": {
+            "input": 0.5,
+            "output": 2
+          },
+          "cost": 2.5
         },
         {
           "id": "google/gemma-4-26B-A4B-it",
-          "name": "google/gemma-4-26B-A4B-it"
+          "name": "google/gemma-4-26B-A4B-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-4-31B-it",
-          "name": "google/gemma-4-31B-it"
+          "name": "google/gemma-4-31B-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
-          "name": "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+          "name": "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+          "pricing": {
+            "input": 0.2,
+            "output": 0.4
+          },
+          "cost": 0.6000000000000001
         },
         {
           "id": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
-          "name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+          "name": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+          "pricing": {
+            "input": 0.2,
+            "output": 0.8
+          },
+          "cost": 1
         },
         {
           "id": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
-          "name": "meta-llama/Llama-4-Scout-17B-16E-Instruct"
+          "name": "meta-llama/Llama-4-Scout-17B-16E-Instruct",
+          "pricing": {
+            "input": 0.15,
+            "output": 0.6
+          },
+          "cost": 0.75
         },
         {
           "id": "MiniMaxAI/MiniMax-M2.7",
-          "name": "MiniMaxAI/MiniMax-M2.7"
+          "name": "MiniMaxAI/MiniMax-M2.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "MiniMaxAI/MiniMax-M3",
-          "name": "MiniMaxAI/MiniMax-M3"
+          "name": "MiniMaxAI/MiniMax-M3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/Kimi-K2.5",
-          "name": "moonshotai/Kimi-K2.5"
+          "name": "moonshotai/Kimi-K2.5",
+          "pricing": {
+            "input": 1.2,
+            "output": 6
+          },
+          "cost": 7.2
         },
         {
           "id": "moonshotai/Kimi-K2.6",
-          "name": "moonshotai/Kimi-K2.6"
+          "name": "moonshotai/Kimi-K2.6",
+          "pricing": {
+            "input": 1.2,
+            "output": 6
+          },
+          "cost": 7.2
         },
         {
           "id": "moonshotai/Kimi-K2.7-Code",
-          "name": "moonshotai/Kimi-K2.7-Code"
+          "name": "moonshotai/Kimi-K2.7-Code",
+          "pricing": {
+            "input": 1.2,
+            "output": 6
+          },
+          "cost": 7.2
         },
         {
           "id": "moonshotai/Kimi-K3",
-          "name": "moonshotai/Kimi-K3"
+          "name": "moonshotai/Kimi-K3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/Nemotron-3-Nano-30B-A3B",
-          "name": "nvidia/Nemotron-3-Nano-30B-A3B"
+          "name": "nvidia/Nemotron-3-Nano-30B-A3B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-oss-120b",
-          "name": "openai/gpt-oss-120b"
+          "name": "openai/gpt-oss-120b",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          },
+          "cost": 0
         },
         {
           "id": "openai/gpt-oss-20b",
-          "name": "openai/gpt-oss-20b"
+          "name": "openai/gpt-oss-20b",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          },
+          "cost": 0
         },
         {
           "id": "Qwen/Qwen3-32B",
-          "name": "Qwen/Qwen3-32B"
+          "name": "Qwen/Qwen3-32B",
+          "pricing": {
+            "input": 0.1,
+            "output": 0.3
+          },
+          "cost": 0.4
         },
         {
           "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
-          "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo"
+          "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo",
+          "pricing": {
+            "input": 0.8,
+            "output": 2.4
+          },
+          "cost": 3.2
         },
         {
           "id": "Qwen/Qwen3-Max",
-          "name": "Qwen/Qwen3-Max"
+          "name": "Qwen/Qwen3-Max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3-Next-80B-A3B-Instruct",
-          "name": "Qwen/Qwen3-Next-80B-A3B-Instruct"
+          "name": "Qwen/Qwen3-Next-80B-A3B-Instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.5-122B-A10B",
-          "name": "Qwen/Qwen3.5-122B-A10B"
+          "name": "Qwen/Qwen3.5-122B-A10B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.5-27B",
-          "name": "Qwen/Qwen3.5-27B"
+          "name": "Qwen/Qwen3.5-27B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.5-35B-A3B",
-          "name": "Qwen/Qwen3.5-35B-A3B"
+          "name": "Qwen/Qwen3.5-35B-A3B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.5-397B-A17B",
-          "name": "Qwen/Qwen3.5-397B-A17B"
+          "name": "Qwen/Qwen3.5-397B-A17B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.5-9B",
-          "name": "Qwen/Qwen3.5-9B"
+          "name": "Qwen/Qwen3.5-9B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.6-27B",
-          "name": "Qwen/Qwen3.6-27B"
+          "name": "Qwen/Qwen3.6-27B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.6-35B-A3B",
-          "name": "Qwen/Qwen3.6-35B-A3B"
+          "name": "Qwen/Qwen3.6-35B-A3B",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3.7-Max",
-          "name": "Qwen/Qwen3.7-Max"
+          "name": "Qwen/Qwen3.7-Max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "XiaomiMiMo/MiMo-V2.5",
-          "name": "XiaomiMiMo/MiMo-V2.5"
+          "name": "XiaomiMiMo/MiMo-V2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "XiaomiMiMo/MiMo-V2.5-Pro",
-          "name": "XiaomiMiMo/MiMo-V2.5-Pro"
+          "name": "XiaomiMiMo/MiMo-V2.5-Pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-4.6",
-          "name": "zai-org/GLM-4.6"
+          "name": "zai-org/GLM-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-4.7",
-          "name": "zai-org/GLM-4.7"
+          "name": "zai-org/GLM-4.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-4.7-Flash",
-          "name": "zai-org/GLM-4.7-Flash"
+          "name": "zai-org/GLM-4.7-Flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-5",
-          "name": "zai-org/GLM-5"
+          "name": "zai-org/GLM-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-5.1",
-          "name": "zai-org/GLM-5.1"
+          "name": "zai-org/GLM-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-5.2",
-          "name": "zai-org/GLM-5.2"
+          "name": "zai-org/GLM-5.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -183,31 +388,66 @@
       "models": [
         {
           "id": "deepseek-ai/DeepSeek-V3.2",
-          "name": "deepseek-ai/DeepSeek-V3.2"
+          "name": "deepseek-ai/DeepSeek-V3.2",
+          "pricing": {
+            "input": 0.27,
+            "output": 1.1
+          },
+          "cost": 1.37
         },
         {
           "id": "google/gemma-4-31B-it",
-          "name": "google/gemma-4-31B-it"
+          "name": "google/gemma-4-31B-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "MiniMaxAI/MiniMax-M2.1",
-          "name": "MiniMaxAI/MiniMax-M2.1"
+          "name": "MiniMaxAI/MiniMax-M2.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "MiniMaxAI/MiniMax-M2.5",
-          "name": "MiniMaxAI/MiniMax-M2.5"
+          "name": "MiniMaxAI/MiniMax-M2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "Qwen/Qwen3-235B-A22B-Instruct-2507",
-          "name": "Qwen/Qwen3-235B-A22B-Instruct-2507"
+          "name": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-5.1",
-          "name": "zai-org/GLM-5.1"
+          "name": "zai-org/GLM-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "zai-org/GLM-5.2",
-          "name": "zai-org/GLM-5.2"
+          "name": "zai-org/GLM-5.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -217,151 +457,336 @@
       "models": [
         {
           "id": "deep-research-max-preview-04-2026",
-          "name": "deep-research-max-preview-04-2026"
+          "name": "deep-research-max-preview-04-2026",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deep-research-preview-04-2026",
-          "name": "deep-research-preview-04-2026"
+          "name": "deep-research-preview-04-2026",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-2.5-computer-use-preview-10-2025",
-          "name": "gemini-2.5-computer-use-preview-10-2025"
+          "name": "gemini-2.5-computer-use-preview-10-2025",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-2.5-flash",
-          "name": "gemini-2.5-flash"
+          "name": "gemini-2.5-flash",
+          "pricing": {
+            "input": 0.075,
+            "output": 0.3
+          },
+          "cost": 0.375
         },
         {
           "id": "gemini-2.5-flash-image",
-          "name": "gemini-2.5-flash-image"
+          "name": "gemini-2.5-flash-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-2.5-flash-lite",
-          "name": "gemini-2.5-flash-lite"
+          "name": "gemini-2.5-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-2.5-flash-preview-tts",
-          "name": "gemini-2.5-flash-preview-tts"
+          "name": "gemini-2.5-flash-preview-tts",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-2.5-pro",
-          "name": "gemini-2.5-pro"
+          "name": "gemini-2.5-pro",
+          "pricing": {
+            "input": 1.25,
+            "output": 5
+          },
+          "cost": 6.25
         },
         {
           "id": "gemini-2.5-pro-preview-tts",
-          "name": "gemini-2.5-pro-preview-tts"
+          "name": "gemini-2.5-pro-preview-tts",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3-flash-preview",
-          "name": "gemini-3-flash-preview"
+          "name": "gemini-3-flash-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3-pro-image",
-          "name": "gemini-3-pro-image"
+          "name": "gemini-3-pro-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3-pro-image-preview",
-          "name": "gemini-3-pro-image-preview"
+          "name": "gemini-3-pro-image-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-image",
-          "name": "gemini-3.1-flash-image"
+          "name": "gemini-3.1-flash-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-image-preview",
-          "name": "gemini-3.1-flash-image-preview"
+          "name": "gemini-3.1-flash-image-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-lite",
-          "name": "gemini-3.1-flash-lite"
+          "name": "gemini-3.1-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-lite-image",
-          "name": "gemini-3.1-flash-lite-image"
+          "name": "gemini-3.1-flash-lite-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-live-preview",
-          "name": "gemini-3.1-flash-live-preview"
+          "name": "gemini-3.1-flash-live-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-flash-tts-preview",
-          "name": "gemini-3.1-flash-tts-preview"
+          "name": "gemini-3.1-flash-tts-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-pro-preview",
-          "name": "gemini-3.1-pro-preview"
+          "name": "gemini-3.1-pro-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-pro-preview-customtools",
-          "name": "gemini-3.1-pro-preview-customtools"
+          "name": "gemini-3.1-pro-preview-customtools",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.5-flash",
-          "name": "gemini-3.5-flash"
+          "name": "gemini-3.5-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.5-flash-lite",
-          "name": "gemini-3.5-flash-lite"
+          "name": "gemini-3.5-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.5-live-translate-preview",
-          "name": "gemini-3.5-live-translate-preview"
+          "name": "gemini-3.5-live-translate-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.6-flash",
-          "name": "gemini-3.6-flash"
+          "name": "gemini-3.6-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-embedding-001",
-          "name": "gemini-embedding-001"
+          "name": "gemini-embedding-001",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-embedding-2",
-          "name": "gemini-embedding-2"
+          "name": "gemini-embedding-2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-flash-latest",
-          "name": "gemini-flash-latest"
+          "name": "gemini-flash-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-flash-lite-latest",
-          "name": "gemini-flash-lite-latest"
+          "name": "gemini-flash-lite-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-omni-flash-preview",
-          "name": "gemini-omni-flash-preview"
+          "name": "gemini-omni-flash-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-robotics-er-1.6-preview",
-          "name": "gemini-robotics-er-1.6-preview"
+          "name": "gemini-robotics-er-1.6-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemma-4-26b-a4b-it",
-          "name": "gemma-4-26b-a4b-it"
+          "name": "gemma-4-26b-a4b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemma-4-31b-it",
-          "name": "gemma-4-31b-it"
+          "name": "gemma-4-31b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "lyria-3-clip-preview",
-          "name": "lyria-3-clip-preview"
+          "name": "lyria-3-clip-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "lyria-3-pro-preview",
-          "name": "lyria-3-pro-preview"
+          "name": "lyria-3-pro-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "veo-3.1-fast-generate-preview",
-          "name": "veo-3.1-fast-generate-preview"
+          "name": "veo-3.1-fast-generate-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "veo-3.1-generate-preview",
-          "name": "veo-3.1-generate-preview"
+          "name": "veo-3.1-generate-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "veo-3.1-lite-generate-preview",
-          "name": "veo-3.1-lite-generate-preview"
+          "name": "veo-3.1-lite-generate-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -371,1383 +796,3108 @@
       "models": [
         {
           "id": "~anthropic/claude-haiku-latest",
-          "name": "~anthropic/claude-haiku-latest"
+          "name": "~anthropic/claude-haiku-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~anthropic/claude-opus-latest",
-          "name": "~anthropic/claude-opus-latest"
+          "name": "~anthropic/claude-opus-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~anthropic/claude-sonnet-latest",
-          "name": "~anthropic/claude-sonnet-latest"
+          "name": "~anthropic/claude-sonnet-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~google/gemini-flash-latest",
-          "name": "~google/gemini-flash-latest"
+          "name": "~google/gemini-flash-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~google/gemini-pro-latest",
-          "name": "~google/gemini-pro-latest"
+          "name": "~google/gemini-pro-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~moonshotai/kimi-latest",
-          "name": "~moonshotai/kimi-latest"
+          "name": "~moonshotai/kimi-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~openai/gpt-latest",
-          "name": "~openai/gpt-latest"
+          "name": "~openai/gpt-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "~openai/gpt-mini-latest",
-          "name": "~openai/gpt-mini-latest"
+          "name": "~openai/gpt-mini-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "ai21/jamba-large-1.7",
-          "name": "ai21/jamba-large-1.7"
+          "name": "ai21/jamba-large-1.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "aion-labs/aion-1.0",
-          "name": "aion-labs/aion-1.0"
+          "name": "aion-labs/aion-1.0",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "aion-labs/aion-1.0-mini",
-          "name": "aion-labs/aion-1.0-mini"
+          "name": "aion-labs/aion-1.0-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "aion-labs/aion-2.0",
-          "name": "aion-labs/aion-2.0"
+          "name": "aion-labs/aion-2.0",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "aion-labs/aion-rp-llama-3.1-8b",
-          "name": "aion-labs/aion-rp-llama-3.1-8b"
+          "name": "aion-labs/aion-rp-llama-3.1-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "alfredpros/codellama-7b-instruct-solidity",
-          "name": "alfredpros/codellama-7b-instruct-solidity"
+          "name": "alfredpros/codellama-7b-instruct-solidity",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "allenai/olmo-3-32b-think",
-          "name": "allenai/olmo-3-32b-think"
+          "name": "allenai/olmo-3-32b-think",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "amazon/nova-2-lite-v1",
-          "name": "amazon/nova-2-lite-v1"
+          "name": "amazon/nova-2-lite-v1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "amazon/nova-lite-v1",
-          "name": "amazon/nova-lite-v1"
+          "name": "amazon/nova-lite-v1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "amazon/nova-micro-v1",
-          "name": "amazon/nova-micro-v1"
+          "name": "amazon/nova-micro-v1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "amazon/nova-premier-v1",
-          "name": "amazon/nova-premier-v1"
+          "name": "amazon/nova-premier-v1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "amazon/nova-pro-v1",
-          "name": "amazon/nova-pro-v1"
+          "name": "amazon/nova-pro-v1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthracite-org/magnum-v4-72b",
-          "name": "anthracite-org/magnum-v4-72b"
+          "name": "anthracite-org/magnum-v4-72b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-3-haiku",
-          "name": "anthropic/claude-3-haiku"
+          "name": "anthropic/claude-3-haiku",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-3.5-haiku",
-          "name": "anthropic/claude-3.5-haiku"
+          "name": "anthropic/claude-3.5-haiku",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-haiku-4.5",
-          "name": "anthropic/claude-haiku-4.5"
+          "name": "anthropic/claude-haiku-4.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4",
-          "name": "anthropic/claude-opus-4"
+          "name": "anthropic/claude-opus-4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.1",
-          "name": "anthropic/claude-opus-4.1"
+          "name": "anthropic/claude-opus-4.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.5",
-          "name": "anthropic/claude-opus-4.5"
+          "name": "anthropic/claude-opus-4.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.6",
-          "name": "anthropic/claude-opus-4.6"
+          "name": "anthropic/claude-opus-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.6-fast",
-          "name": "anthropic/claude-opus-4.6-fast"
+          "name": "anthropic/claude-opus-4.6-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.7",
-          "name": "anthropic/claude-opus-4.7"
+          "name": "anthropic/claude-opus-4.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-opus-4.7-fast",
-          "name": "anthropic/claude-opus-4.7-fast"
+          "name": "anthropic/claude-opus-4.7-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-sonnet-4",
-          "name": "anthropic/claude-sonnet-4"
+          "name": "anthropic/claude-sonnet-4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-sonnet-4.5",
-          "name": "anthropic/claude-sonnet-4.5"
+          "name": "anthropic/claude-sonnet-4.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "anthropic/claude-sonnet-4.6",
-          "name": "anthropic/claude-sonnet-4.6"
+          "name": "anthropic/claude-sonnet-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/coder-large",
-          "name": "arcee-ai/coder-large"
+          "name": "arcee-ai/coder-large",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/maestro-reasoning",
-          "name": "arcee-ai/maestro-reasoning"
+          "name": "arcee-ai/maestro-reasoning",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/spotlight",
-          "name": "arcee-ai/spotlight"
+          "name": "arcee-ai/spotlight",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/trinity-large-thinking",
-          "name": "arcee-ai/trinity-large-thinking"
+          "name": "arcee-ai/trinity-large-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/trinity-mini",
-          "name": "arcee-ai/trinity-mini"
+          "name": "arcee-ai/trinity-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "arcee-ai/virtuoso-large",
-          "name": "arcee-ai/virtuoso-large"
+          "name": "arcee-ai/virtuoso-large",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/cobuddy:free",
-          "name": "baidu/cobuddy:free"
+          "name": "baidu/cobuddy:free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/ernie-4.5-21b-a3b",
-          "name": "baidu/ernie-4.5-21b-a3b"
+          "name": "baidu/ernie-4.5-21b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/ernie-4.5-21b-a3b-thinking",
-          "name": "baidu/ernie-4.5-21b-a3b-thinking"
+          "name": "baidu/ernie-4.5-21b-a3b-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/ernie-4.5-300b-a47b",
-          "name": "baidu/ernie-4.5-300b-a47b"
+          "name": "baidu/ernie-4.5-300b-a47b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/ernie-4.5-vl-28b-a3b",
-          "name": "baidu/ernie-4.5-vl-28b-a3b"
+          "name": "baidu/ernie-4.5-vl-28b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/ernie-4.5-vl-424b-a47b",
-          "name": "baidu/ernie-4.5-vl-424b-a47b"
+          "name": "baidu/ernie-4.5-vl-424b-a47b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "baidu/qianfan-ocr-fast",
-          "name": "baidu/qianfan-ocr-fast"
+          "name": "baidu/qianfan-ocr-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "bytedance-seed/seed-1.6",
-          "name": "bytedance-seed/seed-1.6"
+          "name": "bytedance-seed/seed-1.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "bytedance-seed/seed-1.6-flash",
-          "name": "bytedance-seed/seed-1.6-flash"
+          "name": "bytedance-seed/seed-1.6-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "bytedance-seed/seed-2.0-lite",
-          "name": "bytedance-seed/seed-2.0-lite"
+          "name": "bytedance-seed/seed-2.0-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "bytedance-seed/seed-2.0-mini",
-          "name": "bytedance-seed/seed-2.0-mini"
+          "name": "bytedance-seed/seed-2.0-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "bytedance/ui-tars-1.5-7b",
-          "name": "bytedance/ui-tars-1.5-7b"
+          "name": "bytedance/ui-tars-1.5-7b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "cohere/command-a",
-          "name": "cohere/command-a"
+          "name": "cohere/command-a",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "cohere/command-r-08-2024",
-          "name": "cohere/command-r-08-2024"
+          "name": "cohere/command-r-08-2024",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "cohere/command-r-plus-08-2024",
-          "name": "cohere/command-r-plus-08-2024"
+          "name": "cohere/command-r-plus-08-2024",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "cohere/command-r7b-12-2024",
-          "name": "cohere/command-r7b-12-2024"
+          "name": "cohere/command-r7b-12-2024",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepcogito/cogito-v2.1-671b",
-          "name": "deepcogito/cogito-v2.1-671b"
+          "name": "deepcogito/cogito-v2.1-671b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-chat",
-          "name": "deepseek/deepseek-chat"
+          "name": "deepseek/deepseek-chat",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-chat-v3-0324",
-          "name": "deepseek/deepseek-chat-v3-0324"
+          "name": "deepseek/deepseek-chat-v3-0324",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-chat-v3.1",
-          "name": "deepseek/deepseek-chat-v3.1"
+          "name": "deepseek/deepseek-chat-v3.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-r1",
-          "name": "deepseek/deepseek-r1"
+          "name": "deepseek/deepseek-r1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-r1-0528",
-          "name": "deepseek/deepseek-r1-0528"
+          "name": "deepseek/deepseek-r1-0528",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-r1-distill-llama-70b",
-          "name": "deepseek/deepseek-r1-distill-llama-70b"
+          "name": "deepseek/deepseek-r1-distill-llama-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-r1-distill-qwen-32b",
-          "name": "deepseek/deepseek-r1-distill-qwen-32b"
+          "name": "deepseek/deepseek-r1-distill-qwen-32b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v3.1-terminus",
-          "name": "deepseek/deepseek-v3.1-terminus"
+          "name": "deepseek/deepseek-v3.1-terminus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v3.2",
-          "name": "deepseek/deepseek-v3.2"
+          "name": "deepseek/deepseek-v3.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v3.2-exp",
-          "name": "deepseek/deepseek-v3.2-exp"
+          "name": "deepseek/deepseek-v3.2-exp",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v3.2-speciale",
-          "name": "deepseek/deepseek-v3.2-speciale"
+          "name": "deepseek/deepseek-v3.2-speciale",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v4-flash",
-          "name": "deepseek/deepseek-v4-flash"
+          "name": "deepseek/deepseek-v4-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek/deepseek-v4-pro",
-          "name": "deepseek/deepseek-v4-pro"
+          "name": "deepseek/deepseek-v4-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "essentialai/rnj-1-instruct",
-          "name": "essentialai/rnj-1-instruct"
+          "name": "essentialai/rnj-1-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.0-flash-001",
-          "name": "google/gemini-2.0-flash-001"
+          "name": "google/gemini-2.0-flash-001",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.0-flash-lite-001",
-          "name": "google/gemini-2.0-flash-lite-001"
+          "name": "google/gemini-2.0-flash-lite-001",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-flash",
-          "name": "google/gemini-2.5-flash"
+          "name": "google/gemini-2.5-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-flash-image",
-          "name": "google/gemini-2.5-flash-image"
+          "name": "google/gemini-2.5-flash-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-flash-lite",
-          "name": "google/gemini-2.5-flash-lite"
+          "name": "google/gemini-2.5-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-flash-lite-preview-09-2025",
-          "name": "google/gemini-2.5-flash-lite-preview-09-2025"
+          "name": "google/gemini-2.5-flash-lite-preview-09-2025",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-pro",
-          "name": "google/gemini-2.5-pro"
+          "name": "google/gemini-2.5-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-pro-preview",
-          "name": "google/gemini-2.5-pro-preview"
+          "name": "google/gemini-2.5-pro-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-2.5-pro-preview-05-06",
-          "name": "google/gemini-2.5-pro-preview-05-06"
+          "name": "google/gemini-2.5-pro-preview-05-06",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3-flash-preview",
-          "name": "google/gemini-3-flash-preview"
+          "name": "google/gemini-3-flash-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3-pro-image-preview",
-          "name": "google/gemini-3-pro-image-preview"
+          "name": "google/gemini-3-pro-image-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.1-flash-image-preview",
-          "name": "google/gemini-3.1-flash-image-preview"
+          "name": "google/gemini-3.1-flash-image-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.1-flash-lite",
-          "name": "google/gemini-3.1-flash-lite"
+          "name": "google/gemini-3.1-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.1-flash-lite-preview",
-          "name": "google/gemini-3.1-flash-lite-preview"
+          "name": "google/gemini-3.1-flash-lite-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.1-pro-preview",
-          "name": "google/gemini-3.1-pro-preview"
+          "name": "google/gemini-3.1-pro-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.1-pro-preview-customtools",
-          "name": "google/gemini-3.1-pro-preview-customtools"
+          "name": "google/gemini-3.1-pro-preview-customtools",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemini-3.5-flash",
-          "name": "google/gemini-3.5-flash"
+          "name": "google/gemini-3.5-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-2-27b-it",
-          "name": "google/gemma-2-27b-it"
+          "name": "google/gemma-2-27b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-3-12b-it",
-          "name": "google/gemma-3-12b-it"
+          "name": "google/gemma-3-12b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-3-27b-it",
-          "name": "google/gemma-3-27b-it"
+          "name": "google/gemma-3-27b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-3-4b-it",
-          "name": "google/gemma-3-4b-it"
+          "name": "google/gemma-3-4b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-3n-e4b-it",
-          "name": "google/gemma-3n-e4b-it"
+          "name": "google/gemma-3n-e4b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-4-26b-a4b-it",
-          "name": "google/gemma-4-26b-a4b-it"
+          "name": "google/gemma-4-26b-a4b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/gemma-4-31b-it",
-          "name": "google/gemma-4-31b-it"
+          "name": "google/gemma-4-31b-it",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/lyria-3-clip-preview",
-          "name": "google/lyria-3-clip-preview"
+          "name": "google/lyria-3-clip-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "google/lyria-3-pro-preview",
-          "name": "google/lyria-3-pro-preview"
+          "name": "google/lyria-3-pro-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gryphe/mythomax-l2-13b",
-          "name": "gryphe/mythomax-l2-13b"
+          "name": "gryphe/mythomax-l2-13b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "ibm-granite/granite-4.0-h-micro",
-          "name": "ibm-granite/granite-4.0-h-micro"
+          "name": "ibm-granite/granite-4.0-h-micro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "ibm-granite/granite-4.1-8b",
-          "name": "ibm-granite/granite-4.1-8b"
+          "name": "ibm-granite/granite-4.1-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inception/mercury-2",
-          "name": "inception/mercury-2"
+          "name": "inception/mercury-2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inclusionai/ling-2.6-1t",
-          "name": "inclusionai/ling-2.6-1t"
+          "name": "inclusionai/ling-2.6-1t",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inclusionai/ling-2.6-flash",
-          "name": "inclusionai/ling-2.6-flash"
+          "name": "inclusionai/ling-2.6-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inclusionai/ring-2.6-1t",
-          "name": "inclusionai/ring-2.6-1t"
+          "name": "inclusionai/ring-2.6-1t",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inflection/inflection-3-pi",
-          "name": "inflection/inflection-3-pi"
+          "name": "inflection/inflection-3-pi",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "inflection/inflection-3-productivity",
-          "name": "inflection/inflection-3-productivity"
+          "name": "inflection/inflection-3-productivity",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kilo-auto/balanced",
-          "name": "kilo-auto/balanced"
+          "name": "kilo-auto/balanced",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kilo-auto/free",
-          "name": "kilo-auto/free"
+          "name": "kilo-auto/free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kilo-auto/frontier",
-          "name": "kilo-auto/frontier"
+          "name": "kilo-auto/frontier",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kilo-auto/small",
-          "name": "kilo-auto/small"
+          "name": "kilo-auto/small",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kwaipilot/kat-coder-pro-v2",
-          "name": "kwaipilot/kat-coder-pro-v2"
+          "name": "kwaipilot/kat-coder-pro-v2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "liquid/lfm-2-24b-a2b",
-          "name": "liquid/lfm-2-24b-a2b"
+          "name": "liquid/lfm-2-24b-a2b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mancer/weaver",
-          "name": "mancer/weaver"
+          "name": "mancer/weaver",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3-70b-instruct",
-          "name": "meta-llama/llama-3-70b-instruct"
+          "name": "meta-llama/llama-3-70b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3-8b-instruct",
-          "name": "meta-llama/llama-3-8b-instruct"
+          "name": "meta-llama/llama-3-8b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.1-70b-instruct",
-          "name": "meta-llama/llama-3.1-70b-instruct"
+          "name": "meta-llama/llama-3.1-70b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.1-8b-instruct",
-          "name": "meta-llama/llama-3.1-8b-instruct"
+          "name": "meta-llama/llama-3.1-8b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.2-11b-vision-instruct",
-          "name": "meta-llama/llama-3.2-11b-vision-instruct"
+          "name": "meta-llama/llama-3.2-11b-vision-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.2-1b-instruct",
-          "name": "meta-llama/llama-3.2-1b-instruct"
+          "name": "meta-llama/llama-3.2-1b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.2-3b-instruct",
-          "name": "meta-llama/llama-3.2-3b-instruct"
+          "name": "meta-llama/llama-3.2-3b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-3.3-70b-instruct",
-          "name": "meta-llama/llama-3.3-70b-instruct"
+          "name": "meta-llama/llama-3.3-70b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-4-maverick",
-          "name": "meta-llama/llama-4-maverick"
+          "name": "meta-llama/llama-4-maverick",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-4-scout",
-          "name": "meta-llama/llama-4-scout"
+          "name": "meta-llama/llama-4-scout",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-guard-3-8b",
-          "name": "meta-llama/llama-guard-3-8b"
+          "name": "meta-llama/llama-guard-3-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "meta-llama/llama-guard-4-12b",
-          "name": "meta-llama/llama-guard-4-12b"
+          "name": "meta-llama/llama-guard-4-12b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "microsoft/phi-4",
-          "name": "microsoft/phi-4"
+          "name": "microsoft/phi-4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "microsoft/phi-4-mini-instruct",
-          "name": "microsoft/phi-4-mini-instruct"
+          "name": "microsoft/phi-4-mini-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "microsoft/wizardlm-2-8x22b",
-          "name": "microsoft/wizardlm-2-8x22b"
+          "name": "microsoft/wizardlm-2-8x22b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-01",
-          "name": "minimax/minimax-01"
+          "name": "minimax/minimax-01",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m1",
-          "name": "minimax/minimax-m1"
+          "name": "minimax/minimax-m1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m2",
-          "name": "minimax/minimax-m2"
+          "name": "minimax/minimax-m2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m2-her",
-          "name": "minimax/minimax-m2-her"
+          "name": "minimax/minimax-m2-her",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m2.1",
-          "name": "minimax/minimax-m2.1"
+          "name": "minimax/minimax-m2.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m2.5",
-          "name": "minimax/minimax-m2.5"
+          "name": "minimax/minimax-m2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m2.7",
-          "name": "minimax/minimax-m2.7"
+          "name": "minimax/minimax-m2.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax/minimax-m3",
-          "name": "minimax/minimax-m3"
+          "name": "minimax/minimax-m3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/codestral-2508",
-          "name": "mistralai/codestral-2508"
+          "name": "mistralai/codestral-2508",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/devstral-2512",
-          "name": "mistralai/devstral-2512"
+          "name": "mistralai/devstral-2512",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/devstral-medium",
-          "name": "mistralai/devstral-medium"
+          "name": "mistralai/devstral-medium",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/devstral-small",
-          "name": "mistralai/devstral-small"
+          "name": "mistralai/devstral-small",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/ministral-14b-2512",
-          "name": "mistralai/ministral-14b-2512"
+          "name": "mistralai/ministral-14b-2512",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/ministral-3b-2512",
-          "name": "mistralai/ministral-3b-2512"
+          "name": "mistralai/ministral-3b-2512",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/ministral-8b-2512",
-          "name": "mistralai/ministral-8b-2512"
+          "name": "mistralai/ministral-8b-2512",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-7b-instruct-v0.1",
-          "name": "mistralai/mistral-7b-instruct-v0.1"
+          "name": "mistralai/mistral-7b-instruct-v0.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-large",
-          "name": "mistralai/mistral-large"
+          "name": "mistralai/mistral-large",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-large-2407",
-          "name": "mistralai/mistral-large-2407"
+          "name": "mistralai/mistral-large-2407",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-large-2411",
-          "name": "mistralai/mistral-large-2411"
+          "name": "mistralai/mistral-large-2411",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-large-2512",
-          "name": "mistralai/mistral-large-2512"
+          "name": "mistralai/mistral-large-2512",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-medium-3",
-          "name": "mistralai/mistral-medium-3"
+          "name": "mistralai/mistral-medium-3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-medium-3-5",
-          "name": "mistralai/mistral-medium-3-5"
+          "name": "mistralai/mistral-medium-3-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-medium-3.1",
-          "name": "mistralai/mistral-medium-3.1"
+          "name": "mistralai/mistral-medium-3.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-nemo",
-          "name": "mistralai/mistral-nemo"
+          "name": "mistralai/mistral-nemo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-saba",
-          "name": "mistralai/mistral-saba"
+          "name": "mistralai/mistral-saba",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-small-24b-instruct-2501",
-          "name": "mistralai/mistral-small-24b-instruct-2501"
+          "name": "mistralai/mistral-small-24b-instruct-2501",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-small-2603",
-          "name": "mistralai/mistral-small-2603"
+          "name": "mistralai/mistral-small-2603",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-small-3.1-24b-instruct",
-          "name": "mistralai/mistral-small-3.1-24b-instruct"
+          "name": "mistralai/mistral-small-3.1-24b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mistral-small-3.2-24b-instruct",
-          "name": "mistralai/mistral-small-3.2-24b-instruct"
+          "name": "mistralai/mistral-small-3.2-24b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/mixtral-8x22b-instruct",
-          "name": "mistralai/mixtral-8x22b-instruct"
+          "name": "mistralai/mixtral-8x22b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/pixtral-large-2411",
-          "name": "mistralai/pixtral-large-2411"
+          "name": "mistralai/pixtral-large-2411",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mistralai/voxtral-small-24b-2507",
-          "name": "mistralai/voxtral-small-24b-2507"
+          "name": "mistralai/voxtral-small-24b-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/kimi-k2",
-          "name": "moonshotai/kimi-k2"
+          "name": "moonshotai/kimi-k2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/kimi-k2-0905",
-          "name": "moonshotai/kimi-k2-0905"
+          "name": "moonshotai/kimi-k2-0905",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/kimi-k2-thinking",
-          "name": "moonshotai/kimi-k2-thinking"
+          "name": "moonshotai/kimi-k2-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/kimi-k2.5",
-          "name": "moonshotai/kimi-k2.5"
+          "name": "moonshotai/kimi-k2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "moonshotai/kimi-k2.6",
-          "name": "moonshotai/kimi-k2.6"
+          "name": "moonshotai/kimi-k2.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "morph/morph-v3-fast",
-          "name": "morph/morph-v3-fast"
+          "name": "morph/morph-v3-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "morph/morph-v3-large",
-          "name": "morph/morph-v3-large"
+          "name": "morph/morph-v3-large",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nex-agi/deepseek-v3.1-nex-n1",
-          "name": "nex-agi/deepseek-v3.1-nex-n1"
+          "name": "nex-agi/deepseek-v3.1-nex-n1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nousresearch/hermes-2-pro-llama-3-8b",
-          "name": "nousresearch/hermes-2-pro-llama-3-8b"
+          "name": "nousresearch/hermes-2-pro-llama-3-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nousresearch/hermes-3-llama-3.1-405b",
-          "name": "nousresearch/hermes-3-llama-3.1-405b"
+          "name": "nousresearch/hermes-3-llama-3.1-405b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nousresearch/hermes-3-llama-3.1-70b",
-          "name": "nousresearch/hermes-3-llama-3.1-70b"
+          "name": "nousresearch/hermes-3-llama-3.1-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nousresearch/hermes-4-405b",
-          "name": "nousresearch/hermes-4-405b"
+          "name": "nousresearch/hermes-4-405b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nousresearch/hermes-4-70b",
-          "name": "nousresearch/hermes-4-70b"
+          "name": "nousresearch/hermes-4-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-          "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5"
+          "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/nemotron-3-nano-30b-a3b",
-          "name": "nvidia/nemotron-3-nano-30b-a3b"
+          "name": "nvidia/nemotron-3-nano-30b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
-          "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+          "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/nemotron-3-super-120b-a12b",
-          "name": "nvidia/nemotron-3-super-120b-a12b"
+          "name": "nvidia/nemotron-3-super-120b-a12b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/nemotron-3-super-120b-a12b:free",
-          "name": "nvidia/nemotron-3-super-120b-a12b:free"
+          "name": "nvidia/nemotron-3-super-120b-a12b:free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nvidia/nemotron-nano-9b-v2",
-          "name": "nvidia/nemotron-nano-9b-v2"
+          "name": "nvidia/nemotron-nano-9b-v2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-3.5-turbo",
-          "name": "openai/gpt-3.5-turbo"
+          "name": "openai/gpt-3.5-turbo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-3.5-turbo-0613",
-          "name": "openai/gpt-3.5-turbo-0613"
+          "name": "openai/gpt-3.5-turbo-0613",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-3.5-turbo-16k",
-          "name": "openai/gpt-3.5-turbo-16k"
+          "name": "openai/gpt-3.5-turbo-16k",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-3.5-turbo-instruct",
-          "name": "openai/gpt-3.5-turbo-instruct"
+          "name": "openai/gpt-3.5-turbo-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4",
-          "name": "openai/gpt-4"
+          "name": "openai/gpt-4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4-0314",
-          "name": "openai/gpt-4-0314"
+          "name": "openai/gpt-4-0314",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4-1106-preview",
-          "name": "openai/gpt-4-1106-preview"
+          "name": "openai/gpt-4-1106-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4-turbo",
-          "name": "openai/gpt-4-turbo"
+          "name": "openai/gpt-4-turbo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4-turbo-preview",
-          "name": "openai/gpt-4-turbo-preview"
+          "name": "openai/gpt-4-turbo-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4.1",
-          "name": "openai/gpt-4.1"
+          "name": "openai/gpt-4.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4.1-mini",
-          "name": "openai/gpt-4.1-mini"
+          "name": "openai/gpt-4.1-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4.1-nano",
-          "name": "openai/gpt-4.1-nano"
+          "name": "openai/gpt-4.1-nano",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o",
-          "name": "openai/gpt-4o"
+          "name": "openai/gpt-4o",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-2024-05-13",
-          "name": "openai/gpt-4o-2024-05-13"
+          "name": "openai/gpt-4o-2024-05-13",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-2024-08-06",
-          "name": "openai/gpt-4o-2024-08-06"
+          "name": "openai/gpt-4o-2024-08-06",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-2024-11-20",
-          "name": "openai/gpt-4o-2024-11-20"
+          "name": "openai/gpt-4o-2024-11-20",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-audio-preview",
-          "name": "openai/gpt-4o-audio-preview"
+          "name": "openai/gpt-4o-audio-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-mini",
-          "name": "openai/gpt-4o-mini"
+          "name": "openai/gpt-4o-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-mini-2024-07-18",
-          "name": "openai/gpt-4o-mini-2024-07-18"
+          "name": "openai/gpt-4o-mini-2024-07-18",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-mini-search-preview",
-          "name": "openai/gpt-4o-mini-search-preview"
+          "name": "openai/gpt-4o-mini-search-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-4o-search-preview",
-          "name": "openai/gpt-4o-search-preview"
+          "name": "openai/gpt-4o-search-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5",
-          "name": "openai/gpt-5"
+          "name": "openai/gpt-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-chat",
-          "name": "openai/gpt-5-chat"
+          "name": "openai/gpt-5-chat",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-codex",
-          "name": "openai/gpt-5-codex"
+          "name": "openai/gpt-5-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-image",
-          "name": "openai/gpt-5-image"
+          "name": "openai/gpt-5-image",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-image-mini",
-          "name": "openai/gpt-5-image-mini"
+          "name": "openai/gpt-5-image-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-mini",
-          "name": "openai/gpt-5-mini"
+          "name": "openai/gpt-5-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-nano",
-          "name": "openai/gpt-5-nano"
+          "name": "openai/gpt-5-nano",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5-pro",
-          "name": "openai/gpt-5-pro"
+          "name": "openai/gpt-5-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.1",
-          "name": "openai/gpt-5.1"
+          "name": "openai/gpt-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.1-chat",
-          "name": "openai/gpt-5.1-chat"
+          "name": "openai/gpt-5.1-chat",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.1-codex",
-          "name": "openai/gpt-5.1-codex"
+          "name": "openai/gpt-5.1-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.1-codex-max",
-          "name": "openai/gpt-5.1-codex-max"
+          "name": "openai/gpt-5.1-codex-max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.1-codex-mini",
-          "name": "openai/gpt-5.1-codex-mini"
+          "name": "openai/gpt-5.1-codex-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.2",
-          "name": "openai/gpt-5.2"
+          "name": "openai/gpt-5.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.2-chat",
-          "name": "openai/gpt-5.2-chat"
+          "name": "openai/gpt-5.2-chat",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.2-codex",
-          "name": "openai/gpt-5.2-codex"
+          "name": "openai/gpt-5.2-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.2-pro",
-          "name": "openai/gpt-5.2-pro"
+          "name": "openai/gpt-5.2-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.3-chat",
-          "name": "openai/gpt-5.3-chat"
+          "name": "openai/gpt-5.3-chat",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.3-codex",
-          "name": "openai/gpt-5.3-codex"
+          "name": "openai/gpt-5.3-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.4",
-          "name": "openai/gpt-5.4"
+          "name": "openai/gpt-5.4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.4-image-2",
-          "name": "openai/gpt-5.4-image-2"
+          "name": "openai/gpt-5.4-image-2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.4-mini",
-          "name": "openai/gpt-5.4-mini"
+          "name": "openai/gpt-5.4-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.4-nano",
-          "name": "openai/gpt-5.4-nano"
+          "name": "openai/gpt-5.4-nano",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.4-pro",
-          "name": "openai/gpt-5.4-pro"
+          "name": "openai/gpt-5.4-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.5",
-          "name": "openai/gpt-5.5"
+          "name": "openai/gpt-5.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-5.5-pro",
-          "name": "openai/gpt-5.5-pro"
+          "name": "openai/gpt-5.5-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-audio",
-          "name": "openai/gpt-audio"
+          "name": "openai/gpt-audio",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-audio-mini",
-          "name": "openai/gpt-audio-mini"
+          "name": "openai/gpt-audio-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-chat-latest",
-          "name": "openai/gpt-chat-latest"
+          "name": "openai/gpt-chat-latest",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/gpt-oss-120b",
-          "name": "openai/gpt-oss-120b"
+          "name": "openai/gpt-oss-120b",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          },
+          "cost": 0
         },
         {
           "id": "openai/gpt-oss-20b",
-          "name": "openai/gpt-oss-20b"
+          "name": "openai/gpt-oss-20b",
+          "pricing": {
+            "input": 0,
+            "output": 0
+          },
+          "cost": 0
         },
         {
           "id": "openai/gpt-oss-safeguard-20b",
-          "name": "openai/gpt-oss-safeguard-20b"
+          "name": "openai/gpt-oss-safeguard-20b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o1",
-          "name": "openai/o1"
+          "name": "openai/o1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o1-pro",
-          "name": "openai/o1-pro"
+          "name": "openai/o1-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o3",
-          "name": "openai/o3"
+          "name": "openai/o3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o3-deep-research",
-          "name": "openai/o3-deep-research"
+          "name": "openai/o3-deep-research",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o3-mini",
-          "name": "openai/o3-mini"
+          "name": "openai/o3-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o3-mini-high",
-          "name": "openai/o3-mini-high"
+          "name": "openai/o3-mini-high",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o3-pro",
-          "name": "openai/o3-pro"
+          "name": "openai/o3-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o4-mini",
-          "name": "openai/o4-mini"
+          "name": "openai/o4-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o4-mini-deep-research",
-          "name": "openai/o4-mini-deep-research"
+          "name": "openai/o4-mini-deep-research",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openai/o4-mini-high",
-          "name": "openai/o4-mini-high"
+          "name": "openai/o4-mini-high",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openrouter/auto",
-          "name": "openrouter/auto"
+          "name": "openrouter/auto",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openrouter/bodybuilder",
-          "name": "openrouter/bodybuilder"
+          "name": "openrouter/bodybuilder",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openrouter/free",
-          "name": "openrouter/free"
+          "name": "openrouter/free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "openrouter/pareto-code",
-          "name": "openrouter/pareto-code"
+          "name": "openrouter/pareto-code",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perceptron/perceptron-mk1",
-          "name": "perceptron/perceptron-mk1"
+          "name": "perceptron/perceptron-mk1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perplexity/sonar",
-          "name": "perplexity/sonar"
+          "name": "perplexity/sonar",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perplexity/sonar-deep-research",
-          "name": "perplexity/sonar-deep-research"
+          "name": "perplexity/sonar-deep-research",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perplexity/sonar-pro",
-          "name": "perplexity/sonar-pro"
+          "name": "perplexity/sonar-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perplexity/sonar-pro-search",
-          "name": "perplexity/sonar-pro-search"
+          "name": "perplexity/sonar-pro-search",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "perplexity/sonar-reasoning-pro",
-          "name": "perplexity/sonar-reasoning-pro"
+          "name": "perplexity/sonar-reasoning-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "poolside/laguna-m.1:free",
-          "name": "poolside/laguna-m.1:free"
+          "name": "poolside/laguna-m.1:free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "poolside/laguna-xs.2:free",
-          "name": "poolside/laguna-xs.2:free"
+          "name": "poolside/laguna-xs.2:free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "prime-intellect/intellect-3",
-          "name": "prime-intellect/intellect-3"
+          "name": "prime-intellect/intellect-3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-2.5-72b-instruct",
-          "name": "qwen/qwen-2.5-72b-instruct"
+          "name": "qwen/qwen-2.5-72b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-2.5-7b-instruct",
-          "name": "qwen/qwen-2.5-7b-instruct"
+          "name": "qwen/qwen-2.5-7b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-2.5-coder-32b-instruct",
-          "name": "qwen/qwen-2.5-coder-32b-instruct"
+          "name": "qwen/qwen-2.5-coder-32b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-plus",
-          "name": "qwen/qwen-plus"
+          "name": "qwen/qwen-plus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-plus-2025-07-28",
-          "name": "qwen/qwen-plus-2025-07-28"
+          "name": "qwen/qwen-plus-2025-07-28",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen-plus-2025-07-28:thinking",
-          "name": "qwen/qwen-plus-2025-07-28:thinking"
+          "name": "qwen/qwen-plus-2025-07-28:thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen2.5-vl-72b-instruct",
-          "name": "qwen/qwen2.5-vl-72b-instruct"
+          "name": "qwen/qwen2.5-vl-72b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-14b",
-          "name": "qwen/qwen3-14b"
+          "name": "qwen/qwen3-14b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-235b-a22b",
-          "name": "qwen/qwen3-235b-a22b"
+          "name": "qwen/qwen3-235b-a22b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-235b-a22b-2507",
-          "name": "qwen/qwen3-235b-a22b-2507"
+          "name": "qwen/qwen3-235b-a22b-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-235b-a22b-thinking-2507",
-          "name": "qwen/qwen3-235b-a22b-thinking-2507"
+          "name": "qwen/qwen3-235b-a22b-thinking-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-30b-a3b",
-          "name": "qwen/qwen3-30b-a3b"
+          "name": "qwen/qwen3-30b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-30b-a3b-instruct-2507",
-          "name": "qwen/qwen3-30b-a3b-instruct-2507"
+          "name": "qwen/qwen3-30b-a3b-instruct-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-30b-a3b-thinking-2507",
-          "name": "qwen/qwen3-30b-a3b-thinking-2507"
+          "name": "qwen/qwen3-30b-a3b-thinking-2507",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-32b",
-          "name": "qwen/qwen3-32b"
+          "name": "qwen/qwen3-32b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-8b",
-          "name": "qwen/qwen3-8b"
+          "name": "qwen/qwen3-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-coder",
-          "name": "qwen/qwen3-coder"
+          "name": "qwen/qwen3-coder",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-coder-30b-a3b-instruct",
-          "name": "qwen/qwen3-coder-30b-a3b-instruct"
+          "name": "qwen/qwen3-coder-30b-a3b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-coder-flash",
-          "name": "qwen/qwen3-coder-flash"
+          "name": "qwen/qwen3-coder-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-coder-next",
-          "name": "qwen/qwen3-coder-next"
+          "name": "qwen/qwen3-coder-next",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-coder-plus",
-          "name": "qwen/qwen3-coder-plus"
+          "name": "qwen/qwen3-coder-plus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-max",
-          "name": "qwen/qwen3-max"
+          "name": "qwen/qwen3-max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-max-thinking",
-          "name": "qwen/qwen3-max-thinking"
+          "name": "qwen/qwen3-max-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-next-80b-a3b-instruct",
-          "name": "qwen/qwen3-next-80b-a3b-instruct"
+          "name": "qwen/qwen3-next-80b-a3b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-next-80b-a3b-thinking",
-          "name": "qwen/qwen3-next-80b-a3b-thinking"
+          "name": "qwen/qwen3-next-80b-a3b-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-235b-a22b-instruct",
-          "name": "qwen/qwen3-vl-235b-a22b-instruct"
+          "name": "qwen/qwen3-vl-235b-a22b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-235b-a22b-thinking",
-          "name": "qwen/qwen3-vl-235b-a22b-thinking"
+          "name": "qwen/qwen3-vl-235b-a22b-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-30b-a3b-instruct",
-          "name": "qwen/qwen3-vl-30b-a3b-instruct"
+          "name": "qwen/qwen3-vl-30b-a3b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-30b-a3b-thinking",
-          "name": "qwen/qwen3-vl-30b-a3b-thinking"
+          "name": "qwen/qwen3-vl-30b-a3b-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-32b-instruct",
-          "name": "qwen/qwen3-vl-32b-instruct"
+          "name": "qwen/qwen3-vl-32b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-8b-instruct",
-          "name": "qwen/qwen3-vl-8b-instruct"
+          "name": "qwen/qwen3-vl-8b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3-vl-8b-thinking",
-          "name": "qwen/qwen3-vl-8b-thinking"
+          "name": "qwen/qwen3-vl-8b-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-122b-a10b",
-          "name": "qwen/qwen3.5-122b-a10b"
+          "name": "qwen/qwen3.5-122b-a10b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-27b",
-          "name": "qwen/qwen3.5-27b"
+          "name": "qwen/qwen3.5-27b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-35b-a3b",
-          "name": "qwen/qwen3.5-35b-a3b"
+          "name": "qwen/qwen3.5-35b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-397b-a17b",
-          "name": "qwen/qwen3.5-397b-a17b"
+          "name": "qwen/qwen3.5-397b-a17b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-9b",
-          "name": "qwen/qwen3.5-9b"
+          "name": "qwen/qwen3.5-9b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-flash-02-23",
-          "name": "qwen/qwen3.5-flash-02-23"
+          "name": "qwen/qwen3.5-flash-02-23",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-plus-02-15",
-          "name": "qwen/qwen3.5-plus-02-15"
+          "name": "qwen/qwen3.5-plus-02-15",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.5-plus-20260420",
-          "name": "qwen/qwen3.5-plus-20260420"
+          "name": "qwen/qwen3.5-plus-20260420",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.6-27b",
-          "name": "qwen/qwen3.6-27b"
+          "name": "qwen/qwen3.6-27b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.6-35b-a3b",
-          "name": "qwen/qwen3.6-35b-a3b"
+          "name": "qwen/qwen3.6-35b-a3b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.6-flash",
-          "name": "qwen/qwen3.6-flash"
+          "name": "qwen/qwen3.6-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.6-max-preview",
-          "name": "qwen/qwen3.6-max-preview"
+          "name": "qwen/qwen3.6-max-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.6-plus",
-          "name": "qwen/qwen3.6-plus"
+          "name": "qwen/qwen3.6-plus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen/qwen3.7-max",
-          "name": "qwen/qwen3.7-max"
+          "name": "qwen/qwen3.7-max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "rekaai/reka-edge",
-          "name": "rekaai/reka-edge"
+          "name": "rekaai/reka-edge",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "rekaai/reka-flash-3",
-          "name": "rekaai/reka-flash-3"
+          "name": "rekaai/reka-flash-3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "relace/relace-apply-3",
-          "name": "relace/relace-apply-3"
+          "name": "relace/relace-apply-3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "relace/relace-search",
-          "name": "relace/relace-search"
+          "name": "relace/relace-search",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sao10k/l3-euryale-70b",
-          "name": "sao10k/l3-euryale-70b"
+          "name": "sao10k/l3-euryale-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sao10k/l3-lunaris-8b",
-          "name": "sao10k/l3-lunaris-8b"
+          "name": "sao10k/l3-lunaris-8b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sao10k/l3.1-70b-hanami-x1",
-          "name": "sao10k/l3.1-70b-hanami-x1"
+          "name": "sao10k/l3.1-70b-hanami-x1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sao10k/l3.1-euryale-70b",
-          "name": "sao10k/l3.1-euryale-70b"
+          "name": "sao10k/l3.1-euryale-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sao10k/l3.3-euryale-70b",
-          "name": "sao10k/l3.3-euryale-70b"
+          "name": "sao10k/l3.3-euryale-70b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "stealth/claude-opus-4.6",
-          "name": "stealth/claude-opus-4.6"
+          "name": "stealth/claude-opus-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "stealth/claude-opus-4.7",
-          "name": "stealth/claude-opus-4.7"
+          "name": "stealth/claude-opus-4.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "stealth/claude-sonnet-4.6",
-          "name": "stealth/claude-sonnet-4.6"
+          "name": "stealth/claude-sonnet-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "stepfun/step-3.5-flash",
-          "name": "stepfun/step-3.5-flash"
+          "name": "stepfun/step-3.5-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "switchpoint/router",
-          "name": "switchpoint/router"
+          "name": "switchpoint/router",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "tencent/hunyuan-a13b-instruct",
-          "name": "tencent/hunyuan-a13b-instruct"
+          "name": "tencent/hunyuan-a13b-instruct",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "tencent/hy3-preview",
-          "name": "tencent/hy3-preview"
+          "name": "tencent/hy3-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "thedrummer/cydonia-24b-v4.1",
-          "name": "thedrummer/cydonia-24b-v4.1"
+          "name": "thedrummer/cydonia-24b-v4.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "thedrummer/rocinante-12b",
-          "name": "thedrummer/rocinante-12b"
+          "name": "thedrummer/rocinante-12b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "thedrummer/skyfall-36b-v2",
-          "name": "thedrummer/skyfall-36b-v2"
+          "name": "thedrummer/skyfall-36b-v2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "thedrummer/unslopnemo-12b",
-          "name": "thedrummer/unslopnemo-12b"
+          "name": "thedrummer/unslopnemo-12b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "undi95/remm-slerp-l2-13b",
-          "name": "undi95/remm-slerp-l2-13b"
+          "name": "undi95/remm-slerp-l2-13b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "upstage/solar-pro-3",
-          "name": "upstage/solar-pro-3"
+          "name": "upstage/solar-pro-3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "writer/palmyra-x5",
-          "name": "writer/palmyra-x5"
+          "name": "writer/palmyra-x5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "x-ai/grok-4.20",
-          "name": "x-ai/grok-4.20"
+          "name": "x-ai/grok-4.20",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "x-ai/grok-4.20-multi-agent",
-          "name": "x-ai/grok-4.20-multi-agent"
+          "name": "x-ai/grok-4.20-multi-agent",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "x-ai/grok-4.3",
-          "name": "x-ai/grok-4.3"
+          "name": "x-ai/grok-4.3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "x-ai/grok-build-0.1",
-          "name": "x-ai/grok-build-0.1"
+          "name": "x-ai/grok-build-0.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "xiaomi/mimo-v2-flash",
-          "name": "xiaomi/mimo-v2-flash"
+          "name": "xiaomi/mimo-v2-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "xiaomi/mimo-v2-omni",
-          "name": "xiaomi/mimo-v2-omni"
+          "name": "xiaomi/mimo-v2-omni",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "xiaomi/mimo-v2-pro",
-          "name": "xiaomi/mimo-v2-pro"
+          "name": "xiaomi/mimo-v2-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "xiaomi/mimo-v2.5",
-          "name": "xiaomi/mimo-v2.5"
+          "name": "xiaomi/mimo-v2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "xiaomi/mimo-v2.5-pro",
-          "name": "xiaomi/mimo-v2.5-pro"
+          "name": "xiaomi/mimo-v2.5-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4-32b",
-          "name": "z-ai/glm-4-32b"
+          "name": "z-ai/glm-4-32b",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.5",
-          "name": "z-ai/glm-4.5"
+          "name": "z-ai/glm-4.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.5-air",
-          "name": "z-ai/glm-4.5-air"
+          "name": "z-ai/glm-4.5-air",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.5v",
-          "name": "z-ai/glm-4.5v"
+          "name": "z-ai/glm-4.5v",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.6",
-          "name": "z-ai/glm-4.6"
+          "name": "z-ai/glm-4.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.6v",
-          "name": "z-ai/glm-4.6v"
+          "name": "z-ai/glm-4.6v",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.7",
-          "name": "z-ai/glm-4.7"
+          "name": "z-ai/glm-4.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-4.7-flash",
-          "name": "z-ai/glm-4.7-flash"
+          "name": "z-ai/glm-4.7-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-5",
-          "name": "z-ai/glm-5"
+          "name": "z-ai/glm-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-5-turbo",
-          "name": "z-ai/glm-5-turbo"
+          "name": "z-ai/glm-5-turbo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-5.1",
-          "name": "z-ai/glm-5.1"
+          "name": "z-ai/glm-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "z-ai/glm-5v-turbo",
-          "name": "z-ai/glm-5v-turbo"
+          "name": "z-ai/glm-5v-turbo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -1757,19 +3907,39 @@
       "models": [
         {
           "id": "k3",
-          "name": "k3"
+          "name": "k3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "k3-256k",
-          "name": "k3-256k"
+          "name": "k3-256k",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-for-coding",
-          "name": "kimi-for-coding"
+          "name": "kimi-for-coding",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-for-coding-highspeed",
-          "name": "kimi-for-coding-highspeed"
+          "name": "kimi-for-coding-highspeed",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -1779,43 +3949,93 @@
       "models": [
         {
           "id": "kimi-k2-0711-preview",
-          "name": "kimi-k2-0711-preview"
+          "name": "kimi-k2-0711-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2-0905-preview",
-          "name": "kimi-k2-0905-preview"
+          "name": "kimi-k2-0905-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2-thinking",
-          "name": "kimi-k2-thinking"
+          "name": "kimi-k2-thinking",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2-thinking-turbo",
-          "name": "kimi-k2-thinking-turbo"
+          "name": "kimi-k2-thinking-turbo",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2-turbo-preview",
-          "name": "kimi-k2-turbo-preview"
+          "name": "kimi-k2-turbo-preview",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.5",
-          "name": "kimi-k2.5"
+          "name": "kimi-k2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.6",
-          "name": "kimi-k2.6"
+          "name": "kimi-k2.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.7-code",
-          "name": "kimi-k2.7-code"
+          "name": "kimi-k2.7-code",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.7-code-highspeed",
-          "name": "kimi-k2.7-code-highspeed"
+          "name": "kimi-k2.7-code-highspeed",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k3",
-          "name": "kimi-k3"
+          "name": "kimi-k3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -1825,55 +4045,120 @@
       "models": [
         {
           "id": "gpt-5.3-codex-spark",
-          "name": "gpt-5.3-codex-spark"
+          "name": "gpt-5.3-codex-spark",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4",
-          "name": "gpt-5.4"
+          "name": "gpt-5.4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-fast",
-          "name": "gpt-5.4-fast"
+          "name": "gpt-5.4-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-mini",
-          "name": "gpt-5.4-mini"
+          "name": "gpt-5.4-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-mini-fast",
-          "name": "gpt-5.4-mini-fast"
+          "name": "gpt-5.4-mini-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.5",
-          "name": "gpt-5.5"
+          "name": "gpt-5.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.5-fast",
-          "name": "gpt-5.5-fast"
+          "name": "gpt-5.5-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-luna",
-          "name": "gpt-5.6-luna"
+          "name": "gpt-5.6-luna",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-luna-fast",
-          "name": "gpt-5.6-luna-fast"
+          "name": "gpt-5.6-luna-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-sol",
-          "name": "gpt-5.6-sol"
+          "name": "gpt-5.6-sol",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-sol-fast",
-          "name": "gpt-5.6-sol-fast"
+          "name": "gpt-5.6-sol-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-terra",
-          "name": "gpt-5.6-terra"
+          "name": "gpt-5.6-terra",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-terra-fast",
-          "name": "gpt-5.6-terra-fast"
+          "name": "gpt-5.6-terra-fast",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -1883,243 +4168,543 @@
       "models": [
         {
           "id": "big-pickle",
-          "name": "big-pickle"
+          "name": "big-pickle",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-fable-5",
-          "name": "claude-fable-5"
+          "name": "claude-fable-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-haiku-4-5",
-          "name": "claude-haiku-4-5"
+          "name": "claude-haiku-4-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-4-1",
-          "name": "claude-opus-4-1"
+          "name": "claude-opus-4-1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-4-5",
-          "name": "claude-opus-4-5"
+          "name": "claude-opus-4-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-4-6",
-          "name": "claude-opus-4-6"
+          "name": "claude-opus-4-6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-4-7",
-          "name": "claude-opus-4-7"
+          "name": "claude-opus-4-7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-4-8",
-          "name": "claude-opus-4-8"
+          "name": "claude-opus-4-8",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-opus-5",
-          "name": "claude-opus-5"
+          "name": "claude-opus-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-sonnet-4",
-          "name": "claude-sonnet-4"
+          "name": "claude-sonnet-4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-sonnet-4-5",
-          "name": "claude-sonnet-4-5"
+          "name": "claude-sonnet-4-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-sonnet-4-6",
-          "name": "claude-sonnet-4-6"
+          "name": "claude-sonnet-4-6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "claude-sonnet-5",
-          "name": "claude-sonnet-5"
+          "name": "claude-sonnet-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek-v4-flash",
-          "name": "deepseek-v4-flash"
+          "name": "deepseek-v4-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek-v4-flash-free",
-          "name": "deepseek-v4-flash-free"
+          "name": "deepseek-v4-flash-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "deepseek-v4-pro",
-          "name": "deepseek-v4-pro"
+          "name": "deepseek-v4-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3-flash",
-          "name": "gemini-3-flash"
+          "name": "gemini-3-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.1-pro",
-          "name": "gemini-3.1-pro"
+          "name": "gemini-3.1-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.5-flash",
-          "name": "gemini-3.5-flash"
+          "name": "gemini-3.5-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.5-flash-lite",
-          "name": "gemini-3.5-flash-lite"
+          "name": "gemini-3.5-flash-lite",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gemini-3.6-flash",
-          "name": "gemini-3.6-flash"
+          "name": "gemini-3.6-flash",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "glm-5",
-          "name": "glm-5"
+          "name": "glm-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "glm-5.1",
-          "name": "glm-5.1"
+          "name": "glm-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "glm-5.2",
-          "name": "glm-5.2"
+          "name": "glm-5.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5",
-          "name": "gpt-5"
+          "name": "gpt-5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5-codex",
-          "name": "gpt-5-codex"
+          "name": "gpt-5-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5-nano",
-          "name": "gpt-5-nano"
+          "name": "gpt-5-nano",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.1",
-          "name": "gpt-5.1"
+          "name": "gpt-5.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.1-codex",
-          "name": "gpt-5.1-codex"
+          "name": "gpt-5.1-codex",
+          "pricing": {
+            "input": 3,
+            "output": 15
+          },
+          "cost": 18
         },
         {
           "id": "gpt-5.1-codex-max",
-          "name": "gpt-5.1-codex-max"
+          "name": "gpt-5.1-codex-max",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.1-codex-mini",
-          "name": "gpt-5.1-codex-mini"
+          "name": "gpt-5.1-codex-mini",
+          "pricing": {
+            "input": 3,
+            "output": 15
+          },
+          "cost": 18
         },
         {
           "id": "gpt-5.2",
-          "name": "gpt-5.2"
+          "name": "gpt-5.2",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.2-codex",
-          "name": "gpt-5.2-codex"
+          "name": "gpt-5.2-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.3-codex",
-          "name": "gpt-5.3-codex"
+          "name": "gpt-5.3-codex",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.3-codex-spark",
-          "name": "gpt-5.3-codex-spark"
+          "name": "gpt-5.3-codex-spark",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4",
-          "name": "gpt-5.4"
+          "name": "gpt-5.4",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-mini",
-          "name": "gpt-5.4-mini"
+          "name": "gpt-5.4-mini",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-nano",
-          "name": "gpt-5.4-nano"
+          "name": "gpt-5.4-nano",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.4-pro",
-          "name": "gpt-5.4-pro"
+          "name": "gpt-5.4-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.5",
-          "name": "gpt-5.5"
+          "name": "gpt-5.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.5-pro",
-          "name": "gpt-5.5-pro"
+          "name": "gpt-5.5-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-luna",
-          "name": "gpt-5.6-luna"
+          "name": "gpt-5.6-luna",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-sol",
-          "name": "gpt-5.6-sol"
+          "name": "gpt-5.6-sol",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "gpt-5.6-terra",
-          "name": "gpt-5.6-terra"
+          "name": "gpt-5.6-terra",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "grok-4.5",
-          "name": "grok-4.5"
+          "name": "grok-4.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "grok-build-0.1",
-          "name": "grok-build-0.1"
+          "name": "grok-build-0.1",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.5",
-          "name": "kimi-k2.5"
+          "name": "kimi-k2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.6",
-          "name": "kimi-k2.6"
+          "name": "kimi-k2.6",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k2.7-code",
-          "name": "kimi-k2.7-code"
+          "name": "kimi-k2.7-code",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "kimi-k3",
-          "name": "kimi-k3"
+          "name": "kimi-k3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "laguna-s-2.1-free",
-          "name": "laguna-s-2.1-free"
+          "name": "laguna-s-2.1-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "ling-3.0-flash-free",
-          "name": "ling-3.0-flash-free"
+          "name": "ling-3.0-flash-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "mimo-v2.5-free",
-          "name": "mimo-v2.5-free"
+          "name": "mimo-v2.5-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax-m2.5",
-          "name": "minimax-m2.5"
+          "name": "minimax-m2.5",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax-m2.7",
-          "name": "minimax-m2.7"
+          "name": "minimax-m2.7",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "minimax-m3",
-          "name": "minimax-m3"
+          "name": "minimax-m3",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "nemotron-3-ultra-free",
-          "name": "nemotron-3-ultra-free"
+          "name": "nemotron-3-ultra-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "north-mini-code-free",
-          "name": "north-mini-code-free"
+          "name": "north-mini-code-free",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen3.5-plus",
-          "name": "qwen3.5-plus"
+          "name": "qwen3.5-plus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "qwen3.6-plus",
-          "name": "qwen3.6-plus"
+          "name": "qwen3.6-plus",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     },
@@ -2129,19 +4714,39 @@
       "models": [
         {
           "id": "sonar",
-          "name": "sonar"
+          "name": "sonar",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sonar-deep-research",
-          "name": "sonar-deep-research"
+          "name": "sonar-deep-research",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sonar-pro",
-          "name": "sonar-pro"
+          "name": "sonar-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         },
         {
           "id": "sonar-reasoning-pro",
-          "name": "sonar-reasoning-pro"
+          "name": "sonar-reasoning-pro",
+          "pricing": {
+            "input": 5,
+            "output": 20
+          },
+          "cost": 25
         }
       ]
     }

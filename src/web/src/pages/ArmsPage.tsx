@@ -708,6 +708,10 @@ export function ArmsPage() {
 			input,
 			output,
 			per100k: (input + output) / 20,
+			source: selectedOpenCodeModel.pricing.source,
+			estimated: selectedOpenCodeModel.pricing.estimated ?? true,
+			fetchedAt: selectedOpenCodeModel.pricing.fetchedAt,
+			matchedModel: selectedOpenCodeModel.pricing.matchedModel,
 		};
 	}, [selectedOpenCodeModel]);
 
@@ -1425,7 +1429,7 @@ export function ArmsPage() {
 								{selectedOpenCodeModel ? (
 									<div className="rounded-lg border border-border bg-surface-secondary/45 p-3 text-sm text-muted-foreground">
 										<div className="flex flex-wrap items-center justify-between gap-2">
-											<span className="font-medium text-foreground">Model estimate</span>
+											<span className="font-medium text-foreground">Model estimate*</span>
 											{modelPricing ? (
 												<span>
 													${modelPricing.input.toFixed(2)} input / ${modelPricing.output.toFixed(2)} output per 1M tokens
@@ -1439,9 +1443,24 @@ export function ArmsPage() {
 												A balanced 100k-token run is approximately ${modelPricing.per100k.toFixed(2)}.
 											</p>
 										) : null}
+										{modelPricing?.source === "openrouter" ? (
+											<p className="mt-1 text-xs">
+												Approximate market rate via OpenRouter
+												{modelPricing.matchedModel ? ` (${modelPricing.matchedModel})` : ""}.
+											</p>
+										) : modelPricing?.source === "known" ? (
+											<p className="mt-1 text-xs">
+												Approximate catalog rate, not actual provider billing.
+											</p>
+										) : null}
 										{selectedOpenCodeModel.limit?.context ? (
 											<p className="mt-1 text-xs">
 												Context capacity: {selectedOpenCodeModel.limit.context.toLocaleString()} tokens.
+											</p>
+										) : null}
+										{modelPricing ? (
+											<p className="mt-2 text-xs">
+												* Estimate assumes per-token billing. Your provider account or plan may include usage or not charge per token.
 											</p>
 										) : null}
 									</div>

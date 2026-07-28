@@ -200,6 +200,10 @@ export interface OpenCodeProviderModel {
   pricing?: {
     input?: number;
     output?: number;
+    source?: 'provider' | 'openrouter' | 'known';
+    estimated?: boolean;
+    fetchedAt?: string;
+    matchedModel?: string;
   };
 }
 

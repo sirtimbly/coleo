@@ -1355,6 +1355,10 @@ export interface OpenCodeModel {
   pricing?: {
     input?: number;
     output?: number;
+    source?: 'provider' | 'openrouter' | 'known';
+    estimated?: boolean;
+    fetchedAt?: string;
+    matchedModel?: string;
   };
 }
 

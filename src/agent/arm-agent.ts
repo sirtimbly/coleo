@@ -39,6 +39,7 @@ import { truncateLargeFields } from '../harness/event-stream';
 import { LocalRepositoryOnboarding } from '../onboarding/local';
 import { parseRepositoryOnboardingOperation } from '../onboarding/types';
 import { executeWorkspaceOperation, LocalWorkspaceAccess } from '../workspace';
+import { getOpenRouterPricingCatalog, resolveOpenRouterPricing } from '../lib/openrouter-pricing';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -88,9 +89,10 @@ async function readOpenCodeAuth(): Promise<Record<string, unknown>> {
 }
 
 async function listOpenCodeProviders(): Promise<OpenCodeProvidersResponse> {
-  const [{ stdout }, auth] = await Promise.all([
+  const [{ stdout }, auth, openRouterCatalog] = await Promise.all([
     execFileAsync('opencode', ['models'], { env: process.env, maxBuffer: 1024 * 1024 * 8 }),
     readOpenCodeAuth(),
+    getOpenRouterPricingCatalog(),
   ]);
   const providerModels = new Map<string, Set<string>>();
 
@@ -110,7 +112,14 @@ async function listOpenCodeProviders(): Promise<OpenCodeProvidersResponse> {
     .map(([providerId, models]) => ({
       id: providerId,
       name: humanizeIdentifier(providerId),
-      models: [...models].sort().map((modelId) => ({ id: modelId, name: modelId })),
+      models: [...models].sort().map((modelId) => {
+        const pricing = resolveOpenRouterPricing(openRouterCatalog, providerId, modelId);
+        return {
+          id: modelId,
+          name: modelId,
+          ...(pricing ? { pricing, cost: pricing.input + pricing.output } : {}),
+        };
+      }),
       connected:
         Object.hasOwn(auth, providerId) ||
         (API_KEY_PROVIDER_IDS.has(providerId) &&

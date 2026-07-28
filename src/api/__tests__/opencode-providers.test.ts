@@ -95,6 +95,25 @@ describe("opencode providers API", () => {
     );
     await chmod(scriptPath, 0o755);
     process.env.PATH = `${binDir}:${originalPath || ""}`;
+    globalThis.fetch = createFetchMock(async (input) => {
+      if (String(input) !== "https://openrouter.ai/api/v1/models") {
+        throw new Error(`Unexpected request: ${String(input)}`);
+      }
+      return Response.json({
+        data: [
+          {
+            id: "openai/gpt-5.1-codex-mini",
+            canonical_slug: "openai/gpt-5.1-codex-mini",
+            pricing: { prompt: "0.000002", completion: "0.000008" },
+          },
+          {
+            id: "anthropic/claude-opus-4",
+            canonical_slug: "anthropic/claude-opus-4",
+            pricing: { prompt: "0.000012", completion: "0.00006" },
+          },
+        ],
+      });
+    });
 
     const cache = await refreshOpenCodeProvidersCache();
     expect(cache).not.toBeNull();
@@ -124,6 +143,9 @@ describe("opencode providers API", () => {
           pricing?: {
             input?: number;
             output?: number;
+            source?: string;
+            estimated?: boolean;
+            matchedModel?: string;
           };
         }>;
       }>;
@@ -171,8 +193,14 @@ describe("opencode providers API", () => {
     const responseOpencodeModel = body.providers
       .find((provider) => provider.id === "opencode")
       ?.models.find((model) => model.id === "claude-opus-4");
-    expect(responseOpencodeModel?.cost).toBe(90);
-    expect(responseOpencodeModel?.pricing).toMatchObject({ input: 15, output: 75 });
+    expect(responseOpencodeModel?.cost).toBe(72);
+    expect(responseOpencodeModel?.pricing).toMatchObject({
+      input: 12,
+      output: 60,
+      source: "openrouter",
+      estimated: true,
+      matchedModel: "anthropic/claude-opus-4",
+    });
     const unpricedModel = body.providers
       .find((provider) => provider.id === "opencode")
       ?.models.find((model) => model.id === "custom-unpriced");
