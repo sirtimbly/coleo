@@ -8,7 +8,7 @@
         "@hono/node-server": "^1.19.9",
         "@modelcontextprotocol/sdk": "^1.25.2",
         "@opencode-ai/sdk": "^1.1.36",
-        "@opentui/core": "^0.1.93",
+        "@opentui/core": "0.1.107",
         "@qdrant/js-client-rest": "^1.16.2",
         "@tribe-x/imap-server": "^0.0.25",
         "@types/eventsource": "^1.1.15",
@@ -32,6 +32,14 @@
         "tailwindcss": "^4.1.18",
         "typescript": "^7.0.2",
         "vitepress": "^1.6.4",
+      },
+      "optionalDependencies": {
+        "@opentui/core-darwin-arm64": "0.1.107",
+        "@opentui/core-darwin-x64": "0.1.107",
+        "@opentui/core-linux-arm64": "0.1.107",
+        "@opentui/core-linux-x64": "0.1.107",
+        "@opentui/core-win32-arm64": "0.1.107",
+        "@opentui/core-win32-x64": "0.1.107",
       },
       "peerDependencies": {
         "typescript": "^7.0.0",

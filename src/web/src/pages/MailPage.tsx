@@ -1,4 +1,11 @@
-import { useEffect, useState, useCallback, useRef, useMemo, useReducer } from "react";
+import {
+	useEffect,
+	useState,
+	useCallback,
+	useRef,
+	useMemo,
+	useReducer,
+} from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { Button, Chip } from "@heroui/react";
 import {
@@ -18,7 +25,7 @@ import {
 import { api, type MailMessage, useMessage } from "@/lib";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components";
 import { WorkspacePageShell } from "@/components/WorkspacePageShell";
-import { usePageTitle } from '@/hooks/usePageTitle';
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import {
 	buildMailThreads,
@@ -79,75 +86,192 @@ function MailThreadGrid({
 	}, [focusedThreadId]);
 
 	if (threads.length === 0) {
-		return <div className="flex flex-1 items-center justify-center p-12 text-sm text-muted-foreground"><Mail className="mr-2 h-4 w-4" />No messages</div>;
+		return (
+			<div className="flex flex-1 items-center justify-center p-12 text-sm text-muted-foreground">
+				<Mail className="mr-2 h-4 w-4" />
+				No messages
+			</div>
+		);
 	}
 
-	return <div className="overflow-auto bg-surface-secondary/35 p-2"><div className="space-y-2">
-		{threads.map((thread) => {
-			const expanded = expandedThreadIds.has(thread.id);
-			const focused = focusedThreadId === thread.id;
-			const hasOpenAction = typeof onOpenThread === "function";
-			const latestMessage = thread.messages.at(-1)?.message;
-			const automated = latestMessage ? /\b(?:brain|arm|coleo)\b/i.test(latestMessage.from) : false;
-			const replyLevels = getConsecutiveReplyLevels(thread, MESSAGE_BORDER_COLORS.length);
-			return <div
-				key={thread.id}
-				ref={(element) => {
-					if (element) rowRefs.current.set(thread.id, element);
-					else rowRefs.current.delete(thread.id);
-				}}
-				className={`overflow-hidden rounded-xl border bg-content1 transition-[border-color,box-shadow,background-color] ${
-					focused
-						? "border-accent/70 ring-2 ring-accent/20"
-						: thread.unreadCount
-							? "border-accent/25 bg-accent/[0.035]"
-							: "border-border/70"
-				}`}
-			>
-				<button
-					type="button"
-					onClick={() => {
-						onFocus(thread.id);
-						onToggle(thread.id);
-					}}
-					onFocus={() => onFocus(thread.id)}
-					aria-expanded={expanded}
-					aria-current={focused ? "true" : undefined}
-					data-mail-thread-toggle={thread.id}
-					className="group flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-accent/[0.045] focus-visible:outline-none"
-				>
-					<span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${automated ? "border-accent/20 bg-accent/10 text-accent" : "border-border bg-surface-secondary text-muted-foreground"}`}>
-						{automated ? <Bot className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
-					</span>
-					<span className="min-w-0 flex-1">
-						<span className="flex items-center gap-2">
-							<span className={`truncate text-sm ${thread.unreadCount ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}>{thread.subject}</span>
-							{thread.unreadCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground">{thread.unreadCount}</span> : null}
-						</span>
-						<span className="mt-0.5 block truncate text-xs text-muted-foreground">{latestMessage?.from || "Unknown sender"} · {thread.messages.length} {thread.messages.length === 1 ? "message" : "messages"}</span>
-						{latestMessage?.body ? <span className="mt-1.5 block truncate text-xs leading-5 text-muted-foreground/85">{latestMessage.body}</span> : null}
-					</span>
-					<span className="flex shrink-0 items-center gap-2 pt-0.5">
-						<time className="text-[11px] tabular-nums text-muted-foreground">{formatDate(thread.lastMessageDate.toISOString())}</time>
-						{expanded ? <ChevronUp className="h-4 w-4 text-muted-foreground transition-transform" /> : <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-y-0.5" />}
-					</span>
-				</button>
-				{expanded ? <div className="space-y-2 border-t border-border/60 bg-background/60 p-2.5">{thread.messages.map((threadMessage, index) => {
-					const message = threadMessage.message;
-					const sent = sentMessageIds.has(message.id);
-					const messageAutomated = /\b(?:brain|arm|coleo)\b/i.test(message.from);
-					const reply = index > 0;
-					const replyLevel = replyLevels[index] ?? 0;
-					const borderColor = MESSAGE_BORDER_COLORS[index % MESSAGE_BORDER_COLORS.length];
-					return <div key={message.id} className="pl-2" style={{ marginLeft: `${replyLevel * 1.5}rem`, borderLeft: `2px solid ${borderColor}` }}><article className="rounded-lg border border-border/60 bg-content1 px-3 py-3 shadow-sm"><div className="flex items-start gap-2.5"><span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${sent ? 'bg-accent/15 text-accent' : 'bg-secondary text-muted-foreground'}`}>{sent || !messageAutomated ? <UserRound className="h-3.5 w-3.5" /> : <Bot className="h-3.5 w-3.5" />}</span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="truncate text-sm font-medium">{message.from}</span><span className="text-[11px] text-muted-foreground">{sent ? 'You sent' : messageAutomated ? 'Brain or arm' : 'Received'}{reply ? ' · Reply' : ''}</span><time className="ml-auto text-[11px] tabular-nums text-muted-foreground">{formatDate(message.date)}</time></div><p className="readable-copy mt-2 whitespace-pre-wrap">{message.body}</p><div className="mt-3 flex flex-wrap items-center gap-2"><button type="button" onClick={() => onReply(thread)} className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"><Reply className="mr-1 h-3.5 w-3.5" />Reply</button>{hasOpenAction ? <button type="button" onClick={() => onOpenThread?.(thread.id)} className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"><Eye className="mr-1 h-3.5 w-3.5" />Open detail</button> : null}</div></div></div></article></div>;
-				})}</div> : null}
-			</div>;
-		})}
-	</div></div>;
+	return (
+		<div className="overflow-auto bg-surface-secondary/35 p-2">
+			<div className="space-y-2">
+				{threads.map((thread) => {
+					const expanded = expandedThreadIds.has(thread.id);
+					const focused = focusedThreadId === thread.id;
+					const hasOpenAction = typeof onOpenThread === "function";
+					const latestMessage = thread.messages.at(-1)?.message;
+					const automated = latestMessage
+						? /\b(?:brain|arm|coleo)\b/i.test(latestMessage.from)
+						: false;
+					const replyLevels = getConsecutiveReplyLevels(
+						thread,
+						MESSAGE_BORDER_COLORS.length,
+					);
+					return (
+						<div
+							key={thread.id}
+							ref={(element) => {
+								if (element) rowRefs.current.set(thread.id, element);
+								else rowRefs.current.delete(thread.id);
+							}}
+							className={`overflow-hidden rounded-xl border bg-content1 transition-[border-color,box-shadow,background-color] ${
+								focused
+									? "border-accent/70 ring-2 ring-accent/20"
+									: thread.unreadCount
+										? "border-accent/25 bg-accent/[0.035]"
+										: "border-border/70"
+							}`}
+						>
+							<button
+								type="button"
+								onClick={() => {
+									onFocus(thread.id);
+									onToggle(thread.id);
+								}}
+								onFocus={() => onFocus(thread.id)}
+								aria-expanded={expanded}
+								aria-current={focused ? "true" : undefined}
+								data-mail-thread-toggle={thread.id}
+								className="group flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-accent/[0.045] focus-visible:outline-none"
+							>
+								<span
+									className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${automated ? "border-accent/20 bg-accent/10 text-accent" : "border-border bg-surface-secondary text-muted-foreground"}`}
+								>
+									{automated ? (
+										<Bot className="h-4 w-4" />
+									) : (
+										<UserRound className="h-4 w-4" />
+									)}
+								</span>
+								<span className="min-w-0 flex-1">
+									<span className="flex items-center gap-2">
+										<span
+											className={`truncate text-sm ${thread.unreadCount ? "font-semibold text-foreground" : "font-medium text-foreground/90"}`}
+										>
+											{thread.subject}
+										</span>
+										{thread.unreadCount ? (
+											<span className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-foreground">
+												{thread.unreadCount}
+											</span>
+										) : null}
+									</span>
+									<span className="mt-0.5 block truncate text-xs text-muted-foreground">
+										{latestMessage?.from || "Unknown sender"} ·{" "}
+										{thread.messages.length}{" "}
+										{thread.messages.length === 1 ? "message" : "messages"}
+									</span>
+									{latestMessage?.body ? (
+										<span className="mt-1.5 block truncate text-xs leading-5 text-muted-foreground/85">
+											{latestMessage.body}
+										</span>
+									) : null}
+								</span>
+								<span className="flex shrink-0 items-center gap-2 pt-0.5">
+									<time className="text-[11px] tabular-nums text-muted-foreground">
+										{formatDate(thread.lastMessageDate.toISOString())}
+									</time>
+									{expanded ? (
+										<ChevronUp className="h-4 w-4 text-muted-foreground transition-transform" />
+									) : (
+										<ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-y-0.5" />
+									)}
+								</span>
+							</button>
+							{expanded ? (
+								<div className="space-y-2 border-t border-border/60 bg-background/60 p-2.5">
+									{thread.messages.map((threadMessage, index) => {
+										const message = threadMessage.message;
+										const sent = sentMessageIds.has(message.id);
+										const messageAutomated = /\b(?:brain|arm|coleo)\b/i.test(
+											message.from,
+										);
+										const reply = index > 0;
+										const replyLevel = replyLevels[index] ?? 0;
+										const borderColor =
+											MESSAGE_BORDER_COLORS[
+												index % MESSAGE_BORDER_COLORS.length
+											];
+										return (
+											<div
+												key={message.id}
+												className="pl-2"
+												style={{
+													marginLeft: `${replyLevel * 1.5}rem`,
+													borderLeft: `2px solid ${borderColor}`,
+												}}
+											>
+												<article className="rounded-lg border border-border/60 bg-content1 px-3 py-3 shadow-sm">
+													<div className="flex items-start gap-2.5">
+														<span
+															className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${sent ? "bg-accent/15 text-accent" : "bg-secondary text-muted-foreground"}`}
+														>
+															{sent || !messageAutomated ? (
+																<UserRound className="h-3.5 w-3.5" />
+															) : (
+																<Bot className="h-3.5 w-3.5" />
+															)}
+														</span>
+														<div className="min-w-0 flex-1">
+															<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+																<span className="truncate text-sm font-medium">
+																	{message.from}
+																</span>
+																<span className="text-[11px] text-muted-foreground">
+																	{sent
+																		? "You sent"
+																		: messageAutomated
+																			? "Brain or arm"
+																			: "Received"}
+																	{reply ? " · Reply" : ""}
+																</span>
+																<time className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+																	{formatDate(message.date)}
+																</time>
+															</div>
+															<p className="readable-copy mt-2 whitespace-pre-wrap">
+																{message.body}
+															</p>
+															<div className="mt-3 flex flex-wrap items-center gap-2">
+																<button
+																	type="button"
+																	onClick={() => onReply(thread)}
+																	className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/10"
+																>
+																	<Reply className="mr-1 h-3.5 w-3.5" />
+																	Reply
+																</button>
+																{hasOpenAction ? (
+																	<button
+																		type="button"
+																		onClick={() => onOpenThread?.(thread.id)}
+																		className="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground"
+																	>
+																		<Eye className="mr-1 h-3.5 w-3.5" />
+																		Open detail
+																	</button>
+																) : null}
+															</div>
+														</div>
+													</div>
+												</article>
+											</div>
+										);
+									})}
+								</div>
+							) : null}
+						</div>
+					);
+				})}
+			</div>
+		</div>
+	);
 }
 
 export function MailPage() {
-	usePageTitle('Coleo Observatory - Mail');
+	usePageTitle("Coleo Observatory - Mail");
 	const isWorkspacePanel = useIsWorkspacePanel();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
@@ -228,10 +352,7 @@ export function MailPage() {
 
 	const handleWSMessage = useCallback(
 		(msg: { channel?: string; event?: string; data?: unknown }) => {
-			if (
-				msg.channel === "mail" &&
-				(msg.event as string)?.includes("mail")
-			) {
+			if (msg.channel === "mail" && (msg.event as string)?.includes("mail")) {
 				loadMail();
 			}
 		},
@@ -342,7 +463,13 @@ export function MailPage() {
 				activeTab,
 				collapsedThreads,
 			}),
-		[inbox?.messages, sent?.messages, archive?.messages, activeTab, collapsedThreads],
+		[
+			inbox?.messages,
+			sent?.messages,
+			archive?.messages,
+			activeTab,
+			collapsedThreads,
+		],
 	);
 
 	const selectedThread = threads.find((t) => t.id === selectedThreadId);
@@ -373,14 +500,17 @@ export function MailPage() {
 			),
 		[activeTab, inbox?.messages, selectedThread],
 	);
-	const selectedInboxUnreadMessageIdsKey = selectedInboxUnreadMessageIds.join(",");
+	const selectedInboxUnreadMessageIdsKey =
+		selectedInboxUnreadMessageIds.join(",");
 
 	const markThreadRead = useCallback(
 		async (messageIds: string[]) => {
 			if (messageIds.length === 0) return;
 
 			try {
-				await Promise.all(messageIds.map((messageId) => api.markMailRead(messageId)));
+				await Promise.all(
+					messageIds.map((messageId) => api.markMailRead(messageId)),
+				);
 				await loadMail();
 			} catch (err) {
 				console.error("Failed to mark thread as read:", err);
@@ -397,14 +527,20 @@ export function MailPage() {
 		const timer = window.setTimeout(() => {
 			// Mark messages as read without reloading to avoid view disruption in split mode
 			void Promise.all(
-				selectedInboxUnreadMessageIds.map((messageId) => api.markMailRead(messageId)),
+				selectedInboxUnreadMessageIds.map((messageId) =>
+					api.markMailRead(messageId),
+				),
 			).catch((err) => {
 				console.error("Failed to auto-mark thread as read:", err);
 			});
 		}, 4000);
 
 		return () => window.clearTimeout(timer);
-	}, [selectedInboxUnreadMessageIds, selectedInboxUnreadMessageIdsKey, selectedThreadId]);
+	}, [
+		selectedInboxUnreadMessageIds,
+		selectedInboxUnreadMessageIdsKey,
+		selectedThreadId,
+	]);
 
 	const handleArchive = async (id: string) => {
 		const selectedThreadBeforeArchive = selectedThreadId
@@ -418,7 +554,9 @@ export function MailPage() {
 			archivedSelectedThread &&
 			(selectedThreadBeforeArchive?.messages.length ?? 0) === 1;
 		const selectedThreadIndex = selectedThreadBeforeArchive
-			? threads.findIndex((thread) => thread.id === selectedThreadBeforeArchive.id)
+			? threads.findIndex(
+					(thread) => thread.id === selectedThreadBeforeArchive.id,
+				)
 			: -1;
 		const fallbackThreadId =
 			selectedThreadIndex >= 0
@@ -444,12 +582,12 @@ export function MailPage() {
 			const lastMessage = thread.messages[thread.messages.length - 1];
 			if (!lastMessage) return;
 
-				openReply({
-					messageId: getMailMessageId(lastMessage.message),
-					threadId: getMailThreadId(lastMessage.message, thread.id),
-					from: lastMessage.message.from,
-					subject: thread.subject,
-					body: lastMessage.message.body,
+			openReply({
+				messageId: getMailMessageId(lastMessage.message),
+				threadId: getMailThreadId(lastMessage.message, thread.id),
+				from: lastMessage.message.from,
+				subject: thread.subject,
+				body: lastMessage.message.body,
 			});
 		},
 		[openReply],
@@ -469,32 +607,32 @@ export function MailPage() {
 		[isWorkspacePanel, setSearchParams],
 	);
 
-  const openThreadDetail = useCallback(
-    (threadId: string) => {
-      const thread = threads.find((t) => t.id === threadId);
-      if (!isWorkspacePanel) {
-        setSelectedThreadId(threadId);
-        return;
-      }
+	const openThreadDetail = useCallback(
+		(threadId: string) => {
+			const thread = threads.find((t) => t.id === threadId);
+			if (!isWorkspacePanel) {
+				setSelectedThreadId(threadId);
+				return;
+			}
 
-      const nextSearchParams = new URLSearchParams();
-      nextSearchParams.set("mailbox", activeTab);
-      nextSearchParams.set("thread", threadId);
+			const nextSearchParams = new URLSearchParams();
+			nextSearchParams.set("mailbox", activeTab);
+			nextSearchParams.set("thread", threadId);
 
-      // If this panel is already viewing a thread, update it instead of splitting
-      const isAlreadyViewingThread = searchParams.get("thread") !== null;
+			// If this panel is already viewing a thread, update it instead of splitting
+			const isAlreadyViewingThread = searchParams.get("thread") !== null;
 
-      openWorkspaceRoute(
-        {
-          pathname: "/mail",
-          search: `?${nextSearchParams.toString()}`,
-          title: thread ? `Mail: ${thread.subject}` : undefined,
-        },
-        isAlreadyViewingThread ? "focus" : "split",
-      );
-    },
-    [activeTab, isWorkspacePanel, openWorkspaceRoute, searchParams, threads],
-  );
+			openWorkspaceRoute(
+				{
+					pathname: "/mail",
+					search: `?${nextSearchParams.toString()}`,
+					title: thread ? `Mail: ${thread.subject}` : undefined,
+				},
+				isAlreadyViewingThread ? "focus" : "split",
+			);
+		},
+		[activeTab, isWorkspacePanel, openWorkspaceRoute, searchParams, threads],
+	);
 
 	const archiveThread = useCallback(
 		async (thread: MailThread) => {
@@ -515,7 +653,8 @@ export function MailPage() {
 			setInbox((current) => {
 				if (!current) return current;
 				const archivedUnreadCount = current.messages.filter(
-					(message) => archivedMessageIds.has(message.id) && !message.flags.seen,
+					(message) =>
+						archivedMessageIds.has(message.id) && !message.flags.seen,
 				).length;
 				return {
 					messages: current.messages.filter(
@@ -523,7 +662,10 @@ export function MailPage() {
 					),
 					pagination: {
 						...current.pagination,
-						unread: Math.max(0, current.pagination.unread - archivedUnreadCount),
+						unread: Math.max(
+							0,
+							current.pagination.unread - archivedUnreadCount,
+						),
 					},
 				};
 			});
@@ -549,89 +691,99 @@ export function MailPage() {
 
 	// Gmail-style keyboard shortcuts (mail page only):
 	// c = compose, r = reply, j/k = next/previous thread, e = archive.
-	const handleMailKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-		if (event.defaultPrevented) return;
-		if (event.metaKey || event.ctrlKey || event.altKey) return;
+	const handleMailKeyDown = useCallback(
+		(event: ReactKeyboardEvent<HTMLElement>) => {
+			if (event.defaultPrevented) return;
+			if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-		const target = event.target as HTMLElement | null;
-		if (
-			target &&
-			(target.tagName === "INPUT" ||
-				target.tagName === "TEXTAREA" ||
-				target.isContentEditable)
-		) {
-			return;
-		}
-
-		const key = event.key.toLowerCase();
-		if (key === " " || key === "spacebar") {
-			const threadToggle = target?.closest<HTMLElement>("[data-mail-thread-toggle]");
-			const otherInteractiveTarget = target?.closest<HTMLElement>(
-				"button, a, [role='button'], [role='link']",
-			);
-			if (otherInteractiveTarget && !threadToggle) return;
-
-			event.preventDefault();
-			const scrollRegion = event.currentTarget.querySelector<HTMLElement>(
-				"[data-mail-scroll-region]",
-			);
-			if (scrollRegion) {
-				scrollRegion.scrollBy({ top: scrollRegion.clientHeight, behavior: "auto" });
+			const target = event.target as HTMLElement | null;
+			if (
+				target &&
+				(target.tagName === "INPUT" ||
+					target.tagName === "TEXTAREA" ||
+					target.isContentEditable)
+			) {
+				return;
 			}
-			return;
-		}
 
-		if (key === "c") {
-			event.preventDefault();
-			openNewMessage();
-			return;
-		}
+			const key = event.key.toLowerCase();
+			if (key === " " || key === "spacebar") {
+				const threadToggle = target?.closest<HTMLElement>(
+					"[data-mail-thread-toggle]",
+				);
+				const otherInteractiveTarget = target?.closest<HTMLElement>(
+					"button, a, [role='button'], [role='link']",
+				);
+				if (otherInteractiveTarget && !threadToggle) return;
 
-		const activeThread = focusedThread ?? selectedThread;
-		if (key === "r" && activeThread) {
-			event.preventDefault();
-			replyToThread(activeThread);
-			return;
-		}
+				event.preventDefault();
+				const scrollRegion = event.currentTarget.querySelector<HTMLElement>(
+					"[data-mail-scroll-region]",
+				);
+				if (scrollRegion) {
+					scrollRegion.scrollBy({
+						top: scrollRegion.clientHeight,
+						behavior: "auto",
+					});
+				}
+				return;
+			}
 
-		if (key === "enter" && focusedThread) {
-			const threadToggle = target?.closest<HTMLElement>("[data-mail-thread-toggle]");
-			const otherInteractiveTarget = target?.closest<HTMLElement>(
-				"button, a, [role='button'], [role='link']",
-			);
-			if (otherInteractiveTarget && !threadToggle) return;
+			if (key === "c") {
+				event.preventDefault();
+				openNewMessage();
+				return;
+			}
 
-			event.preventDefault();
-			dispatchMailList({ type: "toggle", threadId: focusedThread.id });
-			return;
-		}
+			const activeThread = focusedThread ?? selectedThread;
+			if (key === "r" && activeThread) {
+				event.preventDefault();
+				replyToThread(activeThread);
+				return;
+			}
 
-		const threadIds = threads.map((thread) => thread.id);
-		if (key === "j" && threadIds.length > 0) {
-			event.preventDefault();
-			dispatchMailList({ type: "move", threadIds, direction: "next" });
-			return;
-		}
+			if (key === "enter" && focusedThread) {
+				const threadToggle = target?.closest<HTMLElement>(
+					"[data-mail-thread-toggle]",
+				);
+				const otherInteractiveTarget = target?.closest<HTMLElement>(
+					"button, a, [role='button'], [role='link']",
+				);
+				if (otherInteractiveTarget && !threadToggle) return;
 
-		if (key === "k" && threadIds.length > 0) {
-			event.preventDefault();
-			dispatchMailList({ type: "move", threadIds, direction: "previous" });
-			return;
-		}
+				event.preventDefault();
+				dispatchMailList({ type: "toggle", threadId: focusedThread.id });
+				return;
+			}
 
-		if (key === "e" && activeThread && activeTab === "inbox") {
-			event.preventDefault();
-			void archiveThread(activeThread);
-		}
-	}, [
-		activeTab,
-		archiveThread,
-		focusedThread,
-		openNewMessage,
-		replyToThread,
-		selectedThread,
-		threads,
-	]);
+			const threadIds = threads.map((thread) => thread.id);
+			if (key === "j" && threadIds.length > 0) {
+				event.preventDefault();
+				dispatchMailList({ type: "move", threadIds, direction: "next" });
+				return;
+			}
+
+			if (key === "k" && threadIds.length > 0) {
+				event.preventDefault();
+				dispatchMailList({ type: "move", threadIds, direction: "previous" });
+				return;
+			}
+
+			if (key === "e" && activeThread && activeTab === "inbox") {
+				event.preventDefault();
+				void archiveThread(activeThread);
+			}
+		},
+		[
+			activeTab,
+			archiveThread,
+			focusedThread,
+			openNewMessage,
+			replyToThread,
+			selectedThread,
+			threads,
+		],
+	);
 
 	if (loading) {
 		return (
@@ -686,8 +838,16 @@ export function MailPage() {
 					))}
 				</div>
 				<div className="ml-auto flex shrink-0 items-center gap-2 pl-2">
-					<div className="text-xs text-muted-foreground">{threads.length} threads</div>
-					<Button variant="ghost" onPress={loadMail} aria-label="Refresh" size="sm" isIconOnly>
+					<div className="text-xs text-muted-foreground">
+						{threads.length} threads
+					</div>
+					<Button
+						variant="ghost"
+						onPress={loadMail}
+						aria-label="Refresh"
+						size="sm"
+						isIconOnly
+					>
 						<RefreshCw className="h-4 w-4" />
 					</Button>
 					<Button size="sm" variant="primary" onPress={openNewMessage}>
@@ -709,7 +869,7 @@ export function MailPage() {
 						{mailboxToolbar}
 					</header>
 					<div className="min-h-0 flex-1 overflow-auto" data-mail-scroll-region>
-						<Card className="rounded-none h-full">
+						<Card className="rounded-none">
 							<CardContent className="p-0">
 								<MailThreadGrid
 									threads={threads}
@@ -730,60 +890,80 @@ export function MailPage() {
 		}
 
 		return (
-			<div className="h-full focus:outline-none" tabIndex={-1} onKeyDown={handleMailKeyDown}>
-			<WorkspacePageShell
-				title={selectedThread.subject}
-				subtitle={`${selectedThread.messages.length} messages`}
-				toolbar={
-					<>
-						<Button size="sm" variant="primary" onPress={() => replyToThread(selectedThread)}>
-							<Reply className="h-3.5 w-3.5 mr-1.5" />
-							Reply
-						</Button>
-						{activeTab === "inbox" ? (
-							<Button size="sm" variant="ghost" onPress={() => void archiveThread(selectedThread)}>
-								<Archive className="h-3.5 w-3.5 mr-1.5" />
-								Archive
-							</Button>
-						) : null}
-					</>
-				}
+			<div
+				className="h-full focus:outline-none"
+				tabIndex={-1}
+				onKeyDown={handleMailKeyDown}
 			>
-				<div className="h-full overflow-auto p-3" data-mail-scroll-region>
-					<div className="space-y-3">
-						{selectedThread.messages.map((threadMessage, index) => {
-							const message = threadMessage.message;
-							const isFirstUnread = index === firstUnreadIndex;
-
-							return (
-								<div
-									key={message.id}
-									ref={isFirstUnread ? unreadMessageRef : undefined}
-									className="rounded-md border border-border/70 bg-content1/85"
+				<WorkspacePageShell
+					title={selectedThread.subject}
+					subtitle={`${selectedThread.messages.length} messages`}
+					toolbar={
+						<>
+							<Button
+								size="sm"
+								variant="primary"
+								onPress={() => replyToThread(selectedThread)}
+							>
+								<Reply className="h-3.5 w-3.5 mr-1.5" />
+								Reply
+							</Button>
+							{activeTab === "inbox" ? (
+								<Button
+									size="sm"
+									variant="ghost"
+									onPress={() => void archiveThread(selectedThread)}
 								>
-									<div className="border-b border-border/60 px-3 py-2">
-										<div className="flex items-center justify-between gap-2">
-											<div className="min-w-0">
-												<div className="truncate text-sm font-medium">{message.from}</div>
-												<div className="text-xs text-muted-foreground">
-													{formatFullDate(message.date)}
+									<Archive className="h-3.5 w-3.5 mr-1.5" />
+									Archive
+								</Button>
+							) : null}
+						</>
+					}
+				>
+					<div className="h-full overflow-auto p-3" data-mail-scroll-region>
+						<div className="space-y-3">
+							{selectedThread.messages.map((threadMessage, index) => {
+								const message = threadMessage.message;
+								const isFirstUnread = index === firstUnreadIndex;
+
+								return (
+									<div
+										key={message.id}
+										ref={isFirstUnread ? unreadMessageRef : undefined}
+										className="rounded-md border border-border/70 bg-content1/85"
+									>
+										<div className="border-b border-border/60 px-3 py-2">
+											<div className="flex items-center justify-between gap-2">
+												<div className="min-w-0">
+													<div className="truncate text-sm font-medium">
+														{message.from}
+													</div>
+													<div className="text-xs text-muted-foreground">
+														{formatFullDate(message.date)}
+													</div>
 												</div>
+												{!message.flags.seen && activeTab === "inbox" ? (
+													<Button
+														size="sm"
+														variant="ghost"
+														onPress={() => handleMarkRead(message.id)}
+													>
+														<Eye className="h-3.5 w-3.5 mr-1.5" />
+														Read
+													</Button>
+												) : null}
 											</div>
-											{!message.flags.seen && activeTab === "inbox" ? (
-												<Button size="sm" variant="ghost" onPress={() => handleMarkRead(message.id)}>
-													<Eye className="h-3.5 w-3.5 mr-1.5" />
-													Read
-												</Button>
-											) : null}
+										</div>
+										<div className="readable-copy whitespace-pre-wrap px-3 py-3">
+											{message.body}
 										</div>
 									</div>
-									<div className="readable-copy whitespace-pre-wrap px-3 py-3">{message.body}</div>
-								</div>
-							);
-						})}
+								);
+							})}
+						</div>
 					</div>
-				</div>
-			</WorkspacePageShell>
+				</WorkspacePageShell>
 			</div>
 		);
 	}
@@ -796,14 +976,76 @@ export function MailPage() {
 				onKeyDown={handleMailKeyDown}
 			>
 				<header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
-					<div><h1 className="text-lg font-semibold">Mail</h1><p className="text-xs text-muted-foreground">Open a conversation to read its complete thread.</p></div>
-					<div className="ml-auto flex items-center gap-1" role="tablist" aria-label="Mailbox">
-						{(["inbox", "sent", "archive"] as const).map((tab) => <Button key={tab} size="sm" variant={activeTab === tab ? "primary" : "ghost"} onPress={() => { setActiveTab(tab); dispatchMailList({ type: "reset" }); }}>{tab === "inbox" ? <Inbox className="mr-1 h-3.5 w-3.5" /> : tab === "sent" ? <Send className="mr-1 h-3.5 w-3.5" /> : <Archive className="mr-1 h-3.5 w-3.5" />}{tab}{tab === "inbox" && inbox?.pagination.unread ? <Chip size="sm" color="danger" className="ml-1">{inbox.pagination.unread}</Chip> : null}</Button>)}
-						<Button size="sm" variant="ghost" onPress={loadMail} isIconOnly aria-label="Refresh"><RefreshCw className="h-4 w-4" /></Button>
-						<Button size="sm" variant="primary" onPress={openNewMessage}><Send className="mr-1.5 h-3.5 w-3.5" />New</Button>
+					<div>
+						<h1 className="text-lg font-semibold">Mail</h1>
+						<p className="text-xs text-muted-foreground">
+							Open a conversation to read its complete thread.
+						</p>
+					</div>
+					<div
+						className="ml-auto flex items-center gap-1"
+						role="tablist"
+						aria-label="Mailbox"
+					>
+						{(["inbox", "sent", "archive"] as const).map((tab) => (
+							<Button
+								key={tab}
+								size="sm"
+								variant={activeTab === tab ? "primary" : "ghost"}
+								onPress={() => {
+									setActiveTab(tab);
+									dispatchMailList({ type: "reset" });
+								}}
+							>
+								{tab === "inbox" ? (
+									<Inbox className="mr-1 h-3.5 w-3.5" />
+								) : tab === "sent" ? (
+									<Send className="mr-1 h-3.5 w-3.5" />
+								) : (
+									<Archive className="mr-1 h-3.5 w-3.5" />
+								)}
+								{tab}
+								{tab === "inbox" && inbox?.pagination.unread ? (
+									<Chip size="sm" color="danger" className="ml-1">
+										{inbox.pagination.unread}
+									</Chip>
+								) : null}
+							</Button>
+						))}
+						<Button
+							size="sm"
+							variant="ghost"
+							onPress={loadMail}
+							isIconOnly
+							aria-label="Refresh"
+						>
+							<RefreshCw className="h-4 w-4" />
+						</Button>
+						<Button size="sm" variant="primary" onPress={openNewMessage}>
+							<Send className="mr-1.5 h-3.5 w-3.5" />
+							New
+						</Button>
 					</div>
 				</header>
-				<div className="min-h-0 flex-1 overflow-auto p-4" data-mail-scroll-region><Card className="min-h-full rounded-lg"><CardContent className="p-0"><MailThreadGrid threads={threads} expandedThreadIds={expandedThreadIds} focusedThreadId={focusedThreadId} sentMessageIds={sentMessageIds} formatDate={formatDate} onToggle={toggleThreadExpansion} onFocus={focusThread} onReply={replyToThread} /></CardContent></Card></div>
+				<div
+					className="min-h-0 flex-1 overflow-auto p-4"
+					data-mail-scroll-region
+				>
+					<Card className="min-h-full rounded-lg">
+						<CardContent className="p-0">
+							<MailThreadGrid
+								threads={threads}
+								expandedThreadIds={expandedThreadIds}
+								focusedThreadId={focusedThreadId}
+								sentMessageIds={sentMessageIds}
+								formatDate={formatDate}
+								onToggle={toggleThreadExpansion}
+								onFocus={focusThread}
+								onReply={replyToThread}
+							/>
+						</CardContent>
+					</Card>
+				</div>
 			</div>
 		);
 	}
@@ -835,16 +1077,16 @@ export function MailPage() {
 						}}
 						className="capitalize"
 					>
-				{tab === "inbox" ? <Inbox className="h-3 w-3 mr-1" /> : null}
-					{tab === "sent" ? <Send className="h-3 w-3 mr-1" /> : null}
-					{tab === "archive" ? <Archive className="h-3 w-3 mr-1" /> : null}
-					<span>{tab}</span>
-					{tab === "inbox" ? (
-						<Chip size="sm" color="danger" className="ml-1">
-							{threads.reduce((sum, t) => sum + t.unreadCount, 0)}
-						</Chip>
-					) : null}
-				</Button>
+						{tab === "inbox" ? <Inbox className="h-3 w-3 mr-1" /> : null}
+						{tab === "sent" ? <Send className="h-3 w-3 mr-1" /> : null}
+						{tab === "archive" ? <Archive className="h-3 w-3 mr-1" /> : null}
+						<span>{tab}</span>
+						{tab === "inbox" ? (
+							<Chip size="sm" color="danger" className="ml-1">
+								{threads.reduce((sum, t) => sum + t.unreadCount, 0)}
+							</Chip>
+						) : null}
+					</Button>
 				))}
 			</div>
 
@@ -869,8 +1111,7 @@ export function MailPage() {
 											role="button"
 											tabIndex={0}
 											className={`w-full py-2 px-3 cursor-pointer hover:bg-accent/5 transition-colors rounded-none ${
-												thread.unreadCount > 0 &&
-												selectedThreadId !== thread.id
+												thread.unreadCount > 0 && selectedThreadId !== thread.id
 													? "bg-accent/5"
 													: ""
 											} ${

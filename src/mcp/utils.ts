@@ -432,6 +432,7 @@ export async function getPendingTasks(): Promise<Task[]> {
       AND (
         assigned_to = ?           -- Tasks assigned to this arm
         OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+        OR assigned_to = ''       -- Legacy: legacy empty string means unassigned
       )
       ORDER BY
         CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
@@ -526,6 +527,7 @@ export async function getMyInstructions(): Promise<{
       AND (
         assigned_to = ?           -- Tasks assigned to this arm
         OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+        OR assigned_to = ''       -- Legacy: legacy empty string means unassigned
       )
       ORDER BY
         CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
@@ -721,13 +723,13 @@ export function getTaskReferenceHint(): string {
 		const database = getDatabase();
 		const rows = database
 			.query(
-				`SELECT id
-				 FROM tasks
-				 WHERE status IN ('pending', 'claimed', 'in_progress')
-				 AND (assigned_to = ? OR assigned_to IS NULL)
-				 ORDER BY
-				   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
-				   updated_at DESC
+					`SELECT id
+					 FROM tasks
+					 WHERE status IN ('pending', 'claimed', 'in_progress')
+					 AND (assigned_to = ? OR assigned_to IS NULL OR assigned_to = '')
+					 ORDER BY
+					   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
+					   updated_at DESC
 				 LIMIT 3`,
 			)
 			.all(ARM_ID, ARM_ID) as Array<{ id: string }>;
