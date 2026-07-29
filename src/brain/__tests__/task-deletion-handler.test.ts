@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdir, rm, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import { Brain } from "../brain";
-import { initDatabase, type Database } from "../../db";
 import type { QueueMessage } from "../../types";
 
 function nowIso() {
@@ -11,7 +10,6 @@ function nowIso() {
 
 describe("Task Deletion Handler", () => {
   let testDir: string;
-  let db: Database;
   let brain: Brain;
   let logActivityCalls: Array<{
     actor: string;
@@ -25,25 +23,15 @@ describe("Task Deletion Handler", () => {
     data?: Record<string, unknown>;
   }>;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     testDir = join("/tmp", `coleo-task-deletion-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-
-    await mkdir(join(testDir, "mail", "inbox", "new"), { recursive: true });
-    await mkdir(join(testDir, "mail", "inbox", "cur"), { recursive: true });
-    await mkdir(join(testDir, "mail", "inbox", "tmp"), { recursive: true });
-
-    db = await initDatabase(join(testDir, "coleo.db"));
 
     brain = new Brain({
       coleoDir: testDir,
+      projectRoot: testDir,
       pollIntervalMs: 1000,
       verbose: false,
     });
-
-    (brain as any).db = db;
-
-    // Ensure templates are available
-    await (brain as any).templates.ensureTemplatesExist();
 
     // Mock logging and event publishing
     logActivityCalls = [];
