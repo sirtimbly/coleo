@@ -1,5 +1,5 @@
 # Coleo Configuration
-# Updated: 2026-07-10T21:37:27.917Z
+# Updated: 2026-07-29T19:45:25.028Z
 
 version = 1
 
@@ -7,6 +7,8 @@ version = 1
 poll_interval_ms = 30000
 max_arms = 8
 arm_grace_period_minutes = 2
+provider = "openai"
+model = "gpt-5.6-luna"
 
 [refactoring]
 file_size_threshold = 400
@@ -20,7 +22,13 @@ enabled = true
 min_interval_hours = 24
 require_empty_queue = true
 
+[maintenance]
+enabled = true
+task_prefix = "Maintenance"
+tasks = []
+
 [mail]
+provider = "cloudflare"
 from_address = "brain@coleo.local"
 to_address = ""
 digest_schedule = "immediate"
@@ -35,9 +43,9 @@ update_enabled = true
 
 [defaults]
 harness = "opencode"
-provider = "github-copilot"
-model = "claude-sonnet-5"
-context_budget = 300000
+provider = "openai"
+model = "gpt-5.3-codex-spark"
+context_budget = 240000
 
 [compression]
 warning_threshold = 80
