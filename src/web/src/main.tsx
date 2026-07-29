@@ -11,7 +11,13 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <PersistQueryClientProvider 
       client={queryClient} 
-      persistOptions={{ persister }}
+      persistOptions={{
+        persister,
+        buster: '2026-07-query-cache-v2',
+        dehydrateOptions: {
+          shouldDehydrateQuery: (query) => query.queryKey[0] !== 'tasks',
+        },
+      }}
     >
       <App />
       <Toast.Container placement="bottom end" />

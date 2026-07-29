@@ -11,11 +11,12 @@
 import { useInfiniteQuery, useMutation, useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { api, type Task } from '@/lib/api';
 import { tasksKeys } from '@/lib/queryKeys';
+import { patchTaskInQueryData } from '@/lib/task-query-cache';
 import { useToast } from '@/hooks/useToast';
 import { useMemo } from 'react';
 
-type TaskListResponse = Awaited<ReturnType<typeof api.listTasks>>;
-type TaskListQueryData = InfiniteData<TaskListResponse>;
+export type TaskListResponse = Awaited<ReturnType<typeof api.listTasks>>;
+export type TaskListQueryData = InfiniteData<TaskListResponse>;
 
 // Types
 interface TaskFilters {
@@ -56,19 +57,19 @@ interface CreateTaskVariables {
 const PAGE_SIZE = 100;
 
 // Hook
-export function useTasks(filters?: TaskFilters) {
+export function useTasks(filters?: TaskFilters, enabled = true) {
   const queryClient = useQueryClient();
   const { showError } = useToast();
 
   // Infinite Query: List tasks with filters
   const tasksQuery = useInfiniteQuery({
     queryKey: tasksKeys.list(filters ?? {}),
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam = 0, signal }) => {
       const response = await api.listTasks({
         ...filters,
         limit: PAGE_SIZE,
         offset: pageParam,
-      });
+      }, signal);
       return response;
     },
     getNextPageParam: (lastPage) => {
@@ -78,6 +79,7 @@ export function useTasks(filters?: TaskFilters) {
       return nextOffset < total ? nextOffset : undefined;
     },
     initialPageParam: 0,
+    enabled,
   });
 
   // Flatten all pages into a single array
@@ -118,21 +120,16 @@ export function useTasks(filters?: TaskFilters) {
       // Optimistically update across all pages
       queryClient.setQueryData(
         tasksKeys.list(filters ?? {}),
-        (old: TaskListQueryData | undefined) => {
-          if (!old) return old;
-          return {
-            ...old,
-            pages: old.pages.map(page => ({
-              ...page,
-              tasks: page.tasks.map((task: Task) =>
-                task.id === id ? { ...task, ...updates } : task
-              ),
-            })),
-          };
-        }
+        (old: TaskListQueryData | undefined) => patchTaskInQueryData(old, id, updates),
       );
 
       return { previousData };
+    },
+    onSuccess: (task) => {
+      queryClient.setQueryData(
+        tasksKeys.list(filters ?? {}),
+        (old: TaskListQueryData | undefined) => patchTaskInQueryData(old, task.id, task),
+      );
     },
     onError: (err, _variables, context) => {
       // Rollback on error
@@ -140,10 +137,6 @@ export function useTasks(filters?: TaskFilters) {
         queryClient.setQueryData(tasksKeys.list(filters ?? {}), context.previousData);
       }
       showError(`Failed to update task: ${err.message}`, 'Update Failed');
-    },
-    onSettled: () => {
-      // Always refetch after error or success
-      queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
     },
   });
 
@@ -239,6 +232,7 @@ export function useTasks(filters?: TaskFilters) {
     // Infinite loading
     hasNextPage,
     isFetchingNextPage,
+    isFetchNextPageError: tasksQuery.isFetchNextPageError,
     fetchNextPage,
 
     // Mutations

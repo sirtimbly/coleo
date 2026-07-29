@@ -93,6 +93,8 @@ interface TaskGridProps {
   onReorder?: (taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => void;
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
+  isLoadMoreError?: boolean;
+  isExternallyFiltered?: boolean;
   onLoadMore?: () => void | Promise<unknown>;
   className?: string;
 }
@@ -215,6 +217,8 @@ export function TaskGrid({
   onReorder,
   hasNextPage = false,
   isFetchingNextPage = false,
+  isLoadMoreError = false,
+  isExternallyFiltered = false,
   onLoadMore,
   className,
 }: TaskGridProps) {
@@ -273,29 +277,41 @@ export function TaskGrid({
     sorting.length === 0 || (sorting.length === 1 && sorting[0]?.id === 'order' && sorting[0].desc === false);
   const canReorder = !hasActiveFilters && hasCanonicalSorting;
   const virtualItemCount = displayRows.length > 0 || hasNextPage ? displayRows.length + 1 : 0;
+  const getVirtualItemKey = useCallback(
+    (index: number) => displayRows[index]?.id ?? 'task-grid-end',
+    [displayRows],
+  );
   const rowVirtualizer = useVirtualizer({
     count: virtualItemCount,
     getScrollElement: () => containerRef.current,
     estimateSize: (index) => index < displayRows.length ? 56 : 48,
-    getItemKey: (index) => displayRows[index]?.id ?? 'task-grid-end',
+    getItemKey: getVirtualItemKey,
     overscan: 10,
   });
   const virtualItems = rowVirtualizer.getVirtualItems();
   const lastVirtualIndex = virtualItems.at(-1)?.index ?? -1;
 
   const handleToggleExpanded = useCallback((taskId: string) => {
-    setExpandedTaskId((current) => current === taskId ? null : taskId);
-  }, []);
+    if (expandedTaskId) {
+      const previousIndex = displayRows.findIndex((row) => row.id === expandedTaskId);
+      if (previousIndex >= 0) rowVirtualizer.resizeItem(previousIndex, 56);
+    }
+    setExpandedTaskId(expandedTaskId === taskId ? null : taskId);
+  }, [displayRows, expandedTaskId, rowVirtualizer]);
 
   useEffect(() => {
     if (
       hasNextPage &&
       !isFetchingNextPage &&
+      !isLoadMoreError &&
+      !isExternallyFiltered &&
+      !hasActiveFilters &&
+      (rowVirtualizer.scrollRect?.height ?? 0) > 0 &&
       lastVirtualIndex >= Math.max(0, displayRows.length - 10)
     ) {
       void onLoadMore?.();
     }
-  }, [displayRows.length, hasNextPage, isFetchingNextPage, lastVirtualIndex, onLoadMore]);
+  }, [displayRows.length, hasActiveFilters, hasNextPage, isExternallyFiltered, isFetchingNextPage, isLoadMoreError, lastVirtualIndex, onLoadMore, rowVirtualizer.scrollRect?.height]);
 
   // Scroll to newly created task
   useEffect(() => {
@@ -324,7 +340,7 @@ export function TaskGrid({
   }, [tasks]);
 
   // Memoize task IDs for SortableContext
-  const taskIds = displayRows.map((row) => row.id);
+  const taskIds = useMemo(() => displayRows.map((row) => row.id), [displayRows]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -527,7 +543,6 @@ export function TaskGrid({
                     return (
                       <div
                         key="task-grid-end"
-                        ref={rowVirtualizer.measureElement}
                         data-index={virtualRow.index}
                         className="absolute left-0 top-0 w-full"
                         style={{ transform: `translateY(${virtualRow.start}px)` }}
@@ -556,7 +571,7 @@ export function TaskGrid({
                   return (
                     <div
                       key={task.id}
-                      ref={rowVirtualizer.measureElement}
+                      ref={task.id === expandedTaskId ? rowVirtualizer.measureElement : undefined}
                       data-index={virtualRow.index}
                       className="absolute left-0 top-0 w-full"
                       style={{ transform: `translateY(${virtualRow.start}px)` }}

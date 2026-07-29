@@ -528,6 +528,7 @@ export function BugsPage() {
 			<StatusBurndownChart
 				entity="bug"
 				refreshKey={burndownRefresh}
+				defaultExpanded={false}
 				className="shrink-0 rounded-none border-x-0 border-t-0"
 			/>
 
@@ -535,6 +536,7 @@ export function BugsPage() {
 				title="Bug list"
 				meta={`${bugs.length} bugs`}
 				fill
+				unmountOnCollapse
 				className="rounded-none border-x-0 border-y-0"
 				bodyClassName="flex h-full min-h-0 p-0"
 			>

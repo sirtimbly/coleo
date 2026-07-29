@@ -912,7 +912,7 @@ class ApiClient {
     sourceType?: string;
     limit?: number;
     offset?: number;
-  }) {
+  }, signal?: AbortSignal) {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.priority) query.set('priority', params.priority);
@@ -927,7 +927,7 @@ class ApiClient {
       tasks: Task[];
       pagination: { limit: number; offset: number; total: number };
       counts: { total: number; byStatus: Record<string, number> };
-    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`);
+    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`, { signal });
   }
 
   async getTask(id: string) {
@@ -1040,9 +1040,9 @@ class ApiClient {
     start: string;
     end: string;
     resolution: StatusSeriesResolution;
-  }) {
+  }, signal?: AbortSignal) {
     const search = new URLSearchParams(params);
-    return this.request<StatusSeriesResponse>(`/status-series?${search}`);
+    return this.request<StatusSeriesResponse>(`/status-series?${search}`, { signal });
   }
 
   async getTaskBlockingBugs(taskId: string) {

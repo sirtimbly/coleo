@@ -111,14 +111,17 @@ export function TaskModal({
         setBlockedNeedsHuman(false);
       }
       setError(null);
-      setTimeout(() => subjectRef.current?.focus(), 100);
+      const focusTimeout = window.setTimeout(() => subjectRef.current?.focus(), 100);
+      return () => window.clearTimeout(focusTimeout);
     }
   }, [initialStatus, isOpen, task]);
 
   // Handle escape key
   useEffect(() => {
+    if (!isOpen) return;
+
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
         onClose();
       }
     }

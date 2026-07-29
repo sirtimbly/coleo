@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { Disclosure } from '@heroui/react';
+import { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 
 import { cn } from '@/lib';
@@ -13,9 +12,10 @@ export interface CollapsibleSectionProps {
   meta?: ReactNode;
   appearance?: 'card' | 'flat';
   defaultExpanded?: boolean;
+  isExpanded?: boolean;
+  onExpandedChange?: (isExpanded: boolean) => void;
   fill?: boolean;
   unmountOnCollapse?: boolean;
-  disableAnimation?: boolean;
   className?: string;
   triggerClassName?: string;
   contentClassName?: string;
@@ -29,20 +29,27 @@ export function CollapsibleSection({
   meta,
   appearance = 'card',
   defaultExpanded = true,
+  isExpanded: controlledExpanded,
+  onExpandedChange,
   fill = false,
   unmountOnCollapse = false,
-  disableAnimation = false,
   className,
   triggerClassName,
   contentClassName,
   bodyClassName,
 }: CollapsibleSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const [internalExpanded, setInternalExpanded] = useState(defaultExpanded);
+  const isExpanded = controlledExpanded ?? internalExpanded;
+  const sectionId = useId();
+  const headingId = `${sectionId}-heading`;
+  const panelId = `${sectionId}-panel`;
+  const setIsExpanded = (next: boolean) => {
+    if (controlledExpanded === undefined) setInternalExpanded(next);
+    onExpandedChange?.(next);
+  };
 
   return (
-    <Disclosure
-      isExpanded={isExpanded}
-      onExpandedChange={setIsExpanded}
+    <section
       className={cn(
         'overflow-hidden shadow-none',
         appearance === 'card'
@@ -53,8 +60,12 @@ export function CollapsibleSection({
         className,
       )}
     >
-      <Disclosure.Heading>
-        <Disclosure.Trigger
+      <h2 id={headingId}>
+        <button
+          type="button"
+          aria-controls={panelId}
+          aria-expanded={isExpanded}
+          onClick={() => setIsExpanded(!isExpanded)}
           className={cn(
             'group flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-surface-secondary/60',
             appearance === 'card' ? 'px-4' : 'px-1',
@@ -68,28 +79,30 @@ export function CollapsibleSection({
             ) : null}
           </span>
           {meta ? <span className="shrink-0 text-xs font-normal text-muted-foreground">{meta}</span> : null}
-          <Disclosure.Indicator className="shrink-0 text-muted-foreground [&>svg]:size-4">
-            <ChevronDown />
-          </Disclosure.Indicator>
-        </Disclosure.Trigger>
-      </Disclosure.Heading>
-      <Disclosure.Content
-        className={cn(
-          fill && 'min-h-0 flex-1 overflow-hidden',
-          disableAnimation && '!transition-none',
-          contentClassName,
-        )}
-      >
-        <Disclosure.Body
-          className={cn(
-            appearance === 'card' ? 'p-4 pt-1' : 'px-0 py-4',
-            fill && 'h-full min-h-0',
-            bodyClassName,
-          )}
+          <ChevronDown
+            className={cn('size-4 shrink-0 text-muted-foreground transition-transform', isExpanded && 'rotate-180')}
+            aria-hidden="true"
+          />
+        </button>
+      </h2>
+      {!unmountOnCollapse || isExpanded ? (
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={headingId}
+          hidden={!isExpanded}
+          className={cn(fill && 'min-h-0 flex-1 overflow-hidden', contentClassName)}
         >
-          {!unmountOnCollapse || isExpanded ? children : null}
-        </Disclosure.Body>
-      </Disclosure.Content>
-    </Disclosure>
+          <div
+            className={cn(
+              fill ? 'h-full min-h-0' : appearance === 'card' ? 'p-4 pt-1' : 'px-0 py-4',
+              bodyClassName,
+            )}
+          >
+            {children}
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }

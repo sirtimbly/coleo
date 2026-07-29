@@ -115,34 +115,34 @@ export function StatusBurndownChart({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const rangeError = validateRange(draftRange, resolution);
   const noun = entity === 'task' ? 'tasks' : 'bugs';
 
   useEffect(() => {
-    let cancelled = false;
+    if (!isExpanded) return;
+
+    const controller = new AbortController();
     setLoading(true);
     api.getStatusSeries({
       entity,
       start: appliedRange.start,
       end: appliedRange.end,
       resolution,
-    })
+    }, controller.signal)
       .then((response) => {
-        if (cancelled) return;
         setData(response);
         setError(null);
       })
       .catch((reason: unknown) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         setError(reason instanceof Error ? reason.message : `Failed to load ${noun} burndown`);
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [appliedRange.end, appliedRange.start, entity, noun, refreshKey, resolution]);
+    return () => controller.abort();
+  }, [appliedRange.end, appliedRange.start, entity, isExpanded, noun, refreshKey, resolution]);
 
   const buckets = data?.buckets ?? [];
   const statuses = data?.statuses ?? Object.keys(STATUS_STYLES[entity]);
@@ -168,10 +168,10 @@ export function StatusBurndownChart({
     <CollapsibleSection
       title={entity === 'task' ? 'Task Burndown' : 'Bug Burndown'}
       description={`Status totals at each ${resolution} boundary`}
-      defaultExpanded={defaultExpanded}
+      isExpanded={isExpanded}
+      onExpandedChange={setIsExpanded}
       className={className}
       bodyClassName="space-y-4"
-      disableAnimation
       unmountOnCollapse
     >
         <div className="grid gap-2 lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_auto_auto] lg:items-end">

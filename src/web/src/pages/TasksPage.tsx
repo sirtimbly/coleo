@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import {
 	Plus,
 	Clock,
@@ -28,15 +28,17 @@ import {
 	type TaskMetadata,
 	type TaskUiMetadata,
 	cn,
+	isJsonObject,
 } from "@/lib";
 import { CollapsibleSection, RegenerateTasksModal, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
-import { useTasks } from "@/hooks/useTasks";
+import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
 import { tasksKeys } from "@/lib/queryKeys";
+import { patchTaskInQueryData } from "@/lib/task-query-cache";
 import { formatTimelineTime, selectTaskTimeline } from "./task-timeline";
 import {
 	useIsWorkspacePanel,
@@ -528,6 +530,10 @@ export function TasksPage() {
 	}>({ show: false, task: null });
 	const [newTaskId, setNewTaskId] = useState<string | null>(null);
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
+	const deferredSearchText = useDeferredValue(searchText);
+	const taskRefreshTimerRef = useRef<number | null>(null);
+	const pendingBurndownRefreshRef = useRef(false);
+	const newTaskHighlightTimerRef = useRef<number | null>(null);
 	const detailsTabId: SidebarTab = "details";
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
@@ -582,8 +588,11 @@ export function TasksPage() {
 		removeFromPlan,
 		hasNextPage,
 		isFetchingNextPage,
+		isFetchNextPageError,
 		fetchNextPage,
-	} = useTasks();
+	} = useTasks(undefined, !isNewTaskPage);
+	const tasksRef = useRef(tasks);
+	tasksRef.current = tasks;
 
 	const getTaskUiMeta = useCallback((task: Task): TaskUiMetadata => {
 		const ui = task.metadata.ui;
@@ -608,8 +617,8 @@ export function TasksPage() {
 	const filteredTasks = useMemo(() => {
 		let result = tasks;
 
-		if (searchText.trim()) {
-			const search = searchText.toLowerCase();
+		if (deferredSearchText.trim()) {
+			const search = deferredSearchText.toLowerCase();
 			result = result.filter(
 				(task) =>
 					task.subject.toLowerCase().includes(search) ||
@@ -619,7 +628,7 @@ export function TasksPage() {
 		}
 
 		return result;
-	}, [tasks, searchText]);
+	}, [deferredSearchText, tasks]);
 
 	useEffect(() => {
 		if (!isWorkspacePanel) return;
@@ -670,7 +679,7 @@ export function TasksPage() {
 
 	const handleUpdateUi = useCallback(
 		async (taskId: string, updates: TaskUiMetadata) => {
-			const target = tasks.find((task) => task.id === taskId);
+			const target = tasksRef.current.find((task) => task.id === taskId);
 			if (!target) return;
 			const currentUi = getTaskUiMeta(target);
 			const nextUi: TaskUiMetadata = {
@@ -686,7 +695,7 @@ export function TasksPage() {
 
 			updateTask({ id: taskId, updates: { metadata: nextMetadata } });
 		},
-		[tasks, getTaskUiMeta, updateTask],
+		[getTaskUiMeta, updateTask],
 	);
 
 	const handleDeleteTask = useCallback(
@@ -745,7 +754,13 @@ export function TasksPage() {
 				if (result?.id) {
 					setNewTaskId(result.id);
 					// Clear after 3 seconds
-					setTimeout(() => setNewTaskId(null), 3000);
+					if (newTaskHighlightTimerRef.current !== null) {
+						window.clearTimeout(newTaskHighlightTimerRef.current);
+					}
+					newTaskHighlightTimerRef.current = window.setTimeout(() => {
+						newTaskHighlightTimerRef.current = null;
+						setNewTaskId(null);
+					}, 3000);
 				}
 			} catch {
 				// Error is handled by the mutation
@@ -802,21 +817,23 @@ export function TasksPage() {
 
 	const handleRemoveTagFromTask = useCallback(
 		(taskId: string, tagToRemove: string) => {
-			const target = tasks.find((task) => task.id === taskId);
+			const target = tasksRef.current.find((task) => task.id === taskId);
 			if (!target) return;
 			const currentTags = getTaskUiMeta(target).tags ?? [];
 			const nextTags = currentTags.filter((tag) => tag !== tagToRemove);
 			handleUpdateUi(taskId, { tags: nextTags });
 		},
-		[tasks, getTaskUiMeta, handleUpdateUi],
+		[getTaskUiMeta, handleUpdateUi],
 	);
 
 	// Update selected task when tasks change
 	React.useEffect(() => {
-		if (!selectedTask) return;
-		const latest = tasks.find((task) => task.id === selectedTask.id) || null;
-		setSelectedTask(latest);
-	}, [tasks, selectedTask]);
+		setSelectedTask((current) => {
+			if (!current) return current;
+			const latest = tasks.find((task) => task.id === current.id) || null;
+			return latest === current ? current : latest;
+		});
+	}, [tasks]);
 
 	// Reset discussion count when selected task changes
 	React.useEffect(() => {
@@ -826,6 +843,28 @@ export function TasksPage() {
 		}
 		setDiscussionCount(0);
 	}, [selectedTask?.id]);
+
+	const scheduleTaskRefresh = useCallback((refreshBurndown: boolean) => {
+		pendingBurndownRefreshRef.current ||= refreshBurndown;
+		if (taskRefreshTimerRef.current !== null) return;
+
+		taskRefreshTimerRef.current = window.setTimeout(() => {
+			taskRefreshTimerRef.current = null;
+			void queryClient.invalidateQueries(
+				{ queryKey: tasksKeys.all(), refetchType: "active" },
+				{ cancelRefetch: false },
+			);
+			if (pendingBurndownRefreshRef.current) {
+				pendingBurndownRefreshRef.current = false;
+				setBurndownRefresh((current) => current + 1);
+			}
+		}, 250);
+	}, [queryClient]);
+
+	useEffect(() => () => {
+		if (taskRefreshTimerRef.current !== null) window.clearTimeout(taskRefreshTimerRef.current);
+		if (newTaskHighlightTimerRef.current !== null) window.clearTimeout(newTaskHighlightTimerRef.current);
+	}, []);
 
 	// Handle WebSocket messages for real-time updates
 	const handleWSMessage = useCallback(
@@ -837,22 +876,42 @@ export function TasksPage() {
 
 			switch (msg.event) {
 				case "task.created":
-				case "task.updated":
 				case "task.deleted":
 				case "tasks.regenerated":
-					// Invalidate queries to trigger refetch
-					queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
-					setBurndownRefresh((current) => current + 1);
+					scheduleTaskRefresh(true);
 					break;
+				case "task.updated": {
+					if (!isJsonObject(msg.data) || typeof msg.data.taskId !== "string" || !isJsonObject(msg.data.changes)) {
+						break;
+					}
+					const status = typeof msg.data.changes.status === "string" && isTaskStatus(msg.data.changes.status)
+						? msg.data.changes.status
+						: undefined;
+					const previousStatus = typeof msg.data.previousStatus === "string" && isTaskStatus(msg.data.previousStatus)
+						? msg.data.previousStatus
+						: undefined;
+					const taskId = msg.data.taskId;
+					const changes = {
+						...msg.data.changes,
+						...(status ? { status } : {}),
+					} as Partial<Task>;
+					queryClient.setQueriesData<TaskListQueryData>(
+						{ queryKey: tasksKeys.lists() },
+						(current) => patchTaskInQueryData(current, taskId, changes, previousStatus),
+					);
+					if (status) setBurndownRefresh((current) => current + 1);
+					break;
+				}
 			}
 		},
-		[queryClient],
+		[queryClient, scheduleTaskRefresh],
 	);
 
 	// Subscribe to tasks channel
 	useWebSocket({
 		channels: ["tasks"],
 		onMessage: handleWSMessage,
+		autoConnect: !isNewTaskPage && (!isWorkspacePanel || !searchParams.has("task")),
 	});
 
 	if (isNewTaskPage) {
@@ -922,6 +981,7 @@ export function TasksPage() {
 						<StatusBurndownChart
 							entity="task"
 							refreshKey={burndownRefresh}
+							defaultExpanded={false}
 							className="shrink-0 rounded-none border-x-0 border-t-0"
 						/>
 						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
@@ -929,6 +989,7 @@ export function TasksPage() {
 							title="Task list"
 							meta={`${pagination?.total ?? filteredTasks.length} tasks`}
 							fill
+							unmountOnCollapse
 							className="rounded-none border-x-0 border-y-0"
 							bodyClassName="p-0"
 						>
@@ -948,6 +1009,8 @@ export function TasksPage() {
 								onReorder={handleReorder}
 								hasNextPage={hasNextPage}
 								isFetchingNextPage={isFetchingNextPage}
+								isLoadMoreError={isFetchNextPageError}
+								isExternallyFiltered={deferredSearchText.trim().length > 0}
 								onLoadMore={fetchNextPage}
 							/>
 						</CollapsibleSection>
@@ -1112,6 +1175,7 @@ export function TasksPage() {
 			<StatusBurndownChart
 				entity="task"
 				refreshKey={burndownRefresh}
+				defaultExpanded={false}
 				className="shrink-0 rounded-none border-x-0 border-t-0"
 			/>
 
@@ -1121,6 +1185,7 @@ export function TasksPage() {
 				title="Task list"
 				meta={`${pagination?.total ?? filteredTasks.length} tasks`}
 				fill
+				unmountOnCollapse
 				className="rounded-none border-x-0 border-y-0"
 				bodyClassName="flex h-full min-h-0 p-0"
 			>
@@ -1152,6 +1217,8 @@ export function TasksPage() {
 								onReorder={handleReorder}
 								hasNextPage={hasNextPage}
 								isFetchingNextPage={isFetchingNextPage}
+								isLoadMoreError={isFetchNextPageError}
+								isExternallyFiltered={deferredSearchText.trim().length > 0}
 								onLoadMore={fetchNextPage}
 							/>
 						</div>
