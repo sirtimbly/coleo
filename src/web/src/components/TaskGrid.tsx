@@ -94,7 +94,6 @@ interface TaskGridProps {
   hasNextPage?: boolean;
   isFetchingNextPage?: boolean;
   isLoadMoreError?: boolean;
-  isExternallyFiltered?: boolean;
   onLoadMore?: () => void | Promise<unknown>;
   className?: string;
 }
@@ -218,7 +217,6 @@ export function TaskGrid({
   hasNextPage = false,
   isFetchingNextPage = false,
   isLoadMoreError = false,
-  isExternallyFiltered = false,
   onLoadMore,
   className,
 }: TaskGridProps) {
@@ -304,14 +302,12 @@ export function TaskGrid({
       hasNextPage &&
       !isFetchingNextPage &&
       !isLoadMoreError &&
-      !isExternallyFiltered &&
-      !hasActiveFilters &&
       (rowVirtualizer.scrollRect?.height ?? 0) > 0 &&
       lastVirtualIndex >= Math.max(0, displayRows.length - 10)
     ) {
       void onLoadMore?.();
     }
-  }, [displayRows.length, hasActiveFilters, hasNextPage, isExternallyFiltered, isFetchingNextPage, isLoadMoreError, lastVirtualIndex, onLoadMore, rowVirtualizer.scrollRect?.height]);
+  }, [displayRows.length, hasNextPage, isFetchingNextPage, isLoadMoreError, lastVirtualIndex, onLoadMore, rowVirtualizer.scrollRect?.height]);
 
   // Scroll to newly created task
   useEffect(() => {

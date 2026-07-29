@@ -2077,13 +2077,34 @@ INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, cha
 SELECT 'task', id, 'pending', created_at FROM tasks;
 
 INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
-SELECT 'task', id, status, updated_at FROM tasks WHERE status <> 'pending';
+SELECT
+  'task',
+  id,
+  status,
+  CASE status
+    WHEN 'claimed' THEN COALESCE(claimed_at, updated_at)
+    WHEN 'in_progress' THEN COALESCE(started_at, claimed_at, updated_at)
+    WHEN 'blocked' THEN COALESCE(blocked_at, updated_at)
+    WHEN 'completed' THEN COALESCE(completed_at, updated_at)
+    ELSE updated_at
+  END
+FROM tasks
+WHERE status <> 'pending';
 
 INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
 SELECT 'bug', id, 'open', created_at FROM bugs;
 
 INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
-SELECT 'bug', id, status, updated_at FROM bugs WHERE status <> 'open';
+SELECT
+  'bug',
+  id,
+  status,
+  CASE
+    WHEN status IN ('resolved', 'closed') THEN COALESCE(resolved_at, updated_at)
+    ELSE updated_at
+  END
+FROM bugs
+WHERE status <> 'open';
 
 CREATE TRIGGER IF NOT EXISTS tasks_status_history_insert
 AFTER INSERT ON tasks

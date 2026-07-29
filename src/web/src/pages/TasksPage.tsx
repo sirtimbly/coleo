@@ -1000,7 +1000,6 @@ export function TasksPage() {
 								hasNextPage={hasNextPage}
 								isFetchingNextPage={isFetchingNextPage}
 								isLoadMoreError={isFetchNextPageError}
-								isExternallyFiltered={deferredSearchText.trim().length > 0}
 								onLoadMore={fetchNextPage}
 							/>
 						</CollapsibleSection>
@@ -1202,7 +1201,6 @@ export function TasksPage() {
 								hasNextPage={hasNextPage}
 								isFetchingNextPage={isFetchingNextPage}
 								isLoadMoreError={isFetchNextPageError}
-								isExternallyFiltered={deferredSearchText.trim().length > 0}
 								onLoadMore={fetchNextPage}
 							/>
 						</div>

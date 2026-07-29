@@ -43,4 +43,67 @@ describe("database migrations", () => {
 		expect(rows[0]?.order_key).toBe("a0000000001");
 		expect(rows[29]?.order_key).toBe("a0000000030");
 	});
+
+	it("backfills entity status history from lifecycle timestamps", async () => {
+		const dir = join(tmpdir(), `coleo-migration-${crypto.randomUUID()}`);
+		testDirs.push(dir);
+		const dbPath = join(dir, "coleo.db");
+		const db = await initDatabase(dbPath);
+		const createdAt = "2026-07-01T00:00:00.000Z";
+		const updatedAt = "2026-07-20T00:00:00.000Z";
+		const lifecycleTimes = {
+			claimed: "2026-07-02T00:00:00.000Z",
+			inProgress: "2026-07-03T00:00:00.000Z",
+			blocked: "2026-07-04T00:00:00.000Z",
+			completed: "2026-07-05T00:00:00.000Z",
+			resolved: "2026-07-06T00:00:00.000Z",
+		};
+
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, created_at, updated_at, claimed_at)
+			 VALUES ('task-claimed', 'Claimed', '', 'claimed', ?, ?, ?)`,
+			[createdAt, updatedAt, lifecycleTimes.claimed],
+		);
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, created_at, updated_at, claimed_at, started_at)
+			 VALUES ('task-progress', 'In progress', '', 'in_progress', ?, ?, ?, ?)`,
+			[createdAt, updatedAt, lifecycleTimes.claimed, lifecycleTimes.inProgress],
+		);
+		db.run(
+			`INSERT INTO tasks (
+				id, subject, description, status, created_at, updated_at, blocked_at, blocked_reason, blocked_category
+			) VALUES ('task-blocked', 'Blocked', '', 'blocked', ?, ?, ?, 'Waiting', 'dependency')`,
+			[createdAt, updatedAt, lifecycleTimes.blocked],
+		);
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, created_at, updated_at, completed_at)
+			 VALUES ('task-completed', 'Completed', '', 'completed', ?, ?, ?)`,
+			[createdAt, updatedAt, lifecycleTimes.completed],
+		);
+		db.run(
+			`INSERT INTO bugs (id, title, description, source, status, created_at, updated_at, resolved_at)
+			 VALUES ('bug-resolved', 'Resolved', '', 'human_reported', 'resolved', ?, ?, ?)`,
+			[createdAt, updatedAt, lifecycleTimes.resolved],
+		);
+		db.run("DELETE FROM entity_status_history");
+		db.run("DELETE FROM _migrations WHERE name = '063_entity_status_history'");
+		db.close();
+
+		const migrated = await initDatabase(dbPath);
+		const changedAtByEntity = Object.fromEntries(
+			(migrated.query(
+				`SELECT entity_id, changed_at FROM entity_status_history
+				 WHERE status NOT IN ('pending', 'open')`,
+			).all() as Array<{ entity_id: string; changed_at: string }>).map((row) => [row.entity_id, row.changed_at]),
+		);
+		migrated.close();
+
+		expect(changedAtByEntity).toEqual({
+			"task-claimed": lifecycleTimes.claimed,
+			"task-progress": lifecycleTimes.inProgress,
+			"task-blocked": lifecycleTimes.blocked,
+			"task-completed": lifecycleTimes.completed,
+			"bug-resolved": lifecycleTimes.resolved,
+		});
+	});
 });
