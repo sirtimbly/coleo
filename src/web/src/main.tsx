@@ -20,7 +20,7 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <App />
-      <Toast.Container placement="bottom end" />
+      <Toast.Provider placement="bottom end" />
       {isLocalhost && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
   </StrictMode>,

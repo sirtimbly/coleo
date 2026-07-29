@@ -142,6 +142,9 @@ This section is for contributors running Coleo from source. For regular usage, i
 
 ### Setup
 
+Dependencies are managed with Bun from the repository root. The root `bun.lock` covers the CLI/server, docs
+toolchain, and the `src/web` workspace; do not create nested lockfiles.
+
 ```bash
 # Clone and install dependencies
 git clone https://github.com/sirtimbly/coleo.git

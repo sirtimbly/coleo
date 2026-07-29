@@ -76,3 +76,4 @@ docs/.vitepress/cache/deps
 # Database backups
 .coleo/*.db.backup-*
 .kilocode/package-lock.json
+.opencode/package-lock.json
