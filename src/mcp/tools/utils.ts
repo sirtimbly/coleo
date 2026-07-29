@@ -646,7 +646,7 @@ export function ensureArmRegistered(): void {
 				"general", // domain - can be updated later
 				"manual", // harness - indicates manually started
 				"running", // status
-				100000, // context_budget
+				300000, // context_budget
 				0, // current_context_used
 				now,
 				now,

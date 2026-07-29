@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS arms (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -304,7 +304,7 @@ CREATE TABLE arms_new (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped', 'starting', 'running')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -344,7 +344,7 @@ CREATE TABLE IF NOT EXISTS arms_new (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped', 'starting', 'running')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -621,7 +621,7 @@ CREATE INDEX IF NOT EXISTS idx_ctx_comp_time ON context_compressions(timestamp D
 
 -- Add context_budget_total and context_budget_used columns to arms
 -- These track the total budget allocated vs actual usage for cost optimization
-ALTER TABLE arms ADD COLUMN context_budget_total INTEGER DEFAULT 128000;
+ALTER TABLE arms ADD COLUMN context_budget_total INTEGER DEFAULT 300000;
 ALTER TABLE arms ADD COLUMN context_budget_used REAL DEFAULT 0;
 
 -- Context budget thresholds config
@@ -1788,7 +1788,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "general",
       harness: "opencode-api",
       status: "idle",
-      context_budget: 100000,
+      context_budget: 300000,
       current_context_used: 45000,
       created_at: now,
       updated_at: now,
@@ -1809,7 +1809,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "frontend",
       harness: "opencode-api",
       status: "idle",
-      context_budget: 150000,
+      context_budget: 300000,
       current_context_used: 62000,
       created_at: now,
       updated_at: now,
@@ -1830,7 +1830,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "backend",
       harness: "opencode-api",
       status: "busy",
-      context_budget: 200000,
+      context_budget: 300000,
       current_context_used: 125000,
       created_at: now,
       updated_at: now,

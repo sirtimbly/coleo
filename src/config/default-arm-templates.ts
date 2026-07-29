@@ -10,7 +10,7 @@ export const DEFAULT_ARM_TEMPLATES = {
   harness: opencode-api
 
 context:
-  budget: 100000
+  budget: 300000
 
 personality:
   traits: Adaptable, pragmatic, and clear about tradeoffs.
@@ -21,7 +21,7 @@ personality:
   harness: opencode-api
 
 context:
-  budget: 120000
+  budget: 300000
 
 personality:
   traits: Implementation-focused, methodical, and attentive to integration details.
@@ -32,7 +32,7 @@ personality:
   harness: opencode-api
 
 context:
-  budget: 100000
+  budget: 300000
 
 personality:
   traits: Evidence-driven, skeptical, and precise about risks and regressions.

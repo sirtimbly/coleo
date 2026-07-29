@@ -804,7 +804,7 @@ function parseArmTemplateYaml(content: string): ArmTemplate {
     name: "",
     domain: "general",
     harness: "opencode-api",
-    contextBudget: 100000,
+    contextBudget: 300000,
     config: {},
   };
 
@@ -895,7 +895,7 @@ function parseArmTemplate(content: string): ArmTemplate {
     name: "",
     domain: "general",
     harness: "opencode-api",
-    contextBudget: 100000,
+    contextBudget: 300000,
     config: {},
   };
 
@@ -938,7 +938,7 @@ function parseArmTemplate(content: string): ArmTemplate {
   if (!result.name && nameMatch?.[1]) result.name = nameMatch[1];
   if (result.domain === "general" && domainMatch?.[1]) result.domain = domainMatch[1];
   if (result.harness === "opencode-api" && harnessMatch?.[1]) result.harness = harnessMatch[1];
-  if (result.contextBudget === 100000 && budgetMatch?.[1]) {
+  if (result.contextBudget === 300000 && budgetMatch?.[1]) {
     result.contextBudget = parseInt(budgetMatch[1], 10);
   }
   if (!result.personality && traitsMatch?.[1]) result.personality = traitsMatch[1];

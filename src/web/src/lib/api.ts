@@ -1751,6 +1751,7 @@ export interface ArmMessagePart {
   type: string;
   id?: string;
   text?: string;
+  content?: string;
   tool?: string;
   toolName?: string;
   name?: string;
@@ -1760,6 +1761,7 @@ export interface ArmMessagePart {
   time?: JsonValue;
   result?: JsonValue;
   error?: JsonValue;
+  reason?: string;
 }
 
 export interface ArmMessage {

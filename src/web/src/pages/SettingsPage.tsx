@@ -28,7 +28,7 @@ export function SettingsPage() {
     harness: 'opencode-api',
     provider: '',
     model: '',
-    contextBudget: 100000,
+    contextBudget: 300000,
   });
   const [armDefaultsSaved, setArmDefaultsSaved] = useState(false);
   const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
@@ -336,7 +336,7 @@ export function SettingsPage() {
                 value={armDefaults.contextBudget}
                 onChange={(event) => setArmDefaults((current) => ({
                   ...current,
-                  contextBudget: Number.parseInt(event.target.value, 10) || 100000,
+                  contextBudget: Number.parseInt(event.target.value, 10) || 300000,
                 }))}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               />

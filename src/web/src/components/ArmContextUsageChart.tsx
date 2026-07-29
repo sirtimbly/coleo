@@ -28,6 +28,8 @@ export type { ContextSample };
 
 interface ArmContextUsageChartProps {
   armId: string | null;
+  contextBudget?: number;
+  onContextBudgetChange?: (contextBudget: number) => Promise<void>;
   samples?: ContextSample[];
   range?: { start: number; end: number };
   title?: string;
@@ -90,6 +92,8 @@ function saveStoredSamples(armId: string, samples: ContextSample[]): void {
 
 export function ArmContextUsageChart({
   armId,
+  contextBudget,
+  onContextBudgetChange,
   samples: externalSamples,
   range,
   title = 'Context Usage',
@@ -101,7 +105,15 @@ export function ArmContextUsageChart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
+  const [budgetInput, setBudgetInput] = useState('');
+  const [budgetSaving, setBudgetSaving] = useState(false);
+  const [budgetError, setBudgetError] = useState<string | null>(null);
   const storedRef = useRef<ContextSample[]>([]);
+
+  useEffect(() => {
+    setBudgetInput(contextBudget ? String(contextBudget) : '');
+    setBudgetError(null);
+  }, [contextBudget]);
 
   useEffect(() => {
     if (externalSamples) {
@@ -227,6 +239,25 @@ export function ArmContextUsageChart({
 
   const hoveredSample = hovered === null ? null : visibleSamples[hovered] ?? null;
 
+  const saveContextBudget = async (): Promise<void> => {
+    const nextBudget = Number(budgetInput);
+    if (!Number.isSafeInteger(nextBudget) || nextBudget < 1) {
+      setBudgetError('Enter a positive whole-number token budget.');
+      return;
+    }
+    if (!onContextBudgetChange) return;
+
+    setBudgetSaving(true);
+    setBudgetError(null);
+    try {
+      await onContextBudgetChange(nextBudget);
+    } catch (err) {
+      setBudgetError(err instanceof Error ? err.message : 'Failed to update context budget.');
+    } finally {
+      setBudgetSaving(false);
+    }
+  };
+
   const inner = (
     <div className="space-y-2 text-sm">
       <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -257,6 +288,37 @@ export function ArmContextUsageChart({
             </span>
           </>
         )}
+
+        {onContextBudgetChange ? (
+          <form
+            className="ml-auto flex flex-wrap items-center gap-1.5"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveContextBudget();
+            }}
+          >
+            <label className="flex items-center gap-1 font-medium text-muted-foreground">
+              <span>Budget</span>
+              <input
+                type="number"
+                min={1}
+                step={1000}
+                value={budgetInput}
+                onChange={(event) => setBudgetInput(event.target.value)}
+                className="h-7 w-24 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:ring-2 focus:ring-accent"
+                aria-label="Context budget"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={budgetSaving}
+              className="h-7 rounded-md border border-border px-2 text-xs font-medium text-foreground transition-colors hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {budgetSaving ? 'Saving' : 'Save'}
+            </button>
+            {budgetError ? <span className="text-danger">{budgetError}</span> : null}
+          </form>
+        ) : null}
       </div>
 
       {loading && visibleSamples.length === 0 ? (

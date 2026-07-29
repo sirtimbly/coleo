@@ -591,7 +591,7 @@ domain = "frontend"  # general, frontend, backend, infrastructure, etc.
 harness = "opencode"  # Agent harness type
 
 [context]
-budget = 100000       # Max context tokens
+budget = 300000       # Max context tokens
 priority_files = [    # Files this arm should focus on
   "src/web/**",
   "*.tsx",

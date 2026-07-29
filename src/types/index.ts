@@ -524,7 +524,7 @@ export const DEFAULT_CONFIG: ColeoConfig = {
     harness: "opencode-api",
     provider: "opencode",
     model: "gpt-5.1-codex-mini",
-    contextBudget: 100000,
+    contextBudget: 300000,
   },
   compression: {
     warningThreshold: 80,
