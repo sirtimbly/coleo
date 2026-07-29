@@ -11,9 +11,12 @@ import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import type { FileTreeRowDecoration } from '@pierre/trees';
 import './setup-page.css';
 
-const EDITABLE_FILE = /\.(md|markdown|txt)$/i;
+const EDITABLE_FILE = /\.(md|markdown|txt|toml|jinja)$/i;
 const MARKDOWN_FILE = /\.(md|markdown)$/i;
+const TOML_FILE = /\.toml$/i;
+const JINJA_FILE = /\.jinja$/i;
 const PLAN_DIRECTORY = '.project';
+const CANONICAL_PLAN_PATH = `${PLAN_DIRECTORY}/plan.md`;
 const TEMPLATE_DIRECTORY = '.coleo/templates';
 const EXPANDED_DIRECTORIES = [PLAN_DIRECTORY, '.coleo', TEMPLATE_DIRECTORY] as const;
 
@@ -37,7 +40,7 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
     };
   }
   return {
-    path: `${PLAN_DIRECTORY}/plan.md`,
+    path: CANONICAL_PLAN_PATH,
     content: status.defaultContent,
     expectedHash: null,
     savedContent: '',
@@ -108,6 +111,7 @@ export function SetupPage() {
   const [saving, setSaving] = useState(false);
   const [preparing, setPreparing] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
+  const [showRegeneratedTasksBanner, setShowRegeneratedTasksBanner] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
@@ -141,11 +145,13 @@ export function SetupPage() {
   }, [load]);
 
   const dirty = useMemo(() => editor ? editor.content !== editor.savedContent : false, [editor]);
+  const projectTree = status?.projectTree;
+  const editorPath = editor?.path;
   const treePaths = useMemo(() => {
-    const paths = new Set(status?.projectTree ?? []);
-    if (editor && !paths.has(editor.path)) paths.add(editor.path);
-    return [...paths].sort();
-  }, [status, editor]);
+    const paths = projectTree ?? [];
+    if (!editorPath || paths.includes(editorPath)) return paths;
+    return [...paths, editorPath].sort();
+  }, [editorPath, projectTree]);
   const modifiedAtByPath = useMemo(() => {
     const map = new Map<string, string>();
     for (const document of status?.projectDocuments ?? []) map.set(document.path, document.modifiedAt);
@@ -183,7 +189,7 @@ export function SetupPage() {
   const selectPath = (path: string): boolean => {
     if (!editor) return false;
     if (!EDITABLE_FILE.test(path)) {
-      setHint('Only .md and .txt files can be viewed and edited here. Every other file is listed so you can verify the checkout downloaded completely.');
+      setHint('Only .md, .txt, .toml, and .jinja files can be viewed and edited here. Every other file is listed so you can verify the checkout downloaded completely.');
       return false;
     }
     if (path === editor.path) return true;
@@ -208,7 +214,7 @@ export function SetupPage() {
     if (!status) return;
     if (dirty && !window.confirm('Discard your unsaved edits and start a new plan?')) return;
     setEditor({
-      path: `${PLAN_DIRECTORY}/plan.md`,
+      path: CANONICAL_PLAN_PATH,
       content: status.defaultContent,
       expectedHash: status.canonicalPlan?.contentHash ?? null,
       savedContent: status.canonicalPlan?.content ?? '',
@@ -246,7 +252,7 @@ export function SetupPage() {
           : [...current.projectTree, file.path].sort();
         return {
           ...current,
-          canonicalPlan: file.path === `${PLAN_DIRECTORY}/plan.md` ? file : current.canonicalPlan,
+          canonicalPlan: file.path === CANONICAL_PLAN_PATH ? file : current.canonicalPlan,
           projectDocuments,
           projectTree,
         };
@@ -324,6 +330,9 @@ export function SetupPage() {
   }
 
   const isMarkdown = MARKDOWN_FILE.test(editor.path);
+  const isToml = TOML_FILE.test(editor.path);
+  const isJinja = JINJA_FILE.test(editor.path);
+  const isCanonicalPlan = editor.path === CANONICAL_PLAN_PATH;
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
@@ -333,14 +342,16 @@ export function SetupPage() {
         </p>
 
         <div className="setup-toolbar-actions">
-          <button
-            type="button"
-            onClick={() => void openRegeneration()}
-            disabled={saving || preparing}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
-          </button>
+          {isCanonicalPlan ? (
+            <button
+              type="button"
+              onClick={() => void openRegeneration()}
+              disabled={saving || preparing}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label="Show setup help"
@@ -359,7 +370,7 @@ export function SetupPage() {
             {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Saving…' : 'Save'}
           </button>
-          {isMarkdown ? (
+          {isCanonicalPlan ? (
             <button
               type="button"
               onClick={() => void prepare()}
@@ -377,7 +388,7 @@ export function SetupPage() {
         <div className="setup-help-bar" role="status">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
           <p className="min-w-0 flex-1">
-            The tree shows the entire project checkout so you can verify every file downloaded. Only .md and .txt
+            The tree shows the entire project checkout so you can verify every file downloaded. Only .md, .txt, .toml, and .jinja
             files open for editing. <span className="text-accent">●</span> marks <code>{PLAN_DIRECTORY}/</code> plan files,{' '}
             <span className="text-success">●</span> marks <code>{TEMPLATE_DIRECTORY}/</code> Arm templates, and{' '}
             <span className="text-warning">●</span> marks the rest of <code>.coleo/</code> configuration.
@@ -474,11 +485,11 @@ export function SetupPage() {
             </div>
           ) : (
           <textarea
-            aria-label={MARKDOWN_FILE.test(editor.path) ? 'Markdown file content' : 'Text file content'}
+            aria-label={isMarkdown ? 'Markdown file content' : isToml ? 'TOML file content' : isJinja ? 'Jinja file content' : 'Text file content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
             className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            spellCheck
+            spellCheck={!isToml && !isJinja}
           />
           )}
           {previewOpen && isMarkdown && !editorLoading ? <MarkdownPreview content={editor.content} /> : null}
@@ -509,23 +520,19 @@ export function SetupPage() {
               </div>
             </div>
           ) : null}
-          {!result && status.completed ? (
+          {!result && showRegeneratedTasksBanner && editor.path === CANONICAL_PLAN_PATH && status.taskCount > 0 ? (
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
               <div className="flex items-center gap-2 text-success">
                 <Check className="h-4 w-4" />
-                <span>{status.taskCount > 0
-                  ? `${status.taskCount} project tasks are ready for review.`
-                  : `${status.canonicalTaskCount} checklist items found. The Brain will create tasks during its next poll.`}</span>
+                <span>{status.taskCount} project tasks are ready for review.</span>
               </div>
-              {status.taskCount > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
-                  className="font-medium text-foreground underline"
-                >
-                  Review tasks
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => openWorkspaceRoute({ pathname: '/tasks', search: '' }, 'tab')}
+                className="font-medium text-foreground underline"
+              >
+                Review tasks
+              </button>
             </div>
           ) : null}
         </section>
@@ -533,7 +540,10 @@ export function SetupPage() {
       <RegenerateTasksModal
         isOpen={regenerateOpen}
         onClose={() => setRegenerateOpen(false)}
-        onRegenerated={() => void load()}
+        onRegenerated={() => {
+          setShowRegeneratedTasksBanner(true);
+          void load();
+        }}
       />
     </div>
   );
