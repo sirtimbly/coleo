@@ -10,12 +10,12 @@ describe('all-arm telemetry helpers', () => {
     const samples = aggregateContextSamples([
       { armId: 'arm-a', timestamp: '2026-07-28T10:00:00.000Z', used: 100, budget: 1000 },
       { armId: 'arm-b', timestamp: '2026-07-28T10:00:00.000Z', used: 200, budget: 2000 },
-      { armId: 'arm-a', timestamp: '2026-07-28T10:01:00.000Z', used: 400, budget: 1000 },
+      { armId: 'arm-a', timestamp: '2026-07-28T10:01:00.000Z', used: 400, budget: 500 },
     ]);
 
     expect(samples).toEqual([
       { timestamp: new Date('2026-07-28T10:00:00.000Z').getTime(), used: 300, budget: 3000 },
-      { timestamp: new Date('2026-07-28T10:01:00.000Z').getTime(), used: 600, budget: 3000 },
+      { timestamp: new Date('2026-07-28T10:01:00.000Z').getTime(), used: 600, budget: 2500 },
     ]);
   });
 
