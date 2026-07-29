@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.7.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.6.0...coleo-v0.7.0) (2026-07-29)
+
+
+### Features
+
+* design for dense pages ([4a51b25](https://github.com/sirtimbly/coleo/commit/4a51b2588a7421a282d494413633b4c9da83c9b6))
+* redesign tasks and other pages for accordion layout ([6929585](https://github.com/sirtimbly/coleo/commit/6929585155e8a4880da2a1e64229442ed7e76530))
+* **setup:** expand project editor workflow ([0b384fc](https://github.com/sirtimbly/coleo/commit/0b384fc00a82fd9ec18c18b70bf27fb16b0fe97b))
+* **web:** streamline task planning and section summaries ([94a6813](https://github.com/sirtimbly/coleo/commit/94a681391245329dca9534def53d44472ece40fe))
+
+
+### Bug Fixes
+
+* preserve filtered pagination and status history ([edfd99b](https://github.com/sirtimbly/coleo/commit/edfd99bab5a562fc6b2dfb86625138deb62e2544))
+* **web:** restore dashboard progress and telemetry data ([9f52b89](https://github.com/sirtimbly/coleo/commit/9f52b893a55a9cd28c85f52419b579de66b64d36))
+
+
+### Performance Improvements
+
+* **web:** optimize task list rendering and updates ([3265c3c](https://github.com/sirtimbly/coleo/commit/3265c3c24e991bf002d05b42ab498656fb0e95e8))
+
 ## [0.6.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.5.0...coleo-v0.6.0) (2026-07-28)
 
 
