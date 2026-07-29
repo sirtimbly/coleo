@@ -609,6 +609,33 @@ export function createTasksRoutes() {
 	});
 
 	/**
+	 * Get task statistics for progress visualization.
+	 * This static route must remain ahead of GET /:id.
+	 */
+	app.get("/stats", (c) => {
+		const db = c.get("db");
+		const totalResult = db
+			.query("SELECT COUNT(*) as count FROM tasks")
+			.get() as { count: number };
+		const statusRows = db
+			.query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status")
+			.all() as Array<{ status: string; count: number }>;
+		const byStatus: Record<string, number> = {};
+		for (const row of statusRows) byStatus[row.status] = row.count;
+		const completed = byStatus["completed"] ?? 0;
+		const failed = byStatus["failed"] ?? 0;
+		const total = totalResult.count;
+
+		return c.json({
+			total,
+			byStatus,
+			completionRate: total > 0 ? Math.round(((completed + failed) / total) * 100) : 0,
+			active: (byStatus["claimed"] ?? 0) + (byStatus["in_progress"] ?? 0) + (byStatus["completing"] ?? 0),
+			blocked: byStatus["blocked"] ?? 0,
+		});
+	});
+
+	/**
 	 * Get a single task
 	 * GET /api/tasks/:id
 	 * Query params:
@@ -1478,7 +1505,11 @@ export function createTasksRoutes() {
 		});
 
 		// Broadcast task updated
-		broadcast("tasks", "task.updated", { taskId: id, changes: body });
+		broadcast("tasks", "task.updated", {
+			taskId: id,
+			changes: body,
+			previousStatus: existing.status,
+		});
 
 		// Fetch updated task
 		const row = db
@@ -1972,40 +2003,6 @@ export function createTasksRoutes() {
 		});
 
 		return c.json({ success: true, orderKey: newOrderKey });
-	});
-
-	/**
-	 * Get task statistics for progress visualization
-	 * GET /api/tasks/stats
-	 */
-	app.get("/stats", async (c) => {
-		const db = c.get("db");
-
-		const totalResult = db
-			.query("SELECT COUNT(*) as count FROM tasks")
-			.get() as { count: number };
-
-		const statusRows = db
-			.query("SELECT status, COUNT(*) as count FROM tasks GROUP BY status")
-			.all() as Array<{ status: string; count: number }>;
-
-		const byStatus: Record<string, number> = {};
-		for (const row of statusRows) {
-			byStatus[row.status] = row.count;
-		}
-
-		const completed = byStatus["completed"] ?? 0;
-		const failed = byStatus["failed"] ?? 0;
-		const total = totalResult.count;
-		const completionRate = total > 0 ? Math.round(((completed + failed) / total) * 100) : 0;
-
-		return c.json({
-			total,
-			byStatus,
-			completionRate,
-			active: (byStatus["claimed"] ?? 0) + (byStatus["in_progress"] ?? 0) + (byStatus["completing"] ?? 0),
-			blocked: byStatus["blocked"] ?? 0,
-		});
 	});
 
 	/**

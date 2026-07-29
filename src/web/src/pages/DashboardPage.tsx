@@ -1,13 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, ChevronRight, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
 import { StatusBurndownChart } from '@/components/StatusBurndownChart';
-import { ArmActivityChart } from '@/components/ArmActivityChart';
-import { ArmContextUsageChart } from '@/components/ArmContextUsageChart';
-import { ArmCostUsageChart } from '@/components/ArmCostUsageChart';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -759,6 +756,7 @@ export function DashboardPage() {
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [taskStatsLoading, setTaskStatsLoading] = useState(true);
+  const [taskStatsError, setTaskStatsError] = useState<string | null>(null);
   const [burndownRefresh, setBurndownRefresh] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -867,16 +865,18 @@ export function DashboardPage() {
   }, []);
 
   const loadTaskStats = useCallback(async () => {
-    setTaskStatsLoading(true);
-    try {
-      const stats = await api.getTaskStats();
-      setTaskStats(stats);
-      setBurndownRefresh((current) => current + 1);
-    } catch {
-      setTaskStats(null);
-    } finally {
-      setTaskStatsLoading(false);
-    }
+    await refreshGate.current.run('task-stats', async () => {
+      try {
+        const stats = await api.getTaskStats();
+        setTaskStats(stats);
+        setTaskStatsError(null);
+        setBurndownRefresh((current) => current + 1);
+      } catch (err) {
+        setTaskStatsError(err instanceof Error ? err.message : 'Failed to load task progress');
+      } finally {
+        setTaskStatsLoading(false);
+      }
+    }, 1_000);
   }, []);
 
   const loadNotableEvents = useCallback(async () => {
@@ -1014,14 +1014,13 @@ export function DashboardPage() {
 
     updateBanner();
     window.addEventListener('focus', updateBanner);
-    loadTaskStats();
     return () => {
       active = false;
       window.removeEventListener('focus', updateBanner);
     };
 
 
-  }, [loadTaskStats]);
+  }, []);
 
   if (error && !status) {
     return (
@@ -1133,7 +1132,12 @@ export function DashboardPage() {
         description="Current completion and queue health"
         className="rounded-none border-x-0 border-t-0"
       >
-        <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} embedded />
+        <TaskProgressWidget
+          stats={taskStats ?? undefined}
+          isLoading={taskStatsLoading}
+          error={taskStatsError ?? undefined}
+          embedded
+        />
       </CollapsibleSection>
 
       <StatusBurndownChart
@@ -1142,69 +1146,6 @@ export function DashboardPage() {
         className="rounded-none border-x-0 border-t-0"
       />
 
-      <CollapsibleSection
-        title="Arm telemetry"
-        description="Activity, context usage, and cost for the most recent arm"
-        className="rounded-none border-x-0 border-t-0"
-      >
-        <ArmActivitySection status={status} arms={arms} onNavigate={navigate} />
-      </CollapsibleSection>
-      </div>
-    </div>
-  );
-}
-
-function ArmActivitySection({
-  status,
-  arms,
-  onNavigate,
-}: {
-  status: SystemStatus | null;
-  arms: Arm[];
-  onNavigate: Navigate;
-}) {
-  const mostRecentArm = useMemo(() => {
-    const details = status?.arms.details ?? [];
-    if (details.length === 0) {
-      return arms[0] ?? null;
-    }
-    const sorted = [...details].sort((a, b) => {
-      const aLast = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-      const bLast = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
-      return bLast - aLast;
-    });
-    const recentDetail = sorted[0];
-    if (!recentDetail) return arms[0] ?? null;
-    return arms.find((arm) => arm.id === recentDetail.id) ?? null;
-  }, [status?.arms.details, arms]);
-
-  if (!mostRecentArm) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-2">
-      <ArmActivityChart
-        armId={mostRecentArm.id}
-        title={`Arm Activity - ${mostRecentArm.name}`}
-      />
-      <ArmContextUsageChart
-        armId={mostRecentArm.id}
-        title={`Context Usage - ${mostRecentArm.name}`}
-      />
-      <ArmCostUsageChart
-        armId={mostRecentArm.id}
-        title={`Cost Usage - ${mostRecentArm.name}`}
-      />
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => onNavigate('/viewer', `?arm=${encodeURIComponent(mostRecentArm.id)}`)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-accent"
-        >
-          Open in Arm Viewer
-          <ArrowUpRight className="h-3 w-3" />
-        </button>
       </div>
     </div>
   );

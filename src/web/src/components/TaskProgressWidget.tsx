@@ -15,6 +15,7 @@ export interface TaskStats {
 interface TaskProgressWidgetProps {
 	stats?: TaskStats;
 	isLoading?: boolean;
+	error?: string;
 	className?: string;
 	embedded?: boolean;
 }
@@ -29,7 +30,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
 	completing: { label: "Completing", color: "text-emerald-600", bg: "bg-emerald-500", icon: CheckCircle2 },
 };
 
-export function TaskProgressWidget({ stats, isLoading, className, embedded = false }: TaskProgressWidgetProps) {
+export function TaskProgressWidget({ stats, isLoading, error, className, embedded = false }: TaskProgressWidgetProps) {
 	const statusBreakdown = useMemo(() => {
 		if (!stats) return [];
 		return Object.entries(stats.byStatus)
@@ -53,7 +54,7 @@ export function TaskProgressWidget({ stats, isLoading, className, embedded = fal
 				</CardTitle>
 			</CardHeader> : null}
 			<CardContent>
-				{isLoading || !stats ? (
+				{isLoading ? (
 					<div className="space-y-4">
 						<div className="h-2 bg-secondary rounded animate-pulse" />
 						<div className="grid grid-cols-2 gap-2">
@@ -61,6 +62,10 @@ export function TaskProgressWidget({ stats, isLoading, className, embedded = fal
 								<div key={i} className="h-8 bg-secondary rounded animate-pulse" />
 							))}
 						</div>
+					</div>
+				) : !stats ? (
+					<div className="flex min-h-24 items-center justify-center rounded-md border border-danger/30 bg-danger/10 px-4 text-sm text-danger" role="alert">
+						{error || "Task progress is unavailable."}
 					</div>
 				) : (
 					<div className="space-y-4">

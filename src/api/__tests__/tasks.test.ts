@@ -442,6 +442,26 @@ describe("tasks API", () => {
       expect(body.counts.byStatus.completed).toBe(1);
     });
 
+    it("should return aggregate task progress stats", async () => {
+      const response = await app.request("/api/tasks/stats");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        total: number;
+        byStatus: Record<string, number>;
+        completionRate: number;
+        active: number;
+        blocked: number;
+      };
+      expect(body).toEqual({
+        total: 3,
+        byStatus: { completed: 1, in_progress: 1, pending: 1 },
+        completionRate: 33,
+        active: 1,
+        blocked: 0,
+      });
+    });
+
     it("should filter by status", async () => {
       const response = await app.request("/api/tasks?status=pending");
       expect(response.status).toBe(200);

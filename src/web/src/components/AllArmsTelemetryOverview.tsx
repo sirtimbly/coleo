@@ -86,7 +86,7 @@ function DateTimeInput({
 }
 
 export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: boolean }) {
-  const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(THIRTY_MINUTES_MS));
+  const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(ONE_DAY_MS));
   const [appliedRange, setAppliedRange] = useState<AppliedRange>(() => toAppliedRange(draftRange));
   const [telemetry, setTelemetry] = useState<AllArmsTelemetryResponse | null>(null);
   const [loading, setLoading] = useState(true);
