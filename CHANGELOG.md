@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.8.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.1...coleo-v0.8.0) (2026-07-29)
+
+
+### Features
+
+* add customization to arm viewer logs list ([db71718](https://github.com/sirtimbly/coleo/commit/db7171879c01beb06907efd90bd0715c44d3170e))
+* **arms:** improve context and activity viewer ([a6b1eab](https://github.com/sirtimbly/coleo/commit/a6b1eabdfd8c17453eda6931f2f9ebcff34bc55b))
+
+
+### Bug Fixes
+
+* **arms:** address viewer review feedback ([21edc4b](https://github.com/sirtimbly/coleo/commit/21edc4bc266adba1fda9479a668ca95fde901571))
+* **nats:** bound distributed message logs ([cdb2505](https://github.com/sirtimbly/coleo/commit/cdb25052574df548559f1403d075f6e5441c908d))
+* tui and dashboard ([2d1b0f1](https://github.com/sirtimbly/coleo/commit/2d1b0f1249a1821ca7f298bff85e80fc2dd61e74))
+* **tui:** resolve deps for crash ([9ba8810](https://github.com/sirtimbly/coleo/commit/9ba88106ec797b101532c4578fde126287f58a6a))
+* **web:** reflect live fleet context budget ([f83f035](https://github.com/sirtimbly/coleo/commit/f83f0357e5906b98e1f12e1ffd389b93d98a4c20))
+
+
+### Code Refactoring
+
+* config ([57950cf](https://github.com/sirtimbly/coleo/commit/57950cf71e26e2050029215db0d12576095f9e26))
+* use bun in root deps only ([38444e3](https://github.com/sirtimbly/coleo/commit/38444e3e977e040ee0d0aff301d25d7cfa026d9b))
+* use bun in root deps only ([1d69abe](https://github.com/sirtimbly/coleo/commit/1d69abedbaf10f1ebc97524d8a2ee492c499816b))
+
+
+### Continuous Integration
+
+* Configure Dependabot for npm with monthly updates ([b3068c4](https://github.com/sirtimbly/coleo/commit/b3068c4d2646a76ca23440650bac8fe8e3b5186a))
+* Configure Dependabot for npm with monthly updates ([16f5899](https://github.com/sirtimbly/coleo/commit/16f589991dc23da5602d511b79d01e22277f02d3))
+
+
+### Tests
+
+* **imap:** allow for loaded fixture startup ([73cf72c](https://github.com/sirtimbly/coleo/commit/73cf72cbb9a9c29b40420ea5b4b5bf6a0efecda3))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump vite from 7.3.6 to 8.1.5 ([957d01d](https://github.com/sirtimbly/coleo/commit/957d01d6cb02d5106862ef02499a7acfc0d3a49b))
+* **deps-dev:** bump vite from 7.3.6 to 8.1.5 ([eb7ef18](https://github.com/sirtimbly/coleo/commit/eb7ef1829ad3c4ad75bdda00e6846a80a240b997))
+* **deps:** bump @heroui/react from 3.0.0-beta.5 to 3.2.2 ([81ab962](https://github.com/sirtimbly/coleo/commit/81ab962f0d1d99ad34c13df34be1fb786ef5b1d0))
+* **deps:** bump @heroui/react from 3.0.0-beta.5 to 3.2.2 ([e63d706](https://github.com/sirtimbly/coleo/commit/e63d70678a52ac06586725603a61e8cfa82ef9ac))
+* **deps:** bump react-router-dom from 7.18.1 to 7.18.2 ([5a6c073](https://github.com/sirtimbly/coleo/commit/5a6c0731c37c87d01fe8c07acc95c0bbb384fb73))
+* **deps:** bump react-router-dom from 7.18.1 to 7.18.2 ([d85c9ec](https://github.com/sirtimbly/coleo/commit/d85c9ecaa40328c61f7c8acfb71c2b666a20bb0d))
+* **deps:** bump three from 0.181.2 to 0.185.1 ([38ff385](https://github.com/sirtimbly/coleo/commit/38ff385987708819d75eb2511c312964838f70d3))
+* **deps:** bump three from 0.181.2 to 0.185.1 ([fe258f0](https://github.com/sirtimbly/coleo/commit/fe258f09f4ebf44384d1bf3e7c88285391d7adf7))
+
 ## [0.7.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.0...coleo-v0.7.1) (2026-07-29)
 
 
