@@ -77,7 +77,7 @@ export async function createArmState(options: SpawnOptions, pid?: number): Promi
       options.domain || "general",
       arm.agent,
       arm.status,
-      100000,
+      300000,
       0,
       now,
       now,

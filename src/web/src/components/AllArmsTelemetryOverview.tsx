@@ -85,7 +85,15 @@ function DateTimeInput({
   );
 }
 
-export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: boolean }) {
+interface AllArmsTelemetryOverviewProps {
+  embedded?: boolean;
+  contextBudget?: number;
+}
+
+export function AllArmsTelemetryOverview({
+  embedded = false,
+  contextBudget,
+}: AllArmsTelemetryOverviewProps) {
   const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(ONE_DAY_MS));
   const [appliedRange, setAppliedRange] = useState<AppliedRange>(() => toAppliedRange(draftRange));
   const [telemetry, setTelemetry] = useState<AllArmsTelemetryResponse | null>(null);
@@ -216,6 +224,7 @@ export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: bool
           />
           <ArmContextUsageChart
             armId={null}
+            contextBudget={contextBudget}
             samples={contextSamples}
             range={chartRange}
             title="Context Usage - All Arms"

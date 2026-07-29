@@ -1060,7 +1060,12 @@ export function ArmsPage() {
 						]}
 						className="rounded-none border-x-0 border-t-0"
 					>
-						<AllArmsTelemetryOverview embedded />
+						<AllArmsTelemetryOverview
+							embedded
+							contextBudget={
+								loading ? undefined : arms.reduce((total, arm) => total + arm.contextBudget, 0)
+							}
+						/>
 					</CollapsibleSection>
 
 					{loading ? (

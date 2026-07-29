@@ -9,7 +9,7 @@ export const DEFAULT_ARM_TEMPLATE = `arm:
   harness: opencode-api
 
 context:
-  budget: 100000
+  budget: 300000
 
 personality:
   traits: Thoughtful, practical, and curious.

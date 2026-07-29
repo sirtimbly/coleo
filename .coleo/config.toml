@@ -37,7 +37,7 @@ update_enabled = true
 harness = "opencode"
 provider = "github-copilot"
 model = "claude-sonnet-5"
-context_budget = 100000
+context_budget = 300000
 
 [compression]
 warning_threshold = 80

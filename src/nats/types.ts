@@ -187,6 +187,7 @@ export interface ListArmsResponse {
 export interface GetMessagesResponse {
   messages: unknown[];
   sessionId: string | null;
+  truncated?: boolean;
 }
 
 export interface GetTodosResponse {

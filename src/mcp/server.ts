@@ -416,7 +416,7 @@ export function createMcpServer(): McpServer {
 				} | null;
 
 				if (!armBudget) {
-					armBudget = { context_budget_total: 128000, context_budget_used: 0 };
+					armBudget = { context_budget_total: 300000, context_budget_used: 0 };
 				}
 
 				const remaining =

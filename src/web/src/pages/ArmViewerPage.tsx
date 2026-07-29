@@ -1,4 +1,4 @@
-import { Button, Dropdown, Popover } from "@heroui/react";
+import { Button, Dropdown, Popover, Switch } from "@heroui/react";
 import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import {
 	Eye,
@@ -32,6 +32,7 @@ import {
 	Pause,
 	AlertOctagon,
 	Info,
+	SlidersHorizontal,
 	MoreHorizontal,
 	Server,
 } from "lucide-react";
@@ -89,6 +90,170 @@ type ViewerTab = "events" | "logs";
 
 const MAX_HISTORY_ITEMS = 200;
 const STORAGE_PREFIX = "coleo-arm-history-";
+const MESSAGE_LOG_PREFERENCES_STORAGE_KEY = "coleo-arm-viewer-message-log-preferences";
+
+type MessageLogContentType = "message" | "response" | "thinking" | "tool" | "error";
+type BrainActivityCategory =
+	| "stuck"
+	| "intervention"
+	| "task"
+	| "session"
+	| "health"
+	| "decision"
+	| "configuration";
+
+interface MessageLogPreferences {
+	collapsed: Record<MessageLogContentType, boolean>;
+	brainActivity: Record<BrainActivityCategory, boolean>;
+}
+
+const DEFAULT_MESSAGE_LOG_PREFERENCES: MessageLogPreferences = {
+	collapsed: {
+		message: false,
+		response: true,
+		thinking: true,
+		tool: true,
+		error: true,
+	},
+	brainActivity: {
+		stuck: true,
+		intervention: true,
+		task: true,
+		session: true,
+		health: true,
+		decision: true,
+		configuration: true,
+	},
+};
+
+const MESSAGE_LOG_TYPE_OPTIONS: readonly {
+	type: MessageLogContentType;
+	label: string;
+	description: string;
+}[] = [
+	{ type: "message", label: "Messages", description: "User and system messages" },
+	{ type: "response", label: "Responses", description: "Model completion text" },
+	{ type: "thinking", label: "Thinking", description: "Model reasoning" },
+	{ type: "tool", label: "Tools", description: "Tool calls and results" },
+	{ type: "error", label: "Errors", description: "Model and tool failures" },
+];
+
+const BRAIN_ACTIVITY_GROUPS: readonly {
+	heading: string;
+	options: readonly { type: BrainActivityCategory; label: string; description: string }[];
+}[] = [
+	{
+		heading: "Recovery",
+		options: [
+			{ type: "stuck", label: "Stuck detection", description: "Diagnosis and confidence" },
+			{ type: "intervention", label: "Interventions", description: "Interrupts, compaction, and escalation" },
+		],
+	},
+	{
+		heading: "Work",
+		options: [
+			{ type: "task", label: "Task orchestration", description: "Assignment, validation, and completion" },
+			{ type: "decision", label: "Brain decisions", description: "Output handling and silent completion" },
+		],
+	},
+	{
+		heading: "Runtime",
+		options: [
+			{ type: "session", label: "Session lifecycle", description: "Spawn, recovery, reset, and status sync" },
+			{ type: "health", label: "Health signals", description: "Heartbeat and runtime health" },
+			{ type: "configuration", label: "Configuration", description: "Model and budget changes" },
+		],
+	},
+];
+
+function loadMessageLogPreferences(): MessageLogPreferences {
+	if (typeof localStorage === "undefined") {
+		return DEFAULT_MESSAGE_LOG_PREFERENCES;
+	}
+
+	try {
+		const stored = localStorage.getItem(MESSAGE_LOG_PREFERENCES_STORAGE_KEY);
+		if (!stored) {
+			return DEFAULT_MESSAGE_LOG_PREFERENCES;
+		}
+
+		const parsed = JSON.parse(stored);
+		if (!isJsonObject(parsed) || !isJsonObject(parsed.collapsed)) {
+			return DEFAULT_MESSAGE_LOG_PREFERENCES;
+		}
+
+		const collapsed = { ...DEFAULT_MESSAGE_LOG_PREFERENCES.collapsed };
+		for (const { type } of MESSAGE_LOG_TYPE_OPTIONS) {
+			const value = parsed.collapsed[type];
+			if (typeof value === "boolean") {
+				collapsed[type] = value;
+			}
+		}
+		const brainActivity = { ...DEFAULT_MESSAGE_LOG_PREFERENCES.brainActivity };
+		if (isJsonObject(parsed.brainActivity)) {
+			for (const group of BRAIN_ACTIVITY_GROUPS) {
+				for (const { type } of group.options) {
+					const value = parsed.brainActivity[type];
+					if (typeof value === "boolean") {
+						brainActivity[type] = value;
+					}
+				}
+			}
+		}
+
+		return { collapsed, brainActivity };
+	} catch {
+		return DEFAULT_MESSAGE_LOG_PREFERENCES;
+	}
+}
+
+function getBrainActivityCategory(activity: ActivityItem): BrainActivityCategory | null {
+	if (!activity.details) {
+		return null;
+	}
+
+	const eventType = typeof activity.details.eventType === "string"
+		? activity.details.eventType
+		: activity.title.toLowerCase().replaceAll(" ", "_");
+	if (eventType.includes("heartbeat")) return "health";
+	if (activity.details.actor !== "brain") return null;
+	if (eventType.includes("stuck_detected")) return "stuck";
+	if (
+		eventType.includes("unstuck") ||
+		eventType.includes("idle_arm_stuck") ||
+		eventType.includes("zombie") ||
+		eventType.includes("stuck_escalated")
+	) return "intervention";
+	if (
+		eventType.includes("task_") ||
+		eventType.includes("validation") ||
+		eventType.includes("verification") ||
+		eventType.includes("blocked_task")
+	) return "task";
+	if (
+		eventType.includes("silent_completion") ||
+		eventType.includes("arm_output_action")
+	) return "decision";
+	if (
+		eventType.includes("heartbeat") ||
+		eventType.includes("health") ||
+		eventType.includes("infrastructure_alert")
+	) return "health";
+	if (
+		eventType.includes("config") ||
+		eventType.includes("budget") ||
+		eventType.includes("model")
+	) return "configuration";
+	if (
+		eventType.includes("arm_detected") ||
+		eventType.includes("arm_initialized") ||
+		eventType.includes("arm_waiting") ||
+		eventType.includes("status_synced") ||
+		eventType.includes("session")
+	) return "session";
+
+	return null;
+}
 
 function getStorageKey(armId: string): string {
 	return `${STORAGE_PREFIX}${armId}`;
@@ -325,8 +490,10 @@ export function ArmViewerPage() {
 	const [activeTab, setActiveTab] = useState<ViewerTab>("logs");
 	const [summaryExpanded, setSummaryExpanded] = useState(false);
 	const [messages, setMessages] = useState<ArmMessage[]>([]);
+	const [messageLogPreferences, setMessageLogPreferences] = useState(loadMessageLogPreferences);
 	const [logsLoading, setLogsLoading] = useState(false);
 	const [logsError, setLogsError] = useState<string | null>(null);
+	const [logsTruncated, setLogsTruncated] = useState(false);
 	const [logsLoadedArmId, setLogsLoadedArmId] = useState<string | null>(null);
 	const [eventsLoading, setEventsLoading] = useState(false);
 	const [markingStuck, setMarkingStuck] = useState(false);
@@ -341,6 +508,42 @@ export function ArmViewerPage() {
 	const [workspaceWidth, setWorkspaceWidth] = useState(0);
 	selectedArmIdRef.current = selectedArmId;
 	activeTabRef.current = activeTab;
+
+	const setMessageLogTypeCollapsed = useCallback(
+		(type: MessageLogContentType, collapsed: boolean) => {
+			setMessageLogPreferences((previous) => {
+				const next = {
+					...previous,
+					collapsed: { ...previous.collapsed, [type]: collapsed },
+				};
+				try {
+					localStorage.setItem(MESSAGE_LOG_PREFERENCES_STORAGE_KEY, JSON.stringify(next));
+				} catch {
+					// Keep the in-memory preference when storage is unavailable.
+				}
+				return next;
+			});
+		},
+		[],
+	);
+
+	const setBrainActivityVisible = useCallback(
+		(type: BrainActivityCategory, visible: boolean) => {
+			setMessageLogPreferences((previous) => {
+				const next = {
+					...previous,
+					brainActivity: { ...previous.brainActivity, [type]: visible },
+				};
+				try {
+					localStorage.setItem(MESSAGE_LOG_PREFERENCES_STORAGE_KEY, JSON.stringify(next));
+				} catch {
+					// Keep the in-memory preference when storage is unavailable.
+				}
+				return next;
+			});
+		},
+		[],
+	);
 
 	const isAtBottom = useCallback((container: HTMLDivElement) => {
 		const bottomOffset =
@@ -402,6 +605,13 @@ export function ArmViewerPage() {
 			setLoading(false);
 		}
 	};
+
+	const updateContextBudget = useCallback(async (armId: string, contextBudget: number) => {
+		const response = await api.updateArm(armId, { contextBudget });
+		setArms((previous) =>
+			previous.map((arm) => (arm.id === armId ? response.arm : arm)),
+		);
+	}, []);
 
 	// Load todos for selected arm
 	const loadTodos = async (armId: string) => {
@@ -467,16 +677,31 @@ export function ArmViewerPage() {
 		}
 		try {
 			let res = await api.getArmMessages(armId, 200);
-			if (!silent && (res.messages?.length || 0) === 0 && !res.error) {
+			let retriedWithSmallerLimit = false;
+			if (res.error?.includes("Response too large for NATS")) {
+				for (const limit of [50, 10]) {
+					retriedWithSmallerLimit = true;
+					res = await api.getArmMessages(armId, limit);
+					if (!res.error?.includes("Response too large for NATS")) {
+						break;
+					}
+				}
+			}
+			if (!silent && !retriedWithSmallerLimit && (res.messages?.length || 0) === 0 && !res.error) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
 				res = await api.getArmMessages(armId, 200);
 			}
 			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
 			const nextMessages = res.messages || [];
-			setMessages((previous) =>
-				silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages,
-			);
-			if (nextMessages.length > 0) {
+			setMessages((previous) => {
+				if (res.truncated && previous.length > 0) {
+					const merged = new Map(previous.map((message) => [message.info.id, message]));
+					for (const message of nextMessages) merged.set(message.info.id, message);
+					return [...merged.values()];
+				}
+				return silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages;
+			});
+			if (nextMessages.length > 0 && !res.truncated) {
 				let input = 0;
 				let output = 0;
 				let cost = 0;
@@ -489,6 +714,7 @@ export function ArmViewerPage() {
 				setTotalCost(cost);
 			}
 			setLogsLoadedArmId(armId);
+			setLogsTruncated(res.truncated === true);
 			setLogsError(res.error || null);
 		} catch (err) {
 			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
@@ -527,6 +753,16 @@ export function ArmViewerPage() {
 			) => upsertActivity(id, { timestamp: eventTimestamp, ...updates });
 
 			// Message events
+			if (type === "arm.heartbeat" || type === "server-heartbeat" || type === "server.heartbeat") {
+				recordActivity(eventActivityId("heartbeat"), {
+					type: "session",
+					title: "Heartbeat",
+					subtitle: type.replaceAll(".", " ").replaceAll("-", " "),
+					status: "info",
+					details: { ...props, eventType: type },
+				});
+			}
+
 			if (type === "message.updated") {
 				const info = props.info as { id: string; role: string } | undefined;
 				if (info) {
@@ -820,7 +1056,7 @@ export function ArmViewerPage() {
 					type: "session",
 					title: formatStatusLayerLabel(type),
 					status: "info",
-					details: props,
+					details: { ...props, eventType: type },
 				});
 			}
 		},
@@ -894,6 +1130,7 @@ export function ArmViewerPage() {
 			setLogsLoadedArmId(null);
 			setMessages([]);
 			setLogsError(null);
+			setLogsTruncated(false);
 			setArmAnalysis(null);
 			autoScrollEnabledRef.current = true;
 			// Try to restore from localStorage first
@@ -927,6 +1164,7 @@ export function ArmViewerPage() {
 			setMessages([]);
 			setLogsLoadedArmId(null);
 			setLogsError(null);
+			setLogsTruncated(false);
 		}
 	}, [loadAnalysis, loadEvents, loadMessages, loadSessionState, selectedArmId]);
 
@@ -1168,9 +1406,14 @@ export function ArmViewerPage() {
 					activities={activities}
 					currentText={currentText}
 					messages={messages}
+					messageLogPreferences={messageLogPreferences}
+					onMessageLogTypeCollapsedChange={setMessageLogTypeCollapsed}
+					onBrainActivityVisibleChange={setBrainActivityVisible}
+					onContextBudgetChange={updateContextBudget}
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1279,9 +1522,14 @@ export function ArmViewerPage() {
 					activities={activities}
 					currentText={currentText}
 					messages={messages}
+					messageLogPreferences={messageLogPreferences}
+					onMessageLogTypeCollapsedChange={setMessageLogTypeCollapsed}
+					onBrainActivityVisibleChange={setBrainActivityVisible}
+					onContextBudgetChange={updateContextBudget}
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1409,9 +1657,14 @@ function ArmViewerConsole({
 	activities,
 	currentText,
 	messages,
+	messageLogPreferences,
+	onMessageLogTypeCollapsedChange,
+	onBrainActivityVisibleChange,
+	onContextBudgetChange,
 	logsLoading,
 	logsReady,
 	logsError,
+	logsTruncated,
 	eventsLoading,
 	analysis,
 	analysisLoading,
@@ -1439,9 +1692,14 @@ function ArmViewerConsole({
 	activities: ActivityItem[];
 	currentText: string;
 	messages: ArmMessage[];
+	messageLogPreferences: MessageLogPreferences;
+	onMessageLogTypeCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+	onBrainActivityVisibleChange: (type: BrainActivityCategory, visible: boolean) => void;
+	onContextBudgetChange: (armId: string, contextBudget: number) => Promise<void>;
 	logsLoading: boolean;
 	logsReady: boolean;
 	logsError: string | null;
+	logsTruncated: boolean;
 	eventsLoading: boolean;
 	analysis: ArmAnalysisFull | null;
 	analysisLoading: boolean;
@@ -1461,10 +1719,26 @@ function ArmViewerConsole({
 		? analysis?.analysis.state.replaceAll("_", " ") ?? null
 		: null;
 	const totalTokenCount = totalTokens.input + totalTokens.output;
-	const streamCount = activeTab === "logs" ? messages.length : activities.length;
+	const focusedBrainActivities = activities.filter((activity) => {
+		const category = getBrainActivityCategory(activity);
+		return category !== null && messageLogPreferences.brainActivity[category];
+	});
+	const focusedActivityItems = [
+		...messages.map((message) => ({
+			kind: "message" as const,
+			message,
+			timestamp: getMessageTimestamp(message.info.time) ?? 0,
+		})),
+		...focusedBrainActivities.map((activity) => ({
+			kind: "brain" as const,
+			activity,
+			timestamp: activity.timestamp,
+		})),
+	].sort((left, right) => left.timestamp - right.timestamp);
+	const streamCount = activeTab === "logs" ? focusedActivityItems.length : activities.length;
 	const streamValue = activeTab === "logs" && !logsReady
-		? "Loading logs"
-		: `${formatCompactNumber(streamCount)} ${activeTab}`;
+		? "Loading focused activity"
+		: `${formatCompactNumber(streamCount)} ${activeTab === "logs" ? "focused" : "events"}`;
 	const activityStateTone =
 		hasEventTelemetry && analysis?.analysis.state === "error"
 			? "danger"
@@ -1678,7 +1952,7 @@ function ArmViewerConsole({
 								<ViewerMetricCard
 									label="Stream"
 									value={streamValue}
-									detail={activeTab === "logs" ? "Captured messages" : "Structured events"}
+									detail={activeTab === "logs" ? "Model transcript and brain decisions" : "Raw live event stream"}
 									tone="neutral"
 									icon={
 										activeTab === "logs" ? (
@@ -1715,18 +1989,25 @@ function ArmViewerConsole({
 				<div className="flex flex-wrap items-center justify-between gap-3">
 					<div className="inline-flex items-center rounded-md border border-border bg-surface-secondary/70 p-0.5">
 						<ViewerTabButton
-							label="Logs"
+							label="Focused Activity"
 							isActive={activeTab === "logs"}
 							onPress={() => onTabChange("logs")}
 						/>
 						<ViewerTabButton
-							label="Events"
+							label="Firehose"
 							isActive={activeTab === "events"}
 							onPress={() => onTabChange("events")}
 						/>
 					</div>
 
 					<div className="flex flex-wrap items-center gap-2">
+						{activeTab === "logs" ? (
+							<CustomizeViewPopover
+								preferences={messageLogPreferences}
+								onCollapsedChange={onMessageLogTypeCollapsedChange}
+								onBrainActivityVisibleChange={onBrainActivityVisibleChange}
+							/>
+						) : null}
 						<Dropdown>
 							<Dropdown.Trigger
 								aria-label="Viewer actions"
@@ -1798,6 +2079,10 @@ function ArmViewerConsole({
 												/>
 												<ArmContextUsageChart
 													armId={selectedArm.id}
+													contextBudget={selectedArm.contextBudget}
+													onContextBudgetChange={(contextBudget) =>
+														onContextBudgetChange(selectedArm.id, contextBudget)
+													}
 													title="Context Usage"
 													embedded
 													compact
@@ -1831,8 +2116,8 @@ function ArmViewerConsole({
 								) : activities.length === 0 && !currentText ? (
 									<ViewerEmptyState
 										icon={<Zap className="h-8 w-8" />}
-										title="No activity yet"
-										description="Structured events will appear here as the arm works."
+										title="No firehose events yet"
+										description="Raw live events will appear here as the arm works."
 									/>
 								) : (
 									activities.map((activity) => (
@@ -1857,6 +2142,11 @@ function ArmViewerConsole({
 										{logsError}
 									</div>
 								) : null}
+								{logsTruncated ? (
+									<div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+										Showing the most recent messages that fit the transport limit. Usage totals are not recalculated from this partial response.
+									</div>
+								) : null}
 
 								{(logsLoading || !logsReady) && messages.length === 0 ? (
 									<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1865,16 +2155,25 @@ function ArmViewerConsole({
 									</div>
 								) : null}
 
-								{messages.length === 0 && logsReady && !logsLoading ? (
+								{focusedActivityItems.length === 0 && logsReady && !logsLoading ? (
 									<ViewerEmptyState
 										icon={<Terminal className="h-8 w-8" />}
-										title="No message logs yet"
-										description="Conversation turns, tool calls, and system notes will accumulate here."
+										title="No focused activity yet"
+										description="Model messages and selected brain decisions will appear here."
 									/>
 								) : (
-									messages.map((message) => (
-										<MessageLogItem key={message.info.id} message={message} />
-									))
+									focusedActivityItems.map((item) =>
+										item.kind === "message" ? (
+											<MessageLogItem
+												key={item.message.info.id}
+												message={item.message}
+												preferences={messageLogPreferences}
+												onCollapsedChange={onMessageLogTypeCollapsedChange}
+											/>
+										) : (
+											<BrainActivityLogItem key={`brain-${item.activity.id}`} activity={item.activity} />
+										),
+									)
 								)}
 							</div>
 						</div>
@@ -2297,7 +2596,104 @@ function ActivityItemComponent({
 	);
 }
 
-function MessageLogItem({ message }: { message: ArmMessage }) {
+function CustomizeViewPopover({
+	preferences,
+	onCollapsedChange,
+	onBrainActivityVisibleChange,
+}: {
+	preferences: MessageLogPreferences;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+	onBrainActivityVisibleChange: (type: BrainActivityCategory, visible: boolean) => void;
+}) {
+	return (
+		<Popover>
+			<Popover.Trigger
+				aria-label="Customize focused activity"
+				className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+			>
+				<SlidersHorizontal className="h-4 w-4" />
+				<span className="hidden sm:inline">Customize view</span>
+			</Popover.Trigger>
+			<Popover.Content placement="bottom end" className="w-96 max-w-[calc(100vw-2rem)]">
+				<Popover.Dialog className="max-h-[min(560px,calc(100vh-2rem))] overflow-auto outline-none">
+					<div className="px-1 py-1">
+						<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Customize focused activity
+						</div>
+						<p className="mt-1 text-sm leading-5 text-muted-foreground">
+							Choose the transcript details and brain activity shown in this view. Preferences are saved locally.
+						</p>
+						<div className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Transcript display
+						</div>
+						<div className="mt-2 grid gap-1">
+							{MESSAGE_LOG_TYPE_OPTIONS.map(({ type, label, description }) => {
+								const collapsed = preferences.collapsed[type];
+								return (
+									<button
+										key={type}
+										type="button"
+										aria-pressed={!collapsed}
+										onClick={() => onCollapsedChange(type, !collapsed)}
+										className="flex items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+									>
+										<span>
+											<span className="block text-sm font-medium text-foreground">{label}</span>
+											<span className="block text-xs text-muted-foreground">{description}</span>
+										</span>
+										<span className="shrink-0 text-xs font-medium text-muted-foreground">
+											{collapsed ? "Collapsed" : "Expanded"}
+										</span>
+									</button>
+								);
+							})}
+						</div>
+						<div className="mt-5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Brain activity
+						</div>
+						<div className="mt-2 grid gap-4">
+							{BRAIN_ACTIVITY_GROUPS.map(({ heading, options }) => (
+								<div key={heading}>
+									<div className="mb-1 text-xs font-semibold text-foreground">{heading}</div>
+									<div className="grid gap-1">
+										{options.map(({ type, label, description }) => (
+											<Switch
+												key={type}
+												size="sm"
+												isSelected={preferences.brainActivity[type]}
+												onChange={(visible) => onBrainActivityVisibleChange(type, visible)}
+											>
+												<Switch.Content className="flex-1 items-start gap-2 rounded-md px-2 py-1 hover:bg-surface-secondary">
+													<Switch.Control>
+														<Switch.Thumb />
+													</Switch.Control>
+													<span>
+														<span className="block text-sm font-medium text-foreground">{label}</span>
+														<span className="block text-xs text-muted-foreground">{description}</span>
+													</span>
+												</Switch.Content>
+											</Switch>
+										))}
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				</Popover.Dialog>
+			</Popover.Content>
+		</Popover>
+	);
+}
+
+function MessageLogItem({
+	message,
+	preferences,
+	onCollapsedChange,
+}: {
+	message: ArmMessage;
+	preferences: MessageLogPreferences;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+}) {
 	const role = message.info.role;
 	const roleLabel =
 		role === "assistant" ? "Assistant" : role === "user" ? "User" : "System";
@@ -2324,16 +2720,70 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 			</div>
 
 			<div className="mt-2 space-y-2">
+				{formatMessageError(message.info.error) ? (
+					<MessageLogEntry
+						type="error"
+						label="Error"
+						collapsed={preferences.collapsed.error}
+						onCollapsedChange={onCollapsedChange}
+					>
+						<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+							{formatMessageError(message.info.error)}
+						</pre>
+					</MessageLogEntry>
+				) : null}
 				{message.parts.map((part, index) => {
-					if (part.type === "text" && part.text) {
+					const text = part.text || part.content;
+					if (part.type === "text" && text) {
+						const type: MessageLogContentType = role === "assistant" ? "response" : "message";
 						return (
-							<pre
+							<MessageLogEntry
 								key={`${message.info.id}-text-${index}`}
-								className="overflow-auto rounded-md border border-border/60 bg-surface-secondary/30 px-3 py-2.5 font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92"
+								type={type}
+								label={type === "response" ? "Response" : "Message"}
+								collapsed={preferences.collapsed[type]}
+								onCollapsedChange={onCollapsedChange}
 							>
-								{part.text}
-							</pre>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92">
+									{text}
+								</pre>
+							</MessageLogEntry>
 						);
+					}
+
+					if (part.type === "reasoning" && text) {
+						return (
+							<MessageLogEntry
+								key={`${message.info.id}-reasoning-${index}`}
+								type="thinking"
+								label="Thinking"
+								collapsed={preferences.collapsed.thinking}
+								onCollapsedChange={onCollapsedChange}
+							>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-muted-foreground">
+									{text}
+								</pre>
+							</MessageLogEntry>
+						);
+					}
+
+					if (part.type === "error") {
+						const error = formatMessageError(part.error) || text;
+						if (error) {
+							return (
+								<MessageLogEntry
+									key={`${message.info.id}-error-${index}`}
+									type="error"
+									label="Error"
+									collapsed={preferences.collapsed.error}
+									onCollapsedChange={onCollapsedChange}
+								>
+									<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+										{error}
+									</pre>
+								</MessageLogEntry>
+							);
+						}
 					}
 
 					if (
@@ -2344,34 +2794,65 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 						const details = extractToolDetails(part);
 						const state = details.status ? ` [${details.status}]` : "";
 						return (
-							<div
-								key={`${message.info.id}-tool-${index}`}
-								className="rounded-md border border-border/60 bg-surface-secondary/25 px-3 py-2"
-							>
-								<div className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-									{`Tool: ${tool}${state}`}
-								</div>
-								{details.input !== undefined && details.input !== null && (
-									<div className="mt-2 text-[11px] text-muted-foreground font-mono">
-										{`input: ${summarizeToolValue(details.input)}`}
-									</div>
-								)}
-								{details.output !== undefined && details.output !== null && (
-									<div className="text-[11px] text-muted-foreground font-mono">
-										{`output: ${summarizeToolValue(details.output)}`}
-									</div>
-								)}
-								{details.error !== undefined && details.error !== null && (
-									<div className="text-[11px] text-destructive font-mono">
-										{`error: ${summarizeToolValue(details.error)}`}
-									</div>
-								)}
-								{details.durationMs !== undefined && (
-									<div className="text-[11px] text-muted-foreground font-mono">
-										{`duration: ${details.durationMs}ms`}
-									</div>
-								)}
+							<div key={`${message.info.id}-tool-${index}`} className="space-y-2">
+								<MessageLogEntry
+									type="tool"
+									label={`Tool: ${tool}${state}`}
+									collapsed={preferences.collapsed.tool}
+									onCollapsedChange={onCollapsedChange}
+								>
+									{details.input !== undefined && details.input !== null && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`input: ${summarizeToolValue(details.input)}`}
+										</div>
+									)}
+									{details.output !== undefined && details.output !== null && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`output: ${summarizeToolValue(details.output)}`}
+										</div>
+									)}
+									{details.durationMs !== undefined && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`duration: ${details.durationMs}ms`}
+										</div>
+									)}
+								</MessageLogEntry>
+								{details.error !== undefined && details.error !== null ? (
+									<MessageLogEntry
+										type="error"
+										label="Tool error"
+										collapsed={preferences.collapsed.error}
+										onCollapsedChange={onCollapsedChange}
+									>
+										<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+											{summarizeToolValue(details.error)}
+										</pre>
+									</MessageLogEntry>
+								) : null}
 							</div>
+						);
+					}
+
+					if (text) {
+						const type: MessageLogContentType = role === "assistant" ? "response" : "message";
+						return (
+							<MessageLogEntry
+								key={`${message.info.id}-${part.type}-${index}`}
+								type={type}
+								label={
+									part.type === "completion"
+										? "Completion"
+										: type === "response"
+											? "Response"
+											: "Message"
+								}
+								collapsed={preferences.collapsed[type]}
+								onCollapsedChange={onCollapsedChange}
+							>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92">
+									{text}
+								</pre>
+							</MessageLogEntry>
 						);
 					}
 
@@ -2382,23 +2863,109 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 	);
 }
 
-function formatMessageTime(timeValue: JsonValue | undefined): string | null {
+function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
+	const category = getBrainActivityCategory(activity);
+	const categoryLabel = category === "health" && activity.details?.actor !== "brain"
+		? "Runtime health"
+		: `Brain ${category}`;
+
+	return (
+		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
+			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5 px-3 py-2.5">
+				<div className="flex items-center justify-between gap-3">
+					<div className="flex min-w-0 items-center gap-2">
+						<Bot className="h-3.5 w-3.5 shrink-0 text-cyan-600" />
+						<span className="truncate text-sm font-semibold text-foreground">{activity.title}</span>
+						{category ? (
+							<span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-cyan-700">
+								{categoryLabel}
+							</span>
+						) : null}
+					</div>
+					<span className="shrink-0 text-xs text-muted-foreground">{formatTime(activity.timestamp)}</span>
+				</div>
+				{activity.subtitle ? (
+					<div className="mt-1 text-sm text-muted-foreground">{activity.subtitle}</div>
+				) : null}
+				{activity.details && Object.keys(activity.details).length > 1 ? (
+					<details className="group mt-2">
+						<summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+							Details
+						</summary>
+						<pre className="mt-2 max-h-56 overflow-auto rounded-sm bg-surface-secondary/45 px-3 py-2 text-[12px] leading-6 whitespace-pre-wrap text-muted-foreground">
+							{formatDetails(activity.details)}
+						</pre>
+					</details>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
+function formatMessageError(error: unknown): string | null {
+	if (typeof error === "string" && error.trim()) {
+		return error;
+	}
+	const errorRecord = error as JsonValue;
+	if (!isJsonObject(errorRecord)) {
+		return null;
+	}
+
+	const name = typeof errorRecord.name === "string" ? errorRecord.name : null;
+	const data = isJsonObject(errorRecord.data) ? errorRecord.data : null;
+	const message = typeof data?.message === "string" ? data.message : null;
+	if (name && message) {
+		return `${name}: ${message}`;
+	}
+
+	return name || message;
+}
+
+function MessageLogEntry({
+	type,
+	label,
+	collapsed,
+	onCollapsedChange,
+	children,
+}: {
+	type: MessageLogContentType;
+	label: string;
+	collapsed: boolean;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+	children: ReactNode;
+}) {
+	return (
+		<details
+			className="group rounded-md border border-border/60 bg-surface-secondary/25"
+			open={!collapsed}
+			onToggle={(event) => onCollapsedChange(type, !event.currentTarget.open)}
+		>
+			<summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground marker:content-none">
+				<span>{label}</span>
+				<ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+			</summary>
+			<div className="border-t border-border/60 px-3 py-2.5">{children}</div>
+		</details>
+	);
+}
+
+function getMessageTimestamp(timeValue: JsonValue | undefined): number | null {
 	if (timeValue === undefined || timeValue === null) {
 		return null;
 	}
 
 	let raw: JsonValue = timeValue;
-		if (isJsonObject(timeValue)) {
-			const timeObj = timeValue;
-			raw = (
-				timeObj.completed ??
-				timeObj.created ??
-				timeObj.updated ??
-				timeObj.end ??
-				timeObj.start ??
-				null
-			);
-		}
+	if (isJsonObject(timeValue)) {
+		const timeObj = timeValue;
+		raw = (
+			timeObj.completed ??
+			timeObj.created ??
+			timeObj.updated ??
+			timeObj.end ??
+			timeObj.start ??
+			null
+		);
+	}
 
 	let date: Date | null = null;
 	if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -2417,8 +2984,16 @@ function formatMessageTime(timeValue: JsonValue | undefined): string | null {
 	if (!date || Number.isNaN(date.getTime())) {
 		return null;
 	}
+	return date.getTime();
+}
 
-	return date.toLocaleTimeString([], {
+function formatMessageTime(timeValue: JsonValue | undefined): string | null {
+	const timestamp = getMessageTimestamp(timeValue);
+	if (timestamp === null) {
+		return null;
+	}
+
+	return new Date(timestamp).toLocaleTimeString([], {
 		hour: "2-digit",
 		minute: "2-digit",
 		second: "2-digit",

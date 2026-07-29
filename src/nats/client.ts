@@ -23,6 +23,10 @@ import { initializeJetStreamEventStore } from './jetstream';
 
 const jc = JSONCodec<unknown>();
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 export interface NatsClientOptions {
   serverUrl: string;
   clientId: string;
@@ -346,7 +350,7 @@ export class NatsClient {
       // Send response to the reply topic
       const replyTopic = TOPICS.agentResponse(agentId, command.requestId);
       try {
-        await this.publish(replyTopic, response);
+        await this.publish(replyTopic, this.compactMessagesResponse(command, response));
       } catch (err) {
         if (!this.isMaxPayloadError(err)) {
           throw err;
@@ -422,6 +426,47 @@ export class NatsClient {
       return maxPayload;
     }
     return null;
+  }
+
+  private compactMessagesResponse(command: AgentCommand, response: CommandResponse): CommandResponse {
+    const maxPayload = this.getMaxPayloadBytes();
+    if (command.type !== 'get_messages' || !response.success || maxPayload === null) {
+      return response;
+    }
+    if (this.payloadFits(response, maxPayload)) {
+      return response;
+    }
+
+    const data = response.data;
+    if (!isRecord(data) || !Array.isArray(data.messages)) {
+      return response;
+    }
+
+    // NATS cannot stream a command response. Keep the most recent complete messages that fit,
+    // rather than failing the whole viewer request when a long-running arm has a large history.
+    const messages: unknown[] = [];
+    for (let index = data.messages.length - 1; index >= 0; index--) {
+      const candidate = {
+        ...response,
+        data: { ...data, messages: [data.messages[index], ...messages], truncated: true },
+      };
+      if (this.payloadFits(candidate, maxPayload)) {
+        messages.unshift(data.messages[index]);
+      }
+    }
+
+    return {
+      ...response,
+      data: { ...data, messages, truncated: true },
+    };
+  }
+
+  private payloadFits(data: unknown, maxPayload: number): boolean {
+    try {
+      return jc.encode(data).length <= maxPayload;
+    } catch {
+      return false;
+    }
   }
 
   private encodePayload(topic: string, data: unknown): Uint8Array {
