@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.0...coleo-v0.7.1) (2026-07-29)
+
+
+### Bug Fixes
+
+* unflake the test ([0e40e3d](https://github.com/sirtimbly/coleo/commit/0e40e3d6c17985f368f2463ad2ff768a84be52dc))
+* unflake the test ([de1f9b0](https://github.com/sirtimbly/coleo/commit/de1f9b03b34a95b0f2d0ba082b119acc2dcc8a9a))
+
+
+### Tests
+
+* clean up slow flaky runs ([c12a538](https://github.com/sirtimbly/coleo/commit/c12a53826b3e2e9d12ec562de411c262360711bf))
+* clean up slow flaky runs ([0d2171f](https://github.com/sirtimbly/coleo/commit/0d2171f033e97421504e71a83c14a2b718f10f8f))
+
 ## [0.7.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.6.0...coleo-v0.7.0) (2026-07-29)
 
 
