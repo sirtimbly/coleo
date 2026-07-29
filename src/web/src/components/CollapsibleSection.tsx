@@ -5,11 +5,16 @@ import { cn } from '@/lib';
 
 import type { ReactNode } from 'react';
 
+export interface CollapsibleSectionSummary {
+  label: string;
+  value: ReactNode;
+  tone?: 'default' | 'accent' | 'success' | 'warning' | 'danger';
+}
+
 export interface CollapsibleSectionProps {
   title: ReactNode;
   children: ReactNode;
-  description?: ReactNode;
-  meta?: ReactNode;
+  summary?: readonly CollapsibleSectionSummary[];
   appearance?: 'card' | 'flat';
   defaultExpanded?: boolean;
   isExpanded?: boolean;
@@ -25,8 +30,7 @@ export interface CollapsibleSectionProps {
 export function CollapsibleSection({
   title,
   children,
-  description,
-  meta,
+  summary,
   appearance = 'card',
   defaultExpanded = true,
   isExpanded: controlledExpanded,
@@ -67,18 +71,34 @@ export function CollapsibleSection({
           aria-expanded={isExpanded}
           onClick={() => setIsExpanded(!isExpanded)}
           className={cn(
-            'group flex w-full items-center gap-3 py-3 text-left transition-colors hover:bg-surface-secondary/60',
+            'group flex w-full items-center gap-3 py-2.5 text-left transition-colors hover:bg-surface-secondary/60',
             appearance === 'card' ? 'px-4' : 'px-1',
             triggerClassName,
           )}
         >
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold tracking-tight text-foreground">{title}</span>
-            {description ? (
-              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{description}</span>
+          <span className="flex min-w-0 flex-1 items-center gap-3 overflow-hidden">
+            <span className="shrink-0 truncate text-sm font-semibold tracking-tight text-foreground">{title}</span>
+            {summary?.length ? (
+              <span className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                {summary.map((item) => (
+                  <span
+                    key={item.label}
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] leading-none',
+                      item.tone === 'accent' && 'border-accent/30 bg-accent/10 text-accent',
+                      item.tone === 'success' && 'border-success/30 bg-success/10 text-success',
+                      item.tone === 'warning' && 'border-warning/30 bg-warning/10 text-warning',
+                      item.tone === 'danger' && 'border-danger/30 bg-danger/10 text-danger',
+                      (!item.tone || item.tone === 'default') && 'border-border bg-surface-secondary text-muted-foreground',
+                    )}
+                  >
+                    <span className="uppercase tracking-[0.08em] opacity-75">{item.label}</span>
+                    <span className="font-semibold tabular-nums text-current">{item.value}</span>
+                  </span>
+                ))}
+              </span>
             ) : null}
           </span>
-          {meta ? <span className="shrink-0 text-xs font-normal text-muted-foreground">{meta}</span> : null}
           <ChevronDown
             className={cn('size-4 shrink-0 text-muted-foreground transition-transform', isExpanded && 'rotate-180')}
             aria-hidden="true"

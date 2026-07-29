@@ -534,7 +534,10 @@ export function BugsPage() {
 
 			<CollapsibleSection
 				title="Bug list"
-				meta={`${bugs.length} bugs`}
+				summary={[
+					{ label: "Total", value: bugs.length },
+					{ label: "Visible", value: filteredBugs.length },
+				]}
 				fill
 				unmountOnCollapse
 				className="rounded-none border-x-0 border-y-0"

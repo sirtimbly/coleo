@@ -146,6 +146,10 @@ export function StatusBurndownChart({
 
   const buckets = data?.buckets ?? [];
   const statuses = data?.statuses ?? Object.keys(STATUS_STYLES[entity]);
+  const rangeDays = Math.max(
+    1,
+    Math.round((new Date(appliedRange.end).getTime() - new Date(appliedRange.start).getTime()) / 86_400_000),
+  );
   const maxDisplayed = Math.max(0, ...buckets.map((bucket) => stackedTotal(bucket.counts, statuses)));
   const yMaximum = niceAxisMaximum(maxDisplayed);
   const width = Math.max(720, buckets.length * 18 + 76);
@@ -167,7 +171,10 @@ export function StatusBurndownChart({
   return (
     <CollapsibleSection
       title={entity === 'task' ? 'Task Burndown' : 'Bug Burndown'}
-      description={`Status totals at each ${resolution} boundary`}
+      summary={[
+        { label: 'Resolution', value: RESOLUTION_LABELS[resolution] },
+        { label: 'Range', value: `${rangeDays}d` },
+      ]}
       isExpanded={isExpanded}
       onExpandedChange={setIsExpanded}
       className={className}

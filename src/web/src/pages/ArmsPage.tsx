@@ -1054,7 +1054,10 @@ export function ArmsPage() {
 					<div className="min-h-0 flex-1 overflow-auto">
 					<CollapsibleSection
 						title="Fleet telemetry"
-						description="Activity, context usage, and cost across all registered arms"
+						summary={[
+							{ label: "Arms", value: arms.length },
+							{ label: "Window", value: "24h" },
+						]}
 						className="rounded-none border-x-0 border-t-0"
 					>
 						<AllArmsTelemetryOverview embedded />
@@ -1080,7 +1083,7 @@ export function ArmsPage() {
 							{attentionArms.length > 0 && (
 								<CollapsibleSection
 									title={<span className="inline-flex items-center gap-2 text-warning"><AlertTriangle className="h-3.5 w-3.5" />Needs attention</span>}
-									meta={`${attentionArms.length} arms`}
+									summary={[{ label: "Arms", value: attentionArms.length, tone: "warning" }]}
 									className="rounded-none border-x-0 border-t-0"
 									bodyClassName="divide-y divide-warning/20 p-0"
 								>
@@ -1103,7 +1106,7 @@ export function ArmsPage() {
 
 					<CollapsibleSection
 						title="Running"
-						meta={`${healthyArms.length} arms`}
+						summary={[{ label: "Arms", value: healthyArms.length, tone: "success" }]}
 						className="rounded-none border-x-0 border-t-0"
 						bodyClassName="divide-y divide-border p-0"
 					>

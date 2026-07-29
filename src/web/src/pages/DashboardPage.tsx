@@ -304,7 +304,18 @@ function PlanStatusSection({
   ) ?? [];
 
   return (
-    <DenseSection title="Plan Status">
+    <DenseSection
+      title="Plan Status"
+      action={(
+        <Button
+          size="sm"
+          variant="ghost"
+          onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}
+        >
+          Edit plan
+        </Button>
+      )}
+    >
       {isLoading ? (
         <>
           {[1, 2, 3, 4].map((i) => (
@@ -1037,6 +1048,11 @@ export function DashboardPage() {
     );
   }
 
+  const infrastructureServices = status ? Object.values(status.infrastructure) : [];
+  const healthyServiceCount = infrastructureServices.filter((service) => service.healthy).length;
+  const configuredProviderCount = armHosts.reduce((total, host) => total + host.configuredProviders.length, 0);
+  const availableProviderCount = armHosts.reduce((total, host) => total + host.availableProviderCount, 0);
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
@@ -1084,7 +1100,14 @@ export function DashboardPage() {
 
       <CollapsibleSection
         title="System readiness"
-        description="Infrastructure health and project plan status"
+        summary={[
+          {
+            label: 'Services',
+            value: statusLoading ? '...' : `${healthyServiceCount}/${infrastructureServices.length}`,
+            tone: infrastructureServices.length > 0 && healthyServiceCount === infrastructureServices.length ? 'success' : 'warning',
+          },
+          { label: 'Arms', value: statusLoading ? '...' : status?.arms.total ?? 0 },
+        ]}
         className="rounded-none border-x-0 border-t-0"
         bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-2"
       >
@@ -1106,7 +1129,10 @@ export function DashboardPage() {
 
       <CollapsibleSection
         title="Runtime hosts"
-        description="Arm hosts and configured model providers"
+        summary={[
+          { label: 'Hosts', value: armHostsLoading ? '...' : armHosts.length },
+          { label: 'Providers', value: armHostsLoading ? '...' : `${configuredProviderCount}/${availableProviderCount}` },
+        ]}
         className="rounded-none border-x-0 border-t-0"
       >
         <ArmHostProvidersSection
@@ -1118,7 +1144,11 @@ export function DashboardPage() {
 
       <CollapsibleSection
         title="Operational feed"
-        description="Arms, notable events, and recent activity"
+        summary={[
+          { label: 'Arms', value: detailsLoading ? '...' : arms.length },
+          { label: 'Events', value: eventsLoading ? '...' : notableEvents.length },
+          { label: 'Activity', value: detailsLoading ? '...' : activity.length },
+        ]}
         className="rounded-none border-x-0 border-t-0"
         bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-3"
       >
@@ -1129,7 +1159,11 @@ export function DashboardPage() {
 
       <CollapsibleSection
         title="Task progress"
-        description="Current completion and queue health"
+        summary={[
+          { label: 'Total', value: taskStatsLoading ? '...' : taskStats?.total ?? 0 },
+          { label: 'Active', value: taskStatsLoading ? '...' : taskStats?.active ?? 0, tone: taskStats?.active ? 'accent' : 'default' },
+          { label: 'Blocked', value: taskStatsLoading ? '...' : taskStats?.blocked ?? 0, tone: taskStats?.blocked ? 'warning' : 'default' },
+        ]}
         className="rounded-none border-x-0 border-t-0"
       >
         <TaskProgressWidget

@@ -30,7 +30,7 @@ import {
 	cn,
 	isJsonObject,
 } from "@/lib";
-import { CollapsibleSection, RegenerateTasksModal, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
+import { CollapsibleSection, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import { TaskGrid } from "@/components/TaskGrid";
 import type { TaskUpdate } from "@/components/TaskGridRow";
@@ -141,8 +141,11 @@ function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task:
 	return (
 		<CollapsibleSection
 			title="Live timeline"
-			description="What is active now, what the Brain can take next, and recent completed work."
-			meta="Updates live"
+			summary={[
+				{ label: "Current", value: current ? STATUS_CONFIG[current.status].label : "None", tone: current ? "accent" : "default" },
+				{ label: "Next", value: upcoming ? "Ready" : "None", tone: upcoming ? "success" : "default" },
+				{ label: "Recent", value: completed.length },
+			]}
 		className="shrink-0 rounded-none border-x-0 border-t-0 bg-surface-secondary/40"
 			bodyClassName="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
 		>
@@ -518,7 +521,6 @@ export function TasksPage() {
 
 	const [searchText, setSearchText] = useState("");
 	const [isModalOpen, setIsModalOpen] = useState(false);
-	const [isRegenerateModalOpen, setIsRegenerateModalOpen] = useState(false);
 	const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
 	const [editingStatus, setEditingStatus] = useState<Task["status"] | undefined>(undefined);
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -561,17 +563,6 @@ export function TasksPage() {
 			initialStatus={editingStatus}
 		/>
 	);
-	const regenerateTasksModal = (
-		<RegenerateTasksModal
-			isOpen={isRegenerateModalOpen}
-			onClose={() => setIsRegenerateModalOpen(false)}
-			onRegenerated={() => {
-				setSelectedTask(null);
-				queryClient.invalidateQueries({ queryKey: tasksKeys.all() });
-			}}
-		/>
-	);
-
 	// Use React Query hook for tasks
 	const {
 		tasks,
@@ -957,10 +948,6 @@ export function TasksPage() {
 					<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
 						<RefreshCw className="h-4 w-4" />
 					</Button>
-					<Button size="sm" variant="primary" onPress={() => setIsRegenerateModalOpen(true)}>
-						<RefreshCw className="mr-1.5 h-4 w-4" />
-						Regenerate All Tasks
-					</Button>
 					<Button
 						size="sm"
 						variant="primary"
@@ -987,7 +974,10 @@ export function TasksPage() {
 						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
 						<CollapsibleSection
 							title="Task list"
-							meta={`${pagination?.total ?? filteredTasks.length} tasks`}
+							summary={[
+								{ label: "Total", value: pagination?.total ?? filteredTasks.length },
+								{ label: "Visible", value: filteredTasks.length },
+							]}
 							fill
 							unmountOnCollapse
 							className="rounded-none border-x-0 border-y-0"
@@ -1016,7 +1006,6 @@ export function TasksPage() {
 						</CollapsibleSection>
 					</div>
 					{taskModal}
-					{regenerateTasksModal}
 				</>
 			);
 		}
@@ -1099,7 +1088,6 @@ export function TasksPage() {
 					) : null}
 				</div>
 				{taskModal}
-				{regenerateTasksModal}
 			</>
 		);
 	}
@@ -1125,13 +1113,6 @@ export function TasksPage() {
 							aria-label="Refresh"
 						>
 							<RefreshCw className="h-4 w-4" />
-						</Button>
-						<Button
-							variant="primary"
-							onPress={() => setIsRegenerateModalOpen(true)}
-						>
-							<RefreshCw className="h-4 w-4 mr-2" />
-							Regenerate All Tasks
 						</Button>
 						<Button
 							variant="primary"
@@ -1183,7 +1164,10 @@ export function TasksPage() {
 
 			<CollapsibleSection
 				title="Task list"
-				meta={`${pagination?.total ?? filteredTasks.length} tasks`}
+				summary={[
+					{ label: "Total", value: pagination?.total ?? filteredTasks.length },
+					{ label: "Visible", value: filteredTasks.length },
+				]}
 				fill
 				unmountOnCollapse
 				className="rounded-none border-x-0 border-y-0"
@@ -1399,7 +1383,6 @@ export function TasksPage() {
 			</CollapsibleSection>
 
 				{taskModal}
-				{regenerateTasksModal}
 
 				{/* Delete Confirmation Dialog */}
 				{deleteConfirm.show &&
