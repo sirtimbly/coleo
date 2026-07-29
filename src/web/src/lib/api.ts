@@ -498,6 +498,7 @@ class ApiClient {
     return this.request<{
       messages: ArmMessage[];
       sessionId?: string;
+      truncated?: boolean;
       error?: string;
     }>(`/arms/${encodeURIComponent(id)}/messages?limit=${limit}`);
   }

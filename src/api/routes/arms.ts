@@ -3176,6 +3176,7 @@ export function createArmsRoutes() {
       return c.json({
         messages: normalizeMessagesForCostChart(response.data?.messages),
         sessionId: response.data?.sessionId || row.session_id,
+        truncated: response.data?.truncated === true,
         distributed: true,
       });
     }

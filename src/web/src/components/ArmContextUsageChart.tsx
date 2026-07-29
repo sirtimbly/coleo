@@ -170,9 +170,7 @@ export function ArmContextUsageChart({
     (sample) => sample.timestamp >= windowStart && sample.timestamp <= windowEnd,
   );
 
-  const budget = visibleSamples.length === 0
-    ? 0
-    : Math.max(...visibleSamples.map((s) => s.budget));
+  const budget = contextBudget ?? visibleSamples.at(-1)?.budget ?? 0;
   const maxUsed = visibleSamples.length === 0 ? 0 : Math.max(...visibleSamples.map((s) => s.used));
   const headroom = Math.max(1, Math.floor(budget * 0.1));
   const chartMax = Math.max(budget, maxUsed + headroom);

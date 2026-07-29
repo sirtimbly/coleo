@@ -208,13 +208,15 @@ function loadMessageLogPreferences(): MessageLogPreferences {
 }
 
 function getBrainActivityCategory(activity: ActivityItem): BrainActivityCategory | null {
-	if (!activity.details || activity.details.actor !== "brain") {
+	if (!activity.details) {
 		return null;
 	}
 
 	const eventType = typeof activity.details.eventType === "string"
 		? activity.details.eventType
 		: activity.title.toLowerCase().replaceAll(" ", "_");
+	if (eventType.includes("heartbeat")) return "health";
+	if (activity.details.actor !== "brain") return null;
 	if (eventType.includes("stuck_detected")) return "stuck";
 	if (
 		eventType.includes("unstuck") ||
@@ -491,6 +493,7 @@ export function ArmViewerPage() {
 	const [messageLogPreferences, setMessageLogPreferences] = useState(loadMessageLogPreferences);
 	const [logsLoading, setLogsLoading] = useState(false);
 	const [logsError, setLogsError] = useState<string | null>(null);
+	const [logsTruncated, setLogsTruncated] = useState(false);
 	const [logsLoadedArmId, setLogsLoadedArmId] = useState<string | null>(null);
 	const [eventsLoading, setEventsLoading] = useState(false);
 	const [markingStuck, setMarkingStuck] = useState(false);
@@ -690,10 +693,15 @@ export function ArmViewerPage() {
 			}
 			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
 			const nextMessages = res.messages || [];
-			setMessages((previous) =>
-				silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages,
-			);
-			if (nextMessages.length > 0) {
+			setMessages((previous) => {
+				if (res.truncated && previous.length > 0) {
+					const merged = new Map(previous.map((message) => [message.info.id, message]));
+					for (const message of nextMessages) merged.set(message.info.id, message);
+					return [...merged.values()];
+				}
+				return silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages;
+			});
+			if (nextMessages.length > 0 && !res.truncated) {
 				let input = 0;
 				let output = 0;
 				let cost = 0;
@@ -706,6 +714,7 @@ export function ArmViewerPage() {
 				setTotalCost(cost);
 			}
 			setLogsLoadedArmId(armId);
+			setLogsTruncated(res.truncated === true);
 			setLogsError(res.error || null);
 		} catch (err) {
 			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
@@ -744,6 +753,16 @@ export function ArmViewerPage() {
 			) => upsertActivity(id, { timestamp: eventTimestamp, ...updates });
 
 			// Message events
+			if (type === "arm.heartbeat" || type === "server-heartbeat" || type === "server.heartbeat") {
+				recordActivity(eventActivityId("heartbeat"), {
+					type: "session",
+					title: "Heartbeat",
+					subtitle: type.replaceAll(".", " ").replaceAll("-", " "),
+					status: "info",
+					details: { ...props, eventType: type },
+				});
+			}
+
 			if (type === "message.updated") {
 				const info = props.info as { id: string; role: string } | undefined;
 				if (info) {
@@ -1111,6 +1130,7 @@ export function ArmViewerPage() {
 			setLogsLoadedArmId(null);
 			setMessages([]);
 			setLogsError(null);
+			setLogsTruncated(false);
 			setArmAnalysis(null);
 			autoScrollEnabledRef.current = true;
 			// Try to restore from localStorage first
@@ -1144,6 +1164,7 @@ export function ArmViewerPage() {
 			setMessages([]);
 			setLogsLoadedArmId(null);
 			setLogsError(null);
+			setLogsTruncated(false);
 		}
 	}, [loadAnalysis, loadEvents, loadMessages, loadSessionState, selectedArmId]);
 
@@ -1392,6 +1413,7 @@ export function ArmViewerPage() {
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1507,6 +1529,7 @@ export function ArmViewerPage() {
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1641,6 +1664,7 @@ function ArmViewerConsole({
 	logsLoading,
 	logsReady,
 	logsError,
+	logsTruncated,
 	eventsLoading,
 	analysis,
 	analysisLoading,
@@ -1675,6 +1699,7 @@ function ArmViewerConsole({
 	logsLoading: boolean;
 	logsReady: boolean;
 	logsError: string | null;
+	logsTruncated: boolean;
 	eventsLoading: boolean;
 	analysis: ArmAnalysisFull | null;
 	analysisLoading: boolean;
@@ -2115,6 +2140,11 @@ function ArmViewerConsole({
 								{logsError ? (
 									<div className="rounded-md border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">
 										{logsError}
+									</div>
+								) : null}
+								{logsTruncated ? (
+									<div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+										Showing the most recent messages that fit the transport limit. Usage totals are not recalculated from this partial response.
 									</div>
 								) : null}
 
@@ -2835,6 +2865,9 @@ function MessageLogItem({
 
 function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
 	const category = getBrainActivityCategory(activity);
+	const categoryLabel = category === "health" && activity.details?.actor !== "brain"
+		? "Runtime health"
+		: `Brain ${category}`;
 
 	return (
 		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
@@ -2845,7 +2878,7 @@ function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
 						<span className="truncate text-sm font-semibold text-foreground">{activity.title}</span>
 						{category ? (
 							<span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-cyan-700">
-								Brain {category}
+								{categoryLabel}
 							</span>
 						) : null}
 					</div>
