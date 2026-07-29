@@ -1,7 +1,11 @@
 name: release-please
 
 on:
-  push:
+  workflow_run:
+    workflows:
+      - ci
+    types:
+      - completed
     branches:
       - master
 
@@ -12,8 +16,10 @@ permissions:
 
 jobs:
   release-please:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v5
         with:
           token: ${{ secrets.MY_RELEASE_PLEASE_TOKEN }}
+          target-branch: master
