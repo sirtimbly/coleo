@@ -35,8 +35,6 @@ jobs:
           ref: ${{ inputs.release_tag || github.sha }}
 
       - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.6"
 
       - name: Resolve source and release metadata
         id: release

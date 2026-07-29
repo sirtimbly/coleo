@@ -6,12 +6,6 @@
 version: 2
 updates:
   - package-ecosystem: "bun" # See documentation for possible values
-    directories:
-      - "/"
-    schedule:
-      interval: "monthly"
-  - package-ecosystem: "npm" # See documentation for possible values
-    directories:
-      - "/docs"
+    directory: "/"
     schedule:
       interval: "monthly"
