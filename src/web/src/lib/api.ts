@@ -586,6 +586,17 @@ class ApiClient {
     );
   }
 
+  async getCommandQueueHealth(params?: { stream?: string; durable?: string; staleMs?: number }) {
+    const query = new URLSearchParams();
+    if (params?.stream) query.set('stream', params.stream);
+    if (params?.durable) query.set('durable', params.durable);
+    if (params?.staleMs) query.set('staleMs', params.staleMs.toString());
+    const queryStr = query.toString();
+    return this.request<CommandQueueHealth>(
+      `/activity/command-queue-health${queryStr ? `?${queryStr}` : ''}`
+    );
+  }
+
   // Brain
   async getBrainStatus() {
     return this.request<{
@@ -1712,7 +1723,7 @@ export interface GardenScene {
   stats: GardenSceneStats;
 }
 
-export interface TranscriptIndexerHealth {
+interface BaseQueueHealth {
   status: "healthy" | "lagging" | "stale" | "unavailable" | "error";
   stream: string;
   durable: string;
@@ -1727,6 +1738,14 @@ export interface TranscriptIndexerHealth {
   staleThresholdMs: number;
   updatedAt: string;
   message?: string;
+}
+
+export interface TranscriptIndexerHealth extends BaseQueueHealth {
+  streamMessages?: number;
+}
+
+export interface CommandQueueHealth extends BaseQueueHealth {
+  enabled: boolean;
 }
 
 export interface MailMessage {

@@ -9,6 +9,7 @@ import type { Database } from "bun:sqlite";
 import { basename } from "path";
 import { eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
+import { COMMAND_STREAM_NAME } from "../../nats/command-types";
 
 interface ActivityContext {
   Variables: {
@@ -42,6 +43,74 @@ interface TranscriptEntry {
     host: string | null;
     project: string | null;
     workdir: string | null;
+  };
+}
+
+interface QueueHealthResponse {
+  status: "healthy" | "lagging" | "stale" | "unavailable" | "error";
+  stream: string;
+  durable: string;
+  consumerFound: boolean;
+  lagMessages: number | null;
+  ackPending: number | null;
+  streamLastSeq: number | null;
+  streamMessages?: number;
+  consumerStreamSeq: number | null;
+  consumerSeq: number | null;
+  lastActive: string | null;
+  staleThresholdMs: number;
+  updatedAt: string;
+  message?: string;
+  enabled?: boolean;
+}
+
+function buildQueueUnavailableHealth(
+  stream: string,
+  durable: string,
+  staleThresholdMs: number,
+  message: string,
+  overrides?: Partial<QueueHealthResponse>,
+): QueueHealthResponse {
+  return {
+    status: "unavailable",
+    stream,
+    durable,
+    consumerFound: false,
+    lagMessages: null,
+    ackPending: null,
+    streamLastSeq: null,
+    consumerStreamSeq: null,
+    consumerSeq: null,
+    lastActive: null,
+    staleThresholdMs,
+    updatedAt: new Date().toISOString(),
+    message,
+    ...overrides,
+  };
+}
+
+function buildQueueErrorHealth(
+  stream: string,
+  durable: string,
+  staleThresholdMs: number,
+  message: string,
+  overrides?: Partial<QueueHealthResponse>,
+): QueueHealthResponse {
+  return {
+    status: "error",
+    stream,
+    durable,
+    consumerFound: false,
+    lagMessages: null,
+    ackPending: null,
+    streamLastSeq: null,
+    consumerStreamSeq: null,
+    consumerSeq: null,
+    lastActive: null,
+    staleThresholdMs,
+    updatedAt: new Date().toISOString(),
+    message,
+    ...overrides,
   };
 }
 
@@ -535,6 +604,118 @@ export function createActivityRoutes() {
         updatedAt: new Date().toISOString(),
         message,
       });
+    }
+  });
+
+  /**
+   * Command queue health from JetStream durable consumer state.
+   * GET /api/activity/command-queue-health?stream=coleo-commands&durable=cmd-projector-to-db&staleMs=120000
+   */
+  app.get("/command-queue-health", async (c) => {
+    const stream = c.req.query("stream")?.trim() || COMMAND_STREAM_NAME;
+    const durable = c.req.query("durable")?.trim() || process.env.COLEO_COMMAND_PROJECTOR_DURABLE || "cmd-projector-to-db";
+    const staleThresholdMs = parseOptionalPositiveInt(
+      c.req.query("staleMs"),
+      parseOptionalPositiveInt(process.env.COLEO_COMMAND_QUEUE_STALE_MS, 120000, 86_400_000),
+      86_400_000,
+    );
+    const projectorEnabledRaw = process.env.COLEO_COMMAND_PROJECTOR_ENABLED?.trim().toLowerCase();
+    const projectorEnabled = !projectorEnabledRaw || !["0", "false", "off", "no", "disabled"].includes(projectorEnabledRaw);
+
+    if (!projectorEnabled) {
+      return c.json(
+        buildQueueUnavailableHealth(
+          stream,
+          durable,
+          staleThresholdMs,
+          "Command projector disabled via COLEO_COMMAND_PROJECTOR_ENABLED",
+          {
+            enabled: false,
+          },
+        ),
+      );
+    }
+
+    if (!eventStore.isInitialized()) {
+      return c.json(
+        buildQueueUnavailableHealth(stream, durable, staleThresholdMs, "JetStream not initialized", {
+          enabled: true,
+        }),
+      );
+    }
+
+    const natsManager = getNatsManager();
+    const connection = natsManager?.getConnection();
+    if (!connection) {
+      return c.json(
+        buildQueueUnavailableHealth(stream, durable, staleThresholdMs, "NATS connection unavailable", {
+          enabled: true,
+        }),
+      );
+    }
+
+    try {
+      const jsm = await connection.jetstreamManager();
+
+      const streamInfo = await jsm.streams.info(stream).catch(() => null);
+      if (!streamInfo) {
+        return c.json(
+          buildQueueUnavailableHealth(stream, durable, staleThresholdMs, `Stream not found: ${stream}`, {
+            enabled: true,
+          }),
+        );
+      }
+
+      const consumerInfo = await jsm.consumers.info(stream, durable).catch(() => null);
+      if (!consumerInfo) {
+        return c.json(
+          buildQueueUnavailableHealth(stream, durable, staleThresholdMs, `Consumer not found: ${durable}`, {
+            enabled: true,
+            streamLastSeq: streamInfo.state.last_seq,
+          }),
+        );
+      }
+
+      const lagMessages = typeof consumerInfo.num_pending === "number" ? consumerInfo.num_pending : null;
+      const ackPending = typeof consumerInfo.num_ack_pending === "number" ? consumerInfo.num_ack_pending : null;
+      const consumerStreamSeq =
+        typeof consumerInfo.delivered?.stream_seq === "number" ? consumerInfo.delivered.stream_seq : null;
+      const consumerSeq =
+        typeof consumerInfo.delivered?.consumer_seq === "number" ? consumerInfo.delivered.consumer_seq : null;
+      const lastActive = toIsoTimestamp(consumerInfo.delivered?.last_active || null);
+
+      let status: QueueHealthResponse["status"] = "healthy";
+      if ((lagMessages ?? 0) > 0 || (ackPending ?? 0) > 0) {
+        status = "lagging";
+      }
+      if (lastActive) {
+        const ageMs = Date.now() - new Date(lastActive).getTime();
+        if (ageMs > staleThresholdMs) {
+          status = "stale";
+        }
+      } else if ((lagMessages ?? 0) > 0) {
+        status = "stale";
+      }
+
+      return c.json({
+        status,
+        stream,
+        durable,
+        enabled: true,
+        consumerFound: true,
+        lagMessages,
+        ackPending,
+        streamLastSeq: streamInfo.state.last_seq,
+        streamMessages: streamInfo.state.messages,
+        consumerStreamSeq,
+        consumerSeq,
+        lastActive,
+        staleThresholdMs,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json(buildQueueErrorHealth(stream, durable, staleThresholdMs, message, { enabled: true }));
     }
   });
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
+import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
 import { Card, CardHeader, CardTitle, CardContent, CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
@@ -191,13 +191,17 @@ const formatUptime = (seconds: number) => {
 function InfrastructureSection({
   infrastructure,
   indexerHealth,
+  commandQueueHealth,
   isLoading,
   indexerLoading,
+  commandQueueLoading,
 }: {
   infrastructure?: SystemStatus['infrastructure'];
   indexerHealth?: TranscriptIndexerHealth | null;
+  commandQueueHealth?: CommandQueueHealth | null;
   isLoading: boolean;
   indexerLoading: boolean;
+  commandQueueLoading: boolean;
 }) {
   const qdrant = infrastructure?.qdrant ?? { healthy: false, optional: true, error: "Status unavailable" };
   const indexer = infrastructure?.indexer ?? { healthy: false, optional: true, running: false, error: "Status unavailable" };
@@ -278,6 +282,21 @@ function InfrastructureSection({
           chipLabel={indexerHealth.status}
           chipColor={indexerColorMap[indexerHealth.status]}
           sub={`stream=${indexerHealth.stream} · durable=${indexerHealth.durable} · consumerSeq=${indexerHealth.consumerSeq ?? "-"}`}
+        />
+      ) : null}
+
+      {commandQueueLoading ? (
+        <DenseRowSkeleton />
+      ) : commandQueueHealth ? (
+        <DenseRow
+          tone={indexerColorMap[commandQueueHealth.status]}
+          label="Command Queue"
+          detail={commandQueueHealth.message}
+          detailTone={commandQueueHealth.enabled ? "warning" : "danger"}
+          meta={`lag ${commandQueueHealth.lagMessages ?? "-"} · ack ${commandQueueHealth.ackPending ?? "-"} · last active ${formatLastSeen(commandQueueHealth.lastActive)} · enabled ${commandQueueHealth.enabled ? "yes" : "no"}`}
+          chipLabel={commandQueueHealth.status}
+          chipColor={indexerColorMap[commandQueueHealth.status]}
+          sub={`stream=${commandQueueHealth.stream} · durable=${commandQueueHealth.durable} · consumerSeq=${commandQueueHealth.consumerSeq ?? "-"}`}
         />
       ) : null}
     </DenseSection>
@@ -763,6 +782,7 @@ export function DashboardPage() {
   const [notableEvents, setNotableEvents] = useState<RecentEvent[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
+  const [commandQueueHealth, setCommandQueueHealth] = useState<CommandQueueHealth | null>(null);
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null);
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
@@ -774,6 +794,7 @@ export function DashboardPage() {
   const [detailsLoading, setDetailsLoading] = useState(true);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [indexerLoading, setIndexerLoading] = useState(true);
+  const [commandQueueLoading, setCommandQueueLoading] = useState(true);
   const [brainLoading, setBrainLoading] = useState(true);
   const [armHostsLoading, setArmHostsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -817,6 +838,34 @@ export function DashboardPage() {
         });
       } finally {
         setIndexerLoading(false);
+      }
+    }, 5_000);
+  }, []);
+
+  const loadCommandQueueHealth = useCallback(async () => {
+    await refreshGate.current.run('command-queue', async () => {
+      try {
+        const healthRes = await api.getCommandQueueHealth();
+        setCommandQueueHealth(healthRes);
+      } catch {
+        setCommandQueueHealth((current) => current ?? {
+          status: "error",
+          stream: "coleo-commands",
+          durable: "cmd-projector-to-db",
+          consumerFound: false,
+          lagMessages: null,
+          ackPending: null,
+          streamLastSeq: null,
+          consumerStreamSeq: null,
+          consumerSeq: null,
+          lastActive: null,
+          staleThresholdMs: 120000,
+          updatedAt: new Date().toISOString(),
+          message: "Failed to load command queue health",
+          enabled: true,
+        });
+      } finally {
+        setCommandQueueLoading(false);
       }
     }, 5_000);
   }, []);
@@ -966,6 +1015,7 @@ export function DashboardPage() {
     if (msg.channel === 'arm-events') {
       void loadNotableEvents();
       void loadIndexerHealth();
+      void loadCommandQueueHealth();
     }
     if (msg.channel === 'brain') {
       void loadBrainStatus();
@@ -976,7 +1026,7 @@ export function DashboardPage() {
     if (msg.channel === 'tasks') {
       void loadTaskStats();
     }
-  }, [loadBrainStatus, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents, loadTaskStats]);
+  }, [loadBrainStatus, loadCommandQueueHealth, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents, loadTaskStats]);
 
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain', 'arm-events', 'tasks'],
@@ -990,6 +1040,7 @@ export function DashboardPage() {
     loadAnalysis();
     loadNotableEvents();
     loadIndexerHealth();
+    loadCommandQueueHealth();
     loadBrainStatus();
     loadArmHosts();
     loadTaskStats();
@@ -1000,12 +1051,13 @@ export function DashboardPage() {
       loadDetails();
       loadNotableEvents();
       loadIndexerHealth();
+      loadCommandQueueHealth();
       loadBrainStatus();
       loadArmHosts();
       loadTaskStats();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadArmHosts, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus, loadTaskStats]);
+  }, [loadArmHosts, loadCommandQueueHealth, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus, loadTaskStats]);
 
   useEffect(() => {
     let active = true;
@@ -1114,8 +1166,10 @@ export function DashboardPage() {
         <InfrastructureSection
           infrastructure={status?.infrastructure}
           indexerHealth={indexerHealth}
+          commandQueueHealth={commandQueueHealth}
           isLoading={statusLoading}
           indexerLoading={indexerLoading}
+          commandQueueLoading={commandQueueLoading}
         />
         <PlanStatusSection
           status={status ?? undefined}
