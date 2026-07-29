@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
 import { mkdir, rm } from "fs/promises";
 import { join } from "path";
 import { Brain } from "../../brain/brain";
@@ -15,7 +15,7 @@ describe("Brain runtime flows", () => {
   let brain: Brain;
   let sentToHuman: Array<{ subject: string; body: string }>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     testDir = join("/tmp", `coleo-brain-runtime-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     await mkdir(join(testDir, "mail", "inbox", "new"), { recursive: true });
@@ -23,17 +23,25 @@ describe("Brain runtime flows", () => {
     await mkdir(join(testDir, "mail", "inbox", "tmp"), { recursive: true });
 
     db = await initDatabase(join(testDir, "coleo.db"));
+    const fixtureBrain = new Brain({
+      coleoDir: testDir,
+      projectRoot: testDir,
+      pollIntervalMs: 1000,
+      verbose: false,
+    });
+    await (fixtureBrain as any).templates.ensureTemplatesExist();
+  }, 30_000);
 
+  beforeEach(() => {
+    db.run("BEGIN");
     brain = new Brain({
       coleoDir: testDir,
+      projectRoot: testDir,
       pollIntervalMs: 1000,
       verbose: false,
     });
 
     (brain as any).db = db;
-
-    // Ensure templates are available for renderTemplate calls
-    await (brain as any).templates.ensureTemplatesExist();
 
     sentToHuman = [];
     (brain as any).sendToHuman = async (message: { subject: string; body: string }) => {
@@ -742,8 +750,12 @@ describe("Brain runtime flows", () => {
     }
   }, 30_000);
 
-  afterEach(async () => {
+  afterEach(() => {
     brain.stop();
+    db.run("ROLLBACK");
+  });
+
+  afterAll(async () => {
     db.close();
     try {
       await rm(testDir, { recursive: true, force: true });
