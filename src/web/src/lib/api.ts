@@ -912,7 +912,7 @@ class ApiClient {
     sourceType?: string;
     limit?: number;
     offset?: number;
-  }) {
+  }, signal?: AbortSignal) {
     const query = new URLSearchParams();
     if (params?.status) query.set('status', params.status);
     if (params?.priority) query.set('priority', params.priority);
@@ -927,7 +927,7 @@ class ApiClient {
       tasks: Task[];
       pagination: { limit: number; offset: number; total: number };
       counts: { total: number; byStatus: Record<string, number> };
-    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`);
+    }>(`/tasks${queryStr ? `?${queryStr}` : ''}`, { signal });
   }
 
   async getTask(id: string) {
@@ -939,6 +939,7 @@ class ApiClient {
     description: string;
     priority?: Task['priority'];
     domain?: string;
+    classification?: string;
     phase?: string;
     sourceType?: Task['sourceType'];
     sourceRef?: string;
@@ -1032,6 +1033,16 @@ class ApiClient {
         cumulativeCompleted: number;
       }>;
     }>(`/tasks/burndown?${search}`);
+  }
+
+  async getStatusSeries(params: {
+    entity: StatusSeriesEntity;
+    start: string;
+    end: string;
+    resolution: StatusSeriesResolution;
+  }, signal?: AbortSignal) {
+    const search = new URLSearchParams(params);
+    return this.request<StatusSeriesResponse>(`/status-series?${search}`, { signal });
   }
 
   async getTaskBlockingBugs(taskId: string) {
@@ -1289,6 +1300,13 @@ class ApiClient {
   async getArmContext(armId: string) {
     return this.request<ArmContextResponse>(
       `/arms/${encodeURIComponent(armId)}/context`,
+    );
+  }
+
+  async getArmContextHistory(armId: string, windowMs = 30 * 60 * 1000) {
+    const query = new URLSearchParams({ windowMs: windowMs.toString() });
+    return this.request<ArmContextHistoryResponse>(
+      `/arms/${encodeURIComponent(armId)}/context-history?${query.toString()}`,
     );
   }
 
@@ -1843,6 +1861,7 @@ export interface Task {
   sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
   sourceRef: string | null;
   phase: string | null;
+  classification: string | null;
   domain: string | null;
   assignedTo: string | null;
   dependencyBlocked?: boolean;
@@ -1976,6 +1995,23 @@ export interface EventWindowResponse {
   };
 }
 
+export type StatusSeriesEntity = 'task' | 'bug';
+export type StatusSeriesResolution = 'hour' | 'day' | 'week';
+
+export interface StatusSeriesResponse {
+  entity: StatusSeriesEntity;
+  resolution: StatusSeriesResolution;
+  start: string;
+  end: string;
+  statuses: string[];
+  buckets: Array<{
+    start: string;
+    end: string;
+    counts: Record<string, number>;
+    total: number;
+  }>;
+}
+
 export interface ArmActivityMetricsResponse {
   armId: string;
   window: {
@@ -2035,6 +2071,16 @@ export interface ArmContextResponse {
     utilization: number;
     files: Array<{ path: string; claimedAt: string }>;
   };
+}
+
+export interface ArmContextHistoryResponse {
+  armId: string;
+  windowMs: number;
+  samples: Array<{
+    timestamp: string;
+    used: number;
+    budget: number;
+  }>;
 }
 
 export interface ArmCostHistoryResponse {

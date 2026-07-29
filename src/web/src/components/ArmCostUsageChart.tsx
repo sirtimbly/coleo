@@ -136,7 +136,7 @@ export function ArmCostUsageChart({
             cacheReadTokens: 0,
             cacheWriteTokens: 0,
           }))
-          .filter((sample) => Number.isFinite(sample.timestamp) && sample.messageCost > 0);
+          .filter((sample) => Number.isFinite(sample.timestamp) && sample.messageCost >= 0);
         recordSnapshot(fresh);
         setError(null);
       } catch (err) {
@@ -166,6 +166,7 @@ export function ArmCostUsageChart({
   const maxBudget = typeof costBudget === 'number' && costBudget > 0 ? costBudget : 0;
   const chartMax = maxBudget > maxCumulative ? maxBudget : maxCumulative * 1.15;
   const costRatePerHour = computeCostRatePerHour(visibleSamples, referenceTime);
+  const hasReportedCost = visibleSamples.some((sample) => sample.messageCost > 0);
 
   const width = 600;
   const height = compact ? 105 : 140;
@@ -258,6 +259,7 @@ export function ArmCostUsageChart({
               {externalSamples
                 ? `${visibleSamples.length} persisted message samples`
                 : `Samples every ~${Math.round(COST_POLL_INTERVAL_MS / 1000)}s`}
+              {visibleSamples.length > 0 && !hasReportedCost ? ' · provider reported $0 cost' : ''}
             </span>
           </>
         )}

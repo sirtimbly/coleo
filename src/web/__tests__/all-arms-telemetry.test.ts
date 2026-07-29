@@ -48,4 +48,21 @@ describe('all-arm telemetry helpers', () => {
     expect(samples.map((sample) => sample.messageId)).toEqual(['arm-a:message-1', 'arm-b:message-1']);
     expect(samples[1]).toMatchObject({ inputTokens: 60, outputTokens: 70, reasoningTokens: 80 });
   });
+
+  it('retains token telemetry when the provider reports zero cost', () => {
+    const samples = mapAllArmCostSamples([{
+      armId: 'arm-a',
+      timestamp: '2026-07-28T10:00:00.000Z',
+      cost: 0,
+      messageId: 'message-1',
+      inputTokens: 100,
+      outputTokens: 20,
+      reasoningTokens: 5,
+      cacheReadTokens: 10,
+      cacheWriteTokens: 0,
+    }]);
+
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toMatchObject({ messageCost: 0, inputTokens: 100, outputTokens: 20 });
+  });
 });

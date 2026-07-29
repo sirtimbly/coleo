@@ -83,6 +83,27 @@ function highlights(query: string, title: string, content: string): string[] {
 	return [...new Set(out)].slice(0, 5);
 }
 
+function parseDateQuery(raw: string | undefined, label: string): { value?: Date; error?: string } {
+	if (!raw) {
+		return {};
+	}
+
+	const parsed = new Date(raw);
+	if (Number.isNaN(parsed.getTime())) {
+		return { error: `Invalid ${label} date: ${raw}` };
+	}
+
+	return { value: parsed };
+}
+
+function parseLimit(raw: string | undefined, fallback: number, max: number): number {
+	const parsed = Number.parseInt(raw || String(fallback), 10);
+	if (!Number.isFinite(parsed) || parsed <= 0) {
+		return fallback;
+	}
+	return Math.min(parsed, max);
+}
+
 export function createStatusHistoryRoutes(): Hono {
 	const app = new Hono();
 
@@ -96,6 +117,12 @@ export function createStatusHistoryRoutes(): Hono {
 			}
 
 			const limit = body.limit ?? 20;
+			const parsedFrom = parseDateQuery(body.filters?.from, "from");
+			const parsedTo = parseDateQuery(body.filters?.to, "to");
+			if (parsedFrom.error || parsedTo.error) {
+				return c.json({ error: parsedFrom.error || parsedTo.error }, 400);
+			}
+
 			const keywordWeight = body.keywordWeight ?? 0.35;
 			const semanticWeight = body.semanticWeight ?? 0.65;
 			const totalWeight = keywordWeight + semanticWeight || 1;
@@ -125,8 +152,8 @@ export function createStatusHistoryRoutes(): Hono {
 								bugId: filters.bug_id,
 								source: filters.source,
 								classification: filters.classification,
-								since: filters.from ? new Date(filters.from) : undefined,
-								until: filters.to ? new Date(filters.to) : undefined,
+								since: parsedFrom.value,
+								until: parsedTo.value,
 							});
 							for (const hit of batch) {
 								if (seen.has(hit.id)) continue;
@@ -144,8 +171,8 @@ export function createStatusHistoryRoutes(): Hono {
 						bugId: filters.bug_id,
 						source: filters.source,
 						classification: filters.classification,
-						since: filters.from ? new Date(filters.from) : undefined,
-						until: filters.to ? new Date(filters.to) : undefined,
+						since: parsedFrom.value,
+						until: parsedTo.value,
 					});
 					semanticHits.push(...batch);
 				}
@@ -205,17 +232,20 @@ export function createStatusHistoryRoutes(): Hono {
 
 	app.get("/by-arm/:armId", async (c) => {
 		const armId = c.req.param("armId");
-		const from = c.req.query("from");
-		const to = c.req.query("to");
-		const limit = Number.parseInt(c.req.query("limit") || "100", 10);
+		const from = parseDateQuery(c.req.query("from"), "from");
+		const to = parseDateQuery(c.req.query("to"), "to");
+		const limit = parseLimit(c.req.query("limit"), 100, 500);
+		if (from.error || to.error) {
+			return c.json({ error: from.error || to.error }, 400);
+		}
 
 		try {
 			// Empty semantic query not useful; use a broad probe via filter-only by searching arm id text.
 			const hits = await searchStatusHistory(armId, {
 				limit,
 				armId,
-				since: from ? new Date(from) : undefined,
-				until: to ? new Date(to) : undefined,
+				since: from.value,
+				until: to.value,
 			});
 			return c.json({
 				armId,

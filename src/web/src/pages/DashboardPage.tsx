@@ -1,13 +1,10 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, ChevronRight, ArrowUpRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
+import { Card, CardHeader, CardTitle, CardContent, CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
-import { TaskBurndownWidget } from '@/components/TaskBurndownWidget';
-import { ArmActivityChart } from '@/components/ArmActivityChart';
-import { ArmContextUsageChart } from '@/components/ArmContextUsageChart';
-import { ArmCostUsageChart } from '@/components/ArmCostUsageChart';
+import { StatusBurndownChart } from '@/components/StatusBurndownChart';
 import { Button, Chip, Skeleton, Disclosure } from '@heroui/react';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { usePageTitle } from '@/hooks/usePageTitle';
@@ -307,7 +304,18 @@ function PlanStatusSection({
   ) ?? [];
 
   return (
-    <DenseSection title="Plan Status">
+    <DenseSection
+      title="Plan Status"
+      action={(
+        <Button
+          size="sm"
+          variant="ghost"
+          onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}
+        >
+          Edit plan
+        </Button>
+      )}
+    >
       {isLoading ? (
         <>
           {[1, 2, 3, 4].map((i) => (
@@ -759,6 +767,7 @@ export function DashboardPage() {
   const [armHosts, setArmHosts] = useState<AgentProviderStatus[]>([]);
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
   const [taskStatsLoading, setTaskStatsLoading] = useState(true);
+  const [taskStatsError, setTaskStatsError] = useState<string | null>(null);
   const [burndownRefresh, setBurndownRefresh] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -867,16 +876,18 @@ export function DashboardPage() {
   }, []);
 
   const loadTaskStats = useCallback(async () => {
-    setTaskStatsLoading(true);
-    try {
-      const stats = await api.getTaskStats();
-      setTaskStats(stats);
-      setBurndownRefresh((current) => current + 1);
-    } catch {
-      setTaskStats(null);
-    } finally {
-      setTaskStatsLoading(false);
-    }
+    await refreshGate.current.run('task-stats', async () => {
+      try {
+        const stats = await api.getTaskStats();
+        setTaskStats(stats);
+        setTaskStatsError(null);
+        setBurndownRefresh((current) => current + 1);
+      } catch (err) {
+        setTaskStatsError(err instanceof Error ? err.message : 'Failed to load task progress');
+      } finally {
+        setTaskStatsLoading(false);
+      }
+    }, 1_000);
   }, []);
 
   const loadNotableEvents = useCallback(async () => {
@@ -1014,14 +1025,13 @@ export function DashboardPage() {
 
     updateBanner();
     window.addEventListener('focus', updateBanner);
-    loadTaskStats();
     return () => {
       active = false;
       window.removeEventListener('focus', updateBanner);
     };
 
 
-  }, [loadTaskStats]);
+  }, []);
 
   if (error && !status) {
     return (
@@ -1038,13 +1048,15 @@ export function DashboardPage() {
     );
   }
 
+  const infrastructureServices = status ? Object.values(status.infrastructure) : [];
+  const healthyServiceCount = infrastructureServices.filter((service) => service.healthy).length;
+  const configuredProviderCount = armHosts.reduce((total, host) => total + host.configuredProviders.length, 0);
+  const availableProviderCount = armHosts.reduce((total, host) => total + host.availableProviderCount, 0);
+
   return (
-    <div className="space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Overview</h1>
-          <p className="mt-1 text-sm text-muted-foreground">System overview and status</p>
-        </div>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
+        <span className="text-xs text-muted-foreground">System overview</span>
         <div className="flex items-center gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em]">
           {connected && authenticated ? (
             <div className="flex items-center gap-2 text-success">
@@ -1058,10 +1070,12 @@ export function DashboardPage() {
             </div>
           )}
         </div>
-      </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-auto">
 
       {showProjectSetup ? (
-        <section className="flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <section className="m-3 flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="font-semibold text-foreground">Give the Brain a project plan</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -1084,7 +1098,19 @@ export function DashboardPage() {
         </section>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      <CollapsibleSection
+        title="System readiness"
+        summary={[
+          {
+            label: 'Services',
+            value: statusLoading ? '...' : `${healthyServiceCount}/${infrastructureServices.length}`,
+            tone: infrastructureServices.length > 0 && healthyServiceCount === infrastructureServices.length ? 'success' : 'warning',
+          },
+          { label: 'Arms', value: statusLoading ? '...' : status?.arms.total ?? 0 },
+        ]}
+        className="rounded-none border-x-0 border-t-0"
+        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-2"
+      >
         <InfrastructureSection
           infrastructure={status?.infrastructure}
           indexerHealth={indexerHealth}
@@ -1099,80 +1125,61 @@ export function DashboardPage() {
           brainLoading={brainLoading}
           onNavigate={navigate}
         />
-      </div>
+      </CollapsibleSection>
 
-      <ArmHostProvidersSection
-        hosts={armHosts}
-        isLoading={armHostsLoading}
-        onOpenArms={() => navigate("/arms")}
-      />
+      <CollapsibleSection
+        title="Runtime hosts"
+        summary={[
+          { label: 'Hosts', value: armHostsLoading ? '...' : armHosts.length },
+          { label: 'Providers', value: armHostsLoading ? '...' : `${configuredProviderCount}/${availableProviderCount}` },
+        ]}
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <ArmHostProvidersSection
+          hosts={armHosts}
+          isLoading={armHostsLoading}
+          onOpenArms={() => navigate("/arms")}
+        />
+      </CollapsibleSection>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+      <CollapsibleSection
+        title="Operational feed"
+        summary={[
+          { label: 'Arms', value: detailsLoading ? '...' : arms.length },
+          { label: 'Events', value: eventsLoading ? '...' : notableEvents.length },
+          { label: 'Activity', value: detailsLoading ? '...' : activity.length },
+        ]}
+        className="rounded-none border-x-0 border-t-0"
+        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-3"
+      >
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />
         <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} onNavigate={navigate} />
         <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
+      </CollapsibleSection>
 
-        <TaskProgressWidget stats={taskStats ?? undefined} isLoading={taskStatsLoading} />
-        <TaskBurndownWidget refreshKey={burndownRefresh} />
+      <CollapsibleSection
+        title="Task progress"
+        summary={[
+          { label: 'Total', value: taskStatsLoading ? '...' : taskStats?.total ?? 0 },
+          { label: 'Active', value: taskStatsLoading ? '...' : taskStats?.active ?? 0, tone: taskStats?.active ? 'accent' : 'default' },
+          { label: 'Blocked', value: taskStatsLoading ? '...' : taskStats?.blocked ?? 0, tone: taskStats?.blocked ? 'warning' : 'default' },
+        ]}
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <TaskProgressWidget
+          stats={taskStats ?? undefined}
+          isLoading={taskStatsLoading}
+          error={taskStatsError ?? undefined}
+          embedded
+        />
+      </CollapsibleSection>
 
-      </div>
-
-      <ArmActivitySection status={status} arms={arms} onNavigate={navigate} />
-    </div>
-  );
-}
-
-function ArmActivitySection({
-  status,
-  arms,
-  onNavigate,
-}: {
-  status: SystemStatus | null;
-  arms: Arm[];
-  onNavigate: Navigate;
-}) {
-  const mostRecentArm = useMemo(() => {
-    const details = status?.arms.details ?? [];
-    if (details.length === 0) {
-      return arms[0] ?? null;
-    }
-    const sorted = [...details].sort((a, b) => {
-      const aLast = a.lastActivity ? new Date(a.lastActivity).getTime() : 0;
-      const bLast = b.lastActivity ? new Date(b.lastActivity).getTime() : 0;
-      return bLast - aLast;
-    });
-    const recentDetail = sorted[0];
-    if (!recentDetail) return arms[0] ?? null;
-    return arms.find((arm) => arm.id === recentDetail.id) ?? null;
-  }, [status?.arms.details, arms]);
-
-  if (!mostRecentArm) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-2">
-      <ArmActivityChart
-        armId={mostRecentArm.id}
-        title={`Arm Activity - ${mostRecentArm.name}`}
+      <StatusBurndownChart
+        entity="task"
+        refreshKey={burndownRefresh}
+        className="rounded-none border-x-0 border-t-0"
       />
-      <ArmContextUsageChart
-        armId={mostRecentArm.id}
-        title={`Context Usage - ${mostRecentArm.name}`}
-      />
-      <ArmCostUsageChart
-        armId={mostRecentArm.id}
-        title={`Cost Usage - ${mostRecentArm.name}`}
-      />
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => onNavigate('/viewer', `?arm=${encodeURIComponent(mostRecentArm.id)}`)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-accent"
-        >
-          Open in Arm Viewer
-          <ArrowUpRight className="h-3 w-3" />
-        </button>
+
       </div>
     </div>
   );

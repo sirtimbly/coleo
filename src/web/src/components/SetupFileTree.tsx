@@ -14,6 +14,20 @@ interface SetupFileTreeProps {
 
 type TreeModel = ReturnType<typeof useFileTree>['model'];
 
+function getAncestorDirectoryPaths(path: string): string[] {
+  const segments = path.split('/').filter(Boolean);
+  return segments.slice(0, -1).map((_, index) => segments.slice(0, index + 1).join('/'));
+}
+
+function expandPathAncestors(model: TreeModel, path: string): void {
+  for (const ancestorPath of getAncestorDirectoryPaths(path)) {
+    const item = model.getItem(ancestorPath);
+    if (!item?.isDirectory()) continue;
+    const directory = item as FileTreeDirectoryHandle;
+    if (!directory.isExpanded()) directory.expand();
+  }
+}
+
 // Trees detects overflow with a height container query. Fractional browser scaling can
 // make a single 24px line measure slightly above 24px, so allow a pixel of rounding
 // tolerance before showing its truncation marker.
@@ -82,8 +96,21 @@ export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect, expand
   modelRef.current = model;
 
   useEffect(() => {
-    model.resetPaths(paths);
-  }, [model, paths]);
+    const knownDirectories = new Set(paths.flatMap(getAncestorDirectoryPaths));
+    const currentlyExpanded = [...knownDirectories].filter((path) => {
+      const item = model.getItem(path);
+      return item?.isDirectory() && (item as FileTreeDirectoryHandle).isExpanded();
+    });
+    model.resetPaths(paths, {
+      initialExpandedPaths: [
+        ...new Set([
+          ...currentlyExpanded,
+          ...(expandedPaths ?? []),
+          ...getAncestorDirectoryPaths(selectedPathRef.current),
+        ]),
+      ],
+    });
+  }, [model, paths, expandedPaths]);
 
   useEffect(() => {
     if (!expandedPaths) return;
@@ -97,6 +124,7 @@ export function SetupFileTree({ ariaLabel, paths, selectedPath, onSelect, expand
 
   useEffect(() => {
     if (!paths.includes(selectedPath)) return;
+    expandPathAncestors(model, selectedPath);
     for (const path of model.getSelectedPaths()) {
       if (path !== selectedPath) model.getItem(path)?.deselect();
     }

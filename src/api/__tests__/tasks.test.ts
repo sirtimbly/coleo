@@ -289,6 +289,48 @@ describe("tasks API", () => {
       expect(body.task.phase).toBe("design");
     });
 
+    it("should persist optional classification", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Classified Task",
+          description: "Task with classification",
+          classification: "development",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json() as { task: Task };
+      expect(body.task.classification).toBe("development");
+    });
+
+    it("should persist prepared payload values in metadata", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Prepared Task",
+          description: "Task created from preparation",
+          metadata: {
+            context: "Existing discussion context",
+            requirements: ["Create API", "Add tests"],
+            acceptanceCriteria: ["All tests pass"],
+            estimatedEffort: "2-3 hours",
+          },
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json() as { task: Task };
+      expect(body.task.metadata).toEqual({
+        context: "Existing discussion context",
+        requirements: ["Create API", "Add tests"],
+        acceptanceCriteria: ["All tests pass"],
+        estimatedEffort: "2-3 hours",
+      });
+    });
+
     it("should accept optional metadata", async () => {
       const metadata = { ui: { tags: ["urgent"], color: "red" } };
       const response = await app.request("/api/tasks", {
@@ -398,6 +440,26 @@ describe("tasks API", () => {
       expect(body.counts.byStatus.pending).toBe(1);
       expect(body.counts.byStatus.in_progress).toBe(1);
       expect(body.counts.byStatus.completed).toBe(1);
+    });
+
+    it("should return aggregate task progress stats", async () => {
+      const response = await app.request("/api/tasks/stats");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        total: number;
+        byStatus: Record<string, number>;
+        completionRate: number;
+        active: number;
+        blocked: number;
+      };
+      expect(body).toEqual({
+        total: 3,
+        byStatus: { completed: 1, in_progress: 1, pending: 1 },
+        completionRate: 33,
+        active: 1,
+        blocked: 0,
+      });
     });
 
     it("should filter by status", async () => {

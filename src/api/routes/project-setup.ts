@@ -107,7 +107,7 @@ function taskCount(db: Database): number {
 	return (db.query("SELECT COUNT(*) AS count FROM tasks").get() as { count: number } | null)?.count ?? 0;
 }
 
-const EDITABLE_DOCUMENT_PATH = /^(?:[^/]+\/)*[^/]+\.(?:md|markdown|txt)$/i;
+const EDITABLE_DOCUMENT_PATH = /^(?:[^/]+\/)*[^/]+\.(?:md|markdown|txt|toml|jinja)$/i;
 
 function validateEditableDocumentPath(path: string): string {
 	const normalized = path.trim().replaceAll("\\", "/").replace(/^\.\//, "");
@@ -115,7 +115,7 @@ function validateEditableDocumentPath(path: string): string {
 		throw new Error("Choose a file inside the project workspace");
 	}
 	if (!EDITABLE_DOCUMENT_PATH.test(normalized)) {
-		throw new Error("Only Markdown (.md) and text (.txt) files can be viewed and edited here");
+		throw new Error("Only Markdown (.md), text (.txt), TOML (.toml), and Jinja (.jinja) files can be viewed and edited here");
 	}
 	return normalized;
 }

@@ -23,6 +23,7 @@ import {
 	type OpenCodeProvider,
 } from "@/lib";
 import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -1031,37 +1032,45 @@ export function ArmsPage() {
 			className={
 				isSpawnPage
 					? "min-h-full overflow-auto bg-surface p-3 sm:p-5"
-					: "p-8 space-y-8 overflow-auto"
+					: "flex h-full min-h-0 flex-col overflow-hidden bg-background"
 			}
 		>
 			{!isSpawnPage ? (
 				<>
-					<div className="flex items-center justify-between">
-						<div>
-							<h1 className="text-2xl font-bold">Arms</h1>
-							<p className="text-muted-foreground">Manage your AI agents</p>
-						</div>
+					<header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
+						<span className="text-xs text-muted-foreground">{arms.length} total</span>
 						<Button
+							size="sm"
 							variant="primary"
 							className="gap-2"
 							onPress={openSpawnPanel}
 							isDisabled={loading}
 						>
 							<Plus className="h-4 w-4" />
-							Spawn Arm
+							Spawn
 						</Button>
-					</div>
+					</header>
 
-					<AllArmsTelemetryOverview />
+					<div className="min-h-0 flex-1 overflow-auto">
+					<CollapsibleSection
+						title="Fleet telemetry"
+						summary={[
+							{ label: "Arms", value: arms.length },
+							{ label: "Window", value: "24h" },
+						]}
+						className="rounded-none border-x-0 border-t-0"
+					>
+						<AllArmsTelemetryOverview embedded />
+					</CollapsibleSection>
 
 					{loading ? (
-						<div className="space-y-2">
+						<div className="space-y-2 p-4">
 							{[1, 2, 3, 4].map((i) => (
 								<div key={i} className="h-16 rounded-lg bg-default-100/60 animate-pulse" />
 							))}
 						</div>
 					) : arms.length === 0 ? (
-						<Card>
+						<Card className="rounded-none border-x-0 border-t-0">
 							<Card.Content className="py-12 text-center">
 								<p className="text-muted-foreground mb-4">No arms registered yet</p>
 								<code className="block p-4 bg-muted/20 rounded text-sm text-left max-w-md mx-auto">
@@ -1070,39 +1079,37 @@ export function ArmsPage() {
 							</Card.Content>
 						</Card>
 					) : (
-						<div className="space-y-6">
+						<div>
 							{attentionArms.length > 0 && (
-						<div className="space-y-2">
-							<div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-warning">
-								<AlertTriangle className="h-3.5 w-3.5" />
-								Needs attention · {attentionArms.length}
-							</div>
-							<div className="rounded-lg border border-warning/40 divide-y divide-warning/20 overflow-hidden">
-								{attentionArms.map((arm) => (
-									<ArmRow
-										key={arm.id}
-										arm={arm}
-										attention
-										spawningArmId={spawningArmId}
-										markingStuckArmId={markingStuckArmId}
-										onOpen={() => openArmViewer(arm.id)}
-										onDelete={() => handleDelete(arm.id)}
-										onSpawn={() => handleSpawn(arm)}
-										onRecover={() => handleRecover(arm)}
-										onMarkStuck={() => handleMarkStuck(arm)}
-									/>
-								))}
-							</div>
-						</div>
+								<CollapsibleSection
+									title={<span className="inline-flex items-center gap-2 text-warning"><AlertTriangle className="h-3.5 w-3.5" />Needs attention</span>}
+									summary={[{ label: "Arms", value: attentionArms.length, tone: "warning" }]}
+									className="rounded-none border-x-0 border-t-0"
+									bodyClassName="divide-y divide-warning/20 p-0"
+								>
+									{attentionArms.map((arm) => (
+											<ArmRow
+												key={arm.id}
+												arm={arm}
+												attention
+												spawningArmId={spawningArmId}
+												markingStuckArmId={markingStuckArmId}
+												onOpen={() => openArmViewer(arm.id)}
+												onDelete={() => handleDelete(arm.id)}
+												onSpawn={() => handleSpawn(arm)}
+												onRecover={() => handleRecover(arm)}
+												onMarkStuck={() => handleMarkStuck(arm)}
+											/>
+										))}
+								</CollapsibleSection>
 					)}
 
-					<div className="space-y-2">
-						{attentionArms.length > 0 && (
-							<div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-								Running · {healthyArms.length}
-							</div>
-						)}
-						<div className="rounded-lg border border-default-200 divide-y divide-default-200 overflow-hidden">
+					<CollapsibleSection
+						title="Running"
+						summary={[{ label: "Arms", value: healthyArms.length, tone: "success" }]}
+						className="rounded-none border-x-0 border-t-0"
+						bodyClassName="divide-y divide-border p-0"
+					>
 							{healthyArms.length === 0 ? (
 								<div className="px-4 py-6 text-center text-sm text-muted-foreground">
 									All arms need attention right now.
@@ -1123,10 +1130,10 @@ export function ArmsPage() {
 									/>
 								))
 							)}
-						</div>
-					</div>
+					</CollapsibleSection>
 				</div>
 			)}
+					</div>
 					</>
 			) : null}
 

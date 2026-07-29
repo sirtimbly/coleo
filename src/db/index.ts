@@ -136,6 +136,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["060_blocked_task_workflow", MIGRATION_060, { table: "tasks", columns: MIGRATION_060_COLUMNS }],
 		["061_arm_metric_history", MIGRATION_061_ARM_METRIC_HISTORY],
 		["062_arm_message_metrics", MIGRATION_062_ARM_MESSAGE_METRICS],
+		["063_entity_status_history", MIGRATION_063_ENTITY_STATUS_HISTORY],
 	];
 
 
@@ -2057,6 +2058,95 @@ CREATE TABLE IF NOT EXISTS arm_message_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_arm_message_metrics_arm_time
 ON arm_message_metrics(arm_id, timestamp DESC);
+`;
+
+const MIGRATION_063_ENTITY_STATUS_HISTORY = `
+CREATE TABLE IF NOT EXISTS entity_status_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('task', 'bug')),
+  entity_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  changed_at TEXT NOT NULL,
+  UNIQUE (entity_type, entity_id, status, changed_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entity_status_history_type_time
+ON entity_status_history(entity_type, changed_at, entity_id);
+
+INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+SELECT 'task', id, 'pending', created_at FROM tasks;
+
+INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+SELECT
+  'task',
+  id,
+  status,
+  CASE status
+    WHEN 'claimed' THEN COALESCE(claimed_at, updated_at)
+    WHEN 'in_progress' THEN COALESCE(started_at, claimed_at, updated_at)
+    WHEN 'blocked' THEN COALESCE(blocked_at, updated_at)
+    WHEN 'completed' THEN COALESCE(completed_at, updated_at)
+    ELSE updated_at
+  END
+FROM tasks
+WHERE status <> 'pending';
+
+INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+SELECT 'bug', id, 'open', created_at FROM bugs;
+
+INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+SELECT
+  'bug',
+  id,
+  status,
+  CASE
+    WHEN status IN ('resolved', 'closed') THEN COALESCE(resolved_at, updated_at)
+    ELSE updated_at
+  END
+FROM bugs
+WHERE status <> 'open';
+
+CREATE TRIGGER IF NOT EXISTS tasks_status_history_insert
+AFTER INSERT ON tasks
+BEGIN
+  INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+  VALUES ('task', NEW.id, NEW.status, NEW.created_at);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_status_history_update
+AFTER UPDATE OF status ON tasks
+WHEN OLD.status <> NEW.status
+BEGIN
+  INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+  VALUES ('task', NEW.id, NEW.status, NEW.updated_at);
+END;
+
+CREATE TRIGGER IF NOT EXISTS tasks_status_history_delete
+AFTER DELETE ON tasks
+BEGIN
+  DELETE FROM entity_status_history WHERE entity_type = 'task' AND entity_id = OLD.id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS bugs_status_history_insert
+AFTER INSERT ON bugs
+BEGIN
+  INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+  VALUES ('bug', NEW.id, NEW.status, NEW.created_at);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bugs_status_history_update
+AFTER UPDATE OF status ON bugs
+WHEN OLD.status <> NEW.status
+BEGIN
+  INSERT OR IGNORE INTO entity_status_history (entity_type, entity_id, status, changed_at)
+  VALUES ('bug', NEW.id, NEW.status, NEW.updated_at);
+END;
+
+CREATE TRIGGER IF NOT EXISTS bugs_status_history_delete
+AFTER DELETE ON bugs
+BEGIN
+  DELETE FROM entity_status_history WHERE entity_type = 'bug' AND entity_id = OLD.id;
+END;
 `;
 
 export { Database };

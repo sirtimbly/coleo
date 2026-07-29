@@ -64,6 +64,6 @@ export function mapAllArmCostSamples(
       cacheReadTokens: sample.cacheReadTokens,
       cacheWriteTokens: sample.cacheWriteTokens,
     }))
-    .filter((sample) => Number.isFinite(sample.timestamp) && sample.messageCost > 0)
+    .filter((sample) => Number.isFinite(sample.timestamp) && sample.messageCost >= 0)
     .sort((left, right) => left.timestamp - right.timestamp);
 }

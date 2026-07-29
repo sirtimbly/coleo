@@ -83,6 +83,7 @@ export function PreparedTaskModal({
         subject: subject.trim(),
         description: description.trim(),
         priority,
+        classification: classification.trim() || undefined,
         phase: phase.trim() || undefined,
         sourceType: 'manual',
         sourceRef: sourceRef.trim() || undefined,

@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { api, type ArmContextResponse } from '@/lib';
+import { api } from '@/lib';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components';
 import {
-  appendSample,
   COMPRESSION_THRESHOLD_PCT,
   MAX_STORED_SAMPLES,
   SAMPLE_INTERVAL_MS,
@@ -54,6 +53,32 @@ function loadStoredSamples(armId: string): ContextSample[] {
   }
 }
 
+function normalizeHistoryResponse(samples: Array<{ timestamp: string; used: number; budget: number }>): ContextSample[] {
+  return samples
+    .map((sample) => ({
+      timestamp: new Date(sample.timestamp).getTime(),
+      used: sample.used,
+      budget: sample.budget,
+    }))
+    .filter((sample) => Number.isFinite(sample.timestamp))
+    .sort((left, right) => left.timestamp - right.timestamp);
+}
+
+function trimAndPersistSamples(
+  armId: string,
+  samples: ContextSample[],
+  setSamples: (next: ContextSample[]) => void,
+  storedRef: { current: ContextSample[] },
+): void {
+  const cutoff = Date.now() - SAMPLE_WINDOW_MS;
+  const next = samples
+    .filter((sample) => sample.timestamp >= cutoff)
+    .slice(-MAX_STORED_SAMPLES);
+  storedRef.current = next;
+  saveStoredSamples(armId, next);
+  setSamples(next);
+}
+
 function saveStoredSamples(armId: string, samples: ContextSample[]): void {
   try {
     const payload = samples.slice(-MAX_STORED_SAMPLES);
@@ -77,12 +102,6 @@ export function ArmContextUsageChart({
   const [error, setError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<number | null>(null);
   const storedRef = useRef<ContextSample[]>([]);
-
-  const recordSample = useCallback((sample: ContextSample) => {
-    setSamples((prev) => appendSample(prev, sample));
-    storedRef.current = appendSample(storedRef.current, sample);
-    if (armId) saveStoredSamples(armId, storedRef.current);
-  }, [armId]);
 
   useEffect(() => {
     if (externalSamples) {
@@ -112,13 +131,10 @@ export function ArmContextUsageChart({
       if (cancelled) return;
       setLoading(true);
       try {
-        const response: ArmContextResponse = await api.getArmContext(armId);
+        const response = await api.getArmContextHistory(armId, SAMPLE_WINDOW_MS);
         if (cancelled) return;
-        recordSample({
-          timestamp: Date.now(),
-          used: response.context.used,
-          budget: response.context.budget,
-        });
+        const nextSamples = normalizeHistoryResponse(response.samples);
+        trimAndPersistSamples(armId, nextSamples, setSamples, storedRef);
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -134,7 +150,7 @@ export function ArmContextUsageChart({
       cancelled = true;
       clearInterval(interval);
     };
-  }, [armId, externalSamples, recordSample]);
+  }, [armId, externalSamples]);
 
   const windowEnd = range?.end ?? Date.now();
   const windowStart = range?.start ?? windowEnd - SAMPLE_WINDOW_MS;

@@ -15,7 +15,9 @@ export interface TaskStats {
 interface TaskProgressWidgetProps {
 	stats?: TaskStats;
 	isLoading?: boolean;
+	error?: string;
 	className?: string;
+	embedded?: boolean;
 }
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: React.ComponentType<{ className?: string }> }> = {
@@ -28,7 +30,7 @@ const STATUS_META: Record<string, { label: string; color: string; bg: string; ic
 	completing: { label: "Completing", color: "text-emerald-600", bg: "bg-emerald-500", icon: CheckCircle2 },
 };
 
-export function TaskProgressWidget({ stats, isLoading, className }: TaskProgressWidgetProps) {
+export function TaskProgressWidget({ stats, isLoading, error, className, embedded = false }: TaskProgressWidgetProps) {
 	const statusBreakdown = useMemo(() => {
 		if (!stats) return [];
 		return Object.entries(stats.byStatus)
@@ -42,17 +44,17 @@ export function TaskProgressWidget({ stats, isLoading, className }: TaskProgress
 	}, [stats]);
 
 	return (
-		<Card className={className}>
-			<CardHeader>
+		<Card className={cn(embedded && "rounded-none border-0 bg-transparent p-0", className)}>
+			{!embedded ? <CardHeader>
 				<CardTitle className="flex items-center justify-between">
 					<span>Task Progress</span>
 					<span className="text-xs font-normal text-muted-foreground">
 						Real-time
 					</span>
 				</CardTitle>
-			</CardHeader>
+			</CardHeader> : null}
 			<CardContent>
-				{isLoading || !stats ? (
+				{isLoading ? (
 					<div className="space-y-4">
 						<div className="h-2 bg-secondary rounded animate-pulse" />
 						<div className="grid grid-cols-2 gap-2">
@@ -60,6 +62,10 @@ export function TaskProgressWidget({ stats, isLoading, className }: TaskProgress
 								<div key={i} className="h-8 bg-secondary rounded animate-pulse" />
 							))}
 						</div>
+					</div>
+				) : !stats ? (
+					<div className="flex min-h-24 items-center justify-center rounded-md border border-danger/30 bg-danger/10 px-4 text-sm text-danger" role="alert">
+						{error || "Task progress is unavailable."}
 					</div>
 				) : (
 					<div className="space-y-4">

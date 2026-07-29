@@ -49,4 +49,20 @@ describe("arm status-history route", () => {
       until: new Date("2026-07-31T00:00:00.000Z"),
     });
   });
+
+  it("rejects invalid date filters on arm status-history", async () => {
+    const res = await app.request("/api/arms/arm-alpha/status-history?from=bad-date");
+    expect(res.status).toBe(400);
+  });
+
+  it("caps status-history limit to 500 for arm endpoint", async () => {
+    const res = await app.request("/api/arms/arm-alpha/status-history?limit=99999");
+    expect(res.status).toBe(200);
+    expect(searchSpy).toHaveBeenCalledWith("arm-alpha", {
+      armId: "arm-alpha",
+      limit: 500,
+      since: undefined,
+      until: undefined,
+    });
+  });
 });

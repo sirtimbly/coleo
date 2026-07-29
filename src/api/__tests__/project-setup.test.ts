@@ -138,9 +138,11 @@ describe("project setup routes", () => {
 		expect(paths.some((path) => path.startsWith("node_modules/"))).toBe(false);
 	});
 
-	it("reads and edits any markdown or text file in the checkout", async () => {
+	it("reads and edits markdown, text, TOML, and Jinja files in the checkout", async () => {
 		await mkdir(join(root, "notes"), { recursive: true });
 		await writeFile(join(root, "notes", "design.txt"), "original\n");
+		await writeFile(join(root, "config.toml"), "enabled = false\n");
+		await writeFile(join(root, "prompt.jinja"), "Hello {{ name }}\n");
 		await writeFile(join(root, "src.ts"), "export {};\n");
 
 		const readResponse = await app.request("http://localhost/api/project-setup/file?path=notes/design.txt");
@@ -160,6 +162,42 @@ describe("project setup routes", () => {
 		});
 		expect(saveResponse.status).toBe(200);
 		expect(await readFile(join(root, "notes", "design.txt"), "utf-8")).toBe("updated\n");
+
+		const tomlReadResponse = await app.request("http://localhost/api/project-setup/file?path=config.toml");
+		const tomlReadBody = await tomlReadResponse.json() as { file: { content: string; contentHash: string } };
+		expect(tomlReadResponse.status).toBe(200);
+		expect(tomlReadBody.file.content).toBe("enabled = false\n");
+
+		const tomlSaveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: "document",
+				path: "config.toml",
+				content: "enabled = true\n",
+				expectedHash: tomlReadBody.file.contentHash,
+			}),
+		});
+		expect(tomlSaveResponse.status).toBe(200);
+		expect(await readFile(join(root, "config.toml"), "utf-8")).toBe("enabled = true\n");
+
+		const jinjaReadResponse = await app.request("http://localhost/api/project-setup/file?path=prompt.jinja");
+		const jinjaReadBody = await jinjaReadResponse.json() as { file: { content: string; contentHash: string } };
+		expect(jinjaReadResponse.status).toBe(200);
+		expect(jinjaReadBody.file.content).toBe("Hello {{ name }}\n");
+
+		const jinjaSaveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				kind: "document",
+				path: "prompt.jinja",
+				content: "Hello {{ agent.name }}\n",
+				expectedHash: jinjaReadBody.file.contentHash,
+			}),
+		});
+		expect(jinjaSaveResponse.status).toBe(200);
+		expect(await readFile(join(root, "prompt.jinja"), "utf-8")).toBe("Hello {{ agent.name }}\n");
 
 		const rejectedRead = await app.request("http://localhost/api/project-setup/file?path=src.ts");
 		expect(rejectedRead.status).toBe(400);

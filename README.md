@@ -1,14 +1,19 @@
+[![Latest Release](https://img.shields.io/github/v/release/sirtimbly/coleo)](https://github.com/sirtimbly/coleo/releases/latest)
 [![Fair Source](https://img.shields.io/badge/license-Fair%20Source-blue.svg)](LICENSE.txt)
 
 # Coleo
 
 Distributed agent orchestration for software development. Coleo is a coordination layer that turns existing agent harnesses into a supervised multi-agent system: a central Brain, persistent state, and an Observatory for visibility.
 
+**[Documentation and self-hosting](https://coleo.dev)** · **[Managed Coleo workspaces at Coleo Reef](https://coleo.app)**
+
 > *Named after Coleoidea, the subclass of intelligent cephalopods that ditched rigid shells for distributed neural architecture.*
 
 ## Quick Start
 
 Requires the [Bun](https://bun.sh/) runtime (v1.1+).
+
+For installation details and configuration guidance, see the [Coleo getting started guide](https://coleo.dev/guides/getting-started).
 
 ```bash
 # Install Bun + coleo globally (Linux/macOS, no mise required)
@@ -65,9 +70,15 @@ Ports:
 - **3000**: Gitea web UI
 - **2223**: Gitea git SSH
 
+## Hosted Coleo
+
+Prefer to use Coleo without operating the infrastructure yourself? [Coleo Reef](https://coleo.app) provides managed private Coleo workspaces, including the Brain, Observatory, storage, routing, and updates.
+
+Coleo remains self-hostable. Visit [coleo.dev](https://coleo.dev) for documentation and deployment guides, or choose [Coleo Reef](https://coleo.app) for the managed experience.
+
 ## Architecture
 
-See `docs/architecture/overview.md` for detailed system documentation.
+See the [architecture overview on coleo.dev](https://coleo.dev/architecture/overview) or `docs/architecture/overview.md` for detailed system documentation.
 
 ```
 Human (You)
@@ -133,7 +144,7 @@ This section is for contributors running Coleo from source. For regular usage, i
 
 ```bash
 # Clone and install dependencies
-git clone <repo-url>
+git clone https://github.com/sirtimbly/coleo.git
 cd coleo
 bun run setup
 
@@ -279,4 +290,4 @@ open http://localhost:3000
 
 ## License
 
-Business Source License 1.1 (BSL 1.1). Free for individual use. Contact for organizational licensing.
+Business Source License 1.1 (BSL 1.1). Free for individual use. See [Coleo licensing](https://coleo.dev/licensing) for organizational use.

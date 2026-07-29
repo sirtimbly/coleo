@@ -8,7 +8,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon, Clock } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
 import { type Bug, type BugMetadata, type UiMetadata, cn, api } from '@/lib';
-import { BugGrid, BugModal } from '@/components';
+import { BugGrid, BugModal, CollapsibleSection, StatusBurndownChart } from '@/components';
 import type { BugUpdate } from '@/components/BugGridRow';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
@@ -181,6 +181,7 @@ export function BugsPage() {
 	const [searchText, setSearchText] = useState('');
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+	const [burndownRefresh, setBurndownRefresh] = useState(0);
 	const detailsTabId: SidebarTab = "details";
 
 	// Use React Query hook for bugs
@@ -360,6 +361,7 @@ export function BugsPage() {
 				case 'bug.deleted':
 					// Invalidate queries to trigger refetch
 					queryClient.invalidateQueries({ queryKey: bugsKeys.all() });
+					setBurndownRefresh((current) => current + 1);
 					break;
 			}
 		},
@@ -523,8 +525,24 @@ export function BugsPage() {
 				</div>
 			)}
 
-			{/* Content area */}
-			<div className="flex-1 flex overflow-hidden">
+			<StatusBurndownChart
+				entity="bug"
+				refreshKey={burndownRefresh}
+				defaultExpanded={false}
+				className="shrink-0 rounded-none border-x-0 border-t-0"
+			/>
+
+			<CollapsibleSection
+				title="Bug list"
+				summary={[
+					{ label: "Total", value: bugs.length },
+					{ label: "Visible", value: filteredBugs.length },
+				]}
+				fill
+				unmountOnCollapse
+				className="rounded-none border-x-0 border-y-0"
+				bodyClassName="flex h-full min-h-0 p-0"
+			>
 				{/* Bug list */}
 				<div className="flex-1 overflow-auto">
 					{isLoading ? (
@@ -536,9 +554,9 @@ export function BugsPage() {
 							))}
 						</div>
 					) : (
-						<div className={isWorkspacePanel ? undefined : "p-4"}>
+						<div>
 							<BugGrid
-								className={isWorkspacePanel ? "rounded-none border-0" : undefined}
+								className="rounded-none border-0"
 								bugs={filteredBugs}
 								totalBugs={bugs.length}
 								availableTags={availableTags}
@@ -675,7 +693,7 @@ export function BugsPage() {
 						</Tabs>
 				</Card>
 			)}
-		</div>
+		</CollapsibleSection>
 
 	</div>
 	);

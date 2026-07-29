@@ -85,8 +85,8 @@ function DateTimeInput({
   );
 }
 
-export function AllArmsTelemetryOverview() {
-  const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(THIRTY_MINUTES_MS));
+export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: boolean }) {
+  const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(ONE_DAY_MS));
   const [appliedRange, setAppliedRange] = useState<AppliedRange>(() => toAppliedRange(draftRange));
   const [telemetry, setTelemetry] = useState<AllArmsTelemetryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -138,21 +138,27 @@ export function AllArmsTelemetryOverview() {
   const costSamples = telemetry ? mapAllArmCostSamples(telemetry.costSamples) : undefined;
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-surface/90 p-4" aria-labelledby="telemetry-overview-title">
+    <section
+      className={embedded ? 'space-y-4' : 'space-y-4 rounded-lg border border-border bg-surface/90 p-4'}
+      aria-label={embedded ? 'All-arm telemetry controls and charts' : undefined}
+      aria-labelledby={embedded ? undefined : 'telemetry-overview-title'}
+    >
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-        <div className="space-y-1">
-          <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
-            Telemetry Overview
+        {!embedded ? (
+          <div className="space-y-1">
+            <div className="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              Telemetry Overview
+            </div>
+            <h2 id="telemetry-overview-title" className="text-sm font-semibold text-foreground">
+              All-arm activity, context, and cost
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {telemetry ? `${telemetry.armCount} registered arms` : 'All registered arms'} · exact applied date-time range
+            </p>
           </div>
-          <h2 id="telemetry-overview-title" className="text-sm font-semibold text-foreground">
-            All-arm activity, context, and cost
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            {telemetry ? `${telemetry.armCount} registered arms` : 'All registered arms'} · exact applied date-time range
-          </p>
-        </div>
+        ) : null}
 
-        <div className="flex w-full flex-col gap-2 xl:max-w-3xl">
+        <div className={embedded ? 'flex w-full flex-col gap-2' : 'flex w-full flex-col gap-2 xl:max-w-3xl'}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <DateTimeInput
               label="Start"

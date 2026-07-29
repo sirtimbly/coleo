@@ -135,7 +135,7 @@ export async function getServiceStatus(service: ServiceType): Promise<ServiceSta
 /**
  * Get the command to start a service
  */
-function getServiceCommand(service: ServiceType): { command: string[]; cwd: string } {
+export function getServiceCommand(service: ServiceType): { command: string[]; cwd: string } {
   // Use the coleo directory as cwd
   const cwd = process.env.COLEO_PROJECT_DIR || process.cwd();
   const cliEntrypoint = getCliEntrypoint();
@@ -154,7 +154,15 @@ function getServiceCommand(service: ServiceType): { command: string[]; cwd: stri
       };
     case "web":
       return {
-        command: [bunBinary, cliEntrypoint, "web", "serve"],
+        command: [
+          bunBinary,
+          cliEntrypoint,
+          "web",
+          "--port",
+          process.env.WEB_UI_PORT || "5173",
+          "--host",
+          process.env.WEB_UI_HOST || "0.0.0.0",
+        ],
         cwd,
       };
     case "indexer":
