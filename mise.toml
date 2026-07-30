@@ -3,6 +3,12 @@ bun = "latest"
 python = "latest"
 shellcheck = "latest"
 
+[env]
+# Isolate this project's JetStream events from other local Coleo instances.
+# Keep COLEO_NATS_URL unset so `coleo serve` automatically starts this project-local NATS server.
+COLEO_NATS_PORT = "4223"
+COLEO_NATS_HTTP_PORT = "8223"
+
 [tasks.dev]
 run = "bun run dev"
 
