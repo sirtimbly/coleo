@@ -6,6 +6,7 @@
  */
 
 import { qdrantStore } from "../qdrant";
+import { getProjectCollectionName } from "../project-scope";
 import {
 	STATUS_HISTORY_CONFIG,
 	type StatusHistoryEventType,
@@ -78,10 +79,12 @@ export async function applyStatusHistoryRetention(options?: {
 	dryRun?: boolean;
 	now?: Date;
 	types?: StatusHistoryEventType[];
-	collectionName?: string;
+	collectionBaseName?: string;
 }): Promise<RetentionRunResult> {
 	const dryRun = options?.dryRun ?? false;
-	const collection = options?.collectionName ?? STATUS_HISTORY_CONFIG.collectionName;
+	const collection = options?.collectionBaseName
+		? getProjectCollectionName(options.collectionBaseName)
+		: STATUS_HISTORY_CONFIG.collectionName;
 	const plan = computeRetentionPlan(options?.now, options?.types);
 
 	const results: RetentionPurgeResult[] = [];

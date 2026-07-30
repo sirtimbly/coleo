@@ -33,6 +33,8 @@ import { eventStore } from "../nats/jetstream";
 import { createOpencodeClient, type OpencodeClient, type Session, type SessionStatus, type Message, type Part, type Todo } from "@opencode-ai/sdk";
 import { resolveModel } from "./model-resolver";
 import { buildHarnessPromptParts } from "./prompt-parts";
+import { getProjectRuntimeEnvironment } from "../project-scope";
+import { resolveApiUrl } from "../network-config";
 import { isColeoSessionForArm, shouldPruneSession } from "./session-lifecycle";
 
 /**
@@ -184,8 +186,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     client: OpencodeClient,
   ): Promise<{ shouldResume: boolean; existingSessionId?: string; reason: string }> {
     // Query Coleo API for arm's current task
-    const apiUrl = process.env.COLEO_API_URL
-      || (process.env.COLEO_API_PORT ? `http://localhost:${process.env.COLEO_API_PORT}` : "http://localhost:8080");
+    const apiUrl = resolveApiUrl();
 
     try {
       // Get arm info to find current task
@@ -467,8 +468,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
     
     if (config.provider && config.model) {
       try {
-        // Use Coleo API to check available models (server runs on 8080)
-        const resolved = await resolveModel(config.provider, config.model, "http://localhost:8080");
+        const resolved = await resolveModel(config.provider, config.model, resolveApiUrl());
         if (resolved.fallback) {
           // Keep explicit user choice; API-side provider discovery can be stale.
           console.log(
@@ -514,6 +514,7 @@ export class OpenCodeTuiHarness implements AgentHarness {
           environment: {
             COLEO_ARM_ID: armId,
             COLEO_DIR: coleoDir,
+            ...getProjectRuntimeEnvironment({ ...process.env, ...config.env }),
             PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
             HOME: process.env.HOME || "",
           },

@@ -30,7 +30,7 @@ Related:
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/api/search/suggestions?q=` | Title suggestions |
-| POST | `/api/search/index` | Upsert document into Qdrant `search-index` |
+| POST | `/api/search/index` | Upsert document into the project's Qdrant `search-index-<projectKey>` collection |
 
 Implementation: `src/api/routes/search.ts`  
 Tests: `src/api/routes/__tests__/search.test.ts`
@@ -139,7 +139,7 @@ Implementation: `src/vector/retention.ts`, `src/scripts/status-history-retention
 
 ## Backfill existing status reports
 
-Import rows from SQLite `status_reports` into the Qdrant `status-history` collection
+Import rows from SQLite `status_reports` into the project's Qdrant `status-history-<projectKey>` collection
 (embeds via configured embedding provider):
 
 ```bash
@@ -149,8 +149,8 @@ bun run backfill:status-history -- --dry-run --limit 20
 # Apply
 bun run backfill:status-history
 
-# Custom DB path
-bun run backfill:status-history -- --db ~/.coleo/coleo.db
+# Another project (the DB must match that project's Coleo directory)
+COLEO_PROJECT_DIR=/path/to/project COLEO_DIR=/path/to/project/.coleo bun run backfill:status-history
 ```
 
 Ids are deterministic (`status-report-<reportId>`) so re-runs upsert safely.

@@ -7,8 +7,9 @@
 
 import { embeddingService } from "../embedding";
 import { qdrantStore } from "../qdrant";
-import { eventStore, type EventData } from "../nats/jetstream";
+import { eventMatchesProject, eventStore, type EventData } from "../nats/jetstream";
 import type { ConsumedStatusEvent } from "../nats/status-history-consumer";
+import { getProjectScope } from "../project-scope";
 import {
   type StatusHistoryEvent,
   type StatusHistoryEventType,
@@ -44,8 +45,14 @@ export async function initializeStatusHistoryCollection(): Promise<void> {
 export async function indexStatusHistoryEvent(
   event: StatusHistoryEvent,
 ): Promise<void> {
+  const projectScope = getProjectScope();
+  const scopedEvent: StatusHistoryEvent = {
+    ...event,
+    projectDir: projectScope.projectDir,
+    projectKey: projectScope.projectKey,
+  };
   // Generate embedding for the event
-  const text = eventToText(event);
+  const text = eventToText(scopedEvent);
   const embedding = await embeddingService.embed(text);
   
   // Upsert into Qdrant
@@ -53,7 +60,7 @@ export async function indexStatusHistoryEvent(
     {
       id: event.id,
       vector: embedding.embedding,
-      payload: buildStatusHistoryPayload(event),
+      payload: buildStatusHistoryPayload(scopedEvent),
     },
   ]);
   
@@ -140,6 +147,8 @@ function buildStatusHistoryPayload(event: StatusHistoryEvent): Record<string, un
     type: event.type,
     timestamp: event.timestamp,
     source: event.source,
+    projectDir: event.projectDir,
+    projectKey: event.projectKey,
     title: event.title,
     content: event.content,
     taskId: event.taskId,
@@ -174,6 +183,8 @@ function buildStatusHistoryEvent(
     type: parseStatusHistoryType(payload.type),
     timestamp: payload.timestamp as string,
     source: payload.source as string,
+    projectDir: payload.projectDir as string | undefined,
+    projectKey: payload.projectKey as string | undefined,
     title: payload.title as string,
     content: payload.content as string,
     taskId: payload.taskId as string | undefined,
@@ -231,6 +242,9 @@ function sanitizeMetadata(value: unknown): Record<string, unknown> {
  * Process an event from NATS JetStream and index it
  */
 export async function processStatusEvent(eventData: EventData): Promise<void> {
+  if (!eventMatchesProject(eventData, getProjectScope().projectKey)) {
+    return;
+  }
   // Map event types to status history event types
   const typeMap: Record<string, StatusHistoryEventType> = {
     "status.report": "status_report",
@@ -280,6 +294,9 @@ export async function processConsumedStatusHistoryEvent(
   consumed: ConsumedStatusEvent,
 ): Promise<void> {
   const { event: eventData } = consumed;
+  if (!eventMatchesProject(eventData, getProjectScope().projectKey)) {
+    return;
+  }
   const sourceId = eventData.armId || stringValue(eventData.data.id) || "unknown";
   const identifiers = resolveStatusHistoryEventIdentifiers(eventData.data, consumed.type);
   const event: StatusHistoryEvent = {

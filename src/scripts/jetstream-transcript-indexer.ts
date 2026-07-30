@@ -17,13 +17,23 @@ import type { JsMsg } from "nats";
 import { embeddingService } from "../embedding";
 import { qdrantStore } from "../qdrant";
 import { connectToNats } from "../nats/transport";
-import type { EventData } from "../nats/jetstream";
+import { eventMatchesProject, type EventData } from "../nats/jetstream";
+import {
+  getProjectDurableName,
+  getProjectScope,
+  getTranscriptCollectionName,
+} from "../project-scope";
+import { resolveNatsUrl } from "../network-config";
 
 const STREAM_NAME = process.env.COLEO_EVENT_STREAM || "coleo-events";
 const FILTER_SUBJECT = process.env.COLEO_TRANSCRIPT_INDEX_SUBJECT || "coleo.events.arm.>";
-const CONSUMER_DURABLE = process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v1";
-const COLLECTION_NAME = process.env.COLEO_TRANSCRIPT_COLLECTION || "search-index";
-const NATS_URL = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+const PROJECT_SCOPE = getProjectScope();
+const CONSUMER_DURABLE = getProjectDurableName(
+  process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v2",
+  PROJECT_SCOPE,
+);
+const COLLECTION_NAME = getTranscriptCollectionName(process.env, PROJECT_SCOPE);
+const NATS_URL = resolveNatsUrl();
 const NATS_TOKEN = process.env.COLEO_NATS_TOKEN;
 const BATCH_SIZE = parsePositiveInt(process.env.COLEO_TRANSCRIPT_INDEX_BATCH, 24, 200);
 const FETCH_EXPIRES_MS = parsePositiveInt(process.env.COLEO_TRANSCRIPT_INDEX_FETCH_EXPIRES_MS, 5000, 60000);
@@ -103,10 +113,10 @@ function parseEvent(msg: JsMsg): EventData | null {
   }
 }
 
-function buildIndexableEvent(msg: JsMsg, event: EventData): IndexableEvent {
+export function buildIndexableEvent(msg: JsMsg, event: EventData): IndexableEvent {
   const armId = event.armId || "unknown";
-  const workdir = typeof event.data?.workdir === "string" ? event.data.workdir : null;
-  const project = typeof event.data?.project === "string" ? event.data.project : deriveProject(workdir);
+  const workdir = typeof event.data?.workdir === "string" ? event.data.workdir : event.projectDir || null;
+  const project = typeof event.data?.project === "string" ? event.data.project : deriveProject(event.projectDir || workdir);
   const host = typeof event.data?.host === "string" ? event.data.host : null;
 
   const text = buildTranscriptText(event);
@@ -120,6 +130,8 @@ function buildIndexableEvent(msg: JsMsg, event: EventData): IndexableEvent {
     host,
     project,
     workdir,
+    project_dir: event.projectDir,
+    project_key: event.projectKey,
   };
 
   return {
@@ -175,6 +187,12 @@ async function main(): Promise<void> {
 
   await qdrantStore.initialize();
   await qdrantStore.createCollection(COLLECTION_NAME, embeddingService.getVectorSize(), "Cosine");
+  await Promise.all([
+    qdrantStore.createPayloadIndex(COLLECTION_NAME, "type", "keyword"),
+    qdrantStore.createPayloadIndex(COLLECTION_NAME, "metadata.project_key", "keyword"),
+    qdrantStore.createPayloadIndex(COLLECTION_NAME, "metadata.project_dir", "keyword"),
+    qdrantStore.createPayloadIndex(COLLECTION_NAME, "metadata.arm_id", "keyword"),
+  ]);
   await ensureDurableConsumer();
 
   const nc = await connectToNats({ servers: NATS_URL, token: NATS_TOKEN });
@@ -200,6 +218,10 @@ async function main(): Promise<void> {
     for await (const msg of batch) {
       const event = parseEvent(msg);
       if (!event || !event.data || !event.type || !event.timestamp) {
+        msg.ack();
+        continue;
+      }
+      if (!eventMatchesProject(event, PROJECT_SCOPE.projectKey)) {
         msg.ack();
         continue;
       }
@@ -245,7 +267,9 @@ async function main(): Promise<void> {
   await nc.close();
 }
 
-main().catch((err) => {
-  console.error("[transcript-indexer] Fatal error:", err);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("[transcript-indexer] Fatal error:", err);
+    process.exit(1);
+  });
+}

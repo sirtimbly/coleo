@@ -16,7 +16,8 @@
  * 
  * // Use with Qdrant
  * import { qdrantStore } from "../qdrant";
- * await qdrantStore.upsertPoints("my-collection", [{
+ * import { getProjectCollectionName } from "../project-scope";
+ * await qdrantStore.upsertPoints(getProjectCollectionName("my-collection"), [{
  *   id: "1",
  *   vector: result.embedding,
  *   payload: { text: "Hello world" }

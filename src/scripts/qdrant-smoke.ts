@@ -18,9 +18,10 @@
  */
 
 import { QdrantVectorStore } from "../qdrant/client";
+import { getProjectCollectionName } from "../project-scope";
 
 const QDRANT_URL = process.env.COLEO_QDRANT_URL || "http://localhost:6333";
-const COLLECTION = `coleo-smoke-${Date.now()}`;
+const COLLECTION = getProjectCollectionName(`coleo-smoke-${Date.now()}`);
 const VECTOR_SIZE = 8;
 const KEEP = process.env.COLEO_QDRANT_SMOKE_KEEP === "1";
 

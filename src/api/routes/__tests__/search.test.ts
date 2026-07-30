@@ -5,6 +5,7 @@ import { Hono } from "hono";
 import { createSearchRoutes } from "../search";
 import { embeddingService } from "../../../embedding";
 import { qdrantStore } from "../../../qdrant";
+import { getProjectScope, getTranscriptCollectionName } from "../../../project-scope";
 
 interface TestContext {
   Variables: {
@@ -389,11 +390,11 @@ describe("search routes", () => {
 
       expect(embedSpy).toHaveBeenCalledWith("New task Task content");
       expect(vectorSizeSpy).toHaveBeenCalledTimes(1);
-      expect(createCollectionSpy).toHaveBeenCalledWith("search-index", 1536, "Cosine");
+      expect(createCollectionSpy).toHaveBeenCalledWith(getTranscriptCollectionName(), 1536, "Cosine");
       expect(upsertPointsSpy).toHaveBeenCalledTimes(1);
 
       const [collectionName, points] = upsertPointsSpy.mock.calls[0] ?? [];
-      expect(collectionName).toBe("search-index");
+      expect(collectionName).toBe(getTranscriptCollectionName());
       expect(points).toHaveLength(1);
       expect(points[0]).toMatchObject({
         id: "task-3",
@@ -401,7 +402,11 @@ describe("search routes", () => {
           type: "task",
           title: "New task",
           content: "Task content",
-          metadata: { priority: "low" },
+          metadata: {
+            priority: "low",
+            project_dir: getProjectScope().projectDir,
+            project_key: getProjectScope().projectKey,
+          },
         },
       });
       expect(Array.isArray(points[0]?.vector)).toBe(true);

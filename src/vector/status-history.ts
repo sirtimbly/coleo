@@ -5,6 +5,8 @@
  * for semantic search of arm status reports, task completions, discoveries, and bugs.
  */
 
+import { getProjectCollectionName } from "../project-scope";
+
 /**
  * Types of status history events
  */
@@ -32,6 +34,12 @@ export interface StatusHistoryEvent {
   
   /** Source (arm_id, 'brain', 'system') */
   source: string;
+
+  /** Canonical project directory partition. */
+  projectDir?: string;
+
+  /** Non-sensitive hash of the canonical project directory. */
+  projectKey?: string;
   
   /** Event title/subject */
   title: string;
@@ -72,7 +80,7 @@ export interface StatusHistoryEvent {
  */
 export const STATUS_HISTORY_CONFIG = {
   /** Collection name in Qdrant */
-  collectionName: "status-history",
+  collectionName: getProjectCollectionName("status-history"),
   
   /** Vector size (1536 for OpenAI embeddings) */
   vectorSize: 1536,
@@ -92,6 +100,8 @@ export const STATUS_HISTORY_CONFIG = {
     "priority",
     "timestamp",
     "classification",
+    "projectDir",
+    "projectKey",
   ],
 };
 

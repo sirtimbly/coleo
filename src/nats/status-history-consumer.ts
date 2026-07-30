@@ -4,10 +4,16 @@ import {
   ReplayPolicy,
 } from "nats";
 import type { ConsumerConfig, JsMsg, NatsConnection } from "nats";
-import type { EventData } from "./jetstream-types";
+import { eventMatchesProject, type EventData } from "./jetstream-types";
+import { getProjectDurableName, getProjectScope } from "../project-scope";
 
 export const STATUS_HISTORY_STREAM = "coleo-events";
-export const STATUS_HISTORY_DURABLE = "status-history-consumer-v1";
+const PROJECT_SCOPE = getProjectScope();
+const STATUS_HISTORY_DURABLE_BASE = "status-history-consumer-v2";
+export const STATUS_HISTORY_DURABLE = getProjectDurableName(
+  STATUS_HISTORY_DURABLE_BASE,
+  PROJECT_SCOPE,
+);
 export const STATUS_HISTORY_FILTER_SUBJECT = "coleo.events.>";
 
 export type ConsumedStatusEventType =
@@ -127,6 +133,10 @@ export async function processStatusHistoryMessage(
     msg.ack();
     return false;
   }
+  if (!eventMatchesProject(event.event, PROJECT_SCOPE.projectKey)) {
+    msg.ack();
+    return false;
+  }
 
   try {
     msg.working();
@@ -144,15 +154,16 @@ export async function processStatusHistoryMessage(
 
 export async function ensureStatusHistoryConsumer(
   connection: NatsConnection,
-  durableName = STATUS_HISTORY_DURABLE,
+  durableBaseName = STATUS_HISTORY_DURABLE_BASE,
   log?: StatusHistoryConsumerOptions["log"],
-): Promise<void> {
+): Promise<string> {
+  const durableName = getProjectDurableName(durableBaseName, PROJECT_SCOPE);
   const jsm = await connection.jetstreamManager();
   const existing = await jsm.consumers
     .info(STATUS_HISTORY_STREAM, durableName)
     .catch(() => null);
   if (existing) {
-    return;
+    return durableName;
   }
 
   const config: Partial<ConsumerConfig> = {
@@ -165,17 +176,21 @@ export async function ensureStatusHistoryConsumer(
   };
   await jsm.consumers.add(STATUS_HISTORY_STREAM, config as ConsumerConfig);
   log?.(`[status-history-consumer] Created durable consumer ${durableName}`);
+  return durableName;
 }
 
 export async function startStatusHistoryConsumer(
   options: StatusHistoryConsumerOptions,
 ): Promise<StatusHistoryConsumerHandle> {
-  const durableName = options.durableName || STATUS_HISTORY_DURABLE;
   const batchSize = positiveInteger(options.batchSize, 64);
   const fetchExpiresMs = positiveInteger(options.fetchExpiresMs, 5000);
   let closed = false;
 
-  await ensureStatusHistoryConsumer(options.connection, durableName, options.log);
+  const durableName = await ensureStatusHistoryConsumer(
+    options.connection,
+    options.durableName || STATUS_HISTORY_DURABLE_BASE,
+    options.log,
+  );
   const consumer = await options.connection.jetstream().consumers.get(
     STATUS_HISTORY_STREAM,
     durableName,

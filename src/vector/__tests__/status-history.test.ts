@@ -10,7 +10,7 @@ import { resolveStatusHistoryEventIdentifiers } from "../indexing-pipeline";
 describe("status-history", () => {
   describe("STATUS_HISTORY_CONFIG", () => {
     it("should have correct collection name", () => {
-      expect(STATUS_HISTORY_CONFIG.collectionName).toBe("status-history");
+      expect(STATUS_HISTORY_CONFIG.collectionName).toMatch(/^status-history-[a-f0-9]{16}$/);
     });
 
     it("should have correct vector size for OpenAI embeddings", () => {
@@ -26,6 +26,8 @@ describe("status-history", () => {
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("source");
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("timestamp");
       expect(STATUS_HISTORY_CONFIG.filterFields).toContain("classification");
+      expect(STATUS_HISTORY_CONFIG.filterFields).toContain("projectDir");
+      expect(STATUS_HISTORY_CONFIG.filterFields).toContain("projectKey");
     });
   });
 

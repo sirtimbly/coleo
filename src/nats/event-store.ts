@@ -14,6 +14,7 @@ import type {
   ArmState,
   IEventStore,
 } from './jetstream-types';
+import { getProjectScope } from '../project-scope';
 
 export type {
   EventData,
@@ -104,7 +105,12 @@ export class EventStore implements IEventStore {
 
   async publishEvent(subject: string, data: EventData): Promise<void> {
     if (!this.js) throw new Error('JetStream client not initialized');
-    const payload = JSON.stringify(data);
+    const scope = getProjectScope();
+    const payload = JSON.stringify({
+      ...data,
+      projectDir: scope.projectDir,
+      projectKey: scope.projectKey,
+    });
     await this.js.publish(subject, payload);
   }
 

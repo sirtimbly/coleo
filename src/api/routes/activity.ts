@@ -8,9 +8,10 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { basename } from "path";
 import { randomUUID } from "crypto";
-import { eventStore, type EventData } from "../../nats/jetstream";
+import { eventMatchesProject, eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
 import { COMMAND_STREAM_NAME } from "../../nats/command-types";
+import { getProjectDurableName, getProjectScope } from "../../project-scope";
 import { broadcast } from "../websocket";
 
 interface ActivityContext {
@@ -501,6 +502,8 @@ export function createActivityRoutes() {
           }));
       }
 
+      const projectKey = getProjectScope().projectKey;
+      scopedEvents = scopedEvents.filter(({ event }) => eventMatchesProject(event, projectKey));
       scopedEvents.sort(sortEventsOldestFirst);
       const sliced = scopedEvents.slice(0, limit);
 
@@ -547,12 +550,13 @@ export function createActivityRoutes() {
 
   /**
    * Transcript indexer health from JetStream durable consumer state.
-   * GET /api/activity/indexer-health?stream=coleo-events&durable=transcript-indexer-v1
+   * GET /api/activity/indexer-health?stream=coleo-events&durable=transcript-indexer-v2
    */
   app.get("/indexer-health", async (c) => {
     const stream = c.req.query("stream")?.trim() || process.env.COLEO_EVENT_STREAM || "coleo-events";
-    const durable =
-      c.req.query("durable")?.trim() || process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v1";
+    const durable = getProjectDurableName(
+      c.req.query("durable")?.trim() || process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v2",
+    );
     const staleThresholdMs = parseOptionalPositiveInt(
       c.req.query("staleMs"),
       parseOptionalPositiveInt(process.env.COLEO_TRANSCRIPT_INDEXER_STALE_MS, 120000, 86_400_000),

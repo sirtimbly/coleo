@@ -824,7 +824,7 @@ export function DashboardPage() {
         setIndexerHealth((current) => current ?? {
           status: "error",
           stream: "coleo-events",
-          durable: "transcript-indexer-v1",
+          durable: "project-scoped",
           consumerFound: false,
           lagMessages: null,
           ackPending: null,

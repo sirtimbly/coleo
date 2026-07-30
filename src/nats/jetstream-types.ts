@@ -4,9 +4,18 @@ export interface EventData {
   type: string;
   armId?: string;
   sessionId?: string;
+  projectDir?: string;
+  projectKey?: string;
   data: Record<string, unknown>;
   timestamp: string;
   sequence?: number;
+}
+
+export function eventMatchesProject(
+  event: EventData,
+  projectKey: string,
+): boolean {
+  return event.projectKey === projectKey;
 }
 
 export interface QueryOptions {

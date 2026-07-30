@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { AckPolicy, DeliverPolicy } from "nats";
 import type { ConsumerConfig, JsMsg, NatsConnection } from "nats";
+import { getProjectDurableName, getProjectScope } from "../../project-scope";
 import {
   STATUS_HISTORY_FILTER_SUBJECT,
   classifyStatusHistoryEvent,
@@ -44,9 +45,12 @@ function makeMessage(
 }
 
 function event(type: string) {
+  const scope = getProjectScope();
   return {
     type,
     armId: "arm-1",
+    projectDir: scope.projectDir,
+    projectKey: scope.projectKey,
     data: {
       taskId: "task-1",
       summary: "Preserve this complete payload",
@@ -73,15 +77,16 @@ describe("status history consumer", () => {
       }),
     } as unknown as NatsConnection;
 
-    await ensureStatusHistoryConsumer(connection, "status-history-test");
+    const durableName = await ensureStatusHistoryConsumer(connection, "status-history-test");
 
     expect(addedConfig).toMatchObject({
-      durable_name: "status-history-test",
+      durable_name: getProjectDurableName("status-history-test"),
       filter_subject: STATUS_HISTORY_FILTER_SUBJECT,
       deliver_policy: DeliverPolicy.All,
       ack_policy: AckPolicy.Explicit,
       max_deliver: -1,
     });
+    expect(durableName).toBe(getProjectDurableName("status-history-test"));
   });
 
   it("normalizes current and canonical status event names", () => {
@@ -169,5 +174,19 @@ describe("status history consumer", () => {
     expect(calls).toBe(0);
     expect(malformedState.acked).toBe(1);
     expect(unrelatedState.acked).toBe(1);
+  });
+
+  it("acks foreign project events without indexing them", async () => {
+    const state = { acked: 0, nacked: 0, working: 0 };
+    let calls = 0;
+    const foreign = { ...event("task.completed"), projectKey: "foreign-project" };
+
+    const processed = await processStatusHistoryMessage(makeMessage(foreign, state), () => {
+      calls += 1;
+    });
+
+    expect(processed).toBe(false);
+    expect(calls).toBe(0);
+    expect(state).toEqual({ acked: 1, nacked: 0, working: 0 });
   });
 });

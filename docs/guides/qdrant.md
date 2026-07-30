@@ -25,14 +25,19 @@ Inside the full stack, containers reach Qdrant at `http://qdrant:6333`.
 
 ```ts
 import { qdrantStore } from "../qdrant";
+import { getProjectCollectionName } from "../project-scope";
 
+const collection = getProjectCollectionName("demo");
 await qdrantStore.initialize();
-await qdrantStore.createCollection("demo", 8, "Cosine");
-await qdrantStore.upsertPoints("demo", [
+await qdrantStore.createCollection(collection, 8, "Cosine");
+await qdrantStore.upsertPoints(collection, [
   { id: "11111111-1111-4111-8111-111111111111", vector: [1, 0, 0, 0, 0, 0, 0, 0], payload: { label: "a" } },
 ]);
-const hits = await qdrantStore.search("demo", [1, 0, 0, 0, 0, 0, 0, 0], { limit: 5 });
+const hits = await qdrantStore.search(collection, [1, 0, 0, 0, 0, 0, 0, 0], { limit: 5 });
 ```
+
+Application collections are suffixed with a stable hash of the canonical project directory. Set
+`COLEO_PROJECT_DIR` when launching Coleo outside the project root; child arm and MCP processes inherit this scope.
 
 Module layout:
 
@@ -76,7 +81,7 @@ Application code treats Qdrant as optional infrastructure: API status reports
 
 ## Status-history filters
 
-The `status-history` collection creates Qdrant payload indexes for event type,
+Each project's `status-history-<projectKey>` collection creates Qdrant payload indexes for event type,
 source, task, arm, timestamp, and classification. The server's durable
 JetStream consumer stores the original event envelope and delivery metadata,
 then acknowledges only after the vector upsert succeeds.
