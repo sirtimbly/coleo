@@ -207,18 +207,19 @@ export class Brain {
 	/**
 	 * Log an activity entry via API (API handles JetStream persistence).
 	 */
-	private logActivity(
+	private async logActivity(
 		actor: string,
 		action: string,
 		target?: string,
 		details?: Record<string, unknown>,
-	): void {
+		options?: { allowDuringShutdown?: boolean },
+	): Promise<void> {
 		// Skip logging during shutdown to avoid connection errors
-		if (this.shuttingDown) {
+		if (this.shuttingDown && !options?.allowDuringShutdown) {
 			return;
 		}
 
-		void this.apiRequest<{ entry?: unknown }>(
+		await this.apiRequest<{ entry?: unknown }>(
 			"/api/activity",
 			{
 				method: "POST",
@@ -781,6 +782,7 @@ export class Brain {
 		if (this.shuttingDown) {
 			return;
 		}
+		const pollStartedAt = Date.now();
 
 		const previousLastPollAt = this.state.lastPollAt;
 		this.state.lastPollAt = new Date().toISOString();
@@ -811,6 +813,10 @@ export class Brain {
 		// If database is down, we can't do anything meaningful
 		if (!infraHealth.components.database.healthy) {
 			this.log("CRITICAL: Database unhealthy, skipping poll cycle");
+			void this.logActivity("brain", "poll_skipped", undefined, {
+				reason: "Database unavailable",
+				durationMs: Date.now() - pollStartedAt,
+			});
 			return;
 		}
 
@@ -833,6 +839,10 @@ export class Brain {
 			await this.saveState();
 			await this.notifyObservatory("paused");
 			this.log("Brain work remains paused while a critical bug is unresolved");
+			void this.logActivity("brain", "poll_skipped", undefined, {
+				reason: "Work paused by a critical bug",
+				durationMs: Date.now() - pollStartedAt,
+			});
 			return;
 		}
 
@@ -913,6 +923,27 @@ export class Brain {
 		this.log(
 			`Poll complete. ${this.tasks.filter((t) => t.status === "pending").length} pending, ${this.arms.size} arms`,
 		);
+		void this.logActivity("brain", "poll_completed", undefined, {
+			durationMs: Date.now() - pollStartedAt,
+			pendingTasks: this.tasks.filter((task) => task.status === "pending").length,
+			activeArms: this.arms.size,
+			completedToday: this.state.completedToday,
+		});
+	}
+
+	private async executePollCycle(): Promise<void> {
+		const startedAt = Date.now();
+		try {
+			await this.poll();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : String(err);
+			this.log(`Poll failed: ${message}`);
+			await this.logActivity("brain", "poll_failed", undefined, {
+				error: message,
+				durationMs: Date.now() - startedAt,
+			});
+			throw err;
+		}
 	}
 
 	/**
@@ -964,7 +995,7 @@ export class Brain {
 		this.state.startedAt = this.state.startedAt || new Date().toISOString();
 
 		this.log(`Starting brain with ${this.options.pollIntervalMs}ms interval`);
-		this.logActivity("brain", "started", undefined, {
+		await this.logActivity("brain", "started", undefined, {
 			pollIntervalMs: this.options.pollIntervalMs,
 		});
 
@@ -972,20 +1003,22 @@ export class Brain {
 		await this.notifyObservatory("started");
 
 		// Initial poll
-		await this.poll();
+		await this.executePollCycle();
 
 		// Polling loop
 		while (this.running && !this.shuttingDown) {
 			await this.sleep(this.options.pollIntervalMs);
 			if (this.running && !this.shuttingDown) {
-				await this.poll();
+				await this.executePollCycle();
 			}
 		}
 
 		this.state.status = "stopped";
 		await this.saveState();
 		await this.notifyObservatory("stopped");
-		this.logActivity("brain", "stopped");
+		await this.logActivity("brain", "stopped", undefined, undefined, {
+			allowDuringShutdown: true,
+		});
 		this.log("Brain stopped");
 	}
 
@@ -996,12 +1029,17 @@ export class Brain {
 		this.state.status = "running";
 		this.state.startedAt = this.state.startedAt || new Date().toISOString();
 
+		await this.logActivity("brain", "started", undefined, {
+			mode: "once",
+			pollIntervalMs: this.options.pollIntervalMs,
+		});
 		await this.notifyObservatory("started");
-		await this.poll();
+		await this.executePollCycle();
 
 		this.state.status = "stopped";
 		await this.saveState();
 		await this.notifyObservatory("stopped");
+		await this.logActivity("brain", "stopped", undefined, { mode: "once" });
 	}
 
 	/**
@@ -1014,9 +1052,14 @@ export class Brain {
 		this.state.status = "running";
 		this.state.startedAt = this.state.startedAt || new Date().toISOString();
 
+		await this.logActivity("brain", "started", undefined, {
+			mode: "cycles",
+			cycles,
+			pollIntervalMs: delayMs,
+		});
 		await this.notifyObservatory("started");
 		for (let cycle = 0; cycle < cycles; cycle++) {
-			await this.poll();
+			await this.executePollCycle();
 			if (cycle < cycles - 1) {
 				await Bun.sleep(delayMs);
 			}
@@ -1026,6 +1069,7 @@ export class Brain {
 		this.state.status = "stopped";
 		await this.saveState();
 		await this.notifyObservatory("stopped");
+		await this.logActivity("brain", "stopped", undefined, { mode: "cycles" });
 	}
 
 	/**
@@ -4899,6 +4943,10 @@ ${originalTask.id}`;
 			case "critical": {
 				this.state.status = "paused";
 				await this.saveState();
+				await this.logActivity("brain", "paused", bugId, {
+					reason: "Critical bug",
+					title: payload.title,
+				});
 				for (const arm of this.arms.values()) {
 					if (arm.status === "busy" || arm.status === "running") {
 						await this.sendPromptToArm(
@@ -4970,6 +5018,9 @@ ${originalTask.id}`;
 				await this.saveState();
 				await this.notifyObservatory("resumed");
 				this.log("Resuming Brain work after all critical bugs were resolved");
+				await this.logActivity("brain", "resumed", undefined, {
+					reason: "All critical bugs resolved",
+				});
 			}
 
 			for (const bug of recentlyResolvedBugs) {

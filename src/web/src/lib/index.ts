@@ -1,4 +1,4 @@
-export { cn } from './utils';
+export { cn, truncateMiddle, truncateStart } from './utils';
 export {
   api,
   isJsonObject,

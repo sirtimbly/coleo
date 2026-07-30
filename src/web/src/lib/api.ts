@@ -286,6 +286,7 @@ class ApiClient {
       status: string;
       version: string;
       cwd: string;
+      projectName: string;
       uptime: number;
       brain: {
         running: boolean;
@@ -562,16 +563,30 @@ class ApiClient {
   }
 
   // Activity
-  async listActivity(params?: { limit?: number; offset?: number; actor?: string }) {
+  async listActivity(params?: {
+    limit?: number;
+    offset?: number;
+    actor?: string;
+    producer?: string;
+    beforeSequence?: number;
+  }) {
     const query = new URLSearchParams();
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     if (params?.actor) query.set('actor', params.actor);
+    if (params?.producer) query.set('producer', params.producer);
+    if (params?.beforeSequence) query.set('beforeSequence', params.beforeSequence.toString());
 
     const queryStr = query.toString();
     return this.request<{
       activity: ActivityEntry[];
-      pagination: { limit: number; offset: number; total: number };
+      pagination: {
+        limit: number;
+        offset: number;
+        total: number;
+        hasMore: boolean;
+        nextCursor: number | null;
+      };
     }>(`/activity${queryStr ? `?${queryStr}` : ''}`);
   }
 
@@ -1601,7 +1616,8 @@ export interface ArmRuntimeSummary {
 }
 
 export interface ActivityEntry {
-  id: number;
+  id: string;
+  sequence: number | null;
   timestamp: string;
   actor: string;
   action: string;

@@ -172,6 +172,9 @@ Default API URL:
 - `http://localhost:8080`
 - If `COLEO_NATS_URL` is unset, `coleo serve` will also bring up local NATS at `nats://127.0.0.1:4222`
 
+The startup banner displays the effective API key. If the Observatory asks for a key, copy that
+value into the Coleo API key field.
+
 If you want to use a shared or remote NATS server instead, set `COLEO_NATS_URL` before starting
 the API server.
 
@@ -256,4 +259,3 @@ For most users, the clean progression is:
 3. Move to the Docker base stack when you want a stable service on a Mac mini or home server.
 4. Expose that base stack privately over LAN, Tailscale, or another VPN.
 5. Add Traefik and Authelia only when you actually need public internet exposure.
-

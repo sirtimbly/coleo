@@ -15,6 +15,7 @@ export interface QueryOptions {
   limit?: number;
   since?: Date;
   until?: Date;
+  beforeSequence?: number;
   eventType?: string;
   latest?: boolean;
 }

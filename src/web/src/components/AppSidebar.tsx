@@ -4,7 +4,7 @@ import { MessageSquarePlus, Plus } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import { NAVIGATION_ROUTES, normalizeAppPathname } from '@/app/routes';
 import type { AppLayoutMode } from '@/hooks/useLayoutMode';
-import { api, cn, useMessage, useToast } from '@/lib';
+import { api, cn, truncateMiddle, useMessage, useToast } from '@/lib';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { VERSION } from '@/version';
 
@@ -22,6 +22,7 @@ export function AppSidebar({
   onOpenRouteInNewPane,
 }: AppSidebarProps) {
   const [cwd, setCwd] = useState('/');
+  const [projectName, setProjectName] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const { openNewMessage } = useMessage();
   const { showToast } = useToast();
@@ -34,6 +35,7 @@ export function AppSidebar({
     try {
       const status = await api.status();
       setCwd(status.cwd);
+      setProjectName(status.projectName);
     } catch (error) {
       console.error('Failed to fetch status:', error);
     }
@@ -95,9 +97,11 @@ export function AppSidebar({
 
           <div className="min-w-0">
             <h1 className="truncate text-sm font-semibold uppercase tracking-[0.22em] text-sidebar-foreground">
-              Coleo
+              COLEO
             </h1>
-            <p className="truncate pt-1 text-xs text-muted-foreground">{cwd}</p>
+            <p className="truncate pt-1 text-xs text-muted-foreground" title={cwd}>
+              {projectName ? truncateMiddle(projectName, 32) : cwd}
+            </p>
           </div>
         </div>
       </div>

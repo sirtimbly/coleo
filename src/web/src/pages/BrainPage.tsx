@@ -1,12 +1,14 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
 import { api } from '@/lib';
-import type { BrainConfigResponse, BrainModel } from '@/lib';
+import type { ActivityEntry, BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
 import { Card, CardContent, DenseSection, DenseRow, DenseRowSkeleton, type Tone } from '@/components';
+import { BrainActivityLog } from '@/components/BrainActivityLog';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
+import { mergeBrainActivity, parseBrainActivityEntry } from './brain-activity';
 
 interface BrainStatus {
   status: 'stopped' | 'running' | 'paused';
@@ -262,6 +264,13 @@ export function BrainPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [brainModels, setBrainModels] = useState<BrainModel[]>([]);
   const [brainModelsError, setBrainModelsError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<ActivityEntry[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [olderActivityLoading, setOlderActivityLoading] = useState(false);
+  const [activityCursor, setActivityCursor] = useState<number | null>(null);
+  const [hasOlderActivity, setHasOlderActivity] = useState(false);
+  const previousAuthenticatedRef = useRef(false);
+  const olderActivityRequestRef = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -287,13 +296,66 @@ export function BrainPage() {
     }
   }, []);
 
-  const handleWSMessage = useCallback((msg: { channel?: string }) => {
-    if (msg.channel === 'brain') loadData();
+  const loadActivity = useCallback(async (options?: { beforeSequence?: number; preserveCursor?: boolean }) => {
+    if (options?.beforeSequence) setOlderActivityLoading(true);
+    else if (!options?.preserveCursor) setActivityLoading(true);
+
+    try {
+      const response = await api.listActivity({
+        producer: 'brain',
+        limit: 200,
+        beforeSequence: options?.beforeSequence,
+      });
+      setActivity((current) => mergeBrainActivity(current, response.activity));
+      if (!options?.preserveCursor) {
+        setActivityCursor(response.pagination.nextCursor ?? null);
+        setHasOlderActivity(response.pagination.hasMore ?? false);
+      }
+    } catch (err) {
+      console.error('Failed to load Brain activity:', err);
+    } finally {
+      if (options?.beforeSequence) setOlderActivityLoading(false);
+      else if (!options?.preserveCursor) setActivityLoading(false);
+    }
+  }, []);
+
+  const loadOlderActivity = useCallback(async () => {
+    if (!activityCursor || olderActivityRequestRef.current || !hasOlderActivity) return;
+    olderActivityRequestRef.current = true;
+    try {
+      await loadActivity({ beforeSequence: activityCursor });
+    } finally {
+      olderActivityRequestRef.current = false;
+    }
+  }, [activityCursor, hasOlderActivity, loadActivity]);
+
+  const handleWSMessage = useCallback((msg: WebSocketMessage) => {
+    if (msg.channel === 'brain') void loadData();
+    if (msg.channel === 'activity') {
+      const entry = parseBrainActivityEntry(msg.data);
+      if (entry?.actor === 'brain') {
+        setActivity((current) => mergeBrainActivity(current, [entry]));
+      }
+    }
   }, [loadData]);
 
-  useWebSocket({ channels: ['brain'], onMessage: handleWSMessage });
+  const { connected, authenticated } = useWebSocket({ channels: ['brain', 'activity'], onMessage: handleWSMessage });
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    void loadData();
+    void loadActivity();
+  }, [loadActivity, loadData]);
+
+  useEffect(() => {
+    if (authenticated && !previousAuthenticatedRef.current) {
+      void loadActivity({ preserveCursor: true });
+    }
+    previousAuthenticatedRef.current = authenticated;
+  }, [authenticated, loadActivity]);
+
+  const handleRefresh = async () => {
+    await Promise.all([loadData(), loadActivity({ preserveCursor: true })]);
+  };
 
   const handleStart = async () => {
     setActionLoading('start');
@@ -342,7 +404,7 @@ export function BrainPage() {
           <h1 className="text-3xl font-semibold tracking-tight">Brain</h1>
           <p className="mt-1 text-sm text-muted-foreground">Central coordinator status and configuration</p>
         </div>
-        <Button variant="ghost" size="sm" onPress={loadData}>
+        <Button variant="ghost" size="sm" onPress={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
@@ -353,6 +415,16 @@ export function BrainPage() {
         actionLoading={actionLoading}
         onStart={handleStart}
         onStop={handleStop}
+        onNavigate={navigate}
+      />
+
+      <BrainActivityLog
+        activity={activity}
+        connected={connected && authenticated}
+        loading={activityLoading}
+        loadingOlder={olderActivityLoading}
+        hasMore={hasOlderActivity}
+        onLoadOlder={loadOlderActivity}
         onNavigate={navigate}
       />
 
