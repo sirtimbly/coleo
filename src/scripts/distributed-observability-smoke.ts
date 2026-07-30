@@ -11,6 +11,8 @@
  *   (allowLocalFallback=true) and compares endpoint parity expectations.
  */
 
+import { resolveApiKey, resolveApiUrl } from "../network-config";
+
 interface SpawnResponse {
   spawned: boolean;
   distributed?: boolean;
@@ -47,8 +49,8 @@ interface ArmRunResult {
   hasSession: boolean;
 }
 
-const API_URL = process.env.COLEO_API_URL || "http://localhost:8080";
-const API_KEY = process.env.COLEO_API_KEY || "";
+const API_URL = resolveApiUrl();
+const API_KEY = resolveApiKey() || "";
 const PROVIDER = process.env.COLEO_TEST_PROVIDER || "opencode";
 const MODEL = process.env.COLEO_TEST_MODEL || "gpt-5.1-codex-mini";
 const TIMEOUT_MS = Number.parseInt(process.env.COLEO_OBS_TIMEOUT_MS || "90000", 10);

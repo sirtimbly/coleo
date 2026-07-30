@@ -10,6 +10,8 @@ import {
 
 const trackedEnv = [
   "COLEO_AGENT_ID",
+  "COLEO_NATS_HOST",
+  "COLEO_NATS_PORT",
   "COLEO_NATS_URL",
   "COLEO_DIR",
   "COLEO_TEST_FILE_SECRET",
@@ -52,6 +54,14 @@ describe("Cloudflare Arm Host entrypoint", () => {
       natsUrl: "nats://env:4222",
       maxArms: 10,
     });
+  });
+
+  it("uses the shared NATS host and port when no URL is configured", () => {
+    delete process.env.COLEO_NATS_URL;
+    process.env.COLEO_NATS_HOST = "127.0.0.4";
+    process.env.COLEO_NATS_PORT = "14422";
+
+    expect(parseCloudflareAgentOptions([]).natsUrl).toBe("nats://127.0.0.4:14422");
   });
 
   it("rejects invalid numeric options", () => {

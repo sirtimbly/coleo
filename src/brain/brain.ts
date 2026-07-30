@@ -22,6 +22,7 @@ import {
 import { parseInbox, clearInbox, deduplicateItems } from "./inbox-parser";
 import { DocUpdateTracker } from "./doc-tracker";
 import { loadConfig, updateConfig } from "../config";
+import { resolveApiKey, resolveApiUrl } from "../network-config";
 import { resolveBrainModelConfig } from "./model-config";
 import {
 	ArmStateMachine,
@@ -291,9 +292,8 @@ export class Brain {
 		this.options = options;
 		this.apiBaseUrl =
 			options.apiBaseUrl ||
-			process.env.COLEO_API_URL ||
-			"http://localhost:8080";
-		this.apiKey = options.apiKey || process.env.COLEO_API_KEY || "";
+			resolveApiUrl();
+		this.apiKey = options.apiKey || resolveApiKey() || "";
 		this.projectRoot = options.projectRoot
 			|| process.env.COLEO_PROJECT_DIR
 			|| process.env.OCTOPAI_PROJECT_ROOT

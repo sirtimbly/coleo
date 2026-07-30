@@ -4,6 +4,7 @@ import { getLocalNatsPaths, getLocalNatsUrl, getNatsDownloadInfo } from "../loca
 const ORIGINAL_ENV = {
   COLEO_BIN_DIR: process.env.COLEO_BIN_DIR,
   COLEO_NATS_DATA_DIR: process.env.COLEO_NATS_DATA_DIR,
+  COLEO_NATS_HOST: process.env.COLEO_NATS_HOST,
   COLEO_NATS_PORT: process.env.COLEO_NATS_PORT,
   NATS_BIN: process.env.NATS_BIN,
   NATS_VERSION: process.env.NATS_VERSION,
@@ -29,9 +30,10 @@ describe("local NATS helpers", () => {
     expect(paths.pidPath).toBe("/tmp/coleo-project/.coleo/run/nats.pid");
   });
 
-  it("builds the local URL from COLEO_NATS_PORT when set", () => {
+  it("builds the local URL from the shared NATS host and port", () => {
+    process.env.COLEO_NATS_HOST = "127.0.0.2";
     process.env.COLEO_NATS_PORT = "5222";
-    expect(getLocalNatsUrl()).toBe("nats://127.0.0.1:5222");
+    expect(getLocalNatsUrl()).toBe("nats://127.0.0.2:5222");
   });
 
   it("builds the pinned release download path for the current platform", () => {

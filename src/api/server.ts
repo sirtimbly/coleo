@@ -23,6 +23,7 @@ import { ensureDefaultArmTemplates, getColeoDir } from "../config";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
+import { resolveApiUrl, resolveNatsUrl } from "../network-config";
 import {
   initializeStatusHistoryCollection,
   processConsumedStatusHistoryEvent,
@@ -331,6 +332,14 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     Object.fromEntries(Object.entries(configOverrides).filter(([_, v]) => v !== undefined)) : 
     {};
   const config = { ...baseConfig, ...overrides } as ApiConfig;
+  process.env.COLEO_API_HOST = config.host;
+  process.env.COLEO_API_PORT = String(config.port);
+  if (configOverrides?.host !== undefined || configOverrides?.port !== undefined || !process.env.COLEO_API_URL) {
+    process.env.COLEO_API_URL = resolveApiUrl({
+      ...process.env,
+      COLEO_API_URL: undefined,
+    });
+  }
   
   const log = (msg: string, level: LogLevel = "normal") => {
     if (shouldLog(config.logLevel, level)) {
@@ -370,7 +379,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   let armClient: ArmClient | undefined;
   
   try {
-    const natsUrl = process.env.COLEO_NATS_URL || 'nats://localhost:4222';
+    const natsUrl = resolveNatsUrl();
     log(`Connecting to NATS at ${natsUrl}...`, "verbose");
     
     nats = new NatsManager({ 

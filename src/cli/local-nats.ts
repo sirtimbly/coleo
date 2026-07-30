@@ -7,11 +7,9 @@ import { promisify } from "node:util";
 import { connect } from "nats";
 import { getColeoDir } from "./context";
 import { isProcessRunning } from "../daemon/utils";
+import { resolveNatsHost, resolveNatsHttpPort, resolveNatsPort, resolveNatsUrl } from "../network-config";
 
 const DEFAULT_NATS_VERSION = "2.12.3";
-const LOCAL_NATS_HOST = "127.0.0.1";
-const DEFAULT_NATS_PORT = 4222;
-const DEFAULT_NATS_HTTP_PORT = 8222;
 const NATS_READY_TIMEOUT_MS = 15_000;
 const NATS_READY_POLL_MS = 250;
 const execFileAsync = promisify(execFile);
@@ -54,7 +52,7 @@ export function getLocalNatsPaths(coleoDir = getColeoDir()): LocalNatsPaths {
 }
 
 export function getLocalNatsUrl(): string {
-  return `nats://${LOCAL_NATS_HOST}:${getNatsPort()}`;
+  return resolveNatsUrl({ ...process.env, COLEO_NATS_URL: undefined });
 }
 
 export async function ensureLocalNatsForServe(
@@ -190,9 +188,11 @@ async function startDetachedLocalNats(paths: LocalNatsPaths): Promise<void> {
         "-sd",
         paths.dataDir,
         "-p",
-        String(getNatsPort()),
+        String(resolveNatsPort()),
+        "-a",
+        resolveNatsHost(),
         "--http_port",
-        String(getNatsHttpPort()),
+        String(resolveNatsHttpPort()),
       ],
       {
         cwd: getColeoDir(),
@@ -217,9 +217,11 @@ async function startDetachedLocalNats(paths: LocalNatsPaths): Promise<void> {
         "-sd",
         paths.dataDir,
         "-p",
-        String(getNatsPort()),
+        String(resolveNatsPort()),
+        "-a",
+        resolveNatsHost(),
         "--http_port",
-        String(getNatsHttpPort()),
+        String(resolveNatsHttpPort()),
       ],
     };
 
@@ -278,22 +280,6 @@ function normalizeArch(arch: string): "amd64" | "arm64" {
     return "arm64";
   }
   throw new Error(`unsupported architecture for local nats-server bootstrap: ${arch}`);
-}
-
-function getNatsPort(): number {
-  return parsePositiveInt(process.env.COLEO_NATS_PORT, DEFAULT_NATS_PORT);
-}
-
-function getNatsHttpPort(): number {
-  return parsePositiveInt(process.env.COLEO_NATS_HTTP_PORT, DEFAULT_NATS_HTTP_PORT);
-}
-
-function parsePositiveInt(raw: string | undefined, fallback: number): number {
-  const value = Number.parseInt(raw || "", 10);
-  if (Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  return fallback;
 }
 
 function formatError(error: unknown): string {

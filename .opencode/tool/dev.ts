@@ -1,16 +1,22 @@
 import { tool } from "@opencode-ai/plugin";
 
+const API_HOST = process.env.COLEO_API_HOST === "0.0.0.0"
+  ? "127.0.0.1"
+  : process.env.COLEO_API_HOST || "127.0.0.1";
+const API_PORT = process.env.COLEO_API_PORT || "8080";
+const API_URL = (process.env.COLEO_API_URL || `http://${API_HOST}:${API_PORT}`).replace(/\/$/, "");
+
 /**
  * Dev server control tools for Coleo
  * 
  * These tools help manage the development environment:
- * - API server (port 8080)
+ * - API server (configured by COLEO_API_HOST/COLEO_API_PORT)
  * - Web UI dev server (port 5173)
  * - Brain loop
  */
 
 export const server_start = tool({
-  description: `Start the Coleo API server on port 8080.
+  description: `Start the Coleo API server at ${API_URL}.
 
 This starts the main API server which provides:
 - REST API for arm management, tasks, mail, etc.
@@ -22,9 +28,9 @@ The server runs in the background. Use dev_server_stop to stop it.`,
   async execute() {
     try {
       // Check if already running
-      const check = await Bun.$`curl -s http://localhost:8080/api/health 2>/dev/null`.text();
+      const check = await Bun.$`curl -s ${API_URL}/api/health 2>/dev/null`.text();
       if (check.includes('"status":"ok"')) {
-        return "Server is already running on port 8080";
+        return `Server is already running at ${API_URL}`;
       }
     } catch {
       // Not running, proceed to start
@@ -40,9 +46,9 @@ The server runs in the background. Use dev_server_stop to stop it.`,
     while (attempts < 10) {
       await new Promise(resolve => setTimeout(resolve, 1000));
       try {
-        const check = await Bun.$`curl -s http://localhost:8080/api/health`.text();
+        const check = await Bun.$`curl -s ${API_URL}/api/health`.text();
         if (check.includes('"status":"ok"')) {
-          return "Server started successfully on port 8080. Logs at /tmp/coleo-server.log";
+          return `Server started successfully at ${API_URL}. Logs at /tmp/coleo-server.log`;
         }
       } catch {
         // Not ready yet
@@ -68,7 +74,7 @@ Kills any running Coleo server process.`,
     // Verify it's stopped
     await new Promise(resolve => setTimeout(resolve, 500));
     try {
-      const check = await Bun.$`curl -s --max-time 1 http://localhost:8080/api/health 2>/dev/null`.text();
+      const check = await Bun.$`curl -s --max-time 1 ${API_URL}/api/health 2>/dev/null`.text();
       if (check.includes('"status":"ok"')) {
         return "Warning: Server still appears to be running";
       }
@@ -87,7 +93,7 @@ Returns the health status if running, or indicates it's not running.`,
   args: {},
   async execute() {
     try {
-      const health = await Bun.$`curl -s --max-time 2 http://localhost:8080/api/health`.text();
+      const health = await Bun.$`curl -s --max-time 2 ${API_URL}/api/health`.text();
       const data = JSON.parse(health);
       return `Server is running. Status: ${data.status}, Timestamp: ${data.timestamp}`;
     } catch (err) {
@@ -100,7 +106,7 @@ export const web_start = tool({
   description: `Start the Coleo Web UI development server on port 5173.
 
 This starts the Vite dev server for the React dashboard.
-The web UI connects to the API server on port 8080.
+The web UI connects to the API server at ${API_URL}.
 
 Note: The API server should be running first (use dev_server_start).`,
   args: {},
@@ -166,7 +172,7 @@ Note: The API server should be running first (use dev_server_start).`,
     
     // Check status via API
     try {
-      const status = await Bun.$`curl -s http://localhost:8080/api/status`.text();
+      const status = await Bun.$`curl -s ${API_URL}/api/status`.text();
       if (status.includes('"brain"')) {
         return "Brain started. Logs at /tmp/coleo-brain.log";
       }
