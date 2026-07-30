@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.8.0...coleo-v0.9.0) (2026-07-30)
+
+
+### Features
+
+* **web:** add brain activity dashboard ([1dfed58](https://github.com/sirtimbly/coleo/commit/1dfed580add7a729907e0f321102718d0ad6f2ad))
+* **web:** add brain activity dashboard ([f8f2daf](https://github.com/sirtimbly/coleo/commit/f8f2dafb8735a556e31fa2e400de5009ae9e6124))
+
 ## [0.8.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.7.1...coleo-v0.8.0) (2026-07-29)
 
 
