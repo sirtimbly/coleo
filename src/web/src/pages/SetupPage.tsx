@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Button } from '@heroui/react';
 import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
@@ -343,14 +344,15 @@ export function SetupPage() {
 
         <div className="setup-toolbar-actions">
           {isCanonicalPlan ? (
-            <button
-              type="button"
-              onClick={() => void openRegeneration()}
-              disabled={saving || preparing}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            <Button
+              variant="outline"
+              size="sm"
+              onPress={() => void openRegeneration()}
+              isDisabled={saving || preparing}
+              className="h-8 border-warning/50 px-2.5 text-xs font-normal text-warning hover:bg-warning/10"
             >
               <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
-            </button>
+            </Button>
           ) : null}
           <button
             type="button"
