@@ -157,3 +157,80 @@ describe("Activity transcript route", () => {
     expect(typeof body.message).toBe("string");
   });
 });
+
+describe("Brain activity route", () => {
+  it("paginates Brain-originated activity from newest pages without losing chronological order", async () => {
+    const store = createTestEventStore();
+    setEventStore(store);
+
+    await store.publishEvent("coleo.events.arm.arm-a.task", {
+      type: "task_created",
+      armId: "task-1",
+      data: { actor: "brain", subject: "First task" },
+      timestamp: "2026-02-13T00:00:01.000Z",
+    });
+    await store.publishEvent("coleo.events.api.other", {
+      type: "other_activity",
+      data: { actor: "api" },
+      timestamp: "2026-02-13T00:00:02.000Z",
+    });
+    await store.publishEvent("coleo.events.arm.arm-a.prompt", {
+      type: "arm_prompted",
+      armId: "arm-a",
+      data: { actor: "brain" },
+      timestamp: "2026-02-13T00:00:03.000Z",
+    });
+    await store.publishEvent("coleo.events.api.poll", {
+      type: "poll_completed",
+      data: { actor: "brain", pendingTasks: 1 },
+      timestamp: "2026-02-13T00:00:04.000Z",
+    });
+
+    const firstResponse = await app.request(new Request(
+      "http://localhost/api/activity?producer=brain&limit=2",
+      { headers: { "X-API-Key": apiKey } },
+    ));
+    expect(firstResponse.status).toBe(200);
+    const firstPage = (await firstResponse.json()) as {
+      activity: Array<{ actor: string; action: string; target: string | null }>;
+      pagination: { hasMore: boolean; nextCursor: number | null };
+    };
+    expect(firstPage.activity.map((entry) => entry.action)).toEqual(["arm_prompted", "poll_completed"]);
+    expect(firstPage.activity[0]).toMatchObject({ actor: "brain", target: "arm-a" });
+    expect(firstPage.pagination.hasMore).toBe(true);
+
+    const secondResponse = await app.request(new Request(
+      `http://localhost/api/activity?producer=brain&limit=2&beforeSequence=${firstPage.pagination.nextCursor}`,
+      { headers: { "X-API-Key": apiKey } },
+    ));
+    const secondPage = (await secondResponse.json()) as {
+      activity: Array<{ action: string }>;
+      pagination: { hasMore: boolean };
+    };
+    expect(secondPage.activity.map((entry) => entry.action)).toEqual(["task_created"]);
+    expect(secondPage.pagination.hasMore).toBe(false);
+  });
+
+  it("normalizes actor and target when the Brain posts activity", async () => {
+    const response = await app.request(new Request("http://localhost/api/activity", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+      },
+      body: JSON.stringify({
+        actor: "brain",
+        action: "arm_prompted",
+        target: "arm-a",
+        details: { reason: "Idle arm" },
+      }),
+    }));
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as {
+      entry: { id: string; sequence: number | null; actor: string; target: string | null };
+    };
+    expect(body.entry).toMatchObject({ sequence: null, actor: "brain", target: "arm-a" });
+    expect(body.entry.id.length).toBeGreaterThan(0);
+  });
+});

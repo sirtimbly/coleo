@@ -33,7 +33,8 @@ import {
 	type CommandPaletteMode,
 	type WorkspaceCommandAction,
 } from "@/components/WorkspaceCommandPalette";
-import { useMessage } from "@/lib";
+import { api, truncateMiddle, truncateStart, useMessage } from "@/lib";
+import { createRandomId } from "@/lib/utils";
 import {
 	WorkspaceRouteProvider,
 	type WorkspaceOpenMode,
@@ -58,7 +59,7 @@ interface PanelInstance {
 }
 
 function createPanelId(): string {
-	return `panel-${crypto.randomUUID()}`;
+	return createRandomId("panel");
 }
 
 function createRoutePanelState(
@@ -197,6 +198,23 @@ export function GoldenWorkspace() {
 	const [paletteMode, setPaletteMode] = useState<CommandPaletteMode | null>(
 		null,
 	);
+	const [projectName, setProjectName] = useState<string | null>(null);
+	const [projectCwd, setProjectCwd] = useState<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		void api.status().then((status) => {
+			if (!cancelled) {
+				setProjectName(status.projectName);
+				setProjectCwd(status.cwd);
+			}
+		}).catch((error) => {
+			console.error("Failed to fetch project identity:", error);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	const persistWorkspaceLayout = useCallback(() => {
 		if (!layoutRef.current) {
@@ -1027,6 +1045,17 @@ export function GoldenWorkspace() {
 										</div>
 									</div>
 								) : null}
+							</div>
+
+							<div className="golden-dock-project">
+								<span className="golden-dock-project-app">COLEO</span>
+								<span className="golden-dock-project-name" title={projectCwd ?? undefined}>
+									{projectName
+										? truncateMiddle(projectName, 32)
+										: projectCwd
+											? truncateStart(projectCwd, 32)
+											: "…"}
+								</span>
 							</div>
 						</div>
 

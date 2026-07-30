@@ -57,9 +57,7 @@ export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWeb
       // Direct/self-hosted clients authenticate in-band. In Reef, the reverse
       // proxy authenticates the upgrade and the server sends the same success
       // message without exposing its private credential to this browser.
-      if (apiKey) {
-        ws.send(JSON.stringify({ type: 'auth', apiKey }));
-      }
+      ws.send(JSON.stringify({ type: 'auth', apiKey: apiKey || '' }));
     };
 
     ws.onmessage = (event) => {

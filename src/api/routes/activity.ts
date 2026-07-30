@@ -7,9 +7,11 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { basename } from "path";
+import { randomUUID } from "crypto";
 import { eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
 import { COMMAND_STREAM_NAME } from "../../nats/command-types";
+import { broadcast } from "../websocket";
 
 interface ActivityContext {
   Variables: {
@@ -18,11 +20,96 @@ interface ActivityContext {
 }
 
 export interface ActivityEntry {
+  id: string;
+  sequence: number | null;
   timestamp: string;
   actor: string;
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+interface ActivityPage {
+  activity: ActivityEntry[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    hasMore: boolean;
+    nextCursor: number | null;
+  };
+}
+
+function toActivityEntry(event: EventData): ActivityEntry {
+  const actor = typeof event.data.actor === "string"
+    ? event.data.actor
+    : event.armId || "system";
+  const target = typeof event.data.target === "string"
+    ? event.data.target
+    : event.armId || null;
+  const activityId = typeof event.data.activityId === "string"
+    ? event.data.activityId
+    : event.sequence !== undefined
+      ? `event-${event.sequence}`
+      : `${event.type}-${event.timestamp}-${target || actor}`;
+
+  return {
+    id: activityId,
+    sequence: event.sequence ?? null,
+    timestamp: event.timestamp,
+    actor,
+    action: event.type,
+    target,
+    details: event.data,
+  };
+}
+
+async function getProducerActivityPage(
+  producer: string,
+  limit: number,
+  beforeSequence?: number,
+): Promise<ActivityPage> {
+  const scanPageSize = 5000;
+  let cursor = beforeSequence;
+  let matches: EventData[] = [];
+  let reachedStart = false;
+
+  while (matches.length <= limit) {
+    const events = await eventStore.queryEvents({
+      limit: scanPageSize,
+      latest: true,
+      beforeSequence: cursor,
+    });
+    if (events.length === 0) {
+      reachedStart = true;
+      break;
+    }
+
+    const pageMatches = events.filter((event) => event.data.actor === producer);
+    matches = [...pageMatches, ...matches];
+
+    const oldestSequence = events[0]?.sequence;
+    if (oldestSequence === undefined || events.length < scanPageSize) {
+      reachedStart = true;
+      break;
+    }
+    cursor = oldestSequence;
+  }
+
+  const pageEvents = matches.slice(-limit);
+  const activity = pageEvents.map(toActivityEntry);
+  const hasMore = pageEvents.length > 0 && (matches.length > limit || !reachedStart);
+
+  return {
+    activity,
+    pagination: {
+      limit,
+      offset: 0,
+      total: activity.length,
+      hasMore,
+      nextCursor: hasMore ? pageEvents[0]?.sequence ?? null : null,
+    },
+  };
 }
 
 interface ArmMetadata {
@@ -722,19 +809,36 @@ export function createActivityRoutes() {
   /**
    * List activity entries from JetStream
    * GET /api/activity?limit=50&actor=arm-123
+   * GET /api/activity?limit=200&producer=brain&beforeSequence=1234
    */
   app.get("/", async (c) => {
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "50", 10), 1), 200);
     const actor = c.req.query("actor");
+    const producer = c.req.query("producer");
+    const beforeSequenceValue = parseInt(c.req.query("beforeSequence") || "", 10);
+    const beforeSequence = Number.isFinite(beforeSequenceValue) && beforeSequenceValue > 0
+      ? beforeSequenceValue
+      : undefined;
 
     if (!eventStore.isInitialized()) {
       return c.json({ 
         activity: [],
+        pagination: {
+          limit,
+          offset: 0,
+          total: 0,
+          hasMore: false,
+          nextCursor: null,
+        },
         message: "JetStream not available - start the API server with NATS",
       });
     }
 
     try {
+      if (producer) {
+        return c.json(await getProducerActivityPage(producer, limit, beforeSequence));
+      }
+
       let events;
       if (actor) {
         // Filter by specific arm
@@ -744,15 +848,18 @@ export function createActivityRoutes() {
         events = await eventStore.getRecentEvents(limit);
       }
 
-      const activity = events.map(event => ({
-        timestamp: event.timestamp,
-        actor: event.armId || (event.data.actor as string) || "brain",
-        action: event.type,
-        target: event.armId || null,
-        details: event.data,
-      }));
+      const activity = events.map(toActivityEntry);
 
-      return c.json({ activity });
+      return c.json({
+        activity,
+        pagination: {
+          limit,
+          offset: 0,
+          total: activity.length,
+          hasMore: false,
+          nextCursor: null,
+        },
+      });
     } catch (err) {
       console.error("Activity query error:", err);
       return c.json({ error: "JetStream error" }, 500);
@@ -836,26 +943,33 @@ export function createActivityRoutes() {
     }
 
     const now = new Date().toISOString();
+    const activityId = randomUUID();
     const subject = body.target 
       ? `coleo.events.arm.${body.target}.${body.action}`
       : `coleo.events.api.${body.action}`;
 
     try {
-      await eventStore.publishEvent(subject, {
+      const event: EventData = {
         type: body.action,
         armId: body.target,
-        data: { actor: body.actor, ...body.details },
+        data: {
+          ...body.details,
+          activityId,
+          actor: body.actor,
+          target: body.target,
+        },
         timestamp: now,
-      });
+      };
+      await eventStore.publishEvent(subject, event);
+
+      const entry = {
+        ...toActivityEntry(event),
+        details: body.details || {},
+      };
+      broadcast("activity", "activity.created", entry);
 
       return c.json({
-        entry: {
-          timestamp: now,
-          actor: body.actor,
-          action: body.action,
-          target: body.target || null,
-          details: body.details || {},
-        },
+        entry,
       }, 201);
     } catch (err) {
       console.error("Failed to publish activity:", err);

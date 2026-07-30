@@ -39,6 +39,32 @@
   justify-content: flex-start;
 }
 
+.golden-dock-project {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  max-width: 220px;
+  line-height: 1.2;
+  padding-left: 2px;
+}
+
+.golden-dock-project-app {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--foreground);
+}
+
+.golden-dock-project-name {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .golden-dock-center {
   justify-content: stretch;
 }

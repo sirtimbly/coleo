@@ -3,7 +3,8 @@
  */
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
-import { join } from "path";
+import { readFileSync } from "fs";
+import { basename, join } from "path";
 import { eventStore } from "../../nats/jetstream";
 import { getServiceStatus } from "../../daemon";
 import { getNatsManager } from "../../nats/server";
@@ -16,6 +17,49 @@ interface SystemContext {
     db: Database;
     startedAt: Date;
   };
+}
+
+export function detectProjectName(cwd: string): string {
+  const fromJson = (file: string): string | null => {
+    try {
+      const parsed = JSON.parse(readFileSync(join(cwd, file), "utf-8")) as { name?: unknown };
+      return typeof parsed.name === "string" && parsed.name.trim() ? parsed.name.trim() : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const fromToml = (file: string, section: string): string | null => {
+    try {
+      const content = readFileSync(join(cwd, file), "utf-8");
+      const sectionMatch = content.match(new RegExp(`\\[${section}\\]([^\\[]*)`));
+      return sectionMatch?.[1]?.match(/^\s*name\s*=\s*["']([^"']+)["']/m)?.[1]?.trim() || null;
+    } catch {
+      return null;
+    }
+  };
+
+  const candidates = [
+    () => fromJson("package.json"),
+    () => fromToml("Cargo.toml", "package"),
+    () => fromToml("pyproject.toml", "project"),
+    () => fromJson("composer.json"),
+    () => {
+      try {
+        const modulePath = readFileSync(join(cwd, "go.mod"), "utf-8").match(/^module\s+(\S+)/m)?.[1]?.trim();
+        return modulePath ? basename(modulePath) : null;
+      } catch {
+        return null;
+      }
+    },
+  ];
+
+  for (const candidate of candidates) {
+    const name = candidate();
+    if (name) return name;
+  }
+
+  return basename(cwd) || cwd;
 }
 
 export function createSystemRoutes() {
@@ -323,10 +367,12 @@ export function createSystemRoutes() {
 
     const overallHealth = infrastructure.database.healthy && infrastructure.maildir.healthy;
 
+    const cwd = process.cwd();
     return c.json({
       status: overallHealth ? "ok" : "degraded",
       version: VERSION,
-      cwd: process.cwd(),
+      cwd,
+      projectName: detectProjectName(cwd),
       uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),
       brain: brainStatus,
       arms: {

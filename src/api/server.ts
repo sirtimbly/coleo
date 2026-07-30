@@ -694,17 +694,9 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   if (nats) {
     console.log(`  NATS:     ${nats.getServerUrl()}`);
   }
-  console.log(`  API Key:  ${config.apiKey.startsWith("dev-") ? "(dev mode)" : config.apiKey.slice(0, 8) + "..."}`);
+  console.log(`  API Key:  ${config.apiKey}`);
   console.log("=".repeat(60));
   console.log("");
-  
-  // Check if API key was auto-generated - only show in verbose mode
-  if (config.apiKey.startsWith("dev-")) {
-    log("=".repeat(60), "verbose");
-    log("  DEV API KEY (set COLEO_API_KEY for production):", "verbose");
-    log(`  ${config.apiKey}`, "verbose");
-    log("=".repeat(60), "verbose");
-  }
 
   // Create WebSocket handlers
   const wsHandlers = createProxyAwareWebSocketHandlers(
