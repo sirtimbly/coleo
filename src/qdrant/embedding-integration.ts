@@ -6,6 +6,7 @@
  */
 
 import { embeddingService } from "../embedding";
+import { getProjectCollectionName, getProjectScope } from "../project-scope";
 import { qdrantStore } from "./client";
 
 export interface SearchableDocument {
@@ -18,9 +19,11 @@ export interface SearchableDocument {
  * Index documents with embeddings into Qdrant
  */
 export async function indexDocuments(
-	collectionName: string,
+	collectionBaseName: string,
 	documents: SearchableDocument[],
 ): Promise<void> {
+	const collectionName = getProjectCollectionName(collectionBaseName);
+	const projectScope = getProjectScope();
 	// Ensure collection exists with correct vector size
 	const vectorSize = embeddingService.getVectorSize();
 	await qdrantStore.createCollection(collectionName, vectorSize, "Cosine");
@@ -36,6 +39,8 @@ export async function indexDocuments(
 		payload: {
 			text: doc.text,
 			...doc.metadata,
+			project_dir: projectScope.projectDir,
+			project_key: projectScope.projectKey,
 		},
 	}));
 
@@ -48,7 +53,7 @@ export async function indexDocuments(
  * Search for similar documents
  */
 export async function searchDocuments(
-	collectionName: string,
+	collectionBaseName: string,
 	query: string,
 	limit = 10,
 ): Promise<Array<{
@@ -61,10 +66,14 @@ export async function searchDocuments(
 	const queryEmbedding = await embeddingService.embed(query);
 
 	// Search Qdrant
-	const results = await qdrantStore.search(collectionName, queryEmbedding.embedding, {
-		limit,
-		with_payload: true,
-	});
+	const results = await qdrantStore.search(
+		getProjectCollectionName(collectionBaseName),
+		queryEmbedding.embedding,
+		{
+			limit,
+			with_payload: true,
+		},
+	);
 
 	return results.map((r) => ({
 		id: r.id,
@@ -130,7 +139,7 @@ export async function searchArmHistory(
 	const queryEmbedding = await embeddingService.embed(query);
 
 	// Search with filter
-	const results = await qdrantStore.search("arm-history", queryEmbedding.embedding, {
+	const results = await qdrantStore.search(getProjectCollectionName("arm-history"), queryEmbedding.embedding, {
 		limit,
 		filter,
 		with_payload: true,

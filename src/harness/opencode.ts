@@ -20,6 +20,7 @@ import type {
 import { KEY_SEQUENCES } from "./types";
 import { PTYManager, stripAnsi } from "./pty-manager";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
+import { getProjectRuntimeEnvironment } from "../project-scope";
 
 /**
  * UI patterns for detecting OpenCode state
@@ -93,6 +94,7 @@ export class OpenCodeHarness implements AgentHarness {
           environment: {
             COLEO_ARM_ID: armId,
             COLEO_DIR: coleoDir,
+            ...getProjectRuntimeEnvironment({ ...process.env, ...config.env }),
           },
           enabled: true,
         },

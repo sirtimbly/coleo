@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { join } from "path";
 import { expandPath, getColeoDir } from "../context";
+import { resolveApiKey, resolveApiUrl } from "../../network-config";
 import {
   type CsvListFilter,
   editListCsvInEditor,
@@ -464,8 +465,8 @@ export function registerTasksCommands(program: Command): void {
     .description("Add a comment to a task discussion")
     .option("-r, --reply-to <commentId>", "Reply to a specific comment")
     .action(async (taskId, message, options) => {
-      const apiUrl = process.env.COLEO_API_URL || `http://localhost:8080`;
-      const apiKey = process.env.COLEO_API_KEY || "";
+      const apiUrl = resolveApiUrl();
+      const apiKey = resolveApiKey() || "";
 
       // Get author info from git config or env
       let authorId = process.env.USER || "unknown";
@@ -517,8 +518,8 @@ export function registerTasksCommands(program: Command): void {
     .option("-n, --limit <n>", "Number of comments to show", "20")
     .option("--json", "Output as JSON")
     .action(async (taskId, options) => {
-      const apiUrl = process.env.COLEO_API_URL || `http://localhost:8080`;
-      const apiKey = process.env.COLEO_API_KEY || "";
+      const apiUrl = resolveApiUrl();
+      const apiKey = resolveApiKey() || "";
 
       try {
         const response = await fetch(

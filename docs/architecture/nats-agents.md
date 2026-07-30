@@ -324,7 +324,14 @@ CREATE INDEX idx_arms_agent ON arms(agent_id);
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `COLEO_NATS_URL` | `nats://localhost:4222` | External NATS server URL. If unset, `coleo serve` will try to bootstrap a local standalone `nats-server` on `127.0.0.1:4222` for local-process development. |
+| `COLEO_NATS_HOST` | `127.0.0.1` | Local NATS bind and client host used by the API server and agents. |
+| `COLEO_NATS_PORT` | `4222` | Local NATS client port. |
+| `COLEO_NATS_HTTP_PORT` | `8222` | Local NATS monitoring port. |
+| `COLEO_NATS_URL` | derived from host/port | External NATS URL override. If unset, `coleo serve` bootstraps project-local NATS. |
+
+Use separate NATS and monitoring ports for each local project. Otherwise a second project can connect to an existing
+NATS listener and share JetStream events unintentionally. `coleo init` can generate available values and write them to
+the project's `mise.toml`.
 
 ### API Server Config
 

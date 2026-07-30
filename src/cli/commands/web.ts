@@ -11,6 +11,7 @@ import {
 	getServiceLogs,
 	formatUptime,
 } from "../../daemon";
+import { resolveApiUrl } from "../../network-config";
 
 // Resolve the actual path (follows symlinks for linked packages)
 const __dirname = dirname(realpathSync(fileURLToPath(import.meta.url)));
@@ -96,6 +97,7 @@ async function startWebServer(options: {
 }): Promise<void> {
 	// Find the web dist directory
 	const distPath = await findWebDist();
+	const apiUrl = resolveApiUrl();
 
 	if (!distPath) {
 		console.error("Error: Web UI build not found.");
@@ -107,7 +109,7 @@ async function startWebServer(options: {
 		`Starting web UI server on http://${options.host}:${options.port}`,
 	);
 	console.log(`Serving files from: ${distPath}`);
-	console.log(`API server expected at: http://localhost:8080`);
+	console.log(`API server expected at: ${apiUrl}`);
 	console.log("Press Ctrl+C to stop\n");
 
 	const server = serve({
@@ -119,7 +121,7 @@ async function startWebServer(options: {
 
 			// Handle API proxy - redirect to the actual API server
 			if (pathname.startsWith("/api") || pathname.startsWith("/ws")) {
-				const targetUrl = new URL(pathname, "http://localhost:8080");
+				const targetUrl = new URL(pathname, apiUrl);
 				targetUrl.search = url.search;
 				return fetch(targetUrl.toString(), {
 					method: req.method,

@@ -1,9 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { Database } from "bun:sqlite";
 import { initDatabase } from "../../db";
 import { createApp } from "../server";
 import { loadApiConfig, type ApiConfig } from "../config";
 import { createTestEventStore, resetEventStore, setEventStore } from "../../nats/jetstream";
+import { getProjectDurableName } from "../../project-scope";
 
 let db: Database;
 let app: ReturnType<typeof createApp>;
@@ -138,6 +139,30 @@ describe("Activity transcript route", () => {
     expect(body.transcript[0]?.partitions.project).toBe("coleo");
   });
 
+  it("excludes transcript events published by another project", async () => {
+    const store = createTestEventStore();
+    setEventStore(store);
+    const querySpy = spyOn(store, "queryEvents").mockResolvedValue([{
+      type: "message.received",
+      armId: "arm-a",
+      projectDir: "/another/project",
+      projectKey: "another-project",
+      data: { message: "foreign transcript" },
+      timestamp: "2026-02-13T00:00:01.000Z",
+    }]);
+
+    const response = await app.request(
+      new Request("http://localhost/api/activity/transcript?limit=10", {
+        headers: { "X-API-Key": apiKey },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { transcript: unknown[] };
+    expect(body.transcript).toEqual([]);
+    querySpy.mockRestore();
+  });
+
   it("returns unavailable indexer health when NATS is not connected", async () => {
     const response = await app.request(
       new Request("http://localhost/api/activity/indexer-health", {
@@ -148,11 +173,13 @@ describe("Activity transcript route", () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
       status: string;
+      durable: string;
       consumerFound: boolean;
       message?: string;
     };
 
     expect(body.status).toBe("unavailable");
+    expect(body.durable).toBe(getProjectDurableName("transcript-indexer-v2"));
     expect(body.consumerFound).toBe(false);
     expect(typeof body.message).toBe("string");
   });

@@ -71,7 +71,14 @@ That will:
 
 - install a pinned `nats-server` binary into `.coleo/bin` if needed
 - start JetStream-backed local NATS using `.coleo/nats` for state
-- point the API server at `nats://127.0.0.1:4222`
+- point the API server, Brain, and agents at the NATS host and port configured by
+  `COLEO_NATS_HOST` and `COLEO_NATS_PORT` (defaults to `nats://127.0.0.1:4222`)
+
+During `coleo init`, Coleo offers to generate available project-specific ports for the API, NATS client, and NATS
+monitoring endpoints. This matters when several Coleo projects run on one host: default ports can cause a second
+project to reuse the first project's NATS server and JetStream history. Init can merge the generated hosts, ports,
+canonical project directory, and a pregenerated API key into `mise.toml`. The API key is plaintext, so do not commit
+that file when it contains a real key.
 
 ### Manual local NATS control
 

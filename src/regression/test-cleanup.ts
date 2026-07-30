@@ -5,7 +5,7 @@
  */
 
 import { join } from "path";
-import { rm } from "fs/promises";
+import { readFile, rm } from "fs/promises";
 import type { TestContext } from "./types";
 import { eventStore, resetEventStore } from "../nats/jetstream";
 
@@ -115,6 +115,9 @@ export async function cleanupTestContext(ctx: TestContext, options?: { keep?: bo
     }
   }
 
+  await stopRuntimeFromPidFile(ctx, "agent-autostart.pid", "auto-started agent");
+  await stopRuntimeFromPidFile(ctx, "nats.pid", "local NATS");
+
   // Close database
   if (ctx.db) {
     try {
@@ -138,4 +141,21 @@ export async function cleanupTestContext(ctx: TestContext, options?: { keep?: bo
 
   // Reset event store to default (JetStream-backed) for non-test code
   resetEventStore();
+}
+
+async function stopRuntimeFromPidFile(
+  ctx: TestContext,
+  fileName: string,
+  label: string,
+): Promise<void> {
+  try {
+    const content = await readFile(join(ctx.coleoDir, "run", fileName), "utf-8");
+    const parsed = JSON.parse(content) as { pid?: number };
+    if (typeof parsed.pid === "number") {
+      process.kill(parsed.pid, "SIGTERM");
+      ctx.log(`Killed ${label} (PID: ${parsed.pid})`);
+    }
+  } catch {
+    // Runtime was not started by this test context or already exited.
+  }
 }

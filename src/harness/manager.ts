@@ -14,6 +14,7 @@ import { eventStore } from "../nats/jetstream";
 import type { OpenCodeApiHarness, ArmEventCallback } from "./opencode-api";
 import type { OpenCodeTuiHarness, ArmDeathCallback } from "./opencode-tui";
 import { truncateLargeFields } from "./event-stream";
+import { getProjectRuntimeEnvironment } from "../project-scope";
 
 export type LogCallback = (armId: string, data: string) => void;
 export type EventCallback = (armId: string, event: string, data: unknown) => void;
@@ -181,6 +182,7 @@ export class HarnessManager {
       env: {
         COLEO_DIR: this.coleoDir,
         COLEO_ARM_ID: armId,
+        ...getProjectRuntimeEnvironment(),
       },
       headless: true,
       mcpServers: ["coleo"],

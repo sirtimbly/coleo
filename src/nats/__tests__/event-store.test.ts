@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { InMemoryEventStore } from "../in-memory-event-store";
+import { getProjectScope } from "../../project-scope";
 
 describe("InMemoryEventStore", () => {
 	it("assigns stable sequences and returns the latest requested arm events", async () => {
@@ -19,5 +20,7 @@ describe("InMemoryEventStore", () => {
 
 		expect(events.map((event) => event.sequence)).toEqual([4, 5]);
 		expect(events.map((event) => event.data.index)).toEqual([3, 4]);
+		expect(events.every((event) => event.projectKey === getProjectScope().projectKey)).toBe(true);
+		expect(events.every((event) => event.projectDir === getProjectScope().projectDir)).toBe(true);
 	});
 });

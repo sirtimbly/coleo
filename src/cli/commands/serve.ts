@@ -19,12 +19,12 @@ export function registerServeCommand(program: Command): void {
 
 	// Default action: run in foreground (existing behavior)
 	serveCmd
-		.option("-p, --port <port>", "Port to listen on", "8080")
-		.option("-h, --host <host>", "Host to bind to", "0.0.0.0")
+		.option("-p, --port <port>", "Port to listen on (defaults to COLEO_API_PORT)")
+		.option("-h, --host <host>", "Host to bind to (defaults to COLEO_API_HOST)")
 		.action(async (options) => {
 			await ensureLocalNatsForServe();
 			await startServer({
-				port: parseInt(options.port, 10),
+				port: options.port ? parseInt(options.port, 10) : undefined,
 				host: options.host,
 			});
 		});

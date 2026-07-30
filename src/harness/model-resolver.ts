@@ -10,6 +10,8 @@
  * 4. If all else fails, use the first available model from any connected provider
  */
 
+import { resolveApiKey, resolveApiUrl } from "../network-config";
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -167,9 +169,9 @@ function getFirstAvailableModel(
 /**
  * Fetch available providers and models from the API
  */
-export async function fetchProviders(apiUrl: string = "http://localhost:8080"): Promise<ProvidersResponse> {
+export async function fetchProviders(apiUrl: string = resolveApiUrl()): Promise<ProvidersResponse> {
   try {
-    const apiKey = process.env.COLEO_API_KEY;
+    const apiKey = resolveApiKey();
     const response = await fetch(`${apiUrl}/api/opencode/providers`, {
       signal: AbortSignal.timeout(5000),
       headers: apiKey ? { "X-API-Key": apiKey } : undefined,
@@ -194,7 +196,7 @@ export async function supportsInputModality(
   providerId: string | null | undefined,
   modelId: string | null | undefined,
   modality: "text" | "audio" | "image" | "video" | "pdf",
-  apiUrl: string = "http://localhost:8080",
+  apiUrl: string = resolveApiUrl(),
 ): Promise<boolean | null> {
   if (!providerId || !modelId) {
     return null;
@@ -215,13 +217,13 @@ export async function supportsInputModality(
  * 
  * @param requestedProvider - The requested provider ID
  * @param requestedModel - The requested model ID
- * @param apiUrl - The API server URL (default: http://localhost:8080)
+ * @param apiUrl - The API server URL (defaults to Coleo's configured API endpoint)
  * @returns Resolved model info with fallback details
  */
 export async function resolveModel(
   requestedProvider: string,
   requestedModel: string,
-  apiUrl: string = "http://localhost:8080"
+  apiUrl: string = resolveApiUrl()
 ): Promise<ResolvedModel> {
   const data = await fetchProviders(apiUrl);
   
@@ -335,7 +337,7 @@ export async function resolveModel(
 export async function isModelAvailable(
   providerId: string,
   modelId: string,
-  apiUrl: string = "http://localhost:8080"
+  apiUrl: string = resolveApiUrl()
 ): Promise<boolean> {
   const data = await fetchProviders(apiUrl);
   
@@ -349,7 +351,7 @@ export async function isModelAvailable(
  * Get a list of all available models sorted by cost
  */
 export async function getAvailableModelsByCost(
-  apiUrl: string = "http://localhost:8080"
+  apiUrl: string = resolveApiUrl()
 ): Promise<Array<{ providerId: string; modelId: string; cost: number }>> {
   const data = await fetchProviders(apiUrl);
   

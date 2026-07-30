@@ -24,6 +24,7 @@ import { appendTaskAttachmentsToPromptText } from "../../lib/prompt-attachments"
 import { supportsInputModality } from "../../harness/model-resolver";
 import { searchStatusHistory } from "../../vector/indexing-pipeline";
 import { recordMetricSnapshot } from "../arm-metrics";
+import { resolveApiUrl, resolveNatsUrl } from "../../network-config";
 import type { TaskAttachment } from "../../types";
 
 interface ArmsContext {
@@ -420,7 +421,7 @@ async function startLocalArmAgentDaemonIfNeeded(): Promise<void> {
     // No existing PID file
   }
 
-  const natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+  const natsUrl = resolveNatsUrl();
   const command = [
     process.execPath,
     getCliEntrypoint(),
@@ -3595,11 +3596,7 @@ export function createArmsRoutes() {
       host: row.host,
     });
     const requestedAttachments = body.attachments || [];
-    const apiUrl =
-      process.env.COLEO_API_URL ||
-      (process.env.COLEO_API_PORT
-        ? `http://localhost:${process.env.COLEO_API_PORT}`
-        : "http://localhost:8080");
+    const apiUrl = resolveApiUrl();
     const supportsNativeImages =
       requestedAttachments.length > 0 &&
       (row.harness === "opencode-api" || row.harness === "opencode-tui") &&

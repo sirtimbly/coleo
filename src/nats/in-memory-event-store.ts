@@ -1,4 +1,5 @@
 import type { EventData, QueryOptions, StreamMetrics, IEventStore } from './jetstream-types';
+import { getProjectScope } from '../project-scope';
 
 export class InMemoryEventStore implements IEventStore {
   private events: Array<{ subject: string; data: EventData }> = [];
@@ -13,10 +14,13 @@ export class InMemoryEventStore implements IEventStore {
   }
 
   async publishEvent(subject: string, data: EventData): Promise<void> {
+    const scope = getProjectScope();
     this.events.push({
       subject,
       data: {
         ...data,
+        projectDir: scope.projectDir,
+        projectKey: scope.projectKey,
         sequence: data.sequence ?? this.events.length + 1,
       },
     });

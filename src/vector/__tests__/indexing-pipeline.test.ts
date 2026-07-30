@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { qdrantStore } from "../../qdrant";
 import { embeddingService } from "../../embedding";
 import type { StatusHistoryEvent } from "../status-history";
+import { STATUS_HISTORY_CONFIG } from "../status-history";
 import { indexStatusHistoryEvent, searchStatusHistory } from "../indexing-pipeline";
+import { getProjectScope } from "../../project-scope";
 
 describe("status-history indexing pipeline", () => {
   const sampleEvent: StatusHistoryEvent = {
@@ -53,8 +55,15 @@ describe("status-history indexing pipeline", () => {
     const payload = upsertSpy.mock.calls[0]?.[1]?.[0]?.payload;
     expect(payload?.type).toBe(sampleEvent.type);
     expect(payload?.timestamp).toBe(sampleEvent.timestamp);
-    expect(payload?.event).toEqual(sampleEvent);
+    expect(payload?.event).toMatchObject({
+      ...sampleEvent,
+      projectDir: getProjectScope().projectDir,
+      projectKey: getProjectScope().projectKey,
+    });
     expect(payload?.metadata).toEqual(sampleEvent.metadata);
+    expect(payload?.projectDir).toBe(getProjectScope().projectDir);
+    expect(payload?.projectKey).toBe(getProjectScope().projectKey);
+    expect(upsertSpy.mock.calls[0]?.[0]).toBe(STATUS_HISTORY_CONFIG.collectionName);
   });
 
   it("reconstructs events from stored embedded payload", async () => {
@@ -83,6 +92,7 @@ describe("status-history indexing pipeline", () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.event).toEqual(sampleEvent);
     expect(searchSpy).toHaveBeenCalledTimes(1);
+    expect(searchSpy.mock.calls[0]?.[0]).toBe(STATUS_HISTORY_CONFIG.collectionName);
   });
 
   it("uses fallback id when embedded event omits id", async () => {

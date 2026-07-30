@@ -9,6 +9,7 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { embeddingService } from "../../embedding";
 import { qdrantStore } from "../../qdrant";
+import { getProjectScope, getTranscriptCollectionName } from "../../project-scope";
 
 interface SearchContext {
   Variables: {
@@ -488,7 +489,7 @@ async function performSemanticSearch(
 
 	// Search Qdrant
 	const results = await qdrantStore.search(
-		"search-index",
+		getTranscriptCollectionName(),
 		queryVector,
 		{
 			limit,
@@ -600,10 +601,12 @@ async function indexContent(content: {
 
 	// Ensure Qdrant collection exists
 	const vectorSize = embeddingService.getVectorSize();
-	await qdrantStore.createCollection("search-index", vectorSize, "Cosine");
+	const collectionName = getTranscriptCollectionName();
+	const projectScope = getProjectScope();
+	await qdrantStore.createCollection(collectionName, vectorSize, "Cosine");
 
 	// Index in Qdrant for semantic search
-	await qdrantStore.upsertPoints("search-index", [
+	await qdrantStore.upsertPoints(collectionName, [
 		{
 			id: content.id,
 			vector: embeddingResult.embedding,
@@ -611,7 +614,11 @@ async function indexContent(content: {
 				type: content.type,
 				title: content.title,
 				content: content.content,
-				metadata: content.metadata || {},
+				metadata: {
+					...(content.metadata || {}),
+					project_dir: projectScope.projectDir,
+					project_key: projectScope.projectKey,
+				},
 				created_at: new Date().toISOString(),
 			},
 		},
