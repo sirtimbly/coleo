@@ -12,6 +12,32 @@ describe("database migrations", () => {
 		await Promise.all(testDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 	});
 
+	it("keeps a stable database instance id until the database is recreated", async () => {
+		const dir = join(tmpdir(), `coleo-database-instance-${crypto.randomUUID()}`);
+		testDirs.push(dir);
+		const dbPath = join(dir, "coleo.db");
+		const first = await initDatabase(dbPath);
+		const firstId = first.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
+			value: string;
+		};
+		first.close();
+
+		const reopened = await initDatabase(dbPath);
+		const reopenedId = reopened.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
+			value: string;
+		};
+		reopened.close();
+		expect(reopenedId.value).toBe(firstId.value);
+
+		await rm(dbPath, { force: true });
+		const recreated = await initDatabase(dbPath);
+		const recreatedId = recreated.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
+			value: string;
+		};
+		recreated.close();
+		expect(recreatedId.value).not.toBe(firstId.value);
+	});
+
 	it("normalizes legacy task keys to SQLite-sortable queue order", async () => {
 		const dir = join(tmpdir(), `coleo-migration-${crypto.randomUUID()}`);
 		testDirs.push(dir);

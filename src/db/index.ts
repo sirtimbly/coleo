@@ -2,6 +2,7 @@
  * Database initialization and migrations
  */
 import { Database } from "bun:sqlite";
+import { randomUUID } from "crypto";
 import { mkdir } from "fs/promises";
 import { dirname } from "path";
 
@@ -26,6 +27,10 @@ export async function initDatabase(dbPath: string): Promise<Database> {
 
   // Run migrations
   await runMigrations(db);
+  db.run(
+    "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
+    ["database_instance_id", randomUUID()],
+  );
 
   return db;
 }
