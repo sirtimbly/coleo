@@ -1531,7 +1531,7 @@ export interface Arm {
   name: string;
   domain: string;
   harness: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped' | 'starting' | 'running';
+  status: 'idle' | 'busy' | 'paused' | 'planning_blocked' | 'error' | 'stopped' | 'starting' | 'running';
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;

@@ -94,7 +94,7 @@ export function validateBrainInboxPayload(type: BrainInboxMessageType, payload: 
 			}
 			if (
 				payload.category !== undefined
-				&& !["dependency", "bug", "file_claim", "environment", "human", "arm", "planning", "unknown"]
+				&& !["dependency", "bug", "file_claim", "environment", "human", "arm", "unknown"]
 					.includes(String(payload.category))
 			) {
 				return "blocked_task_review payload.category is invalid";

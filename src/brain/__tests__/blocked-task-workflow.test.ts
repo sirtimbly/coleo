@@ -80,7 +80,7 @@ describe("blocked task workflow", () => {
 			summary: "The plan still needs work",
 			reason: "Missing architecture decision",
 			category: "planning",
-		})).toBeNull();
+		})).toContain("payload.category");
 	});
 
 	it("assigns old housekeeping reviews to idle arms through the review protocol", async () => {

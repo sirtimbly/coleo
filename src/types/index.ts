@@ -7,7 +7,7 @@ export interface Arm {
   id: string;
   name: string;
   agent: "opencode" | "claude-code" | string;
-  status: "starting" | "running" | "idle" | "busy" | "stopped" | "error";
+  status: "starting" | "running" | "idle" | "busy" | "paused" | "planning_blocked" | "stopped" | "error";
   pid?: number;
   startedAt: Date;
   lastActivity?: Date;

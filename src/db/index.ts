@@ -142,6 +142,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["061_arm_metric_history", MIGRATION_061_ARM_METRIC_HISTORY],
 		["062_arm_message_metrics", MIGRATION_062_ARM_MESSAGE_METRICS],
 		["063_entity_status_history", MIGRATION_063_ENTITY_STATUS_HISTORY],
+		["064_arm_planning_gate", "SELECT 1;", { table: "arms", columns: MIGRATION_064_COLUMNS }],
 	];
 
 
@@ -2153,5 +2154,12 @@ BEGIN
   DELETE FROM entity_status_history WHERE entity_type = 'bug' AND entity_id = OLD.id;
 END;
 `;
+
+const MIGRATION_064_COLUMNS = [
+  {
+    name: "planning_blocked",
+    sql: "ALTER TABLE arms ADD COLUMN planning_blocked INTEGER NOT NULL DEFAULT 0;",
+  },
+];
 
 export { Database };

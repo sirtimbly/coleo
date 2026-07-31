@@ -278,7 +278,7 @@ export function registerTaskTools(server: McpServer): void {
 					.optional()
 					.describe("Updated concrete blocker; required for still_blocked"),
 				category: z
-					.enum(["dependency", "bug", "file_claim", "environment", "human", "arm", "planning", "unknown"])
+					.enum(["dependency", "bug", "file_claim", "environment", "human", "arm", "unknown"])
 					.optional()
 					.describe("Category for an updated blocker"),
 				needs_human: z

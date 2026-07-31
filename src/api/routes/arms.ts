@@ -567,7 +567,7 @@ export interface ArmProfile {
   name: string;
   domain: string;
   harness: string;
-  status: "idle" | "busy" | "paused" | "error" | "stopped" | "starting" | "running";
+  status: "idle" | "busy" | "paused" | "planning_blocked" | "error" | "stopped" | "starting" | "running";
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;
@@ -593,6 +593,17 @@ export interface ArmProfile {
   workdir?: string;
   runtime?: ArmRuntimeSummary;
 }
+
+const ARM_PROFILE_STATUSES = [
+  "idle",
+  "busy",
+  "paused",
+  "planning_blocked",
+  "error",
+  "stopped",
+  "starting",
+  "running",
+] as const;
 
 function parseArmConfig(config: string | null | undefined): Record<string, unknown> {
   try {
@@ -1166,7 +1177,7 @@ export function createArmsRoutes() {
     try {
       const rows = db.query(`
         SELECT
-          id, name, domain, harness, status,
+          id, name, domain, harness, status, planning_blocked as planningBlocked,
           context_budget as contextBudget,
           current_context_used as currentContextUsed,
           created_at as createdAt,
@@ -1250,7 +1261,7 @@ export function createArmsRoutes() {
 
     const row = db.query(`
       SELECT 
-        id, name, domain, harness, status,
+        id, name, domain, harness, status, planning_blocked as planningBlocked,
         context_budget as contextBudget,
         current_context_used as currentContextUsed,
         created_at as createdAt,
@@ -1394,7 +1405,7 @@ export function createArmsRoutes() {
   app.patch("/:id", async (c) => {
     const db = c.get("db");
     const id = c.req.param("id");
-    const body = await c.req.json<Partial<ArmProfile>>();
+    const body = await c.req.json<Partial<ArmProfile> & { planningBlocked?: boolean }>();
 
     // Check arm exists
     const existing = db.query("SELECT id FROM arms WHERE id = ?").get(id);
@@ -1418,10 +1429,27 @@ export function createArmsRoutes() {
       values.push(body.harness);
     }
     if (body.status !== undefined) {
+      if (!ARM_PROFILE_STATUSES.includes(body.status)) {
+        throw HttpError.badRequest(`Invalid arm status: ${body.status}`);
+      }
       updates.push("status = ?");
-      values.push(body.status);
+      values.push(body.status === "planning_blocked" ? "paused" : body.status);
+      if (body.status === "planning_blocked") {
+        updates.push("planning_blocked = 1");
+      } else if (body.status === "stopped" || body.status === "error") {
+        updates.push("planning_blocked = 0");
+      }
       // Log status change
       logActivity(db, id, "arm.status_changed", undefined, { newStatus: body.status });
+    }
+    if (
+      body.planningBlocked !== undefined
+      && body.status !== "planning_blocked"
+      && body.status !== "stopped"
+      && body.status !== "error"
+    ) {
+      updates.push("planning_blocked = ?");
+      values.push(body.planningBlocked ? 1 : 0);
     }
     if (body.contextBudget !== undefined) {
       updates.push("context_budget = ?");
@@ -1520,8 +1548,8 @@ export function createArmsRoutes() {
 
     // Fetch updated arm
     const row = db.query(`
-      SELECT 
-        id, name, domain, harness, status,
+      SELECT
+        id, name, domain, harness, status, planning_blocked as planningBlocked,
         context_budget as contextBudget,
         current_context_used as currentContextUsed,
         created_at as createdAt,
@@ -1590,7 +1618,7 @@ export function createArmsRoutes() {
     console.info(`[arms-api] Recovery requested for stuck arm ${id} at ${recoveryRequestedAt}`);
 
     const row = db.query(`
-      SELECT id, name, domain, harness, status,
+      SELECT id, name, domain, harness, status, planning_blocked as planningBlocked,
         context_budget as contextBudget, current_context_used as currentContextUsed,
         created_at as createdAt, updated_at as updatedAt, last_activity_at as lastActivityAt,
         last_heartbeat as lastHeartbeat, last_output_at as lastOutputAt,
@@ -1647,7 +1675,7 @@ export function createArmsRoutes() {
     }>();
 
     // Check if arm exists (include runtime metadata for recovery)
-    let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?").get(id) as {
+    let row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject, config FROM arms WHERE id = ?").get(id) as {
       id: string;
       name: string;
       domain: string;
@@ -1667,6 +1695,7 @@ export function createArmsRoutes() {
       last_output_at: string | null;
       current_task_id: string | null;
       current_task_subject: string | null;
+      config: string;
     } | null;
 
     console.log(`[spawn] Checking arm ${id}, exists: ${!!row}`);
@@ -1726,7 +1755,7 @@ export function createArmsRoutes() {
         console.log(`[spawn] Created arm record for ${id}`);
 
         // Fetch the newly created arm
-        row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?").get(id) as typeof row;
+        row = db.query("SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject, config FROM arms WHERE id = ?").get(id) as typeof row;
 
         if (!row) {
           throw new Error(`Failed to fetch newly created arm record for ${id}`);
@@ -1782,7 +1811,6 @@ export function createArmsRoutes() {
     const fullInitialPrompt = body.initialPrompt
       ? `${systemPrompt}\n\n---\n\n## Additional Instructions\n\n${body.initialPrompt}`
       : systemPrompt;
-
     // Hosted control runtimes can require every harness to execute on a remote
     // arm agent, including harnesses that normally support a local fallback.
     const remoteArmsOnly = process.env.COLEO_REMOTE_ARMS_ONLY === "1";
@@ -2067,6 +2095,10 @@ export function createArmsRoutes() {
       const spawnOnAgent = async (agentId: string) => {
         const agent = armClient.getAgent(agentId);
         const agentHost = agent?.hostname || row.host || hostname();
+        db.run("UPDATE arms SET config = ? WHERE id = ?", [
+          JSON.stringify({ ...parseArmConfig(row.config), deferredInitialPrompt: fullInitialPrompt }),
+          id,
+        ]);
         const response = await armClient.spawnArm(agentId, id, {
           name: row.name,
           domain: row.domain,
@@ -2075,7 +2107,7 @@ export function createArmsRoutes() {
           model,
           contextBudget: row.context_budget,
           workDir: workdir,
-          initialPrompt: fullInitialPrompt,
+          initialPrompt: undefined,
         });
 
         if (!response.success) {
@@ -2208,11 +2240,15 @@ export function createArmsRoutes() {
 
     try {
       // Spawn via harness
+      db.run("UPDATE arms SET config = ? WHERE id = ?", [
+        JSON.stringify({ ...parseArmConfig(row.config), deferredInitialPrompt: fullInitialPrompt }),
+        id,
+      ]);
       const session = await manager.spawn(id, row.harness, {
         workdir,
         provider,
         model,
-        initialPrompt: fullInitialPrompt,
+        initialPrompt: undefined,
       });
 
       // Update database
@@ -2263,7 +2299,7 @@ export function createArmsRoutes() {
     }));
 
     const row = db.query(
-      "SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject FROM arms WHERE id = ?",
+      "SELECT id, name, domain, harness, status, provider, model, port, pid, session_id, agent_id, host, context_budget, workdir, last_activity_at, last_heartbeat, last_output_at, current_task_id, current_task_subject, config FROM arms WHERE id = ?",
     ).get(id) as {
       id: string;
       name: string;
@@ -2284,6 +2320,7 @@ export function createArmsRoutes() {
       last_output_at: string | null;
       current_task_id: string | null;
       current_task_subject: string | null;
+      config: string;
     } | null;
 
     if (!row) {
@@ -2587,11 +2624,15 @@ export function createArmsRoutes() {
       provider,
       model,
     });
+    db.run("UPDATE arms SET config = ? WHERE id = ?", [
+      JSON.stringify({ ...parseArmConfig(row.config), deferredInitialPrompt: systemPrompt }),
+      id,
+    ]);
     const session = await manager.spawn(id, row.harness, {
       workdir,
       provider,
       model,
-      initialPrompt: systemPrompt,
+      initialPrompt: undefined,
     });
 
     const now = new Date().toISOString();
@@ -2649,7 +2690,7 @@ export function createArmsRoutes() {
           
           // Update database
           const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
           const releasedClaims = releaseClaimsForArm(db, id, now);
 
           // Log activity
@@ -2663,7 +2704,7 @@ export function createArmsRoutes() {
           const message = err instanceof Error ? err.message : String(err);
           // Still try to clean up DB state even if agent kill fails
           const now = new Date().toISOString();
-          db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
+          db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, session_id = NULL, agent_id = NULL, host = NULL, updated_at = ? WHERE id = ?", [now, id]);
           releaseClaimsForArm(db, id, now);
           console.log(`[kill] Agent kill failed, cleaned up DB state: ${message}`);
         }
@@ -2681,7 +2722,7 @@ export function createArmsRoutes() {
 
     // Update database
     const now = new Date().toISOString();
-    db.run("UPDATE arms SET status = 'stopped', pid = NULL, port = NULL, updated_at = ? WHERE id = ?", [now, id]);
+    db.run("UPDATE arms SET status = 'stopped', planning_blocked = 0, pid = NULL, port = NULL, updated_at = ? WHERE id = ?", [now, id]);
     const releasedClaims = releaseClaimsForArm(db, id, now);
 
     // Log activity
@@ -3575,9 +3616,10 @@ export function createArmsRoutes() {
     }
 
     // Check if arm exists
-    const row = db.query("SELECT id, status, agent_id, harness, host, pid, port, provider, model FROM arms WHERE id = ?").get(id) as {
+    const row = db.query("SELECT id, status, planning_blocked, agent_id, harness, host, pid, port, provider, model FROM arms WHERE id = ?").get(id) as {
       id: string;
       status: string;
+      planning_blocked: number;
       agent_id: string | null;
       harness: string;
       host: string | null;
@@ -3589,6 +3631,9 @@ export function createArmsRoutes() {
 
     if (!row) {
       throw HttpError.notFound(`Arm not found: ${id}`);
+    }
+    if (row.planning_blocked) {
+      return c.json({ error: `Arm ${id} is waiting for the Brain planning gate.` }, 409);
     }
 
     const distributedAgentId = resolveDistributedAgentId(id, row.agent_id, {
@@ -3785,6 +3830,7 @@ interface ArmRow {
   domain: string;
   harness: string;
   status: string;
+  planningBlocked: number;
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;
@@ -3814,9 +3860,10 @@ function parseArmRow(row: ArmRow): ArmProfile {
   const recoveryRequestedAt =
     typeof config.recoveryRequestedAt === "string" ? config.recoveryRequestedAt : undefined;
 
+  const { planningBlocked, ...profile } = row;
   return {
-    ...row,
-    status: row.status as ArmProfile["status"],
+    ...profile,
+    status: planningBlocked ? "planning_blocked" : row.status as ArmProfile["status"],
     pid: row.pid ?? undefined,
     port: row.port ?? undefined,
     provider: row.provider ?? undefined,

@@ -53,6 +53,23 @@ describe("workspace access", () => {
 		expect(await workspace.gitFiles()).toEqual(["docs/guide.md"]);
 	});
 
+	it("truncates large git status output before it reaches planning prompts", async () => {
+		const generatedDir = join(root, "generated");
+		await mkdir(generatedDir, { recursive: true });
+		const initialized = Bun.spawnSync(["git", "init"], { cwd: root });
+		expect(initialized.exitCode).toBe(0);
+		await Promise.all(
+			Array.from({ length: 1_050 }, (_, index) =>
+				writeFile(join(generatedDir, `file-${String(index).padStart(4, "0")}.txt`), ""),
+			),
+		);
+
+		const status = await new LocalWorkspaceAccess(root).gitStatus();
+
+		expect(status).toContain("[git status truncated]");
+		expect(Buffer.byteLength(status, "utf-8")).toBeLessThan(101_000);
+	});
+
 	it("rejects lexical and symlink escapes", async () => {
 		const workspace = new LocalWorkspaceAccess(root);
 		await expect(workspace.readText("../secret.txt")).rejects.toThrow("escapes");

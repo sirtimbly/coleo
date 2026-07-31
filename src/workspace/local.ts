@@ -1,8 +1,7 @@
 import { createHash } from "crypto";
-import { execFile } from "child_process";
+import { spawn } from "child_process";
 import { mkdir, readFile, realpath, stat, writeFile } from "fs/promises";
 import { dirname, isAbsolute, relative, resolve, sep } from "path";
-import { promisify } from "util";
 import fg from "fast-glob";
 import type {
 	WorkspaceAccess,
@@ -12,11 +11,56 @@ import type {
 	WorkspaceWriteOptions,
 } from "./types";
 
-const execFileAsync = promisify(execFile);
 const MAX_TEXT_BYTES = 4 * 1024 * 1024;
 const MAX_SCAN_FILES = 2_000;
-const MAX_GIT_STATUS_BYTES = 1024 * 1024;
+const MAX_GIT_OUTPUT_BYTES = 100_000;
+const MAX_GIT_OUTPUT_ENTRIES = 1_000;
 const FALLBACK_FILE_DEPTH = 6;
+
+interface BoundedGitOutput {
+	output: string;
+	code: number | null;
+	truncated: boolean;
+}
+
+function runBoundedGit(root: string, args: string[]): Promise<BoundedGitOutput> {
+	return new Promise((resolvePromise, reject) => {
+		const child = spawn("git", args, { cwd: root });
+		let output = "";
+		let stderr = "";
+		let truncated = false;
+
+		child.stdout.setEncoding("utf-8");
+		child.stderr.setEncoding("utf-8");
+		child.stdout.on("data", (chunk: string) => {
+			if (truncated) return;
+			const lines = `${output}${chunk}`.split("\n");
+			if (lines.length - 1 > MAX_GIT_OUTPUT_ENTRIES) {
+				output = `${lines.slice(0, MAX_GIT_OUTPUT_ENTRIES).join("\n")}\n`;
+				truncated = true;
+			} else {
+				output += chunk;
+			}
+
+			if (Buffer.byteLength(output, "utf-8") > MAX_GIT_OUTPUT_BYTES) {
+				output = Buffer.from(output, "utf-8").subarray(0, MAX_GIT_OUTPUT_BYTES).toString("utf-8");
+				truncated = true;
+			}
+			if (truncated) child.kill("SIGTERM");
+		});
+		child.stderr.on("data", (chunk: string) => {
+			if (stderr.length < 10_000) stderr += chunk;
+		});
+		child.once("error", reject);
+		child.once("close", (code) => {
+			if (code !== 0 && code !== 128 && !truncated) {
+				reject(new Error(stderr.trim() || `git ${args[0] || "command"} failed (${code})`));
+				return;
+			}
+			resolvePromise({ output, code, truncated });
+		});
+	});
+}
 
 function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
@@ -171,32 +215,17 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 	}
 
 	async gitStatus(): Promise<string> {
-		try {
-			const { stdout } = await execFileAsync("git", ["status", "--porcelain", "--untracked-files=all"], {
-				cwd: this.root,
-				encoding: "utf-8",
-				maxBuffer: MAX_GIT_STATUS_BYTES,
-			});
-			return stdout;
-		} catch (error) {
-			const code = (error as { code?: unknown }).code;
-			if (code === 128) return "";
-			throw error;
-		}
+		const result = await runBoundedGit(this.root, ["status", "--porcelain", "--untracked-files=all"]);
+		if (result.code === 128) return "";
+		return result.truncated
+			? `${result.output.trimEnd()}\n... [git status truncated]\n`
+			: result.output;
 	}
 
 	async gitFiles(): Promise<string[]> {
-		try {
-			const { stdout } = await execFileAsync("git", ["ls-files"], {
-				cwd: this.root,
-				encoding: "utf-8",
-				maxBuffer: MAX_GIT_STATUS_BYTES,
-			});
-			return stdout.split("\n").filter((path) => path.length > 0);
-		} catch (error) {
-			const code = (error as { code?: unknown }).code;
-			if (code === 128) {
-				return (await fg(["**/*"], {
+		const result = await runBoundedGit(this.root, ["ls-files"]);
+		if (result.code === 128) {
+			return (await fg(["**/*"], {
 					cwd: this.root,
 					onlyFiles: true,
 					followSymbolicLinks: false,
@@ -204,9 +233,8 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 					dot: true,
 					deep: FALLBACK_FILE_DEPTH,
 					ignore: ["**/.git/**", "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**"],
-				})).sort().slice(0, MAX_SCAN_FILES);
-			}
-			throw error;
+			})).sort().slice(0, MAX_SCAN_FILES);
 		}
+		return result.output.split("\n").filter((path) => path.length > 0);
 	}
 }

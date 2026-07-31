@@ -458,6 +458,7 @@ export class Brain {
 		currentTaskSubject?: string | null;
 		currentBugId?: string | null;
 		currentBugTitle?: string | null;
+		config?: Record<string, unknown>;
 	} | null> {
 		const response = await this.apiRequest<{
 			arm: {
@@ -473,6 +474,7 @@ export class Brain {
 				currentTaskSubject?: string | null;
 				currentBugId?: string | null;
 				currentBugTitle?: string | null;
+				config?: Record<string, unknown>;
 			};
 		}>(`/api/arms/${encodeURIComponent(armId)}`);
 		return response?.arm || null;
@@ -495,6 +497,7 @@ export class Brain {
 			createdAt?: string;
 			provider?: string;
 			model?: string;
+			config?: Record<string, unknown>;
 		}>
 	> {
 		const suffix = includeAll ? "?includeAll=true" : "";
@@ -515,6 +518,7 @@ export class Brain {
 				createdAt?: string;
 				provider?: string;
 				model?: string;
+				config?: Record<string, unknown>;
 			}>;
 		}>(`/api/arms${suffix}`);
 		return response?.arms || [];
@@ -524,6 +528,8 @@ export class Brain {
 		armId: string,
 		patch: {
 			status?: string;
+			planningBlocked?: boolean;
+			config?: Record<string, unknown>;
 			lastActivityAt?: string | null;
 			lastHeartbeat?: string | null;
 			currentTaskId?: string | null;
@@ -5772,9 +5778,6 @@ Report findings using bug resolution workflow.`;
 	 */
 	private async assignInitialTasks(): Promise<void> {
 		for (const [armId, arm] of this.arms) {
-			// Skip if we've already sent initial prompt to this arm (check database)
-			if (await this.hasReceivedInitialTasks(armId)) continue;
-
 			// Skip if arm is not idle
 			if (arm.status !== "idle") continue;
 
@@ -5786,25 +5789,39 @@ Report findings using bug resolution workflow.`;
 			}
 
 			// Send the common initial prompt to the arm
-			const prompt = await this.templates.loadInitialArmPrompt();
+			const commonPrompt = await this.templates.loadInitialArmPrompt();
+			const deferredPrompt = typeof armExists.config?.deferredInitialPrompt === "string"
+				? armExists.config.deferredInitialPrompt.trim()
+				: "";
+			const alreadyInitialized = await this.hasReceivedInitialTasks(armId);
+			if (alreadyInitialized && !deferredPrompt) continue;
+			const prompt = deferredPrompt ? `${deferredPrompt}\n\n---\n\n${commonPrompt}` : commonPrompt;
 			const success = await this.sendPromptToArm(armId, prompt);
 
 			if (success) {
+				if (deferredPrompt) {
+					const { deferredInitialPrompt: _, ...config } = armExists.config || {};
+					if (!await this.patchArmViaApi(armId, { config })) {
+						this.log(`Failed to clear deferred initial prompt for ${armId}`);
+					}
+				}
 				this.log(`Sent initial prompt to ${armId}`);
-					this.logActivity("brain", "arm_initialized", armId, {
-						source: "initial_prompt_sent",
-					});
-					this.initializedArmIds.add(armId);
+				this.logActivity("brain", "arm_initialized", armId, {
+					source: "initial_prompt_sent",
+				});
+				this.initializedArmIds.add(armId);
 
+				if (!alreadyInitialized) {
 					await this.createTaskViaApi({
 						id: `init-${armId}`,
 						subject: `Arm ${armId} initialized`,
-					description: "Initial prompt sent to arm",
-					status: "completed",
-					priority: "normal",
-					sourceType: "system",
-					sourceRef: "arm-init",
-				});
+						description: "Initial prompt sent to arm",
+						status: "completed",
+						priority: "normal",
+						sourceType: "system",
+						sourceRef: "arm-init",
+					});
+				}
 			} else {
 				this.log(`Failed to send initial prompt to ${armId}`);
 			}
@@ -8874,6 +8891,8 @@ ${conflictList}
 			this.lastPlanningFailureFingerprint = fingerprint;
 		}
 
+		await this.blockArmsForPlanningFailure();
+
 		const activeStatuses: Task["status"][] = [
 			"pending",
 			"claimed",
@@ -8901,19 +8920,77 @@ ${conflictList}
 		}
 	}
 
+	private async blockArmsForPlanningFailure(): Promise<void> {
+		const arms = await this.listArmsFromApi(true);
+		for (const arm of arms) {
+			if (["stopped", "error", "planning_blocked"].includes(arm.status)) continue;
+
+			const hasActiveWork = ["busy", "running"].includes(arm.status) || !!arm.currentTaskId;
+			if (hasActiveWork) {
+				const interrupted = await this.sendPromptToArm(
+					arm.id,
+					"Stop the current operation immediately. The Brain planning gate is blocked; do not modify the workspace or request more work until the Brain resumes you.",
+					{ interrupt: true },
+				);
+				if (!interrupted) {
+					this.log(`Could not interrupt ${arm.id}; stopping the arm to enforce the planning gate`);
+					const stopped = await this.apiRequest<{ killed?: boolean }>(
+						`/api/arms/${encodeURIComponent(arm.id)}/kill`,
+						{ method: "POST" },
+					);
+					if (stopped?.killed) {
+						const inMemoryArm = this.arms.get(arm.id);
+						if (inMemoryArm) inMemoryArm.status = "stopped";
+						continue;
+					}
+					this.log(`CRITICAL: Could not stop arm ${arm.id}; marking it planning-blocked for visibility`);
+				}
+			}
+
+			const gated = await this.patchArmViaApi(arm.id, {
+				status: "planning_blocked",
+				lastActivityAt: new Date().toISOString(),
+			});
+			if (!gated) {
+				this.log(`Failed to mark arm ${arm.id} as planning-blocked`);
+				continue;
+			}
+			const inMemoryArm = this.arms.get(arm.id);
+			if (inMemoryArm) inMemoryArm.status = "planning_blocked";
+		}
+	}
+
 	private async resumePlanningBlockedTasks(): Promise<void> {
 		const tasks = await this.listAllTasksFromApi({
 			status: ["blocked"],
 			includeHousekeeping: true,
 		});
 		for (const task of tasks) {
-			if (task.blockedCategory !== "planning") continue;
+			if (
+				task.blockedCategory !== "planning"
+				|| !task.blockedReason?.includes("[planning-state:")
+			) continue;
 			const resumed = await this.patchTaskViaApi(task.id, {
 				status: "pending",
 				assignedTo: null,
 				dependencyBlocked: false,
 			});
 			if (!resumed) throw new Error(`Could not resume planning-blocked task ${task.id}`);
+		}
+	}
+
+	private async resumePlanningBlockedArms(): Promise<void> {
+		const arms = await this.listArmsFromApi(true);
+		for (const arm of arms) {
+			if (arm.status !== "planning_blocked") continue;
+			const resumed = await this.patchArmViaApi(arm.id, {
+				status: "idle",
+				planningBlocked: false,
+				lastActivityAt: new Date().toISOString(),
+			});
+			if (!resumed) throw new Error(`Could not resume planning-blocked arm ${arm.id}`);
+			const inMemoryArm = this.arms.get(arm.id);
+			if (inMemoryArm) inMemoryArm.status = "idle";
 		}
 	}
 
@@ -9132,6 +9209,7 @@ ${conflictList}
 			}
 
 			await this.resumePlanningBlockedTasks();
+			await this.resumePlanningBlockedArms();
 			if (currentPlanHash) this.planningErrorsByPlanHash.delete(currentPlanHash);
 			this.lastPlanningFailureFingerprint = null;
 

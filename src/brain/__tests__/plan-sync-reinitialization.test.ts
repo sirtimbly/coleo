@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 import { Brain } from "../brain";
-import type { Task } from "../../types";
+import type { Arm, Task } from "../../types";
 import type { PlanFormatter } from "../../project-setup/service";
 
 const temporaryDirectories: string[] = [];
@@ -121,10 +121,119 @@ Choose the stack before feature implementation.
 			sendToHuman: async () => {
 				events.push("mail");
 			},
+			listArms: async () => [{
+				id: "arm-1",
+				status: "busy",
+				currentTaskId: task.id,
+			}],
+			sendPromptToArm: async (_armId, _prompt, options) => {
+				events.push(`interrupt:${options?.interrupt === true}`);
+				return true;
+			},
+			patchArm: async (_armId, patch) => {
+				events.push(`arm:${patch.status}`);
+				return true;
+			},
 		});
 
 		expect(await syncPlanTasks()).toBe(false);
-		expect(events).toEqual(["mail", "block:planning"]);
+		expect(events).toEqual([
+			"mail",
+			"interrupt:true",
+			"arm:planning_blocked",
+			"block:planning",
+		]);
+	});
+
+	it("resumes only system-owned planning blockers with a planning-state marker", async () => {
+		const { brain, task } = await createPlanSyncFixture();
+		const patched: string[] = [];
+		const privateBrain = brain as unknown as {
+			listAllTasksFromApi: () => Promise<Task[]>;
+			patchTaskViaApi: (taskId: string, patch: Partial<Task>) => Promise<Task | null>;
+			resumePlanningBlockedTasks: () => Promise<void>;
+		};
+		privateBrain.listAllTasksFromApi = async () => [
+			{
+				...task,
+				id: "system-planning",
+				status: "blocked",
+				blockedCategory: "planning",
+				blockedReason: "Planning failed [planning-state:abc123]",
+			},
+			{
+				...task,
+				id: "untrusted-planning",
+				status: "blocked",
+				blockedCategory: "planning",
+				blockedReason: "Arm supplied this category",
+			},
+		];
+		privateBrain.patchTaskViaApi = async (taskId) => {
+			patched.push(taskId);
+			return task;
+		};
+
+		await privateBrain.resumePlanningBlockedTasks();
+
+		expect(patched).toEqual(["system-planning"]);
+	});
+
+	it("delivers and clears a deferred startup prompt for an initialized arm", async () => {
+		const { brain } = await createPlanSyncFixture();
+		const prompts: string[] = [];
+		const configs: Record<string, unknown>[] = [];
+		const privateBrain = brain as unknown as {
+			arms: Map<string, Arm>;
+			templates: { loadInitialArmPrompt: () => Promise<string> };
+			getArmFromApi: () => Promise<{
+				id: string;
+				name: string;
+				domain: string;
+				harness: string;
+				status: string;
+				config: Record<string, unknown>;
+			}>;
+			hasReceivedInitialTasks: () => Promise<boolean>;
+			sendPromptToArm: (_armId: string, prompt: string) => Promise<boolean>;
+			patchArmViaApi: (
+				_armId: string,
+				patch: { config?: Record<string, unknown> },
+			) => Promise<boolean>;
+			logActivity: () => void;
+			assignInitialTasks: () => Promise<void>;
+		};
+		privateBrain.arms.set("arm-1", {
+			id: "arm-1",
+			name: "Arm 1",
+			agent: "opencode",
+			status: "idle",
+			startedAt: new Date(),
+		});
+		privateBrain.templates.loadInitialArmPrompt = async () => "Common instructions";
+		privateBrain.getArmFromApi = async () => ({
+			id: "arm-1",
+			name: "Arm 1",
+			domain: "general",
+			harness: "opencode-api",
+			status: "idle",
+			config: { deferredInitialPrompt: "System identity", preserved: true },
+		});
+		privateBrain.hasReceivedInitialTasks = async () => true;
+		privateBrain.sendPromptToArm = async (_armId, prompt) => {
+			prompts.push(prompt);
+			return true;
+		};
+		privateBrain.patchArmViaApi = async (_armId, patch) => {
+			if (patch.config) configs.push(patch.config);
+			return true;
+		};
+		privateBrain.logActivity = () => {};
+
+		await privateBrain.assignInitialTasks();
+
+		expect(prompts).toEqual(["System identity\n\n---\n\nCommon instructions"]);
+		expect(configs).toEqual([{ preserved: true }]);
 	});
 });
 
@@ -177,6 +286,16 @@ function setPlanSyncApi(
 		createTask: (input: { id?: string; subject: string }) => Promise<Task | null>;
 		patchTask?: (taskId: string, patch: Partial<Task>) => Promise<Task | null>;
 		sendToHuman?: () => Promise<void>;
+		listArms?: () => Promise<Array<{ id: string; status: string; currentTaskId?: string }>>;
+		sendPromptToArm?: (
+			armId: string,
+			prompt: string,
+			options?: { interrupt?: boolean },
+		) => Promise<boolean>;
+		patchArm?: (
+			armId: string,
+			patch: { status?: string; planningBlocked?: boolean },
+		) => Promise<boolean>;
   },
 ): void {
   const privateBrain = brain as unknown as {
@@ -186,6 +305,16 @@ function setPlanSyncApi(
 		createTaskViaApi: (input: { id?: string; subject: string }) => Promise<Task | null>;
 		patchTaskViaApi: (taskId: string, patch: Partial<Task>) => Promise<Task | null>;
 		sendToHuman: () => Promise<void>;
+		listArmsFromApi: () => Promise<Array<{ id: string; status: string; currentTaskId?: string }>>;
+		sendPromptToArm: (
+			armId: string,
+			prompt: string,
+			options?: { interrupt?: boolean },
+		) => Promise<boolean>;
+		patchArmViaApi: (
+			armId: string,
+			patch: { status?: string; planningBlocked?: boolean },
+		) => Promise<boolean>;
   };
   privateBrain.getBrainConfigBoolean = async () => true;
   privateBrain.getBrainConfigValue = implementations.databaseInstanceId;
@@ -193,4 +322,7 @@ function setPlanSyncApi(
   privateBrain.createTaskViaApi = implementations.createTask;
 	privateBrain.patchTaskViaApi = implementations.patchTask || (async () => null);
 	privateBrain.sendToHuman = implementations.sendToHuman || (async () => {});
+	privateBrain.listArmsFromApi = implementations.listArms || (async () => []);
+	privateBrain.sendPromptToArm = implementations.sendPromptToArm || (async () => true);
+	privateBrain.patchArmViaApi = implementations.patchArm || (async () => true);
 }

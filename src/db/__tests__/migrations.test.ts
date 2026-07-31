@@ -38,6 +38,19 @@ describe("database migrations", () => {
 		expect(recreatedId.value).not.toBe(firstId.value);
 	});
 
+	it("adds a durable planning gate flag to arms", async () => {
+		const dir = join(tmpdir(), `coleo-arm-planning-gate-${crypto.randomUUID()}`);
+		testDirs.push(dir);
+		const db = await initDatabase(join(dir, "coleo.db"));
+		const columns = db.query("PRAGMA table_info(arms)").all() as Array<{
+			name: string;
+			dflt_value: string | null;
+		}>;
+
+		expect(columns.find((column) => column.name === "planning_blocked")?.dflt_value).toBe("0");
+		db.close();
+	});
+
 	it("normalizes legacy task keys to SQLite-sortable queue order", async () => {
 		const dir = join(tmpdir(), `coleo-migration-${crypto.randomUUID()}`);
 		testDirs.push(dir);

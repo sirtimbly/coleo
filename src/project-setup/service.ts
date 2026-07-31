@@ -94,6 +94,7 @@ const IGNORED_PLANNING_DIRECTORIES = new Set([
 ]);
 
 function pathFromGitStatusLine(line: string): string | null {
+	if (line.startsWith("... [")) return null;
 	const value = line.slice(3).trim().split(" -> ").at(-1)?.replace(/^"|"$/g, "");
 	return value || null;
 }
