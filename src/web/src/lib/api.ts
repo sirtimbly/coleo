@@ -1914,7 +1914,7 @@ export interface Task {
   startedAt: string | null;
   blockedAt?: string | null;
   blockedReason?: string | null;
-  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'unknown' | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'planning' | 'unknown' | null;
   blockedRecheckAt?: string | null;
   blockedLastCheckedAt?: string | null;
   blockedReviewCount?: number;

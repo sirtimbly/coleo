@@ -59,7 +59,7 @@ export interface Task {
   completedAt?: Date;
   blockedAt?: Date;
 	blockedReason?: string;
-	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "unknown";
+	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "planning" | "unknown";
 	blockedRecheckAt?: Date;
 	blockedLastCheckedAt?: Date;
 	blockedReviewCount?: number;

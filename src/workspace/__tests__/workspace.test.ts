@@ -47,6 +47,12 @@ describe("workspace access", () => {
 		})).rejects.toThrow("changed before write");
 	});
 
+	it("lists shallow project files without requiring a git repository", async () => {
+		const workspace = new LocalWorkspaceAccess(root);
+
+		expect(await workspace.gitFiles()).toEqual(["docs/guide.md"]);
+	});
+
 	it("rejects lexical and symlink escapes", async () => {
 		const workspace = new LocalWorkspaceAccess(root);
 		await expect(workspace.readText("../secret.txt")).rejects.toThrow("escapes");

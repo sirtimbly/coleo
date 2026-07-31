@@ -1,6 +1,7 @@
 import type { WorkspaceAccess, WorkspaceTextFile } from "../workspace";
-import { loadConfig } from "../config";
+import { getColeoDir, loadConfig } from "../config";
 import { resolveBrainModelConfig } from "../brain/model-config";
+import { BrainTemplateManager } from "../brain/template-manager";
 
 export const CANONICAL_PLAN_PATH = ".project/plan.md";
 export const DEFAULT_ARM_TEMPLATE = `arm:
@@ -62,11 +63,68 @@ export interface PlanFormatterResult {
 	mode: "ai" | "structured";
 }
 
+export interface PlanWorkspaceContext {
+	gitStatus: string;
+	files: string[];
+	planDocuments?: Array<{ path: string; content: string }>;
+}
+
 export type PlanFormatter = (
 	content: string,
 	sourcePath: string,
 	guidance?: string,
+	workspaceContext?: PlanWorkspaceContext,
+	templates?: BrainTemplateManager,
 ) => Promise<PlanFormatterResult>;
+
+export interface PlanEvaluationPrompt {
+	system: string;
+	user: string;
+}
+
+const MAX_PLANNING_FILES = 1_000;
+const MAX_PLANNING_FILE_DEPTH = 6;
+const IGNORED_PLANNING_DIRECTORIES = new Set([
+	".git",
+	"node_modules",
+	"dist",
+	"build",
+	"coverage",
+	"vendor",
+]);
+
+function pathFromGitStatusLine(line: string): string | null {
+	const value = line.slice(3).trim().split(" -> ").at(-1)?.replace(/^"|"$/g, "");
+	return value || null;
+}
+
+/** Builds planning context from file names and Git metadata without reading project file contents. */
+export async function collectPlanWorkspaceContext(
+	workspace: WorkspaceAccess,
+): Promise<PlanWorkspaceContext> {
+	const [gitStatus, trackedFiles] = await Promise.all([
+		workspace.gitStatus(),
+		workspace.gitFiles(),
+	]);
+	const statusFiles = gitStatus
+		.split(/\r?\n/)
+		.filter(Boolean)
+		.flatMap((line) => pathFromGitStatusLine(line) ?? []);
+	const files = Array.from(new Set([...trackedFiles, ...statusFiles]))
+		.map((path) => path.replaceAll("\\", "/").replace(/^\.\//, ""))
+		.filter((path) => {
+			const segments = path.split("/");
+			return segments.length <= MAX_PLANNING_FILE_DEPTH
+				&& !segments.some((segment) => IGNORED_PLANNING_DIRECTORIES.has(segment));
+		})
+		.sort()
+		.slice(0, MAX_PLANNING_FILES);
+
+	return {
+		gitStatus: gitStatus.trim().slice(0, 100_000),
+		files,
+	};
+}
 
 export function hasStructuredPlanTasks(content: string): boolean {
 	return /^##\s+Phase\s+\d/im.test(content)
@@ -275,10 +333,38 @@ function stripMarkdownFence(value: string): string {
 	return value.trim().replace(/^```(?:markdown|md)?\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
+export async function renderPlanEvaluationPrompt(
+	templates: BrainTemplateManager,
+	content: string,
+	sourcePath: string,
+	guidance?: string,
+	workspaceContext?: PlanWorkspaceContext,
+): Promise<PlanEvaluationPrompt> {
+	await templates.ensureTemplatesExist();
+	const referencedPlanDocuments = workspaceContext?.planDocuments
+		?.map((document) => `--- ${document.path} ---\n${document.content}`)
+		.join("\n\n") || "(none)";
+	const [system, user] = await Promise.all([
+		templates.renderTemplate("plan-evaluation-system-prompt.jinja"),
+		templates.renderTemplate("plan-evaluation-user-prompt.jinja", {
+			source_path: sourcePath,
+			guidance: guidance?.trim() || "No additional guidance.",
+			git_status: workspaceContext?.gitStatus || "(empty)",
+			max_file_depth: MAX_PLANNING_FILE_DEPTH,
+			project_files: workspaceContext?.files.join("\n") || "(none found)",
+			referenced_plan_documents: referencedPlanDocuments,
+			project_plan: content,
+		}),
+	]);
+	return { system, user };
+}
+
 export async function formatPlanWithConfiguredModel(
 	content: string,
 	sourcePath: string,
 	guidance?: string,
+	workspaceContext?: PlanWorkspaceContext,
+	templates?: BrainTemplateManager,
 ): Promise<PlanFormatterResult> {
 	const config = resolveBrainModelConfig((await loadConfig()).brain);
 	const apiKey = config.apiKey.trim();
@@ -296,8 +382,16 @@ export async function formatPlanWithConfiguredModel(
 		Math.max(8_000, Math.ceil(content.length / 3) + 4_000),
 	);
 	try {
+		const prompt = await renderPlanEvaluationPrompt(
+			templates || new BrainTemplateManager(getColeoDir(), () => {}),
+			content,
+			sourcePath,
+			guidance,
+			workspaceContext,
+		);
 		const response = await fetch(`${baseUrl}/chat/completions`, {
 			method: "POST",
+			signal: AbortSignal.timeout(120_000),
 			headers: {
 				"Content-Type": "application/json",
 				Authorization: `Bearer ${apiKey}`,
@@ -307,11 +401,11 @@ export async function formatPlanWithConfiguredModel(
 				messages: [
 					{
 						role: "system",
-						content: "Clean up and organize the user's Markdown project plan while preserving every requirement, constraint, decision, explanation, caveat, and piece of commentary from the source. Do not summarize away or omit context. Add actionable checklist items inline using one or more '## Phase N: Name' sections with '### Deliverables' subsections containing '- [ ] Task' items. Under each phase heading and before Deliverables, include concise prose that explains the phase's user-visible goal, scope, important relationships, and implementation context needed to understand its tasks. Keep checklist titles concise and action-oriented; do not rely on a checklist title alone to carry phase context. Existing prose should remain as prose in appropriate sections. Return the complete revised plan as Markdown only. Do not add work unsupported by the source. When regeneration guidance is provided, use it to adjust task boundaries, granularity, grouping, and duplication without overriding the source plan.",
+						content: prompt.system,
 					},
 					{
 						role: "user",
-						content: `Source file: ${sourcePath}\n\nHuman regeneration guidance:\n${guidance?.trim() || "No additional guidance."}\n\nProject plan:\n${content}`,
+						content: prompt.user,
 					},
 				],
 				max_completion_tokens: completionTokenBudget,

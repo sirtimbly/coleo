@@ -16,6 +16,7 @@ const execFileAsync = promisify(execFile);
 const MAX_TEXT_BYTES = 4 * 1024 * 1024;
 const MAX_SCAN_FILES = 2_000;
 const MAX_GIT_STATUS_BYTES = 1024 * 1024;
+const FALLBACK_FILE_DEPTH = 6;
 
 function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
@@ -171,7 +172,7 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 
 	async gitStatus(): Promise<string> {
 		try {
-			const { stdout } = await execFileAsync("git", ["status", "--porcelain"], {
+			const { stdout } = await execFileAsync("git", ["status", "--porcelain", "--untracked-files=all"], {
 				cwd: this.root,
 				encoding: "utf-8",
 				maxBuffer: MAX_GIT_STATUS_BYTES,
@@ -194,7 +195,17 @@ export class LocalWorkspaceAccess implements WorkspaceAccess {
 			return stdout.split("\n").filter((path) => path.length > 0);
 		} catch (error) {
 			const code = (error as { code?: unknown }).code;
-			if (code === 128) return [];
+			if (code === 128) {
+				return (await fg(["**/*"], {
+					cwd: this.root,
+					onlyFiles: true,
+					followSymbolicLinks: false,
+					unique: true,
+					dot: true,
+					deep: FALLBACK_FILE_DEPTH,
+					ignore: ["**/.git/**", "**/node_modules/**", "**/dist/**", "**/build/**", "**/vendor/**"],
+				})).sort().slice(0, MAX_SCAN_FILES);
+			}
 			throw error;
 		}
 	}
