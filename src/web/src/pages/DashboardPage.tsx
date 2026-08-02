@@ -6,9 +6,9 @@
  * event triggers this page to refetch its quantitative series.
  */
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { AlertTriangle, ChevronRight, Inbox } from 'lucide-react';
+import { api, type AgentProviderStatus, type Arm, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type TranscriptIndexerHealth } from '@/lib';
 import { CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
@@ -87,99 +87,6 @@ const indexerColorMap: Record<TranscriptIndexerHealth["status"], "success" | "wa
   stale: "danger",
   unavailable: "default",
   error: "danger",
-};
-
-type RecentEvent = RecentEventsResponse['events'][number];
-
-const NOTABLE_TASK_EVENTS = new Set([
-  'task.completed',
-  'task.failed',
-  'task.blocked',
-  'task.validated',
-  'task.status_reported',
-  'task.discovery_reported',
-  'task.dependency_reported',
-  'task.context_compressed',
-]);
-
-const NOTABLE_OTHER_EVENTS = new Set([
-  'arm.status_changed',
-  'system.status',
-  'session.error',
-]);
-
-const EVENT_LABELS: Record<string, string> = {
-  'task.completed': 'Task completed',
-  'task.failed': 'Task failed',
-  'task.blocked': 'Task blocked',
-  'task.validated': 'Task validated',
-  'task.status_reported': 'Status report submitted',
-  'task.discovery_reported': 'Discovery reported',
-  'task.dependency_reported': 'Dependency reported',
-  'task.context_compressed': 'Context compressed',
-  'arm.status_changed': 'Arm status changed',
-  'system.status': 'System status update',
-  'session.error': 'Session error',
-};
-
-const getDataString = (data: JsonObject | undefined, keys: string[]) => {
-  if (!data) return undefined;
-  for (const key of keys) {
-    const value = data[key];
-    if (typeof value === 'string' && value.trim()) return value;
-  }
-  return undefined;
-};
-
-const isNotableEvent = (event: RecentEvent) =>
-  NOTABLE_TASK_EVENTS.has(event.type) || NOTABLE_OTHER_EVENTS.has(event.type);
-
-const humanizeEventType = (type: string) =>
-  type.replace(/\./g, ' ').replace(/_/g, ' ');
-
-const formatEventTitle = (event: RecentEvent) => {
-  const label = EVENT_LABELS[event.type] ?? humanizeEventType(event.type);
-  const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
-  const bugId = getDataString(event.data, ['bugId', 'bug_id']);
-  const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
-  const summary = getDataString(event.data, ['summary', 'title', 'content']);
-
-  if (event.type === 'arm.status_changed' && armId) {
-    const newStatus = getDataString(event.data, ['to', 'newStatus', 'status']);
-    return newStatus ? `Arm ${armId} is ${newStatus}` : `${label}: ${armId}`;
-  }
-
-  if (event.type === 'task.status_reported' && summary) {
-    const status = getDataString(event.data, ['status', 'newStatus']);
-    const prefix = status ? status.replace(/_/g, ' ') : 'status';
-    return `${prefix}: ${summary.slice(0, 80)}${summary.length > 80 ? '…' : ''}`;
-  }
-
-  const subject = taskId ? `Task ${taskId}` : bugId ? `Bug ${bugId}` : armId ? `Arm ${armId}` : null;
-  return subject ? `${label}: ${subject}` : label;
-};
-
-const formatEventMeta = (event: RecentEvent) => {
-  const parts: string[] = [];
-  const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
-  const bugId = getDataString(event.data, ['bugId', 'bug_id']);
-  const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
-  const status = getDataString(event.data, ['status', 'newStatus', 'to']);
-
-  if (taskId) parts.push(`Task ${taskId}`);
-  if (bugId) parts.push(`Bug ${bugId}`);
-  if (armId && event.type !== 'arm.status_changed') parts.push(`Arm ${armId}`);
-  if (status) parts.push(`Status ${status}`);
-
-  return parts;
-};
-
-const getEventDotClass = (event: RecentEvent) => {
-  const type = event.type;
-  if (type.includes('failed') || type.includes('error')) return 'bg-danger';
-  if (type.includes('blocked')) return 'bg-warning';
-  if (type.includes('completed') || type.includes('validated')) return 'bg-success';
-  return 'bg-accent';
 };
 
 const formatLastSeen = (timestamp?: string | null) => {
@@ -592,181 +499,22 @@ function ArmsListSection({
   );
 }
 
-function ActivitySection({
-  activity,
-  isLoading,
-  arms,
-  onNavigate,
-}: {
-  activity: ActivityEntry[];
-  isLoading: boolean;
-  arms: Arm[];
-  onNavigate: Navigate;
-}) {
-  const armIds = useMemo(() => new Set(arms.map((arm) => arm.id)), [arms]);
-
+function OperationalInboxSection({ onNavigate }: { onNavigate: Navigate }) {
   return (
     <WorkbenchSurface>
       <WorkbenchHeader
-        title="Recent activity"
-        description="Latest actors and resource changes"
+        title="Operational Inbox"
+        description="Live messages, Brain decisions, Arm events, and project changes"
         actions={
-          <Button size="sm" variant="ghost" onPress={() => onNavigate("/history-search")}>
-            Search <ChevronRight className="h-3.5 w-3.5" />
+          <Button size="sm" variant="primary" onPress={() => onNavigate("/messaging", "?facet=attention")}>
+            <Inbox className="h-3.5 w-3.5" />
+            Open Inbox
           </Button>
         }
       />
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-start gap-3">
-                <Skeleton className="h-2 w-2 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <Skeleton className="h-4 w-full rounded mb-1" />
-                  <Skeleton className="h-3 w-24 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : activity.length === 0 ? (
-          <p className="text-muted-foreground text-sm">No recent activity</p>
-        ) : (
-          <div className="space-y-1">
-            {activity.map((entry) => {
-              const isArm = armIds.has(entry.actor);
-              const rowContent = (
-                <>
-                  <div className="h-2 w-2 rounded-full bg-accent mt-1.5" />
-                  <div>
-                    <p>
-                      <span className="font-medium">{entry.actor}</span>{' '}
-                      <span className="text-muted-foreground">{entry.action}</span>
-                      {entry.target && (
-                        <span className="text-muted-foreground"> on {entry.target}</span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(entry.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                </>
-              );
-
-              return isArm ? (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => onNavigate("/viewer", `?arm=${encodeURIComponent(entry.actor)}`)}
-                  className="flex w-full items-start gap-3 rounded-md px-1 py-1 text-left text-sm transition-colors hover:bg-default-100/60"
-                >
-                  {rowContent}
-                </button>
-              ) : (
-                <div key={entry.id} className="flex items-start gap-3 px-1 py-1 text-sm">
-                  {rowContent}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </WorkbenchSurface>
-  );
-}
-
-function NotableEventsSection({
-  events,
-  isLoading,
-  error,
-  onNavigate,
-}: {
-  events: RecentEvent[];
-  isLoading: boolean;
-  error: string | null;
-  onNavigate: Navigate;
-}) {
-  return (
-    <WorkbenchSurface>
-      <WorkbenchHeader
-        title="Notable events"
-        description="High-signal task, bug, Arm, and system changes"
-        actions={
-          <Button size="sm" variant="ghost" onPress={() => onNavigate("/history-search")}>
-            Search history <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
-        }
-      />
-      <div className="p-4">
-        {isLoading ? (
-          <div className="space-y-3">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex items-start gap-3">
-                <Skeleton className="h-2 w-2 rounded-full mt-1.5" />
-                <div className="flex-1">
-                  <Skeleton className="h-4 w-full rounded mb-1" />
-                  <Skeleton className="h-3 w-32 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : error ? (
-          <div>
-            <p className="text-sm text-danger">{error}</p>
-            <p className="text-xs text-muted-foreground mt-1">Event stream may be unavailable.</p>
-          </div>
-        ) : events.length === 0 ? (
-          <div className="space-y-2">
-            <p className="text-muted-foreground text-sm">No notable events yet</p>
-            <button
-              type="button"
-              onClick={() => onNavigate("/history-search")}
-              className="text-xs text-accent hover:underline"
-            >
-              Open complete search page
-            </button>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            {events.map((event, index) => {
-              const meta = formatEventMeta(event);
-              const taskId = getDataString(event.data, ['taskId', 'task_id', 'target']);
-              const bugId = getDataString(event.data, ['bugId', 'bug_id']);
-              const armId = event.armId || getDataString(event.data, ['armId', 'arm_id', 'actor']);
-              const target = taskId
-                ? { pathname: '/tasks', search: `?task=${encodeURIComponent(taskId)}&view=details` }
-                : bugId
-                  ? { pathname: '/bugs', search: `?bug=${encodeURIComponent(bugId)}` }
-                  : armId
-                    ? { pathname: '/viewer', search: `?arm=${encodeURIComponent(armId)}` }
-                    : { pathname: '/history-search', search: '' };
-
-              const rowContent = (
-                <>
-                  <div className={`h-2 w-2 rounded-full mt-1.5 ${getEventDotClass(event)}`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{formatEventTitle(event)}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {meta.length > 0 ? `${meta.join(' • ')} • ` : ''}
-                      {new Date(event.timestamp).toLocaleString()}
-                    </p>
-                  </div>
-                </>
-              );
-
-              return (
-                <button
-                  key={`${event.type}-${event.timestamp}-${index}`}
-                  type="button"
-                  onClick={() => onNavigate(target.pathname, target.search)}
-                  className="flex w-full items-start gap-3 rounded-md px-1 py-1 text-left text-sm transition-colors hover:bg-default-100/60"
-                >
-                  {rowContent}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      <div className="px-4 py-3 text-sm leading-6 text-muted-foreground">
+        Review actionable changes, search retained history, and open task, bug,
+        or Arm targets from the unified stream.
       </div>
     </WorkbenchSurface>
   );
@@ -782,8 +530,6 @@ export function DashboardPage() {
 
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [arms, setArms] = useState<Arm[]>([]);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [notableEvents, setNotableEvents] = useState<RecentEvent[]>([]);
   const [armsAnalysis, setArmsAnalysis] = useState<AllArmsAnalysis | null>(null);
   const [indexerHealth, setIndexerHealth] = useState<TranscriptIndexerHealth | null>(null);
   const [commandQueueHealth, setCommandQueueHealth] = useState<CommandQueueHealth | null>(null);
@@ -796,12 +542,10 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [detailsLoading, setDetailsLoading] = useState(true);
-  const [eventsLoading, setEventsLoading] = useState(true);
   const [indexerLoading, setIndexerLoading] = useState(true);
   const [commandQueueLoading, setCommandQueueLoading] = useState(true);
   const [brainLoading, setBrainLoading] = useState(true);
   const [armHostsLoading, setArmHostsLoading] = useState(true);
-  const [eventsError, setEventsError] = useState<string | null>(null);
   const [showProjectSetup, setShowProjectSetup] = useState(false);
   const refreshGate = useRef(new RefreshGate());
 
@@ -903,12 +647,8 @@ export function DashboardPage() {
   const loadDetails = useCallback(async () => {
     await refreshGate.current.run('details', async () => {
       try {
-        const [armsRes, activityRes] = await Promise.all([
-          api.listArms(),
-          api.listActivity({ limit: 5 }),
-        ]);
+        const armsRes = await api.listArms();
         setArms(armsRes.arms);
-        setActivity(activityRes.activity);
       } catch {
         // Preserve the last successful snapshot during a transient failure.
       } finally {
@@ -943,81 +683,11 @@ export function DashboardPage() {
     }, 1_000);
   }, []);
 
-  const loadNotableEvents = useCallback(async () => {
-    await refreshGate.current.run('events', async () => {
-      try {
-        // Prefer live event stream; fall back to high-signal status reports so the
-        // widget still has content when JetStream is empty/unavailable.
-        const eventsRes = await api.getRecentEvents({ limit: 80, sinceMs: 1000 * 60 * 60 * 24 });
-        let filtered = eventsRes.events.filter(isNotableEvent);
-
-        if (filtered.length < 6) {
-          try {
-            const reportsRes = await api.listStatusReports({ limit: 20 });
-            const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
-            const reportEvents: RecentEvent[] = reportsRes.reports
-              .filter((r) => HIGH_SIGNAL.has(r.status))
-              .map((r) => ({
-                type: 'task.status_reported',
-                timestamp: r.createdAt,
-                armId: r.armId,
-                data: {
-                  taskId: r.taskId,
-                  status: r.status,
-                  summary: r.summary,
-                },
-              }));
-            const seen = new Set(filtered.map((e) => `${e.type}-${e.timestamp}-${e.armId}`));
-            for (const re of reportEvents) {
-              const key = `${re.type}-${re.timestamp}-${re.armId}`;
-              if (!seen.has(key)) {
-                filtered.push(re);
-                seen.add(key);
-              }
-            }
-            filtered = filtered
-              .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          } catch {
-            // status reports optional
-          }
-        }
-
-        setNotableEvents(filtered.slice(0, 8));
-        setEventsError(null);
-      } catch (err) {
-        // Full fallback: status reports only
-        try {
-          const reportsRes = await api.listStatusReports({ limit: 8 });
-          const HIGH_SIGNAL = new Set(['blocked', 'issues_found', 'needs_review', 'completed_with_issues']);
-          const reportEvents: RecentEvent[] = reportsRes.reports
-            .filter((r) => HIGH_SIGNAL.has(r.status))
-            .map((r) => ({
-              type: 'task.status_reported',
-              timestamp: r.createdAt,
-              armId: r.armId,
-              data: {
-                taskId: r.taskId,
-                status: r.status,
-                summary: r.summary,
-              },
-            }));
-          setNotableEvents(reportEvents.slice(0, 8));
-          setEventsError(null);
-        } catch {
-          setEventsError(err instanceof Error ? err.message : 'Failed to load events');
-        }
-      } finally {
-        setEventsLoading(false);
-      }
-    }, 5_000);
-  }, []);
-
   const handleWSMessage = useCallback((msg: WebSocketMessage) => {
-    if (msg.channel === 'arms' || msg.channel === 'activity') {
+    if (msg.channel === 'arms') {
       void loadDetails();
     }
     if (msg.channel === 'arm-events') {
-      void loadNotableEvents();
       void loadIndexerHealth();
       void loadCommandQueueHealth();
     }
@@ -1030,7 +700,7 @@ export function DashboardPage() {
     if (msg.channel === 'tasks') {
       void loadTaskStats();
     }
-  }, [loadBrainStatus, loadCommandQueueHealth, loadCriticalData, loadDetails, loadIndexerHealth, loadNotableEvents, loadTaskStats]);
+  }, [loadBrainStatus, loadCommandQueueHealth, loadCriticalData, loadDetails, loadIndexerHealth, loadTaskStats]);
 
   const { connected, authenticated } = useWebSocket({
     channels: ['arms', 'activity', 'brain', 'arm-events', 'tasks'],
@@ -1042,7 +712,6 @@ export function DashboardPage() {
     loadCriticalData();
     loadDetails();
     loadAnalysis();
-    loadNotableEvents();
     loadIndexerHealth();
     loadCommandQueueHealth();
     loadBrainStatus();
@@ -1053,7 +722,6 @@ export function DashboardPage() {
       if (document.visibilityState !== 'visible') return;
       loadCriticalData();
       loadDetails();
-      loadNotableEvents();
       loadIndexerHealth();
       loadCommandQueueHealth();
       loadBrainStatus();
@@ -1061,7 +729,7 @@ export function DashboardPage() {
       loadTaskStats();
     }, 30000);
     return () => clearInterval(interval);
-  }, [loadArmHosts, loadCommandQueueHealth, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadNotableEvents, loadBrainStatus, loadTaskStats]);
+  }, [loadArmHosts, loadCommandQueueHealth, loadCriticalData, loadDetails, loadAnalysis, loadIndexerHealth, loadBrainStatus, loadTaskStats]);
 
   useEffect(() => {
     let active = true;
@@ -1216,15 +884,13 @@ export function DashboardPage() {
         title="Operational feed"
         summary={[
           { label: 'Arms', value: detailsLoading ? '...' : arms.length },
-          { label: 'Events', value: eventsLoading ? '...' : notableEvents.length },
-          { label: 'Activity', value: detailsLoading ? '...' : activity.length },
+          { label: 'Events (24h)', value: statusLoading ? '...' : status?.activity.last24h ?? 0 },
         ]}
         className="rounded-none border-x-0 border-t-0"
-        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-3"
+        bodyClassName="grid grid-cols-1 gap-4 xl:grid-cols-2"
       >
         <ArmsListSection status={status ?? undefined} arms={arms} isLoading={detailsLoading} onNavigate={navigate} />
-        <NotableEventsSection events={notableEvents} isLoading={eventsLoading} error={eventsError} onNavigate={navigate} />
-        <ActivitySection activity={activity} isLoading={detailsLoading} arms={arms} onNavigate={navigate} />
+        <OperationalInboxSection onNavigate={navigate} />
       </CollapsibleSection>
 
       <CollapsibleSection

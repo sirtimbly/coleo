@@ -51,6 +51,16 @@ const brainPoll = {
 	},
 };
 
+const blockedTaskEvent = {
+	type: "task.blocked",
+	timestamp: "2026-08-02T11:15:00.000Z",
+	armId: "arm-octavia",
+	data: {
+		taskId: "task-dashboard",
+		status: "blocked",
+	},
+};
+
 test("views indented message threads and carries reply context into the composer", async ({ page }) => {
 	await installMockApi(page, { inbox: [received], sent: [reply] });
 	await page.goto("/messaging?facet=messages&mailbox=inbox");
@@ -86,14 +96,24 @@ test("archives every inbox message represented by the open thread", async ({ pag
 });
 
 test("launcher navigation exposes the unified Inbox instead of legacy stream pages", async ({ page }) => {
-	await installMockApi(page);
-	await page.goto("/messaging");
+	await installMockApi(page, { recentEvents: [blockedTaskEvent] });
+	await page.goto("/");
 
+	await expect(page.getByRole("heading", { name: "Recent activity", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("heading", { name: "Notable events", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "Open Inbox", exact: true }).click();
+
+	await expect(page).toHaveURL(/\/messaging\?facet=attention$/);
+	await expect(page.getByText("Task blocked: Task task-dashboard", { exact: true })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Inbox", exact: true })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Project Mail", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Activity", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "History", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveCount(0);
+
+	await page.getByRole("button", { name: /Task blocked: Task task-dashboard/ }).click();
+	await page.getByRole("button", { name: "Open target", exact: true }).click();
+	await expect(page).toHaveURL(/\/tasks\?task=task-dashboard&view=details$/);
 });
 
 test("Brain delegates its semantic activity feed to the live Inbox facet", async ({ page }) => {

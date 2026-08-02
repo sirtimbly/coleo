@@ -14,6 +14,7 @@ interface MockApiOptions {
 	sent?: unknown[];
 	archive?: unknown[];
 	activity?: unknown[];
+	recentEvents?: unknown[];
 }
 
 const now = "2026-08-02T12:00:00.000Z";
@@ -55,7 +56,32 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 		}
 
 		if (path === "/api/status") {
-			return json(route, { cwd: "/workspace/coleo", projectName: "Coleo" });
+			return json(route, {
+				cwd: "/workspace/coleo",
+				projectName: "Coleo",
+				status: "healthy",
+				version: "test",
+				uptime: 3600,
+				brain: { running: true, status: "running" },
+				arms: {
+					total: options.arms?.length ?? 0,
+					healthy: options.arms?.length ?? 0,
+					idle: 0,
+					stuck: 0,
+					stale: 0,
+					details: [],
+				},
+				proposals: { open: 0 },
+				activity: { last24h: options.recentEvents?.length ?? options.activity?.length ?? 0 },
+				infrastructure: {
+					database: { healthy: true },
+					nats: { healthy: true, optional: false },
+					maildir: { healthy: true },
+					qdrant: { healthy: true, optional: true },
+					indexer: { healthy: true, optional: true, running: true },
+				},
+				timestamp: now,
+			});
 		}
 
 		if (path === "/api/workbench/bootstrap") {
@@ -77,6 +103,7 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 		if (path === "/api/arms" && request.method() === "GET") {
 			return json(route, { arms: options.arms ?? [] });
 		}
+		if (path === "/api/agents/providers") return json(route, { hosts: [] });
 		if (path === "/api/agents") return json(route, { agents: [] });
 		if (path === "/api/config/defaults") {
 			return json(route, {
@@ -119,6 +146,65 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			return json(route, { providers: [], connected: [], source: "cache" });
 		}
 		if (path === "/api/arms/templates") return json(route, { templates: [] });
+		if (path === "/api/project-setup") {
+			return json(route, { required: false, completed: true });
+		}
+		if (path === "/api/tasks/stats") {
+			return json(route, {
+				total: options.tasks?.length ?? 0,
+				byStatus: {},
+				completionRate: 0,
+				active: 0,
+				blocked: 0,
+			});
+		}
+		if (path === "/api/activity/indexer-health") {
+			return json(route, {
+				status: "healthy",
+				stream: "coleo-events",
+				durable: "project-scoped",
+				consumerFound: true,
+				lagMessages: 0,
+				ackPending: 0,
+				streamLastSeq: 0,
+				consumerStreamSeq: 0,
+				consumerSeq: 0,
+				lastActive: now,
+				staleThresholdMs: 120000,
+				updatedAt: now,
+			});
+		}
+		if (path === "/api/activity/command-queue-health") {
+			return json(route, {
+				status: "healthy",
+				stream: "coleo-commands",
+				durable: "cmd-projector-to-db",
+				consumerFound: true,
+				lagMessages: 0,
+				ackPending: 0,
+				streamLastSeq: 0,
+				consumerStreamSeq: 0,
+				consumerSeq: 0,
+				lastActive: now,
+				staleThresholdMs: 120000,
+				updatedAt: now,
+				enabled: true,
+			});
+		}
+		if (path === "/api/events/analysis") {
+			return json(route, {
+				arms: [],
+				summary: {
+					productive: 0,
+					idle: 0,
+					starting: 0,
+					waiting: 0,
+					looping: 0,
+					silent: 0,
+					error: 0,
+				},
+			});
+		}
 		if (path === "/api/events/telemetry") {
 			return json(route, {
 				armCount: options.arms?.length ?? 0,
@@ -274,7 +360,8 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			});
 		}
 		if (path === "/api/events/recent") {
-			return json(route, { events: [], total: 0 });
+			const events = options.recentEvents ?? [];
+			return json(route, { events, total: events.length });
 		}
 
 		return json(route, {});

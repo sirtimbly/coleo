@@ -38,6 +38,11 @@ import {
 } from "@/workbench/ProjectionInbox";
 import { useLiveProjections, useProjectionSignal } from "@/workbench/live-projections";
 import {
+	isNotableEvent,
+	projectRecentEvent,
+	type RecentEvent,
+} from "@/workbench/recent-event-inbox";
+import {
 	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
@@ -49,6 +54,7 @@ interface InboxItemData {
 	mailbox?: MailboxTab;
 	statusReport?: StatusReport;
 	activity?: ActivityEntry;
+	recentEvent?: RecentEvent;
 	brainCategory?: BrainActivityCategory;
 	targetRoute?: { pathname: string; search: string };
 }
@@ -237,6 +243,7 @@ export function MessagingPage() {
 	const [sent, setSent] = useState<MailMessage[]>([]);
 	const [archive, setArchive] = useState<MailMessage[]>([]);
 	const [activity, setActivity] = useState<ActivityEntry[]>([]);
+	const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
 	const [brainActivity, setBrainActivity] = useState<ActivityEntry[]>([]);
 	const [brainActivityCursor, setBrainActivityCursor] = useState<number | null>(null);
 	const [hasOlderBrainActivity, setHasOlderBrainActivity] = useState(false);
@@ -264,6 +271,7 @@ export function MessagingPage() {
 				sentResponse,
 				archiveResponse,
 				reportsResponse,
+				recentEventsResponse,
 			] =
 				await Promise.all([
 					api.listActivity({ limit: 100 }),
@@ -272,6 +280,8 @@ export function MessagingPage() {
 					api.listSent({ limit: 100 }),
 					api.listArchive({ limit: 100 }),
 					api.listStatusReports({ limit: 100 }),
+					api.getRecentEvents({ limit: 100, sinceMs: 1000 * 60 * 60 * 24 })
+						.catch(() => ({ events: [], total: 0 })),
 				]);
 			setActivity(activityResponse.activity);
 			setBrainActivity((current) => mergeBrainActivity(current, brainActivityResponse.activity));
@@ -284,6 +294,7 @@ export function MessagingPage() {
 			setSent(sentResponse.messages);
 			setArchive(archiveResponse.messages);
 			setReports(reportsResponse.reports);
+			setRecentEvents(recentEventsResponse.events);
 		} finally {
 			setLoading(false);
 		}
@@ -366,12 +377,15 @@ export function MessagingPage() {
 				.filter((entry) => !brainActivityIds.has(entry.id))
 				.map(activityToItem),
 			...brainActivity.map(brainActivityToItem),
+			...recentEvents
+				.filter(isNotableEvent)
+				.map((event, index) => projectRecentEvent(event, index)),
 		];
 		return merged.sort(
 			(left, right) =>
 				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
 		);
-	}, [activity, brainActivity, effectiveMailbox, reports, threads]);
+	}, [activity, brainActivity, effectiveMailbox, recentEvents, reports, threads]);
 
 	const projectionItems = useMemo(
 		() => items.filter((entry) =>
@@ -477,7 +491,13 @@ export function MessagingPage() {
 				<div className="min-h-0 flex-1 overflow-auto p-5">
 					<pre className="mx-auto max-w-4xl whitespace-pre-wrap font-sans text-sm leading-6">
 						{selectedItem.statusReport?.summary ??
-							JSON.stringify(selectedItem.activity?.details ?? selectedItem.item, null, 2)}
+							JSON.stringify(
+								selectedItem.activity?.details ??
+									selectedItem.recentEvent?.data ??
+									selectedItem.item,
+								null,
+								2,
+							)}
 					</pre>
 				</div>
 			</div>

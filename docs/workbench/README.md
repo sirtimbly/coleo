@@ -158,5 +158,8 @@ The initial workbench migration was completed on 2026-07-31 in
   retained-history paging.
 - Viewer remains a route-backed detail projection for selected Arms, but is not
   exposed as a standalone launcher or navigation destination.
+- Dashboard no longer owns recent-activity or notable-event feeds. It links to
+  Inbox, which now ingests the high-signal server event stream while retaining
+  task, bug, and Arm target navigation.
 - Eight Playwright scenarios protect the Inbox, Brain handoff, Arm Fleet/Viewer, and task
   spreadsheet/detail flows.
