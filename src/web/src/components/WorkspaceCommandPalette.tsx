@@ -1,3 +1,7 @@
+/**
+ * Provides keyboard-first navigation and project-wide resource search.
+ * Its destinations follow the same route registry used by every launcher.
+ */
 import {
 	useCallback,
 	useEffect,
@@ -76,9 +80,9 @@ function routeForSearchResult(type: string, id: string): { pathname: string; sea
 			return { pathname: "/grid" };
 		case "mail":
 		case "message":
-			return { pathname: "/mail" };
+			return { pathname: "/messaging", search: "?facet=messages&mailbox=inbox" };
 		case "status_report":
-			return { pathname: "/status-reports" };
+			return { pathname: "/messaging", search: "?facet=history" };
 		default:
 			return null;
 	}

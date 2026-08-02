@@ -67,6 +67,7 @@ export function ProjectionInbox({
 	onOpen,
 	onRefresh,
 	onMarkAllRead,
+	toolbarContent,
 	loading = false,
 	className,
 }: {
@@ -79,6 +80,7 @@ export function ProjectionInbox({
 	onOpen: (item: InboxProjectionItem) => void;
 	onRefresh?: () => void;
 	onMarkAllRead?: (items: InboxProjectionItem[]) => void;
+	toolbarContent?: ReactNode;
 	loading?: boolean;
 	className?: string;
 }) {
@@ -151,6 +153,7 @@ export function ProjectionInbox({
 						);
 					})}
 				</div>
+				{toolbarContent}
 				<ProjectionSearch
 					value={search}
 					onChange={setSearch}

@@ -96,8 +96,7 @@ project-domain data.
 | Existing surface | Workbench destination |
 | --- | --- |
 | `TaskGrid`, `BugGrid` | Handsontable `ResourceSheet` |
-| `MessagingPage` | multi-aspect `ProjectionInbox` |
-| `ActivityPage` | `EventTimeline` |
+| Mail, activity, history, and proposals | Inbox facets backed by `ProjectionInbox` |
 | Arm telemetry components | metric-backed dashboard panels |
 | Setup plan editor | retained as the specialized collaborative plan document |
 | Golden Layout local storage | versioned database-backed workspace layout |
@@ -134,3 +133,19 @@ The initial workbench migration was completed on 2026-07-31 in
   actual layout state changes remain the persistence trigger.
 - Portaled Handsontable menus receive the same light/dark design tokens as the
   sheet that opened them.
+
+### 2026-08-02 projection migration
+
+- Arm Fleet and Viewer now share one compact Arm row and the same workbench
+  framing, while preserving Viewer as a dedicated workspace panel.
+- Brain status and operational history use common projection surfaces.
+- Task and bug sheets retain Handsontable for spreadsheet interaction and use
+  consistent workbench headers, toolbars, and detail framing.
+- Dashboard cards and activity summaries use shared surfaces without changing
+  the existing metric and chart implementations.
+- Inbox is the primary stream interface. Its Messages facet preserves read,
+  reply, archive, full-thread viewing, and reply indentation. Brain, Arm,
+  attention, and history facets expose the other operational streams.
+- Mail, Activity, History, and Proposals remain compatibility redirects for old
+  deep links and saved workspaces, but are omitted from launchers and
+  navigation.

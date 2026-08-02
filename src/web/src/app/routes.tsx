@@ -139,7 +139,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'History',
     icon: FileText,
     component: StatusReportsPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'history-search',
@@ -179,7 +179,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Project Mail',
     icon: Mail,
     component: MailPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'proposals',
@@ -188,7 +188,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Proposals',
     icon: Vote,
     component: ProposalsPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'activity',
@@ -197,7 +197,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Activity',
     icon: Activity,
     component: ActivityPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'settings',

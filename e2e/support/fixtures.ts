@@ -232,6 +232,18 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				pagination: { limit: 100, offset: 0, total: 0 },
 			});
 		}
+		if (path === "/api/activity") {
+			return json(route, {
+				activity: [],
+				pagination: {
+					limit: 100,
+					offset: 0,
+					total: 0,
+					hasMore: false,
+					nextCursor: null,
+				},
+			});
+		}
 		if (path === "/api/events/recent") {
 			return json(route, { events: [], total: 0 });
 		}

@@ -1,14 +1,11 @@
 /**
- * Route adapter for the reusable operational History projection.
+ * Compatibility redirect for saved History panels.
  *
- * History also appears as an Inbox facet; this route remains available for
- * saved layouts and deep links while navigation converges on the Inbox.
+ * Operational history now appears as a facet in the unified Inbox.
  */
 
-import { usePageTitle } from "@/hooks/usePageTitle";
-import { HistoryProjection } from "@/workbench/HistoryProjection";
+import { Navigate } from "react-router-dom";
 
 export function StatusReportsPage() {
-	usePageTitle("Coleo Observatory - History");
-	return <HistoryProjection />;
+	return <Navigate to="/messaging?facet=history" replace />;
 }

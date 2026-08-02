@@ -378,7 +378,7 @@ function PlanStatusSection({
             detail={status.proposals.open > 0 ? "Awaiting review" : "None pending"}
             chipLabel={String(status.proposals.open)}
             chipColor={status.proposals.open > 0 ? "warning" : "default"}
-            onClick={() => onNavigate("/proposals")}
+            onClick={() => onNavigate("/messaging", "?facet=history")}
           />
           <DenseRow
             tone="default"
@@ -386,7 +386,7 @@ function PlanStatusSection({
             detail="Events recorded in the last 24 hours"
             chipLabel={String(status.activity.last24h)}
             chipColor="default"
-            onClick={() => onNavigate("/activity")}
+            onClick={() => onNavigate("/messaging", "?facet=history")}
           />
           <DenseRow
             tone="default"
