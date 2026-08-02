@@ -113,7 +113,8 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Viewer',
     icon: Eye,
     component: ArmViewerPage,
-    showInNav: true,
+    // Viewer requires Arm context and is opened from fleet/search selections.
+    showInNav: false,
     getTitle: (searchParams) => {
       const armId = searchParams.get('arm');
       return armId ? `Viewer: ${armId}` : 'Viewer';

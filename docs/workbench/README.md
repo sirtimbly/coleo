@@ -156,5 +156,7 @@ The initial workbench migration was completed on 2026-07-31 in
   activity feed. The Inbox retains Brain-specific semantic categories,
   formatted summaries, target navigation, live connection state, and
   retained-history paging.
+- Viewer remains a route-backed detail projection for selected Arms, but is not
+  exposed as a standalone launcher or navigation destination.
 - Eight Playwright scenarios protect the Inbox, Brain handoff, Arm Fleet/Viewer, and task
   spreadsheet/detail flows.

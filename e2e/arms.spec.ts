@@ -33,6 +33,7 @@ test("shows fleet status and assignments in the Arms projection", async ({ page 
 test("opens the selected Arm in the dedicated Viewer route", async ({ page }) => {
 	await installMockApi(page, { arms: [activeArm] });
 	await page.goto("/arms");
+	await expect(page.getByRole("link", { name: "Viewer", exact: true })).toHaveCount(0);
 	await page.getByRole("button", { name: /Octavia/ }).click();
 
 	await expect(page).toHaveURL(/\/viewer\?arm=arm-octavia/);
