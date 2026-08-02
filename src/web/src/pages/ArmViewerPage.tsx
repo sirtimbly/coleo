@@ -65,6 +65,12 @@ import {
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
 import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
+import {
+	WorkbenchEmptyState,
+	WorkbenchHeader,
+	WorkbenchToolbar,
+} from "@/design-system/WorkbenchSurface";
+import { ArmCollectionRow } from "@/workbench/ArmCollectionRow";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -1351,20 +1357,11 @@ export function ArmViewerPage() {
 		if (!selectedArmId) {
 			return (
 				<div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-background">
-					<div className="border-b border-border px-5 py-5">
-						<div className="flex items-start justify-between gap-4">
-							<div>
-								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-									Arm Viewer
-								</p>
-								<h1 className="mt-2 text-3xl font-semibold tracking-tight">
-									Select an active arm
-								</h1>
-								<p className="mt-1 text-sm text-muted-foreground">
-									Open a live console to inspect session output, state changes, and recent activity.
-								</p>
-							</div>
-
+					<WorkbenchHeader
+						title="Select an active Arm"
+						description="Open a live console to inspect session output, state changes, and recent activity."
+						icon={<Eye className="h-4 w-4" />}
+						actions={
 							<Button
 								variant="ghost"
 								onPress={loadArms}
@@ -1374,12 +1371,13 @@ export function ArmViewerPage() {
 							>
 								<RefreshCw className="h-4 w-4" />
 							</Button>
-						</div>
-					</div>
-
-					<div className="border-b border-border px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-						{arms.length} active arm{arms.length === 1 ? "" : "s"}
-					</div>
+						}
+					/>
+					<WorkbenchToolbar>
+						<span className="text-xs text-muted-foreground">
+							{arms.length} active Arm{arms.length === 1 ? "" : "s"}
+						</span>
+					</WorkbenchToolbar>
 
 					<ArmSelectorPanel
 						arms={arms}
@@ -1583,64 +1581,21 @@ function ArmSelectorPanel({
 	return (
 		<div className={cn("min-h-0 overflow-auto p-3", className)}>
 			{arms.length === 0 ? (
-				<div className="flex h-full min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 px-6 text-center">
-					<div>
-						<Eye className="mx-auto mb-4 h-10 w-10 text-muted-foreground/60" />
-						<p className="text-sm font-medium">{emptyTitle}</p>
-						<p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p>
-					</div>
-				</div>
+				<WorkbenchEmptyState
+					title={emptyTitle}
+					description={emptyDescription}
+					icon={<Eye className="h-4 w-4" />}
+				/>
 			) : (
-				<div className="space-y-2">
-					{arms.map((arm) => {
-						const isSelected = selectedArmId === arm.id;
-						const summary = arm.status === "planning_blocked"
-							? "Waiting for the Brain planning gate"
-							: arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
-
-						return (
-							<button
-								key={arm.id}
-								type="button"
-								className={cn(
-									"w-full rounded-md border px-3 py-3 text-left transition-colors",
-									isSelected
-										? "border-accent/45 bg-accent/8"
-										: "border-border bg-card hover:bg-surface-secondary/55",
-								)}
-								onClick={() => onSelectArm(arm.id)}
-							>
-								<div className="flex items-start justify-between gap-3">
-									<div className="min-w-0">
-										<div className="flex items-center gap-2">
-											<span
-												className={cn(
-													"h-2 w-2 rounded-full",
-													arm.status === "running"
-														? "bg-success"
-														: arm.status === "starting" || arm.status === "planning_blocked"
-															? "bg-warning"
-															: arm.status === "error"
-																? "bg-danger"
-																: "bg-muted-foreground/60",
-												)}
-											/>
-											<div className="truncate text-sm font-medium">{arm.name}</div>
-										</div>
-										<div className="mt-1 truncate text-xs text-muted-foreground">
-											{summary}
-										</div>
-										<div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-											<span>{arm.harness}</span>
-											{arm.provider ? <span>{arm.provider}</span> : null}
-										</div>
-									</div>
-
-									<StatusBadge status={arm.status} />
-								</div>
-							</button>
-						);
-					})}
+				<div className="overflow-hidden border border-border bg-surface">
+					{arms.map((arm) => (
+						<ArmCollectionRow
+							key={arm.id}
+							arm={arm}
+							selected={selectedArmId === arm.id}
+							onOpen={() => onSelectArm(arm.id)}
+						/>
+					))}
 				</div>
 			)}
 		</div>
@@ -1769,50 +1724,21 @@ function ArmViewerConsole({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
-			<div className="border-b border-border px-5 py-3">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="min-w-0 flex-1">
-						{arm ? (
-							<div className="flex min-w-0 items-center gap-3">
-								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-secondary text-accent">
-									<Bot className="h-4 w-4" />
-								</div>
-								<div className="min-w-0">
-									<div className="flex min-w-0 flex-wrap items-center gap-2">
-										<h1 className="truncate text-xl font-semibold tracking-tight">
-											{arm.name}
-										</h1>
-										<StatusBadge status={arm.status} />
-									</div>
-									<div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-										<span className="truncate">
-											{arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : arm.model ?? "Arm console"}
-										</span>
-										<span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-										<span className="inline-flex items-center gap-1.5">
-											<span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success" : "bg-danger")} />
-											{connected ? "Live" : "Offline"}
-										</span>
-										{arm.recoveryRequestedAt ? (
-											<span className="inline-flex items-center gap-1 text-warning">
-												<AlertTriangle className="h-3 w-3" />
-												Recovery requested
-											</span>
-										) : null}
-									</div>
-								</div>
-							</div>
-						) : (
-							<div className="mt-3">
-								<h1 className="text-2xl font-semibold tracking-tight">Arm Viewer</h1>
-								<p className="mt-2 text-sm text-muted-foreground">
-									Select an arm to inspect its live output, structured events, and recent health signals.
-								</p>
-							</div>
-						)}
-					</div>
-
-					<div className="flex flex-wrap items-center justify-end gap-2">
+			<WorkbenchHeader
+				title={
+					<span className="flex min-w-0 items-center gap-2">
+						<span className="truncate">{arm?.name ?? "Arm Viewer"}</span>
+						{arm ? <StatusBadge status={arm.status} /> : null}
+					</span>
+				}
+				description={
+					arm
+						? `${arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : arm.model ?? "Arm console"} · ${connected ? "Live" : "Offline"}`
+						: "Select an Arm to inspect its live output, structured events, and health signals."
+				}
+				icon={<Bot className="h-4 w-4" />}
+				actions={
+					<>
 						{arm ? (
 							<ArmDetailsPopover
 								arm={arm}
@@ -1846,9 +1772,9 @@ function ArmViewerConsole({
 						>
 							<RefreshCw className="h-4 w-4" />
 						</Button>
-					</div>
-				</div>
-			</div>
+					</>
+				}
+			/>
 
 			{arm ? (
 				<div className="border-b border-border">

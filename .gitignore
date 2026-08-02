@@ -53,6 +53,8 @@ gitea-data/
 
 # Test artifacts
 .test-coleo/
+test-results/
+playwright-report/
 
 # Debug/repro scripts (temporary)
 repro_*.ts

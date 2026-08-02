@@ -31,7 +31,7 @@ export function WorkbenchHeader({
 	actions,
 	className,
 }: {
-	title: string;
+	title: ReactNode;
 	description?: string;
 	icon?: ReactNode;
 	actions?: ReactNode;
