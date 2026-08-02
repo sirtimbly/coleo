@@ -1,7 +1,22 @@
+/**
+ * Normalizes Brain activity into stable categories, tones, and summaries.
+ * The unified Inbox consumes this model so moving activity out of Brain does
+ * not discard the semantic formatting or retained-history behavior.
+ */
 import { isJsonObject, type ActivityEntry, type JsonObject, type JsonValue } from "../lib/api";
 
 export type BrainActivityCategory = "operations" | "tasks" | "arms" | "decisions" | "planning" | "alerts";
 export type BrainActivityTone = "default" | "success" | "warning" | "danger" | "accent";
+
+export const BRAIN_ACTIVITY_CATEGORY_LABELS: Record<BrainActivityCategory | "all", string> = {
+	all: "All",
+	operations: "Operations",
+	tasks: "Tasks",
+	arms: "Arms",
+	decisions: "Decisions",
+	planning: "Planning",
+	alerts: "Alerts",
+};
 
 export interface BrainActivityItem extends ActivityEntry {
 	category: BrainActivityCategory;

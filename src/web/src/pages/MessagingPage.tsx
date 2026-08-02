@@ -8,9 +8,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
-import { FileText, MessageSquarePlus } from "lucide-react";
+import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
-import { WorkbenchEmptyState, WorkbenchHeader } from "@/design-system/WorkbenchSurface";
+import {
+	WorkbenchEmptyState,
+	WorkbenchHeader,
+	WorkbenchStatusDot,
+} from "@/design-system/WorkbenchSurface";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { api, cn, type ActivityEntry, type MailMessage, type StatusReport, useMessage } from "@/lib";
 import {
@@ -19,13 +23,20 @@ import {
 	type MailboxTab,
 	type MailThread,
 } from "@/pages/mail-page-utils";
+import {
+	BRAIN_ACTIVITY_CATEGORY_LABELS,
+	formatBrainActivity,
+	mergeBrainActivity,
+	type BrainActivityCategory,
+	type BrainActivityTone,
+} from "@/pages/brain-activity";
 import { MailThreadProjection } from "@/workbench/MailThreadProjection";
 import {
 	ProjectionInbox,
 	type InboxFacet,
 	type InboxProjectionItem,
 } from "@/workbench/ProjectionInbox";
-import { useProjectionSignal } from "@/workbench/live-projections";
+import { useLiveProjections, useProjectionSignal } from "@/workbench/live-projections";
 import {
 	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
@@ -38,6 +49,8 @@ interface InboxItemData {
 	mailbox?: MailboxTab;
 	statusReport?: StatusReport;
 	activity?: ActivityEntry;
+	brainCategory?: BrainActivityCategory;
+	targetRoute?: { pathname: string; search: string };
 }
 
 const FACETS: InboxFacet[] = [
@@ -62,6 +75,10 @@ const MAILBOXES: ReadonlyArray<{ id: MailboxTab; label: string }> = [
 	{ id: "sent", label: "Sent" },
 	{ id: "archive", label: "Archived" },
 ];
+
+function isBrainCategory(value: string | null): value is BrainActivityCategory | "all" {
+	return value !== null && value in BRAIN_ACTIVITY_CATEGORY_LABELS;
+}
 
 function activityKind(entry: ActivityEntry): InboxProjectionItem["kind"] {
 	const actor = entry.actor.toLowerCase();
@@ -155,28 +172,80 @@ function activityToItem(entry: ActivityEntry): InboxItemData {
 	};
 }
 
+function brainToneToSeverity(tone: BrainActivityTone): InboxProjectionItem["severity"] {
+	if (tone === "danger") return "danger";
+	if (tone === "warning") return "warning";
+	if (tone === "success") return "success";
+	return "info";
+}
+
+function brainActivityToItem(entry: ActivityEntry): InboxItemData {
+	const formatted = formatBrainActivity(entry);
+	const requiresAction = formatted.tone === "danger" ||
+		formatted.tone === "warning" ||
+		activityRequiresAction(entry);
+	const targetRoute = formatted.target && formatted.category === "arms"
+		? {
+				pathname: "/viewer",
+				search: `?arm=${encodeURIComponent(formatted.target)}`,
+			}
+		: formatted.target && (formatted.category === "tasks" || formatted.category === "decisions")
+			? {
+					pathname: "/tasks",
+					search: `?task=${encodeURIComponent(formatted.target)}&view=details`,
+				}
+			: undefined;
+	return {
+		item: {
+			id: `activity:${formatted.id}`,
+			kind: "brain",
+			title: formatted.title,
+			summary: formatted.summary,
+			timestamp: formatted.timestamp,
+			source: `Brain · ${BRAIN_ACTIVITY_CATEGORY_LABELS[formatted.category]}`,
+			resourceId: formatted.target ?? undefined,
+			unread: requiresAction,
+			requiresAction,
+			severity: brainToneToSeverity(formatted.tone),
+		},
+		activity: entry,
+		brainCategory: formatted.category,
+		targetRoute,
+	};
+}
+
 export function MessagingPage() {
 	usePageTitle("Coleo Observatory - Inbox");
 	const [searchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const closeWorkspaceRoute = useWorkspaceCloseRoute("/messaging");
 	const { openNewMessage, openReply } = useMessage();
+	const { connected, authenticated } = useLiveProjections();
 	const initialFacet = searchParams.get("facet");
 	const initialMailbox = searchParams.get("mailbox");
+	const initialBrainCategory = searchParams.get("brainCategory");
 	const [activeFacet, setActiveFacet] = useState(
 		FACETS.some((facet) => facet.id === initialFacet) ? initialFacet! : "attention",
 	);
 	const [mailbox, setMailbox] = useState<MailboxTab>(
 		initialMailbox === "sent" || initialMailbox === "archive" ? initialMailbox : "inbox",
 	);
+	const [brainCategory, setBrainCategory] = useState<BrainActivityCategory | "all">(
+		isBrainCategory(initialBrainCategory) ? initialBrainCategory : "all",
+	);
 	const [inbox, setInbox] = useState<MailMessage[]>([]);
 	const [sent, setSent] = useState<MailMessage[]>([]);
 	const [archive, setArchive] = useState<MailMessage[]>([]);
 	const [activity, setActivity] = useState<ActivityEntry[]>([]);
+	const [brainActivity, setBrainActivity] = useState<ActivityEntry[]>([]);
+	const [brainActivityCursor, setBrainActivityCursor] = useState<number | null>(null);
+	const [hasOlderBrainActivity, setHasOlderBrainActivity] = useState(false);
+	const [olderBrainActivityLoading, setOlderBrainActivityLoading] = useState(false);
 	const [reports, setReports] = useState<StatusReport[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [archiving, setArchiving] = useState(false);
 	const loadTimerRef = useRef<number | null>(null);
+	const brainActivityInitializedRef = useRef(false);
 	const selectedThreadId = searchParams.get("thread");
 	const selectedItemId = searchParams.get("item");
 	const detailMailboxParam = searchParams.get("mailbox");
@@ -188,15 +257,29 @@ export function MessagingPage() {
 	const load = useCallback(async () => {
 		setLoading(true);
 		try {
-			const [activityResponse, inboxResponse, sentResponse, archiveResponse, reportsResponse] =
+			const [
+				activityResponse,
+				brainActivityResponse,
+				inboxResponse,
+				sentResponse,
+				archiveResponse,
+				reportsResponse,
+			] =
 				await Promise.all([
 					api.listActivity({ limit: 100 }),
+					api.listActivity({ producer: "brain", limit: 200 }),
 					api.listInbox({ limit: 100 }),
 					api.listSent({ limit: 100 }),
 					api.listArchive({ limit: 100 }),
 					api.listStatusReports({ limit: 100 }),
 				]);
 			setActivity(activityResponse.activity);
+			setBrainActivity((current) => mergeBrainActivity(current, brainActivityResponse.activity));
+			if (!brainActivityInitializedRef.current) {
+				setBrainActivityCursor(brainActivityResponse.pagination.nextCursor ?? null);
+				setHasOlderBrainActivity(brainActivityResponse.pagination.hasMore ?? false);
+				brainActivityInitializedRef.current = true;
+			}
 			setInbox(inboxResponse.messages);
 			setSent(sentResponse.messages);
 			setArchive(archiveResponse.messages);
@@ -221,7 +304,26 @@ export function MessagingPage() {
 		if (nextMailbox === "inbox" || nextMailbox === "sent" || nextMailbox === "archive") {
 			setMailbox(nextMailbox);
 		}
+		const nextBrainCategory = searchParams.get("brainCategory");
+		if (isBrainCategory(nextBrainCategory)) setBrainCategory(nextBrainCategory);
 	}, [searchParams]);
+
+	const loadOlderBrainActivity = useCallback(async () => {
+		if (!brainActivityCursor || olderBrainActivityLoading || !hasOlderBrainActivity) return;
+		setOlderBrainActivityLoading(true);
+		try {
+			const response = await api.listActivity({
+				producer: "brain",
+				limit: 200,
+				beforeSequence: brainActivityCursor,
+			});
+			setBrainActivity((current) => mergeBrainActivity(current, response.activity));
+			setBrainActivityCursor(response.pagination.nextCursor ?? null);
+			setHasOlderBrainActivity(response.pagination.hasMore ?? false);
+		} finally {
+			setOlderBrainActivityLoading(false);
+		}
+	}, [brainActivityCursor, hasOlderBrainActivity, olderBrainActivityLoading]);
 
 	useProjectionSignal((signal) => {
 		if (!["mail", "brain", "arms", "arm-events", "activity"].includes(signal.channel)) return;
@@ -256,16 +358,30 @@ export function MessagingPage() {
 	const selectedThread = detailThreads.find((thread) => thread.id === selectedThreadId) ?? null;
 
 	const items = useMemo<InboxItemData[]>(() => {
+		const brainActivityIds = new Set(brainActivity.map((entry) => entry.id));
 		const merged = [
 			...threads.map((thread) => threadToItem(thread, effectiveMailbox)),
 			...reports.map(reportToItem),
-			...activity.map(activityToItem),
+			...activity
+				.filter((entry) => !brainActivityIds.has(entry.id))
+				.map(activityToItem),
+			...brainActivity.map(brainActivityToItem),
 		];
 		return merged.sort(
 			(left, right) =>
 				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
 		);
-	}, [activity, effectiveMailbox, reports, threads]);
+	}, [activity, brainActivity, effectiveMailbox, reports, threads]);
+
+	const projectionItems = useMemo(
+		() => items.filter((entry) =>
+			activeFacet !== "brain" ||
+			brainCategory === "all" ||
+			entry.item.kind !== "brain" ||
+			entry.brainCategory === brainCategory
+		),
+		[activeFacet, brainCategory, items],
+	);
 
 	const selectedItem = useMemo(
 		() => items.find((entry) => entry.item.id === selectedItemId) ?? null,
@@ -347,6 +463,16 @@ export function MessagingPage() {
 					title={selectedItem.item.title}
 					description={`${selectedItem.item.source ?? selectedItem.item.kind} · ${new Date(selectedItem.item.timestamp).toLocaleString()}`}
 					icon={<FileText className="h-4 w-4" />}
+					actions={selectedItem.targetRoute ? (
+						<Button
+							size="sm"
+							variant="secondary"
+							onPress={() => openWorkspaceRoute(selectedItem.targetRoute!, "focus")}
+						>
+							<ArrowUpRight className="h-3.5 w-3.5" />
+							Open target
+						</Button>
+					) : null}
 				/>
 				<div className="min-h-0 flex-1 overflow-auto p-5">
 					<pre className="mx-auto max-w-4xl whitespace-pre-wrap font-sans text-sm leading-6">
@@ -362,7 +488,7 @@ export function MessagingPage() {
 		<ProjectionInbox
 			title="Inbox"
 			description="Messages, Brain decisions, Arm events, and operational history"
-			items={items.map((entry) => entry.item)}
+			items={projectionItems.map((entry) => entry.item)}
 			facets={FACETS}
 			activeFacet={activeFacet}
 			onFacetChange={setActiveFacet}
@@ -390,6 +516,46 @@ export function MessagingPage() {
 						<Button size="sm" variant="ghost" onPress={openNewMessage}>
 							<MessageSquarePlus className="h-3.5 w-3.5" />
 							New
+						</Button>
+					</div>
+				) : activeFacet === "brain" ? (
+					<div className="flex max-w-full items-center gap-1 border-l border-border pl-2">
+						<WorkbenchStatusDot
+							tone={connected && authenticated ? "success" : "neutral"}
+							label={connected && authenticated ? "Live" : "Reconnecting"}
+						/>
+						<div className="flex max-w-full items-center gap-1 overflow-x-auto pl-1">
+							{(
+								Object.entries(BRAIN_ACTIVITY_CATEGORY_LABELS) as Array<
+									[BrainActivityCategory | "all", string]
+								>
+							).map(([category, label]) => (
+								<button
+									key={category}
+									type="button"
+									aria-pressed={brainCategory === category}
+									onClick={() => setBrainCategory(category)}
+									className={cn(
+										"h-7 shrink-0 border px-2 text-xs",
+										brainCategory === category
+											? "border-accent/40 bg-accent/10 text-accent"
+											: "border-transparent text-muted-foreground hover:bg-surface",
+									)}
+								>
+									{label}
+								</button>
+							))}
+						</div>
+						<Button
+							size="sm"
+							variant="ghost"
+							isDisabled={olderBrainActivityLoading || !hasOlderBrainActivity}
+							onPress={() => void loadOlderBrainActivity()}
+						>
+							{olderBrainActivityLoading ? (
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+							) : null}
+							{hasOlderBrainActivity ? "Load older" : "Beginning"}
 						</Button>
 					</div>
 				) : null

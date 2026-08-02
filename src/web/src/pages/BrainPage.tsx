@@ -1,14 +1,17 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
+/**
+ * Brain lifecycle and inference configuration projection.
+ *
+ * Operational activity lives in the unified Inbox; this page links directly
+ * to that live, searchable Brain facet instead of maintaining a second feed.
+ */
+import { useEffect, useState, useCallback } from 'react';
+import { Inbox, Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
 import { api } from '@/lib';
-import type { ActivityEntry, BrainConfigResponse, BrainModel } from '@/lib';
+import type { BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
 import { DenseRowSkeleton } from '@/components';
-import { BrainActivityLog } from '@/components/BrainActivityLog';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
-import { mergeBrainActivity, parseBrainActivityEntry } from './brain-activity';
 import { CollectionRow } from '@/design-system/CollectionRow';
 import {
   WorkbenchEmptyState,
@@ -272,13 +275,6 @@ export function BrainPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [brainModels, setBrainModels] = useState<BrainModel[]>([]);
   const [brainModelsError, setBrainModelsError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [olderActivityLoading, setOlderActivityLoading] = useState(false);
-  const [activityCursor, setActivityCursor] = useState<number | null>(null);
-  const [hasOlderActivity, setHasOlderActivity] = useState(false);
-  const previousAuthenticatedRef = useRef(false);
-  const olderActivityRequestRef = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -304,65 +300,12 @@ export function BrainPage() {
     }
   }, []);
 
-  const loadActivity = useCallback(async (options?: { beforeSequence?: number; preserveCursor?: boolean }) => {
-    if (options?.beforeSequence) setOlderActivityLoading(true);
-    else if (!options?.preserveCursor) setActivityLoading(true);
-
-    try {
-      const response = await api.listActivity({
-        producer: 'brain',
-        limit: 200,
-        beforeSequence: options?.beforeSequence,
-      });
-      setActivity((current) => mergeBrainActivity(current, response.activity));
-      if (!options?.preserveCursor) {
-        setActivityCursor(response.pagination.nextCursor ?? null);
-        setHasOlderActivity(response.pagination.hasMore ?? false);
-      }
-    } catch (err) {
-      console.error('Failed to load Brain activity:', err);
-    } finally {
-      if (options?.beforeSequence) setOlderActivityLoading(false);
-      else if (!options?.preserveCursor) setActivityLoading(false);
-    }
-  }, []);
-
-  const loadOlderActivity = useCallback(async () => {
-    if (!activityCursor || olderActivityRequestRef.current || !hasOlderActivity) return;
-    olderActivityRequestRef.current = true;
-    try {
-      await loadActivity({ beforeSequence: activityCursor });
-    } finally {
-      olderActivityRequestRef.current = false;
-    }
-  }, [activityCursor, hasOlderActivity, loadActivity]);
-
-  const handleWSMessage = useCallback((msg: WebSocketMessage) => {
-    if (msg.channel === 'brain') void loadData();
-    if (msg.channel === 'activity') {
-      const entry = parseBrainActivityEntry(msg.data);
-      if (entry?.actor === 'brain') {
-        setActivity((current) => mergeBrainActivity(current, [entry]));
-      }
-    }
-  }, [loadData]);
-
-  const { connected, authenticated } = useWebSocket({ channels: ['brain', 'activity'], onMessage: handleWSMessage });
-
   useEffect(() => {
     void loadData();
-    void loadActivity();
-  }, [loadActivity, loadData]);
-
-  useEffect(() => {
-    if (authenticated && !previousAuthenticatedRef.current) {
-      void loadActivity({ preserveCursor: true });
-    }
-    previousAuthenticatedRef.current = authenticated;
-  }, [authenticated, loadActivity]);
+  }, [loadData]);
 
   const handleRefresh = async () => {
-    await Promise.all([loadData(), loadActivity({ preserveCursor: true })]);
+    await loadData();
   };
 
   const handleStart = async () => {
@@ -407,11 +350,21 @@ export function BrainPage() {
     <div className="flex h-full min-h-0 flex-col bg-background">
       <WorkbenchHeader
         title="Brain"
-        description="Central coordinator status, activity, and configuration"
+        description="Central coordinator status and configuration"
         actions={
-          <Button variant="ghost" size="sm" onPress={handleRefresh} aria-label="Refresh Brain">
-            <RefreshCw className="h-4 w-4" />
-          </Button>
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => navigate('/messaging', '?facet=brain')}
+            >
+              <Inbox className="h-4 w-4" />
+              Open activity in Inbox
+            </Button>
+            <Button variant="ghost" size="sm" onPress={handleRefresh} aria-label="Refresh Brain">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
         }
       />
 
@@ -422,16 +375,6 @@ export function BrainPage() {
           actionLoading={actionLoading}
           onStart={handleStart}
           onStop={handleStop}
-          onNavigate={navigate}
-        />
-
-        <BrainActivityLog
-          activity={activity}
-          connected={connected && authenticated}
-          loading={activityLoading}
-          loadingOlder={olderActivityLoading}
-          hasMore={hasOlderActivity}
-          onLoadOlder={loadOlderActivity}
           onNavigate={navigate}
         />
 

@@ -152,5 +152,9 @@ The initial workbench migration was completed on 2026-07-31 in
 - Settings, project documents, and Garden now share workbench framing while
   retaining their specialized profile, plan-reconciliation, and 3D scene
   behavior.
-- Seven Playwright scenarios protect the Inbox, Arm Fleet/Viewer, and task
+- Brain links to the Inbox's Brain facet rather than maintaining a second
+  activity feed. The Inbox retains Brain-specific semantic categories,
+  formatted summaries, target navigation, live connection state, and
+  retained-history paging.
+- Eight Playwright scenarios protect the Inbox, Brain handoff, Arm Fleet/Viewer, and task
   spreadsheet/detail flows.

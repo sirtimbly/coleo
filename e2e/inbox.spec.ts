@@ -37,6 +37,20 @@ const reply = {
 	flags: { seen: true, flagged: false },
 };
 
+const brainPoll = {
+	id: "brain-poll-1",
+	sequence: 101,
+	timestamp: "2026-08-02T11:10:00.000Z",
+	actor: "brain",
+	action: "poll_completed",
+	target: null,
+	details: {
+		pendingTasks: 2,
+		activeArms: 3,
+		durationMs: 1200,
+	},
+};
+
 test("views indented message threads and carries reply context into the composer", async ({ page }) => {
 	await installMockApi(page, { inbox: [received], sent: [reply] });
 	await page.goto("/messaging?facet=messages&mailbox=inbox");
@@ -80,4 +94,21 @@ test("launcher navigation exposes the unified Inbox instead of legacy stream pag
 	await expect(page.getByRole("link", { name: "Activity", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "History", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveCount(0);
+});
+
+test("Brain delegates its semantic activity feed to the live Inbox facet", async ({ page }) => {
+	await installMockApi(page, { activity: [brainPoll] });
+	await page.goto("/brain");
+
+	await expect(page.getByRole("heading", { name: "Brain activity", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "Open activity in Inbox" }).click();
+
+	await expect(page).toHaveURL(/\/messaging\?facet=brain$/);
+	await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
+	await expect(page.getByText("2 pending tasks, 3 active arms in 1.2s", { exact: true })).toBeVisible();
+
+	await page.getByRole("button", { name: "Operations", exact: true }).click();
+	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Beginning", exact: true })).toBeDisabled();
 });

@@ -13,6 +13,7 @@ interface MockApiOptions {
 	inbox?: unknown[];
 	sent?: unknown[];
 	archive?: unknown[];
+	activity?: unknown[];
 }
 
 const now = "2026-08-02T12:00:00.000Z";
@@ -84,6 +85,33 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 					provider: "openai",
 					model: "gpt-5",
 					contextBudget: 128000,
+				},
+			});
+		}
+		if (path === "/api/config/brain/models") {
+			return json(route, { models: [] });
+		}
+		if (path === "/api/config/brain") {
+			return json(route, {
+				brain: {
+					pollIntervalMs: 30000,
+					maxArms: 8,
+					provider: "openai",
+					model: "gpt-5",
+					apiKeyConfigured: true,
+				},
+			});
+		}
+		if (path === "/api/brain/status") {
+			return json(route, {
+				brain: {
+					status: "running",
+					lastPollAt: now,
+					pollIntervalMs: 30000,
+					activeArmsCount: options.arms?.length ?? 0,
+					pendingTasksCount: options.tasks?.length ?? 0,
+					completedToday: 0,
+					uptime: 3600,
 				},
 			});
 		}
@@ -233,12 +261,13 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			});
 		}
 		if (path === "/api/activity") {
+			const activity = options.activity ?? [];
 			return json(route, {
-				activity: [],
+				activity,
 				pagination: {
-					limit: 100,
+					limit: url.searchParams.get("producer") === "brain" ? 200 : 100,
 					offset: 0,
-					total: 0,
+					total: activity.length,
 					hasMore: false,
 					nextCursor: null,
 				},
