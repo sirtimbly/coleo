@@ -13,6 +13,11 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { VERSION } from '@/version';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+} from '@/design-system/WorkbenchSurface';
 import { WorkbenchProfileManager } from '@/workbench/WorkbenchProfileManager';
 
 const themeOptions = [
@@ -149,19 +154,23 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="px-6 py-6">
-        <p>Loading...</p>
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Loading settings"
+          description="Inspecting workspace preferences and system connections."
+        />
+      </WorkbenchSurface>
     );
   }
 
   return (
-    <div className="space-y-6 px-6 py-6">
-      <div className="border-b border-border pb-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Configure the workspace and system connections</p>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <WorkbenchHeader
+        title="Settings"
+        description="Configure workbench profiles, appearance, runtime defaults, and system connections."
+      />
 
+      <div className="flex-1 space-y-6 overflow-auto px-4 py-4 lg:px-6">
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
@@ -531,6 +540,7 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

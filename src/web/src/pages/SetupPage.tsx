@@ -11,6 +11,12 @@ import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshC
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+  WorkbenchToolbar,
+} from '@/design-system/WorkbenchSurface';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
@@ -318,22 +324,29 @@ export function SetupPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[28rem] items-center justify-center text-sm text-muted-foreground">
-        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Inspecting project plans…
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Inspecting project documents"
+          description="Loading the canonical plan, templates, and project checkout."
+          icon={<LoaderCircle className="h-4 w-4 animate-spin" />}
+        />
+      </WorkbenchSurface>
     );
   }
 
   if (!status || !editor) {
     return (
-      <div className="p-6">
-        <div className="rounded-xl border border-danger/30 bg-danger/10 p-5 text-sm text-danger">
-          <p>{error || 'Project setup is unavailable.'}</p>
-          <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-2 font-medium underline">
-            <RefreshCw className="h-4 w-4" /> Try again
-          </button>
-        </div>
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Project documents are unavailable"
+          description={error || 'Coleo could not inspect the project checkout.'}
+          action={(
+            <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 font-medium underline">
+              <RefreshCw className="h-4 w-4" /> Try again
+            </button>
+          )}
+        />
+      </WorkbenchSurface>
     );
   }
 
@@ -344,7 +357,11 @@ export function SetupPage() {
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
-      <div className="setup-page-toolbar">
+      <WorkbenchHeader
+        title="Project documents"
+        description="Edit the canonical plan and the project files that inform Brain and Arm work."
+      />
+      <WorkbenchToolbar className="setup-page-toolbar">
         <p className="text-xs text-muted-foreground">
           {treePaths.length} files in the project checkout
         </p>
@@ -391,7 +408,7 @@ export function SetupPage() {
             </button>
           ) : null}
         </div>
-      </div>
+      </WorkbenchToolbar>
 
       {helpOpen ? (
         <div className="setup-help-bar" role="status">

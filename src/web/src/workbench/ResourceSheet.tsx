@@ -36,6 +36,16 @@ const COLUMN_MENU_ITEMS = [
 	"filter_by_value",
 	"filter_action_bar",
 ];
+const EDITABLE_ROW_MENU_ITEMS = [
+	"row_above",
+	"row_below",
+	"remove_row",
+	"---------",
+	"undo",
+	"redo",
+	"copy",
+];
+const READ_ONLY_ROW_MENU_ITEMS = ["copy"];
 
 export interface ResourceSheetColumn<T> {
 	id: string;
@@ -189,12 +199,9 @@ export function ResourceSheet<T extends { id: string }>({
 		className: column.className,
 		validator: column.validator,
 	})), [preferences.columns, visibleColumns]);
-	const contextMenuItems = useMemo(
-		() => onCreateRowAt || onDeleteRows
-			? ["row_above", "row_below", "remove_row", "---------", "undo", "redo", "copy"]
-			: ["copy"],
-		[Boolean(onCreateRowAt), Boolean(onDeleteRows)],
-	);
+	const contextMenuItems = onCreateRowAt || onDeleteRows
+		? EDITABLE_ROW_MENU_ITEMS
+		: READ_ONLY_ROW_MENU_ITEMS;
 
 	useEffect(() => {
 		const hot = hotRef.current?.hotInstance;

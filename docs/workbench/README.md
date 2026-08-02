@@ -149,3 +149,8 @@ The initial workbench migration was completed on 2026-07-31 in
 - Mail, Activity, History, and Proposals remain compatibility redirects for old
   deep links and saved workspaces, but are omitted from launchers and
   navigation.
+- Settings, project documents, and Garden now share workbench framing while
+  retaining their specialized profile, plan-reconciliation, and 3D scene
+  behavior.
+- Seven Playwright scenarios protect the Inbox, Arm Fleet/Viewer, and task
+  spreadsheet/detail flows.
