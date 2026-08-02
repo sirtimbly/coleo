@@ -1,3 +1,11 @@
+/**
+ * Operational dashboard projection.
+ *
+ * Dashboards summarize durable Arm metric samples and system health. Event
+ * timelines and inbox attention are separate projections even when a live
+ * event triggers this page to refetch its quantitative series.
+ */
+
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';

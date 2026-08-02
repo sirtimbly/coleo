@@ -1,3 +1,10 @@
+/**
+ * Specialized collaborative plan and project-document editor.
+ *
+ * The canonical plan is not treated as generic text: saving and preparing it
+ * preserve content hashes, Brain reconciliation, task identities, and explicit
+ * task-regeneration workflows.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@heroui/react';
 import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';

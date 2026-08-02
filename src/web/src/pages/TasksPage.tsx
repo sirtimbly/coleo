@@ -1,3 +1,9 @@
+/**
+ * Task workbench projection and dedicated task detail views.
+ *
+ * The list surface is now a Handsontable sheet; task details, discussions,
+ * summaries, and diffs still open as separate Golden Layout panels.
+ */
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import {
 	Plus,
@@ -32,8 +38,7 @@ import {
 } from "@/lib";
 import { CollapsibleSection, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
-import { TaskGrid } from "@/components/TaskGrid";
-import type { TaskUpdate } from "@/components/TaskGridRow";
+import type { TaskUpdate } from "@/workbench/resource-updates";
 import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
@@ -48,6 +53,10 @@ import {
 } from '@/workspace/route-context';
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
+
+const TaskSheet = React.lazy(() =>
+	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
+);
 
 // Status configuration
 const STATUS_CONFIG: Record<
@@ -530,12 +539,10 @@ export function TasksPage() {
 		show: boolean;
 		task: Task | null;
 	}>({ show: false, task: null });
-	const [newTaskId, setNewTaskId] = useState<string | null>(null);
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
 	const deferredSearchText = useDeferredValue(searchText);
 	const taskRefreshTimerRef = useRef<number | null>(null);
 	const pendingBurndownRefreshRef = useRef(false);
-	const newTaskHighlightTimerRef = useRef<number | null>(null);
 	const detailsTabId: SidebarTab = "details";
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
@@ -573,13 +580,11 @@ export function TasksPage() {
 		error,
 		refetch,
 		updateTask,
-		reorderTask,
 		createTaskAsync,
+		reorderTaskAsync,
 		deleteTask,
 		removeFromPlan,
 		hasNextPage,
-		isFetchingNextPage,
-		isFetchNextPageError,
 		fetchNextPage,
 	} = useTasks(undefined, !isNewTaskPage);
 	const tasksRef = useRef(tasks);
@@ -594,16 +599,6 @@ export function TasksPage() {
 			llm: ui?.llm,
 		};
 	}, []);
-
-	const availableTags = useMemo(() => {
-		const tagSet = new Set<string>();
-		tasks.forEach((task) => {
-			getTaskUiMeta(task).tags?.forEach((tag) => {
-				tagSet.add(tag);
-			});
-		});
-		return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
-	}, [tasks, getTaskUiMeta]);
 
 	const filteredTasks = useMemo(() => {
 		let result = tasks;
@@ -622,8 +617,6 @@ export function TasksPage() {
 	}, [deferredSearchText, tasks]);
 
 	useEffect(() => {
-		if (!isWorkspacePanel) return;
-
 		const taskId = searchParams.get("task");
 		const view = searchParams.get("view");
 		setSidebarTab(view === "discussions" ? "discussions" : "details");
@@ -634,7 +627,7 @@ export function TasksPage() {
 		}
 
 		setSelectedTask(tasks.find((task) => task.id === taskId) || null);
-	}, [isWorkspacePanel, searchParams, tasks]);
+	}, [searchParams, tasks]);
 
 	const handleUpdateTask = useCallback(
 		async (taskId: string, updates: TaskUpdate) => {
@@ -732,7 +725,7 @@ export function TasksPage() {
 				history: [{ role: "user", content: subject, at: now }],
 			};
 			try {
-				const result = await createTaskAsync({
+				const created = await createTaskAsync({
 					subject,
 					description: subject,
 					priority: "normal",
@@ -741,40 +734,21 @@ export function TasksPage() {
 					},
 					sortOrder: index,
 				});
-				// Set the new task ID to trigger scroll
-				if (result?.id) {
-					setNewTaskId(result.id);
-					// Clear after 3 seconds
-					if (newTaskHighlightTimerRef.current !== null) {
-						window.clearTimeout(newTaskHighlightTimerRef.current);
-					}
-					newTaskHighlightTimerRef.current = window.setTimeout(() => {
-						newTaskHighlightTimerRef.current = null;
-						setNewTaskId(null);
-					}, 3000);
-				}
+				await reorderTaskAsync({
+					taskId: created.id,
+					fromSortOrder: created.sortOrder ?? tasksRef.current.length,
+					toSortOrder: index,
+					prevTaskId: tasksRef.current[index - 1]?.id ?? null,
+					nextTaskId: tasksRef.current[index]?.id ?? null,
+				});
 			} catch {
 				// Error is handled by the mutation
 			}
 		},
-		[createTaskAsync],
-	);
-
-	const handleReorder = useCallback(
-		(taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => {
-			if (!taskId) return;
-			reorderTask({ taskId, fromSortOrder, toSortOrder, prevTaskId, nextTaskId });
-		},
-		[reorderTask],
+		[createTaskAsync, reorderTaskAsync],
 	);
 
   const handleOpenDetails = useCallback((task: Task) => {
-    if (!isWorkspacePanel) {
-      setSelectedTask(task);
-      setSidebarTab("details");
-      return;
-    }
-
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.set("task", task.id);
     nextSearchParams.set("view", "details");
@@ -785,26 +759,7 @@ export function TasksPage() {
       },
       "split",
     );
-  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
-
-  const handleOpenDiscussions = useCallback((task: Task) => {
-    if (!isWorkspacePanel) {
-      setSelectedTask(task);
-      setSidebarTab("discussions");
-      return;
-    }
-
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.set("task", task.id);
-    nextSearchParams.set("view", "discussions");
-    openWorkspaceRoute(
-      {
-        pathname: "/tasks",
-        search: `?${nextSearchParams.toString()}`,
-      },
-      "split",
-    );
-  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
+  }, [openWorkspaceRoute, searchParams]);
 
 	const handleRemoveTagFromTask = useCallback(
 		(taskId: string, tagToRemove: string) => {
@@ -854,7 +809,6 @@ export function TasksPage() {
 
 	useEffect(() => () => {
 		if (taskRefreshTimerRef.current !== null) window.clearTimeout(taskRefreshTimerRef.current);
-		if (newTaskHighlightTimerRef.current !== null) window.clearTimeout(newTaskHighlightTimerRef.current);
 	}, []);
 
 	// Handle WebSocket messages for real-time updates
@@ -925,7 +879,7 @@ export function TasksPage() {
 		updateTask({ id: taskId, updates: { priority: newPriority } });
 	};
 
-	if (isWorkspacePanel) {
+	if (isWorkspacePanel || searchParams.has("task")) {
 		const workspaceListHeader = (
 			<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
 				<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
@@ -983,25 +937,18 @@ export function TasksPage() {
 							className="rounded-none border-x-0 border-y-0"
 							bodyClassName="p-0"
 						>
-							<TaskGrid
-								className="h-full rounded-none border-0"
-								tasks={filteredTasks}
-								totalTasks={pagination?.total}
-								availableTags={availableTags}
-								selectedTaskId={undefined}
-								newTaskId={newTaskId}
-								onOpenDetails={handleOpenDetails}
-								onOpenDiscussions={handleOpenDiscussions}
-								onUpdateTask={handleUpdateTask}
-								onUpdateUi={handleUpdateUi}
-								onDelete={handleDeleteTask}
-								onCreateTaskAt={handleCreateTaskAt}
-								onReorder={handleReorder}
-								hasNextPage={hasNextPage}
-								isFetchingNextPage={isFetchingNextPage}
-								isLoadMoreError={isFetchNextPageError}
-								onLoadMore={fetchNextPage}
-							/>
+							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={undefined}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									hasNextPage={hasNextPage}
+									onLoadMore={fetchNextPage}
+								/>
+							</React.Suspense>
 						</CollapsibleSection>
 					</div>
 					{taskModal}
@@ -1184,25 +1131,18 @@ export function TasksPage() {
 						</div>
 					) : (
 						<div className="h-full">
-							<TaskGrid
-								className="h-full rounded-none border-0"
-								tasks={filteredTasks}
-								totalTasks={pagination?.total}
-								availableTags={availableTags}
-								selectedTaskId={selectedTask?.id}
-								newTaskId={newTaskId}
-								onOpenDetails={handleOpenDetails}
-								onOpenDiscussions={handleOpenDiscussions}
-								onUpdateTask={handleUpdateTask}
-								onUpdateUi={handleUpdateUi}
-								onDelete={handleDeleteTask}
-								onCreateTaskAt={handleCreateTaskAt}
-								onReorder={handleReorder}
-								hasNextPage={hasNextPage}
-								isFetchingNextPage={isFetchingNextPage}
-								isLoadMoreError={isFetchNextPageError}
-								onLoadMore={fetchNextPage}
-							/>
+							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={selectedTask?.id}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									hasNextPage={hasNextPage}
+									onLoadMore={fetchNextPage}
+								/>
+							</React.Suspense>
 						</div>
 					)}
 				</div>

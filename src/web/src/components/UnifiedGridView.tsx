@@ -1,213 +1,247 @@
-import { type ChangeEvent, useState, useMemo, useCallback, useDeferredValue } from 'react';
-import { RefreshCw, Settings, Grid3x3, ListTree, ListTodo, Search, Lightbulb } from 'lucide-react';
-import { Button, Tabs, Chip } from '@heroui/react';
-import { TaskGrid } from './TaskGrid';
-import { DiscoveryGrid } from './DiscoveryGrid';
-import { type Task, type Discovery, cn } from '@/lib';
-import { useTasks } from '@/hooks/useTasks';
-import { useDiscoveries, useInfiniteDiscoveries } from '@/hooks/useDiscoveries';
+/**
+ * Consolidated sheet workspace.
+ *
+ * This compatibility route now composes the same persisted Handsontable
+ * projections as the task and bug pages. It intentionally contains no grid
+ * implementation of its own, so new resource sheets inherit one interaction
+ * model and one profile-backed configuration system.
+ */
 
-type TabType = 'plan-items' | 'tasks' | 'discoveries';
+import {
+	lazy,
+	Suspense,
+	type ChangeEvent,
+	useCallback,
+	useDeferredValue,
+	useMemo,
+	useState,
+} from "react";
+import { Button, Chip, Tabs } from "@heroui/react";
+import { Grid3x3, Lightbulb, ListTodo, ListTree, RefreshCw, Search } from "lucide-react";
 
-interface UnifiedGridViewProps {
-  className?: string;
+import { useDiscoveries, useInfiniteDiscoveries } from "@/hooks/useDiscoveries";
+import { useTasks } from "@/hooks/useTasks";
+import { cn } from "@/lib";
+import { useWorkspaceOpenRoute } from "@/workspace/route-context";
+
+import type { Task } from "@/lib";
+import type { TaskUpdate } from "@/workbench/resource-updates";
+
+const TaskSheet = lazy(() =>
+	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
+);
+const DiscoverySheet = lazy(() =>
+	import("@/workbench/DiscoverySheet").then((module) => ({ default: module.DiscoverySheet }))
+);
+
+type TabType = "plan-items" | "tasks" | "discoveries";
+
+function SheetLoading({ label }: { label: string }) {
+	return (
+		<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+			Loading {label}…
+		</div>
+	);
 }
 
-export function UnifiedGridView({ className }: UnifiedGridViewProps) {
-  const planItemsId: TabType = 'plan-items';
-  const tasksId: TabType = 'tasks';
-  const discoveriesId: TabType = 'discoveries';
-  const [activeTab, setActiveTab] = useState<TabType>('plan-items');
-  const [searchText, setSearchText] = useState('');
-  const deferredSearchText = useDeferredValue(searchText);
-  const [selectedTaskId, setSelectedTaskId] = useState<string | undefined>();
-  const [selectedDiscoveryId, setSelectedDiscoveryId] = useState<string | undefined>();
+export function UnifiedGridView({ className }: { className?: string }) {
+	const [activeTab, setActiveTab] = useState<TabType>("plan-items");
+	const [searchText, setSearchText] = useState("");
+	const deferredSearchText = useDeferredValue(searchText);
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
 
-  const tasksResult = useTasks();
-  const { tasks, isLoading: tasksLoading, refetch: refetchTasks } = tasksResult;
-	const planItems = useTasks({ sourceType: 'plan' });
-	const discoveriesResult = useInfiniteDiscoveries({ status: 'all' });
-	const discoveriesMutation = useDiscoveries({ status: 'all' });
-	const { discoveries, isLoading: discoveriesLoading, refetch: refetchDiscoveries } = discoveriesResult;
+	const tasksResult = useTasks();
+	const planItems = useTasks({ sourceType: "plan" });
+	const discoveriesResult = useInfiniteDiscoveries({ status: "all" });
+	const discoveriesMutation = useDiscoveries({ status: "all" });
 
-  const filteredTasks = useMemo(() => {
-    if (!deferredSearchText.trim()) return tasks;
-    const search = deferredSearchText.toLowerCase();
-    return tasks.filter(task =>
-      task.subject.toLowerCase().includes(search) ||
-      task.description.toLowerCase().includes(search) ||
-      task.phase?.toLowerCase().includes(search)
-    );
-  }, [tasks, deferredSearchText]);
+	const filterTasks = useCallback((tasks: Task[]) => {
+		if (!deferredSearchText.trim()) return tasks;
+		const search = deferredSearchText.toLocaleLowerCase();
+		return tasks.filter((task) =>
+			task.subject.toLocaleLowerCase().includes(search)
+			|| task.description.toLocaleLowerCase().includes(search)
+			|| task.phase?.toLocaleLowerCase().includes(search)
+		);
+	}, [deferredSearchText]);
+	const filteredTasks = useMemo(
+		() => filterTasks(tasksResult.tasks),
+		[filterTasks, tasksResult.tasks],
+	);
+	const filteredPlanItems = useMemo(
+		() => filterTasks(planItems.tasks),
+		[filterTasks, planItems.tasks],
+	);
+	const filteredDiscoveries = useMemo(() => {
+		if (!deferredSearchText.trim()) return discoveriesResult.discoveries;
+		const search = deferredSearchText.toLocaleLowerCase();
+		return discoveriesResult.discoveries.filter((discovery) =>
+			discovery.title.toLocaleLowerCase().includes(search)
+			|| discovery.details.toLocaleLowerCase().includes(search)
+		);
+	}, [deferredSearchText, discoveriesResult.discoveries]);
 
-  const filteredPlanItems = useMemo(() => {
-    if (!deferredSearchText.trim()) return planItems.tasks;
-    const search = deferredSearchText.toLowerCase();
-    return planItems.tasks.filter(task =>
-      task.subject.toLowerCase().includes(search) ||
-      task.description.toLowerCase().includes(search) ||
-      task.phase?.toLowerCase().includes(search)
-    );
-  }, [planItems.tasks, deferredSearchText]);
+	const openTask = useCallback((task: Task) => {
+		openWorkspaceRoute(
+			{ pathname: "/tasks", search: `?task=${encodeURIComponent(task.id)}`, title: task.subject },
+			"split",
+		);
+	}, [openWorkspaceRoute]);
 
-  const filteredDiscoveries = useMemo(() => {
-    if (!deferredSearchText.trim()) return discoveries;
-    const search = deferredSearchText.toLowerCase();
-    return discoveries.filter(discovery =>
-      discovery.title.toLowerCase().includes(search) ||
-      discovery.details.toLowerCase().includes(search)
-    );
-  }, [discoveries, deferredSearchText]);
+	const refresh = useCallback(() => {
+		if (activeTab === "plan-items") void planItems.refetch();
+		if (activeTab === "tasks") void tasksResult.refetch();
+		if (activeTab === "discoveries") void discoveriesResult.refetch();
+	}, [activeTab, discoveriesResult, planItems, tasksResult]);
 
-  const handleOpenTaskDetails = useCallback((task: Task) => {
-    setSelectedTaskId(task.id);
-  }, []);
+	const updateTask = useCallback((taskId: string, updates: TaskUpdate) => {
+		tasksResult.updateTask({ id: taskId, updates });
+	}, [tasksResult]);
+	const updatePlanItem = useCallback((taskId: string, updates: TaskUpdate) => {
+		planItems.updateTask({ id: taskId, updates });
+	}, [planItems]);
 
-  const handleOpenDiscoveryDetails = useCallback((discovery: Discovery) => {
-    setSelectedDiscoveryId(discovery.id);
-  }, []);
+	return (
+		<div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
+			<header className="shrink-0 border-b border-border bg-surface px-4 py-3">
+				<div className="flex items-center justify-between gap-3">
+					<div className="flex items-center gap-2">
+						<Grid3x3 className="h-5 w-5 text-accent" />
+						<div>
+							<h1 className="text-sm font-semibold">Resource sheets</h1>
+							<p className="text-xs text-muted-foreground">
+								One spreadsheet interaction model for structured work
+							</p>
+						</div>
+					</div>
+					<Button isIconOnly size="sm" variant="ghost" onPress={refresh} aria-label="Refresh">
+						<RefreshCw className="h-4 w-4" />
+					</Button>
+				</div>
+				<div className="relative mt-3 max-w-xl">
+					<Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+					<input
+						type="search"
+						placeholder="Search the current resources"
+						value={searchText}
+						onChange={(event: ChangeEvent<HTMLInputElement>) => setSearchText(event.target.value)}
+						className="h-9 w-full border border-border bg-surface-secondary pl-8 pr-3 text-sm outline-none focus:border-accent"
+					/>
+				</div>
+			</header>
 
-  const handleRefresh = useCallback(() => {
-    if (activeTab === 'plan-items') planItems.refetch();
-    if (activeTab === 'tasks') refetchTasks();
-    if (activeTab === 'discoveries') refetchDiscoveries();
-  }, [activeTab, planItems, refetchTasks, refetchDiscoveries]);
+			<Tabs
+				selectedKey={activeTab}
+				onSelectionChange={(key) => setActiveTab(key as TabType)}
+				className="flex min-h-0 flex-1 flex-col"
+			>
+				<Tabs.ListContainer className="shrink-0 border-b border-border bg-surface">
+					<Tabs.List aria-label="Resource sheet tabs" className="w-full">
+						<Tabs.Tab id="plan-items" className="flex-1">
+							<ListTree className="h-4 w-4" />
+							Plan items
+							<Chip size="sm" variant="soft">{planItems.pagination?.total ?? planItems.tasks.length}</Chip>
+							<Tabs.Indicator />
+						</Tabs.Tab>
+						<Tabs.Tab id="tasks" className="flex-1">
+							<ListTodo className="h-4 w-4" />
+							Tasks
+							<Chip size="sm" variant="soft">{tasksResult.pagination?.total ?? tasksResult.tasks.length}</Chip>
+							<Tabs.Indicator />
+						</Tabs.Tab>
+						<Tabs.Tab id="discoveries" className="flex-1">
+							<Lightbulb className="h-4 w-4" />
+							Discoveries
+							<Chip size="sm" variant="soft">{discoveriesResult.discoveries.length}</Chip>
+							<Tabs.Indicator />
+						</Tabs.Tab>
+					</Tabs.List>
+				</Tabs.ListContainer>
 
-	const handleSearch = (e: ChangeEvent<HTMLInputElement>) => {
-		setSearchText(e.target.value);
-	};
+				<Tabs.Panel id="plan-items" className="min-h-0 flex-1 p-0">
+					<Suspense fallback={<SheetLoading label="plan items" />}>
+						{planItems.isLoading ? <SheetLoading label="plan items" /> : (
+							<TaskSheet
+								tasks={filteredPlanItems}
+								viewId="plan-items-sheet"
+								onOpenDetails={openTask}
+								onUpdateTask={updatePlanItem}
+								onCreateTaskAt={(index, subject) => {
+									void planItems.createTaskAsync({
+										subject,
+										description: subject,
+										sourceType: "plan",
+										sortOrder: index,
+									}).then((created) => planItems.reorderTaskAsync({
+										taskId: created.id,
+										fromSortOrder: created.sortOrder ?? filteredPlanItems.length,
+										toSortOrder: index,
+										prevTaskId: filteredPlanItems[index - 1]?.id ?? null,
+										nextTaskId: filteredPlanItems[index]?.id ?? null,
+									})).catch(() => {
+										// Mutation hooks surface the error through the shared toast.
+									});
+								}}
+								onDelete={(task) => planItems.deleteTask(task.id)}
+								hasNextPage={planItems.hasNextPage}
+								onLoadMore={() => {
+									void planItems.fetchNextPage();
+								}}
+							/>
+						)}
+					</Suspense>
+				</Tabs.Panel>
 
-  return (
-    <div className={cn('flex flex-col h-full', className)}>
-      <div className="px-4 py-3 border-b">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Grid3x3 className="h-5 w-5 text-accent" />
-              <h1 className="text-lg font-semibold">Planning Grid</h1>
-          </div>
-          <Button
-            isIconOnly
-            size="sm"
-            variant="ghost"
-            onPress={handleRefresh}
-            aria-label="Refresh"
-          >
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
+				<Tabs.Panel id="tasks" className="min-h-0 flex-1 p-0">
+					<Suspense fallback={<SheetLoading label="tasks" />}>
+						{tasksResult.isLoading ? <SheetLoading label="tasks" /> : (
+							<TaskSheet
+								tasks={filteredTasks}
+								onOpenDetails={openTask}
+								onUpdateTask={updateTask}
+								onCreateTaskAt={(index, subject) => {
+									void tasksResult.createTaskAsync({
+										subject,
+										description: subject,
+										sortOrder: index,
+									}).then((created) => tasksResult.reorderTaskAsync({
+										taskId: created.id,
+										fromSortOrder: created.sortOrder ?? filteredTasks.length,
+										toSortOrder: index,
+										prevTaskId: filteredTasks[index - 1]?.id ?? null,
+										nextTaskId: filteredTasks[index]?.id ?? null,
+									})).catch(() => {
+										// Mutation hooks surface the error through the shared toast.
+									});
+								}}
+								onDelete={(task) => tasksResult.deleteTask(task.id)}
+								hasNextPage={tasksResult.hasNextPage}
+								onLoadMore={() => {
+									void tasksResult.fetchNextPage();
+								}}
+							/>
+						)}
+					</Suspense>
+				</Tabs.Panel>
 
-        <div className="flex items-center gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-            <input
-              type="text"
-              placeholder="Search..."
-              value={searchText}
-              onChange={handleSearch}
-              className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent max-w-md w-full"
-            />
-          </div>
-          <Button size="sm" variant="ghost" isIconOnly>
-            <Settings className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-hidden">
-        <Tabs
-          selectedKey={activeTab}
-          onSelectionChange={(key) => setActiveTab(key as TabType)}
-          className="h-full flex flex-col"
-        >
-          <Tabs.ListContainer className="flex-shrink-0 border-b">
-            <Tabs.List aria-label="Grid view tabs" className="w-full">
-              <Tabs.Tab id={planItemsId} className="flex-1">
-                <ListTree className="h-4 w-4" />
-                Plan Items
-                <Tabs.Indicator />
-                <Chip size="sm" variant="soft" className="ml-1">
-                  {planItems.pagination?.total ?? planItems.tasks.length}
-                </Chip>
-              </Tabs.Tab>
-              <Tabs.Tab id={tasksId} className="flex-1">
-                <ListTodo className="h-4 w-4" />
-                Tasks
-                <Tabs.Indicator />
-                <Chip size="sm" variant="soft" className="ml-1">
-                  {tasks.length}
-                </Chip>
-              </Tabs.Tab>
-              <Tabs.Tab id={discoveriesId} className="flex-1">
-                <Lightbulb className="h-4 w-4" />
-                Discoveries
-                <Tabs.Indicator />
-                <Chip size="sm" variant="soft" className="ml-1">
-                  {discoveries.length}
-                </Chip>
-              </Tabs.Tab>
-            </Tabs.List>
-          </Tabs.ListContainer>
-
-          <Tabs.Panel id={planItemsId} className="flex-1 overflow-hidden p-0">
-            <div className="p-4 h-full overflow-auto">
-              {planItems.isLoading ? (
-                <div className="text-center p-8 text-muted-foreground">Loading plan items...</div>
-              ) : (
-                <TaskGrid
-                  tasks={filteredPlanItems}
-                  totalTasks={planItems.pagination?.total}
-                  selectedTaskId={selectedTaskId}
-                  onOpenDetails={handleOpenTaskDetails}
-                  hasNextPage={planItems.hasNextPage}
-                  isFetchingNextPage={planItems.isFetchingNextPage}
-                  onLoadMore={planItems.fetchNextPage}
-                  className="h-full"
-                />
-              )}
-            </div>
-          </Tabs.Panel>
-
-          <Tabs.Panel id={tasksId} className="flex-1 overflow-hidden p-0">
-            <div className="p-4 h-full overflow-auto">
-              {tasksLoading ? (
-                <div className="text-center p-8 text-muted-foreground">Loading tasks...</div>
-              ) : (
-                <TaskGrid
-                  tasks={filteredTasks}
-                  totalTasks={tasksResult.pagination?.total}
-                  selectedTaskId={selectedTaskId}
-                  onOpenDetails={handleOpenTaskDetails}
-                  hasNextPage={tasksResult.hasNextPage}
-                  isFetchingNextPage={tasksResult.isFetchingNextPage}
-                  onLoadMore={tasksResult.fetchNextPage}
-                  className="h-full"
-                />
-              )}
-            </div>
-          </Tabs.Panel>
-
-          <Tabs.Panel id={discoveriesId} className="flex-1 overflow-hidden p-0">
-            <div className="p-4 h-full overflow-auto">
-              {discoveriesLoading ? (
-                <div className="text-center p-8 text-muted-foreground">Loading discoveries...</div>
-              ) : (
-						<DiscoveryGrid
-							discoveries={filteredDiscoveries}
-							selectedDiscoveryId={selectedDiscoveryId}
-							onOpenDetails={handleOpenDiscoveryDetails}
-							onUpdateDiscovery={(discoveryId, updates) =>
-								discoveriesMutation.updateDiscovery({ id: discoveryId, updates })
-							}
-							hasNextPage={discoveriesResult.hasNextPage}
-							isFetchingNextPage={discoveriesResult.isFetchingNextPage}
-							onLoadMore={discoveriesResult.fetchNextPage}
-							className="h-full"
-                />
-              )}
-            </div>
-          </Tabs.Panel>
-        </Tabs>
-      </div>
-    </div>
-  );
+				<Tabs.Panel id="discoveries" className="min-h-0 flex-1 p-0">
+					<Suspense fallback={<SheetLoading label="discoveries" />}>
+						{discoveriesResult.isLoading ? <SheetLoading label="discoveries" /> : (
+							<DiscoverySheet
+								discoveries={filteredDiscoveries}
+								onUpdateStatus={(id, status) => discoveriesMutation.updateDiscovery({
+									id,
+									updates: { status },
+								})}
+								hasNextPage={discoveriesResult.hasNextPage}
+								onLoadMore={() => {
+									void discoveriesResult.fetchNextPage();
+								}}
+							/>
+						)}
+					</Suspense>
+				</Tabs.Panel>
+			</Tabs>
+		</div>
+	);
 }

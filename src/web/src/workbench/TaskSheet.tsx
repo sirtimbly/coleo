@@ -1,0 +1,199 @@
+/**
+ * Task and plan-item spreadsheet projection.
+ *
+ * Handsontable supplies the Excel-like interaction model. Subject and status
+ * are intentionally editable inline; richer task fields continue to open in a
+ * dedicated Golden Layout detail panel.
+ */
+
+import { useMemo, useState } from "react";
+import { Button } from "@heroui/react";
+import { SlidersHorizontal } from "lucide-react";
+
+import type { Task } from "@/lib";
+import { PRIORITY_OPTIONS } from "@/components/task-styles";
+
+import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
+import { ViewConfigurator } from "./ViewConfigurator";
+import { useViewPreferences } from "./use-view-preferences";
+
+import type { TaskUpdate } from "./resource-updates";
+
+const TASK_STATUSES: Task["status"][] = [
+	"pending",
+	"claimed",
+	"in_progress",
+	"completing",
+	"completed",
+	"blocked",
+	"failed",
+	"cancelled",
+];
+
+const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
+	{
+		id: "subject",
+		header: "Subject",
+		read: (task) => task.subject,
+		width: 360,
+		className: "coleo-sheet-primary-cell",
+	},
+	{
+		id: "status",
+		header: "Status",
+		read: (task) => task.status,
+		type: "dropdown",
+		options: TASK_STATUSES,
+		width: 128,
+	},
+	{
+		id: "priority",
+		header: "Priority",
+		read: (task) => task.priority,
+		type: "dropdown",
+		options: PRIORITY_OPTIONS,
+		readOnly: true,
+		width: 104,
+	},
+	{
+		id: "phase",
+		header: "Phase",
+		read: (task) => task.phase ?? "",
+		readOnly: true,
+		width: 130,
+	},
+	{
+		id: "domain",
+		header: "Domain",
+		read: (task) => task.domain ?? "",
+		readOnly: true,
+		width: 120,
+	},
+	{
+		id: "assignedArm",
+		header: "Arm",
+		read: (task) => task.assignedArmName ?? task.assignedTo ?? "",
+		readOnly: true,
+		width: 140,
+	},
+	{
+		id: "progress",
+		header: "Progress",
+		read: (task) => task.progress ?? 0,
+		type: "numeric",
+		readOnly: true,
+		width: 92,
+	},
+	{
+		id: "sourceType",
+		header: "Source",
+		read: (task) => task.sourceType,
+		readOnly: true,
+		width: 104,
+	},
+	{
+		id: "updatedAt",
+		header: "Updated",
+		read: (task) => new Date(task.updatedAt).toLocaleString(),
+		readOnly: true,
+		width: 170,
+	},
+];
+
+export function TaskSheet({
+	tasks,
+	selectedTaskId,
+	onOpenDetails,
+	onUpdateTask,
+	onDelete,
+	onCreateTaskAt,
+	onLoadMore,
+	hasNextPage,
+	viewId = "tasks-sheet",
+}: {
+	tasks: Task[];
+	selectedTaskId?: string;
+	onOpenDetails?: (task: Task) => void;
+	onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
+	onDelete?: (task: Task) => void;
+	onCreateTaskAt?: (index: number, subject: string) => void;
+	onLoadMore?: () => void;
+	hasNextPage?: boolean;
+	viewId?: string;
+}) {
+	const [configuring, setConfiguring] = useState(false);
+	const { view, preferences, updatePreferences, updateShared } = useViewPreferences(viewId, {
+		id: viewId,
+		name: viewId === "plan-items-sheet" ? "Plan items" : "Tasks",
+		kind: "sheet",
+		resourceKind: "task",
+		description: "Editable task spreadsheet",
+		query: viewId === "plan-items-sheet"
+			? { resourceKinds: ["task"], filters: [{ field: "sourceType", operator: "equals", value: "plan" }] }
+			: { resourceKinds: ["task"] },
+		preferences: {
+			density: "compact",
+			// Natural server order preserves between-row insertion.
+			sort: [],
+		},
+		shared: false,
+	});
+	const configurableColumns = useMemo(
+		() => TASK_COLUMNS.map((column) => ({
+			id: column.id,
+			header: column.header,
+			defaultWidth: column.width,
+			hideable: column.id !== "subject",
+		})),
+		[],
+	);
+
+	return (
+		<div className="relative flex h-full min-h-0 flex-col">
+			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
+				<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+					Spreadsheet · double-click a row for details
+				</span>
+				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
+					<SlidersHorizontal className="h-3.5 w-3.5" />
+					View
+				</Button>
+			</div>
+			<ResourceSheet
+				rows={tasks}
+				columns={TASK_COLUMNS}
+				preferences={preferences}
+				onPreferencesChange={updatePreferences}
+				onChange={(task, columnId, value) => {
+					if (columnId === "subject" && typeof value === "string" && value.trim()) {
+						onUpdateTask?.(task.id, { subject: value.trim() });
+					}
+					if (columnId === "status" && TASK_STATUSES.includes(value as Task["status"])) {
+						onUpdateTask?.(task.id, { status: value as Task["status"] });
+					}
+				}}
+				onCreateRowAt={onCreateTaskAt
+					? (index) => onCreateTaskAt(index, "New task")
+					: undefined}
+				onDeleteRows={onDelete ? (removed) => {
+					for (const task of removed) onDelete?.(task);
+				} : undefined}
+				onOpenRow={onOpenDetails}
+				selectedRowId={selectedTaskId}
+				onNearEnd={hasNextPage ? onLoadMore : undefined}
+				className="min-h-0 flex-1"
+			/>
+			<ViewConfigurator
+				open={configuring}
+				columns={configurableColumns}
+				preferences={preferences}
+				shared={view.shared}
+				onChange={updatePreferences}
+				onSharedChange={(shared) => {
+					void updateShared(shared);
+				}}
+				onClose={() => setConfiguring(false)}
+			/>
+		</div>
+	);
+}

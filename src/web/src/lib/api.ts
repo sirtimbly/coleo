@@ -1,5 +1,8 @@
 /**
- * API Client for Coleo Observatory
+ * API Client for Coleo Observatory.
+ *
+ * Domain requests and workbench-persistence requests share this authenticated
+ * client so saved views and layouts work in direct and Reef-hosted deployments.
  */
 
 import type {
@@ -13,6 +16,13 @@ import type {
   TaskDiff as SharedTaskDiff,
   TaskWorkAuthorType as SharedTaskWorkAuthorType,
 } from '../../../types';
+import type {
+  ViewDefinition,
+  ArmRun,
+  WorkbenchBundle,
+  WorkbenchProfile,
+  WorkspaceLayoutRecord,
+} from '@/workbench/types';
 
 const API_BASE = '/api';
 
@@ -1356,6 +1366,152 @@ class ApiClient {
 
   async getEventTypes() {
     return this.request<{ knownTypes: string[]; count: number }>('/events/types');
+  }
+
+  // Workbench profiles, saved projections, and Golden Layout workspaces
+  async getWorkbenchBootstrap(profileId?: string) {
+    const query = profileId ? `?profileId=${encodeURIComponent(profileId)}` : '';
+    return this.request<{
+      schemaVersion: number;
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>(`/workbench/bootstrap${query}`);
+  }
+
+  async listWorkbenchProfiles() {
+    return this.request<{ profiles: WorkbenchProfile[] }>('/workbench/profiles');
+  }
+
+  async createWorkbenchProfile(data: {
+    id?: string;
+    name: string;
+    email?: string;
+    isDefault?: boolean;
+    preferences?: JsonObject;
+  }) {
+    return this.request<{ profile: WorkbenchProfile }>('/workbench/profiles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWorkbenchProfile(
+    id: string,
+    data: Partial<Pick<WorkbenchProfile, 'name' | 'email' | 'isDefault' | 'preferences'>>,
+  ) {
+    return this.request<{ profile: WorkbenchProfile }>(
+      `/workbench/profiles/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async exportWorkbenchProfile(id: string) {
+    return this.request<{ bundle: WorkbenchBundle }>(
+      `/workbench/profiles/${encodeURIComponent(id)}/export`,
+    );
+  }
+
+  async importWorkbenchProfile(bundle: WorkbenchBundle, mode: 'replace' | 'copy' = 'copy') {
+    return this.request<{
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>('/workbench/profiles/import', {
+      method: 'POST',
+      body: JSON.stringify({ bundle, mode }),
+    });
+  }
+
+  async listWorkbenchViews(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ views: ViewDefinition[] }>(`/workbench/views?${query.toString()}`);
+  }
+
+  async createWorkbenchView(
+    data: Omit<ViewDefinition, 'id' | 'version' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) {
+    return this.request<{ view: ViewDefinition }>('/workbench/views', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async saveWorkbenchView(id: string, data: Partial<ViewDefinition>) {
+    return this.request<{ view: ViewDefinition }>(
+      `/workbench/views/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchView(id: string) {
+    return this.request<{ success: true }>(`/workbench/views/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listWorkbenchLayouts(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ layouts: WorkspaceLayoutRecord[] }>(
+      `/workbench/layouts?${query.toString()}`,
+    );
+  }
+
+  async saveWorkbenchLayout(
+    id: string,
+    data: {
+      profileId: string;
+      name: string;
+      description?: string;
+      layout: JsonObject;
+      isDefault?: boolean;
+      shared?: boolean;
+    },
+  ) {
+    return this.request<{ layout: WorkspaceLayoutRecord }>(
+      `/workbench/layouts/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchLayout(id: string) {
+    return this.request<{ success: true }>(`/workbench/layouts/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listRuns(params?: {
+    status?: ArmRun['status'];
+    armId?: string;
+    active?: boolean;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.active !== undefined) query.set('active', String(params.active));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request<{ runs: ArmRun[] }>(`/runs${suffix ? `?${suffix}` : ''}`);
+  }
+
+  async getRun(id: string) {
+    return this.request<{ run: ArmRun }>(`/runs/${encodeURIComponent(id)}`);
   }
 
   // Garden

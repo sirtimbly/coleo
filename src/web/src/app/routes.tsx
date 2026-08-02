@@ -1,3 +1,9 @@
+/**
+ * Static workbench view contributions.
+ *
+ * Each entry gives the shell a route-backed view type. The registry remains
+ * static while the migration consolidates presentation and persistence.
+ */
 import {
   Activity,
   Bot,
@@ -11,9 +17,11 @@ import {
   ClipboardCheck,
   Mail,
   MessageSquareMore,
+  Inbox,
   Search,
   Settings,
   Terminal,
+  Workflow,
   Vote,
   type LucideIcon,
 } from 'lucide-react';
@@ -29,6 +37,7 @@ import {
   MailPage,
   MessagingPage,
   ProposalsPage,
+  ProcessesPage,
   SettingsPage,
   StatusReportsPage,
   StatusHistorySearchPage,
@@ -64,7 +73,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'setup',
     href: '/setup',
     path: 'setup',
-    label: 'Setup',
+    label: 'Plan & Documents',
     icon: ClipboardCheck,
     component: SetupPage,
     showInNav: true,
@@ -87,6 +96,15 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     component: ArmsPage,
     showInNav: true,
     getTitle: (searchParams) => searchParams.get('spawn') === '1' ? 'Spawn Arm' : 'Arms',
+  },
+  {
+    id: 'processes',
+    href: '/processes',
+    path: 'processes',
+    label: 'Processes',
+    icon: Workflow,
+    component: ProcessesPage,
+    showInNav: true,
   },
   {
     id: 'viewer',
@@ -158,7 +176,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'mail',
     href: '/mail',
     path: 'mail',
-    label: 'Mail',
+    label: 'Project Mail',
     icon: Mail,
     component: MailPage,
     showInNav: true,
@@ -202,9 +220,10 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'messaging',
     href: '/messaging',
     path: 'messaging',
-    label: 'Messaging',
-    icon: MessageSquareMore,
+    label: 'Inbox',
+    icon: Inbox,
     component: MessagingPage,
+    showInNav: true,
   },
   {
     id: 'grid',

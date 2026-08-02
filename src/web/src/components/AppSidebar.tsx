@@ -1,3 +1,11 @@
+/**
+ * Primary workbench navigation.
+ *
+ * The sidebar opens routes as Golden Layout panels and surfaces immediate
+ * inbox attention. Layout and per-view state are persisted elsewhere by the
+ * workbench profile infrastructure.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button, Chip } from '@heroui/react';
 import { MessageSquarePlus, Plus } from 'lucide-react';
@@ -110,7 +118,7 @@ export function AppSidebar({
         <ul className="space-y-1.5">
           {NAVIGATION_ROUTES.map((route) => {
             const routeBadge =
-              route.id === 'mail' && unreadCount > 0 ? (
+              route.id === 'messaging' && unreadCount > 0 ? (
                 <Chip
                   size="sm"
                   variant="soft"

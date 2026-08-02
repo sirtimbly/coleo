@@ -1,20 +1,21 @@
 /**
  * Bugs Page
  *
- * Displays bug reports and allows tracking and management
- * Uses React Query for data fetching with optimistic updates
+ * Displays bug reports through the shared Handsontable sheet and opens richer
+ * bug details in a dedicated Golden Layout panel.
  */
 import React, { useMemo, useState, useCallback } from 'react';
 import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon, Clock } from 'lucide-react';
 import { Button, Chip, Card, Tabs } from '@heroui/react';
-import { type Bug, type BugMetadata, type UiMetadata, cn, api } from '@/lib';
-import { BugGrid, BugModal, CollapsibleSection, StatusBurndownChart } from '@/components';
-import type { BugUpdate } from '@/components/BugGridRow';
+import { type Bug, type UiMetadata, cn, api } from '@/lib';
+import { BugModal, CollapsibleSection, StatusBurndownChart } from '@/components';
+import type { BugUpdate } from '@/workbench/resource-updates';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
+import { WorkbenchHeader } from '@/design-system/WorkbenchSurface';
 import {
 	useIsWorkspacePanel,
 	useWorkspaceCloseRoute,
@@ -25,6 +26,10 @@ import {
 type SidebarTab = 'details';
 
 type BugUiMeta = UiMetadata;
+
+const BugSheet = React.lazy(() =>
+	import('@/workbench/BugSheet').then((module) => ({ default: module.BugSheet }))
+);
 
 // Status configuration
 const STATUS_CONFIG: Record<Bug['status'], { color: string; bgColor: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
@@ -169,6 +174,74 @@ function BugDescriptionField({
 	);
 }
 
+function BugDetailProjection({
+	bug,
+	onClose,
+	onUpdate,
+}: {
+	bug: Bug;
+	onClose: () => void;
+	onUpdate: (bugId: string, updates: BugUpdate) => void;
+}) {
+	return (
+		<div className="flex h-full min-h-0 flex-col bg-background">
+			<WorkbenchHeader
+				title={bug.title}
+				description={`Bug ${bug.id}`}
+				actions={(
+					<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
+						<X className="h-4 w-4" />
+					</Button>
+				)}
+			/>
+			<div className="min-h-0 flex-1 overflow-auto p-5">
+				<div className="mx-auto max-w-4xl space-y-5">
+					<div className="flex flex-wrap items-center justify-between gap-3">
+						<span
+							className={cn(
+								'px-2 py-1 text-xs',
+								PRIORITY_CONFIG[bug.priority].bgColor,
+								PRIORITY_CONFIG[bug.priority].color,
+							)}
+						>
+							{PRIORITY_CONFIG[bug.priority].label}
+						</span>
+						<BugCreatedAt createdAt={bug.createdAt} />
+					</div>
+
+					<section>
+						<h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+							Description
+						</h2>
+						<BugDescriptionField
+							bugId={bug.id}
+							description={bug.description}
+							onSave={(bugId, description) => onUpdate(bugId, { description })}
+						/>
+					</section>
+
+					<div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
+						<div>
+							<span className="text-xs text-muted-foreground">Status</span>
+							<p className={cn('mt-1 text-sm font-medium', STATUS_CONFIG[bug.status].color)}>
+								{STATUS_CONFIG[bug.status].label}
+							</p>
+						</div>
+						<div>
+							<span className="text-xs text-muted-foreground">Source</span>
+							<p className="mt-1 text-sm capitalize">{bug.source.replace('_', ' ')}</p>
+						</div>
+						<div>
+							<span className="text-xs text-muted-foreground">Assigned Arm</span>
+							<p className="mt-1 text-sm">{bug.assigneeArmName ?? 'Unassigned'}</p>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
 export function BugsPage() {
 	const queryClient = useQueryClient();
 	const isWorkspacePanel = useIsWorkspacePanel();
@@ -192,9 +265,9 @@ export function BugsPage() {
 		error,
 		refetch,
 		updateBug,
-		createBug,
+		createBugAsync,
 		deleteBug,
-		reorderBug,
+		reorderBugAsync,
 	} = useBugs();
 
 	const getBugUiMeta = useCallback((bug: Bug): BugUiMeta => {
@@ -246,26 +319,6 @@ export function BugsPage() {
 		[updateBug]
 	);
 
-	const handleUpdateUi = useCallback(
-		async (bugId: string, updates: BugUiMeta) => {
-			const target = bugs.find((bug) => bug.id === bugId);
-			if (!target) return;
-			const currentUi = getBugUiMeta(target);
-			const nextUi: BugUiMeta = {
-				...currentUi,
-				...updates,
-				tags: updates.tags ?? currentUi.tags,
-			};
-			const nextMetadata: BugMetadata = {
-				...target.metadata,
-				ui: nextUi,
-			};
-
-			updateBug({ id: bugId, updates: { metadata: nextMetadata } });
-		},
-		[bugs, getBugUiMeta, updateBug]
-	);
-
 	const handleDeleteBug = useCallback(
 		(bug: Bug) => {
 			if (confirm('Are you sure you want to delete this bug?')) {
@@ -276,33 +329,34 @@ export function BugsPage() {
 	);
 
 	const handleCreateBugAt = useCallback(
-		async (_index: number, title: string) => {
+		async (index: number, title: string) => {
 			try {
-				await createBug({
+				const created = await createBugAsync({
 					title,
 					description: title,
 					source: 'human_reported',
 					priority: 'medium',
 				});
+				await reorderBugAsync({
+					bugId: created.id,
+					fromSortOrder: created.sortOrder ?? bugs.length,
+					toSortOrder: index,
+				});
 			} catch {
 				// Error is handled by the mutation
 			}
 		},
-		[createBug]
-	);
-
-	const handleReorder = useCallback(
-		(bugId: string, fromSortOrder: number, toSortOrder: number) => {
-			if (!bugId) return;
-			reorderBug({ bugId, fromSortOrder, toSortOrder });
-		},
-		[reorderBug]
+		[bugs.length, createBugAsync, reorderBugAsync]
 	);
 
 	const handleOpenDetails = useCallback((bug: Bug) => {
-		setSelectedBug(bug);
-		setSidebarTab('details');
-	}, []);
+		const nextSearchParams = new URLSearchParams(searchParams);
+		nextSearchParams.set('bug', bug.id);
+		openWorkspaceRoute(
+			{ pathname: '/bugs', search: `?${nextSearchParams.toString()}`, title: `Bug: ${bug.title}` },
+			'split',
+		);
+	}, [openWorkspaceRoute, searchParams]);
 
 	const toggleTagFilter = useCallback((tag: string) => {
 		setTagFilter((prev) =>
@@ -325,10 +379,11 @@ export function BugsPage() {
 	// direct fetch when the bug isn't part of the currently loaded list (e.g. it
 	// is archived).
 	React.useEffect(() => {
-		if (!isWorkspacePanel) return;
-
 		const bugId = searchParams.get('bug');
-		if (!bugId) return;
+		if (!bugId) {
+			setSelectedBug(null);
+			return;
+		}
 
 		const fromList = bugs.find((bug) => bug.id === bugId);
 		if (fromList) {
@@ -348,7 +403,7 @@ export function BugsPage() {
 		return () => {
 			cancelled = true;
 		};
-	}, [bugs, isWorkspacePanel, searchParams]);
+	}, [bugs, searchParams]);
 
 	// Handle WebSocket messages for real-time updates
 	const handleWSMessage = useCallback(
@@ -390,6 +445,16 @@ export function BugsPage() {
 				onSaved={() => {
 					void refetch();
 				}}
+			/>
+		);
+	}
+
+	if (selectedBug && searchParams.has('bug')) {
+		return (
+			<BugDetailProjection
+				bug={selectedBug}
+				onClose={closeWorkspaceRoute}
+				onUpdate={handleUpdateBug}
 			/>
 		);
 	}
@@ -554,20 +619,17 @@ export function BugsPage() {
 							))}
 						</div>
 					) : (
-						<div>
-							<BugGrid
-								className="rounded-none border-0"
-								bugs={filteredBugs}
-								totalBugs={bugs.length}
-								availableTags={availableTags}
-								selectedBugId={selectedBug?.id}
-								onOpenDetails={handleOpenDetails}
-								onUpdateBug={handleUpdateBug}
-								onUpdateUi={handleUpdateUi}
-								onDelete={handleDeleteBug}
-								onCreateBugAt={handleCreateBugAt}
-								onReorder={handleReorder}
-							/>
+						<div className="h-full min-h-0">
+							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+								<BugSheet
+									bugs={filteredBugs}
+									selectedBugId={selectedBug?.id}
+									onOpenDetails={handleOpenDetails}
+									onUpdateBug={handleUpdateBug}
+									onDelete={handleDeleteBug}
+									onCreateBugAt={handleCreateBugAt}
+								/>
+							</React.Suspense>
 						</div>
 					)}
 				</div>

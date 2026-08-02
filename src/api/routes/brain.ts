@@ -1,14 +1,15 @@
 /**
  * Brain routes
  *
- * Brain state, control, and management endpoints
+ * Brain state, control, and management endpoints.
  * 
  * NOTE: Brain state is now stored in SQLite (brain_state table), not JSON files.
+ * Successful Arm claims also notify live workbench projections immediately.
  */
 import { Hono, type Context } from "hono";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
-import { broadcastBrainEvent, broadcastMailEvent } from "../websocket";
+import { broadcast, broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
@@ -1062,6 +1063,19 @@ export function createBrainRoutes() {
       body.role || "primary",
       body.isClaim === true
     );
+
+    if (result.success) {
+      const task = db.query(
+        "SELECT status, assigned_to AS assignedTo FROM tasks WHERE id = ?",
+      ).get(body.taskId) as { status: string; assignedTo: string | null } | null;
+      broadcast("tasks", "task.updated", {
+        taskId: body.taskId,
+        changes: {
+          assignedTo: task?.assignedTo ?? body.armId,
+          ...(body.isClaim === true ? { status: task?.status ?? "claimed" } : {}),
+        },
+      });
+    }
 
     return c.json({ result });
   });

@@ -1,3 +1,9 @@
+/**
+ * System and workbench configuration.
+ *
+ * Alongside runtime settings, this page hosts portable profile registration,
+ * switching, import, and export for saved views and Golden Layout workspaces.
+ */
 import { useState, useEffect, useId } from 'react';
 import { Button, Select, Label, ListBox } from '@heroui/react';
 import { LayoutPanelTop, Monitor, Moon, PanelsTopLeft, Sun } from 'lucide-react';
@@ -7,6 +13,7 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { VERSION } from '@/version';
+import { WorkbenchProfileManager } from '@/workbench/WorkbenchProfileManager';
 
 const themeOptions = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -239,6 +246,18 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workbench Profiles</CardTitle>
+          <CardDescription>
+            Save view configuration and complete window layouts to a portable profile.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WorkbenchProfileManager />
         </CardContent>
       </Card>
 

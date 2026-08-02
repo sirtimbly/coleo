@@ -1,3 +1,10 @@
+/**
+ * Compatibility adapter for legacy domain pages.
+ *
+ * New workbench projections use `WorkbenchSurface` directly; existing pages
+ * retain this API while sharing the same border, surface, radius, and spacing
+ * decisions during migration.
+ */
 import { cn } from '@/lib';
 import type { ReactNode } from 'react';
 

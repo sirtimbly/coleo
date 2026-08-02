@@ -1,110 +1,77 @@
-import { useEffect, useState } from 'react';
-import { Button } from '@heroui/react';
-import { api, type ActivityEntry } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components';
+/**
+ * Route-level immutable event projection.
+ *
+ * Live signals prepend through the shared transport by refreshing the first
+ * page, while cursor pagination loads older JetStream-backed activity.
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { api, type ActivityEntry } from "@/lib";
+import { EventTimeline } from "@/workbench/EventTimeline";
+import { useProjectionSignal } from "@/workbench/live-projections";
 
 export function ActivityPage() {
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [pagination, setPagination] = useState({ limit: 50, offset: 0, total: 0 });
+	usePageTitle("Coleo Observatory - Event Timeline");
+	const [events, setEvents] = useState<ActivityEntry[]>([]);
+	const [total, setTotal] = useState(0);
+	const [nextCursor, setNextCursor] = useState<number | null>(null);
+	const [loading, setLoading] = useState(true);
+	const refreshTimerRef = useRef<number | null>(null);
 
-  const loadActivity = async (offset = 0) => {
-    try {
-      const res = await api.listActivity({ limit: 50, offset });
-      setActivity(res.activity);
-      setPagination(res.pagination ?? { limit: 50, offset, total: res.activity.length });
-    } catch (err) {
-      console.error('Failed to load activity:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+	const loadFirstPage = useCallback(async () => {
+		setLoading(true);
+		try {
+			const response = await api.listActivity({ limit: 100 });
+			setEvents(response.activity);
+			setTotal(response.pagination.total);
+			setNextCursor(response.pagination.nextCursor);
+		} finally {
+			setLoading(false);
+		}
+	}, []);
 
-  useEffect(() => {
-    loadActivity();
-  }, []);
+	const loadMore = useCallback(async () => {
+		if (!nextCursor || loading) return;
+		setLoading(true);
+		try {
+			const response = await api.listActivity({ limit: 100, beforeSequence: nextCursor });
+			setEvents((current) => {
+				const seen = new Set(current.map((event) => event.id));
+				return [...current, ...response.activity.filter((event) => !seen.has(event.id))];
+			});
+			setNextCursor(response.pagination.nextCursor);
+		} finally {
+			setLoading(false);
+		}
+	}, [loading, nextCursor]);
 
-  return (
-    <div className="space-y-6 px-6 py-6">
-      <div className="border-b border-border pb-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Activity</h1>
-        <p className="mt-1 text-sm text-muted-foreground">System activity log</p>
-      </div>
+	useEffect(() => {
+		void loadFirstPage();
+	}, [loadFirstPage]);
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            Activity Log
-            <span className="ml-2 text-sm font-normal text-muted-foreground">
-              ({pagination.total} total)
-            </span>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="h-12 bg-secondary rounded animate-pulse" />
-              ))}
-            </div>
-          ) : activity.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              No activity recorded yet
-            </p>
-          ) : (
-            <div className="space-y-0">
-              {activity.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex items-center gap-4 border-b border-border px-1 py-3 transition-colors last:border-b-0 hover:bg-surface-secondary/40"
-                >
-                    <div className="h-2 w-2 rounded-full bg-accent flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">
-                      <span className="font-medium">{entry.actor}</span>
-                      <span className="text-muted-foreground"> {entry.action}</span>
-                      {entry.target && (
-                        <span className="text-muted-foreground"> on </span>
-                      )}
-                      {entry.target && (
-                        <span className="font-mono text-xs">{entry.target}</span>
-                      )}
-                    </p>
-                  </div>
-                  <div className="text-xs text-muted-foreground flex-shrink-0">
-                    {new Date(entry.timestamp).toLocaleString()}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+	useProjectionSignal((signal) => {
+		if (signal.channel !== "activity") return;
+		if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+		refreshTimerRef.current = window.setTimeout(() => {
+			refreshTimerRef.current = null;
+			void loadFirstPage();
+		}, 150);
+	});
 
-          {/* Pagination */}
-          {pagination.total > pagination.limit && (
-            <div className="flex justify-center gap-2 mt-4 pt-4 border-t border-border">
-              <Button
-                variant="secondary"
-                size="sm"
-                onPress={() => loadActivity(Math.max(0, pagination.offset - pagination.limit))}
-                isDisabled={pagination.offset === 0}
-              >
-                Previous
-              </Button>
-              <span className="px-3 py-1 text-sm text-muted-foreground">
-                {pagination.offset + 1} - {Math.min(pagination.offset + pagination.limit, pagination.total)} of {pagination.total}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onPress={() => loadActivity(pagination.offset + pagination.limit)}
-                isDisabled={pagination.offset + pagination.limit >= pagination.total}
-              >
-                Next
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  );
+	useEffect(() => () => {
+		if (refreshTimerRef.current !== null) window.clearTimeout(refreshTimerRef.current);
+	}, []);
+
+	return (
+		<EventTimeline
+			events={events}
+			total={total}
+			loading={loading}
+			onRefresh={() => void loadFirstPage()}
+			onLoadMore={() => void loadMore()}
+			hasMore={nextCursor !== null}
+		/>
+	);
 }

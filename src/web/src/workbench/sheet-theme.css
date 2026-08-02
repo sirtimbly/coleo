@@ -1,0 +1,94 @@
+/*
+ * Handsontable theme adapter.
+ *
+ * The spreadsheet keeps native Excel-like interaction while using Coleo's
+ * existing surface, border, typography, selection, and status tokens.
+ */
+
+.coleo-resource-sheet,
+.coleo-resource-sheet.ht-theme-main,
+.coleo-resource-sheet .ht-theme-main,
+.coleo-resource-sheet .handsontable {
+	height: 100%;
+	min-height: 0;
+}
+
+.coleo-resource-sheet.ht-theme-main,
+.coleo-resource-sheet .ht-theme-main {
+	--ht-font-family: var(--font-body);
+	--ht-font-size: 12px;
+	--ht-background-color: var(--surface);
+	--ht-background-secondary-color: var(--surface-secondary);
+	--ht-foreground-color: var(--foreground);
+	--ht-foreground-secondary-color: var(--muted-foreground);
+	--ht-read-only-color: var(--muted-foreground);
+	--ht-border-color: var(--border);
+	--ht-wrapper-border-color: var(--border);
+	--ht-cell-read-only-background-color: var(--surface-secondary);
+	--ht-row-cell-odd-background-color: var(--surface);
+	--ht-row-cell-even-background-color: var(--surface);
+	--ht-header-background-color: var(--surface-secondary);
+	--ht-header-foreground-color: var(--foreground);
+	--ht-row-header-background-color: var(--surface-secondary);
+	--ht-row-header-foreground-color: var(--muted-foreground);
+	--ht-cell-horizontal-border-color: var(--border);
+	--ht-cell-vertical-border-color: var(--border);
+	--ht-accent-color: var(--accent);
+	--ht-accent-foreground-color: var(--accent-foreground);
+	--ht-cell-selection-border-color: var(--accent);
+	--ht-cell-selection-background-color: color-mix(in oklch, var(--accent) 12%, transparent);
+	--ht-menu-background-color: var(--overlay);
+	--ht-menu-foreground-color: var(--overlay-foreground);
+	--ht-menu-item-hover-background-color: var(--surface-secondary);
+	--ht-menu-item-active-background-color: color-mix(in oklch, var(--accent) 14%, var(--surface));
+	--ht-menu-border-color: var(--border);
+	--ht-dropdown-menu-filter-input-background-color: var(--surface);
+	--ht-dropdown-menu-filter-input-border-color: var(--border);
+}
+
+.coleo-resource-sheet .handsontable th {
+	font-family: var(--font-interface);
+	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+
+.coleo-resource-sheet .handsontable td {
+	line-height: 1.35;
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-selected-row {
+	background: color-mix(in oklch, var(--accent) 9%, var(--surface));
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-primary-cell {
+	font-weight: 550;
+}
+
+/*
+ * Handsontable portals menus directly under <body>, outside the sheet theme
+ * element. Reapply the application tokens so those transient surfaces inherit
+ * the active light/dark theme instead of falling back to a white menu.
+ */
+.handsontable.htDropdownMenu,
+.handsontable.htContextMenu,
+.handsontable.htFiltersConditionsMenu {
+	--ht-font-family: var(--font-body);
+	--ht-font-size: 12px;
+	--ht-background-color: var(--overlay);
+	--ht-background-secondary-color: var(--surface-secondary);
+	--ht-foreground-color: var(--overlay-foreground);
+	--ht-foreground-secondary-color: var(--muted-foreground);
+	--ht-border-color: var(--border);
+	--ht-accent-color: var(--accent);
+	--ht-menu-background-color: var(--overlay);
+	--ht-menu-foreground-color: var(--overlay-foreground);
+	--ht-menu-border-color: var(--border);
+	--ht-menu-item-hover-background-color: var(--surface-secondary);
+	--ht-menu-item-active-background-color: color-mix(in oklch, var(--accent) 14%, var(--surface));
+	--ht-input-background-color: var(--surface);
+	--ht-input-foreground-color: var(--foreground);
+	--ht-input-border-color: var(--border);
+	--ht-input-focus-background-color: var(--surface);
+	--ht-input-focus-foreground-color: var(--foreground);
+	--ht-input-focus-border-color: var(--accent);
+}
