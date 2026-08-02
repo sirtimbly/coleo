@@ -9,7 +9,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, ChevronRight } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type ActivityEntry, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type JsonObject, type RecentEventsResponse, type TranscriptIndexerHealth } from '@/lib';
-import { Card, CardHeader, CardTitle, CardContent, CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
+import { CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
 import { StatusBurndownChart } from '@/components/StatusBurndownChart';
@@ -20,6 +20,12 @@ import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import { RefreshGate } from '@/lib/refresh-gate';
 import { hasOpenedProjectSetup, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { ArmHostProvidersSection } from '@/components/ArmHostProvidersSection';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+  WorkbenchToolbar,
+} from '@/design-system/WorkbenchSurface';
 
 type Navigate = (pathname: string, search?: string) => void;
 
@@ -495,18 +501,17 @@ function ArmsListSection({
   const hasDetails = status?.arms.details && status.arms.details.length > 0;
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <button
-          type="button"
-          onClick={() => onNavigate("/arms")}
-          className="group flex items-center gap-1 hover:text-accent"
-        >
-          <CardTitle className="group-hover:text-accent">Arms</CardTitle>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
-        </button>
-      </CardHeader>
-      <CardContent>
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Arms"
+        description="Fleet health and current assignments"
+        actions={
+          <Button size="sm" variant="ghost" onPress={() => onNavigate("/arms")}>
+            Open fleet <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+      <div className="p-4">
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
@@ -582,8 +587,8 @@ function ArmsListSection({
             ))}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </WorkbenchSurface>
   );
 }
 
@@ -601,18 +606,17 @@ function ActivitySection({
   const armIds = useMemo(() => new Set(arms.map((arm) => arm.id)), [arms]);
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <button
-          type="button"
-          onClick={() => onNavigate("/history-search")}
-          className="group flex items-center gap-1 hover:text-accent"
-        >
-          <CardTitle className="group-hover:text-accent">Recent Activity</CardTitle>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
-        </button>
-      </CardHeader>
-      <CardContent>
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Recent activity"
+        description="Latest actors and resource changes"
+        actions={
+          <Button size="sm" variant="ghost" onPress={() => onNavigate("/history-search")}>
+            Search <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+      <div className="p-4">
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map((i) => (
@@ -666,8 +670,8 @@ function ActivitySection({
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </WorkbenchSurface>
   );
 }
 
@@ -683,25 +687,17 @@ function NotableEventsSection({
   onNavigate: Navigate;
 }) {
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <button
-          type="button"
-          onClick={() => onNavigate("/activity")}
-          className="group flex items-center gap-1 hover:text-accent"
-        >
-          <CardTitle className="group-hover:text-accent">Recent Notable Events</CardTitle>
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-hover:text-accent" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate("/history-search")}
-          className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground hover:text-accent"
-        >
-          Search complete history
-        </button>
-      </CardHeader>
-      <CardContent>
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Notable events"
+        description="High-signal task, bug, Arm, and system changes"
+        actions={
+          <Button size="sm" variant="ghost" onPress={() => onNavigate("/history-search")}>
+            Search history <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        }
+      />
+      <div className="p-4">
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4].map((i) => (
@@ -771,8 +767,8 @@ function NotableEventsSection({
             })}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </WorkbenchSurface>
   );
 }
 
@@ -1096,14 +1092,12 @@ export function DashboardPage() {
   if (error && !status) {
     return (
       <div className="p-8">
-        <Card className="border-danger">
-          <CardContent>
-            <p className="text-danger">Error: {error}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Make sure the API server is running: <code className="px-1 bg-secondary rounded">bun run server</code>
-            </p>
-          </CardContent>
-        </Card>
+        <WorkbenchSurface className="border-danger">
+          <WorkbenchEmptyState
+            title="Unable to load the dashboard"
+            description={`${error}. Make sure the API server is running.`}
+          />
+        </WorkbenchSurface>
       </div>
     );
   }
@@ -1115,9 +1109,11 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
-        <span className="text-xs text-muted-foreground">System overview</span>
-        <div className="flex items-center gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em]">
+      <WorkbenchHeader
+        title="Dashboard"
+        description="System readiness, runtime hosts, and sampled operational metrics"
+        actions={
+          <div className="flex items-center gap-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em]">
           {connected && authenticated ? (
             <div className="flex items-center gap-2 text-success">
               <span className="h-2 w-2 rounded-full bg-success" />
@@ -1129,8 +1125,20 @@ export function DashboardPage() {
               <span>Polling</span>
             </div>
           )}
-        </div>
-      </header>
+          </div>
+        }
+      />
+      <WorkbenchToolbar>
+        <span className="text-xs text-muted-foreground">
+          {statusLoading ? "Loading system status…" : `${healthyServiceCount}/${infrastructureServices.length} services healthy`}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {detailsLoading ? "Loading Arms…" : `${arms.length} Arms`}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {taskStatsLoading ? "Loading tasks…" : `${taskStats?.active ?? 0} active tasks`}
+        </span>
+      </WorkbenchToolbar>
 
       <div className="min-h-0 flex-1 overflow-auto">
 
