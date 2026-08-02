@@ -3,12 +3,19 @@ import { Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
 import { api } from '@/lib';
 import type { ActivityEntry, BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
-import { Card, CardContent, DenseSection, DenseRow, DenseRowSkeleton, type Tone } from '@/components';
+import { DenseRowSkeleton } from '@/components';
 import { BrainActivityLog } from '@/components/BrainActivityLog';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import { mergeBrainActivity, parseBrainActivityEntry } from './brain-activity';
+import { CollectionRow } from '@/design-system/CollectionRow';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchStatusDot,
+  WorkbenchSurface,
+} from '@/design-system/WorkbenchSurface';
 
 interface BrainStatus {
   status: 'stopped' | 'running' | 'paused';
@@ -36,10 +43,10 @@ const formatPollInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
-const statusTone = (brainStatus: string): Tone => {
+const statusTone = (brainStatus: string): 'neutral' | 'success' | 'warning' => {
   if (brainStatus === 'running') return 'success';
   if (brainStatus === 'paused') return 'warning';
-  return 'default';
+  return 'neutral';
 };
 
 function EditToggle({ isEditing, onToggle }: { isEditing: boolean; onToggle: () => void }) {
@@ -67,9 +74,11 @@ function BrainStatusSection({
   onNavigate: Navigate;
 }) {
   return (
-    <DenseSection
-      title="Brain Status"
-      action={
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Brain status"
+        description="Coordinator lifecycle and current workload"
+        actions={
         status?.status === 'running' ? (
           <Button variant="secondary" size="sm" onPress={onStop} isDisabled={actionLoading === 'stop'}>
             <Square className="h-3.5 w-3.5" />
@@ -82,53 +91,47 @@ function BrainStatusSection({
           </Button>
         )
       }
-    >
+      />
       {isLoading ? (
-        <>
+        <div>
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <DenseRowSkeleton key={i} />
           ))}
-        </>
+        </div>
       ) : (
-        <>
-          <DenseRow
-            tone={statusTone(status?.status || 'stopped')}
-            label="Status"
-            detail={`uptime ${formatUptime(status?.uptime)}`}
-            chipLabel={status?.status || 'unknown'}
-            chipColor={statusTone(status?.status || 'stopped')}
+        <div>
+          <CollectionRow
+            title="Status"
+            description={`Uptime ${formatUptime(status?.uptime)}`}
+            leading={<WorkbenchStatusDot tone={statusTone(status?.status || 'stopped')} />}
+            trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
           />
-          <DenseRow
-            tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'default'}
-            label="Active Arms"
-            detail="Arms currently registered with the coordinator"
-            chipLabel={String(status?.activeArmsCount ?? 0)}
-            chipColor="accent"
-            onClick={() => onNavigate('/arms')}
+          <CollectionRow
+            title="Active Arms"
+            description="Arms currently registered with the coordinator"
+            leading={<WorkbenchStatusDot tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'neutral'} />}
+            trailing={<span>{status?.activeArmsCount ?? 0}</span>}
+            onOpen={() => onNavigate('/arms')}
           />
-          <DenseRow
-            tone={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'default'}
-            label="Pending Tasks"
-            detail={`${status?.completedToday ?? 0} completed today`}
-            chipLabel={String(status?.pendingTasksCount ?? 0)}
-            chipColor={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'default'}
-            onClick={() => onNavigate('/tasks')}
+          <CollectionRow
+            title="Pending Tasks"
+            description={`${status?.completedToday ?? 0} completed today`}
+            leading={<WorkbenchStatusDot tone={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'neutral'} />}
+            trailing={<span>{status?.pendingTasksCount ?? 0}</span>}
+            onOpen={() => onNavigate('/tasks')}
           />
-          <DenseRow
-            tone="default"
-            label="Poll Interval"
-            detail="How often the brain checks for new work"
-            chipLabel={formatPollInterval(status?.pollIntervalMs || 30000)}
-            chipColor="default"
+          <CollectionRow
+            title="Poll interval"
+            description="How often the brain checks for new work"
+            trailing={<span>{formatPollInterval(status?.pollIntervalMs || 30000)}</span>}
           />
-          <DenseRow
-            tone="default"
-            label="Last Poll"
-            detail={status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Never'}
+          <CollectionRow
+            title="Last poll"
+            description={status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Never'}
           />
-        </>
+        </div>
       )}
-    </DenseSection>
+    </WorkbenchSurface>
   );
 }
 
@@ -177,7 +180,12 @@ function BrainConfigSection({
   };
 
   return (
-    <DenseSection title="Brain Configuration" action={<EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} />}>
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Brain configuration"
+        description="Inference and orchestration limits"
+        actions={<EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} />}
+      />
       {isEditing ? (
         <div className="space-y-4 px-4 py-3">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -238,14 +246,14 @@ function BrainConfigSection({
           </div>
         </div>
       ) : (
-        <>
-          <DenseRow tone="default" label="Provider" detail="Inference provider used by the brain" chipLabel={provider === 'openai' ? 'OpenAI' : provider} chipColor="default" />
-          <DenseRow tone="default" label="Model" detail="Model used for brain analysis and coordination" chipLabel={model} chipColor="default" />
-          <DenseRow tone="default" label="Poll Interval" detail="How often the brain checks for new work" chipLabel={`${pollIntervalMs}ms`} chipColor="default" />
-          <DenseRow tone="default" label="Max Arms" detail="Maximum concurrent arms the brain will spawn" chipLabel={String(maxArms)} chipColor="default" />
-        </>
+        <div>
+          <CollectionRow title="Provider" description="Inference provider used by the brain" trailing={<span>{provider === 'openai' ? 'OpenAI' : provider}</span>} />
+          <CollectionRow title="Model" description="Model used for brain analysis and coordination" trailing={<span>{model}</span>} />
+          <CollectionRow title="Poll interval" description="How often the brain checks for new work" trailing={<span>{pollIntervalMs}ms</span>} />
+          <CollectionRow title="Max Arms" description="Maximum concurrent Arms" trailing={<span>{maxArms}</span>} />
+        </div>
       )}
-    </DenseSection>
+    </WorkbenchSurface>
   );
 }
 
@@ -385,55 +393,55 @@ export function BrainPage() {
   if (error) {
     return (
       <div className="p-8">
-        <Card className="border-danger">
-          <CardContent>
-            <p className="text-danger">Error: {error}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Make sure the API server is running: <code className="px-1 bg-secondary rounded">bun run server</code>
-            </p>
-          </CardContent>
-        </Card>
+        <WorkbenchSurface className="border-danger">
+          <WorkbenchEmptyState
+            title="Unable to load the Brain"
+            description={`${error}. Make sure the API server is running.`}
+          />
+        </WorkbenchSurface>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Brain</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Central coordinator status and configuration</p>
-        </div>
-        <Button variant="ghost" size="sm" onPress={handleRefresh}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WorkbenchHeader
+        title="Brain"
+        description="Central coordinator status, activity, and configuration"
+        actions={
+          <Button variant="ghost" size="sm" onPress={handleRefresh} aria-label="Refresh Brain">
+            <RefreshCw className="h-4 w-4" />
+          </Button>
+        }
+      />
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+        <BrainStatusSection
+          status={status}
+          isLoading={loading}
+          actionLoading={actionLoading}
+          onStart={handleStart}
+          onStop={handleStop}
+          onNavigate={navigate}
+        />
+
+        <BrainActivityLog
+          activity={activity}
+          connected={connected && authenticated}
+          loading={activityLoading}
+          loadingOlder={olderActivityLoading}
+          hasMore={hasOlderActivity}
+          onLoadOlder={loadOlderActivity}
+          onNavigate={navigate}
+        />
+
+        <BrainConfigSection
+          config={config}
+          models={brainModels}
+          modelsError={brainModelsError}
+          onUpdate={loadData}
+        />
       </div>
-
-      <BrainStatusSection
-        status={status}
-        isLoading={loading}
-        actionLoading={actionLoading}
-        onStart={handleStart}
-        onStop={handleStop}
-        onNavigate={navigate}
-      />
-
-      <BrainActivityLog
-        activity={activity}
-        connected={connected && authenticated}
-        loading={activityLoading}
-        loadingOlder={olderActivityLoading}
-        hasMore={hasOlderActivity}
-        onLoadOlder={loadOlderActivity}
-        onNavigate={navigate}
-      />
-
-      <BrainConfigSection
-        config={config}
-        models={brainModels}
-        modelsError={brainModelsError}
-        onUpdate={loadData}
-      />
     </div>
   );
 }
