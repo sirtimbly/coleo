@@ -163,3 +163,18 @@ The initial workbench migration was completed on 2026-07-31 in
   task, bug, and Arm target navigation.
 - Eight Playwright scenarios protect the Inbox, Brain handoff, Arm Fleet/Viewer, and task
   spreadsheet/detail flows.
+
+### 2026-08-02 sheet performance follow-up
+
+- Resource sheets own one imperative Handsontable instance instead of routing
+  its editor portals and settings updates through React renders.
+- Explicit column widths and row heights disable unnecessary automatic sizing,
+  while Handsontable's row virtualization remains enabled with a small viewport
+  buffer.
+- The Subject column scrolls with the rest of the sheet. Removing its frozen
+  overlay eliminates the duplicated first-column layer that made row-header
+  repainting visible during selection.
+- Sheet pagination runs only when the vertical viewport reaches the bottom
+  threshold, not on every scroll event.
+- The Tasks browser coverage samples row-header selection over multiple
+  animation frames and rejects duplicate frozen-column cells.

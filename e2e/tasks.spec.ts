@@ -36,13 +36,52 @@ test("renders tasks in the configurable spreadsheet", async ({ page }) => {
 
 	await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 	await expect(page.getByText("Protect the critical workbench", { exact: true })).toBeVisible();
-	await expect(page.getByText(/double-click a row for details/i)).toBeVisible();
+	await expect(page.getByText(/double-click a row for details/i)).toBeVisible({
+		timeout: 20_000,
+	});
+
+	const rowHeader = page.getByRole("rowheader", { name: "1", exact: true });
+	await expect(rowHeader).toHaveCount(1);
+	const sampleGutterStates = () => rowHeader.evaluate(async (element) => {
+		const classNames = new Set<string>();
+		let bodyBackgroundMatches = 0;
+		const startedAt = performance.now();
+		do {
+			const style = getComputedStyle(element);
+			classNames.add(element.className);
+			if (style.backgroundColor === getComputedStyle(document.body).backgroundColor) {
+				bodyBackgroundMatches += 1;
+			}
+			await new Promise(requestAnimationFrame);
+		} while (performance.now() - startedAt < 300);
+		return { classNames: [...classNames], bodyBackgroundMatches };
+	});
+	const expectStableGutter = async () => {
+		const state = await sampleGutterStates();
+		expect(state.classNames).toHaveLength(1);
+		expect(state.bodyBackgroundMatches).toBe(0);
+	};
+
+	await rowHeader.click();
+	await expectStableGutter();
+
+	await page
+		.locator(".coleo-resource-sheet")
+		.getByRole("gridcell", { name: "Protect the critical workbench", exact: true })
+		.click();
+	await expectStableGutter();
+
+	await expect(
+		page.locator(".coleo-resource-sheet .ht_clone_inline_start tbody td"),
+	).toHaveCount(0);
 });
 
 test("opens a spreadsheet row in the dedicated task detail projection", async ({ page }) => {
 	await installMockApi(page, { tasks: [task] });
 	await page.goto("/tasks");
-	await page.getByText("Protect the critical workbench", { exact: true }).dblclick();
+	const sheet = page.locator(".coleo-resource-sheet");
+	await expect(sheet).toBeVisible({ timeout: 20_000 });
+	await sheet.getByText("Protect the critical workbench", { exact: true }).dblclick();
 
 	await expect(page).toHaveURL(/\/tasks\?.*task=task-workbench/);
 	await expect(
