@@ -185,6 +185,19 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				counts: { total: tasks.length, byStatus: {} },
 			});
 		}
+		if (/^\/api\/tasks\/[^/]+$/.test(path) && request.method() === "GET") {
+			const taskId = path.split("/")[3];
+			const task = (options.tasks ?? []).find(
+				(candidate) =>
+					typeof candidate === "object" &&
+					candidate !== null &&
+					"id" in candidate &&
+					candidate.id === taskId,
+			);
+			return task
+				? json(route, { task, dependencies: [] })
+				: json(route, { error: "Task not found" }, 404);
+		}
 
 		if (path === "/api/mail/inbox") {
 			const messages = options.inbox ?? [];

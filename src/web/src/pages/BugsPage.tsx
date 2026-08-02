@@ -15,7 +15,13 @@ import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
-import { WorkbenchHeader } from '@/design-system/WorkbenchSurface';
+import {
+	WorkbenchHeader,
+	WorkbenchSurface,
+	WorkbenchToolbar,
+} from '@/design-system/WorkbenchSurface';
+import { CollectionRow } from '@/design-system/CollectionRow';
+import { ProjectionSearch } from '@/design-system/ProjectionControls';
 import {
 	useIsWorkspacePanel,
 	useWorkspaceCloseRoute,
@@ -188,28 +194,28 @@ function BugDetailProjection({
 			<WorkbenchHeader
 				title={bug.title}
 				description={`Bug ${bug.id}`}
+				icon={<BugIcon className="h-4 w-4" />}
 				actions={(
 					<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
 						<X className="h-4 w-4" />
 					</Button>
 				)}
 			/>
+			<WorkbenchToolbar>
+				<span
+					className={cn(
+						'px-2 py-1 text-xs',
+						PRIORITY_CONFIG[bug.priority].bgColor,
+						PRIORITY_CONFIG[bug.priority].color,
+					)}
+				>
+					{PRIORITY_CONFIG[bug.priority].label}
+				</span>
+				<BugCreatedAt createdAt={bug.createdAt} />
+			</WorkbenchToolbar>
 			<div className="min-h-0 flex-1 overflow-auto p-5">
-				<div className="mx-auto max-w-4xl space-y-5">
-					<div className="flex flex-wrap items-center justify-between gap-3">
-						<span
-							className={cn(
-								'px-2 py-1 text-xs',
-								PRIORITY_CONFIG[bug.priority].bgColor,
-								PRIORITY_CONFIG[bug.priority].color,
-							)}
-						>
-							{PRIORITY_CONFIG[bug.priority].label}
-						</span>
-						<BugCreatedAt createdAt={bug.createdAt} />
-					</div>
-
-					<section>
+				<WorkbenchSurface className="mx-auto max-w-4xl">
+					<section className="p-4">
 						<h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
 							Description
 						</h2>
@@ -219,24 +225,10 @@ function BugDetailProjection({
 							onSave={(bugId, description) => onUpdate(bugId, { description })}
 						/>
 					</section>
-
-					<div className="grid gap-4 border-t border-border pt-4 sm:grid-cols-3">
-						<div>
-							<span className="text-xs text-muted-foreground">Status</span>
-							<p className={cn('mt-1 text-sm font-medium', STATUS_CONFIG[bug.status].color)}>
-								{STATUS_CONFIG[bug.status].label}
-							</p>
-						</div>
-						<div>
-							<span className="text-xs text-muted-foreground">Source</span>
-							<p className="mt-1 text-sm capitalize">{bug.source.replace('_', ' ')}</p>
-						</div>
-						<div>
-							<span className="text-xs text-muted-foreground">Assigned Arm</span>
-							<p className="mt-1 text-sm">{bug.assigneeArmName ?? 'Unassigned'}</p>
-						</div>
-					</div>
-				</div>
+					<CollectionRow title="Status" trailing={<span className={STATUS_CONFIG[bug.status].color}>{STATUS_CONFIG[bug.status].label}</span>} />
+					<CollectionRow title="Source" trailing={<span className="capitalize">{bug.source.replace('_', ' ')}</span>} />
+					<CollectionRow title="Assigned Arm" trailing={<span>{bug.assigneeArmName ?? 'Unassigned'}</span>} />
+				</WorkbenchSurface>
 			</div>
 		</div>
 	);
@@ -460,46 +452,50 @@ export function BugsPage() {
 	}
 
 	const workspaceHeader = (
-		<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
-			<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-				<div className="relative w-48 shrink-0">
-					<Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-default-400" />
-					<input
-						type="text"
-						placeholder="Search bugs..."
-						value={searchText}
-						onChange={(event) => setSearchText(event.target.value)}
-						className="h-9 w-full rounded-md border border-border bg-surface-secondary px-8 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-					/>
-				</div>
-				<div className="shrink-0 text-xs text-muted-foreground">{bugs.length} total</div>
-				{availableTags.length > 0 ? <div className="h-4 w-px shrink-0 bg-border" /> : null}
+		<>
+			<WorkbenchHeader
+				title="Bugs"
+				description="Track, prioritize, and resolve reported defects"
+				icon={<BugIcon className="h-4 w-4" />}
+				actions={
+					<>
+						<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh Bugs">
+							<RefreshCw className="h-4 w-4" />
+						</Button>
+						<Button size="sm" variant="primary" onPress={openNewBugPanel}>
+							<Plus className="mr-1.5 h-4 w-4" />
+							New
+						</Button>
+					</>
+				}
+			/>
+			<WorkbenchToolbar>
+				<ProjectionSearch
+					value={searchText}
+					onChange={setSearchText}
+					placeholder="Search bugs"
+					className="max-w-sm"
+				/>
+				<span className="shrink-0 text-xs text-muted-foreground">
+					{bugs.length} total · {filteredBugs.length} visible
+				</span>
 				{availableTags.slice(0, 8).map((tag) => (
 					<button
 						key={tag}
 						type="button"
 						aria-pressed={tagFilter.includes(tag)}
 						onClick={() => toggleTagFilter(tag)}
-						className={`h-8 shrink-0 rounded-md border px-2.5 text-xs transition-colors ${
+						className={`h-8 shrink-0 border px-2.5 text-xs ${
 							tagFilter.includes(tag)
 								? 'border-accent/50 bg-accent/10 text-accent'
-								: 'border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground'
+								: 'border-border text-muted-foreground hover:bg-surface-secondary'
 						}`}
 					>
 						{tag}
 					</button>
 				))}
-			</div>
-			<div className="flex shrink-0 items-center gap-2">
-				<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
-					<RefreshCw className="h-4 w-4" />
-				</Button>
-				<Button size="sm" variant="primary" onPress={openNewBugPanel}>
-					<Plus className="mr-1.5 h-4 w-4" />
-					New
-				</Button>
-			</div>
-		</header>
+			</WorkbenchToolbar>
+		</>
 	);
 
 	return (

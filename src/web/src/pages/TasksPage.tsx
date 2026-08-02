@@ -51,6 +51,12 @@ import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
+import { ProjectionSearch } from "@/design-system/ProjectionControls";
+import {
+	WorkbenchHeader,
+	WorkbenchSurface,
+	WorkbenchToolbar,
+} from "@/design-system/WorkbenchSurface";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
 
@@ -881,37 +887,36 @@ export function TasksPage() {
 
 	if (isWorkspacePanel || searchParams.has("task")) {
 		const workspaceListHeader = (
-			<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
-				<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-					<div className="relative w-48 shrink-0">
-						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-						<input
-							type="text"
-							placeholder="Search tasks..."
-							value={searchText}
-							onChange={(e) => setSearchText(e.target.value)}
-							className="h-9 w-full rounded-md border border-border bg-surface-secondary px-8 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-						/>
-					</div>
-					<div className="shrink-0 text-xs text-muted-foreground">
-						{counts?.total ?? 0} total
-					</div>
-				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					<TaskWorkflowHelp />
-					<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
-						<RefreshCw className="h-4 w-4" />
-					</Button>
-					<Button
-						size="sm"
-						variant="primary"
-						onPress={openNewTaskPanel}
-					>
-						<Plus className="mr-1.5 h-4 w-4" />
-						New
-					</Button>
-				</div>
-			</header>
+			<>
+				<WorkbenchHeader
+					title="Tasks"
+					description="Brain-managed queue and plan-backed work"
+					icon={<ScrollText className="h-4 w-4" />}
+					actions={
+						<>
+							<TaskWorkflowHelp />
+							<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh Tasks">
+								<RefreshCw className="h-4 w-4" />
+							</Button>
+							<Button size="sm" variant="primary" onPress={openNewTaskPanel}>
+								<Plus className="mr-1.5 h-4 w-4" />
+								New
+							</Button>
+						</>
+					}
+				/>
+				<WorkbenchToolbar>
+					<ProjectionSearch
+						value={searchText}
+						onChange={setSearchText}
+						placeholder="Search tasks"
+						className="max-w-sm"
+					/>
+					<span className="shrink-0 text-xs text-muted-foreground">
+						{counts?.total ?? 0} total · {filteredTasks.length} visible
+					</span>
+				</WorkbenchToolbar>
+			</>
 		);
 
 		if (!selectedTask) {
@@ -959,6 +964,22 @@ export function TasksPage() {
 		return (
 			<>
 				<div className="flex h-full min-h-0 flex-col bg-background">
+					<WorkbenchHeader
+						title={selectedTask.subject}
+						description={`Task ${selectedTask.id}`}
+						icon={<ScrollText className="h-4 w-4" />}
+						actions={
+							<Button
+								isIconOnly
+								size="sm"
+								variant="ghost"
+								onPress={closeWorkspaceRoute}
+								aria-label="Close task details"
+							>
+								<X className="h-4 w-4" />
+							</Button>
+						}
+					/>
 					<TaskDetailsToolbar
 						activeTab={sidebarTab}
 						onTabChange={setSidebarTab}
@@ -973,6 +994,7 @@ export function TasksPage() {
 
 					{sidebarTab === detailsTabId ? (
 						<div className="flex-1 overflow-auto p-3" role="tabpanel">
+							<WorkbenchSurface className="mx-auto max-w-4xl p-4">
 							<div className="space-y-3">
 								<div className="flex items-center justify-between">
 									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
@@ -1008,6 +1030,7 @@ export function TasksPage() {
 								</div>
 								<BlockedTaskNotice task={selectedTask} />
 							</div>
+							</WorkbenchSurface>
 						</div>
 					) : null}
 
