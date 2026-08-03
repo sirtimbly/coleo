@@ -102,6 +102,7 @@ export function presentResourceEditor(input: {
 	kind: "task" | "bug";
 	title: string;
 	description: string;
+	resourceVersion?: string;
 }): CardEnvelope {
 	return {
 		id: `edit:${input.kind}:${input.id}`,
@@ -117,6 +118,7 @@ export function presentResourceEditor(input: {
 			title: input.title,
 			description: input.description,
 			saveVerb: `${input.kind}.update`,
+			resourceVersion: input.resourceVersion,
 		},
 	};
 }

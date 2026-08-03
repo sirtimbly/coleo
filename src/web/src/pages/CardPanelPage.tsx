@@ -1,5 +1,6 @@
 import { Button } from "@heroui/react";
 import { ExternalLink, PanelsTopLeft } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
 import { parseCardRoute } from "@/adaptive-cards/card-route";
@@ -10,24 +11,46 @@ import {
 	useWorkspaceSearchParams,
 } from "@/workspace/route-context";
 
-import type { CardActionRequest } from "../../../types/adaptive-cards";
+import type { CardActionRequest, CardEnvelope } from "../../../types/adaptive-cards";
 
 export function CardPanelPage() {
 	const [searchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
-	const envelope = parseCardRoute(searchParams);
+	const instanceId = parseCardRoute(searchParams);
+	const [envelope, setEnvelope] = useState<CardEnvelope | null>(null);
+	const [loadError, setLoadError] = useState<string | null>(null);
 
-	if (!envelope) {
+	useEffect(() => {
+		if (!instanceId) return;
+		let cancelled = false;
+		void api.getWorkbenchCardInstance(instanceId)
+			.then((response) => {
+				if (!cancelled) setEnvelope(response.instance.envelope);
+			})
+			.catch((reason: unknown) => {
+				if (!cancelled) {
+					setLoadError(reason instanceof Error ? reason.message : "Could not restore this card.");
+				}
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [instanceId]);
+
+	if (!instanceId || loadError) {
 		return (
 			<WorkbenchEmptyState
 				title="Card unavailable"
-				description="This panel does not contain a supported card envelope."
+				description={loadError ?? "This panel does not contain a supported card identity."}
 			/>
 		);
 	}
+	if (!envelope) {
+		return <WorkbenchEmptyState title="Loading card" description="Restoring this card projection." />;
+	}
 
 	const handleAction = async (request: CardActionRequest) => {
-		if (request.verb === "resource.open") {
+		if (request.verb === "resource.open" || request.verb === "message.open") {
 			const target = envelope.data.targetRoute;
 			if (target && typeof target === "object" && !Array.isArray(target)) {
 				const pathname = target.pathname;
@@ -39,6 +62,10 @@ export function CardPanelPage() {
 					}, "focus");
 				}
 			}
+			return;
+		}
+		if (request.verb === "message.archive" && request.resource?.kind === "message") {
+			await api.archiveMail(request.resource.id);
 			return;
 		}
 		const result = await api.executeWorkbenchCardAction(request);

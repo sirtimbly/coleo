@@ -71,6 +71,27 @@
         "actionId": "resolve-attention"
       },
       "mode": "secondary"
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${requiresAction}",
+      "title": "Snooze 1 hour",
+      "verb": "attention.snooze",
+      "data": {
+        "actionId": "snooze-attention",
+        "durationMinutes": 60
+      },
+      "mode": "secondary"
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${requiresAction}",
+      "title": "Assign to me",
+      "verb": "attention.assign",
+      "data": {
+        "actionId": "assign-attention"
+      },
+      "mode": "secondary"
     }
   ]
 }

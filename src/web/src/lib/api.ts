@@ -27,6 +27,7 @@ import type {
   CardActionRequest,
   CardActionResult,
   WorkbenchAttention,
+  WorkbenchInboxRecord,
 } from '../../../types/adaptive-cards';
 
 const API_BASE = '/api';
@@ -1521,6 +1522,21 @@ class ApiClient {
     );
   }
 
+  async listWorkbenchInbox(params: {
+    profileId?: string;
+    cursor?: string;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams({
+      profileId: params.profileId ?? 'local',
+      limit: String(params.limit ?? 100),
+    });
+    if (params.cursor) query.set('cursor', params.cursor);
+    return this.request<{ items: WorkbenchInboxRecord[]; nextCursor?: string }>(
+      `/workbench/inbox?${query.toString()}`,
+    );
+  }
+
   async updateWorkbenchAttention(
     itemKey: string,
     patch: Partial<Omit<WorkbenchAttention, 'profileId' | 'itemKey' | 'updatedAt'>> & {
@@ -1549,6 +1565,31 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify(request),
     }).then((response) => response.result);
+  }
+
+  async saveWorkbenchCardInstance(envelope: import('../../../types/adaptive-cards').CardEnvelope) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>('/workbench/cards/instances', {
+      method: 'POST',
+      body: JSON.stringify({ profileId: 'local', envelope }),
+    });
+  }
+
+  async getWorkbenchCardInstance(id: string) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>(`/workbench/cards/instances/${encodeURIComponent(id)}`);
   }
 
   async listRuns(params?: {

@@ -32,9 +32,13 @@ describe("adaptive card contracts", () => {
 			requiresAction: true,
 			severity: "warning",
 		});
-		const route = createCardRoute(envelope);
+		const route = createCardRoute(
+			"018fd384-7c9a-7a83-8fd8-6f6f0c96af95",
+			envelope.presentation.title,
+		);
 		expect(route.pathname).toBe("/card");
-		expect(parseCardRoute(new URLSearchParams(route.search))).toEqual(envelope);
+		expect(parseCardRoute(new URLSearchParams(route.search)))
+			.toBe("018fd384-7c9a-7a83-8fd8-6f6f0c96af95");
 	});
 
 	it("creates scalar editors with a resource-scoped save verb", () => {

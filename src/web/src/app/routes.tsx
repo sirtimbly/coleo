@@ -46,6 +46,7 @@ import {
   SetupPage,
   ComposeMessagePage,
   CardPanelPage,
+  CardCatalogPage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -236,17 +237,18 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     component: CardPanelPage,
     showInNav: false,
     getTitle: (searchParams) => {
-      const raw = searchParams.get('envelope');
-      if (!raw) return 'Card';
-      try {
-        const envelope = JSON.parse(raw) as { presentation?: { title?: unknown } };
-        return typeof envelope.presentation?.title === 'string'
-          ? envelope.presentation.title
-          : 'Card';
-      } catch {
-        return 'Card';
-      }
+      const id = searchParams.get('id');
+      return id ? `Card ${id.slice(0, 8)}` : 'Card';
     },
+  },
+  {
+    id: 'card-catalog',
+    href: '/card-catalog',
+    path: 'card-catalog',
+    label: 'Card catalog',
+    icon: Grid3x3,
+    component: CardCatalogPage,
+    showInNav: false,
   },
   {
     id: 'grid',

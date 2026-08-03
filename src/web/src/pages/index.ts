@@ -20,3 +20,4 @@ export { UnifiedGridPage } from './UnifiedGridPage';
 export { SetupPage } from './SetupPage';
 export { ComposeMessagePage } from './ComposeMessagePage';
 export { CardPanelPage } from './CardPanelPage';
+export { CardCatalogPage } from './CardCatalogPage';

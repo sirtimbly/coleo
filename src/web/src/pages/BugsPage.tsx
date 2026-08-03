@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { AdaptiveCardView } from '@/adaptive-cards/AdaptiveCardView';
-import { createCardRoute } from '@/adaptive-cards/card-route';
+import { createPersistedCardRoute } from '@/adaptive-cards/persisted-card-route';
 import {
 	presentResourceDetail,
 	presentResourceEditor,
@@ -560,12 +560,13 @@ export function BugsPage() {
 	}, [openWorkspaceRoute, searchParams]);
 	const handleOpenBugCardEditor = useCallback(() => {
 		if (!selectedBug) return;
-		openWorkspaceRoute(createCardRoute(presentResourceEditor({
+		void createPersistedCardRoute(presentResourceEditor({
 			id: selectedBug.id,
 			kind: "bug",
 			title: selectedBug.title,
 			description: selectedBug.description,
-		})), "action");
+			resourceVersion: selectedBug.updatedAt,
+		})).then((route) => openWorkspaceRoute(route, "action"));
 	}, [openWorkspaceRoute, selectedBug]);
 
 	const toggleTagFilter = useCallback((tag: string) => {

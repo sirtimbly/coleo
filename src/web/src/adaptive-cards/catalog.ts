@@ -22,7 +22,12 @@ export const CARD_CATALOG: Record<CardTemplateId, CatalogEntry> = {
 		schemaVersion: CARD_SCHEMA_VERSION,
 		description: "Semantic event and status activity",
 		surfaces: ["inbox", "stream", "panel", "popout"],
-		allowedActions: ["resource.open", "attention.resolve"],
+		allowedActions: [
+			"resource.open",
+			"attention.resolve",
+			"attention.snooze",
+			"attention.assign",
+		],
 		payload: eventCard as CardJsonObject,
 	},
 	"workbench.message": {

@@ -23,6 +23,10 @@ The initial catalog contains:
 - `workbench.resource-detail@1` for singleton detail panels
 - `workbench.resource-editor@1` for allowlisted scalar edits
 
+Developers can open `/card-catalog` to preview every trusted template and
+inspect the action payload it produces without executing a mutation. Set
+`VITE_ADAPTIVE_CARDS=false` to exercise the readable fallback path.
+
 Raw Arm logs, diffs, threaded discussions, charts, tabular sheets, and plan
 editors remain specialized Workbench projections.
 
@@ -43,6 +47,8 @@ attempting best-effort execution.
 
 - The supported schema is pinned to 1.5.
 - Template versions are append-only once released.
+- Retire a template by adding a new version and an explicit envelope migration;
+  never change the meaning or verb allowlist of a released version in place.
 - External URLs are blocked by default; host navigation uses route data, not
   template-provided URLs.
 - Inputs and action payloads are size-limited and validated on the server.
@@ -59,3 +65,31 @@ attempting best-effort execution.
 4. Singleton task/bug detail and edit cards.
 5. Unified attention views, browser pop-outs, catalog tooling, accessibility,
    performance, and compatibility tests.
+
+Card panels persist an opaque server-side instance ID in Golden Layout. The
+envelope remains behind the authenticated Workbench API and is never embedded
+in route or layout JSON.
+
+## Validation baseline
+
+The production build keeps both runtimes out of the initial route chunk:
+
+- `adaptivecards` runtime: 365.70 kB minified, 88.17 kB gzip
+- templating runtime: 923.09 kB minified, 236.22 kB gzip
+
+Stream cards use an Intersection Observer with a 400 px pre-render margin, so
+the retained 200-item ARM window creates SDK instances only near the viewport.
+List containers retain `content-visibility: auto`; malformed or retired
+templates render a readable fallback and dispose their DOM on replacement.
+
+Released template checksums:
+
+| Template | SHA-256 |
+| --- | --- |
+| `workbench.event@1` | `8a3f53ef42eb13fbb87d6bc6eee12296b0521c4dfdb92af93247b9fc45d2881f` |
+| `workbench.message@1` | `6906261bfde92334798a494b912d5d430fc4aefc605a300bbc9539788a0e20d2` |
+| `workbench.resource-detail@1` | `78cb6ab106330d28d3f7dd2bf60b719916b40c99759226e3eaf0c186424c8878` |
+| `workbench.resource-editor@1` | `1189e94c00d3272f857931af3f5fec75a9afa1a8397e4acc7a6ec3e3e8f01422` |
+
+When a template changes before release, update its checksum. After release,
+create a new version instead.

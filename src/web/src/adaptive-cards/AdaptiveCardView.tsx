@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib";
 import { getCardTemplate, isCardActionAllowed } from "./catalog";
 import { COLEO_CARD_HOST_CONFIG } from "./host-config";
+import { ADAPTIVE_CARDS_ENABLED } from "./feature-flags";
 
 import type {
 	CardActionRequest,
@@ -34,6 +35,9 @@ export function AdaptiveCardView({
 		setError(null);
 
 		const render = async () => {
+			if (!ADAPTIVE_CARDS_ENABLED) {
+				throw new Error("Adaptive Cards are disabled for this deployment.");
+			}
 			if (envelope.schemaVersion !== "1.5") {
 				throw new Error(`Unsupported card schema ${envelope.schemaVersion}`);
 			}
@@ -74,6 +78,9 @@ export function AdaptiveCardView({
 					resource: envelope.resource,
 					inputs: data,
 					clientActionId: crypto.randomUUID(),
+					expectedResourceVersion: typeof data.expectedResourceVersion === "string"
+						? data.expectedResourceVersion
+						: undefined,
 				});
 			};
 			card.parse(expanded);

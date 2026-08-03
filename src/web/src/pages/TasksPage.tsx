@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
-import { createCardRoute } from "@/adaptive-cards/card-route";
+import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
 import {
 	presentResourceDetail,
 	presentResourceEditor,
@@ -724,12 +724,13 @@ export function TasksPage() {
 	}, [selectedTask]);
 	const handleOpenTaskCardEditor = useCallback(() => {
 		if (!selectedTask) return;
-		openWorkspaceRoute(createCardRoute(presentResourceEditor({
+		void createPersistedCardRoute(presentResourceEditor({
 			id: selectedTask.id,
 			kind: "task",
 			title: selectedTask.subject,
 			description: selectedTask.description,
-		})), "action");
+			resourceVersion: selectedTask.updatedAt,
+		})).then((route) => openWorkspaceRoute(route, "action"));
 	}, [openWorkspaceRoute, selectedTask]);
 
 	const handleStatusChange = useCallback(

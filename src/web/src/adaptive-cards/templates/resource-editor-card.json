@@ -32,7 +32,8 @@
       "title": "Save",
       "verb": "${saveVerb}",
       "data": {
-        "actionId": "save-resource"
+        "actionId": "save-resource",
+        "expectedResourceVersion": "${resourceVersion}"
       }
     }
   ]

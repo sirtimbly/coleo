@@ -11,7 +11,7 @@ import { Button } from "@heroui/react";
 import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
-import { createCardRoute } from "@/adaptive-cards/card-route";
+import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
 import { presentInboxItem } from "@/adaptive-cards/presenters";
 import {
 	WorkbenchEmptyState,
@@ -54,6 +54,7 @@ import {
 import type {
 	CardActionRequest,
 	WorkbenchAttention,
+	WorkbenchInboxRecord,
 } from "../../../types/adaptive-cards";
 
 interface InboxItemData {
@@ -228,6 +229,35 @@ function brainActivityToItem(entry: ActivityEntry): InboxItemData {
 	};
 }
 
+function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemData {
+	const targetRoute = record.resource.kind === "task"
+		? {
+				pathname: "/tasks",
+				search: `?task=${encodeURIComponent(record.resource.id)}&view=details`,
+			}
+		: record.resource.kind === "bug"
+			? {
+					pathname: "/bugs",
+					search: `?bug=${encodeURIComponent(record.resource.id)}`,
+				}
+			: undefined;
+	return {
+		item: {
+			id: record.itemKey,
+			kind: record.kind === "bug" ? "system" : "status",
+			title: record.title,
+			summary: record.summary,
+			timestamp: record.timestamp,
+			source: record.source.replaceAll("-", " "),
+			resourceId: record.resource.id,
+			unread: !record.attention?.readAt,
+			requiresAction: record.requiresAction,
+			severity: record.severity,
+		},
+		targetRoute,
+	};
+}
+
 export function MessagingPage() {
 	usePageTitle("Coleo Observatory - Inbox");
 	const [searchParams] = useWorkspaceSearchParams();
@@ -258,6 +288,7 @@ export function MessagingPage() {
 	const [olderBrainActivityLoading, setOlderBrainActivityLoading] = useState(false);
 	const [reports, setReports] = useState<StatusReport[]>([]);
 	const [attention, setAttention] = useState<WorkbenchAttention[]>([]);
+	const [workbenchInbox, setWorkbenchInbox] = useState<WorkbenchInboxRecord[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [archiving, setArchiving] = useState(false);
 	const loadTimerRef = useRef<number | null>(null);
@@ -282,6 +313,7 @@ export function MessagingPage() {
 				reportsResponse,
 				recentEventsResponse,
 				attentionResponse,
+				workbenchInboxResponse,
 			] =
 				await Promise.all([
 					api.listActivity({ limit: 100 }),
@@ -293,6 +325,7 @@ export function MessagingPage() {
 					api.getRecentEvents({ limit: 100, sinceMs: 1000 * 60 * 60 * 24 })
 						.catch(() => ({ events: [], total: 0 })),
 					api.listWorkbenchAttention({ includeArchived: true, limit: 1000 }),
+					api.listWorkbenchInbox({ limit: 200 }),
 				]);
 			setActivity(activityResponse.activity);
 			setBrainActivity((current) => mergeBrainActivity(current, brainActivityResponse.activity));
@@ -307,6 +340,7 @@ export function MessagingPage() {
 			setReports(reportsResponse.reports);
 			setRecentEvents(recentEventsResponse.events);
 			setAttention(attentionResponse.attention);
+			setWorkbenchInbox(workbenchInboxResponse.items);
 		} finally {
 			setLoading(false);
 		}
@@ -383,6 +417,7 @@ export function MessagingPage() {
 	const items = useMemo<InboxItemData[]>(() => {
 		const brainActivityIds = new Set(brainActivity.map((entry) => entry.id));
 		const merged = [
+			...workbenchInbox.map(workbenchInboxToItem),
 			...threads.map((thread) => threadToItem(thread, effectiveMailbox)),
 			...reports.map(reportToItem),
 			...activity
@@ -393,11 +428,11 @@ export function MessagingPage() {
 				.filter(isNotableEvent)
 				.map((event, index) => projectRecentEvent(event, index)),
 		];
-		return merged.sort(
+		return [...new Map(merged.map((entry) => [entry.item.id, entry])).values()].sort(
 			(left, right) =>
 				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
 		);
-	}, [activity, brainActivity, effectiveMailbox, recentEvents, reports, threads]);
+	}, [activity, brainActivity, effectiveMailbox, recentEvents, reports, threads, workbenchInbox]);
 
 	const attentionByItem = useMemo(
 		() => new Map(attention.map((entry) => [entry.itemKey, entry])),
@@ -526,16 +561,7 @@ export function MessagingPage() {
 				return;
 			}
 			await api.executeWorkbenchCardAction(request);
-			setAttention((current) => current.map((entry) =>
-				entry.itemKey === request.envelopeId
-					? {
-							...entry,
-							readAt: new Date().toISOString(),
-							resolvedAt: new Date().toISOString(),
-							requiresAction: false,
-						}
-					: entry
-			));
+			await load();
 		};
 		return (
 			<div className="flex h-full min-h-0 flex-col bg-background">
@@ -548,10 +574,12 @@ export function MessagingPage() {
 							<Button
 								size="sm"
 								variant="ghost"
-								onPress={() => openWorkspaceRoute(createCardRoute({
-									...envelope,
-									presentation: { ...envelope.presentation, surface: "panel" },
-								}), "tab")}
+								onPress={() => {
+									void createPersistedCardRoute({
+										...envelope,
+										presentation: { ...envelope.presentation, surface: "panel" },
+									}).then((route) => openWorkspaceRoute(route, "tab"));
+								}}
 							>
 								<FileText className="h-3.5 w-3.5" />
 								Open card

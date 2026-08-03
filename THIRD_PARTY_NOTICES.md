@@ -39,3 +39,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## Microsoft Adaptive Cards
+
+- Packages: `adaptivecards` 3.0.6 and `adaptivecards-templating` 2.3.1
+- Copyright: 2017 Microsoft
+- License: MIT
+- Source: <https://github.com/microsoft/AdaptiveCards>
+
+These packages render and expand the Workbench's trusted Adaptive Card
+templates. They are redistributed under the same MIT terms reproduced above.
