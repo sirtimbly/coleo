@@ -25,6 +25,12 @@ import {
 	Ban,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
+import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { createCardRoute } from "@/adaptive-cards/card-route";
+import {
+	presentResourceDetail,
+	presentResourceEditor,
+} from "@/adaptive-cards/presenters";
 import {
 	type Task,
 	type TaskLlmMetadata,
@@ -292,6 +298,7 @@ function TaskDetailsToolbar({
 	onPriorityChange,
 	task,
 	onEdit,
+	onOpenCardEditor,
 	onStatusChange,
 	onClose,
 }: {
@@ -303,6 +310,7 @@ function TaskDetailsToolbar({
 	onPriorityChange: (taskId: string, priority: Task["priority"]) => void;
 	task: Task;
 	onEdit: (status?: Task["status"]) => void;
+	onOpenCardEditor: () => void;
 	onStatusChange: (status: Task["status"]) => void;
 	onClose?: () => void;
 }) {
@@ -352,6 +360,10 @@ function TaskDetailsToolbar({
 				<Dropdown.Popover placement="bottom end" className="min-w-[220px]">
 					<Dropdown.Menu
 						onAction={(key) => {
+							if (key === "card-edit") {
+								onOpenCardEditor();
+								return;
+							}
 							if (key === "edit" || key === "blocked") {
 								onEdit(key === "blocked" ? "blocked" : undefined);
 								return;
@@ -365,6 +377,10 @@ function TaskDetailsToolbar({
 						<Dropdown.Item id="edit" textValue="Edit task">
 							<Pencil className="h-4 w-4 text-muted-foreground" />
 							<Label>Edit task</Label>
+						</Dropdown.Item>
+						<Dropdown.Item id="card-edit" textValue="Edit as card">
+							<FileText className="h-4 w-4 text-muted-foreground" />
+							<Label>Edit as card</Label>
 						</Dropdown.Item>
 						<Separator />
 						<Dropdown.Item id="status:draft" textValue="Move to draft">
@@ -706,6 +722,15 @@ export function TasksPage() {
 		setEditingStatus(status);
 		setIsModalOpen(true);
 	}, [selectedTask]);
+	const handleOpenTaskCardEditor = useCallback(() => {
+		if (!selectedTask) return;
+		openWorkspaceRoute(createCardRoute(presentResourceEditor({
+			id: selectedTask.id,
+			kind: "task",
+			title: selectedTask.subject,
+			description: selectedTask.description,
+		})), "action");
+	}, [openWorkspaceRoute, selectedTask]);
 
 	const handleStatusChange = useCallback(
 		(status: Task["status"]) => {
@@ -1043,6 +1068,7 @@ export function TasksPage() {
 						onPriorityChange={handlePriorityChange}
 						task={selectedTask}
 						onEdit={handleEditSelectedTask}
+						onOpenCardEditor={handleOpenTaskCardEditor}
 						onStatusChange={handleStatusChange}
 					/>
 
@@ -1083,6 +1109,19 @@ export function TasksPage() {
 									</div>
 								</div>
 								<BlockedTaskNotice task={selectedTask} />
+								<AdaptiveCardView
+									envelope={presentResourceDetail({
+										id: selectedTask.id,
+										kind: "task",
+										title: selectedTask.subject,
+										description: selectedTask.description,
+										facts: [
+											{ label: "Status", value: STATUS_CONFIG[selectedTask.status].label },
+											{ label: "Priority", value: selectedTask.priority },
+											{ label: "Assigned", value: selectedTask.assignedArmName ?? "Unassigned" },
+										],
+									})}
+								/>
 							</div>
 							</WorkbenchSurface>
 						</div>
@@ -1195,6 +1234,7 @@ export function TasksPage() {
 							onPriorityChange={handlePriorityChange}
 							task={selectedTask}
 							onEdit={handleEditSelectedTask}
+							onOpenCardEditor={handleOpenTaskCardEditor}
 							onStatusChange={handleStatusChange}
 							onClose={() => setSelectedTask(null)}
 						/>
@@ -1210,6 +1250,20 @@ export function TasksPage() {
 											<TaskCreatedAt createdAt={selectedTask.createdAt} />
 										</div>
 										<BlockedTaskNotice task={selectedTask} />
+
+										<AdaptiveCardView
+											envelope={presentResourceDetail({
+												id: selectedTask.id,
+												kind: "task",
+												title: selectedTask.subject,
+												description: selectedTask.description,
+												facts: [
+													{ label: "Status", value: STATUS_CONFIG[selectedTask.status].label },
+													{ label: "Priority", value: selectedTask.priority },
+													{ label: "Assigned", value: selectedTask.assignedArmName ?? "Unassigned" },
+												],
+											})}
+										/>
 
 										<div>
 											<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">

@@ -15,6 +15,12 @@ import {
 	X,
 } from 'lucide-react';
 import { Button } from '@heroui/react';
+import { AdaptiveCardView } from '@/adaptive-cards/AdaptiveCardView';
+import { createCardRoute } from '@/adaptive-cards/card-route';
+import {
+	presentResourceDetail,
+	presentResourceEditor,
+} from '@/adaptive-cards/presenters';
 import { type Bug, type UiMetadata, cn, api } from '@/lib';
 import { BugModal, StatusBurndownChart } from '@/components';
 import type { BugUpdate } from '@/workbench/resource-updates';
@@ -197,10 +203,12 @@ function BugDetailProjection({
 	bug,
 	onClose,
 	onUpdate,
+	onOpenCardEditor,
 }: {
 	bug: Bug;
 	onClose: () => void;
 	onUpdate: (bugId: string, updates: BugUpdate) => void;
+	onOpenCardEditor: () => void;
 }) {
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
@@ -209,9 +217,14 @@ function BugDetailProjection({
 				description={`Bug ${bug.id}`}
 				icon={<BugIcon className="h-4 w-4" aria-hidden="true" />}
 				actions={(
-					<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
-						<X className="h-4 w-4" aria-hidden="true" />
-					</Button>
+					<>
+						<Button size="sm" variant="ghost" onPress={onOpenCardEditor}>
+							Edit as card
+						</Button>
+						<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
+							<X className="h-4 w-4" aria-hidden="true" />
+						</Button>
+					</>
 				)}
 			/>
 			<WorkbenchToolbar>
@@ -227,7 +240,21 @@ function BugDetailProjection({
 				<BugCreatedAt createdAt={bug.createdAt} />
 			</WorkbenchToolbar>
 			<div className="min-h-0 flex-1 overflow-auto p-5">
-				<WorkbenchSurface className="mx-auto max-w-4xl">
+				<div className="mx-auto grid max-w-4xl gap-4">
+					<AdaptiveCardView
+						envelope={presentResourceDetail({
+							id: bug.id,
+							kind: "bug",
+							title: bug.title,
+							description: bug.description,
+							facts: [
+								{ label: "Status", value: STATUS_CONFIG[bug.status].label },
+								{ label: "Priority", value: PRIORITY_CONFIG[bug.priority].label },
+								{ label: "Assigned", value: bug.assigneeArmName ?? "Unassigned" },
+							],
+						})}
+					/>
+				<WorkbenchSurface>
 					<section className="p-4">
 						<h2 className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
 							Description
@@ -242,6 +269,7 @@ function BugDetailProjection({
 					<CollectionRow title="Source" trailing={<span className="capitalize">{bug.source.replace('_', ' ')}</span>} />
 					<CollectionRow title="Assigned Arm" trailing={<span>{bug.assigneeArmName ?? 'Unassigned'}</span>} />
 				</WorkbenchSurface>
+				</div>
 			</div>
 		</div>
 	);
@@ -530,6 +558,15 @@ export function BugsPage() {
 			'split',
 		);
 	}, [openWorkspaceRoute, searchParams]);
+	const handleOpenBugCardEditor = useCallback(() => {
+		if (!selectedBug) return;
+		openWorkspaceRoute(createCardRoute(presentResourceEditor({
+			id: selectedBug.id,
+			kind: "bug",
+			title: selectedBug.title,
+			description: selectedBug.description,
+		})), "action");
+	}, [openWorkspaceRoute, selectedBug]);
 
 	const toggleTagFilter = useCallback((tag: string) => {
 		setTagFilter((prev) =>
@@ -628,6 +665,7 @@ export function BugsPage() {
 				bug={selectedBug}
 				onClose={closeWorkspaceRoute}
 				onUpdate={handleUpdateBug}
+				onOpenCardEditor={handleOpenBugCardEditor}
 			/>
 		);
 	}

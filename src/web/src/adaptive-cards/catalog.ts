@@ -58,3 +58,12 @@ export function getCardTemplate(id: CardTemplateId, version: number): CardJsonOb
 	const entry = CARD_CATALOG[id];
 	return entry.version === version ? entry.payload : null;
 }
+
+export function isCardActionAllowed(
+	id: CardTemplateId,
+	version: number,
+	verb: string,
+): boolean {
+	const entry = CARD_CATALOG[id];
+	return entry.version === version && entry.allowedActions.includes(verb);
+}

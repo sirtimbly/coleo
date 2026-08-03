@@ -33,8 +33,9 @@
   "actions": [
     {
       "type": "Action.Execute",
+      "$when": "${openVerb != null}",
       "title": "Open conversation",
-      "verb": "message.open",
+      "verb": "${openVerb}",
       "data": {
         "actionId": "open-message"
       }

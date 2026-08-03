@@ -53,7 +53,12 @@ export function CardPanelPage() {
 
 	const openPopout = () => {
 		const url = `${window.location.origin}/card?${searchParams.toString()}`;
-		window.open(url, `coleo-card-${envelope.id}`, "popup,width=720,height=800");
+		const popout = window.open(
+			url,
+			`coleo-card-${envelope.id}`,
+			"popup,noopener,noreferrer,width=720,height=800",
+		);
+		if (popout) popout.opener = null;
 	};
 
 	return (

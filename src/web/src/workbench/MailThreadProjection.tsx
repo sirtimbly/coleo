@@ -10,6 +10,8 @@ import { Button } from "@heroui/react";
 import { Archive, Bot, Mail, Reply, UserRound, X } from "lucide-react";
 
 import { WorkbenchEmptyState, WorkbenchHeader } from "@/design-system/WorkbenchSurface";
+import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { presentMessage } from "@/adaptive-cards/presenters";
 import { cn, type MailMessage } from "@/lib";
 import {
 	getConsecutiveReplyLevels,
@@ -125,26 +127,23 @@ export function MailThreadProjection({
 								style={{ marginLeft: `${level * 1.5}rem` }}
 								data-thread-depth={level}
 							>
-								<article className="border border-border bg-surface p-4">
-									<header className="flex items-start gap-3">
-										<span className="flex h-8 w-8 shrink-0 items-center justify-center border border-border bg-surface-secondary text-muted-foreground">
-											{automated ? <Bot className="h-4 w-4" /> : <UserRound className="h-4 w-4" />}
-										</span>
-										<div className="min-w-0 flex-1">
-											<div className="flex flex-wrap items-center gap-2">
-												<span className="truncate text-sm font-semibold">{message.from}</span>
-												<span className="text-xs text-muted-foreground">
-													{sent ? "Sent" : index > 0 ? "Reply" : "Received"}
-												</span>
-												<time className="ml-auto text-xs text-muted-foreground">
-													{new Date(message.date).toLocaleString()}
-												</time>
-											</div>
-											<div className="mt-1 text-xs text-muted-foreground">To {message.to}</div>
-										</div>
-									</header>
-									<p className="readable-copy mt-4 whitespace-pre-wrap">{message.body}</p>
-									<div className="mt-4">
+								<article className="border border-border bg-surface">
+									<div className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">
+										{automated ? <Bot className="h-3.5 w-3.5" /> : <UserRound className="h-3.5 w-3.5" />}
+										<span>{sent ? "Sent" : index > 0 ? "Reply" : "Received"}</span>
+										<span>to {message.to}</span>
+									</div>
+									<DeferredAdaptiveCardView
+										envelope={presentMessage({
+											id: message.id,
+											from: message.from,
+											subject: thread.subject,
+											preview: message.body,
+											timestamp: new Date(message.date).toISOString(),
+										})}
+										className="border-0"
+									/>
+									<div className="border-t border-border px-4 py-2">
 										<Button size="sm" variant="ghost" onPress={reply}>
 											<Reply className="h-3.5 w-3.5" />
 											Reply

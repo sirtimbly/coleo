@@ -96,3 +96,57 @@ export function presentResourceDetail(input: {
 		},
 	};
 }
+
+export function presentResourceEditor(input: {
+	id: string;
+	kind: "task" | "bug";
+	title: string;
+	description: string;
+}): CardEnvelope {
+	return {
+		id: `edit:${input.kind}:${input.id}`,
+		template: { id: "workbench.resource-editor", version: 1 },
+		schemaVersion: "1.5",
+		presentation: {
+			surface: "editor",
+			title: `Edit ${input.kind}: ${input.title}`,
+		},
+		resource: { kind: input.kind, id: input.id },
+		createdAt: new Date().toISOString(),
+		data: {
+			title: input.title,
+			description: input.description,
+			saveVerb: `${input.kind}.update`,
+		},
+	};
+}
+
+export function presentMessage(input: {
+	id: string;
+	from: string;
+	subject: string;
+	preview: string;
+	timestamp: string;
+	surface?: CardSurface;
+	canArchive?: boolean;
+}): CardEnvelope {
+	return {
+		id: `message:${input.id}`,
+		template: { id: "workbench.message", version: 1 },
+		schemaVersion: "1.5",
+		presentation: {
+			surface: input.surface ?? "detail",
+			title: input.subject,
+		},
+		resource: { kind: "message", id: input.id },
+		createdAt: input.timestamp,
+		data: {
+			from: input.from,
+			subject: input.subject,
+			preview: input.preview,
+			timestampLabel: new Date(input.timestamp).toLocaleString(),
+			openVerb: null,
+			canArchive: input.canArchive ?? false,
+		},
+	};
+}

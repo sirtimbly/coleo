@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib";
-import { getCardTemplate } from "./catalog";
+import { getCardTemplate, isCardActionAllowed } from "./catalog";
 import { COLEO_CARD_HOST_CONFIG } from "./host-config";
 
 import type {
@@ -53,10 +53,15 @@ export function AdaptiveCardView({
 			const expanded = template.expand({ $root: envelope.data }) as CardJsonObject;
 			const card = new cards.AdaptiveCard();
 			card.hostConfig = new cards.HostConfig(COLEO_CARD_HOST_CONFIG);
+			card.onAnchorClicked = () => true;
 			card.onExecuteAction = (action) => {
 				if (action.getJsonTypeName() !== "Action.Execute") return;
 				const verb = action.verb;
-				if (!verb || !onActionRef.current) return;
+				if (
+					!verb ||
+					!onActionRef.current ||
+					!isCardActionAllowed(envelope.template.id, envelope.template.version, verb)
+				) return;
 				const data = action.data && typeof action.data === "object"
 					? action.data as CardJsonObject
 					: {};
@@ -107,5 +112,36 @@ export function AdaptiveCardView({
 				className,
 			)}
 		/>
+	);
+}
+
+export function DeferredAdaptiveCardView(props: AdaptiveCardViewProps) {
+	const boundaryRef = useRef<HTMLDivElement>(null);
+	const [visible, setVisible] = useState(false);
+
+	useEffect(() => {
+		const boundary = boundaryRef.current;
+		if (!boundary || visible) return;
+		if (!("IntersectionObserver" in window)) {
+			setVisible(true);
+			return;
+		}
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries.some((entry) => entry.isIntersecting)) {
+					setVisible(true);
+					observer.disconnect();
+				}
+			},
+			{ rootMargin: "400px 0px" },
+		);
+		observer.observe(boundary);
+		return () => observer.disconnect();
+	}, [visible]);
+
+	return (
+		<div ref={boundaryRef} className={cn("min-h-24", props.className)}>
+			{visible ? <AdaptiveCardView {...props} className={undefined} /> : null}
+		</div>
 	);
 }

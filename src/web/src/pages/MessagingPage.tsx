@@ -10,6 +10,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
+import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { createCardRoute } from "@/adaptive-cards/card-route";
+import { presentInboxItem } from "@/adaptive-cards/presenters";
 import {
 	WorkbenchEmptyState,
 	WorkbenchHeader,
@@ -47,6 +50,11 @@ import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from "@/workspace/route-context";
+
+import type {
+	CardActionRequest,
+	WorkbenchAttention,
+} from "../../../types/adaptive-cards";
 
 interface InboxItemData {
 	item: InboxProjectionItem;
@@ -249,6 +257,7 @@ export function MessagingPage() {
 	const [hasOlderBrainActivity, setHasOlderBrainActivity] = useState(false);
 	const [olderBrainActivityLoading, setOlderBrainActivityLoading] = useState(false);
 	const [reports, setReports] = useState<StatusReport[]>([]);
+	const [attention, setAttention] = useState<WorkbenchAttention[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [archiving, setArchiving] = useState(false);
 	const loadTimerRef = useRef<number | null>(null);
@@ -272,6 +281,7 @@ export function MessagingPage() {
 				archiveResponse,
 				reportsResponse,
 				recentEventsResponse,
+				attentionResponse,
 			] =
 				await Promise.all([
 					api.listActivity({ limit: 100 }),
@@ -282,6 +292,7 @@ export function MessagingPage() {
 					api.listStatusReports({ limit: 100 }),
 					api.getRecentEvents({ limit: 100, sinceMs: 1000 * 60 * 60 * 24 })
 						.catch(() => ({ events: [], total: 0 })),
+					api.listWorkbenchAttention({ includeArchived: true, limit: 1000 }),
 				]);
 			setActivity(activityResponse.activity);
 			setBrainActivity((current) => mergeBrainActivity(current, brainActivityResponse.activity));
@@ -295,6 +306,7 @@ export function MessagingPage() {
 			setArchive(archiveResponse.messages);
 			setReports(reportsResponse.reports);
 			setRecentEvents(recentEventsResponse.events);
+			setAttention(attentionResponse.attention);
 		} finally {
 			setLoading(false);
 		}
@@ -337,7 +349,7 @@ export function MessagingPage() {
 	}, [brainActivityCursor, hasOlderBrainActivity, olderBrainActivityLoading]);
 
 	useProjectionSignal((signal) => {
-		if (!["mail", "brain", "arms", "arm-events", "activity"].includes(signal.channel)) return;
+		if (!["mail", "brain", "arms", "arm-events", "activity", "workbench"].includes(signal.channel)) return;
 		if (loadTimerRef.current !== null) window.clearTimeout(loadTimerRef.current);
 		loadTimerRef.current = window.setTimeout(() => {
 			loadTimerRef.current = null;
@@ -387,19 +399,40 @@ export function MessagingPage() {
 		);
 	}, [activity, brainActivity, effectiveMailbox, recentEvents, reports, threads]);
 
+	const attentionByItem = useMemo(
+		() => new Map(attention.map((entry) => [entry.itemKey, entry])),
+		[attention],
+	);
+	const statefulItems = useMemo(
+		() => items.map((entry) => {
+			const state = attentionByItem.get(entry.item.id);
+			if (!state) return entry;
+			return {
+				...entry,
+				item: {
+					...entry.item,
+					unread: state.readAt ? false : entry.item.unread,
+					requiresAction: state.resolvedAt
+						? false
+						: state.requiresAction || entry.item.requiresAction,
+				},
+			};
+		}),
+		[attentionByItem, items],
+	);
 	const projectionItems = useMemo(
-		() => items.filter((entry) =>
+		() => statefulItems.filter((entry) =>
 			activeFacet !== "brain" ||
 			brainCategory === "all" ||
 			entry.item.kind !== "brain" ||
 			entry.brainCategory === brainCategory
 		),
-		[activeFacet, brainCategory, items],
+		[activeFacet, brainCategory, statefulItems],
 	);
 
 	const selectedItem = useMemo(
-		() => items.find((entry) => entry.item.id === selectedItemId) ?? null,
-		[items, selectedItemId],
+		() => statefulItems.find((entry) => entry.item.id === selectedItemId) ?? null,
+		[selectedItemId, statefulItems],
 	);
 
 	const markThreadRead = useCallback(async (thread: MailThread) => {
@@ -417,7 +450,7 @@ export function MessagingPage() {
 	}, [inbox]);
 
 	const openItem = useCallback((item: InboxProjectionItem) => {
-		const source = items.find((entry) => entry.item.id === item.id);
+		const source = statefulItems.find((entry) => entry.item.id === item.id);
 		if (source?.thread && source.mailbox) {
 			void markThreadRead(source.thread);
 			openWorkspaceRoute(
@@ -430,6 +463,11 @@ export function MessagingPage() {
 			);
 			return;
 		}
+		void api.updateWorkbenchAttention(item.id, {
+			seenAt: new Date().toISOString(),
+			readAt: new Date().toISOString(),
+			requiresAction: item.requiresAction,
+		});
 		openWorkspaceRoute(
 			{
 				pathname: "/messaging",
@@ -438,7 +476,7 @@ export function MessagingPage() {
 			},
 			"split",
 		);
-	}, [activeFacet, items, markThreadRead, openWorkspaceRoute]);
+	}, [activeFacet, markThreadRead, openWorkspaceRoute, statefulItems]);
 
 	const archiveThread = useCallback(async (messageIds: string[]) => {
 		if (messageIds.length === 0) return;
@@ -471,34 +509,72 @@ export function MessagingPage() {
 		if (!selectedItem) {
 			return <WorkbenchEmptyState title="Loading inbox item" description="The selected item is being restored." />;
 		}
+		const envelope = presentInboxItem(selectedItem.item, {
+			surface: "detail",
+			targetRoute: selectedItem.targetRoute,
+			facts: selectedItem.statusReport
+				? [
+						{ label: "Arm", value: selectedItem.statusReport.armId },
+						{ label: "Task", value: selectedItem.statusReport.taskId },
+						{ label: "Status", value: selectedItem.statusReport.status.replaceAll("_", " ") },
+					]
+				: [],
+		});
+		const handleCardAction = async (request: CardActionRequest) => {
+			if (request.verb === "resource.open" && selectedItem.targetRoute) {
+				openWorkspaceRoute(selectedItem.targetRoute, "focus");
+				return;
+			}
+			await api.executeWorkbenchCardAction(request);
+			setAttention((current) => current.map((entry) =>
+				entry.itemKey === request.envelopeId
+					? {
+							...entry,
+							readAt: new Date().toISOString(),
+							resolvedAt: new Date().toISOString(),
+							requiresAction: false,
+						}
+					: entry
+			));
+		};
 		return (
 			<div className="flex h-full min-h-0 flex-col bg-background">
 				<WorkbenchHeader
 					title={selectedItem.item.title}
 					description={`${selectedItem.item.source ?? selectedItem.item.kind} · ${new Date(selectedItem.item.timestamp).toLocaleString()}`}
 					icon={<FileText className="h-4 w-4" />}
-					actions={selectedItem.targetRoute ? (
-						<Button
-							size="sm"
-							variant="secondary"
-							onPress={() => openWorkspaceRoute(selectedItem.targetRoute!, "focus")}
-						>
-							<ArrowUpRight className="h-3.5 w-3.5" />
-							Open target
-						</Button>
-					) : null}
+					actions={(
+						<>
+							<Button
+								size="sm"
+								variant="ghost"
+								onPress={() => openWorkspaceRoute(createCardRoute({
+									...envelope,
+									presentation: { ...envelope.presentation, surface: "panel" },
+								}), "tab")}
+							>
+								<FileText className="h-3.5 w-3.5" />
+								Open card
+							</Button>
+							{selectedItem.targetRoute ? (
+								<Button
+									size="sm"
+									variant="secondary"
+									onPress={() => openWorkspaceRoute(selectedItem.targetRoute!, "focus")}
+								>
+									<ArrowUpRight className="h-3.5 w-3.5" />
+									Open target
+								</Button>
+							) : null}
+						</>
+					)}
 				/>
 				<div className="min-h-0 flex-1 overflow-auto p-5">
-					<pre className="mx-auto max-w-4xl whitespace-pre-wrap font-sans text-sm leading-6">
-						{selectedItem.statusReport?.summary ??
-							JSON.stringify(
-								selectedItem.activity?.details ??
-									selectedItem.recentEvent?.data ??
-									selectedItem.item,
-								null,
-								2,
-							)}
-					</pre>
+					<AdaptiveCardView
+						envelope={envelope}
+						onAction={handleCardAction}
+						className="mx-auto max-w-4xl"
+					/>
 				</div>
 			</div>
 		);
@@ -582,9 +658,18 @@ export function MessagingPage() {
 			}
 			onMarkAllRead={(visible) => {
 				const visibleIds = new Set(visible.map((item) => item.id));
-				for (const source of items) {
+				for (const source of statefulItems) {
 					if (source.thread && visibleIds.has(source.item.id)) void markThreadRead(source.thread);
 				}
+				void api.bulkUpdateWorkbenchAttention([...visibleIds], "read").then((response) => {
+					setAttention((current) => {
+						const updates = new Map(response.attention.map((entry) => [entry.itemKey, entry]));
+						return [
+							...current.filter((entry) => !updates.has(entry.itemKey)),
+							...response.attention,
+						];
+					});
+				});
 			}}
 			loading={loading}
 		/>

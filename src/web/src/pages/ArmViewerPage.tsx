@@ -3,18 +3,12 @@ import { useEffect, useState, useCallback, useRef, type ReactNode } from "react"
 import {
 	Eye,
 	Radio,
-	Wrench,
-	CheckCircle2,
-	XCircle,
-	Clock,
 	Loader2,
 	ChevronDown,
 	ChevronRight,
-	FileEdit,
 	Terminal,
 	AlertTriangle,
 	MessageSquare,
-	GitBranch,
 	ListTodo,
 	Zap,
 	Bot,
@@ -62,6 +56,8 @@ import {
 	type ViewerActivityItem as ActivityItem,
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
+import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { presentInboxItem } from "@/adaptive-cards/presenters";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
 import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
@@ -312,70 +308,6 @@ function pruneOldHistories(): void {
 		// Ignore
 	}
 }
-
-// Color schemes for different activity types
-const activityColors: Record<
-	ActivityType,
-	{ bg: string; border: string; icon: string }
-> = {
-	message: {
-		bg: "bg-blue-500/10",
-		border: "border-l-blue-500",
-		icon: "text-blue-500",
-	},
-	tool: {
-		bg: "bg-purple-500/10",
-		border: "border-l-purple-500",
-		icon: "text-purple-500",
-	},
-	file: {
-		bg: "bg-green-500/10",
-		border: "border-l-green-500",
-		icon: "text-green-500",
-	},
-	session: {
-		bg: "bg-cyan-500/10",
-		border: "border-l-cyan-500",
-		icon: "text-cyan-500",
-	},
-	error: {
-		bg: "bg-red-500/10",
-		border: "border-l-red-500",
-		icon: "text-red-500",
-	},
-	todo: {
-		bg: "bg-yellow-500/10",
-		border: "border-l-yellow-500",
-		icon: "text-yellow-500",
-	},
-	step: {
-		bg: "bg-indigo-500/10",
-		border: "border-l-indigo-500",
-		icon: "text-indigo-500",
-	},
-	terminal: {
-		bg: "bg-orange-500/10",
-		border: "border-l-orange-500",
-		icon: "text-orange-500",
-	},
-	branch: {
-		bg: "bg-pink-500/10",
-		border: "border-l-pink-500",
-		icon: "text-pink-500",
-	},
-};
-
-const activityIcons: Record<ActivityType, typeof Wrench> = {
-	message: MessageSquare,
-	tool: Wrench,
-	file: FileEdit,
-	session: Zap,
-	error: AlertTriangle,
-	todo: ListTodo,
-	step: Bot,
-	terminal: Terminal,
-	branch: GitBranch,
-};
 
 const HANDLED_EVENT_TYPES = new Set([
 	"connected",
@@ -2462,60 +2394,50 @@ function ActivityItemComponent({
 	activity: ActivityItem;
 	onToggle: () => void;
 }) {
-	const colors = activityColors[activity.type];
-	const Icon = activityIcons[activity.type];
 	const hasDetails =
 		activity.details && Object.keys(activity.details).length > 0;
-
-	const statusIcon = {
-		pending: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
-		running: <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />,
-		completed: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
-		error: <XCircle className="h-3.5 w-3.5 text-danger" />,
-		info: null,
-	}[activity.status];
+	const envelope = presentInboxItem({
+		id: `arm-activity:${activity.id}`,
+		kind: "arm",
+		title: activity.title,
+		summary: activity.subtitle ?? activity.status,
+		timestamp: new Date(activity.timestamp).toISOString(),
+		source: `Arm activity · ${activity.type.replaceAll("_", " ")}`,
+		resourceId: activity.id,
+		unread: activity.status === "error",
+		requiresAction: activity.status === "error",
+		severity: activity.status === "error"
+			? "danger"
+			: activity.status === "completed"
+				? "success"
+				: activity.status === "running"
+					? "warning"
+					: "info",
+	}, {
+		surface: "stream",
+		facts: [
+			{ label: "Status", value: activity.status },
+			{ label: "Type", value: activity.type.replaceAll("_", " ") },
+		],
+	});
 
 	return (
 		<div className="overflow-hidden rounded-md border border-border bg-card">
-			<div className={cn("h-1 w-full", colors.bg)} />
-			<Button
-				variant="ghost"
-				onPress={onToggle}
-				isDisabled={!hasDetails}
-				className="h-auto w-full justify-start px-4 py-3"
-			>
-				<div className="flex min-w-0 flex-1 items-start gap-3 text-left">
-					<div className={cn("mt-0.5 rounded-sm border border-border p-2", colors.bg)}>
-						<Icon className={`h-4 w-4 ${colors.icon}`} />
-					</div>
-
-					<div className="min-w-0 flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<span className="truncate text-sm font-semibold">{activity.title}</span>
-							{statusIcon}
-							<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-								{activity.status}
-							</span>
-						</div>
-						{activity.subtitle ? (
-							<div className="mt-1 truncate text-sm text-muted-foreground">
-								{activity.subtitle}
-							</div>
-						) : null}
-					</div>
-
-					<div className="flex items-center gap-2 pl-2 text-xs text-muted-foreground">
-						<span>{formatTime(activity.timestamp)}</span>
-						{hasDetails ? (
-							activity.expanded ? (
-								<ChevronDown className="h-3.5 w-3.5" />
-							) : (
-								<ChevronRight className="h-3.5 w-3.5" />
-							)
-						) : null}
-					</div>
-				</div>
-			</Button>
+			<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
+			{hasDetails ? (
+				<Button
+					variant="ghost"
+					onPress={onToggle}
+					className="h-8 w-full justify-between border-t border-border px-4 text-xs"
+				>
+					<span>{activity.expanded ? "Hide raw details" : "Show raw details"}</span>
+					{activity.expanded ? (
+						<ChevronDown className="h-3.5 w-3.5" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5" />
+					)}
+				</Button>
+			) : null}
 
 			{activity.expanded && hasDetails ? (
 				<div className="border-t border-border px-4 py-3">
