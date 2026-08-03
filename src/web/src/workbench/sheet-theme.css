@@ -1,207 +1,333 @@
-/*
- * Handsontable theme adapter.
+/**
+ * Coleo design-system theme for the production Tabulator resource sheet.
  *
- * The spreadsheet keeps native Excel-like interaction while using Coleo's
- * existing surface, border, typography, selection, and status tokens.
+ * Selectors stay under the adapter root so vendor defaults cannot leak into
+ * inboxes, dashboards, Golden Layout chrome, or other application surfaces.
  */
 
-.coleo-resource-sheet,
-.coleo-resource-sheet.ht-theme-main,
-.coleo-resource-sheet .ht-theme-main,
-.coleo-resource-sheet .handsontable {
-	height: 100%;
-	min-height: 0;
-}
-
-.coleo-resource-sheet.ht-theme-main,
-.coleo-resource-sheet .ht-theme-main {
-	--ht-font-family: var(--font-body);
-	--ht-font-size: 12px;
-	--ht-background-color: var(--surface);
-	--ht-background-secondary-color: var(--surface-secondary);
-	--ht-foreground-color: var(--foreground);
-	--ht-foreground-secondary-color: var(--muted-foreground);
-	--ht-read-only-color: var(--muted-foreground);
-	--ht-border-color: var(--border);
-	--ht-wrapper-border-color: var(--border);
-	--ht-cell-read-only-background-color: var(--surface-secondary);
-	--ht-row-cell-odd-background-color: var(--surface);
-	--ht-row-cell-even-background-color: var(--surface);
-	--ht-header-background-color: var(--surface-secondary);
-	--ht-header-foreground-color: var(--foreground);
-	--ht-header-highlighted-background-color: color-mix(in oklch, var(--accent) 10%, var(--surface-secondary));
-	--ht-header-highlighted-foreground-color: var(--foreground);
-	--ht-header-active-background-color: color-mix(in oklch, var(--accent) 18%, var(--surface-secondary));
-	--ht-header-active-foreground-color: var(--foreground);
-	--ht-header-active-border-color: var(--accent);
-	--ht-row-header-background-color: var(--surface-secondary);
-	--ht-row-header-foreground-color: var(--muted-foreground);
-	--ht-header-row-highlighted-background-color: color-mix(in oklch, var(--accent) 10%, var(--surface-secondary));
-	--ht-header-row-highlighted-foreground-color: var(--foreground);
-	--ht-header-row-active-background-color: color-mix(in oklch, var(--accent) 18%, var(--surface-secondary));
-	--ht-header-row-active-foreground-color: var(--foreground);
-	--ht-cell-horizontal-border-color: var(--border);
-	--ht-cell-vertical-border-color: var(--border);
-	--ht-accent-color: var(--accent);
-	--ht-accent-foreground-color: var(--accent-foreground);
-	--ht-cell-selection-border-color: var(--accent);
-	--ht-cell-selection-background-color: color-mix(in oklch, var(--accent) 12%, transparent);
-	--ht-cell-editor-foreground-color: var(--foreground);
-	--ht-cell-editor-background-color: var(--surface-secondary);
-	--ht-cell-editor-border-color: var(--accent);
-	--ht-cell-editor-shadow-color: var(--accent);
-	--ht-menu-background-color: var(--overlay);
-	--ht-menu-foreground-color: var(--overlay-foreground);
-	--ht-menu-item-hover-background-color: var(--surface-secondary);
-	--ht-menu-item-active-background-color: color-mix(in oklch, var(--accent) 14%, var(--surface));
-	--ht-menu-border-color: var(--border);
-	--ht-dropdown-menu-filter-input-background-color: var(--surface);
-	--ht-dropdown-menu-filter-input-border-color: var(--border);
-}
-
-.coleo-resource-sheet .handsontable th {
-	font-family: var(--font-interface);
-	font-weight: 600;
-	letter-spacing: 0.01em;
-}
-
-.coleo-resource-sheet .handsontable span.coleo-sheet-row-order {
-	align-items: center;
-	display: inline-flex;
-	gap: 5px;
-	justify-content: center;
-	width: 100%;
-}
-
-.coleo-resource-sheet .handsontable span.coleo-sheet-row-order::before {
-	background-image: radial-gradient(circle, var(--muted-foreground) 1px, transparent 1.5px);
-	background-position: center;
-	background-size: 4px 4px;
-	content: "";
-	height: 12px;
-	opacity: 0.72;
-	width: 8px;
-}
-
-.coleo-resource-sheet .handsontable span.coleo-sheet-row-order-disabled::before {
-	opacity: 0.28;
-}
-
-.coleo-resource-sheet .handsontable.ht__manualRowMove tbody th {
-	cursor: grab;
-}
-
-.coleo-resource-sheet .handsontable.ht__manualRowMove.on-moving--rows tbody th {
-	cursor: grabbing;
-}
-
-.coleo-resource-sheet .ht-multi-select-editor-search-input-wrapper input.ht-multi-select-editor-search-input {
-	flex: 1 1 auto;
-	min-width: 0;
-	width: auto;
-}
-
-.coleo-resource-sheet .coleo-multiselect-create {
-	align-items: center;
-	background: color-mix(in oklch, var(--accent) 14%, var(--surface-secondary));
-	border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
-	border-radius: var(--ht-input-border-radius);
+.coleo-tabulator-resource-sheet {
+	--tabulator-border-color: color-mix(in srgb, var(--border) 82%, transparent);
+	--tabulator-header: color-mix(in srgb, var(--surface-secondary) 76%, var(--background));
+	--tabulator-row-even: color-mix(in srgb, var(--surface-secondary) 28%, var(--background));
+	--tabulator-row-hover: color-mix(in srgb, var(--accent) 11%, var(--background));
+	--tabulator-row-selected: color-mix(in srgb, var(--accent) 20%, var(--background));
+	position: relative;
 	color: var(--foreground);
-	display: inline-flex;
-	flex: 0 0 auto;
 	font-family: var(--font-interface);
-	font-size: 11px;
+}
+
+.coleo-tabulator-resource-sheet .tabulator {
+	height: 100%;
+	border: 0;
+	background: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-body);
+	font-size: 0.75rem;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-header {
+	border-color: var(--tabulator-border-color);
+	background: var(--tabulator-header);
+	color: var(--foreground);
+	font-family: var(--font-interface);
 	font-weight: 600;
-	height: 26px;
-	justify-content: center;
-	padding: 0 9px;
-	white-space: nowrap;
 }
 
-.coleo-resource-sheet .coleo-multiselect-create:hover:not(:disabled) {
-	background: color-mix(in oklch, var(--accent) 24%, var(--surface-secondary));
-	border-color: var(--accent);
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col,
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col.tabulator-sortable:hover {
+	border-color: var(--tabulator-border-color);
+	background: var(--tabulator-header);
 }
 
-.coleo-resource-sheet .coleo-multiselect-create:focus-visible {
-	outline: 2px solid var(--accent);
-	outline-offset: 1px;
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col-content {
+	padding: 7px 9px;
 }
 
-.coleo-resource-sheet .coleo-multiselect-create:disabled {
-	cursor: default;
-	opacity: 0.45;
+.coleo-tabulator-resource-sheet .tabulator-row-header .tabulator-col-content {
+	color: var(--muted-foreground);
+	font-size: 0.62rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
-.coleo-resource-sheet .handsontable td {
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col:first-child .tabulator-col-content:empty::after {
+	content: "Order";
+}
+
+.coleo-tabulator-resource-sheet .tabulator-tableholder,
+.coleo-tabulator-resource-sheet .tabulator-table {
+	background: var(--background);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row {
+	border-color: var(--tabulator-border-color);
+	background: var(--background);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-row-even {
+	background: var(--tabulator-row-even);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row:hover {
+	background: var(--tabulator-row-hover);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-selected,
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-selected:hover,
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-selected-row {
+	background: var(--tabulator-row-selected);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell {
+	display: inline-flex;
+	align-items: center;
+	border-color: var(--tabulator-border-color);
+	padding: 6px 9px;
 	line-height: 1.35;
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-status-cell {
-	background: color-mix(
-		in srgb,
-		var(--coleo-sheet-status-color) 12%,
-		var(--surface)
-	);
-	box-shadow: inset 3px 0 0 var(--coleo-sheet-status-color);
-	color: var(--coleo-sheet-status-color);
-	font-family: var(--font-interface);
-	font-weight: 600;
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell.tabulator-row-header {
+	justify-content: center;
+	background: color-mix(in srgb, var(--surface-secondary) 68%, var(--background));
+	color: var(--muted-foreground);
+	cursor: grab;
+	font-variant-numeric: tabular-nums;
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-selected-row {
-	background: color-mix(in oklch, var(--accent) 9%, var(--surface));
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-moving,
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-moving .tabulator-row-header {
+	cursor: grabbing;
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-primary-cell {
+.coleo-tabulator-resource-sheet[data-manual-order="disabled"] .tabulator-row-header {
+	cursor: not-allowed;
+	opacity: 0.42;
+	pointer-events: none;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell.tabulator-editing {
+	overflow: visible;
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--surface-secondary) 92%, var(--background));
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell input,
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell textarea,
+.coleo-tabulator-resource-sheet .tabulator-edit-list {
+	background: var(--surface-secondary);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell input,
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell textarea {
+	width: 100%;
+	border: 0;
+	outline: 0;
+	font: inherit;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-popup,
+.coleo-tabulator-resource-sheet .tabulator-menu,
+.coleo-tabulator-resource-sheet .tabulator-edit-list {
+	z-index: 1400;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	background: var(--surface-secondary);
+	box-shadow: 0 12px 32px rgb(0 0 0 / 32%);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item {
+	padding: 0.5rem 0.7rem;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item:hover,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item:hover,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item.active {
+	background: color-mix(in srgb, var(--accent) 16%, var(--surface-secondary));
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item.tabulator-menu-item-disabled {
+	opacity: 0.42;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-placeholder {
+	background: var(--background);
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .coleo-sheet-primary-cell {
 	font-weight: 400;
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-bold {
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-row-bold .tabulator-cell {
 	font-weight: 700;
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-blue {
-	background: color-mix(in oklch, var(--color-blue-400) 18%, var(--surface));
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="blue"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-blue-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-blue-400) 18%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-green {
-	background: color-mix(in oklch, var(--color-green-400) 18%, var(--surface));
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="green"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-green-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-green-400) 18%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-orange {
-	background: color-mix(in oklch, var(--color-orange-400) 20%, var(--surface));
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="orange"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-orange-400) 20%, var(--surface));
+	background: color-mix(in srgb, var(--color-orange-400) 20%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-purple {
-	background: color-mix(in oklch, var(--color-violet-400) 18%, var(--surface));
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="purple"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-violet-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-violet-400) 18%, var(--surface));
 }
 
-/*
- * Handsontable portals menus directly under <body>, outside the sheet theme
- * element. Reapply the application tokens so those transient surfaces inherit
- * the active light/dark theme instead of falling back to a white menu.
- */
-.handsontable.htDropdownMenu,
-.handsontable.htContextMenu,
-.handsontable.htFiltersConditionsMenu {
-	--ht-font-family: var(--font-body);
-	--ht-font-size: 12px;
-	--ht-background-color: var(--overlay);
-	--ht-background-secondary-color: var(--surface-secondary);
-	--ht-foreground-color: var(--overlay-foreground);
-	--ht-foreground-secondary-color: var(--muted-foreground);
-	--ht-border-color: var(--border);
-	--ht-accent-color: var(--accent);
-	--ht-menu-background-color: var(--overlay);
-	--ht-menu-foreground-color: var(--overlay-foreground);
-	--ht-menu-border-color: var(--border);
-	--ht-menu-item-hover-background-color: var(--surface-secondary);
-	--ht-menu-item-active-background-color: color-mix(in oklch, var(--accent) 14%, var(--surface));
-	--ht-input-background-color: var(--surface);
-	--ht-input-foreground-color: var(--foreground);
-	--ht-input-border-color: var(--border);
-	--ht-input-focus-background-color: var(--surface);
-	--ht-input-focus-foreground-color: var(--foreground);
-	--ht-input-focus-border-color: var(--accent);
+.coleo-sheet-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.38rem;
+	color: var(--coleo-sheet-status-color);
+	font-weight: 600;
+}
+
+.coleo-sheet-status::before {
+	width: 0.45rem;
+	height: 0.45rem;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	background: var(--coleo-sheet-status-color);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--coleo-sheet-status-color) 14%, transparent);
+	content: "";
+}
+
+.coleo-tabulator-tag-list {
+	display: inline-flex;
+	max-width: 100%;
+	align-items: center;
+	gap: 0.25rem;
+	overflow: hidden;
+}
+
+.coleo-tabulator-tag-list.is-empty {
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-tag {
+	display: inline-flex;
+	min-width: 0;
+	flex: 0 1 auto;
+	overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--accent) 10%, var(--surface-secondary));
+	padding: 0.12rem 0.42rem;
+	color: var(--foreground);
+	font-size: 0.66rem;
+	line-height: 1.2;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.coleo-tabulator-multiselect-editor {
+	position: fixed;
+	z-index: 1500;
+	top: var(--coleo-editor-top);
+	left: var(--coleo-editor-left);
+	display: grid;
+	width: var(--coleo-editor-width);
+	max-height: 20rem;
+	grid-template-rows: auto minmax(3rem, 1fr) auto auto;
+	gap: 0.45rem;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 0.55rem;
+	background: var(--surface-secondary);
+	box-shadow: 0 16px 40px rgb(0 0 0 / 38%);
+	padding: 0.55rem;
+	color: var(--foreground);
+}
+
+.coleo-tabulator-multiselect-search {
+	height: 2rem;
+	border: 1px solid var(--border);
+	border-radius: 0.35rem;
+	background: var(--surface);
+	padding: 0 0.55rem;
+	color: var(--foreground);
+	outline: none;
+}
+
+.coleo-tabulator-multiselect-search:focus {
+	border-color: var(--accent);
+}
+
+.coleo-tabulator-multiselect-options {
+	max-height: 10rem;
+	overflow: auto;
+	border-block: 1px solid var(--border);
+	padding-block: 0.25rem;
+}
+
+.coleo-tabulator-multiselect-option {
+	display: flex;
+	min-height: 1.9rem;
+	align-items: center;
+	gap: 0.5rem;
+	border-radius: 0.3rem;
+	padding: 0.25rem 0.4rem;
+	cursor: pointer;
+}
+
+.coleo-tabulator-multiselect-option:hover {
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.coleo-tabulator-multiselect-option input {
+	accent-color: var(--accent);
+}
+
+.coleo-tabulator-multiselect-empty {
+	display: block;
+	padding: 0.55rem 0.4rem;
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-multiselect-create,
+.coleo-tabulator-multiselect-footer button {
+	min-height: 1.9rem;
+	border: 1px solid var(--border);
+	border-radius: 0.35rem;
+	background: var(--surface);
+	padding: 0.3rem 0.55rem;
+	color: var(--foreground);
+	font-size: 0.72rem;
+	font-weight: 600;
+}
+
+.coleo-tabulator-multiselect-create:not(:disabled):hover,
+.coleo-tabulator-multiselect-footer button:hover {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.coleo-tabulator-multiselect-create:disabled {
+	opacity: 0.42;
+}
+
+.coleo-tabulator-multiselect-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.4rem;
+}
+
+.coleo-tabulator-multiselect-footer button.is-primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--accent-foreground);
 }

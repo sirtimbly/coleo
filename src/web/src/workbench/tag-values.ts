@@ -1,7 +1,7 @@
 /**
- * Shared tag value adapters for Handsontable-backed resource projections.
+ * Shared tag value adapters for Tabulator-backed resource projections.
  *
- * The native MultiSelect cell type reads and writes arrays, while paste and
+ * The custom MultiSelect editor reads and writes arrays, while paste and
  * legacy callers can still supply comma-delimited text. These helpers keep
  * Tasks and Bugs on one normalization and option-ordering contract.
  */

@@ -67,7 +67,6 @@
         "clsx": "^2.1.1",
         "framer-motion": "^12.29.0",
         "golden-layout": "^2.6.0",
-        "handsontable": "18.0.0",
         "lucide-react": "^0.562.0",
         "react": "^19.2.0",
         "react-dom": "^19.2.0",
@@ -1060,8 +1059,6 @@
     "gopd": ["gopd@1.2.0", "", {}, "sha512-ZUKRh6/kUFoAiTAtTYPZJ3hw9wNxx+BIBOijnlG9PnrJsCcSjs1wyyD6vJpaYtgnzDrKYRSqf3OO6Rfa93xsRg=="],
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
-
-    "handsontable": ["handsontable@18.0.0", "", {}, "sha512-U4H6gDrwGTfjahSyoGHhFHZvOZWB7ReQ3iBvJUIcZPdqdppdZ+FSYNovw+3MH1guJfGgRIhoLYnbSm8Gd6Ft8w=="],
 
     "has-flag": ["has-flag@4.0.0", "", {}, "sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ=="],
 

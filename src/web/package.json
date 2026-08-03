@@ -27,7 +27,6 @@
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.0",
     "golden-layout": "^2.6.0",
-    "handsontable": "18.0.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

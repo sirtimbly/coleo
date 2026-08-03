@@ -1,7 +1,7 @@
 /**
  * Consolidated sheet workspace.
  *
- * This compatibility route now composes the same persisted Handsontable
+ * This compatibility route composes the same persisted Tabulator
  * projections as the task and bug pages. It intentionally contains no grid
  * implementation of its own, so new resource sheets inherit one interaction
  * model and one profile-backed configuration system.

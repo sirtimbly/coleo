@@ -1,7 +1,7 @@
 /**
  * Task and plan-item spreadsheet projection.
  *
- * Handsontable supplies the Excel-like interaction model. Subject and status
+ * Tabulator supplies the Excel-like interaction model. Subject and status
  * are intentionally editable inline; richer task fields continue to open in a
  * dedicated Golden Layout detail panel.
  */

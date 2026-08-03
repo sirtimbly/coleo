@@ -1,7 +1,7 @@
 /**
  * Discovery spreadsheet projection.
  *
- * Discoveries are the first non-task resource using the shared sheet
+ * Discoveries use the shared Tabulator sheet
  * infrastructure. Only workflow status is editable; evidence and provenance
  * remain read-only and can later open in a dedicated inspector projection.
  */

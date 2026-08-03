@@ -1,7 +1,7 @@
 /**
  * Bug spreadsheet projection.
  *
- * The sheet mirrors the task interaction model so future structured grids use
+ * The Tabulator sheet mirrors the task interaction model so structured grids use
  * one consistent editing, insertion, configuration, and navigation language.
  */
 

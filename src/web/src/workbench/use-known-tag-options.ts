@@ -2,7 +2,7 @@
  * Session-stable option discovery for resource tag MultiSelect cells.
  *
  * A tag removed from its final visible row must remain in the option source so
- * Handsontable can redo or undo that edit. Newly loaded tags are merged into
+ * Tabulator can redo or undo that edit. Newly loaded tags are merged into
  * the known set without changing the column settings for unrelated row edits.
  */
 

@@ -1,7 +1,7 @@
 /**
  * Task workbench projection and dedicated task detail views.
  *
- * The list surface is now a Handsontable sheet; task details, discussions,
+ * The list surface is a shared Tabulator sheet; task details, discussions,
  * summaries, and diffs still open as separate Golden Layout panels.
  */
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
@@ -23,7 +23,6 @@ import {
 	Pencil,
 	RotateCcw,
 	Ban,
-	Table2,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import {
@@ -64,11 +63,6 @@ type SidebarTab = "details" | "summary" | "diff" | "discussions";
 
 const TaskSheet = React.lazy(() =>
 	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
-);
-const TabulatorTaskSheet = React.lazy(() =>
-	import("@/workbench/TabulatorTaskSheet").then((module) => ({
-		default: module.TabulatorTaskSheet,
-	}))
 );
 
 // Status configuration
@@ -573,7 +567,6 @@ export function TasksPage() {
 	const closeWorkspaceRoute = useWorkspaceCloseRoute('/tasks');
 	const [searchParams] = useWorkspaceSearchParams();
 	const isNewTaskPage = searchParams.get("new") === "1";
-	const isTabulatorPreview = searchParams.get("grid") === "tabulator";
 	usePageTitle(isNewTaskPage ? 'Coleo Observatory - New Task' : 'Coleo Observatory - Tasks');
 
 	const [searchText, setSearchText] = useState("");
@@ -604,17 +597,6 @@ export function TasksPage() {
 			"action",
 		);
 	}, [openWorkspaceRoute]);
-	const openTabulatorPreview = useCallback(() => {
-		openWorkspaceRoute(
-			{
-				pathname: "/tasks",
-				search: "?grid=tabulator",
-				title: "Tasks · Tabulator Preview",
-			},
-			"split",
-		);
-	}, [openWorkspaceRoute]);
-
 	const taskModal = (
 		<TaskModal
 			isOpen={isModalOpen}
@@ -697,23 +679,6 @@ export function TasksPage() {
 			Drafts Only
 		</Button>
 	);
-	const taskActionControls = (
-		<>
-			<Button
-				size="sm"
-				variant={isTabulatorPreview ? "secondary" : "ghost"}
-				aria-pressed={isTabulatorPreview}
-				isDisabled={isTabulatorPreview}
-				onPress={openTabulatorPreview}
-				className="h-8 shrink-0"
-			>
-				<Table2 className="h-3.5 w-3.5" aria-hidden="true" />
-				{isTabulatorPreview ? "Tabulator Preview" : "Compare Tabulator"}
-			</Button>
-			<TaskWorkflowHelp />
-		</>
-	);
-
 	useEffect(() => {
 		const taskId = searchParams.get("task");
 		const view = searchParams.get("view");
@@ -1013,7 +978,7 @@ export function TasksPage() {
 							}}
 							onNew={openNewTaskPanel}
 							secondaryControls={draftFilterControl}
-							actionControls={taskActionControls}
+							actionControls={<TaskWorkflowHelp />}
 						/>
 						{isError && error ? (
 							<div className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -1029,33 +994,19 @@ export function TasksPage() {
 						/>
 						<div className="min-h-0 flex-1 overflow-hidden">
 							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
-								{isTabulatorPreview ? (
-									<TabulatorTaskSheet
-										tasks={filteredTasks}
-										selectedTaskId={undefined}
-										onOpenDetails={handleOpenDetails}
-										onUpdateTask={handleUpdateTask}
-										onRowsMove={handleRowsMove}
-										hasNextPage={hasNextPage}
-										onLoadMore={fetchNextPage}
-										draftFilterToggleRequest={draftFilterToggleRequest}
-										onDraftsOnlyChange={setDraftsOnly}
-									/>
-								) : (
-									<TaskSheet
-										tasks={filteredTasks}
-										selectedTaskId={undefined}
-										onOpenDetails={handleOpenDetails}
-										onUpdateTask={handleUpdateTask}
-										onDelete={handleDeleteTask}
-										onCreateTaskAt={handleCreateTaskAt}
-										onRowsMove={handleRowsMove}
-										hasNextPage={hasNextPage}
-										onLoadMore={fetchNextPage}
-										draftFilterToggleRequest={draftFilterToggleRequest}
-										onDraftsOnlyChange={setDraftsOnly}
-									/>
-								)}
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={undefined}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
+									hasNextPage={hasNextPage}
+									onLoadMore={fetchNextPage}
+									draftFilterToggleRequest={draftFilterToggleRequest}
+									onDraftsOnlyChange={setDraftsOnly}
+								/>
 							</React.Suspense>
 						</div>
 					</div>
@@ -1181,7 +1132,7 @@ export function TasksPage() {
 				}}
 				onNew={openNewTaskPanel}
 				secondaryControls={draftFilterControl}
-				actionControls={taskActionControls}
+				actionControls={<TaskWorkflowHelp />}
 			/>
 
 			{isError && error ? (
@@ -1214,33 +1165,19 @@ export function TasksPage() {
 					) : (
 						<div className="h-full">
 							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
-								{isTabulatorPreview ? (
-									<TabulatorTaskSheet
-										tasks={filteredTasks}
-										selectedTaskId={selectedTask?.id}
-										onOpenDetails={handleOpenDetails}
-										onUpdateTask={handleUpdateTask}
-										onRowsMove={handleRowsMove}
-										hasNextPage={hasNextPage}
-										onLoadMore={fetchNextPage}
-										draftFilterToggleRequest={draftFilterToggleRequest}
-										onDraftsOnlyChange={setDraftsOnly}
-									/>
-								) : (
-									<TaskSheet
-										tasks={filteredTasks}
-										selectedTaskId={selectedTask?.id}
-										onOpenDetails={handleOpenDetails}
-										onUpdateTask={handleUpdateTask}
-										onDelete={handleDeleteTask}
-										onCreateTaskAt={handleCreateTaskAt}
-										onRowsMove={handleRowsMove}
-										hasNextPage={hasNextPage}
-										onLoadMore={fetchNextPage}
-										draftFilterToggleRequest={draftFilterToggleRequest}
-										onDraftsOnlyChange={setDraftsOnly}
-									/>
-								)}
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={selectedTask?.id}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
+									hasNextPage={hasNextPage}
+									onLoadMore={fetchNextPage}
+									draftFilterToggleRequest={draftFilterToggleRequest}
+									onDraftsOnlyChange={setDraftsOnly}
+								/>
 							</React.Suspense>
 						</div>
 					)}

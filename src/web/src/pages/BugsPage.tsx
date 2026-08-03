@@ -1,7 +1,7 @@
 /**
  * Bugs Page
  *
- * Displays bug reports through the shared Handsontable sheet and opens richer
+ * Displays bug reports through the shared Tabulator sheet and opens richer
  * bug details in a dedicated Golden Layout panel.
  */
 import React, { useMemo, useState, useCallback, useDeferredValue } from 'react';
