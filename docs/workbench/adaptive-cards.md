@@ -72,10 +72,13 @@ in route or layout JSON.
 
 ## Validation baseline
 
-The production build keeps both runtimes out of the initial route chunk:
+The production build keeps the renderer runtime out of the initial route chunk:
 
 - `adaptivecards` runtime: 365.70 kB minified, 88.17 kB gzip
-- templating runtime: 923.09 kB minified, 236.22 kB gzip
+
+Coleo expands only the small interpolation, conditional, and repeated-data
+subset used by its trusted catalog. It deliberately does not ship a general
+expression runtime or accept template expressions from producers.
 
 Stream cards use an Intersection Observer with a 400 px pre-render margin, so
 the retained 200-item ARM window creates SDK instances only near the viewport.

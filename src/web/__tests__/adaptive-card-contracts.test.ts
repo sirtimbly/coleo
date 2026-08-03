@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { CARD_CATALOG, getCardTemplate, isCardActionAllowed } from "../src/adaptive-cards/catalog";
 import { createCardRoute, parseCardRoute } from "../src/adaptive-cards/card-route";
+import { expandCardTemplate } from "../src/adaptive-cards/expand-template";
 import { presentInboxItem, presentResourceEditor } from "../src/adaptive-cards/presenters";
 
 describe("adaptive card contracts", () => {
@@ -54,5 +55,26 @@ describe("adaptive card contracts", () => {
 			id: "workbench.resource-editor",
 			version: 1,
 		});
+	});
+
+	it("expands only the trusted template expression subset", () => {
+		const template = getCardTemplate("workbench.event", 1);
+		expect(template).not.toBeNull();
+		const expanded = expandCardTemplate(template!, {
+			eyebrow: "Test",
+			title: "Blocked",
+			summary: "Needs input",
+			tone: "warning",
+			timestampLabel: "now",
+			requiresAction: true,
+			facts: [{ label: "Task", value: "task-1" }],
+			openVerb: null,
+		});
+		const serialized = JSON.stringify(expanded);
+		expect(serialized).not.toContain("${");
+		expect(serialized).not.toContain("$when");
+		expect(serialized).not.toContain("$data");
+		expect(serialized).toContain('"title":"Task"');
+		expect((expanded.actions as unknown[])).toHaveLength(3);
 	});
 });

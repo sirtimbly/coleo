@@ -42,10 +42,10 @@ SOFTWARE.
 
 ## Microsoft Adaptive Cards
 
-- Packages: `adaptivecards` 3.0.6 and `adaptivecards-templating` 2.3.1
+- Package: `adaptivecards` 3.0.6
 - Copyright: 2017 Microsoft
 - License: MIT
 - Source: <https://github.com/microsoft/AdaptiveCards>
 
-These packages render and expand the Workbench's trusted Adaptive Card
-templates. They are redistributed under the same MIT terms reproduced above.
+This package renders the Workbench's trusted Adaptive Card templates. It is
+redistributed under the same MIT terms reproduced above.

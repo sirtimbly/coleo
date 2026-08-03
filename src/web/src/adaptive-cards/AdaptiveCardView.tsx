@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib";
 import { getCardTemplate, isCardActionAllowed } from "./catalog";
-import { COLEO_CARD_HOST_CONFIG } from "./host-config";
+import { expandCardTemplate } from "./expand-template";
 import { ADAPTIVE_CARDS_ENABLED } from "./feature-flags";
+import { COLEO_CARD_HOST_CONFIG } from "./host-config";
 
 import type {
 	CardActionRequest,
@@ -48,13 +49,9 @@ export function AdaptiveCardView({
 				);
 			}
 
-			const [cards, templating] = await Promise.all([
-				import("adaptivecards/dist/adaptivecards.js"),
-				import("adaptivecards-templating/dist/adaptivecards-templating.js"),
-			]);
+			const cards = await import("adaptivecards/dist/adaptivecards.js");
 			if (cancelled) return;
-			const template = new templating.Template(payload);
-			const expanded = template.expand({ $root: envelope.data }) as CardJsonObject;
+			const expanded = expandCardTemplate(payload, envelope.data) as CardJsonObject;
 			const card = new cards.AdaptiveCard();
 			card.hostConfig = new cards.HostConfig(COLEO_CARD_HOST_CONFIG);
 			card.onAnchorClicked = () => true;

@@ -21,10 +21,3 @@ declare module "adaptivecards/dist/adaptivecards.js" {
 		render(): HTMLElement | undefined;
 	}
 }
-
-declare module "adaptivecards-templating/dist/adaptivecards-templating.js" {
-	export class Template {
-		constructor(payload: unknown);
-		expand(context: { $root: unknown }): unknown;
-	}
-}

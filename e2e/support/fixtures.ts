@@ -36,6 +36,8 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 	const bugRecords = (options.bugs ?? []).map((bug) => ({ ...bug }));
 	const discoveryRecords = (options.discoveries ?? []).map((discovery) => ({ ...discovery }));
 	const viewRecords: Array<Record<string, unknown>> = [];
+	const cardInstances = new Map<string, unknown>();
+	const attentionRecords = new Map<string, Record<string, unknown>>();
 
 	await page.addInitScript(() => {
 		window.localStorage.setItem("coleo-layout-mode", "classic");
@@ -106,6 +108,67 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				},
 				views: viewRecords,
 				layouts: [],
+			});
+		}
+		if (path === "/api/workbench/inbox") {
+			return json(route, { items: [], nextCursor: undefined });
+		}
+		if (path === "/api/workbench/attention" && request.method() === "GET") {
+			return json(route, { attention: [...attentionRecords.values()] });
+		}
+		if (path === "/api/workbench/attention/bulk" && request.method() === "POST") {
+			const input = request.postDataJSON() as {
+				itemKeys?: string[];
+				action?: string;
+			};
+			const attention = (input.itemKeys ?? []).map((itemKey) => {
+				const record = {
+					profileId: "local",
+					itemKey,
+					readAt: now,
+					requiresAction: input.action !== "resolve",
+					updatedAt: now,
+				};
+				attentionRecords.set(itemKey, record);
+				return record;
+			});
+			return json(route, { attention });
+		}
+		if (path.startsWith("/api/workbench/attention/") && request.method() === "PUT") {
+			const itemKey = decodeURIComponent(path.slice("/api/workbench/attention/".length));
+			const input = request.postDataJSON() as Record<string, unknown>;
+			const attention = {
+				profileId: "local",
+				itemKey,
+				...input,
+				updatedAt: now,
+			};
+			attentionRecords.set(itemKey, attention);
+			return json(route, { attention });
+		}
+		if (path === "/api/workbench/cards/instances" && request.method() === "POST") {
+			const input = request.postDataJSON() as { envelope: unknown };
+			const id = `018fd384-7c9a-7a83-8fd8-${String(cardInstances.size + 1).padStart(12, "0")}`;
+			cardInstances.set(id, input.envelope);
+			return json(route, {
+				instance: { id, envelope: input.envelope, createdAt: now },
+			}, 201);
+		}
+		if (/^\/api\/workbench\/cards\/instances\/[^/]+$/.test(path)) {
+			const id = decodeURIComponent(path.split("/").at(-1) ?? "");
+			const envelope = cardInstances.get(id);
+			return envelope
+				? json(route, { instance: { id, envelope, createdAt: now } })
+				: json(route, { error: "Card not found" }, 404);
+		}
+		if (path === "/api/workbench/cards/actions" && request.method() === "POST") {
+			const input = request.postDataJSON() as { clientActionId: string };
+			return json(route, {
+				result: {
+					ok: true,
+					clientActionId: input.clientActionId,
+					message: "Action complete",
+				},
 			});
 		}
 		if (path === "/api/workbench/views" && request.method() === "POST") {
