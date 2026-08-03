@@ -344,6 +344,18 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			return json(route, { messages: [], truncated: false });
 		}
 
+		if (path === "/api/tasks" && request.method() === "POST") {
+			const input = request.postDataJSON() as Record<string, unknown>;
+			const created = {
+				...taskRecords[0],
+				...input,
+				id: `task-created-${taskRecords.length + 1}`,
+				createdAt: now,
+				updatedAt: now,
+			};
+			taskRecords.push(created);
+			return json(route, { task: created }, 201);
+		}
 		if (path === "/api/tasks") {
 			return json(route, {
 				tasks: taskRecords,

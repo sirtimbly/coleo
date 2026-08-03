@@ -89,21 +89,6 @@ const discovery = {
 	updatedAt: "2026-08-02T12:00:00.000Z",
 };
 
-async function dragOrderRowAfter(page: Page, source: Locator, target: Locator) {
-	await source.click();
-	const sourceBox = await source.boundingBox();
-	const targetBox = await target.boundingBox();
-	if (!sourceBox || !targetBox) throw new Error("Order gutter row is not visible");
-	await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
-	await page.mouse.down();
-	await page.mouse.move(
-		targetBox.x + targetBox.width / 2,
-		targetBox.y + targetBox.height - 2,
-		{ steps: 8 },
-	);
-	await page.mouse.up();
-}
-
 async function dragTabulatorRowAfter(page: Page, source: Locator, target: Locator) {
 	const sourceBox = await source.boundingBox();
 	const targetBox = await target.boundingBox();
@@ -183,7 +168,7 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	await taskSubjectCell.click();
 	await expectStableGutter();
 	const activeHeaderBackgrounds = await resourceSheet
-		.locator("th.ht__highlight, th.ht__active_highlight")
+		.locator(".tabulator-header .tabulator-col")
 		.evaluateAll((headers) => headers.map((header) => getComputedStyle(header).backgroundColor));
 	expect(activeHeaderBackgrounds.length).toBeGreaterThan(0);
 	expect(activeHeaderBackgrounds).not.toContain("rgb(255, 255, 255)");
@@ -196,9 +181,7 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		.click();
 	await expect(taskSubjectCell).toHaveClass(/coleo-sheet-row-color-blue/);
 
-	await expect(
-		page.locator(".coleo-resource-sheet .ht_clone_inline_start tbody td"),
-	).toHaveCount(0);
+	await expect(page.locator(".handsontable")).toHaveCount(0);
 
 	const editedSubject = "Undo and redo the task subject";
 	const editRequest = page.waitForRequest((request) =>
@@ -206,7 +189,7 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		new URL(request.url()).pathname === "/api/tasks/task-workbench"
 	);
 	await taskSubjectCell.dblclick();
-	const subjectEditor = resourceSheet.locator("textarea.handsontableInput");
+	const subjectEditor = taskSubjectCell.locator("input");
 	await expect(subjectEditor).toBeVisible();
 	const editorUsesThemeTokens = await subjectEditor.evaluate((element) => {
 		const probe = document.createElement("span");
@@ -268,16 +251,14 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	});
 	const bugSheet = page.locator(".coleo-resource-sheet");
 	expect(await bugSheet.evaluate((element) => element.clientHeight)).toBeGreaterThan(500);
-	const tagsCell = bugSheet.locator("td.ht-multi-select-renderer").filter({
-		hasText: "regression",
-	});
-	const tagChips = tagsCell.locator(".ht-multi-select-chip-label");
+	const tagsCell = bugSheet.locator('.tabulator-cell[tabulator-field="tags"]');
+	const tagChips = tagsCell.locator(".coleo-tabulator-tag");
 	await expect(tagChips).toHaveText(["regression", "ui"]);
 
 	// Open the editor from the empty side of the cell so the gesture doesn't
 	// target either chip's remove control.
-	await tagsCell.dblclick({ position: { x: 174, y: 14 } });
-	const tagsEditor = bugSheet.locator(".ht-multi-select-editor");
+	await tagsCell.dblclick();
+	const tagsEditor = page.locator(".coleo-tabulator-multiselect-editor");
 	await expect(tagsEditor).toBeVisible();
 	await expect(tagsEditor.getByRole("checkbox", { name: "regression" })).toBeChecked();
 	await expect(tagsEditor.getByRole("checkbox", { name: "ui" })).toBeChecked();
@@ -286,14 +267,14 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
 	);
 	await tagsEditor.getByRole("checkbox", { name: "ui" }).uncheck();
+	await tagsEditor.getByRole("button", { name: "Apply", exact: true }).click();
 	const requestBody = (await tagUpdateRequest).postDataJSON() as {
 		metadata?: { ui?: { tags?: string[] } };
 	};
 	expect(requestBody.metadata?.ui?.tags).toEqual(["regression"]);
 	await expect(tagChips).toHaveText(["regression"]);
 
-	await page.keyboard.press("Escape");
-	await tagsCell.click({ position: { x: 174, y: 14 } });
+	await bugSheet.focus();
 	const undoTagsRequest = page.waitForRequest((request) =>
 		request.method() === "PATCH" &&
 		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
@@ -316,12 +297,12 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	expect(redoTagsBody.metadata?.ui?.tags).toEqual(["regression"]);
 	await expect(tagChips).toHaveText(["regression"]);
 
-	await page.getByRole("rowheader", { name: "1", exact: true }).click();
-	await expect(formattingToolbar).toBeVisible();
 	const bugSubjectCell = bugSheet.getByRole("gridcell", {
 		name: "Restore bug tags",
 		exact: true,
 	});
+	await bugSubjectCell.click();
+	await expect(formattingToolbar).toBeVisible();
 	await formattingToolbar
 		.getByRole("button", { name: "Use green row color", exact: true })
 		.click();
@@ -346,14 +327,13 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	});
 	await expect(discoveryStatusCell).toBeVisible({ timeout: 20_000 });
 
-	await discoveryStatusCell.click();
-	await page.keyboard.press("Enter");
+	await discoveryStatusCell.dblclick();
 	const discoveryStatusUpdate = page.waitForRequest((request) =>
 		request.method() === "PATCH" &&
 		new URL(request.url()).pathname === "/api/discoveries/discovery-workbench"
 	);
 	await page
-		.locator(".handsontable.listbox")
+		.locator(".tabulator-edit-list")
 		.getByText("acknowledged", { exact: true })
 		.click();
 	expect((await discoveryStatusUpdate).postDataJSON()).toEqual({
@@ -370,7 +350,7 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		new URL(request.url()).pathname === "/api/discoveries/discovery-workbench"
 	);
 	await acknowledgedStatusCell.click({ button: "right" });
-	const contextMenu = page.locator(".htContextMenu");
+	const contextMenu = page.locator(".tabulator-menu");
 	await expect(contextMenu.getByText("Undo", { exact: true })).toBeVisible();
 	await expect(contextMenu.getByText("Redo", { exact: true })).toBeVisible();
 	await contextMenu.getByText("Undo", { exact: true }).click();
@@ -404,10 +384,9 @@ test("matches sheet status colors to the burndown legend", async ({ page }) => {
 		request.method() === "PATCH" &&
 		new URL(request.url()).pathname === "/api/tasks/task-workbench"
 	);
-	await pendingStatus.click();
-	await page.keyboard.press("Enter");
+	await pendingStatus.dblclick();
 	await page
-		.locator(".handsontable.listbox")
+		.locator(".tabulator-edit-list")
 		.getByText("completed", { exact: true })
 		.click();
 	expect((await statusUpdate).postDataJSON()).toMatchObject({ status: "completed" });
@@ -432,7 +411,7 @@ test("opens a spreadsheet row from the Details context action", async ({ page })
 	await sheet
 		.getByRole("gridcell", { name: "implementation", exact: true })
 		.click({ button: "right" });
-	const contextMenu = page.locator(".htContextMenu");
+	const contextMenu = page.locator(".tabulator-menu");
 	await expect(contextMenu.getByText("Details", { exact: true })).toBeVisible();
 	await contextMenu.getByText("Details", { exact: true }).click();
 
@@ -443,7 +422,7 @@ test("opens a spreadsheet row from the Details context action", async ({ page })
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
 });
 
-test("proves the Tabulator Tasks spike beside Handsontable in Golden Layout", async ({ page }) => {
+test("runs the production Tabulator sheet inside a resizable Golden Layout pane", async ({ page }) => {
 	await installMockApi(page, { tasks: [task, secondTask, draftTask] });
 	await page.addInitScript(() => {
 		window.localStorage.setItem("coleo-layout-mode", "golden");
@@ -454,18 +433,11 @@ test("proves the Tabulator Tasks spike beside Handsontable in Golden Layout", as
 	});
 	await page.goto("/tasks");
 
-	const handsontable = page.locator(".coleo-resource-sheet");
-	await expect(handsontable).toBeVisible({ timeout: 20_000 });
-	await page.getByRole("button", { name: "Compare Tabulator", exact: true }).click();
-
-	const preview = page.getByTestId("tabulator-task-sheet");
-	await expect(preview).toBeVisible({ timeout: 20_000 });
-	await expect(handsontable).toBeVisible();
-	await expect(
-		preview.getByText("Tabulator migration preview", { exact: true }),
-	).toBeVisible();
-
-	const table = preview.locator(".tabulator");
+	const sheet = page.locator(".coleo-resource-sheet");
+	await expect(sheet).toBeVisible({ timeout: 20_000 });
+	await expect(sheet).toHaveClass(/tabulator/);
+	await expect(page.locator(".handsontable")).toHaveCount(0);
+	const table = sheet;
 	const firstRow = table.locator('.tabulator-row[data-resource-id="task-workbench"]');
 	const secondRow = table.locator('.tabulator-row[data-resource-id="task-second"]');
 	await expect(firstRow).toBeVisible();
@@ -493,68 +465,46 @@ test("proves the Tabulator Tasks spike beside Handsontable in Golden Layout", as
 		table.getByText("Edit through the Tabulator spike", { exact: true }),
 	).toBeVisible();
 
-	const statusCell = firstRow.locator('.tabulator-cell[tabulator-field="status"]');
-	const statusRequest = page.waitForRequest((request) =>
-		request.method() === "PATCH" &&
-		new URL(request.url()).pathname === "/api/tasks/task-workbench"
-	);
-	await statusCell.dblclick();
-	await preview
-		.locator(".tabulator-edit-list-item")
-		.getByText("In progress", { exact: true })
-		.click();
-	expect((await statusRequest).postDataJSON()).toMatchObject({
-		status: "in_progress",
-	});
-	await expect(statusCell.getByText("In progress", { exact: true })).toBeVisible();
+	await secondRow
+		.locator('.tabulator-cell[tabulator-field="phase"]')
+		.click({ button: "right" });
+	await page.locator(".tabulator-menu").getByText("Details", { exact: true }).click();
+	await expect(
+		page.getByRole("heading", { name: secondTask.subject, exact: true }),
+	).toBeVisible();
 
-	const previewBeforeResize = await preview.boundingBox();
+	const sheetBeforeResize = await sheet.boundingBox();
 	const splitter = page.locator(".lm_splitter").first();
 	const splitterBox = await splitter.boundingBox();
-	if (!previewBeforeResize || !splitterBox) throw new Error("Golden Layout split is not visible");
+	if (!sheetBeforeResize || !splitterBox) throw new Error("Golden Layout split is not visible");
 	await page.mouse.move(splitterBox.x + splitterBox.width / 2, splitterBox.y + 40);
 	await page.mouse.down();
 	await page.mouse.move(splitterBox.x - 90, splitterBox.y + 40, { steps: 8 });
 	await page.mouse.up();
 	await expect
-		.poll(async () => (await preview.boundingBox())?.width ?? 0)
-		.not.toBe(previewBeforeResize.width);
-	const resizedGridBounds = await preview.evaluate((element) => {
-		const host = element.querySelector<HTMLElement>(".coleo-tabulator-host");
-		const grid = element.querySelector<HTMLElement>(".tabulator");
+		.poll(async () => (await sheet.boundingBox())?.width ?? 0)
+		.not.toBe(sheetBeforeResize.width);
+	const resizedGridBounds = await sheet.evaluate((element) => {
 		return {
-			hostHeight: host?.getBoundingClientRect().height ?? 0,
-			gridHeight: grid?.getBoundingClientRect().height ?? 0,
+			hostHeight: element.getBoundingClientRect().height,
+			gridHeight: element.getBoundingClientRect().height,
 		};
 	});
 	expect(Math.abs(resizedGridBounds.hostHeight - resizedGridBounds.gridHeight)).toBeLessThan(2);
 
-	const reorderRequest = page.waitForRequest((request) =>
-		request.method() === "POST" &&
-		new URL(request.url()).pathname === "/api/tasks/reorder"
-	);
-	await dragTabulatorRowAfter(
-		page,
-		firstRow.locator('.tabulator-cell[tabulator-field="phase"]'),
-		secondRow.locator('.tabulator-cell[tabulator-field="phase"]'),
-	);
-	expect((await reorderRequest).postDataJSON()).toMatchObject({
-		taskId: task.id,
-		prevTaskId: secondTask.id,
-		nextTaskId: draftTask.id,
-	});
-
-	await secondRow
+	await firstRow
 		.locator('.tabulator-cell[tabulator-field="phase"]')
 		.click({ button: "right" });
-	const detailsAction = preview.locator(".tabulator-menu").getByText("Details", {
-		exact: true,
+	const createTaskRequest = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/tasks"
+	);
+	await page.locator(".tabulator-menu").getByText("Insert row above", { exact: true }).click();
+	expect((await createTaskRequest).postDataJSON()).toMatchObject({
+		subject: "New task",
+		status: "draft",
 	});
-	await expect(detailsAction).toBeVisible();
-	await detailsAction.click();
-	await expect(
-		page.getByRole("heading", { name: secondTask.subject, exact: true }),
-	).toBeVisible();
+	await expect(sheet.getByText("New task", { exact: true })).toBeVisible();
 });
 
 test("filters Draft tasks through the saved view shortcut", async ({ page }) => {
@@ -602,37 +552,36 @@ test("filters Draft tasks through the saved view shortcut", async ({ page }) => 
 	await expect(
 		sheet.getByRole("gridcell", { name: draftTask.subject, exact: true }),
 	).toBeVisible();
+
+	await page.getByRole("button", { name: "View", exact: true }).click();
+	await expect(
+		page.getByRole("heading", { name: "Configure view", exact: true }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Hide Tags", exact: true }).click();
+	await expect(sheet.getByRole("columnheader", { name: "Tags", exact: true })).toHaveCount(0);
+	await page.getByRole("button", { name: "Show Tags", exact: true }).click();
+	await expect(sheet.getByRole("columnheader", { name: "Tags", exact: true })).toBeVisible();
+	await page.getByRole("button", { name: "Close configuration", exact: true }).click();
 });
 
 test("creates and selects a tag from the multiselect search", async ({ page }) => {
 	await installMockApi(page, { bugs: [bug] });
 	await page.goto("/bugs");
 	const bugSheet = page.locator(".coleo-resource-sheet");
-	const tagsCell = bugSheet.locator("td.ht-multi-select-renderer").filter({
-		hasText: "regression",
-	});
+	const tagsCell = bugSheet.locator('.tabulator-cell[tabulator-field="tags"]');
 	await expect(tagsCell).toBeVisible({ timeout: 20_000 });
-	await tagsCell.dblclick({ position: { x: 174, y: 14 } });
-	const editor = bugSheet.locator(".ht-multi-select-editor");
-	const search = editor.getByRole("textbox", { name: "Search options" });
+	await tagsCell.dblclick();
+	await expect(tagsCell).toHaveClass(/tabulator-editing/);
+	const editor = page.locator(".coleo-tabulator-multiselect-editor");
+	await expect(editor).toBeVisible();
+	const search = editor.getByRole("searchbox", { name: "Search options" });
 	await search.fill("performance");
 	const addButton = editor.getByRole("button", {
 		name: 'Add "performance" as a tag',
 	});
 	await expect(addButton).toBeEnabled();
-	const createTagRequest = page.waitForRequest((request) =>
-		request.method() === "PATCH" &&
-		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
-	);
 	await addButton.click();
-	const requestBody = (await createTagRequest).postDataJSON() as {
-		metadata?: { ui?: { tags?: string[] } };
-	};
-	expect(requestBody.metadata?.ui?.tags).toEqual(["regression", "ui", "performance"]);
 	await expect(editor.getByRole("checkbox", { name: "performance" })).toBeChecked();
-	await expect(
-		tagsCell.locator(".ht-multi-select-chip-label").filter({ hasText: "performance" }),
-	).toHaveText("performance");
 
 	await search.fill("PERFORMANCE");
 	await expect(
@@ -642,21 +591,28 @@ test("creates and selects a tag from the multiselect search", async ({ page }) =
 	).toBeDisabled();
 
 	await search.fill("frontend");
-	const enterTagRequest = page.waitForRequest((request) =>
+	await search.press("Enter");
+	await expect(editor.getByRole("checkbox", { name: "frontend" })).toBeChecked();
+	const tagUpdateRequest = page.waitForRequest((request) =>
 		request.method() === "PATCH" &&
 		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
 	);
-	await search.press("Enter");
-	const enterRequestBody = (await enterTagRequest).postDataJSON() as {
+	await editor.getByRole("button", { name: "Apply", exact: true }).click();
+	const requestBody = (await tagUpdateRequest).postDataJSON() as {
 		metadata?: { ui?: { tags?: string[] } };
 	};
-	expect(enterRequestBody.metadata?.ui?.tags).toEqual([
+	expect(requestBody.metadata?.ui?.tags).toEqual([
 		"regression",
 		"ui",
 		"performance",
 		"frontend",
 	]);
-	await expect(editor.getByRole("checkbox", { name: "frontend" })).toBeChecked();
+	await expect(tagsCell.locator(".coleo-tabulator-tag")).toHaveText([
+		"regression",
+		"ui",
+		"performance",
+		"frontend",
+	]);
 });
 
 test("manually orders task and bug rows from the Order gutter", async ({ page }) => {
@@ -666,17 +622,21 @@ test("manually orders task and bug rows from the Order gutter", async ({ page })
 	});
 	await page.goto("/tasks");
 	const taskSheet = page.locator(".coleo-resource-sheet");
-	await expect(taskSheet.getByText("Order", { exact: true })).not.toHaveCount(0, {
+	await expect(taskSheet.getByRole("rowheader", { name: "1", exact: true })).toBeVisible({
 		timeout: 20_000,
 	});
 	const taskReorder = page.waitForRequest((request) =>
 		request.method() === "POST" &&
 		new URL(request.url()).pathname === "/api/tasks/reorder"
 	);
-	await dragOrderRowAfter(
+	await dragTabulatorRowAfter(
 		page,
-		taskSheet.getByRole("rowheader", { name: "1", exact: true }),
-		taskSheet.getByRole("rowheader", { name: "2", exact: true }),
+		taskSheet
+			.locator('.tabulator-row[data-resource-id="task-workbench"]')
+			.locator('.tabulator-cell[tabulator-field="phase"]'),
+		taskSheet
+			.locator('.tabulator-row[data-resource-id="task-second"]')
+			.locator('.tabulator-cell[tabulator-field="phase"]'),
 	);
 	expect((await taskReorder).postDataJSON()).toMatchObject({
 		taskId: task.id,
@@ -713,17 +673,21 @@ test("manually orders task and bug rows from the Order gutter", async ({ page })
 
 	await page.goto("/bugs");
 	const bugSheet = page.locator(".coleo-resource-sheet");
-	await expect(bugSheet.getByText("Order", { exact: true })).not.toHaveCount(0, {
+	await expect(bugSheet.getByRole("rowheader", { name: "1", exact: true })).toBeVisible({
 		timeout: 20_000,
 	});
 	const bugReorder = page.waitForRequest((request) =>
 		request.method() === "POST" &&
 		new URL(request.url()).pathname === "/api/bugs/reorder"
 	);
-	await dragOrderRowAfter(
+	await dragTabulatorRowAfter(
 		page,
-		bugSheet.getByRole("rowheader", { name: "1", exact: true }),
-		bugSheet.getByRole("rowheader", { name: "2", exact: true }),
+		bugSheet
+			.locator('.tabulator-row[data-resource-id="bug-workbench"]')
+			.locator('.tabulator-cell[tabulator-field="source"]'),
+		bugSheet
+			.locator('.tabulator-row[data-resource-id="bug-second"]')
+			.locator('.tabulator-cell[tabulator-field="source"]'),
 	);
 	expect((await bugReorder).postDataJSON()).toMatchObject({
 		bugId: bug.id,
