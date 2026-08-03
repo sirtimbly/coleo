@@ -37,6 +37,10 @@
 	--ht-accent-foreground-color: var(--accent-foreground);
 	--ht-cell-selection-border-color: var(--accent);
 	--ht-cell-selection-background-color: color-mix(in oklch, var(--accent) 12%, transparent);
+	--ht-cell-editor-foreground-color: var(--foreground);
+	--ht-cell-editor-background-color: var(--surface-secondary);
+	--ht-cell-editor-border-color: var(--accent);
+	--ht-cell-editor-shadow-color: var(--accent);
 	--ht-menu-background-color: var(--overlay);
 	--ht-menu-foreground-color: var(--overlay-foreground);
 	--ht-menu-item-hover-background-color: var(--surface-secondary);

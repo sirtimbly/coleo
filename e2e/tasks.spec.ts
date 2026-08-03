@@ -73,6 +73,9 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		bugs: [bug],
 		discoveries: [discovery],
 	});
+	await page.addInitScript(() => {
+		window.localStorage.setItem("coleo-theme", "dark");
+	});
 	await page.goto("/tasks");
 
 	await expect(
@@ -149,6 +152,21 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	await taskSubjectCell.dblclick();
 	const subjectEditor = resourceSheet.locator("textarea.handsontableInput");
 	await expect(subjectEditor).toBeVisible();
+	const editorUsesThemeTokens = await subjectEditor.evaluate((element) => {
+		const probe = document.createElement("span");
+		probe.style.color = "var(--foreground)";
+		probe.style.backgroundColor = "var(--surface-secondary)";
+		document.body.append(probe);
+		const editorStyle = getComputedStyle(element);
+		const probeStyle = getComputedStyle(probe);
+		const matches = {
+			foreground: editorStyle.color === probeStyle.color,
+			background: editorStyle.backgroundColor === probeStyle.backgroundColor,
+		};
+		probe.remove();
+		return matches;
+	});
+	expect(editorUsesThemeTokens).toEqual({ foreground: true, background: true });
 	await subjectEditor.fill(editedSubject);
 	await page.keyboard.press("Enter");
 	expect((await editRequest).postDataJSON()).toMatchObject({ subject: editedSubject });
