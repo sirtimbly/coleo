@@ -24,7 +24,11 @@ import type {
 	UiMetadata,
 } from "@/lib";
 
-import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
+import {
+	ResourceSheet,
+	type ResourceSheetColumn,
+	type ResourceSheetRowMove,
+} from "./ResourceSheet";
 import { normalizeTagValues } from "./tag-values";
 import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
@@ -122,6 +126,7 @@ export function BugSheet({
 	onUpdateBug,
 	onDelete,
 	onCreateBugAt,
+	onRowsMove,
 }: {
 	bugs: Bug[];
 	selectedBugId?: string;
@@ -129,6 +134,7 @@ export function BugSheet({
 	onUpdateBug?: (bugId: string, updates: BugUpdate) => void;
 	onDelete?: (bug: Bug) => void;
 	onCreateBugAt?: (index: number, title: string) => void;
+	onRowsMove?: (moves: ResourceSheetRowMove<Bug>[]) => void | Promise<void>;
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingBugId, setFormattingBugId] = useState<string>();
@@ -182,7 +188,7 @@ export function BugSheet({
 					/>
 				) : (
 					<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-						Spreadsheet · double-click to edit · use read-only cells for details
+						Spreadsheet · drag the Order gutter · double-click to edit
 					</span>
 				)}
 				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
@@ -214,6 +220,7 @@ export function BugSheet({
 				onDeleteRows={onDelete ? (removed) => {
 					for (const bug of removed) onDelete?.(bug);
 				} : undefined}
+				onRowsMove={onRowsMove}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedBugId}
 				onRowSelectionChange={(bug) => setFormattingBugId(bug?.id)}

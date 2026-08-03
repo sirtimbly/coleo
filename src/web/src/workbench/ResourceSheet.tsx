@@ -2,9 +2,9 @@
  * Generic Handsontable-backed resource projection.
  *
  * Task, bug, plan-item, and future structured lists all use this component for
- * spreadsheet editing, between-row insertion, sorting, column movement,
- * resizing, visibility, row selection/formatting, and opening resources in
- * separate workbench panels.
+ * spreadsheet editing, between-row insertion, manual row ordering, sorting,
+ * column movement, resizing, visibility, row selection/formatting, and opening
+ * resources in separate workbench panels.
  */
 
 import { useEffect, useMemo, useRef } from "react";
@@ -57,6 +57,14 @@ export interface ResourceSheetColumn<T> {
 	validator?: ColumnSettings["validator"];
 }
 
+export interface ResourceSheetRowMove<T> {
+	row: T;
+	fromIndex: number;
+	toIndex: number;
+	previousRow?: T;
+	nextRow?: T;
+}
+
 interface SheetRow {
 	__resourceId: string;
 	[columnId: string]: unknown;
@@ -73,11 +81,13 @@ interface ResourceSheetRuntime<T> {
 	rowHeight: number;
 	contextMenuItems: string[];
 	sortConfig: ColumnSortingConfig[];
+	canMoveRows: boolean;
 	preferences: ViewPreferences;
 	onPreferencesChange: (preferences: ViewPreferences) => void;
 	onChange?: (row: T, columnId: string, value: unknown, previousValue: unknown) => void;
 	onCreateRowAt?: (index: number) => void;
 	onDeleteRows?: (rows: T[]) => void;
+	onRowsMove?: (moves: ResourceSheetRowMove<T>[]) => void | Promise<void>;
 	onOpenRow?: (row: T) => void;
 	onNearEnd?: () => void;
 	onRowSelectionChange?: (row: T | undefined) => void;
@@ -189,6 +199,7 @@ export function ResourceSheet<T extends { id: string }>({
 	onChange,
 	onCreateRowAt,
 	onDeleteRows,
+	onRowsMove,
 	onOpenRow,
 	onNearEnd,
 	onRowSelectionChange,
@@ -203,6 +214,7 @@ export function ResourceSheet<T extends { id: string }>({
 	onChange?: (row: T, columnId: string, value: unknown, previousValue: unknown) => void;
 	onCreateRowAt?: (index: number) => void;
 	onDeleteRows?: (rows: T[]) => void;
+	onRowsMove?: (moves: ResourceSheetRowMove<T>[]) => void | Promise<void>;
 	onOpenRow?: (row: T) => void;
 	onNearEnd?: () => void;
 	onRowSelectionChange?: (row: T | undefined) => void;
@@ -215,6 +227,8 @@ export function ResourceSheet<T extends { id: string }>({
 	const scrollFrameRef = useRef<number | null>(null);
 	const lastNearEndRowCountRef = useRef<number | null>(null);
 	const syncingSortRef = useRef(false);
+	const rowMoveCaptureRef = useRef<{ order: string[]; movedIds: string[] } | null>(null);
+	const pendingManualOrderRef = useRef<string[] | null>(null);
 	const visibleColumns = useMemo(
 		() => resolveColumns(columns, preferences.columns),
 		[columns, preferences.columns],
@@ -249,6 +263,7 @@ export function ResourceSheet<T extends { id: string }>({
 	const canCreateRows = Boolean(onCreateRowAt);
 	const canDeleteRows = Boolean(onDeleteRows);
 	const hasEditableCells = visibleColumns.some((column) => column.readOnly !== true);
+	const canMoveRows = Boolean(onRowsMove) && sortConfig.length === 0;
 
 	const hotColumns = useMemo<ColumnSettings[]>(() => visibleColumns.map((column) => ({
 		data: column.id,
@@ -280,11 +295,13 @@ export function ResourceSheet<T extends { id: string }>({
 		rowHeight,
 		contextMenuItems,
 		sortConfig,
+		canMoveRows,
 		preferences,
 		onPreferencesChange,
 		onChange,
 		onCreateRowAt,
 		onDeleteRows,
+		onRowsMove,
 		onOpenRow,
 		onNearEnd,
 		onRowSelectionChange,
@@ -302,11 +319,13 @@ export function ResourceSheet<T extends { id: string }>({
 		rowHeight,
 		contextMenuItems,
 		sortConfig,
+		canMoveRows,
 		preferences,
 		onPreferencesChange,
 		onChange,
 		onCreateRowAt,
 		onDeleteRows,
+		onRowsMove,
 		onOpenRow,
 		onNearEnd,
 		onRowSelectionChange,
@@ -323,6 +342,7 @@ export function ResourceSheet<T extends { id: string }>({
 			columns: runtime.hotColumns,
 			colHeaders: runtime.columnHeaders,
 			rowHeaders: true,
+			rowHeaderWidth: 62,
 			width: "100%",
 			height: "100%",
 			stretchH: "last",
@@ -330,6 +350,7 @@ export function ResourceSheet<T extends { id: string }>({
 			columnHeaderHeight: 32,
 			manualColumnMove: true,
 			manualColumnResize: true,
+			manualRowMove: runtime.canMoveRows,
 			multiColumnSorting: true,
 			undo: true,
 			copyPaste: true,
@@ -369,6 +390,59 @@ export function ResourceSheet<T extends { id: string }>({
 				// Domain mutations own deletion. Keep the immutable source in
 				// place until its optimistic/server update reaches React.
 				return false;
+			},
+			beforeRowMove: (movedRows: number[]) => {
+				const current = runtimeRef.current;
+				if (!current.canMoveRows || movedRows.length === 0) return false;
+				const order = Array.from({ length: hot.countRows() }, (_, visualRow) => {
+					const physicalRow = hot.toPhysicalRow(visualRow) ?? visualRow;
+					return current.sheetRows[physicalRow]?.__resourceId;
+				}).filter((id): id is string => Boolean(id));
+				const movedIds = movedRows.map((visualRow) => {
+					const physicalRow = hot.toPhysicalRow(visualRow) ?? visualRow;
+					return current.sheetRows[physicalRow]?.__resourceId;
+				}).filter((id): id is string => Boolean(id));
+				rowMoveCaptureRef.current = { order, movedIds };
+			},
+			afterRowMove: (
+				_movedRows: number[],
+				finalIndex: number,
+				_dropIndex: number | undefined,
+				movePossible: boolean,
+				orderChanged: boolean,
+			) => {
+				const captured = rowMoveCaptureRef.current;
+				rowMoveCaptureRef.current = null;
+				if (!captured || !movePossible || !orderChanged || captured.movedIds.length === 0) return;
+
+				const current = runtimeRef.current;
+				const movedSet = new Set(captured.movedIds);
+				const orderedIds = captured.order.filter((id) => !movedSet.has(id));
+				const targetIndex = Math.max(0, Math.min(finalIndex, orderedIds.length));
+				orderedIds.splice(targetIndex, 0, ...captured.movedIds);
+				const moves = captured.movedIds.flatMap((id) => {
+					const row = current.rowsById.get(id);
+					if (!row) return [];
+					const toIndex = orderedIds.indexOf(id);
+					const previousId = orderedIds[toIndex - 1];
+					const nextId = orderedIds[toIndex + 1];
+					return [{
+						row,
+						fromIndex: captured.order.indexOf(id),
+						toIndex,
+						previousRow: previousId ? current.rowsById.get(previousId) : undefined,
+						nextRow: nextId ? current.rowsById.get(nextId) : undefined,
+					} satisfies ResourceSheetRowMove<T>];
+				});
+				if (moves.length === 0) return;
+				pendingManualOrderRef.current = orderedIds;
+				Promise.resolve(current.onRowsMove?.(moves)).catch(() => {
+					pendingManualOrderRef.current = null;
+					hot.rowIndexMapper.setIndexesSequence(
+						Array.from({ length: hot.countRows() }, (_, index) => index),
+					);
+					hot.render();
+				});
 			},
 			afterColumnMove: (
 				movedColumns: number[],
@@ -425,6 +499,26 @@ export function ResourceSheet<T extends { id: string }>({
 						: [];
 				});
 				current.onPreferencesChange({ ...current.preferences, sort: nextSort });
+			},
+			afterGetColHeader: (column, header) => {
+				if (column >= 0 || !runtimeRef.current.onRowsMove) return;
+				const label = header.querySelector<HTMLElement>(".colHeader");
+				if (label) label.textContent = "Order";
+				header.title = runtimeRef.current.canMoveRows
+					? "Manual row order"
+					: "Clear column sorting to reorder rows";
+			},
+			afterGetRowHeader: (row, header) => {
+				const current = runtimeRef.current;
+				if (!current.onRowsMove || row < 0) return;
+				const label = header.querySelector<HTMLElement>(".rowHeader");
+				if (!label) return;
+				label.textContent = String(row + 1);
+				label.classList.add("coleo-sheet-row-order");
+				label.classList.toggle("coleo-sheet-row-order-disabled", !current.canMoveRows);
+				header.title = current.canMoveRows
+					? `Select row ${row + 1}, then drag this order handle`
+					: "Clear column sorting to reorder rows";
 			},
 			afterOnCellMouseDown: (event, coords) => {
 				if (event.detail < 2 || coords.row === null || coords.row < 0) return;
@@ -516,6 +610,22 @@ export function ResourceSheet<T extends { id: string }>({
 		// updateData preserves Handsontable's interaction state and undo/redo
 		// history while React Query reconciles optimistic and server values.
 		hot.updateData(sheetRows);
+		const pendingOrder = pendingManualOrderRef.current;
+		const sourceOrder = sheetRows.map((row) => row.__resourceId);
+		if (
+			pendingOrder &&
+			pendingOrder.length === sourceOrder.length &&
+			pendingOrder.every((id, index) => id === sourceOrder[index])
+		) {
+			// The backend order is now authoritative. Remove the temporary
+			// visual index mapping so the persisted source order is not applied
+			// a second time.
+			hot.rowIndexMapper.setIndexesSequence(
+				Array.from({ length: hot.countRows() }, (_, index) => index),
+			);
+			pendingManualOrderRef.current = null;
+			hot.render();
+		}
 	}, [sheetRows]);
 
 	useEffect(() => {
@@ -526,9 +636,10 @@ export function ResourceSheet<T extends { id: string }>({
 			colHeaders: columnHeaders,
 			rowHeights: rowHeight,
 			contextMenu: contextMenuItems,
+			manualRowMove: canMoveRows,
 		}, false);
 		hot.render();
-	}, [columnHeaders, contextMenuItems, hotColumns, rowHeight]);
+	}, [canMoveRows, columnHeaders, contextMenuItems, hotColumns, rowHeight]);
 
 	useEffect(() => {
 		hotRef.current?.render();

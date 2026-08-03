@@ -18,6 +18,7 @@ import { Button } from '@heroui/react';
 import { type Bug, type UiMetadata, cn, api } from '@/lib';
 import { BugModal, StatusBurndownChart } from '@/components';
 import type { BugUpdate } from '@/workbench/resource-updates';
+import type { ResourceSheetRowMove } from '@/workbench/ResourceSheet';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
@@ -491,6 +492,36 @@ export function BugsPage() {
 		[bugs.length, createBugAsync, reorderBugAsync]
 	);
 
+	const handleRowsMove = useCallback(
+		async (moves: ResourceSheetRowMove<Bug>[]) => {
+			let workingOrder = [...bugs];
+			for (const move of moves) {
+				const fromIndex = workingOrder.findIndex((bug) => bug.id === move.row.id);
+				const movedBug = fromIndex >= 0 ? workingOrder[fromIndex] : move.row;
+				const remaining = workingOrder.filter((bug) => bug.id !== move.row.id);
+				const nextIndex = move.nextRow
+					? remaining.findIndex((bug) => bug.id === move.nextRow?.id)
+					: -1;
+				const previousIndex = move.previousRow
+					? remaining.findIndex((bug) => bug.id === move.previousRow?.id)
+					: -1;
+				const targetIndex = nextIndex >= 0
+					? nextIndex
+					: previousIndex >= 0
+						? previousIndex + 1
+						: Math.max(0, Math.min(move.toIndex, remaining.length));
+				await reorderBugAsync({
+					bugId: move.row.id,
+					fromSortOrder: move.row.sortOrder ?? Math.max(0, fromIndex),
+					toSortOrder: targetIndex,
+				});
+				remaining.splice(targetIndex, 0, movedBug);
+				workingOrder = remaining;
+			}
+		},
+		[bugs, reorderBugAsync],
+	);
+
 	const handleOpenDetails = useCallback((bug: Bug) => {
 		const nextSearchParams = new URLSearchParams(searchParams);
 		nextSearchParams.set('bug', bug.id);
@@ -673,6 +704,7 @@ export function BugsPage() {
 							onUpdateBug={handleUpdateBug}
 							onDelete={handleDeleteBug}
 							onCreateBugAt={handleCreateBugAt}
+							onRowsMove={handleRowsMove}
 						/>
 					</React.Suspense>
 				)}

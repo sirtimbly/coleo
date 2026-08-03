@@ -351,6 +351,33 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				counts: { total: taskRecords.length, byStatus: {} },
 			});
 		}
+		if (path === "/api/tasks/reorder" && request.method() === "POST") {
+			const input = request.postDataJSON() as {
+				taskId: string;
+				toIndex?: number;
+				prevTaskId?: string | null;
+				nextTaskId?: string | null;
+			};
+			const fromIndex = taskRecords.findIndex((candidate) => candidate.id === input.taskId);
+			if (fromIndex < 0) return json(route, { error: "Task not found" }, 404);
+			const [movedTask] = taskRecords.splice(fromIndex, 1);
+			const nextIndex = input.nextTaskId
+				? taskRecords.findIndex((candidate) => candidate.id === input.nextTaskId)
+				: -1;
+			const previousIndex = input.prevTaskId
+				? taskRecords.findIndex((candidate) => candidate.id === input.prevTaskId)
+				: -1;
+			const targetIndex = nextIndex >= 0
+				? nextIndex
+				: previousIndex >= 0
+					? previousIndex + 1
+					: Math.max(0, Math.min(input.toIndex ?? taskRecords.length, taskRecords.length));
+			if (movedTask) taskRecords.splice(targetIndex, 0, movedTask);
+			taskRecords.forEach((record, index) => {
+				record.sortOrder = index;
+			});
+			return json(route, { success: true });
+		}
 		if (/^\/api\/tasks\/[^/]+$/.test(path) && request.method() === "PATCH") {
 			const taskId = path.split("/")[3];
 			const index = taskRecords.findIndex((candidate) => candidate.id === taskId);
@@ -368,6 +395,20 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 		}
 		if (path === "/api/bugs" && request.method() === "GET") {
 			return json(route, { bugs: bugRecords });
+		}
+		if (path === "/api/bugs/reorder" && request.method() === "POST") {
+			const input = request.postDataJSON() as { bugId: string; toSortOrder: number };
+			const fromIndex = bugRecords.findIndex((candidate) => candidate.id === input.bugId);
+			if (fromIndex < 0) return json(route, { error: "Bug not found" }, 404);
+			const [movedBug] = bugRecords.splice(fromIndex, 1);
+			const targetIndex = input.toSortOrder < 0
+				? bugRecords.length
+				: Math.min(input.toSortOrder, bugRecords.length);
+			if (movedBug) bugRecords.splice(targetIndex, 0, movedBug);
+			bugRecords.forEach((record, index) => {
+				record.sortOrder = index;
+			});
+			return json(route, { success: true });
 		}
 		if (/^\/api\/bugs\/[^/]+$/.test(path) && request.method() === "PATCH") {
 			const bugId = path.split("/")[3];

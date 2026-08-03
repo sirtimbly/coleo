@@ -18,3 +18,13 @@ lists scroll inside the sheet. Search and actions live in the single top
 toolbar. Burndown and Activity views are optional insight panels opened by the
 compact icon selectors in that toolbar; neither view reserves space until it is
 selected.
+
+## Manual sheet ordering
+
+Task, plan-item, and bug sheets expose Handsontable's supported manual row-move
+interaction through a dedicated Order gutter. The gutter is both the visible
+grip and the row position column: select a row header, then drag it to move the
+whole row. Moves are persisted through the domain reorder endpoints, including
+neighbor IDs for fractionally indexed tasks. Manual moving is unavailable while
+a saved column sort is active so the displayed order and persisted order cannot
+contradict one another.

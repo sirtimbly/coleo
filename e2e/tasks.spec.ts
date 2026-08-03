@@ -5,7 +5,7 @@
 
 /// <reference lib="dom" />
 
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { installMockApi } from "./support/fixtures";
 
@@ -52,6 +52,20 @@ const bug = {
 	humanNotified: false,
 };
 
+const secondTask = {
+	...task,
+	id: "task-second",
+	subject: "Keep manual ordering predictable",
+	sortOrder: 2,
+};
+
+const secondBug = {
+	...bug,
+	id: "bug-second",
+	title: "Verify the reorder handle",
+	sortOrder: 2,
+};
+
 const discovery = {
 	id: "discovery-workbench",
 	armId: "arm-undo",
@@ -66,6 +80,21 @@ const discovery = {
 	createdAt: "2026-08-02T11:00:00.000Z",
 	updatedAt: "2026-08-02T12:00:00.000Z",
 };
+
+async function dragOrderRowAfter(page: Page, source: Locator, target: Locator) {
+	await source.click();
+	const sourceBox = await source.boundingBox();
+	const targetBox = await target.boundingBox();
+	if (!sourceBox || !targetBox) throw new Error("Order gutter row is not visible");
+	await page.mouse.move(sourceBox.x + sourceBox.width / 2, sourceBox.y + sourceBox.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(
+		targetBox.x + targetBox.width / 2,
+		targetBox.y + targetBox.height - 2,
+		{ steps: 8 },
+	);
+	await page.mouse.up();
+}
 
 test("formats rows and preserves undo and redo across resource sheets", async ({ page }) => {
 	await installMockApi(page, {
@@ -349,4 +378,83 @@ test("opens a spreadsheet row in the dedicated task detail projection", async ({
 		page.getByRole("heading", { name: "Protect the critical workbench", exact: true }),
 	).toBeVisible();
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
+});
+
+test("manually orders task and bug rows from the Order gutter", async ({ page }) => {
+	await installMockApi(page, {
+		tasks: [task, secondTask],
+		bugs: [bug, secondBug],
+	});
+	await page.goto("/tasks");
+	const taskSheet = page.locator(".coleo-resource-sheet");
+	await expect(taskSheet.getByText("Order", { exact: true })).not.toHaveCount(0, {
+		timeout: 20_000,
+	});
+	const taskReorder = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/tasks/reorder"
+	);
+	await dragOrderRowAfter(
+		page,
+		taskSheet.getByRole("rowheader", { name: "1", exact: true }),
+		taskSheet.getByRole("rowheader", { name: "2", exact: true }),
+	);
+	expect((await taskReorder).postDataJSON()).toMatchObject({
+		taskId: task.id,
+		prevTaskId: secondTask.id,
+		nextTaskId: null,
+	});
+	await expect
+		.poll(async () => {
+			const renderedRows = await taskSheet.getByRole("row").allTextContents();
+			return renderedRows.findIndex((row) => row.includes(secondTask.subject)) <
+				renderedRows.findIndex((row) => row.includes(task.subject));
+		})
+		.toBe(true);
+	const undoTaskReorder = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/tasks/reorder"
+	);
+	await page.keyboard.press("ControlOrMeta+Z");
+	expect((await undoTaskReorder).postDataJSON()).toMatchObject({
+		taskId: task.id,
+		prevTaskId: null,
+		nextTaskId: secondTask.id,
+	});
+	const redoTaskReorder = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/tasks/reorder"
+	);
+	await page.keyboard.press("ControlOrMeta+Shift+Z");
+	expect((await redoTaskReorder).postDataJSON()).toMatchObject({
+		taskId: task.id,
+		prevTaskId: secondTask.id,
+		nextTaskId: null,
+	});
+
+	await page.goto("/bugs");
+	const bugSheet = page.locator(".coleo-resource-sheet");
+	await expect(bugSheet.getByText("Order", { exact: true })).not.toHaveCount(0, {
+		timeout: 20_000,
+	});
+	const bugReorder = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/bugs/reorder"
+	);
+	await dragOrderRowAfter(
+		page,
+		bugSheet.getByRole("rowheader", { name: "1", exact: true }),
+		bugSheet.getByRole("rowheader", { name: "2", exact: true }),
+	);
+	expect((await bugReorder).postDataJSON()).toMatchObject({
+		bugId: bug.id,
+		toSortOrder: 1,
+	});
+	await expect
+		.poll(async () => {
+			const renderedRows = await bugSheet.getByRole("row").allTextContents();
+			return renderedRows.findIndex((row) => row.includes(secondBug.title)) <
+				renderedRows.findIndex((row) => row.includes(bug.title));
+		})
+		.toBe(true);
 });

@@ -22,7 +22,11 @@ import type {
 	UiMetadata,
 } from "@/lib";
 
-import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
+import {
+	ResourceSheet,
+	type ResourceSheetColumn,
+	type ResourceSheetRowMove,
+} from "./ResourceSheet";
 import { normalizeTagValues } from "./tag-values";
 import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
@@ -146,6 +150,7 @@ export function TaskSheet({
 	onUpdateTask,
 	onDelete,
 	onCreateTaskAt,
+	onRowsMove,
 	onLoadMore,
 	hasNextPage,
 	viewId = "tasks-sheet",
@@ -156,6 +161,7 @@ export function TaskSheet({
 	onUpdateTask?: (taskId: string, updates: TaskUpdate) => void;
 	onDelete?: (task: Task) => void;
 	onCreateTaskAt?: (index: number, subject: string) => void;
+	onRowsMove?: (moves: ResourceSheetRowMove<Task>[]) => void | Promise<void>;
 	onLoadMore?: () => void;
 	hasNextPage?: boolean;
 	viewId?: string;
@@ -214,7 +220,7 @@ export function TaskSheet({
 					/>
 				) : (
 					<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-						Spreadsheet · double-click to edit · use read-only cells for details
+						Spreadsheet · drag the Order gutter · double-click to edit
 					</span>
 				)}
 				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
@@ -246,6 +252,7 @@ export function TaskSheet({
 				onDeleteRows={onDelete ? (removed) => {
 					for (const task of removed) onDelete?.(task);
 				} : undefined}
+				onRowsMove={onRowsMove}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedTaskId}
 				onNearEnd={hasNextPage ? onLoadMore : undefined}

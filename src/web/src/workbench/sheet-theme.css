@@ -65,6 +65,36 @@
 	letter-spacing: 0.01em;
 }
 
+.coleo-resource-sheet .handsontable span.coleo-sheet-row-order {
+	align-items: center;
+	display: inline-flex;
+	gap: 5px;
+	justify-content: center;
+	width: 100%;
+}
+
+.coleo-resource-sheet .handsontable span.coleo-sheet-row-order::before {
+	background-image: radial-gradient(circle, var(--muted-foreground) 1px, transparent 1.5px);
+	background-position: center;
+	background-size: 4px 4px;
+	content: "";
+	height: 12px;
+	opacity: 0.72;
+	width: 8px;
+}
+
+.coleo-resource-sheet .handsontable span.coleo-sheet-row-order-disabled::before {
+	opacity: 0.28;
+}
+
+.coleo-resource-sheet .handsontable.ht__manualRowMove tbody th {
+	cursor: grab;
+}
+
+.coleo-resource-sheet .handsontable.ht__manualRowMove.on-moving--rows tbody th {
+	cursor: grabbing;
+}
+
 .coleo-resource-sheet .handsontable td {
 	line-height: 1.35;
 }

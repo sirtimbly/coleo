@@ -25,6 +25,7 @@ import { cn } from "@/lib";
 import { useWorkspaceOpenRoute } from "@/workspace/route-context";
 
 import type { Task } from "@/lib";
+import type { ResourceSheetRowMove } from "@/workbench/ResourceSheet";
 import type { TaskUpdate } from "@/workbench/resource-updates";
 
 const TaskSheet = lazy(() =>
@@ -54,6 +55,10 @@ export function UnifiedGridView({ className }: { className?: string }) {
 	const planItems = useTasks({ sourceType: "plan" });
 	const discoveriesResult = useInfiniteDiscoveries({ status: "all" });
 	const discoveriesMutation = useDiscoveries({ status: "all" });
+	const updateTaskMutation = tasksResult.updateTask;
+	const reorderTaskMutation = tasksResult.reorderTaskAsync;
+	const updatePlanItemMutation = planItems.updateTask;
+	const reorderPlanItemMutation = planItems.reorderTaskAsync;
 
 	const filterTasks = useCallback((tasks: Task[]) => {
 		if (!deferredSearchText.trim()) return tasks;
@@ -95,11 +100,33 @@ export function UnifiedGridView({ className }: { className?: string }) {
 	}, [activeTab, discoveriesResult, planItems, tasksResult]);
 
 	const updateTask = useCallback((taskId: string, updates: TaskUpdate) => {
-		tasksResult.updateTask({ id: taskId, updates });
-	}, [tasksResult]);
+		updateTaskMutation({ id: taskId, updates });
+	}, [updateTaskMutation]);
 	const updatePlanItem = useCallback((taskId: string, updates: TaskUpdate) => {
-		planItems.updateTask({ id: taskId, updates });
-	}, [planItems]);
+		updatePlanItemMutation({ id: taskId, updates });
+	}, [updatePlanItemMutation]);
+	const reorderTasks = useCallback(async (moves: ResourceSheetRowMove<Task>[]) => {
+		for (const move of moves) {
+			await reorderTaskMutation({
+				taskId: move.row.id,
+				fromSortOrder: move.row.sortOrder ?? move.fromIndex,
+				toSortOrder: move.toIndex,
+				prevTaskId: move.previousRow?.id ?? null,
+				nextTaskId: move.nextRow?.id ?? null,
+			});
+		}
+	}, [reorderTaskMutation]);
+	const reorderPlanItems = useCallback(async (moves: ResourceSheetRowMove<Task>[]) => {
+		for (const move of moves) {
+			await reorderPlanItemMutation({
+				taskId: move.row.id,
+				fromSortOrder: move.row.sortOrder ?? move.fromIndex,
+				toSortOrder: move.toIndex,
+				prevTaskId: move.previousRow?.id ?? null,
+				nextTaskId: move.nextRow?.id ?? null,
+			});
+		}
+	}, [reorderPlanItemMutation]);
 
 	return (
 		<div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
@@ -166,6 +193,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 								viewId="plan-items-sheet"
 								onOpenDetails={openTask}
 								onUpdateTask={updatePlanItem}
+								onRowsMove={reorderPlanItems}
 								onCreateTaskAt={(index, subject) => {
 									void planItems.createTaskAsync({
 										subject,
@@ -199,6 +227,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 								tasks={filteredTasks}
 								onOpenDetails={openTask}
 								onUpdateTask={updateTask}
+								onRowsMove={reorderTasks}
 								onCreateTaskAt={(index, subject) => {
 									void tasksResult.createTaskAsync({
 										subject,

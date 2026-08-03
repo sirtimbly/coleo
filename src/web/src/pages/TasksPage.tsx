@@ -36,6 +36,7 @@ import {
 import { StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import type { TaskUpdate } from "@/workbench/resource-updates";
+import type { ResourceSheetRowMove } from "@/workbench/ResourceSheet";
 import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
@@ -779,6 +780,21 @@ export function TasksPage() {
 		[createTaskAsync, reorderTaskAsync],
 	);
 
+	const handleRowsMove = useCallback(
+		async (moves: ResourceSheetRowMove<Task>[]) => {
+			for (const move of moves) {
+				await reorderTaskAsync({
+					taskId: move.row.id,
+					fromSortOrder: move.row.sortOrder ?? move.fromIndex,
+					toSortOrder: move.toIndex,
+					prevTaskId: move.previousRow?.id ?? null,
+					nextTaskId: move.nextRow?.id ?? null,
+				});
+			}
+		},
+		[reorderTaskAsync],
+	);
+
   const handleOpenDetails = useCallback((task: Task) => {
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.set("task", task.id);
@@ -952,6 +968,7 @@ export function TasksPage() {
 									onUpdateTask={handleUpdateTask}
 									onDelete={handleDeleteTask}
 									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
 									onLoadMore={fetchNextPage}
 								/>
@@ -1119,6 +1136,7 @@ export function TasksPage() {
 									onUpdateTask={handleUpdateTask}
 									onDelete={handleDeleteTask}
 									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
 									onLoadMore={fetchNextPage}
 								/>
