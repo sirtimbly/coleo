@@ -62,6 +62,7 @@ export interface CardActionRequest {
 	resource?: CardResourceRef;
 	inputs: CardJsonObject;
 	clientActionId: string;
+	expectedResourceVersion?: string;
 }
 
 export interface CardActionResult {
@@ -96,4 +97,17 @@ export interface WorkbenchAttention {
 	assignedTo?: string;
 	requiresAction: boolean;
 	updatedAt: string;
+}
+
+export interface WorkbenchInboxRecord {
+	itemKey: string;
+	source: "status-report" | "task" | "bug";
+	kind: "status" | "task" | "bug";
+	title: string;
+	summary: string;
+	timestamp: string;
+	resource: CardResourceRef;
+	severity: "info" | "success" | "warning" | "danger";
+	requiresAction: boolean;
+	attention?: WorkbenchAttention;
 }

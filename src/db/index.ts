@@ -220,6 +220,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["065_workbench_profiles", MIGRATION_065_WORKBENCH_PROFILES],
 		["066_arm_runs", MIGRATION_066_ARM_RUNS],
 		["067_task_draft_status", MIGRATION_067_TASK_DRAFT_STATUS],
+		["068_workbench_card_instances", MIGRATION_068_WORKBENCH_CARD_INSTANCES],
 	];
 
 
@@ -2531,5 +2532,53 @@ END;
 // table rebuild to change a CHECK constraint while preserving later columns,
 // indexes, triggers, dependent rows, and external-content FTS rowids.
 const MIGRATION_067_TASK_DRAFT_STATUS = "SELECT 1;";
+
+const MIGRATION_068_WORKBENCH_CARD_INSTANCES = `
+CREATE TABLE IF NOT EXISTS workbench_card_instances (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  envelope TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  FOREIGN KEY (profile_id) REFERENCES workbench_profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_card_instances_resource
+ON workbench_card_instances(profile_id, resource_kind, resource_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS workbench_card_action_receipts (
+  client_action_id TEXT PRIMARY KEY,
+  envelope_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  verb TEXT NOT NULL,
+  result TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workbench_card_action_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_action_id TEXT NOT NULL,
+  envelope_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  verb TEXT NOT NULL,
+  input_keys TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_card_action_audit_resource
+ON workbench_card_action_audit(resource_kind, resource_id, created_at DESC);
+`;
 
 export { Database };

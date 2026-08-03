@@ -170,22 +170,23 @@ describe("workbench foundation", () => {
 			[now, now],
 		);
 
+		const actionBody = {
+			envelopeId: "edit:task:card-task",
+			template: { id: "workbench.resource-editor", version: 1 },
+			actionId: "save-resource",
+			verb: "task.update",
+			resource: { kind: "task", id: "card-task" },
+			inputs: {
+				actionId: "save-resource",
+				title: "After",
+				description: "After detail",
+			},
+			clientActionId: "action-test",
+		};
 		const action = await app.request("/workbench/cards/actions", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({
-				envelopeId: "edit:task:card-task",
-				template: { id: "workbench.resource-editor", version: 1 },
-				actionId: "save-resource",
-				verb: "task.update",
-				resource: { kind: "task", id: "card-task" },
-				inputs: {
-					actionId: "save-resource",
-					title: "After",
-					description: "After detail",
-				},
-				clientActionId: "action-test",
-			}),
+			body: JSON.stringify(actionBody),
 		});
 		expect(action.status).toBe(200);
 		expect((await action.json() as {
@@ -193,6 +194,29 @@ describe("workbench foundation", () => {
 		}).result).toMatchObject({ ok: true, clientActionId: "action-test" });
 		expect(db.query("SELECT subject, description FROM tasks WHERE id = ?").get("card-task"))
 			.toEqual({ subject: "After", description: "After detail" });
+		const duplicate = await app.request("/workbench/cards/actions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify(actionBody),
+		});
+		expect(duplicate.status).toBe(200);
+		expect((db.query(
+			"SELECT COUNT(*) AS count FROM workbench_card_action_receipts WHERE client_action_id = ?",
+		).get("action-test") as { count: number }).count).toBe(1);
+		expect((db.query(
+			"SELECT COUNT(*) AS count FROM workbench_card_action_audit WHERE client_action_id = ?",
+		).get("action-test") as { count: number }).count).toBe(1);
+
+		const stale = await app.request("/workbench/cards/actions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				...actionBody,
+				clientActionId: "action-stale",
+				expectedResourceVersion: "2020-01-01T00:00:00.000Z",
+			}),
+		});
+		expect(stale.status).toBe(409);
 
 		const rejected = await app.request("/workbench/cards/actions", {
 			method: "POST",
@@ -208,6 +232,72 @@ describe("workbench foundation", () => {
 			}),
 		});
 		expect(rejected.status).toBe(400);
+	});
+
+	it("restores persisted card panels by opaque instance identity", async () => {
+		const app = createTestApp();
+		const envelope = {
+			id: "event:test",
+			template: { id: "workbench.event", version: 1 },
+			schemaVersion: "1.5",
+			presentation: { surface: "panel", title: "Test event" },
+			data: { title: "Test event", summary: "Persistent card" },
+			createdAt: new Date().toISOString(),
+		};
+		const created = await app.request("/workbench/cards/instances", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ profileId: "local", envelope }),
+		});
+		expect(created.status).toBe(201);
+		const instance = (await created.json() as { instance: { id: string } }).instance;
+		expect(instance.id).toBeString();
+
+		const restored = await app.request(`/workbench/cards/instances/${instance.id}`);
+		expect(restored.status).toBe(200);
+		expect((await restored.json() as {
+			instance: { envelope: { id: string; data: { title: string } } };
+		}).instance.envelope).toMatchObject({
+			id: "event:test",
+			data: { title: "Test event" },
+		});
+	});
+
+	it("returns a cursor-ready unified attention inbox", async () => {
+		const app = createTestApp();
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (
+			   id, subject, description, status, priority, source_type, blocked_reason,
+			   created_at, updated_at
+			 ) VALUES (
+			   'inbox-task', 'Blocked task', 'Waiting on a decision', 'blocked',
+			   'high', 'manual', 'Human decision required', ?, ?
+			 )`,
+			[now, now],
+		);
+		db.run(
+			`INSERT INTO status_reports (
+			   id, task_id, arm_id, status, summary, created_at
+			 ) VALUES ('inbox-report', 'inbox-task', 'arm-test', 'needs_review', 'Review requested', ?)`,
+			[now],
+		);
+
+		const response = await app.request("/workbench/inbox?profileId=local&limit=1");
+		expect(response.status).toBe(200);
+		const page = await response.json() as {
+			items: Array<{ itemKey: string; requiresAction: boolean }>;
+			nextCursor?: string;
+		};
+		expect(page.items).toHaveLength(1);
+		expect(page.items[0]?.requiresAction).toBe(true);
+		expect(page.nextCursor).toBeString();
+
+		const next = await app.request(
+			`/workbench/inbox?profileId=local&limit=1&cursor=${encodeURIComponent(page.nextCursor!)}`,
+		);
+		expect(next.status).toBe(200);
+		expect((await next.json() as { items: Array<{ itemKey: string }> }).items).toHaveLength(1);
 	});
 
 	it("starts a run only when an Arm claims work", () => {

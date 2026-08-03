@@ -13,6 +13,7 @@ import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { createWorkbenchAttentionRoutes } from "./workbench-attention";
 import { createWorkbenchCardRoutes } from "./workbench-cards";
+import { createWorkbenchInboxRoutes } from "./workbench-inbox";
 
 import type { Database } from "bun:sqlite";
 
@@ -188,6 +189,7 @@ export function createWorkbenchRoutes() {
 
 	app.route("/attention", createWorkbenchAttentionRoutes());
 	app.route("/cards", createWorkbenchCardRoutes());
+	app.route("/inbox", createWorkbenchInboxRoutes());
 
 	app.get("/bootstrap", (c) => {
 		const db = c.get("db");
