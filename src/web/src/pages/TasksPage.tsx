@@ -6,13 +6,11 @@
  */
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import {
-	Plus,
 	Clock,
 	CheckCircle2,
 	XCircle,
 	AlertTriangle,
 	Pause,
-	RefreshCw,
 	ChevronUp,
 	ChevronDown,
 	Sparkles,
@@ -25,8 +23,6 @@ import {
 	Pencil,
 	RotateCcw,
 	Ban,
-	Activity,
-	ChartNoAxesCombined,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import {
@@ -52,15 +48,17 @@ import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
-import { ProjectionSearch } from "@/design-system/ProjectionControls";
+import {
+	SheetInsightPanel,
+	SheetWorkspaceToolbar,
+	type SheetInsight,
+} from "@/design-system/SheetWorkspaceToolbar";
 import {
 	WorkbenchHeader,
 	WorkbenchSurface,
-	WorkbenchToolbar,
 } from "@/design-system/WorkbenchSurface";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
-type TaskInsight = "burndown" | "timeline" | null;
 
 const TaskSheet = React.lazy(() =>
 	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
@@ -152,101 +150,15 @@ const PRIORITY_CONFIG: Record<
 	low: { color: "text-gray-500", bgColor: "bg-gray-500/20", label: "Low" },
 };
 
-function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
+function TaskActivity({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
 	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
 
 	return (
-		<section
-			aria-label="Live task timeline"
-			className="grid gap-3 bg-surface-secondary/40 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
-		>
-			<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
-			<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
+		<div className="grid gap-3 bg-surface-secondary/40 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
+			<ActivityTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
+			<ActivityTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
 			<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
-		</section>
-	);
-}
-
-function TaskListToolbar({
-	searchText,
-	onSearchTextChange,
-	total,
-	visible,
-	activeInsight,
-	onInsightChange,
-	onRefresh,
-	onNew,
-}: {
-	searchText: string;
-	onSearchTextChange: (value: string) => void;
-	total: number;
-	visible: number;
-	activeInsight: TaskInsight;
-	onInsightChange: (insight: TaskInsight) => void;
-	onRefresh: () => void;
-	onNew: () => void;
-}) {
-	return (
-		<WorkbenchToolbar className="min-h-12 shrink-0 flex-nowrap overflow-x-auto">
-			<ProjectionSearch
-				value={searchText}
-				onChange={onSearchTextChange}
-				placeholder="Search tasks…"
-				className="min-w-48 max-w-xl"
-			/>
-			<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-				{visible} of {total}
-			</span>
-			<div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
-			<div
-				role="group"
-				aria-label="Task insights"
-				className="flex shrink-0 items-center border border-border bg-surface p-0.5"
-			>
-				<Button
-					size="sm"
-					variant={activeInsight === "burndown" ? "secondary" : "ghost"}
-					aria-pressed={activeInsight === "burndown"}
-					aria-controls="task-burndown-panel"
-					onPress={() => onInsightChange(
-						activeInsight === "burndown" ? null : "burndown",
-					)}
-					className="h-7 min-w-0 px-2"
-				>
-					<ChartNoAxesCombined className="h-3.5 w-3.5" aria-hidden="true" />
-					Burndown
-				</Button>
-				<Button
-					size="sm"
-					variant={activeInsight === "timeline" ? "secondary" : "ghost"}
-					aria-pressed={activeInsight === "timeline"}
-					aria-controls="task-timeline-panel"
-					onPress={() => onInsightChange(
-						activeInsight === "timeline" ? null : "timeline",
-					)}
-					className="h-7 min-w-0 px-2"
-				>
-					<Activity className="h-3.5 w-3.5" aria-hidden="true" />
-					Timeline
-				</Button>
-			</div>
-			<div className="ml-auto flex shrink-0 items-center gap-1">
-				<TaskWorkflowHelp />
-				<Button
-					isIconOnly
-					size="sm"
-					variant="ghost"
-					onPress={onRefresh}
-					aria-label="Refresh Tasks"
-				>
-					<RefreshCw className="h-4 w-4" aria-hidden="true" />
-				</Button>
-				<Button size="sm" variant="primary" onPress={onNew}>
-					<Plus className="h-4 w-4" aria-hidden="true" />
-					New
-				</Button>
-			</div>
-		</WorkbenchToolbar>
+		</div>
 	);
 }
 
@@ -256,7 +168,7 @@ function TaskInsightPanel({
 	burndownRefresh,
 	onOpenTask,
 }: {
-	activeInsight: TaskInsight;
+	activeInsight: SheetInsight;
 	tasks: Task[];
 	burndownRefresh: number;
 	onOpenTask: (task: Task) => void;
@@ -264,11 +176,10 @@ function TaskInsightPanel({
 	if (activeInsight === null) return null;
 
 	return (
-		<div
-			id={activeInsight === "burndown" ? "task-burndown-panel" : "task-timeline-panel"}
-			role="region"
-			aria-label={activeInsight === "burndown" ? "Task Burndown" : "Live Task Timeline"}
-			className="max-h-[min(48vh,30rem)] shrink-0 overflow-auto border-b border-border"
+		<SheetInsightPanel
+			resourceKey="task"
+			resourceName="Task"
+			activeInsight={activeInsight}
 		>
 			{activeInsight === "burndown" ? (
 				<StatusBurndownChart
@@ -278,13 +189,13 @@ function TaskInsightPanel({
 					className="rounded-none border-0"
 				/>
 			) : (
-				<TaskTimeline tasks={tasks} onOpenTask={onOpenTask} />
+				<TaskActivity tasks={tasks} onOpenTask={onOpenTask} />
 			)}
-		</div>
+		</SheetInsightPanel>
 	);
 }
 
-function TimelineTaskCard({ label, task, timestamp, empty, tone, onOpenTask }: { label: string; task: Task | undefined; timestamp: string | null | undefined; empty: string; tone: "accent" | "default"; onOpenTask: (task: Task) => void }) {
+function ActivityTaskCard({ label, task, timestamp, empty, tone, onOpenTask }: { label: string; task: Task | undefined; timestamp: string | null | undefined; empty: string; tone: "accent" | "default"; onOpenTask: (task: Task) => void }) {
 	return <div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><Clock className={`h-4 w-4 ${tone === "accent" ? "text-accent" : "text-muted-foreground"}`} /><span className="text-sm font-medium">{label}</span></div>{task ? <button type="button" onClick={() => onOpenTask(task)} className="block w-full rounded text-left hover:bg-accent/5"><p className="truncate text-sm font-medium">{task.subject}</p><div className="mt-1 flex items-center justify-between gap-2"><Chip size="sm" variant="secondary">{STATUS_CONFIG[task.status].label}</Chip><time className="truncate text-xs text-muted-foreground">{formatTimelineTime(timestamp)}</time></div></button> : <p className="text-sm text-muted-foreground">{empty}</p>}</div>;
 }
 
@@ -654,7 +565,7 @@ export function TasksPage() {
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
-	const [activeInsight, setActiveInsight] = useState<TaskInsight>(null);
+	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
 	const [deleteConfirm, setDeleteConfirm] = useState<{
 		show: boolean;
 		task: Task | null;
@@ -1004,9 +915,12 @@ export function TasksPage() {
 			return (
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
-						<TaskListToolbar
+						<SheetWorkspaceToolbar
+							resourceKey="task"
+							resourceName="Tasks"
 							searchText={searchText}
 							onSearchTextChange={setSearchText}
+							searchPlaceholder="Search tasks…"
 							total={counts?.total ?? pagination?.total ?? filteredTasks.length}
 							visible={filteredTasks.length}
 							activeInsight={activeInsight}
@@ -1015,6 +929,7 @@ export function TasksPage() {
 								void refetch();
 							}}
 							onNew={openNewTaskPanel}
+							actionControls={<TaskWorkflowHelp />}
 						/>
 						{isError && error ? (
 							<div className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -1150,9 +1065,12 @@ export function TasksPage() {
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			<TaskListToolbar
+			<SheetWorkspaceToolbar
+				resourceKey="task"
+				resourceName="Tasks"
 				searchText={searchText}
 				onSearchTextChange={setSearchText}
+				searchPlaceholder="Search tasks…"
 				total={counts?.total ?? pagination?.total ?? filteredTasks.length}
 				visible={filteredTasks.length}
 				activeInsight={activeInsight}
@@ -1161,6 +1079,7 @@ export function TasksPage() {
 					void refetch();
 				}}
 				onNew={openNewTaskPanel}
+				actionControls={<TaskWorkflowHelp />}
 			/>
 
 			{isError && error ? (

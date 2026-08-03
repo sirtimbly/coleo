@@ -15,3 +15,8 @@ spreadsheet surface participates in the same light and dark themes.
 Sheet row formatting uses the semantic Blue, Green, Orange, and Purple choices.
 Persisted legacy Emerald, Amber, and Rose values are normalized when rendered so
 existing user formatting continues to appear with the corrected palette.
+
+Task and bug sheets share `SheetWorkspaceToolbar` for search, counts,
+Burndown/Activity selectors, filters, and actions. Handsontable header
+highlights use the same muted accent mix as selected cells instead of its
+default white active-header treatment.

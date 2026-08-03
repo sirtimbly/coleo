@@ -81,16 +81,16 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	await expect(
 		page.getByRole("searchbox", { name: "Search tasks", exact: true }),
 	).toBeVisible();
-	const timelineToggle = page.getByRole("button", { name: "Timeline", exact: true });
+	const activityToggle = page.getByRole("button", { name: "Activity", exact: true });
 	await expect(page.getByRole("button", { name: "Burndown", exact: true })).toBeVisible();
-	await expect(timelineToggle).toBeVisible();
-	await timelineToggle.click();
+	await expect(activityToggle).toBeVisible();
+	await activityToggle.click();
 	await expect(
-		page.getByRole("region", { name: "Live Task Timeline", exact: true }),
+		page.getByRole("region", { name: "Task Activity", exact: true }),
 	).toBeVisible();
-	await timelineToggle.click();
+	await activityToggle.click();
 	await expect(
-		page.getByRole("region", { name: "Live Task Timeline", exact: true }),
+		page.getByRole("region", { name: "Task Activity", exact: true }),
 	).toHaveCount(0);
 	await expect(page.getByText("Protect the critical workbench", { exact: true })).toBeVisible();
 	await expect(page.getByText(/double-click to edit/i)).toBeVisible({
@@ -131,6 +131,11 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		.getByRole("gridcell", { name: "Protect the critical workbench", exact: true });
 	await taskSubjectCell.click();
 	await expectStableGutter();
+	const activeHeaderBackgrounds = await resourceSheet
+		.locator("th.ht__highlight, th.ht__active_highlight")
+		.evaluateAll((headers) => headers.map((header) => getComputedStyle(header).backgroundColor));
+	expect(activeHeaderBackgrounds.length).toBeGreaterThan(0);
+	expect(activeHeaderBackgrounds).not.toContain("rgb(255, 255, 255)");
 	await expect(taskSubjectCell).toHaveCSS("font-weight", "400");
 	await formattingToolbar.getByRole("button", { name: "Bold", exact: true }).click();
 	await expect(taskSubjectCell).toHaveClass(/coleo-sheet-row-bold/);
@@ -197,11 +202,21 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	).toBeVisible();
 
 	await page.goto("/bugs");
-	await expect(page.getByRole("heading", { name: "Bugs", exact: true })).toBeVisible();
+	await expect(
+		page.getByRole("searchbox", { name: "Search bugs", exact: true }),
+	).toBeVisible();
+	const bugActivityToggle = page.getByRole("button", { name: "Activity", exact: true });
+	await expect(page.getByRole("button", { name: "Burndown", exact: true })).toBeVisible();
+	await bugActivityToggle.click();
+	await expect(page.getByRole("region", { name: "Bug Activity", exact: true })).toBeVisible();
+	await expect(page.getByText("Recently Reported", { exact: true })).toBeVisible();
+	await bugActivityToggle.click();
+	await expect(page.getByRole("region", { name: "Bug Activity", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("columnheader", { name: "Tags", exact: true })).toBeVisible({
 		timeout: 20_000,
 	});
 	const bugSheet = page.locator(".coleo-resource-sheet");
+	expect(await bugSheet.evaluate((element) => element.clientHeight)).toBeGreaterThan(500);
 	const tagsCell = bugSheet.locator("td.ht-multi-select-renderer").filter({
 		hasText: "regression",
 	});
@@ -260,6 +275,13 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		.getByRole("button", { name: "Use green row color", exact: true })
 		.click();
 	await expect(bugSubjectCell).toHaveClass(/coleo-sheet-row-color-green/);
+	await bugSheet
+		.getByRole("gridcell", { name: "human_reported", exact: true })
+		.dblclick();
+	await expect(page).toHaveURL(/\/bugs\?.*bug=bug-workbench/);
+	await expect(
+		page.getByRole("heading", { name: "Restore bug tags", exact: true }),
+	).toBeVisible();
 
 	await page.goto("/grid");
 	await expect(

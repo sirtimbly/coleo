@@ -4,11 +4,19 @@
  * Displays bug reports through the shared Handsontable sheet and opens richer
  * bug details in a dedicated Golden Layout panel.
  */
-import React, { useMemo, useState, useCallback } from 'react';
-import { Plus, RefreshCw, AlertTriangle, Tag, X, Search, FileText, Bug as BugIcon, Clock } from 'lucide-react';
-import { Button, Chip, Card, Tabs } from '@heroui/react';
+import React, { useMemo, useState, useCallback, useDeferredValue } from 'react';
+import {
+	Activity,
+	AlertTriangle,
+	Bug as BugIcon,
+	CheckCircle2,
+	Clock,
+	Tag,
+	X,
+} from 'lucide-react';
+import { Button } from '@heroui/react';
 import { type Bug, type UiMetadata, cn, api } from '@/lib';
-import { BugModal, CollapsibleSection, StatusBurndownChart } from '@/components';
+import { BugModal, StatusBurndownChart } from '@/components';
 import type { BugUpdate } from '@/workbench/resource-updates';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
@@ -21,15 +29,16 @@ import {
 	WorkbenchToolbar,
 } from '@/design-system/WorkbenchSurface';
 import { CollectionRow } from '@/design-system/CollectionRow';
-import { ProjectionSearch } from '@/design-system/ProjectionControls';
 import {
-	useIsWorkspacePanel,
+	SheetInsightPanel,
+	SheetWorkspaceToolbar,
+	type SheetInsight,
+} from '@/design-system/SheetWorkspaceToolbar';
+import {
 	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
-
-type SidebarTab = 'details';
 
 type BugUiMeta = UiMetadata;
 
@@ -84,7 +93,7 @@ function BugCreatedAt({ createdAt }: { createdAt: string }) {
 			className="inline-flex items-center gap-1 text-xs text-foreground-500"
 			title={formatAbsoluteDateTime(createdAt)}
 		>
-			<Clock className="h-3 w-3" />
+			<Clock className="h-3 w-3" aria-hidden="true" />
 			Created {formatRelativeAge(createdAt)}
 		</span>
 	);
@@ -128,6 +137,9 @@ function BugDescriptionField({
 			<div className="space-y-2">
 				<textarea
 					autoFocus
+					name="bug-description"
+					aria-label="Bug description"
+					autoComplete="off"
 					value={draft}
 					onChange={(event) => setDraft(event.target.value)}
 					onKeyDown={(event) => {
@@ -139,7 +151,7 @@ function BugDescriptionField({
 							handleSave();
 						}
 					}}
-					placeholder="Add a description for this bug..."
+					placeholder="Add a description for this bug…"
 					rows={4}
 					className="w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-accent"
 				/>
@@ -194,10 +206,10 @@ function BugDetailProjection({
 			<WorkbenchHeader
 				title={bug.title}
 				description={`Bug ${bug.id}`}
-				icon={<BugIcon className="h-4 w-4" />}
+				icon={<BugIcon className="h-4 w-4" aria-hidden="true" />}
 				actions={(
 					<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
-						<X className="h-4 w-4" />
+						<X className="h-4 w-4" aria-hidden="true" />
 					</Button>
 				)}
 			/>
@@ -234,9 +246,147 @@ function BugDetailProjection({
 	);
 }
 
+function newestFirst(left: Bug, right: Bug): number {
+	return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+}
+
+function BugActivityColumn({
+	title,
+	icon,
+	bugs,
+	empty,
+	onOpenBug,
+}: {
+	title: string;
+	icon: React.ReactNode;
+	bugs: Bug[];
+	empty: string;
+	onOpenBug: (bug: Bug) => void;
+}) {
+	return (
+		<div className="min-w-0 rounded-lg border border-border bg-background/70 p-3">
+			<div className="mb-2 flex items-center gap-2">
+				{icon}
+				<span className="text-sm font-medium">{title}</span>
+			</div>
+			{bugs.length > 0 ? (
+				<div className="space-y-1">
+					{bugs.map((bug) => (
+						<button
+							key={bug.id}
+							type="button"
+							onClick={() => onOpenBug(bug)}
+							className="flex w-full touch-manipulation items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-accent/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+						>
+							<span
+								className={cn(
+									"h-1.5 w-1.5 shrink-0 rounded-full bg-current",
+									STATUS_CONFIG[bug.status].color,
+								)}
+								aria-hidden="true"
+							/>
+							<span className="min-w-0 flex-1 truncate text-sm">{bug.title}</span>
+							<time
+								dateTime={bug.updatedAt}
+								className="shrink-0 text-xs tabular-nums text-muted-foreground"
+								title={formatAbsoluteDateTime(bug.updatedAt)}
+							>
+								{formatRelativeAge(bug.updatedAt)}
+							</time>
+						</button>
+					))}
+				</div>
+			) : (
+				<p className="text-sm text-muted-foreground">{empty}</p>
+			)}
+		</div>
+	);
+}
+
+function BugActivity({
+	bugs,
+	onOpenBug,
+}: {
+	bugs: Bug[];
+	onOpenBug: (bug: Bug) => void;
+}) {
+	const groups = useMemo(() => {
+		const sorted = [...bugs].sort(newestFirst);
+		return {
+			active: sorted.filter((bug) => (
+				bug.status === "investigating" ||
+				bug.status === "fixing" ||
+				bug.status === "verifying"
+			)).slice(0, 5),
+			reported: sorted.filter((bug) => bug.status === "open").slice(0, 5),
+			resolved: sorted.filter((bug) => (
+				bug.status === "resolved" || bug.status === "closed"
+			)).slice(0, 5),
+		};
+	}, [bugs]);
+
+	return (
+		<div className="grid gap-3 bg-surface-secondary/40 p-3 lg:grid-cols-3">
+			<BugActivityColumn
+				title="Active Work"
+				icon={<Activity className="h-4 w-4 text-accent" aria-hidden="true" />}
+				bugs={groups.active}
+				empty="No bugs are actively being worked."
+				onOpenBug={onOpenBug}
+			/>
+			<BugActivityColumn
+				title="Recently Reported"
+				icon={<BugIcon className="h-4 w-4 text-danger" aria-hidden="true" />}
+				bugs={groups.reported}
+				empty="No open bugs in the loaded activity."
+				onOpenBug={onOpenBug}
+			/>
+			<BugActivityColumn
+				title="Recently Resolved"
+				icon={<CheckCircle2 className="h-4 w-4 text-success" aria-hidden="true" />}
+				bugs={groups.resolved}
+				empty="No recently resolved bugs."
+				onOpenBug={onOpenBug}
+			/>
+		</div>
+	);
+}
+
+function BugInsightPanel({
+	activeInsight,
+	bugs,
+	burndownRefresh,
+	onOpenBug,
+}: {
+	activeInsight: SheetInsight;
+	bugs: Bug[];
+	burndownRefresh: number;
+	onOpenBug: (bug: Bug) => void;
+}) {
+	if (activeInsight === null) return null;
+
+	return (
+		<SheetInsightPanel
+			resourceKey="bug"
+			resourceName="Bug"
+			activeInsight={activeInsight}
+		>
+			{activeInsight === "burndown" ? (
+				<StatusBurndownChart
+					entity="bug"
+					refreshKey={burndownRefresh}
+					embedded
+					className="rounded-none border-0"
+				/>
+			) : (
+				<BugActivity bugs={bugs} onOpenBug={onOpenBug} />
+			)}
+		</SheetInsightPanel>
+	);
+}
+
 export function BugsPage() {
 	const queryClient = useQueryClient();
-	const isWorkspacePanel = useIsWorkspacePanel();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const closeWorkspaceRoute = useWorkspaceCloseRoute('/bugs');
 	const [searchParams] = useWorkspaceSearchParams();
@@ -245,9 +395,9 @@ export function BugsPage() {
 	const [tagFilter, setTagFilter] = useState<string[]>([]);
 	const [searchText, setSearchText] = useState('');
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
-	const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
-	const detailsTabId: SidebarTab = "details";
+	const deferredSearchText = useDeferredValue(searchText);
 
 	// Use React Query hook for bugs
 	const {
@@ -284,8 +434,8 @@ export function BugsPage() {
 	const filteredBugs = useMemo(() => {
 		let result = bugs;
 
-		if (searchText.trim()) {
-			const search = searchText.toLowerCase();
+		if (deferredSearchText.trim()) {
+			const search = deferredSearchText.toLowerCase();
 			result = result.filter(
 				(bug) =>
 					bug.title.toLowerCase().includes(search) ||
@@ -301,7 +451,7 @@ export function BugsPage() {
 		}
 
 		return result;
-	}, [bugs, tagFilter, searchText, getBugUiMeta]);
+	}, [bugs, tagFilter, deferredSearchText, getBugUiMeta]);
 
 	const handleUpdateBug = useCallback(
 		async (bugId: string, updates: BugUpdate) => {
@@ -421,12 +571,12 @@ export function BugsPage() {
 		onMessage: handleWSMessage,
 	});
 
-	const openNewBugPanel = () => {
+	const openNewBugPanel = useCallback(() => {
 		openWorkspaceRoute(
 			{ pathname: '/bugs', search: '?new=1', title: 'New Bug' },
 			'action',
 		);
-	};
+	}, [openWorkspaceRoute]);
 
 	if (isNewBugPage) {
 		return (
@@ -451,308 +601,82 @@ export function BugsPage() {
 		);
 	}
 
-	const workspaceHeader = (
-		<>
-			<WorkbenchHeader
-				title="Bugs"
-				description="Track, prioritize, and resolve reported defects"
-				icon={<BugIcon className="h-4 w-4" />}
-				actions={
-					<>
-						<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh Bugs">
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-						<Button size="sm" variant="primary" onPress={openNewBugPanel}>
-							<Plus className="mr-1.5 h-4 w-4" />
-							New
-						</Button>
-					</>
-				}
-			/>
-			<WorkbenchToolbar>
-				<ProjectionSearch
-					value={searchText}
-					onChange={setSearchText}
-					placeholder="Search bugs"
-					className="max-w-sm"
-				/>
-				<span className="shrink-0 text-xs text-muted-foreground">
-					{bugs.length} total · {filteredBugs.length} visible
-				</span>
-				{availableTags.slice(0, 8).map((tag) => (
-					<button
-						key={tag}
-						type="button"
-						aria-pressed={tagFilter.includes(tag)}
-						onClick={() => toggleTagFilter(tag)}
-						className={`h-8 shrink-0 border px-2.5 text-xs ${
-							tagFilter.includes(tag)
-								? 'border-accent/50 bg-accent/10 text-accent'
-								: 'border-border text-muted-foreground hover:bg-surface-secondary'
-						}`}
-					>
-						{tag}
-					</button>
-				))}
-			</WorkbenchToolbar>
-		</>
-	);
-
 	return (
-		<div className="flex flex-col h-full">
-			{/* Header with filters and actions */}
-			{isWorkspacePanel ? workspaceHeader : (
-			<div className="border-b px-4 py-3 bg-content2">
-				<div className="flex items-center justify-between mb-3">
-					<div className="flex items-center space-x-2">
-						<BugIcon className="h-5 w-5" />
-						<h1 className="text-lg font-semibold">Bugs</h1>
-						<span className="text-sm text-foreground-500">Track and manage bug reports</span>
-					</div>
-
-					<div className="flex items-center gap-2">
-						<Button
-							isIconOnly
-							variant="ghost"
-							onPress={() => refetch()}
-							aria-label="Refresh"
-						>
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-						<Button
-							variant="primary"
-							onPress={openNewBugPanel}
-						>
-							<Plus className="h-4 w-4 mr-2" />
-							New Bug
-						</Button>
-					</div>
-				</div>
-
-				{/* Compact filter bar */}
-				<div className="flex items-center gap-3">
-					<div className="relative">
-						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-						<input
-							type="text"
-							placeholder="Search bugs..."
-							value={searchText}
-							onChange={(e) => setSearchText(e.target.value)}
-							className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-64"
-						/>
-					</div>
-					<div className="h-4 w-px bg-divider" />
-					<div className="flex items-center gap-2 text-sm">
-						<span className="text-foreground-500">Total:</span>
-						<span className="font-medium">{bugs.length}</span>
-					</div>
-				</div>
-
-				<div className="mt-3 flex items-center gap-2 flex-wrap">
-					<div className="flex items-center gap-1 text-xs text-foreground-500">
-						<Tag className="h-3.5 w-3.5" />
-						<span>Tags</span>
-					</div>
-					{availableTags.length === 0 ? (
-						<span className="text-xs text-foreground-500">No tags yet</span>
-					) : (
-						availableTags.map((tag) => (
-							<Chip
+		<div className="flex h-full min-h-0 flex-col">
+			<SheetWorkspaceToolbar
+				resourceKey="bug"
+				resourceName="Bugs"
+				searchText={searchText}
+				onSearchTextChange={setSearchText}
+				searchPlaceholder="Search bugs…"
+				total={bugs.length}
+				visible={filteredBugs.length}
+				activeInsight={activeInsight}
+				onInsightChange={setActiveInsight}
+				onRefresh={() => {
+					void refetch();
+				}}
+				onNew={openNewBugPanel}
+				secondaryControls={availableTags.length > 0 ? (
+					<div className="flex shrink-0 items-center gap-1" aria-label="Bug tag filters">
+						<Tag className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+						{availableTags.slice(0, 8).map((tag) => (
+							<button
 								key={tag}
-								size="sm"
-								variant={tagFilter.includes(tag) ? 'primary' : 'soft'}
+								type="button"
+								aria-pressed={tagFilter.includes(tag)}
 								onClick={() => toggleTagFilter(tag)}
-								className="cursor-pointer"
+								className={cn(
+									"h-7 shrink-0 touch-manipulation border px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+									tagFilter.includes(tag)
+										? "border-accent/50 bg-accent/10 text-accent"
+										: "border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground",
+								)}
 							>
 								{tag}
-							</Chip>
-						))
-					)}
-					{tagFilter.length > 0 && (
-						<Button size="sm" variant="ghost" onPress={() => setTagFilter([])}>
-							Clear tags
-						</Button>
-					)}
-				</div>
-			</div>
-			)}
-
-			{isError && error && (
-				<div className="p-4 bg-danger/10 text-danger border-b border-danger/20">
-					<div className="flex items-center gap-2">
-						<AlertTriangle className="h-4 w-4" />
-						<span className="text-sm">{error.message}</span>
+							</button>
+						))}
+						{tagFilter.length > 0 ? (
+							<Button size="sm" variant="ghost" onPress={() => setTagFilter([])}>
+								Clear
+							</Button>
+						) : null}
 					</div>
-				</div>
-			)}
-
-			<StatusBurndownChart
-				entity="bug"
-				refreshKey={burndownRefresh}
-				defaultExpanded={false}
-				className="shrink-0 rounded-none border-x-0 border-t-0"
+				) : undefined}
 			/>
 
-			<CollapsibleSection
-				title="Bug list"
-				summary={[
-					{ label: "Total", value: bugs.length },
-					{ label: "Visible", value: filteredBugs.length },
-				]}
-				fill
-				unmountOnCollapse
-				className="rounded-none border-x-0 border-y-0"
-				bodyClassName="flex h-full min-h-0 p-0"
-			>
-				{/* Bug list */}
-				<div className="flex-1 overflow-auto">
-					{isLoading ? (
-						<div className="p-4 space-y-4">
-							{[1, 2, 3].map((i) => (
-								<Card key={i} className="h-24">
-									<Card.Content className="animate-pulse bg-default-100" />
-								</Card>
-							))}
-						</div>
-					) : (
-						<div className="h-full min-h-0">
-							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
-								<BugSheet
-									bugs={filteredBugs}
-									selectedBugId={selectedBug?.id}
-									onOpenDetails={handleOpenDetails}
-									onUpdateBug={handleUpdateBug}
-									onDelete={handleDeleteBug}
-									onCreateBugAt={handleCreateBugAt}
-								/>
-							</React.Suspense>
-						</div>
-					)}
+			{isError && error ? (
+				<div role="alert" className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
+					<AlertTriangle className="h-4 w-4" aria-hidden="true" />
+					<span>{error.message}</span>
 				</div>
+			) : null}
 
-				{/* Bug details sidebar */}
-			{selectedBug && (
-				<Card className="w-96 border-l rounded-none shadow-none flex flex-col">
-						{/* Header with close button */}
-						<div className="p-3 border-b flex items-center justify-between flex-shrink-0">
-							<h3
-								className="font-semibold text-sm truncate max-w-[280px]"
-								title={selectedBug.title}
-							>
-								{selectedBug.title}
-							</h3>
-							<Button
-								isIconOnly
-								size="sm"
-								variant="ghost"
-								onPress={() => setSelectedBug(null)}
-								aria-label="Close"
-							>
-								<X className="h-4 w-4" />
-							</Button>
-						</div>
+			<BugInsightPanel
+				activeInsight={activeInsight}
+				bugs={bugs}
+				burndownRefresh={burndownRefresh}
+				onOpenBug={handleOpenDetails}
+			/>
 
-						{/* Tabs */}
-						<Tabs
-							selectedKey={sidebarTab}
-							onSelectionChange={(key) => {
-								if (key === 'details') {
-									setSidebarTab(key);
-								}
-							}}
-							className="flex-1 flex flex-col"
-						>
-							<Tabs.ListContainer className="flex-shrink-0 border-b"
-							>
-								<Tabs.List aria-label="Bug tabs" className="w-full"
-								>
-							<Tabs.Tab id={detailsTabId} className="flex-1"
-							>
-										<FileText className="h-4 w-4" />
-										Details
-										<Tabs.Indicator />
-									</Tabs.Tab>
-								</Tabs.List>
-							</Tabs.ListContainer>
-
-						<Tabs.Panel id={detailsTabId} className="flex-1 overflow-hidden p-0"
-						>
-								<div className="p-4 overflow-auto h-full"
-								>
-									<div className="space-y-4"
-									>
-										<div className="flex items-center justify-between">
-											<span className="text-xs text-foreground-500 font-mono">
-												ID: {selectedBug.id}
-											</span>
-											<BugCreatedAt createdAt={selectedBug.createdAt} />
-										</div>
-
-										<div>
-											<span
-												className={cn(
-													'px-2 py-1 text-xs rounded',
-													PRIORITY_CONFIG[selectedBug.priority].bgColor,
-													PRIORITY_CONFIG[selectedBug.priority].color
-												)}
-											>
-												{PRIORITY_CONFIG[selectedBug.priority].label}
-											</span>
-										</div>
-
-										<div>
-											<h5 className="text-sm font-medium text-foreground-500 mb-1">
-												Description
-											</h5>
-											<BugDescriptionField
-												bugId={selectedBug.id}
-												description={selectedBug.description}
-												onSave={(bugId, description) => handleUpdateBug(bugId, { description })}
-											/>
-										</div>
-
-										<div className="grid grid-cols-2 gap-4 text-sm"
-										>
-											<div>
-												<span className="text-foreground-500">Status:</span>
-												<div className="flex items-center gap-1 mt-1"
-												>
-													<span
-														className={
-															STATUS_CONFIG[selectedBug.status].color
-														}
-													>
-														{STATUS_CONFIG[selectedBug.status].label}
-													</span>
-												</div>
-											</div>
-											<div>
-												<span className="text-foreground-500">Source:</span>
-												<div className="mt-1 capitalize"
-												>
-													{selectedBug.source.replace('_', ' ')}
-												</div>
-											</div>
-										</div>
-
-										{selectedBug.assigneeArmName && (
-											<div>
-												<span className="text-sm text-foreground-500">
-													Assigned to:
-												</span>
-												<p className="text-sm font-medium">
-													{selectedBug.assigneeArmName}
-												</p>
-											</div>
-										)}
-									</div>
-								</div>
-							</Tabs.Panel>
-						</Tabs>
-				</Card>
-			)}
-		</CollapsibleSection>
-
-	</div>
+			<div className="min-h-0 flex-1 overflow-hidden">
+				{isLoading ? (
+					<div className="flex h-full items-center justify-center text-sm text-muted-foreground" role="status">
+						Loading bugs…
+					</div>
+				) : (
+					<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+						<BugSheet
+							bugs={filteredBugs}
+							selectedBugId={undefined}
+							onOpenDetails={handleOpenDetails}
+							onUpdateBug={handleUpdateBug}
+							onDelete={handleDeleteBug}
+							onCreateBugAt={handleCreateBugAt}
+						/>
+					</React.Suspense>
+				)}
+			</div>
+		</div>
 	);
 }
