@@ -94,8 +94,10 @@ test("formats task rows and restores bug tags in configurable spreadsheets", asy
 		.getByRole("gridcell", { name: "Protect the critical workbench", exact: true });
 	await taskSubjectCell.click();
 	await expectStableGutter();
+	await expect(taskSubjectCell).toHaveCSS("font-weight", "400");
 	await formattingToolbar.getByRole("button", { name: "Bold", exact: true }).click();
 	await expect(taskSubjectCell).toHaveClass(/coleo-sheet-row-bold/);
+	await expect(taskSubjectCell).toHaveCSS("font-weight", "700");
 	await formattingToolbar
 		.getByRole("button", { name: "Use blue row color", exact: true })
 		.click();
