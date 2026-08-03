@@ -80,6 +80,7 @@ const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 		read: (task) => task.status,
 		type: "dropdown",
 		options: TASK_STATUSES,
+		statusEntity: "task",
 		width: 128,
 	},
 	{

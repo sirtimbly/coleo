@@ -16,6 +16,7 @@ import {
 	normalizeRowColor,
 	type RowFormattingValue,
 } from "@/design-system/RowFormattingToolbar";
+import { getResourceStatusStyle } from "@/design-system/resource-status-styles";
 import { cn } from "@/lib";
 import type {
 	CellChange,
@@ -29,6 +30,7 @@ import type {
 	ProjectionSort,
 	ViewPreferences,
 } from "./types";
+import type { StatusSeriesEntity } from "@/lib";
 import {
 	creatableMultiSelectValidator,
 	decorateCreatableMultiSelect,
@@ -57,6 +59,7 @@ export interface ResourceSheetColumn<T> {
 	options?: string[];
 	allowCreateOptions?: boolean;
 	optionLabel?: string;
+	statusEntity?: StatusSeriesEntity;
 	readOnly?: boolean;
 	width?: number;
 	className?: string;
@@ -536,6 +539,18 @@ export function ResourceSheet<T extends { id: string }>({
 				header.title = current.canMoveRows
 					? `Select row ${row + 1}, then drag this order handle`
 					: "Clear column sorting to reorder rows";
+			},
+			afterRenderer: (cell, _row, column, _property, value) => {
+				cell.classList.remove("coleo-sheet-status-cell");
+				cell.style.removeProperty("--coleo-sheet-status-color");
+				cell.removeAttribute("aria-label");
+				const entity = runtimeRef.current.visibleColumns[column]?.statusEntity;
+				if (!entity || typeof value !== "string") return;
+				const statusStyle = getResourceStatusStyle(entity, value);
+				if (!statusStyle) return;
+				cell.classList.add("coleo-sheet-status-cell");
+				cell.style.setProperty("--coleo-sheet-status-color", statusStyle.color);
+				cell.setAttribute("aria-label", `${statusStyle.label} status`);
 			},
 			afterOnCellMouseDown: (event, coords) => {
 				if (event.detail < 2 || coords.row === null || coords.row < 0) return;

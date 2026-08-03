@@ -366,6 +366,42 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 	});
 });
 
+test("matches sheet status colors to the burndown legend", async ({ page }) => {
+	await installMockApi(page, { tasks: [task], bugs: [bug] });
+	await page.goto("/tasks");
+
+	const taskSheet = page.locator(".coleo-resource-sheet");
+	const pendingStatus = taskSheet.getByRole("gridcell", {
+		name: "Pending status",
+		exact: true,
+	});
+	await expect(pendingStatus).toBeVisible({ timeout: 20_000 });
+	await expect(pendingStatus).toHaveCSS("color", "rgb(148, 163, 184)");
+
+	const statusUpdate = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await pendingStatus.click();
+	await page.keyboard.press("Enter");
+	await page
+		.locator(".handsontable.listbox")
+		.getByText("completed", { exact: true })
+		.click();
+	expect((await statusUpdate).postDataJSON()).toMatchObject({ status: "completed" });
+	await expect(
+		taskSheet.getByRole("gridcell", { name: "Completed status", exact: true }),
+	).toHaveCSS("color", "rgb(34, 197, 94)");
+
+	await page.goto("/bugs");
+	const openStatus = page.locator(".coleo-resource-sheet").getByRole("gridcell", {
+		name: "Open status",
+		exact: true,
+	});
+	await expect(openStatus).toBeVisible({ timeout: 20_000 });
+	await expect(openStatus).toHaveCSS("color", "rgb(239, 68, 68)");
+});
+
 test("opens a spreadsheet row in the dedicated task detail projection", async ({ page }) => {
 	await installMockApi(page, { tasks: [task] });
 	await page.goto("/tasks");

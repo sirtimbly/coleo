@@ -20,3 +20,8 @@ Task and bug sheets share `SheetWorkspaceToolbar` for search, counts,
 Burndown/Activity selectors, filters, and actions. Handsontable header
 highlights use the same muted accent mix as selected cells instead of its
 default white active-header treatment.
+
+Task and bug lifecycle colors live in `resource-status-styles.ts`. Burndown
+legends, chart segments, and editable sheet status cells consume that shared
+palette so analytical and operational views never assign different meanings to
+the same color.

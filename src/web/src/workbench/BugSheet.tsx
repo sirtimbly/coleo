@@ -71,6 +71,7 @@ const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 		read: (bug) => bug.status,
 		type: "dropdown",
 		options: STATUS_OPTIONS,
+		statusEntity: "bug",
 		width: 128,
 	},
 	{

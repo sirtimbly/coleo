@@ -137,6 +137,18 @@
 	line-height: 1.35;
 }
 
+.coleo-resource-sheet .handsontable td.coleo-sheet-status-cell {
+	background: color-mix(
+		in srgb,
+		var(--coleo-sheet-status-color) 12%,
+		var(--surface)
+	);
+	box-shadow: inset 3px 0 0 var(--coleo-sheet-status-color);
+	color: var(--coleo-sheet-status-color);
+	font-family: var(--font-interface);
+	font-weight: 600;
+}
+
 .coleo-resource-sheet .handsontable td.coleo-sheet-selected-row {
 	background: color-mix(in oklch, var(--accent) 9%, var(--surface));
 }

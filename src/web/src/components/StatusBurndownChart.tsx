@@ -9,6 +9,7 @@ import { Button, Input, Label } from '@heroui/react';
 import { Clock3, Loader2 } from 'lucide-react';
 import { api } from '@/lib';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
+import { RESOURCE_STATUS_STYLES } from '@/design-system/resource-status-styles';
 import { niceAxisMaximum, stackedTotal } from './status-burndown-chart';
 
 import type {
@@ -16,32 +17,6 @@ import type {
   StatusSeriesResolution,
   StatusSeriesResponse,
 } from '@/lib';
-
-interface StatusStyle {
-  label: string;
-  color: string;
-}
-
-const STATUS_STYLES: Record<StatusSeriesEntity, Record<string, StatusStyle>> = {
-  task: {
-    pending: { label: 'Pending', color: '#94a3b8' },
-    claimed: { label: 'Claimed', color: '#3b82f6' },
-    in_progress: { label: 'In progress', color: '#eab308' },
-    blocked: { label: 'Blocked', color: '#f97316' },
-    completing: { label: 'Completing', color: '#8b5cf6' },
-    completed: { label: 'Completed', color: '#22c55e' },
-    failed: { label: 'Failed', color: '#ef4444' },
-    cancelled: { label: 'Cancelled', color: '#64748b' },
-  },
-  bug: {
-    open: { label: 'Open', color: '#ef4444' },
-    investigating: { label: 'Investigating', color: '#eab308' },
-    fixing: { label: 'Fixing', color: '#3b82f6' },
-    verifying: { label: 'Verifying', color: '#8b5cf6' },
-    resolved: { label: 'Resolved', color: '#22c55e' },
-    closed: { label: 'Closed', color: '#64748b' },
-  },
-};
 
 const RESOLUTION_LABELS: Record<StatusSeriesResolution, string> = {
   hour: 'Hour',
@@ -154,7 +129,7 @@ export function StatusBurndownChart({
   }, [appliedRange.end, appliedRange.start, entity, isChartVisible, noun, refreshKey, resolution]);
 
   const buckets = data?.buckets ?? [];
-  const statuses = data?.statuses ?? Object.keys(STATUS_STYLES[entity]);
+  const statuses = data?.statuses ?? Object.keys(RESOURCE_STATUS_STYLES[entity]);
   const rangeDays = Math.max(
     1,
     Math.round((new Date(appliedRange.end).getTime() - new Date(appliedRange.start).getTime()) / 86_400_000),
@@ -237,7 +212,7 @@ export function StatusBurndownChart({
 
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">
           {statuses.map((status) => {
-            const style = STATUS_STYLES[entity][status] ?? { label: status, color: '#64748b' };
+            const style = RESOURCE_STATUS_STYLES[entity][status] ?? { label: status, color: '#64748b' };
             return (
               <span key={status} className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: style.color }} />
@@ -301,7 +276,7 @@ export function StatusBurndownChart({
                           y={y}
                           width={barWidth}
                           height={segmentHeight}
-                          fill={STATUS_STYLES[entity][status]?.color ?? '#64748b'}
+                          fill={RESOURCE_STATUS_STYLES[entity][status]?.color ?? '#64748b'}
                           rx="1.5"
                         />
                       );
@@ -328,7 +303,7 @@ export function StatusBurndownChart({
                 <strong>{formatBucketLabel(selected.start, resolution)}</strong>
                 <div className="mt-1 space-y-0.5">
                   {statuses.map((status) => {
-                    const style = STATUS_STYLES[entity][status] ?? { label: status, color: '#64748b' };
+                    const style = RESOURCE_STATUS_STYLES[entity][status] ?? { label: status, color: '#64748b' };
                     return (
                       <div key={status} className="flex items-center justify-between gap-3">
                         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
