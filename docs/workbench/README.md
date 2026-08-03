@@ -54,11 +54,10 @@ The frontend is divided into four layers:
    detail components.
 4. Golden Layout hosts registered view instances and persists their placement.
 
-Handsontable remains the production sheet implementation. An opt-in Tabulator
-Tasks projection is available as a migration spike and is not yet used by Bugs,
-Discovery, plan items, or default Tasks workspaces. Inbox, timeline, document,
-process, and dashboard surfaces use the Coleo design system so they share one
-compact interaction language.
+Tabulator is the production `ResourceSheet` runtime for Tasks, plan items,
+Bugs, and Discovery. Inbox, timeline, document, process, and dashboard surfaces
+use the Coleo design system so the application shares one compact interaction
+language.
 
 ## Persistence
 
@@ -97,7 +96,7 @@ project-domain data.
 
 | Existing surface | Workbench destination |
 | --- | --- |
-| `TaskGrid`, `BugGrid` | Handsontable `ResourceSheet` |
+| `TaskGrid`, `BugGrid` | Tabulator `ResourceSheet` |
 | Mail, activity, history, and proposals | Inbox facets backed by `ProjectionInbox` |
 | Arm telemetry components | metric-backed dashboard panels |
 | Setup plan editor | retained as the specialized collaborative plan document |
@@ -113,7 +112,7 @@ as its list implementation.
 The initial workbench migration was completed on 2026-07-31 in
 `codex/workbench-ui`.
 
-- Tasks, bugs, and discovery lists now use the shared Handsontable sheet.
+- Tasks, bugs, and discovery lists use the shared Tabulator sheet.
 - Brain, Arm, project, system, and attention streams share one inbox surface.
 - Activity uses the reusable event timeline; implicit Arm work uses Processes.
 - Saved views, profiles, portable imports/exports, and complete Golden Layout
@@ -127,13 +126,13 @@ The initial workbench migration was completed on 2026-07-31 in
 
 ### 2026-08-01 overlay reliability follow-up
 
-- View configuration panels use an explicit overlay layer above Handsontable's
-  cloned headers and editors.
+- View configuration panels use an explicit overlay layer above grid headers,
+  editors, and menus.
 - Column and context menus are initialized outside routine React prop updates,
   preventing unrelated profile or workspace renders from closing open menus.
 - Focusing a Golden Layout pane no longer schedules a redundant layout save;
   actual layout state changes remain the persistence trigger.
-- Portaled Handsontable menus receive the same light/dark design tokens as the
+- Portaled grid menus receive the same light/dark design tokens as the
   sheet that opened them.
 
 ### 2026-08-02 projection migration
@@ -141,7 +140,7 @@ The initial workbench migration was completed on 2026-07-31 in
 - Arm Fleet and Viewer now share one compact Arm row and the same workbench
   framing, while preserving Viewer as a dedicated workspace panel.
 - Brain status and operational history use common projection surfaces.
-- Task and bug sheets retain Handsontable for spreadsheet interaction and use
+- Task and bug sheets use shared spreadsheet interaction and
   consistent workbench headers, toolbars, and detail framing.
 - Dashboard cards and activity summaries use shared surfaces without changing
   the existing metric and chart implementations.
@@ -168,10 +167,10 @@ The initial workbench migration was completed on 2026-07-31 in
 
 ### 2026-08-02 sheet performance follow-up
 
-- Resource sheets own one imperative Handsontable instance instead of routing
+- Resource sheets own one imperative grid instance instead of routing
   its editor portals and settings updates through React renders.
 - Explicit column widths and row heights disable unnecessary automatic sizing,
-  while Handsontable's row virtualization remains enabled with a small viewport
+  while virtual row rendering remains enabled with a small viewport
   buffer.
 - The Subject column scrolls with the rest of the sheet. Removing its frozen
   overlay eliminates the duplicated first-column layer that made row-header
@@ -183,33 +182,36 @@ The initial workbench migration was completed on 2026-07-31 in
 
 ### 2026-08-02 row metadata restoration
 
-- Task and Bug sheets expose their existing metadata tags through Handsontable's
-  native MultiSelect cell type. Selected tags render as removable chips, and
+- Task and Bug sheets expose metadata tags through one custom, creatable
+  MultiSelect editor. Selected tags render as compact chips, and
   edits persist string arrays while preserving unrelated metadata.
 - Selecting any data cell or row header reveals the shared row-formatting
-  toolbar without recreating the Handsontable instance.
+  toolbar without recreating the Tabulator instance.
 - Bold and the existing slate, blue, green, amber, and rose row colors persist
   through each resource's `metadata.ui` object and render across the full row.
 - Browser coverage protects Task formatting and the restored Bug tags/color
   behavior while keeping the critical workbench suite at eight scenarios.
-- Every sheet with editable cells exposes Handsontable Undo and Redo through
+- Every sheet with editable cells exposes Coleo-owned Undo and Redo through
   keyboard shortcuts and the context menu. React Query reconciliation uses
   `updateData()` so server responses preserve the current history stack.
 
-### 2026-08-03 Tabulator migration spike
+### 2026-08-03 Tabulator production migration
 
-- Tasks remains Handsontable-backed by default. **Compare Tabulator** opens the
-  experimental `?grid=tabulator` projection in a separate Golden Layout split
-  so both runtimes can be evaluated against the same API data.
-- The Tabulator bundle and stylesheet are loaded only when the preview is
-  opened. React owns the resource data and callback refs while one imperative
-  Tabulator instance owns grid interaction state.
-- The first gate covers dark-theme presentation, Golden Layout resize redraws,
-  single-row selection, Subject and Status editing, whole-row drag ordering,
-  and the Details context action.
-- The preview intentionally does not replace `ResourceSheet`, implement the
-  creatable Tags editor, expose the shared view configurator, or become the
-  default. Those remain later migration gates.
-- A focused model test protects row conversion and update/reorder translation.
-  Playwright exercises the preview beside Handsontable using real Golden Layout
-  splitting before the production runtime can be changed.
+- The validated spike now powers the shared `ResourceSheet`; Tasks, plan items,
+  Bugs, and Discovery no longer carry a second grid runtime.
+- The common column model maps text, numeric, checkbox, date, dropdown, and
+  creatable multi-select cells while keeping status and row-formatting styles
+  in Coleo design tokens.
+- Coleo-owned history records only user edits and manual row moves. React Query,
+  server responses, and streamed same-shape updates use `updateData()` and stay
+  out of the undo stack.
+- Context actions provide Details, between-row insertion, deletion, Undo, Redo,
+  and copying. Whole-row dragging persists through the existing domain reorder
+  APIs.
+- Saved visibility, order, width, density, filters, sort, and sharing continue
+  through the database-backed view/profile APIs.
+- Model gates cover 1k, 10k, and 50k projections. Playwright covers Tasks,
+  Bugs, Discovery, plan items, Tags creation, formatting, history, ordering,
+  insertion, dark editing, and Golden Layout resizing.
+- `THIRD_PARTY_NOTICES.md` records the pinned MIT dependency. The package,
+  bundle, and source contain no retired evaluation key.
