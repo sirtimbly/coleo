@@ -59,6 +59,14 @@ const secondTask = {
 	sortOrder: 2,
 };
 
+const draftTask = {
+	...task,
+	id: "task-draft",
+	subject: "Shape a future task",
+	status: "draft",
+	sortOrder: 3,
+};
+
 const secondBug = {
 	...bug,
 	id: "bug-second",
@@ -402,18 +410,70 @@ test("matches sheet status colors to the burndown legend", async ({ page }) => {
 	await expect(openStatus).toHaveCSS("color", "rgb(239, 68, 68)");
 });
 
-test("opens a spreadsheet row in the dedicated task detail projection", async ({ page }) => {
+test("opens a spreadsheet row from the Details context action", async ({ page }) => {
 	await installMockApi(page, { tasks: [task] });
 	await page.goto("/tasks");
 	const sheet = page.locator(".coleo-resource-sheet");
 	await expect(sheet).toBeVisible({ timeout: 20_000 });
-	await sheet.getByRole("gridcell", { name: "implementation", exact: true }).dblclick();
+	await sheet
+		.getByRole("gridcell", { name: "implementation", exact: true })
+		.click({ button: "right" });
+	const contextMenu = page.locator(".htContextMenu");
+	await expect(contextMenu.getByText("Details", { exact: true })).toBeVisible();
+	await contextMenu.getByText("Details", { exact: true }).click();
 
 	await expect(page).toHaveURL(/\/tasks\?.*task=task-workbench/);
 	await expect(
 		page.getByRole("heading", { name: "Protect the critical workbench", exact: true }),
 	).toBeVisible();
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
+});
+
+test("filters Draft tasks through the saved view shortcut", async ({ page }) => {
+	await installMockApi(page, { tasks: [task, draftTask] });
+	await page.goto("/tasks");
+	const sheet = page.locator(".coleo-resource-sheet");
+	await expect(
+		sheet.getByRole("gridcell", { name: task.subject, exact: true }),
+	).toBeVisible({ timeout: 20_000 });
+	await expect(
+		sheet.getByRole("gridcell", { name: draftTask.subject, exact: true }),
+	).toBeVisible();
+
+	const draftsOnly = page.getByRole("button", { name: "Drafts Only", exact: true });
+	await expect(draftsOnly).toHaveAttribute("aria-pressed", "false");
+	const savedDraftFilter = page.waitForRequest((request) => {
+		if (
+			!["POST", "PUT"].includes(request.method()) ||
+			!new URL(request.url()).pathname.startsWith("/api/workbench/views")
+		) return false;
+		const body = request.postDataJSON() as {
+			preferences?: { filters?: Array<{ field?: string; operator?: string; value?: unknown }> };
+		};
+		return body.preferences?.filters?.some((filter) =>
+			filter.field === "status" &&
+			filter.operator === "equals" &&
+			filter.value === "draft"
+		) ?? false;
+	});
+	await draftsOnly.click();
+	await expect(draftsOnly).toHaveAttribute("aria-pressed", "true");
+	await expect(
+		sheet.getByRole("gridcell", { name: draftTask.subject, exact: true }),
+	).toBeVisible();
+	await expect(
+		sheet.getByRole("gridcell", { name: task.subject, exact: true }),
+	).toHaveCount(0);
+	await savedDraftFilter;
+
+	await draftsOnly.click();
+	await expect(draftsOnly).toHaveAttribute("aria-pressed", "false");
+	await expect(
+		sheet.getByRole("gridcell", { name: task.subject, exact: true }),
+	).toBeVisible();
+	await expect(
+		sheet.getByRole("gridcell", { name: draftTask.subject, exact: true }),
+	).toBeVisible();
 });
 
 test("creates and selects a tag from the multiselect search", async ({ page }) => {

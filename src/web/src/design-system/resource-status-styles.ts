@@ -17,6 +17,7 @@ export const RESOURCE_STATUS_STYLES: Record<
 	Record<string, ResourceStatusStyle>
 > = {
 	task: {
+		draft: { label: "Draft", color: "#06b6d4" },
 		pending: { label: "Pending", color: "#94a3b8" },
 		claimed: { label: "Claimed", color: "#3b82f6" },
 		in_progress: { label: "In progress", color: "#eab308" },

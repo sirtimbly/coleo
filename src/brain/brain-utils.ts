@@ -10,13 +10,15 @@ import { isRecord } from "../utils/json";
 
 function isTaskStatus(value: string): value is Task["status"] {
 	return (
+		value === "draft" ||
 		value === "pending" ||
 		value === "claimed" ||
 		value === "in_progress" ||
 		value === "completing" ||
 		value === "completed" ||
 		value === "failed" ||
-		value === "blocked"
+		value === "blocked" ||
+		value === "cancelled"
 	);
 }
 

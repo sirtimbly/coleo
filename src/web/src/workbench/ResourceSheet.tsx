@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef } from "react";
 import Handsontable from "handsontable";
 import { registerAllModules } from "handsontable/registry";
 import type { ColumnSortingConfig } from "handsontable/plugins/columnSorting";
+import type { MenuItemConfig } from "handsontable/plugins/contextMenu";
 
 import {
 	normalizeRowColor,
@@ -88,7 +89,7 @@ interface ResourceSheetRuntime<T> {
 	hotColumns: ColumnSettings[];
 	columnHeaders: string[];
 	rowHeight: number;
-	contextMenuItems: string[];
+	contextMenuItems: ResourceSheetContextMenu;
 	sortConfig: ColumnSortingConfig[];
 	canMoveRows: boolean;
 	preferences: ViewPreferences;
@@ -102,6 +103,10 @@ interface ResourceSheetRuntime<T> {
 	onRowSelectionChange?: (row: T | undefined) => void;
 	getRowFormatting?: (row: T) => Partial<RowFormattingValue> | undefined;
 	selectedRowId?: string;
+}
+
+interface ResourceSheetContextMenu {
+	items: Array<string | MenuItemConfig>;
 }
 
 function resolveColumns<T>(
@@ -139,12 +144,23 @@ function resolveContextMenuItems({
 	canCreateRows,
 	canDeleteRows,
 	hasEditableCells,
+	canOpenRows,
+	onOpenDetails,
 }: {
 	canCreateRows: boolean;
 	canDeleteRows: boolean;
 	hasEditableCells: boolean;
-}): string[] {
-	const groups: string[][] = [];
+	canOpenRows: boolean;
+	onOpenDetails: () => void;
+}): ResourceSheetContextMenu {
+	const groups: Array<Array<string | MenuItemConfig>> = [];
+	if (canOpenRows) {
+		groups.push([{
+			key: "details",
+			name: "Details",
+			callback: onOpenDetails,
+		}]);
+	}
 	const rowItems = [
 		...(canCreateRows ? CREATE_ROW_MENU_ITEMS : []),
 		...(canDeleteRows ? ["remove_row"] : []),
@@ -153,9 +169,11 @@ function resolveContextMenuItems({
 	if (hasEditableCells) groups.push(HISTORY_MENU_ITEMS);
 	groups.push(COPY_MENU_ITEMS);
 
-	return groups.flatMap((group, index) => (
-		index === 0 ? group : ["---------", ...group]
-	));
+	return {
+		items: groups.flatMap((group, index) => (
+			index === 0 ? group : ["---------", ...group]
+		)),
+	};
 }
 
 function comparableValue(value: unknown): string {
@@ -233,6 +251,7 @@ export function ResourceSheet<T extends { id: string }>({
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const hotRef = useRef<Handsontable | null>(null);
+	const openSelectedRowRef = useRef<() => void>(() => undefined);
 	const scrollFrameRef = useRef<number | null>(null);
 	const lastNearEndRowCountRef = useRef<number | null>(null);
 	const syncingSortRef = useRef(false);
@@ -292,8 +311,10 @@ export function ResourceSheet<T extends { id: string }>({
 			canCreateRows,
 			canDeleteRows,
 			hasEditableCells,
+			canOpenRows: Boolean(onOpenRow),
+			onOpenDetails: () => openSelectedRowRef.current(),
 		}),
-		[canCreateRows, canDeleteRows, hasEditableCells],
+		[canCreateRows, canDeleteRows, hasEditableCells, onOpenRow],
 	);
 	const runtimeRef = useRef<ResourceSheetRuntime<T>>({
 		sheetRows,
@@ -342,6 +363,16 @@ export function ResourceSheet<T extends { id: string }>({
 		onRowSelectionChange,
 		getRowFormatting,
 		selectedRowId,
+	};
+	openSelectedRowRef.current = () => {
+		const hot = hotRef.current;
+		const visualRow = hot?.getSelectedLast()?.[0] ?? -1;
+		if (!hot || visualRow < 0) return;
+		const current = runtimeRef.current;
+		const physicalRow = hot.toPhysicalRow(visualRow) ?? visualRow;
+		const id = current.sheetRows[physicalRow]?.__resourceId;
+		const resource = id ? current.rowsById.get(id) : undefined;
+		if (resource) current.onOpenRow?.(resource);
 	};
 
 	useEffect(() => {

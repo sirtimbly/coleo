@@ -75,6 +75,12 @@ const STATUS_CONFIG: Record<
 		label: string;
 	}
 > = {
+	draft: {
+		color: "text-cyan-500",
+		bgColor: "bg-cyan-500/10",
+		icon: Pencil,
+		label: "Draft",
+	},
 	in_progress: {
 		color: "text-yellow-500",
 		bgColor: "bg-yellow-500/10",
@@ -361,6 +367,10 @@ function TaskDetailsToolbar({
 							<Label>Edit task</Label>
 						</Dropdown.Item>
 						<Separator />
+						<Dropdown.Item id="status:draft" textValue="Move to draft">
+							<Pencil className="h-4 w-4 text-cyan-500" />
+							<Label>Move to draft</Label>
+						</Dropdown.Item>
 						<Dropdown.Item id="status:pending" textValue="Move to pending">
 							<RotateCcw className="h-4 w-4 text-muted-foreground" />
 							<Label>{task.status === "blocked" ? "Unblock to pending" : "Move to pending"}</Label>
@@ -567,6 +577,8 @@ export function TasksPage() {
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
 	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
+	const [draftsOnly, setDraftsOnly] = useState(false);
+	const [draftFilterToggleRequest, setDraftFilterToggleRequest] = useState(0);
 	const [deleteConfirm, setDeleteConfirm] = useState<{
 		show: boolean;
 		task: Task | null;
@@ -647,6 +659,27 @@ export function TasksPage() {
 
 		return result;
 	}, [deferredSearchText, tasks]);
+	const visibleTaskCount = useMemo(
+		() => draftsOnly
+			? filteredTasks.filter((task) => task.status === "draft").length
+			: filteredTasks.length,
+		[draftsOnly, filteredTasks],
+	);
+	const toggleDraftsOnly = useCallback(() => {
+		setDraftFilterToggleRequest((current) => current + 1);
+	}, []);
+	const draftFilterControl = (
+		<Button
+			size="sm"
+			variant={draftsOnly ? "secondary" : "ghost"}
+			aria-pressed={draftsOnly}
+			onPress={toggleDraftsOnly}
+			className="h-8 shrink-0"
+		>
+			<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+			Drafts Only
+		</Button>
+	);
 
 	useEffect(() => {
 		const taskId = searchParams.get("task");
@@ -760,6 +793,7 @@ export function TasksPage() {
 				const created = await createTaskAsync({
 					subject,
 					description: subject,
+					status: "draft",
 					priority: "normal",
 					metadata: {
 						ui: { tags: [], bold: false, color: "slate", llm: llmMeta },
@@ -938,13 +972,14 @@ export function TasksPage() {
 							onSearchTextChange={setSearchText}
 							searchPlaceholder="Search tasks…"
 							total={counts?.total ?? pagination?.total ?? filteredTasks.length}
-							visible={filteredTasks.length}
+							visible={visibleTaskCount}
 							activeInsight={activeInsight}
 							onInsightChange={setActiveInsight}
 							onRefresh={() => {
 								void refetch();
 							}}
 							onNew={openNewTaskPanel}
+							secondaryControls={draftFilterControl}
 							actionControls={<TaskWorkflowHelp />}
 						/>
 						{isError && error ? (
@@ -971,6 +1006,8 @@ export function TasksPage() {
 									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
 									onLoadMore={fetchNextPage}
+									draftFilterToggleRequest={draftFilterToggleRequest}
+									onDraftsOnlyChange={setDraftsOnly}
 								/>
 							</React.Suspense>
 						</div>
@@ -1089,13 +1126,14 @@ export function TasksPage() {
 				onSearchTextChange={setSearchText}
 				searchPlaceholder="Search tasks…"
 				total={counts?.total ?? pagination?.total ?? filteredTasks.length}
-				visible={filteredTasks.length}
+				visible={visibleTaskCount}
 				activeInsight={activeInsight}
 				onInsightChange={setActiveInsight}
 				onRefresh={() => {
 					void refetch();
 				}}
 				onNew={openNewTaskPanel}
+				secondaryControls={draftFilterControl}
 				actionControls={<TaskWorkflowHelp />}
 			/>
 
@@ -1139,6 +1177,8 @@ export function TasksPage() {
 									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
 									onLoadMore={fetchNextPage}
+									draftFilterToggleRequest={draftFilterToggleRequest}
+									onDraftsOnlyChange={setDraftsOnly}
 								/>
 							</React.Suspense>
 						</div>

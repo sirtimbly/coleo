@@ -30,6 +30,7 @@ interface TasksContext {
 }
 
 const TASK_STATUSES = [
+	"draft",
 	"pending",
 	"claimed",
 	"in_progress",
@@ -458,14 +459,15 @@ export function createTasksRoutes() {
       ORDER BY
         t.order_key ASC,
         CASE t.status
-          WHEN 'in_progress' THEN 1
-          WHEN 'completing' THEN 2
-          WHEN 'claimed' THEN 3
-          WHEN 'pending' THEN 4
-          WHEN 'blocked' THEN 5
-          WHEN 'completed' THEN 6
-          WHEN 'failed' THEN 7
-          WHEN 'cancelled' THEN 8
+          WHEN 'draft' THEN 1
+          WHEN 'in_progress' THEN 2
+          WHEN 'completing' THEN 3
+          WHEN 'claimed' THEN 4
+          WHEN 'pending' THEN 5
+          WHEN 'blocked' THEN 6
+          WHEN 'completed' THEN 7
+          WHEN 'failed' THEN 8
+          WHEN 'cancelled' THEN 9
         END,
         CASE t.priority
           WHEN 'critical' THEN 1
@@ -1235,7 +1237,7 @@ export function createTasksRoutes() {
 
 		const releaseAssignment =
 			body.status !== undefined &&
-			["pending", "blocked", "completed", "failed", "cancelled"].includes(body.status) &&
+			["draft", "pending", "blocked", "completed", "failed", "cancelled"].includes(body.status) &&
 			body.assignedTo == null;
 
 		if (body.subject !== undefined) {
@@ -1288,7 +1290,10 @@ export function createTasksRoutes() {
 				);
 			}
 
-			if (body.status === "pending" && body.dependencyBlocked === undefined) {
+			if (
+				(body.status === "draft" || body.status === "pending") &&
+				body.dependencyBlocked === undefined
+			) {
 				updates.push("dependency_blocked = 0");
 			}
 		}
@@ -1541,6 +1546,7 @@ export function createTasksRoutes() {
 			eventStore.isInitialized()
 		) {
 			const statusToEventType: Record<Task["status"], string | undefined> = {
+				draft: undefined,
 				pending: undefined,
 				claimed: "task.claimed",
 				in_progress: undefined,

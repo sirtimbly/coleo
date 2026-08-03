@@ -232,6 +232,7 @@ export function UnifiedGridView({ className }: { className?: string }) {
 									void tasksResult.createTaskAsync({
 										subject,
 										description: subject,
+										status: "draft",
 										sortOrder: index,
 									}).then((created) => tasksResult.reorderTaskAsync({
 										taskId: created.id,

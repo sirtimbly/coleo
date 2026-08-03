@@ -226,7 +226,7 @@ export function registerTasksCommands(program: Command): void {
   tasksCmd
     .command("list")
     .description("List tasks in database")
-    .option("-s, --status <status>", "Filter by status (pending, claimed, completed)")
+    .option("-s, --status <status>", "Filter by status (draft, pending, claimed, completed)")
     .option("-n, --limit <n>", "Limit results", "20")
     .action(async (options) => {
       const coleoDir = getColeoDir();

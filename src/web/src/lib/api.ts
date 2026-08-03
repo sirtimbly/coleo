@@ -974,6 +974,7 @@ class ApiClient {
   async createTask(data: {
     subject: string;
     description: string;
+    status?: Task['status'];
     priority?: Task['priority'];
     domain?: string;
     classification?: string;
@@ -2050,7 +2051,7 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  status: 'draft' | 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   priority: 'critical' | 'high' | 'normal' | 'low';
   sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
   sourceRef: string | null;

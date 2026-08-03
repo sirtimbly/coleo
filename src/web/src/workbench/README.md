@@ -11,6 +11,13 @@ This folder owns reusable application-shell behavior:
 Domain pages should use these services instead of creating their own WebSocket
 connections or saving configuration directly to browser storage.
 
+## Resource details
+
+Sheets with a dedicated resource projection expose `Details` as the first
+right-click action. It resolves the clicked row through Handsontable's current
+visual-to-physical mapping before handing the resource to Golden Layout, so the
+action stays correct after filtering, sorting, and manual ordering.
+
 ## Task workspace
 
 Task and bug lists give their remaining height directly to Handsontable so long
@@ -18,6 +25,11 @@ lists scroll inside the sheet. Search and actions live in the single top
 toolbar. Burndown and Activity views are optional insight panels opened by the
 compact icon selectors in that toolbar; neither view reserves space until it is
 selected.
+
+Tasks entered directly in the workspace start as Drafts and are excluded from
+the brain's runnable queue. The `Drafts Only` toolbar shortcut changes the saved
+view's status filters, preserving other filter fields and restoring the
+previous status selection when the shortcut is disabled.
 
 ## Manual sheet ordering
 

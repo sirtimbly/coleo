@@ -6,7 +6,7 @@
  * dedicated Golden Layout detail panel.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { SlidersHorizontal } from "lucide-react";
 
@@ -33,8 +33,10 @@ import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
 import type { TaskUpdate } from "./resource-updates";
+import type { ProjectionFilter, ViewPreferences } from "./types";
 
 const TASK_STATUSES: Task["status"][] = [
+	"draft",
 	"pending",
 	"claimed",
 	"in_progress",
@@ -44,6 +46,21 @@ const TASK_STATUSES: Task["status"][] = [
 	"failed",
 	"cancelled",
 ];
+
+const DRAFT_STATUS_FILTER: ProjectionFilter = {
+	field: "status",
+	operator: "equals",
+	value: "draft",
+};
+
+function isDraftsOnly(preferences: ViewPreferences): boolean {
+	const statusFilters = (preferences.filters ?? []).filter(
+		(filter) => filter.field === "status",
+	);
+	return statusFilters.length === 1 &&
+		statusFilters[0]?.operator === "equals" &&
+		statusFilters[0]?.value === "draft";
+}
 
 function readTags(task: Task): string[] {
 	return task.metadata.ui?.tags ?? [];
@@ -157,6 +174,8 @@ export function TaskSheet({
 	onLoadMore,
 	hasNextPage,
 	viewId = "tasks-sheet",
+	draftFilterToggleRequest = 0,
+	onDraftsOnlyChange,
 }: {
 	tasks: Task[];
 	selectedTaskId?: string;
@@ -168,6 +187,8 @@ export function TaskSheet({
 	onLoadMore?: () => void;
 	hasNextPage?: boolean;
 	viewId?: string;
+	draftFilterToggleRequest?: number;
+	onDraftsOnlyChange?: (active: boolean) => void;
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingTaskId, setFormattingTaskId] = useState<string>();
@@ -194,6 +215,40 @@ export function TaskSheet({
 		},
 		shared: false,
 	});
+	const draftsOnly = isDraftsOnly(preferences);
+	const previousDraftToggleRequestRef = useRef(draftFilterToggleRequest);
+	const previousStatusFiltersRef = useRef<ProjectionFilter[]>([]);
+
+	useEffect(() => {
+		onDraftsOnlyChange?.(draftsOnly);
+	}, [draftsOnly, onDraftsOnlyChange]);
+
+	useEffect(() => {
+		if (previousDraftToggleRequestRef.current === draftFilterToggleRequest) return;
+		previousDraftToggleRequestRef.current = draftFilterToggleRequest;
+		const filters = preferences.filters ?? [];
+		const nonStatusFilters = filters.filter((filter) => filter.field !== "status");
+		if (draftsOnly) {
+			updatePreferences({
+				...preferences,
+				filters: [...nonStatusFilters, ...previousStatusFiltersRef.current],
+			});
+			previousStatusFiltersRef.current = [];
+			return;
+		}
+		previousStatusFiltersRef.current = filters.filter(
+			(filter) => filter.field === "status",
+		);
+		updatePreferences({
+			...preferences,
+			filters: [...nonStatusFilters, DRAFT_STATUS_FILTER],
+		});
+	}, [
+		draftFilterToggleRequest,
+		draftsOnly,
+		preferences,
+		updatePreferences,
+	]);
 	const configurableColumns = useMemo(
 		() => columns.map((column) => ({
 			id: column.id,

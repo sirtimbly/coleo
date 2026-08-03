@@ -51,6 +51,39 @@ describe("database migrations", () => {
 		db.close();
 	});
 
+	it("adds Draft tasks without losing task indexes or lifecycle triggers", async () => {
+		const dir = join(tmpdir(), `coleo-task-draft-${crypto.randomUUID()}`);
+		testDirs.push(dir);
+		const db = await initDatabase(join(dir, "coleo.db"));
+		const now = "2026-08-03T12:00:00.000Z";
+
+		db.run(
+			`INSERT INTO tasks (id, subject, description, status, created_at, updated_at)
+			 VALUES ('draft-task', 'Unshaped idea', 'Capture before assignment', 'draft', ?, ?)`,
+			[now, now],
+		);
+		expect(
+			db.query("SELECT status FROM tasks WHERE id = 'draft-task'").get(),
+		).toEqual({ status: "draft" });
+		expect(
+			db.query("SELECT subject FROM tasks_fts WHERE tasks_fts MATCH 'unshaped'").all(),
+		).toEqual([{ subject: "Unshaped idea" }]);
+
+		db.run(
+			"UPDATE tasks SET status = 'pending', updated_at = ? WHERE id = 'draft-task'",
+			["2026-08-03T12:05:00.000Z"],
+		);
+		expect(
+			db.query(
+				`SELECT status FROM entity_status_history
+				 WHERE entity_type = 'task' AND entity_id = 'draft-task'
+				 ORDER BY changed_at`,
+			).all(),
+		).toEqual([{ status: "draft" }, { status: "pending" }]);
+		expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+		db.close();
+	});
+
 	it("normalizes legacy task keys to SQLite-sortable queue order", async () => {
 		const dir = join(tmpdir(), `coleo-migration-${crypto.randomUUID()}`);
 		testDirs.push(dir);

@@ -15,6 +15,7 @@ export const PRIORITY_STYLES: Record<Task["priority"], string> = {
 };
 
 export const STATUS_LABELS: Record<Task["status"], string> = {
+	draft: "Draft",
 	pending: "Pending",
 	claimed: "Claimed",
 	in_progress: "In Progress",
@@ -26,6 +27,7 @@ export const STATUS_LABELS: Record<Task["status"], string> = {
 };
 
 export const STATUS_DOT_STYLES: Record<Task["status"], string> = {
+	draft: "bg-cyan-500",
 	pending: "bg-slate-500",
 	claimed: "bg-sky-500",
 	in_progress: "bg-blue-500",
