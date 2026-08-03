@@ -429,12 +429,13 @@ export function ResourceSheet<T extends { id: string }>({
 			afterOnCellMouseDown: (event, coords) => {
 				if (event.detail < 2 || coords.row === null || coords.row < 0) return;
 				const current = runtimeRef.current;
-				// MultiSelect uses double-click to open its native checklist.
-				// Keep that gesture inside the cell instead of opening details.
-				if (
-					coords.col !== null &&
-					current.visibleColumns[coords.col]?.type === "multiselect"
-				) return;
+				// Spreadsheet convention wins inside editable cells: double-click
+				// opens their text, dropdown, or multiselect editor. Read-only
+				// cells and row headers retain the detail-window gesture.
+				if (coords.col !== null && coords.col >= 0) {
+					const column = current.visibleColumns[coords.col];
+					if (column?.readOnly !== true) return;
+				}
 				const physicalRow = hot.toPhysicalRow(coords.row) ?? coords.row;
 				const id = current.sheetRows[physicalRow]?.__resourceId;
 				const resource = id ? current.rowsById.get(id) : undefined;

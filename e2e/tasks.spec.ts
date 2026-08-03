@@ -90,7 +90,7 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		page.getByRole("region", { name: "Live Task Timeline", exact: true }),
 	).toHaveCount(0);
 	await expect(page.getByText("Protect the critical workbench", { exact: true })).toBeVisible();
-	await expect(page.getByText(/select a row to format/i)).toBeVisible({
+	await expect(page.getByText(/double-click to edit/i)).toBeVisible({
 		timeout: 20_000,
 	});
 	const resourceSheet = page.locator(".coleo-resource-sheet");
@@ -146,10 +146,10 @@ test("formats rows and preserves undo and redo across resource sheets", async ({
 		request.method() === "PATCH" &&
 		new URL(request.url()).pathname === "/api/tasks/task-workbench"
 	);
-	await taskSubjectCell.click();
-	await page.keyboard.press("Enter");
-	await page.keyboard.press("ControlOrMeta+A");
-	await page.keyboard.type(editedSubject);
+	await taskSubjectCell.dblclick();
+	const subjectEditor = resourceSheet.locator("textarea.handsontableInput");
+	await expect(subjectEditor).toBeVisible();
+	await subjectEditor.fill(editedSubject);
 	await page.keyboard.press("Enter");
 	expect((await editRequest).postDataJSON()).toMatchObject({ subject: editedSubject });
 	await expect(
@@ -302,7 +302,7 @@ test("opens a spreadsheet row in the dedicated task detail projection", async ({
 	await page.goto("/tasks");
 	const sheet = page.locator(".coleo-resource-sheet");
 	await expect(sheet).toBeVisible({ timeout: 20_000 });
-	await sheet.getByText("Protect the critical workbench", { exact: true }).dblclick();
+	await sheet.getByRole("gridcell", { name: "implementation", exact: true }).dblclick();
 
 	await expect(page).toHaveURL(/\/tasks\?.*task=task-workbench/);
 	await expect(

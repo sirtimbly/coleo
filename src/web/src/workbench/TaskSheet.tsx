@@ -214,7 +214,7 @@ export function TaskSheet({
 					/>
 				) : (
 					<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-						Spreadsheet · select a row to format · double-click for details
+						Spreadsheet · double-click to edit · use read-only cells for details
 					</span>
 				)}
 				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
