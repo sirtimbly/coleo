@@ -113,9 +113,30 @@ test("formats task rows and restores bug tags in configurable spreadsheets", asy
 		timeout: 20_000,
 	});
 	const bugSheet = page.locator(".coleo-resource-sheet");
-	await expect(
-		bugSheet.getByRole("gridcell", { name: "regression, ui", exact: true }),
-	).toBeVisible();
+	const tagsCell = bugSheet.locator("td.ht-multi-select-renderer").filter({
+		hasText: "regression",
+	});
+	const tagChips = tagsCell.locator(".ht-multi-select-chip-label");
+	await expect(tagChips).toHaveText(["regression", "ui"]);
+
+	// Open the editor from the empty side of the cell so the gesture doesn't
+	// target either chip's remove control.
+	await tagsCell.dblclick({ position: { x: 174, y: 14 } });
+	const tagsEditor = bugSheet.locator(".ht-multi-select-editor");
+	await expect(tagsEditor).toBeVisible();
+	await expect(tagsEditor.getByRole("checkbox", { name: "regression" })).toBeChecked();
+	await expect(tagsEditor.getByRole("checkbox", { name: "ui" })).toBeChecked();
+	const tagUpdateRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
+	);
+	await tagsEditor.getByRole("checkbox", { name: "ui" }).uncheck();
+	const requestBody = (await tagUpdateRequest).postDataJSON() as {
+		metadata?: { ui?: { tags?: string[] } };
+	};
+	expect(requestBody.metadata?.ui?.tags).toEqual(["regression"]);
+	await expect(tagChips).toHaveText(["regression"]);
+
 	await page.getByRole("rowheader", { name: "1", exact: true }).click();
 	await expect(formattingToolbar).toBeVisible();
 	const bugSubjectCell = bugSheet.getByRole("gridcell", {

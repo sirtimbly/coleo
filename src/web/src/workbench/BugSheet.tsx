@@ -25,22 +25,14 @@ import type {
 } from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
+import { collectTagOptions, normalizeTagValues } from "./tag-values";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
 import type { BugUpdate } from "./resource-updates";
 
-function readTags(bug: Bug): string {
-	return (bug.metadata?.ui?.tags ?? []).join(", ");
-}
-
-function parseTags(value: unknown): string[] {
-	return Array.from(new Set(
-		String(value ?? "")
-			.split(",")
-			.map((tag) => tag.trim())
-			.filter(Boolean),
-	));
+function readTags(bug: Bug): string[] {
+	return bug.metadata?.ui?.tags ?? [];
 }
 
 function bugMetadataWithUi(bug: Bug, updates: Partial<UiMetadata>): BugMetadata {
@@ -96,6 +88,7 @@ const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 		id: "tags",
 		header: "Tags",
 		read: readTags,
+		type: "multiselect",
 		width: 180,
 	},
 	{
@@ -138,6 +131,16 @@ export function BugSheet({
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingBugId, setFormattingBugId] = useState<string>();
+	const tagOptions = useMemo(
+		() => collectTagOptions(bugs.map(readTags)),
+		[bugs],
+	);
+	const columns = useMemo(
+		() => BUG_COLUMNS.map((column) => (
+			column.id === "tags" ? { ...column, options: tagOptions } : column
+		)),
+		[tagOptions],
+	);
 	const { view, preferences, updatePreferences, updateShared } = useViewPreferences("bugs-sheet", {
 		id: "bugs-sheet",
 		name: "Bugs",
@@ -153,13 +156,13 @@ export function BugSheet({
 		shared: false,
 	});
 	const configurableColumns = useMemo(
-		() => BUG_COLUMNS.map((column) => ({
+		() => columns.map((column) => ({
 			id: column.id,
 			header: column.header,
 			defaultWidth: column.width,
 			hideable: column.id !== "title",
 		})),
-		[],
+		[columns],
 	);
 	const formattingBug = useMemo(
 		() => bugs.find((bug) => bug.id === formattingBugId),
@@ -191,7 +194,7 @@ export function BugSheet({
 			</div>
 			<ResourceSheet
 				rows={bugs}
-				columns={BUG_COLUMNS}
+				columns={columns}
 				preferences={preferences}
 				onPreferencesChange={updatePreferences}
 				onChange={(bug, columnId, value) => {
@@ -203,7 +206,7 @@ export function BugSheet({
 					}
 					if (columnId === "tags") {
 						onUpdateBug?.(bug.id, {
-							metadata: bugMetadataWithUi(bug, { tags: parseTags(value) }),
+							metadata: bugMetadataWithUi(bug, { tags: normalizeTagValues(value) }),
 						});
 					}
 				}}

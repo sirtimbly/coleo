@@ -181,8 +181,9 @@ The initial workbench migration was completed on 2026-07-31 in
 
 ### 2026-08-02 row metadata restoration
 
-- Task and Bug sheets expose their existing metadata tags as editable,
-  comma-separated Tags columns. Editing the cell preserves unrelated metadata.
+- Task and Bug sheets expose their existing metadata tags through Handsontable's
+  native MultiSelect cell type. Selected tags render as removable chips, and
+  edits persist string arrays while preserving unrelated metadata.
 - Selecting any data cell or row header reveals the shared row-formatting
   toolbar without recreating the Handsontable instance.
 - Bold and the existing slate, blue, green, amber, and rose row colors persist

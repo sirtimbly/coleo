@@ -56,7 +56,7 @@ export interface ResourceSheetColumn<T> {
 	id: string;
 	header: string;
 	read: (row: T) => unknown;
-	type?: "text" | "numeric" | "checkbox" | "date" | "dropdown";
+	type?: "text" | "numeric" | "checkbox" | "date" | "dropdown" | "multiselect";
 	options?: string[];
 	readOnly?: boolean;
 	width?: number;
@@ -405,6 +405,12 @@ export function ResourceSheet<T extends { id: string }>({
 			afterOnCellMouseDown: (event, coords) => {
 				if (event.detail < 2 || coords.row === null || coords.row < 0) return;
 				const current = runtimeRef.current;
+				// MultiSelect uses double-click to open its native checklist.
+				// Keep that gesture inside the cell instead of opening details.
+				if (
+					coords.col !== null &&
+					current.visibleColumns[coords.col]?.type === "multiselect"
+				) return;
 				const physicalRow = hot.toPhysicalRow(coords.row) ?? coords.row;
 				const id = current.sheetRows[physicalRow]?.__resourceId;
 				const resource = id ? current.rowsById.get(id) : undefined;

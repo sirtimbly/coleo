@@ -23,6 +23,7 @@ import type {
 } from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
+import { collectTagOptions, normalizeTagValues } from "./tag-values";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
@@ -39,17 +40,8 @@ const TASK_STATUSES: Task["status"][] = [
 	"cancelled",
 ];
 
-function readTags(task: Task): string {
-	return (task.metadata.ui?.tags ?? []).join(", ");
-}
-
-function parseTags(value: unknown): string[] {
-	return Array.from(new Set(
-		String(value ?? "")
-			.split(",")
-			.map((tag) => tag.trim())
-			.filter(Boolean),
-	));
+function readTags(task: Task): string[] {
+	return task.metadata.ui?.tags ?? [];
 }
 
 function taskMetadataWithUi(task: Task, updates: Partial<UiMetadata>): TaskMetadata {
@@ -134,6 +126,7 @@ const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 		id: "tags",
 		header: "Tags",
 		read: readTags,
+		type: "multiselect",
 		width: 180,
 	},
 	{
@@ -168,6 +161,16 @@ export function TaskSheet({
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingTaskId, setFormattingTaskId] = useState<string>();
+	const tagOptions = useMemo(
+		() => collectTagOptions(tasks.map(readTags)),
+		[tasks],
+	);
+	const columns = useMemo(
+		() => TASK_COLUMNS.map((column) => (
+			column.id === "tags" ? { ...column, options: tagOptions } : column
+		)),
+		[tagOptions],
+	);
 	const { view, preferences, updatePreferences, updateShared } = useViewPreferences(viewId, {
 		id: viewId,
 		name: viewId === "plan-items-sheet" ? "Plan items" : "Tasks",
@@ -185,13 +188,13 @@ export function TaskSheet({
 		shared: false,
 	});
 	const configurableColumns = useMemo(
-		() => TASK_COLUMNS.map((column) => ({
+		() => columns.map((column) => ({
 			id: column.id,
 			header: column.header,
 			defaultWidth: column.width,
 			hideable: column.id !== "subject",
 		})),
-		[],
+		[columns],
 	);
 	const formattingTask = useMemo(
 		() => tasks.find((task) => task.id === formattingTaskId),
@@ -223,7 +226,7 @@ export function TaskSheet({
 			</div>
 			<ResourceSheet
 				rows={tasks}
-				columns={TASK_COLUMNS}
+				columns={columns}
 				preferences={preferences}
 				onPreferencesChange={updatePreferences}
 				onChange={(task, columnId, value) => {
@@ -235,7 +238,7 @@ export function TaskSheet({
 					}
 					if (columnId === "tags") {
 						onUpdateTask?.(task.id, {
-							metadata: taskMetadataWithUi(task, { tags: parseTags(value) }),
+							metadata: taskMetadataWithUi(task, { tags: normalizeTagValues(value) }),
 						});
 					}
 				}}
