@@ -54,7 +54,9 @@ The frontend is divided into four layers:
    detail components.
 4. Golden Layout hosts registered view instances and persists their placement.
 
-Handsontable is the only sheet implementation. Inbox, timeline, document,
+Handsontable remains the production sheet implementation. An opt-in Tabulator
+Tasks projection is available as a migration spike and is not yet used by Bugs,
+Discovery, plan items, or default Tasks workspaces. Inbox, timeline, document,
 process, and dashboard surfaces use the Coleo design system so they share one
 compact interaction language.
 
@@ -193,3 +195,21 @@ The initial workbench migration was completed on 2026-07-31 in
 - Every sheet with editable cells exposes Handsontable Undo and Redo through
   keyboard shortcuts and the context menu. React Query reconciliation uses
   `updateData()` so server responses preserve the current history stack.
+
+### 2026-08-03 Tabulator migration spike
+
+- Tasks remains Handsontable-backed by default. **Compare Tabulator** opens the
+  experimental `?grid=tabulator` projection in a separate Golden Layout split
+  so both runtimes can be evaluated against the same API data.
+- The Tabulator bundle and stylesheet are loaded only when the preview is
+  opened. React owns the resource data and callback refs while one imperative
+  Tabulator instance owns grid interaction state.
+- The first gate covers dark-theme presentation, Golden Layout resize redraws,
+  single-row selection, Subject and Status editing, whole-row drag ordering,
+  and the Details context action.
+- The preview intentionally does not replace `ResourceSheet`, implement the
+  creatable Tags editor, expose the shared view configurator, or become the
+  default. Those remain later migration gates.
+- A focused model test protects row conversion and update/reorder translation.
+  Playwright exercises the preview beside Handsontable using real Golden Layout
+  splitting before the production runtime can be changed.

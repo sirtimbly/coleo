@@ -104,6 +104,20 @@ async function dragOrderRowAfter(page: Page, source: Locator, target: Locator) {
 	await page.mouse.up();
 }
 
+async function dragTabulatorRowAfter(page: Page, source: Locator, target: Locator) {
+	const sourceBox = await source.boundingBox();
+	const targetBox = await target.boundingBox();
+	if (!sourceBox || !targetBox) throw new Error("Tabulator rows are not visible");
+	await page.mouse.move(sourceBox.x + sourceBox.width * 0.72, sourceBox.y + sourceBox.height / 2);
+	await page.mouse.down();
+	await page.mouse.move(
+		targetBox.x + targetBox.width * 0.72,
+		targetBox.y + targetBox.height - 2,
+		{ steps: 10 },
+	);
+	await page.mouse.up();
+}
+
 test("formats rows and preserves undo and redo across resource sheets", async ({ page }) => {
 	await installMockApi(page, {
 		tasks: [task],
@@ -427,6 +441,120 @@ test("opens a spreadsheet row from the Details context action", async ({ page })
 		page.getByRole("heading", { name: "Protect the critical workbench", exact: true }),
 	).toBeVisible();
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
+});
+
+test("proves the Tabulator Tasks spike beside Handsontable in Golden Layout", async ({ page }) => {
+	await installMockApi(page, { tasks: [task, secondTask, draftTask] });
+	await page.addInitScript(() => {
+		window.localStorage.setItem("coleo-layout-mode", "golden");
+		window.localStorage.setItem("coleo-theme", "dark");
+		for (const key of Object.keys(window.localStorage)) {
+			if (key.startsWith("coleo-golden-layout")) window.localStorage.removeItem(key);
+		}
+	});
+	await page.goto("/tasks");
+
+	const handsontable = page.locator(".coleo-resource-sheet");
+	await expect(handsontable).toBeVisible({ timeout: 20_000 });
+	await page.getByRole("button", { name: "Compare Tabulator", exact: true }).click();
+
+	const preview = page.getByTestId("tabulator-task-sheet");
+	await expect(preview).toBeVisible({ timeout: 20_000 });
+	await expect(handsontable).toBeVisible();
+	await expect(
+		preview.getByText("Tabulator migration preview", { exact: true }),
+	).toBeVisible();
+
+	const table = preview.locator(".tabulator");
+	const firstRow = table.locator('.tabulator-row[data-resource-id="task-workbench"]');
+	const secondRow = table.locator('.tabulator-row[data-resource-id="task-second"]');
+	await expect(firstRow).toBeVisible();
+	await expect(secondRow).toBeVisible();
+
+	await firstRow.click();
+	await expect(firstRow).toHaveClass(/tabulator-selected/);
+	await expect(firstRow).not.toHaveCSS("background-color", "rgb(255, 255, 255)");
+
+	const subjectCell = firstRow.locator('.tabulator-cell[tabulator-field="subject"]');
+	const subjectRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await subjectCell.dblclick();
+	const subjectEditor = subjectCell.locator("input");
+	await expect(subjectEditor).toBeVisible();
+	await expect(subjectEditor).not.toHaveCSS("color", "rgb(0, 0, 0)");
+	await subjectEditor.fill("Edit through the Tabulator spike");
+	await subjectEditor.press("Enter");
+	expect((await subjectRequest).postDataJSON()).toMatchObject({
+		subject: "Edit through the Tabulator spike",
+	});
+	await expect(
+		table.getByText("Edit through the Tabulator spike", { exact: true }),
+	).toBeVisible();
+
+	const statusCell = firstRow.locator('.tabulator-cell[tabulator-field="status"]');
+	const statusRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await statusCell.dblclick();
+	await preview
+		.locator(".tabulator-edit-list-item")
+		.getByText("In progress", { exact: true })
+		.click();
+	expect((await statusRequest).postDataJSON()).toMatchObject({
+		status: "in_progress",
+	});
+	await expect(statusCell.getByText("In progress", { exact: true })).toBeVisible();
+
+	const previewBeforeResize = await preview.boundingBox();
+	const splitter = page.locator(".lm_splitter").first();
+	const splitterBox = await splitter.boundingBox();
+	if (!previewBeforeResize || !splitterBox) throw new Error("Golden Layout split is not visible");
+	await page.mouse.move(splitterBox.x + splitterBox.width / 2, splitterBox.y + 40);
+	await page.mouse.down();
+	await page.mouse.move(splitterBox.x - 90, splitterBox.y + 40, { steps: 8 });
+	await page.mouse.up();
+	await expect
+		.poll(async () => (await preview.boundingBox())?.width ?? 0)
+		.not.toBe(previewBeforeResize.width);
+	const resizedGridBounds = await preview.evaluate((element) => {
+		const host = element.querySelector<HTMLElement>(".coleo-tabulator-host");
+		const grid = element.querySelector<HTMLElement>(".tabulator");
+		return {
+			hostHeight: host?.getBoundingClientRect().height ?? 0,
+			gridHeight: grid?.getBoundingClientRect().height ?? 0,
+		};
+	});
+	expect(Math.abs(resizedGridBounds.hostHeight - resizedGridBounds.gridHeight)).toBeLessThan(2);
+
+	const reorderRequest = page.waitForRequest((request) =>
+		request.method() === "POST" &&
+		new URL(request.url()).pathname === "/api/tasks/reorder"
+	);
+	await dragTabulatorRowAfter(
+		page,
+		firstRow.locator('.tabulator-cell[tabulator-field="phase"]'),
+		secondRow.locator('.tabulator-cell[tabulator-field="phase"]'),
+	);
+	expect((await reorderRequest).postDataJSON()).toMatchObject({
+		taskId: task.id,
+		prevTaskId: secondTask.id,
+		nextTaskId: draftTask.id,
+	});
+
+	await secondRow
+		.locator('.tabulator-cell[tabulator-field="phase"]')
+		.click({ button: "right" });
+	const detailsAction = preview.locator(".tabulator-menu").getByText("Details", {
+		exact: true,
+	});
+	await expect(detailsAction).toBeVisible();
+	await detailsAction.click();
+	await expect(
+		page.getByRole("heading", { name: secondTask.subject, exact: true }),
+	).toBeVisible();
 });
 
 test("filters Draft tasks through the saved view shortcut", async ({ page }) => {

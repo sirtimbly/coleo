@@ -10,35 +10,18 @@ import { Button } from "@heroui/react";
 import { Bold } from "lucide-react";
 
 import { cn } from "@/lib";
+import { ROW_COLOR_OPTIONS } from "./row-formatting";
 
-export const ROW_COLOR_OPTIONS = [
-	{ key: "slate", label: "Default", className: "bg-surface" },
-	{ key: "blue", label: "Blue", className: "bg-blue-400" },
-	{ key: "green", label: "Green", className: "bg-green-400" },
-	{ key: "orange", label: "Orange", className: "bg-orange-400" },
-	{ key: "purple", label: "Purple", className: "bg-violet-400" },
-] as const;
+import type { RowFormattingValue } from "./row-formatting";
 
-export type RowColor = (typeof ROW_COLOR_OPTIONS)[number]["key"];
-const LEGACY_ROW_COLORS: Record<string, RowColor> = {
-	emerald: "green",
-	amber: "orange",
-	rose: "purple",
-};
-const ROW_COLOR_KEYS = new Set<string>(
-	ROW_COLOR_OPTIONS.map((option) => option.key),
-);
-
-export interface RowFormattingValue {
-	bold: boolean;
-	color: RowColor;
-}
-
-export function normalizeRowColor(value: string | undefined): RowColor {
-	if (value === undefined) return "slate";
-	if (ROW_COLOR_KEYS.has(value)) return value as RowColor;
-	return LEGACY_ROW_COLORS[value] ?? "slate";
-}
+export {
+	normalizeRowColor,
+	ROW_COLOR_OPTIONS,
+} from "./row-formatting";
+export type {
+	RowColor,
+	RowFormattingValue,
+} from "./row-formatting";
 
 export function RowFormattingToolbar({
 	label,
