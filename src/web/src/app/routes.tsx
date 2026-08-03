@@ -45,6 +45,7 @@ import {
   UnifiedGridPage,
   SetupPage,
   ComposeMessagePage,
+  CardPanelPage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -225,6 +226,27 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     icon: Inbox,
     component: MessagingPage,
     showInNav: true,
+  },
+  {
+    id: 'card',
+    href: '/card',
+    path: 'card',
+    label: 'Card',
+    icon: FileText,
+    component: CardPanelPage,
+    showInNav: false,
+    getTitle: (searchParams) => {
+      const raw = searchParams.get('envelope');
+      if (!raw) return 'Card';
+      try {
+        const envelope = JSON.parse(raw) as { presentation?: { title?: unknown } };
+        return typeof envelope.presentation?.title === 'string'
+          ? envelope.presentation.title
+          : 'Card';
+      } catch {
+        return 'Card';
+      }
+    },
   },
   {
     id: 'grid',

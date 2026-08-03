@@ -19,3 +19,4 @@ export { MessagingPage } from './MessagingPage';
 export { UnifiedGridPage } from './UnifiedGridPage';
 export { SetupPage } from './SetupPage';
 export { ComposeMessagePage } from './ComposeMessagePage';
+export { CardPanelPage } from './CardPanelPage';

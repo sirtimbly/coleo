@@ -23,6 +23,11 @@ import type {
   WorkbenchProfile,
   WorkspaceLayoutRecord,
 } from '@/workbench/types';
+import type {
+  CardActionRequest,
+  CardActionResult,
+  WorkbenchAttention,
+} from '../../../types/adaptive-cards';
 
 const API_BASE = '/api';
 
@@ -1494,6 +1499,56 @@ class ApiClient {
     return this.request<{ success: true }>(`/workbench/layouts/${encodeURIComponent(id)}`, {
       method: 'DELETE',
     });
+  }
+
+  async listWorkbenchAttention(params: {
+    profileId?: string;
+    requiresAction?: boolean;
+    unread?: boolean;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams();
+    query.set('profileId', params.profileId ?? 'local');
+    if (params.requiresAction !== undefined) query.set('requiresAction', String(params.requiresAction));
+    if (params.unread !== undefined) query.set('unread', String(params.unread));
+    if (params.includeArchived !== undefined) {
+      query.set('includeArchived', String(params.includeArchived));
+    }
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    return this.request<{ attention: WorkbenchAttention[] }>(
+      `/workbench/attention?${query.toString()}`,
+    );
+  }
+
+  async updateWorkbenchAttention(
+    itemKey: string,
+    patch: Partial<Omit<WorkbenchAttention, 'profileId' | 'itemKey' | 'updatedAt'>> & {
+      profileId?: string;
+    },
+  ) {
+    return this.request<{ attention: WorkbenchAttention }>(
+      `/workbench/attention/${encodeURIComponent(itemKey)}`,
+      { method: 'PUT', body: JSON.stringify(patch) },
+    );
+  }
+
+  async bulkUpdateWorkbenchAttention(
+    itemKeys: string[],
+    action: 'read' | 'archive' | 'resolve',
+    profileId = 'local',
+  ) {
+    return this.request<{ attention: WorkbenchAttention[] }>('/workbench/attention/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ profileId, itemKeys, action }),
+    });
+  }
+
+  async executeWorkbenchCardAction(request: CardActionRequest) {
+    return this.request<{ result: CardActionResult }>('/workbench/cards/actions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }).then((response) => response.result);
   }
 
   async listRuns(params?: {
