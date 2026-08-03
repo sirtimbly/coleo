@@ -1,4 +1,3 @@
-import type { PlanFormatter } from "../project-setup/service";
 import type { Arm, Task, Discovery, QueueMessage, TaskAttachment } from "../types";
 import type { WorkspaceAccess } from "../workspace";
 
@@ -10,7 +9,6 @@ export interface BrainOptions {
 	apiKey?: string;
 	projectRoot?: string;
 	workspace?: WorkspaceAccess;
-	planFormatter?: PlanFormatter;
 }
 
 export interface TaskClaimContext {

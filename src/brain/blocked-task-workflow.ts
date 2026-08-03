@@ -27,12 +27,7 @@ export function selectBlockedTasksForReview(
 	limit = 5,
 ): Task[] {
 	return tasks
-		.filter(
-			(task) =>
-				task.status === "blocked"
-				&& task.blockedCategory !== "planning"
-				&& reviewTime(task) <= now.getTime(),
-		)
+		.filter((task) => task.status === "blocked" && reviewTime(task) <= now.getTime())
 		.sort((left, right) => {
 			const timeDifference = reviewTime(left) - reviewTime(right);
 			if (timeDifference !== 0) return timeDifference;

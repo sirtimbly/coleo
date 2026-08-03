@@ -35,10 +35,6 @@ describe("Brain template manager", () => {
 
     await templates.ensureTemplatesExist();
     expect((await readFile(promptPath, "utf-8")).length).toBeGreaterThan(0);
-		expect((await readFile(
-			join(testDir, "src", "brain", "templates", "plan-evaluation-system-prompt.jinja"),
-			"utf-8",
-		)).length).toBeGreaterThan(0);
 
     await writeFile(promptPath, "custom prompt", "utf-8");
     await templates.ensureTemplatesExist();

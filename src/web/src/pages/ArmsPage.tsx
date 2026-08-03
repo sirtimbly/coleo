@@ -206,7 +206,6 @@ const STATUS_DOT_CLASS: Record<string, string> = {
 	busy: "bg-primary",
 	idle: "bg-success",
 	starting: "bg-warning",
-	planning_blocked: "bg-warning",
 	stopped: "bg-default-400",
 	error: "bg-danger",
 };
@@ -314,11 +313,7 @@ function ArmRow({
 				)}
 
 				<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-					{arm.status === "planning_blocked" ? (
-						<span className="font-medium text-warning">
-							Waiting for the Brain to finish the project planning gate
-						</span>
-					) : currentWork ? (
+					{currentWork ? (
 						<>
 							<span className="mr-1">{arm.currentBugTitle ? "🐛" : "📋"}</span>
 							{currentWork}
@@ -380,7 +375,7 @@ function ArmRow({
 							{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
 						</Button>
 					)}
-					{arm.status !== "stopped" && arm.status !== "planning_blocked" && (
+					{arm.status !== "stopped" && (
 						<Button
 							variant="ghost"
 							size="sm"

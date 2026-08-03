@@ -421,9 +421,6 @@ function getViewerStatusNarrative({
 }): string {
 	const lifecycle = formatStatusLayerLabel(armStatus);
 	const session = sessionLabel.toLowerCase();
-	if (armStatus === "planning_blocked") {
-		return "Waiting for the Brain to complete the project planning gate; no work will be sent to this arm.";
-	}
 
 	if (analysisState === "silent") {
 		return `${lifecycle} arm, no recent output; session is ${session}.`;
@@ -663,9 +660,7 @@ export function ArmViewerPage() {
 						: "running";
 			setArms((previous) =>
 				previous.map((arm) =>
-					arm.id === armId
-						&& arm.status !== "planning_blocked"
-						&& arm.status !== normalizedArmStatus
+					arm.id === armId && arm.status !== normalizedArmStatus
 						? { ...arm, status: normalizedArmStatus }
 						: arm,
 				),
@@ -1594,9 +1589,8 @@ function ArmSelectorPanel({
 				<div className="space-y-2">
 					{arms.map((arm) => {
 						const isSelected = selectedArmId === arm.id;
-						const summary = arm.status === "planning_blocked"
-							? "Waiting for the Brain planning gate"
-							: arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
+						const summary =
+							arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
 
 						return (
 							<button
@@ -1618,7 +1612,7 @@ function ArmSelectorPanel({
 													"h-2 w-2 rounded-full",
 													arm.status === "running"
 														? "bg-success"
-														: arm.status === "starting" || arm.status === "planning_blocked"
+														: arm.status === "starting"
 															? "bg-warning"
 															: arm.status === "error"
 																? "bg-danger"
@@ -1821,7 +1815,7 @@ function ArmViewerConsole({
 								totalTokens={totalTokens}
 							/>
 						) : null}
-						{arm && arm.status !== "stopped" && arm.status !== "planning_blocked" ? (
+						{arm && arm.status !== "stopped" ? (
 							<Button
 								variant="ghost"
 								size="sm"

@@ -47,13 +47,6 @@ describe("blocked task workflow", () => {
 		expect(getNextBlockedReviewAt(0, true, now)).toBe("2026-01-03T12:00:00.000Z");
 	});
 
-	it("does not send planning failures to an arm for automatic review", () => {
-		const task = blockedTask("planning", "2020-01-01T00:00:00.000Z");
-		task.blockedCategory = "planning";
-
-		expect(selectBlockedTasksForReview([task], new Date("2026-01-02T12:00:00.000Z"))).toEqual([]);
-	});
-
 	it("rejects malformed blocked-task review payloads", () => {
 		expect(validateBrainInboxPayload("blocked_task_review", {
 			taskId: "task-1",
@@ -74,13 +67,6 @@ describe("blocked task workflow", () => {
 			reason: "Waiting for credentials",
 			needsHuman: "yes",
 		})).toContain("payload.needsHuman");
-		expect(validateBrainInboxPayload("blocked_task_review", {
-			taskId: "task-1",
-			outcome: "still_blocked",
-			summary: "The plan still needs work",
-			reason: "Missing architecture decision",
-			category: "planning",
-		})).toContain("payload.category");
 	});
 
 	it("assigns old housekeeping reviews to idle arms through the review protocol", async () => {

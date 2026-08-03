@@ -5,17 +5,13 @@ import { join } from "node:path";
 
 import {
 	discoverProjectPlans,
-	collectPlanWorkspaceContext,
 	formatPlanWithoutModel,
 	listProjectPlanDocuments,
 	preservesPlanContext,
-	renderPlanEvaluationPrompt,
 	validateEditablePlanPath,
 	validateEditableTemplatePath,
 } from "../service";
 import { LocalWorkspaceAccess } from "../../workspace";
-import { BrainTemplateManager } from "../../brain/template-manager";
-import type { WorkspaceAccess } from "../../workspace";
 
 describe("project setup service", () => {
 	let root: string;
@@ -68,57 +64,6 @@ describe("project setup service", () => {
 		expect(plan).toContain("### Deliverables");
 		expect(plan).toContain("- [ ] Support team accounts");
 		expect(plan).toContain("- [ ] Add an audit log");
-	});
-
-	it("builds bounded planning context from git metadata without reading file contents", async () => {
-		let readCount = 0;
-		const workspace = {
-			root,
-			readText: async () => {
-				readCount += 1;
-				return null;
-			},
-			writeText: async () => {
-				throw new Error("not used");
-			},
-			scan: async () => {
-				throw new Error("not used");
-			},
-			gitStatus: async () => " M src/app.ts\n?? package.json\n?? node_modules/cache.bin\n?? a/b/c/d/e/f/g.ts\n",
-			gitFiles: async () => ["src/index.ts", "dist/output.js"],
-		} satisfies WorkspaceAccess;
-
-		const context = await collectPlanWorkspaceContext(workspace);
-
-		expect(context.gitStatus).toContain("?? package.json");
-		expect(context.files).toEqual(["package.json", "src/app.ts", "src/index.ts"]);
-		expect(readCount).toBe(0);
-	});
-
-	it("renders plan evaluation messages from user-customizable Jinja templates", async () => {
-		const templateDir = join(root, "src", "brain", "templates");
-		await mkdir(templateDir, { recursive: true });
-		await writeFile(
-			join(templateDir, "plan-evaluation-system-prompt.jinja"),
-			"Custom planning policy",
-		);
-		await writeFile(
-			join(templateDir, "plan-evaluation-user-prompt.jinja"),
-			"{{ source_path }}|{{ git_status }}|{{ project_files }}|{{ project_plan }}",
-		);
-
-		const prompt = await renderPlanEvaluationPrompt(
-			new BrainTemplateManager(root, () => {}),
-			"# Complete plan",
-			".project/plan.md",
-			undefined,
-			{ gitStatus: " M src/app.ts", files: ["package.json", "src/app.ts"] },
-		);
-
-		expect(prompt.system).toBe("Custom planning policy");
-		expect(prompt.user).toBe(
-			".project/plan.md| M src/app.ts|package.json\nsrc/app.ts|# Complete plan",
-		);
 	});
 
 	it("detects formatter output that drops substantial project context", () => {

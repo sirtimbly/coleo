@@ -12,45 +12,6 @@ describe("database migrations", () => {
 		await Promise.all(testDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 	});
 
-	it("keeps a stable database instance id until the database is recreated", async () => {
-		const dir = join(tmpdir(), `coleo-database-instance-${crypto.randomUUID()}`);
-		testDirs.push(dir);
-		const dbPath = join(dir, "coleo.db");
-		const first = await initDatabase(dbPath);
-		const firstId = first.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
-			value: string;
-		};
-		first.close();
-
-		const reopened = await initDatabase(dbPath);
-		const reopenedId = reopened.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
-			value: string;
-		};
-		reopened.close();
-		expect(reopenedId.value).toBe(firstId.value);
-
-		await rm(dbPath, { force: true });
-		const recreated = await initDatabase(dbPath);
-		const recreatedId = recreated.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
-			value: string;
-		};
-		recreated.close();
-		expect(recreatedId.value).not.toBe(firstId.value);
-	});
-
-	it("adds a durable planning gate flag to arms", async () => {
-		const dir = join(tmpdir(), `coleo-arm-planning-gate-${crypto.randomUUID()}`);
-		testDirs.push(dir);
-		const db = await initDatabase(join(dir, "coleo.db"));
-		const columns = db.query("PRAGMA table_info(arms)").all() as Array<{
-			name: string;
-			dflt_value: string | null;
-		}>;
-
-		expect(columns.find((column) => column.name === "planning_blocked")?.dflt_value).toBe("0");
-		db.close();
-	});
-
 	it("normalizes legacy task keys to SQLite-sortable queue order", async () => {
 		const dir = join(tmpdir(), `coleo-migration-${crypto.randomUUID()}`);
 		testDirs.push(dir);

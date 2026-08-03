@@ -2,11 +2,9 @@ import type { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
 import { parsePlanFile, tasksToDatabaseFormat } from "./plan-parser";
-import type { BrainTemplateManager } from "./template-manager";
 import { generateInitialKeys } from "../lib/fractional-indexing";
 import {
 	CANONICAL_PLAN_PATH,
-	collectPlanWorkspaceContext,
 	formatPlanWithConfiguredModel,
 	type PlanFormatter,
 } from "../project-setup/service";
@@ -24,7 +22,6 @@ export async function regenerateTasksFromPlan(options: {
 	workspace: WorkspaceAccess;
 	explanation: string;
 	formatter?: PlanFormatter;
-	templates?: BrainTemplateManager;
 }): Promise<RegenerateTasksResult> {
 	const explanation = options.explanation.trim();
 	if (!explanation) throw new Error("Explain why the task list needs to be regenerated");
@@ -54,14 +51,7 @@ export async function regenerateTasksFromPlan(options: {
 	};
 	assertNoActiveTaskArms();
 
-	const workspaceContext = await collectPlanWorkspaceContext(options.workspace);
-	const formatted = await formatter(
-		existingPlan.content,
-		CANONICAL_PLAN_PATH,
-		explanation,
-		workspaceContext,
-		options.templates,
-	);
+	const formatted = await formatter(existingPlan.content, CANONICAL_PLAN_PATH, explanation);
 	const canonicalPlan = await options.workspace.writeText(CANONICAL_PLAN_PATH, formatted.content, {
 		expectedHash: existingPlan.contentHash,
 	});
