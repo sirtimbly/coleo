@@ -380,6 +380,61 @@ test("opens a spreadsheet row in the dedicated task detail projection", async ({
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
 });
 
+test("creates and selects a tag from the multiselect search", async ({ page }) => {
+	await installMockApi(page, { bugs: [bug] });
+	await page.goto("/bugs");
+	const bugSheet = page.locator(".coleo-resource-sheet");
+	const tagsCell = bugSheet.locator("td.ht-multi-select-renderer").filter({
+		hasText: "regression",
+	});
+	await expect(tagsCell).toBeVisible({ timeout: 20_000 });
+	await tagsCell.dblclick({ position: { x: 174, y: 14 } });
+	const editor = bugSheet.locator(".ht-multi-select-editor");
+	const search = editor.getByRole("textbox", { name: "Search options" });
+	await search.fill("performance");
+	const addButton = editor.getByRole("button", {
+		name: 'Add "performance" as a tag',
+	});
+	await expect(addButton).toBeEnabled();
+	const createTagRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
+	);
+	await addButton.click();
+	const requestBody = (await createTagRequest).postDataJSON() as {
+		metadata?: { ui?: { tags?: string[] } };
+	};
+	expect(requestBody.metadata?.ui?.tags).toEqual(["regression", "ui", "performance"]);
+	await expect(editor.getByRole("checkbox", { name: "performance" })).toBeChecked();
+	await expect(
+		tagsCell.locator(".ht-multi-select-chip-label").filter({ hasText: "performance" }),
+	).toHaveText("performance");
+
+	await search.fill("PERFORMANCE");
+	await expect(
+		editor.getByRole("button", {
+			name: 'tag "performance" is already selected',
+		}),
+	).toBeDisabled();
+
+	await search.fill("frontend");
+	const enterTagRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
+	);
+	await search.press("Enter");
+	const enterRequestBody = (await enterTagRequest).postDataJSON() as {
+		metadata?: { ui?: { tags?: string[] } };
+	};
+	expect(enterRequestBody.metadata?.ui?.tags).toEqual([
+		"regression",
+		"ui",
+		"performance",
+		"frontend",
+	]);
+	await expect(editor.getByRole("checkbox", { name: "frontend" })).toBeChecked();
+});
+
 test("manually orders task and bug rows from the Order gutter", async ({ page }) => {
 	await installMockApi(page, {
 		tasks: [task, secondTask],

@@ -95,6 +95,44 @@
 	cursor: grabbing;
 }
 
+.coleo-resource-sheet .ht-multi-select-editor-search-input-wrapper input.ht-multi-select-editor-search-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	width: auto;
+}
+
+.coleo-resource-sheet .coleo-multiselect-create {
+	align-items: center;
+	background: color-mix(in oklch, var(--accent) 14%, var(--surface-secondary));
+	border: 1px solid color-mix(in oklch, var(--accent) 45%, var(--border));
+	border-radius: var(--ht-input-border-radius);
+	color: var(--foreground);
+	display: inline-flex;
+	flex: 0 0 auto;
+	font-family: var(--font-interface);
+	font-size: 11px;
+	font-weight: 600;
+	height: 26px;
+	justify-content: center;
+	padding: 0 9px;
+	white-space: nowrap;
+}
+
+.coleo-resource-sheet .coleo-multiselect-create:hover:not(:disabled) {
+	background: color-mix(in oklch, var(--accent) 24%, var(--surface-secondary));
+	border-color: var(--accent);
+}
+
+.coleo-resource-sheet .coleo-multiselect-create:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 1px;
+}
+
+.coleo-resource-sheet .coleo-multiselect-create:disabled {
+	cursor: default;
+	opacity: 0.45;
+}
+
 .coleo-resource-sheet .handsontable td {
 	line-height: 1.35;
 }

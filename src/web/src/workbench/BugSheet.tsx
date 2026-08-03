@@ -94,6 +94,8 @@ const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 		header: "Tags",
 		read: readTags,
 		type: "multiselect",
+		allowCreateOptions: true,
+		optionLabel: "tag",
 		width: 180,
 	},
 	{

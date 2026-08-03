@@ -29,6 +29,10 @@ import type {
 	ProjectionSort,
 	ViewPreferences,
 } from "./types";
+import {
+	creatableMultiSelectValidator,
+	decorateCreatableMultiSelect,
+} from "./creatable-multiselect";
 
 import "handsontable/styles/handsontable.css";
 import "handsontable/styles/ht-theme-main.css";
@@ -51,6 +55,8 @@ export interface ResourceSheetColumn<T> {
 	read: (row: T) => unknown;
 	type?: "text" | "numeric" | "checkbox" | "date" | "dropdown" | "multiselect";
 	options?: string[];
+	allowCreateOptions?: boolean;
+	optionLabel?: string;
 	readOnly?: boolean;
 	width?: number;
 	className?: string;
@@ -274,7 +280,9 @@ export function ResourceSheet<T extends { id: string }>({
 		readOnly: column.readOnly,
 		width: preferences.columns?.find((item) => item.id === column.id)?.width ?? column.width,
 		className: column.className,
-		validator: column.validator,
+		validator: column.allowCreateOptions
+			? creatableMultiSelectValidator
+			: column.validator,
 	})), [preferences.columns, visibleColumns]);
 	const contextMenuItems = useMemo(
 		() => resolveContextMenuItems({
@@ -374,6 +382,15 @@ export function ResourceSheet<T extends { id: string }>({
 					const resource = id ? current.rowsById.get(id) : undefined;
 					if (resource) current.onChange?.(resource, property, nextValue, previousValue);
 				}
+			},
+			afterBeginEditing: (_row, column) => {
+				const current = runtimeRef.current;
+				const definition = current.visibleColumns[column];
+				if (!definition?.allowCreateOptions) return;
+				decorateCreatableMultiSelect(
+					hot,
+					definition,
+				);
 			},
 			afterCreateRow: (index: number, amount: number) => {
 				const current = runtimeRef.current;

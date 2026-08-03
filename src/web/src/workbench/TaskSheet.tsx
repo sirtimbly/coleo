@@ -132,6 +132,8 @@ const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 		header: "Tags",
 		read: readTags,
 		type: "multiselect",
+		allowCreateOptions: true,
+		optionLabel: "tag",
 		width: 180,
 	},
 	{

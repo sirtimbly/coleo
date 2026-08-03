@@ -28,3 +28,11 @@ whole row. Moves are persisted through the domain reorder endpoints, including
 neighbor IDs for fractionally indexed tasks. Manual moving is unavailable while
 a saved column sort is active so the displayed order and persisted order cannot
 contradict one another.
+
+## Creatable tag cells
+
+Task and bug Tags columns extend the native MultiSelect editor with an explicit
+Add tag action beside its search input. A new search value is added to the
+cell's option source, selected through Handsontable's normal checkbox path, and
+saved immediately. Pressing Enter performs the same action. Existing options
+are selected instead of duplicated, using a case-insensitive match.
