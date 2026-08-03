@@ -17,7 +17,6 @@ import {
 	ChevronDown,
 	Sparkles,
 	X,
-	Search,
 	FileText,
 	MessageSquare,
 	ScrollText,
@@ -26,6 +25,8 @@ import {
 	Pencil,
 	RotateCcw,
 	Ban,
+	Activity,
+	ChartNoAxesCombined,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import {
@@ -36,7 +37,7 @@ import {
 	cn,
 	isJsonObject,
 } from "@/lib";
-import { CollapsibleSection, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
+import { StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import type { TaskUpdate } from "@/workbench/resource-updates";
 import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
@@ -59,6 +60,7 @@ import {
 } from "@/design-system/WorkbenchSurface";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
+type TaskInsight = "burndown" | "timeline" | null;
 
 const TaskSheet = React.lazy(() =>
 	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
@@ -154,20 +156,131 @@ function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task:
 	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
 
 	return (
-		<CollapsibleSection
-			title="Live timeline"
-			summary={[
-				{ label: "Current", value: current ? STATUS_CONFIG[current.status].label : "None", tone: current ? "accent" : "default" },
-				{ label: "Next", value: upcoming ? "Ready" : "None", tone: upcoming ? "success" : "default" },
-				{ label: "Recent", value: completed.length },
-			]}
-		className="shrink-0 rounded-none border-x-0 border-t-0 bg-surface-secondary/40"
-			bodyClassName="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
+		<section
+			aria-label="Live task timeline"
+			className="grid gap-3 bg-surface-secondary/40 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
 		>
-				<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
-				<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
-				<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
-		</CollapsibleSection>
+			<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
+			<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
+			<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
+		</section>
+	);
+}
+
+function TaskListToolbar({
+	searchText,
+	onSearchTextChange,
+	total,
+	visible,
+	activeInsight,
+	onInsightChange,
+	onRefresh,
+	onNew,
+}: {
+	searchText: string;
+	onSearchTextChange: (value: string) => void;
+	total: number;
+	visible: number;
+	activeInsight: TaskInsight;
+	onInsightChange: (insight: TaskInsight) => void;
+	onRefresh: () => void;
+	onNew: () => void;
+}) {
+	return (
+		<WorkbenchToolbar className="min-h-12 shrink-0 flex-nowrap overflow-x-auto">
+			<ProjectionSearch
+				value={searchText}
+				onChange={onSearchTextChange}
+				placeholder="Search tasks…"
+				className="min-w-48 max-w-xl"
+			/>
+			<span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+				{visible} of {total}
+			</span>
+			<div className="h-5 w-px shrink-0 bg-border" aria-hidden="true" />
+			<div
+				role="group"
+				aria-label="Task insights"
+				className="flex shrink-0 items-center border border-border bg-surface p-0.5"
+			>
+				<Button
+					size="sm"
+					variant={activeInsight === "burndown" ? "secondary" : "ghost"}
+					aria-pressed={activeInsight === "burndown"}
+					aria-controls="task-burndown-panel"
+					onPress={() => onInsightChange(
+						activeInsight === "burndown" ? null : "burndown",
+					)}
+					className="h-7 min-w-0 px-2"
+				>
+					<ChartNoAxesCombined className="h-3.5 w-3.5" aria-hidden="true" />
+					Burndown
+				</Button>
+				<Button
+					size="sm"
+					variant={activeInsight === "timeline" ? "secondary" : "ghost"}
+					aria-pressed={activeInsight === "timeline"}
+					aria-controls="task-timeline-panel"
+					onPress={() => onInsightChange(
+						activeInsight === "timeline" ? null : "timeline",
+					)}
+					className="h-7 min-w-0 px-2"
+				>
+					<Activity className="h-3.5 w-3.5" aria-hidden="true" />
+					Timeline
+				</Button>
+			</div>
+			<div className="ml-auto flex shrink-0 items-center gap-1">
+				<TaskWorkflowHelp />
+				<Button
+					isIconOnly
+					size="sm"
+					variant="ghost"
+					onPress={onRefresh}
+					aria-label="Refresh Tasks"
+				>
+					<RefreshCw className="h-4 w-4" aria-hidden="true" />
+				</Button>
+				<Button size="sm" variant="primary" onPress={onNew}>
+					<Plus className="h-4 w-4" aria-hidden="true" />
+					New
+				</Button>
+			</div>
+		</WorkbenchToolbar>
+	);
+}
+
+function TaskInsightPanel({
+	activeInsight,
+	tasks,
+	burndownRefresh,
+	onOpenTask,
+}: {
+	activeInsight: TaskInsight;
+	tasks: Task[];
+	burndownRefresh: number;
+	onOpenTask: (task: Task) => void;
+}) {
+	if (activeInsight === null) return null;
+
+	return (
+		<div
+			id={activeInsight === "burndown" ? "task-burndown-panel" : "task-timeline-panel"}
+			role="region"
+			aria-label={activeInsight === "burndown" ? "Task Burndown" : "Live Task Timeline"}
+			className="max-h-[min(48vh,30rem)] shrink-0 overflow-auto border-b border-border"
+		>
+			{activeInsight === "burndown" ? (
+				<StatusBurndownChart
+					entity="task"
+					refreshKey={burndownRefresh}
+					embedded
+					className="rounded-none border-0"
+				/>
+			) : (
+				<TaskTimeline tasks={tasks} onOpenTask={onOpenTask} />
+			)}
+		</div>
 	);
 }
 
@@ -541,6 +654,7 @@ export function TasksPage() {
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
+	const [activeInsight, setActiveInsight] = useState<TaskInsight>(null);
 	const [deleteConfirm, setDeleteConfirm] = useState<{
 		show: boolean;
 		task: Task | null;
@@ -886,62 +1000,35 @@ export function TasksPage() {
 	};
 
 	if (isWorkspacePanel || searchParams.has("task")) {
-		const workspaceListHeader = (
-			<>
-				<WorkbenchHeader
-					title="Tasks"
-					description="Brain-managed queue and plan-backed work"
-					icon={<ScrollText className="h-4 w-4" />}
-					actions={
-						<>
-							<TaskWorkflowHelp />
-							<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh Tasks">
-								<RefreshCw className="h-4 w-4" />
-							</Button>
-							<Button size="sm" variant="primary" onPress={openNewTaskPanel}>
-								<Plus className="mr-1.5 h-4 w-4" />
-								New
-							</Button>
-						</>
-					}
-				/>
-				<WorkbenchToolbar>
-					<ProjectionSearch
-						value={searchText}
-						onChange={setSearchText}
-						placeholder="Search tasks"
-						className="max-w-sm"
-					/>
-					<span className="shrink-0 text-xs text-muted-foreground">
-						{counts?.total ?? 0} total · {filteredTasks.length} visible
-					</span>
-				</WorkbenchToolbar>
-			</>
-		);
-
 		if (!selectedTask) {
 			return (
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
-						{workspaceListHeader}
-						<StatusBurndownChart
-							entity="task"
-							refreshKey={burndownRefresh}
-							defaultExpanded={false}
-							className="shrink-0 rounded-none border-x-0 border-t-0"
+						<TaskListToolbar
+							searchText={searchText}
+							onSearchTextChange={setSearchText}
+							total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+							visible={filteredTasks.length}
+							activeInsight={activeInsight}
+							onInsightChange={setActiveInsight}
+							onRefresh={() => {
+								void refetch();
+							}}
+							onNew={openNewTaskPanel}
 						/>
-						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-						<CollapsibleSection
-							title="Task list"
-							summary={[
-								{ label: "Total", value: pagination?.total ?? filteredTasks.length },
-								{ label: "Visible", value: filteredTasks.length },
-							]}
-							fill
-							unmountOnCollapse
-							className="rounded-none border-x-0 border-y-0"
-							bodyClassName="p-0"
-						>
+						{isError && error ? (
+							<div className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
+								<AlertTriangle className="h-4 w-4" aria-hidden="true" />
+								<span>{error.message}</span>
+							</div>
+						) : null}
+						<TaskInsightPanel
+							activeInsight={activeInsight}
+							tasks={tasks}
+							burndownRefresh={burndownRefresh}
+							onOpenTask={handleOpenDetails}
+						/>
+						<div className="min-h-0 flex-1 overflow-hidden">
 							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
 								<TaskSheet
 									tasks={filteredTasks}
@@ -954,7 +1041,7 @@ export function TasksPage() {
 									onLoadMore={fetchNextPage}
 								/>
 							</React.Suspense>
-						</CollapsibleSection>
+						</div>
 					</div>
 					{taskModal}
 				</>
@@ -1062,86 +1149,37 @@ export function TasksPage() {
 	}
 
 	return (
-		<div className="flex flex-col h-full">
-			{/* Header with filters and actions */}
-			<div className="border-b px-4 py-3 bg-content2">
-				<div className="flex items-center justify-between mb-3">
-					<div className="flex items-center space-x-2">
-						<h1 className="text-lg font-semibold">Tasks</h1>
-						<span className="text-sm text-foreground-500">
-							Brain-managed task queue
-						</span>
-					</div>
+		<div className="flex h-full min-h-0 flex-col">
+			<TaskListToolbar
+				searchText={searchText}
+				onSearchTextChange={setSearchText}
+				total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+				visible={filteredTasks.length}
+				activeInsight={activeInsight}
+				onInsightChange={setActiveInsight}
+				onRefresh={() => {
+					void refetch();
+				}}
+				onNew={openNewTaskPanel}
+			/>
 
-					<div className="flex items-center gap-2">
-						<TaskWorkflowHelp />
-						<Button
-							isIconOnly
-							variant="ghost"
-							onPress={() => refetch()}
-							aria-label="Refresh"
-						>
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-						<Button
-							variant="primary"
-							onPress={openNewTaskPanel}
-						>
-							<Plus className="h-4 w-4 mr-2" />
-							New Task
-						</Button>
-					</div>
-				</div>
-
-				{/* Compact filter bar */}
-				<div className="flex items-center gap-3">
-					<div className="relative">
-						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-						<input
-							type="text"
-							placeholder="Search tasks..."
-							value={searchText}
-							onChange={(e) => setSearchText(e.target.value)}
-							className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-64"
-						/>
-					</div>
-					<div className="h-4 w-px bg-divider" />
-					<div className="flex items-center gap-2 text-sm">
-						<span className="text-foreground-500">Total:</span>
-						<span className="font-medium">{counts?.total ?? 0}</span>
-					</div>
-				</div>
-			</div>
-
-			{isError && error && (
+			{isError && error ? (
 				<div className="p-4 bg-danger/10 text-danger border-b border-danger/20">
 					<div className="flex items-center gap-2">
-						<AlertTriangle className="h-4 w-4" />
+						<AlertTriangle className="h-4 w-4" aria-hidden="true" />
 						<span className="text-sm">{error.message}</span>
 					</div>
 				</div>
-			)}
+			) : null}
 
-			<StatusBurndownChart
-				entity="task"
-				refreshKey={burndownRefresh}
-				defaultExpanded={false}
-				className="shrink-0 rounded-none border-x-0 border-t-0"
+			<TaskInsightPanel
+				activeInsight={activeInsight}
+				tasks={tasks}
+				burndownRefresh={burndownRefresh}
+				onOpenTask={handleOpenDetails}
 			/>
 
-			<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-
-			<CollapsibleSection
-				title="Task list"
-				summary={[
-					{ label: "Total", value: pagination?.total ?? filteredTasks.length },
-					{ label: "Visible", value: filteredTasks.length },
-				]}
-				fill
-				unmountOnCollapse
-				className="rounded-none border-x-0 border-y-0"
-				bodyClassName="flex h-full min-h-0 p-0"
-			>
+			<div className="flex min-h-0 flex-1">
 				{/* Task list */}
 				<div className="min-w-0 flex-1 overflow-hidden">
 					{isLoading ? (
@@ -1341,7 +1379,7 @@ export function TasksPage() {
 						) : null}
 					</Card>
 				)}
-			</CollapsibleSection>
+			</div>
 
 				{taskModal}
 

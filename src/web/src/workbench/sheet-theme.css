@@ -72,16 +72,16 @@
 	background: color-mix(in oklch, var(--color-blue-400) 18%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-emerald {
-	background: color-mix(in oklch, var(--color-emerald-400) 18%, var(--surface));
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-green {
+	background: color-mix(in oklch, var(--color-green-400) 18%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-amber {
-	background: color-mix(in oklch, var(--color-amber-400) 20%, var(--surface));
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-orange {
+	background: color-mix(in oklch, var(--color-orange-400) 20%, var(--surface));
 }
 
-.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-rose {
-	background: color-mix(in oklch, var(--color-rose-400) 16%, var(--surface));
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-purple {
+	background: color-mix(in oklch, var(--color-violet-400) 18%, var(--surface));
 }
 
 /*

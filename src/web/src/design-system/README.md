@@ -12,3 +12,6 @@ The existing CSS custom properties remain the source of truth for color and
 typography. Handsontable receives an adapter theme in `sheet-theme.css` so its
 spreadsheet surface participates in the same light and dark themes.
 
+Sheet row formatting uses the semantic Blue, Green, Orange, and Purple choices.
+Persisted legacy Emerald, Amber, and Rose values are normalized when rendered so
+existing user formatting continues to appear with the corrected palette.

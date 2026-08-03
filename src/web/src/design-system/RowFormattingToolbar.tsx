@@ -14,12 +14,17 @@ import { cn } from "@/lib";
 export const ROW_COLOR_OPTIONS = [
 	{ key: "slate", label: "Default", className: "bg-surface" },
 	{ key: "blue", label: "Blue", className: "bg-blue-400" },
-	{ key: "emerald", label: "Green", className: "bg-emerald-400" },
-	{ key: "amber", label: "Amber", className: "bg-amber-400" },
-	{ key: "rose", label: "Rose", className: "bg-rose-400" },
+	{ key: "green", label: "Green", className: "bg-green-400" },
+	{ key: "orange", label: "Orange", className: "bg-orange-400" },
+	{ key: "purple", label: "Purple", className: "bg-violet-400" },
 ] as const;
 
 export type RowColor = (typeof ROW_COLOR_OPTIONS)[number]["key"];
+const LEGACY_ROW_COLORS: Record<string, RowColor> = {
+	emerald: "green",
+	amber: "orange",
+	rose: "purple",
+};
 const ROW_COLOR_KEYS = new Set<string>(
 	ROW_COLOR_OPTIONS.map((option) => option.key),
 );
@@ -30,9 +35,9 @@ export interface RowFormattingValue {
 }
 
 export function normalizeRowColor(value: string | undefined): RowColor {
-	return value !== undefined && ROW_COLOR_KEYS.has(value)
-		? (value as RowColor)
-		: "slate";
+	if (value === undefined) return "slate";
+	if (ROW_COLOR_KEYS.has(value)) return value as RowColor;
+	return LEGACY_ROW_COLORS[value] ?? "slate";
 }
 
 export function RowFormattingToolbar({
@@ -77,7 +82,7 @@ export function RowFormattingToolbar({
 						title={option.label}
 						onClick={() => onChange({ color: option.key })}
 						className={cn(
-							"h-4.5 w-4.5 rounded-full border border-border shadow-sm transition-transform",
+							"h-4.5 w-4.5 touch-manipulation rounded-full border border-white/25 shadow-sm transition-transform motion-reduce:transition-none",
 							option.className,
 							"hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50",
 							value.color === option.key &&
