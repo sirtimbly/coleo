@@ -5,11 +5,14 @@
  * shell, onboarding, profile, and empty-resource responses stay centralized.
  */
 
+/// <reference lib="dom" />
+
 import type { Page, Route } from "@playwright/test";
 
 interface MockApiOptions {
 	arms?: unknown[];
-	tasks?: unknown[];
+	tasks?: Array<Record<string, unknown>>;
+	bugs?: Array<Record<string, unknown>>;
 	inbox?: unknown[];
 	sent?: unknown[];
 	archive?: unknown[];
@@ -28,6 +31,9 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 export async function installMockApi(page: Page, options: MockApiOptions = {}) {
+	const taskRecords = (options.tasks ?? []).map((task) => ({ ...task }));
+	const bugRecords = (options.bugs ?? []).map((bug) => ({ ...bug }));
+
 	await page.addInitScript(() => {
 		window.localStorage.setItem("coleo-layout-mode", "classic");
 		window.localStorage.setItem("coleo:workbench-profile", "local");
@@ -156,6 +162,14 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				completionRate: 0,
 				active: 0,
 				blocked: 0,
+			});
+		}
+		if (path === "/api/bugs/stats") {
+			return json(route, {
+				bySource: {},
+				byStatus: {},
+				byPriority: {},
+				recent24h: 0,
 			});
 		}
 		if (path === "/api/activity/indexer-health") {
@@ -292,25 +306,37 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 		}
 
 		if (path === "/api/tasks") {
-			const tasks = options.tasks ?? [];
 			return json(route, {
-				tasks,
-				pagination: { limit: 100, offset: 0, total: tasks.length },
-				counts: { total: tasks.length, byStatus: {} },
+				tasks: taskRecords,
+				pagination: { limit: 100, offset: 0, total: taskRecords.length },
+				counts: { total: taskRecords.length, byStatus: {} },
 			});
+		}
+		if (/^\/api\/tasks\/[^/]+$/.test(path) && request.method() === "PATCH") {
+			const taskId = path.split("/")[3];
+			const index = taskRecords.findIndex((candidate) => candidate.id === taskId);
+			if (index < 0) return json(route, { error: "Task not found" }, 404);
+			const updates = request.postDataJSON() as Record<string, unknown>;
+			taskRecords[index] = { ...taskRecords[index], ...updates };
+			return json(route, { task: taskRecords[index] });
 		}
 		if (/^\/api\/tasks\/[^/]+$/.test(path) && request.method() === "GET") {
 			const taskId = path.split("/")[3];
-			const task = (options.tasks ?? []).find(
-				(candidate) =>
-					typeof candidate === "object" &&
-					candidate !== null &&
-					"id" in candidate &&
-					candidate.id === taskId,
-			);
+			const task = taskRecords.find((candidate) => candidate.id === taskId);
 			return task
 				? json(route, { task, dependencies: [] })
 				: json(route, { error: "Task not found" }, 404);
+		}
+		if (path === "/api/bugs" && request.method() === "GET") {
+			return json(route, { bugs: bugRecords });
+		}
+		if (/^\/api\/bugs\/[^/]+$/.test(path) && request.method() === "PATCH") {
+			const bugId = path.split("/")[3];
+			const index = bugRecords.findIndex((candidate) => candidate.id === bugId);
+			if (index < 0) return json(route, { error: "Bug not found" }, 404);
+			const updates = request.postDataJSON() as Record<string, unknown>;
+			bugRecords[index] = { ...bugRecords[index], ...updates };
+			return json(route, { success: true });
 		}
 
 		if (path === "/api/mail/inbox") {

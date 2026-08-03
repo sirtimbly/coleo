@@ -64,6 +64,26 @@
 	font-weight: 550;
 }
 
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-bold {
+	font-weight: 700;
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-blue {
+	background: color-mix(in oklch, var(--color-blue-400) 18%, var(--surface));
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-emerald {
+	background: color-mix(in oklch, var(--color-emerald-400) 18%, var(--surface));
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-amber {
+	background: color-mix(in oklch, var(--color-amber-400) 20%, var(--surface));
+}
+
+.coleo-resource-sheet .handsontable td.coleo-sheet-row-color-rose {
+	background: color-mix(in oklch, var(--color-rose-400) 16%, var(--surface));
+}
+
 /*
  * Handsontable portals menus directly under <body>, outside the sheet theme
  * element. Reapply the application tokens so those transient surfaces inherit

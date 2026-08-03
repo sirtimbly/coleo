@@ -3,7 +3,8 @@
  *
  * Task, bug, plan-item, and future structured lists all use this component for
  * spreadsheet editing, between-row insertion, sorting, column movement,
- * resizing, visibility, and opening resources in separate workbench panels.
+ * resizing, visibility, row selection/formatting, and opening resources in
+ * separate workbench panels.
  */
 
 import { useEffect, useMemo, useRef } from "react";
@@ -11,6 +12,10 @@ import Handsontable from "handsontable";
 import { registerAllModules } from "handsontable/registry";
 import type { ColumnSortingConfig } from "handsontable/plugins/columnSorting";
 
+import {
+	normalizeRowColor,
+	type RowFormattingValue,
+} from "@/design-system/RowFormattingToolbar";
 import { cn } from "@/lib";
 import type {
 	CellChange,
@@ -82,6 +87,8 @@ interface ResourceSheetRuntime<T> {
 	onDeleteRows?: (rows: T[]) => void;
 	onOpenRow?: (row: T) => void;
 	onNearEnd?: () => void;
+	onRowSelectionChange?: (row: T | undefined) => void;
+	getRowFormatting?: (row: T) => Partial<RowFormattingValue> | undefined;
 	selectedRowId?: string;
 }
 
@@ -168,6 +175,8 @@ export function ResourceSheet<T extends { id: string }>({
 	onDeleteRows,
 	onOpenRow,
 	onNearEnd,
+	onRowSelectionChange,
+	getRowFormatting,
 	selectedRowId,
 	className,
 }: {
@@ -180,6 +189,8 @@ export function ResourceSheet<T extends { id: string }>({
 	onDeleteRows?: (rows: T[]) => void;
 	onOpenRow?: (row: T) => void;
 	onNearEnd?: () => void;
+	onRowSelectionChange?: (row: T | undefined) => void;
+	getRowFormatting?: (row: T) => Partial<RowFormattingValue> | undefined;
 	selectedRowId?: string;
 	className?: string;
 }) {
@@ -252,6 +263,8 @@ export function ResourceSheet<T extends { id: string }>({
 		onDeleteRows,
 		onOpenRow,
 		onNearEnd,
+		onRowSelectionChange,
+		getRowFormatting,
 		selectedRowId,
 	});
 	runtimeRef.current = {
@@ -272,6 +285,8 @@ export function ResourceSheet<T extends { id: string }>({
 		onDeleteRows,
 		onOpenRow,
 		onNearEnd,
+		onRowSelectionChange,
+		getRowFormatting,
 		selectedRowId,
 	};
 
@@ -395,6 +410,20 @@ export function ResourceSheet<T extends { id: string }>({
 				const resource = id ? current.rowsById.get(id) : undefined;
 				if (resource) current.onOpenRow?.(resource);
 			},
+			afterSelectionEnd: (row: number, _column: number, row2: number) => {
+				const current = runtimeRef.current;
+				const visualRow = Math.min(row, row2);
+				if (visualRow < 0) {
+					current.onRowSelectionChange?.(undefined);
+					return;
+				}
+				const physicalRow = hot.toPhysicalRow(visualRow) ?? visualRow;
+				const id = current.sheetRows[physicalRow]?.__resourceId;
+				current.onRowSelectionChange?.(id ? current.rowsById.get(id) : undefined);
+			},
+			afterDeselect: () => {
+				runtimeRef.current.onRowSelectionChange?.(undefined);
+			},
 			afterScrollVertically: () => {
 				if (scrollFrameRef.current !== null) return;
 				scrollFrameRef.current = window.requestAnimationFrame(() => {
@@ -420,8 +449,15 @@ export function ResourceSheet<T extends { id: string }>({
 				// still running, before the instance can be assigned to hotRef.
 				const physicalRow = hotRef.current?.toPhysicalRow(row) ?? row;
 				const id = current.sheetRows[physicalRow]?.__resourceId;
+				const resource = id ? current.rowsById.get(id) : undefined;
+				const formatting = resource
+					? current.getRowFormatting?.(resource)
+					: undefined;
+				const color = normalizeRowColor(formatting?.color);
 				const classes: string = [
 					current.visibleColumns[column]?.className,
+					formatting?.bold ? "coleo-sheet-row-bold" : undefined,
+					color !== "slate" ? `coleo-sheet-row-color-${color}` : undefined,
 					id === current.selectedRowId ? "coleo-sheet-selected-row" : undefined,
 				].filter(Boolean).join(" ");
 				return classes ? { className: classes } : {};

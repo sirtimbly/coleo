@@ -9,17 +9,56 @@ import { useMemo, useState } from "react";
 import { Button } from "@heroui/react";
 import { SlidersHorizontal } from "lucide-react";
 
-import type { Bug } from "@/lib";
 import {
 	PRIORITY_OPTIONS,
 	STATUS_OPTIONS,
 } from "@/components/bug-styles";
+import {
+	normalizeRowColor,
+	RowFormattingToolbar,
+	type RowFormattingValue,
+} from "@/design-system/RowFormattingToolbar";
+import type {
+	Bug,
+	BugMetadata,
+	UiMetadata,
+} from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
 import type { BugUpdate } from "./resource-updates";
+
+function readTags(bug: Bug): string {
+	return (bug.metadata?.ui?.tags ?? []).join(", ");
+}
+
+function parseTags(value: unknown): string[] {
+	return Array.from(new Set(
+		String(value ?? "")
+			.split(",")
+			.map((tag) => tag.trim())
+			.filter(Boolean),
+	));
+}
+
+function bugMetadataWithUi(bug: Bug, updates: Partial<UiMetadata>): BugMetadata {
+	return {
+		...bug.metadata,
+		ui: {
+			...bug.metadata?.ui,
+			...updates,
+		},
+	};
+}
+
+function readBugFormatting(bug: Bug): RowFormattingValue {
+	return {
+		bold: bug.metadata?.ui?.bold ?? false,
+		color: normalizeRowColor(bug.metadata?.ui?.color),
+	};
+}
 
 const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 	{
@@ -52,6 +91,12 @@ const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 		read: (bug) => bug.source,
 		readOnly: true,
 		width: 136,
+	},
+	{
+		id: "tags",
+		header: "Tags",
+		read: readTags,
+		width: 180,
 	},
 	{
 		id: "assignee",
@@ -92,6 +137,7 @@ export function BugSheet({
 	onCreateBugAt?: (index: number, title: string) => void;
 }) {
 	const [configuring, setConfiguring] = useState(false);
+	const [formattingBugId, setFormattingBugId] = useState<string>();
 	const { view, preferences, updatePreferences, updateShared } = useViewPreferences("bugs-sheet", {
 		id: "bugs-sheet",
 		name: "Bugs",
@@ -115,13 +161,29 @@ export function BugSheet({
 		})),
 		[],
 	);
+	const formattingBug = useMemo(
+		() => bugs.find((bug) => bug.id === formattingBugId),
+		[bugs, formattingBugId],
+	);
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
 			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
-				<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-					Spreadsheet · double-click a row for details
-				</span>
+				{formattingBug ? (
+					<RowFormattingToolbar
+						label={formattingBug.title}
+						value={readBugFormatting(formattingBug)}
+						onChange={(updates) => {
+							onUpdateBug?.(formattingBug.id, {
+								metadata: bugMetadataWithUi(formattingBug, updates),
+							});
+						}}
+					/>
+				) : (
+					<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+						Spreadsheet · select a row to format · double-click for details
+					</span>
+				)}
 				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
 					<SlidersHorizontal className="h-3.5 w-3.5" />
 					View
@@ -139,6 +201,11 @@ export function BugSheet({
 					if (columnId === "status" && STATUS_OPTIONS.includes(value as Bug["status"])) {
 						onUpdateBug?.(bug.id, { status: value as Bug["status"] });
 					}
+					if (columnId === "tags") {
+						onUpdateBug?.(bug.id, {
+							metadata: bugMetadataWithUi(bug, { tags: parseTags(value) }),
+						});
+					}
 				}}
 				onCreateRowAt={onCreateBugAt
 					? (index) => onCreateBugAt(index, "New bug")
@@ -148,6 +215,8 @@ export function BugSheet({
 				} : undefined}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedBugId}
+				onRowSelectionChange={(bug) => setFormattingBugId(bug?.id)}
+				getRowFormatting={readBugFormatting}
 				className="min-h-0 flex-1"
 			/>
 			<ViewConfigurator

@@ -10,8 +10,17 @@ import { useMemo, useState } from "react";
 import { Button } from "@heroui/react";
 import { SlidersHorizontal } from "lucide-react";
 
-import type { Task } from "@/lib";
 import { PRIORITY_OPTIONS } from "@/components/task-styles";
+import {
+	normalizeRowColor,
+	RowFormattingToolbar,
+	type RowFormattingValue,
+} from "@/design-system/RowFormattingToolbar";
+import type {
+	Task,
+	TaskMetadata,
+	UiMetadata,
+} from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
 import { ViewConfigurator } from "./ViewConfigurator";
@@ -29,6 +38,36 @@ const TASK_STATUSES: Task["status"][] = [
 	"failed",
 	"cancelled",
 ];
+
+function readTags(task: Task): string {
+	return (task.metadata.ui?.tags ?? []).join(", ");
+}
+
+function parseTags(value: unknown): string[] {
+	return Array.from(new Set(
+		String(value ?? "")
+			.split(",")
+			.map((tag) => tag.trim())
+			.filter(Boolean),
+	));
+}
+
+function taskMetadataWithUi(task: Task, updates: Partial<UiMetadata>): TaskMetadata {
+	return {
+		...task.metadata,
+		ui: {
+			...task.metadata.ui,
+			...updates,
+		},
+	};
+}
+
+function readTaskFormatting(task: Task): RowFormattingValue {
+	return {
+		bold: task.metadata.ui?.bold ?? false,
+		color: normalizeRowColor(task.metadata.ui?.color),
+	};
+}
 
 const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 	{
@@ -92,6 +131,12 @@ const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 		width: 104,
 	},
 	{
+		id: "tags",
+		header: "Tags",
+		read: readTags,
+		width: 180,
+	},
+	{
 		id: "updatedAt",
 		header: "Updated",
 		read: (task) => new Date(task.updatedAt).toLocaleString(),
@@ -122,6 +167,7 @@ export function TaskSheet({
 	viewId?: string;
 }) {
 	const [configuring, setConfiguring] = useState(false);
+	const [formattingTaskId, setFormattingTaskId] = useState<string>();
 	const { view, preferences, updatePreferences, updateShared } = useViewPreferences(viewId, {
 		id: viewId,
 		name: viewId === "plan-items-sheet" ? "Plan items" : "Tasks",
@@ -147,13 +193,29 @@ export function TaskSheet({
 		})),
 		[],
 	);
+	const formattingTask = useMemo(
+		() => tasks.find((task) => task.id === formattingTaskId),
+		[formattingTaskId, tasks],
+	);
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
 			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
-				<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-					Spreadsheet · double-click a row for details
-				</span>
+				{formattingTask ? (
+					<RowFormattingToolbar
+						label={formattingTask.subject}
+						value={readTaskFormatting(formattingTask)}
+						onChange={(updates) => {
+							onUpdateTask?.(formattingTask.id, {
+								metadata: taskMetadataWithUi(formattingTask, updates),
+							});
+						}}
+					/>
+				) : (
+					<span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+						Spreadsheet · select a row to format · double-click for details
+					</span>
+				)}
 				<Button size="sm" variant="ghost" onPress={() => setConfiguring(true)}>
 					<SlidersHorizontal className="h-3.5 w-3.5" />
 					View
@@ -171,6 +233,11 @@ export function TaskSheet({
 					if (columnId === "status" && TASK_STATUSES.includes(value as Task["status"])) {
 						onUpdateTask?.(task.id, { status: value as Task["status"] });
 					}
+					if (columnId === "tags") {
+						onUpdateTask?.(task.id, {
+							metadata: taskMetadataWithUi(task, { tags: parseTags(value) }),
+						});
+					}
 				}}
 				onCreateRowAt={onCreateTaskAt
 					? (index) => onCreateTaskAt(index, "New task")
@@ -181,6 +248,8 @@ export function TaskSheet({
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedTaskId}
 				onNearEnd={hasNextPage ? onLoadMore : undefined}
+				onRowSelectionChange={(task) => setFormattingTaskId(task?.id)}
+				getRowFormatting={readTaskFormatting}
 				className="min-h-0 flex-1"
 			/>
 			<ViewConfigurator

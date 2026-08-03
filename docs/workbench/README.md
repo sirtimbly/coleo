@@ -178,3 +178,14 @@ The initial workbench migration was completed on 2026-07-31 in
   threshold, not on every scroll event.
 - The Tasks browser coverage samples row-header selection over multiple
   animation frames and rejects duplicate frozen-column cells.
+
+### 2026-08-02 row metadata restoration
+
+- Task and Bug sheets expose their existing metadata tags as editable,
+  comma-separated Tags columns. Editing the cell preserves unrelated metadata.
+- Selecting any data cell or row header reveals the shared row-formatting
+  toolbar without recreating the Handsontable instance.
+- Bold and the existing slate, blue, green, amber, and rose row colors persist
+  through each resource's `metadata.ui` object and render across the full row.
+- Browser coverage protects Task formatting and the restored Bug tags/color
+  behavior while keeping the critical workbench suite at eight scenarios.

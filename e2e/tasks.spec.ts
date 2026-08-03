@@ -3,6 +3,8 @@
  * detail handoff.
  */
 
+/// <reference lib="dom" />
+
 import { expect, test } from "@playwright/test";
 
 import { installMockApi } from "./support/fixtures";
@@ -30,13 +32,33 @@ const task = {
 	startedAt: null,
 };
 
-test("renders tasks in the configurable spreadsheet", async ({ page }) => {
-	await installMockApi(page, { tasks: [task] });
+const bug = {
+	id: "bug-workbench",
+	title: "Restore bug tags",
+	description: "Keep tags and row formatting available in the shared sheet.",
+	source: "human_reported",
+	status: "open",
+	priority: "high",
+	blockers: [],
+	metadata: {
+		ui: {
+			tags: ["regression", "ui"],
+			color: "slate",
+			bold: false,
+		},
+	},
+	createdAt: "2026-08-02T11:00:00.000Z",
+	updatedAt: "2026-08-02T12:00:00.000Z",
+	humanNotified: false,
+};
+
+test("formats task rows and restores bug tags in configurable spreadsheets", async ({ page }) => {
+	await installMockApi(page, { tasks: [task], bugs: [bug] });
 	await page.goto("/tasks");
 
 	await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
 	await expect(page.getByText("Protect the critical workbench", { exact: true })).toBeVisible();
-	await expect(page.getByText(/double-click a row for details/i)).toBeVisible({
+	await expect(page.getByText(/select a row to format/i)).toBeVisible({
 		timeout: 20_000,
 	});
 
@@ -64,16 +86,44 @@ test("renders tasks in the configurable spreadsheet", async ({ page }) => {
 
 	await rowHeader.click();
 	await expectStableGutter();
+	const formattingToolbar = page.getByRole("toolbar", { name: "Format selected row" });
+	await expect(formattingToolbar).toBeVisible();
 
-	await page
+	const taskSubjectCell = page
 		.locator(".coleo-resource-sheet")
-		.getByRole("gridcell", { name: "Protect the critical workbench", exact: true })
-		.click();
+		.getByRole("gridcell", { name: "Protect the critical workbench", exact: true });
+	await taskSubjectCell.click();
 	await expectStableGutter();
+	await formattingToolbar.getByRole("button", { name: "Bold", exact: true }).click();
+	await expect(taskSubjectCell).toHaveClass(/coleo-sheet-row-bold/);
+	await formattingToolbar
+		.getByRole("button", { name: "Use blue row color", exact: true })
+		.click();
+	await expect(taskSubjectCell).toHaveClass(/coleo-sheet-row-color-blue/);
 
 	await expect(
 		page.locator(".coleo-resource-sheet .ht_clone_inline_start tbody td"),
 	).toHaveCount(0);
+
+	await page.goto("/bugs");
+	await expect(page.getByRole("heading", { name: "Bugs", exact: true })).toBeVisible();
+	await expect(page.getByRole("columnheader", { name: "Tags", exact: true })).toBeVisible({
+		timeout: 20_000,
+	});
+	const bugSheet = page.locator(".coleo-resource-sheet");
+	await expect(
+		bugSheet.getByRole("gridcell", { name: "regression, ui", exact: true }),
+	).toBeVisible();
+	await page.getByRole("rowheader", { name: "1", exact: true }).click();
+	await expect(formattingToolbar).toBeVisible();
+	const bugSubjectCell = bugSheet.getByRole("gridcell", {
+		name: "Restore bug tags",
+		exact: true,
+	});
+	await formattingToolbar
+		.getByRole("button", { name: "Use green row color", exact: true })
+		.click();
+	await expect(bugSubjectCell).toHaveClass(/coleo-sheet-row-color-emerald/);
 });
 
 test("opens a spreadsheet row in the dedicated task detail projection", async ({ page }) => {
