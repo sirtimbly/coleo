@@ -78,6 +78,12 @@ import type {
 } from "../types";
 import { isBrainInboxMessageType } from "../types/brain-inbox";
 import { appendTaskAttachmentsToPromptText } from "../lib/prompt-attachments";
+import { generateInitialKeys } from "../lib/fractional-indexing";
+import {
+	CANONICAL_PLAN_PATH,
+	collectPlanWorkspaceContext,
+	formatPlanWithConfiguredModel,
+} from "../project-setup/service";
 import {
 	buildCommitTaskSubject,
 	buildValidationTaskSubject,
@@ -178,6 +184,10 @@ export class Brain {
 	private processedDiscoveryIds: Set<string> = new Set();
 	private fileSubscriptions: Map<string, Set<string>> = new Map();
 	private planFileHashes: Map<string, string> = new Map();
+	private evaluatedPlanHashes: Map<string, string> = new Map();
+	private planningErrorsByPlanHash: Map<string, string> = new Map();
+	private lastPlanningFailureFingerprint: string | null = null;
+	private databaseInstanceId: string | null = null;
 	private infrastructureHealth: {
 		database: { healthy: boolean; lastCheck: Date | null; error?: string };
 		apiServer: { healthy: boolean; lastCheck: Date | null; error?: string };
@@ -448,6 +458,7 @@ export class Brain {
 		currentTaskSubject?: string | null;
 		currentBugId?: string | null;
 		currentBugTitle?: string | null;
+		config?: Record<string, unknown>;
 	} | null> {
 		const response = await this.apiRequest<{
 			arm: {
@@ -463,6 +474,7 @@ export class Brain {
 				currentTaskSubject?: string | null;
 				currentBugId?: string | null;
 				currentBugTitle?: string | null;
+				config?: Record<string, unknown>;
 			};
 		}>(`/api/arms/${encodeURIComponent(armId)}`);
 		return response?.arm || null;
@@ -485,6 +497,7 @@ export class Brain {
 			createdAt?: string;
 			provider?: string;
 			model?: string;
+			config?: Record<string, unknown>;
 		}>
 	> {
 		const suffix = includeAll ? "?includeAll=true" : "";
@@ -505,6 +518,7 @@ export class Brain {
 				createdAt?: string;
 				provider?: string;
 				model?: string;
+				config?: Record<string, unknown>;
 			}>;
 		}>(`/api/arms${suffix}`);
 		return response?.arms || [];
@@ -514,6 +528,8 @@ export class Brain {
 		armId: string,
 		patch: {
 			status?: string;
+			planningBlocked?: boolean;
+			config?: Record<string, unknown>;
 			lastActivityAt?: string | null;
 			lastHeartbeat?: string | null;
 			currentTaskId?: string | null;
@@ -833,7 +849,16 @@ export class Brain {
 		// they were not handled through the live arm queue path.
 		await this.processOperationalSignals(previousLastPollAt);
 
-		// Step 2.5: Check for resolved bugs and resume blocked tasks
+		// Step 2.5: Validate and synchronize the complete plan before any work can be assigned.
+		const planningReady = await this.syncPlanTasks();
+		if (!planningReady) {
+			await this.saveState();
+			await this.notifyObservatory("poll");
+			this.log("Brain work remains blocked until the project plan is fixed");
+			return;
+		}
+
+		// Step 2.75: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
 		if (this.state.status === "paused") {
 			await this.saveState();
@@ -892,10 +917,7 @@ export class Brain {
 			this.log("API server unavailable - skipping arm operations");
 		}
 
-		// Step 8: Sync tasks from plan files via API-backed state adapter
-		await this.syncPlanTasks();
-
-		// Step 8a: Process inbox items (convert to tasks, clear inbox)
+		// Step 8: Process inbox items (convert to tasks, clear inbox)
 		await this.processInbox();
 
 		// Step 8b: Check for documentation update triggers
@@ -2491,6 +2513,26 @@ export class Brain {
 			: tasks.filter((task) => !containsCommitTaskKeyword(task.subject));
 	}
 
+	private async listAllTasksFromApi(options?: {
+		status?: string[];
+		assignedTo?: string;
+		phase?: string;
+		includeHousekeeping?: boolean;
+	}): Promise<Task[]> {
+		const tasks: Task[] = [];
+		let offset = 0;
+		while (true) {
+			const page = await this.listTasksFromApi({
+				...options,
+				limit: 500,
+				offset,
+			});
+			tasks.push(...page);
+			if (page.length < 500) return tasks;
+			offset += page.length;
+		}
+	}
+
 	private async listBugsFromApi(
 		limit: number = 200,
 		options?: { statuses?: string[] },
@@ -2627,6 +2669,7 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
+				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
@@ -2669,6 +2712,7 @@ export class Brain {
 			metadata?: Record<string, unknown>;
 			artifacts?: string[];
 			context?: Task["context"];
+			orderKey?: string | null;
 			blockedReason?: string;
 			blockedCategory?: Task["blockedCategory"];
 			blockedRecheckAt?: string | null;
@@ -2692,6 +2736,7 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
+				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
@@ -2735,6 +2780,7 @@ export class Brain {
 				assignedTo?: string | null;
 				dependencyBlocked?: boolean;
 				sortOrder?: number | null;
+				orderKey?: string | null;
 				createdAt: string;
 				updatedAt: string;
 				completedAt?: string | null;
@@ -5732,9 +5778,6 @@ Report findings using bug resolution workflow.`;
 	 */
 	private async assignInitialTasks(): Promise<void> {
 		for (const [armId, arm] of this.arms) {
-			// Skip if we've already sent initial prompt to this arm (check database)
-			if (await this.hasReceivedInitialTasks(armId)) continue;
-
 			// Skip if arm is not idle
 			if (arm.status !== "idle") continue;
 
@@ -5746,25 +5789,39 @@ Report findings using bug resolution workflow.`;
 			}
 
 			// Send the common initial prompt to the arm
-			const prompt = await this.templates.loadInitialArmPrompt();
+			const commonPrompt = await this.templates.loadInitialArmPrompt();
+			const deferredPrompt = typeof armExists.config?.deferredInitialPrompt === "string"
+				? armExists.config.deferredInitialPrompt.trim()
+				: "";
+			const alreadyInitialized = await this.hasReceivedInitialTasks(armId);
+			if (alreadyInitialized && !deferredPrompt) continue;
+			const prompt = deferredPrompt ? `${deferredPrompt}\n\n---\n\n${commonPrompt}` : commonPrompt;
 			const success = await this.sendPromptToArm(armId, prompt);
 
 			if (success) {
+				if (deferredPrompt) {
+					const { deferredInitialPrompt: _, ...config } = armExists.config || {};
+					if (!await this.patchArmViaApi(armId, { config })) {
+						this.log(`Failed to clear deferred initial prompt for ${armId}`);
+					}
+				}
 				this.log(`Sent initial prompt to ${armId}`);
-					this.logActivity("brain", "arm_initialized", armId, {
-						source: "initial_prompt_sent",
-					});
-					this.initializedArmIds.add(armId);
+				this.logActivity("brain", "arm_initialized", armId, {
+					source: "initial_prompt_sent",
+				});
+				this.initializedArmIds.add(armId);
 
+				if (!alreadyInitialized) {
 					await this.createTaskViaApi({
 						id: `init-${armId}`,
 						subject: `Arm ${armId} initialized`,
-					description: "Initial prompt sent to arm",
-					status: "completed",
-					priority: "normal",
-					sourceType: "system",
-					sourceRef: "arm-init",
-				});
+						description: "Initial prompt sent to arm",
+						status: "completed",
+						priority: "normal",
+						sourceType: "system",
+						sourceRef: "arm-init",
+					});
+				}
 			} else {
 				this.log(`Failed to send initial prompt to ${armId}`);
 			}
@@ -8807,12 +8864,157 @@ ${conflictList}
 	}
 
 	/**
-	 * Sync tasks from project plan files into the task API
+	 * Notify the user before placing every active task behind a durable planning gate.
 	 */
-	private async syncPlanTasks(): Promise<void> {
+	private async blockTasksForPlanningFailure(error: unknown, planHash?: string): Promise<void> {
+		const detail = error instanceof Error ? error.message : String(error);
+		const planningState = planHash || "missing-plan";
+		const fingerprint = createHash("sha256")
+			.update(`${planningState}\0${detail}`)
+			.digest("hex");
+		if (this.lastPlanningFailureFingerprint !== fingerprint) {
+			try {
+				await this.sendToHuman({
+					subject: "[coleo] Project planning failed; all work is blocked",
+					body: [
+						"Coleo could not turn the complete project plan into a safe, dependency-ordered task queue.",
+						"",
+						`Problem: ${detail.slice(0, 2_000)}`,
+						"",
+						`Review and fix ${CANONICAL_PLAN_PATH} or one of its linked plan documents, including missing foundational decisions and constraints. Coleo will evaluate the plan set again after it changes. No active task will be assigned in the meantime.`,
+					].join("\n"),
+					headers: { "X-Coleo-Type": "planning-error" },
+				});
+			} catch (mailError) {
+				this.log(`Failed to notify human about planning failure: ${mailError}`);
+			}
+			this.lastPlanningFailureFingerprint = fingerprint;
+		}
+
+		await this.blockArmsForPlanningFailure();
+
+		const activeStatuses: Task["status"][] = [
+			"pending",
+			"claimed",
+			"in_progress",
+			"completing",
+			"blocked",
+		];
+		const tasks = await this.listAllTasksFromApi({
+			status: activeStatuses,
+			includeHousekeeping: true,
+		});
+		for (const task of tasks) {
+			// Existing blockers remain authoritative and must not be lost when planning recovers.
+			if (task.status === "blocked") continue;
+			const blocked = await this.patchTaskViaApi(task.id, {
+				status: "blocked",
+				assignedTo: null,
+				dependencyBlocked: false,
+				blockedReason: `Project planning must succeed before work can resume: ${detail.slice(0, 500)} [planning-state:${planningState}]`,
+				blockedCategory: "planning",
+				blockedNeedsHuman: true,
+				blockedRecheckAt: new Date("9999-12-31T23:59:59.999Z").toISOString(),
+			});
+			if (!blocked) this.log(`Failed to planning-block task ${task.id}`);
+		}
+	}
+
+	private async blockArmsForPlanningFailure(): Promise<void> {
+		const arms = await this.listArmsFromApi(true);
+		for (const arm of arms) {
+			if (["stopped", "error", "planning_blocked"].includes(arm.status)) continue;
+
+			const hasActiveWork = ["busy", "running"].includes(arm.status) || !!arm.currentTaskId;
+			if (hasActiveWork) {
+				const interrupted = await this.sendPromptToArm(
+					arm.id,
+					"Stop the current operation immediately. The Brain planning gate is blocked; do not modify the workspace or request more work until the Brain resumes you.",
+					{ interrupt: true },
+				);
+				if (!interrupted) {
+					this.log(`Could not interrupt ${arm.id}; stopping the arm to enforce the planning gate`);
+					const stopped = await this.apiRequest<{ killed?: boolean }>(
+						`/api/arms/${encodeURIComponent(arm.id)}/kill`,
+						{ method: "POST" },
+					);
+					if (stopped?.killed) {
+						const inMemoryArm = this.arms.get(arm.id);
+						if (inMemoryArm) inMemoryArm.status = "stopped";
+						continue;
+					}
+					this.log(`CRITICAL: Could not stop arm ${arm.id}; marking it planning-blocked for visibility`);
+				}
+			}
+
+			const gated = await this.patchArmViaApi(arm.id, {
+				status: "planning_blocked",
+				lastActivityAt: new Date().toISOString(),
+			});
+			if (!gated) {
+				this.log(`Failed to mark arm ${arm.id} as planning-blocked`);
+				continue;
+			}
+			const inMemoryArm = this.arms.get(arm.id);
+			if (inMemoryArm) inMemoryArm.status = "planning_blocked";
+		}
+	}
+
+	private async resumePlanningBlockedTasks(): Promise<void> {
+		const tasks = await this.listAllTasksFromApi({
+			status: ["blocked"],
+			includeHousekeeping: true,
+		});
+		for (const task of tasks) {
+			if (
+				task.blockedCategory !== "planning"
+				|| !task.blockedReason?.includes("[planning-state:")
+			) continue;
+			const resumed = await this.patchTaskViaApi(task.id, {
+				status: "pending",
+				assignedTo: null,
+				dependencyBlocked: false,
+			});
+			if (!resumed) throw new Error(`Could not resume planning-blocked task ${task.id}`);
+		}
+	}
+
+	private async resumePlanningBlockedArms(): Promise<void> {
+		const arms = await this.listArmsFromApi(true);
+		for (const arm of arms) {
+			if (arm.status !== "planning_blocked") continue;
+			const resumed = await this.patchArmViaApi(arm.id, {
+				status: "idle",
+				planningBlocked: false,
+				lastActivityAt: new Date().toISOString(),
+			});
+			if (!resumed) throw new Error(`Could not resume planning-blocked arm ${arm.id}`);
+			const inMemoryArm = this.arms.get(arm.id);
+			if (inMemoryArm) inMemoryArm.status = "idle";
+		}
+	}
+
+	/**
+	 * Evaluate the full project plan, then synchronize and rank its task queue.
+	 */
+	private async syncPlanTasks(): Promise<boolean> {
+		let currentPlanHash: string | undefined;
 		try {
-			// Get project root (current working directory or configured)
 			const projectRoot = this.projectRoot;
+			const databaseInstanceId = await this.getBrainConfigValue("database_instance_id");
+			if (
+				databaseInstanceId &&
+				this.databaseInstanceId &&
+				databaseInstanceId !== this.databaseInstanceId
+			) {
+				this.planFileHashes.clear();
+				this.evaluatedPlanHashes.clear();
+				this.planningErrorsByPlanHash.clear();
+				this.log("Database instance changed; resetting plan synchronization cache");
+			}
+			if (databaseInstanceId) {
+				this.databaseInstanceId = databaseInstanceId;
+			}
 
 			// Check if task auto-discover is enabled
 			const autoDiscover = await this.getBrainConfigBoolean(
@@ -8820,40 +9022,108 @@ ${conflictList}
 				true,
 			);
 			if (!autoDiscover) {
-				return; // Task sync disabled
+				return true;
 			}
 
-			// Find and parse all plan files
 			const planFiles = await findPlanFiles(projectRoot, this.workspace);
-
 			if (planFiles.length === 0) {
-				return; // No plan files found
+				throw new Error(`No readable ${CANONICAL_PLAN_PATH} file was found`);
+			}
+
+			const canonicalPath = join(projectRoot, CANONICAL_PLAN_PATH);
+			const canonicalPlan = await this.workspace.readText(canonicalPath);
+			if (!canonicalPlan?.content.trim()) {
+				throw new Error(`${CANONICAL_PLAN_PATH} is empty or unreadable`);
+			}
+			const referencedPlans = (
+				await Promise.all(
+					planFiles
+						.filter((filePath) => filePath !== canonicalPath)
+						.map(async (filePath) => ({ filePath, file: await this.workspace.readText(filePath) })),
+				)
+			).flatMap(({ filePath, file }) => file ? [{ filePath, file }] : []);
+			const planStateHash = (canonicalHash: string): string => {
+				const hash = createHash("sha256").update(`${canonicalPath}\0${canonicalHash}`);
+				for (const plan of referencedPlans) {
+					hash.update(`\0${plan.filePath}\0${plan.file.contentHash}`);
+				}
+				return hash.digest("hex");
+			};
+			currentPlanHash = planStateHash(canonicalPlan.contentHash);
+			const previousPlanningError = this.planningErrorsByPlanHash.get(currentPlanHash);
+			if (previousPlanningError) {
+				throw new Error(`${previousPlanningError} Edit the primary or a linked plan document before retrying.`);
+			}
+			const durablePlanningBlock = (await this.listAllTasksFromApi({
+				status: ["blocked"],
+				includeHousekeeping: true,
+			})).find(
+				(task) =>
+					task.blockedCategory === "planning"
+					&& task.blockedReason?.includes(`[planning-state:${currentPlanHash}]`),
+			);
+			if (durablePlanningBlock) {
+				throw new Error("The project plan is still in the planning-failure state. Edit the primary or a linked plan document before retrying.");
+			}
+
+			if (this.evaluatedPlanHashes.get(canonicalPath) !== currentPlanHash) {
+				let evaluated;
+				try {
+					const workspaceContext = await collectPlanWorkspaceContext(this.workspace);
+					workspaceContext.planDocuments = referencedPlans.map(({ filePath, file }) => ({
+						path: filePath,
+						content: file.content,
+					}));
+					const formatter = this.options.planFormatter || formatPlanWithConfiguredModel;
+					evaluated = await formatter(
+						canonicalPlan.content,
+						CANONICAL_PLAN_PATH,
+						"Validate the whole plan, add missing foundational work, and order every task by dependency before any task is assigned.",
+						workspaceContext,
+						this.templates,
+					);
+					if (!evaluated.content.trim()) throw new Error("The plan evaluator returned an empty plan");
+				} catch (error) {
+					const detail = error instanceof Error ? error.message : String(error);
+					this.planningErrorsByPlanHash.set(currentPlanHash, detail);
+					throw error;
+				}
+
+				let evaluatedPlan = canonicalPlan;
+				if (evaluated.content !== canonicalPlan.content) {
+					evaluatedPlan = await this.workspace.writeText(canonicalPath, evaluated.content, {
+						expectedHash: canonicalPlan.contentHash,
+					});
+				}
+				currentPlanHash = planStateHash(evaluatedPlan.contentHash);
+				this.evaluatedPlanHashes.set(canonicalPath, currentPlanHash);
+				this.planFileHashes.delete(canonicalPath);
 			}
 
 			let newTasksCount = 0;
 			let updatedTasksCount = 0;
-			const existingTasks = await this.listTasksFromApi({ limit: 5000 });
+			const orderedPlanTaskIds: string[] = [];
+			const existingTasks = await this.listAllTasksFromApi({ includeHousekeeping: true });
 			const existingById = new Map(existingTasks.map((task) => [task.id, task]));
 
 			for (const filePath of planFiles) {
 				const result = await parsePlanFile(filePath, this.workspace);
 
 				if (result.errors.length > 0) {
-					this.log(
-						`Plan parse errors in ${filePath}: ${result.errors.join(", ")}`,
-					);
-					continue;
+					const detail = `Plan parse errors in ${filePath}: ${result.errors.join(", ")}`;
+					if (currentPlanHash) this.planningErrorsByPlanHash.set(currentPlanHash, detail);
+					throw new Error(detail);
 				}
 
-				// Skip unchanged files based on in-memory hash cache.
+				const dbTasks = tasksToDatabaseFormat(result.tasks);
+				orderedPlanTaskIds.push(...dbTasks.map((task) => task.id));
 				const lastHash = this.planFileHashes.get(filePath);
 				if (lastHash === result.fileHash) {
-					// File hasn't changed, skip
 					continue;
 				}
 
 				// Import tasks from plan
-				const dbTasks = tasksToDatabaseFormat(result.tasks);
+				let fileSynchronized = true;
 
 				for (const task of dbTasks) {
 					const existing = existingById.get(task.id) || null;
@@ -8881,23 +9151,67 @@ ${conflictList}
 						if (created) {
 							newTasksCount++;
 							existingById.set(created.id, created);
+						} else {
+							fileSynchronized = false;
 						}
-					} else if (
-						existing.status === "pending" &&
-						task.status === "completed"
-					) {
-						const updated = await this.patchTaskViaApi(task.id, {
-							status: "completed",
-						});
+					} else {
+						const patch: {
+							description?: string;
+							priority?: Task["priority"];
+							status?: Task["status"];
+						} = {};
+						if (existing.description !== task.description) patch.description = task.description;
+						if (existing.priority !== task.priority) patch.priority = task.priority as Task["priority"];
+						if (existing.status === "pending" && task.status === "completed") {
+							patch.status = "completed";
+						}
+						if (Object.keys(patch).length === 0) continue;
+						const updated = await this.patchTaskViaApi(task.id, patch);
 						if (updated) {
 							updatedTasksCount++;
 							existingById.set(updated.id, updated);
+						} else {
+							fileSynchronized = false;
 						}
 					}
 				}
 
-				this.planFileHashes.set(filePath, result.fileHash);
+				if (fileSynchronized) {
+					this.planFileHashes.set(filePath, result.fileHash);
+				} else {
+					this.planFileHashes.delete(filePath);
+					throw new Error(`Plan synchronization was incomplete for ${filePath}`);
+				}
 			}
+
+			if (orderedPlanTaskIds.length === 0) {
+				const detail = "The evaluated plan did not contain any actionable tasks";
+				if (currentPlanHash) this.planningErrorsByPlanHash.set(currentPlanHash, detail);
+				throw new Error(detail);
+			}
+
+			const latestTasks = await this.listAllTasksFromApi({ includeHousekeeping: true });
+			const existingIds = new Set(latestTasks.map((task) => task.id));
+			const seen = new Set<string>();
+			const orderedTasks: string[] = [];
+			for (const taskId of [...orderedPlanTaskIds, ...latestTasks.map((task) => task.id)]) {
+				if (!existingIds.has(taskId) || seen.has(taskId)) continue;
+				seen.add(taskId);
+				orderedTasks.push(taskId);
+			}
+			const orderKeys = generateInitialKeys(orderedTasks.length);
+			const latestById = new Map(latestTasks.map((task) => [task.id, task]));
+			for (const [index, taskId] of orderedTasks.entries()) {
+				const current = latestById.get(taskId);
+				if (current?.orderKey === orderKeys[index]) continue;
+				const reordered = await this.patchTaskViaApi(taskId, { orderKey: orderKeys[index]! });
+				if (!reordered) throw new Error(`Could not rank planned task ${taskId}`);
+			}
+
+			await this.resumePlanningBlockedTasks();
+			await this.resumePlanningBlockedArms();
+			if (currentPlanHash) this.planningErrorsByPlanHash.delete(currentPlanHash);
+			this.lastPlanningFailureFingerprint = null;
 
 			// Remove stale hashes for plan files that no longer exist.
 			for (const knownPath of Array.from(this.planFileHashes.keys())) {
@@ -8915,8 +9229,11 @@ ${conflictList}
 					updated: updatedTasksCount,
 				});
 			}
+			return true;
 		} catch (err) {
 			this.log(`Failed to sync plan tasks: ${err}`);
+			await this.blockTasksForPlanningFailure(err, currentPlanHash);
+			return false;
 		}
 	}
 

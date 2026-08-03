@@ -25,6 +25,7 @@ function createTestDb(): Database {
       domain TEXT NOT NULL,
       harness TEXT NOT NULL,
       status TEXT NOT NULL,
+      planning_blocked INTEGER NOT NULL DEFAULT 0,
       context_budget INTEGER NOT NULL,
       current_context_used INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
@@ -91,6 +92,44 @@ describe("arms spawn route auto-creation", () => {
       return next();
     });
     app.route("/api/arms", createArmsRoutes());
+  });
+
+  it("exposes planning-gated arms and rejects direct prompts until the gate opens", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, planning_blocked, context_budget,
+        created_at, updated_at, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ["planning-arm", "Planning Arm", "general", "manual", "paused", 1, 100000, now, now, "{}"],
+    );
+
+    const statusResponse = await app.request("http://coleo.test/api/arms/planning-arm");
+    const statusBody = await statusResponse.json() as { arm: { status: string } };
+    expect(statusBody.arm.status).toBe("planning_blocked");
+
+    const lateRuntimeResponse = await app.request("http://coleo.test/api/arms/planning-arm", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "busy" }),
+    });
+    const lateRuntimeBody = await lateRuntimeResponse.json() as { arm: { status: string } };
+    expect(lateRuntimeBody.arm.status).toBe("planning_blocked");
+
+    const promptResponse = await app.request("http://coleo.test/api/arms/planning-arm/prompt", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Start work" }),
+    });
+    expect(promptResponse.status).toBe(409);
+
+    const resumeResponse = await app.request("http://coleo.test/api/arms/planning-arm", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ status: "idle", planningBlocked: false }),
+    });
+    const resumeBody = await resumeResponse.json() as { arm: { status: string } };
+    expect(resumeBody.arm.status).toBe("idle");
   });
 
   afterEach(async () => {
@@ -415,11 +454,11 @@ describe("arms spawn route auto-creation", () => {
     process.env.COLEO_REMOTE_WORKDIR = "/srv/tenant/workspace";
     process.env.COLEO_AUTO_START_AGENT = "0";
 
-    const spawnCalls: Array<{ agentId: string; options: { workDir?: string } }> = [];
+    const spawnCalls: Array<{ agentId: string; options: { workDir?: string; initialPrompt?: string } }> = [];
     const mockArmClient = {
       findBestAgent: () => ({ agentId: "remote-agent", hostname: "agent-host", capabilities: ["kimi-cli"], maxArms: 10 }),
       getAgent: () => ({ agentId: "remote-agent", hostname: "agent-host" }),
-      spawnArm: async (agentId: string, _armId: string, options: { workDir?: string }) => {
+      spawnArm: async (agentId: string, _armId: string, options: { workDir?: string; initialPrompt?: string }) => {
         spawnCalls.push({ agentId, options });
         return { requestId: "req-remote", success: true, data: { armId: "remote-only", pid: 44, port: 18888, sessionId: "ses_remote" } };
       },
@@ -432,12 +471,15 @@ describe("arms spawn route auto-creation", () => {
     const response = await app.request("http://coleo.test/api/arms/remote-only/spawn", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ allowLocalFallback: true }),
+      body: JSON.stringify({ allowLocalFallback: true, initialPrompt: "Review the deployment constraints." }),
     });
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ distributed: true, agentId: "remote-agent" });
     expect(spawnCalls).toEqual([{ agentId: "remote-agent", options: expect.objectContaining({ workDir: "/srv/tenant/workspace" }) }]);
+    expect(spawnCalls[0]?.options.initialPrompt).toBeUndefined();
+    const deferredConfig = db.query("SELECT config FROM arms WHERE id = ?").get("remote-only") as { config: string };
+    expect(JSON.parse(deferredConfig.config).deferredInitialPrompt).toContain("Review the deployment constraints.");
   });
 
   it("reattaches to an existing distributed runtime when recover is requested", async () => {

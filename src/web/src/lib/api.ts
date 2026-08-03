@@ -1531,7 +1531,7 @@ export interface Arm {
   name: string;
   domain: string;
   harness: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped' | 'starting' | 'running';
+  status: 'idle' | 'busy' | 'paused' | 'planning_blocked' | 'error' | 'stopped' | 'starting' | 'running';
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;
@@ -1914,7 +1914,7 @@ export interface Task {
   startedAt: string | null;
   blockedAt?: string | null;
   blockedReason?: string | null;
-  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'unknown' | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'planning' | 'unknown' | null;
   blockedRecheckAt?: string | null;
   blockedLastCheckedAt?: string | null;
   blockedReviewCount?: number;

@@ -47,6 +47,7 @@ const BLOCKED_CATEGORIES = [
 	"environment",
 	"human",
 	"arm",
+	"planning",
 	"unknown",
 ] as const;
 

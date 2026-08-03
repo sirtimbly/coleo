@@ -11,6 +11,7 @@ import {
 	CANONICAL_PLAN_PATH,
 	DEFAULT_ARM_TEMPLATE,
 	DEFAULT_PLAN_TEMPLATE,
+	collectPlanWorkspaceContext,
 	discoverProjectPlans,
 	formatPlanWithConfiguredModel,
 	hasStructuredPlanTasks,
@@ -257,7 +258,14 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				await workspace.writeText(sourcePath, body.content, { expectedHash: sourceExpectedHash });
 			}
 
-			const formatted = await formatter(body.content, sourcePath);
+			const workspaceContext = await collectPlanWorkspaceContext(workspace);
+			const formatted = await formatter(
+				body.content,
+				sourcePath,
+				undefined,
+				workspaceContext,
+				brainTemplates,
+			);
 			if (!hasStructuredPlanTasks(formatted.content)) {
 				throw new Error("The prepared plan did not contain a phase with deliverable checklist items");
 			}
@@ -300,6 +308,7 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				workspace: getWorkspace(),
 				explanation: body.explanation,
 				formatter,
+				templates: brainTemplates,
 			});
 			broadcast("tasks", "tasks.regenerated", result);
 			return c.json(result);

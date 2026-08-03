@@ -1,7 +1,7 @@
 import { Chip } from '@heroui/react';
 
 interface StatusBadgeProps {
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped' | 'starting' | 'running' | string;
+  status: 'idle' | 'busy' | 'paused' | 'planning_blocked' | 'error' | 'stopped' | 'starting' | 'running' | string;
   size?: 'sm' | 'md';
 }
 
@@ -9,6 +9,7 @@ const statusConfig = {
   idle: { label: 'Idle', color: 'default' },
   busy: { label: 'Busy', color: 'warning' },
   paused: { label: 'Paused', color: 'accent' },
+  planning_blocked: { label: 'Waiting on planning', color: 'warning' },
   error: { label: 'Error', color: 'danger' },
   stopped: { label: 'Stopped', color: 'default' },
   starting: { label: 'Starting', color: 'warning' },
