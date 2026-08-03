@@ -2722,27 +2722,25 @@ function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
 	const categoryLabel = category === "health" && activity.details?.actor !== "brain"
 		? "Runtime health"
 		: `Brain ${category}`;
+	const envelope = presentInboxItem({
+		id: `brain-activity:${activity.id}`,
+		kind: "brain",
+		title: activity.title,
+		summary: activity.subtitle ?? categoryLabel,
+		timestamp: new Date(activity.timestamp).toISOString(),
+		source: categoryLabel,
+		resourceId: activity.id,
+		unread: activity.status === "error",
+		requiresAction: activity.status === "error",
+		severity: activity.status === "error" ? "danger" : "info",
+	}, { surface: "stream" });
 
 	return (
 		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
-			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5 px-3 py-2.5">
-				<div className="flex items-center justify-between gap-3">
-					<div className="flex min-w-0 items-center gap-2">
-						<Bot className="h-3.5 w-3.5 shrink-0 text-cyan-600" />
-						<span className="truncate text-sm font-semibold text-foreground">{activity.title}</span>
-						{category ? (
-							<span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-cyan-700">
-								{categoryLabel}
-							</span>
-						) : null}
-					</div>
-					<span className="shrink-0 text-xs text-muted-foreground">{formatTime(activity.timestamp)}</span>
-				</div>
-				{activity.subtitle ? (
-					<div className="mt-1 text-sm text-muted-foreground">{activity.subtitle}</div>
-				) : null}
+			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5">
+				<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
 				{activity.details && Object.keys(activity.details).length > 1 ? (
-					<details className="group mt-2">
+					<details className="group border-t border-border px-3 py-2">
 						<summary className="cursor-pointer text-xs font-medium text-muted-foreground">
 							Details
 						</summary>
@@ -3215,15 +3213,6 @@ function ArmAnalysisPanel({
 			) : null}
 		</div>
 	);
-}
-
-function formatTime(timestamp: number): string {
-	const date = new Date(timestamp);
-	return date.toLocaleTimeString([], {
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	});
 }
 
 function formatDetails(details: JsonObject): string {
