@@ -41,16 +41,9 @@ const COLUMN_MENU_ITEMS = [
 	"filter_by_value",
 	"filter_action_bar",
 ];
-const EDITABLE_ROW_MENU_ITEMS = [
-	"row_above",
-	"row_below",
-	"remove_row",
-	"---------",
-	"undo",
-	"redo",
-	"copy",
-];
-const READ_ONLY_ROW_MENU_ITEMS = ["copy"];
+const CREATE_ROW_MENU_ITEMS = ["row_above", "row_below"];
+const HISTORY_MENU_ITEMS = ["undo", "redo"];
+const COPY_MENU_ITEMS = ["copy"];
 
 export interface ResourceSheetColumn<T> {
 	id: string;
@@ -121,6 +114,29 @@ function updateColumnPreference(
 		...(column.id === columnId ? update : {}),
 	}));
 	return { ...preferences, columns: next };
+}
+
+function resolveContextMenuItems({
+	canCreateRows,
+	canDeleteRows,
+	hasEditableCells,
+}: {
+	canCreateRows: boolean;
+	canDeleteRows: boolean;
+	hasEditableCells: boolean;
+}): string[] {
+	const groups: string[][] = [];
+	const rowItems = [
+		...(canCreateRows ? CREATE_ROW_MENU_ITEMS : []),
+		...(canDeleteRows ? ["remove_row"] : []),
+	];
+	if (rowItems.length > 0) groups.push(rowItems);
+	if (hasEditableCells) groups.push(HISTORY_MENU_ITEMS);
+	groups.push(COPY_MENU_ITEMS);
+
+	return groups.flatMap((group, index) => (
+		index === 0 ? group : ["---------", ...group]
+	));
 }
 
 function comparableValue(value: unknown): string {
@@ -230,6 +246,9 @@ export function ResourceSheet<T extends { id: string }>({
 		() => visibleColumns.map((column) => column.header),
 		[visibleColumns],
 	);
+	const canCreateRows = Boolean(onCreateRowAt);
+	const canDeleteRows = Boolean(onDeleteRows);
+	const hasEditableCells = visibleColumns.some((column) => column.readOnly !== true);
 
 	const hotColumns = useMemo<ColumnSettings[]>(() => visibleColumns.map((column) => ({
 		data: column.id,
@@ -242,9 +261,14 @@ export function ResourceSheet<T extends { id: string }>({
 		className: column.className,
 		validator: column.validator,
 	})), [preferences.columns, visibleColumns]);
-	const contextMenuItems = onCreateRowAt || onDeleteRows
-		? EDITABLE_ROW_MENU_ITEMS
-		: READ_ONLY_ROW_MENU_ITEMS;
+	const contextMenuItems = useMemo(
+		() => resolveContextMenuItems({
+			canCreateRows,
+			canDeleteRows,
+			hasEditableCells,
+		}),
+		[canCreateRows, canDeleteRows, hasEditableCells],
+	);
 	const runtimeRef = useRef<ResourceSheetRuntime<T>>({
 		sheetRows,
 		rowsById,
@@ -488,14 +512,26 @@ export function ResourceSheet<T extends { id: string }>({
 	useEffect(() => {
 		const hot = hotRef.current;
 		if (!hot) return;
+		// updateData preserves Handsontable's interaction state and undo/redo
+		// history while React Query reconciles optimistic and server values.
+		hot.updateData(sheetRows);
+	}, [sheetRows]);
+
+	useEffect(() => {
+		const hot = hotRef.current;
+		if (!hot) return;
 		hot.updateSettings({
-			data: sheetRows,
 			columns: hotColumns,
 			colHeaders: columnHeaders,
 			rowHeights: rowHeight,
+			contextMenu: contextMenuItems,
 		}, false);
 		hot.render();
-	}, [columnHeaders, hotColumns, rowHeight, selectedRowId, sheetRows]);
+	}, [columnHeaders, contextMenuItems, hotColumns, rowHeight]);
+
+	useEffect(() => {
+		hotRef.current?.render();
+	}, [selectedRowId]);
 
 	useEffect(() => {
 		const hot = hotRef.current;

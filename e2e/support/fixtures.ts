@@ -13,6 +13,7 @@ interface MockApiOptions {
 	arms?: unknown[];
 	tasks?: Array<Record<string, unknown>>;
 	bugs?: Array<Record<string, unknown>>;
+	discoveries?: Array<Record<string, unknown>>;
 	inbox?: unknown[];
 	sent?: unknown[];
 	archive?: unknown[];
@@ -33,6 +34,8 @@ function json(route: Route, body: unknown, status = 200) {
 export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 	const taskRecords = (options.tasks ?? []).map((task) => ({ ...task }));
 	const bugRecords = (options.bugs ?? []).map((bug) => ({ ...bug }));
+	const discoveryRecords = (options.discoveries ?? []).map((discovery) => ({ ...discovery }));
+	const viewRecords: Array<Record<string, unknown>> = [];
 
 	await page.addInitScript(() => {
 		window.localStorage.setItem("coleo-layout-mode", "classic");
@@ -101,9 +104,37 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 					createdAt: now,
 					updatedAt: now,
 				},
-				views: [],
+				views: viewRecords,
 				layouts: [],
 			});
+		}
+		if (path === "/api/workbench/views" && request.method() === "POST") {
+			const input = request.postDataJSON() as Record<string, unknown>;
+			const view = {
+				...input,
+				id: input.id ?? `view-${viewRecords.length + 1}`,
+				version: 1,
+				createdAt: now,
+				updatedAt: now,
+			};
+			viewRecords.push(view);
+			return json(route, { view });
+		}
+		if (/^\/api\/workbench\/views\/[^/]+$/.test(path) && request.method() === "PUT") {
+			const viewId = decodeURIComponent(path.split("/").at(-1) ?? "");
+			const input = request.postDataJSON() as Record<string, unknown>;
+			const index = viewRecords.findIndex((view) => view.id === viewId);
+			const view = {
+				...(index >= 0 ? viewRecords[index] : {}),
+				...input,
+				id: viewId,
+				version: Number(viewRecords[index]?.version ?? 0) + 1,
+				createdAt: viewRecords[index]?.createdAt ?? now,
+				updatedAt: now,
+			};
+			if (index >= 0) viewRecords[index] = view;
+			else viewRecords.push(view);
+			return json(route, { view });
 		}
 
 		if (path === "/api/arms" && request.method() === "GET") {
@@ -169,6 +200,14 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				bySource: {},
 				byStatus: {},
 				byPriority: {},
+				recent24h: 0,
+			});
+		}
+		if (path === "/api/discoveries/stats") {
+			return json(route, {
+				bySeverity: {},
+				byKind: {},
+				byStatus: {},
 				recent24h: 0,
 			});
 		}
@@ -336,6 +375,26 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 			if (index < 0) return json(route, { error: "Bug not found" }, 404);
 			const updates = request.postDataJSON() as Record<string, unknown>;
 			bugRecords[index] = { ...bugRecords[index], ...updates };
+			return json(route, { success: true });
+		}
+		if (path === "/api/discoveries" && request.method() === "GET") {
+			return json(route, {
+				discoveries: discoveryRecords,
+				pagination: {
+					limit: 100,
+					offset: 0,
+					total: discoveryRecords.length,
+				},
+			});
+		}
+		if (/^\/api\/discoveries\/[^/]+$/.test(path) && request.method() === "PATCH") {
+			const discoveryId = path.split("/")[3];
+			const index = discoveryRecords.findIndex(
+				(candidate) => candidate.id === discoveryId,
+			);
+			if (index < 0) return json(route, { error: "Discovery not found" }, 404);
+			const updates = request.postDataJSON() as Record<string, unknown>;
+			discoveryRecords[index] = { ...discoveryRecords[index], ...updates };
 			return json(route, { success: true });
 		}
 

@@ -25,7 +25,8 @@ import type {
 } from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
-import { collectTagOptions, normalizeTagValues } from "./tag-values";
+import { normalizeTagValues } from "./tag-values";
+import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
@@ -131,10 +132,7 @@ export function BugSheet({
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingBugId, setFormattingBugId] = useState<string>();
-	const tagOptions = useMemo(
-		() => collectTagOptions(bugs.map(readTags)),
-		[bugs],
-	);
+	const tagOptions = useKnownTagOptions(bugs, readTags);
 	const columns = useMemo(
 		() => BUG_COLUMNS.map((column) => (
 			column.id === "tags" ? { ...column, options: tagOptions } : column

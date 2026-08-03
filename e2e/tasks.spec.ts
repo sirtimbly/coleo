@@ -52,8 +52,27 @@ const bug = {
 	humanNotified: false,
 };
 
-test("formats task rows and restores bug tags in configurable spreadsheets", async ({ page }) => {
-	await installMockApi(page, { tasks: [task], bugs: [bug] });
+const discovery = {
+	id: "discovery-workbench",
+	armId: "arm-undo",
+	armName: "Undo Arm",
+	kind: "pattern",
+	title: "Keep sheet history consistent",
+	details: "Discovery status must share the same undo and redo behavior.",
+	filePath: null,
+	lineNumber: null,
+	severity: "info",
+	status: "open",
+	createdAt: "2026-08-02T11:00:00.000Z",
+	updatedAt: "2026-08-02T12:00:00.000Z",
+};
+
+test("formats rows and preserves undo and redo across resource sheets", async ({ page }) => {
+	await installMockApi(page, {
+		tasks: [task],
+		bugs: [bug],
+		discoveries: [discovery],
+	});
 	await page.goto("/tasks");
 
 	await expect(page.getByRole("heading", { name: "Tasks", exact: true })).toBeVisible();
@@ -107,6 +126,43 @@ test("formats task rows and restores bug tags in configurable spreadsheets", asy
 		page.locator(".coleo-resource-sheet .ht_clone_inline_start tbody td"),
 	).toHaveCount(0);
 
+	const editedSubject = "Undo and redo the task subject";
+	const editRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await taskSubjectCell.click();
+	await page.keyboard.press("Enter");
+	await page.keyboard.press("ControlOrMeta+A");
+	await page.keyboard.type(editedSubject);
+	await page.keyboard.press("Enter");
+	expect((await editRequest).postDataJSON()).toMatchObject({ subject: editedSubject });
+	await expect(
+		page.getByRole("gridcell", { name: editedSubject, exact: true }),
+	).toBeVisible();
+
+	const undoRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await page.keyboard.press("ControlOrMeta+Z");
+	expect((await undoRequest).postDataJSON()).toMatchObject({
+		subject: task.subject,
+	});
+	await expect(
+		page.getByRole("gridcell", { name: task.subject, exact: true }),
+	).toBeVisible();
+
+	const redoRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/tasks/task-workbench"
+	);
+	await page.keyboard.press("ControlOrMeta+Shift+Z");
+	expect((await redoRequest).postDataJSON()).toMatchObject({ subject: editedSubject });
+	await expect(
+		page.getByRole("gridcell", { name: editedSubject, exact: true }),
+	).toBeVisible();
+
 	await page.goto("/bugs");
 	await expect(page.getByRole("heading", { name: "Bugs", exact: true })).toBeVisible();
 	await expect(page.getByRole("columnheader", { name: "Tags", exact: true })).toBeVisible({
@@ -137,6 +193,30 @@ test("formats task rows and restores bug tags in configurable spreadsheets", asy
 	expect(requestBody.metadata?.ui?.tags).toEqual(["regression"]);
 	await expect(tagChips).toHaveText(["regression"]);
 
+	await page.keyboard.press("Escape");
+	await tagsCell.click({ position: { x: 174, y: 14 } });
+	const undoTagsRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
+	);
+	await page.keyboard.press("ControlOrMeta+Z");
+	const undoTagsBody = (await undoTagsRequest).postDataJSON() as {
+		metadata?: { ui?: { tags?: string[] } };
+	};
+	expect(undoTagsBody.metadata?.ui?.tags).toEqual(["regression", "ui"]);
+	await expect(tagChips).toHaveText(["regression", "ui"]);
+
+	const redoTagsRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/bugs/bug-workbench"
+	);
+	await page.keyboard.press("ControlOrMeta+Shift+Z");
+	const redoTagsBody = (await redoTagsRequest).postDataJSON() as {
+		metadata?: { ui?: { tags?: string[] } };
+	};
+	expect(redoTagsBody.metadata?.ui?.tags).toEqual(["regression"]);
+	await expect(tagChips).toHaveText(["regression"]);
+
 	await page.getByRole("rowheader", { name: "1", exact: true }).click();
 	await expect(formattingToolbar).toBeVisible();
 	const bugSubjectCell = bugSheet.getByRole("gridcell", {
@@ -147,6 +227,59 @@ test("formats task rows and restores bug tags in configurable spreadsheets", asy
 		.getByRole("button", { name: "Use green row color", exact: true })
 		.click();
 	await expect(bugSubjectCell).toHaveClass(/coleo-sheet-row-color-emerald/);
+
+	await page.goto("/grid");
+	await expect(
+		page.getByRole("heading", { name: "Resource sheets", exact: true }),
+	).toBeVisible();
+	await page.getByRole("tab", { name: /Discoveries/ }).click();
+	const discoverySheet = page.locator(".coleo-resource-sheet");
+	const discoveryStatusCell = discoverySheet.getByRole("gridcell", {
+		name: "open",
+		exact: true,
+	});
+	await expect(discoveryStatusCell).toBeVisible({ timeout: 20_000 });
+
+	await discoveryStatusCell.click();
+	await page.keyboard.press("Enter");
+	const discoveryStatusUpdate = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/discoveries/discovery-workbench"
+	);
+	await page
+		.locator(".handsontable.listbox")
+		.getByText("acknowledged", { exact: true })
+		.click();
+	expect((await discoveryStatusUpdate).postDataJSON()).toEqual({
+		status: "acknowledged",
+	});
+	const acknowledgedStatusCell = discoverySheet.getByRole("gridcell", {
+		name: "acknowledged",
+		exact: true,
+	});
+	await expect(acknowledgedStatusCell).toBeVisible();
+
+	const undoDiscoveryRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/discoveries/discovery-workbench"
+	);
+	await acknowledgedStatusCell.click({ button: "right" });
+	const contextMenu = page.locator(".htContextMenu");
+	await expect(contextMenu.getByText("Undo", { exact: true })).toBeVisible();
+	await expect(contextMenu.getByText("Redo", { exact: true })).toBeVisible();
+	await contextMenu.getByText("Undo", { exact: true }).click();
+	expect((await undoDiscoveryRequest).postDataJSON()).toEqual({ status: "open" });
+	await expect(discoveryStatusCell).toBeVisible();
+
+	const redoDiscoveryRequest = page.waitForRequest((request) =>
+		request.method() === "PATCH" &&
+		new URL(request.url()).pathname === "/api/discoveries/discovery-workbench"
+	);
+	await discoveryStatusCell.click({ button: "right" });
+	await contextMenu.getByText("Redo", { exact: true }).click();
+	expect((await redoDiscoveryRequest).postDataJSON()).toEqual({
+		status: "acknowledged",
+	});
 });
 
 test("opens a spreadsheet row in the dedicated task detail projection", async ({ page }) => {

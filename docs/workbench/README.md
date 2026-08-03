@@ -190,3 +190,6 @@ The initial workbench migration was completed on 2026-07-31 in
   through each resource's `metadata.ui` object and render across the full row.
 - Browser coverage protects Task formatting and the restored Bug tags/color
   behavior while keeping the critical workbench suite at eight scenarios.
+- Every sheet with editable cells exposes Handsontable Undo and Redo through
+  keyboard shortcuts and the context menu. React Query reconciliation uses
+  `updateData()` so server responses preserve the current history stack.

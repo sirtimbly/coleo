@@ -23,7 +23,8 @@ import type {
 } from "@/lib";
 
 import { ResourceSheet, type ResourceSheetColumn } from "./ResourceSheet";
-import { collectTagOptions, normalizeTagValues } from "./tag-values";
+import { normalizeTagValues } from "./tag-values";
+import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
@@ -161,10 +162,7 @@ export function TaskSheet({
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingTaskId, setFormattingTaskId] = useState<string>();
-	const tagOptions = useMemo(
-		() => collectTagOptions(tasks.map(readTags)),
-		[tasks],
-	);
+	const tagOptions = useKnownTagOptions(tasks, readTags);
 	const columns = useMemo(
 		() => TASK_COLUMNS.map((column) => (
 			column.id === "tags" ? { ...column, options: tagOptions } : column
