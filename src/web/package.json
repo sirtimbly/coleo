@@ -24,6 +24,8 @@
     "@tanstack/react-query-persist-client": "^5.90.22",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.8",
+    "adaptivecards": "3.0.6",
+    "adaptivecards-templating": "2.3.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.0",
     "golden-layout": "^2.6.0",

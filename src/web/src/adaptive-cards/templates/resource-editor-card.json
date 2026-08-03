@@ -1,0 +1,39 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "${title}",
+      "size": "Large",
+      "weight": "Bolder",
+      "wrap": true
+    },
+    {
+      "type": "Input.Text",
+      "id": "title",
+      "label": "Title",
+      "value": "${title}",
+      "isRequired": true,
+      "errorMessage": "A title is required."
+    },
+    {
+      "type": "Input.Text",
+      "id": "description",
+      "label": "Description",
+      "value": "${description}",
+      "isMultiline": true
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "title": "Save",
+      "verb": "${saveVerb}",
+      "data": {
+        "actionId": "save-resource"
+      }
+    }
+  ]
+}
