@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.10.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.9.0...coleo-v0.10.0) (2026-08-03)
+
+
+### Features
+
+* **brain:** fail closed on invalid project plans ([95524ac](https://github.com/sirtimbly/coleo/commit/95524ac484bb25d9bc0ec1d282fb5852c2e1ace3))
+* **brain:** fail closed on invalid project plans ([74e99ba](https://github.com/sirtimbly/coleo/commit/74e99ba0fdaa6d15205e8eac5e026efe77ff9109))
+* **runtime:** isolate project network endpoints ([2321dfb](https://github.com/sirtimbly/coleo/commit/2321dfbb2f7d2eed7b85888c28be6820d7c91793))
+* **runtime:** isolate project-local services and vector data ([3f6c0a9](https://github.com/sirtimbly/coleo/commit/3f6c0a90ed8d8d389ffa9067509d30a740395e70))
+* **search:** isolate vector data by project ([b2413f1](https://github.com/sirtimbly/coleo/commit/b2413f1fa0c53dc9172291656d49b52e4d492aa4))
+
+
+### Bug Fixes
+
+* **brain:** enforce planning gate for active arms ([be6d941](https://github.com/sirtimbly/coleo/commit/be6d9414f1cbafb95e4acf168be47351cacd5028))
+* **brain:** persist database instance identity ([f8c36d5](https://github.com/sirtimbly/coleo/commit/f8c36d5e7866359511ea914963f5a3052ef304b5))
+
+
+### Styles
+
+* **web:** deemphasize task regeneration action ([4a24286](https://github.com/sirtimbly/coleo/commit/4a242864fc9f31bb0bde4d6446aca0aee3373ea9))
+
+
+### Miscellaneous Chores
+
+* **dev:** isolate local NATS ports ([1f725e1](https://github.com/sirtimbly/coleo/commit/1f725e10dd7d3b61f0188bd4a39470414937f5af))
+
 ## [0.9.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.8.0...coleo-v0.9.0) (2026-07-30)
 
 
