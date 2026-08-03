@@ -120,6 +120,96 @@ describe("workbench foundation", () => {
 		).get() as { count: number }).count).toBe(2);
 	});
 
+	it("persists attention transitions independently from source events", async () => {
+		const app = createTestApp();
+		const itemKey = "event:task.blocked:task-test";
+		const readAt = new Date().toISOString();
+		const update = await app.request(`/workbench/attention/${encodeURIComponent(itemKey)}`, {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				profileId: "local",
+				seenAt: readAt,
+				readAt,
+				requiresAction: true,
+			}),
+		});
+		expect(update.status).toBe(200);
+		expect((await update.json() as {
+			attention: { itemKey: string; requiresAction: boolean };
+		}).attention).toMatchObject({ itemKey, requiresAction: true });
+
+		const resolve = await app.request("/workbench/attention/bulk", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				profileId: "local",
+				itemKeys: [itemKey],
+				action: "resolve",
+			}),
+		});
+		expect(resolve.status).toBe(200);
+
+		const listed = await app.request("/workbench/attention?profileId=local&includeArchived=true");
+		const attention = (await listed.json() as {
+			attention: Array<{ itemKey: string; resolvedAt?: string; requiresAction: boolean }>;
+		}).attention;
+		expect(attention).toHaveLength(1);
+		expect(attention[0]?.itemKey).toBe(itemKey);
+		expect(attention[0]?.resolvedAt).toBeString();
+		expect(attention[0]?.requiresAction).toBe(false);
+	});
+
+	it("allowlists card actions and updates scalar resource fields", async () => {
+		const app = createTestApp();
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO tasks (
+			   id, subject, description, status, priority, source_type, created_at, updated_at
+			 ) VALUES ('card-task', 'Before', 'Before detail', 'draft', 'normal', 'manual', ?, ?)`,
+			[now, now],
+		);
+
+		const action = await app.request("/workbench/cards/actions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				envelopeId: "edit:task:card-task",
+				template: { id: "workbench.resource-editor", version: 1 },
+				actionId: "save-resource",
+				verb: "task.update",
+				resource: { kind: "task", id: "card-task" },
+				inputs: {
+					actionId: "save-resource",
+					title: "After",
+					description: "After detail",
+				},
+				clientActionId: "action-test",
+			}),
+		});
+		expect(action.status).toBe(200);
+		expect((await action.json() as {
+			result: { ok: boolean; clientActionId: string };
+		}).result).toMatchObject({ ok: true, clientActionId: "action-test" });
+		expect(db.query("SELECT subject, description FROM tasks WHERE id = ?").get("card-task"))
+			.toEqual({ subject: "After", description: "After detail" });
+
+		const rejected = await app.request("/workbench/cards/actions", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				envelopeId: "event:test",
+				template: { id: "workbench.event", version: 1 },
+				actionId: "save-resource",
+				verb: "task.update",
+				resource: { kind: "task", id: "card-task" },
+				inputs: { title: "Not allowed" },
+				clientActionId: "action-rejected",
+			}),
+		});
+		expect(rejected.status).toBe(400);
+	});
+
 	it("starts a run only when an Arm claims work", () => {
 		const now = new Date().toISOString();
 		db.run(

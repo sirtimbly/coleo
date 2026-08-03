@@ -11,6 +11,8 @@ import { Hono } from "hono";
 
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import { createWorkbenchAttentionRoutes } from "./workbench-attention";
+import { createWorkbenchCardRoutes } from "./workbench-cards";
 
 import type { Database } from "bun:sqlite";
 
@@ -183,6 +185,9 @@ function broadcastChange(entity: "profile" | "view" | "layout", action: string, 
 
 export function createWorkbenchRoutes() {
 	const app = new Hono<WorkbenchContext>();
+
+	app.route("/attention", createWorkbenchAttentionRoutes());
+	app.route("/cards", createWorkbenchCardRoutes());
 
 	app.get("/bootstrap", (c) => {
 		const db = c.get("db");
