@@ -229,5 +229,9 @@ describe("adaptive card contracts", () => {
 		expect(getEffectiveCardPresentation("card-b", "detail")).toBe("compact");
 		clearCardPresentation("card-a");
 		setAllCardPresentations("surface");
+		expect(getEffectiveCardPresentation("thread-card", "compact", "detail")).toBe("detail");
+		setAllCardPresentations("compact");
+		expect(getEffectiveCardPresentation("thread-card", "compact", "detail")).toBe("compact");
+		setAllCardPresentations("surface");
 	});
 });

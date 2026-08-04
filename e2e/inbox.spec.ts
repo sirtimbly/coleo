@@ -78,6 +78,14 @@ test("views indented message threads and carries reply context into the composer
 	await expect(page.getByText(received.body)).toBeVisible();
 	await expect(page.getByText(reply.body)).toBeVisible();
 	await expect(page.locator('[data-thread-depth="1"]')).toBeVisible();
+	const threadCards = page.locator('[data-card-template="workbench.message@1"]');
+	await expect(threadCards).toHaveCount(2);
+	await expect(threadCards.first()).toHaveAttribute("data-card-presentation", "detail");
+	await expect(threadCards.last()).toHaveAttribute("data-card-presentation", "detail");
+	await threadCards.first().getByRole("button", { name: "Card view settings" }).click();
+	const fullDetailsForAll = page.getByRole("menuitem", { name: "Full details for all cards" });
+	await expect(fullDetailsForAll.locator("svg.lucide-check")).toBeVisible();
+	await page.keyboard.press("Escape");
 
 	await page.getByRole("button", { name: "Reply", exact: true }).first().click();
 	await expect(page).toHaveURL("/compose");
