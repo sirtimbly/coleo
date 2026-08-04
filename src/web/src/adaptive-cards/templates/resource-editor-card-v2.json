@@ -1,0 +1,141 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "RichTextBlock",
+      "inlines": [
+        {
+          "type": "TextRun",
+          "text": "EDIT ${kindLabel}",
+          "size": "Small",
+          "weight": "Bolder",
+          "color": "Accent"
+        }
+      ]
+    },
+    {
+      "type": "Input.Text",
+      "id": "title",
+      "label": "Title",
+      "value": "${title}",
+      "isRequired": true,
+      "errorMessage": "A title is required.",
+      "maxLength": 500
+    },
+    {
+      "type": "Input.Text",
+      "id": "description",
+      "label": "Description",
+      "value": "${description}",
+      "isMultiline": true
+    },
+    {
+      "type": "ColumnSet",
+      "$when": "${showTaskFields}",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "Input.ChoiceSet",
+              "id": "priority",
+              "label": "Priority",
+              "value": "${priority}",
+              "style": "compact",
+              "choices": [
+                {
+                  "title": "Critical",
+                  "value": "critical"
+                },
+                {
+                  "title": "High",
+                  "value": "high"
+                },
+                {
+                  "title": "Normal",
+                  "value": "normal"
+                },
+                {
+                  "title": "Low",
+                  "value": "low"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "Input.Date",
+              "id": "dueDate",
+              "label": "Due date",
+              "value": "${dueDate}"
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "Input.Number",
+              "id": "progress",
+              "label": "Progress (%)",
+              "value": "${progress}",
+              "min": 0,
+              "max": 100
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "ColumnSet",
+      "$when": "${showTaskFields}",
+      "columns": [
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "Input.Text",
+              "id": "phase",
+              "label": "Phase",
+              "value": "${phase}",
+              "maxLength": 200
+            }
+          ]
+        },
+        {
+          "type": "Column",
+          "width": "stretch",
+          "items": [
+            {
+              "type": "Input.Text",
+              "id": "domain",
+              "label": "Domain",
+              "value": "${domain}",
+              "maxLength": 200
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "title": "Save changes",
+      "verb": "${saveVerb}",
+      "data": {
+        "actionId": "save-resource",
+        "expectedResourceVersion": "${resourceVersion}"
+      }
+    }
+  ]
+}

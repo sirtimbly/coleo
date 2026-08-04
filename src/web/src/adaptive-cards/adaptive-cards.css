@@ -19,6 +19,12 @@
 	background: var(--color-surface-secondary);
 }
 
+.adaptive-card-host .ac-pushButton:focus-visible,
+.adaptive-card-host .ac-input:focus-visible {
+	outline: 2px solid var(--color-ring);
+	outline-offset: 2px;
+}
+
 .adaptive-card-host .ac-input {
 	box-sizing: border-box;
 	width: 100%;
@@ -28,6 +34,20 @@
 	padding: 0.5rem;
 	color: var(--color-foreground);
 	font: inherit;
+}
+
+.adaptive-card-host table {
+	width: 100%;
+	table-layout: fixed;
+}
+
+.adaptive-card-host td {
+	vertical-align: top;
+	overflow-wrap: anywhere;
+}
+
+.adaptive-card-host input[type="date"] {
+	color-scheme: dark;
 }
 
 .adaptive-card-host a {

@@ -127,11 +127,11 @@ export function AdaptiveCardView({
 				? `${envelope.creator.kind}:${envelope.creator.id}`
 				: undefined}
 			className={cn(
-				"min-w-0 overflow-hidden border border-border bg-card",
+				"min-w-0 overflow-hidden rounded-md border border-border bg-card",
 				className,
 			)}
 		>
-			<div className="flex min-h-10 items-center gap-2 border-b border-border bg-surface-secondary/35 px-2.5 py-1.5">
+			<div className="flex min-h-10 items-center gap-2 border-b border-border/70 px-3 py-1.5">
 				{envelope.creator ? (
 					<>
 						<CardCreatorAvatar
@@ -142,11 +142,6 @@ export function AdaptiveCardView({
 							<p className="truncate text-xs font-semibold text-foreground">
 								{envelope.creator.displayName}
 							</p>
-							{mode === "detail" ? (
-								<p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-									{envelope.creator.kind}
-								</p>
-							) : null}
 						</div>
 					</>
 				) : (

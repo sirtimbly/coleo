@@ -11,7 +11,7 @@ import type {
 	CardSurface,
 } from "../../../types/adaptive-cards";
 
-interface CardFact {
+export interface CardFact {
 	label: string;
 	value: string;
 }
@@ -78,12 +78,18 @@ export function presentResourceDetail(input: {
 	title: string;
 	description?: string;
 	facts: CardFact[];
+	technicalFacts?: CardFact[];
+	stateLabel?: string;
+	stateColor?: "Default" | "Accent" | "Good" | "Warning" | "Attention";
+	timestampLabel?: string;
+	noticeText?: string;
+	noticeTone?: "default" | "emphasis" | "good" | "warning" | "attention";
 	creator?: CardCreator;
 	targetRoute?: { pathname: string; search?: string; title?: string };
 }): CardEnvelope {
 	return {
 		id: `detail:${input.kind}:${input.id}`,
-		template: { id: "workbench.resource-detail", version: 1 },
+		template: { id: "workbench.resource-detail", version: 2 },
 		schemaVersion: "1.5",
 		presentation: { surface: "detail", title: input.title },
 		resource: { kind: input.kind, id: input.id },
@@ -94,6 +100,12 @@ export function presentResourceDetail(input: {
 			title: input.title,
 			description: input.description,
 			facts: jsonFacts(input.facts),
+			technicalFacts: jsonFacts(input.technicalFacts ?? []),
+			stateLabel: input.stateLabel,
+			stateColor: input.stateColor ?? "Default",
+			timestampLabel: input.timestampLabel,
+			noticeText: input.noticeText,
+			noticeTone: input.noticeTone ?? "emphasis",
 			openVerb: input.targetRoute ? "resource.open" : undefined,
 			openLabel: input.targetRoute ? "Open full view" : undefined,
 			targetRoute: input.targetRoute
@@ -114,10 +126,17 @@ export function presentResourceEditor(input: {
 	description: string;
 	resourceVersion?: string;
 	creator?: CardCreator;
+	taskFields?: {
+		priority: "critical" | "high" | "normal" | "low";
+		dueDate?: string | null;
+		progress?: number;
+		phase?: string | null;
+		domain?: string | null;
+	};
 }): CardEnvelope {
 	return {
 		id: `edit:${input.kind}:${input.id}`,
-		template: { id: "workbench.resource-editor", version: 1 },
+		template: { id: "workbench.resource-editor", version: 2 },
 		schemaVersion: "1.5",
 		presentation: {
 			surface: "editor",
@@ -127,8 +146,15 @@ export function presentResourceEditor(input: {
 		creator: input.creator ?? USER_CARD_CREATOR,
 		createdAt: new Date().toISOString(),
 		data: {
+			kindLabel: input.kind.toUpperCase(),
 			title: input.title,
 			description: input.description,
+			showTaskFields: input.kind === "task",
+			priority: input.taskFields?.priority ?? "normal",
+			dueDate: input.taskFields?.dueDate?.slice(0, 10) ?? "",
+			progress: input.taskFields?.progress ?? 0,
+			phase: input.taskFields?.phase ?? "",
+			domain: input.taskFields?.domain ?? "",
 			saveVerb: `${input.kind}.update`,
 			resourceVersion: input.resourceVersion,
 		},
