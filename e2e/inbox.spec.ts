@@ -166,9 +166,15 @@ test("keeps following virtual rows below an expanded card", async ({ page }) => 
 		hasText: "Task blocked: Task task-dashboard",
 	});
 	const followingRow = page.locator(".tabulator-row").filter({ hasText: "Poll completed" });
-	await eventRow.getByRole("button", {
-		name: "Expand Task blocked: Task task-dashboard card",
-	}).click();
+	const expander = eventRow.locator(".coleo-inbox-expand");
+	const expanderIcon = expander.locator("svg.coleo-inbox-expand-icon");
+	await expect(expander).toHaveAccessibleName("Expand Task blocked: Task task-dashboard card");
+	await expect(expanderIcon).toBeVisible();
+	await expect(expanderIcon).toHaveCSS("transform", "matrix(1, 0, 0, 1, 0, 0)");
+	await expander.click();
+	await expect(expander).toHaveAccessibleName("Collapse Task blocked: Task task-dashboard card");
+	await expect(expander).toHaveAttribute("aria-expanded", "true");
+	await expect(expanderIcon).toHaveCSS("transform", "matrix(0, 1, -1, 0, 0, 0)");
 	const card = eventRow.locator('[data-card-template="workbench.event@1"]');
 	await expect(card).toBeVisible();
 	await expect.poll(async () => {
@@ -178,8 +184,6 @@ test("keeps following virtual rows below an expanded card", async ({ page }) => 
 		return followingBox.y >= cardBox.y + cardBox.height - 1;
 	}).toBe(true);
 
-	await eventRow.getByRole("button", {
-		name: "Collapse Task blocked: Task task-dashboard card",
-	}).click();
+	await expander.click();
 	await expect(card).toHaveCount(0);
 });
