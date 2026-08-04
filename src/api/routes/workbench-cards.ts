@@ -29,6 +29,13 @@ const ACTIONS_BY_TEMPLATE: Record<CardTemplateId, ReadonlySet<string>> = {
 	"workbench.resource-editor": new Set(["task.update", "bug.update"]),
 };
 
+const VERSIONS_BY_TEMPLATE: Record<CardTemplateId, ReadonlySet<number>> = {
+	"workbench.event": new Set([1]),
+	"workbench.message": new Set([1]),
+	"workbench.resource-detail": new Set([1, 2]),
+	"workbench.resource-editor": new Set([1, 2]),
+};
+
 function requireText(input: CardJsonObject, field: string, maxLength: number): string {
 	const value = input[field];
 	if (typeof value !== "string" || !value.trim()) {
@@ -36,6 +43,18 @@ function requireText(input: CardJsonObject, field: string, maxLength: number): s
 	}
 	if (value.length > maxLength) throw HttpError.badRequest(`${field} is too long`);
 	return value.trim();
+}
+
+function optionalText(
+	input: CardJsonObject,
+	field: string,
+	maxLength: number,
+): string | null | undefined {
+	const value = input[field];
+	if (value === undefined) return undefined;
+	if (typeof value !== "string") throw HttpError.badRequest(`${field} must be text`);
+	if (value.length > maxLength) throw HttpError.badRequest(`${field} is too long`);
+	return value.trim() || null;
 }
 
 function validateRequest(value: unknown): CardActionRequest {
@@ -57,7 +76,10 @@ function validateRequest(value: unknown): CardActionRequest {
 	) {
 		throw HttpError.badRequest("Card action is missing required fields");
 	}
-	if (input.template.version !== 1 || !(input.template.id in ACTIONS_BY_TEMPLATE)) {
+	if (
+		!(input.template.id in ACTIONS_BY_TEMPLATE) ||
+		!VERSIONS_BY_TEMPLATE[input.template.id].has(input.template.version)
+	) {
 		throw HttpError.badRequest("Unsupported card template version");
 	}
 	if (JSON.stringify(input.inputs).length > 32_000) {
@@ -86,7 +108,7 @@ function validateEnvelope(value: unknown): CardEnvelope {
 		typeof envelope.template.id !== "string" ||
 		typeof envelope.template.version !== "number" ||
 		!(envelope.template.id in ACTIONS_BY_TEMPLATE) ||
-		envelope.template.version !== 1 ||
+		!VERSIONS_BY_TEMPLATE[envelope.template.id].has(envelope.template.version) ||
 		!envelope.presentation ||
 		typeof envelope.presentation.surface !== "string" ||
 		!envelope.data ||
@@ -321,15 +343,82 @@ export function createWorkbenchCardRoutes() {
 			const description = typeof request.inputs.description === "string"
 				? request.inputs.description.slice(0, 100_000)
 				: "";
+			const priorityInput = request.inputs.priority;
+			const priority = priorityInput === undefined
+				? undefined
+				: typeof priorityInput === "string" &&
+					["critical", "high", "normal", "low"].includes(priorityInput)
+					? priorityInput
+					: null;
+			if (priorityInput !== undefined && priority === null) {
+				throw HttpError.badRequest("priority is invalid");
+			}
+			const dueDateInput = request.inputs.dueDate;
+			let dueDate: string | null | undefined;
+			if (dueDateInput !== undefined) {
+				if (typeof dueDateInput !== "string") throw HttpError.badRequest("dueDate must be a date");
+				dueDate = dueDateInput.trim() || null;
+				if (
+					dueDate &&
+					(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) ||
+						Number.isNaN(Date.parse(`${dueDate}T00:00:00Z`)))
+				) {
+					throw HttpError.badRequest("dueDate must use YYYY-MM-DD");
+				}
+			}
+			const progressInput = request.inputs.progress;
+			let progress: number | undefined;
+			if (progressInput !== undefined && progressInput !== "") {
+				progress = typeof progressInput === "number"
+					? progressInput
+					: typeof progressInput === "string"
+						? Number(progressInput)
+						: Number.NaN;
+				if (!Number.isFinite(progress) || progress < 0 || progress > 100) {
+					throw HttpError.badRequest("progress must be between 0 and 100");
+				}
+			}
+			const phase = optionalText(request.inputs, "phase", 200);
+			const domain = optionalText(request.inputs, "domain", 200);
 			const updatedAt = new Date().toISOString();
+			const columns = ["subject = ?", "description = ?"];
+			const values: Array<string | number | null> = [subject, description];
+			const changes: Record<string, string | number | null> = { subject, description };
+			if (priority !== undefined) {
+				columns.push("priority = ?");
+				values.push(priority);
+				changes.priority = priority;
+			}
+			if (dueDate !== undefined) {
+				columns.push("due_date = ?");
+				values.push(dueDate);
+				changes.dueDate = dueDate;
+			}
+			if (progress !== undefined) {
+				columns.push("progress = ?");
+				values.push(progress);
+				changes.progress = progress;
+			}
+			if (phase !== undefined) {
+				columns.push("phase = ?");
+				values.push(phase);
+				changes.phase = phase;
+			}
+			if (domain !== undefined) {
+				columns.push("domain = ?");
+				values.push(domain);
+				changes.domain = domain;
+			}
+			columns.push("updated_at = ?");
+			values.push(updatedAt, resource.id);
 			const update = db.run(
-				"UPDATE tasks SET subject = ?, description = ?, updated_at = ? WHERE id = ?",
-				[subject, description, updatedAt, resource.id],
+				`UPDATE tasks SET ${columns.join(", ")} WHERE id = ?`,
+				values,
 			);
 			if (update.changes === 0) throw HttpError.notFound(`Task not found: ${resource.id}`);
 			broadcast("tasks", "task.updated", {
 				taskId: resource.id,
-				changes: { subject, description },
+				changes,
 			});
 			return c.json({
 				result: completeAction(db, auditId, request, result(request, "Task saved", {

@@ -172,7 +172,7 @@ describe("workbench foundation", () => {
 
 		const actionBody = {
 			envelopeId: "edit:task:card-task",
-			template: { id: "workbench.resource-editor", version: 1 },
+			template: { id: "workbench.resource-editor", version: 2 },
 			actionId: "save-resource",
 			verb: "task.update",
 			resource: { kind: "task", id: "card-task" },
@@ -180,6 +180,11 @@ describe("workbench foundation", () => {
 				actionId: "save-resource",
 				title: "After",
 				description: "After detail",
+				priority: "high",
+				dueDate: "2026-08-20",
+				progress: "45",
+				phase: "Phase 2",
+				domain: "frontend",
 			},
 			clientActionId: "action-test",
 		};
@@ -192,8 +197,19 @@ describe("workbench foundation", () => {
 		expect((await action.json() as {
 			result: { ok: boolean; clientActionId: string };
 		}).result).toMatchObject({ ok: true, clientActionId: "action-test" });
-		expect(db.query("SELECT subject, description FROM tasks WHERE id = ?").get("card-task"))
-			.toEqual({ subject: "After", description: "After detail" });
+		expect(db.query(
+			`SELECT subject, description, priority, due_date AS dueDate,
+			        progress, phase, domain
+			 FROM tasks WHERE id = ?`,
+		).get("card-task")).toEqual({
+			subject: "After",
+			description: "After detail",
+			priority: "high",
+			dueDate: "2026-08-20",
+			progress: 45,
+			phase: "Phase 2",
+			domain: "frontend",
+		});
 		const duplicate = await app.request("/workbench/cards/actions", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
