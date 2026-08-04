@@ -132,7 +132,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     showInNav: true,
     getTitle: (searchParams) => {
       const taskId = searchParams.get('task');
-      return taskId ? `Task: ${taskId}` : 'Tasks';
+      return taskId ? 'Task details' : 'Tasks';
     },
   },
   {

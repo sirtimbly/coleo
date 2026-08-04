@@ -30,10 +30,7 @@ import {
 	BRAIN_CARD_CREATOR,
 	USER_CARD_CREATOR,
 } from "@/adaptive-cards/card-creators";
-import {
-	presentResourceDetail,
-	presentResourceEditor,
-} from "@/adaptive-cards/presenters";
+import { presentTaskCard } from "@/adaptive-cards/task-presenter";
 import {
 	type Task,
 	type TaskLlmMetadata,
@@ -64,11 +61,7 @@ import {
 	SheetWorkspaceToolbar,
 	type SheetInsight,
 } from "@/design-system/SheetWorkspaceToolbar";
-import {
-	WorkbenchHeader,
-	WorkbenchSurface,
-} from "@/design-system/WorkbenchSurface";
-import type { CardActionRequest, CardEnvelope } from "../../../types/adaptive-cards";
+import type { CardActionRequest } from "../../../types/adaptive-cards";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
 
@@ -145,31 +138,6 @@ const STATUS_CONFIG: Record<
 		label: "Cancelled",
 	},
 };
-
-function presentTaskCard(task: Task, editing: boolean): CardEnvelope {
-	if (editing) {
-		return presentResourceEditor({
-			id: task.id,
-			kind: "task",
-			title: task.subject,
-			description: task.description,
-			resourceVersion: task.updatedAt,
-			creator: taskCardCreator(task),
-		});
-	}
-	return presentResourceDetail({
-		id: task.id,
-		kind: "task",
-		title: task.subject,
-		description: task.description,
-		creator: taskCardCreator(task),
-		facts: [
-			{ label: "Status", value: STATUS_CONFIG[task.status].label },
-			{ label: "Priority", value: task.priority },
-			{ label: "Assigned", value: task.assignedArmName ?? "Unassigned" },
-		],
-	});
-}
 
 const isTaskStatus = (value: string): value is Task["status"] =>
 	value in STATUS_CONFIG;
@@ -454,65 +422,6 @@ function TaskDetailsToolbar({
 				</Button>
 			) : null}
 		</header>
-	);
-}
-
-function formatAbsoluteDateTime(iso: string): string {
-	return new Date(iso).toLocaleString(undefined, {
-		dateStyle: "medium",
-		timeStyle: "short",
-	});
-}
-
-function formatRelativeAge(iso: string): string {
-	const diffMs = Date.now() - new Date(iso).getTime();
-	const diffSeconds = Math.floor(diffMs / 1000);
-	if (diffSeconds < 60) return "just now";
-	const diffMinutes = Math.floor(diffSeconds / 60);
-	if (diffMinutes < 60) return `${diffMinutes}m ago`;
-	const diffHours = Math.floor(diffMinutes / 60);
-	if (diffHours < 24) return `${diffHours}h ago`;
-	const diffDays = Math.floor(diffHours / 24);
-	if (diffDays < 30) return `${diffDays}d ago`;
-	const diffMonths = Math.floor(diffDays / 30);
-	if (diffMonths < 12) return `${diffMonths}mo ago`;
-	const diffYears = Math.floor(diffMonths / 12);
-	return `${diffYears}y ago`;
-}
-
-function TaskCreatedAt({ createdAt }: { createdAt: string }) {
-	return (
-		<span
-			className="inline-flex items-center gap-1 text-xs text-foreground-500"
-			title={formatAbsoluteDateTime(createdAt)}
-		>
-			<Clock className="h-3 w-3" />
-			Created {formatRelativeAge(createdAt)}
-		</span>
-	);
-}
-
-function BlockedTaskNotice({ task }: { task: Task }) {
-	if (task.status !== "blocked") return null;
-
-	return (
-		<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-			<div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-				<Pause className="h-3.5 w-3.5" />
-				Current blocker
-			</div>
-			<p className="readable-copy mt-1.5 whitespace-pre-wrap">
-				{task.blockedReason || "No reason was recorded. The next review must add one."}
-			</p>
-			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-				<span>Category: {(task.blockedCategory || "unknown").replace("_", " ")}</span>
-				{task.blockedRecheckAt ? (
-					<span>Next review: {formatAbsoluteDateTime(task.blockedRecheckAt)}</span>
-				) : null}
-				{task.blockedReviewCount ? <span>Reviews: {task.blockedReviewCount}</span> : null}
-				{task.blockedNeedsHuman ? <span className="font-medium text-amber-700 dark:text-amber-300">Waiting for human input</span> : null}
-			</div>
-		</div>
 	);
 }
 
@@ -804,6 +713,7 @@ export function TasksPage() {
       {
         pathname: "/tasks",
         search: `?${nextSearchParams.toString()}`,
+        title: task.subject,
       },
       "split",
     );
@@ -987,22 +897,6 @@ export function TasksPage() {
 		return (
 			<>
 				<div className="flex h-full min-h-0 flex-col bg-background">
-					<WorkbenchHeader
-						title={selectedTask.subject}
-						description={`Task ${selectedTask.id}`}
-						icon={<ScrollText className="h-4 w-4" />}
-						actions={
-							<Button
-								isIconOnly
-								size="sm"
-								variant="ghost"
-								onPress={closeWorkspaceRoute}
-								aria-label="Close task details"
-							>
-								<X className="h-4 w-4" />
-							</Button>
-						}
-					/>
 					<TaskDetailsToolbar
 						activeTab={sidebarTab}
 						onTabChange={setSidebarTab}
@@ -1015,26 +909,21 @@ export function TasksPage() {
 						cardEditing={cardEditTaskId === selectedTask.id}
 						onCardEditToggle={handleToggleTaskCardEditor}
 						onStatusChange={handleStatusChange}
+						onClose={closeWorkspaceRoute}
 					/>
 
 					{sidebarTab === detailsTabId ? (
 						<div className="flex-1 overflow-auto p-3" role="tabpanel">
-							<WorkbenchSurface className="mx-auto max-w-4xl p-4">
-							<div className="space-y-3">
-								<div className="flex items-center justify-between">
-									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
-									<TaskCreatedAt createdAt={selectedTask.createdAt} />
-								</div>
-								<BlockedTaskNotice task={selectedTask} />
+							<div className="mx-auto max-w-4xl">
 								<AdaptiveCardView
 									envelope={presentTaskCard(
 										selectedTask,
 										cardEditTaskId === selectedTask.id,
+										taskCardCreator(selectedTask),
 									)}
 									onAction={handleTaskCardAction}
 								/>
 							</div>
-							</WorkbenchSurface>
 						</div>
 					) : null}
 
@@ -1155,18 +1044,11 @@ export function TasksPage() {
 							<div className="flex-1 p-0" role="tabpanel">
 								<div className="p-3 overflow-auto h-full">
 									<div className="space-y-3">
-										<div className="flex items-center justify-between">
-											<span className="text-xs text-foreground-500 font-mono">
-												ID: {selectedTask.id}
-											</span>
-											<TaskCreatedAt createdAt={selectedTask.createdAt} />
-										</div>
-										<BlockedTaskNotice task={selectedTask} />
-
 										<AdaptiveCardView
 											envelope={presentTaskCard(
 												selectedTask,
 												cardEditTaskId === selectedTask.id,
+												taskCardCreator(selectedTask),
 											)}
 											onAction={handleTaskCardAction}
 										/>
