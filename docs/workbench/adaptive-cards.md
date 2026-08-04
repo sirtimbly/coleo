@@ -45,6 +45,10 @@ is saved locally; "Use surface defaults" restores compact streams and detailed
 singleton views. Item overrides stay session-local. Editor cards always use
 full detail so inputs cannot be hidden accidentally.
 
+Mail thread panels treat "Full details for all cards" as their shared default,
+so every message body is readable on entry unless the user has explicitly
+chosen another saved presentation mode.
+
 Raw Arm logs, diffs, threaded discussions, charts, tabular sheets, and plan
 editors remain specialized Workbench projections.
 
