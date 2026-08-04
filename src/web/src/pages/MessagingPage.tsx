@@ -10,13 +10,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@heroui/react";
 import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
-import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import {
+	AdaptiveCardView,
+	DeferredAdaptiveCardView,
+} from "@/adaptive-cards/AdaptiveCardView";
 import {
 	BRAIN_CARD_CREATOR,
 	createArmCardCreator,
 } from "@/adaptive-cards/card-creators";
 import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
-import { presentInboxItem } from "@/adaptive-cards/presenters";
+import { presentInboxItem, presentMessage } from "@/adaptive-cards/presenters";
 import {
 	WorkbenchEmptyState,
 	WorkbenchHeader,
@@ -57,6 +60,7 @@ import {
 
 import type {
 	CardActionRequest,
+	CardCreator,
 	WorkbenchAttention,
 	WorkbenchInboxRecord,
 } from "../../../types/adaptive-cards";
@@ -262,6 +266,18 @@ function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemData {
 	};
 }
 
+function creatorForInboxItem(source: InboxItemData): CardCreator {
+	if (source.statusReport) return createArmCardCreator(source.statusReport.armId);
+	if (source.recentEvent?.armId) return createArmCardCreator(source.recentEvent.armId);
+	if (source.item.kind === "arm") {
+		return createArmCardCreator(
+			source.activity?.actor ?? source.item.resourceId ?? "unknown-arm",
+			source.activity?.actor ?? source.item.resourceId,
+		);
+	}
+	return BRAIN_CARD_CREATOR;
+}
+
 export function MessagingPage() {
 	usePageTitle("Coleo Observatory - Inbox");
 	const [searchParams] = useWorkspaceSearchParams();
@@ -459,6 +475,10 @@ export function MessagingPage() {
 		}),
 		[attentionByItem, items],
 	);
+	const statefulItemsById = useMemo(
+		() => new Map(statefulItems.map((entry) => [entry.item.id, entry])),
+		[statefulItems],
+	);
 	const projectionItems = useMemo(
 		() => statefulItems.filter((entry) =>
 			activeFacet !== "brain" ||
@@ -489,7 +509,7 @@ export function MessagingPage() {
 	}, [inbox]);
 
 	const openItem = useCallback((item: InboxProjectionItem) => {
-		const source = statefulItems.find((entry) => entry.item.id === item.id);
+		const source = statefulItemsById.get(item.id);
 		if (source?.thread && source.mailbox) {
 			void markThreadRead(source.thread);
 			openWorkspaceRoute(
@@ -515,7 +535,72 @@ export function MessagingPage() {
 			},
 			"split",
 		);
-	}, [activeFacet, markThreadRead, openWorkspaceRoute, statefulItems]);
+	}, [activeFacet, markThreadRead, openWorkspaceRoute, statefulItemsById]);
+
+	const renderInboxCard = useCallback((item: InboxProjectionItem) => {
+		const source = statefulItemsById.get(item.id);
+		if (!source) return null;
+		const latestMessage = source.thread?.messages.at(-1)?.message;
+		const threadRoute = source.thread && source.mailbox
+			? {
+					pathname: "/messaging",
+					search: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
+					title: source.thread.subject,
+				}
+			: undefined;
+		const envelope = source.thread
+			? presentMessage({
+					id: item.id,
+					from: latestMessage?.from ?? "Unknown sender",
+					subject: item.title,
+					preview: item.summary,
+					timestamp: item.timestamp,
+					surface: "inbox",
+					sent: source.mailbox === "sent",
+					targetRoute: threadRoute,
+				})
+			: presentInboxItem(item, {
+					surface: "inbox",
+					targetRoute: source.targetRoute,
+					creator: creatorForInboxItem(source),
+					facts: source.statusReport
+						? [
+								{ label: "Arm", value: source.statusReport.armId },
+								{ label: "Task", value: source.statusReport.taskId },
+								{ label: "Status", value: source.statusReport.status.replaceAll("_", " ") },
+							]
+						: [],
+				});
+		const handleAction = async (request: CardActionRequest) => {
+			if (request.verb === "message.open") {
+				openItem(item);
+				return;
+			}
+			if (request.verb === "resource.open" && source.targetRoute) {
+				openWorkspaceRoute(source.targetRoute, "focus");
+				return;
+			}
+			await api.executeWorkbenchCardAction(request);
+			await load();
+		};
+		return (
+			<DeferredAdaptiveCardView
+				envelope={envelope}
+				onAction={handleAction}
+				headerActions={(
+					<Button
+						isIconOnly
+						size="sm"
+						variant="ghost"
+						onPress={() => openItem(item)}
+						aria-label={`Open ${item.title} in panel`}
+					>
+						<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+					</Button>
+				)}
+			/>
+		);
+	}, [load, openItem, openWorkspaceRoute, statefulItemsById]);
 
 	const archiveThread = useCallback(async (messageIds: string[]) => {
 		if (messageIds.length === 0) return;
@@ -551,14 +636,7 @@ export function MessagingPage() {
 		const envelope = presentInboxItem(selectedItem.item, {
 			surface: "detail",
 			targetRoute: selectedItem.targetRoute,
-			creator: selectedItem.statusReport
-				? createArmCardCreator(selectedItem.statusReport.armId)
-				: selectedItem.item.kind === "arm"
-					? createArmCardCreator(
-							selectedItem.activity?.actor ?? selectedItem.item.source ?? "unknown-arm",
-							selectedItem.activity?.actor ?? selectedItem.item.source,
-						)
-					: BRAIN_CARD_CREATOR,
+			creator: creatorForInboxItem(selectedItem),
 			facts: selectedItem.statusReport
 				? [
 						{ label: "Arm", value: selectedItem.statusReport.armId },
@@ -629,6 +707,7 @@ export function MessagingPage() {
 			activeFacet={activeFacet}
 			onFacetChange={setActiveFacet}
 			onOpen={openItem}
+			renderCard={renderInboxCard}
 			onRefresh={() => void load()}
 			toolbarContent={
 				activeFacet === "messages" ? (

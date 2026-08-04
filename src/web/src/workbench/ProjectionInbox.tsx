@@ -1,15 +1,21 @@
 /**
  * Reusable inbox projection presentation.
  *
- * Brain, Arm, project-message, and attention inboxes share this compact list,
- * selection, keyboard, search, bulk-action, and empty-state language.
+ * Brain, Arm, project-message, and attention inboxes share this virtualized
+ * table, expandable card, search, bulk-action, and empty-state language.
  */
 
-import { useDeferredValue, useMemo, useState, type ReactNode } from "react";
+import {
+	lazy,
+	Suspense,
+	useDeferredValue,
+	useMemo,
+	useState,
+	type ReactNode,
+} from "react";
 import { Button } from "@heroui/react";
 import { CheckCheck, RefreshCw } from "lucide-react";
 
-import { CollectionRow } from "@/design-system/CollectionRow";
 import { ProjectionSearch } from "@/design-system/ProjectionControls";
 import {
 	WorkbenchEmptyState,
@@ -17,6 +23,10 @@ import {
 	WorkbenchToolbar,
 } from "@/design-system/WorkbenchSurface";
 import { cn } from "@/lib";
+
+const InboxCardTable = lazy(() =>
+	import("./InboxCardTable").then((module) => ({ default: module.InboxCardTable }))
+);
 
 export type InboxItemKind =
 	| "brain"
@@ -47,16 +57,6 @@ export interface InboxFacet {
 	predicate?: (item: InboxProjectionItem) => boolean;
 }
 
-function relativeTime(timestamp: string): string {
-	const milliseconds = Date.now() - new Date(timestamp).getTime();
-	const minutes = Math.max(0, Math.floor(milliseconds / 60_000));
-	if (minutes < 1) return "now";
-	if (minutes < 60) return `${minutes}m`;
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) return `${hours}h`;
-	return `${Math.floor(hours / 24)}d`;
-}
-
 export function ProjectionInbox({
 	title,
 	description,
@@ -65,6 +65,7 @@ export function ProjectionInbox({
 	activeFacet,
 	onFacetChange,
 	onOpen,
+	renderCard,
 	onRefresh,
 	onMarkAllRead,
 	toolbarContent,
@@ -78,6 +79,7 @@ export function ProjectionInbox({
 	activeFacet: string;
 	onFacetChange: (facet: string) => void;
 	onOpen: (item: InboxProjectionItem) => void;
+	renderCard: (item: InboxProjectionItem) => ReactNode;
 	onRefresh?: () => void;
 	onMarkAllRead?: (items: InboxProjectionItem[]) => void;
 	toolbarContent?: ReactNode;
@@ -161,7 +163,7 @@ export function ProjectionInbox({
 					className="ml-auto max-w-xs"
 				/>
 			</WorkbenchToolbar>
-			<div className="min-h-0 flex-1 overflow-y-auto [content-visibility:auto]">
+			<div className="min-h-0 flex-1">
 				{filtered.length === 0 ? (
 					<WorkbenchEmptyState
 						title={loading ? "Loading inbox" : "Nothing in this view"}
@@ -169,37 +171,22 @@ export function ProjectionInbox({
 							? "Coleo is collecting the latest project state."
 							: "New Brain, Arm, and project activity will stream into this projection."}
 					/>
-				) : filtered.map((item) => (
-					<CollectionRow
-						key={item.id}
-						title={item.title}
-						description={item.summary}
-						meta={item.source}
-						unread={item.unread}
-						onOpen={() => onOpen(item)}
-						leading={(
-							<span className={cn(
-								"h-2 w-2 rounded-full",
-								item.severity === "danger" && "bg-danger",
-								item.severity === "warning" && "bg-warning",
-								item.severity === "success" && "bg-success",
-								(!item.severity || item.severity === "info") && "bg-accent",
-							)} />
+				) : (
+					<Suspense
+						fallback={(
+							<WorkbenchEmptyState
+								title="Preparing inbox"
+								description="Building the expandable card table…"
+							/>
 						)}
-						trailing={(
-							<div className="flex items-center gap-2">
-								{item.requiresAction ? (
-									<span className="border border-warning/30 bg-warning/10 px-1.5 py-0.5 text-[0.62rem] font-semibold uppercase tracking-wide text-warning">
-										Action
-									</span>
-								) : null}
-								<time dateTime={item.timestamp} title={new Date(item.timestamp).toLocaleString()}>
-									{relativeTime(item.timestamp)}
-								</time>
-							</div>
-						)}
-					/>
-				))}
+					>
+						<InboxCardTable
+							items={filtered}
+							renderCard={renderCard}
+							onOpen={onOpen}
+						/>
+					</Suspense>
+				)}
 			</div>
 		</div>
 	);

@@ -31,19 +31,22 @@ export function presentInboxItem(
 	item: InboxProjectionItem,
 	options: {
 		surface?: CardSurface;
+		compact?: boolean;
 		targetRoute?: { pathname: string; search?: string; title?: string };
+		openLabel?: string;
 		facts?: CardFact[];
 		creator?: CardCreator;
 	} = {},
 ): CardEnvelope {
 	const targetRoute = options.targetRoute;
+	const surface = options.surface ?? "inbox";
 	return {
 		id: item.id,
 		template: { id: "workbench.event", version: 1 },
 		schemaVersion: "1.5",
 		presentation: {
-			surface: options.surface ?? "inbox",
-			compact: options.surface === "stream",
+			surface,
+			compact: options.compact ?? surface === "stream",
 			title: item.title,
 		},
 		resource: item.resourceId
@@ -59,7 +62,7 @@ export function presentInboxItem(
 			timestampLabel: new Date(item.timestamp).toLocaleString(),
 			requiresAction: item.requiresAction,
 			facts: jsonFacts(options.facts ?? []),
-			openLabel: targetRoute ? "Open target" : undefined,
+			openLabel: targetRoute ? options.openLabel ?? "Open target" : undefined,
 			openVerb: targetRoute ? "resource.open" : undefined,
 			targetRoute: targetRoute
 				? {
@@ -171,6 +174,8 @@ export function presentMessage(input: {
 	canArchive?: boolean;
 	creator?: CardCreator;
 	sent?: boolean;
+	compact?: boolean;
+	targetRoute?: { pathname: string; search?: string; title?: string };
 }): CardEnvelope {
 	return {
 		id: `message:${input.id}`,
@@ -178,6 +183,7 @@ export function presentMessage(input: {
 		schemaVersion: "1.5",
 		presentation: {
 			surface: input.surface ?? "detail",
+			compact: input.compact,
 			title: input.subject,
 		},
 		resource: { kind: "message", id: input.id },
@@ -188,7 +194,14 @@ export function presentMessage(input: {
 			subject: input.subject,
 			preview: input.preview,
 			timestampLabel: new Date(input.timestamp).toLocaleString(),
-			openVerb: null,
+			openVerb: input.targetRoute ? "message.open" : null,
+			targetRoute: input.targetRoute
+				? {
+					pathname: input.targetRoute.pathname,
+					search: input.targetRoute.search ?? "",
+					title: input.targetRoute.title ?? input.subject,
+				}
+				: undefined,
 			canArchive: input.canArchive ?? false,
 		},
 	};
