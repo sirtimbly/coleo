@@ -16,7 +16,11 @@ import {
 import { Button } from "@heroui/react";
 import { CheckCheck, RefreshCw } from "lucide-react";
 
-import { ProjectionSearch } from "@/design-system/ProjectionControls";
+import {
+	ProjectionFilterMenu,
+	ProjectionSearch,
+	type ProjectionFilterOption,
+} from "@/design-system/ProjectionControls";
 import {
 	WorkbenchEmptyState,
 	WorkbenchHeader,
@@ -100,6 +104,17 @@ export function ProjectionInbox({
 			return `${item.title} ${item.summary} ${item.source ?? ""}`.toLowerCase().includes(query);
 		});
 	}, [deferredSearch, facet, items]);
+	const facetOptions = useMemo<ProjectionFilterOption[]>(() =>
+		facets.map((item) => ({
+			id: item.id,
+			label: item.label,
+			count: items.reduce((count, candidate) => {
+				const matches = item.predicate
+					? item.predicate(candidate)
+					: !item.kinds || item.kinds.includes(candidate.kind);
+				return count + (matches ? 1 : 0);
+			}, 0),
+		})), [facets, items]);
 	const unread = filtered.filter((item) => item.unread);
 
 	return (
@@ -129,37 +144,17 @@ export function ProjectionInbox({
 				)}
 			/>
 			<WorkbenchToolbar>
-				<div className="flex max-w-full items-center gap-1 overflow-x-auto">
-					{facets.map((item) => {
-						const count = items.filter((candidate) => item.predicate
-							? item.predicate(candidate)
-							: !item.kinds || item.kinds.includes(candidate.kind)).filter((candidate) =>
-								candidate.unread || candidate.requiresAction
-							).length;
-						return (
-							<button
-								key={item.id}
-								type="button"
-								aria-pressed={activeFacet === item.id}
-								onClick={() => onFacetChange(item.id)}
-								className={cn(
-									"h-7 shrink-0 border px-2.5 text-xs font-medium transition-colors",
-									activeFacet === item.id
-										? "border-accent/40 bg-accent/10 text-accent"
-										: "border-transparent text-muted-foreground hover:border-border hover:bg-surface",
-								)}
-							>
-								{item.label}
-								{count > 0 ? <span className="ml-1.5 tabular-nums">{count}</span> : null}
-							</button>
-						);
-					})}
-				</div>
+				<ProjectionFilterMenu
+					label="View"
+					value={activeFacet}
+					options={facetOptions}
+					onChange={onFacetChange}
+				/>
 				{toolbarContent}
 				<ProjectionSearch
 					value={search}
 					onChange={setSearch}
-					placeholder="Search this inbox"
+					placeholder="Search this inbox…"
 					className="ml-auto max-w-xs"
 				/>
 			</WorkbenchToolbar>

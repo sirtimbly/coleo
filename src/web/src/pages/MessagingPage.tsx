@@ -24,8 +24,13 @@ import {
 	WorkbenchEmptyState,
 	WorkbenchStatusDot,
 } from "@/design-system/WorkbenchSurface";
+import {
+	ProjectionControlGroup,
+	ProjectionFilterMenu,
+	type ProjectionFilterOption,
+} from "@/design-system/ProjectionControls";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { api, cn, type ActivityEntry, type MailMessage, type StatusReport, useMessage } from "@/lib";
+import { api, type ActivityEntry, type MailMessage, type StatusReport, useMessage } from "@/lib";
 import {
 	buildMailThreads,
 	getInboxMessageIdsForThread,
@@ -97,6 +102,10 @@ const MAILBOXES: ReadonlyArray<{ id: MailboxTab; label: string }> = [
 	{ id: "sent", label: "Sent" },
 	{ id: "archive", label: "Archived" },
 ];
+
+const BRAIN_CATEGORY_OPTIONS: readonly ProjectionFilterOption[] = Object.entries(
+	BRAIN_ACTIVITY_CATEGORY_LABELS,
+).map(([id, label]) => ({ id, label }));
 
 function isBrainCategory(value: string | null): value is BrainActivityCategory | "all" {
 	return value !== null && value in BRAIN_ACTIVITY_CATEGORY_LABELS;
@@ -279,7 +288,7 @@ function creatorForInboxItem(source: InboxItemData): CardCreator {
 
 export function MessagingPage() {
 	usePageTitle("Coleo Observatory - Inbox");
-	const [searchParams] = useWorkspaceSearchParams();
+	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const closeWorkspaceRoute = useWorkspaceCloseRoute("/messaging");
 	const { openNewMessage, openReply } = useMessage();
@@ -375,14 +384,55 @@ export function MessagingPage() {
 
 	useEffect(() => {
 		const facet = searchParams.get("facet");
-		if (facet && FACETS.some((candidate) => candidate.id === facet)) setActiveFacet(facet);
+		setActiveFacet(
+			facet && FACETS.some((candidate) => candidate.id === facet) ? facet : "attention",
+		);
 		const nextMailbox = searchParams.get("mailbox");
-		if (nextMailbox === "inbox" || nextMailbox === "sent" || nextMailbox === "archive") {
-			setMailbox(nextMailbox);
-		}
+		setMailbox(
+			nextMailbox === "sent" || nextMailbox === "archive" ? nextMailbox : "inbox",
+		);
 		const nextBrainCategory = searchParams.get("brainCategory");
-		if (isBrainCategory(nextBrainCategory)) setBrainCategory(nextBrainCategory);
+		setBrainCategory(isBrainCategory(nextBrainCategory) ? nextBrainCategory : "all");
 	}, [searchParams]);
+
+	const handleFacetChange = useCallback((facet: string) => {
+		setActiveFacet(facet);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			next.set("facet", facet);
+			if (facet === "messages") next.set("mailbox", mailbox);
+			if (facet === "brain") next.set("brainCategory", brainCategory);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [brainCategory, mailbox, setActiveFacet, setSearchParams]);
+
+	const handleMailboxChange = useCallback((nextMailbox: string) => {
+		if (nextMailbox !== "inbox" && nextMailbox !== "sent" && nextMailbox !== "archive") return;
+		setMailbox(nextMailbox);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			next.set("facet", "messages");
+			next.set("mailbox", nextMailbox);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [setMailbox, setSearchParams]);
+
+	const handleBrainCategoryChange = useCallback((category: string) => {
+		if (!isBrainCategory(category)) return;
+		setBrainCategory(category);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			next.set("facet", "brain");
+			next.set("brainCategory", category);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [setBrainCategory, setSearchParams]);
 
 	const loadOlderBrainActivity = useCallback(async () => {
 		if (!brainActivityCursor || olderBrainActivityLoading || !hasOlderBrainActivity) return;
@@ -685,62 +735,36 @@ export function MessagingPage() {
 			items={projectionItems.map((entry) => entry.item)}
 			facets={FACETS}
 			activeFacet={activeFacet}
-			onFacetChange={setActiveFacet}
+			onFacetChange={handleFacetChange}
 			onOpen={openItem}
 			renderCard={renderInboxCard}
 			onRefresh={() => void load()}
 			toolbarContent={
 				activeFacet === "messages" ? (
-					<div className="flex items-center gap-1 border-l border-border pl-2">
-						{MAILBOXES.map((option) => (
-							<button
-								key={option.id}
-								type="button"
-								aria-pressed={mailbox === option.id}
-								onClick={() => setMailbox(option.id)}
-								className={cn(
-									"h-7 border px-2 text-xs",
-									mailbox === option.id
-										? "border-accent/40 bg-accent/10 text-accent"
-										: "border-transparent text-muted-foreground hover:bg-surface",
-								)}
-							>
-								{option.label}
-							</button>
-						))}
+					<ProjectionControlGroup>
+						<ProjectionFilterMenu
+							label="Mailbox"
+							value={mailbox}
+							options={MAILBOXES}
+							onChange={handleMailboxChange}
+						/>
 						<Button size="sm" variant="ghost" onPress={openNewMessage}>
-							<MessageSquarePlus className="h-3.5 w-3.5" />
+							<MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
 							New
 						</Button>
-					</div>
+					</ProjectionControlGroup>
 				) : activeFacet === "brain" ? (
-					<div className="flex max-w-full items-center gap-1 border-l border-border pl-2">
+					<ProjectionControlGroup>
 						<WorkbenchStatusDot
 							tone={connected && authenticated ? "success" : "neutral"}
 							label={connected && authenticated ? "Live" : "Reconnecting"}
 						/>
-						<div className="flex max-w-full items-center gap-1 overflow-x-auto pl-1">
-							{(
-								Object.entries(BRAIN_ACTIVITY_CATEGORY_LABELS) as Array<
-									[BrainActivityCategory | "all", string]
-								>
-							).map(([category, label]) => (
-								<button
-									key={category}
-									type="button"
-									aria-pressed={brainCategory === category}
-									onClick={() => setBrainCategory(category)}
-									className={cn(
-										"h-7 shrink-0 border px-2 text-xs",
-										brainCategory === category
-											? "border-accent/40 bg-accent/10 text-accent"
-											: "border-transparent text-muted-foreground hover:bg-surface",
-									)}
-								>
-									{label}
-								</button>
-							))}
-						</div>
+						<ProjectionFilterMenu
+							label="Category"
+							value={brainCategory}
+							options={BRAIN_CATEGORY_OPTIONS}
+							onChange={handleBrainCategoryChange}
+						/>
 						<Button
 							size="sm"
 							variant="ghost"
@@ -748,11 +772,11 @@ export function MessagingPage() {
 							onPress={() => void loadOlderBrainActivity()}
 						>
 							{olderBrainActivityLoading ? (
-								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
 							) : null}
 							{hasOlderBrainActivity ? "Load older" : "Beginning"}
 						</Button>
-					</div>
+					</ProjectionControlGroup>
 				) : null
 			}
 			onMarkAllRead={(visible) => {

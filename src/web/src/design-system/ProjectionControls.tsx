@@ -3,15 +3,88 @@
  */
 
 import type { ChangeEvent, ReactNode } from "react";
-import { Search, SlidersHorizontal } from "lucide-react";
-import { Button } from "@heroui/react";
+import type { Selection } from "@heroui/react";
+import { Button, Dropdown, Label } from "@heroui/react";
+import { ChevronDown, ListFilter, Search, SlidersHorizontal } from "lucide-react";
 
 import { cn } from "@/lib";
+
+export interface ProjectionFilterOption {
+	id: string;
+	label: string;
+	count?: number;
+}
+
+export function ProjectionFilterMenu({
+	label,
+	value,
+	options,
+	onChange,
+	className,
+}: {
+	label: string;
+	value: string;
+	options: readonly ProjectionFilterOption[];
+	onChange: (value: string) => void;
+	className?: string;
+}) {
+	const selected = options.find((option) => option.id === value) ?? options[0];
+	const handleSelectionChange = (selection: Selection) => {
+		if (selection === "all") return;
+		const [next] = selection;
+		if (typeof next === "string" && options.some((option) => option.id === next)) {
+			onChange(next);
+		}
+	};
+
+	if (!selected) return null;
+
+	return (
+		<Dropdown>
+			<Button
+				size="sm"
+				variant="secondary"
+				aria-label={`Filter ${label}: ${selected.label}`}
+				className={cn(
+					"h-8 min-h-8 min-w-0 max-w-56 gap-1.5 border border-border bg-surface px-2.5 text-xs shadow-none",
+					className,
+				)}
+			>
+				<ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+				<span className="shrink-0 text-muted-foreground">{label}</span>
+				<span className="min-w-0 truncate font-semibold text-foreground">{selected.label}</span>
+				{selected.count !== undefined ? (
+					<span className="shrink-0 tabular-nums text-muted-foreground">{selected.count}</span>
+				) : null}
+				<ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+			</Button>
+			<Dropdown.Popover placement="bottom start" className="min-w-56">
+				<Dropdown.Menu
+					selectionMode="single"
+					selectedKeys={[value]}
+					onSelectionChange={handleSelectionChange}
+				>
+					{options.map((option) => (
+						<Dropdown.Item key={option.id} id={option.id} textValue={option.label}>
+							<Dropdown.ItemIndicator />
+							<Label className="min-w-0 flex-1 truncate">{option.label}</Label>
+							{option.count !== undefined ? (
+								<span className="ml-auto tabular-nums text-xs text-muted-foreground">
+									{option.count}
+								</span>
+							) : null}
+						</Dropdown.Item>
+					))}
+				</Dropdown.Menu>
+			</Dropdown.Popover>
+		</Dropdown>
+	);
+}
 
 export function ProjectionSearch({
 	value,
 	onChange,
-	placeholder = "Search this view",
+	placeholder = "Search this view…",
 	className,
 }: {
 	value: string;

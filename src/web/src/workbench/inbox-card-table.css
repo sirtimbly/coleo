@@ -1,25 +1,72 @@
 .coleo-inbox-card-table {
 	--inbox-row-height: 54px;
+	--inbox-header-background: #171b22;
+	--inbox-header-background-hover: #232a35;
+	--inbox-header-border: #343c49;
+	--inbox-header-foreground: #f8fafc;
+	--inbox-header-muted: #aeb8c7;
 	border: 0;
 	background: var(--color-background);
 	color: var(--color-foreground);
 	font-family: inherit;
 }
 
-.coleo-inbox-card-table .tabulator-header {
-	border-color: var(--color-border);
-	background: var(--color-surface-secondary);
-	color: var(--color-muted-foreground);
+.coleo-inbox-card-table.tabulator .tabulator-header {
+	border-color: var(--inbox-header-border);
+	background: var(--inbox-header-background);
+	color: var(--inbox-header-foreground);
 	font-size: 0.7rem;
 	font-weight: 650;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
 }
 
-.coleo-inbox-card-table .tabulator-col,
-.coleo-inbox-card-table .tabulator-col-row-handle {
-	border-color: var(--color-border);
-	background: transparent;
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col,
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col-row-handle {
+	border-color: var(--inbox-header-border);
+	background: var(--inbox-header-background);
+	color: var(--inbox-header-foreground);
+}
+
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort] {
+	color: var(--inbox-header-foreground);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.coleo-inbox-card-table.tabulator
+		.tabulator-header
+		.tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover {
+		background: var(--inbox-header-background-hover);
+	}
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable:focus-visible {
+	z-index: 2;
+	outline: 2px solid var(--color-accent);
+	outline-offset: -2px;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="none"]
+	.tabulator-arrow {
+	border-bottom-color: var(--inbox-header-muted) !important;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="ascending"]
+	.tabulator-arrow {
+	border-bottom-color: var(--inbox-header-foreground) !important;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="descending"]
+	.tabulator-arrow {
+	border-top-color: var(--inbox-header-foreground) !important;
 }
 
 .coleo-inbox-card-table .tabulator-tableholder,
