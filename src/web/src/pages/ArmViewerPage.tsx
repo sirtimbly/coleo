@@ -1989,7 +1989,7 @@ function ArmViewerConsole({
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}
-											arm={selectedArm}
+											arm={arm}
 											onToggle={() => onToggleActivity(activity.id)}
 										/>
 									))
