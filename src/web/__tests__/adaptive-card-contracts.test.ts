@@ -2,6 +2,19 @@ import { describe, expect, it } from "bun:test";
 
 import { CARD_CATALOG, getCardTemplate, isCardActionAllowed } from "../src/adaptive-cards/catalog";
 import { createCardRoute, parseCardRoute } from "../src/adaptive-cards/card-route";
+import {
+	BRAIN_CARD_CREATOR,
+	createArmAvatarSource,
+	createArmCardCreator,
+	inferMessageCreator,
+	USER_CARD_CREATOR,
+} from "../src/adaptive-cards/card-creators";
+import {
+	clearCardPresentation,
+	getEffectiveCardPresentation,
+	setAllCardPresentations,
+	setCardPresentation,
+} from "../src/adaptive-cards/card-presentation";
 import { expandCardTemplate } from "../src/adaptive-cards/expand-template";
 import { presentInboxItem, presentResourceEditor } from "../src/adaptive-cards/presenters";
 
@@ -67,6 +80,8 @@ describe("adaptive card contracts", () => {
 			tone: "warning",
 			timestampLabel: "now",
 			requiresAction: true,
+			showAttentionActions: true,
+			summaryMaxLines: 0,
 			facts: [{ label: "Task", value: "task-1" }],
 			openVerb: null,
 		});
@@ -76,5 +91,27 @@ describe("adaptive card contracts", () => {
 		expect(serialized).not.toContain("$data");
 		expect(serialized).toContain('"title":"Task"');
 		expect((expanded.actions as unknown[])).toHaveLength(3);
+	});
+
+	it("assigns stable Brain, Arm, and user creator identities", () => {
+		expect(inferMessageCreator("Coleo Brain")).toEqual(BRAIN_CARD_CREATOR);
+		expect(inferMessageCreator("operator@example.test", true)).toEqual(USER_CARD_CREATOR);
+		expect(createArmCardCreator("arm-octavia", "Octavia").displayName).toBe("Octavia");
+		expect(createArmAvatarSource("arm-octavia")).toBe(createArmAvatarSource("arm-octavia"));
+		expect(createArmAvatarSource("arm-octavia")).not.toBe(createArmAvatarSource("arm-turing"));
+	});
+
+	it("applies presentation preferences per card or across all cards", () => {
+		setAllCardPresentations("surface");
+		expect(getEffectiveCardPresentation("card-a", "compact")).toBe("compact");
+		expect(getEffectiveCardPresentation("card-b", "detail")).toBe("detail");
+		setCardPresentation("card-a", "detail");
+		expect(getEffectiveCardPresentation("card-a", "compact")).toBe("detail");
+		expect(getEffectiveCardPresentation("card-b", "detail")).toBe("detail");
+		setAllCardPresentations("compact");
+		expect(getEffectiveCardPresentation("card-a", "detail")).toBe("compact");
+		expect(getEffectiveCardPresentation("card-b", "detail")).toBe("compact");
+		clearCardPresentation("card-a");
+		setAllCardPresentations("surface");
 	});
 });

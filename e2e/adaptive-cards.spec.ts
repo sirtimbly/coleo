@@ -12,6 +12,26 @@ const blockedTaskEvent = {
 	},
 };
 
+const task = {
+	id: "task-card-view",
+	subject: "Refine task card presentation",
+	description: "Show this task description exactly once.",
+	status: "pending",
+	priority: "normal",
+	sourceType: "manual",
+	sourceRef: null,
+	phase: "implementation",
+	domain: "frontend",
+	assignedTo: null,
+	artifacts: [],
+	metadata: {},
+	progress: 0,
+	sortOrder: 1,
+	createdAt: "2026-08-02T11:00:00.000Z",
+	updatedAt: "2026-08-02T12:00:00.000Z",
+	completedAt: null,
+};
+
 test("previews the trusted catalog at narrow and wide panel widths", async ({ page }) => {
 	await installMockApi(page);
 	await page.setViewportSize({ width: 420, height: 900 });
@@ -21,9 +41,30 @@ test("previews the trusted catalog at narrow and wide panel widths", async ({ pa
 	await expect(page.getByText("Attention event", { exact: false })).toBeVisible();
 	await expect(page.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
 	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]')).toBeVisible();
+	await expect(
+		page.locator(
+			'[data-card-template="workbench.event@1"][data-card-creator="brain:coleo-brain"]',
+		),
+	).toBeVisible();
 
 	await page.setViewportSize({ width: 1024, height: 900 });
 	await expect(page.locator('[data-card-template]')).toHaveCount(4);
+
+	const eventCard = page.locator('[data-card-template="workbench.event@1"]');
+	await eventCard.getByRole("button", { name: "Card view settings" }).click();
+	await page.getByRole("menuitem", { name: "Compact this card" }).click();
+	await expect(eventCard).toHaveAttribute("data-card-presentation", "compact");
+	await expect(page.locator('[data-card-template="workbench.message@1"]'))
+		.toHaveAttribute("data-card-presentation", "detail");
+
+	await eventCard.getByRole("button", { name: "Card view settings" }).click();
+	await page.getByRole("menuitem", { name: "Compact all cards" }).click();
+	await expect(page.locator('[data-card-template="workbench.message@1"]'))
+		.toHaveAttribute("data-card-presentation", "compact");
+	await expect(page.locator('[data-card-template="workbench.resource-detail@1"]'))
+		.toHaveAttribute("data-card-presentation", "compact");
+	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]'))
+		.toHaveAttribute("data-card-presentation", "detail");
 });
 
 test("opens an Inbox event as a restorable card identity", async ({ page }) => {
@@ -37,4 +78,24 @@ test("opens an Inbox event as a restorable card identity", async ({ page }) => {
 	await expect(page).toHaveURL(/\/card\?id=018fd384-/);
 	await expect(page.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
 	await expect(page.getByRole("button", { name: "Pop out" })).toBeVisible();
+	await expect(page.getByText("workbench.event@1", { exact: true })).toHaveCount(0);
+});
+
+test("uses one task card with explicit detail and edit modes", async ({ page }) => {
+	await installMockApi(page, { tasks: [task] });
+	await page.goto("/tasks?task=task-card-view&view=details");
+
+	const detailCard = page.locator('[data-card-template="workbench.resource-detail@1"]');
+	await expect(detailCard).toBeVisible({ timeout: 20_000 });
+	await expect(page.getByText(task.description, { exact: true })).toHaveCount(1);
+	await expect(page.getByText("You", { exact: true })).toBeVisible();
+
+	await page.getByRole("button", { name: "Edit task or change status" }).click();
+	await page.getByRole("menuitem", { name: "Edit task card" }).click();
+	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]')).toBeVisible();
+	await expect(detailCard).toHaveCount(0);
+
+	await page.getByRole("button", { name: "Edit task or change status" }).click();
+	await page.getByRole("menuitem", { name: "Cancel card editing" }).click();
+	await expect(page.locator('[data-card-template="workbench.resource-detail@1"]')).toBeVisible();
 });
