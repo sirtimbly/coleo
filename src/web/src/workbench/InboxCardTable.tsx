@@ -96,6 +96,22 @@ function textElement(tag: "span" | "strong", className: string, text: string): H
 	return element;
 }
 
+function createExpanderIcon(): SVGSVGElement {
+	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	icon.classList.add("coleo-inbox-expand-icon");
+	icon.setAttribute("viewBox", "0 0 24 24");
+	icon.setAttribute("fill", "none");
+	icon.setAttribute("stroke", "currentColor");
+	icon.setAttribute("stroke-width", "2");
+	icon.setAttribute("stroke-linecap", "round");
+	icon.setAttribute("stroke-linejoin", "round");
+	icon.setAttribute("aria-hidden", "true");
+	const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.setAttribute("d", "m9 18 6-6-6-6");
+	icon.append(path);
+	return icon;
+}
+
 const stateFormatter: Formatter = (cell) => {
 	const data = cell.getRow().getData() as InboxTableRow;
 	const wrapper = document.createElement("span");
@@ -186,8 +202,6 @@ export function InboxCardTable({
 				`${expanded ? "Collapse" : "Expand"} ${data.title} card`,
 			);
 			button.title = expanded ? "Collapse card" : "Expand card";
-			const glyph = button.querySelector<HTMLElement>("[aria-hidden='true']");
-			if (glyph) glyph.textContent = expanded ? "⌄" : "›";
 		};
 
 		const renderExpandedCard = (row: RowComponent) => {
@@ -257,10 +271,7 @@ export function InboxCardTable({
 				`${expanded ? "Collapse" : "Expand"} ${data.title} card`,
 			);
 			button.title = expanded ? "Collapse card" : "Expand card";
-			const glyph = document.createElement("span");
-			glyph.setAttribute("aria-hidden", "true");
-			glyph.textContent = expanded ? "⌄" : "›";
-			button.append(glyph);
+			button.append(createExpanderIcon());
 			button.addEventListener("click", (event) => {
 				event.stopPropagation();
 				toggleRow(cell.getRow());

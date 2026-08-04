@@ -113,9 +113,19 @@
 	border-radius: 0.25rem;
 	background: transparent;
 	color: var(--color-muted-foreground);
-	font-size: 1.25rem;
 	line-height: 1;
 	touch-action: manipulation;
+}
+
+.coleo-inbox-expand-icon {
+	width: 1rem;
+	height: 1rem;
+	transform: rotate(0deg);
+	transform-origin: center;
+}
+
+.coleo-inbox-expand[aria-expanded="true"] .coleo-inbox-expand-icon {
+	transform: rotate(90deg);
 }
 
 .coleo-inbox-expand:hover {
@@ -205,5 +215,9 @@
 			background-color 120ms ease,
 			border-color 120ms ease,
 			color 120ms ease;
+	}
+
+	.coleo-inbox-expand-icon {
+		transition: transform 120ms ease;
 	}
 }
