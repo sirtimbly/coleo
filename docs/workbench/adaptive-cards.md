@@ -48,6 +48,27 @@ full detail so inputs cannot be hidden accidentally.
 Raw Arm logs, diffs, threaded discussions, charts, tabular sheets, and plan
 editors remain specialized Workbench projections.
 
+## Inbox projection
+
+The Inbox uses Tabulator as a read-only, virtualized scan surface rather than
+rendering every item as a card. Each row shows only the fields needed to triage
+the queue: state, source, subject and summary, item type, and received time.
+Sorting, facets, search, responsive column hiding, and bulk read state remain
+host-owned behaviors.
+
+Activating a row expander mounts that item's full Adaptive Card immediately
+below the scan row. Collapsing the row disposes the React and Adaptive Cards
+roots. Consequently a large Inbox keeps only visible table rows and explicitly
+expanded cards alive; it never creates one Adaptive Cards SDK instance per
+record. Double-clicking a row or using its card-header open control sends the
+same item to a Golden Layout panel. Semantic buttons inside the card continue
+to use the normal allowlisted card action flow.
+
+The table is not an editable resource sheet. Inbox cells never mutate domain
+data, and the dedicated `ResourceSheet` column/editor contract is not reused.
+Messages retain their full threaded detail view; operational events retain
+their target navigation and attention actions.
+
 ## Task projection
 
 Task cards derive their hierarchy from the task API instead of printing the
@@ -147,10 +168,11 @@ Coleo expands only the small interpolation, conditional, and repeated-data
 subset used by its trusted catalog. It deliberately does not ship a general
 expression runtime or accept template expressions from producers.
 
-Stream cards use an Intersection Observer with a 400 px pre-render margin, so
-the retained 200-item ARM window creates SDK instances only near the viewport.
-List containers retain `content-visibility: auto`; malformed or retired
-templates render a readable fallback and dispose their DOM on replacement.
+The Inbox virtualizes its scan rows and creates SDK instances only for expanded
+items. Other stream cards use an Intersection Observer with a 400 px pre-render
+margin, so the retained 200-item ARM window creates SDK instances only near the
+viewport. Malformed or retired templates render a readable fallback and
+dispose their DOM on replacement.
 
 Released template checksums:
 

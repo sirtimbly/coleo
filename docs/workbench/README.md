@@ -55,9 +55,10 @@ The frontend is divided into four layers:
 4. Golden Layout hosts registered view instances and persists their placement.
 
 Tabulator is the production `ResourceSheet` runtime for Tasks, plan items,
-Bugs, and Discovery. Inbox, timeline, document, process, and dashboard surfaces
-use the Coleo design system so the application shares one compact interaction
-language.
+Bugs, and Discovery. The Inbox also uses Tabulator, but as a separate read-only
+scan table whose rows expand into full Adaptive Cards. Timeline, document,
+process, and dashboard surfaces use the Coleo design system so the application
+shares one compact interaction language.
 
 ## Persistence
 
@@ -144,7 +145,9 @@ The initial workbench migration was completed on 2026-07-31 in
   consistent workbench headers, toolbars, and detail framing.
 - Dashboard cards and activity summaries use shared surfaces without changing
   the existing metric and chart implementations.
-- Inbox is the primary stream interface. Its Messages facet preserves read,
+- Inbox is the primary stream interface. Its virtualized scan table keeps state,
+  source, subject, type, and received time sortable at a glance, while each row
+  can expand into its full Adaptive Card. Its Messages facet preserves read,
   reply, archive, full-thread viewing, and reply indentation. Brain, Arm,
   attention, and history facets expose the other operational streams.
 - Mail, Activity, History, and Proposals remain compatibility redirects for old
