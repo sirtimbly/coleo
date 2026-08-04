@@ -25,12 +25,15 @@ Templates cannot select arbitrary URLs, HTTP methods, or service calls.
 re-authorizes every mutation against the referenced domain resource and treats
 all card input as untrusted.
 
-The initial catalog contains:
+The catalog contains:
 
 - `workbench.event@1` for Inbox and semantic Arm/event streams
 - `workbench.message@1` for message summaries
-- `workbench.resource-detail@1` for singleton detail panels
-- `workbench.resource-editor@1` for allowlisted scalar edits
+- `workbench.resource-detail@1` and `workbench.resource-editor@1` for persisted
+  compatibility
+- `workbench.resource-detail@2` for structured singleton details with a table
+  and progressive disclosure
+- `workbench.resource-editor@2` for typed, allowlisted edits
 
 Developers can open `/card-catalog` to preview every trusted template and
 inspect the action payload it produces without executing a mutation. Set
@@ -44,6 +47,53 @@ full detail so inputs cannot be hidden accidentally.
 
 Raw Arm logs, diffs, threaded discussions, charts, tabular sheets, and plan
 editors remain specialized Workbench projections.
+
+## Task projection
+
+Task cards derive their hierarchy from the task API instead of printing the
+database record or imported plan prose verbatim:
+
+| Task contract | Presentation |
+| --- | --- |
+| `subject` | One card title; lightweight Markdown markers are removed |
+| `description` | Readable body with repeated subject, plan phase, and task objective paragraphs removed |
+| `status` | State label and semantic color beside the resource kind |
+| `priority`, assignment, progress, due date, checklist | Compact two-column table |
+| blocker and dependency state | One semantic notice inside the card |
+| phase, classification, domain, source, timestamps | Collapsed record-details section |
+| `id` and source reference | Record-details section only |
+
+The Golden Layout tab uses the task subject when opened from a data surface and
+retains that title when the route's selected detail tab changes. A dedicated
+task panel has one toolbar and one card; it does not add a second page header or
+metadata surface around the card.
+
+Task edit cards preserve the raw subject and description. Priority uses
+`Input.ChoiceSet`, due date uses `Input.Date`, progress uses `Input.Number`, and
+phase/domain use bounded `Input.Text`. Workflow state and Arm assignment remain
+host-owned controls because they require queue and lifecycle validation beyond
+a scalar card submission.
+
+## Schema 1.5 element policy
+
+The host supports the full schema 1.5 parser, but trusted templates deliberately
+use each element only where it improves comprehension:
+
+| Schema family | Workbench policy |
+| --- | --- |
+| `TextBlock`, `RichTextBlock`, `TextRun` | Titles, prose, and semantic inline state |
+| `Container`, `ColumnSet`, `Column` | Visual hierarchy and responsive metadata |
+| `FactSet`, `Fact` | Secondary record details |
+| `Table`, `TableCell` | Aligned primary resource facts |
+| `Image`, `ImageSet` | Reserved for host-approved attachments; creator avatars remain host-rendered |
+| `Media`, `MediaSource`, `CaptionSource` | Disabled until content is served through a trusted media policy |
+| `Action.Execute` | Allowlisted host and API commands |
+| `Action.ToggleVisibility` | Local progressive disclosure without a server call |
+| `Action.OpenUrl` | Blocked; Workbench navigation uses structured host routes |
+| `Action.Submit`, `Action.ShowCard` | Not used; execute actions and dedicated editor cards keep audit behavior explicit |
+| `Input.Text`, `Input.Number`, `Input.Date`, `Input.ChoiceSet` | Typed resource editing |
+| `Input.Time`, `Input.Toggle` | Available to future templates when backed by domain fields |
+| `Data.Query`, refresh, authentication | Excluded from schema 1.5 envelopes and the producer contract |
 
 ## Rendering flow
 
@@ -110,6 +160,8 @@ Released template checksums:
 | `workbench.message@1` | `f04d5c24858953b78eb50ba6c9740355bfa3b1a5ac1fd7eae574bc8a5a31471f` |
 | `workbench.resource-detail@1` | `a21a0e56244ed6da9bb3d189498ede3fff4f79927235fa58aadff33998b16958` |
 | `workbench.resource-editor@1` | `1189e94c00d3272f857931af3f5fec75a9afa1a8397e4acc7a6ec3e3e8f01422` |
+| `workbench.resource-detail@2` | `53b7cdb39667c2cad4bad80cd8417dd15c6316bae839f99ddb3144d7360c2161` |
+| `workbench.resource-editor@2` | `43c770c71e9b22b5e5c23a7990193b891da79ded8829dcbe9ad9bbbce3c18868` |
 
 When a template changes before release, update its checksum. After release,
 create a new version instead.
