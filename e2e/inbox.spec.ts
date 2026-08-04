@@ -66,6 +66,8 @@ test("views indented message threads and carries reply context into the composer
 	await page.goto("/messaging?facet=messages&mailbox=inbox");
 
 	await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Filter View: Messages" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Filter Mailbox: Inbox" })).toBeVisible();
 	const messageRow = page.locator('[data-inbox-item-id="thread:inbox:thread-architecture"]');
 	await expect(messageRow).toBeVisible();
 	await messageRow.getByRole("button", { name: "Expand Workbench architecture card" }).click();
@@ -115,6 +117,10 @@ test("launcher navigation exposes the unified Inbox instead of legacy stream pag
 	await expect(page.getByRole("link", { name: "History", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveCount(0);
 
+	await page.getByRole("button", { name: "Filter View: Needs attention" }).click();
+	await page.getByRole("menuitemradio", { name: /^All/ }).click();
+	await expect(page).toHaveURL(/\/messaging\?facet=all$/);
+
 	const eventRow = page.locator(".tabulator-row").filter({
 		hasText: "Task blocked: Task task-dashboard",
 	});
@@ -139,7 +145,9 @@ test("Brain delegates its semantic activity feed to the live Inbox facet", async
 	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
 	await expect(page.getByText("2 pending tasks, 3 active arms in 1.2s", { exact: true })).toBeVisible();
 
-	await page.getByRole("button", { name: "Operations", exact: true }).click();
+	await page.getByRole("button", { name: "Filter Category: All" }).click();
+	await page.getByRole("menuitemradio", { name: "Operations" }).click();
+	await expect(page).toHaveURL(/\/messaging\?facet=brain&brainCategory=operations$/);
 	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Beginning", exact: true })).toBeDisabled();
 });
@@ -151,6 +159,9 @@ test("keeps following virtual rows below an expanded card", async ({ page }) => 
 	});
 	await page.goto("/messaging?facet=all");
 
+	const header = page.locator(".coleo-inbox-card-table .tabulator-header");
+	await expect(header).toHaveCSS("background-color", "rgb(23, 27, 34)");
+	await expect(header.locator(".tabulator-col").first()).toHaveCSS("color", "rgb(248, 250, 252)");
 	const eventRow = page.locator(".tabulator-row").filter({
 		hasText: "Task blocked: Task task-dashboard",
 	});
