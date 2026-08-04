@@ -1,6 +1,11 @@
 import type { WorkspaceAccess, WorkspaceTextFile } from "../workspace";
 import { loadConfig } from "../config";
 import { resolveBrainModelConfig } from "../brain/model-config";
+import {
+	BrainModelAccessError,
+	detectBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "../brain/model-access";
 
 export const CANONICAL_PLAN_PATH = ".project/plan.md";
 export const DEFAULT_ARM_TEMPLATE = `arm:
@@ -60,6 +65,7 @@ export interface ProjectPlanDocument extends WorkspaceTextFile {
 export interface PlanFormatterResult {
 	content: string;
 	mode: "ai" | "structured";
+	modelIssue?: BrainModelAccessIssue;
 }
 
 export type PlanFormatter = (
@@ -317,7 +323,18 @@ export async function formatPlanWithConfiguredModel(
 				max_completion_tokens: completionTokenBudget,
 			}),
 		});
-		if (!response.ok) throw new Error(`Plan formatter returned ${response.status}`);
+		if (!response.ok) {
+			const responseBody = await response.text();
+			const modelIssue = detectBrainModelAccessIssue(
+				response.status,
+				responseBody,
+				config.provider,
+			);
+			if (modelIssue) throw new BrainModelAccessError(modelIssue);
+			throw new Error(
+				`Plan formatter returned ${response.status}: ${responseBody.slice(0, 200)}`,
+			);
+		}
 		const body = await response.json() as {
 			choices?: Array<{
 				finish_reason?: string | null;
@@ -342,6 +359,12 @@ export async function formatPlanWithConfiguredModel(
 		return { content: formatted.trimEnd() + "\n", mode: "ai" };
 	} catch (error) {
 		if (guidance?.trim()) throw error;
-		return { content: formatPlanWithoutModel(content, sourcePath), mode: "structured" };
+		return {
+			content: formatPlanWithoutModel(content, sourcePath),
+			mode: "structured",
+			...(error instanceof BrainModelAccessError
+				? { modelIssue: error.issue }
+				: {}),
+		};
 	}
 }

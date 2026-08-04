@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
+import { AlertTriangle, Edit2, ExternalLink, Play, RefreshCw, Save, Square, X } from 'lucide-react';
 import { api } from '@/lib';
 import type { ActivityEntry, BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
@@ -18,6 +18,15 @@ interface BrainStatus {
   pendingTasksCount: number;
   completedToday: number;
   uptime: number | null;
+  modelAccess: {
+    status: 'available' | 'blocked' | 'unknown';
+    issueCode: 'insufficient_credits' | null;
+    provider: string | null;
+    message: string | null;
+    actionLabel: string | null;
+    actionUrl: string | null;
+    checkedAt: string | null;
+  };
 }
 
 type Navigate = (pathname: string, search?: string) => void;
@@ -48,6 +57,40 @@ function EditToggle({ isEditing, onToggle }: { isEditing: boolean; onToggle: () 
     <Button variant="ghost" size="sm" onPress={onToggle}>
       <Edit2 className="h-3.5 w-3.5" /> Edit
     </Button>
+  );
+}
+
+function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAccess'] }) {
+  if (modelAccess.status !== 'blocked') return null;
+
+  return (
+    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+        <div>
+          <p className="font-medium text-danger">Plan evaluation is blocked</p>
+          <p className="mt-1 text-sm text-foreground">
+            {modelAccess.message || 'The Brain model API is unavailable.'}
+          </p>
+          {modelAccess.checkedAt ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Detected {new Date(modelAccess.checkedAt).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {modelAccess.actionUrl ? (
+        <a
+          href={modelAccess.actionUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-md border border-danger/30 bg-surface px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+        >
+          {modelAccess.actionLabel || 'Resolve billing'}
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+    </div>
   );
 }
 
@@ -92,11 +135,13 @@ function BrainStatusSection({
       ) : (
         <>
           <DenseRow
-            tone={statusTone(status?.status || 'stopped')}
+            tone={status?.modelAccess.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')}
             label="Status"
-            detail={`uptime ${formatUptime(status?.uptime)}`}
+            detail={status?.modelAccess.status === 'blocked'
+              ? 'Plan evaluation blocked · API credits required'
+              : `uptime ${formatUptime(status?.uptime)}`}
             chipLabel={status?.status || 'unknown'}
-            chipColor={statusTone(status?.status || 'stopped')}
+            chipColor={status?.modelAccess.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')}
           />
           <DenseRow
             tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'default'}
@@ -408,6 +453,8 @@ export function BrainPage() {
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
+
+      {status ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
 
       <BrainStatusSection
         status={status}

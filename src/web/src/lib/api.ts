@@ -623,6 +623,15 @@ class ApiClient {
         pendingTasksCount: number;
         completedToday: number;
         uptime: number | null;
+        modelAccess: {
+          status: 'available' | 'blocked' | 'unknown';
+          issueCode: 'insufficient_credits' | null;
+          provider: string | null;
+          message: string | null;
+          actionLabel: string | null;
+          actionUrl: string | null;
+          checkedAt: string | null;
+        };
       };
     }>('/brain/status');
   }

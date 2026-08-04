@@ -37,6 +37,10 @@ import {
 import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
 import {
+	serializeBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "./model-access";
+import {
 	ArmOutputProcessor,
 	type ArmOutputDecision,
 } from "./arm-output-processor";
@@ -631,7 +635,12 @@ export class Brain {
 			const current = await loadConfig(this.options.coleoDir);
 			return resolveBrainModelConfig(current.brain);
 		};
-		this.mailProcessor = new MailProcessor((msg) => this.log(msg), "", modelConfigSource);
+		this.mailProcessor = new MailProcessor(
+			(msg) => this.log(msg),
+			"",
+			modelConfigSource,
+			(issue) => this.reportBrainModelAccess(issue),
+		);
 		this.armOutputProcessor = new ArmOutputProcessor((msg) => this.log(msg), modelConfigSource);
 		this.stuckArmAnalyzer = new StuckArmAnalyzer(
 			(msg) => this.log(msg),
@@ -1287,6 +1296,19 @@ export class Brain {
 			);
 
 			this.log(`Intent: ${intent.type} (${intent.reasoning})`);
+			if (intent.modelIssue) {
+				const action = intent.modelIssue.actionUrl
+					? `\n\n[${intent.modelIssue.actionLabel}](${intent.modelIssue.actionUrl})`
+					: "";
+				await this.sendToHuman({
+					subject: `Re: ${message.subject} — Brain plan evaluation blocked`,
+					body: `${intent.modelIssue.message}\n\nI used fallback intent handling for this message, so you should verify the task classification.${action}`,
+					headers: this.buildMailReplyHeaders(
+						message,
+						"brain-model-access-blocked",
+					),
+				});
+			}
 
 			// Handle the intent
 			switch (intent.type) {
@@ -8793,6 +8815,44 @@ ${conflictList}
 			});
 		} catch (err) {
 			console.error(`Failed to save brain state via API: ${err}`);
+		}
+	}
+
+	private async reportBrainModelAccess(
+		issue: BrainModelAccessIssue | null,
+	): Promise<void> {
+		const result = await this.apiRequest<{
+			result?: { success?: boolean; error?: string };
+		}>("/api/brain/internal/infrastructure-health", {
+			method: "POST",
+			body: JSON.stringify({
+				components: [
+					{
+						component: "brain_model_api",
+						healthy: issue === null,
+						optional: false,
+						error: issue
+							? serializeBrainModelAccessIssue(issue)
+							: undefined,
+					},
+				],
+			}),
+		});
+
+		if (!result?.result?.success) {
+			this.log(
+				`Failed to persist Brain model access: ${result?.result?.error || "API unavailable"}`,
+			);
+			return;
+		}
+
+		if (issue) {
+			this.log(`Brain plan evaluation blocked: ${issue.message}`);
+			void this.logActivity("brain", "model_access_blocked", undefined, {
+				code: issue.code,
+				provider: issue.provider,
+				actionUrl: issue.actionUrl,
+			});
 		}
 	}
 
