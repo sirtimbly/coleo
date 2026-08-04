@@ -40,7 +40,7 @@ test("previews the trusted catalog at narrow and wide panel widths", async ({ pa
 	await expect(page.getByRole("heading", { name: "Adaptive Card catalog" })).toBeVisible();
 	await expect(page.getByText("Attention event", { exact: false })).toBeVisible();
 	await expect(page.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
-	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]')).toBeVisible();
+	await expect(page.locator('[data-card-template="workbench.resource-editor@2"]')).toBeVisible();
 	await expect(
 		page.locator(
 			'[data-card-template="workbench.event@1"][data-card-creator="brain:coleo-brain"]',
@@ -61,9 +61,9 @@ test("previews the trusted catalog at narrow and wide panel widths", async ({ pa
 	await page.getByRole("menuitem", { name: "Compact all cards" }).click();
 	await expect(page.locator('[data-card-template="workbench.message@1"]'))
 		.toHaveAttribute("data-card-presentation", "compact");
-	await expect(page.locator('[data-card-template="workbench.resource-detail@1"]'))
+	await expect(page.locator('[data-card-template="workbench.resource-detail@2"]'))
 		.toHaveAttribute("data-card-presentation", "compact");
-	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]'))
+	await expect(page.locator('[data-card-template="workbench.resource-editor@2"]'))
 		.toHaveAttribute("data-card-presentation", "detail");
 });
 
@@ -85,17 +85,20 @@ test("uses one task card with explicit detail and edit modes", async ({ page }) 
 	await installMockApi(page, { tasks: [task] });
 	await page.goto("/tasks?task=task-card-view&view=details");
 
-	const detailCard = page.locator('[data-card-template="workbench.resource-detail@1"]');
+	const detailCard = page.locator('[data-card-template="workbench.resource-detail@2"]');
 	await expect(detailCard).toBeVisible({ timeout: 20_000 });
 	await expect(page.getByText(task.description, { exact: true })).toHaveCount(1);
 	await expect(page.getByText("You", { exact: true })).toBeVisible();
+	await expect(detailCard.getByText(task.id, { exact: true })).toBeHidden();
+	await detailCard.getByRole("button", { name: "More details" }).click();
+	await expect(detailCard.getByText(task.id, { exact: true })).toBeVisible();
 
 	await page.getByRole("button", { name: "Edit task or change status" }).click();
 	await page.getByRole("menuitem", { name: "Edit task card" }).click();
-	await expect(page.locator('[data-card-template="workbench.resource-editor@1"]')).toBeVisible();
+	await expect(page.locator('[data-card-template="workbench.resource-editor@2"]')).toBeVisible();
 	await expect(detailCard).toHaveCount(0);
 
 	await page.getByRole("button", { name: "Edit task or change status" }).click();
 	await page.getByRole("menuitem", { name: "Cancel card editing" }).click();
-	await expect(page.locator('[data-card-template="workbench.resource-detail@1"]')).toBeVisible();
+	await expect(page.locator('[data-card-template="workbench.resource-detail@2"]')).toBeVisible();
 });

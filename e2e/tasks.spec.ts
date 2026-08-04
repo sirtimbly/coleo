@@ -416,9 +416,7 @@ test("opens a spreadsheet row from the Details context action", async ({ page })
 	await contextMenu.getByText("Details", { exact: true }).click();
 
 	await expect(page).toHaveURL(/\/tasks\?.*task=task-workbench/);
-	await expect(
-		page.getByRole("heading", { name: "Protect the critical workbench", exact: true }),
-	).toBeVisible();
+	await expect(page.getByText(task.subject, { exact: true })).toHaveCount(1);
 	await expect(page.getByRole("tab", { name: "Details" })).toBeVisible();
 });
 
@@ -470,7 +468,9 @@ test("runs the production Tabulator sheet inside a resizable Golden Layout pane"
 		.click({ button: "right" });
 	await page.locator(".tabulator-menu").getByText("Details", { exact: true }).click();
 	await expect(
-		page.getByRole("heading", { name: secondTask.subject, exact: true }),
+		page
+			.locator('[data-card-template="workbench.resource-detail@2"]')
+			.getByText(secondTask.subject, { exact: true }),
 	).toBeVisible();
 
 	const sheetBeforeResize = await sheet.boundingBox();
