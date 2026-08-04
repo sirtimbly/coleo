@@ -56,6 +56,12 @@ the queue: state, source, subject and summary, item type, and received time.
 Sorting, facets, search, responsive column hiding, and bulk read state remain
 host-owned behaviors.
 
+Inbox facets use one compact, keyboard-accessible dropdown pattern for view,
+mailbox, and Brain activity category filters. The selected values are reflected
+in the panel route so a filtered Inbox can be restored, deep-linked, or popped
+out without losing its context. The table header deliberately remains dark with
+high-contrast labels and sort indicators in both application themes.
+
 Activating a row expander mounts that item's full Adaptive Card immediately
 below the scan row. Collapsing the row disposes the React and Adaptive Cards
 roots. Consequently a large Inbox keeps only visible table rows and explicitly
