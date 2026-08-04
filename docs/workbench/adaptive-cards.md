@@ -8,8 +8,17 @@ They do not replace the task, bug, mail, Arm, event, or layout data models.
 
 Every rendered card is a `CardEnvelope`. The envelope selects an immutable
 host-owned template version, supplies JSON data, identifies the underlying
-resource, and records the target surface. The web host expands the template and
-renders Adaptive Cards schema 1.5 with Coleo's host configuration.
+resource and creator, and records the target surface. The web host expands the
+template and renders Adaptive Cards schema 1.5 with Coleo's host configuration.
+
+Creator identities are host-rendered rather than template-provided:
+
+- Brain uses the Coleo octopus mark.
+- The local user uses the brass diving-helmet operator portrait.
+- Arms use mirrored pixel identicons derived deterministically from their IDs.
+
+This keeps identities stable without allowing card producers to inject image
+URLs. Cards without a meaningful author can omit `creator`.
 
 Templates cannot select arbitrary URLs, HTTP methods, or service calls.
 `Action.Execute` verbs are dispatched through an allowlist. The server
@@ -26,6 +35,12 @@ The initial catalog contains:
 Developers can open `/card-catalog` to preview every trusted template and
 inspect the action payload it produces without executing a mutation. Set
 `VITE_ADAPTIVE_CARDS=false` to exercise the readable fallback path.
+
+Every non-editor card exposes a settings icon in its creator bar. Compact and
+full-detail modes can be applied to one card or to all cards. The global choice
+is saved locally; "Use surface defaults" restores compact streams and detailed
+singleton views. Item overrides stay session-local. Editor cards always use
+full detail so inputs cannot be hidden accidentally.
 
 Raw Arm logs, diffs, threaded discussions, charts, tabular sheets, and plan
 editors remain specialized Workbench projections.
@@ -68,7 +83,9 @@ attempting best-effort execution.
 
 Card panels persist an opaque server-side instance ID in Golden Layout. The
 envelope remains behind the authenticated Workbench API and is never embedded
-in route or layout JSON.
+in route or layout JSON. The card's creator bar owns view settings and pop-out
+controls, so the viewer does not repeat the card title and template identity in
+a second panel header.
 
 ## Validation baseline
 
@@ -89,9 +106,9 @@ Released template checksums:
 
 | Template | SHA-256 |
 | --- | --- |
-| `workbench.event@1` | `8a3f53ef42eb13fbb87d6bc6eee12296b0521c4dfdb92af93247b9fc45d2881f` |
-| `workbench.message@1` | `6906261bfde92334798a494b912d5d430fc4aefc605a300bbc9539788a0e20d2` |
-| `workbench.resource-detail@1` | `78cb6ab106330d28d3f7dd2bf60b719916b40c99759226e3eaf0c186424c8878` |
+| `workbench.event@1` | `05ccc7be833de03af0c84abd401af17330a3fc00c8b20ddc79259d460efc6407` |
+| `workbench.message@1` | `f04d5c24858953b78eb50ba6c9740355bfa3b1a5ac1fd7eae574bc8a5a31471f` |
+| `workbench.resource-detail@1` | `a21a0e56244ed6da9bb3d189498ede3fff4f79927235fa58aadff33998b16958` |
 | `workbench.resource-editor@1` | `1189e94c00d3272f857931af3f5fec75a9afa1a8397e4acc7a6ec3e3e8f01422` |
 
 When a template changes before release, update its checksum. After release,

@@ -36,6 +36,14 @@ export interface CardResourceRef {
 	id: string;
 }
 
+export type CardCreatorKind = "brain" | "arm" | "user";
+
+export interface CardCreator {
+	kind: CardCreatorKind;
+	id: string;
+	displayName: string;
+}
+
 export interface CardPresentation {
 	surface: CardSurface;
 	compact?: boolean;
@@ -49,6 +57,7 @@ export interface CardEnvelope {
 	presentation: CardPresentation;
 	data: CardJsonObject;
 	resource?: CardResourceRef;
+	creator?: CardCreator;
 	correlationId?: string;
 	createdAt: string;
 	expiresAt?: string;

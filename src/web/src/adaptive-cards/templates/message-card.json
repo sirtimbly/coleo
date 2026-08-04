@@ -21,13 +21,14 @@
       "type": "TextBlock",
       "text": "${preview}",
       "wrap": true,
-      "maxLines": 6
+      "maxLines": "${previewMaxLines}"
     },
     {
       "type": "TextBlock",
       "text": "${timestampLabel}",
       "size": "Small",
-      "isSubtle": true
+      "isSubtle": true,
+      "$when": "${timestampLabel != null}"
     }
   ],
   "actions": [

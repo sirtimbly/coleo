@@ -11,6 +11,10 @@ import { Button } from "@heroui/react";
 import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import {
+	BRAIN_CARD_CREATOR,
+	createArmCardCreator,
+} from "@/adaptive-cards/card-creators";
 import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
 import { presentInboxItem } from "@/adaptive-cards/presenters";
 import {
@@ -547,6 +551,14 @@ export function MessagingPage() {
 		const envelope = presentInboxItem(selectedItem.item, {
 			surface: "detail",
 			targetRoute: selectedItem.targetRoute,
+			creator: selectedItem.statusReport
+				? createArmCardCreator(selectedItem.statusReport.armId)
+				: selectedItem.item.kind === "arm"
+					? createArmCardCreator(
+							selectedItem.activity?.actor ?? selectedItem.item.source ?? "unknown-arm",
+							selectedItem.activity?.actor ?? selectedItem.item.source,
+						)
+					: BRAIN_CARD_CREATOR,
 			facts: selectedItem.statusReport
 				? [
 						{ label: "Arm", value: selectedItem.statusReport.armId },

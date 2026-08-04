@@ -1,5 +1,11 @@
 import type { InboxProjectionItem } from "@/workbench/ProjectionInbox";
+import {
+	BRAIN_CARD_CREATOR,
+	inferMessageCreator,
+	USER_CARD_CREATOR,
+} from "./card-creators";
 import type {
+	CardCreator,
 	CardEnvelope,
 	CardJsonObject,
 	CardSurface,
@@ -27,6 +33,7 @@ export function presentInboxItem(
 		surface?: CardSurface;
 		targetRoute?: { pathname: string; search?: string; title?: string };
 		facts?: CardFact[];
+		creator?: CardCreator;
 	} = {},
 ): CardEnvelope {
 	const targetRoute = options.targetRoute;
@@ -42,6 +49,7 @@ export function presentInboxItem(
 		resource: item.resourceId
 			? { kind: item.kind, id: item.resourceId }
 			: undefined,
+		creator: options.creator ?? BRAIN_CARD_CREATOR,
 		createdAt: item.timestamp,
 		data: {
 			eyebrow: item.source ?? item.kind,
@@ -70,6 +78,7 @@ export function presentResourceDetail(input: {
 	title: string;
 	description?: string;
 	facts: CardFact[];
+	creator?: CardCreator;
 	targetRoute?: { pathname: string; search?: string; title?: string };
 }): CardEnvelope {
 	return {
@@ -78,6 +87,7 @@ export function presentResourceDetail(input: {
 		schemaVersion: "1.5",
 		presentation: { surface: "detail", title: input.title },
 		resource: { kind: input.kind, id: input.id },
+		creator: input.creator ?? USER_CARD_CREATOR,
 		createdAt: new Date().toISOString(),
 		data: {
 			kindLabel: input.kind.replace(/(^|\s)\S/g, (value) => value.toUpperCase()),
@@ -103,6 +113,7 @@ export function presentResourceEditor(input: {
 	title: string;
 	description: string;
 	resourceVersion?: string;
+	creator?: CardCreator;
 }): CardEnvelope {
 	return {
 		id: `edit:${input.kind}:${input.id}`,
@@ -113,6 +124,7 @@ export function presentResourceEditor(input: {
 			title: `Edit ${input.kind}: ${input.title}`,
 		},
 		resource: { kind: input.kind, id: input.id },
+		creator: input.creator ?? USER_CARD_CREATOR,
 		createdAt: new Date().toISOString(),
 		data: {
 			title: input.title,
@@ -131,6 +143,8 @@ export function presentMessage(input: {
 	timestamp: string;
 	surface?: CardSurface;
 	canArchive?: boolean;
+	creator?: CardCreator;
+	sent?: boolean;
 }): CardEnvelope {
 	return {
 		id: `message:${input.id}`,
@@ -141,6 +155,7 @@ export function presentMessage(input: {
 			title: input.subject,
 		},
 		resource: { kind: "message", id: input.id },
+		creator: input.creator ?? inferMessageCreator(input.from, input.sent),
 		createdAt: input.timestamp,
 		data: {
 			from: input.from,

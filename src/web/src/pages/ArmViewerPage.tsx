@@ -57,6 +57,7 @@ import {
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
 import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { createArmCardCreator } from "@/adaptive-cards/card-creators";
 import { presentInboxItem } from "@/adaptive-cards/presenters";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
@@ -1988,6 +1989,7 @@ function ArmViewerConsole({
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}
+											arm={selectedArm}
 											onToggle={() => onToggleActivity(activity.id)}
 										/>
 									))
@@ -2389,9 +2391,11 @@ function PulseStateIcon({
 
 function ActivityItemComponent({
 	activity,
+	arm,
 	onToggle,
 }: {
 	activity: ActivityItem;
+	arm: Pick<Arm, "id" | "name">;
 	onToggle: () => void;
 }) {
 	const hasDetails =
@@ -2415,6 +2419,7 @@ function ActivityItemComponent({
 					: "info",
 	}, {
 		surface: "stream",
+		creator: createArmCardCreator(arm.id, arm.name),
 		facts: [
 			{ label: "Status", value: activity.status },
 			{ label: "Type", value: activity.type.replaceAll("_", " ") },

@@ -26,6 +26,7 @@
     },
     {
       "type": "FactSet",
+      "$when": "${count(facts) > 0}",
       "facts": [
         {
           "$data": "${facts}",

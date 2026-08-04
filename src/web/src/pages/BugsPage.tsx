@@ -16,6 +16,11 @@ import {
 } from 'lucide-react';
 import { Button } from '@heroui/react';
 import { AdaptiveCardView } from '@/adaptive-cards/AdaptiveCardView';
+import {
+	BRAIN_CARD_CREATOR,
+	createArmCardCreator,
+	USER_CARD_CREATOR,
+} from '@/adaptive-cards/card-creators';
 import { createPersistedCardRoute } from '@/adaptive-cards/persisted-card-route';
 import {
 	presentResourceDetail,
@@ -52,6 +57,14 @@ type BugUiMeta = UiMetadata;
 const BugSheet = React.lazy(() =>
 	import('@/workbench/BugSheet').then((module) => ({ default: module.BugSheet }))
 );
+
+function bugCardCreator(bug: Bug) {
+	if (bug.source === 'human_reported') return USER_CARD_CREATOR;
+	if (bug.source === 'arm_reported') {
+		return createArmCardCreator(bug.sourceArmId ?? 'unknown-arm');
+	}
+	return BRAIN_CARD_CREATOR;
+}
 
 // Status configuration
 const STATUS_CONFIG: Record<Bug['status'], { color: string; bgColor: string; icon: React.ComponentType<{ className?: string }>; label: string }> = {
@@ -247,6 +260,7 @@ function BugDetailProjection({
 							kind: "bug",
 							title: bug.title,
 							description: bug.description,
+							creator: bugCardCreator(bug),
 							facts: [
 								{ label: "Status", value: STATUS_CONFIG[bug.status].label },
 								{ label: "Priority", value: PRIORITY_CONFIG[bug.priority].label },
@@ -566,6 +580,7 @@ export function BugsPage() {
 			title: selectedBug.title,
 			description: selectedBug.description,
 			resourceVersion: selectedBug.updatedAt,
+			creator: bugCardCreator(selectedBug),
 		})).then((route) => openWorkspaceRoute(route, "action"));
 	}, [openWorkspaceRoute, selectedBug]);
 

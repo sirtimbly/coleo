@@ -140,6 +140,7 @@ export function MailThreadProjection({
 											subject: thread.subject,
 											preview: message.body,
 											timestamp: new Date(message.date).toISOString(),
+											sent,
 										})}
 										className="border-0"
 									/>

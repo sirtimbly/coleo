@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import { cn } from "@/lib";
+import { CardCreatorAvatar } from "./CardCreatorAvatar";
+import { useCardPresentation } from "./card-presentation";
+import { CardViewSettings } from "./CardViewSettings";
 import { getCardTemplate, isCardActionAllowed } from "./catalog";
 import { expandCardTemplate } from "./expand-template";
 import { ADAPTIVE_CARDS_ENABLED } from "./feature-flags";
@@ -11,21 +14,30 @@ import type {
 	CardEnvelope,
 	CardJsonObject,
 } from "../../../types/adaptive-cards";
+import type { ReactNode } from "react";
 
 export interface AdaptiveCardViewProps {
 	envelope: CardEnvelope;
 	onAction?: (request: CardActionRequest) => void | Promise<void>;
 	className?: string;
+	headerActions?: ReactNode;
 }
 
 export function AdaptiveCardView({
 	envelope,
 	onAction,
 	className,
+	headerActions,
 }: AdaptiveCardViewProps) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const onActionRef = useRef(onAction);
 	const [error, setError] = useState<string | null>(null);
+	const settings = useCardPresentation(
+		envelope.id,
+		envelope.presentation.compact ? "compact" : "detail",
+	);
+	const configurable = envelope.presentation.surface !== "editor";
+	const mode = configurable ? settings.mode : "detail";
 	onActionRef.current = onAction;
 
 	useEffect(() => {
@@ -51,7 +63,18 @@ export function AdaptiveCardView({
 
 			const cards = await import("adaptivecards/dist/adaptivecards.js");
 			if (cancelled) return;
-			const expanded = expandCardTemplate(payload, envelope.data) as CardJsonObject;
+			const data: CardJsonObject = {
+				...envelope.data,
+				facts: mode === "compact" ? [] : envelope.data.facts,
+				description: mode === "compact" ? null : envelope.data.description,
+				timestampLabel: mode === "compact" ? null : envelope.data.timestampLabel,
+				canArchive: mode === "detail" && envelope.data.canArchive === true,
+				showAttentionActions:
+					mode === "detail" && envelope.data.requiresAction === true,
+				summaryMaxLines: mode === "compact" ? 2 : 0,
+				previewMaxLines: mode === "compact" ? 2 : 0,
+			};
+			const expanded = expandCardTemplate(payload, data) as CardJsonObject;
 			const card = new cards.AdaptiveCard();
 			card.hostConfig = new cards.HostConfig(COLEO_CARD_HOST_CONFIG);
 			card.onAnchorClicked = () => true;
@@ -94,28 +117,72 @@ export function AdaptiveCardView({
 			cancelled = true;
 			host.replaceChildren();
 		};
-	}, [envelope]);
-
-	if (error) {
-		return (
-			<div role="alert" className={cn("border border-danger/30 bg-danger/10 p-4 text-sm", className)}>
-				<p className="font-semibold">Card unavailable</p>
-				<p className="mt-1 text-muted-foreground">{error}</p>
-				<p className="mt-3 font-medium">{String(envelope.data.title ?? envelope.presentation.title ?? envelope.id)}</p>
-				<p className="mt-1 text-muted-foreground">{String(envelope.data.summary ?? "")}</p>
-			</div>
-		);
-	}
+	}, [envelope, mode]);
 
 	return (
 		<div
-			ref={hostRef}
 			data-card-template={`${envelope.template.id}@${envelope.template.version}`}
+			data-card-presentation={mode}
+			data-card-creator={envelope.creator
+				? `${envelope.creator.kind}:${envelope.creator.id}`
+				: undefined}
 			className={cn(
-				"adaptive-card-host min-w-0 overflow-hidden border border-border bg-card",
+				"min-w-0 overflow-hidden border border-border bg-card",
 				className,
 			)}
-		/>
+		>
+			<div className="flex min-h-10 items-center gap-2 border-b border-border bg-surface-secondary/35 px-2.5 py-1.5">
+				{envelope.creator ? (
+					<>
+						<CardCreatorAvatar
+							creator={envelope.creator}
+							size={mode === "compact" ? "sm" : "md"}
+						/>
+						<div className="min-w-0 flex-1">
+							<p className="truncate text-xs font-semibold text-foreground">
+								{envelope.creator.displayName}
+							</p>
+							{mode === "detail" ? (
+								<p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+									{envelope.creator.kind}
+								</p>
+							) : null}
+						</div>
+					</>
+				) : (
+					<div className="min-w-0 flex-1" />
+				)}
+				<div className="ml-auto flex shrink-0 items-center gap-1">
+					{headerActions}
+					{configurable ? (
+						<CardViewSettings
+							mode={mode}
+							globalMode={settings.globalMode}
+							hasOverride={settings.hasOverride}
+							onCardModeChange={settings.setForCard}
+							onClearCardMode={settings.clearForCard}
+							onAllModeChange={settings.setForAll}
+						/>
+					) : null}
+				</div>
+			</div>
+			{error ? (
+				<div role="alert" className="border border-danger/30 bg-danger/10 p-4 text-sm">
+					<p className="font-semibold">Card unavailable</p>
+					<p className="mt-1 text-muted-foreground">{error}</p>
+					<p className="mt-3 font-medium">
+						{String(envelope.data.title ?? envelope.presentation.title ?? envelope.id)}
+					</p>
+					<p className="mt-1 text-muted-foreground">
+						{String(envelope.data.summary ?? "")}
+					</p>
+				</div>
+			) : null}
+			<div
+				ref={hostRef}
+				className={cn("adaptive-card-host", error ? "hidden" : "")}
+			/>
+		</div>
 	);
 }
 
@@ -144,8 +211,8 @@ export function DeferredAdaptiveCardView(props: AdaptiveCardViewProps) {
 	}, [visible]);
 
 	return (
-		<div ref={boundaryRef} className={cn("min-h-24", props.className)}>
-			{visible ? <AdaptiveCardView {...props} className={undefined} /> : null}
+		<div ref={boundaryRef} className="min-h-24">
+			{visible ? <AdaptiveCardView {...props} /> : null}
 		</div>
 	);
 }
