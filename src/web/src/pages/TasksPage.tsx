@@ -26,7 +26,10 @@ import {
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
-import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
+import {
+	BRAIN_CARD_CREATOR,
+	USER_CARD_CREATOR,
+} from "@/adaptive-cards/card-creators";
 import {
 	presentResourceDetail,
 	presentResourceEditor,
@@ -36,6 +39,7 @@ import {
 	type TaskLlmMetadata,
 	type TaskMetadata,
 	type TaskUiMetadata,
+	api,
 	cn,
 	isJsonObject,
 } from "@/lib";
@@ -64,12 +68,17 @@ import {
 	WorkbenchHeader,
 	WorkbenchSurface,
 } from "@/design-system/WorkbenchSurface";
+import type { CardActionRequest, CardEnvelope } from "../../../types/adaptive-cards";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
 
 const TaskSheet = React.lazy(() =>
 	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
 );
+
+function taskCardCreator(task: Task) {
+	return task.sourceType === "manual" ? USER_CARD_CREATOR : BRAIN_CARD_CREATOR;
+}
 
 // Status configuration
 const STATUS_CONFIG: Record<
@@ -136,6 +145,31 @@ const STATUS_CONFIG: Record<
 		label: "Cancelled",
 	},
 };
+
+function presentTaskCard(task: Task, editing: boolean): CardEnvelope {
+	if (editing) {
+		return presentResourceEditor({
+			id: task.id,
+			kind: "task",
+			title: task.subject,
+			description: task.description,
+			resourceVersion: task.updatedAt,
+			creator: taskCardCreator(task),
+		});
+	}
+	return presentResourceDetail({
+		id: task.id,
+		kind: "task",
+		title: task.subject,
+		description: task.description,
+		creator: taskCardCreator(task),
+		facts: [
+			{ label: "Status", value: STATUS_CONFIG[task.status].label },
+			{ label: "Priority", value: task.priority },
+			{ label: "Assigned", value: task.assignedArmName ?? "Unassigned" },
+		],
+	});
+}
 
 const isTaskStatus = (value: string): value is Task["status"] =>
 	value in STATUS_CONFIG;
@@ -298,7 +332,8 @@ function TaskDetailsToolbar({
 	onPriorityChange,
 	task,
 	onEdit,
-	onOpenCardEditor,
+	cardEditing,
+	onCardEditToggle,
 	onStatusChange,
 	onClose,
 }: {
@@ -310,7 +345,8 @@ function TaskDetailsToolbar({
 	onPriorityChange: (taskId: string, priority: Task["priority"]) => void;
 	task: Task;
 	onEdit: (status?: Task["status"]) => void;
-	onOpenCardEditor: () => void;
+	cardEditing: boolean;
+	onCardEditToggle: () => void;
 	onStatusChange: (status: Task["status"]) => void;
 	onClose?: () => void;
 }) {
@@ -359,29 +395,25 @@ function TaskDetailsToolbar({
 				</Button>
 				<Dropdown.Popover placement="bottom end" className="min-w-[220px]">
 					<Dropdown.Menu
-						onAction={(key) => {
-							if (key === "card-edit") {
-								onOpenCardEditor();
-								return;
-							}
-							if (key === "edit" || key === "blocked") {
-								onEdit(key === "blocked" ? "blocked" : undefined);
-								return;
-							}
-							if (typeof key === "string" && key.startsWith("status:")) {
+					onAction={(key) => {
+						if (key === "card-edit") {
+							onCardEditToggle();
+							return;
+						}
+						if (key === "blocked") onEdit("blocked");
+						if (typeof key === "string" && key.startsWith("status:")) {
 								const status = key.slice("status:".length);
 								if (isTaskStatus(status)) onStatusChange(status);
 							}
 						}}
 					>
-						<Dropdown.Item id="edit" textValue="Edit task">
-							<Pencil className="h-4 w-4 text-muted-foreground" />
-							<Label>Edit task</Label>
-						</Dropdown.Item>
-						<Dropdown.Item id="card-edit" textValue="Edit as card">
-							<FileText className="h-4 w-4 text-muted-foreground" />
-							<Label>Edit as card</Label>
-						</Dropdown.Item>
+					<Dropdown.Item
+						id="card-edit"
+						textValue={cardEditing ? "Cancel task card editing" : "Edit task card"}
+					>
+						<FileText className="h-4 w-4 text-muted-foreground" />
+						<Label>{cardEditing ? "Cancel card editing" : "Edit task card"}</Label>
+					</Dropdown.Item>
 						<Separator />
 						<Dropdown.Item id="status:draft" textValue="Move to draft">
 							<Pencil className="h-4 w-4 text-cyan-500" />
@@ -484,98 +516,6 @@ function BlockedTaskNotice({ task }: { task: Task }) {
 	);
 }
 
-/**
- * Description field that shows an explicit empty state (instead of silently
- * rendering nothing) and lets you add/edit the description inline.
- */
-function TaskDescriptionField({
-	taskId,
-	description,
-	onSave,
-}: {
-	taskId: string;
-	description: string;
-	onSave: (taskId: string, description: string) => void;
-}) {
-	const [isEditing, setIsEditing] = useState(false);
-	const [draft, setDraft] = useState(description);
-
-	useEffect(() => {
-		if (!isEditing) setDraft(description);
-	}, [description, isEditing]);
-
-	const handleSave = () => {
-		const trimmed = draft.trim();
-		setIsEditing(false);
-		if (trimmed !== description) {
-			onSave(taskId, trimmed);
-		}
-	};
-
-	const handleCancel = () => {
-		setDraft(description);
-		setIsEditing(false);
-	};
-
-	if (isEditing) {
-		return (
-			<div className="space-y-2">
-				<textarea
-					autoFocus
-					value={draft}
-					onChange={(event) => setDraft(event.target.value)}
-					onKeyDown={(event) => {
-						if (event.key === "Escape") {
-							event.preventDefault();
-							handleCancel();
-						} else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-							event.preventDefault();
-							handleSave();
-						}
-					}}
-					placeholder="Add a description for this task..."
-					rows={4}
-					className="readable-copy w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent"
-				/>
-				<div className="flex items-center gap-2">
-					<Button size="sm" variant="primary" onPress={handleSave}>
-						Save
-					</Button>
-					<Button size="sm" variant="ghost" onPress={handleCancel}>
-						Cancel
-					</Button>
-					<span className="text-xs text-foreground-500">⌘⏎ to save · Esc to cancel</span>
-				</div>
-			</div>
-		);
-	}
-
-	if (!description.trim()) {
-		return (
-			<button
-				type="button"
-				onClick={() => setIsEditing(true)}
-				className="w-full rounded-md border border-dashed border-border/70 px-3 py-3 text-left text-sm text-foreground-500 transition-colors hover:border-accent hover:text-foreground"
-			>
-				No description yet — click to add one
-			</button>
-		);
-	}
-
-	return (
-		<button
-			type="button"
-			onClick={() => setIsEditing(true)}
-			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
-			title="Click to edit"
-		>
-			<p className="readable-copy whitespace-pre-wrap">
-				{description}
-			</p>
-		</button>
-	);
-}
-
 export function TasksPage() {
 	const queryClient = useQueryClient();
 	const isWorkspacePanel = useIsWorkspacePanel();
@@ -590,6 +530,7 @@ export function TasksPage() {
 	const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
 	const [editingStatus, setEditingStatus] = useState<Task["status"] | undefined>(undefined);
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+	const [cardEditTaskId, setCardEditTaskId] = useState<string | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
 	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
@@ -722,16 +663,18 @@ export function TasksPage() {
 		setEditingStatus(status);
 		setIsModalOpen(true);
 	}, [selectedTask]);
-	const handleOpenTaskCardEditor = useCallback(() => {
+	const handleToggleTaskCardEditor = useCallback(() => {
 		if (!selectedTask) return;
-		void createPersistedCardRoute(presentResourceEditor({
-			id: selectedTask.id,
-			kind: "task",
-			title: selectedTask.subject,
-			description: selectedTask.description,
-			resourceVersion: selectedTask.updatedAt,
-		})).then((route) => openWorkspaceRoute(route, "action"));
-	}, [openWorkspaceRoute, selectedTask]);
+		setCardEditTaskId((current) => current === selectedTask.id ? null : selectedTask.id);
+	}, [selectedTask]);
+	const handleTaskCardAction = useCallback(async (request: CardActionRequest) => {
+		await api.executeWorkbenchCardAction(request);
+		setCardEditTaskId(null);
+		await queryClient.invalidateQueries({
+			queryKey: tasksKeys.all(),
+			refetchType: "active",
+		});
+	}, [queryClient]);
 
 	const handleStatusChange = useCallback(
 		(status: Task["status"]) => {
@@ -1069,7 +1012,8 @@ export function TasksPage() {
 						onPriorityChange={handlePriorityChange}
 						task={selectedTask}
 						onEdit={handleEditSelectedTask}
-						onOpenCardEditor={handleOpenTaskCardEditor}
+						cardEditing={cardEditTaskId === selectedTask.id}
+						onCardEditToggle={handleToggleTaskCardEditor}
 						onStatusChange={handleStatusChange}
 					/>
 
@@ -1081,47 +1025,13 @@ export function TasksPage() {
 									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
 									<TaskCreatedAt createdAt={selectedTask.createdAt} />
 								</div>
-								<div>
-									<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">Description</h5>
-									<p className="mb-1.5 text-sm font-medium text-foreground">{selectedTask.subject}</p>
-									<TaskDescriptionField
-										taskId={selectedTask.id}
-										description={selectedTask.description}
-										onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
-									/>
-								</div>
-								<div className="grid grid-cols-2 gap-3 text-sm">
-									<div>
-										<span className="text-foreground-500">Status</span>
-										<div className="mt-1 flex items-center gap-1">
-											{React.createElement(STATUS_CONFIG[selectedTask.status].icon, {
-												className: "h-3 w-3",
-											})}
-											<span className={STATUS_CONFIG[selectedTask.status].color}>
-												{STATUS_CONFIG[selectedTask.status].label}
-											</span>
-										</div>
-									</div>
-									<div>
-										<span className="text-foreground-500">Assigned</span>
-										<div className="mt-1 text-sm">
-											{selectedTask.assignedArmName ?? "Unassigned"}
-										</div>
-									</div>
-								</div>
 								<BlockedTaskNotice task={selectedTask} />
 								<AdaptiveCardView
-									envelope={presentResourceDetail({
-										id: selectedTask.id,
-										kind: "task",
-										title: selectedTask.subject,
-										description: selectedTask.description,
-										facts: [
-											{ label: "Status", value: STATUS_CONFIG[selectedTask.status].label },
-											{ label: "Priority", value: selectedTask.priority },
-											{ label: "Assigned", value: selectedTask.assignedArmName ?? "Unassigned" },
-										],
-									})}
+									envelope={presentTaskCard(
+										selectedTask,
+										cardEditTaskId === selectedTask.id,
+									)}
+									onAction={handleTaskCardAction}
 								/>
 							</div>
 							</WorkbenchSurface>
@@ -1235,7 +1145,8 @@ export function TasksPage() {
 							onPriorityChange={handlePriorityChange}
 							task={selectedTask}
 							onEdit={handleEditSelectedTask}
-							onOpenCardEditor={handleOpenTaskCardEditor}
+							cardEditing={cardEditTaskId === selectedTask.id}
+							onCardEditToggle={handleToggleTaskCardEditor}
 							onStatusChange={handleStatusChange}
 							onClose={() => setSelectedTask(null)}
 						/>
@@ -1253,55 +1164,12 @@ export function TasksPage() {
 										<BlockedTaskNotice task={selectedTask} />
 
 										<AdaptiveCardView
-											envelope={presentResourceDetail({
-												id: selectedTask.id,
-												kind: "task",
-												title: selectedTask.subject,
-												description: selectedTask.description,
-												facts: [
-													{ label: "Status", value: STATUS_CONFIG[selectedTask.status].label },
-													{ label: "Priority", value: selectedTask.priority },
-													{ label: "Assigned", value: selectedTask.assignedArmName ?? "Unassigned" },
-												],
-											})}
+											envelope={presentTaskCard(
+												selectedTask,
+												cardEditTaskId === selectedTask.id,
+											)}
+											onAction={handleTaskCardAction}
 										/>
-
-										<div>
-											<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">
-												Description
-											</h5>
-											<p className="mb-1.5 text-sm font-medium text-foreground">
-												{selectedTask.subject}
-											</p>
-											<TaskDescriptionField
-												taskId={selectedTask.id}
-												description={selectedTask.description}
-												onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
-											/>
-										</div>
-
-										<div className="grid grid-cols-2 gap-3 text-sm">
-											<div>
-												<span className="text-foreground-500">Status:</span>
-												<div className="flex items-center gap-1 mt-1">
-													{React.createElement(
-														STATUS_CONFIG[selectedTask.status].icon,
-														{ className: "h-3 w-3" },
-													)}
-													<span
-														className={STATUS_CONFIG[selectedTask.status].color}
-													>
-														{STATUS_CONFIG[selectedTask.status].label}
-													</span>
-												</div>
-											</div>
-											<div>
-												<span className="text-foreground-500">Assigned</span>
-												<div className="mt-1 text-sm">
-													{selectedTask.assignedArmName ?? "Unassigned"}
-												</div>
-											</div>
-										</div>
 
 										<div>
 											<h5 className="text-sm font-medium text-foreground-500 mb-1">
@@ -1344,17 +1212,6 @@ export function TasksPage() {
 												)}
 											</div>
 										</div>
-
-										{selectedTask.assignedArmName && (
-											<div>
-												<span className="text-sm text-foreground-500">
-													Assigned to:
-												</span>
-												<p className="text-sm font-medium">
-													{selectedTask.assignedArmName}
-												</p>
-											</div>
-										)}
 
 										{getTaskUiMeta(selectedTask).llm?.originalPrompt && (
 											<div>

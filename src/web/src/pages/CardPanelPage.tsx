@@ -1,11 +1,11 @@
 import { Button } from "@heroui/react";
-import { ExternalLink, PanelsTopLeft } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
 import { parseCardRoute } from "@/adaptive-cards/card-route";
 import { api } from "@/lib";
-import { WorkbenchEmptyState, WorkbenchHeader } from "@/design-system/WorkbenchSurface";
+import { WorkbenchEmptyState } from "@/design-system/WorkbenchSurface";
 import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
@@ -90,22 +90,23 @@ export function CardPanelPage() {
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
-			<WorkbenchHeader
-				title={envelope.presentation.title ?? "Card"}
-				description={`${envelope.template.id}@${envelope.template.version}`}
-				icon={<PanelsTopLeft className="h-4 w-4" />}
-				actions={(
-					<Button size="sm" variant="ghost" onPress={openPopout}>
-						<ExternalLink className="h-3.5 w-3.5" />
-						Pop out
-					</Button>
-				)}
-			/>
 			<div className="min-h-0 flex-1 overflow-auto p-4">
 				<AdaptiveCardView
 					envelope={envelope}
 					onAction={handleAction}
 					className="mx-auto max-w-3xl"
+					headerActions={(
+						<Button
+							isIconOnly
+							size="sm"
+							variant="ghost"
+							onPress={openPopout}
+							aria-label="Pop out"
+							className="h-7 min-h-7 w-7 min-w-7"
+						>
+							<ExternalLink className="h-3.5 w-3.5" />
+						</Button>
+					)}
 				/>
 			</div>
 		</div>
