@@ -143,6 +143,7 @@ export function MailThreadProjection({
 											sent,
 										})}
 										className="border-0"
+										allCardsDefault="detail"
 									/>
 									<div className="border-t border-border px-4 py-2">
 										<Button size="sm" variant="ghost" onPress={reply}>

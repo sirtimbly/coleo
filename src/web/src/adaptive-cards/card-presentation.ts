@@ -49,11 +49,12 @@ function getSnapshot(id: string): string {
 export function getEffectiveCardPresentation(
 	id: string,
 	surfaceDefault: CardPresentationMode,
+	allCardsDefault?: CardPresentationMode,
 ): CardPresentationMode {
 	const override = itemOverrides.get(id);
 	if (override) return override;
 	const saved = readGlobalMode();
-	return saved === "surface" ? surfaceDefault : saved;
+	return saved === "surface" ? allCardsDefault ?? surfaceDefault : saved;
 }
 
 export function setCardPresentation(id: string, mode: CardPresentationMode): void {
@@ -80,15 +81,20 @@ export function setAllCardPresentations(mode: GlobalCardPresentationMode): void 
 export function useCardPresentation(
 	id: string,
 	surfaceDefault: CardPresentationMode,
+	allCardsDefault?: CardPresentationMode,
 ) {
 	useSyncExternalStore(
 		(listener) => subscribe(id, listener),
 		() => getSnapshot(id),
 		() => "0:0",
 	);
+	const persistedGlobalMode = readGlobalMode();
 	return {
-		mode: getEffectiveCardPresentation(id, surfaceDefault),
-		globalMode: readGlobalMode(),
+		mode: getEffectiveCardPresentation(id, surfaceDefault, allCardsDefault),
+		globalMode:
+			persistedGlobalMode === "surface" && allCardsDefault
+				? allCardsDefault
+				: persistedGlobalMode,
 		hasOverride: itemOverrides.has(id),
 		setForCard: (mode: CardPresentationMode) => setCardPresentation(id, mode),
 		clearForCard: () => clearCardPresentation(id),

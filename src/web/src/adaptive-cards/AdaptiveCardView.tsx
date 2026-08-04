@@ -14,6 +14,7 @@ import type {
 	CardEnvelope,
 	CardJsonObject,
 } from "../../../types/adaptive-cards";
+import type { CardPresentationMode } from "./card-presentation";
 import type { ReactNode } from "react";
 
 export interface AdaptiveCardViewProps {
@@ -21,6 +22,7 @@ export interface AdaptiveCardViewProps {
 	onAction?: (request: CardActionRequest) => void | Promise<void>;
 	className?: string;
 	headerActions?: ReactNode;
+	allCardsDefault?: CardPresentationMode;
 }
 
 export function AdaptiveCardView({
@@ -28,6 +30,7 @@ export function AdaptiveCardView({
 	onAction,
 	className,
 	headerActions,
+	allCardsDefault,
 }: AdaptiveCardViewProps) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const onActionRef = useRef(onAction);
@@ -35,6 +38,7 @@ export function AdaptiveCardView({
 	const settings = useCardPresentation(
 		envelope.id,
 		envelope.presentation.compact ? "compact" : "detail",
+		allCardsDefault,
 	);
 	const configurable = envelope.presentation.surface !== "editor";
 	const mode = configurable ? settings.mode : "detail";
