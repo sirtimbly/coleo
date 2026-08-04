@@ -71,8 +71,17 @@ test("opens an Inbox event as a restorable card identity", async ({ page }) => {
 	await installMockApi(page, { recentEvents: [blockedTaskEvent] });
 	await page.goto("/messaging?facet=attention");
 
-	await page.getByRole("button", { name: /Task blocked: Task task-dashboard/ }).click();
-	await expect(page.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
+	const eventRow = page.locator(".tabulator-row").filter({
+		hasText: "Task blocked: Task task-dashboard",
+	});
+	await eventRow.getByRole("button", {
+		name: "Expand Task blocked: Task task-dashboard card",
+	}).click();
+	await expect(eventRow.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
+	await eventRow.getByRole("button", {
+		name: "Open Task blocked: Task task-dashboard in panel",
+	}).click();
+	await expect(page.getByRole("button", { name: "Open card" })).toBeVisible();
 	await page.getByRole("button", { name: "Open card" }).click();
 
 	await expect(page).toHaveURL(/\/card\?id=018fd384-/);

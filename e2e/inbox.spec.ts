@@ -66,7 +66,11 @@ test("views indented message threads and carries reply context into the composer
 	await page.goto("/messaging?facet=messages&mailbox=inbox");
 
 	await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-	await page.getByRole("button", { name: /Workbench architecture/ }).click();
+	const messageRow = page.locator('[data-inbox-item-id="thread:inbox:thread-architecture"]');
+	await expect(messageRow).toBeVisible();
+	await messageRow.getByRole("button", { name: "Expand Workbench architecture card" }).click();
+	await expect(messageRow.locator('[data-card-template="workbench.message@1"]')).toBeVisible();
+	await messageRow.getByRole("button", { name: "Open conversation", exact: true }).click();
 
 	await expect(page.getByRole("heading", { name: "Workbench architecture", exact: true })).toBeVisible();
 	await expect(page.getByText(received.body)).toBeVisible();
@@ -111,8 +115,14 @@ test("launcher navigation exposes the unified Inbox instead of legacy stream pag
 	await expect(page.getByRole("link", { name: "History", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveCount(0);
 
-	await page.getByRole("button", { name: /Task blocked: Task task-dashboard/ }).click();
-	await page.getByRole("button", { name: "Open target", exact: true }).click();
+	const eventRow = page.locator(".tabulator-row").filter({
+		hasText: "Task blocked: Task task-dashboard",
+	});
+	await eventRow.getByRole("button", {
+		name: "Expand Task blocked: Task task-dashboard card",
+	}).click();
+	await expect(eventRow.locator('[data-card-template="workbench.event@1"]')).toBeVisible();
+	await eventRow.getByRole("button", { name: "Open target", exact: true }).click();
 	await expect(page).toHaveURL(/\/tasks\?task=task-dashboard&view=details$/);
 });
 
@@ -125,10 +135,40 @@ test("Brain delegates its semantic activity feed to the live Inbox facet", async
 
 	await expect(page).toHaveURL(/\/messaging\?facet=brain$/);
 	await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+	await expect(page.locator(".coleo-inbox-card-table.tabulator")).toBeVisible();
 	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
 	await expect(page.getByText("2 pending tasks, 3 active arms in 1.2s", { exact: true })).toBeVisible();
 
 	await page.getByRole("button", { name: "Operations", exact: true }).click();
 	await expect(page.getByText("Poll completed", { exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Beginning", exact: true })).toBeDisabled();
+});
+
+test("keeps following virtual rows below an expanded card", async ({ page }) => {
+	await installMockApi(page, {
+		activity: [brainPoll],
+		recentEvents: [blockedTaskEvent],
+	});
+	await page.goto("/messaging?facet=all");
+
+	const eventRow = page.locator(".tabulator-row").filter({
+		hasText: "Task blocked: Task task-dashboard",
+	});
+	const followingRow = page.locator(".tabulator-row").filter({ hasText: "Poll completed" });
+	await eventRow.getByRole("button", {
+		name: "Expand Task blocked: Task task-dashboard card",
+	}).click();
+	const card = eventRow.locator('[data-card-template="workbench.event@1"]');
+	await expect(card).toBeVisible();
+	await expect.poll(async () => {
+		const cardBox = await card.boundingBox();
+		const followingBox = await followingRow.boundingBox();
+		if (!cardBox || !followingBox) return false;
+		return followingBox.y >= cardBox.y + cardBox.height - 1;
+	}).toBe(true);
+
+	await eventRow.getByRole("button", {
+		name: "Collapse Task blocked: Task task-dashboard card",
+	}).click();
+	await expect(card).toHaveCount(0);
 });

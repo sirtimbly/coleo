@@ -16,7 +16,11 @@ import {
 	setCardPresentation,
 } from "../src/adaptive-cards/card-presentation";
 import { expandCardTemplate } from "../src/adaptive-cards/expand-template";
-import { presentInboxItem, presentResourceEditor } from "../src/adaptive-cards/presenters";
+import {
+	presentInboxItem,
+	presentMessage,
+	presentResourceEditor,
+} from "../src/adaptive-cards/presenters";
 import {
 	presentTaskCard,
 	stripCardMarkdown,
@@ -61,6 +65,33 @@ describe("adaptive card contracts", () => {
 		expect(route.pathname).toBe("/card");
 		expect(parseCardRoute(new URLSearchParams(route.search)))
 			.toBe("018fd384-7c9a-7a83-8fd8-6f6f0c96af95");
+	});
+
+	it("projects expanded inbox messages with a trusted conversation action", () => {
+		const envelope = presentMessage({
+			id: "thread-architecture",
+			from: "brain@coleo.local",
+			subject: "Workbench architecture",
+			preview: "The Brain has a question.",
+			timestamp: "2026-08-03T12:00:00.000Z",
+			surface: "inbox",
+			targetRoute: {
+				pathname: "/messaging",
+				search: "?facet=messages&thread=thread-architecture",
+			},
+		});
+		expect(envelope.presentation).toMatchObject({
+			surface: "inbox",
+			title: "Workbench architecture",
+		});
+		expect(envelope.data).toMatchObject({
+			openVerb: "message.open",
+			targetRoute: {
+				pathname: "/messaging",
+				search: "?facet=messages&thread=thread-architecture",
+			},
+		});
+		expect(isCardActionAllowed("workbench.message", 1, "message.open")).toBe(true);
 	});
 
 	it("creates scalar editors with a resource-scoped save verb", () => {
