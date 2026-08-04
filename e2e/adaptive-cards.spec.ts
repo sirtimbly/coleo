@@ -81,6 +81,10 @@ test("opens an Inbox event as a restorable card identity", async ({ page }) => {
 	await eventRow.getByRole("button", {
 		name: "Open Task blocked: Task task-dashboard in panel",
 	}).click();
+	await expect(page.getByRole("heading", {
+		name: "Task blocked: Task task-dashboard",
+		exact: true,
+	})).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Open card" })).toBeVisible();
 	await page.getByRole("button", { name: "Open card" }).click();
 

@@ -22,7 +22,6 @@ import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route"
 import { presentInboxItem, presentMessage } from "@/adaptive-cards/presenters";
 import {
 	WorkbenchEmptyState,
-	WorkbenchHeader,
 	WorkbenchStatusDot,
 } from "@/design-system/WorkbenchSurface";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -654,46 +653,27 @@ export function MessagingPage() {
 			await load();
 		};
 		return (
-			<div className="flex h-full min-h-0 flex-col bg-background">
-				<WorkbenchHeader
-					title={selectedItem.item.title}
-					description={`${selectedItem.item.source ?? selectedItem.item.kind} · ${new Date(selectedItem.item.timestamp).toLocaleString()}`}
-					icon={<FileText className="h-4 w-4" />}
-					actions={(
-						<>
-							<Button
-								size="sm"
-								variant="ghost"
-								onPress={() => {
-									void createPersistedCardRoute({
-										...envelope,
-										presentation: { ...envelope.presentation, surface: "panel" },
-									}).then((route) => openWorkspaceRoute(route, "tab"));
-								}}
-							>
-								<FileText className="h-3.5 w-3.5" />
-								Open card
-							</Button>
-							{selectedItem.targetRoute ? (
-								<Button
-									size="sm"
-									variant="secondary"
-									onPress={() => openWorkspaceRoute(selectedItem.targetRoute!, "focus")}
-								>
-									<ArrowUpRight className="h-3.5 w-3.5" />
-									Open target
-								</Button>
-							) : null}
-						</>
+			<div className="h-full min-h-0 overflow-auto bg-background p-5">
+				<AdaptiveCardView
+					envelope={envelope}
+					onAction={handleCardAction}
+					className="mx-auto max-w-4xl"
+					headerActions={(
+						<Button
+							size="sm"
+							variant="ghost"
+							onPress={() => {
+								void createPersistedCardRoute({
+									...envelope,
+									presentation: { ...envelope.presentation, surface: "panel" },
+								}).then((route) => openWorkspaceRoute(route, "tab"));
+							}}
+						>
+							<FileText className="h-3.5 w-3.5" aria-hidden="true" />
+							Open card
+						</Button>
 					)}
 				/>
-				<div className="min-h-0 flex-1 overflow-auto p-5">
-					<AdaptiveCardView
-						envelope={envelope}
-						onAction={handleCardAction}
-						className="mx-auto max-w-4xl"
-					/>
-				</div>
 			</div>
 		);
 	}
