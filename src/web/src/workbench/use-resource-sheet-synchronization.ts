@@ -68,11 +68,10 @@ export function useResourceSheetSynchronization({
 		}
 		const currentIds = currentData.map((row) => String(row.__resourceId));
 		const nextIds = sheetRows.map((row) => row.__resourceId);
-		const nextIdSet = new Set(nextIds);
-		const sameShape =
+		const sameOrderAndShape =
 			currentIds.length === nextIds.length &&
-			currentIds.every((id) => nextIdSet.has(id));
-		const sync = sameShape && sheetRows.length > 0
+			currentIds.every((id, index) => id === nextIds[index]);
+		const sync = sameOrderAndShape && sheetRows.length > 0
 			? table.updateData(sheetRows)
 			: table.replaceData(sheetRows);
 		void sync.then(() => {

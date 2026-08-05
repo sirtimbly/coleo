@@ -110,6 +110,26 @@ interface PanelInstance {
 	route: RoutePanelState;
 }
 
+function normalizeLegacyRoute(route: RoutePanelState): RoutePanelState {
+	if (route.pathname === "/mail") {
+		return {
+			...route,
+			pathname: "/messaging",
+			search: "?facet=messages&mailbox=inbox",
+			title: undefined,
+		};
+	}
+	if (["/activity", "/proposals", "/status-reports"].includes(route.pathname)) {
+		return {
+			...route,
+			pathname: "/messaging",
+			search: "?facet=history",
+			title: undefined,
+		};
+	}
+	return route;
+}
+
 function createPanelId(): string {
 	return createRandomId("panel");
 }
@@ -120,12 +140,12 @@ function createRoutePanelState(
 	panelId = createPanelId(),
 	title?: string,
 ): RoutePanelState {
-	return {
+	return normalizeLegacyRoute({
 		panelId,
 		pathname,
 		search,
 		title,
-	};
+	});
 }
 
 function createComponentConfig(route: RoutePanelState): ComponentItemConfig {
@@ -554,7 +574,7 @@ export function GoldenWorkspace() {
 					WORKSPACE_COMPONENT_TYPE,
 					panelState,
 					title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 2 }], // Add as sibling in a row
+					[{ typeId: 4 }], // Add as a sibling in the first row
 				);
 				focusPanelByRoute(panelState);
 				return;
@@ -938,11 +958,7 @@ export function GoldenWorkspace() {
 				const restoredRoute = isRoutePanelState(state)
 					? state
 					: createRoutePanelState("/", "");
-				const route =
-					restoredRoute.pathname === "/status-reports" &&
-					restoredRoute.title === "Status History"
-						? { ...restoredRoute, title: undefined }
-						: restoredRoute;
+				const route = normalizeLegacyRoute(restoredRoute);
 				const hostElement = document.createElement("div");
 				hostElement.className = "golden-workspace-panel-host";
 				container.element.appendChild(hostElement);

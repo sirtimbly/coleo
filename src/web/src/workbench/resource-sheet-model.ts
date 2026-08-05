@@ -45,9 +45,9 @@ export function areProjectedResourceRowsEqual(
 	nextRows: readonly ResourceSheetDataRow[],
 ): boolean {
 	if (currentRows.length !== nextRows.length) return false;
-	const currentById = new Map(currentRows.map((row) => [row.__resourceId, row]));
-	return nextRows.every((nextRow) => {
-		const currentRow = currentById.get(nextRow.__resourceId);
+	return nextRows.every((nextRow, index) => {
+		const currentRow = currentRows[index];
+		if (currentRow?.__resourceId !== nextRow.__resourceId) return false;
 		return Boolean(currentRow) && Object.keys(nextRow).every((key) =>
 			sameProjectedValue(currentRow?.[key], nextRow[key])
 		);

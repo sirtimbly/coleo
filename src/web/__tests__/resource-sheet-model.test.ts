@@ -105,6 +105,10 @@ describe("resource sheet model", () => {
 			{ ...sameRows[0], subject: "Streamed subject update" },
 			sameRows[1],
 		])).toBe(false);
+		expect(areProjectedResourceRowsEqual(projection.sheetRows, [
+			sameRows[1],
+			sameRows[0],
+		])).toBe(false);
 	});
 
 	for (const benchmark of [
