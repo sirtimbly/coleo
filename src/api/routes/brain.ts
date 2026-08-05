@@ -47,6 +47,10 @@ import {
   parseWorkspaceOperation,
 } from "../../workspace";
 import { getServerWorkspaceAccess } from "../workspace-access";
+import {
+	parseBrainModelAccessIssue,
+	type BrainModelAccessIssueCode,
+} from "../../brain/model-access";
 
 interface BrainContext {
   Variables: {
@@ -90,6 +94,15 @@ export interface BrainStatus {
     blockedTaskCount: number;
     blockedArmCount: number;
     taskCount: number;
+  };
+  modelAccess: {
+    status: "available" | "blocked" | "unknown";
+    issueCode: BrainModelAccessIssueCode | null;
+    provider: string | null;
+    message: string | null;
+    actionLabel: string | null;
+    actionUrl: string | null;
+    checkedAt: string | null;
   };
 }
 
@@ -216,6 +229,46 @@ export function createBrainRoutes() {
     const now = Date.now();
     const startedAt = brainState.startedAt ? new Date(brainState.startedAt).getTime() : null;
     const uptime = startedAt ? Math.floor((now - startedAt) / 1000) : null;
+    let modelAccess: BrainStatus["modelAccess"] = {
+      status: "unknown",
+      issueCode: null,
+      provider: null,
+      message: null,
+      actionLabel: null,
+      actionUrl: null,
+      checkedAt: null,
+    };
+    try {
+      const row = db.query(`
+        SELECT healthy, error, last_check
+        FROM infrastructure_health
+        WHERE component = 'brain_model_api'
+      `).get() as {
+        healthy: number;
+        error: string | null;
+        last_check: string;
+      } | null;
+      const issue = parseBrainModelAccessIssue(row?.error);
+      if (row?.healthy === 1) {
+        modelAccess = {
+          ...modelAccess,
+          status: "available",
+          checkedAt: row.last_check,
+        };
+      } else if (row && issue) {
+        modelAccess = {
+          status: "blocked",
+          issueCode: issue.code,
+          provider: issue.provider,
+          message: issue.message,
+          actionLabel: issue.actionLabel,
+          actionUrl: issue.actionUrl || null,
+          checkedAt: row.last_check,
+        };
+      }
+    } catch {
+      // Older/minimal databases may not have infrastructure health yet.
+    }
 
     const status: BrainStatus = {
       status: brainState.status,
@@ -232,6 +285,7 @@ export function createBrainRoutes() {
         blockedArmCount,
         taskCount: planTaskCount,
       },
+      modelAccess,
     };
 
     return c.json({ brain: status });
@@ -1193,6 +1247,9 @@ export function createBrainRoutes() {
     }
 
     const result = await updateInfrastructureHealth(db, body.components);
+    if (body.components.some((component) => component.component === "brain_model_api")) {
+      broadcast("brain", "brain.model_access_changed", {});
+    }
     return c.json({ result });
   });
 

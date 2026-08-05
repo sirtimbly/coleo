@@ -647,6 +647,15 @@ class ApiClient {
           blockedArmCount: number;
           taskCount: number;
         };
+        modelAccess: {
+          status: 'available' | 'blocked' | 'unknown';
+          issueCode: 'insufficient_credits' | null;
+          provider: string | null;
+          message: string | null;
+          actionLabel: string | null;
+          actionUrl: string | null;
+          checkedAt: string | null;
+        };
       };
     }>('/brain/status');
   }

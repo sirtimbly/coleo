@@ -313,12 +313,17 @@ function PlanStatusSection({
       ) : brain ? (
         <>
           <DenseRow
-            tone={brain.status === "running" ? "success" : "default"}
+            tone={brain.modelAccess.status === "blocked" ? "danger" : brain.status === "running" ? "success" : "default"}
             label="Brain"
-            detail={`${brain.activeArmsCount} active arms · lastPoll ${formatLastSeen(brain.lastPollAt)}`}
+            detail={brain.modelAccess.status === "blocked"
+              ? "Plan evaluation blocked · add Brain API credits"
+              : `${brain.activeArmsCount} active arms · lastPoll ${formatLastSeen(brain.lastPollAt)}`}
+            detailTone={brain.modelAccess.status === "blocked" ? "danger" : "default"}
             chipLabel={brain.status}
-            chipColor={brain.status === "running" ? "success" : "default"}
-            sub={`interval=${brain.pollIntervalMs}ms`}
+            chipColor={brain.modelAccess.status === "blocked" ? "danger" : brain.status === "running" ? "success" : "default"}
+            sub={brain.modelAccess.status === "blocked"
+              ? `lastPoll=${formatLastSeen(brain.lastPollAt)}`
+              : `interval=${brain.pollIntervalMs}ms`}
             onClick={() => onNavigate("/brain")}
           />
           <DenseRow

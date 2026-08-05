@@ -8,6 +8,11 @@ import { parsePlanFile } from "../../brain/plan-parser";
 import { regenerateTasksFromPlan } from "../../brain/task-regenerator";
 import { BrainTemplateManager } from "../../brain/template-manager";
 import {
+	getBrainModelAccessIssue,
+	serializeBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "../../brain/model-access";
+import {
 	CANONICAL_PLAN_PATH,
 	DEFAULT_ARM_TEMPLATE,
 	DEFAULT_PLAN_TEMPLATE,
@@ -21,6 +26,7 @@ import {
 	type PlanFormatter,
 } from "../../project-setup/service";
 import { getColeoDir } from "../../config";
+import { updateInfrastructureHealth } from "../../db/transactions";
 import type { WorkspaceAccess, WorkspaceTextFile } from "../../workspace";
 import { HttpError } from "../middleware";
 import { getServerWorkspaceAccess } from "../workspace-access";
@@ -123,6 +129,25 @@ function validateEditableDocumentPath(path: string): string {
 
 function badRequestFrom(error: unknown, fallback: string): HttpError {
 	return HttpError.badRequest(error instanceof Error ? error.message : fallback);
+}
+
+async function recordBrainModelAccess(
+	db: Database,
+	issue: BrainModelAccessIssue | null,
+): Promise<void> {
+	const result = await updateInfrastructureHealth(db, [
+		{
+			component: "brain_model_api",
+			healthy: issue === null,
+			optional: false,
+			error: issue ? serializeBrainModelAccessIssue(issue) : undefined,
+		},
+	]);
+	if (!result.success) return;
+	broadcast("brain", "brain.model_access_changed", {
+		status: issue ? "blocked" : "available",
+		issueCode: issue?.code,
+	});
 }
 
 async function listProjectTreePaths(workspace: WorkspaceAccess): Promise<string[]> {
@@ -266,6 +291,11 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				workspaceContext,
 				brainTemplates,
 			);
+			if (formatted.modelIssue) {
+				await recordBrainModelAccess(c.get("db"), formatted.modelIssue);
+			} else if (formatted.mode === "ai") {
+				await recordBrainModelAccess(c.get("db"), null);
+			}
 			if (!hasStructuredPlanTasks(formatted.content)) {
 				throw new Error("The prepared plan did not contain a phase with deliverable checklist items");
 			}
@@ -290,6 +320,8 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				taskCount: parsed.tasks.length,
 			});
 		} catch (error) {
+			const issue = getBrainModelAccessIssue(error);
+			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to prepare the project plan");
 		}
 	});
@@ -311,9 +343,14 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				formatter,
 				templates: brainTemplates,
 			});
+			if (result.mode === "ai") {
+				await recordBrainModelAccess(c.get("db"), null);
+			}
 			broadcast("tasks", "tasks.regenerated", result);
 			return c.json(result);
 		} catch (error) {
+			const issue = getBrainModelAccessIssue(error);
+			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to regenerate tasks from the project plan");
 		}
 	});

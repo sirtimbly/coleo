@@ -1,6 +1,11 @@
 import type { WorkspaceAccess, WorkspaceTextFile } from "../workspace";
 import { getColeoDir, loadConfig } from "../config";
 import { resolveBrainModelConfig } from "../brain/model-config";
+import {
+	BrainModelAccessError,
+	detectBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "../brain/model-access";
 import { BrainTemplateManager } from "../brain/template-manager";
 
 export const CANONICAL_PLAN_PATH = ".project/plan.md";
@@ -62,6 +67,7 @@ export interface PlanFormatterResult {
 	content: string;
 	mode: "ai" | "structured";
 	formatterError?: string;
+	modelIssue?: BrainModelAccessIssue;
 }
 
 export interface PlanWorkspaceContext {
@@ -419,6 +425,12 @@ export async function formatPlanWithConfiguredModel(
 		});
 		if (!response.ok) {
 			const rawBody = (await response.text()).trim();
+			const modelIssue = detectBrainModelAccessIssue(
+				response.status,
+				rawBody,
+				config.provider,
+			);
+			if (modelIssue) throw new BrainModelAccessError(modelIssue);
 			let detail = rawBody;
 			if (rawBody) {
 				try {
@@ -472,6 +484,9 @@ export async function formatPlanWithConfiguredModel(
 			content: formatPlanWithoutModel(content, sourcePath),
 			mode: "structured",
 			formatterError: error instanceof Error ? error.message : String(error),
+			...(error instanceof BrainModelAccessError
+				? { modelIssue: error.issue }
+				: {}),
 		};
 	}
 }

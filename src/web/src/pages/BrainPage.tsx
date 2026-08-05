@@ -5,7 +5,7 @@
  * to that live, searchable Brain facet instead of maintaining a second feed.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { Inbox, Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
+import { AlertTriangle, Edit2, ExternalLink, Inbox, Play, RefreshCw, Save, Square, X } from 'lucide-react';
 import { api } from '@/lib';
 import type { BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
@@ -34,6 +34,15 @@ interface BrainStatus {
     blockedTaskCount: number;
     blockedArmCount: number;
     taskCount: number;
+  };
+  modelAccess: {
+    status: 'available' | 'blocked' | 'unknown';
+    issueCode: 'insufficient_credits' | null;
+    provider: string | null;
+    message: string | null;
+    actionLabel: string | null;
+    actionUrl: string | null;
+    checkedAt: string | null;
   };
 }
 
@@ -65,6 +74,40 @@ function EditToggle({ isEditing, onToggle }: { isEditing: boolean; onToggle: () 
     <Button variant="ghost" size="sm" onPress={onToggle}>
       <Edit2 className="h-3.5 w-3.5" /> Edit
     </Button>
+  );
+}
+
+function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAccess'] }) {
+  if (modelAccess.status !== 'blocked') return null;
+
+  return (
+    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+        <div>
+          <p className="font-medium text-danger">Plan evaluation is blocked</p>
+          <p className="mt-1 text-sm text-foreground">
+            {modelAccess.message || 'The Brain model API is unavailable.'}
+          </p>
+          {modelAccess.checkedAt ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Detected {new Date(modelAccess.checkedAt).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {modelAccess.actionUrl ? (
+        <a
+          href={modelAccess.actionUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-md border border-danger/30 bg-surface px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+        >
+          {modelAccess.actionLabel || 'Resolve billing'}
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+    </div>
   );
 }
 
@@ -116,8 +159,10 @@ function BrainStatusSection({
         <div>
           <CollectionRow
             title="Status"
-            description={`Uptime ${formatUptime(status?.uptime)}`}
-            leading={<WorkbenchStatusDot tone={statusTone(status?.status || 'stopped')} />}
+            description={status?.modelAccess.status === 'blocked'
+              ? 'Plan evaluation blocked · API credits required'
+              : `Uptime ${formatUptime(status?.uptime)}`}
+            leading={<WorkbenchStatusDot tone={status?.modelAccess.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')} />}
             trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
           />
           <CollectionRow
@@ -391,6 +436,8 @@ export function BrainPage() {
       />
 
       <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+        {status ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
+
         <BrainStatusSection
           status={status}
           isLoading={loading}
