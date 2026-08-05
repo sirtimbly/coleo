@@ -84,6 +84,13 @@ export interface BrainStatus {
   pendingTasksCount: number;
   completedToday: number;
   uptime: number | null;
+  plan: {
+    status: "blocked" | "healthy" | "pending";
+    detail: string;
+    blockedTaskCount: number;
+    blockedArmCount: number;
+    taskCount: number;
+  };
 }
 
 interface CommandPublishRequestBody {
@@ -175,6 +182,36 @@ export function createBrainRoutes() {
     const brainState = getBrainState(db);
 
     const activeArmsCount = db.query("SELECT COUNT(*) as count FROM arms WHERE status NOT IN ('stopped', 'error')").get() as { count: number } | null;
+    const blockedPlanTasks = db.query(
+      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'blocked' AND blocked_category = 'planning'",
+    ).get() as { count: number } | null;
+    const latestPlanBlock = db.query(
+      "SELECT blocked_reason AS reason FROM tasks WHERE status = 'blocked' AND blocked_category = 'planning' ORDER BY updated_at DESC LIMIT 1",
+    ).get() as { reason: string | null } | null;
+    const blockedPlanArms = db.query(
+      "SELECT COUNT(*) AS count FROM arms WHERE planning_blocked = 1",
+    ).get() as { count: number } | null;
+    const planTasks = db.query(
+      "SELECT COUNT(*) AS count FROM tasks WHERE source_type = 'plan'",
+    ).get() as { count: number } | null;
+
+    const blockedTaskCount = blockedPlanTasks?.count || 0;
+    const blockedArmCount = blockedPlanArms?.count || 0;
+    const planTaskCount = planTasks?.count || 0;
+    const planStatus = blockedTaskCount > 0 || blockedArmCount > 0
+      ? "blocked"
+      : planTaskCount > 0 ? "healthy" : "pending";
+    const rawBlockReason = latestPlanBlock?.reason || "";
+    const blockPrefix = "Project planning must succeed before work can resume: ";
+    const markerIndex = rawBlockReason.lastIndexOf(" [planning-state:");
+    const blockDetail = rawBlockReason.startsWith(blockPrefix)
+      ? rawBlockReason.slice(blockPrefix.length, markerIndex >= 0 ? markerIndex : undefined).trim()
+      : rawBlockReason.trim();
+    const planDetail = planStatus === "blocked"
+      ? blockDetail || "The project planning gate is blocking task assignment."
+      : planStatus === "healthy"
+        ? `${planTaskCount} plan task${planTaskCount === 1 ? " is" : "s are"} synchronized with no planning blockers.`
+        : "No plan tasks have been synchronized yet. Prepare a project plan or wait for the Brain's next poll.";
 
     const now = Date.now();
     const startedAt = brainState.startedAt ? new Date(brainState.startedAt).getTime() : null;
@@ -188,6 +225,13 @@ export function createBrainRoutes() {
       pendingTasksCount: brainState.pendingTasks,
       completedToday: brainState.completedToday,
       uptime,
+      plan: {
+        status: planStatus,
+        detail: planDetail,
+        blockedTaskCount,
+        blockedArmCount,
+        taskCount: planTaskCount,
+      },
     };
 
     return c.json({ brain: status });

@@ -181,7 +181,8 @@ export function SettingsPage() {
         <CardContent className="space-y-4">
           <div>
             <Select
-              className="w-full max-w-xs"
+              className="w-fit"
+              variant="secondary"
               value={theme}
               onChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
             >
@@ -190,7 +191,7 @@ export function SettingsPage() {
                 <Select.Value />
                 <Select.Indicator />
               </Select.Trigger>
-              <Select.Popover>
+              <Select.Popover className="w-fit">
                 <ListBox>
                   {themeOptions.map((option) => (
                     <ListBox.Item key={option.value} id={option.value} textValue={option.label}>

@@ -43,12 +43,15 @@ function decodeCursor(value: string | undefined): [string, string] | null {
 	if (!value) return null;
 	try {
 		const decoded = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as unknown;
-		return Array.isArray(decoded) &&
+		if (
+			Array.isArray(decoded) &&
 			decoded.length === 2 &&
 			typeof decoded[0] === "string" &&
 			typeof decoded[1] === "string"
-			? [decoded[0], decoded[1]]
-			: null;
+		) {
+			return [decoded[0], decoded[1]];
+		}
+		throw HttpError.badRequest("Invalid inbox cursor");
 	} catch {
 		throw HttpError.badRequest("Invalid inbox cursor");
 	}

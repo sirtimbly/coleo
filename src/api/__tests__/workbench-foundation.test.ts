@@ -316,6 +316,13 @@ describe("workbench foundation", () => {
 		expect((await next.json() as { items: Array<{ itemKey: string }> }).items).toHaveLength(1);
 	});
 
+	it("rejects invalid inbox cursor values", async () => {
+		const app = createTestApp();
+		const response = await app.request("/workbench/inbox?profileId=local&cursor=not-a-cursor");
+		expect(response.status).toBe(400);
+		expect(await response.json()).toMatchObject({ error: "Invalid inbox cursor" });
+	});
+
 	it("starts a run only when an Arm claims work", () => {
 		const now = new Date().toISOString();
 		db.run(

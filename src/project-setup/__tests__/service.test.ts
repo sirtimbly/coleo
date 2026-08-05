@@ -6,6 +6,7 @@ import { join } from "node:path";
 import {
 	discoverProjectPlans,
 	collectPlanWorkspaceContext,
+	formatPlanWithConfiguredModel,
 	formatPlanWithoutModel,
 	listProjectPlanDocuments,
 	preservesPlanContext,
@@ -68,6 +69,43 @@ describe("project setup service", () => {
 		expect(plan).toContain("### Deliverables");
 		expect(plan).toContain("- [ ] Support team accounts");
 		expect(plan).toContain("- [ ] Add an audit log");
+	});
+
+	it("includes the provider error detail when model formatting falls back", async () => {
+		const templateDir = join(root, "src", "brain", "templates");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "plan-evaluation-system-prompt.jinja"), "Format the plan");
+		await writeFile(join(templateDir, "plan-evaluation-user-prompt.jinja"), "{{ project_plan }}");
+		const originalFetch = globalThis.fetch;
+		const originalApiKey = process.env.COLEO_BRAIN_API_KEY;
+		const originalBaseUrl = process.env.OPENAI_BASE_URL;
+		process.env.COLEO_BRAIN_API_KEY = "test-key";
+		process.env.OPENAI_BASE_URL = "https://formatter.test/v1";
+		globalThis.fetch = (async () => new Response(
+			JSON.stringify({ error: { message: "Model capacity exhausted for this request" } }),
+			{ status: 500, statusText: "Internal Server Error" },
+		)) as unknown as typeof fetch;
+
+		try {
+			const result = await formatPlanWithConfiguredModel(
+				"# Product brief\n\nShip team accounts.\n",
+				".project/plan.md",
+				undefined,
+				{ gitStatus: "", files: [] },
+				new BrainTemplateManager(root, () => {}),
+			);
+
+			expect(result.mode).toBe("structured");
+			expect(result.formatterError).toBe(
+				"Plan formatter returned 500 Internal Server Error: Model capacity exhausted for this request",
+			);
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (originalApiKey === undefined) delete process.env.COLEO_BRAIN_API_KEY;
+			else process.env.COLEO_BRAIN_API_KEY = originalApiKey;
+			if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+			else process.env.OPENAI_BASE_URL = originalBaseUrl;
+		}
 	});
 
 	it("builds bounded planning context from git metadata without reading file contents", async () => {

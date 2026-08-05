@@ -56,11 +56,13 @@ describe("project setup routes", () => {
 	let db: Database;
 	let app: Hono<{ Variables: { db: Database } }>;
 	let formatterGuidance: string | undefined;
+	let formatterError: string | undefined;
 
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "coleo-project-setup-api-"));
 		db = createTestDb();
 		formatterGuidance = undefined;
+		formatterError = undefined;
 		app = new Hono<{ Variables: { db: Database } }>();
 		app.use("*", async (c, next) => {
 			c.set("db", db);
@@ -74,12 +76,30 @@ describe("project setup routes", () => {
 				formatterGuidance = guidance;
 				return {
 				mode: "structured",
+				formatterError,
 				content: content.includes("### Deliverables")
 					? content
 					: `${content.trimEnd()}\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n`,
 				};
 			},
 		}));
+	});
+
+	it("returns formatter diagnostics when prepare uses structured fallback", async () => {
+		formatterError = "Plan formatter returned 500: model capacity exhausted";
+		const response = await app.request("http://localhost/api/project-setup/prepare", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				sourcePath: ".project/plan.md",
+				content: "# Project Plan\n\nShip the first release.\n",
+				expectedHash: null,
+			}),
+		});
+		const body = await response.json() as { formatterError?: string };
+
+		expect(response.status).toBe(200);
+		expect(body.formatterError).toBe("Plan formatter returned 500: model capacity exhausted");
 	});
 
 	afterEach(async () => {

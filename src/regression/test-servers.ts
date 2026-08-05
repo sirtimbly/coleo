@@ -22,6 +22,14 @@ export async function initTestDatabase(ctx: TestContext): Promise<void> {
   ctx.log("Database initialized");
 }
 
+export function setTaskAutoDiscover(ctx: TestContext, enabled: boolean): void {
+  if (!ctx.db) throw new Error("Initialize the test database before updating task discovery");
+  ctx.db.run(
+    "UPDATE config SET value = ?, updated_at = datetime('now') WHERE key = 'task_auto_discover'",
+    [String(enabled)],
+  );
+}
+
 /**
  * Start the API server for a test context
  */

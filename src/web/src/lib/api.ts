@@ -257,6 +257,7 @@ class ApiClient {
     return this.request<{
       completed: boolean;
       mode: 'ai' | 'structured';
+      formatterError?: string;
       canonicalPlan: WorkspaceTextFile;
       taskCount: number;
     }>('/project-setup/prepare', {
@@ -639,6 +640,13 @@ class ApiClient {
         pendingTasksCount: number;
         completedToday: number;
         uptime: number | null;
+        plan: {
+          status: 'blocked' | 'healthy' | 'pending';
+          detail: string;
+          blockedTaskCount: number;
+          blockedArmCount: number;
+          taskCount: number;
+        };
       };
     }>('/brain/status');
   }

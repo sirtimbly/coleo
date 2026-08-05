@@ -285,6 +285,7 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			return c.json({
 				completed: true,
 				mode: formatted.mode,
+				formatterError: formatted.formatterError,
 				canonicalPlan,
 				taskCount: parsed.tasks.length,
 			});

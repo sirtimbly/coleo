@@ -135,6 +135,66 @@ import {
 
 const HIGH_PRIORITY_FILE_THRESHOLD_LINES = 600;
 const CRITICAL_FILE_THRESHOLD_LINES = 800;
+const PLANNING_BLOCK_REASON_PREFIX = "Project planning must succeed before work can resume: ";
+
+function planningFailureDetailFromBlockedReason(reason: string | undefined): string | null {
+	if (!reason?.startsWith(PLANNING_BLOCK_REASON_PREFIX)) return null;
+	const markerIndex = reason.lastIndexOf(" [planning-state:");
+	return reason.slice(
+		PLANNING_BLOCK_REASON_PREFIX.length,
+		markerIndex >= 0 ? markerIndex : undefined,
+	).trim() || null;
+}
+
+function isPlanFormatterNetworkFailure(detail: string): boolean {
+	return /^(?:fetch failed|network error|connection refused|request timed out|the operation (?:timed out|was aborted))/i
+		.test(detail);
+}
+
+function isRetryablePlanFormatterFailure(detail: string): boolean {
+	return detail.startsWith("Plan formatter ")
+		|| detail.startsWith("Configure a Brain model API key")
+		|| isPlanFormatterNetworkFailure(detail);
+}
+
+function planningFailureNextStep(detail: string): string {
+	const formatterStatus = detail.match(/^Plan formatter returned (\d{3})\b/)?.[1];
+	if (formatterStatus) {
+		const status = Number(formatterStatus);
+		if (status === 401 || status === 403) {
+			return "Update the configured Brain model API key and confirm that it can access the selected model. The plan documents do not need to change for this error; Coleo will retry the unchanged plan automatically.";
+		}
+		if (status === 404) {
+			return "Correct the configured Brain provider base URL or model ID. The plan documents do not need to change for this error; Coleo will retry the unchanged plan automatically.";
+		}
+		if (status === 429) {
+			return "Check the model provider quota and rate limits, then wait for capacity or increase the quota. The plan documents do not need to change; Coleo will retry the unchanged plan automatically.";
+		}
+		if (status >= 500) {
+			return "The model provider failed before it could assess the plan. Check the provider status and logs, plus the configured Brain provider base URL and model. The plan documents do not need to change; Coleo will retry the unchanged plan automatically.";
+		}
+		return "Follow the provider error above and verify the configured Brain provider base URL, model, and API key. The plan documents do not need to change; Coleo will retry the unchanged plan automatically.";
+	}
+	if (detail.startsWith("Plan formatter ")) {
+		return "Check the selected Brain model and the plan-evaluation prompt templates under .coleo/src/brain/templates. The formatter did not produce a usable plan, so the source plan documents do not need to change unless the problem above identifies missing content. Coleo will retry the unchanged plan automatically.";
+	}
+	if (detail.startsWith("Configure a Brain model API key")) {
+		return "Configure the Brain model API key in Coleo settings. The plan documents do not need to change; Coleo will retry the unchanged plan automatically.";
+	}
+	if (isPlanFormatterNetworkFailure(detail)) {
+		return "Restore connectivity to the configured Brain model provider and check its base URL. The plan documents do not need to change; Coleo will retry the unchanged plan automatically.";
+	}
+	if (detail.startsWith("Plan parse errors in ")) {
+		return "Edit the plan file named in the error and correct the reported structure or syntax. Coleo will evaluate the plan set again after that file changes.";
+	}
+	if (/did not contain (?:any )?(?:actionable )?tasks/i.test(detail)) {
+		return `Add concrete checklist deliverables under a numbered phase in ${CANONICAL_PLAN_PATH} or a linked plan document, then save the file.`;
+	}
+	if (detail.includes("is empty or unreadable") || detail.startsWith("No readable ")) {
+		return `Create or restore a readable ${CANONICAL_PLAN_PATH} with concrete project goals and checklist deliverables.`;
+	}
+	return `Review ${CANONICAL_PLAN_PATH} and its linked plan documents using the problem above as the specific correction to make. Add any missing foundational decisions, constraints, and dependency-ordered deliverables, then save the changed file.`;
+}
 
 export class Brain {
 	private options: BrainOptions;
@@ -8868,6 +8928,7 @@ ${conflictList}
 	 */
 	private async blockTasksForPlanningFailure(error: unknown, planHash?: string): Promise<void> {
 		const detail = error instanceof Error ? error.message : String(error);
+		const nextStep = planningFailureNextStep(detail);
 		const planningState = planHash || "missing-plan";
 		const fingerprint = createHash("sha256")
 			.update(`${planningState}\0${detail}`)
@@ -8881,7 +8942,9 @@ ${conflictList}
 						"",
 						`Problem: ${detail.slice(0, 2_000)}`,
 						"",
-						`Review and fix ${CANONICAL_PLAN_PATH} or one of its linked plan documents, including missing foundational decisions and constraints. Coleo will evaluate the plan set again after it changes. No active task will be assigned in the meantime.`,
+						`What to change: ${nextStep}`,
+						"",
+						"No active task will be assigned until project planning succeeds.",
 					].join("\n"),
 					headers: { "X-Coleo-Type": "planning-error" },
 				});
@@ -8911,7 +8974,7 @@ ${conflictList}
 				status: "blocked",
 				assignedTo: null,
 				dependencyBlocked: false,
-				blockedReason: `Project planning must succeed before work can resume: ${detail.slice(0, 500)} [planning-state:${planningState}]`,
+				blockedReason: `${PLANNING_BLOCK_REASON_PREFIX}${detail.slice(0, 2_000)} [planning-state:${planningState}]`,
 				blockedCategory: "planning",
 				blockedNeedsHuman: true,
 				blockedRecheckAt: new Date("9999-12-31T23:59:59.999Z").toISOString(),
@@ -9052,7 +9115,7 @@ ${conflictList}
 			currentPlanHash = planStateHash(canonicalPlan.contentHash);
 			const previousPlanningError = this.planningErrorsByPlanHash.get(currentPlanHash);
 			if (previousPlanningError) {
-				throw new Error(`${previousPlanningError} Edit the primary or a linked plan document before retrying.`);
+				throw new Error(previousPlanningError);
 			}
 			const durablePlanningBlock = (await this.listAllTasksFromApi({
 				status: ["blocked"],
@@ -9063,7 +9126,10 @@ ${conflictList}
 					&& task.blockedReason?.includes(`[planning-state:${currentPlanHash}]`),
 			);
 			if (durablePlanningBlock) {
-				throw new Error("The project plan is still in the planning-failure state. Edit the primary or a linked plan document before retrying.");
+				const durableDetail = planningFailureDetailFromBlockedReason(durablePlanningBlock.blockedReason);
+				if (!durableDetail || !isRetryablePlanFormatterFailure(durableDetail)) {
+					throw new Error(durableDetail || "The project plan is still in the planning-failure state");
+				}
 			}
 
 			if (this.evaluatedPlanHashes.get(canonicalPath) !== currentPlanHash) {
@@ -9085,7 +9151,11 @@ ${conflictList}
 					if (!evaluated.content.trim()) throw new Error("The plan evaluator returned an empty plan");
 				} catch (error) {
 					const detail = error instanceof Error ? error.message : String(error);
-					this.planningErrorsByPlanHash.set(currentPlanHash, detail);
+					if (isRetryablePlanFormatterFailure(detail)) {
+						this.planningErrorsByPlanHash.delete(currentPlanHash);
+					} else {
+						this.planningErrorsByPlanHash.set(currentPlanHash, detail);
+					}
 					throw error;
 				}
 

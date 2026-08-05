@@ -110,6 +110,7 @@ Choose the stack before feature implementation.
 			throw new Error("The plan is missing a deployable architecture");
 		});
 		const events: string[] = [];
+		const notifications: Array<{ subject: string; body: string }> = [];
 		setPlanSyncApi(brain, {
 			databaseInstanceId: async () => "database-one",
 			listTasks: async () => [task],
@@ -118,7 +119,8 @@ Choose the stack before feature implementation.
 				events.push(`block:${patch.blockedCategory}`);
 				return { ...task, status: patch.status || task.status };
 			},
-			sendToHuman: async () => {
+			sendToHuman: async (message) => {
+				notifications.push(message);
 				events.push("mail");
 			},
 			listArms: async () => [{
@@ -143,6 +145,99 @@ Choose the stack before feature implementation.
 			"arm:planning_blocked",
 			"block:planning",
 		]);
+		expect(notifications[0]?.body).toContain("Problem: The plan is missing a deployable architecture");
+		expect(notifications[0]?.body).toContain("What to change: Review .project/plan.md");
+	});
+
+	it("retains the persisted planning cause after Brain state is reinitialized", async () => {
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async () => {
+			throw new Error("The plan is missing a deployable architecture");
+		});
+		let storedTask = task;
+		const notifications: Array<{ subject: string; body: string }> = [];
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one",
+			listTasks: async () => [storedTask],
+			createTask: async () => storedTask,
+			patchTask: async (_taskId, patch) => {
+				storedTask = { ...storedTask, ...patch };
+				return storedTask;
+			},
+			sendToHuman: async (message) => {
+				notifications.push(message);
+			},
+		});
+
+		expect(await syncPlanTasks()).toBe(false);
+		const privateBrain = brain as unknown as {
+			planningErrorsByPlanHash: Map<string, string>;
+			lastPlanningFailureFingerprint: string | null;
+		};
+		privateBrain.planningErrorsByPlanHash.clear();
+		privateBrain.lastPlanningFailureFingerprint = null;
+		expect(await syncPlanTasks()).toBe(false);
+
+		expect(notifications).toHaveLength(2);
+		expect(notifications[1]?.body).toContain("Problem: The plan is missing a deployable architecture");
+		expect(notifications[1]?.body).not.toContain("project plan is still in the planning-failure state");
+	});
+
+	it("retries an unchanged plan after a provider failure and sends actionable guidance", async () => {
+		let formatterCalls = 0;
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async (content) => {
+			formatterCalls += 1;
+			if (formatterCalls === 1) {
+				throw new Error("Plan formatter returned 500 Internal Server Error: provider overloaded");
+			}
+			return { content, mode: "ai" };
+		});
+		let storedTask = task;
+		const notifications: Array<{ subject: string; body: string }> = [];
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one",
+			listTasks: async () => [storedTask],
+			createTask: async () => storedTask,
+			patchTask: async (_taskId, patch) => {
+				storedTask = { ...storedTask, ...patch };
+				return storedTask;
+			},
+			sendToHuman: async (message) => {
+				notifications.push(message);
+			},
+		});
+
+		expect(await syncPlanTasks()).toBe(false);
+		expect(await syncPlanTasks()).toBe(true);
+		expect(formatterCalls).toBe(2);
+		expect(notifications).toHaveLength(1);
+		expect(notifications[0]?.body).toContain(
+			"The model provider failed before it could assess the plan",
+		);
+		expect(notifications[0]?.body).toContain("The plan documents do not need to change");
+		expect(notifications[0]?.body).toContain("retry the unchanged plan automatically");
+	});
+
+	it("retries an unchanged plan when formatter output omits source context", async () => {
+		let formatterCalls = 0;
+		const { brain, syncPlanTasks, task } = await createPlanSyncFixture(async (content) => {
+			formatterCalls += 1;
+			if (formatterCalls === 1) throw new Error("Plan formatter omitted source context");
+			return { content, mode: "ai" };
+		});
+		let storedTask = task;
+		setPlanSyncApi(brain, {
+			databaseInstanceId: async () => "database-one",
+			listTasks: async () => [storedTask],
+			createTask: async () => storedTask,
+			patchTask: async (_taskId, patch) => {
+				storedTask = { ...storedTask, ...patch };
+				return storedTask;
+			},
+		});
+
+		expect(await syncPlanTasks()).toBe(false);
+		expect(await syncPlanTasks()).toBe(true);
+		expect(formatterCalls).toBe(2);
 	});
 
 	it("resumes only system-owned planning blockers with a planning-state marker", async () => {
@@ -285,7 +380,7 @@ function setPlanSyncApi(
 		listTasks: (options?: unknown) => Promise<Task[]>;
 		createTask: (input: { id?: string; subject: string }) => Promise<Task | null>;
 		patchTask?: (taskId: string, patch: Partial<Task>) => Promise<Task | null>;
-		sendToHuman?: () => Promise<void>;
+		sendToHuman?: (message: { subject: string; body: string }) => Promise<void>;
 		listArms?: () => Promise<Array<{ id: string; status: string; currentTaskId?: string }>>;
 		sendPromptToArm?: (
 			armId: string,
@@ -304,7 +399,7 @@ function setPlanSyncApi(
     listTasksFromApi: () => Promise<Task[]>;
 		createTaskViaApi: (input: { id?: string; subject: string }) => Promise<Task | null>;
 		patchTaskViaApi: (taskId: string, patch: Partial<Task>) => Promise<Task | null>;
-		sendToHuman: () => Promise<void>;
+		sendToHuman: (message: { subject: string; body: string }) => Promise<void>;
 		listArmsFromApi: () => Promise<Array<{ id: string; status: string; currentTaskId?: string }>>;
 		sendPromptToArm: (
 			armId: string,

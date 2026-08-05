@@ -7,7 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@heroui/react';
-import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
+import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, TriangleAlert, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
@@ -130,7 +130,11 @@ export function SetupPage() {
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-  const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number } | null>(null);
+  const [result, setResult] = useState<{
+    mode: 'ai' | 'structured';
+    taskCount: number;
+    formatterError?: string;
+  } | null>(null);
   const [openedModifiedAt, setOpenedModifiedAt] = useState<Map<string, string>>(() => new Map());
   const requestedPathRef = useRef<string | null>(null);
 
@@ -300,6 +304,7 @@ export function SetupPage() {
       setResult({
         mode: response.mode,
         taskCount: response.taskCount,
+        formatterError: response.formatterError,
       });
       setEditor({
         path: response.canonicalPlan.path,
@@ -525,14 +530,28 @@ export function SetupPage() {
             <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
           ) : null}
           {result ? (
-            <div className="mt-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
+            <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>
               <div className="flex items-start gap-2">
-                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                {result.formatterError
+                  ? <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  : <Check className="mt-0.5 h-4 w-4 shrink-0" />}
                 <div>
-                  <p className="font-medium">Project plan prepared</p>
-                  <p className="mt-1 text-foreground/80">
-                    {result.taskCount} checklist items added using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting. The Brain will analyze this file and create the tasks during its next poll.
+                  <p className="font-medium">
+                    {result.formatterError ? 'Plan prepared with structured fallback' : 'Project plan prepared'}
                   </p>
+                  <p className="mt-1 text-foreground/80">
+                    {result.taskCount} checklist items are ready in the canonical plan using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting.
+                  </p>
+                  {result.formatterError ? (
+                    <>
+                      <p className="mt-1 text-foreground/80"><span className="font-medium text-warning">AI formatter problem:</span> {result.formatterError}</p>
+                      <p className="mt-1 text-foreground/80">
+                        The plan was saved, but the Brain has not accepted the AI evaluation, so its planning gate may remain blocked. The Brain will retry automatically; if this repeats, review the selected Brain model and plan-evaluation templates.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-foreground/80">The Brain will analyze this file and create the tasks during its next poll.</p>
+                  )}
                   {status.taskCount > 0 ? (
                     <button
                       type="button"

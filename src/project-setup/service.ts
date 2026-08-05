@@ -61,6 +61,7 @@ export interface ProjectPlanDocument extends WorkspaceTextFile {
 export interface PlanFormatterResult {
 	content: string;
 	mode: "ai" | "structured";
+	formatterError?: string;
 }
 
 export interface PlanWorkspaceContext {
@@ -373,7 +374,11 @@ export async function formatPlanWithConfiguredModel(
 		if (guidance?.trim()) {
 			throw new Error("Configure a Brain model API key before regenerating tasks");
 		}
-		return { content: formatPlanWithoutModel(content, sourcePath), mode: "structured" };
+		return {
+			content: formatPlanWithoutModel(content, sourcePath),
+			mode: "structured",
+			formatterError: "Configure a Brain model API key before using AI plan formatting",
+		};
 	}
 
 	const baseUrl = config.baseUrl.replace(/\/$/, "");
@@ -412,7 +417,33 @@ export async function formatPlanWithConfiguredModel(
 				max_completion_tokens: completionTokenBudget,
 			}),
 		});
-		if (!response.ok) throw new Error(`Plan formatter returned ${response.status}`);
+		if (!response.ok) {
+			const rawBody = (await response.text()).trim();
+			let detail = rawBody;
+			if (rawBody) {
+				try {
+					const payload = JSON.parse(rawBody) as unknown;
+					if (typeof payload === "object" && payload !== null) {
+						const body = payload as Record<string, unknown>;
+						const nestedError = typeof body.error === "object" && body.error !== null
+							? body.error as Record<string, unknown>
+							: null;
+						detail = typeof nestedError?.message === "string"
+							? nestedError.message
+							: typeof body.message === "string"
+								? body.message
+								: typeof body.error === "string" ? body.error : rawBody;
+					}
+				} catch {
+					// Plain-text provider responses are useful diagnostics too.
+				}
+			}
+			const normalizedDetail = detail.replace(/\s+/g, " ").slice(0, 1_000);
+			const statusText = response.statusText.trim();
+			throw new Error(
+				`Plan formatter returned ${response.status}${statusText ? ` ${statusText}` : ""}${normalizedDetail ? `: ${normalizedDetail}` : ""}`,
+			);
+		}
 		const body = await response.json() as {
 			choices?: Array<{
 				finish_reason?: string | null;
@@ -437,6 +468,10 @@ export async function formatPlanWithConfiguredModel(
 		return { content: formatted.trimEnd() + "\n", mode: "ai" };
 	} catch (error) {
 		if (guidance?.trim()) throw error;
-		return { content: formatPlanWithoutModel(content, sourcePath), mode: "structured" };
+		return {
+			content: formatPlanWithoutModel(content, sourcePath),
+			mode: "structured",
+			formatterError: error instanceof Error ? error.message : String(error),
+		};
 	}
 }

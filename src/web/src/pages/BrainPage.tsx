@@ -28,6 +28,13 @@ interface BrainStatus {
   pendingTasksCount: number;
   completedToday: number;
   uptime: number | null;
+  plan: {
+    status: 'blocked' | 'healthy' | 'pending';
+    detail: string;
+    blockedTaskCount: number;
+    blockedArmCount: number;
+    taskCount: number;
+  };
 }
 
 type Navigate = (pathname: string, search?: string) => void;
@@ -76,6 +83,10 @@ function BrainStatusSection({
   onStop: () => void;
   onNavigate: Navigate;
 }) {
+  const planStatus = status?.plan?.status;
+  const planTone = planStatus === 'healthy' ? 'success' : planStatus === 'blocked' ? 'warning' : 'neutral';
+  const planLabel = planStatus === 'blocked' ? 'Blocked' : planStatus === 'healthy' ? 'Healthy' : 'Not ready';
+
   return (
     <WorkbenchSurface>
       <WorkbenchHeader
@@ -108,6 +119,17 @@ function BrainStatusSection({
             description={`Uptime ${formatUptime(status?.uptime)}`}
             leading={<WorkbenchStatusDot tone={statusTone(status?.status || 'stopped')} />}
             trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
+          />
+          <CollectionRow
+            title="Project plan"
+            description={status?.plan?.detail || 'Plan status is unavailable'}
+            leading={<WorkbenchStatusDot tone={planTone} />}
+            trailing={(
+              <span className={planStatus === 'blocked' ? 'font-medium text-warning' : planStatus === 'healthy' ? 'font-medium text-success' : 'text-muted-foreground'}>
+                {planLabel}
+              </span>
+            )}
+            onOpen={() => onNavigate('/setup', '?path=.project%2Fplan.md')}
           />
           <CollectionRow
             title="Active Arms"
