@@ -66,6 +66,11 @@ const WORKSPACE_COMPONENT_TYPE = "route";
 const STORAGE_KEY = "coleo-golden-layout";
 const LAYOUT_SAVE_DELAY_MS = 750;
 
+// Mirrors LocationSelector.TypeId from golden-layout. The package declares it
+// as a const enum, which cannot be imported at runtime under esbuild.
+const LOCATION_SELECTOR_FIRST_ROW = 4;
+const LOCATION_SELECTOR_ROOT = 7;
+
 function profileStorageKey(profileId: string): string {
 	return `${STORAGE_KEY}:${profileId}`;
 }
@@ -475,7 +480,7 @@ export function GoldenWorkspace() {
 					WORKSPACE_COMPONENT_TYPE,
 					panelState,
 					getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 7 }],
+					[{ typeId: LOCATION_SELECTOR_ROOT }],
 				);
 			}
 
@@ -518,7 +523,7 @@ export function GoldenWorkspace() {
 					WORKSPACE_COMPONENT_TYPE,
 					panelState,
 					title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 7 }],
+					[{ typeId: LOCATION_SELECTOR_ROOT }],
 				);
 				focusPanelByRoute(panelState);
 				return;
@@ -570,12 +575,12 @@ export function GoldenWorkspace() {
 				rootItem &&
 				(rootItem as unknown as { type: string }).type === "row"
 			) {
-				layout.addComponentAtLocation(
-					WORKSPACE_COMPONENT_TYPE,
-					panelState,
-					title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 4 }], // Add as a sibling in the first row
-				);
+			layout.addComponentAtLocation(
+				WORKSPACE_COMPONENT_TYPE,
+				panelState,
+				title ?? getAppRouteTitle(panelState.pathname, panelState.search),
+				[{ typeId: LOCATION_SELECTOR_FIRST_ROW }], // Add as a sibling in the first row
+			);
 				focusPanelByRoute(panelState);
 				return;
 			}
@@ -585,7 +590,7 @@ export function GoldenWorkspace() {
 				WORKSPACE_COMPONENT_TYPE,
 				panelState,
 				title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-				[{ typeId: 7 }],
+				[{ typeId: LOCATION_SELECTOR_ROOT }],
 			);
 			focusPanelByRoute(panelState);
 		},
@@ -655,16 +660,16 @@ export function GoldenWorkspace() {
 				return findRightmostStack(rootItem);
 			})();
 
-			if (rightStack) {
-				rightStack.addComponent(WORKSPACE_COMPONENT_TYPE, panelState, panelTitle);
-			} else {
-				layout.addComponentAtLocation(
-					WORKSPACE_COMPONENT_TYPE,
-					panelState,
-					panelTitle,
-					[{ typeId: 7 }],
-				);
-			}
+		if (rightStack) {
+			rightStack.addComponent(WORKSPACE_COMPONENT_TYPE, panelState, panelTitle);
+		} else {
+			layout.addComponentAtLocation(
+				WORKSPACE_COMPONENT_TYPE,
+				panelState,
+				panelTitle,
+				[{ typeId: LOCATION_SELECTOR_ROOT }],
+			);
+		}
 
 			focusPanelByRoute(panelState);
 		},
