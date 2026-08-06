@@ -239,6 +239,22 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 					pendingTasksCount: options.tasks?.length ?? 0,
 					completedToday: 0,
 					uptime: 3600,
+					plan: {
+						status: "healthy",
+						detail: "",
+						blockedTaskCount: 0,
+						blockedArmCount: 0,
+						taskCount: options.tasks?.length ?? 0,
+					},
+					modelAccess: {
+						status: "available",
+						issueCode: null,
+						provider: null,
+						message: null,
+						actionLabel: null,
+						actionUrl: null,
+						checkedAt: null,
+					},
 				},
 			});
 		}

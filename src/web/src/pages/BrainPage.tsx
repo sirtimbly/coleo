@@ -159,10 +159,10 @@ function BrainStatusSection({
         <div>
           <CollectionRow
             title="Status"
-            description={status?.modelAccess.status === 'blocked'
+            description={status?.modelAccess?.status === 'blocked'
               ? 'Plan evaluation blocked · API credits required'
               : `Uptime ${formatUptime(status?.uptime)}`}
-            leading={<WorkbenchStatusDot tone={status?.modelAccess.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')} />}
+            leading={<WorkbenchStatusDot tone={status?.modelAccess?.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')} />}
             trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
           />
           <CollectionRow
@@ -436,7 +436,7 @@ export function BrainPage() {
       />
 
       <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
-        {status ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
+        {status?.modelAccess ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
 
         <BrainStatusSection
           status={status}
