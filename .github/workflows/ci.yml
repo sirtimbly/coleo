@@ -37,8 +37,25 @@ jobs:
         run: bun run setup
       - name: Install opencode harness
         run: bun install -g opencode-ai
+      - name: Smoke test opencode serve
+        run: |
+          opencode serve --port 19399 &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:19399/global/health; then break; fi
+            sleep 1
+          done
+          curl -s http://127.0.0.1:19399/global/health || echo "health check failed"
+          kill $SERVER_PID || true
       - name: Run integration regression suite
         run: bun run test:integration
+      - name: Dump agent logs on failure
+        if: failure()
+        run: |
+          for log in /tmp/coleo-regression-*/.coleo/run/agent-autostart.log; do
+            echo "=== $log ==="
+            tail -100 "$log" || true
+          done
       - name: Upload regression results
         if: always()
         uses: actions/upload-artifact@v4
