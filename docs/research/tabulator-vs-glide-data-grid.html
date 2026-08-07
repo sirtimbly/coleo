@@ -1,0 +1,1455 @@
+<!DOCTYPE html>
+<!--
+  Decision report for replacing Handsontable in Coleo's ResourceSheet.
+  This file is intentionally self-contained so it can be opened locally,
+  shared as a single artifact, or printed to PDF without a documentation build.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Tabulator vs. Glide Data Grid — Coleo Technical Decision Report</title>
+  <style>
+    :root {
+      --bg: #0b1020;
+      --surface: #121a2e;
+      --surface-raised: #18233c;
+      --surface-soft: #10182a;
+      --line: #2a3856;
+      --line-strong: #3b4d72;
+      --text: #edf3ff;
+      --muted: #a8b5ce;
+      --faint: #7483a2;
+      --blue: #72a7ff;
+      --blue-soft: #172d52;
+      --green: #69d6a1;
+      --green-soft: #14392d;
+      --amber: #f3bc67;
+      --amber-soft: #3a2b16;
+      --red: #ff8e97;
+      --red-soft: #412026;
+      --purple: #c49aff;
+      --purple-soft: #2e2250;
+      --tabulator: #68d7b5;
+      --glide: #7ea7ff;
+      --shadow: 0 20px 60px rgb(0 0 0 / 28%);
+      --radius: 18px;
+      --content: 1180px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% -10%, rgb(74 120 220 / 18%), transparent 36rem),
+        radial-gradient(circle at 88% 5%, rgb(58 190 149 / 12%), transparent 32rem),
+        var(--bg);
+      color: var(--text);
+      font-family:
+        Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+      line-height: 1.58;
+    }
+
+    a {
+      color: var(--blue);
+      text-underline-offset: 0.18em;
+    }
+
+    a:hover {
+      color: #a9c8ff;
+    }
+
+    code {
+      border: 1px solid var(--line);
+      border-radius: 0.35rem;
+      background: var(--surface-soft);
+      color: #dce8ff;
+      padding: 0.08rem 0.35rem;
+      font-size: 0.9em;
+    }
+
+    header {
+      padding: 4.5rem 1.5rem 2.75rem;
+    }
+
+    .header-inner,
+    main,
+    footer {
+      width: min(var(--content), calc(100% - 3rem));
+      margin-inline: auto;
+    }
+
+    .eyebrow {
+      margin: 0 0 0.85rem;
+      color: var(--green);
+      font-size: 0.78rem;
+      font-weight: 760;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 900px;
+      margin: 0;
+      font-size: clamp(2.25rem, 6vw, 5.1rem);
+      line-height: 0.98;
+      letter-spacing: -0.055em;
+    }
+
+    .lede {
+      max-width: 820px;
+      margin: 1.5rem 0 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2vw, 1.35rem);
+    }
+
+    .metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.65rem 1.25rem;
+      margin-top: 1.6rem;
+      padding: 0;
+      color: var(--faint);
+      font-size: 0.86rem;
+      list-style: none;
+    }
+
+    .metadata li {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin: 0;
+    }
+
+    .metadata li::before {
+      width: 0.42rem;
+      height: 0.42rem;
+      border-radius: 50%;
+      background: var(--line-strong);
+      content: "";
+    }
+
+    .toc {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-block: 1px solid rgb(76 96 137 / 48%);
+      background: rgb(11 16 32 / 88%);
+      backdrop-filter: blur(14px);
+    }
+
+    .toc nav {
+      display: flex;
+      width: min(var(--content), calc(100% - 3rem));
+      margin-inline: auto;
+      gap: 1.15rem;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .toc a {
+      flex: 0 0 auto;
+      padding: 0.85rem 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 680;
+      text-decoration: none;
+    }
+
+    .toc a:hover {
+      color: var(--text);
+    }
+
+    main {
+      padding-block: 2.5rem 5rem;
+    }
+
+    section {
+      margin-top: 4rem;
+      scroll-margin-top: 4.5rem;
+    }
+
+    section:first-child {
+      margin-top: 0;
+    }
+
+    h2 {
+      margin: 0 0 0.65rem;
+      font-size: clamp(1.65rem, 3vw, 2.4rem);
+      letter-spacing: -0.035em;
+    }
+
+    h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      letter-spacing: -0.015em;
+    }
+
+    .section-intro {
+      max-width: 780px;
+      margin: 0 0 1.4rem;
+      color: var(--muted);
+    }
+
+    .decision {
+      display: grid;
+      grid-template-columns: minmax(0, 1.55fr) minmax(260px, 0.65fr);
+      gap: 1.2rem;
+      padding: clamp(1.4rem, 4vw, 2.2rem);
+      border: 1px solid #376a60;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(120deg, rgb(27 82 67 / 72%), rgb(18 26 46 / 96%) 58%),
+        var(--surface);
+      box-shadow: var(--shadow);
+    }
+
+    .decision p {
+      max-width: 760px;
+      margin: 0.65rem 0 0;
+      color: #d2e8e2;
+    }
+
+    .decision-score {
+      display: grid;
+      align-content: center;
+      justify-items: center;
+      min-height: 180px;
+      border: 1px solid rgb(118 220 188 / 28%);
+      border-radius: 15px;
+      background: rgb(4 21 22 / 28%);
+      text-align: center;
+    }
+
+    .decision-score strong {
+      color: var(--tabulator);
+      font-size: 3.7rem;
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+
+    .decision-score span {
+      margin-top: 0.35rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .caveat {
+      margin-top: 1rem;
+      padding: 1rem 1.15rem;
+      border-left: 3px solid var(--amber);
+      border-radius: 0 10px 10px 0;
+      background: var(--amber-soft);
+      color: #f8dfb8;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      min-width: 0;
+      padding: 1.35rem;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(160deg, var(--surface-raised), var(--surface));
+      box-shadow: 0 12px 32px rgb(0 0 0 / 14%);
+    }
+
+    .card.tabulator {
+      border-top: 3px solid var(--tabulator);
+    }
+
+    .card.glide {
+      border-top: 3px solid var(--glide);
+    }
+
+    .card-kicker {
+      margin-bottom: 0.45rem;
+      color: var(--faint);
+      font-size: 0.72rem;
+      font-weight: 760;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .card p {
+      margin: 0.55rem 0 0;
+      color: var(--muted);
+    }
+
+    .fact-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.65rem;
+      margin-top: 1.2rem;
+    }
+
+    .fact {
+      padding: 0.7rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgb(9 15 28 / 48%);
+    }
+
+    .fact strong,
+    .fact span {
+      display: block;
+    }
+
+    .fact strong {
+      font-size: 1.05rem;
+    }
+
+    .fact span {
+      margin-top: 0.15rem;
+      color: var(--faint);
+      font-size: 0.73rem;
+    }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: stretch;
+      gap: 0.8rem;
+    }
+
+    .architecture.spaced {
+      margin-top: 1rem;
+    }
+
+    .architecture-panel {
+      padding: 1.2rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .architecture-panel ol {
+      display: grid;
+      gap: 0.55rem;
+      margin: 1rem 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: layers;
+    }
+
+    .architecture-panel li {
+      position: relative;
+      padding: 0.7rem 0.7rem 0.7rem 2.6rem;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: var(--surface-soft);
+      color: var(--muted);
+      counter-increment: layers;
+    }
+
+    .architecture-panel li::before {
+      position: absolute;
+      top: 0.62rem;
+      left: 0.7rem;
+      display: grid;
+      width: 1.35rem;
+      height: 1.35rem;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--blue-soft);
+      color: var(--blue);
+      content: counter(layers);
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+
+    .versus {
+      display: grid;
+      place-items: center;
+      color: var(--faint);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+      box-shadow: 0 12px 30px rgb(0 0 0 / 12%);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    th,
+    td {
+      padding: 0.85rem 0.9rem;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      text-align: left;
+    }
+
+    th {
+      background: #19243c;
+      color: #dbe7ff;
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.055em;
+      text-transform: uppercase;
+    }
+
+    .parity-table th:nth-child(1) {
+      width: 19%;
+    }
+
+    .parity-table th:nth-child(2),
+    .parity-table th:nth-child(3) {
+      width: 28%;
+    }
+
+    .parity-table th:nth-child(4) {
+      width: 25%;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    tbody tr:hover td {
+      background: rgb(75 100 154 / 8%);
+    }
+
+    td:first-child {
+      color: #dce7fb;
+      font-weight: 680;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.55rem;
+      padding: 0.16rem 0.48rem;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-size: 0.7rem;
+      font-weight: 780;
+      letter-spacing: 0.03em;
+      white-space: nowrap;
+    }
+
+    .tag.built-in {
+      border-color: #2c725c;
+      background: var(--green-soft);
+      color: var(--green);
+    }
+
+    .tag.adapter {
+      border-color: #365f9a;
+      background: var(--blue-soft);
+      color: var(--blue);
+    }
+
+    .tag.custom {
+      border-color: #7a5c2d;
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .tag.risk {
+      border-color: #78414a;
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .score-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .score {
+      padding: 1.2rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .score-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 0.9rem;
+    }
+
+    .score-head strong {
+      font-size: 2rem;
+      line-height: 1;
+      letter-spacing: -0.05em;
+    }
+
+    .score:not(.glide-score) .score-head strong {
+      color: var(--tabulator);
+    }
+
+    .glide-score .score-head strong {
+      color: var(--glide);
+    }
+
+    .score-row {
+      display: grid;
+      grid-template-columns: minmax(125px, 1fr) 2fr 2.3rem;
+      align-items: center;
+      gap: 0.65rem;
+      margin-top: 0.55rem;
+      color: var(--muted);
+      font-size: 0.78rem;
+    }
+
+    .bar {
+      height: 0.45rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #26334d;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--tabulator);
+    }
+
+    .bar .w-50 { width: 50%; }
+    .bar .w-54 { width: 54%; }
+    .bar .w-60 { width: 60%; }
+    .bar .w-70 { width: 70%; }
+    .bar .w-80 { width: 80%; }
+    .bar .w-82 { width: 82%; }
+    .bar .w-84 { width: 84%; }
+    .bar .w-86 { width: 86%; }
+    .bar .w-88 { width: 88%; }
+    .bar .w-90 { width: 90%; }
+    .bar .w-100 { width: 100%; }
+
+    .score.glide-score .bar span {
+      background: var(--glide);
+    }
+
+    .estimate {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .estimate-card {
+      padding: 1.4rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .estimate-card .days {
+      display: block;
+      margin-top: 0.55rem;
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 760;
+      line-height: 1;
+      letter-spacing: -0.06em;
+    }
+
+    .estimate-card.tabulator-estimate .days {
+      color: var(--tabulator);
+    }
+
+    .estimate-card.glide-estimate .days {
+      color: var(--glide);
+    }
+
+    .estimate-card ul,
+    .risk-list,
+    .recommendation-list {
+      margin: 1rem 0 0;
+      padding-left: 1.15rem;
+      color: var(--muted);
+    }
+
+    li + li {
+      margin-top: 0.45rem;
+    }
+
+    .risk-columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .risk-card {
+      padding: 1.25rem;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+
+    .risk-level {
+      display: inline-block;
+      margin-left: 0.4rem;
+      padding: 0.15rem 0.45rem;
+      border-radius: 999px;
+      font-size: 0.66rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .risk-level.medium {
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+
+    .risk-level.high {
+      background: var(--red-soft);
+      color: var(--red);
+    }
+
+    .callout {
+      margin-top: 1rem;
+      padding: 1.15rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface-soft);
+    }
+
+    .callout strong {
+      display: block;
+      margin-bottom: 0.35rem;
+    }
+
+    .callout p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .plan {
+      display: grid;
+      gap: 0.8rem;
+      margin: 1.25rem 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: plan;
+    }
+
+    .plan li {
+      display: grid;
+      grid-template-columns: 2.5rem minmax(0, 1fr);
+      gap: 0.9rem;
+      align-items: start;
+      padding: 1rem;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      counter-increment: plan;
+    }
+
+    .plan li::before {
+      display: grid;
+      width: 2.2rem;
+      height: 2.2rem;
+      place-items: center;
+      border-radius: 10px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      content: counter(plan, decimal-leading-zero);
+      font-size: 0.73rem;
+      font-weight: 800;
+    }
+
+    .plan p {
+      margin: 0.25rem 0 0;
+      color: var(--muted);
+    }
+
+    .sources {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin: 1.25rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .sources li {
+      margin: 0;
+      padding: 0.85rem;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--surface);
+    }
+
+    .sources a {
+      font-weight: 680;
+    }
+
+    .sources span {
+      display: block;
+      margin-top: 0.2rem;
+      color: var(--faint);
+      font-size: 0.76rem;
+    }
+
+    footer {
+      padding: 0 0 3.5rem;
+      color: var(--faint);
+      font-size: 0.8rem;
+    }
+
+    @media (max-width: 820px) {
+      .decision,
+      .cards,
+      .score-grid,
+      .estimate,
+      .risk-columns,
+      .sources {
+        grid-template-columns: 1fr;
+      }
+
+      .architecture {
+        grid-template-columns: 1fr;
+      }
+
+      .versus {
+        min-height: 2rem;
+      }
+
+      .fact-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 520px) {
+      header {
+        padding-top: 3rem;
+      }
+
+      .header-inner,
+      main,
+      footer,
+      .toc nav {
+        width: min(100% - 1.5rem, var(--content));
+      }
+
+      th,
+      td {
+        padding: 0.7rem;
+      }
+
+      .score-row {
+        grid-template-columns: 1fr 2.4rem;
+      }
+
+      .score-row .bar {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+    }
+
+    @media print {
+      :root {
+        --bg: #fff;
+        --surface: #fff;
+        --surface-raised: #f5f7fb;
+        --surface-soft: #f3f5f8;
+        --line: #cbd3df;
+        --line-strong: #98a5b8;
+        --text: #101828;
+        --muted: #45536a;
+        --faint: #64748b;
+        --blue-soft: #e7efff;
+        --green-soft: #e8f7f0;
+        --amber-soft: #fff5df;
+        --red-soft: #ffeaec;
+      }
+
+      body {
+        background: #fff;
+      }
+
+      .toc {
+        display: none;
+      }
+
+      header {
+        padding-top: 1.5rem;
+      }
+
+      .card,
+      .decision,
+      .table-wrap {
+        box-shadow: none;
+      }
+
+      section {
+        break-inside: avoid;
+      }
+
+      a {
+        color: #2359a8;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <p class="eyebrow">Coleo · Grid replacement decision</p>
+      <h1>Tabulator vs.<br>Glide Data Grid</h1>
+      <p class="lede">
+        A practical comparison of two MIT-licensed replacements for Handsontable,
+        evaluated against the interactions already built into Coleo’s Tasks, Bugs,
+        and Discovery sheets.
+      </p>
+      <ul class="metadata" aria-label="Report metadata">
+        <li>Research date: August 3, 2026</li>
+        <li>Target: React 19 + Golden Layout</li>
+        <li>Scope: presentation and interaction layer</li>
+        <li>Confidence: high on features, medium on app-specific performance</li>
+      </ul>
+    </div>
+  </header>
+
+  <div class="toc">
+    <nav aria-label="Report sections">
+      <a href="#decision">Decision</a>
+      <a href="#difference">Real difference</a>
+      <a href="#parity">Coleo parity</a>
+      <a href="#complexity">Complexity</a>
+      <a href="#license">License</a>
+      <a href="#maintenance">Maintenance</a>
+      <a href="#plan">Migration plan</a>
+      <a href="#sources">Sources</a>
+    </nav>
+  </div>
+
+  <main>
+    <section id="decision">
+      <div class="decision">
+        <div>
+          <p class="eyebrow">Recommendation</p>
+          <h2>Choose Tabulator for Coleo.</h2>
+          <p>
+            Tabulator is the lower-risk replacement because Coleo needs a complete
+            spreadsheet interaction system more than it needs a specialized rendering
+            engine. It supplies editing, filters, sorting, menus, row insertion and
+            movement, range selection, clipboard, and interaction history. Glide is
+            faster at extreme scale, but it deliberately leaves filtering, sorting,
+            menus, persistence, and undo/redo to the application.
+          </p>
+        </div>
+        <div class="decision-score" role="img" aria-label="Weighted Coleo fit score: 87 out of 100">
+          <strong>87</strong>
+          <span>Weighted Coleo fit / 100</span>
+        </div>
+      </div>
+      <div class="caveat">
+        <strong>When Glide would be the better choice:</strong>
+        if a Coleo grid must sustain hundreds of thousands to millions of rows,
+        continuous high-frequency cell invalidation, or exceptionally dense visual
+        rendering. The current Tasks and Bugs use case does not appear to justify
+        taking on that extra application code.
+      </div>
+    </section>
+
+    <section id="difference">
+      <h2>The real difference</h2>
+      <p class="section-intro">
+        These libraries overlap visually but occupy different layers of the stack.
+        That distinction drives nearly every implementation and maintenance tradeoff.
+      </p>
+
+      <div class="cards">
+        <article class="card tabulator">
+          <div class="card-kicker">Feature-complete grid product</div>
+          <h3>Tabulator owns grid behavior</h3>
+          <p>
+            A DOM-based, framework-agnostic grid with an internal data pipeline and
+            modules for common table behavior. React hosts an imperative instance;
+            the grid performs much of the interaction work.
+          </p>
+          <div class="fact-grid">
+            <div class="fact">
+              <strong>DOM virtualized</strong>
+              <span>Inspectable cells and CSS-driven styling</span>
+            </div>
+            <div class="fact">
+              <strong>0 runtime deps</strong>
+              <span>Package declaration, version 6.5.2</span>
+            </div>
+            <div class="fact">
+              <strong>~102 KB gzip</strong>
+              <span>Bundlephobia full-package estimate</span>
+            </div>
+            <div class="fact">
+              <strong>100,000s</strong>
+              <span>Vendor virtual-DOM scale claim</span>
+            </div>
+          </div>
+        </article>
+
+        <article class="card glide">
+          <div class="card-kicker">High-performance grid engine</div>
+          <h3>Glide owns pixels; Coleo owns behavior</h3>
+          <p>
+            A React canvas renderer designed for massive data sets and rapid updates.
+            It emits interaction requests; the application updates data, builds menus,
+            implements sorting and filtering, and redraws the appropriate cells.
+          </p>
+          <div class="fact-grid">
+            <div class="fact">
+              <strong>Canvas rendered</strong>
+              <span>Native scrolling and lazy cell drawing</span>
+            </div>
+            <div class="fact">
+              <strong>3 + peers</strong>
+              <span>Runtime dependencies plus five peer packages</span>
+            </div>
+            <div class="fact">
+              <strong>~64 KB gzip</strong>
+              <span>Bundlephobia, excluding peer dependencies</span>
+            </div>
+            <div class="fact">
+              <strong>Millions</strong>
+              <span>Vendor scale claim</span>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="architecture spaced">
+        <div class="architecture-panel">
+          <h3>Tabulator integration</h3>
+          <ol>
+            <li>Coleo resource model and saved view preferences</li>
+            <li>Thin <code>ResourceSheet</code> adapter</li>
+            <li>Tabulator behavior modules and data pipeline</li>
+            <li>Virtualized DOM rows, cells, editors, and menus</li>
+          </ol>
+        </div>
+        <div class="versus" aria-hidden="true">VS</div>
+        <div class="architecture-panel">
+          <h3>Glide integration</h3>
+          <ol>
+            <li>Coleo resource model and saved view preferences</li>
+            <li>Controlled sort, filter, selection, and history state</li>
+            <li>Custom menus, tag cells, editors, insertion, and formatting</li>
+            <li>Glide canvas renderer plus portal-based React overlays</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <section id="parity">
+      <h2>Behavior-by-behavior parity</h2>
+      <p class="section-intro">
+        “Built in” means the library supplies the interaction and state transition.
+        “Adapter” means Coleo must connect a documented callback. “Custom” means Coleo
+        must design and maintain the behavior or UI.
+      </p>
+
+      <div class="table-wrap">
+        <table class="parity-table">
+          <thead>
+            <tr>
+              <th>Coleo behavior</th>
+              <th>Tabulator</th>
+              <th>Glide Data Grid</th>
+              <th>Practical consequence</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Text and status editing</td>
+              <td><span class="tag built-in">Built in</span> Input and list editors, validation, edit events.</td>
+              <td><span class="tag adapter">Adapter</span> Built-in cell editing, but Coleo must synchronously update its data source.</td>
+              <td>Both are straightforward. Tabulator has less controlled-state plumbing.</td>
+            </tr>
+            <tr>
+              <td>Creatable multi-select Tags</td>
+              <td><span class="tag custom">Custom editor</span> The standard list editor supports multi-select or autocomplete/free-text, not both together.</td>
+              <td><span class="tag custom">Custom cell + editor</span> Canvas chip renderer plus a React overlay editor.</td>
+              <td>This remains custom either way; ordinary DOM makes Tabulator materially simpler.</td>
+            </tr>
+            <tr>
+              <td>Insert above / below</td>
+              <td><span class="tag built-in">Built in</span> Row APIs and built-in row menus can insert at a position.</td>
+              <td><span class="tag custom">Custom</span> Built-in append handles the trailing row only; arbitrary insertion needs a menu and application array mutation.</td>
+              <td>Tabulator closely matches the current Handsontable behavior.</td>
+            </tr>
+            <tr>
+              <td>Manual row ordering</td>
+              <td><span class="tag built-in">Built in</span> Drag the whole row or a dedicated handle; emits <code>rowMoved</code>.</td>
+              <td><span class="tag adapter">Adapter</span> <code>onRowMoved</code> enables reordering from the first column; Coleo performs the reorder.</td>
+              <td>Both are viable. Tabulator provides more handle and lifecycle control.</td>
+            </tr>
+            <tr>
+              <td>Undo / redo</td>
+              <td><span class="tag built-in">Built in</span> Tracks cell edits and row add, delete, and move actions; keyboard bindings included.</td>
+              <td><span class="tag risk">Not documented</span> No built-in interaction history; Coleo needs a command journal for edits, batches, insertion, deletion, and movement.</td>
+              <td>Glide adds one of the largest correctness and test burdens.</td>
+            </tr>
+            <tr>
+              <td>Details context action</td>
+              <td><span class="tag built-in">Built in</span> Row context menu items receive a row component.</td>
+              <td><span class="tag custom">Custom menu</span> A context event is emitted; Coleo draws and controls the menu.</td>
+              <td>Both can open a Golden Layout detail panel; only Tabulator supplies the menu.</td>
+            </tr>
+            <tr>
+              <td>Column header menus</td>
+              <td><span class="tag built-in">Built in</span> Header menus and context menus, including nested items.</td>
+              <td><span class="tag custom">Custom menu</span> Glide supplies screen coordinates and explicitly makes the application draw it.</td>
+              <td>Glide recreates the overlay behavior that previously caused stacking and dismissal bugs.</td>
+            </tr>
+            <tr>
+              <td>Sort and filter</td>
+              <td><span class="tag built-in">Built in</span> Multi-sort, programmatic filters, and header filters.</td>
+              <td><span class="tag custom">Application-owned</span> Glide’s FAQ says filtering and sorting must be implemented in the data source.</td>
+              <td>Coleo already has preference models, but Glide still needs the execution and header UI.</td>
+            </tr>
+            <tr>
+              <td>Saved column layout and views</td>
+              <td><span class="tag adapter">Built in + adapter</span> Local persistence covers sort, filter, visibility, width, and order; Coleo still sends shareable views to its database.</td>
+              <td><span class="tag custom">Application-owned</span> Every column move, resize, visibility, sort, and filter transition must be stored and restored by Coleo.</td>
+              <td>Tabulator reduces interaction code, though neither replaces Coleo’s shared-view API.</td>
+            </tr>
+            <tr>
+              <td>Range selection and clipboard</td>
+              <td><span class="tag built-in">Built in</span> Range selection and configurable clipboard modules.</td>
+              <td><span class="tag adapter">Adapter</span> Strong selection model; copy needs <code>getCellsForSelection</code>, paste needs callbacks, and oversized paste needs custom handling.</td>
+              <td>Glide is capable, but more behavior remains application-owned.</td>
+            </tr>
+            <tr>
+              <td>Row colors and bold formatting</td>
+              <td><span class="tag adapter">Easy adapter</span> Row formatter and CSS classes on normal DOM elements.</td>
+              <td><span class="tag adapter">Canvas adapter</span> Row or cell theme overrides; custom drawing for unsupported decoration.</td>
+              <td>Tabulator reuses design tokens and browser inspection more naturally.</td>
+            </tr>
+            <tr>
+              <td>Live server updates</td>
+              <td><span class="tag adapter">Good</span> Update rows or data by stable index while virtual DOM handles rendering.</td>
+              <td><span class="tag built-in">Excellent renderer</span> Mutate the backing store and invalidate targeted cells through <code>updateCells</code>.</td>
+              <td>Glide has the advantage for rapid, dense streams of cell changes.</td>
+            </tr>
+            <tr>
+              <td>Golden Layout overlays</td>
+              <td><span class="tag adapter">Manageable</span> Configure a popup container within the workbench panel.</td>
+              <td><span class="tag risk">Integration risk</span> Editing requires a root portal and careful outside-click handling.</td>
+              <td>Glide’s portal is workable, but deserves a dedicated focus and z-index spike.</td>
+            </tr>
+            <tr>
+              <td>Playwright regression tests</td>
+              <td><span class="tag adapter">Mostly portable</span> DOM grid cells, roles, editors, and CSS remain inspectable.</td>
+              <td><span class="tag risk">Substantial rewrite</span> Visible cell content is canvas-rendered; CSS assertions and many cell locators need replacement or test hooks.</td>
+              <td>The current Tasks suite is much cheaper to preserve with Tabulator.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="scores">
+      <h2>Weighted fit for Coleo</h2>
+      <p class="section-intro">
+        Scores use a five-point scale and weights chosen for Coleo’s present needs.
+        They are a decision aid, not a vendor benchmark. Performance is architectural
+        confidence until both candidates are measured with Coleo data.
+      </p>
+
+      <div class="score-grid">
+        <article class="score">
+          <div class="score-head">
+            <h3>Tabulator</h3>
+            <strong>87</strong>
+          </div>
+          <div class="score-row"><span>Behavior parity · 25%</span><div class="bar"><span class="w-90"></span></div><b>4.5</b></div>
+          <div class="score-row"><span>Spreadsheet UX · 18%</span><div class="bar"><span class="w-88"></span></div><b>4.4</b></div>
+          <div class="score-row"><span>Performance · 18%</span><div class="bar"><span class="w-80"></span></div><b>4.0</b></div>
+          <div class="score-row"><span>Implementation · 15%</span><div class="bar"><span class="w-86"></span></div><b>4.3</b></div>
+          <div class="score-row"><span>Design-system fit · 8%</span><div class="bar"><span class="w-82"></span></div><b>4.1</b></div>
+          <div class="score-row"><span>License · 8%</span><div class="bar"><span class="w-100"></span></div><b>5.0</b></div>
+          <div class="score-row"><span>Maintenance · 8%</span><div class="bar"><span class="w-84"></span></div><b>4.2</b></div>
+        </article>
+
+        <article class="score glide-score">
+          <div class="score-head">
+            <h3>Glide Data Grid</h3>
+            <strong>74</strong>
+          </div>
+          <div class="score-row"><span>Behavior parity · 25%</span><div class="bar"><span class="w-60"></span></div><b>3.0</b></div>
+          <div class="score-row"><span>Spreadsheet UX · 18%</span><div class="bar"><span class="w-84"></span></div><b>4.2</b></div>
+          <div class="score-row"><span>Performance · 18%</span><div class="bar"><span class="w-100"></span></div><b>5.0</b></div>
+          <div class="score-row"><span>Implementation · 15%</span><div class="bar"><span class="w-50"></span></div><b>2.5</b></div>
+          <div class="score-row"><span>Design-system fit · 8%</span><div class="bar"><span class="w-70"></span></div><b>3.5</b></div>
+          <div class="score-row"><span>License · 8%</span><div class="bar"><span class="w-100"></span></div><b>5.0</b></div>
+          <div class="score-row"><span>Maintenance · 8%</span><div class="bar"><span class="w-54"></span></div><b>2.7</b></div>
+        </article>
+      </div>
+    </section>
+
+    <section id="complexity">
+      <h2>Implementation complexity</h2>
+      <p class="section-intro">
+        Coleo currently has 1,093 lines in the direct Handsontable adapter,
+        creatable-tag integration, and sheet theme
+        (<code>ResourceSheet.tsx</code>, <code>creatable-multiselect.ts</code>,
+        and <code>sheet-theme.css</code>). Estimates include parity work and regression
+        tests, but no backend changes or visual redesign. Expect ±30% after a spike.
+      </p>
+
+      <div class="estimate">
+        <article class="estimate-card tabulator-estimate">
+          <div class="card-kicker">Tabulator migration</div>
+          <h3>Lower implementation risk</h3>
+          <span class="days">8–14 days</span>
+          <ul>
+            <li>2–3 days: adapter skeleton, theme, React lifecycle, Golden Layout sizing.</li>
+            <li>2–4 days: edit mapping, insert/delete, reorder, selection, context menus, views.</li>
+            <li>2–3 days: creatable multi-select Tags editor and row formatting.</li>
+            <li>2–4 days: undo/server reconciliation and Playwright migration.</li>
+          </ul>
+        </article>
+
+        <article class="estimate-card glide-estimate">
+          <div class="card-kicker">Glide migration</div>
+          <h3>More infrastructure becomes Coleo code</h3>
+          <span class="days">20–35 days</span>
+          <ul>
+            <li>3–5 days: controlled data source, coordinate mapping, theme, portal, sizing.</li>
+            <li>5–8 days: sort/filter execution, header menus, context menus, persistence.</li>
+            <li>4–7 days: tag canvas renderer, React editor overlay, insertion and row formatting.</li>
+            <li>4–7 days: durable command journal for undo/redo and server reconciliation.</li>
+            <li>4–8 days: test hooks and Playwright rewrite for canvas interactions.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>Complexity multiplier: controlled rendering</strong>
+        <p>
+          Glide never mutates Coleo’s data. That is clean and React-friendly, but every
+          edit, move, paste, resize, selection, sort, filter, and history transition
+          must update stable application state and then be returned through grid props.
+          This is excellent when a team wants to own a grid platform; it is expensive
+          when the goal is to simplify an application.
+        </p>
+      </div>
+
+      <div class="callout">
+        <strong>Performance should be proven, not inferred</strong>
+        <p>
+          Glide should win an extreme-scale benchmark because canvas avoids mounting
+          DOM cells. Tabulator’s virtual DOM should be more than sufficient for typical
+          task and bug lists, but Coleo should test 1k, 10k, and 50k rows with rapid
+          edits and live updates before committing. The prior Handsontable strobe and
+          slow-scroll symptoms are not, by themselves, proof that a DOM grid cannot
+          meet the target.
+        </p>
+      </div>
+    </section>
+
+    <section id="license">
+      <h2>License and distribution</h2>
+      <p class="section-intro">
+        Both choices eliminate the core Handsontable distribution problem. This is a
+        technical licensing assessment, not legal advice.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Question</th>
+              <th>Tabulator 6.5.2</th>
+              <th>Glide Data Grid 6.0.3</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Primary license</td>
+              <td>MIT, copyright Oli Folkerd.</td>
+              <td>MIT, copyright typeguard, Inc.</td>
+            </tr>
+            <tr>
+              <td>Commercial use</td>
+              <td>Allowed without a fee.</td>
+              <td>Allowed without a fee.</td>
+            </tr>
+            <tr>
+              <td>Redistribution in BSL Coleo</td>
+              <td>Allowed; preserve the MIT copyright and permission notice in copies or substantial portions.</td>
+              <td>Allowed on the same MIT notice-preservation condition.</td>
+            </tr>
+            <tr>
+              <td>Per-developer, server, or end-user fees</td>
+              <td>None.</td>
+              <td>None.</td>
+            </tr>
+            <tr>
+              <td>Runtime dependency notices</td>
+              <td>No declared runtime dependencies; include Tabulator’s own notice.</td>
+              <td>Declared runtime and peer dependencies currently report MIT licenses; inventory and preserve their notices too.</td>
+            </tr>
+            <tr>
+              <td>Operational restriction</td>
+              <td>None beyond MIT conditions; self-hosting and forks are permitted.</td>
+              <td>None beyond MIT conditions; self-hosting and forks are permitted.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="caveat">
+        <strong>Required release hygiene:</strong>
+        add a generated <code>THIRD_PARTY_NOTICES</code> artifact to distributed builds,
+        pin the selected package version, retain license files in source and packaged
+        assets, and scan transitive dependency licenses during releases.
+      </div>
+    </section>
+
+    <section id="maintenance">
+      <h2>Maintenance risk</h2>
+      <p class="section-intro">
+        Snapshot as of August 3, 2026. Repository and download counts change over time;
+        release cadence and package compatibility are the more important signals.
+      </p>
+
+      <div class="risk-columns">
+        <article class="risk-card">
+          <h3>Tabulator <span class="risk-level medium">Medium</span></h3>
+          <ul class="risk-list">
+            <li><strong>Healthy current releases:</strong> 6.4.0 in March 2026, then 6.5.0–6.5.2 in June 2026; repository activity continued in July.</li>
+            <li><strong>Long project history:</strong> public development since 2015, 163 GitHub releases, about 7.7k stars, and roughly 182k npm downloads in the most recent measured week.</li>
+            <li><strong>Concentrated ownership:</strong> the top contributor has far more commits than the rest. Bus-factor risk remains despite recent collaborator activity.</li>
+            <li><strong>Framework boundary:</strong> it is not React-native. Coleo must maintain a careful imperative wrapper, lifecycle cleanup, and stable event callbacks.</li>
+            <li><strong>Large API surface:</strong> many modules reduce Coleo code but increase upgrade testing and the chance of feature interactions.</li>
+          </ul>
+        </article>
+
+        <article class="risk-card">
+          <h3>Glide Data Grid <span class="risk-level high">High</span></h3>
+          <ul class="risk-list">
+            <li><strong>Stable-release gap:</strong> npm’s latest stable is 6.0.3 from February 2024. Work continued through alpha builds, but no later stable release was published by the research date.</li>
+            <li><strong>React 19 mismatch:</strong> stable 6.0.3 declares React 16–18 peer support. The 6.0.4 alpha line adds React 19, so Coleo must accept an unsupported peer range or depend on prerelease code.</li>
+            <li><strong>Main/package divergence:</strong> the repository contains a January 2026 <code>6.0.4-alpha25</code> commit that is not available on npm; the beta tag still points to alpha24.</li>
+            <li><strong>Documentation lag:</strong> many public API pages say “last updated 2 years ago,” and the custom-cell guide opens with “Coming soon.”</li>
+            <li><strong>Real adoption:</strong> about 5.3k stars and roughly 263k npm downloads in the measured week reduce abandonment risk, but do not resolve release-governance uncertainty.</li>
+            <li><strong>Canvas specialization:</strong> future maintainers need familiarity with coordinate systems, draw lifecycles, overlay portals, memoization, and accessibility mirroring.</li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="callout">
+        <strong>Neither option is risk-free</strong>
+        <p>
+          Tabulator’s risk is maintainer concentration and an imperative, feature-rich
+          core. Glide’s risk is release cadence plus the amount of grid-product code
+          Coleo would inherit. For a redistributable local application, MIT licensing
+          is equally strong; maintenance and implementation should decide the choice.
+        </p>
+      </div>
+    </section>
+
+    <section id="plan">
+      <h2>Recommended migration plan</h2>
+      <p class="section-intro">
+        Keep the existing <code>ResourceSheet</code> public interface so Tasks, Bugs,
+        and Discovery do not care which grid renders them. Replace the runtime behind
+        that boundary and use the current tests as the acceptance contract.
+      </p>
+
+      <ol class="plan">
+        <li>
+          <div>
+            <h3>Build a Tabulator spike beside Handsontable</h3>
+            <p>
+              Render a realistic Tasks data set in Golden Layout. Prove dark theme,
+              panel resize, selection, inline subject/status editing, whole-row drag,
+              and a Details context action before removing anything.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Benchmark the behavior Coleo actually has</h3>
+            <p>
+              Measure scroll frame stability and edit latency at 1k, 10k, and 50k rows;
+              apply batched simulated WebSocket updates; watch memory after repeated
+              tab mount/unmount cycles. Set explicit pass thresholds.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Map the shared column model</h3>
+            <p>
+              Translate text, numeric, checkbox, date, dropdown, and multi-select
+              definitions into Tabulator columns. Keep status styles and row formatting
+              in Coleo’s design-system tokens rather than vendor theme constants.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Implement Tags as one documented custom editor</h3>
+            <p>
+              Reuse Coleo’s known-tag option source and “create from search” semantics.
+              Do not misconfigure Tabulator’s built-in list editor: multi-select and
+              autocomplete/free-text are mutually exclusive modes.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Reconcile history with server updates</h3>
+            <p>
+              Verify that optimistic React Query reconciliation and streamed updates do
+              not erase or replay Tabulator history incorrectly. Keep external updates
+              out of the user edit stack and preserve Coleo API calls on undo and redo.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Port the regression suite before switching Tasks</h3>
+            <p>
+              Preserve tests for gutter stability, edit theme, undo/redo, tags,
+              formatting, reordering, insertion, status filters, and Golden Layout
+              details. Move Tasks first, then Bugs, then Discovery.
+            </p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <h3>Remove Handsontable and add license notices</h3>
+            <p>
+              Confirm the final bundle contains no Handsontable code or evaluation key,
+              pin Tabulator, add its MIT notice to release artifacts, and document the
+              adapter boundary and upgrade checklist.
+            </p>
+          </div>
+        </li>
+      </ol>
+
+      <div class="caveat">
+        <strong>Decision gate:</strong>
+        choose Glide only if the benchmark shows Tabulator cannot meet an agreed
+        performance threshold on a representative Coleo workload. Do not choose it
+        based solely on its theoretical maximum row count.
+      </div>
+    </section>
+
+    <section id="sources">
+      <h2>Primary sources</h2>
+      <p class="section-intro">
+        Vendor documentation, package metadata, and project repositories were checked
+        on August 3, 2026. Package sizes are directional and should be confirmed in
+        Coleo’s production bundle.
+      </p>
+
+      <ul class="sources">
+        <li>
+          <a href="https://www.tabulator.info/docs/6.x/" target="_blank" rel="noreferrer">Tabulator 6.x documentation</a>
+          <span>Current feature surface and version documentation</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.4/license" target="_blank" rel="noreferrer">Tabulator software license</a>
+          <span>MIT terms and explicit commercial-use guidance</span>
+        </li>
+        <li>
+          <a href="https://www.tabulator.info/docs/6.x/edit/" target="_blank" rel="noreferrer">Tabulator editing</a>
+          <span>Editors and the multi-select versus autocomplete/free-text limitation</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.3/history" target="_blank" rel="noreferrer">Tabulator interaction history</a>
+          <span>Undo/redo coverage for edits and row operations</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.4/move" target="_blank" rel="noreferrer">Tabulator movable rows and columns</a>
+          <span>Whole-row drag, handles, APIs, and events</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.4/menu" target="_blank" rel="noreferrer">Tabulator menus and popups</a>
+          <span>Row and header menu capabilities</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.3/persist" target="_blank" rel="noreferrer">Tabulator persistent configuration</a>
+          <span>Sort, filter, header filter, and column layout persistence</span>
+        </li>
+        <li>
+          <a href="https://tabulator.info/docs/6.3/virtual-dom" target="_blank" rel="noreferrer">Tabulator virtual DOM</a>
+          <span>Rendering architecture and vendor scale claims</span>
+        </li>
+        <li>
+          <a href="https://github.com/tabulator-tables/tabulator" target="_blank" rel="noreferrer">Tabulator repository</a>
+          <span>Releases, activity, contributors, and MIT license file</span>
+        </li>
+        <li>
+          <a href="https://docs.grid.glideapps.com/" target="_blank" rel="noreferrer">Glide Data Grid documentation</a>
+          <span>Canvas architecture, setup, and core feature claims</span>
+        </li>
+        <li>
+          <a href="https://docs.grid.glideapps.com/api/dataeditor" target="_blank" rel="noreferrer">Glide DataEditor API</a>
+          <span>Controlled state, events, portal prerequisite, selection, and editing</span>
+        </li>
+        <li>
+          <a href="https://docs.grid.glideapps.com/api/dataeditor/editing" target="_blank" rel="noreferrer">Glide editing API</a>
+          <span>Edit, paste, validation, deletion, fill, and append callbacks</span>
+        </li>
+        <li>
+          <a href="https://docs.grid.glideapps.com/api/dataeditor/input-interaction" target="_blank" rel="noreferrer">Glide input interaction</a>
+          <span>Row movement and application-owned header menus</span>
+        </li>
+        <li>
+          <a href="https://docs.grid.glideapps.com/guides/implementing-custom-cells" target="_blank" rel="noreferrer">Glide custom cells</a>
+          <span>Canvas renderer and React overlay editor pattern</span>
+        </li>
+        <li>
+          <a href="https://github.com/glideapps/glide-data-grid" target="_blank" rel="noreferrer">Glide Data Grid repository</a>
+          <span>MIT license, release history, FAQ, activity, and contributors</span>
+        </li>
+        <li>
+          <a href="https://bundlephobia.com/package/tabulator-tables@6.5.2" target="_blank" rel="noreferrer">Tabulator bundle estimate</a>
+          <span>Directional minified and gzip package size</span>
+        </li>
+        <li>
+          <a href="https://bundlephobia.com/package/@glideapps/glide-data-grid@6.0.3" target="_blank" rel="noreferrer">Glide bundle estimate</a>
+          <span>Directional size; peer dependencies are not included</span>
+        </li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>
+      Prepared for the Coleo workbench migration. Recommendation assumes the primary
+      grids remain task and bug management surfaces rather than million-row analytical
+      canvases.
+    </p>
+  </footer>
+</body>
+</html>

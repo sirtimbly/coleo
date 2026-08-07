@@ -5,13 +5,18 @@ import { join } from "node:path";
 
 import {
 	discoverProjectPlans,
+	collectPlanWorkspaceContext,
+	formatPlanWithConfiguredModel,
 	formatPlanWithoutModel,
 	listProjectPlanDocuments,
 	preservesPlanContext,
+	renderPlanEvaluationPrompt,
 	validateEditablePlanPath,
 	validateEditableTemplatePath,
 } from "../service";
 import { LocalWorkspaceAccess } from "../../workspace";
+import { BrainTemplateManager } from "../../brain/template-manager";
+import type { WorkspaceAccess } from "../../workspace";
 
 describe("project setup service", () => {
 	let root: string;
@@ -64,6 +69,94 @@ describe("project setup service", () => {
 		expect(plan).toContain("### Deliverables");
 		expect(plan).toContain("- [ ] Support team accounts");
 		expect(plan).toContain("- [ ] Add an audit log");
+	});
+
+	it("includes the provider error detail when model formatting falls back", async () => {
+		const templateDir = join(root, "src", "brain", "templates");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(join(templateDir, "plan-evaluation-system-prompt.jinja"), "Format the plan");
+		await writeFile(join(templateDir, "plan-evaluation-user-prompt.jinja"), "{{ project_plan }}");
+		const originalFetch = globalThis.fetch;
+		const originalApiKey = process.env.COLEO_BRAIN_API_KEY;
+		const originalBaseUrl = process.env.OPENAI_BASE_URL;
+		process.env.COLEO_BRAIN_API_KEY = "test-key";
+		process.env.OPENAI_BASE_URL = "https://formatter.test/v1";
+		globalThis.fetch = (async () => new Response(
+			JSON.stringify({ error: { message: "Model capacity exhausted for this request" } }),
+			{ status: 500, statusText: "Internal Server Error" },
+		)) as unknown as typeof fetch;
+
+		try {
+			const result = await formatPlanWithConfiguredModel(
+				"# Product brief\n\nShip team accounts.\n",
+				".project/plan.md",
+				undefined,
+				{ gitStatus: "", files: [] },
+				new BrainTemplateManager(root, () => {}),
+			);
+
+			expect(result.mode).toBe("structured");
+			expect(result.formatterError).toBe(
+				"Plan formatter returned 500 Internal Server Error: Model capacity exhausted for this request",
+			);
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (originalApiKey === undefined) delete process.env.COLEO_BRAIN_API_KEY;
+			else process.env.COLEO_BRAIN_API_KEY = originalApiKey;
+			if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL;
+			else process.env.OPENAI_BASE_URL = originalBaseUrl;
+		}
+	});
+
+	it("builds bounded planning context from git metadata without reading file contents", async () => {
+		let readCount = 0;
+		const workspace = {
+			root,
+			readText: async () => {
+				readCount += 1;
+				return null;
+			},
+			writeText: async () => {
+				throw new Error("not used");
+			},
+			scan: async () => {
+				throw new Error("not used");
+			},
+			gitStatus: async () => " M src/app.ts\n?? package.json\n?? node_modules/cache.bin\n?? a/b/c/d/e/f/g.ts\n",
+			gitFiles: async () => ["src/index.ts", "dist/output.js"],
+		} satisfies WorkspaceAccess;
+
+		const context = await collectPlanWorkspaceContext(workspace);
+
+		expect(context.gitStatus).toContain("?? package.json");
+		expect(context.files).toEqual(["package.json", "src/app.ts", "src/index.ts"]);
+		expect(readCount).toBe(0);
+	});
+
+	it("renders plan evaluation messages from user-customizable Jinja templates", async () => {
+		const templateDir = join(root, "src", "brain", "templates");
+		await mkdir(templateDir, { recursive: true });
+		await writeFile(
+			join(templateDir, "plan-evaluation-system-prompt.jinja"),
+			"Custom planning policy",
+		);
+		await writeFile(
+			join(templateDir, "plan-evaluation-user-prompt.jinja"),
+			"{{ source_path }}|{{ git_status }}|{{ project_files }}|{{ project_plan }}",
+		);
+
+		const prompt = await renderPlanEvaluationPrompt(
+			new BrainTemplateManager(root, () => {}),
+			"# Complete plan",
+			".project/plan.md",
+			undefined,
+			{ gitStatus: " M src/app.ts", files: ["package.json", "src/app.ts"] },
+		);
+
+		expect(prompt.system).toBe("Custom planning policy");
+		expect(prompt.user).toBe(
+			".project/plan.md| M src/app.ts|package.json\nsrc/app.ts|# Complete plan",
+		);
 	});
 
 	it("detects formatter output that drops substantial project context", () => {

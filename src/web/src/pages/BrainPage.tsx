@@ -1,14 +1,24 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { Play, Square, RefreshCw, Save, X, Edit2 } from 'lucide-react';
+/**
+ * Brain lifecycle and inference configuration projection.
+ *
+ * Operational activity lives in the unified Inbox; this page links directly
+ * to that live, searchable Brain facet instead of maintaining a second feed.
+ */
+import { useEffect, useState, useCallback } from 'react';
+import { AlertTriangle, Edit2, ExternalLink, Inbox, Play, RefreshCw, Save, Square, X } from 'lucide-react';
 import { api } from '@/lib';
-import type { ActivityEntry, BrainConfigResponse, BrainModel } from '@/lib';
+import type { BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
-import { Card, CardContent, DenseSection, DenseRow, DenseRowSkeleton, type Tone } from '@/components';
-import { BrainActivityLog } from '@/components/BrainActivityLog';
+import { DenseRowSkeleton } from '@/components';
 import { usePageTitle } from '@/hooks/usePageTitle';
-import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
-import { mergeBrainActivity, parseBrainActivityEntry } from './brain-activity';
+import { CollectionRow } from '@/design-system/CollectionRow';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchStatusDot,
+  WorkbenchSurface,
+} from '@/design-system/WorkbenchSurface';
 
 interface BrainStatus {
   status: 'stopped' | 'running' | 'paused';
@@ -18,6 +28,22 @@ interface BrainStatus {
   pendingTasksCount: number;
   completedToday: number;
   uptime: number | null;
+  plan: {
+    status: 'blocked' | 'healthy' | 'pending';
+    detail: string;
+    blockedTaskCount: number;
+    blockedArmCount: number;
+    taskCount: number;
+  };
+  modelAccess: {
+    status: 'available' | 'blocked' | 'unknown';
+    issueCode: 'insufficient_credits' | null;
+    provider: string | null;
+    message: string | null;
+    actionLabel: string | null;
+    actionUrl: string | null;
+    checkedAt: string | null;
+  };
 }
 
 type Navigate = (pathname: string, search?: string) => void;
@@ -36,10 +62,10 @@ const formatPollInterval = (ms: number) => {
   return `${ms}ms`;
 };
 
-const statusTone = (brainStatus: string): Tone => {
+const statusTone = (brainStatus: string): 'neutral' | 'success' | 'warning' => {
   if (brainStatus === 'running') return 'success';
   if (brainStatus === 'paused') return 'warning';
-  return 'default';
+  return 'neutral';
 };
 
 function EditToggle({ isEditing, onToggle }: { isEditing: boolean; onToggle: () => void }) {
@@ -48,6 +74,40 @@ function EditToggle({ isEditing, onToggle }: { isEditing: boolean; onToggle: () 
     <Button variant="ghost" size="sm" onPress={onToggle}>
       <Edit2 className="h-3.5 w-3.5" /> Edit
     </Button>
+  );
+}
+
+function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAccess'] }) {
+  if (modelAccess.status !== 'blocked') return null;
+
+  return (
+    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-danger/30 bg-danger/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+        <div>
+          <p className="font-medium text-danger">Plan evaluation is blocked</p>
+          <p className="mt-1 text-sm text-foreground">
+            {modelAccess.message || 'The Brain model API is unavailable.'}
+          </p>
+          {modelAccess.checkedAt ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Detected {new Date(modelAccess.checkedAt).toLocaleString()}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {modelAccess.actionUrl ? (
+        <a
+          href={modelAccess.actionUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1.5 self-start rounded-md border border-danger/30 bg-surface px-3 py-2 text-sm font-medium text-danger transition-colors hover:bg-danger/10"
+        >
+          {modelAccess.actionLabel || 'Resolve billing'}
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      ) : null}
+    </div>
   );
 }
 
@@ -66,10 +126,16 @@ function BrainStatusSection({
   onStop: () => void;
   onNavigate: Navigate;
 }) {
+  const planStatus = status?.plan?.status;
+  const planTone = planStatus === 'healthy' ? 'success' : planStatus === 'blocked' ? 'warning' : 'neutral';
+  const planLabel = planStatus === 'blocked' ? 'Blocked' : planStatus === 'healthy' ? 'Healthy' : 'Not ready';
+
   return (
-    <DenseSection
-      title="Brain Status"
-      action={
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Brain status"
+        description="Coordinator lifecycle and current workload"
+        actions={
         status?.status === 'running' ? (
           <Button variant="secondary" size="sm" onPress={onStop} isDisabled={actionLoading === 'stop'}>
             <Square className="h-3.5 w-3.5" />
@@ -82,53 +148,60 @@ function BrainStatusSection({
           </Button>
         )
       }
-    >
+      />
       {isLoading ? (
-        <>
+        <div>
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <DenseRowSkeleton key={i} />
           ))}
-        </>
+        </div>
       ) : (
-        <>
-          <DenseRow
-            tone={statusTone(status?.status || 'stopped')}
-            label="Status"
-            detail={`uptime ${formatUptime(status?.uptime)}`}
-            chipLabel={status?.status || 'unknown'}
-            chipColor={statusTone(status?.status || 'stopped')}
+        <div>
+          <CollectionRow
+            title="Status"
+            description={status?.modelAccess?.status === 'blocked'
+              ? 'Plan evaluation blocked · API credits required'
+              : `Uptime ${formatUptime(status?.uptime)}`}
+            leading={<WorkbenchStatusDot tone={status?.modelAccess?.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')} />}
+            trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
           />
-          <DenseRow
-            tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'default'}
-            label="Active Arms"
-            detail="Arms currently registered with the coordinator"
-            chipLabel={String(status?.activeArmsCount ?? 0)}
-            chipColor="accent"
-            onClick={() => onNavigate('/arms')}
+          <CollectionRow
+            title="Project plan"
+            description={status?.plan?.detail || 'Plan status is unavailable'}
+            leading={<WorkbenchStatusDot tone={planTone} />}
+            trailing={(
+              <span className={planStatus === 'blocked' ? 'font-medium text-warning' : planStatus === 'healthy' ? 'font-medium text-success' : 'text-muted-foreground'}>
+                {planLabel}
+              </span>
+            )}
+            onOpen={() => onNavigate('/setup', '?path=.project%2Fplan.md')}
           />
-          <DenseRow
-            tone={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'default'}
-            label="Pending Tasks"
-            detail={`${status?.completedToday ?? 0} completed today`}
-            chipLabel={String(status?.pendingTasksCount ?? 0)}
-            chipColor={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'default'}
-            onClick={() => onNavigate('/tasks')}
+          <CollectionRow
+            title="Active Arms"
+            description="Arms currently registered with the coordinator"
+            leading={<WorkbenchStatusDot tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'neutral'} />}
+            trailing={<span>{status?.activeArmsCount ?? 0}</span>}
+            onOpen={() => onNavigate('/arms')}
           />
-          <DenseRow
-            tone="default"
-            label="Poll Interval"
-            detail="How often the brain checks for new work"
-            chipLabel={formatPollInterval(status?.pollIntervalMs || 30000)}
-            chipColor="default"
+          <CollectionRow
+            title="Pending Tasks"
+            description={`${status?.completedToday ?? 0} completed today`}
+            leading={<WorkbenchStatusDot tone={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'neutral'} />}
+            trailing={<span>{status?.pendingTasksCount ?? 0}</span>}
+            onOpen={() => onNavigate('/tasks')}
           />
-          <DenseRow
-            tone="default"
-            label="Last Poll"
-            detail={status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Never'}
+          <CollectionRow
+            title="Poll interval"
+            description="How often the brain checks for new work"
+            trailing={<span>{formatPollInterval(status?.pollIntervalMs || 30000)}</span>}
           />
-        </>
+          <CollectionRow
+            title="Last poll"
+            description={status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Never'}
+          />
+        </div>
       )}
-    </DenseSection>
+    </WorkbenchSurface>
   );
 }
 
@@ -177,7 +250,12 @@ function BrainConfigSection({
   };
 
   return (
-    <DenseSection title="Brain Configuration" action={<EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} />}>
+    <WorkbenchSurface>
+      <WorkbenchHeader
+        title="Brain configuration"
+        description="Inference and orchestration limits"
+        actions={<EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} />}
+      />
       {isEditing ? (
         <div className="space-y-4 px-4 py-3">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -238,14 +316,14 @@ function BrainConfigSection({
           </div>
         </div>
       ) : (
-        <>
-          <DenseRow tone="default" label="Provider" detail="Inference provider used by the brain" chipLabel={provider === 'openai' ? 'OpenAI' : provider} chipColor="default" />
-          <DenseRow tone="default" label="Model" detail="Model used for brain analysis and coordination" chipLabel={model} chipColor="default" />
-          <DenseRow tone="default" label="Poll Interval" detail="How often the brain checks for new work" chipLabel={`${pollIntervalMs}ms`} chipColor="default" />
-          <DenseRow tone="default" label="Max Arms" detail="Maximum concurrent arms the brain will spawn" chipLabel={String(maxArms)} chipColor="default" />
-        </>
+        <div>
+          <CollectionRow title="Provider" description="Inference provider used by the brain" trailing={<span>{provider === 'openai' ? 'OpenAI' : provider}</span>} />
+          <CollectionRow title="Model" description="Model used for brain analysis and coordination" trailing={<span>{model}</span>} />
+          <CollectionRow title="Poll interval" description="How often the brain checks for new work" trailing={<span>{pollIntervalMs}ms</span>} />
+          <CollectionRow title="Max Arms" description="Maximum concurrent Arms" trailing={<span>{maxArms}</span>} />
+        </div>
       )}
-    </DenseSection>
+    </WorkbenchSurface>
   );
 }
 
@@ -264,13 +342,6 @@ export function BrainPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [brainModels, setBrainModels] = useState<BrainModel[]>([]);
   const [brainModelsError, setBrainModelsError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [activityLoading, setActivityLoading] = useState(true);
-  const [olderActivityLoading, setOlderActivityLoading] = useState(false);
-  const [activityCursor, setActivityCursor] = useState<number | null>(null);
-  const [hasOlderActivity, setHasOlderActivity] = useState(false);
-  const previousAuthenticatedRef = useRef(false);
-  const olderActivityRequestRef = useRef(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -296,65 +367,12 @@ export function BrainPage() {
     }
   }, []);
 
-  const loadActivity = useCallback(async (options?: { beforeSequence?: number; preserveCursor?: boolean }) => {
-    if (options?.beforeSequence) setOlderActivityLoading(true);
-    else if (!options?.preserveCursor) setActivityLoading(true);
-
-    try {
-      const response = await api.listActivity({
-        producer: 'brain',
-        limit: 200,
-        beforeSequence: options?.beforeSequence,
-      });
-      setActivity((current) => mergeBrainActivity(current, response.activity));
-      if (!options?.preserveCursor) {
-        setActivityCursor(response.pagination.nextCursor ?? null);
-        setHasOlderActivity(response.pagination.hasMore ?? false);
-      }
-    } catch (err) {
-      console.error('Failed to load Brain activity:', err);
-    } finally {
-      if (options?.beforeSequence) setOlderActivityLoading(false);
-      else if (!options?.preserveCursor) setActivityLoading(false);
-    }
-  }, []);
-
-  const loadOlderActivity = useCallback(async () => {
-    if (!activityCursor || olderActivityRequestRef.current || !hasOlderActivity) return;
-    olderActivityRequestRef.current = true;
-    try {
-      await loadActivity({ beforeSequence: activityCursor });
-    } finally {
-      olderActivityRequestRef.current = false;
-    }
-  }, [activityCursor, hasOlderActivity, loadActivity]);
-
-  const handleWSMessage = useCallback((msg: WebSocketMessage) => {
-    if (msg.channel === 'brain') void loadData();
-    if (msg.channel === 'activity') {
-      const entry = parseBrainActivityEntry(msg.data);
-      if (entry?.actor === 'brain') {
-        setActivity((current) => mergeBrainActivity(current, [entry]));
-      }
-    }
-  }, [loadData]);
-
-  const { connected, authenticated } = useWebSocket({ channels: ['brain', 'activity'], onMessage: handleWSMessage });
-
   useEffect(() => {
     void loadData();
-    void loadActivity();
-  }, [loadActivity, loadData]);
-
-  useEffect(() => {
-    if (authenticated && !previousAuthenticatedRef.current) {
-      void loadActivity({ preserveCursor: true });
-    }
-    previousAuthenticatedRef.current = authenticated;
-  }, [authenticated, loadActivity]);
+  }, [loadData]);
 
   const handleRefresh = async () => {
-    await Promise.all([loadData(), loadActivity({ preserveCursor: true })]);
+    await loadData();
   };
 
   const handleStart = async () => {
@@ -385,55 +403,57 @@ export function BrainPage() {
   if (error) {
     return (
       <div className="p-8">
-        <Card className="border-danger">
-          <CardContent>
-            <p className="text-danger">Error: {error}</p>
-            <p className="text-sm text-muted-foreground mt-2">
-              Make sure the API server is running: <code className="px-1 bg-secondary rounded">bun run server</code>
-            </p>
-          </CardContent>
-        </Card>
+        <WorkbenchSurface className="border-danger">
+          <WorkbenchEmptyState
+            title="Unable to load the Brain"
+            description={`${error}. Make sure the API server is running.`}
+          />
+        </WorkbenchSurface>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4 px-6 py-6">
-      <div className="flex items-center justify-between border-b border-border pb-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Brain</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Central coordinator status and configuration</p>
-        </div>
-        <Button variant="ghost" size="sm" onPress={handleRefresh}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <WorkbenchHeader
+        title="Brain"
+        description="Central coordinator status and configuration"
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onPress={() => navigate('/messaging', '?facet=brain')}
+            >
+              <Inbox className="h-4 w-4" />
+              Open activity in Inbox
+            </Button>
+            <Button variant="ghost" size="sm" onPress={handleRefresh} aria-label="Refresh Brain">
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
+
+      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+        {status?.modelAccess ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
+
+        <BrainStatusSection
+          status={status}
+          isLoading={loading}
+          actionLoading={actionLoading}
+          onStart={handleStart}
+          onStop={handleStop}
+          onNavigate={navigate}
+        />
+
+        <BrainConfigSection
+          config={config}
+          models={brainModels}
+          modelsError={brainModelsError}
+          onUpdate={loadData}
+        />
       </div>
-
-      <BrainStatusSection
-        status={status}
-        isLoading={loading}
-        actionLoading={actionLoading}
-        onStart={handleStart}
-        onStop={handleStop}
-        onNavigate={navigate}
-      />
-
-      <BrainActivityLog
-        activity={activity}
-        connected={connected && authenticated}
-        loading={activityLoading}
-        loadingOlder={olderActivityLoading}
-        hasMore={hasOlderActivity}
-        onLoadOlder={loadOlderActivity}
-        onNavigate={navigate}
-      />
-
-      <BrainConfigSection
-        config={config}
-        models={brainModels}
-        modelsError={brainModelsError}
-        onUpdate={loadData}
-      />
     </div>
   );
 }

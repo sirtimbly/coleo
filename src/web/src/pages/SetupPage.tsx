@@ -1,9 +1,22 @@
+/**
+ * Specialized collaborative plan and project-document editor.
+ *
+ * The canonical plan is not treated as generic text: saving and preparing it
+ * preserve content hashes, Brain reconciliation, task identities, and explicit
+ * task-regeneration workflows.
+ */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@heroui/react';
-import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, X } from 'lucide-react';
+import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, TriangleAlert, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+  WorkbenchToolbar,
+} from '@/design-system/WorkbenchSurface';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
@@ -117,7 +130,11 @@ export function SetupPage() {
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
-  const [result, setResult] = useState<{ mode: 'ai' | 'structured'; taskCount: number } | null>(null);
+  const [result, setResult] = useState<{
+    mode: 'ai' | 'structured';
+    taskCount: number;
+    formatterError?: string;
+  } | null>(null);
   const [openedModifiedAt, setOpenedModifiedAt] = useState<Map<string, string>>(() => new Map());
   const requestedPathRef = useRef<string | null>(null);
 
@@ -287,6 +304,7 @@ export function SetupPage() {
       setResult({
         mode: response.mode,
         taskCount: response.taskCount,
+        formatterError: response.formatterError,
       });
       setEditor({
         path: response.canonicalPlan.path,
@@ -311,22 +329,29 @@ export function SetupPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[28rem] items-center justify-center text-sm text-muted-foreground">
-        <LoaderCircle className="mr-2 h-4 w-4 animate-spin" /> Inspecting project plans…
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Inspecting project documents"
+          description="Loading the canonical plan, templates, and project checkout."
+          icon={<LoaderCircle className="h-4 w-4 animate-spin" />}
+        />
+      </WorkbenchSurface>
     );
   }
 
   if (!status || !editor) {
     return (
-      <div className="p-6">
-        <div className="rounded-xl border border-danger/30 bg-danger/10 p-5 text-sm text-danger">
-          <p>{error || 'Project setup is unavailable.'}</p>
-          <button type="button" onClick={() => void load()} className="mt-3 inline-flex items-center gap-2 font-medium underline">
-            <RefreshCw className="h-4 w-4" /> Try again
-          </button>
-        </div>
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Project documents are unavailable"
+          description={error || 'Coleo could not inspect the project checkout.'}
+          action={(
+            <button type="button" onClick={() => void load()} className="inline-flex items-center gap-2 font-medium underline">
+              <RefreshCw className="h-4 w-4" /> Try again
+            </button>
+          )}
+        />
+      </WorkbenchSurface>
     );
   }
 
@@ -337,7 +362,11 @@ export function SetupPage() {
 
   return (
     <div className="setup-page-shell flex h-full min-h-0 flex-col bg-background">
-      <div className="setup-page-toolbar">
+      <WorkbenchHeader
+        title="Project documents"
+        description="Edit the canonical plan and the project files that inform Brain and Arm work."
+      />
+      <WorkbenchToolbar className="setup-page-toolbar">
         <p className="text-xs text-muted-foreground">
           {treePaths.length} files in the project checkout
         </p>
@@ -384,7 +413,7 @@ export function SetupPage() {
             </button>
           ) : null}
         </div>
-      </div>
+      </WorkbenchToolbar>
 
       {helpOpen ? (
         <div className="setup-help-bar" role="status">
@@ -501,14 +530,28 @@ export function SetupPage() {
             <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
           ) : null}
           {result ? (
-            <div className="mt-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs text-success">
+            <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>
               <div className="flex items-start gap-2">
-                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                {result.formatterError
+                  ? <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                  : <Check className="mt-0.5 h-4 w-4 shrink-0" />}
                 <div>
-                  <p className="font-medium">Project plan prepared</p>
-                  <p className="mt-1 text-foreground/80">
-                    {result.taskCount} checklist items added using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting. The Brain will analyze this file and create the tasks during its next poll.
+                  <p className="font-medium">
+                    {result.formatterError ? 'Plan prepared with structured fallback' : 'Project plan prepared'}
                   </p>
+                  <p className="mt-1 text-foreground/80">
+                    {result.taskCount} checklist items are ready in the canonical plan using {result.mode === 'ai' ? 'AI-assisted' : 'structured fallback'} formatting.
+                  </p>
+                  {result.formatterError ? (
+                    <>
+                      <p className="mt-1 text-foreground/80"><span className="font-medium text-warning">AI formatter problem:</span> {result.formatterError}</p>
+                      <p className="mt-1 text-foreground/80">
+                        The plan was saved, but the Brain has not accepted the AI evaluation, so its planning gate may remain blocked. The Brain will retry automatically; if this repeats, review the selected Brain model and plan-evaluation templates.
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 text-foreground/80">The Brain will analyze this file and create the tasks during its next poll.</p>
+                  )}
                   {status.taskCount > 0 ? (
                     <button
                       type="button"

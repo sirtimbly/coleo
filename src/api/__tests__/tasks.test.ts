@@ -135,6 +135,30 @@ describe("tasks API", () => {
       expect(body.task.sortOrder).toBe(0);
     });
 
+    it("creates Draft tasks outside the runnable pending queue", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Unshaped idea",
+          description: "Capture this before offering it to an arm.",
+          status: "draft",
+        }),
+      });
+
+      expect(response.status).toBe(201);
+      const body = await response.json() as { task: Task };
+      expect(body.task.status).toBe("draft");
+
+      const pendingResponse = await app.request("/api/tasks?status=pending");
+      const pendingBody = await pendingResponse.json() as { tasks: Task[] };
+      expect(pendingBody.tasks).toHaveLength(0);
+
+      const draftResponse = await app.request("/api/tasks?status=draft");
+      const draftBody = await draftResponse.json() as { tasks: Task[] };
+      expect(draftBody.tasks.map((task) => task.id)).toEqual([body.task.id]);
+    });
+
     it("should assign sequential IDs (task-1, task-2, task-3)", async () => {
       // Create first task
       const res1 = await app.request("/api/tasks", {

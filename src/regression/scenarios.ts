@@ -10,6 +10,7 @@
 import type { TestScenario, TestContext, TestResult } from "./types";
 import {
   initTestDatabase,
+  setTaskAutoDiscover,
   startApiServer,
   startBrain,
   spawnArm,
@@ -236,6 +237,7 @@ export const simpleTaskCompletion: TestScenario = {
 
     // Setup infrastructure
     await initTestDatabase(ctx);
+    setTaskAutoDiscover(ctx, false);
     await startApiServer(ctx);
     checks.push({ name: "infrastructure_ready", passed: true });
 

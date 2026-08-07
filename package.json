@@ -58,6 +58,7 @@
 		"test:integration:spec": "bun test src/integration/__tests__/",
 		"test:integration": "bun run src/regression/runner.ts --quick",
 		"test:e2e": "bun run src/regression/runner.ts",
+		"test:e2e:web": "playwright test",
 		"test:distributed-observability": "bun run src/scripts/distributed-observability-smoke.ts",
 		"index:transcripts": "bun run src/scripts/jetstream-transcript-indexer.ts",
 		"simulate:arm-output": "bun run src/scripts/simulate-arm-output-processor.ts",
@@ -75,6 +76,7 @@
 		"dev:core:stop": "bun run src/cli/index.ts serve stop; bun run src/cli/index.ts brain stop"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.58.2",
 		"@tailwindcss/vite": "^4.1.18",
 		"@types/bun": "latest",
 		"@types/nunjucks": "^3.2.6",

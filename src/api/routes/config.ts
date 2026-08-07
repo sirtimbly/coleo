@@ -184,6 +184,9 @@ export function createConfigRoutes() {
     try {
       const updates = await c.req.json<Partial<ColeoConfig["brain"]>>();
       const config = await updateConfig({ brain: updates as ColeoConfig["brain"] });
+      if ("provider" in updates || "model" in updates || "apiKey" in updates) {
+        c.get("db").run("DELETE FROM infrastructure_health WHERE component = 'brain_model_api'");
+      }
       return c.json({ brain: brainConfigResponse(config) });
     } catch (err) {
       if (err instanceof HttpError) throw err;

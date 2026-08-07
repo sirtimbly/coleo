@@ -1,5 +1,8 @@
 /**
- * API Client for Coleo Observatory
+ * API Client for Coleo Observatory.
+ *
+ * Domain requests and workbench-persistence requests share this authenticated
+ * client so saved views and layouts work in direct and Reef-hosted deployments.
  */
 
 import type {
@@ -13,6 +16,19 @@ import type {
   TaskDiff as SharedTaskDiff,
   TaskWorkAuthorType as SharedTaskWorkAuthorType,
 } from '../../../types';
+import type {
+  ViewDefinition,
+  ArmRun,
+  WorkbenchBundle,
+  WorkbenchProfile,
+  WorkspaceLayoutRecord,
+} from '@/workbench/types';
+import type {
+  CardActionRequest,
+  CardActionResult,
+  WorkbenchAttention,
+  WorkbenchInboxRecord,
+} from '../../../types/adaptive-cards';
 
 const API_BASE = '/api';
 
@@ -241,6 +257,7 @@ class ApiClient {
     return this.request<{
       completed: boolean;
       mode: 'ai' | 'structured';
+      formatterError?: string;
       canonicalPlan: WorkspaceTextFile;
       taskCount: number;
     }>('/project-setup/prepare', {
@@ -623,6 +640,22 @@ class ApiClient {
         pendingTasksCount: number;
         completedToday: number;
         uptime: number | null;
+        plan: {
+          status: 'blocked' | 'healthy' | 'pending';
+          detail: string;
+          blockedTaskCount: number;
+          blockedArmCount: number;
+          taskCount: number;
+        };
+        modelAccess: {
+          status: 'available' | 'blocked' | 'unknown';
+          issueCode: 'insufficient_credits' | null;
+          provider: string | null;
+          message: string | null;
+          actionLabel: string | null;
+          actionUrl: string | null;
+          checkedAt: string | null;
+        };
       };
     }>('/brain/status');
   }
@@ -964,6 +997,7 @@ class ApiClient {
   async createTask(data: {
     subject: string;
     description: string;
+    status?: Task['status'];
     priority?: Task['priority'];
     domain?: string;
     classification?: string;
@@ -1358,6 +1392,242 @@ class ApiClient {
     return this.request<{ knownTypes: string[]; count: number }>('/events/types');
   }
 
+  // Workbench profiles, saved projections, and Golden Layout workspaces
+  async getWorkbenchBootstrap(profileId?: string) {
+    const query = profileId ? `?profileId=${encodeURIComponent(profileId)}` : '';
+    return this.request<{
+      schemaVersion: number;
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>(`/workbench/bootstrap${query}`);
+  }
+
+  async listWorkbenchProfiles() {
+    return this.request<{ profiles: WorkbenchProfile[] }>('/workbench/profiles');
+  }
+
+  async createWorkbenchProfile(data: {
+    id?: string;
+    name: string;
+    email?: string;
+    isDefault?: boolean;
+    preferences?: JsonObject;
+  }) {
+    return this.request<{ profile: WorkbenchProfile }>('/workbench/profiles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateWorkbenchProfile(
+    id: string,
+    data: Partial<Pick<WorkbenchProfile, 'name' | 'email' | 'isDefault' | 'preferences'>>,
+  ) {
+    return this.request<{ profile: WorkbenchProfile }>(
+      `/workbench/profiles/${encodeURIComponent(id)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async exportWorkbenchProfile(id: string) {
+    return this.request<{ bundle: WorkbenchBundle }>(
+      `/workbench/profiles/${encodeURIComponent(id)}/export`,
+    );
+  }
+
+  async importWorkbenchProfile(bundle: WorkbenchBundle, mode: 'replace' | 'copy' = 'copy') {
+    return this.request<{
+      profile: WorkbenchProfile;
+      views: ViewDefinition[];
+      layouts: WorkspaceLayoutRecord[];
+    }>('/workbench/profiles/import', {
+      method: 'POST',
+      body: JSON.stringify({ bundle, mode }),
+    });
+  }
+
+  async listWorkbenchViews(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ views: ViewDefinition[] }>(`/workbench/views?${query.toString()}`);
+  }
+
+  async createWorkbenchView(
+    data: Omit<ViewDefinition, 'id' | 'version' | 'createdAt' | 'updatedAt'> & { id?: string },
+  ) {
+    return this.request<{ view: ViewDefinition }>('/workbench/views', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async saveWorkbenchView(id: string, data: Partial<ViewDefinition>) {
+    return this.request<{ view: ViewDefinition }>(
+      `/workbench/views/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchView(id: string) {
+    return this.request<{ success: true }>(`/workbench/views/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listWorkbenchLayouts(profileId = 'local', includeShared = true) {
+    const query = new URLSearchParams({
+      profileId,
+      includeShared: String(includeShared),
+    });
+    return this.request<{ layouts: WorkspaceLayoutRecord[] }>(
+      `/workbench/layouts?${query.toString()}`,
+    );
+  }
+
+  async saveWorkbenchLayout(
+    id: string,
+    data: {
+      profileId: string;
+      name: string;
+      description?: string;
+      layout: JsonObject;
+      isDefault?: boolean;
+      shared?: boolean;
+    },
+  ) {
+    return this.request<{ layout: WorkspaceLayoutRecord }>(
+      `/workbench/layouts/${encodeURIComponent(id)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      },
+    );
+  }
+
+  async deleteWorkbenchLayout(id: string) {
+    return this.request<{ success: true }>(`/workbench/layouts/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async listWorkbenchAttention(params: {
+    profileId?: string;
+    requiresAction?: boolean;
+    unread?: boolean;
+    includeArchived?: boolean;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams();
+    query.set('profileId', params.profileId ?? 'local');
+    if (params.requiresAction !== undefined) query.set('requiresAction', String(params.requiresAction));
+    if (params.unread !== undefined) query.set('unread', String(params.unread));
+    if (params.includeArchived !== undefined) {
+      query.set('includeArchived', String(params.includeArchived));
+    }
+    if (params.limit !== undefined) query.set('limit', String(params.limit));
+    return this.request<{ attention: WorkbenchAttention[] }>(
+      `/workbench/attention?${query.toString()}`,
+    );
+  }
+
+  async listWorkbenchInbox(params: {
+    profileId?: string;
+    cursor?: string;
+    limit?: number;
+  } = {}) {
+    const query = new URLSearchParams({
+      profileId: params.profileId ?? 'local',
+      limit: String(params.limit ?? 100),
+    });
+    if (params.cursor) query.set('cursor', params.cursor);
+    return this.request<{ items: WorkbenchInboxRecord[]; nextCursor?: string }>(
+      `/workbench/inbox?${query.toString()}`,
+    );
+  }
+
+  async updateWorkbenchAttention(
+    itemKey: string,
+    patch: Partial<Omit<WorkbenchAttention, 'profileId' | 'itemKey' | 'updatedAt'>> & {
+      profileId?: string;
+    },
+  ) {
+    return this.request<{ attention: WorkbenchAttention }>(
+      `/workbench/attention/${encodeURIComponent(itemKey)}`,
+      { method: 'PUT', body: JSON.stringify(patch) },
+    );
+  }
+
+  async bulkUpdateWorkbenchAttention(
+    itemKeys: string[],
+    action: 'read' | 'archive' | 'resolve',
+    profileId = 'local',
+  ) {
+    return this.request<{ attention: WorkbenchAttention[] }>('/workbench/attention/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ profileId, itemKeys, action }),
+    });
+  }
+
+  async executeWorkbenchCardAction(request: CardActionRequest) {
+    return this.request<{ result: CardActionResult }>('/workbench/cards/actions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }).then((response) => response.result);
+  }
+
+  async saveWorkbenchCardInstance(envelope: import('../../../types/adaptive-cards').CardEnvelope) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>('/workbench/cards/instances', {
+      method: 'POST',
+      body: JSON.stringify({ profileId: 'local', envelope }),
+    });
+  }
+
+  async getWorkbenchCardInstance(id: string) {
+    return this.request<{
+      instance: {
+        id: string;
+        envelope: import('../../../types/adaptive-cards').CardEnvelope;
+        createdAt: string;
+        expiresAt?: string;
+      };
+    }>(`/workbench/cards/instances/${encodeURIComponent(id)}`);
+  }
+
+  async listRuns(params?: {
+    status?: ArmRun['status'];
+    armId?: string;
+    active?: boolean;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.armId) query.set('armId', params.armId);
+    if (params?.active !== undefined) query.set('active', String(params.active));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString();
+    return this.request<{ runs: ArmRun[] }>(`/runs${suffix ? `?${suffix}` : ''}`);
+  }
+
+  async getRun(id: string) {
+    return this.request<{ run: ArmRun }>(`/runs/${encodeURIComponent(id)}`);
+  }
+
   // Garden
   async getGardenScene() {
     return this.request<{ scene: GardenScene }>('/garden/scene');
@@ -1531,7 +1801,7 @@ export interface Arm {
   name: string;
   domain: string;
   harness: string;
-  status: 'idle' | 'busy' | 'paused' | 'error' | 'stopped' | 'starting' | 'running';
+  status: 'idle' | 'busy' | 'paused' | 'planning_blocked' | 'error' | 'stopped' | 'starting' | 'running';
   contextBudget: number;
   currentContextUsed: number;
   createdAt: string;
@@ -1894,7 +2164,7 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
+  status: 'draft' | 'pending' | 'claimed' | 'in_progress' | 'completing' | 'completed' | 'failed' | 'blocked' | 'cancelled';
   priority: 'critical' | 'high' | 'normal' | 'low';
   sourceType: 'manual' | 'plan' | 'email' | 'discovery' | 'proposal' | 'system';
   sourceRef: string | null;
@@ -1914,7 +2184,7 @@ export interface Task {
   startedAt: string | null;
   blockedAt?: string | null;
   blockedReason?: string | null;
-  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'unknown' | null;
+  blockedCategory?: 'dependency' | 'bug' | 'file_claim' | 'environment' | 'human' | 'arm' | 'planning' | 'unknown' | null;
   blockedRecheckAt?: string | null;
   blockedLastCheckedAt?: string | null;
   blockedReviewCount?: number;

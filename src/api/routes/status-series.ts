@@ -27,7 +27,7 @@ interface StatusSeriesContext {
 }
 
 const ENTITY_STATUSES = {
-  task: ["pending", "claimed", "in_progress", "blocked", "completing", "completed", "failed", "cancelled"],
+  task: ["draft", "pending", "claimed", "in_progress", "blocked", "completing", "completed", "failed", "cancelled"],
   bug: ["open", "investigating", "fixing", "verifying", "resolved", "closed"],
 } as const satisfies Record<EntityType, readonly string[]>;
 

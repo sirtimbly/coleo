@@ -53,9 +53,10 @@ export function WorkspaceRouteProvider({
       onRouteChange({
         pathname: route.pathname,
         search: nextSearch ? `?${nextSearch}` : '',
+        title: route.title,
       });
     },
-    [onRouteChange, route.pathname, route.search],
+    [onRouteChange, route.pathname, route.search, route.title],
   );
 
   const value = useMemo<WorkspaceRouteContextValue>(

@@ -86,9 +86,10 @@ describe("Brain poll order", () => {
 		).assignInitialTasks = async () => {
 			record("assignInitialTasks");
 		};
-		(brain as unknown as { syncPlanTasks: () => Promise<void> }).syncPlanTasks =
+		(brain as unknown as { syncPlanTasks: () => Promise<boolean> }).syncPlanTasks =
 			async () => {
 				record("syncPlanTasks");
+				return true;
 			};
 		(brain as unknown as { processInbox: () => Promise<void> }).processInbox =
 			async () => {
@@ -137,6 +138,7 @@ describe("Brain poll order", () => {
 			"processHumanMail",
 			"processArmQueue",
 			"processOperationalSignals",
+			"syncPlanTasks",
 			"checkResolvedBugsAndResumeTasks",
 			"checkArms",
 			"loadTasks",
@@ -145,7 +147,6 @@ describe("Brain poll order", () => {
 			"assignTasks",
 			"reviewBlockedTasks",
 			"assignInitialTasks",
-			"syncPlanTasks",
 			"processInbox",
 			"checkDocUpdateTrigger",
 			"reEvaluatePlanProgress",

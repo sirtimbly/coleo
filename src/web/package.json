@@ -24,6 +24,7 @@
     "@tanstack/react-query-persist-client": "^5.90.22",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/react-virtual": "^3.14.8",
+    "adaptivecards": "3.0.6",
     "clsx": "^2.1.1",
     "framer-motion": "^12.29.0",
     "golden-layout": "^2.6.0",
@@ -31,6 +32,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.12.0",
+    "tabulator-tables": "6.5.2",
     "tailwind-merge": "^3.4.0",
     "three": "^0.185.1",
     "three-stdlib": "^2.36.1"
@@ -41,6 +43,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@types/tabulator-tables": "6.3.6",
     "@types/three": "^0.181.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^5.1.1",

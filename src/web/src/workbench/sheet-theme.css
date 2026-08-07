@@ -1,0 +1,333 @@
+/**
+ * Coleo design-system theme for the production Tabulator resource sheet.
+ *
+ * Selectors stay under the adapter root so vendor defaults cannot leak into
+ * inboxes, dashboards, Golden Layout chrome, or other application surfaces.
+ */
+
+.coleo-tabulator-resource-sheet {
+	--tabulator-border-color: color-mix(in srgb, var(--border) 82%, transparent);
+	--tabulator-header: color-mix(in srgb, var(--surface-secondary) 76%, var(--background));
+	--tabulator-row-even: color-mix(in srgb, var(--surface-secondary) 28%, var(--background));
+	--tabulator-row-hover: color-mix(in srgb, var(--accent) 11%, var(--background));
+	--tabulator-row-selected: color-mix(in srgb, var(--accent) 20%, var(--background));
+	position: relative;
+	color: var(--foreground);
+	font-family: var(--font-interface);
+}
+
+.coleo-tabulator-resource-sheet .tabulator {
+	height: 100%;
+	border: 0;
+	background: var(--background);
+	color: var(--foreground);
+	font-family: var(--font-body);
+	font-size: 0.75rem;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-header {
+	border-color: var(--tabulator-border-color);
+	background: var(--tabulator-header);
+	color: var(--foreground);
+	font-family: var(--font-interface);
+	font-weight: 600;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col,
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col.tabulator-sortable:hover {
+	border-color: var(--tabulator-border-color);
+	background: var(--tabulator-header);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col-content {
+	padding: 7px 9px;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row-header .tabulator-col-content {
+	color: var(--muted-foreground);
+	font-size: 0.62rem;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-header .tabulator-col:first-child .tabulator-col-content:empty::after {
+	content: "Order";
+}
+
+.coleo-tabulator-resource-sheet .tabulator-tableholder,
+.coleo-tabulator-resource-sheet .tabulator-table {
+	background: var(--background);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row {
+	border-color: var(--tabulator-border-color);
+	background: var(--background);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-row-even {
+	background: var(--tabulator-row-even);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row:hover {
+	background: var(--tabulator-row-hover);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-selected,
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-selected:hover,
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-selected-row {
+	background: var(--tabulator-row-selected);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell {
+	display: inline-flex;
+	align-items: center;
+	border-color: var(--tabulator-border-color);
+	padding: 6px 9px;
+	line-height: 1.35;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell.tabulator-row-header {
+	justify-content: center;
+	background: color-mix(in srgb, var(--surface-secondary) 68%, var(--background));
+	color: var(--muted-foreground);
+	cursor: grab;
+	font-variant-numeric: tabular-nums;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-moving,
+.coleo-tabulator-resource-sheet .tabulator-row.tabulator-moving .tabulator-row-header {
+	cursor: grabbing;
+}
+
+.coleo-tabulator-resource-sheet[data-manual-order="disabled"] .tabulator-row-header {
+	cursor: not-allowed;
+	opacity: 0.42;
+	pointer-events: none;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell.tabulator-editing {
+	overflow: visible;
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--surface-secondary) 92%, var(--background));
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell input,
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell textarea,
+.coleo-tabulator-resource-sheet .tabulator-edit-list {
+	background: var(--surface-secondary);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell input,
+.coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell textarea {
+	width: 100%;
+	border: 0;
+	outline: 0;
+	font: inherit;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-popup,
+.coleo-tabulator-resource-sheet .tabulator-menu,
+.coleo-tabulator-resource-sheet .tabulator-edit-list {
+	z-index: 1400;
+	border: 1px solid var(--border);
+	border-radius: 0.5rem;
+	background: var(--surface-secondary);
+	box-shadow: 0 12px 32px rgb(0 0 0 / 32%);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item {
+	padding: 0.5rem 0.7rem;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item:hover,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item:hover,
+.coleo-tabulator-resource-sheet .tabulator-edit-list .tabulator-edit-list-item.active {
+	background: color-mix(in srgb, var(--accent) 16%, var(--surface-secondary));
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-menu .tabulator-menu-item.tabulator-menu-item-disabled {
+	opacity: 0.42;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-placeholder {
+	background: var(--background);
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row .coleo-sheet-primary-cell {
+	font-weight: 400;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-row-bold .tabulator-cell {
+	font-weight: 700;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="blue"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-blue-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-blue-400) 18%, var(--surface));
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="green"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-green-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-green-400) 18%, var(--surface));
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="orange"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-orange-400) 20%, var(--surface));
+	background: color-mix(in srgb, var(--color-orange-400) 20%, var(--surface));
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row[data-row-color="purple"] {
+	--tabulator-row-even: color-mix(in srgb, var(--color-violet-400) 18%, var(--surface));
+	background: color-mix(in srgb, var(--color-violet-400) 18%, var(--surface));
+}
+
+.coleo-sheet-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.38rem;
+	color: var(--coleo-sheet-status-color);
+	font-weight: 600;
+}
+
+.coleo-sheet-status::before {
+	width: 0.45rem;
+	height: 0.45rem;
+	flex: 0 0 auto;
+	border-radius: 999px;
+	background: var(--coleo-sheet-status-color);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--coleo-sheet-status-color) 14%, transparent);
+	content: "";
+}
+
+.coleo-tabulator-tag-list {
+	display: inline-flex;
+	max-width: 100%;
+	align-items: center;
+	gap: 0.25rem;
+	overflow: hidden;
+}
+
+.coleo-tabulator-tag-list.is-empty {
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-tag {
+	display: inline-flex;
+	min-width: 0;
+	flex: 0 1 auto;
+	overflow: hidden;
+	border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--accent) 10%, var(--surface-secondary));
+	padding: 0.12rem 0.42rem;
+	color: var(--foreground);
+	font-size: 0.66rem;
+	line-height: 1.2;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.coleo-tabulator-multiselect-editor {
+	position: fixed;
+	z-index: 1500;
+	top: var(--coleo-editor-top);
+	left: var(--coleo-editor-left);
+	display: grid;
+	width: var(--coleo-editor-width);
+	max-height: 20rem;
+	grid-template-rows: auto minmax(3rem, 1fr) auto auto;
+	gap: 0.45rem;
+	overflow: hidden;
+	border: 1px solid var(--border);
+	border-radius: 0.55rem;
+	background: var(--surface-secondary);
+	box-shadow: 0 16px 40px rgb(0 0 0 / 38%);
+	padding: 0.55rem;
+	color: var(--foreground);
+}
+
+.coleo-tabulator-multiselect-search {
+	height: 2rem;
+	border: 1px solid var(--border);
+	border-radius: 0.35rem;
+	background: var(--surface);
+	padding: 0 0.55rem;
+	color: var(--foreground);
+	outline: none;
+}
+
+.coleo-tabulator-multiselect-search:focus {
+	border-color: var(--accent);
+}
+
+.coleo-tabulator-multiselect-options {
+	max-height: 10rem;
+	overflow: auto;
+	border-block: 1px solid var(--border);
+	padding-block: 0.25rem;
+}
+
+.coleo-tabulator-multiselect-option {
+	display: flex;
+	min-height: 1.9rem;
+	align-items: center;
+	gap: 0.5rem;
+	border-radius: 0.3rem;
+	padding: 0.25rem 0.4rem;
+	cursor: pointer;
+}
+
+.coleo-tabulator-multiselect-option:hover {
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.coleo-tabulator-multiselect-option input {
+	accent-color: var(--accent);
+}
+
+.coleo-tabulator-multiselect-empty {
+	display: block;
+	padding: 0.55rem 0.4rem;
+	color: var(--muted-foreground);
+}
+
+.coleo-tabulator-multiselect-create,
+.coleo-tabulator-multiselect-footer button {
+	min-height: 1.9rem;
+	border: 1px solid var(--border);
+	border-radius: 0.35rem;
+	background: var(--surface);
+	padding: 0.3rem 0.55rem;
+	color: var(--foreground);
+	font-size: 0.72rem;
+	font-weight: 600;
+}
+
+.coleo-tabulator-multiselect-create:not(:disabled):hover,
+.coleo-tabulator-multiselect-footer button:hover {
+	border-color: var(--accent);
+	background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+}
+
+.coleo-tabulator-multiselect-create:disabled {
+	opacity: 0.42;
+}
+
+.coleo-tabulator-multiselect-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.4rem;
+}
+
+.coleo-tabulator-multiselect-footer button.is-primary {
+	border-color: var(--accent);
+	background: var(--accent);
+	color: var(--accent-foreground);
+}

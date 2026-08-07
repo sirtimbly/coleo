@@ -1,11 +1,20 @@
+/**
+ * Interactive spatial projection of the Brain, Arms, work, and relationships.
+ * The 3D scene remains specialized while its framing follows workbench chrome.
+ */
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Info, SlidersHorizontal, X } from 'lucide-react';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components';
 import { GardenCanvas } from '@/components/garden/GardenCanvas';
 import { GardenControlsPanel } from '@/components/garden/GardenControlsPanel';
 import { GardenInspector } from '@/components/garden/GardenInspector';
 import type { GardenDisplaySettings, GardenSelection } from '@/components/garden/types';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+  WorkbenchToolbar,
+} from '@/design-system/WorkbenchSurface';
 import { useGardenScene } from '@/hooks/useGardenScene';
 import { usePageTitle } from '@/hooks/usePageTitle';
 
@@ -113,7 +122,11 @@ export function GardenPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
-      <div className="border-b border-border bg-surface px-4 py-2 lg:px-5">
+      <WorkbenchHeader
+        title="Garden"
+        description={selectedSummary}
+      />
+      <WorkbenchToolbar>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <button
             type="button"
@@ -130,7 +143,7 @@ export function GardenPage() {
         </div>
 
         {hudOpen ? (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2">
             <StatChip
               label="Active Arms"
               value={scene?.stats.activeArms ?? '—'}
@@ -163,28 +176,24 @@ export function GardenPage() {
             />
           </div>
         ) : null}
-      </div>
+      </WorkbenchToolbar>
 
       <div className="flex-1 overflow-hidden p-3 lg:p-4">
         <div className="relative h-full">
           {isLoading ? (
-            <Card className="border-border bg-surface">
-              <CardHeader>
-                <CardTitle>Loading Garden</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-muted-foreground">
-                Building the scene from current arms, tasks, bugs, discoveries, and ownership links…
-              </CardContent>
-            </Card>
+            <WorkbenchSurface className="h-full">
+              <WorkbenchEmptyState
+                title="Loading Garden"
+                description="Building the scene from current Arms, tasks, bugs, discoveries, and ownership links."
+              />
+            </WorkbenchSurface>
           ) : isError || !scene ? (
-            <Card className="border-danger/30 bg-surface">
-              <CardHeader>
-                <CardTitle className="text-danger">Unable to Load Garden</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm text-danger">
-                {error instanceof Error ? error.message : 'Unknown scene error'}
-              </CardContent>
-            </Card>
+            <WorkbenchSurface className="h-full border-danger/30">
+              <WorkbenchEmptyState
+                title="Unable to load Garden"
+                description={error instanceof Error ? error.message : 'Unknown scene error'}
+              />
+            </WorkbenchSurface>
           ) : (
             <>
               <GardenCanvas

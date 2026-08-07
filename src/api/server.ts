@@ -3,6 +3,7 @@
  * 
  * Hono-based REST API for the Coleo dashboard and external integrations.
  * Arms communicate via MCP, not this API (to prevent them from affecting each other).
+ * The workbench route persists portable UI profiles, views, and layouts.
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -11,7 +12,7 @@ import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes, createWorkbenchRoutes, createRunsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -289,6 +290,8 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/uploads", createUploadApiRoutes());
   app.route("/api/onboarding", createOnboardingRoutes());
   app.route("/api/project-setup", createProjectSetupRoutes());
+  app.route("/api/workbench", createWorkbenchRoutes());
+  app.route("/api/runs", createRunsRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.
   const webDist = options.webDist === undefined ? findWebDist() : options.webDist;

@@ -3,18 +3,12 @@ import { useEffect, useState, useCallback, useRef, type ReactNode } from "react"
 import {
 	Eye,
 	Radio,
-	Wrench,
-	CheckCircle2,
-	XCircle,
-	Clock,
 	Loader2,
 	ChevronDown,
 	ChevronRight,
-	FileEdit,
 	Terminal,
 	AlertTriangle,
 	MessageSquare,
-	GitBranch,
 	ListTodo,
 	Zap,
 	Bot,
@@ -62,9 +56,18 @@ import {
 	type ViewerActivityItem as ActivityItem,
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
+import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { createArmCardCreator } from "@/adaptive-cards/card-creators";
+import { presentInboxItem } from "@/adaptive-cards/presenters";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
 import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
+import {
+	WorkbenchEmptyState,
+	WorkbenchHeader,
+	WorkbenchToolbar,
+} from "@/design-system/WorkbenchSurface";
+import { ArmCollectionRow } from "@/workbench/ArmCollectionRow";
 
 function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
 	const result: JsonObject = {};
@@ -307,70 +310,6 @@ function pruneOldHistories(): void {
 	}
 }
 
-// Color schemes for different activity types
-const activityColors: Record<
-	ActivityType,
-	{ bg: string; border: string; icon: string }
-> = {
-	message: {
-		bg: "bg-blue-500/10",
-		border: "border-l-blue-500",
-		icon: "text-blue-500",
-	},
-	tool: {
-		bg: "bg-purple-500/10",
-		border: "border-l-purple-500",
-		icon: "text-purple-500",
-	},
-	file: {
-		bg: "bg-green-500/10",
-		border: "border-l-green-500",
-		icon: "text-green-500",
-	},
-	session: {
-		bg: "bg-cyan-500/10",
-		border: "border-l-cyan-500",
-		icon: "text-cyan-500",
-	},
-	error: {
-		bg: "bg-red-500/10",
-		border: "border-l-red-500",
-		icon: "text-red-500",
-	},
-	todo: {
-		bg: "bg-yellow-500/10",
-		border: "border-l-yellow-500",
-		icon: "text-yellow-500",
-	},
-	step: {
-		bg: "bg-indigo-500/10",
-		border: "border-l-indigo-500",
-		icon: "text-indigo-500",
-	},
-	terminal: {
-		bg: "bg-orange-500/10",
-		border: "border-l-orange-500",
-		icon: "text-orange-500",
-	},
-	branch: {
-		bg: "bg-pink-500/10",
-		border: "border-l-pink-500",
-		icon: "text-pink-500",
-	},
-};
-
-const activityIcons: Record<ActivityType, typeof Wrench> = {
-	message: MessageSquare,
-	tool: Wrench,
-	file: FileEdit,
-	session: Zap,
-	error: AlertTriangle,
-	todo: ListTodo,
-	step: Bot,
-	terminal: Terminal,
-	branch: GitBranch,
-};
-
 const HANDLED_EVENT_TYPES = new Set([
 	"connected",
 	"arm.heartbeat",
@@ -421,6 +360,9 @@ function getViewerStatusNarrative({
 }): string {
 	const lifecycle = formatStatusLayerLabel(armStatus);
 	const session = sessionLabel.toLowerCase();
+	if (armStatus === "planning_blocked") {
+		return "Waiting for the Brain to complete the project planning gate; no work will be sent to this arm.";
+	}
 
 	if (analysisState === "silent") {
 		return `${lifecycle} arm, no recent output; session is ${session}.`;
@@ -660,7 +602,9 @@ export function ArmViewerPage() {
 						: "running";
 			setArms((previous) =>
 				previous.map((arm) =>
-					arm.id === armId && arm.status !== normalizedArmStatus
+					arm.id === armId
+						&& arm.status !== "planning_blocked"
+						&& arm.status !== normalizedArmStatus
 						? { ...arm, status: normalizedArmStatus }
 						: arm,
 				),
@@ -1346,20 +1290,11 @@ export function ArmViewerPage() {
 		if (!selectedArmId) {
 			return (
 				<div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-background">
-					<div className="border-b border-border px-5 py-5">
-						<div className="flex items-start justify-between gap-4">
-							<div>
-								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-									Arm Viewer
-								</p>
-								<h1 className="mt-2 text-3xl font-semibold tracking-tight">
-									Select an active arm
-								</h1>
-								<p className="mt-1 text-sm text-muted-foreground">
-									Open a live console to inspect session output, state changes, and recent activity.
-								</p>
-							</div>
-
+					<WorkbenchHeader
+						title="Select an active Arm"
+						description="Open a live console to inspect session output, state changes, and recent activity."
+						icon={<Eye className="h-4 w-4" />}
+						actions={
 							<Button
 								variant="ghost"
 								onPress={loadArms}
@@ -1369,12 +1304,13 @@ export function ArmViewerPage() {
 							>
 								<RefreshCw className="h-4 w-4" />
 							</Button>
-						</div>
-					</div>
-
-					<div className="border-b border-border px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-						{arms.length} active arm{arms.length === 1 ? "" : "s"}
-					</div>
+						}
+					/>
+					<WorkbenchToolbar>
+						<span className="text-xs text-muted-foreground">
+							{arms.length} active Arm{arms.length === 1 ? "" : "s"}
+						</span>
+					</WorkbenchToolbar>
 
 					<ArmSelectorPanel
 						arms={arms}
@@ -1578,63 +1514,21 @@ function ArmSelectorPanel({
 	return (
 		<div className={cn("min-h-0 overflow-auto p-3", className)}>
 			{arms.length === 0 ? (
-				<div className="flex h-full min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 px-6 text-center">
-					<div>
-						<Eye className="mx-auto mb-4 h-10 w-10 text-muted-foreground/60" />
-						<p className="text-sm font-medium">{emptyTitle}</p>
-						<p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p>
-					</div>
-				</div>
+				<WorkbenchEmptyState
+					title={emptyTitle}
+					description={emptyDescription}
+					icon={<Eye className="h-4 w-4" />}
+				/>
 			) : (
-				<div className="space-y-2">
-					{arms.map((arm) => {
-						const isSelected = selectedArmId === arm.id;
-						const summary =
-							arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
-
-						return (
-							<button
-								key={arm.id}
-								type="button"
-								className={cn(
-									"w-full rounded-md border px-3 py-3 text-left transition-colors",
-									isSelected
-										? "border-accent/45 bg-accent/8"
-										: "border-border bg-card hover:bg-surface-secondary/55",
-								)}
-								onClick={() => onSelectArm(arm.id)}
-							>
-								<div className="flex items-start justify-between gap-3">
-									<div className="min-w-0">
-										<div className="flex items-center gap-2">
-											<span
-												className={cn(
-													"h-2 w-2 rounded-full",
-													arm.status === "running"
-														? "bg-success"
-														: arm.status === "starting"
-															? "bg-warning"
-															: arm.status === "error"
-																? "bg-danger"
-																: "bg-muted-foreground/60",
-												)}
-											/>
-											<div className="truncate text-sm font-medium">{arm.name}</div>
-										</div>
-										<div className="mt-1 truncate text-xs text-muted-foreground">
-											{summary}
-										</div>
-										<div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-											<span>{arm.harness}</span>
-											{arm.provider ? <span>{arm.provider}</span> : null}
-										</div>
-									</div>
-
-									<StatusBadge status={arm.status} />
-								</div>
-							</button>
-						);
-					})}
+				<div className="overflow-hidden border border-border bg-surface">
+					{arms.map((arm) => (
+						<ArmCollectionRow
+							key={arm.id}
+							arm={arm}
+							selected={selectedArmId === arm.id}
+							onOpen={() => onSelectArm(arm.id)}
+						/>
+					))}
 				</div>
 			)}
 		</div>
@@ -1763,50 +1657,21 @@ function ArmViewerConsole({
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
-			<div className="border-b border-border px-5 py-3">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="min-w-0 flex-1">
-						{arm ? (
-							<div className="flex min-w-0 items-center gap-3">
-								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-secondary text-accent">
-									<Bot className="h-4 w-4" />
-								</div>
-								<div className="min-w-0">
-									<div className="flex min-w-0 flex-wrap items-center gap-2">
-										<h1 className="truncate text-xl font-semibold tracking-tight">
-											{arm.name}
-										</h1>
-										<StatusBadge status={arm.status} />
-									</div>
-									<div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-										<span className="truncate">
-											{arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : arm.model ?? "Arm console"}
-										</span>
-										<span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-										<span className="inline-flex items-center gap-1.5">
-											<span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success" : "bg-danger")} />
-											{connected ? "Live" : "Offline"}
-										</span>
-										{arm.recoveryRequestedAt ? (
-											<span className="inline-flex items-center gap-1 text-warning">
-												<AlertTriangle className="h-3 w-3" />
-												Recovery requested
-											</span>
-										) : null}
-									</div>
-								</div>
-							</div>
-						) : (
-							<div className="mt-3">
-								<h1 className="text-2xl font-semibold tracking-tight">Arm Viewer</h1>
-								<p className="mt-2 text-sm text-muted-foreground">
-									Select an arm to inspect its live output, structured events, and recent health signals.
-								</p>
-							</div>
-						)}
-					</div>
-
-					<div className="flex flex-wrap items-center justify-end gap-2">
+			<WorkbenchHeader
+				title={
+					<span className="flex min-w-0 items-center gap-2">
+						<span className="truncate">{arm?.name ?? "Arm Viewer"}</span>
+						{arm ? <StatusBadge status={arm.status} /> : null}
+					</span>
+				}
+				description={
+					arm
+						? `${arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : arm.model ?? "Arm console"} · ${connected ? "Live" : "Offline"}`
+						: "Select an Arm to inspect its live output, structured events, and health signals."
+				}
+				icon={<Bot className="h-4 w-4" />}
+				actions={
+					<>
 						{arm ? (
 							<ArmDetailsPopover
 								arm={arm}
@@ -1815,7 +1680,7 @@ function ArmViewerConsole({
 								totalTokens={totalTokens}
 							/>
 						) : null}
-						{arm && arm.status !== "stopped" ? (
+						{arm && arm.status !== "stopped" && arm.status !== "planning_blocked" ? (
 							<Button
 								variant="ghost"
 								size="sm"
@@ -1840,9 +1705,9 @@ function ArmViewerConsole({
 						>
 							<RefreshCw className="h-4 w-4" />
 						</Button>
-					</div>
-				</div>
-			</div>
+					</>
+				}
+			/>
 
 			{arm ? (
 				<div className="border-b border-border">
@@ -2124,6 +1989,7 @@ function ArmViewerConsole({
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}
+											arm={arm}
 											onToggle={() => onToggleActivity(activity.id)}
 										/>
 									))
@@ -2525,65 +2391,58 @@ function PulseStateIcon({
 
 function ActivityItemComponent({
 	activity,
+	arm,
 	onToggle,
 }: {
 	activity: ActivityItem;
+	arm: Pick<Arm, "id" | "name">;
 	onToggle: () => void;
 }) {
-	const colors = activityColors[activity.type];
-	const Icon = activityIcons[activity.type];
 	const hasDetails =
 		activity.details && Object.keys(activity.details).length > 0;
-
-	const statusIcon = {
-		pending: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
-		running: <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />,
-		completed: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
-		error: <XCircle className="h-3.5 w-3.5 text-danger" />,
-		info: null,
-	}[activity.status];
+	const envelope = presentInboxItem({
+		id: `arm-activity:${activity.id}`,
+		kind: "arm",
+		title: activity.title,
+		summary: activity.subtitle ?? activity.status,
+		timestamp: new Date(activity.timestamp).toISOString(),
+		source: `Arm activity · ${activity.type.replaceAll("_", " ")}`,
+		resourceId: activity.id,
+		unread: activity.status === "error",
+		requiresAction: activity.status === "error",
+		severity: activity.status === "error"
+			? "danger"
+			: activity.status === "completed"
+				? "success"
+				: activity.status === "running"
+					? "warning"
+					: "info",
+	}, {
+		surface: "stream",
+		creator: createArmCardCreator(arm.id, arm.name),
+		facts: [
+			{ label: "Status", value: activity.status },
+			{ label: "Type", value: activity.type.replaceAll("_", " ") },
+		],
+	});
 
 	return (
 		<div className="overflow-hidden rounded-md border border-border bg-card">
-			<div className={cn("h-1 w-full", colors.bg)} />
-			<Button
-				variant="ghost"
-				onPress={onToggle}
-				isDisabled={!hasDetails}
-				className="h-auto w-full justify-start px-4 py-3"
-			>
-				<div className="flex min-w-0 flex-1 items-start gap-3 text-left">
-					<div className={cn("mt-0.5 rounded-sm border border-border p-2", colors.bg)}>
-						<Icon className={`h-4 w-4 ${colors.icon}`} />
-					</div>
-
-					<div className="min-w-0 flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<span className="truncate text-sm font-semibold">{activity.title}</span>
-							{statusIcon}
-							<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-								{activity.status}
-							</span>
-						</div>
-						{activity.subtitle ? (
-							<div className="mt-1 truncate text-sm text-muted-foreground">
-								{activity.subtitle}
-							</div>
-						) : null}
-					</div>
-
-					<div className="flex items-center gap-2 pl-2 text-xs text-muted-foreground">
-						<span>{formatTime(activity.timestamp)}</span>
-						{hasDetails ? (
-							activity.expanded ? (
-								<ChevronDown className="h-3.5 w-3.5" />
-							) : (
-								<ChevronRight className="h-3.5 w-3.5" />
-							)
-						) : null}
-					</div>
-				</div>
-			</Button>
+			<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
+			{hasDetails ? (
+				<Button
+					variant="ghost"
+					onPress={onToggle}
+					className="h-8 w-full justify-between border-t border-border px-4 text-xs"
+				>
+					<span>{activity.expanded ? "Hide raw details" : "Show raw details"}</span>
+					{activity.expanded ? (
+						<ChevronDown className="h-3.5 w-3.5" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5" />
+					)}
+				</Button>
+			) : null}
 
 			{activity.expanded && hasDetails ? (
 				<div className="border-t border-border px-4 py-3">
@@ -2868,27 +2727,25 @@ function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
 	const categoryLabel = category === "health" && activity.details?.actor !== "brain"
 		? "Runtime health"
 		: `Brain ${category}`;
+	const envelope = presentInboxItem({
+		id: `brain-activity:${activity.id}`,
+		kind: "brain",
+		title: activity.title,
+		summary: activity.subtitle ?? categoryLabel,
+		timestamp: new Date(activity.timestamp).toISOString(),
+		source: categoryLabel,
+		resourceId: activity.id,
+		unread: activity.status === "error",
+		requiresAction: activity.status === "error",
+		severity: activity.status === "error" ? "danger" : "info",
+	}, { surface: "stream" });
 
 	return (
 		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
-			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5 px-3 py-2.5">
-				<div className="flex items-center justify-between gap-3">
-					<div className="flex min-w-0 items-center gap-2">
-						<Bot className="h-3.5 w-3.5 shrink-0 text-cyan-600" />
-						<span className="truncate text-sm font-semibold text-foreground">{activity.title}</span>
-						{category ? (
-							<span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-cyan-700">
-								{categoryLabel}
-							</span>
-						) : null}
-					</div>
-					<span className="shrink-0 text-xs text-muted-foreground">{formatTime(activity.timestamp)}</span>
-				</div>
-				{activity.subtitle ? (
-					<div className="mt-1 text-sm text-muted-foreground">{activity.subtitle}</div>
-				) : null}
+			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5">
+				<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
 				{activity.details && Object.keys(activity.details).length > 1 ? (
-					<details className="group mt-2">
+					<details className="group border-t border-border px-3 py-2">
 						<summary className="cursor-pointer text-xs font-medium text-muted-foreground">
 							Details
 						</summary>
@@ -3361,15 +3218,6 @@ function ArmAnalysisPanel({
 			) : null}
 		</div>
 	);
-}
-
-function formatTime(timestamp: number): string {
-	const date = new Date(timestamp);
-	return date.toLocaleTimeString([], {
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	});
 }
 
 function formatDetails(details: JsonObject): string {

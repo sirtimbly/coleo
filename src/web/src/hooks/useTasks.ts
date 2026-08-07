@@ -44,6 +44,7 @@ interface ReorderTaskVariables {
 interface CreateTaskVariables {
   subject: string;
   description: string;
+  status?: Task['status'];
   priority?: Task['priority'];
   domain?: string;
   phase?: string;

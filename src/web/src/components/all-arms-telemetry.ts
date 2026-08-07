@@ -1,3 +1,10 @@
+/**
+ * Pure transforms for persisted, multi-Arm metric samples.
+ *
+ * These helpers build dashboard series from quantitative telemetry rather than
+ * treating the activity event stream as a substitute for sampled statistics.
+ */
+
 import type { ContextSample } from './arm-context-usage-helpers';
 import type { CostSample } from './arm-cost-usage-helpers';
 

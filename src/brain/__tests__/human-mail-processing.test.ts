@@ -4,6 +4,7 @@ import { join } from "path";
 
 import { Maildir } from "../../mail";
 import { Brain } from "../brain";
+import { detectBrainModelAccessIssue } from "../model-access";
 
 describe("Brain human mail processing", () => {
   let testDir: string;
@@ -106,6 +107,71 @@ describe("Brain human mail processing", () => {
     const seenMessage = seenMessages.find((entry) => entry.id === message.id);
     expect(seenMessage).toBeTruthy();
     expect(seenMessage?.flags.seen).toBe(true);
+  });
+
+  it("warns the human when fallback intent handling was caused by exhausted API credits", async () => {
+    const brain = new Brain({
+      coleoDir: testDir,
+      pollIntervalMs: 1000,
+      verbose: false,
+    });
+    const sent = new Maildir(join(testDir, "mail", "sent"));
+    await sent.write({
+      from: "human@coleo.local",
+      to: "brain@coleo.local",
+      subject: "Evaluate this request",
+      date: new Date(),
+      body: "Turn this into planned work.",
+      headers: {
+        "Message-ID": "<credits@example.test>",
+        "X-Coleo-Type": "human-message",
+      },
+    });
+    const modelIssue = detectBrainModelAccessIssue(
+      429,
+      '{"error":{"message":"You have no credits remaining. Add credits to continue."}}',
+      "openai",
+    );
+    expect(modelIssue).not.toBeNull();
+    if (!modelIssue) return;
+
+    (brain as any).mailProcessor = {
+      processMessage: async () => ({
+        type: "new_task",
+        reasoning: "Fallback: treated as new task",
+        subject: "Evaluate this request",
+        body: "Turn this into planned work.",
+        priority: "normal",
+        modelIssue,
+      }),
+    };
+    (brain as any).templates = {
+      loadMailProcessorSystemPrompt: async () => "system prompt",
+    };
+    (brain as any).listRecentActivitySummary = async () => [];
+    (brain as any).createTask = async () => ({
+      id: "task-credits",
+      subject: "Evaluate this request",
+      priority: "normal",
+      status: "pending",
+    });
+    const replies: Array<{ subject: string; body: string; headers?: Record<string, string> }> = [];
+    (brain as any).sendToHuman = async (reply: {
+      subject: string;
+      body: string;
+      headers?: Record<string, string>;
+    }) => {
+      replies.push(reply);
+    };
+
+    await (brain as any).processHumanMail();
+
+    expect(replies).toHaveLength(2);
+    expect(replies[0]?.headers?.["X-Coleo-Type"]).toBe("brain-model-access-blocked");
+    expect(replies[0]?.subject).toContain("plan evaluation blocked");
+    expect(replies[0]?.body).toContain("fallback intent handling");
+    expect(replies[0]?.body).toContain("platform.openai.com");
+    expect(replies[1]?.headers?.["X-Coleo-Type"]).toBe("task-created");
   });
 
   it("records a task-thread reply as actionable discussion input", async () => {

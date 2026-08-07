@@ -1,14 +1,15 @@
 /**
  * Brain routes
  *
- * Brain state, control, and management endpoints
+ * Brain state, control, and management endpoints.
  * 
  * NOTE: Brain state is now stored in SQLite (brain_state table), not JSON files.
+ * Successful Arm claims also notify live workbench projections immediately.
  */
 import { Hono, type Context } from "hono";
 import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
-import { broadcastBrainEvent, broadcastMailEvent } from "../websocket";
+import { broadcast, broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
 import { join } from "path";
 import { mkdir } from "fs/promises";
@@ -46,6 +47,10 @@ import {
   parseWorkspaceOperation,
 } from "../../workspace";
 import { getServerWorkspaceAccess } from "../workspace-access";
+import {
+	parseBrainModelAccessIssue,
+	type BrainModelAccessIssueCode,
+} from "../../brain/model-access";
 
 interface BrainContext {
   Variables: {
@@ -83,6 +88,22 @@ export interface BrainStatus {
   pendingTasksCount: number;
   completedToday: number;
   uptime: number | null;
+  plan: {
+    status: "blocked" | "healthy" | "pending";
+    detail: string;
+    blockedTaskCount: number;
+    blockedArmCount: number;
+    taskCount: number;
+  };
+  modelAccess: {
+    status: "available" | "blocked" | "unknown";
+    issueCode: BrainModelAccessIssueCode | null;
+    provider: string | null;
+    message: string | null;
+    actionLabel: string | null;
+    actionUrl: string | null;
+    checkedAt: string | null;
+  };
 }
 
 interface CommandPublishRequestBody {
@@ -174,10 +195,80 @@ export function createBrainRoutes() {
     const brainState = getBrainState(db);
 
     const activeArmsCount = db.query("SELECT COUNT(*) as count FROM arms WHERE status NOT IN ('stopped', 'error')").get() as { count: number } | null;
+    const blockedPlanTasks = db.query(
+      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'blocked' AND blocked_category = 'planning'",
+    ).get() as { count: number } | null;
+    const latestPlanBlock = db.query(
+      "SELECT blocked_reason AS reason FROM tasks WHERE status = 'blocked' AND blocked_category = 'planning' ORDER BY updated_at DESC LIMIT 1",
+    ).get() as { reason: string | null } | null;
+    const blockedPlanArms = db.query(
+      "SELECT COUNT(*) AS count FROM arms WHERE planning_blocked = 1",
+    ).get() as { count: number } | null;
+    const planTasks = db.query(
+      "SELECT COUNT(*) AS count FROM tasks WHERE source_type = 'plan'",
+    ).get() as { count: number } | null;
+
+    const blockedTaskCount = blockedPlanTasks?.count || 0;
+    const blockedArmCount = blockedPlanArms?.count || 0;
+    const planTaskCount = planTasks?.count || 0;
+    const planStatus = blockedTaskCount > 0 || blockedArmCount > 0
+      ? "blocked"
+      : planTaskCount > 0 ? "healthy" : "pending";
+    const rawBlockReason = latestPlanBlock?.reason || "";
+    const blockPrefix = "Project planning must succeed before work can resume: ";
+    const markerIndex = rawBlockReason.lastIndexOf(" [planning-state:");
+    const blockDetail = rawBlockReason.startsWith(blockPrefix)
+      ? rawBlockReason.slice(blockPrefix.length, markerIndex >= 0 ? markerIndex : undefined).trim()
+      : rawBlockReason.trim();
+    const planDetail = planStatus === "blocked"
+      ? blockDetail || "The project planning gate is blocking task assignment."
+      : planStatus === "healthy"
+        ? `${planTaskCount} plan task${planTaskCount === 1 ? " is" : "s are"} synchronized with no planning blockers.`
+        : "No plan tasks have been synchronized yet. Prepare a project plan or wait for the Brain's next poll.";
 
     const now = Date.now();
     const startedAt = brainState.startedAt ? new Date(brainState.startedAt).getTime() : null;
     const uptime = startedAt ? Math.floor((now - startedAt) / 1000) : null;
+    let modelAccess: BrainStatus["modelAccess"] = {
+      status: "unknown",
+      issueCode: null,
+      provider: null,
+      message: null,
+      actionLabel: null,
+      actionUrl: null,
+      checkedAt: null,
+    };
+    try {
+      const row = db.query(`
+        SELECT healthy, error, last_check
+        FROM infrastructure_health
+        WHERE component = 'brain_model_api'
+      `).get() as {
+        healthy: number;
+        error: string | null;
+        last_check: string;
+      } | null;
+      const issue = parseBrainModelAccessIssue(row?.error);
+      if (row?.healthy === 1) {
+        modelAccess = {
+          ...modelAccess,
+          status: "available",
+          checkedAt: row.last_check,
+        };
+      } else if (row && issue) {
+        modelAccess = {
+          status: "blocked",
+          issueCode: issue.code,
+          provider: issue.provider,
+          message: issue.message,
+          actionLabel: issue.actionLabel,
+          actionUrl: issue.actionUrl || null,
+          checkedAt: row.last_check,
+        };
+      }
+    } catch {
+      // Older/minimal databases may not have infrastructure health yet.
+    }
 
     const status: BrainStatus = {
       status: brainState.status,
@@ -187,6 +278,14 @@ export function createBrainRoutes() {
       pendingTasksCount: brainState.pendingTasks,
       completedToday: brainState.completedToday,
       uptime,
+      plan: {
+        status: planStatus,
+        detail: planDetail,
+        blockedTaskCount,
+        blockedArmCount,
+        taskCount: planTaskCount,
+      },
+      modelAccess,
     };
 
     return c.json({ brain: status });
@@ -1063,6 +1162,19 @@ export function createBrainRoutes() {
       body.isClaim === true
     );
 
+    if (result.success) {
+      const task = db.query(
+        "SELECT status, assigned_to AS assignedTo FROM tasks WHERE id = ?",
+      ).get(body.taskId) as { status: string; assignedTo: string | null } | null;
+      broadcast("tasks", "task.updated", {
+        taskId: body.taskId,
+        changes: {
+          assignedTo: task?.assignedTo ?? body.armId,
+          ...(body.isClaim === true ? { status: task?.status ?? "claimed" } : {}),
+        },
+      });
+    }
+
     return c.json({ result });
   });
 
@@ -1135,6 +1247,9 @@ export function createBrainRoutes() {
     }
 
     const result = await updateInfrastructureHealth(db, body.components);
+    if (body.components.some((component) => component.component === "brain_model_api")) {
+      broadcast("brain", "brain.model_access_changed", {});
+    }
     return c.json({ result });
   });
 

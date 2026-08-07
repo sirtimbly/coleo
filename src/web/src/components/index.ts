@@ -1,3 +1,10 @@
+/**
+ * Public compatibility exports for route-level UI.
+ *
+ * New projection primitives live in design-system and workbench modules;
+ * legacy exports remain here only while their containing pages are migrated.
+ */
+
 export { Layout } from './Layout';
 export { StatusBadge } from './StatusBadge';
 export { Card, CardHeader, CardTitle, CardContent, CardDescription } from './Card';
@@ -11,11 +18,7 @@ export { TaskSummaryPanel } from './TaskSummaryPanel';
 export { TaskDiffPanel } from './TaskDiffPanel';
 export { DiscussionItem } from './DiscussionItem';
 export { DiscussionComposer } from './DiscussionComposer';
-export { BugGrid } from './BugGrid';
-export { BugGridRow } from './BugGridRow';
 export { UnifiedGridView } from './UnifiedGridView';
-export { DiscoveryGrid } from './DiscoveryGrid';
-export { DiscoveryGridRow } from './DiscoveryGridRow';
 export { ArmStatusBar } from './ArmStatusBar';
 export { DenseSection, DenseRow, DenseRowSkeleton, DOT_TONE_CLASS, TEXT_TONE_CLASS, type Tone, type DenseRowProps } from './DenseList';
 export { TaskProgressWidget } from './TaskProgressWidget';

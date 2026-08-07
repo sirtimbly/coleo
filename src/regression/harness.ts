@@ -14,7 +14,7 @@ import { setEventStore, createTestEventStore } from "../nats/jetstream";
 // Re-export utilities from focused modules
 export { isPortAvailable, getNextPort } from "./test-ports";
 export { createTimingHelper } from "./test-timing";
-export { initTestDatabase, startApiServer, startBrain } from "./test-servers";
+export { initTestDatabase, setTaskAutoDiscover, startApiServer, startBrain } from "./test-servers";
 export { spawnArm, createTask, waitForTaskStatus, waitForArmStatus } from "./test-arm-utils";
 export { cleanupTestContext, checkInfraHealth } from "./test-cleanup";
 

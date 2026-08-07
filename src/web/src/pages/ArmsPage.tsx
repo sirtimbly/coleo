@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
 	AlertTriangle,
-	Coins,
 	KeyRound,
 	LoaderCircle,
 	Play,
@@ -11,9 +10,8 @@ import {
 	Server,
 	Trash2,
 	X,
-	Zap,
 } from "lucide-react";
-import { Card, Chip, Button } from "@heroui/react";
+import { Button } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
 import {
 	api,
@@ -33,6 +31,13 @@ import {
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
 import { ProviderSetupModal } from "@/components/ProviderSetupModal";
+import {
+	WorkbenchEmptyState,
+	WorkbenchHeader,
+	WorkbenchSurface,
+	WorkbenchToolbar,
+} from "@/design-system/WorkbenchSurface";
+import { ArmCollectionRow } from "@/workbench/ArmCollectionRow";
 
 interface ArmEventData {
 	arm?: Arm;
@@ -146,32 +151,6 @@ function generateSuggestedArmName(existingArms: Arm[]): string {
 	return `${generateArmName()}-${existingArms.length + 1}`;
 }
 
-function formatAge(seconds: number | null | undefined): string {
-	if (seconds === null || seconds === undefined) {
-		return "Never";
-	}
-	if (seconds < 60) {
-		return `${seconds}s ago`;
-	}
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) {
-		return `${minutes}m ago`;
-	}
-	const hours = Math.floor(minutes / 60);
-	if (hours < 24) {
-		return `${hours}h ${minutes % 60}m ago`;
-	}
-	const days = Math.floor(hours / 24);
-	return `${days}d ${hours % 24}h ago`;
-}
-
-function runtimeTone(state: string | undefined): "success" | "warning" | "danger" | "default" {
-	if (state === "active" || state === "quiet") return "success";
-	if (state === "starting") return "warning";
-	if (state === "hung" || state === "recoverable") return "danger";
-	return "default";
-}
-
 function armActionFor(arm: Arm): { kind: "spawn" | "recover"; label: string } | null {
 	const runtimeState = arm.runtime?.state;
 	if (
@@ -202,18 +181,6 @@ function needsAttention(arm: Arm): boolean {
 	);
 }
 
-const STATUS_DOT_CLASS: Record<string, string> = {
-	busy: "bg-primary",
-	idle: "bg-success",
-	starting: "bg-warning",
-	stopped: "bg-default-400",
-	error: "bg-danger",
-};
-
-function statusDotClass(status: string): string {
-	return STATUS_DOT_CLASS[status] || "bg-default-400";
-}
-
 interface ArmRowProps {
 	arm: Arm;
 	attention: boolean;
@@ -241,122 +208,13 @@ function ArmRow({
 	const isRecover = action?.kind === "recover";
 	const isSpawning = spawningArmId === arm.id;
 	const isMarkingStuck = markingStuckArmId === arm.id;
-	const contextPct = arm.contextBudget
-		? Math.min((arm.currentContextUsed / arm.contextBudget) * 100, 100)
-		: 0;
-	const currentWork = arm.currentBugTitle || arm.currentTaskSubject || null;
-
-	const diagnosticParts: string[] = [];
-	if (arm.runtime) {
-		diagnosticParts.push(arm.runtime.reason);
-		diagnosticParts.push(
-			[
-				`status=${arm.runtime.signals.dbStatus}`,
-				arm.runtime.signals.hasPid ? "pid" : "no-pid",
-				arm.runtime.signals.hasPort ? "port" : "no-port",
-				arm.runtime.signals.hasSessionId ? "session" : "no-session",
-				arm.runtime.signals.hasAgentId ? "agent" : "local",
-				arm.runtime.signals.hasWorkdir ? "workdir" : "no-workdir",
-				arm.runtime.signals.hasAssignedTask ? "task" : "no-task",
-			].join(" · "),
-		);
-	}
-	if (arm.host || arm.agentId) {
-		diagnosticParts.push(
-			`${arm.host || arm.agentId}${arm.host && arm.agentId ? ` · ${arm.agentId}` : ""}`,
-		);
-	}
-	if (arm.port || arm.pid) {
-		diagnosticParts.push(
-			`${arm.port ? `:${arm.port}` : "no port"}${arm.pid ? ` · pid ${arm.pid}` : ""}`,
-		);
-	}
-
 	return (
-		<div
-			role="button"
-			tabIndex={0}
-			onClick={onOpen}
-			onKeyDown={(e) => {
-				if (e.key === "Enter" || e.key === " ") {
-					e.preventDefault();
-					onOpen();
-				}
-			}}
-			className={`group relative flex cursor-pointer flex-col gap-1.5 px-4 py-3 outline-none transition-colors hover:bg-default-100/50 focus-visible:bg-default-100/60 ${
-				attention ? "bg-warning/5" : ""
-			}`}
-		>
-			<div className="flex items-center gap-3">
-				<span
-					className={`h-2 w-2 shrink-0 rounded-full ${statusDotClass(arm.status)} ${
-						arm.status === "busy" ? "animate-pulse" : ""
-					}`}
-					aria-hidden
-				/>
-				<span className="font-medium shrink-0">{arm.name}</span>
-				{arm.recoveryRequestedAt && (
-					<Chip size="sm" variant="soft" color="warning" className="shrink-0">
-						Recovery requested
-					</Chip>
-				)}
-				<span className="text-xs text-muted-foreground shrink-0">{arm.harness}</span>
-				{arm.provider && (
-					<Chip size="sm" variant="soft" className="shrink-0">
-						{arm.provider}
-					</Chip>
-				)}
-				{arm.model && (
-					<Chip size="sm" variant="soft" color="success" className="shrink-0">
-						{arm.model}
-					</Chip>
-				)}
-
-				<span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">
-					{currentWork ? (
-						<>
-							<span className="mr-1">{arm.currentBugTitle ? "🐛" : "📋"}</span>
-							{currentWork}
-						</>
-					) : (
-						<span className="italic text-muted-foreground/60">
-							Idle — waiting for the brain to assign work
-						</span>
-					)}
-				</span>
-
-				<div className="hidden shrink-0 items-center gap-1.5 sm:flex" title="Context used">
-					<div className="h-1.5 w-16 overflow-hidden rounded-full bg-default-200">
-						<div
-							className="h-full bg-primary transition-all"
-							style={{ width: `${contextPct}%` }}
-						/>
-					</div>
-					<span className="w-9 text-right text-[11px] text-muted-foreground">
-						{Math.round(contextPct)}%
-					</span>
-				</div>
-
-				{arm.totalTokens !== undefined && (
-					<span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground md:flex">
-						<Zap className="h-3 w-3" />
-						{arm.totalTokens.toLocaleString()}
-					</span>
-				)}
-				{arm.totalCost !== undefined && arm.totalCost > 0 && (
-					<span className="hidden shrink-0 items-center gap-1 text-[11px] text-muted-foreground lg:flex">
-						<Coins className="h-3 w-3" />${arm.totalCost.toFixed(3)}
-					</span>
-				)}
-
-				<span className="hidden w-24 shrink-0 text-right text-[11px] text-muted-foreground md:block">
-					{arm.lastActivityAt ? formatAge(arm.runtime?.secondsSinceOutput) : "Never"}
-				</span>
-
-				<div
-					className="flex shrink-0 items-center gap-1.5"
-					onClick={(e) => e.stopPropagation()}
-				>
+		<ArmCollectionRow
+			arm={arm}
+			attention={attention}
+			onOpen={onOpen}
+			actions={
+				<>
 					{action && (
 						<Button
 							variant={isRecover ? "secondary" : "primary"}
@@ -375,7 +233,7 @@ function ArmRow({
 							{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
 						</Button>
 					)}
-					{arm.status !== "stopped" && (
+					{arm.status !== "stopped" && arm.status !== "planning_blocked" && (
 						<Button
 							variant="ghost"
 							size="sm"
@@ -400,27 +258,9 @@ function ArmRow({
 					>
 						<Trash2 className="h-3.5 w-3.5" />
 					</Button>
-				</div>
-			</div>
-
-			{diagnosticParts.length > 0 && (
-				<div className="pl-5 font-mono text-[10.5px] leading-relaxed text-muted-foreground/50 flex flex-wrap gap-x-3">
-					{arm.runtime && (
-						<Chip
-							size="sm"
-							variant="soft"
-							color={runtimeTone(arm.runtime.state)}
-							className="!h-4 !px-1.5 !text-[10px] normal-case"
-						>
-							{arm.runtime.state}
-						</Chip>
-					)}
-					{diagnosticParts.map((part, i) => (
-						<span key={i}>{part}</span>
-					))}
-				</div>
-			)}
-		</div>
+				</>
+			}
+		/>
 	);
 }
 
@@ -1018,11 +858,9 @@ export function ArmsPage() {
 	if (error) {
 		return (
 			<div className="p-8">
-				<Card className="border-danger">
-					<Card.Content>
-						<p className="text-danger">{error}</p>
-					</Card.Content>
-				</Card>
+				<WorkbenchSurface className="border-danger">
+					<WorkbenchEmptyState title="Unable to load Arms" description={error} />
+				</WorkbenchSurface>
 			</div>
 		);
 	}
@@ -1037,19 +875,28 @@ export function ArmsPage() {
 		>
 			{!isSpawnPage ? (
 				<>
-					<header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-background px-3 py-2">
+					<WorkbenchHeader
+						title="Arms"
+						description="Fleet health, assignments, and runtime telemetry"
+						icon={<Server className="h-4 w-4" />}
+						actions={
+							<Button
+								size="sm"
+								variant="primary"
+								className="gap-2"
+								onPress={openSpawnPanel}
+								isDisabled={loading}
+							>
+								<Plus className="h-4 w-4" />
+								Spawn
+							</Button>
+						}
+					/>
+					<WorkbenchToolbar>
 						<span className="text-xs text-muted-foreground">{arms.length} total</span>
-						<Button
-							size="sm"
-							variant="primary"
-							className="gap-2"
-							onPress={openSpawnPanel}
-							isDisabled={loading}
-						>
-							<Plus className="h-4 w-4" />
-							Spawn
-						</Button>
-					</header>
+						<span className="text-xs text-warning">{attentionArms.length} need attention</span>
+						<span className="text-xs text-success">{healthyArms.length} running normally</span>
+					</WorkbenchToolbar>
 
 					<div className="min-h-0 flex-1 overflow-auto">
 					<CollapsibleSection
@@ -1075,14 +922,12 @@ export function ArmsPage() {
 							))}
 						</div>
 					) : arms.length === 0 ? (
-						<Card className="rounded-none border-x-0 border-t-0">
-							<Card.Content className="py-12 text-center">
-								<p className="text-muted-foreground mb-4">No arms registered yet</p>
-								<code className="block p-4 bg-muted/20 rounded text-sm text-left max-w-md mx-auto">
-									coleo arm spawn
-								</code>
-							</Card.Content>
-						</Card>
+						<WorkbenchEmptyState
+							title="No arms registered yet"
+							description="Spawn an Arm to let the brain assign work."
+							action={<code className="border border-border bg-surface-secondary px-3 py-2 text-xs">coleo arm spawn</code>}
+							icon={<Server className="h-4 w-4" />}
+						/>
 					) : (
 						<div>
 							{attentionArms.length > 0 && (

@@ -20,6 +20,7 @@ type TaskPriority = Task['priority'];
 type TaskSourceType = Task['sourceType'];
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending' },
   { value: 'blocked', label: 'Blocked' },
   { value: 'failed', label: 'Failed' },
@@ -64,7 +65,7 @@ export function TaskModal({
   const [subject, setSubject] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('normal');
-  const [status, setStatus] = useState<TaskStatus>('pending');
+  const [status, setStatus] = useState<TaskStatus>('draft');
   const [domain, setDomain] = useState('');
   const [phase, setPhase] = useState('');
   const [sourceType, setSourceType] = useState<TaskSourceType>('manual');
@@ -100,7 +101,7 @@ export function TaskModal({
         setSubject('');
         setDescription('');
         setPriority('normal');
-        setStatus('pending');
+        setStatus('draft');
         setDomain('');
         setPhase('');
         setSourceType('manual');
@@ -173,6 +174,7 @@ export function TaskModal({
         const result = await api.createTask({
           subject: subject.trim(),
           description: description.trim(),
+          status,
           priority,
           domain: domain.trim() || undefined,
           phase: phase.trim() || undefined,

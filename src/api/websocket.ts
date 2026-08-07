@@ -1,17 +1,14 @@
 /**
- * WebSocket Server for real-time updates
+ * WebSocket Server for real-time updates.
  * 
- * Supports channel subscriptions:
- * - arms: Arm status changes
- * - activity: New activity entries
- * - proposals: Proposal updates
- * - brain: Brain status changes
- * - mail: New mail messages
+ * Domain publishers and workbench preference persistence share this transport.
+ * Browser clients fan the connection out to live projections instead of
+ * opening one socket per view.
  */
 
 import type { ServerWebSocket } from "bun";
 
-export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "tasks" | "agents" | "bugs" | "all";
+export type Channel = "arms" | "activity" | "proposals" | "brain" | "mail" | "arm-events" | "tasks" | "agents" | "bugs" | "workbench" | "all";
 export type LogLevel = "quiet" | "normal" | "verbose";
 
 export interface WSMessage {

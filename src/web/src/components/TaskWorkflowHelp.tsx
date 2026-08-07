@@ -2,6 +2,7 @@ import { Popover } from "@heroui/react";
 import { CircleHelp, ExternalLink } from "lucide-react";
 
 const STATUS_ROWS = [
+	["Draft", "A human note that stays outside the runnable queue until it is moved to Pending."],
 	["Pending", "Runnable and ordered in the normal task queue."],
 	["Claimed / In progress", "Owned by an arm. These states are normally managed by the brain."],
 	["Completing", "Work was reported complete and is waiting for validation or approval."],

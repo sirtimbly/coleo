@@ -10,6 +10,7 @@ export type CsvListKind = "tasks" | "bugs";
 export type CsvListFilter = "all" | "pending" | "not-completed";
 
 type TaskStatus =
+  | "draft"
   | "pending"
   | "claimed"
   | "in_progress"
@@ -78,6 +79,7 @@ export interface CsvImportResult {
 }
 
 const TASK_STATUSES = new Set<TaskStatus>([
+  "draft",
   "pending",
   "claimed",
   "in_progress",
