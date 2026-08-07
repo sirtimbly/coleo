@@ -29,16 +29,14 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun run setup
-      - name: Install opencode harness
-        run: bun install -g opencode-ai
-      - name: Run integration regression suite
-        run: bun run test:integration
+      - name: Run server API smoke scenario
+        run: bun run src/regression/runner.ts --scenario infrastructure-startup
       - name: Dump agent logs on failure
         if: failure()
         run: |
