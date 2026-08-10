@@ -263,6 +263,16 @@ export const APP_ROUTES: AppRouteDefinition[] = [
 
 export const NAVIGATION_ROUTES = APP_ROUTES.filter((route) => route.showInNav);
 
+const LAUNCHER_ROUTE_ORDER = ['dashboard', 'messaging', 'arms', 'tasks', 'bugs'];
+
+export const LAUNCHER_ROUTES = [...NAVIGATION_ROUTES].sort((left, right) => {
+  const leftIndex = LAUNCHER_ROUTE_ORDER.indexOf(left.id);
+  const rightIndex = LAUNCHER_ROUTE_ORDER.indexOf(right.id);
+  const leftRank = leftIndex === -1 ? LAUNCHER_ROUTE_ORDER.length : leftIndex;
+  const rightRank = rightIndex === -1 ? LAUNCHER_ROUTE_ORDER.length : rightIndex;
+  return leftRank - rightRank;
+});
+
 export function normalizeAppPathname(pathname: string): string {
   if (pathname === '') {
     return '/';

@@ -23,7 +23,7 @@ import {
 	Sparkles,
 } from "lucide-react";
 import { createPortal } from "react-dom";
-import { NAVIGATION_ROUTES } from "@/app/routes";
+import { LAUNCHER_ROUTES } from "@/app/routes";
 import { api } from "@/lib/api";
 import { armsKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
@@ -162,7 +162,7 @@ export function WorkspaceCommandPalette({
 		if (!mode) return [];
 
 		if (mode === "actions") {
-			const navItems: PaletteItem[] = NAVIGATION_ROUTES.map((route) => ({
+			const navItems: PaletteItem[] = LAUNCHER_ROUTES.map((route) => ({
 				id: `nav:${route.id}`,
 				label: route.label,
 				description: `Open ${route.label}`,
@@ -181,7 +181,7 @@ export function WorkspaceCommandPalette({
 				run: action.run,
 			}));
 
-			return filterByQuery([...actionItems, ...navItems], query);
+			return [...filterByQuery(navItems, query), ...filterByQuery(actionItems, query)];
 		}
 
 		const armItems: PaletteItem[] = arms.map((arm) => ({

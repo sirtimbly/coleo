@@ -14,9 +14,31 @@ See [requirements.md](./requirements.md) for philosophy, [progressive-planning.m
 4. **Transparency** - All project state in plain text files, version controlled
 5. **Human-centric** - Humans provide requirements; arms execute and report
 
+## Plan Authority and Execution Rules
+
+`.project/plan.md` is the canonical project plan. The Brain must use this document and only the sub-plan files explicitly referenced from it when determining work. Other plan fragments, such as `.project/plans/git-worktree-isolation.md`, should only be consulted when the canonical plan links to them. The Brain must not treat standalone plan files as authoritative without that linkage.
+
+Tasks are progressively determined at runtime rather than pre-generated. A plan bullet is not a database backlog item. The Brain evaluates the next actionable work only after validating prerequisites, current task state, completed history, status reports, discoveries, blockers, claims, leases, and branch state.
+
+The branch-centered task lifecycle defined later in this plan supersedes the generation of separate review or polish child tasks. “Verify & polish” work must be recorded as a pass on the original task where that lifecycle applies.
+
+### Deliverables
+
+- [ ] **Validate the complete canonical plan.** Check every phase, dependency, acceptance criterion, checkbox state, referenced document, decision, caveat, and stable Octopai UID before assigning any implementation task.
+- [ ] **Inventory the workspace before task creation.** Read the relevant source, tests, configuration, decision records, acceptance documents, and explicitly referenced sub-plans; do not claim implementation based only on filenames.
+- [ ] **Reconcile completed claims with evidence.** For every section described as complete, verify the implementation, runtime behavior, tests, documentation, and status reports before treating dependent work as ready.
+- [ ] **Resolve plan contradictions.** Record whether the current branch-centered lifecycle, API boundary, generic-arm philosophy, event-storage strategy, and governance model supersede older wording, while preserving historical commentary and requirements.
+- [ ] **Build the dependency graph.** Parse phase dependencies and task-level prerequisites, identify unresolved prerequisites, and prevent dependent work from being assigned until those prerequisites are complete.
+- [ ] **Establish acceptance evidence.** Define the commands, runtime checks, integration scenarios, and human-review evidence required to mark each phase complete.
+- [ ] **Preserve plan traceability.** Keep task, pass, branch, diff, decision, comment, status-report, discovery, and acceptance references linked to the canonical plan and durable files.
+
 ---
 
-## Communication Modes
+## Phase 0: Core Infrastructure and Planning Gate
+
+This phase establishes the project runtime, authoritative boundaries, persistence assumptions, communication paths, test commands, and safe task-assignment contract before feature work begins. The source plan records Phase 0 as complete, but the planning gate must verify that claim against implementation and runtime evidence before later work is assigned.
+
+### Communication Modes
 
 To keep humans, the brain, and arms aligned, standardize three primary communication paths:
 
@@ -24,24 +46,7 @@ To keep humans, the brain, and arms aligned, standardize three primary communica
 2. **Web UI ↔ API Server** – The React/Vite Observatory consumes the same authenticated REST and WebSocket endpoints, mirroring CLI capabilities with dashboards and controls.
 3. **Mail Client ↔ Email Server** – A future IMAP/SMTP gateway will expose the Maildir inbox/outbox so humans can use any email client. Until then, humans interact via Maildir-backed tools and the Observatory’s Mail UI.
 
----
-
-## Active Refactor: Brain/API Boundary
-
-We are executing a boundary cleanup where:
-
-- Brain becomes an API-first orchestrator with no direct NATS/JetStream/harness calls.
-- API server becomes the typed/authenticated integration boundary.
-- ArmAgent owns harness/OpenCode traffic and publishes arm events/messages through NATS.
-
-Execution details and phased rollout:
-
-- `.project/plans/brain-api-boundary-execution-plan.md`
-- `docs/architecture/brain-api-boundary.md`
-
----
-
-## Completed Foundation
+### Completed Foundation
 
 ### Phase 0: Core Infrastructure
 
@@ -59,9 +64,41 @@ Phase 0 is complete. Its implemented scope includes:
 
 Acceptance criteria are documented in [acceptance/phase-0.md](./acceptance/phase-0.md).
 
-### Phase 1: Observatory Foundation
+### Deliverables
 
-**Goal**: Web UI and API for human observation and control.
+- [ ] **Verify the Phase 0 acceptance document.** Confirm the cited brain, Maildir, MCP, arm-spawner, CLI, type, and NATS behavior through source inspection, tests, and runtime checks.
+- [ ] **Verify the runtime and package toolchain.** Confirm Bun usage from decision 001, install and test commands, workspace package boundaries, lockfile behavior, and supported Node/Bun compatibility.
+- [ ] **Verify the server framework and frontend boundary.** Confirm Hono is the API boundary and React/Vite is the web boundary; if evidence contradicts this, create an explicit architecture decision before dependent work.
+- [ ] **Verify persistence ownership.** Confirm SQLite is the current authoritative application database, Maildir remains the communication format, plans remain human-editable Git-tracked Markdown, and NATS is used for distributed communication.
+- [ ] **Verify deployment targets.** Confirm Docker and Cloudflare container targets, self-host deployment, and the production deployment direction before adding deployment-dependent work.
+- [ ] **Verify authentication.** Confirm API-key authentication from decision 003, configuration loading, CLI credentials, browser credentials, and rejection behavior.
+- [ ] **Verify baseline checks.** Run the repository typecheck, unit tests, integration tests, web build, end-to-end tests, lint, and documented development-server checks; record failures as discoveries or blockers.
+- [ ] **Verify claims and workspace isolation.** Confirm how claims, Git worktrees, branches, and concurrent arm edits are represented before assigning tasks that can touch shared files.
+- [ ] **Verify task assignment safety.** Ensure no task is assigned until its dependencies, claims, lease state, branch state, and acceptance context are known.
+- [ ] **Create or update the Phase 0 status record.** Record verified completion, gaps, blockers, evidence, and links for human review.
+
+---
+
+## Phase 1: Observatory Foundation
+
+This phase provides the human observation and control surface through the Hono API, SQLite, WebSocket, React/Vite UI, CLI proxying, and activity logging. The source plan records Phase 1 as complete; the acceptance document remains authoritative for verification. The listed enhancements are non-blocking and do not retroactively prevent Phase 1 from being considered complete.
+
+### Goal
+
+Humans can reliably observe arm activity and basic system state through the Observatory (web UI) and CLI, both backed by the Hono API server and SQLite database.
+
+### Approach
+
+1. **API Surface for Observatory** – Provide REST and WebSocket endpoints for health, arms, activity, and configuration.
+2. **Web UI Shell** – Implement a basic React/Vite shell with routing and a dashboard that consumes the API.
+3. **CLI Proxying** – Route key CLI commands through the API instead of local-only operations.
+4. **Activity Logging** – Persist arm and system activity in SQLite and expose it via API and WebSocket.
+
+### Dependencies
+
+- Phase 0: Core Infrastructure (brain polling loop, Maildir I/O, MCP server, arm spawner, CLI basics, SQLite migrations)
+
+### Completed Foundation
 
 Phase 1 is complete. Its implemented scope includes:
 
@@ -80,11 +117,25 @@ Key decisions:
 - shadcn/ui components (decisions/004)
 - Bun runtime (decisions/001)
 
-The following Observatory enhancements remain non-blocking and do not retroactively prevent Phase 1 from being considered complete.
+### Deliverables
+
+- [ ] **Verify the Phase 1 acceptance criteria.** Evaluate all criteria in [acceptance/phase-1.md](./acceptance/phase-1.md) through code, runtime behavior, tests, and status reports.
+- [ ] **Verify API health and degraded behavior.** Confirm `bun run server`, the health route, database reachability reporting, and non-crashing degraded responses.
+- [ ] **Verify SQLite migrations and persistence.** Confirm automatic migrations and the `arms`, `activity`, `config`, and `claims` tables, including arm and activity mutations.
+- [ ] **Verify arm status propagation.** Confirm API listing, CLI spawn visibility, polling updates, and exit-state updates.
+- [ ] **Verify activity and WebSocket delivery.** Confirm chronological activity, arm/task events, near-real-time delivery, reconnect behavior, system status, and arm status changes.
+- [ ] **Verify the React/Vite shell.** Confirm the web build, dashboard content, client-side routing, authenticated API use, and WebSocket behavior.
+- [ ] **Verify CLI proxying.** Confirm `octopai arm list`, `octopai arm spawn`, and `octopai status` use the API and report clear degraded-mode errors.
+- [ ] **Verify authentication and secret handling.** Confirm invalid requests are rejected and the browser and CLI do not hardcode secrets.
+- [ ] **Verify progressive-planning hooks.** Confirm a Phase 1 plan document exists under `.project/plans/`, acceptance can be evaluated by architect tasks, and status reports contain enough detail for Brain decisions.
+- [ ] **Update `.project/status.md`.** Include a Phase 1 section with completion state, known gaps, and links to plan and acceptance files; use runtime verification and tests rather than code inspection alone.
+- [ ] **Preserve the Phase 1 completion decision.** Treat enhancements below as non-blocking unless a later acceptance review explicitly changes that decision.
 
 ---
 
 ## Phase 1 Enhancements: Observatory
+
+These enhancements depend on the verified API, authentication, WebSocket, UI shell, activity model, and task representation. They may be implemented independently where their data contracts are already stable, but each must be validated against the shared API and UI boundaries.
 
 ### Deliverables
 
@@ -106,7 +157,11 @@ The following Observatory enhancements remain non-blocking and do not retroactiv
 
 ## Phase 1.2: Collaborative Planning and Task Refinement
 
-**Goal**: Enable humans and agents to collaboratively refine plan items into actionable tasks using a high-density interactive UI.
+This phase depends on the verified Observatory data and progressive-planning contract. It introduces a high-density planning surface without changing the rule that the canonical plan document is the backlog and that tasks are created progressively.
+
+### Goal
+
+Enable humans and agents to collaboratively refine plan items into actionable tasks using a high-density interactive UI.
 
 ### Deliverables
 
@@ -128,7 +183,11 @@ The following Observatory enhancements remain non-blocking and do not retroactiv
 
 ## Phase 2: Task Classification and Context
 
-**Goal**: Implement task classifications (architect, development, QA, documentation) with context bundles for arms.
+This phase establishes classification-driven prompts and verifies that arms remain general-purpose. It depends on the Phase 0 runtime and context-bundle infrastructure, and must complete before agentic task decisions or classification-specific tool filtering are assigned.
+
+### Goal
+
+Implement task classifications (architect, development, QA, documentation) with context bundles for arms.
 
 ### Task Classifications
 
@@ -145,6 +204,8 @@ The existing context-bundle, discovery, assignment, and discovery API infrastruc
 
 - [ ] **Implement classification-specific prompt templates.** Create prompts for architect, development, QA, documentation, and the other classifications required by the system. Each template must describe the expected work and output without assigning a permanent specialization to an arm.
 - [ ] **Ensure arms can execute every task classification.** Classification must determine behavior and context rather than arm identity. Verify that any eligible arm can receive and complete each classification.
+- [ ] **Remove arm-domain routing from classification.** Confirm that classifications are task metadata only and do not create permanent arm roles, domain ownership, expertise routing, or specialized arm identities.
+- [ ] **Verify context bundles.** Confirm arms receive relevant discoveries, plans, decisions, documentation, prior attempts, status reports, acceptance criteria, and task-file references.
 
 ### Dependencies
 
@@ -161,9 +222,11 @@ The existing context-bundle, discovery, assignment, and discovery API infrastruc
 
 ## Phase 2.1: Progressive Planning
 
-**Goal**: Brain dynamically determines the next task based on the plan, history, and status reports.
+This phase depends on task classifications and context bundles. It must be verified before status-driven bug handling, agentic planning, or any new assignment workflow is allowed to proceed.
 
-> **Planning note (2026-05-26):** Task determination is driven by `.project/plan.md` and the sub-plan files explicitly referenced from it. Other plan fragments, such as `.project/plans/git-worktree-isolation.md`, should only be consulted when the canonical plan links to them. The Brain must not treat standalone plan files as authoritative without that linkage.
+### Goal
+
+Brain dynamically determines the next task based on the plan, history, and status reports.
 
 See [progressive-planning.md](./progressive-planning.md) for the full design.
 
@@ -208,6 +271,15 @@ The following progressive-planning infrastructure is complete:
 - New work is marked blocked when prerequisites are unfinished.
 - Architect tasks can be spawned to update plan dependencies when unresolved prerequisites are discovered.
 
+### Deliverables: Verification and Safety Gaps
+
+- [ ] **Verify progressive planning against the canonical plan.** Ensure `.project/plan.md` and explicitly linked sub-plans are the only authoritative sources.
+- [ ] **Verify dynamic task representation.** Tasks exist only when started or completed; there is no `pending` status; the plan document remains the backlog.
+- [ ] **Verify the single-next-task contract.** Ensure `/api/tasks/next` returns one dynamically determined task with source, classification, and context rather than a static backlog.
+- [ ] **Add deterministic dependency gating.** Block tasks with unfinished prerequisites and preserve unrelated human, bug, environment, file-claim, and runtime blockers.
+- [ ] **Verify status-report influence.** Ensure completed tasks with issues receive follow-up evaluation and blocked work is escalated without bypassing the branch-centered pass lifecycle.
+- [ ] **Record plan-evaluation evidence.** Store the plan excerpt, history, discoveries, status reports, and rationale used for each determination.
+
 ### Dependencies
 
 - Phase 2 (context bundles)
@@ -216,9 +288,11 @@ The following progressive-planning infrastructure is complete:
 
 ## Phase 2.2: Documentation Updates
 
-**Goal**: Brain creates documentation update tasks to keep feature documentation aligned with code.
+This phase depends on progressive planning and changed-file tracking. Its documented implementation is complete, but the behavior remains required and must be verified whenever feature or capability documentation changes.
 
-This phase’s documented implementation is complete. The behavior remains part of the plan and must continue to observe the following scope.
+### Goal
+
+Brain creates documentation update tasks to keep feature documentation aligned with code.
 
 ### Purpose
 
@@ -309,15 +383,23 @@ add "## Future Work" notes referencing the plan.
 Do NOT update conceptual/architecture docs.
 ```
 
+### Deliverables
+
+- [ ] **Verify documentation-task triggers and scope.** Confirm the documented implementation is present and continues to exclude conceptual and architecture documentation.
+- [ ] **Verify future-work rendering.** Confirm planned and partially implemented features receive the specified status and plan references.
+- [ ] **Verify documentation evidence.** Require changed-file lists, reviewed documentation, tests or documentation checks, and status reports before completion.
+
 ---
 
 ## Phase 2.3: Technical Debt Resolution
 
-**Goal**: Address architectural issues identified in the January 2026 review to improve code quality and data consistency.
+This phase depends on the Phase 0 persistence boundary but should be completed before substantial new database, API, event, or agent features. It removes unsafe fallbacks and consolidates shared utilities without deleting safety paths before migration verification.
+
+### Goal
+
+Address architectural issues identified in the January 2026 review to improve code quality and data consistency.
 
 ### Known Architectural Issues
-
-#### SQLite Principle Violations
 
 More than 50 JSON files were found storing state, violating the single-source-of-truth principle:
 
@@ -358,10 +440,6 @@ The following migrations are complete:
 
 File fallbacks are currently retained for safety during transition and must be removed only after migration verification.
 
-### Dependencies
-
-- None; work can start immediately.
-
 ### Acceptance Criteria
 
 - [ ] `find .octopai -name "*.json" -path "*state*"` returns no results.
@@ -372,11 +450,21 @@ File fallbacks are currently retained for safety during transition and must be r
 - [ ] All API routes use `HttpError` middleware.
 - [ ] Code duplication is reduced by 50% or more.
 
+### Dependencies
+
+- Phase 0 verification
+- Database migration verification
+- API error-boundary verification
+
 ---
 
 ## Phase 2.4: Status Reports
 
-**Goal**: Formalize status reporting from arms to humans through the Brain.
+This phase depends on progressive planning and the communication boundary. It must precede bug tracking and provide the structured evidence required by the Brain, human notifications, task history, and later agentic decisions.
+
+### Goal
+
+Formalize status reporting from arms to humans through the Brain.
 
 ### Why This Is Next
 
@@ -403,6 +491,8 @@ Arm → Status Report → Brain → Aggregates → Human (email)
 - [ ] **Make status influence task determination.** Feed parsed status reports into progressive planning so issues, blockers, and completion information affect the next assignment.
 - [ ] **Add a status dashboard in the API.** Expose status-report information through API endpoints so the Observatory can display arm progress and issues.
 - [ ] **Add user-message confirmation and tracking.** Track the processing fate of each user message, whether it was added to the plan, and whether it unblocked work.
+- [ ] **Migrate status reports into Maildir.** Preserve the current `.project/status-*.md` files during transition, then write reports as Maildir messages to `~/.octopai/mail/brain/cur/` with `X-Octopai-Type: status-report` and `X-Octopai-Task: <task-id>` headers; keep the body in Markdown and expose reports through the mail UI and API.
+- [ ] **Verify status-report idempotency and correlation.** Prevent duplicate reports, preserve task and arm identity, and retain the original evidence and timestamps.
 
 ### Dependencies
 
@@ -412,7 +502,11 @@ Arm → Status Report → Brain → Aggregates → Human (email)
 
 ## Phase 2.5: Bug Tracking and Resolution
 
-**Goal**: Handle bug reports from arms and humans with priority escalation and resolution tracking.
+This phase depends on structured status reports and progressive dependency gating. It must establish bug state and priority handling before bug-dependent task assignment or agentic intervention is enabled.
+
+### Goal
+
+Handle bug reports from arms and humans with priority escalation and resolution tracking.
 
 ### Problem
 
@@ -468,9 +562,46 @@ When bug resolved:
 
 ---
 
-## Phase 2.6: Agentic Brain
+## Phase 2.6: Active Refactor — Brain/API Boundary
 
-**Goal**: Transform Brain from a polling loop with hardcoded logic into an agentic AI system.
+This boundary cleanup must be completed before the agentic Brain is migrated. Brain orchestration must not retain direct NATS, JetStream, or harness calls where the API boundary is intended to own those integrations.
+
+### Scope
+
+- Brain becomes an API-first orchestrator with no direct NATS/JetStream/harness calls.
+- API server becomes the typed/authenticated integration boundary.
+- ArmAgent owns harness/OpenCode traffic and publishes arm events/messages through NATS.
+
+Execution details and phased rollout:
+
+- `.project/plans/brain-api-boundary-execution-plan.md`
+- `docs/architecture/brain-api-boundary.md`
+
+### Deliverables
+
+- [ ] **Read and validate the Brain/API boundary execution plan.** Confirm its tasks, dependencies, API contracts, migration order, rollback path, and acceptance checks.
+- [ ] **Define the typed boundary contracts.** Establish request, response, error, authentication, event, and ownership contracts before moving callers.
+- [ ] **Move harness and NATS integration behind the API boundary.** Preserve behavior and observability while removing forbidden direct Brain integrations.
+- [ ] **Update ArmAgent ownership.** Ensure ArmAgent owns harness/OpenCode traffic and publishes arm events/messages through NATS.
+- [ ] **Migrate Brain callers incrementally.** Keep compatibility and fallback behavior until boundary verification succeeds.
+- [ ] **Add boundary integration tests.** Cover authentication, event delivery, arm lifecycle, task operations, failure behavior, and API restart behavior.
+- [ ] **Update architecture documentation.** Document the resulting ownership and explicitly identify any intentional exceptions.
+
+### Dependencies
+
+- Phase 0 verification
+- Phase 1 API verification
+- Technical debt error and type utilities
+
+---
+
+## Phase 2.7: Agentic Brain
+
+This phase depends on task classification, progressive planning, status reports, bug handling, and the Brain/API boundary. It must be implemented incrementally, retaining deterministic fallback behavior until the agent path is proven.
+
+### Goal
+
+Transform Brain from a polling loop with hardcoded logic into an agentic AI system.
 
 See [brain-agent-plan.md](./brain-agent-plan.md) for full implementation details.
 
@@ -521,7 +652,8 @@ Use LangChain.js with:
 
 ### Deliverables
 
-- [ ] **Integrate LangChain.js.** Configure the project to use `createAgent`, Zod-validated tool calling, memory/checkpoint support, GPT-4.1 for reasoning, and GPT-4.1 Codex for code tasks.
+- [ ] **Choose and record the agent framework integration.** Configure the project to use `createAgent`, Zod-validated tool calling, memory/checkpoint support, GPT-4.1 for reasoning, and GPT-4.1 Codex for code tasks.
+- [ ] **Integrate LangChain.js.** Add the dependency, configuration, model resolution, cost controls, timeouts, and unavailable-model behavior.
 - [ ] **Implement the `BrainAgent` class.** Create the agent under the planned Brain agent structure and expose the nine tools listed above through one agent implementation.
 - [ ] **Add the Brain agent system prompt.** Define how the agent reads project state, reasons about tasks, respects human approval gates, and communicates decisions.
 - [ ] **Implement all nine Brain agent tools.** Provide validated implementations for `readPlan`, `getTaskHistory`, `getStatusReports`, `getDiscoveries`, `determineNextTask`, `assignTask`, `storeDiscovery`, `sendToHuman`, and `getArmStatus`.
@@ -530,6 +662,8 @@ Use LangChain.js with:
 - [ ] **Add the system-alignment control loop.** Let the Brain compare the project state with the plan and take corrective actions, while enforcing human approval gates where required.
 - [ ] **Optimize polling and busy-arm handling.** Adjust polling frequency and add arm `busy` status so active arms are not interrupted by new work.
 - [ ] **Add vector search for arm context history.** Store searchable arm conversation history so the Brain can retrieve relevant prior context during task decisions.
+- [ ] **Test agent safety.** Cover invalid tool input, tool failure, LLM timeout, unavailable model, duplicate assignment, blocked dependencies, human approval gates, and fallback continuity.
+- [ ] **Measure agent quality and cost.** Record reasonable task determinations, discovery storage, human responses, stuck-arm handling, latency, token use, and cost.
 
 ### Migration Strategy
 
@@ -545,7 +679,9 @@ Use LangChain.js with:
 
 - Phase 2 (Task Classification)
 - Phase 2.1 (Progressive Planning)
-- Phase 2.5 (Status Reports)
+- Phase 2.4 (Status Reports)
+- Phase 2.5 (Bug Tracking)
+- Brain/API Boundary
 
 ### Acceptance Criteria
 
@@ -557,9 +693,13 @@ Use LangChain.js with:
 
 ---
 
-## Phase 2.7: Context Compression
+## Phase 2.8: Context Compression
 
-**Goal**: Configure context-size limits and automatically re-inject task context after compression so agents remain focused on Brain directives.
+This phase depends on task classification, context bundles, the agentic Brain, and harness event contracts. It must establish configuration and event semantics before changing prompts or filtering tools.
+
+### Goal
+
+Configure context-size limits and automatically re-inject task context after compression so agents remain focused on Brain directives.
 
 ### Problem
 
@@ -633,33 +773,6 @@ Good luck continuing your work!
 ===
 ```
 
-### OpenCode MCP Tool
-
-Add a tool for arms to signal context compression:
-
-```typescript
-server.registerTool(
-  "report_context_compression",
-  {
-    description: "Report that context compression occurred",
-    inputSchema: {
-      compressed_at: z.string().datetime(),
-      original_tokens: z.number(),
-      compressed_tokens: z.number(),
-      retention_summary: z.string(),
-    },
-  },
-  async ({ compressed_at, original_tokens, compressed_tokens, retention_summary }) => {
-    await sendToBrain({
-      from: ARM_ID,
-      to: "brain",
-      type: "context_compression",
-      payload: { compressed_at, original_tokens, compressed_tokens, retention_summary },
-    });
-  }
-);
-```
-
 ### Deliverables
 
 - [ ] **Add Brain context-compression configuration.** Support `context_compression_threshold` with default 80, `context_hard_limit` with default 95, `context_reinforce_after_compression` with default `true`, and the configured `context_wip_prefix`.
@@ -674,13 +787,17 @@ server.registerTool(
 ### Dependencies
 
 - Phase 2 (Task Classification)
-- Phase 2.6 (Agentic Brain)
+- Phase 2.7 (Agentic Brain)
 
 ---
 
-## Phase 2.8: Global Status History Search
+## Phase 2.9: Global Status History Search
 
-**Goal**: Provide searchable full-text history of arm status messages and completions through vector-database indexing.
+This phase depends on status reports, JetStream event contracts, the agentic Brain, and the Qdrant deployment decision. Qdrant is the recommended production-ready vector database, but the API and retention contracts must be defined before indexing work begins.
+
+### Goal
+
+Provide searchable full-text history of arm status messages and completions through vector-database indexing.
 
 ### Problem
 
@@ -698,8 +815,7 @@ Arms ──▶ Status Reports ──▶ NATS JetStream ──▶ Consumer
                                   │                 │
                                   ▼                 ▼
                             Event Stream      Vector DB
-                            (audit log)       (embeddings)
-                                  │                 │
+                                  │            (embeddings)
                                   └────────┬────────┘
                                            ▼
                                     Search API
@@ -879,6 +995,7 @@ server.registerTool(
 - [ ] **Add the dashboard notable-events widget.** Show “Recent Notable Events” and link to the complete search page.
 - [ ] **Implement retention policy.** Retain task completions and critical events forever, status reports for 90 days, and routine heartbeats for 7 days.
 - [ ] **Add a backfill script.** Index existing status reports and completions so the search is useful before new JetStream events accumulate.
+- [ ] **Validate indexing failure behavior.** Preserve event audit data and retry or dead-letter failed embeddings without blocking core task orchestration.
 
 ### Tracking and Status
 
@@ -897,13 +1014,17 @@ These tasks cover Qdrant and collection work, the search page, and ongoing inges
 
 - Phase 2.4 (Status Reports)
 - Phase 2.3 (NATS JetStream integration)
-- Phase 2.6 (Agentic Brain)
+- Phase 2.7 (Agentic Brain)
 
 ---
 
-## Phase 2.9: Code Graph and Navigable Context
+## Phase 2.10: Code Graph and Navigable Context
 
-**Goal**: Provide a navigable and queryable graph of the codebase so the Brain and arms can recall structure, traverse dependencies, and improve task-context payloads.
+This phase depends on the stable API/MCP boundary, SQLite utility consolidation, task context contracts, and Brain context retrieval. It should not begin until file claims and task-file references can distinguish graph inputs from concurrent edits.
+
+### Goal
+
+Provide a navigable and queryable graph of the codebase so the Brain and arms can recall structure, traverse dependencies, and improve task-context payloads.
 
 ### Deliverables
 
@@ -922,12 +1043,119 @@ These tasks cover Qdrant and collection work, the search page, and ongoing inges
 
 ---
 
-## Phase 3: Governance
+## Phase 2.11: JetStream Event Sourcing and State History
 
-**Goal**: Arms debate and reach consensus on plans and changes through proposals, arguments, and signals rather than human-maintained merge-request workflows.
+This phase depends on the verified NATS deployment, event contracts, API boundary, and persistence utilities. It must begin with dual-write and replay validation; SQLite remains the fallback during migration and is not removed until data-loss and reconstruction checks pass.
+
+### Overview
+
+Migrate from SQLite-based event storage to NATS JetStream for event persistence, enabling event sourcing patterns for state reconstruction and audit trails.
+
+### Current State
+
+- Events stored in SQLite `arm_events` table
+- Events published by harnesses via `emitEvent()`
+- Events queried via API endpoints
+- No event sourcing patterns implemented
+
+### Target State
+
+- Events persisted in NATS JetStream streams
+- State derived from event streams (event sourcing)
+- Comprehensive API for event querying and state reconstruction
+- Real-time event processing and historical analysis
 
 ### Deliverables
 
+- [ ] **Enable JetStream on NATS Server.** Configure `--jetstream`, monitoring on port `8222`, memory and file limits, and persistent `/tmp/nats/jetstream` storage as specified in the migration plan.
+- [ ] **Integrate the JetStream client.** Initialize `JetStreamManager` and `JetStreamClient`, ensure the `octopai-events` stream, and configure `octopai.events.arm.*.*` subjects with the specified retention and storage limits.
+- [ ] **Standardize event schemas.** Support state transitions, activity, question/decision, and system events including `arm.spawned`, `arm.status_changed`, `arm.killed`, `arm.heartbeat`, `task.assigned`, `task.claimed`, `task.completed`, `task.blocked`, `status_report.submitted`, `status_report.processed`, `message.sent`, `message.received`, `tool.invoked`, `tool.completed`, `tool.failed`, `file.created`, `file.modified`, `file.deleted`, `session.compacted`, `session.created`, `session.error`, `question.asked`, `question.replied`, `question.rejected`, `brain.task_determined`, `brain.status_analyzed`, `discovery.created`, and `plan.updated`.
+- [ ] **Preserve question event handling.** Support `question.asked` with request ID, session ID, questions, options, and optional tool linkage; respond with `question.replied` or `question.rejected`; have the Brain answer autonomously when safe or escalate to a human.
+- [ ] **Migrate harness event publishing.** Update harnesses such as `src/harness/opencode-api.ts` to publish events with arm ID, harness, data, and timestamp through the event store.
+- [ ] **Implement task state reconstruction.** Reconstruct task state from assigned, claimed, completed, and blocked events.
+- [ ] **Implement arm state reconstruction.** Reconstruct spawned, status, heartbeat, and killed state and mark stale arms after five minutes without a heartbeat.
+- [ ] **Implement activity analysis.** Report message count, tool usage, file changes, errors, and last activity for an arm over a time range.
+- [ ] **Add event-query routes.** Add arm event querying with `limit` and `since`, state-derived task and arm endpoints, `/api/events/metrics`, and `/api/events/types`.
+- [ ] **Migrate Brain state queries.** Replace direct state queries with event-sourced queries after dual-write and replay verification.
+- [ ] **Add consumer strategies.** Use push consumers for WebSocket broadcasting and pull consumers for historical queries with the specified durable and acknowledgement behavior.
+- [ ] **Add caching and batch operations.** Cache task and arm state, reconstruct multiple states efficiently, and expose metrics.
+- [ ] **Perform dual-write and backup.** Write SQLite and JetStream during migration, export events periodically to cold storage, and define recovery procedures.
+- [ ] **Remove old SQLite event tables only after validation.** Confirm replay, performance, compatibility, and no-data-loss criteria before cleanup.
+
+### Key Architectural Decisions
+
+#### Stream Partitioning
+
+- **Decision**: Single stream with subject partitioning (`octopai.events.arm.{armId}.{eventType}`)
+- **Rationale**: Efficient filtering, scalable, supports cross-arm queries
+
+#### Consumer Strategy
+
+- **Push consumers**: Real-time updates (WebSocket broadcasting)
+- **Pull consumers**: Historical queries (API endpoints)
+- **Hybrid approach**: Best of both worlds
+
+#### State Reconstruction
+
+- **Event sourcing pattern**: Current state computed from event history
+- **Caching**: Frequently accessed states cached in memory
+- **Fallback**: SQLite as backup during migration
+
+### Benefits
+
+1. **Audit Trail**: Complete history of all state changes
+2. **Scalability**: Event streams can be partitioned and replicated
+3. **Consistency**: Single source of truth for state
+4. **Replay Capability**: Reconstruct state at any point in time
+5. **Real-time**: Push-based updates instead of polling
+
+### Risks & Mitigations
+
+#### Data Loss Risk
+
+- **Mitigation**: Dual-write during migration, JetStream file storage
+- **Backup**: Export events periodically to cold storage
+
+#### Performance Impact
+
+- **Mitigation**: Caching layer, batch operations, subject filtering
+- **Monitoring**: Query performance metrics and alerts
+
+#### Complexity Increase
+
+- **Mitigation**: Gradual migration, comprehensive testing
+- **Documentation**: Clear event schemas and reconstruction logic
+
+### Success Criteria
+
+- [ ] All brain database queries for state replaced with event queries
+- [ ] WebSocket real-time updates working via JetStream consumers
+- [ ] API endpoints returning event-sourced data
+- [ ] State reconstruction working for tasks and arms
+- [ ] Performance benchmarks met (query < 100ms, reconstruction < 500ms)
+- [ ] No data loss during migration
+- [ ] Backward compatibility maintained during transition
+
+### Dependencies
+
+- NATS communication verification
+- Brain/API boundary
+- Technical debt migration verification
+- Status-report event contracts
+
+---
+
+## Phase 3: Governance
+
+This phase depends on task classification, progressive planning, status reports, bug handling, durable task/pass state, and the generic-arm philosophy. Governance must use proposal and evidence quality rather than permanent arm specialization. The source requirements below retain reputation language, while the generic-arm refactor identifies reputation as non-central; this conflict must be resolved by an explicit decision before implementation.
+
+### Goal
+
+Arms debate and reach consensus on plans and changes through proposals, arguments, and signals rather than human-maintained merge-request workflows.
+
+### Deliverables
+
+- [ ] **Record the governance authority decision.** Decide whether reputation is retained only as a non-decision-making annotation, removed, or used in a narrowly bounded governance calculation; do not silently reintroduce arm-global specialization.
 - [ ] **Add the proposal system.** Support proposals for `deploy`, `claim`, `refactor`, `dependency`, `breaking_change`, and `creative_override`. Each proposal must retain the subject, task relationship, arguments, signals, and outcome.
 - [ ] **Tie arguments and signals to tasks and classifications.** Associate governance activity with the relevant task and classification while keeping arms general-purpose rather than assigning fixed roles.
 - [ ] **Calculate consensus dynamically.** Use reputation and task or subject relevance instead of static arm domains when determining whether a proposal has consensus.
@@ -940,556 +1168,9 @@ These tasks cover Qdrant and collection work, the search page, and ongoing inges
 
 ---
 
-## Phase 4: Garden Visualization
+## Phase 3.1: Branch-Centered Iterative Task Lifecycle
 
-**Goal**: Provide a 3D visualization of the workspace.
-
-### Deliverables
-
-- [ ] **Integrate React Three Fiber.** Add the 3D rendering foundation for the Garden visualization and connect it to workspace state.
-- [x] Add a radial coordinate system.
-- [ ] **Display real-time file activity.** Reflect file activity in the Garden as workspace events occur.
-- [ ] **Add ownership coloring.** Color workspace regions or files according to current ownership.
-- [ ] **Highlight conflict zones.** Make areas with conflicting claims or activity visible in the 3D view.
-- [x] Add interactive navigation.
-- [x] Generate octopus avatars for arms with reuse logic and color/personality traits.
-- [x] Add a Brain mascot with personality and animation.
-
----
-
-## Phase 5: Notifications and Deployment
-
-**Goal**: Add push notifications and deployment flow.
-
-### Deliverables
-
-- [ ] **Add browser push notifications.** Notify users about relevant project, arm, status, bug, governance, and deployment events.
-- [ ] **Add the deployment proposal flow.** Route deployment requests through the governance proposal system and preserve the resulting decision.
-- [ ] **Add blue/green deployment support.** Provide the two-environment deployment behavior needed to shift traffic safely.
-- [ ] **Add rollback with pause.** Pause relevant work when rollback is required and retain the rollback outcome.
-- [ ] **Add monitoring integration hooks.** Expose integration points for deployment and runtime monitoring systems.
-
----
-
-## Phase 6: Agent Harnesses
-
-**Goal**: Support multiple AI agents through pluggable harnesses with restart-resilient lifecycle management.
-
-### Current Status
-
-Implemented harnesses:
-
-- `opencode-api` (HTTP)
-- `opencode` (PTY)
-- `opencode-tui` (visual terminal plus API)
-
-Lifecycle policy:
-
-- `opencode-api` and `opencode` are daemon-managed and should be launched through `ArmAgent` so sessions survive API restarts.
-- `opencode-tui` can remain a local/operator mode where persistence across API restarts is less critical.
-
-### Phase 6.1: Daemon-First Harness Routing
-
-### Deliverables
-
-- [ ] **Add API-restart regression tests.** Verify that an arm survives an API restart, prompts still route to the surviving session, and claims remain valid. The tests must cover the daemon-managed `opencode-api` and `opencode` lifecycle policy.
-
-### Phase 6.2: ACP Integration
-
-**Goal**: Add an ACP adapter layer so Coleo can interoperate with external clients, including Claude Code and Codex CLI, without hard-coding each harness.
-
-### Deliverables
-
-- [ ] **Implement the ACP handshake.** Support `initialize`, version negotiation, and capability negotiation before using an ACP session.
-- [ ] **Map core ACP methods to harness actions.** Support `session/new`, `session/load`, `session/prompt`, `session/cancel`, and `session/set-mode`, mapping them to the corresponding harness behavior.
-- [ ] **Support ACP authorization callbacks.** Handle authorization for `acp/fs/read-text-file` and `acp/fs/write-text-file` without bypassing the required safety flow.
-- [ ] **Add ACP transports incrementally.** Start with ACP `stdio` transport for local adapters, then add Streamable HTTP/SSE for remote agents.
-- [ ] **Define `AcpHarnessAdapter`.** Map the interface to Coleo harness primitives: `spawn`, `prompt`, `interrupt`, and `state`.
-- [ ] **Support session attach and resume.** Preserve long-running agent sessions and allow external clients to attach to or resume them.
-- [ ] **Document ACP compatibility.** Maintain a compatibility matrix for ACP-capable clients and unsupported features.
-- [ ] **Add ACP conformance tests.** Use recorded ACP transcripts to verify handshake, methods, authorization, transport, attach, and resume behavior.
-
-### Future Work: Phase 7+
-
-- [ ] Add more harnesses and protocol adapters beyond OpenCode.
-- [ ] Improve PTY/TUI session reattachment and persistence.
-- [ ] Add placement policies based on capabilities, load, and affinity for multi-agent scheduling.
-
----
-
-## Phase 7: Polish and Production
-
-**Goal**: Produce a production-ready system.
-
-### Deliverables
-
-- [ ] **Add PostgreSQL support.** Provide the production database option while preserving the required data and query behavior.
-- [ ] **Add a comprehensive test suite.** Cover the production system, orchestration behavior, APIs, harnesses, UI integration points, and failure paths.
-- [ ] **Optimize performance.** Identify and improve slow orchestration, database, API, search, and UI operations without changing required behavior.
-- [ ] **Harden security.** Strengthen authentication, authorization, data handling, tool access, deployment controls, and other production security boundaries.
-- [ ] **Add Docker Swarm support.** Provide deployment support for the distributed production environment.
-- [ ] **Write user documentation.** Document setup, configuration, communication modes, arm operation, planning, governance, deployment, and troubleshooting.
-- [ ] **Evaluate the PTY harness.** Reassess the PTY harness if remaining issues are resolved and record whether it is suitable for production use.
-
----
-
-## Phase 8: Budget Planning and Burn Rate Estimation
-
-**Goal**: Enable long-running autonomous operation with predictable costs through model cost tracking, burn-rate estimation, and budget forecasting.
-
-### Problem
-
-Users want to run Octopai autonomously for hours, days, or weeks without constant monitoring. They need:
-
-1. Predictable costs before starting a work session.
-2. Model flexibility to trade quality against cost.
-3. Adaptive pricing that handles model price changes.
-4. Cost-aware task distribution across models.
-
-### User Scenarios
-
-| Scenario | Need |
-|---|---|
-| “Run overnight on this feature” | Estimate eight-hour cost at the current burn rate |
-| “I have a $50 budget for this sprint” | Calculate how many hours or tasks that buys |
-| “Use GPT-4.1 for architecture, cheaper models for tests” | Route models with cost awareness |
-| “Prices changed, recalculate my estimates” | Dynamically reprice without manual updates |
-
-### Model Preference Configuration
-
-```toml
-# ~/.octopai/config.toml
-[models]
-preferred = ["claude-sonnet-4", "gpt-4.1", "grok-code"]
-banned = ["gpt-3.5-turbo", "claude-haiku"]
-
-[models.overrides]
-architect = ["claude-sonnet-4"]
-qa = ["grok-code", "gpt-4.1-mini"]
-documentation = ["grok-code"]
-```
-
-The preferred list is ordered, with the first model preferred and the last as fallback. Banned models must never receive work.
-
-### Price Tracking Schema
-
-```sql
-CREATE TABLE model_prices (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  provider TEXT NOT NULL,
-  model TEXT NOT NULL,
-  input_cost_per_1k REAL NOT NULL,
-  output_cost_per_1k REAL NOT NULL,
-  cache_read_cost_per_1k REAL,
-  cache_write_cost_per_1k REAL,
-  effective_from TEXT NOT NULL DEFAULT (datetime('now')),
-  effective_to TEXT,
-  source TEXT NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX idx_model_prices_current
-  ON model_prices(provider, model, effective_to);
-```
-
-The `source` value identifies `opencode_api`, `manual`, or `provider_api`.
-
-### Burn-Rate Model
-
-```typescript
-interface BurnRate {
-  tokensPerMinute: { input: number; output: number };
-  costPerMinute: number;
-  costPerHour: number;
-
-  estimatedDailyCost: number;
-  estimatedWeeklyCost: number;
-
-  byModel: Record<string, {
-    tokensUsed: { input: number; output: number };
-    cost: number;
-    percentOfTotal: number;
-  }>;
-
-  confidence: 'low' | 'medium' | 'high';
-  samplePeriodMinutes: number;
-}
-```
-
-### Budget Forecast
-
-```typescript
-interface BudgetForecast {
-  budget: number;
-  spent: number;
-  remaining: number;
-
-  estimatedHoursRemaining: number;
-  estimatedTasksRemaining: number;
-  depletionTime: Date;
-
-  scenarios: {
-    economyMode: {
-      hoursRemaining: number;
-      qualityImpact: 'minimal' | 'moderate' | 'significant';
-    };
-    premiumMode: {
-      hoursRemaining: number;
-    };
-  }
-}
-```
-
-### API Endpoints
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/budget` | Current budget status and forecast |
-| `GET /api/budget/burn-rate` | Real-time burn-rate calculation |
-| `GET /api/budget/history` | Historical spend |
-| `POST /api/budget/set` | Set budget limits and alerts |
-| `GET /api/models/prices` | Current and historical model prices |
-| `POST /api/models/prices/refresh` | Fetch latest provider prices |
-
-### UI Components
-
-**Budget Dashboard Widget**:
-
-- Current spend versus budget progress bar.
-- Burn-rate indicator in dollars per hour.
-- Time remaining at the current rate.
-- Model-breakdown pie chart.
-
-**Budget Planning Page**:
-
-- Set a session, daily, or weekly budget.
-- Simulate costs with different model mixes.
-- Show price-change alerts and impact analysis.
-- Show historical cost graphs.
-
-**Model Selector with Costs**:
-
-- Show dollars per 1,000 tokens for each model.
-- Estimate task cost from historical averages.
-- Warn about budget impact when selecting expensive models.
-
-### Budget Enforcement
-
-```typescript
-interface BudgetPolicy {
-  dailyLimit?: number;
-  sessionLimit?: number;
-
-  warningThreshold: number;
-
-  onWarning: 'notify' | 'downgrade_models' | 'pause_low_priority';
-  onLimit: 'pause' | 'stop' | 'notify_only';
-
-  downgradeOrder: string[];
-}
-```
-
-### Deliverables
-
-- [ ] **Add historical model-price tracking.** Create the `model_prices` table and index, storing provider, model, input/output/cache pricing, effective dates, source, and creation time.
-- [ ] **Refresh prices from OpenCode.** Fetch current prices through `GET /provider`, preserve historical records, and identify whether each value came from `opencode_api`, `manual`, or `provider_api`.
-- [ ] **Calculate burn rate from recent activity.** Use actual token and cost activity to calculate tokens per minute, cost per minute, cost per hour, daily and weekly estimates, per-model usage, and confidence over a sample period.
-- [ ] **Add budget forecasting.** Calculate budget, spent, remaining, estimated hours and tasks remaining, depletion time, and economy and premium scenarios with the specified quality-impact values.
-- [ ] **Add model-preference configuration.** Support ordered preferred models, banned models that must never receive work, and classification-specific overrides.
-- [ ] **Route tasks by classification and cost.** Select models according to the configured preferences, classification overrides, current prices, and cost-aware task distribution.
-- [ ] **Add the budget dashboard widget.** Show current spend versus budget, dollars-per-hour burn rate, time remaining, and a model-breakdown pie chart.
-- [ ] **Add the budget-planning page.** Allow session, daily, and weekly budgets; simulate model mixes; show price-change impact; and display historical cost graphs.
-- [ ] **Add the cost-aware model selector.** Show dollars per 1,000 tokens, estimate task cost from historical averages, and warn when a selection has a high budget impact.
-- [ ] **Add optional budget-enforcement policies.** Support daily and session limits, warning thresholds, notification or model-downgrade behavior, low-priority pausing, pause/stop/notify-only limit behavior, and the configured downgrade order.
-- [ ] **Detect price changes and alert users.** Compare refreshed prices with historical values and update estimates when prices change.
-- [ ] **Add budget API endpoints.** Implement the budget status, burn-rate, history, budget-setting, current/historical model-price, and price-refresh endpoints listed above.
-
-### Dependencies
-
-- Phase 1 (Observatory)
-- Phase 2 (Task Classification)
-- OpenCode API integration
-
-### Acceptance Criteria
-
-- [ ] Users can set daily and weekly budgets.
-- [ ] Burn rate updates in real time from actual usage.
-- [ ] Budget forecasts are within 20% of actual spend.
-- [ ] Price changes are detected and estimates are updated.
-- [ ] Model preference ordering is respected.
-- [ ] Banned models never receive work.
-- [ ] The UI clearly shows cost and quality tradeoffs.
-
----
-
-## Remaining Tasks Created by Brain
-
-These tasks were documented by the Brain and remain in scope.
-
-### Deliverables
-
-- [ ] **Provide arm access to development-server logs and restart control.** Research existing solutions, including MCP servers, then implement log access and development-server restart control. Coordinate destructive operations through the Brain rather than allowing unreviewed direct actions.
-- [ ] **Add thrashing detection for lazy claims.** Detect when arms are fighting over files, implement a lazy claim-release protocol, and throttle rapid reclaims so repeated claim competition does not destabilize work.
-- [ ] **Add the handoff protocol between arms.** Define graceful task handoff, include context transfer, and handle abandoned tasks and conflicts without losing task state or work history.
-
----
-
-## Regular Refactoring Cycle
-
-**Goal**: Keep files small enough for LLM context windows through periodic refactoring.
-
-### Problem
-
-Large files over 400 lines:
-
-- Consume significant context budget.
-- May not fit completely into an arm’s context.
-- Lead to more errors and incomplete understanding.
-
-### Trigger Conditions
-
-The Brain creates a refactoring task when:
-
-1. Five tasks have been completed.
-2. Any file over 400 lines is found during work.
-3. A human explicitly requests refactoring.
-
-### Refactoring Classification
-
-| Classification | Purpose | Output |
-|---|---|---|
-| `refactoring` | Split large files | Smaller, focused modules |
-
-### Prerequisites
-
-Before refactoring, the arm must verify:
-
-1. `git status` shows no uncommitted changes to target files.
-2. All files to be refactored are checked in.
-3. No other arm has claimed the target files.
-
-If prerequisites are not met:
-
-- The arm reports a blocker to the Brain.
-- The Brain waits or reassigns the task.
-- Refactoring does not proceed with uncommitted changes.
-
-### File Size Rules
-
-| Threshold | Action |
-|---|---|
-| >400 lines | Flag for refactoring |
-| >600 lines | High-priority refactoring |
-| >800 lines | Critical; block new work on the file until refactored |
-
-### Brain Implementation
-
-```typescript
-let completedTaskCount = 0;
-
-async function onTaskCompleted(task: Task) {
-  completedTaskCount++;
-
-  if (completedTaskCount % 5 === 0) {
-    const largeFiles = await findLargeFiles(400);
-    if (largeFiles.length > 0) {
-      await createRefactoringTask(largeFiles);
-    }
-  }
-}
-
-async function findLargeFiles(threshold: number): Promise<string[]> {
-  // Use wc -l or similar to find files > threshold lines.
-  // Exclude node_modules, .git, and build artifacts.
-}
-
-async function createRefactoringTask(files: string[]) {
-  await db.run(`
-    INSERT INTO tasks (id, subject, description, classification, priority)
-    VALUES (?, ?, ?, 'refactoring', ?)
-  `, [
-    generateTaskId(),
-    `Refactor large files (${files.length} files)`,
-    buildRefactoringDescription(files),
-    files.some(f => getLineCount(f) > 600) ? 'high' : 'medium'
-  ]);
-}
-```
-
-### Refactoring Task Template
-
-```markdown
-## Refactoring Task
-
-### Prerequisites (VERIFY FIRST)
-- [ ] Run `git status` - confirm target files have no uncommitted changes
-- [ ] Confirm files are checked in before making changes
-- [ ] Check no other arms have active claims on these files
-
-### Files to Refactor
-
-| File | Lines | Priority |
-|------|-------|----------|
-{{#each files}}
-| `{{path}}` | {{lines}} | {{priority}} |
-{{/each}}
-
-### Guidelines
-
-1. **Extract focused modules**: Each file should do one thing well
-2. **Preserve exports**: Don't break existing imports
-3. **Add barrel files**: Use index.ts for clean re-exports
-4. **Test after split**: Run `bun run typecheck` and `bun test`
-5. **Commit incrementally**: One logical change per commit
-
-### Example Splits
-
-- Extract types to `types.ts`
-- Extract utilities to `utils.ts`
-- Extract constants to `constants.ts`
-- Split by feature/domain into subdirectories
-```
-
-### Deliverables
-
-- [ ] **Track completed-task count in the Brain.** Increment the count when a task completes and evaluate the five-task trigger without losing the count across the relevant Brain lifecycle.
-- [ ] **Implement `findLargeFiles()`.** Use `wc -l` or similar to find files over the configured threshold, excluding `node_modules`, `.git`, and build artifacts.
-- [ ] **Add the refactoring task classification.** Ensure the Brain can create and assign tasks classified as `refactoring` with the correct purpose and output.
-- [ ] **Add prerequisite verification to the template.** Require `git status`, checked-in target files, and confirmation that no other arm has an active claim before refactoring starts.
-- [ ] **Add configurable file-size thresholds.** Default the flagging threshold to 400 lines and preserve the >600 high-priority and >800 critical rules.
-- [ ] **Escalate oversized files.** Assign high priority to files over 600 lines and block new work on files over 800 lines until refactoring occurs.
-- [ ] **Integrate refactoring with claims.** Prevent refactoring from proceeding when another arm has claimed a target file and preserve the prerequisite blocker behavior.
-
-### Dependencies
-
-- Phase 2.1 (Progressive Planning)
-- Claims system
-
----
-
-## Additional Architecture Considerations
-
-### NATS JetStream Event Sourcing
-
-Some current-state data is better modeled as derived state from an event stream. NATS JetStream provides:
-
-- Append-only event logs with configurable time, size, and count retention.
-- A key-value store for derived state snapshots.
-- Replay to rebuild state from event history.
-
-Potential candidates after SQLite cleanup:
-
-| Current state | Event stream | Derived query |
-|---|---|---|
-| `seenArmIds` | `task_assigned` events | Whether any task was assigned to an arm |
-| Arm heartbeats and last seen | `heartbeat` events | Most recent heartbeat for an arm |
-| Task state transitions | `task_claimed`, `task_completed`, and similar events | Current status equals the last event type |
-| Message delivery status | `message_sent`, `message_acked` | Whether a message was acknowledged |
-
-Benefits:
-
-- Full audit trail of state changes.
-- Current state is computed rather than duplicated.
-- Time-series queries.
-- Natural fit for distributed systems.
-
-Implementation notes:
-
-- NATS JetStream is already integrated for arm communication.
-- Start with task state transitions.
-- Keep SQLite for complex queries and JetStream for the event log.
-- Cache current state in SQLite and rebuild it from the stream on startup.
-
-See [jetstream-migration-plan.md](./jetstream-migration-plan.md) for the comprehensive migration plan and question-event formats.
-
-### Question Event Handling
-
-Arms can emit `question.asked` events when they need decisions requiring human input. The Brain must detect these events, handle them autonomously when possible, or escalate them to humans. The complete event schema and handling requirements are in the JetStream migration plan.
-
-### Data That Remains in SQLite or Files
-
-The following are not candidates for event sourcing:
-
-- Maildir messages, because Maildir is standard and interoperable.
-- MCP configurations, because they are external tool requirements.
-- Plan documents, because they are human-editable and version controlled.
-- Configuration, because it is human-editable TOML.
-
-### Task File References
-
-Tasks should reference git-tracked files as dependencies and outputs so durable artifacts outlive any orchestration tool.
-
-| Directory | Purpose | Relation to task |
-|---|---|---|
-| `.project/acceptance/` | Acceptance criteria per phase | Input dependency |
-| `.project/decisions/` | Architectural decisions | Input/output |
-| `.project/tasks/` | Task definitions and context | Input dependency |
-| Source files | Implementation artifacts | Output |
-
-Proposed schema:
-
-```sql
-CREATE TABLE task_files (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT NOT NULL,
-  file_path TEXT NOT NULL,
-  relation TEXT NOT NULL CHECK (relation IN ('dependency', 'output', 'context')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-  UNIQUE(task_id, file_path)
-);
-
-CREATE INDEX idx_task_files_task ON task_files(task_id);
-CREATE INDEX idx_task_files_path ON task_files(file_path);
-```
-
-Benefits:
-
-- Tool-agnostic access to `.project/` files.
-- Git-tracked decisions and acceptance criteria.
-- SQLite queries showing which tasks read or wrote files.
-- An audit trail showing why a decision was made and which task created it.
-
-Implementation notes:
-
-- Arms report file dependencies when claiming tasks.
-- Arms report output files when completing tasks.
-- The Brain verifies outputs exist before marking a task complete.
-- The UI can show a file graph for each task.
-
-### Status Reports in Maildir
-
-Status reports currently stored as `.project/status-*.md` files should eventually be stored in Maildir format.
-
-Current state:
-
-- `.project/status-2026-01-16-*.md` files are in the project root.
-- They are not queryable and are not integrated with the mail UI.
-
-Target state:
-
-- Status reports are written as Maildir messages to `~/.octopai/mail/brain/cur/`.
-- Headers include:
-  - `X-Octopai-Type: status-report`
-  - `X-Octopai-Task: <task-id>`
-- The body remains Markdown.
-- Reports are queryable through the mail UI and API.
-- Humans can reply to status reports.
-
-Benefits:
-
-- A unified communication channel.
-- Status reports appear in the Observatory mail UI.
-- Humans can reply with feedback or corrections.
-- The design remains consistent with Maildir-as-communication-channel philosophy.
-
----
-
-## Active Design: Branch-Centered Iterative Task Lifecycle
-
-**Date**: July 2026
-
-**Goal**: Make a task the durable unit of work while multiple arms implement, review, polish, approve, and merge changes through recorded passes on the same task and branch.
+This phase is foundational for safe autonomous execution and must precede autonomous merge, governance-controlled deployment, and any workflow that assigns review or polish work. It replaces child review tasks with durable passes on the original task and branch.
 
 ### Core Decisions
 
@@ -1678,6 +1359,608 @@ Brain scores next action using branch, diff, tests, history, and comments
 
 ---
 
+## Phase 3.2: Generic Arms and Conflict-Oriented Orchestration
+
+This work aligns the implementation with the requirements philosophy that arms are stateless, general-purpose executors. It depends on durable task passes, claims, status reports, and the Brain/API boundary. The source requirements explicitly request removal of arm domains and arm-level reputation, while the governance section retains reputation-related deliverables; the governance decision above must settle the conflict before schema deletion.
+
+### Deliverables
+
+- [ ] **Remove arm domains completely.** Drop domain and domain-like columns such as expertise where safe; if immediate removal is painful, mark them deprecated, cut off all code usage, and remove them in a later migration.
+- [ ] **Remove domain routing from claims and tasks.** Ensure no table or decision path uses domain as a routing field.
+- [ ] **Remove arm-domain types.** Remove `ArmDomain`, domain unions, and type-level arm selection by domain, or retain only an internal unused legacy field during migration.
+- [ ] **Deprecate `octopai arm spawn --domain`.** Remove it as meaningful configuration, or retain it as an ignored backward-compatible no-op.
+- [ ] **Update arm TOML configs and presets.** Remove domain fields or clearly mark them ignored; model presets by count, shape, workdirs, harnesses, runtime constraints, and maximum concurrency rather than “frontend”, “backend”, or “docs” specialization.
+- [ ] **Update public documentation.** Strip domain stories and retain task classification and visualization file categories.
+- [ ] **Remove arm-level reputation logic.** Drop or freeze reputation columns and events, remove weighting of proposals or arm preference based on arm-global reputation, and preserve any future trust annotation on the proposal, argument, or signal itself.
+- [ ] **Strengthen first-class task storage.** Ensure tasks contain `id`, `subject`, `description`, `status`, timestamps, optional classification, plan state, attempt/pass history, and no arm-domain binding.
+- [ ] **Strengthen proposals and discoveries.** Store proposals, proposal arguments, proposal signals, and structured discovery activity as the main intelligence ledger.
+- [ ] **Make arm lifecycle minimal.** Retain identity, name, agent type, workdir, status, and current task/pass ID; remove reputation, domain, and expertise ownership.
+- [ ] **Prepare rich task prompts.** Include task ID, classification, context bundle, relevant files, past proposals, discoveries, previous attempts, branch, diff, acceptance criteria, and constraints.
+- [ ] **Record partial progress and conflicts.** Store task state updates, proposals, discoveries, competing edits, alternative implementations, and conflicts.
+- [ ] **Stop selecting the “best” idle arm.** Use human-triggered assignment or simple round-robin/random assignment where needed; never use domain or reputation.
+- [ ] **Detect conflicts.** Use claims, activity, Git, and diffs to detect arms touching the same files or task incompatibly.
+- [ ] **Arbitrate conflicts.** Pull proposals and discoveries from each arm, select a path or escalate to a human, mark the accepted path, and log abandoned alternatives.
+- [ ] **Support multiple attempts.** Use pass or attempt IDs so work and history can be attached to a task without losing alternative approaches.
+- [ ] **Support long-running incremental arms.** Ensure harnesses tolerate long sessions, intermediate mail/logs, partial progress, and non-terminal arm reports.
+- [ ] **Add task-level time controls.** Configure maximum wall-clock time or poll cycles before the Brain pauses an arm or re-queues a task attempt; do not add an arm-level intelligence slider.
+- [ ] **Test generic-arm behavior.** Prove that any eligible arm can receive any classification and that orchestration does not depend on identity, domain, expertise, or reputation.
+
+---
+
+## Phase 4: Garden Visualization
+
+This phase depends on stable workspace events, claims, conflict detection, arm identity/color data, and the Observatory UI. It visualizes workspace state without becoming a new source of truth.
+
+### Goal
+
+Provide a 3D visualization of the workspace.
+
+### Deliverables
+
+- [ ] **Integrate React Three Fiber.** Add the 3D rendering foundation for the Garden visualization and connect it to workspace state.
+- [x] Add a radial coordinate system.
+- [ ] **Display real-time file activity.** Reflect file activity in the Garden as workspace events occur.
+- [ ] **Add ownership coloring.** Color workspace regions or files according to current ownership.
+- [ ] **Highlight conflict zones.** Make areas with conflicting claims or activity visible in the 3D view.
+- [x] Add interactive navigation.
+- [x] Generate octopus avatars for arms with reuse logic and color/personality traits.
+- [x] Add a Brain mascot with personality and animation.
+
+---
+
+## Phase 5: Notifications and Deployment
+
+This phase depends on governance proposals, durable approvals, event delivery, authentication, deployment target verification, and rollback semantics. Deployment must not be enabled until proposal decisions, human gates, monitoring, and rollback behavior are validated.
+
+### Goal
+
+Add push notifications and deployment flow.
+
+### Deliverables
+
+- [ ] **Add browser push notifications.** Notify users about relevant project, arm, status, bug, governance, and deployment events.
+- [ ] **Add the deployment proposal flow.** Route deployment requests through the governance proposal system and preserve the resulting decision.
+- [ ] **Add blue/green deployment support.** Provide the two-environment deployment behavior needed to shift traffic safely.
+- [ ] **Add rollback with pause.** Pause relevant work when rollback is required and retain the rollback outcome.
+- [ ] **Add monitoring integration hooks.** Expose integration points for deployment and runtime monitoring systems.
+- [ ] **Validate Docker and Cloudflare deployment paths.** Confirm image boundaries, environment variables, health checks, persistence, secrets, and rollback procedures for the supported deployment targets.
+
+---
+
+## Phase 6: Agent Harnesses
+
+This phase depends on the API boundary, arm lifecycle, durable leases, event contracts, and generic-arm behavior. Harnesses must be pluggable and restart-resilient without making the Brain responsible for direct harness traffic.
+
+### Goal
+
+Support multiple AI agents through pluggable harnesses with restart-resilient lifecycle management.
+
+### Current Status
+
+Implemented harnesses:
+
+- `opencode-api` (HTTP)
+- `opencode` (PTY)
+- `opencode-tui` (visual terminal plus API)
+
+Lifecycle policy:
+
+- `opencode-api` and `opencode` are daemon-managed and should be launched through `ArmAgent` so sessions survive API restarts.
+- `opencode-tui` can remain a local/operator mode where persistence across API restarts is less critical.
+
+### Phase 6.1: Daemon-First Harness Routing
+
+### Deliverables
+
+- [ ] **Add API-restart regression tests.** Verify that an arm survives an API restart, prompts still route to the surviving session, and claims remain valid. The tests must cover the daemon-managed `opencode-api` and `opencode` lifecycle policy.
+- [ ] **Verify harness ownership.** Ensure ArmAgent owns harness/OpenCode traffic and that the Brain uses the API boundary.
+- [ ] **Verify long-running sessions.** Cover interruption, reconnect, incremental progress, stale sessions, cleanup, and task/pass continuity.
+
+### Phase 6.2: ACP Integration
+
+This subsection adds an ACP adapter layer so Coleo can interoperate with external clients, including Claude Code and Codex CLI, without hard-coding each harness.
+
+### Deliverables
+
+- [ ] **Implement the ACP handshake.** Support `initialize`, version negotiation, and capability negotiation before using an ACP session.
+- [ ] **Map core ACP methods to harness actions.** Support `session/new`, `session/load`, `session/prompt`, `session/cancel`, and `session/set-mode`, mapping them to the corresponding harness behavior.
+- [ ] **Support ACP authorization callbacks.** Handle authorization for `acp/fs/read-text-file` and `acp/fs/write-text-file` without bypassing the required safety flow.
+- [ ] **Add ACP transports incrementally.** Start with ACP `stdio` transport for local adapters, then add Streamable HTTP/SSE for remote agents.
+- [ ] **Define `AcpHarnessAdapter`.** Map the interface to Coleo harness primitives: `spawn`, `prompt`, `interrupt`, and `state`.
+- [ ] **Support session attach and resume.** Preserve long-running agent sessions and allow external clients to attach to or resume them.
+- [ ] **Document ACP compatibility.** Maintain a compatibility matrix for ACP-capable clients and unsupported features.
+- [ ] **Add ACP conformance tests.** Use recorded ACP transcripts to verify handshake, methods, authorization, transport, attach, and resume behavior.
+
+### Future Work: Phase 7+
+
+- [ ] Add more harnesses and protocol adapters beyond OpenCode.
+- [ ] Improve PTY/TUI session reattachment and persistence.
+- [ ] Add placement policies based on capabilities, load, and affinity for multi-agent scheduling.
+
+---
+
+## Phase 7: Budget Planning and Burn Rate Estimation
+
+This phase depends on Observatory metrics, OpenCode provider and token-cost data, model configuration, task classification, and authenticated API routes. It should precede cost-aware routing and deployment policies.
+
+### Goal
+
+Enable long-running autonomous operation with predictable costs through model cost tracking, burn-rate estimation, and budget forecasting.
+
+### Problem
+
+Users want to run Octopai autonomously for hours, days, or weeks without constant monitoring. They need:
+
+1. Predictable costs before starting a work session.
+2. Model flexibility to trade quality against cost.
+3. Adaptive pricing that handles model price changes.
+4. Cost-aware task distribution across models.
+
+### User Scenarios
+
+| Scenario | Need |
+|---|---|
+| “Run overnight on this feature” | Estimate eight-hour cost at the current burn rate |
+| “I have a $50 budget for this sprint” | Calculate how many hours or tasks that buys |
+| “Use GPT-4.1 for architecture, cheaper models for tests” | Route models with cost awareness |
+| “Prices changed, recalculate my estimates” | Dynamically reprice without manual updates |
+
+### Model Preference Configuration
+
+```toml
+# ~/.octopai/config.toml
+[models]
+preferred = ["claude-sonnet-4", "gpt-4.1", "grok-code"]
+banned = ["gpt-3.5-turbo", "claude-haiku"]
+
+[models.overrides]
+architect = ["claude-sonnet-4"]
+qa = ["grok-code", "gpt-4.1-mini"]
+documentation = ["grok-code"]
+```
+
+The preferred list is ordered, with the first model preferred and the last as fallback. Banned models must never receive work.
+
+### Price Tracking Schema
+
+```sql
+CREATE TABLE model_prices (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  input_cost_per_1k REAL NOT NULL,
+  output_cost_per_1k REAL NOT NULL,
+  cache_read_cost_per_1k REAL,
+  cache_write_cost_per_1k REAL,
+  effective_from TEXT NOT NULL DEFAULT (datetime('now')),
+  effective_to TEXT,
+  source TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_model_prices_current
+  ON model_prices(provider, model, effective_to);
+```
+
+The `source` value identifies `opencode_api`, `manual`, or `provider_api`.
+
+### Burn-Rate Model
+
+```typescript
+interface BurnRate {
+  tokensPerMinute: { input: number; output: number };
+  costPerMinute: number;
+  costPerHour: number;
+
+  estimatedDailyCost: number;
+  estimatedWeeklyCost: number;
+
+  byModel: Record<string, {
+    tokensUsed: { input: number; output: number };
+    cost: number;
+    percentOfTotal: number;
+  }>;
+
+  confidence: 'low' | 'medium' | 'high';
+  samplePeriodMinutes: number;
+}
+```
+
+### Budget Forecast
+
+```typescript
+interface BudgetForecast {
+  budget: number;
+  spent: number;
+  remaining: number;
+
+  estimatedHoursRemaining: number;
+  estimatedTasksRemaining: number;
+  depletionTime: Date;
+
+  scenarios: {
+    economyMode: {
+      hoursRemaining: number;
+      qualityImpact: 'minimal' | 'moderate' | 'significant';
+    };
+    premiumMode: {
+      hoursRemaining: number;
+    };
+  };
+}
+```
+
+### API Endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/budget` | Current budget status and forecast |
+| `GET /api/budget/burn-rate` | Real-time burn-rate calculation |
+| `GET /api/budget/history` | Historical spend |
+| `POST /api/budget/set` | Set budget limits and alerts |
+| `GET /api/models/prices` | Current and historical model prices |
+| `POST /api/models/prices/refresh` | Fetch latest provider prices |
+
+### UI Components
+
+**Budget Dashboard Widget**:
+
+- Current spend versus budget progress bar.
+- Burn-rate indicator in dollars per hour.
+- Time remaining at the current rate.
+- Model-breakdown pie chart.
+
+**Budget Planning Page**:
+
+- Set a session, daily, or weekly budget.
+- Simulate costs with different model mixes.
+- Show price-change alerts and impact analysis.
+- Show historical cost graphs.
+
+**Model Selector with Costs**:
+
+- Show dollars per 1,000 tokens for each model.
+- Estimate task cost from historical averages.
+- Warn about budget impact when selecting expensive models.
+
+### Budget Enforcement
+
+```typescript
+interface BudgetPolicy {
+  dailyLimit?: number;
+  sessionLimit?: number;
+
+  warningThreshold: number;
+
+  onWarning: 'notify' | 'downgrade_models' | 'pause_low_priority';
+  onLimit: 'pause' | 'stop' | 'notify_only';
+
+  downgradeOrder: string[];
+}
+```
+
+### Deliverables
+
+- [ ] **Add historical model-price tracking.** Create the `model_prices` table and index, storing provider, model, input/output/cache pricing, effective dates, source, and creation time.
+- [ ] **Refresh prices from OpenCode.** Fetch current prices through `GET /provider`, preserve historical records, and identify whether each value came from `opencode_api`, `manual`, or `provider_api`.
+- [ ] **Calculate burn rate from recent activity.** Use actual token and cost activity to calculate tokens per minute, cost per minute, cost per hour, daily and weekly estimates, per-model usage, and confidence over a sample period.
+- [ ] **Add budget forecasting.** Calculate budget, spent, remaining, estimated hours and tasks remaining, depletion time, and economy and premium scenarios with the specified quality-impact values.
+- [ ] **Add model-preference configuration.** Support ordered preferred models, banned models that must never receive work, and classification-specific overrides.
+- [ ] **Route tasks by classification and cost.** Select models according to the configured preferences, classification overrides, current prices, and cost-aware task distribution.
+- [ ] **Add the budget dashboard widget.** Show current spend versus budget, dollars-per-hour burn rate, time remaining, and a model-breakdown pie chart.
+- [ ] **Add the budget-planning page.** Allow session, daily, and weekly budgets; simulate model mixes; show price-change impact; and display historical cost graphs.
+- [ ] **Add the cost-aware model selector.** Show dollars per 1,000 tokens, estimate task cost from historical averages, and warn when a selection has a high budget impact.
+- [ ] **Add optional budget-enforcement policies.** Support daily and session limits, warning thresholds, notification or model-downgrade behavior, low-priority pausing, pause/stop/notify-only limit behavior, and the configured downgrade order.
+- [ ] **Detect price changes and alert users.** Compare refreshed prices with historical values and update estimates when prices change.
+- [ ] **Add budget API endpoints.** Implement the budget status, burn-rate, history, budget-setting, current/historical model-price, and price-refresh endpoints listed above.
+
+### Dependencies
+
+- Phase 1 (Observatory)
+- Phase 2 (Task Classification)
+- OpenCode API integration
+
+### Acceptance Criteria
+
+- [ ] Users can set daily and weekly budgets.
+- [ ] Burn rate updates in real time from actual usage.
+- [ ] Budget forecasts are within 20% of actual spend.
+- [ ] Price changes are detected and estimates are updated.
+- [ ] Model preference ordering is respected.
+- [ ] Banned models never receive work.
+- [ ] The UI clearly shows cost and quality tradeoffs.
+
+---
+
+## Phase 8: Remaining Operational Tasks
+
+These tasks depend on the API boundary, claims, handoff semantics, development-server controls, and durable task lifecycle. They are operational prerequisites for reliable autonomous execution and should be assigned only after their safety boundaries are explicit.
+
+### Deliverables
+
+- [ ] **Provide arm access to development-server logs and restart control.** Research existing solutions, including MCP servers, then implement log access and development-server restart control. Coordinate destructive operations through the Brain rather than allowing unreviewed direct actions.
+- [ ] **Add thrashing detection for lazy claims.** Detect when arms are fighting over files, implement a lazy claim-release protocol, and throttle rapid reclaims so repeated claim competition does not destabilize work.
+- [ ] **Add the handoff protocol between arms.** Define graceful task handoff, include context transfer, and handle abandoned tasks and conflicts without losing task state or work history.
+
+---
+
+## Phase 9: Regular Refactoring Cycle
+
+This phase is an ongoing Brain-managed maintenance cycle. It depends on progressive planning, claims, branch safety, and the branch-centered task lifecycle. Refactoring must never begin with uncommitted target changes or active competing claims.
+
+### Goal
+
+Keep files small enough for LLM context windows through periodic refactoring.
+
+### Problem
+
+Large files over 400 lines:
+
+- Consume significant context budget.
+- May not fit completely into an arm’s context.
+- Lead to more errors and incomplete understanding.
+
+### Trigger Conditions
+
+The Brain creates a refactoring task when:
+
+1. Five tasks have been completed.
+2. Any file over 400 lines is found during work.
+3. A human explicitly requests refactoring.
+
+### Refactoring Classification
+
+| Classification | Purpose | Output |
+|---|---|---|
+| `refactoring` | Split large files | Smaller, focused modules |
+
+### Prerequisites
+
+Before refactoring, the arm must verify:
+
+1. `git status` shows no uncommitted changes to target files.
+2. All files to be refactored are checked in.
+3. No other arm has claimed the target files.
+
+If prerequisites are not met:
+
+- The arm reports a blocker to the Brain.
+- The Brain waits or reassigns the task.
+- Refactoring does not proceed with uncommitted changes.
+
+### File Size Rules
+
+| Threshold | Action |
+|---|---|
+| >400 lines | Flag for refactoring |
+| >600 lines | High-priority refactoring |
+| >800 lines | Critical; block new work on the file until refactored |
+
+### Brain Implementation
+
+```typescript
+let completedTaskCount = 0;
+
+async function onTaskCompleted(task: Task) {
+  completedTaskCount++;
+
+  if (completedTaskCount % 5 === 0) {
+    const largeFiles = await findLargeFiles(400);
+    if (largeFiles.length > 0) {
+      await createRefactoringTask(largeFiles);
+    }
+  }
+}
+
+async function findLargeFiles(threshold: number): Promise<string[]> {
+  // Use wc -l or similar to find files > threshold lines.
+  // Exclude node_modules, .git, and build artifacts.
+}
+
+async function createRefactoringTask(files: string[]) {
+  await db.run(`
+    INSERT INTO tasks (id, subject, description, classification, priority)
+    VALUES (?, ?, ?, 'refactoring', ?)
+  `, [
+    generateTaskId(),
+    `Refactor large files (${files.length} files)`,
+    buildRefactoringDescription(files),
+    files.some(f => getLineCount(f) > 600) ? 'high' : 'medium'
+  ]);
+}
+```
+
+### Refactoring Task Template
+
+```markdown
+## Refactoring Task
+
+### Prerequisites (VERIFY FIRST)
+- [ ] Run `git status` - confirm target files have no uncommitted changes
+- [ ] Confirm files are checked in before making changes
+- [ ] Check no other arms have active claims on these files
+
+### Files to Refactor
+
+| File | Lines | Priority |
+|------|-------|----------|
+{{#each files}}
+| `{{path}}` | {{lines}} | {{priority}} |
+{{/each}}
+
+### Guidelines
+
+1. **Extract focused modules**: Each file should do one thing well
+2. **Preserve exports**: Don’t break existing imports
+3. **Add barrel files**: Use index.ts for clean re-exports
+4. **Test after split**: Run `bun run typecheck` and `bun test`
+5. **Commit incrementally**: One logical change per commit
+
+### Example Splits
+
+- Extract types to `types.ts`
+- Extract utilities to `utils.ts`
+- Extract constants to `constants.ts`
+- Split by feature/domain into subdirectories
+```
+
+### Deliverables
+
+- [ ] **Track completed-task count in the Brain.** Increment the count when a task completes and evaluate the five-task trigger without losing the count across the relevant Brain lifecycle.
+- [ ] **Implement `findLargeFiles()`.** Use `wc -l` or similar to find files over the configured threshold, excluding `node_modules`, `.git`, and build artifacts.
+- [ ] **Add the refactoring task classification.** Ensure the Brain can create and assign tasks classified as `refactoring` with the correct purpose and output.
+- [ ] **Add prerequisite verification to the template.** Require `git status`, checked-in target files, and confirmation that no other arm has an active claim before refactoring starts.
+- [ ] **Add configurable file-size thresholds.** Default the flagging threshold to 400 lines and preserve the >600 high-priority and >800 critical rules.
+- [ ] **Escalate oversized files.** Assign high priority to files over 600 lines and block new work on files over 800 lines until refactoring occurs.
+- [ ] **Integrate refactoring with claims.** Prevent refactoring from proceeding when another arm has claimed a target file and preserve the prerequisite blocker behavior.
+
+### Dependencies
+
+- Phase 2.1 (Progressive Planning)
+- Claims system
+- Phase 3.1 (Branch-centered lifecycle)
+
+---
+
+## Phase 10: Production and Deployment
+
+This phase depends on the complete API boundary, persistence strategy, event migration decisions, governance, notifications, harness lifecycle, budget controls, and operational validation. Production database and distributed deployment choices must be implemented as explicit adapters with behavior-preserving tests.
+
+### Goal
+
+Produce a production-ready system.
+
+### Deliverables
+
+- [ ] **Add PostgreSQL support.** Provide the production database option while preserving the required data and query behavior.
+- [ ] **Add a comprehensive test suite.** Cover the production system, orchestration behavior, APIs, harnesses, UI integration points, and failure paths.
+- [ ] **Optimize performance.** Identify and improve slow orchestration, database, API, search, and UI operations without changing required behavior.
+- [ ] **Harden security.** Strengthen authentication, authorization, data handling, tool access, deployment controls, and other production security boundaries.
+- [ ] **Add Docker Swarm support.** Provide deployment support for the distributed production environment.
+- [ ] **Write user documentation.** Document setup, configuration, communication modes, arm operation, planning, governance, deployment, and troubleshooting.
+- [ ] **Evaluate the PTY harness.** Reassess the PTY harness if remaining issues are resolved and record whether it is suitable for production use.
+- [ ] **Run release validation.** Verify migrations, backups, rollback, health checks, observability, security, load, upgrade, and clean-install procedures in the supported deployment targets.
+
+---
+
+## Additional Architecture Considerations
+
+### NATS JetStream Event Sourcing
+
+Some current-state data is better modeled as derived state from an event stream. NATS JetStream provides:
+
+- Append-only event logs with configurable time, size, and count retention.
+- A key-value store for derived state snapshots.
+- Replay to rebuild state from event history.
+
+Potential candidates after SQLite cleanup:
+
+| Current state | Event stream | Derived query |
+|---|---|---|
+| `seenArmIds` | `task_assigned` events | Whether any task was assigned to an arm |
+| Arm heartbeats and last seen | `heartbeat` events | Most recent heartbeat for an arm |
+| Task state transitions | `task_claimed`, `task_completed`, and similar events | Current status equals the last event type |
+| Message delivery status | `message_sent`, `message_acked` | Whether a message was acknowledged |
+
+Benefits:
+
+- Full audit trail of state changes.
+- Current state is computed rather than duplicated.
+- Time-series queries.
+- Natural fit for distributed systems.
+
+Implementation notes:
+
+- NATS JetStream is already integrated for arm communication.
+- Start with task state transitions.
+- Keep SQLite for complex queries and JetStream for the event log.
+- Cache current state in SQLite and rebuild it from the stream on startup.
+
+See [jetstream-migration-plan.md](./jetstream-migration-plan.md) for the comprehensive migration plan and question-event formats.
+
+### Question Event Handling
+
+Arms can emit `question.asked` events when they need decisions requiring human input. The Brain must detect these events, handle them autonomously when possible, or escalate them to humans. The complete event schema and handling requirements are in the JetStream migration plan.
+
+### Data That Remains in SQLite or Files
+
+The following are not candidates for event sourcing:
+
+- Maildir messages, because Maildir is standard and interoperable.
+- MCP configurations, because they are external tool requirements.
+- Plan documents, because they are human-editable and version controlled.
+- Configuration, because it is human-editable TOML.
+
+### Task File References
+
+Tasks should reference git-tracked files as dependencies and outputs so durable artifacts outlive any orchestration tool.
+
+| Directory | Purpose | Relation to task |
+|---|---|---|
+| `.project/acceptance/` | Acceptance criteria per phase | Input dependency |
+| `.project/decisions/` | Architectural decisions | Input/output |
+| `.project/tasks/` | Task definitions and context | Input dependency |
+| Source files | Implementation artifacts | Output |
+
+Proposed schema:
+
+```sql
+CREATE TABLE task_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  relation TEXT NOT NULL CHECK (relation IN ('dependency', 'output', 'context')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, file_path)
+);
+
+CREATE INDEX idx_task_files_task ON task_files(task_id);
+CREATE INDEX idx_task_files_path ON task_files(file_path);
+```
+
+Benefits:
+
+- Tool-agnostic access to `.project/` files.
+- Git-tracked decisions and acceptance criteria.
+- SQLite queries showing which tasks read or wrote files.
+- An audit trail showing why a decision was made and which task created it.
+
+Implementation notes:
+
+- Arms report file dependencies when claiming tasks.
+- Arms report output files when completing tasks.
+- The Brain verifies outputs exist before marking a task complete.
+- The UI can show a file graph for each task.
+
+### Status Reports in Maildir
+
+Status reports currently stored as `.project/status-*.md` files should eventually be stored in Maildir format.
+
+Current state:
+
+- `.project/status-2026-01-16-*.md` files are in the project root.
+- They are not queryable and are not integrated with the mail UI.
+
+Target state:
+
+- Status reports are written as Maildir messages to `~/.octopai/mail/brain/cur/`.
+- Headers include:
+  - `X-Octopai-Type: status-report`
+  - `X-Octopai-Task: <task-id>`
+- The body remains Markdown.
+- Reports are queryable through the mail UI and API.
+- Humans can reply to status reports.
+
+Benefits:
+
+- A unified communication channel.
+- Status reports appear in the Observatory mail UI.
+- Humans can reply with feedback or corrections.
+- The design remains consistent with Maildir-as-communication-channel philosophy.
+
+---
+
 ## Milestones
 
 | Milestone | Target | Description |
@@ -1685,8 +1968,8 @@ Brain scores next action using branch, diff, tests, history, and comments
 | M1: Observable | End of Phase 1 | See arm activity in the web UI |
 | M2: Coordinated | End of Phase 3 | Arms negotiate and reach consensus |
 | M3: Visual | End of Phase 4 | 3D Garden shows workspace state |
-| M4: Agentic | End of Phase 2.6 | Brain uses agentic decision making |
-| M5: Production | End of Phase 7 | Ready for real use |
+| M4: Agentic | End of Phase 2.7 | Brain uses agentic decision making |
+| M5: Production | End of Phase 10 | Ready for real use |
 
 Harness strategy is daemon-first for resilient lifecycles, with protocol adapters such as ACP planned for broader client interoperability.
 

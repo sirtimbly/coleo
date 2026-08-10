@@ -31,7 +31,7 @@ import {
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-	NAVIGATION_ROUTES,
+	LAUNCHER_ROUTES,
 	findAppRoute,
 	getAppRouteTitle,
 } from "@/app/routes";
@@ -1217,7 +1217,7 @@ export function GoldenWorkspace() {
 										</div>
 
 										<div className="golden-launcher-menu-list">
-											{NAVIGATION_ROUTES.map((route) => (
+											{LAUNCHER_ROUTES.map((route) => (
 												<div
 													key={route.id}
 													className="golden-launcher-menu-row"
