@@ -215,7 +215,7 @@ export function AllArmsTelemetryOverview({
           Loading all-arm telemetry...
         </div>
       ) : telemetry ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]">
           <ArmActivityChart
             armId={null}
             metrics={activityMetrics}

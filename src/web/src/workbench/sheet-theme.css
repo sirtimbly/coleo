@@ -12,6 +12,7 @@
 	--tabulator-row-hover: color-mix(in srgb, var(--accent) 11%, var(--background));
 	--tabulator-row-selected: color-mix(in srgb, var(--accent) 20%, var(--background));
 	position: relative;
+	container-type: inline-size;
 	color: var(--foreground);
 	font-family: var(--font-interface);
 }
@@ -84,7 +85,111 @@
 	align-items: center;
 	border-color: var(--tabulator-border-color);
 	padding: 6px 9px;
+	font-family: var(--font-sheet);
+	font-size: 0.6875rem;
+	font-weight: 400;
 	line-height: 1.35;
+}
+
+.coleo-tabulator-resource-sheet[data-density="comfortable"] .tabulator-row .tabulator-cell {
+	align-items: flex-start !important;
+	white-space: normal;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-expand {
+	display: inline-grid;
+	width: 1.5rem;
+	height: 1.5rem;
+	place-items: center;
+	border: 1px solid transparent;
+	background: transparent;
+	color: var(--muted-foreground);
+	line-height: 1;
+	touch-action: manipulation;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-expand:hover {
+	border-color: var(--border);
+	background: var(--surface-secondary);
+	color: var(--foreground);
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-expand:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 1px;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-expand-icon {
+	width: 0.9rem;
+	height: 0.9rem;
+	transform: rotate(0deg);
+	transform-origin: center;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-expand[aria-expanded="true"] .coleo-sheet-expand-icon {
+	transform: rotate(90deg);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-row-expanded {
+	flex-wrap: wrap;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-row-detail {
+	width: 100%;
+	flex: 0 0 100%;
+	border-top: 1px solid var(--tabulator-border-color);
+	background: color-mix(in srgb, var(--surface-secondary) 38%, var(--background));
+	padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem) 1rem;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-row-detail > * {
+	margin-inline: auto;
+	max-width: 64rem;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-row-detail > .coleo-task-expanded-copy {
+	position: sticky;
+	left: 10cqw;
+	min-height: 9rem;
+	width: 80cqw;
+	min-width: 400px;
+	max-width: 80cqw;
+	margin-inline: 0;
+	overflow: auto;
+	border: 1px solid var(--tabulator-border-color);
+	background: var(--background);
+	padding: 0.75rem 1rem;
+	font-family: var(--font-sheet);
+}
+
+.coleo-tabulator-resource-sheet .coleo-task-expanded-subject {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--foreground);
+	font-size: 0.8125rem;
+	font-weight: 500;
+	line-height: 1.4;
+}
+
+.coleo-tabulator-resource-sheet .coleo-task-expanded-description {
+	margin-top: 0.5rem;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--muted-foreground);
+	font-size: 0.75rem;
+	font-weight: 400;
+	line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.coleo-tabulator-resource-sheet .coleo-sheet-expand,
+	.coleo-tabulator-resource-sheet .coleo-sheet-expand-icon {
+		transition:
+			background-color 120ms ease,
+			border-color 120ms ease,
+			color 120ms ease,
+			transform 120ms ease;
+	}
 }
 
 .coleo-tabulator-resource-sheet .tabulator-row .tabulator-cell.tabulator-row-header {
@@ -161,10 +266,79 @@
 }
 
 .coleo-tabulator-resource-sheet .tabulator-row .coleo-sheet-primary-cell {
+	position: relative;
 	font-weight: 400;
 }
 
+.coleo-tabulator-resource-sheet .coleo-sheet-open-content {
+	display: block;
+	min-width: 0;
+	width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-open-label {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.coleo-tabulator-resource-sheet[data-density="compact"] .coleo-sheet-open-label {
+	white-space: nowrap;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-open-action {
+	position: absolute;
+	z-index: 2;
+	top: 50%;
+	right: 4px;
+	display: inline-grid;
+	width: 26px;
+	height: 26px;
+	place-items: center;
+	border: 1px solid color-mix(in srgb, var(--accent) 74%, white);
+	border-radius: 0;
+	background: var(--accent);
+	box-shadow: -5px 0 8px color-mix(in srgb, var(--accent) 72%, transparent);
+	color: var(--accent-foreground);
+	cursor: pointer;
+	line-height: 1;
+	opacity: 0;
+	pointer-events: none;
+	transform: translateY(-50%);
+	touch-action: manipulation;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row:hover .coleo-sheet-open-action,
+.coleo-tabulator-resource-sheet .coleo-sheet-open-action:focus-visible {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-open-action:hover {
+	background: color-mix(in srgb, var(--accent) 86%, black);
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-open-action:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 1px;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-editing .coleo-sheet-open-action {
+	display: none;
+}
+
+.coleo-tabulator-resource-sheet .coleo-sheet-open-icon {
+	width: 15px;
+	height: 15px;
+}
+
 .coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-row-bold .tabulator-cell {
+	font-weight: 700;
+}
+
+.coleo-tabulator-resource-sheet .tabulator-row.coleo-sheet-row-bold .coleo-sheet-status {
 	font-weight: 700;
 }
 

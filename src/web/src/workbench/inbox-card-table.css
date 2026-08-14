@@ -1,14 +1,18 @@
 .coleo-inbox-card-table {
 	--inbox-row-height: 54px;
-	--inbox-header-background: #171b22;
-	--inbox-header-background-hover: #232a35;
-	--inbox-header-border: #343c49;
-	--inbox-header-foreground: #f8fafc;
-	--inbox-header-muted: #aeb8c7;
+	--inbox-header-background: color-mix(in srgb, var(--color-surface-secondary) 76%, var(--color-background));
+	--inbox-header-background-hover: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-secondary));
+	--inbox-header-border: var(--color-border);
+	--inbox-header-foreground: var(--color-foreground);
+	--inbox-header-muted: var(--color-muted-foreground);
 	border: 0;
 	background: var(--color-background);
 	color: var(--color-foreground);
 	font-family: inherit;
+}
+
+.coleo-inbox-card-table-comfortable {
+	--inbox-row-height: 68px;
 }
 
 .coleo-inbox-card-table.tabulator .tabulator-header {

@@ -35,6 +35,7 @@ import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
 
 import type { BugUpdate } from "./resource-updates";
+import type { ViewPreferences } from "./types";
 
 function readTags(bug: Bug): string[] {
 	return bug.metadata?.ui?.tags ?? [];
@@ -57,13 +58,14 @@ function readBugFormatting(bug: Bug): RowFormattingValue {
 	};
 }
 
-const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
+export const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 	{
 		id: "title",
 		header: "Subject",
 		read: (bug) => bug.title,
 		width: 360,
 		className: "coleo-sheet-primary-cell",
+		openRowAction: true,
 	},
 	{
 		id: "status",
@@ -130,6 +132,10 @@ export function BugSheet({
 	onDelete,
 	onCreateBugAt,
 	onRowsMove,
+	density,
+	viewPreferences,
+	onViewPreferencesChange,
+	onSelectedBugChange,
 }: {
 	bugs: Bug[];
 	selectedBugId?: string;
@@ -138,6 +144,10 @@ export function BugSheet({
 	onDelete?: (bug: Bug) => void;
 	onCreateBugAt?: (index: number, title: string) => void;
 	onRowsMove?: (moves: ResourceSheetRowMove<Bug>[]) => void | Promise<void>;
+	density?: ViewPreferences["density"];
+	viewPreferences?: ViewPreferences;
+	onViewPreferencesChange?: (preferences: ViewPreferences) => void;
+	onSelectedBugChange?: (bug: Bug | undefined) => void;
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingBugId, setFormattingBugId] = useState<string>();
@@ -148,7 +158,7 @@ export function BugSheet({
 		)),
 		[tagOptions],
 	);
-	const { view, preferences, updatePreferences, updateShared } = useViewPreferences("bugs-sheet", {
+	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared } = useViewPreferences("bugs-sheet", {
 		id: "bugs-sheet",
 		name: "Bugs",
 		kind: "sheet",
@@ -162,6 +172,9 @@ export function BugSheet({
 		},
 		shared: false,
 	});
+	const preferences = viewPreferences ?? savedPreferences;
+	const updatePreferences = onViewPreferencesChange ?? updateSavedPreferences;
+	const externallyConfigured = viewPreferences !== undefined && onViewPreferencesChange !== undefined;
 	const configurableColumns = useMemo(
 		() => columns.map((column) => ({
 			id: column.id,
@@ -171,6 +184,9 @@ export function BugSheet({
 		})),
 		[columns],
 	);
+	const effectivePreferences = density && density !== preferences.density
+		? { ...preferences, density }
+		: preferences;
 	const formattingBug = useMemo(
 		() => bugs.find((bug) => bug.id === formattingBugId),
 		[bugs, formattingBugId],
@@ -178,7 +194,7 @@ export function BugSheet({
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
-			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
+			{externallyConfigured ? null : <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
 				{formattingBug ? (
 					<RowFormattingToolbar
 						label={formattingBug.title}
@@ -198,11 +214,11 @@ export function BugSheet({
 					<SlidersHorizontal className="h-3.5 w-3.5" />
 					View
 				</Button>
-			</div>
+			</div>}
 			<ResourceSheet
 				rows={bugs}
 				columns={columns}
-				preferences={preferences}
+				preferences={effectivePreferences}
 				onPreferencesChange={updatePreferences}
 				onChange={(bug, columnId, value) => {
 					if (columnId === "title" && typeof value === "string" && value.trim()) {
@@ -226,21 +242,24 @@ export function BugSheet({
 				onRowsMove={onRowsMove}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedBugId}
-				onRowSelectionChange={(bug) => setFormattingBugId(bug?.id)}
+				onRowSelectionChange={(bug) => {
+					setFormattingBugId(bug?.id);
+					onSelectedBugChange?.(bug);
+				}}
 				getRowFormatting={readBugFormatting}
 				className="min-h-0 flex-1"
 			/>
-			<ViewConfigurator
+			{externallyConfigured ? null : <ViewConfigurator
 				open={configuring}
 				columns={configurableColumns}
-				preferences={preferences}
+				preferences={effectivePreferences}
 				shared={view.shared}
 				onChange={updatePreferences}
 				onSharedChange={(shared) => {
 					void updateShared(shared);
 				}}
 				onClose={() => setConfiguring(false)}
-			/>
+			/>}
 		</div>
 	);
 }

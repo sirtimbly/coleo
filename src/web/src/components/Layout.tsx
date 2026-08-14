@@ -14,7 +14,7 @@ export function Layout({ children, layoutMode }: LayoutProps) {
   const showArmStatusBar = location.pathname !== '/viewer';
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
+    <div className="observatory-backdrop flex h-screen bg-background text-foreground">
       <AppSidebar layoutMode={layoutMode} />
 
       <main className="flex min-w-0 flex-1 flex-col overflow-auto bg-background">

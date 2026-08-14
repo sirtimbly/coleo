@@ -1,8 +1,8 @@
 /**
  * Task workbench projection and dedicated task detail views.
  *
- * The list surface is a shared Tabulator sheet; task details, discussions,
- * summaries, and diffs still open as separate Golden Layout panels.
+ * The list surface switches between a shared Tabulator sheet and Adaptive Card
+ * collection; richer task views still open as separate workspace panels.
  */
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import {
@@ -23,9 +23,10 @@ import {
 	Pencil,
 	RotateCcw,
 	Ban,
+	ExternalLink,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
-import { AdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { AdaptiveCardView, DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
 import {
 	BRAIN_CARD_CREATOR,
 	USER_CARD_CREATOR,
@@ -61,9 +62,41 @@ import {
 	SheetWorkspaceToolbar,
 	type SheetInsight,
 } from "@/design-system/SheetWorkspaceToolbar";
+import { normalizeRowColor, RowFormattingToolbar } from "@/design-system/RowFormattingToolbar";
+import { AdaptiveCardCollection } from "@/workbench/AdaptiveCardCollection";
+import { useCollectionDisplayPreferences } from "@/workbench/collection-display";
+import { projectResourceCollection } from "@/workbench/resource-sheet-model";
+import { useViewPreferences } from "@/workbench/use-view-preferences";
+import { ViewConfigurator, type ConfigurableColumn } from "@/workbench/ViewConfigurator";
 import type { CardActionRequest } from "../../../types/adaptive-cards";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
+
+const TASK_VIEW_COLUMNS: ConfigurableColumn[] = [
+	{ id: "subject", header: "Subject", defaultWidth: 360, hideable: false },
+	{ id: "status", header: "Status", defaultWidth: 128 },
+	{ id: "priority", header: "Priority", defaultWidth: 104 },
+	{ id: "phase", header: "Phase", defaultWidth: 130 },
+	{ id: "domain", header: "Domain", defaultWidth: 120 },
+	{ id: "assignedArm", header: "Arm", defaultWidth: 140 },
+	{ id: "progress", header: "Progress", defaultWidth: 92 },
+	{ id: "sourceType", header: "Source", defaultWidth: 104 },
+	{ id: "tags", header: "Tags", defaultWidth: 180 },
+	{ id: "updatedAt", header: "Updated", defaultWidth: 170 },
+];
+
+const TASK_COLLECTION_COLUMNS = [
+	{ id: "subject", read: (task: Task) => task.subject },
+	{ id: "status", read: (task: Task) => task.status },
+	{ id: "priority", read: (task: Task) => task.priority },
+	{ id: "phase", read: (task: Task) => task.phase ?? "" },
+	{ id: "domain", read: (task: Task) => task.domain ?? "" },
+	{ id: "assignedArm", read: (task: Task) => task.assignedArmName ?? task.assignedTo ?? "" },
+	{ id: "progress", read: (task: Task) => task.progress ?? 0 },
+	{ id: "sourceType", read: (task: Task) => task.sourceType },
+	{ id: "tags", read: (task: Task) => task.metadata.ui?.tags ?? [] },
+	{ id: "updatedAt", read: (task: Task) => task.updatedAt },
+];
 
 const TaskSheet = React.lazy(() =>
 	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
@@ -443,13 +476,37 @@ export function TasksPage() {
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
 	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
-	const [draftsOnly, setDraftsOnly] = useState(false);
-	const [draftFilterToggleRequest, setDraftFilterToggleRequest] = useState(0);
 	const [deleteConfirm, setDeleteConfirm] = useState<{
 		show: boolean;
 		task: Task | null;
 	}>({ show: false, task: null });
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
+	const [configuringView, setConfiguringView] = useState(false);
+	const [formattingTask, setFormattingTask] = useState<Task>();
+	const { display, updateDisplay } = useCollectionDisplayPreferences({
+		viewId: "tasks-display",
+		name: "Tasks",
+		resourceKind: "task",
+	});
+	const taskView = useViewPreferences("tasks-sheet", {
+		id: "tasks-sheet",
+		name: "Tasks",
+		kind: "sheet",
+		resourceKind: "task",
+		description: "Task collection filters, sorting, and grid columns",
+		query: { resourceKinds: ["task"] },
+		preferences: { density: "compact", sort: [] },
+		shared: false,
+	});
+	const taskViewPreferences = useMemo(
+		() => taskView.preferences.density === display.density
+			? taskView.preferences
+			: { ...taskView.preferences, density: display.density },
+		[display.density, taskView.preferences],
+	);
+	const draftsOnly = (taskViewPreferences.filters ?? []).some((filter) =>
+		filter.field === "status" && filter.operator === "equals" && filter.value === "draft"
+	);
 	const deferredSearchText = useDeferredValue(searchText);
 	const taskRefreshTimerRef = useRef<number | null>(null);
 	const pendingBurndownRefreshRef = useRef(false);
@@ -457,12 +514,6 @@ export function TasksPage() {
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
 	const discussionsTabId: SidebarTab = "discussions";
-	const openNewTaskPanel = useCallback(() => {
-		openWorkspaceRoute(
-			{ pathname: "/tasks", search: "?new=1", title: "New Task" },
-			"action",
-		);
-	}, [openWorkspaceRoute]);
 	const taskModal = (
 		<TaskModal
 			isOpen={isModalOpen}
@@ -495,7 +546,7 @@ export function TasksPage() {
 		removeFromPlan,
 		hasNextPage,
 		fetchNextPage,
-	} = useTasks(undefined, !isNewTaskPage);
+	} = useTasks(draftsOnly ? { status: "draft" } : undefined, !isNewTaskPage);
 	const tasksRef = useRef(tasks);
 	tasksRef.current = tasks;
 
@@ -509,7 +560,7 @@ export function TasksPage() {
 		};
 	}, []);
 
-	const filteredTasks = useMemo(() => {
+	const searchedTasks = useMemo(() => {
 		let result = tasks;
 
 		if (deferredSearchText.trim()) {
@@ -524,15 +575,30 @@ export function TasksPage() {
 
 		return result;
 	}, [deferredSearchText, tasks]);
-	const visibleTaskCount = useMemo(
-		() => draftsOnly
-			? filteredTasks.filter((task) => task.status === "draft").length
-			: filteredTasks.length,
-		[draftsOnly, filteredTasks],
+	const filteredTasks = useMemo(
+		() => projectResourceCollection(searchedTasks, TASK_COLLECTION_COLUMNS, taskViewPreferences),
+		[searchedTasks, taskViewPreferences],
 	);
+	const visibleTaskCount = filteredTasks.length;
 	const toggleDraftsOnly = useCallback(() => {
-		setDraftFilterToggleRequest((current) => current + 1);
-	}, []);
+		const filters = taskView.preferences.filters ?? [];
+		taskView.updatePreferences({
+			...taskView.preferences,
+			filters: draftsOnly
+				? filters.filter((filter) => !(filter.field === "status" && filter.operator === "equals" && filter.value === "draft"))
+				: [...filters.filter((filter) => filter.field !== "status"), { field: "status", operator: "equals", value: "draft" }],
+		});
+	}, [draftsOnly, taskView]);
+	const openNewTaskPanel = useCallback(() => {
+		openWorkspaceRoute(
+			{
+				pathname: "/tasks",
+				search: draftsOnly ? "?new=1&draft=1" : "?new=1",
+				title: "New Task",
+			},
+			"action",
+		);
+	}, [draftsOnly, openWorkspaceRoute]);
 	const draftFilterControl = (
 		<Button
 			size="sm"
@@ -718,6 +784,102 @@ export function TasksPage() {
       "split",
     );
   }, [openWorkspaceRoute, searchParams]);
+	const taskCardCollection = (
+		<AdaptiveCardCollection
+			items={filteredTasks}
+			columns={display.cardColumns}
+			presentation={display.cardPresentation}
+			getKey={(task) => task.id}
+			renderCard={(task, presentation) => (
+				<DeferredAdaptiveCardView
+					envelope={presentTaskCard(
+						task,
+						cardEditTaskId === task.id,
+						taskCardCreator(task),
+					)}
+					onAction={handleTaskCardAction}
+					presentationMode={presentation}
+					headerActions={(
+						<Button
+							isIconOnly
+							size="sm"
+							variant={cardEditTaskId === task.id ? "secondary" : "ghost"}
+							aria-label={cardEditTaskId === task.id ? `Cancel editing ${task.subject}` : `Edit ${task.subject}`}
+							aria-pressed={cardEditTaskId === task.id}
+							onPress={() => setCardEditTaskId((current) => current === task.id ? null : task.id)}
+							className="h-7 min-h-7 w-7 min-w-7"
+						>
+							<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+						</Button>
+					)}
+					footerActions={cardEditTaskId === task.id ? undefined : (
+						<>
+							<Button size="sm" variant="ghost" onPress={() => handleOpenDetails(task)}>
+								<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+								View Task
+							</Button>
+							{task.sourceType === "plan" || task.planLineUid ? (
+								<Button
+									size="sm"
+									variant="ghost"
+									onPress={() => openWorkspaceRoute(
+										{ pathname: "/setup", search: "", title: "Plan & Documents" },
+										"split",
+									)}
+								>
+									<FileText className="h-3.5 w-3.5" aria-hidden="true" />
+									View Plan
+								</Button>
+							) : null}
+						</>
+					)}
+				/>
+			)}
+		/>
+	);
+	const selectedTaskCardEditAction = selectedTask ? (
+		<Button
+			isIconOnly
+			size="sm"
+			variant={cardEditTaskId === selectedTask.id ? "secondary" : "ghost"}
+			aria-label={cardEditTaskId === selectedTask.id ? "Cancel task card editing" : "Edit task card"}
+			aria-pressed={cardEditTaskId === selectedTask.id}
+			onPress={handleToggleTaskCardEditor}
+			className="h-7 min-h-7 w-7 min-w-7"
+		>
+			<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+		</Button>
+	) : undefined;
+	const taskSort = taskViewPreferences.sort?.[0];
+	const taskSortLabel = taskSort
+		? `${TASK_VIEW_COLUMNS.find((column) => column.id === taskSort.field)?.header ?? taskSort.field} ${taskSort.direction === "desc" ? "↓" : "↑"}`
+		: undefined;
+	const taskGridControls = formattingTask ? (
+		<RowFormattingToolbar
+			label={formattingTask.subject}
+			value={{
+				bold: formattingTask.metadata.ui?.bold ?? false,
+				color: normalizeRowColor(formattingTask.metadata.ui?.color),
+			}}
+			onChange={(updates) => handleUpdateTask(formattingTask.id, {
+				metadata: {
+					...formattingTask.metadata,
+					ui: { ...formattingTask.metadata.ui, ...updates },
+				},
+			})}
+		/>
+	) : undefined;
+	const taskViewConfigurator = (
+		<ViewConfigurator
+			open={configuringView}
+			columns={TASK_VIEW_COLUMNS}
+			preferences={taskViewPreferences}
+			shared={taskView.view.shared}
+			onChange={taskView.updatePreferences}
+			onSharedChange={(shared) => void taskView.updateShared(shared)}
+			onClose={() => setConfiguringView(false)}
+		/>
+	);
 
 	const handleRemoveTagFromTask = useCallback(
 		(taskId: string, tagToRemove: string) => {
@@ -822,9 +984,15 @@ export function TasksPage() {
 			<TaskModal
 				isOpen
 				presentation="panel"
+				initialStatus={searchParams.get("draft") === "1" || (searchParams.get("draft") === null && draftsOnly)
+					? "draft"
+					: "pending"}
 				onClose={closeWorkspaceRoute}
 				onSaved={() => {
-					void refetch();
+					void queryClient.invalidateQueries({
+						queryKey: tasksKeys.all(),
+						refetchType: "active",
+					});
 				}}
 			/>
 		);
@@ -843,6 +1011,7 @@ export function TasksPage() {
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
 						<SheetWorkspaceToolbar
+							screenId="tasks"
 							resourceKey="task"
 							resourceName="Tasks"
 							searchText={searchText}
@@ -856,8 +1025,16 @@ export function TasksPage() {
 								void refetch();
 							}}
 							onNew={openNewTaskPanel}
-							secondaryControls={draftFilterControl}
-							actionControls={<TaskWorkflowHelp />}
+							display={display}
+							onDisplayChange={updateDisplay}
+							onConfigure={() => setConfiguringView(true)}
+							filterCount={taskViewPreferences.filters?.length ?? 0}
+							sortLabel={taskSortLabel}
+							extensionWidgets={{
+								"tasks.drafts-only": draftFilterControl,
+								"tasks.workflow-help": <TaskWorkflowHelp />,
+								"tasks.row-formatting": display.mode === "grid" ? taskGridControls : null,
+							}}
 						/>
 						{isError && error ? (
 							<div className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
@@ -872,7 +1049,7 @@ export function TasksPage() {
 							onOpenTask={handleOpenDetails}
 						/>
 						<div className="min-h-0 flex-1 overflow-hidden">
-							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+							{display.mode === "cards" ? taskCardCollection : <React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
 								<TaskSheet
 									tasks={filteredTasks}
 									selectedTaskId={undefined}
@@ -882,13 +1059,16 @@ export function TasksPage() {
 									onCreateTaskAt={handleCreateTaskAt}
 									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
-									onLoadMore={fetchNextPage}
-									draftFilterToggleRequest={draftFilterToggleRequest}
-									onDraftsOnlyChange={setDraftsOnly}
-								/>
-							</React.Suspense>
+										onLoadMore={fetchNextPage}
+										density={display.density}
+										viewPreferences={taskViewPreferences}
+										onViewPreferencesChange={taskView.updatePreferences}
+										onSelectedTaskChange={setFormattingTask}
+									/>
+							</React.Suspense>}
 						</div>
 					</div>
+					{taskViewConfigurator}
 					{taskModal}
 				</>
 			);
@@ -909,7 +1089,7 @@ export function TasksPage() {
 						cardEditing={cardEditTaskId === selectedTask.id}
 						onCardEditToggle={handleToggleTaskCardEditor}
 						onStatusChange={handleStatusChange}
-						onClose={closeWorkspaceRoute}
+						onClose={isWorkspacePanel ? undefined : closeWorkspaceRoute}
 					/>
 
 					{sidebarTab === detailsTabId ? (
@@ -922,6 +1102,7 @@ export function TasksPage() {
 										taskCardCreator(selectedTask),
 									)}
 									onAction={handleTaskCardAction}
+									headerActions={selectedTaskCardEditAction}
 								/>
 							</div>
 						</div>
@@ -955,8 +1136,9 @@ export function TasksPage() {
 	}
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="relative flex h-full min-h-0 flex-col">
 			<SheetWorkspaceToolbar
+				screenId="tasks"
 				resourceKey="task"
 				resourceName="Tasks"
 				searchText={searchText}
@@ -970,8 +1152,16 @@ export function TasksPage() {
 					void refetch();
 				}}
 				onNew={openNewTaskPanel}
-				secondaryControls={draftFilterControl}
-				actionControls={<TaskWorkflowHelp />}
+				display={display}
+				onDisplayChange={updateDisplay}
+				onConfigure={() => setConfiguringView(true)}
+				filterCount={taskViewPreferences.filters?.length ?? 0}
+				sortLabel={taskSortLabel}
+				extensionWidgets={{
+					"tasks.drafts-only": draftFilterControl,
+					"tasks.workflow-help": <TaskWorkflowHelp />,
+					"tasks.row-formatting": display.mode === "grid" ? taskGridControls : null,
+				}}
 			/>
 
 			{isError && error ? (
@@ -1001,6 +1191,8 @@ export function TasksPage() {
 								</Card>
 							))}
 						</div>
+					) : display.mode === "cards" ? (
+						taskCardCollection
 					) : (
 						<div className="h-full">
 							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
@@ -1014,8 +1206,10 @@ export function TasksPage() {
 									onRowsMove={handleRowsMove}
 									hasNextPage={hasNextPage}
 									onLoadMore={fetchNextPage}
-									draftFilterToggleRequest={draftFilterToggleRequest}
-									onDraftsOnlyChange={setDraftsOnly}
+									density={display.density}
+									viewPreferences={taskViewPreferences}
+									onViewPreferencesChange={taskView.updatePreferences}
+									onSelectedTaskChange={setFormattingTask}
 								/>
 							</React.Suspense>
 						</div>
@@ -1051,6 +1245,7 @@ export function TasksPage() {
 												taskCardCreator(selectedTask),
 											)}
 											onAction={handleTaskCardAction}
+											headerActions={selectedTaskCardEditAction}
 										/>
 
 										<div>
@@ -1149,6 +1344,8 @@ export function TasksPage() {
 					</Card>
 				)}
 			</div>
+
+			{taskViewConfigurator}
 
 				{taskModal}
 

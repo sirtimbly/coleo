@@ -25,6 +25,7 @@ import type {
 	WorkbenchProfile,
 	WorkspaceLayoutRecord,
 } from "./types";
+import type { JsonObject } from "@/lib/api";
 
 const PROFILE_STORAGE_KEY = "coleo:workbench-profile";
 
@@ -34,6 +35,9 @@ interface WorkbenchProfileContextValue {
 	layouts: WorkspaceLayoutRecord[];
 	isLoading: boolean;
 	setActiveProfile: (profileId: string) => void;
+	updateProfilePreferences: (
+		updater: (current: JsonObject) => JsonObject,
+	) => Promise<WorkbenchProfile>;
 	saveView: (view: ViewDefinition) => Promise<ViewDefinition>;
 	deleteView: (viewId: string) => Promise<void>;
 	refresh: () => Promise<void>;
@@ -108,6 +112,22 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 	const refresh = useCallback(async () => {
 		await bootstrapQuery.refetch();
 	}, [bootstrapQuery]);
+	const updateProfilePreferences = useCallback(async (
+		updater: (current: JsonObject) => JsonObject,
+	) => {
+		const activeProfile = bootstrapQuery.data?.profile;
+		if (!activeProfile) throw new Error("No active workbench profile is available");
+		const capturedProfileId = activeProfile.id;
+		const preferences = updater(activeProfile.preferences);
+		const { profile } = await api.updateWorkbenchProfile(capturedProfileId, { preferences });
+		queryClient.setQueryData(
+			["workbench", "bootstrap", capturedProfileId],
+			(current: typeof bootstrapQuery.data | undefined) => current
+				? { ...current, profile }
+				: current,
+		);
+		return profile;
+	}, [bootstrapQuery, queryClient]);
 
 	const value = useMemo<WorkbenchProfileContextValue>(() => ({
 		profile: bootstrapQuery.data?.profile ?? null,
@@ -115,6 +135,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		layouts: bootstrapQuery.data?.layouts ?? [],
 		isLoading: bootstrapQuery.isLoading,
 		setActiveProfile,
+		updateProfilePreferences,
 		saveView: async (view) => saveMutation.mutateAsync(view),
 		deleteView: async (viewId) => {
 			await deleteMutation.mutateAsync(viewId);
@@ -127,6 +148,7 @@ export function WorkbenchProfileProvider({ children }: { children: ReactNode }) 
 		refresh,
 		saveMutation,
 		setActiveProfile,
+		updateProfilePreferences,
 	]);
 
 	return (

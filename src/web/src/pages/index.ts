@@ -21,3 +21,4 @@ export { SetupPage } from './SetupPage';
 export { ComposeMessagePage } from './ComposeMessagePage';
 export { CardPanelPage } from './CardPanelPage';
 export { CardCatalogPage } from './CardCatalogPage';
+export { ToolbarsPage } from './ToolbarsPage';

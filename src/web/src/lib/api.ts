@@ -646,6 +646,7 @@ class ApiClient {
           blockedTaskCount: number;
           blockedArmCount: number;
           taskCount: number;
+			nextStep: string | null;
         };
         modelAccess: {
           status: 'available' | 'blocked' | 'unknown';

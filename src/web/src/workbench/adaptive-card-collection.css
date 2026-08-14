@@ -1,0 +1,22 @@
+.coleo-adaptive-card-collection {
+	container-type: inline-size;
+}
+
+.coleo-adaptive-card-grid {
+	display: grid;
+	grid-template-columns: repeat(var(--collection-card-columns), minmax(0, 1fr));
+	align-items: start;
+	gap: 0.75rem;
+}
+
+@container (max-width: 52rem) {
+	.coleo-adaptive-card-grid {
+		grid-template-columns: repeat(min(2, var(--collection-card-columns)), minmax(0, 1fr));
+	}
+}
+
+@container (max-width: 34rem) {
+	.coleo-adaptive-card-grid {
+		grid-template-columns: minmax(0, 1fr);
+	}
+}

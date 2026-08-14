@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import {
 	AlertTriangle,
+	BarChart3,
 	KeyRound,
+	LayoutGrid,
 	LoaderCircle,
+	MoreHorizontal,
 	Play,
 	Plus,
 	RefreshCw,
 	RotateCcw,
 	Server,
+	Table2,
 	Trash2,
 	X,
 } from "lucide-react";
-import { Button } from "@heroui/react";
+import { Button, ButtonGroup, Dropdown } from "@heroui/react";
 import { generateArmName } from "../../../cli/arm-names";
 import {
 	api,
@@ -21,7 +25,7 @@ import {
 	type OpenCodeProvider,
 } from "@/lib";
 import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
-import { CollapsibleSection } from "@/components/CollapsibleSection";
+import { StatusBadge } from "@/components/StatusBadge";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -33,11 +37,23 @@ import {
 import { ProviderSetupModal } from "@/components/ProviderSetupModal";
 import {
 	WorkbenchEmptyState,
-	WorkbenchHeader,
 	WorkbenchSurface,
-	WorkbenchToolbar,
 } from "@/design-system/WorkbenchSurface";
+import {
+	ProjectionFilterMenu,
+	ProjectionSearch,
+} from "@/design-system/ProjectionControls";
+import { ToolbarTemplateRows } from "@/design-system/toolbar-template";
+import { ArmAvatar } from "@/workbench/ArmAvatar";
 import { ArmCollectionRow } from "@/workbench/ArmCollectionRow";
+import {
+	ARM_COLLECTION_SCOPE_LABELS,
+	armMatchesCollectionScope,
+	armMatchesSearch,
+	armNeedsAttention,
+	type ArmCollectionScope,
+} from "@/workbench/arm-collection-model";
+import { useToolbarTemplate } from "@/workbench/toolbar-template-context";
 
 interface ArmEventData {
 	arm?: Arm;
@@ -78,6 +94,8 @@ interface NewArmModalState {
 	model: string;
 	agentId: string;
 }
+
+type ArmListView = "grid" | "cards";
 
 const DEFAULT_SPAWN_DEFAULTS: SpawnDefaults = {
 	harness: "opencode-api",
@@ -171,96 +189,178 @@ function armActionFor(arm: Arm): { kind: "spawn" | "recover"; label: string } | 
 	return null;
 }
 
-function needsAttention(arm: Arm): boolean {
-	const runtimeState = arm.runtime?.state;
-	return (
-		armActionFor(arm) !== null ||
-		runtimeState === "hung" ||
-		runtimeState === "recoverable" ||
-		arm.status === "error"
-	);
-}
-
-interface ArmRowProps {
+interface ArmActionProps {
 	arm: Arm;
-	attention: boolean;
 	spawningArmId: string | null;
 	markingStuckArmId: string | null;
-	onOpen: () => void;
 	onDelete: () => void;
 	onSpawn: () => void;
 	onRecover: () => void;
 	onMarkStuck: () => void;
 }
 
-function ArmRow({
+interface ArmRowProps extends ArmActionProps {
+	attention: boolean;
+	onOpen: () => void;
+}
+
+function ArmActionControls({
 	arm,
-	attention,
 	spawningArmId,
 	markingStuckArmId,
-	onOpen,
 	onDelete,
 	onSpawn,
 	onRecover,
 	onMarkStuck,
-}: ArmRowProps) {
+}: ArmActionProps) {
 	const action = armActionFor(arm);
 	const isRecover = action?.kind === "recover";
 	const isSpawning = spawningArmId === arm.id;
 	const isMarkingStuck = markingStuckArmId === arm.id;
+
 	return (
-		<ArmCollectionRow
-			arm={arm}
-			attention={attention}
-			onOpen={onOpen}
-			actions={
-				<>
-					{action && (
-						<Button
-							variant={isRecover ? "secondary" : "primary"}
-							size="sm"
-							onPress={() => void (isRecover ? onRecover() : onSpawn())}
-							isDisabled={spawningArmId !== null}
-							className={isRecover ? "gap-1.5 text-warning" : "gap-1.5"}
-						>
-							{isSpawning ? (
-								<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
-							) : isRecover ? (
-								<RotateCcw className="h-3.5 w-3.5" />
-							) : (
-								<Play className="h-3.5 w-3.5" />
-							)}
-							{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
-						</Button>
+		<>
+			{action && (
+				<Button
+					variant={isRecover ? "secondary" : "primary"}
+					size="sm"
+					onPress={() => void (isRecover ? onRecover() : onSpawn())}
+					isDisabled={spawningArmId !== null}
+					className={isRecover ? "gap-1.5 text-warning" : "gap-1.5"}
+				>
+					{isSpawning ? (
+						<LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+					) : isRecover ? (
+						<RotateCcw className="h-3.5 w-3.5" />
+					) : (
+						<Play className="h-3.5 w-3.5" />
 					)}
-					{arm.status !== "stopped" && arm.status !== "planning_blocked" && (
-						<Button
-							variant="ghost"
-							size="sm"
-							onPress={onMarkStuck}
-							isDisabled={markingStuckArmId !== null}
-							className="gap-1.5 text-warning"
-						>
-							<AlertTriangle className="h-3.5 w-3.5" />
-							{isMarkingStuck
-								? "Reporting…"
-								: arm.recoveryRequestedAt
-									? "Recovery requested"
-									: "Mark stuck"}
-						</Button>
-					)}
+					{isSpawning ? (isRecover ? "Recovering…" : "Starting…") : action.label}
+				</Button>
+			)}
+			{arm.status !== "stopped" && arm.status !== "planning_blocked" && (
+				<span className="hidden 2xl:inline-flex">
 					<Button
-						isIconOnly
 						variant="ghost"
 						size="sm"
-						onPress={onDelete}
-						className="text-muted-foreground opacity-0 transition-opacity hover:text-danger focus-visible:opacity-100 group-hover:opacity-100"
+						onPress={onMarkStuck}
+						isDisabled={markingStuckArmId !== null}
+						className="gap-1.5 text-warning"
 					>
-						<Trash2 className="h-3.5 w-3.5" />
+						<AlertTriangle className="h-3.5 w-3.5" />
+						{isMarkingStuck
+							? "Reporting…"
+							: arm.recoveryRequestedAt
+								? "Recovery requested"
+								: "Mark stuck"}
 					</Button>
-				</>
-			}
+				</span>
+			)}
+			<Dropdown>
+				<Dropdown.Trigger
+					aria-label={`Actions for ${arm.name}`}
+					className="inline-flex h-7 w-7 cursor-pointer items-center justify-center text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+				>
+					<MoreHorizontal className="h-3.5 w-3.5" />
+				</Dropdown.Trigger>
+				<Dropdown.Popover placement="bottom end">
+					<Dropdown.Menu
+						onAction={(key) => {
+							if (key === "stuck") onMarkStuck();
+							if (key === "delete") onDelete();
+						}}
+					>
+						{arm.status !== "stopped" && arm.status !== "planning_blocked" ? (
+							<Dropdown.Item key="stuck" id="stuck" textValue="Mark stuck" isDisabled={markingStuckArmId !== null}>
+								<span className="flex items-center gap-2 text-warning">
+									<AlertTriangle className="h-4 w-4" />
+									{arm.recoveryRequestedAt ? "Recovery requested" : "Mark stuck"}
+								</span>
+							</Dropdown.Item>
+						) : null}
+						<Dropdown.Item key="delete" id="delete" textValue="Delete arm">
+							<span className="flex items-center gap-2 text-danger">
+								<Trash2 className="h-4 w-4" />
+								Delete arm
+							</span>
+						</Dropdown.Item>
+					</Dropdown.Menu>
+				</Dropdown.Popover>
+			</Dropdown>
+		</>
+	);
+}
+
+function ArmRow(props: ArmRowProps) {
+	return (
+		<ArmCollectionRow
+			arm={props.arm}
+			attention={props.attention}
+			onOpen={props.onOpen}
+			actions={<ArmActionControls {...props} />}
 		/>
+	);
+}
+
+function ArmCard(props: ArmRowProps) {
+	const { arm, attention, onOpen } = props;
+	const currentWork = arm.currentBugTitle ?? arm.currentTaskSubject;
+	const contextUsage = arm.contextBudget
+		? `${Math.round(Math.min((arm.currentContextUsed / arm.contextBudget) * 100, 100))}%`
+		: "—";
+	const runtimeLocation = arm.host ?? arm.agentId ?? "Not assigned";
+
+	return (
+		<article className={`min-w-0 overflow-hidden border bg-surface ${attention ? "border-warning/35 bg-warning/5" : "border-border"}`}>
+			<div
+				role="button"
+				tabIndex={0}
+				onClick={onOpen}
+				onKeyDown={(event) => {
+					if (event.key !== "Enter" && event.key !== " ") return;
+					event.preventDefault();
+					onOpen();
+				}}
+				className="cursor-pointer px-4 py-3 outline-none transition-colors hover:bg-surface-secondary/50 focus-visible:bg-surface-secondary"
+			>
+				<div className="flex min-w-0 items-start gap-3">
+					<ArmAvatar armId={arm.id} className="h-10 w-10" />
+					<div className="min-w-0 flex-1">
+						<div className="flex min-w-0 items-center gap-2">
+							<h2 className="truncate text-sm font-semibold text-foreground">{arm.name}</h2>
+							<StatusBadge status={arm.status} />
+						</div>
+						<p className="mt-0.5 truncate text-[0.68rem] text-muted-foreground" title={`${arm.provider ?? "Default"} · ${arm.model ?? "Default"}`}>
+							{arm.provider ?? "Default"} · {arm.model ?? "Default"}
+						</p>
+					</div>
+				</div>
+				<p className={`mt-3 line-clamp-2 min-h-10 text-xs leading-5 ${arm.status === "planning_blocked" ? "font-medium text-warning" : "text-muted-foreground"}`}>
+					{arm.status === "planning_blocked"
+						? "Waiting for the Brain to finish the project planning gate"
+						: currentWork
+							? `${arm.currentBugTitle ? "Bug" : "Task"} · ${currentWork}`
+							: "Waiting for the brain to assign work"}
+				</p>
+				<dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border pt-3 text-xs">
+					<div className="min-w-0">
+						<dt className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Runtime</dt>
+						<dd className="mt-0.5 truncate capitalize text-foreground">{arm.runtime?.state ?? arm.status}</dd>
+					</div>
+					<div className="min-w-0">
+						<dt className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Context</dt>
+						<dd className="mt-0.5 tabular-nums text-foreground">{contextUsage}</dd>
+					</div>
+					<div className="min-w-0 col-span-2">
+						<dt className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Host</dt>
+						<dd className="mt-0.5 truncate text-foreground" title={runtimeLocation}>{runtimeLocation}</dd>
+					</div>
+				</dl>
+			</div>
+			<div className="flex min-h-10 items-center justify-end gap-1 border-t border-border px-3 py-1.5">
+				<ArmActionControls {...props} />
+			</div>
+		</article>
 	);
 }
 
@@ -268,6 +368,7 @@ export function ArmsPage() {
 	const [searchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const closeWorkspaceRoute = useWorkspaceCloseRoute('/arms');
+	const toolbarTemplate = useToolbarTemplate("arms");
 	const isSpawnPage = searchParams.get("spawn") === "1";
 	usePageTitle(isSpawnPage ? 'Coleo Observatory - Spawn Arm' : 'Coleo Observatory - Arms');
 	const [arms, setArms] = useState<Arm[]>([]);
@@ -284,6 +385,10 @@ export function ArmsPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [spawningArmId, setSpawningArmId] = useState<string | null>(null);
 	const [markingStuckArmId, setMarkingStuckArmId] = useState<string | null>(null);
+	const [searchText, setSearchText] = useState("");
+	const [scope, setScope] = useState<ArmCollectionScope>("all");
+	const [telemetryExpanded, setTelemetryExpanded] = useState(true);
+	const [listView, setListView] = useState<ArmListView>("grid");
 	const [spawnModal, setSpawnModal] = useState<NewArmModalState>(
 		DEFAULT_SPAWN_MODAL_STATE,
 	);
@@ -846,14 +951,113 @@ export function ArmsPage() {
 		spawnModal.isOpen,
 	]);
 
-	const { attentionArms, healthyArms } = useMemo(() => {
-		const attention: Arm[] = [];
-		const healthy: Arm[] = [];
+	const armScopeOptions = useMemo(() => {
+		const counts: Record<ArmCollectionScope, number> = {
+			all: arms.length,
+			attention: 0,
+			working: 0,
+			waiting: 0,
+		};
 		for (const arm of arms) {
-			(needsAttention(arm) ? attention : healthy).push(arm);
+			if (armNeedsAttention(arm)) counts.attention++;
+			else if (arm.status === "busy" || arm.status === "running") counts.working++;
+			else counts.waiting++;
 		}
-		return { attentionArms: attention, healthyArms: healthy };
+		return (Object.keys(ARM_COLLECTION_SCOPE_LABELS) as ArmCollectionScope[]).map((id) => ({
+			id,
+			label: ARM_COLLECTION_SCOPE_LABELS[id],
+			count: counts[id],
+		}));
 	}, [arms]);
+	const visibleArms = useMemo(
+		() => arms.filter((arm) => armMatchesCollectionScope(arm, scope) && armMatchesSearch(arm, searchText)),
+		[arms, scope, searchText],
+	);
+	const ArmRenderer = listView === "cards" ? ArmCard : ArmRow;
+	const toolbarWidgets = {
+		"arms.search": (
+			<ProjectionSearch
+				value={searchText}
+				onChange={setSearchText}
+				placeholder="Search arms…"
+				className="min-w-36 max-w-xl"
+			/>
+		),
+		"arms.telemetry": (
+			<Button
+				size="sm"
+				variant={telemetryExpanded ? "secondary" : "ghost"}
+				aria-pressed={telemetryExpanded}
+				aria-controls="arms-telemetry-panel"
+				aria-label="Toggle fleet telemetry"
+				onPress={() => setTelemetryExpanded((current) => !current)}
+				className="h-8 min-w-0 shrink-0 px-2"
+			>
+				<BarChart3 className="h-3.5 w-3.5" />
+				<span className="hidden sm:inline">Telemetry</span>
+			</Button>
+		),
+		"arms.refresh": (
+			<Button
+				isIconOnly
+				size="sm"
+				variant="ghost"
+				onPress={() => void loadArms()}
+				aria-label="Refresh arms"
+			>
+				<RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+			</Button>
+		),
+		"arms.spawn": (
+			<Button
+				size="sm"
+				variant="primary"
+				onPress={openSpawnPanel}
+				isDisabled={loading}
+				aria-label="Spawn arm"
+				className="min-w-0 px-2.5"
+			>
+				<Plus className="h-4 w-4" />
+				<span className="hidden sm:inline">Spawn</span>
+			</Button>
+		),
+		"arms.display": (
+			<ButtonGroup size="sm" variant="ghost" aria-label="Arm list display">
+				<Button
+					aria-pressed={listView === "grid"}
+					variant={listView === "grid" ? "secondary" : "ghost"}
+					onPress={() => setListView("grid")}
+					className="h-7 min-w-0 px-2"
+				>
+					<Table2 className="h-3.5 w-3.5" aria-hidden="true" />
+					Grid
+				</Button>
+				<Button
+					aria-pressed={listView === "cards"}
+					variant={listView === "cards" ? "secondary" : "ghost"}
+					onPress={() => setListView("cards")}
+					className="h-7 min-w-0 px-2"
+				>
+					<LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+					Cards
+				</Button>
+			</ButtonGroup>
+		),
+		"arms.result-count": (
+			<span className="inline-flex shrink-0 self-center items-center text-xs tabular-nums text-muted-foreground">
+				{visibleArms.length} of {arms.length}
+			</span>
+		),
+		"arms.scope": (
+			<ProjectionFilterMenu
+				label="View"
+				value={scope}
+				options={armScopeOptions}
+				onChange={(value) => setScope(value as ArmCollectionScope)}
+				className="h-7 min-h-7"
+			/>
+		),
+	};
 
 	if (error) {
 		return (
@@ -875,50 +1079,28 @@ export function ArmsPage() {
 		>
 			{!isSpawnPage ? (
 				<>
-					<WorkbenchHeader
-						title="Arms"
-						description="Fleet health, assignments, and runtime telemetry"
-						icon={<Server className="h-4 w-4" />}
-						actions={
-							<Button
-								size="sm"
-								variant="primary"
-								className="gap-2"
-								onPress={openSpawnPanel}
-								isDisabled={loading}
-							>
-								<Plus className="h-4 w-4" />
-								Spawn
-							</Button>
-						}
-					/>
-					<WorkbenchToolbar>
-						<span className="text-xs text-muted-foreground">{arms.length} total</span>
-						<span className="text-xs text-warning">{attentionArms.length} need attention</span>
-						<span className="text-xs text-success">{healthyArms.length} running normally</span>
-					</WorkbenchToolbar>
+					<ToolbarTemplateRows template={toolbarTemplate} widgets={toolbarWidgets} />
 
 					<div className="min-h-0 flex-1 overflow-auto">
-					<CollapsibleSection
-						title="Fleet telemetry"
-						summary={[
-							{ label: "Arms", value: arms.length },
-							{ label: "Window", value: "24h" },
-						]}
-						className="rounded-none border-x-0 border-t-0"
-					>
-						<AllArmsTelemetryOverview
-							embedded
-							contextBudget={
-								loading ? undefined : arms.reduce((total, arm) => total + arm.contextBudget, 0)
-							}
-						/>
-					</CollapsibleSection>
+					{telemetryExpanded ? (
+						<section
+							id="arms-telemetry-panel"
+							aria-label="Fleet telemetry"
+							className="border-b border-border"
+						>
+							<AllArmsTelemetryOverview
+								embedded
+								contextBudget={
+									loading ? undefined : arms.reduce((total, arm) => total + arm.contextBudget, 0)
+								}
+							/>
+						</section>
+					) : null}
 
 					{loading ? (
-						<div className="space-y-2 p-4">
+						<div className={listView === "cards" ? "grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-3" : "space-y-2 p-4"}>
 							{[1, 2, 3, 4].map((i) => (
-								<div key={i} className="h-16 rounded-lg bg-default-100/60 animate-pulse" />
+								<div key={i} className={`${listView === "cards" ? "h-56" : "h-16"} animate-pulse bg-default-100/60`} />
 							))}
 						</div>
 					) : arms.length === 0 ? (
@@ -928,61 +1110,31 @@ export function ArmsPage() {
 							action={<code className="border border-border bg-surface-secondary px-3 py-2 text-xs">coleo arm spawn</code>}
 							icon={<Server className="h-4 w-4" />}
 						/>
+					) : visibleArms.length === 0 ? (
+						<WorkbenchEmptyState
+							title="No matching arms"
+							description="Try another search or fleet view."
+							action={<Button size="sm" variant="ghost" onPress={() => { setSearchText(""); setScope("all"); }}>Clear filters</Button>}
+							icon={<Server className="h-4 w-4" />}
+						/>
 					) : (
-						<div>
-							{attentionArms.length > 0 && (
-								<CollapsibleSection
-									title={<span className="inline-flex items-center gap-2 text-warning"><AlertTriangle className="h-3.5 w-3.5" />Needs attention</span>}
-									summary={[{ label: "Arms", value: attentionArms.length, tone: "warning" }]}
-									className="rounded-none border-x-0 border-t-0"
-									bodyClassName="divide-y divide-warning/20 p-0"
-								>
-									{attentionArms.map((arm) => (
-											<ArmRow
-												key={arm.id}
-												arm={arm}
-												attention
-												spawningArmId={spawningArmId}
-												markingStuckArmId={markingStuckArmId}
-												onOpen={() => openArmViewer(arm.id)}
-												onDelete={() => handleDelete(arm.id)}
-												onSpawn={() => handleSpawn(arm)}
-												onRecover={() => handleRecover(arm)}
-												onMarkStuck={() => handleMarkStuck(arm)}
-											/>
-										))}
-								</CollapsibleSection>
+						<div className={listView === "cards" ? "grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3" : "bg-surface"}>
+							{visibleArms.map((arm) => (
+								<ArmRenderer
+									key={arm.id}
+									arm={arm}
+									attention={armNeedsAttention(arm)}
+									spawningArmId={spawningArmId}
+									markingStuckArmId={markingStuckArmId}
+									onOpen={() => openArmViewer(arm.id)}
+									onDelete={() => handleDelete(arm.id)}
+									onSpawn={() => handleSpawn(arm)}
+									onRecover={() => handleRecover(arm)}
+									onMarkStuck={() => handleMarkStuck(arm)}
+								/>
+							))}
+						</div>
 					)}
-
-					<CollapsibleSection
-						title="Running"
-						summary={[{ label: "Arms", value: healthyArms.length, tone: "success" }]}
-						className="rounded-none border-x-0 border-t-0"
-						bodyClassName="divide-y divide-border p-0"
-					>
-							{healthyArms.length === 0 ? (
-								<div className="px-4 py-6 text-center text-sm text-muted-foreground">
-									All arms need attention right now.
-								</div>
-							) : (
-								healthyArms.map((arm) => (
-									<ArmRow
-										key={arm.id}
-										arm={arm}
-										attention={false}
-										spawningArmId={spawningArmId}
-										markingStuckArmId={markingStuckArmId}
-										onOpen={() => openArmViewer(arm.id)}
-										onDelete={() => handleDelete(arm.id)}
-										onSpawn={() => handleSpawn(arm)}
-										onRecover={() => handleRecover(arm)}
-										onMarkStuck={() => handleMarkStuck(arm)}
-									/>
-								))
-							)}
-					</CollapsibleSection>
-				</div>
-			)}
 					</div>
 					</>
 			) : null}
@@ -1031,7 +1183,7 @@ export function ArmsPage() {
 												}
 												className="gap-1.5 text-xs"
 											>
-												<RefreshCw className="h-3.5 w-3.5" />
+											<RefreshCw className="h-3.5 w-3.5" />
 												Regenerate
 											</Button>
 										</div>

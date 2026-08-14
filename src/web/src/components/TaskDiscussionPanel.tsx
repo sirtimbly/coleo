@@ -211,15 +211,15 @@ export function TaskDiscussionPanel({
   const displayDiscussions = [...discussions].reverse();
 
   return (
-    <div className={cn('flex flex-col h-full', className)}>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-700 bg-zinc-800/30">
-        <h3 className="text-sm font-medium text-zinc-300">Discussion</h3>
+    <div className={cn('flex h-full flex-col bg-background text-foreground', className)}>
+      <div className="flex items-center justify-between border-b border-border bg-surface-secondary/35 px-4 py-2">
+        <h3 className="text-sm font-medium text-foreground">Discussion</h3>
         <Button
           size="sm"
           variant="ghost"
           onPress={handlePrepareTask}
           isDisabled={isPreparing}
-          className="text-amber-400 hover:text-amber-300 hover:bg-amber-950/20"
+          className="text-accent hover:bg-accent/10 hover:text-accent"
         >
           <Sparkles className="h-3.5 w-3.5 mr-1.5" />
           Prepare task
@@ -227,8 +227,8 @@ export function TaskDiscussionPanel({
       </div>
 
       {error && (
-        <div className="px-4 py-2 bg-red-500/10 border-b border-red-500/30">
-          <p className="text-sm text-red-400">{error}</p>
+        <div className="border-b border-danger/30 bg-danger/10 px-4 py-2">
+          <p className="text-sm text-danger">{error}</p>
         </div>
       )}
 
@@ -239,20 +239,20 @@ export function TaskDiscussionPanel({
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <div key={i} className="p-3 bg-zinc-800/50 border border-zinc-700 rounded-lg animate-pulse">
+              <div key={i} className="animate-pulse border border-border bg-surface p-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <div className="w-6 h-6 bg-zinc-700 rounded" />
-                  <div className="w-24 h-4 bg-zinc-700 rounded" />
+                  <div className="h-6 w-6 bg-surface-secondary" />
+                  <div className="h-4 w-24 bg-surface-secondary" />
                 </div>
-                <div className="w-full h-12 bg-zinc-700 rounded" />
+                <div className="h-12 w-full bg-surface-secondary" />
               </div>
             ))}
           </div>
         ) : displayDiscussions.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-8">
-            <MessageSquare className="h-12 w-12 text-zinc-600 mb-3" />
-            <p className="text-zinc-400 text-sm">No discussions yet</p>
-            <p className="text-zinc-500 text-xs mt-1">
+            <MessageSquare className="mb-3 h-12 w-12 text-muted-foreground/45" />
+            <p className="text-sm text-foreground">No discussions yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               Start a conversation about this task
             </p>
           </div>
@@ -284,7 +284,7 @@ export function TaskDiscussionPanel({
         )}
       </div>
 
-      <div className="border-t border-zinc-700 p-3">
+      <div className="border-t border-border bg-background p-3">
         {editing ? (
           <DiscussionComposer
             replyTo={null}

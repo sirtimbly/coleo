@@ -6,7 +6,7 @@
  * dedicated Golden Layout detail panel.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@heroui/react";
 import { SlidersHorizontal } from "lucide-react";
 
@@ -83,13 +83,23 @@ function readTaskFormatting(task: Task): RowFormattingValue {
 	};
 }
 
-const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
+function renderExpandedTaskText(task: Task): ReactNode {
+	return (
+		<div className="coleo-task-expanded-copy">
+			<p className="coleo-task-expanded-subject">{task.subject}</p>
+			<p className="coleo-task-expanded-description">{task.description}</p>
+		</div>
+	);
+}
+
+export const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 	{
 		id: "subject",
 		header: "Subject",
 		read: (task) => task.subject,
 		width: 360,
 		className: "coleo-sheet-primary-cell",
+		openRowAction: true,
 	},
 	{
 		id: "status",
@@ -176,6 +186,10 @@ export function TaskSheet({
 	viewId = "tasks-sheet",
 	draftFilterToggleRequest = 0,
 	onDraftsOnlyChange,
+	density,
+	viewPreferences,
+	onViewPreferencesChange,
+	onSelectedTaskChange,
 }: {
 	tasks: Task[];
 	selectedTaskId?: string;
@@ -189,6 +203,10 @@ export function TaskSheet({
 	viewId?: string;
 	draftFilterToggleRequest?: number;
 	onDraftsOnlyChange?: (active: boolean) => void;
+	density?: ViewPreferences["density"];
+	viewPreferences?: ViewPreferences;
+	onViewPreferencesChange?: (preferences: ViewPreferences) => void;
+	onSelectedTaskChange?: (task: Task | undefined) => void;
 }) {
 	const [configuring, setConfiguring] = useState(false);
 	const [formattingTaskId, setFormattingTaskId] = useState<string>();
@@ -199,7 +217,7 @@ export function TaskSheet({
 		)),
 		[tagOptions],
 	);
-	const { view, preferences, updatePreferences, updateShared } = useViewPreferences(viewId, {
+	const { view, preferences: savedPreferences, updatePreferences: updateSavedPreferences, updateShared } = useViewPreferences(viewId, {
 		id: viewId,
 		name: viewId === "plan-items-sheet" ? "Plan items" : "Tasks",
 		kind: "sheet",
@@ -215,7 +233,13 @@ export function TaskSheet({
 		},
 		shared: false,
 	});
+	const preferences = viewPreferences ?? savedPreferences;
+	const updatePreferences = onViewPreferencesChange ?? updateSavedPreferences;
+	const externallyConfigured = viewPreferences !== undefined && onViewPreferencesChange !== undefined;
 	const draftsOnly = isDraftsOnly(preferences);
+	const effectivePreferences = density && density !== preferences.density
+		? { ...preferences, density }
+		: preferences;
 	const previousDraftToggleRequestRef = useRef(draftFilterToggleRequest);
 	const previousStatusFiltersRef = useRef<ProjectionFilter[]>([]);
 
@@ -265,7 +289,7 @@ export function TaskSheet({
 
 	return (
 		<div className="relative flex h-full min-h-0 flex-col">
-			<div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
+			{externallyConfigured ? null : <div className="flex h-9 shrink-0 items-center justify-between border-b border-border bg-surface-secondary/35 px-3">
 				{formattingTask ? (
 					<RowFormattingToolbar
 						label={formattingTask.subject}
@@ -285,11 +309,11 @@ export function TaskSheet({
 					<SlidersHorizontal className="h-3.5 w-3.5" />
 					View
 				</Button>
-			</div>
+			</div>}
 			<ResourceSheet
 				rows={tasks}
 				columns={columns}
-				preferences={preferences}
+				preferences={effectivePreferences}
 				onPreferencesChange={updatePreferences}
 				onChange={(task, columnId, value) => {
 					if (columnId === "subject" && typeof value === "string" && value.trim()) {
@@ -314,21 +338,28 @@ export function TaskSheet({
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedTaskId}
 				onNearEnd={hasNextPage ? onLoadMore : undefined}
-				onRowSelectionChange={(task) => setFormattingTaskId(task?.id)}
+				onRowSelectionChange={(task) => {
+					setFormattingTaskId(task?.id);
+					onSelectedTaskChange?.(task);
+				}}
 				getRowFormatting={readTaskFormatting}
+				renderRowDetail={effectivePreferences.density === "comfortable"
+					? renderExpandedTaskText
+					: undefined}
+				getRowDetailLabel={(task) => task.subject}
 				className="min-h-0 flex-1"
 			/>
-			<ViewConfigurator
+			{externallyConfigured ? null : <ViewConfigurator
 				open={configuring}
 				columns={configurableColumns}
-				preferences={preferences}
+				preferences={effectivePreferences}
 				shared={view.shared}
 				onChange={updatePreferences}
 				onSharedChange={(shared) => {
 					void updateShared(shared);
 				}}
 				onClose={() => setConfiguring(false)}
-			/>
+			/>}
 		</div>
 	);
 }

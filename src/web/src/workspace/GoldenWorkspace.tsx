@@ -1172,7 +1172,7 @@ export function GoldenWorkspace() {
 	);
 
 	return (
-		<div className="golden-workspace-shell flex h-screen">
+		<div className="observatory-backdrop golden-workspace-shell flex h-screen">
 			<div className="flex-1 min-w-0 flex flex-col">
 				<header className="golden-workspace-dock px-3 pt-3 pb-2">
 					<div className="golden-workspace-dock-inner">

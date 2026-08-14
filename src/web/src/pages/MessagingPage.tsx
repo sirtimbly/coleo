@@ -45,6 +45,7 @@ import {
 	type BrainActivityTone,
 } from "@/pages/brain-activity";
 import { MailThreadProjection } from "@/workbench/MailThreadProjection";
+import { useCollectionDisplayPreferences } from "@/workbench/collection-display";
 import {
 	ProjectionInbox,
 	type InboxFacet,
@@ -84,7 +85,7 @@ const FACETS: InboxFacet[] = [
 	{
 		id: "attention",
 		label: "Needs attention",
-		predicate: (item) => item.requiresAction || item.unread,
+		predicate: (item) => item.requiresAction,
 	},
 	{ id: "messages", label: "Messages", kinds: ["project"] },
 	{ id: "brain", label: "Brain", kinds: ["brain"] },
@@ -257,12 +258,24 @@ function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemData {
 					search: `?bug=${encodeURIComponent(record.resource.id)}`,
 				}
 			: undefined;
+	const summary = record.source === "planning-gate"
+		? (() => {
+			try {
+				const parsed = JSON.parse(record.summary) as { detail?: unknown; nextStep?: unknown };
+				return [parsed.detail, parsed.nextStep]
+					.filter((value): value is string => typeof value === "string")
+					.join(" Required action: ");
+			} catch {
+				return record.summary;
+			}
+		})()
+		: record.summary;
 	return {
 		item: {
 			id: record.itemKey,
-			kind: record.kind === "bug" ? "system" : "status",
+			kind: record.kind === "brain" ? "brain" : record.kind === "bug" ? "system" : "status",
 			title: record.title,
-			summary: record.summary,
+			summary,
 			timestamp: record.timestamp,
 			source: record.source.replaceAll("-", " "),
 			resourceId: record.resource.id,
@@ -319,6 +332,11 @@ export function MessagingPage() {
 	const [workbenchInbox, setWorkbenchInbox] = useState<WorkbenchInboxRecord[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [archiving, setArchiving] = useState(false);
+	const { display, updateDisplay } = useCollectionDisplayPreferences({
+		viewId: "inbox-display",
+		name: "Inbox",
+		resourceKind: "message",
+	});
 	const loadTimerRef = useRef<number | null>(null);
 	const brainActivityInitializedRef = useRef(false);
 	const selectedThreadId = searchParams.get("thread");
@@ -497,7 +515,14 @@ export function MessagingPage() {
 				.filter(isNotableEvent)
 				.map((event, index) => projectRecentEvent(event, index)),
 		];
-		return [...new Map(merged.map((entry) => [entry.item.id, entry])).values()].sort(
+		const durableTaskIds = new Set(workbenchInbox
+			.filter((record) => record.resource.kind === "task")
+			.map((record) => record.resource.id));
+		const focused = merged.filter((entry) => {
+			if (!entry.item.resourceId || !durableTaskIds.has(entry.item.resourceId)) return true;
+			return entry.item.id === `task:${entry.item.resourceId}` || entry.item.id.startsWith("status:");
+		});
+		return [...new Map(focused.map((entry) => [entry.item.id, entry])).values()].sort(
 			(left, right) =>
 				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
 		);
@@ -528,13 +553,21 @@ export function MessagingPage() {
 		() => new Map(statefulItems.map((entry) => [entry.item.id, entry])),
 		[statefulItems],
 	);
+	const planningGateBlocked = workbenchInbox.some((record) =>
+		record.itemKey === "brain:planning-gate" && record.requiresAction
+	);
+	const facets = useMemo(() => planningGateBlocked
+		? FACETS.map((facet) => facet.id === "attention"
+			? { ...facet, predicate: (item: InboxProjectionItem) => item.id === "brain:planning-gate" }
+			: facet)
+		: FACETS, [planningGateBlocked]);
 	const projectionItems = useMemo(
-		() => statefulItems.filter((entry) =>
-			activeFacet !== "brain" ||
-			brainCategory === "all" ||
-			entry.item.kind !== "brain" ||
-			entry.brainCategory === brainCategory
-		),
+		() => statefulItems.filter((entry) => {
+			return activeFacet !== "brain" ||
+				brainCategory === "all" ||
+				entry.item.kind !== "brain" ||
+				entry.brainCategory === brainCategory;
+		}),
 		[activeFacet, brainCategory, statefulItems],
 	);
 
@@ -586,7 +619,10 @@ export function MessagingPage() {
 		);
 	}, [activeFacet, markThreadRead, openWorkspaceRoute, statefulItemsById]);
 
-	const renderInboxCard = useCallback((item: InboxProjectionItem) => {
+	const renderInboxCard = useCallback((
+		item: InboxProjectionItem,
+		presentationMode: import("@/adaptive-cards/card-presentation").CardPresentationMode,
+	) => {
 		const source = statefulItemsById.get(item.id);
 		if (!source) return null;
 		const latestMessage = source.thread?.messages.at(-1)?.message;
@@ -634,8 +670,9 @@ export function MessagingPage() {
 		};
 		return (
 			<DeferredAdaptiveCardView
-				envelope={envelope}
-				onAction={handleAction}
+					envelope={envelope}
+					onAction={handleAction}
+					presentationMode={presentationMode}
 				headerActions={(
 					<Button
 						isIconOnly
@@ -733,8 +770,10 @@ export function MessagingPage() {
 			title="Inbox"
 			description="Messages, Brain decisions, Arm events, and operational history"
 			items={projectionItems.map((entry) => entry.item)}
-			facets={FACETS}
+			facets={facets}
 			activeFacet={activeFacet}
+			display={display}
+			onDisplayChange={updateDisplay}
 			onFacetChange={handleFacetChange}
 			onOpen={openItem}
 			renderCard={renderInboxCard}

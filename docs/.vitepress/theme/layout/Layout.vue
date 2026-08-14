@@ -21,6 +21,9 @@ const isHome = computed(() => {
 watchEffect(() => {
   if (typeof document === "undefined") return;
   document.body.classList.toggle("coleo-home", isHome.value);
+  if (isHome.value) {
+    document.body.classList.remove("light-mode", "dark-mode");
+  }
 });
 
 const bootAnimations = async () => {
@@ -35,7 +38,9 @@ const bootAnimations = async () => {
       try {
         await import("../anim.js");
       } catch (_) {}
-      (window as any).__homeAnim?.initHomeAnimation?.();
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        (window as any).__homeAnim?.initHomeAnimation?.();
+      }
     } else {
       try {
         await import("../anim-lite.js");

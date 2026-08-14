@@ -15,6 +15,7 @@ import { ToastProvider, MessageProvider, ThemeProvider } from '@/lib';
 import { GoldenWorkspace } from '@/workspace/GoldenWorkspace';
 import { LiveProjectionProvider } from '@/workbench/live-projections';
 import { WorkbenchProfileProvider } from '@/workbench/profile-context';
+import { ToolbarTemplateProvider } from '@/workbench/toolbar-template-context';
 
 function AppShell() {
   const { layoutMode } = useLayoutMode();
@@ -37,32 +38,34 @@ function App() {
         <MessageProvider>
           <LiveProjectionProvider>
             <WorkbenchProfileProvider>
-              <BrowserRouter>
-                <ProjectOnboardingGate>
-                  <InterfaceTypography />
-                  <AppMessageOverlay />
-                  <Routes>
-                    <Route path="/" element={<AppShell />}>
-                      {APP_ROUTES.map((route) => {
-                        const RouteComponent = route.component;
+              <ToolbarTemplateProvider>
+                <BrowserRouter>
+                  <ProjectOnboardingGate>
+                    <InterfaceTypography />
+                    <AppMessageOverlay />
+                    <Routes>
+                      <Route path="/" element={<AppShell />}>
+                        {APP_ROUTES.map((route) => {
+                          const RouteComponent = route.component;
 
-                        if (route.index) {
-                          return <Route key={route.id} index element={<RouteComponent />} />;
-                        }
+                          if (route.index) {
+                            return <Route key={route.id} index element={<RouteComponent />} />;
+                          }
 
-                        return (
-                          <Route
-                            key={route.id}
-                            path={route.path}
-                            element={<RouteComponent />}
-                          />
-                        );
-                      })}
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Route>
-                  </Routes>
-                </ProjectOnboardingGate>
-              </BrowserRouter>
+                          return (
+                            <Route
+                              key={route.id}
+                              path={route.path}
+                              element={<RouteComponent />}
+                            />
+                          );
+                        })}
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Route>
+                    </Routes>
+                  </ProjectOnboardingGate>
+                </BrowserRouter>
+              </ToolbarTemplateProvider>
             </WorkbenchProfileProvider>
           </LiveProjectionProvider>
         </MessageProvider>

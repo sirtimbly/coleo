@@ -168,8 +168,10 @@ test("keeps following virtual rows below an expanded card", async ({ page }) => 
 	await page.goto("/messaging?facet=all");
 
 	const header = page.locator(".coleo-inbox-card-table .tabulator-header");
-	await expect(header).toHaveCSS("background-color", "rgb(23, 27, 34)");
-	await expect(header.locator(".tabulator-col").first()).toHaveCSS("color", "rgb(248, 250, 252)");
+	const headerBackground = await header.evaluate((element) => getComputedStyle(element).backgroundColor);
+	const pageForeground = await page.locator("body").evaluate((element) => getComputedStyle(element).color);
+	expect(headerBackground).not.toBe("rgb(23, 27, 34)");
+	await expect(header.locator(".tabulator-col").first()).toHaveCSS("color", pageForeground);
 	const eventRow = page.locator(".tabulator-row").filter({
 		hasText: "Task blocked: Task task-dashboard",
 	});

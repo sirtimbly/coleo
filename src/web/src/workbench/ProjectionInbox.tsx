@@ -1,8 +1,8 @@
 /**
  * Reusable inbox projection presentation.
  *
- * Brain, Arm, project-message, and attention inboxes share this virtualized
- * table, expandable card, search, bulk-action, and empty-state language.
+ * Brain, Arm, project-message, and attention inboxes share card and virtualized
+ * data-grid modes, search, bulk-action, and empty-state language.
  */
 
 import {
@@ -14,19 +14,24 @@ import {
 	type ReactNode,
 } from "react";
 import { Button } from "@heroui/react";
-import { CheckCheck, RefreshCw } from "lucide-react";
+import { CheckCheck, Inbox, RefreshCw } from "lucide-react";
 
 import {
 	ProjectionFilterMenu,
 	ProjectionSearch,
 	type ProjectionFilterOption,
 } from "@/design-system/ProjectionControls";
+import { useCollectionViewToolbarWidgets } from "@/design-system/CollectionViewToolbar";
+import { WorkbenchEmptyState } from "@/design-system/WorkbenchSurface";
 import {
-	WorkbenchEmptyState,
-	WorkbenchHeader,
-	WorkbenchToolbar,
-} from "@/design-system/WorkbenchSurface";
+	ToolbarTemplateRows,
+	type ToolbarWidgetRegistry,
+} from "@/design-system/toolbar-template";
 import { cn } from "@/lib";
+import { AdaptiveCardCollection } from "./AdaptiveCardCollection";
+import { useToolbarTemplate } from "./toolbar-template-context";
+import type { CollectionDisplayPreferences } from "./collection-display";
+import type { CardPresentationMode } from "@/adaptive-cards/card-presentation";
 
 const InboxCardTable = lazy(() =>
 	import("./InboxCardTable").then((module) => ({ default: module.InboxCardTable }))
@@ -73,6 +78,8 @@ export function ProjectionInbox({
 	onRefresh,
 	onMarkAllRead,
 	toolbarContent,
+	display,
+	onDisplayChange,
 	loading = false,
 	className,
 }: {
@@ -83,10 +90,12 @@ export function ProjectionInbox({
 	activeFacet: string;
 	onFacetChange: (facet: string) => void;
 	onOpen: (item: InboxProjectionItem) => void;
-	renderCard: (item: InboxProjectionItem) => ReactNode;
+	renderCard: (item: InboxProjectionItem, presentation: CardPresentationMode) => ReactNode;
 	onRefresh?: () => void;
 	onMarkAllRead?: (items: InboxProjectionItem[]) => void;
 	toolbarContent?: ReactNode;
+	display: CollectionDisplayPreferences;
+	onDisplayChange: (updates: Partial<CollectionDisplayPreferences>) => void;
 	loading?: boolean;
 	className?: string;
 }) {
@@ -116,48 +125,67 @@ export function ProjectionInbox({
 			}, 0),
 		})), [facets, items]);
 	const unread = filtered.filter((item) => item.unread);
+	const template = useToolbarTemplate("inbox");
+	const collectionWidgets = useCollectionViewToolbarWidgets({
+		resourceName: "inbox items",
+		display,
+		onChange: onDisplayChange,
+	});
+	const toolbarWidgets: ToolbarWidgetRegistry = {
+		"inbox.identity": (
+			<div className="flex min-w-44 shrink-0 items-center gap-2">
+				<span className="flex h-7 w-7 shrink-0 items-center justify-center border border-border bg-surface-secondary text-muted-foreground">
+					<Inbox className="h-3.5 w-3.5" aria-hidden="true" />
+				</span>
+				<div className="min-w-0">
+					<h1 className="truncate text-sm font-semibold tracking-tight text-foreground">{title}</h1>
+					{description ? (
+						<p className="max-w-72 truncate text-[0.68rem] text-muted-foreground">{description}</p>
+					) : null}
+				</div>
+			</div>
+		),
+		"inbox.facet": (
+			<ProjectionFilterMenu
+				label="View"
+				value={activeFacet}
+				options={facetOptions}
+				onChange={onFacetChange}
+			/>
+		),
+		"inbox.context.messages": activeFacet === "messages" ? toolbarContent : null,
+		"inbox.context.brain": activeFacet === "brain" ? toolbarContent : null,
+		"inbox.search": (
+			<ProjectionSearch
+				value={search}
+				onChange={setSearch}
+				placeholder="Search this inbox…"
+				className="min-w-48 max-w-xs"
+			/>
+		),
+		"inbox.mark-read": onMarkAllRead ? (
+			<Button
+				size="sm"
+				variant="ghost"
+				isDisabled={unread.length === 0}
+				onPress={() => onMarkAllRead(unread)}
+				className="shrink-0"
+			>
+				<CheckCheck className="h-3.5 w-3.5" aria-hidden="true" />
+				Mark read
+			</Button>
+		) : null,
+		"inbox.refresh": onRefresh ? (
+			<Button isIconOnly size="sm" variant="ghost" onPress={onRefresh} aria-label="Refresh inbox">
+				<RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+			</Button>
+		) : null,
+		...collectionWidgets,
+	};
 
 	return (
 		<div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
-			<WorkbenchHeader
-				title={title}
-				description={description}
-				actions={(
-					<>
-						{onMarkAllRead ? (
-							<Button
-								size="sm"
-								variant="ghost"
-								isDisabled={unread.length === 0}
-								onPress={() => onMarkAllRead(unread)}
-							>
-								<CheckCheck className="h-3.5 w-3.5" />
-								Mark read
-							</Button>
-						) : null}
-						{onRefresh ? (
-							<Button isIconOnly size="sm" variant="ghost" onPress={onRefresh} aria-label="Refresh inbox">
-								<RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-							</Button>
-						) : null}
-					</>
-				)}
-			/>
-			<WorkbenchToolbar>
-				<ProjectionFilterMenu
-					label="View"
-					value={activeFacet}
-					options={facetOptions}
-					onChange={onFacetChange}
-				/>
-				{toolbarContent}
-				<ProjectionSearch
-					value={search}
-					onChange={setSearch}
-					placeholder="Search this inbox…"
-					className="ml-auto max-w-xs"
-				/>
-			</WorkbenchToolbar>
+			<ToolbarTemplateRows template={template} widgets={toolbarWidgets} />
 			<div className="min-h-0 flex-1">
 				{filtered.length === 0 ? (
 					<WorkbenchEmptyState
@@ -165,6 +193,14 @@ export function ProjectionInbox({
 						description={loading
 							? "Coleo is collecting the latest project state."
 							: "New Brain, Arm, and project activity will stream into this projection."}
+					/>
+				) : display.mode === "cards" ? (
+					<AdaptiveCardCollection
+						items={filtered}
+						columns={display.cardColumns}
+						presentation={display.cardPresentation}
+						getKey={(item) => item.id}
+						renderCard={renderCard}
 					/>
 				) : (
 					<Suspense
@@ -177,8 +213,9 @@ export function ProjectionInbox({
 					>
 						<InboxCardTable
 							items={filtered}
-							renderCard={renderCard}
+							renderCard={(item) => renderCard(item, display.cardPresentation)}
 							onOpen={onOpen}
+							density={display.density}
 						/>
 					</Suspense>
 				)}

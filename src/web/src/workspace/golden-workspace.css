@@ -4,14 +4,14 @@
   --golden-control-radius: 10px;
   --golden-control-height: 36px;
   --golden-border: color-mix(in oklch, var(--border) 88%, transparent);
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
 }
 
 .golden-workspace-dock {
   position: relative;
   z-index: 40;
-  background: var(--background);
+  background: transparent;
 }
 
 .golden-workspace-dock-inner {
@@ -20,9 +20,9 @@
   align-items: center;
   gap: 10px;
   min-height: 56px;
-  border: 1px solid var(--golden-border);
-  border-radius: var(--golden-shell-radius);
-  background: color-mix(in oklch, var(--surface) 94%, black 6%);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   padding: 8px 10px;
 }
 
@@ -135,7 +135,7 @@
   bottom: -8px;
   width: 64px;
   height: 56px;
-  overflow: hidden;
+  overflow: visible;
   gap: 0;
   padding: 0;
   border-radius: 0;
@@ -155,6 +155,7 @@
   position: absolute;
   inset: 0;
   display: block;
+  z-index: -1;
 }
 
 .golden-launcher-badge img {
@@ -167,6 +168,10 @@
   transition:
     transform 160ms ease,
     filter 160ms ease;
+}
+
+.golden-launcher-menu {
+  z-index: 1;
 }
 
 .golden-launcher-button:hover .golden-launcher-badge img,
@@ -501,6 +506,7 @@
   position: relative;
   display: flex;
   align-items: center;
+  min-width: 0;
   margin: 0 !important;
   min-height: 26px;
   height: 26px !important;
@@ -519,6 +525,8 @@
 .golden-workspace-layout .lm_tab .lm_title {
   position: relative;
   display: inline-block;
+  min-width: 0;
+  flex: 1 1 auto;
   overflow: hidden;
   max-width: 100%;
   height: 100%;
@@ -600,7 +608,7 @@
 }
 
 .golden-workspace-layout .lm_items {
-  background: var(--surface) !important;
+  background: transparent !important;
 }
 
 .golden-workspace-layout .lm_splitter {
