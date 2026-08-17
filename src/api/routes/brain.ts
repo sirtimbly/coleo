@@ -94,6 +94,7 @@ export interface BrainStatus {
     blockedTaskCount: number;
     blockedArmCount: number;
     taskCount: number;
+		nextStep: string | null;
   };
   modelAccess: {
     status: "available" | "blocked" | "unknown";
@@ -207,11 +208,27 @@ export function createBrainRoutes() {
     const planTasks = db.query(
       "SELECT COUNT(*) AS count FROM tasks WHERE source_type = 'plan'",
     ).get() as { count: number } | null;
+		const planningGate = db.query(`
+			SELECT healthy, error
+			FROM infrastructure_health
+			WHERE component = 'brain_planning_gate'
+		`).get() as { healthy: number; error: string | null } | null;
 
     const blockedTaskCount = blockedPlanTasks?.count || 0;
     const blockedArmCount = blockedPlanArms?.count || 0;
     const planTaskCount = planTasks?.count || 0;
-    const planStatus = blockedTaskCount > 0 || blockedArmCount > 0
+		let gateDetail = "";
+		let gateNextStep: string | null = null;
+		if (planningGate?.healthy === 0 && planningGate.error) {
+			try {
+				const parsed = JSON.parse(planningGate.error) as { detail?: unknown; nextStep?: unknown };
+				gateDetail = typeof parsed.detail === "string" ? parsed.detail : planningGate.error;
+				gateNextStep = typeof parsed.nextStep === "string" ? parsed.nextStep : null;
+			} catch {
+				gateDetail = planningGate.error;
+			}
+		}
+    const planStatus = planningGate?.healthy === 0 || blockedTaskCount > 0 || blockedArmCount > 0
       ? "blocked"
       : planTaskCount > 0 ? "healthy" : "pending";
     const rawBlockReason = latestPlanBlock?.reason || "";
@@ -221,7 +238,7 @@ export function createBrainRoutes() {
       ? rawBlockReason.slice(blockPrefix.length, markerIndex >= 0 ? markerIndex : undefined).trim()
       : rawBlockReason.trim();
     const planDetail = planStatus === "blocked"
-      ? blockDetail || "The project planning gate is blocking task assignment."
+			? gateDetail || blockDetail || "The project planning gate is blocking task assignment."
       : planStatus === "healthy"
         ? `${planTaskCount} plan task${planTaskCount === 1 ? " is" : "s are"} synchronized with no planning blockers.`
         : "No plan tasks have been synchronized yet. Prepare a project plan or wait for the Brain's next poll.";
@@ -284,6 +301,7 @@ export function createBrainRoutes() {
         blockedTaskCount,
         blockedArmCount,
         taskCount: planTaskCount,
+			nextStep: gateNextStep,
       },
       modelAccess,
     };
@@ -1247,7 +1265,9 @@ export function createBrainRoutes() {
     }
 
     const result = await updateInfrastructureHealth(db, body.components);
-    if (body.components.some((component) => component.component === "brain_model_api")) {
+		if (body.components.some((component) =>
+			component.component === "brain_model_api" || component.component === "brain_planning_gate"
+		)) {
       broadcast("brain", "brain.model_access_changed", {});
     }
     return c.json({ result });

@@ -153,11 +153,13 @@ export function InboxCardTable({
 	items,
 	renderCard,
 	onOpen,
+	density,
 	className,
 }: {
 	items: InboxProjectionItem[];
 	renderCard: (item: InboxProjectionItem) => ReactNode;
 	onOpen: (item: InboxProjectionItem) => void;
+	density?: "compact" | "comfortable";
 	className?: string;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
@@ -415,7 +417,11 @@ export function InboxCardTable({
 	return (
 		<div
 			ref={containerRef}
-			className={cn("coleo-inbox-card-table h-full min-h-0 overflow-hidden", className)}
+			className={cn(
+				"coleo-inbox-card-table h-full min-h-0 overflow-hidden",
+				density === "comfortable" && "coleo-inbox-card-table-comfortable",
+				className,
+			)}
 			role="region"
 			aria-label="Inbox cards"
 		/>

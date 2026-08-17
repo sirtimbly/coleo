@@ -47,9 +47,24 @@
 }
 
 .adaptive-card-host input[type="date"] {
-	color-scheme: dark;
+	color-scheme: inherit;
 }
 
 .adaptive-card-host a {
 	color: var(--color-accent);
+}
+
+[data-card-template="workbench.resource-editor@2"] {
+	container-type: inline-size;
+}
+
+@container (max-width: 38rem) {
+	[data-card-template="workbench.resource-editor@2"] .ac-columnSet {
+		flex-direction: column;
+	}
+
+	[data-card-template="workbench.resource-editor@2"] .ac-columnSet > .ac-container {
+		width: 100%;
+		flex: 0 0 auto !important;
+	}
 }

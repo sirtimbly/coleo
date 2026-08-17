@@ -1,0 +1,21 @@
+# Coleo Documentation
+
+> Coleo is a self-hosted control plane for coordinating coding agents through a central Brain, independent Arms, persistent local state, and observable event streams.
+
+## Start Here
+
+- [Getting Started](https://coleo.dev/guides/getting-started): Install Coleo and launch a local control plane.
+- [Task Workflow](https://coleo.dev/guides/task-workflow): Create, assign, execute, and inspect agent work.
+- [CLI Reference](https://coleo.dev/guides/cli): Use Coleo from the terminal.
+
+## Concepts and Architecture
+
+- [Philosophy](https://coleo.dev/philosophy): Understand the Octopus Model and proposal-based coordination.
+- [Architecture Overview](https://coleo.dev/architecture/overview): Trace the major system components and data flow.
+- [Harness Contract](https://coleo.dev/architecture/harness-contract): Integrate coding-agent CLI harnesses.
+- [Security](https://coleo.dev/architecture/security): Review trust boundaries and deployment controls.
+
+## Deployment
+
+- [Docker](https://coleo.dev/guides/docker): Run Coleo in containers.
+- [Coleo Reef](https://coleo.app): Use a managed private Coleo workspace.

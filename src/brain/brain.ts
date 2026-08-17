@@ -37,6 +37,7 @@ import {
 import { BrainTemplateManager } from "./template-manager";
 import { MailProcessor } from "./mail-processor";
 import {
+	getBrainModelAccessIssue,
 	serializeBrainModelAccessIssue,
 	type BrainModelAccessIssue,
 } from "./model-access";
@@ -140,6 +141,13 @@ import {
 const HIGH_PRIORITY_FILE_THRESHOLD_LINES = 600;
 const CRITICAL_FILE_THRESHOLD_LINES = 800;
 const PLANNING_BLOCK_REASON_PREFIX = "Project planning must succeed before work can resume: ";
+
+function verificationTaskId(originalTaskId: string, reportId: string): string {
+	return `verify-${createHash("sha256")
+		.update(`${originalTaskId}\0${reportId}`)
+		.digest("hex")
+		.slice(0, 20)}`;
+}
 
 function planningFailureDetailFromBlockedReason(reason: string | undefined): string | null {
 	if (!reason?.startsWith(PLANNING_BLOCK_REASON_PREFIX)) return null;
@@ -905,20 +913,9 @@ export class Brain {
 			return;
 		}
 
-		// Step 1: Check for new human messages
-		if (infraHealth.components.maildir.healthy) {
-			await this.processHumanMail();
-		}
-
-		// Step 2: Process arm messages
-		await this.processArmQueue();
-
-		// Step 2.25: Evaluate recently persisted status reports and discoveries
-		// so reports visible in the dashboard also influence planning even when
-		// they were not handled through the live arm queue path.
-		await this.processOperationalSignals(previousLastPollAt);
-
-		// Step 2.5: Validate and synchronize the complete plan before any work can be assigned.
+		// Step 1: Validate the complete plan before processing anything that can
+		// create work or notifications. A blocked planning gate pauses the whole
+		// coordinator until a later lightweight poll observes recovery.
 		const planningReady = await this.syncPlanTasks();
 		if (!planningReady) {
 			await this.saveState();
@@ -926,6 +923,13 @@ export class Brain {
 			this.log("Brain work remains blocked until the project plan is fixed");
 			return;
 		}
+
+		// Step 2: Process human and Arm input only after the planning gate opens.
+		if (infraHealth.components.maildir.healthy) {
+			await this.processHumanMail();
+		}
+		await this.processArmQueue();
+		await this.processOperationalSignals(previousLastPollAt);
 
 		// Step 2.75: Check for resolved bugs and resume blocked tasks
 		await this.checkResolvedBugsAndResumeTasks();
@@ -4177,7 +4181,9 @@ export class Brain {
 		},
 		skipNotification: boolean = false,
 	): Promise<Task> {
-		const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const taskId = verificationTaskId(originalTask.id, report.id);
+		const existingTask = await this.getTaskFromApi(taskId);
+		if (existingTask) return existingTask;
 
 		const issuesList =
 			report.issues.length > 0
@@ -8938,6 +8944,12 @@ ${conflictList}
 	private async reportBrainModelAccess(
 		issue: BrainModelAccessIssue | null,
 	): Promise<void> {
+		const current = await this.apiRequest<{
+			components?: Array<{ component: string; healthy: boolean; error?: string }>;
+		}>("/api/brain/internal/infrastructure-health");
+		const existing = current?.components?.find((component) => component.component === "brain_model_api");
+		const serializedIssue = issue ? serializeBrainModelAccessIssue(issue) : undefined;
+		if (existing && existing.healthy === (issue === null) && existing.error === serializedIssue) return;
 		const result = await this.apiRequest<{
 			result?: { success?: boolean; error?: string };
 		}>("/api/brain/internal/infrastructure-health", {
@@ -8948,9 +8960,7 @@ ${conflictList}
 						component: "brain_model_api",
 						healthy: issue === null,
 						optional: false,
-						error: issue
-							? serializeBrainModelAccessIssue(issue)
-							: undefined,
+						error: serializedIssue,
 					},
 				],
 			}),
@@ -8970,6 +8980,59 @@ ${conflictList}
 				provider: issue.provider,
 				actionUrl: issue.actionUrl,
 			});
+		}
+	}
+
+	private async reportPlanningGate(error: unknown): Promise<boolean> {
+		const detail = error instanceof Error ? error.message : String(error);
+		const nextStep = planningFailureNextStep(detail);
+		const current = await this.apiRequest<{
+			components?: Array<{ component: string; healthy: boolean; error?: string }>;
+		}>("/api/brain/internal/infrastructure-health");
+		const existing = current?.components?.find((component) => component.component === "brain_planning_gate");
+		if (existing && !existing.healthy && existing.error) {
+			try {
+				const parsed = JSON.parse(existing.error) as { detail?: unknown };
+				if (parsed.detail === detail) return false;
+			} catch {
+				if (existing.error === detail) return false;
+			}
+		}
+		const result = await this.apiRequest<{
+			result?: { success?: boolean; error?: string };
+		}>("/api/brain/internal/infrastructure-health", {
+			method: "POST",
+			body: JSON.stringify({
+				components: [{
+					component: "brain_planning_gate",
+					healthy: false,
+					optional: false,
+					error: JSON.stringify({ detail, nextStep }),
+				}],
+			}),
+		});
+		if (!result?.result?.success) {
+			this.log(`Failed to persist planning gate state: ${result?.result?.error || "API unavailable"}`);
+		}
+		return true;
+	}
+
+	private async reportPlanningGateReady(): Promise<void> {
+		const current = await this.apiRequest<{
+			components?: Array<{ component: string; healthy: boolean }>;
+		}>("/api/brain/internal/infrastructure-health");
+		const existing = current?.components?.find((component) => component.component === "brain_planning_gate");
+		if (existing?.healthy) return;
+		const result = await this.apiRequest<{
+			result?: { success?: boolean; error?: string };
+		}>("/api/brain/internal/infrastructure-health", {
+			method: "POST",
+			body: JSON.stringify({
+				components: [{ component: "brain_planning_gate", healthy: true, optional: false }],
+			}),
+		});
+		if (!result?.result?.success) {
+			this.log(`Failed to persist planning gate recovery: ${result?.result?.error || "API unavailable"}`);
 		}
 	}
 
@@ -9340,6 +9403,8 @@ ${conflictList}
 
 			await this.resumePlanningBlockedTasks();
 			await this.resumePlanningBlockedArms();
+			await this.reportPlanningGateReady();
+			await this.reportBrainModelAccess(null);
 			if (currentPlanHash) this.planningErrorsByPlanHash.delete(currentPlanHash);
 			this.lastPlanningFailureFingerprint = null;
 
@@ -9362,6 +9427,16 @@ ${conflictList}
 			return true;
 		} catch (err) {
 			this.log(`Failed to sync plan tasks: ${err}`);
+			const shouldNotify = await this.reportPlanningGate(err);
+			const modelAccessIssue = getBrainModelAccessIssue(err);
+			if (modelAccessIssue && shouldNotify) await this.reportBrainModelAccess(modelAccessIssue);
+			if (!shouldNotify) {
+				const detail = err instanceof Error ? err.message : String(err);
+				const planningState = currentPlanHash || "missing-plan";
+				this.lastPlanningFailureFingerprint = createHash("sha256")
+					.update(`${planningState}\0${detail}`)
+					.digest("hex");
+			}
 			await this.blockTasksForPlanningFailure(err, currentPlanHash);
 			return false;
 		}
@@ -9621,7 +9696,9 @@ ${conflictList}
 			testsStatus?: "passing" | "failing" | "not_run";
 		},
 	): Promise<Task | null> {
-		const taskId = `verify-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+		const taskId = verificationTaskId(originalTask.id, report.id);
+		const existingTask = await this.getTaskFromApi(taskId);
+		if (existingTask) return existingTask;
 
 		const issuesList =
 			report.issues.length > 0

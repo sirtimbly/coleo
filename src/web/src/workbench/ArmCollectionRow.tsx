@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { CollectionRow } from "@/design-system/CollectionRow";
 import { WorkbenchStatusDot } from "@/design-system/WorkbenchSurface";
 import { cn, type Arm } from "@/lib";
+import { ArmAvatar } from "./ArmAvatar";
 
 function statusTone(status: string): "neutral" | "accent" | "success" | "warning" | "danger" {
 	if (status === "busy" || status === "running") return "accent";
@@ -31,6 +32,7 @@ export function ArmCollectionRow({
 	attention = false,
 	onOpen,
 	actions,
+	showUsage = true,
 	className,
 }: {
 	arm: Arm;
@@ -38,6 +40,7 @@ export function ArmCollectionRow({
 	attention?: boolean;
 	onOpen: () => void;
 	actions?: ReactNode;
+	showUsage?: boolean;
 	className?: string;
 }) {
 	const planningBlocked = arm.status === "planning_blocked";
@@ -75,17 +78,19 @@ export function ArmCollectionRow({
 					<span className="italic">Waiting for the brain to assign work</span>
 				)
 			}
-			meta={metadata}
+			meta={<span className="block max-w-full truncate" title={metadata}>{metadata}</span>}
 			leading={
-				<WorkbenchStatusDot
-					tone={statusTone(arm.status)}
-					label={arm.status}
-				/>
+				<span className="relative block h-8 w-8" aria-label={`Arm status: ${arm.status}`}>
+					<ArmAvatar armId={arm.id} />
+					<span className="absolute -bottom-0.5 -right-0.5 flex border-2 border-surface bg-surface">
+						<WorkbenchStatusDot tone={statusTone(arm.status)} />
+					</span>
+				</span>
 			}
 			trailing={
 				<>
-					{contextUsage ? <span className="hidden whitespace-nowrap lg:inline">{contextUsage}</span> : null}
-					{arm.totalTokens !== undefined ? (
+					{showUsage && contextUsage ? <span className="hidden whitespace-nowrap lg:inline">{contextUsage}</span> : null}
+					{showUsage && arm.totalTokens !== undefined ? (
 						<span className="hidden whitespace-nowrap xl:inline">
 							{arm.totalTokens.toLocaleString()} tokens
 						</span>
@@ -103,7 +108,7 @@ export function ArmCollectionRow({
 			selected={selected}
 			unread={attention}
 			onOpen={onOpen}
-			className={cn(attention && "bg-warning/5", className)}
+			className={cn("overflow-hidden", attention && "bg-warning/5", className)}
 		/>
 	);
 }

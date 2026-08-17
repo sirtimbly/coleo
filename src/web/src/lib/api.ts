@@ -119,6 +119,7 @@ export interface WorkspaceTextFile {
   contentHash: string;
   size: number;
   modifiedAt: string;
+  readOnly?: boolean;
 }
 
 export interface ProjectPlanCandidate extends WorkspaceTextFile {
@@ -646,6 +647,7 @@ class ApiClient {
           blockedTaskCount: number;
           blockedArmCount: number;
           taskCount: number;
+			nextStep: string | null;
         };
         modelAccess: {
           status: 'available' | 'blocked' | 'unknown';

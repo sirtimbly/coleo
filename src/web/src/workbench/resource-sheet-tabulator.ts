@@ -39,6 +39,7 @@ export interface ResourceSheetColumn<T> {
 	readOnly?: boolean;
 	width?: number;
 	className?: string;
+	openRowAction?: boolean;
 	validator?: Validator;
 }
 
@@ -187,6 +188,7 @@ export function resourceColumnConfigurationKey<T>(
 		readOnly: column.readOnly,
 		width: columnPreferences?.find((item) => item.id === column.id)?.width ?? column.width,
 		options: column.options,
+		openRowAction: column.openRowAction,
 	})));
 }
 

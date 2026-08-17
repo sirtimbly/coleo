@@ -29,6 +29,11 @@ import { getColeoDir } from "../../config";
 import { updateInfrastructureHealth } from "../../db/transactions";
 import type { WorkspaceAccess, WorkspaceTextFile } from "../../workspace";
 import { HttpError } from "../middleware";
+import {
+	isWorkbenchToolbarProjectionPath,
+	listWorkbenchToolbarProjectionPaths,
+	readWorkbenchToolbarProjectionFile,
+} from "../workbench-toolbar-projection";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { broadcast } from "../websocket";
 
@@ -172,16 +177,22 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const db = c.get("db");
 		await brainTemplates.ensureTemplatesExist();
-		const [candidates, canonical, projectDocuments, templateFiles, projectTree] = await Promise.all([
+		const [candidates, canonical, projectDocuments, templateFiles, workspaceTree, toolbarPaths] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
 			listProjectPlanDocuments(workspace),
 			listSetupTemplateFiles(coleoDir),
 			listProjectTreePaths(workspace),
+			listWorkbenchToolbarProjectionPaths(coleoDir),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
 		const tasks = taskCount(db);
 		const canonicalTaskCount = parsed?.tasks.length ?? 0;
+		const projectTree = Array.from(new Set([
+			...workspaceTree,
+			...templateFiles.map((file) => file.path),
+			...toolbarPaths,
+		])).sort();
 
 		return c.json({
 			required: tasks === 0 && canonicalTaskCount === 0,
@@ -203,6 +214,11 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const rawPath = c.req.query("path");
 		if (!rawPath) throw HttpError.badRequest("path is required");
+		if (isWorkbenchToolbarProjectionPath(rawPath)) {
+			const file = await readWorkbenchToolbarProjectionFile(coleoDir, rawPath);
+			if (!file) throw HttpError.notFound("Toolbar configuration snapshot not found");
+			return c.json({ file });
+		}
 
 		try {
 			const path = validateEditableDocumentPath(rawPath);
@@ -225,6 +241,9 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		}>();
 		if (typeof body.path !== "string" || typeof body.content !== "string") {
 			throw HttpError.badRequest("path and content are required");
+		}
+		if (isWorkbenchToolbarProjectionPath(body.path)) {
+			throw HttpError.badRequest("Toolbar configuration snapshots are read-only. Edit them in Toolbar Playground.");
 		}
 		if (body.expectedHash !== undefined && body.expectedHash !== null && typeof body.expectedHash !== "string") {
 			throw HttpError.badRequest("expectedHash must be a string or null");

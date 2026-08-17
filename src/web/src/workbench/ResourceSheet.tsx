@@ -7,7 +7,8 @@
  * detail navigation. Coleo owns data and history; Tabulator owns rendering.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
 import { TabulatorFull as Tabulator } from "tabulator-tables";
 
 import { cn } from "@/lib";
@@ -40,12 +41,77 @@ import {
 import { useResourceSheetSynchronization } from "./use-resource-sheet-synchronization";
 
 import type { ProjectionSort, ViewPreferences } from "./types";
-import type { CellComponent, ColumnComponent, RowComponent, SorterFromTable } from "tabulator-tables";
+import type {
+	CellComponent,
+	ColumnComponent,
+	ColumnDefinition,
+	Formatter,
+	RowComponent,
+	SorterFromTable,
+} from "tabulator-tables";
 
 import "tabulator-tables/dist/css/tabulator.min.css";
 import "./sheet-theme.css";
 
 export type { ResourceSheetColumn, ResourceSheetRowMove } from "./resource-sheet-tabulator";
+
+interface MountedRowDetail {
+	id: string;
+	host: HTMLDivElement;
+	root: Root;
+	resizeObserver: ResizeObserver;
+	normalizeFrame: number | null;
+}
+
+function disposeMountedRowDetail(mounted: MountedRowDetail): void {
+	mounted.resizeObserver.disconnect();
+	if (mounted.normalizeFrame !== null) window.cancelAnimationFrame(mounted.normalizeFrame);
+	mounted.host.remove();
+	queueMicrotask(() => mounted.root.unmount());
+}
+
+function createRowExpanderIcon(): SVGSVGElement {
+	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	icon.classList.add("coleo-sheet-expand-icon");
+	icon.setAttribute("viewBox", "0 0 24 24");
+	icon.setAttribute("fill", "none");
+	icon.setAttribute("stroke", "currentColor");
+	icon.setAttribute("stroke-width", "2");
+	icon.setAttribute("stroke-linecap", "round");
+	icon.setAttribute("stroke-linejoin", "round");
+	icon.setAttribute("aria-hidden", "true");
+	const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+	path.setAttribute("d", "m9 18 6-6-6-6");
+	icon.append(path);
+	return icon;
+}
+
+function createOpenRowIcon(): SVGSVGElement {
+	const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+	icon.classList.add(
+		"lucide",
+		"lucide-square-arrow-right-exit-icon",
+		"lucide-square-arrow-right-exit",
+		"coleo-sheet-open-icon",
+	);
+	icon.setAttribute("viewBox", "0 0 24 24");
+	icon.setAttribute("fill", "none");
+	icon.setAttribute("stroke", "currentColor");
+	icon.setAttribute("stroke-width", "2");
+	icon.setAttribute("stroke-linecap", "round");
+	icon.setAttribute("stroke-linejoin", "round");
+	icon.setAttribute("aria-hidden", "true");
+	for (const pathData of [
+		"M10 12h11",
+		"m17 16 4-4-4-4",
+		"M21 6.344V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1.344",
+	]) {
+		const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+		path.setAttribute("d", pathData);
+		icon.append(path);
+	}
+	return icon;
+}
 
 export function ResourceSheet<T extends { id: string }>({
 	rows,
@@ -60,6 +126,8 @@ export function ResourceSheet<T extends { id: string }>({
 	onNearEnd,
 	onRowSelectionChange,
 	getRowFormatting,
+	renderRowDetail,
+	getRowDetailLabel,
 	selectedRowId,
 	className,
 }: {
@@ -75,6 +143,8 @@ export function ResourceSheet<T extends { id: string }>({
 	onNearEnd?: () => void;
 	onRowSelectionChange?: (row: T | undefined) => void;
 	getRowFormatting?: (row: T) => Partial<RowFormattingValue> | undefined;
+	renderRowDetail?: (row: T) => ReactNode;
+	getRowDetailLabel?: (row: T) => string;
 	selectedRowId?: string;
 	className?: string;
 }) {
@@ -89,6 +159,9 @@ export function ResourceSheet<T extends { id: string }>({
 	const syncingSortRef = useRef(false);
 	const historyRef = useRef<ResourceSheetHistory>({ actions: [], index: -1 });
 	const configurationDeferredRef = useRef(false);
+	const expandedRowIdsRef = useRef(new Set<string>());
+	const mountedRowDetailsRef = useRef(new Map<HTMLElement, MountedRowDetail>());
+	const toggleExpandedRowRef = useRef<(row: RowComponent) => void>(() => undefined);
 	const [synchronizationRevision, setSynchronizationRevision] = useState(0);
 	const visibleColumns = useMemo(
 		() => resolveResourceColumns(columns, preferences.columns),
@@ -98,16 +171,95 @@ export function ResourceSheet<T extends { id: string }>({
 		() => projectResourceRows(rows, columns, preferences.filters),
 		[columns, preferences.filters, rows],
 	);
-	const rowHeight = preferences.density === "comfortable" ? 38 : 30;
+	const openRowRuntimeRef = useRef({ rowsById, onOpenRow });
+	openRowRuntimeRef.current = { rowsById, onOpenRow };
+	const openRowFormatter = useMemo<Formatter>(() => (cell) => {
+		const value = cell.getValue();
+		const content = document.createElement("span");
+		content.className = "coleo-sheet-open-label";
+		content.textContent = value === null || value === undefined ? "" : String(value);
+		const container = document.createElement("span");
+		container.className = "coleo-sheet-open-content";
+		container.append(content);
+
+		const data = readResourceSheetRow(cell.getRow());
+		const resource = data
+			? openRowRuntimeRef.current.rowsById.get(data.__resourceId)
+			: undefined;
+		if (!resource || !openRowRuntimeRef.current.onOpenRow) return container;
+
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "coleo-sheet-open-action";
+		button.setAttribute("aria-label", `Open ${content.textContent || "item"} details`);
+		button.title = "Open details";
+		button.append(createOpenRowIcon());
+		button.addEventListener("click", (event) => {
+			event.preventDefault();
+			event.stopPropagation();
+			const currentData = readResourceSheetRow(cell.getRow());
+			const currentResource = currentData
+				? openRowRuntimeRef.current.rowsById.get(currentData.__resourceId)
+				: undefined;
+			if (currentResource) openRowRuntimeRef.current.onOpenRow?.(currentResource);
+		});
+		button.addEventListener("dblclick", (event) => event.stopPropagation());
+		container.append(button);
+		return container;
+	}, []);
+	const rowDetailRuntimeRef = useRef({ rowsById, renderRowDetail, getRowDetailLabel });
+	rowDetailRuntimeRef.current = { rowsById, renderRowDetail, getRowDetailLabel };
+	const rowDetailEnabled = renderRowDetail !== undefined;
+	const expanderFormatter = useMemo<Formatter>(() => (cell) => {
+		const data = readResourceSheetRow(cell.getRow());
+		if (!data) return "";
+		const resource = rowDetailRuntimeRef.current.rowsById.get(data.__resourceId);
+		if (!resource) return "";
+		const expanded = expandedRowIdsRef.current.has(data.__resourceId);
+		const label = rowDetailRuntimeRef.current.getRowDetailLabel?.(resource) ?? data.__resourceId;
+		const button = document.createElement("button");
+		button.type = "button";
+		button.className = "coleo-sheet-expand";
+		button.setAttribute("aria-expanded", String(expanded));
+		button.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${label} details`);
+		button.title = expanded ? "Collapse details" : "Expand details";
+		button.append(createRowExpanderIcon());
+		button.addEventListener("click", (event) => {
+			event.stopPropagation();
+			toggleExpandedRowRef.current(cell.getRow());
+		});
+		return button;
+	}, []);
+	const expansionColumn = useMemo<ColumnDefinition>(() => ({
+		title: "",
+		field: "__expand",
+		width: 40,
+		minWidth: 40,
+		headerSort: false,
+		resizable: false,
+		frozen: true,
+		hozAlign: "center",
+		formatter: expanderFormatter,
+	}), [expanderFormatter]);
+	const rowHeight = preferences.density === "comfortable" ? 44 : 30;
 	const canMoveRows = Boolean(onRowsMove) && (preferences.sort ?? []).length === 0;
-	const tabulatorColumns = useMemo(
-		() => visibleColumns.map((column) => toTabulatorColumn(column, preferences.columns)),
-		[preferences.columns, visibleColumns],
+	const tabulatorColumns = useMemo<ColumnDefinition[]>(
+		() => [
+			...(rowDetailEnabled ? [expansionColumn] : []),
+			...visibleColumns.map((column) => {
+				const definition = toTabulatorColumn(column, preferences.columns);
+				if (column.openRowAction) definition.formatter = openRowFormatter;
+				return definition;
+			}),
+		],
+		[expansionColumn, openRowFormatter, preferences.columns, rowDetailEnabled, visibleColumns],
 	);
 	const columnConfigurationKey = useMemo(
-		() => resourceColumnConfigurationKey(visibleColumns, preferences.columns),
-		[preferences.columns, visibleColumns],
+		() => `${rowDetailEnabled ? "expanded" : "compact"}:${resourceColumnConfigurationKey(visibleColumns, preferences.columns)}`,
+		[preferences.columns, rowDetailEnabled, visibleColumns],
 	);
+	const initialTabulatorColumnsRef = useRef(tabulatorColumns);
+	const initialColumnConfigurationKeyRef = useRef(columnConfigurationKey);
 	const formattingConfigurationKey = useMemo(
 		() => resourceFormattingConfigurationKey(filteredRows, getRowFormatting),
 		[filteredRows, getRowFormatting],
@@ -162,6 +314,85 @@ export function ResourceSheet<T extends { id: string }>({
 		let disposed = false;
 		let table: Tabulator | null = null;
 		let resizeObserver: ResizeObserver | null = null;
+		const mountedRowDetails = mountedRowDetailsRef.current;
+		const unmountRowDetail = (element: HTMLElement) => {
+			const mounted = mountedRowDetails.get(element);
+			if (!mounted) return;
+			mountedRowDetails.delete(element);
+			element.classList.remove("coleo-sheet-row-expanded");
+			disposeMountedRowDetail(mounted);
+		};
+		const updateExpander = (row: RowComponent, expanded: boolean) => {
+			const data = readResourceSheetRow(row);
+			const button = row.getElement().querySelector<HTMLButtonElement>(".coleo-sheet-expand");
+			const resource = data
+				? rowDetailRuntimeRef.current.rowsById.get(data.__resourceId)
+				: undefined;
+			if (!data || !button || !resource) return;
+			const label = rowDetailRuntimeRef.current.getRowDetailLabel?.(resource) ?? data.__resourceId;
+			button.setAttribute("aria-expanded", String(expanded));
+			button.setAttribute("aria-label", `${expanded ? "Collapse" : "Expand"} ${label} details`);
+			button.title = expanded ? "Collapse details" : "Expand details";
+		};
+		const renderExpandedRow = (row: RowComponent) => {
+			const data = readResourceSheetRow(row);
+			if (!data) return;
+			const element = row.getElement();
+			if (!expandedRowIdsRef.current.has(data.__resourceId)) {
+				unmountRowDetail(element);
+				updateExpander(row, false);
+				row.normalizeHeight();
+				return;
+			}
+			const resource = rowDetailRuntimeRef.current.rowsById.get(data.__resourceId);
+			const render = rowDetailRuntimeRef.current.renderRowDetail;
+			if (!resource || !render) return;
+			const existing = mountedRowDetails.get(element);
+			if (existing?.id === data.__resourceId) {
+				existing.root.render(render(resource));
+				updateExpander(row, true);
+				queueMicrotask(() => row.normalizeHeight());
+				return;
+			}
+			if (existing) unmountRowDetail(element);
+			const host = document.createElement("div");
+			host.className = "coleo-sheet-row-detail";
+			host.setAttribute("role", "region");
+			const label = rowDetailRuntimeRef.current.getRowDetailLabel?.(resource) ?? data.__resourceId;
+			host.setAttribute("aria-label", `${label} details`);
+			element.classList.add("coleo-sheet-row-expanded");
+			element.append(host);
+			const root = createRoot(host);
+			const mounted: MountedRowDetail = {
+				id: data.__resourceId,
+				host,
+				root,
+				resizeObserver: new ResizeObserver(() => {
+					if (mounted.normalizeFrame !== null || !host.isConnected) return;
+					mounted.normalizeFrame = window.requestAnimationFrame(() => {
+						mounted.normalizeFrame = null;
+						if (host.isConnected) row.normalizeHeight();
+					});
+				}),
+				normalizeFrame: null,
+			};
+			mountedRowDetails.set(element, mounted);
+			mounted.resizeObserver.observe(host);
+			root.render(render(resource));
+			updateExpander(row, true);
+			queueMicrotask(() => row.normalizeHeight());
+		};
+		const toggleExpandedRow = (row: RowComponent) => {
+			const data = readResourceSheetRow(row);
+			if (!data) return;
+			if (expandedRowIdsRef.current.has(data.__resourceId)) {
+				expandedRowIdsRef.current.delete(data.__resourceId);
+			} else {
+				expandedRowIdsRef.current.add(data.__resourceId);
+			}
+			renderExpandedRow(row);
+		};
+		toggleExpandedRowRef.current = toggleExpandedRow;
 
 		const orderedIds = (instance: Tabulator): string[] => (
 			instance
@@ -270,9 +501,7 @@ export function ResourceSheet<T extends { id: string }>({
 			const instance = new Tabulator(container, {
 				index: "__resourceId",
 				data: runtimeRef.current.sheetRows,
-				columns: runtimeRef.current.visibleColumns.map((column) =>
-					toTabulatorColumn(column, runtimeRef.current.preferences.columns)
-				),
+				columns: initialTabulatorColumnsRef.current,
 				height: "100%",
 				layout: "fitDataStretch",
 				renderVertical: "virtual",
@@ -315,6 +544,8 @@ export function ResourceSheet<T extends { id: string }>({
 						? runtime.getRowFormatting?.(resource)
 						: undefined;
 					const element = row.getElement();
+					const mounted = mountedRowDetails.get(element);
+					if (mounted && mounted.id !== data.__resourceId) unmountRowDetail(element);
 					element.dataset.resourceId = data.__resourceId;
 					const color = normalizeRowColor(formatting?.color);
 					element.dataset.rowColor = color;
@@ -338,6 +569,13 @@ export function ResourceSheet<T extends { id: string }>({
 						rowHeader.setAttribute("role", "rowheader");
 						rowHeader.setAttribute("aria-label", rowHeader.textContent?.trim() ?? "");
 					}
+					if (expandedRowIdsRef.current.has(data.__resourceId)) {
+						queueMicrotask(() => {
+							if (!disposed) renderExpandedRow(row);
+						});
+					} else if (mounted) {
+						unmountRowDetail(element);
+					}
 				},
 			});
 			table = instance;
@@ -346,10 +584,7 @@ export function ResourceSheet<T extends { id: string }>({
 			instance.on("tableBuilt", () => {
 				if (disposed) return;
 				tableReadyRef.current = true;
-				appliedColumnConfigurationRef.current = resourceColumnConfigurationKey(
-					runtimeRef.current.visibleColumns,
-					runtimeRef.current.preferences.columns,
-				);
+				appliedColumnConfigurationRef.current = initialColumnConfigurationKeyRef.current;
 				appliedSortConfigurationRef.current = JSON.stringify(
 					runtimeRef.current.preferences.sort ?? [],
 				);
@@ -459,7 +694,7 @@ export function ResourceSheet<T extends { id: string }>({
 				const runtime = runtimeRef.current;
 				const visibleIds = renderedColumns
 					.map((column) => column.getField())
-					.filter((id): id is string => Boolean(id) && id !== "__order");
+					.filter((id): id is string => Boolean(id) && id !== "__order" && id !== "__expand");
 				if (visibleIds.length !== runtime.visibleColumns.length) return;
 				const hiddenIds = runtime.columns
 					.map((column) => column.id)
@@ -482,7 +717,7 @@ export function ResourceSheet<T extends { id: string }>({
 			instance.on("columnResized", (column: ColumnComponent) => {
 				if (syncingColumnsRef.current) return;
 				const id = column.getField();
-				if (!id || id === "__order") return;
+				if (!id || id === "__order" || id === "__expand") return;
 				const runtime = runtimeRef.current;
 				runtime.onPreferencesChange(updateResourceColumnPreference(
 					runtime.columns,
@@ -543,6 +778,8 @@ export function ResourceSheet<T extends { id: string }>({
 			tableReadyRef.current = false;
 			document.removeEventListener("keydown", onKeyDown);
 			resizeObserver?.disconnect();
+			toggleExpandedRowRef.current = () => undefined;
+			for (const element of [...mountedRowDetails.keys()]) unmountRowDetail(element);
 			if (resizeFrameRef.current !== undefined) {
 				window.cancelAnimationFrame(resizeFrameRef.current);
 				resizeFrameRef.current = undefined;
@@ -560,6 +797,31 @@ export function ResourceSheet<T extends { id: string }>({
 		// The imperative instance is intentionally stable. Live data, handlers,
 		// selections, and saved preferences flow through refs and focused effects.
 	}, []);
+
+	useEffect(() => {
+		const mountedRowDetails = mountedRowDetailsRef.current;
+		for (const [element, mounted] of mountedRowDetails) {
+			const resource = rowsById.get(mounted.id);
+			if (!rowDetailEnabled || !resource || !renderRowDetail) {
+				mountedRowDetails.delete(element);
+				element.classList.remove("coleo-sheet-row-expanded");
+				disposeMountedRowDetail(mounted);
+				continue;
+			}
+			mounted.root.render(renderRowDetail(resource));
+		}
+		for (const id of expandedRowIdsRef.current) {
+			if (!rowDetailEnabled || !rowsById.has(id)) expandedRowIdsRef.current.delete(id);
+		}
+	}, [renderRowDetail, rowDetailEnabled, rowsById]);
+
+	useEffect(() => {
+		const table = tableRef.current;
+		if (!table || !tableReadyRef.current) return;
+		table.options.rowHeight = rowHeight;
+		table.getRows().forEach((row) => row.normalizeHeight());
+		table.redraw(true);
+	}, [rowHeight]);
 
 	useResourceSheetSynchronization({
 		tableRef,
@@ -588,6 +850,7 @@ export function ResourceSheet<T extends { id: string }>({
 				"coleo-resource-sheet coleo-tabulator-resource-sheet h-full min-h-0 overflow-hidden",
 				className,
 			)}
+			data-density={preferences.density ?? "compact"}
 			role="region"
 			aria-label="Resource spreadsheet"
 			tabIndex={0}

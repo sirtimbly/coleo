@@ -37,8 +37,9 @@ import type { ServerContext } from "./server-context";
 export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
-interface CreateAppOptions {
+export interface CreateAppOptions {
   webDist?: string | null;
+  coleoDir?: string;
 }
 
 export function createProxyAwareWebSocketHandlers(
@@ -289,8 +290,8 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/status-series", createStatusSeriesRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
   app.route("/api/onboarding", createOnboardingRoutes());
-  app.route("/api/project-setup", createProjectSetupRoutes());
-  app.route("/api/workbench", createWorkbenchRoutes());
+  app.route("/api/project-setup", createProjectSetupRoutes({ coleoDir: options.coleoDir }));
+  app.route("/api/workbench", createWorkbenchRoutes({ coleoDir: options.coleoDir }));
   app.route("/api/runs", createRunsRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.

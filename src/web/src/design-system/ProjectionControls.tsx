@@ -15,6 +15,44 @@ export interface ProjectionFilterOption {
 	count?: number;
 }
 
+export function ProjectionMenuTrigger({
+	label = "View",
+	summary,
+	count,
+	onPress,
+	ariaLabel,
+	className,
+}: {
+	label?: string;
+	summary: string;
+	count?: number;
+	onPress?: () => void;
+	ariaLabel?: string;
+	className?: string;
+}) {
+	return (
+		<Button
+			size="sm"
+			variant="secondary"
+			data-projection-menu-trigger
+			onPress={onPress}
+			aria-label={ariaLabel ?? `${label}: ${summary}`}
+			className={cn(
+				"h-8 min-h-8 min-w-0 max-w-56 gap-1.5 border border-border bg-surface px-2.5 text-xs shadow-none",
+				className,
+			)}
+		>
+			<ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+			<span className="shrink-0 text-muted-foreground">{label}</span>
+			<span className="min-w-0 truncate font-semibold text-foreground">{summary}</span>
+			{count !== undefined ? (
+				<span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>
+			) : null}
+			<ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+		</Button>
+	);
+}
+
 export function ProjectionFilterMenu({
 	label,
 	value,
@@ -41,23 +79,13 @@ export function ProjectionFilterMenu({
 
 	return (
 		<Dropdown>
-			<Button
-				size="sm"
-				variant="secondary"
-				aria-label={`Filter ${label}: ${selected.label}`}
-				className={cn(
-					"h-8 min-h-8 min-w-0 max-w-56 gap-1.5 border border-border bg-surface px-2.5 text-xs shadow-none",
-					className,
-				)}
-			>
-				<ListFilter className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-				<span className="shrink-0 text-muted-foreground">{label}</span>
-				<span className="min-w-0 truncate font-semibold text-foreground">{selected.label}</span>
-				{selected.count !== undefined ? (
-					<span className="shrink-0 tabular-nums text-muted-foreground">{selected.count}</span>
-				) : null}
-				<ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-			</Button>
+			<ProjectionMenuTrigger
+				label={label}
+				summary={selected.label}
+				count={selected.count}
+				ariaLabel={`Filter ${label}: ${selected.label}`}
+				className={className}
+			/>
 			<Dropdown.Popover placement="bottom start" className="min-w-56">
 				<Dropdown.Menu
 					selectionMode="single"

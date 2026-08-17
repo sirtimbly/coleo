@@ -11,6 +11,7 @@ import { api, type Arm, type TaskAttachment } from '@/lib/api';
 
 interface MessageComposerProps {
   onClose: () => void;
+  initialArmId?: string;
   replyTo?: {
     messageId: string;
     threadId?: string;
@@ -29,10 +30,10 @@ interface ArmOption {
   domain: string;
 }
 
-export function MessageComposer({ onClose, replyTo }: MessageComposerProps) {
-  const [mode, setMode] = useState<MessageMode>('brain');
+export function MessageComposer({ onClose, initialArmId, replyTo }: MessageComposerProps) {
+  const [mode, setMode] = useState<MessageMode>(initialArmId ? 'arm' : 'brain');
   const [message, setMessage] = useState('');
-  const [selectedArmId, setSelectedArmId] = useState<string>('');
+  const [selectedArmId, setSelectedArmId] = useState<string>(initialArmId ?? '');
   const [arms, setArms] = useState<ArmOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -70,10 +71,39 @@ export function MessageComposer({ onClose, replyTo }: MessageComposerProps) {
 
   // Load arms when the composer opens
   useEffect(() => {
+    let cancelled = false;
+    const loadArms = async () => {
+      setIsLoading(true);
+      try {
+        const result = await api.listArms();
+        if (cancelled) return;
+        const armOptions: ArmOption[] = result.arms.map(arm => ({
+          id: arm.id,
+          name: arm.name,
+          status: arm.status,
+          domain: arm.domain,
+        }));
+        setArms(armOptions);
+
+        const preferredArm = armOptions.find(a => a.id === initialArmId);
+        const runningArm = armOptions.find(a => a.status === 'idle' || a.status === 'busy');
+        if (preferredArm || runningArm) {
+          setSelectedArmId((preferredArm || runningArm)!.id);
+        }
+      } catch (err) {
+        console.error('Failed to load arms:', err);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
     void loadArms();
     const focusTimer = window.setTimeout(() => textareaRef.current?.focus(), 100);
-    return () => window.clearTimeout(focusTimer);
-  }, []);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(focusTimer);
+    };
+  }, [initialArmId]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -96,30 +126,6 @@ export function MessageComposer({ onClose, replyTo }: MessageComposerProps) {
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
-
-  const loadArms = async () => {
-    setIsLoading(true);
-    try {
-      const result = await api.listArms();
-      const armOptions: ArmOption[] = result.arms.map(arm => ({
-        id: arm.id,
-        name: arm.name,
-        status: arm.status,
-        domain: arm.domain,
-      }));
-      setArms(armOptions);
-      
-      // Auto-select first running arm if available
-      const runningArm = armOptions.find(a => a.status === 'idle' || a.status === 'busy');
-      if (runningArm) {
-        setSelectedArmId(runningArm.id);
-      }
-    } catch (err) {
-      console.error('Failed to load arms:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const handleSubmit = async () => {
     if (!message.trim()) return;

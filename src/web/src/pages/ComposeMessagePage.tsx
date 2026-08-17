@@ -5,11 +5,12 @@
 import { MessageComposer } from '@/components/MessageModal';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useMessage } from '@/lib';
-import { useWorkspaceCloseRoute } from '@/workspace/route-context';
+import { useWorkspaceCloseRoute, useWorkspaceSearchParams } from '@/workspace/route-context';
 
 export function ComposeMessagePage() {
   usePageTitle('Coleo Observatory - New Message');
   const closeRoute = useWorkspaceCloseRoute('/messaging');
+  const [searchParams] = useWorkspaceSearchParams();
   const { closeMessageModal, replyContext } = useMessage();
 
   const closeComposer = () => {
@@ -17,5 +18,11 @@ export function ComposeMessagePage() {
     closeRoute();
   };
 
-  return <MessageComposer onClose={closeComposer} replyTo={replyContext} />;
+  return (
+    <MessageComposer
+      onClose={closeComposer}
+      initialArmId={searchParams.get('arm') ?? undefined}
+      replyTo={replyContext}
+    />
+  );
 }

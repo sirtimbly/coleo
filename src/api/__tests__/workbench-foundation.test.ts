@@ -13,8 +13,13 @@ import { join } from "path";
 import { Hono } from "hono";
 
 import { initDatabase } from "../../db";
+import { DEFAULT_TOOLBAR_TEMPLATES } from "../../workbench/toolbar-templates";
 import { formatErrorResponse } from "../middleware/error";
 import { createWorkbenchRoutes } from "../routes/workbench";
+import {
+	getWorkbenchToolbarProjectionPaths,
+	readWorkbenchToolbarProjectionFile,
+} from "../workbench-toolbar-projection";
 
 import type { Database } from "bun:sqlite";
 
@@ -39,9 +44,57 @@ describe("workbench foundation", () => {
 			await next();
 		});
 		app.onError((error, c) => formatErrorResponse(c, error));
-		app.route("/workbench", createWorkbenchRoutes());
+		app.route("/workbench", createWorkbenchRoutes({ coleoDir: join(directory, ".coleo") }));
 		return app;
 	}
+
+	it("materializes effective profile toolbar configurations in the Coleo directory", async () => {
+		const app = createTestApp();
+		const bootstrap = await app.request("/workbench/bootstrap?profileId=local");
+		expect(bootstrap.status).toBe(200);
+
+		const localPaths = getWorkbenchToolbarProjectionPaths("local");
+		expect(localPaths).toHaveLength(8);
+		const inboxFile = await readWorkbenchToolbarProjectionFile(join(directory, ".coleo"), localPaths[0]!);
+		const inbox = JSON.parse(inboxFile!.content) as {
+			id: string;
+			rows: unknown[];
+		};
+		expect(inbox.id).toBe("inbox");
+		expect(inbox.rows).toHaveLength(2);
+
+		const taskTemplate = {
+			...DEFAULT_TOOLBAR_TEMPLATES.tasks,
+			rows: [
+				{ ...DEFAULT_TOOLBAR_TEMPLATES.tasks.rows[0], label: "Custom task controls" },
+				DEFAULT_TOOLBAR_TEMPLATES.tasks.rows[1],
+			],
+		};
+		const update = await app.request("/workbench/profiles/local", {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ preferences: { toolbarTemplates: { tasks: taskTemplate } } }),
+		});
+		expect(update.status).toBe(200);
+		const taskPath = localPaths.find((path) => path.endsWith("/tasks.json"));
+		const taskFile = await readWorkbenchToolbarProjectionFile(join(directory, ".coleo"), taskPath!);
+		const tasks = JSON.parse(taskFile!.content) as {
+			rows: Array<{ label: string }>;
+		};
+		expect(tasks.rows[0]?.label).toBe("Custom task controls");
+
+		const unsafeId = "../unsafe/profile";
+		const created = await app.request("/workbench/profiles", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ id: unsafeId, name: "Path-like profile" }),
+		});
+		expect(created.status).toBe(201);
+		const unsafePaths = getWorkbenchToolbarProjectionPaths(unsafeId);
+		expect(unsafePaths.every((path) => !path.split("/").includes(".."))).toBe(true);
+		const unsafeFile = await readWorkbenchToolbarProjectionFile(join(directory, ".coleo"), unsafePaths[0]!);
+		expect(JSON.parse(unsafeFile!.content)).toMatchObject({ id: "inbox" });
+	});
 
 	it("persists and exports profile-owned views and layouts", async () => {
 		const app = createTestApp();
@@ -158,6 +211,42 @@ describe("workbench foundation", () => {
 		expect(attention[0]?.itemKey).toBe(itemKey);
 		expect(attention[0]?.resolvedAt).toBeString();
 		expect(attention[0]?.requiresAction).toBe(false);
+	});
+
+	it("focuses planning failures into one durable inbox item", async () => {
+		const app = createTestApp();
+		const now = new Date().toISOString();
+		db.run(
+			`INSERT INTO infrastructure_health
+			  (component, healthy, optional, error, last_check, updated_at)
+			 VALUES (?, 0, 0, ?, ?, ?)`,
+			[
+				"brain_planning_gate",
+				JSON.stringify({ detail: "Plan evaluation failed", nextStep: "Review .project/plan.md" }),
+				now,
+				now,
+			],
+		);
+		db.run(
+			`INSERT INTO tasks (
+			  id, subject, description, status, priority, source_type, blocked_category,
+			  blocked_reason, created_at, updated_at
+			 ) VALUES (?, ?, ?, 'blocked', 'high', 'plan', 'planning', ?, ?, ?)`,
+			["planning-task", "Blocked task", "Waiting", "Planning failed", now, now],
+		);
+
+		const response = await app.request("/workbench/inbox?profileId=local");
+		const body = await response.json() as {
+			items: Array<{ itemKey: string; source: string; resource: { kind: string } }>;
+		};
+
+		expect(response.status).toBe(200);
+		expect(body.items).toHaveLength(1);
+		expect(body.items[0]).toMatchObject({
+			itemKey: "brain:planning-gate",
+			source: "planning-gate",
+			resource: { kind: "brain" },
+		});
 	});
 
 	it("allowlists card actions and updates scalar resource fields", async () => {

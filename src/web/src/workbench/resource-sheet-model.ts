@@ -91,6 +91,15 @@ function comparableValue(value: unknown): string {
 	return String(value).toLocaleLowerCase();
 }
 
+function compareResourceValues(left: unknown, right: unknown): number {
+	if (typeof left === "number" && typeof right === "number") return left - right;
+	if (typeof left === "boolean" && typeof right === "boolean") return Number(left) - Number(right);
+	return comparableValue(left).localeCompare(comparableValue(right), undefined, {
+		numeric: true,
+		sensitivity: "base",
+	});
+}
+
 export function matchesResourceFilter<T>(
 	row: T,
 	columns: readonly ResourceSheetColumnModel<T>[],
@@ -152,6 +161,28 @@ export function projectResourceRows<T extends { id: string }>(
 	}
 
 	return { filteredRows, sheetRows, rowsById };
+}
+
+export function projectResourceCollection<T>(
+	rows: readonly T[],
+	columns: readonly ResourceSheetColumnModel<T>[],
+	preferences: Pick<ViewPreferences, "filters" | "sort">,
+): T[] {
+	const filtered = rows.filter((row) =>
+		(preferences.filters ?? []).every((filter) => matchesResourceFilter(row, columns, filter))
+	);
+	const sorts = preferences.sort ?? [];
+	if (sorts.length === 0) return filtered;
+	const columnsById = new Map(columns.map((column) => [column.id, column]));
+	return filtered.slice().sort((left, right) => {
+		for (const sort of sorts) {
+			const column = columnsById.get(sort.field);
+			if (!column) continue;
+			const compared = compareResourceValues(column.read(left), column.read(right));
+			if (compared !== 0) return sort.direction === "desc" ? -compared : compared;
+		}
+		return 0;
+	});
 }
 
 export function resolveResourceRowMove<T extends { id: string }>(

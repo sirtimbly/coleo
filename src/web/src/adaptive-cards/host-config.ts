@@ -17,7 +17,7 @@ export const COLEO_CARD_HOST_CONFIG = {
 	},
 	separator: {
 		lineThickness: 1,
-		lineColor: "#3f3f46",
+		lineColor: "var(--color-border)",
 	},
 	fontSizes: {
 		small: 12,
@@ -33,63 +33,128 @@ export const COLEO_CARD_HOST_CONFIG = {
 	},
 	containerStyles: {
 		default: {
-			backgroundColor: "#18181b",
 			foregroundColors: {
-				default: { default: "#fafafa", subtle: "#a1a1aa" },
-				accent: { default: "#60a5fa", subtle: "#93c5fd" },
-				good: { default: "#4ade80", subtle: "#86efac" },
-				warning: { default: "#fbbf24", subtle: "#fde68a" },
-				attention: { default: "#f87171", subtle: "#fca5a5" },
-				dark: { default: "#18181b", subtle: "#3f3f46" },
-				light: { default: "#fafafa", subtle: "#d4d4d8" },
+				default: {
+					default: "var(--color-foreground)",
+					subtle: "var(--color-muted-foreground)",
+				},
+				accent: {
+					default: "var(--color-accent)",
+					subtle: "var(--color-accent)",
+				},
+				good: {
+					default: "var(--color-success)",
+					subtle: "var(--color-success)",
+				},
+				warning: {
+					default: "var(--color-warning)",
+					subtle: "var(--color-warning)",
+				},
+				attention: {
+					default: "var(--color-danger)",
+					subtle: "var(--color-danger)",
+				},
+				dark: {
+					default: "var(--color-foreground)",
+					subtle: "var(--color-muted-foreground)",
+				},
+				light: {
+					default: "var(--color-foreground)",
+					subtle: "var(--color-muted-foreground)",
+				},
 			},
 		},
 		emphasis: {
-			backgroundColor: "#27272a",
+			backgroundColor: "var(--adaptive-card-emphasis)",
 			foregroundColors: {
-				default: { default: "#fafafa", subtle: "#a1a1aa" },
-				accent: { default: "#60a5fa", subtle: "#93c5fd" },
-				good: { default: "#4ade80", subtle: "#86efac" },
-				warning: { default: "#fbbf24", subtle: "#fde68a" },
-				attention: { default: "#f87171", subtle: "#fca5a5" },
-				dark: { default: "#18181b", subtle: "#3f3f46" },
-				light: { default: "#fafafa", subtle: "#d4d4d8" },
+				default: {
+					default: "var(--adaptive-card-emphasis-foreground)",
+					subtle: "var(--adaptive-card-emphasis-muted)",
+				},
+				accent: { default: "var(--color-accent)", subtle: "var(--color-accent)" },
+				good: { default: "var(--color-success)", subtle: "var(--color-success)" },
+				warning: { default: "var(--color-warning)", subtle: "var(--color-warning)" },
+				attention: { default: "var(--color-danger)", subtle: "var(--color-danger)" },
+				dark: {
+					default: "var(--adaptive-card-emphasis-foreground)",
+					subtle: "var(--adaptive-card-emphasis-muted)",
+				},
+				light: {
+					default: "var(--adaptive-card-emphasis-foreground)",
+					subtle: "var(--adaptive-card-emphasis-muted)",
+				},
 			},
 		},
 		good: {
-			backgroundColor: "#052e16",
+			backgroundColor: "var(--adaptive-card-good)",
 			foregroundColors: {
-				default: { default: "#f0fdf4", subtle: "#86efac" },
-				accent: { default: "#93c5fd", subtle: "#bfdbfe" },
-				good: { default: "#4ade80", subtle: "#86efac" },
-				warning: { default: "#fde047", subtle: "#fef08a" },
-				attention: { default: "#fca5a5", subtle: "#fecaca" },
-				dark: { default: "#052e16", subtle: "#14532d" },
-				light: { default: "#f0fdf4", subtle: "#dcfce7" },
+				default: {
+					default: "var(--adaptive-card-good-foreground)",
+					subtle: "var(--adaptive-card-good-muted)",
+				},
+				accent: { default: "var(--color-accent)", subtle: "var(--color-accent)" },
+				good: {
+					default: "var(--adaptive-card-good-foreground)",
+					subtle: "var(--adaptive-card-good-muted)",
+				},
+				warning: { default: "var(--color-warning)", subtle: "var(--color-warning)" },
+				attention: { default: "var(--color-danger)", subtle: "var(--color-danger)" },
+				dark: {
+					default: "var(--adaptive-card-good-foreground)",
+					subtle: "var(--adaptive-card-good-muted)",
+				},
+				light: {
+					default: "var(--adaptive-card-good-foreground)",
+					subtle: "var(--adaptive-card-good-muted)",
+				},
 			},
 		},
 		warning: {
-			backgroundColor: "#422006",
+			backgroundColor: "var(--adaptive-card-warning)",
 			foregroundColors: {
-				default: { default: "#fffbeb", subtle: "#fde68a" },
-				accent: { default: "#93c5fd", subtle: "#bfdbfe" },
-				good: { default: "#86efac", subtle: "#bbf7d0" },
-				warning: { default: "#fbbf24", subtle: "#fde68a" },
-				attention: { default: "#fca5a5", subtle: "#fecaca" },
-				dark: { default: "#422006", subtle: "#713f12" },
-				light: { default: "#fffbeb", subtle: "#fef3c7" },
+				default: {
+					default: "var(--adaptive-card-warning-foreground)",
+					subtle: "var(--adaptive-card-warning-muted)",
+				},
+				accent: { default: "var(--color-accent)", subtle: "var(--color-accent)" },
+				good: { default: "var(--color-success)", subtle: "var(--color-success)" },
+				warning: {
+					default: "var(--adaptive-card-warning-foreground)",
+					subtle: "var(--adaptive-card-warning-muted)",
+				},
+				attention: { default: "var(--color-danger)", subtle: "var(--color-danger)" },
+				dark: {
+					default: "var(--adaptive-card-warning-foreground)",
+					subtle: "var(--adaptive-card-warning-muted)",
+				},
+				light: {
+					default: "var(--adaptive-card-warning-foreground)",
+					subtle: "var(--adaptive-card-warning-muted)",
+				},
 			},
 		},
 		attention: {
-			backgroundColor: "#450a0a",
+			backgroundColor: "var(--adaptive-card-attention)",
 			foregroundColors: {
-				default: { default: "#fef2f2", subtle: "#fca5a5" },
-				accent: { default: "#93c5fd", subtle: "#bfdbfe" },
-				good: { default: "#86efac", subtle: "#bbf7d0" },
-				warning: { default: "#fde047", subtle: "#fef08a" },
-				attention: { default: "#f87171", subtle: "#fca5a5" },
-				dark: { default: "#450a0a", subtle: "#7f1d1d" },
-				light: { default: "#fef2f2", subtle: "#fee2e2" },
+				default: {
+					default: "var(--adaptive-card-attention-foreground)",
+					subtle: "var(--adaptive-card-attention-muted)",
+				},
+				accent: { default: "var(--color-accent)", subtle: "var(--color-accent)" },
+				good: { default: "var(--color-success)", subtle: "var(--color-success)" },
+				warning: { default: "var(--color-warning)", subtle: "var(--color-warning)" },
+				attention: {
+					default: "var(--adaptive-card-attention-foreground)",
+					subtle: "var(--adaptive-card-attention-muted)",
+				},
+				dark: {
+					default: "var(--adaptive-card-attention-foreground)",
+					subtle: "var(--adaptive-card-attention-muted)",
+				},
+				light: {
+					default: "var(--adaptive-card-attention-foreground)",
+					subtle: "var(--adaptive-card-attention-muted)",
+				},
 			},
 		},
 	},

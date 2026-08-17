@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@heroui/react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/lib";
 import { CardCreatorAvatar } from "./CardCreatorAvatar";
@@ -22,7 +24,9 @@ export interface AdaptiveCardViewProps {
 	onAction?: (request: CardActionRequest) => void | Promise<void>;
 	className?: string;
 	headerActions?: ReactNode;
+	footerActions?: ReactNode;
 	allCardsDefault?: CardPresentationMode;
+	presentationMode?: CardPresentationMode;
 }
 
 export function AdaptiveCardView({
@@ -30,18 +34,24 @@ export function AdaptiveCardView({
 	onAction,
 	className,
 	headerActions,
+	footerActions,
 	allCardsDefault,
+	presentationMode,
 }: AdaptiveCardViewProps) {
 	const hostRef = useRef<HTMLDivElement>(null);
 	const onActionRef = useRef(onAction);
 	const [error, setError] = useState<string | null>(null);
+	const [technicalDetailsOpen, setTechnicalDetailsOpen] = useState(false);
 	const settings = useCardPresentation(
 		envelope.id,
 		envelope.presentation.compact ? "compact" : "detail",
 		allCardsDefault,
 	);
-	const configurable = envelope.presentation.surface !== "editor";
-	const mode = configurable ? settings.mode : "detail";
+	const configurable = envelope.presentation.surface !== "editor" && presentationMode === undefined;
+	const mode = envelope.presentation.surface === "editor"
+		? "detail"
+		: presentationMode ?? settings.mode;
+	const hasTechnicalDetails = Array.isArray(envelope.data.technicalFacts) && envelope.data.technicalFacts.length > 0;
 	onActionRef.current = onAction;
 
 	useEffect(() => {
@@ -72,9 +82,10 @@ export function AdaptiveCardView({
 				facts: mode === "compact" ? [] : envelope.data.facts,
 				description: mode === "compact" ? null : envelope.data.description,
 				timestampLabel: mode === "compact" ? null : envelope.data.timestampLabel,
-				canArchive: mode === "detail" && envelope.data.canArchive === true,
+				canArchive: envelope.data.canArchive === true,
 				showAttentionActions:
 					mode === "detail" && envelope.data.requiresAction === true,
+				showTechnicalDetails: mode === "detail" && technicalDetailsOpen,
 				summaryMaxLines: mode === "compact" ? 2 : 0,
 				previewMaxLines: mode === "compact" ? 2 : 0,
 			};
@@ -121,7 +132,7 @@ export function AdaptiveCardView({
 			cancelled = true;
 			host.replaceChildren();
 		};
-	}, [envelope, mode]);
+	}, [envelope, mode, technicalDetailsOpen]);
 
 	return (
 		<div
@@ -181,6 +192,34 @@ export function AdaptiveCardView({
 				ref={hostRef}
 				className={cn("adaptive-card-host", error ? "hidden" : "")}
 			/>
+			{footerActions || (hasTechnicalDetails && mode === "detail") ? (
+				<div className={cn(
+					"min-h-10 items-center gap-1 border-t border-border/70 px-3 py-1.5",
+					hasTechnicalDetails && mode === "detail"
+						? "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+						: "flex flex-wrap",
+				)}>
+					<div className="flex min-w-0 flex-wrap items-center gap-1">{footerActions}</div>
+					{hasTechnicalDetails && mode === "detail" ? (
+						<Button
+							size="sm"
+							variant="ghost"
+							aria-label={technicalDetailsOpen ? "Hide details" : "More details"}
+							aria-expanded={technicalDetailsOpen}
+							onPress={() => setTechnicalDetailsOpen((open) => !open)}
+							className="h-7 min-h-7 text-[0.68rem] !font-normal"
+						>
+							{technicalDetailsOpen ? "Hide details" : "More details"}
+							{technicalDetailsOpen ? (
+								<ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+							) : (
+								<ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+							)}
+						</Button>
+					) : null}
+					{hasTechnicalDetails && mode === "detail" ? <span aria-hidden="true" /> : null}
+				</div>
+			) : null}
 		</div>
 	);
 }

@@ -1,8 +1,8 @@
 /**
  * Bugs Page
  *
- * Displays bug reports through the shared Tabulator sheet and opens richer
- * bug details in a dedicated Golden Layout panel.
+ * Displays bug reports through shared data-grid and Adaptive Card projections,
+ * with richer bug details in a dedicated workspace panel.
  */
 import React, { useMemo, useState, useCallback, useDeferredValue } from 'react';
 import {
@@ -11,11 +11,14 @@ import {
 	Bug as BugIcon,
 	CheckCircle2,
 	Clock,
+	ExternalLink,
+	Pencil,
 	Tag,
 	X,
 } from 'lucide-react';
 import { Button } from '@heroui/react';
-import { AdaptiveCardView } from '@/adaptive-cards/AdaptiveCardView';
+import { AdaptiveCardView, DeferredAdaptiveCardView } from '@/adaptive-cards/AdaptiveCardView';
+import { presentBugCard } from '@/adaptive-cards/bug-presenter';
 import {
 	BRAIN_CARD_CREATOR,
 	createArmCardCreator,
@@ -46,13 +49,42 @@ import {
 	SheetWorkspaceToolbar,
 	type SheetInsight,
 } from '@/design-system/SheetWorkspaceToolbar';
+import { normalizeRowColor, RowFormattingToolbar } from '@/design-system/RowFormattingToolbar';
+import { AdaptiveCardCollection } from '@/workbench/AdaptiveCardCollection';
+import { useCollectionDisplayPreferences } from '@/workbench/collection-display';
+import { projectResourceCollection } from '@/workbench/resource-sheet-model';
+import { useViewPreferences } from '@/workbench/use-view-preferences';
+import { ViewConfigurator, type ConfigurableColumn } from '@/workbench/ViewConfigurator';
 import {
+	useIsWorkspacePanel,
 	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
 
 type BugUiMeta = UiMetadata;
+
+const BUG_VIEW_COLUMNS: ConfigurableColumn[] = [
+	{ id: 'title', header: 'Subject', defaultWidth: 360, hideable: false },
+	{ id: 'status', header: 'Status', defaultWidth: 128 },
+	{ id: 'priority', header: 'Priority', defaultWidth: 104 },
+	{ id: 'source', header: 'Source', defaultWidth: 136 },
+	{ id: 'tags', header: 'Tags', defaultWidth: 180 },
+	{ id: 'assignee', header: 'Arm', defaultWidth: 140 },
+	{ id: 'createdAt', header: 'Created', defaultWidth: 170 },
+	{ id: 'updatedAt', header: 'Updated', defaultWidth: 170 },
+];
+
+const BUG_COLLECTION_COLUMNS = [
+	{ id: 'title', read: (bug: Bug) => bug.title },
+	{ id: 'status', read: (bug: Bug) => bug.status },
+	{ id: 'priority', read: (bug: Bug) => bug.priority },
+	{ id: 'source', read: (bug: Bug) => bug.source },
+	{ id: 'tags', read: (bug: Bug) => bug.metadata?.ui?.tags ?? [] },
+	{ id: 'assignee', read: (bug: Bug) => bug.assigneeArmName ?? bug.assigneeArmId ?? '' },
+	{ id: 'createdAt', read: (bug: Bug) => bug.createdAt },
+	{ id: 'updatedAt', read: (bug: Bug) => bug.updatedAt },
+];
 
 const BugSheet = React.lazy(() =>
 	import('@/workbench/BugSheet').then((module) => ({ default: module.BugSheet }))
@@ -219,7 +251,7 @@ function BugDetailProjection({
 	onOpenCardEditor,
 }: {
 	bug: Bug;
-	onClose: () => void;
+	onClose?: () => void;
 	onUpdate: (bugId: string, updates: BugUpdate) => void;
 	onOpenCardEditor: () => void;
 }) {
@@ -234,9 +266,11 @@ function BugDetailProjection({
 						<Button size="sm" variant="ghost" onPress={onOpenCardEditor}>
 							Edit as card
 						</Button>
-						<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
-							<X className="h-4 w-4" aria-hidden="true" />
-						</Button>
+						{onClose ? (
+							<Button isIconOnly size="sm" variant="ghost" onPress={onClose} aria-label="Close bug details">
+								<X className="h-4 w-4" aria-hidden="true" />
+							</Button>
+						) : null}
 					</>
 				)}
 			/>
@@ -430,6 +464,7 @@ function BugInsightPanel({
 
 export function BugsPage() {
 	const queryClient = useQueryClient();
+	const isWorkspacePanel = useIsWorkspacePanel();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const closeWorkspaceRoute = useWorkspaceCloseRoute('/bugs');
 	const [searchParams] = useWorkspaceSearchParams();
@@ -440,6 +475,30 @@ export function BugsPage() {
 	const [selectedBug, setSelectedBug] = useState<Bug | null>(null);
 	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
+	const [cardEditBugId, setCardEditBugId] = useState<string | null>(null);
+	const [configuringView, setConfiguringView] = useState(false);
+	const [formattingBug, setFormattingBug] = useState<Bug>();
+	const { display, updateDisplay } = useCollectionDisplayPreferences({
+		viewId: 'bugs-display',
+		name: 'Bugs',
+		resourceKind: 'bug',
+	});
+	const bugView = useViewPreferences('bugs-sheet', {
+		id: 'bugs-sheet',
+		name: 'Bugs',
+		kind: 'sheet',
+		resourceKind: 'bug',
+		description: 'Bug collection filters, sorting, and grid columns',
+		query: { resourceKinds: ['bug'] },
+		preferences: { density: 'compact', sort: [] },
+		shared: false,
+	});
+	const bugViewPreferences = useMemo(
+		() => bugView.preferences.density === display.density
+			? bugView.preferences
+			: { ...bugView.preferences, density: display.density },
+		[bugView.preferences, display.density],
+	);
 	const deferredSearchText = useDeferredValue(searchText);
 
 	// Use React Query hook for bugs
@@ -493,8 +552,8 @@ export function BugsPage() {
 			});
 		}
 
-		return result;
-	}, [bugs, tagFilter, deferredSearchText, getBugUiMeta]);
+		return projectResourceCollection(result, BUG_COLLECTION_COLUMNS, bugViewPreferences);
+	}, [bugs, tagFilter, deferredSearchText, getBugUiMeta, bugViewPreferences]);
 
 	const handleUpdateBug = useCallback(
 		async (bugId: string, updates: BugUpdate) => {
@@ -572,6 +631,83 @@ export function BugsPage() {
 			'split',
 		);
 	}, [openWorkspaceRoute, searchParams]);
+	const handleBugCardAction = useCallback(async (request: import('../../../types/adaptive-cards').CardActionRequest) => {
+		await api.executeWorkbenchCardAction(request);
+		setCardEditBugId(null);
+		await queryClient.invalidateQueries({ queryKey: bugsKeys.all(), refetchType: 'active' });
+	}, [queryClient]);
+	const bugCardCollection = (
+		<AdaptiveCardCollection
+			items={filteredBugs}
+			columns={display.cardColumns}
+			presentation={display.cardPresentation}
+			getKey={(bug) => bug.id}
+			renderCard={(bug, presentation) => (
+				<DeferredAdaptiveCardView
+					envelope={presentBugCard(bug, cardEditBugId === bug.id, bugCardCreator(bug))}
+					onAction={handleBugCardAction}
+					presentationMode={presentation}
+					headerActions={(
+						<Button
+							isIconOnly
+							size="sm"
+							variant={cardEditBugId === bug.id ? 'secondary' : 'ghost'}
+							aria-label={cardEditBugId === bug.id ? `Cancel editing ${bug.title}` : `Edit ${bug.title}`}
+							aria-pressed={cardEditBugId === bug.id}
+							onPress={() => setCardEditBugId((current) => current === bug.id ? null : bug.id)}
+							className="h-7 min-h-7 w-7 min-w-7"
+						>
+							<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+						</Button>
+					)}
+					footerActions={cardEditBugId === bug.id ? undefined : (
+						<>
+							<Button size="sm" variant="ghost" onPress={() => handleOpenDetails(bug)}>
+								<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+								View Bug
+							</Button>
+							{bug.sourceTaskId ? (
+								<Button
+									size="sm"
+									variant="ghost"
+									onPress={() => openWorkspaceRoute(
+										{
+											pathname: '/tasks',
+											search: `?task=${encodeURIComponent(bug.sourceTaskId!)}&view=details`,
+											title: 'Related task',
+										},
+										'split',
+									)}
+								>
+									<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+									View Task
+								</Button>
+							) : null}
+						</>
+					)}
+				/>
+			)}
+		/>
+	);
+	const bugSort = bugViewPreferences.sort?.[0];
+	const bugSortLabel = bugSort
+		? `${BUG_VIEW_COLUMNS.find((column) => column.id === bugSort.field)?.header ?? bugSort.field} ${bugSort.direction === 'desc' ? '↓' : '↑'}`
+		: undefined;
+	const bugGridControls = formattingBug ? (
+		<RowFormattingToolbar
+			label={formattingBug.title}
+			value={{
+				bold: formattingBug.metadata?.ui?.bold ?? false,
+				color: normalizeRowColor(formattingBug.metadata?.ui?.color),
+			}}
+			onChange={(updates) => handleUpdateBug(formattingBug.id, {
+				metadata: {
+					...formattingBug.metadata,
+					ui: { ...formattingBug.metadata?.ui, ...updates },
+				},
+			})}
+		/>
+	) : undefined;
 	const handleOpenBugCardEditor = useCallback(() => {
 		if (!selectedBug) return;
 		void createPersistedCardRoute(presentResourceEditor({
@@ -679,7 +815,7 @@ export function BugsPage() {
 		return (
 			<BugDetailProjection
 				bug={selectedBug}
-				onClose={closeWorkspaceRoute}
+				onClose={isWorkspacePanel ? undefined : closeWorkspaceRoute}
 				onUpdate={handleUpdateBug}
 				onOpenCardEditor={handleOpenBugCardEditor}
 			/>
@@ -687,8 +823,9 @@ export function BugsPage() {
 	}
 
 	return (
-		<div className="flex h-full min-h-0 flex-col">
+		<div className="relative flex h-full min-h-0 flex-col">
 			<SheetWorkspaceToolbar
+				screenId="bugs"
 				resourceKey="bug"
 				resourceName="Bugs"
 				searchText={searchText}
@@ -702,32 +839,40 @@ export function BugsPage() {
 					void refetch();
 				}}
 				onNew={openNewBugPanel}
-				secondaryControls={availableTags.length > 0 ? (
-					<div className="flex shrink-0 items-center gap-1" aria-label="Bug tag filters">
-						<Tag className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
-						{availableTags.slice(0, 8).map((tag) => (
-							<button
-								key={tag}
-								type="button"
-								aria-pressed={tagFilter.includes(tag)}
-								onClick={() => toggleTagFilter(tag)}
-								className={cn(
-									"h-7 shrink-0 touch-manipulation border px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-									tagFilter.includes(tag)
-										? "border-accent/50 bg-accent/10 text-accent"
-										: "border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground",
-								)}
-							>
-								{tag}
-							</button>
-						))}
-						{tagFilter.length > 0 ? (
-							<Button size="sm" variant="ghost" onPress={() => setTagFilter([])}>
-								Clear
-							</Button>
-						) : null}
-					</div>
-				) : undefined}
+				display={display}
+				onDisplayChange={updateDisplay}
+				onConfigure={() => setConfiguringView(true)}
+				filterCount={bugViewPreferences.filters?.length ?? 0}
+				sortLabel={bugSortLabel}
+				extensionWidgets={{
+					"bugs.tag-filters": availableTags.length > 0 ? (
+						<div className="flex shrink-0 items-center gap-1" aria-label="Bug tag filters">
+							<Tag className="h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+							{availableTags.slice(0, 8).map((tag) => (
+								<button
+									key={tag}
+									type="button"
+									aria-pressed={tagFilter.includes(tag)}
+									onClick={() => toggleTagFilter(tag)}
+									className={cn(
+										"h-7 shrink-0 touch-manipulation border px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+										tagFilter.includes(tag)
+											? "border-accent/50 bg-accent/10 text-accent"
+											: "border-border text-muted-foreground hover:bg-surface-secondary hover:text-foreground",
+									)}
+								>
+									{tag}
+								</button>
+							))}
+							{tagFilter.length > 0 ? (
+								<Button size="sm" variant="ghost" onPress={() => setTagFilter([])}>
+									Clear
+								</Button>
+							) : null}
+						</div>
+					) : null,
+					"bugs.row-formatting": display.mode === "grid" ? bugGridControls : null,
+				}}
 			/>
 
 			{isError && error ? (
@@ -749,6 +894,8 @@ export function BugsPage() {
 					<div className="flex h-full items-center justify-center text-sm text-muted-foreground" role="status">
 						Loading bugs…
 					</div>
+				) : display.mode === 'cards' ? (
+					bugCardCollection
 				) : (
 					<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
 						<BugSheet
@@ -759,10 +906,23 @@ export function BugsPage() {
 							onDelete={handleDeleteBug}
 							onCreateBugAt={handleCreateBugAt}
 							onRowsMove={handleRowsMove}
+							density={display.density}
+							viewPreferences={bugViewPreferences}
+							onViewPreferencesChange={bugView.updatePreferences}
+							onSelectedBugChange={setFormattingBug}
 						/>
 					</React.Suspense>
 				)}
 			</div>
+			<ViewConfigurator
+				open={configuringView}
+				columns={BUG_VIEW_COLUMNS}
+				preferences={bugViewPreferences}
+				shared={bugView.view.shared}
+				onChange={bugView.updatePreferences}
+				onSharedChange={(shared) => void bugView.updateShared(shared)}
+				onClose={() => setConfiguringView(false)}
+			/>
 		</div>
 	);
 }

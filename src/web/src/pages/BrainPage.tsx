@@ -34,6 +34,7 @@ interface BrainStatus {
     blockedTaskCount: number;
     blockedArmCount: number;
     taskCount: number;
+		nextStep: string | null;
   };
   modelAccess: {
     status: 'available' | 'blocked' | 'unknown';
@@ -111,6 +112,31 @@ function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAcce
   );
 }
 
+function PlanningGateAlert({ plan, onNavigate }: { plan: BrainStatus['plan']; onNavigate: Navigate }) {
+	if (plan.status !== 'blocked') return null;
+	const blocked = [
+		plan.blockedArmCount ? `${plan.blockedArmCount} Arm${plan.blockedArmCount === 1 ? '' : 's'}` : null,
+		plan.blockedTaskCount ? `${plan.blockedTaskCount} task${plan.blockedTaskCount === 1 ? '' : 's'}` : null,
+	].filter(Boolean).join(' and ');
+
+	return (
+		<div role="alert" className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+			<div className="flex min-w-0 gap-3">
+				<AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+				<div>
+					<p className="font-medium text-warning">The Brain is paused at the planning gate</p>
+					<p className="mt-1 text-sm text-foreground">{plan.detail}</p>
+					{plan.nextStep ? <p className="mt-2 text-sm font-medium text-foreground">Required action: {plan.nextStep}</p> : null}
+					{blocked ? <p className="mt-1 text-xs text-muted-foreground">{blocked} waiting. No new work or notifications will be generated until recovery.</p> : null}
+				</div>
+			</div>
+			<Button variant="secondary" size="sm" onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}>
+				Review plan
+			</Button>
+		</div>
+	);
+}
+
 function BrainStatusSection({
   status,
   isLoading,
@@ -161,9 +187,11 @@ function BrainStatusSection({
             title="Status"
             description={status?.modelAccess?.status === 'blocked'
               ? 'Plan evaluation blocked · API credits required'
+				: status?.plan?.status === 'blocked'
+					? 'Paused until the project planning gate recovers'
               : `Uptime ${formatUptime(status?.uptime)}`}
-            leading={<WorkbenchStatusDot tone={status?.modelAccess?.status === 'blocked' ? 'danger' : statusTone(status?.status || 'stopped')} />}
-            trailing={<span className="capitalize">{status?.status || 'unknown'}</span>}
+			leading={<WorkbenchStatusDot tone={status?.modelAccess?.status === 'blocked' ? 'danger' : status?.plan?.status === 'blocked' ? 'warning' : statusTone(status?.status || 'stopped')} />}
+			trailing={<span className="capitalize">{status?.plan?.status === 'blocked' ? 'blocked' : status?.status || 'unknown'}</span>}
           />
           <CollectionRow
             title="Project plan"
@@ -437,6 +465,7 @@ export function BrainPage() {
 
       <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
         {status?.modelAccess ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
+		{status ? <PlanningGateAlert plan={status.plan} onNavigate={navigate} /> : null}
 
         <BrainStatusSection
           status={status}

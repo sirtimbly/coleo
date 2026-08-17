@@ -14,6 +14,10 @@ import {
 import { LocalWorkspaceAccess } from "../../workspace";
 import { formatErrorResponse } from "../middleware/error";
 import { createProjectSetupRoutes } from "../routes/project-setup";
+import {
+	getWorkbenchToolbarProjectionPaths,
+	materializeWorkbenchToolbarTemplates,
+} from "../workbench-toolbar-projection";
 
 function createTestDb(): Database {
 	const db = new Database(":memory:");
@@ -169,6 +173,35 @@ describe("project setup routes", () => {
 		expect(paths).toContain(".project/plan.md");
 		expect(paths.some((path) => path.startsWith(".git/"))).toBe(false);
 		expect(paths.some((path) => path.startsWith("node_modules/"))).toBe(false);
+	});
+
+	it("lists and opens generated toolbar snapshots as read-only Coleo files", async () => {
+		const coleoDir = join(root, ".coleo");
+		await materializeWorkbenchToolbarTemplates(coleoDir, "local", {});
+		const inboxPath = getWorkbenchToolbarProjectionPaths("local")
+			.find((path) => path.endsWith("/inbox.json"))!;
+
+		const statusResponse = await app.request("http://localhost/api/project-setup");
+		const status = await statusResponse.json() as { projectTree: string[] };
+		expect(status.projectTree).toContain(inboxPath);
+
+		const readResponse = await app.request(
+			`http://localhost/api/project-setup/file?path=${encodeURIComponent(inboxPath)}`,
+		);
+		const readBody = await readResponse.json() as {
+			file: { path: string; content: string; readOnly: boolean };
+		};
+		expect(readResponse.status).toBe(200);
+		expect(readBody.file).toMatchObject({ path: inboxPath, readOnly: true });
+		expect(JSON.parse(readBody.file.content)).toMatchObject({ id: "inbox" });
+
+		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ kind: "document", path: inboxPath, content: "{}\n" }),
+		});
+		expect(saveResponse.status).toBe(400);
+		expect(await saveResponse.text()).toContain("read-only");
 	});
 
 	it("reads and edits markdown, text, TOML, and Jinja files in the checkout", async () => {

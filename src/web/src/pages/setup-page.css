@@ -3,24 +3,6 @@
   container-type: inline-size;
 }
 
-.setup-page-toolbar {
-  display: flex;
-  min-height: 2.75rem;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-  border-bottom: 1px solid var(--border);
-  padding: 0.375rem 0.75rem;
-}
-
-.setup-toolbar-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-left: auto;
-}
-
 .setup-help-bar {
   display: flex;
   flex-shrink: 0;

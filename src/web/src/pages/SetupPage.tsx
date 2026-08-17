@@ -6,29 +6,31 @@
  * task-regeneration workflows.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Button } from '@heroui/react';
-import { Check, CircleHelp, Eye, EyeOff, FilePlus2, Info, LoaderCircle, RefreshCw, Save, Sparkles, TriangleAlert, X } from 'lucide-react';
+import { Check, FilePlus2, Info, LoaderCircle, RefreshCw, TriangleAlert, X } from 'lucide-react';
 
 import { SetupFileTree } from '@/components/SetupFileTree';
 import { RegenerateTasksModal } from '@/components/RegenerateTasksModal';
+import { SetupWorkspaceToolbar } from '@/components/SetupWorkspaceToolbar';
 import {
   WorkbenchEmptyState,
   WorkbenchHeader,
   WorkbenchSurface,
-  WorkbenchToolbar,
 } from '@/design-system/WorkbenchSurface';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { api, type ProjectSetupStatus } from '@/lib';
 import { dismissProjectSetupHelp, hasDismissedProjectSetupHelp, markProjectSetupOpened } from '@/lib/project-setup-visit';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 
+import { filterSetupFilePaths, setupPathMatchesScope, type SetupFileScope } from './setup-file-scope';
 import type { FileTreeRowDecoration } from '@pierre/trees';
 import './setup-page.css';
 
 const EDITABLE_FILE = /\.(md|markdown|txt|toml|jinja)$/i;
+const TOOLBAR_SNAPSHOT_FILE = /^\.coleo\/state\/workbench\/toolbar-templates\/[^/]+\/[^/]+\.json$/i;
 const MARKDOWN_FILE = /\.(md|markdown)$/i;
 const TOML_FILE = /\.toml$/i;
 const JINJA_FILE = /\.jinja$/i;
+const JSON_FILE = /\.json$/i;
 const PLAN_DIRECTORY = '.project';
 const CANONICAL_PLAN_PATH = `${PLAN_DIRECTORY}/plan.md`;
 const TEMPLATE_DIRECTORY = '.coleo/templates';
@@ -39,6 +41,11 @@ interface EditorState {
   content: string;
   expectedHash: string | null;
   savedContent: string;
+  readOnly: boolean;
+}
+
+function isOpenableFile(path: string): boolean {
+  return EDITABLE_FILE.test(path) || TOOLBAR_SNAPSHOT_FILE.test(path);
 }
 
 function editorFromStatus(status: ProjectSetupStatus): EditorState {
@@ -51,6 +58,7 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
       content: selected.content,
       expectedHash: selected.contentHash,
       savedContent: selected.content,
+      readOnly: false,
     };
   }
   return {
@@ -58,6 +66,7 @@ function editorFromStatus(status: ProjectSetupStatus): EditorState {
     content: status.defaultContent,
     expectedHash: null,
     savedContent: '',
+    readOnly: false,
   };
 }
 
@@ -127,6 +136,7 @@ export function SetupPage() {
   const [regenerateOpen, setRegenerateOpen] = useState(false);
   const [showRegeneratedTasksBanner, setShowRegeneratedTasksBanner] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [fileScope, setFileScope] = useState<SetupFileScope>('all');
   const [helpOpen, setHelpOpen] = useState(() => !hasDismissedProjectSetupHelp());
   const [error, setError] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
@@ -170,12 +180,22 @@ export function SetupPage() {
     if (!editorPath || paths.includes(editorPath)) return paths;
     return [...paths, editorPath].sort();
   }, [editorPath, projectTree]);
+  const scopedTreePaths = useMemo(
+    () => filterSetupFilePaths(treePaths, fileScope, CANONICAL_PLAN_PATH),
+    [fileScope, treePaths],
+  );
   const modifiedAtByPath = useMemo(() => {
     const map = new Map<string, string>();
     for (const document of status?.projectDocuments ?? []) map.set(document.path, document.modifiedAt);
     for (const [path, modifiedAt] of openedModifiedAt) map.set(path, modifiedAt);
     return map;
   }, [status, openedModifiedAt]);
+  const recentProjectDocuments = useMemo(
+    () => (status?.projectDocuments ?? []).filter((document) => (
+      document.recentlyChanged && setupPathMatchesScope(document.path, fileScope, CANONICAL_PLAN_PATH)
+    )).slice(0, 5),
+    [fileScope, status],
+  );
 
   const dismissHelp = () => {
     dismissProjectSetupHelp();
@@ -194,6 +214,7 @@ export function SetupPage() {
         content: file.content,
         expectedHash: file.contentHash,
         savedContent: file.content,
+        readOnly: file.readOnly === true,
       });
     } catch (err) {
       if (requestedPathRef.current === path) {
@@ -204,10 +225,56 @@ export function SetupPage() {
     }
   }, []);
 
+  const changeFileScope = (nextScope: SetupFileScope) => {
+    if (!editor || !status || nextScope === fileScope || saving) return;
+    requestedPathRef.current = null;
+    setEditorLoading(false);
+    if (setupPathMatchesScope(editor.path, nextScope, CANONICAL_PLAN_PATH)) {
+      setFileScope(nextScope);
+      return;
+    }
+
+    const targetPath = nextScope === 'plan'
+      ? CANONICAL_PLAN_PATH
+      : nextScope === 'coleo'
+        ? treePaths.find((path) => isOpenableFile(path) && setupPathMatchesScope(path, nextScope, CANONICAL_PLAN_PATH))
+        : editor.path;
+    if (!targetPath) {
+      setFileScope(nextScope);
+      setHint('No editable files are available in the .coleo directory.');
+      return;
+    }
+    if (dirty && !window.confirm('Discard your unsaved edits and change the files shown?')) return;
+
+    setFileScope(nextScope);
+    setHint(null);
+    setResult(null);
+    setError(null);
+    if (targetPath === CANONICAL_PLAN_PATH) {
+      requestedPathRef.current = null;
+      const canonicalPlan = status.canonicalPlan;
+      setEditor(canonicalPlan ? {
+        path: canonicalPlan.path,
+        content: canonicalPlan.content,
+        expectedHash: canonicalPlan.contentHash,
+        savedContent: canonicalPlan.content,
+        readOnly: false,
+      } : {
+        path: CANONICAL_PLAN_PATH,
+        content: status.defaultContent,
+        expectedHash: null,
+        savedContent: '',
+        readOnly: false,
+      });
+      return;
+    }
+    void loadFileIntoEditor(targetPath);
+  };
+
   const selectPath = (path: string): boolean => {
-    if (!editor) return false;
-    if (!EDITABLE_FILE.test(path)) {
-      setHint('Only .md, .txt, .toml, and .jinja files can be viewed and edited here. Every other file is listed so you can verify the checkout downloaded completely.');
+    if (!editor || saving) return false;
+    if (!isOpenableFile(path)) {
+      setHint('Markdown, text, TOML, and Jinja files can be edited here. Generated toolbar JSON snapshots can also be opened read-only.');
       return false;
     }
     if (path === editor.path) return true;
@@ -220,32 +287,42 @@ export function SetupPage() {
   };
 
   const selectDocument = (path: string) => {
-    if (!editor) return;
+    if (!editor || saving) return;
     if (dirty && !window.confirm('Discard your unsaved edits and open another file?')) return;
     setHint(null);
     setResult(null);
     setError(null);
+    if (!setupPathMatchesScope(path, fileScope, CANONICAL_PLAN_PATH)) setFileScope('all');
     void loadFileIntoEditor(path);
   };
 
   const createPlan = () => {
-    if (!status) return;
+    if (!status || saving) return;
     if (dirty && !window.confirm('Discard your unsaved edits and start a new plan?')) return;
+    requestedPathRef.current = null;
+    setEditorLoading(false);
     setEditor({
       path: CANONICAL_PLAN_PATH,
       content: status.defaultContent,
       expectedHash: status.canonicalPlan?.contentHash ?? null,
       savedContent: status.canonicalPlan?.content ?? '',
+      readOnly: false,
     });
     setHint(null);
     setResult(null);
     setError(null);
+    setFileScope('plan');
   };
 
   const save = async (): Promise<boolean> => {
     if (!editor) return false;
+    if (editor.readOnly) {
+      setError('Toolbar configuration snapshots are read-only. Edit them in Toolbar Playground.');
+      return false;
+    }
     setSaving(true);
     setError(null);
+    const targetPath = editor.path;
     try {
       const response = await api.saveProjectSetupFile({
         path: editor.path,
@@ -253,7 +330,7 @@ export function SetupPage() {
         expectedHash: editor.expectedHash,
         kind: 'document',
       });
-      setEditor((current) => current ? {
+      setEditor((current) => current?.path === targetPath ? {
         ...current,
         expectedHash: response.file.contentHash,
         savedContent: response.file.content,
@@ -311,6 +388,7 @@ export function SetupPage() {
         content: response.canonicalPlan.content,
         expectedHash: response.canonicalPlan.contentHash,
         savedContent: response.canonicalPlan.content,
+        readOnly: false,
       });
       setStatus((current) => current ? {
         ...current,
@@ -358,6 +436,7 @@ export function SetupPage() {
   const isMarkdown = MARKDOWN_FILE.test(editor.path);
   const isToml = TOML_FILE.test(editor.path);
   const isJinja = JINJA_FILE.test(editor.path);
+  const isJson = JSON_FILE.test(editor.path);
   const isCanonicalPlan = editor.path === CANONICAL_PLAN_PATH;
 
   return (
@@ -366,61 +445,31 @@ export function SetupPage() {
         title="Project documents"
         description="Edit the canonical plan and the project files that inform Brain and Arm work."
       />
-      <WorkbenchToolbar className="setup-page-toolbar">
-        <p className="text-xs text-muted-foreground">
-          {treePaths.length} files in the project checkout
-        </p>
-
-        <div className="setup-toolbar-actions">
-          {isCanonicalPlan ? (
-            <Button
-              variant="outline"
-              size="sm"
-              onPress={() => void openRegeneration()}
-              isDisabled={saving || preparing}
-              className="h-8 border-warning/50 px-2.5 text-xs font-normal text-warning hover:bg-warning/10"
-            >
-              <RefreshCw className="h-4 w-4" /> Regenerate All Tasks
-            </Button>
-          ) : null}
-          <button
-            type="button"
-            aria-label="Show setup help"
-            title="Show setup help"
-            onClick={() => setHelpOpen(true)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
-          >
-            <CircleHelp className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={!dirty || saving || preparing}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium hover:bg-surface-secondary disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-          {isCanonicalPlan ? (
-            <button
-              type="button"
-              onClick={() => void prepare()}
-              disabled={!editor.content.trim() || saving || preparing}
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-accent px-2.5 text-xs font-medium text-accent-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {preparing ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              {preparing ? 'Preparing…' : 'Prepare tasks'}
-            </button>
-          ) : null}
-        </div>
-      </WorkbenchToolbar>
+      <SetupWorkspaceToolbar
+        fileScope={fileScope}
+        visibleFileCount={scopedTreePaths.length}
+        isCanonicalPlan={isCanonicalPlan}
+        isMarkdown={isMarkdown}
+        readOnly={editor.readOnly}
+        dirty={dirty}
+        saving={saving}
+        preparing={preparing}
+        hasContent={Boolean(editor.content.trim())}
+        previewOpen={previewOpen}
+        onFileScopeChange={changeFileScope}
+        onRegenerate={() => void openRegeneration()}
+        onHelp={() => setHelpOpen(true)}
+        onSave={() => void save()}
+        onPrepare={() => void prepare()}
+        onPreviewChange={() => setPreviewOpen((current) => !current)}
+      />
 
       {helpOpen ? (
         <div className="setup-help-bar" role="status">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
           <p className="min-w-0 flex-1">
-            The tree shows the entire project checkout so you can verify every file downloaded. Only .md, .txt, .toml, and .jinja
-            files open for editing. <span className="text-accent">●</span> marks <code>{PLAN_DIRECTORY}/</code> plan files,{' '}
+            Use Show to focus the tree on the canonical plan, the <code>.coleo/</code> directory, or all project files. Markdown, text, TOML, and Jinja
+            files open for editing; generated toolbar JSON snapshots open read-only. <span className="text-accent">●</span> marks <code>{PLAN_DIRECTORY}/</code> plan files,{' '}
             <span className="text-success">●</span> marks <code>{TEMPLATE_DIRECTORY}/</code> Arm templates, and{' '}
             <span className="text-warning">●</span> marks the rest of <code>.coleo/</code> configuration.
             Preparing a plan creates project tasks.
@@ -441,15 +490,17 @@ export function SetupPage() {
         <aside className="setup-file-sidebar">
           <section className="setup-file-browser">
             <div>
-              {treePaths.length === 0 ? (
+              {scopedTreePaths.length === 0 ? (
                 <p className="rounded-md bg-surface-secondary p-2.5 text-xs leading-5 text-muted-foreground">
-                  The project directory is empty. Clone a repository or start a new plan to get going.
+                  {fileScope === 'coleo'
+                    ? 'No files were found in the .coleo directory.'
+                    : 'The project directory is empty. Clone a repository or start a new plan to get going.'}
                 </p>
               ) : (
                 <div className="setup-file-tree-container">
                   <SetupFileTree
                     ariaLabel="Project checkout files"
-                    paths={treePaths}
+                    paths={scopedTreePaths}
                     selectedPath={editor.path}
                     onSelect={selectPath}
                     expandedPaths={EXPANDED_DIRECTORIES}
@@ -463,10 +514,10 @@ export function SetupPage() {
                 {hint}
               </p>
             ) : null}
-            {status.projectDocuments.some((document) => document.recentlyChanged) ? (
+            {recentProjectDocuments.length > 0 ? (
               <div className="setup-recent-documents" aria-label="Recently changed project documents">
                 <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Recently changed</p>
-                {status.projectDocuments.filter((document) => document.recentlyChanged).slice(0, 5).map((document) => (
+                {recentProjectDocuments.map((document) => (
                   <button key={document.path} type="button" onClick={() => selectDocument(document.path)} className="block w-full truncate rounded px-2 py-1 text-left text-xs text-accent hover:bg-accent/10">
                     {document.path.replace('.project/', '')}
                   </button>
@@ -476,6 +527,7 @@ export function SetupPage() {
             <button
               type="button"
               onClick={createPlan}
+              disabled={saving || preparing}
               className="mt-1 inline-flex h-8 w-full items-center justify-start gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
             >
               <FilePlus2 className="h-3.5 w-3.5" /> New plan
@@ -483,30 +535,10 @@ export function SetupPage() {
           </section>
 
         </aside>
-
         <section className="setup-file-editor min-w-0 rounded-md border border-border bg-surface p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
-              <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(modifiedAtByPath.get(editor.path))}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {isMarkdown ? (
-                <button
-                  type="button"
-                  onClick={() => setPreviewOpen((current) => !current)}
-                  aria-expanded={previewOpen}
-                  title={previewOpen ? 'Hide markdown preview' : 'Show markdown preview'}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2 text-[11px] font-medium text-muted-foreground hover:bg-surface-secondary hover:text-foreground"
-                >
-                  {previewOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                  Preview
-                </button>
-              ) : null}
-              <span className={`rounded px-2 py-0.5 text-[11px] ${dirty ? 'bg-warning/15 text-warning' : 'bg-success/15 text-success'}`}>
-                {dirty ? 'Unsaved changes' : 'Saved'}
-              </span>
-            </div>
+          <div className="min-w-0">
+            <p className="truncate font-mono text-xs text-muted-foreground">{editor.path}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">Last Updated: {formatLastUpdated(modifiedAtByPath.get(editor.path))}</p>
           </div>
 
           <div className={`setup-document-panes mt-2 ${previewOpen && isMarkdown ? '' : 'setup-document-panes--single'}`}>
@@ -516,21 +548,22 @@ export function SetupPage() {
             </div>
           ) : (
           <textarea
-            aria-label={isMarkdown ? 'Markdown file content' : isToml ? 'TOML file content' : isJinja ? 'Jinja file content' : 'Text file content'}
+            aria-label={isMarkdown ? 'Markdown file content' : isToml ? 'TOML file content' : isJinja ? 'Jinja file content' : isJson ? 'Toolbar JSON snapshot' : 'Text file content'}
             value={editor.content}
             onChange={(event) => setEditor((current) => current ? { ...current, content: event.target.value } : current)}
-            className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-            spellCheck={!isToml && !isJinja}
+            readOnly={editor.readOnly}
+            className="setup-file-textarea mt-2 w-full resize-y rounded-md border border-border bg-surface-secondary p-3 font-mono text-sm leading-5 text-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent read-only:cursor-default read-only:text-muted-foreground"
+            spellCheck={!isToml && !isJinja && !isJson}
           />
           )}
           {previewOpen && isMarkdown && !editorLoading ? <MarkdownPreview content={editor.content} /> : null}
           </div>
 
           {error ? (
-            <div className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
+            <div role="alert" className="mt-2 rounded-md border border-danger/30 bg-danger/10 px-3 py-2 text-xs text-danger">{error}</div>
           ) : null}
           {result ? (
-            <div className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>
+            <div role="status" className={`mt-2 rounded-md border px-3 py-2 text-xs ${result.formatterError ? 'border-warning/30 bg-warning/10 text-warning' : 'border-success/30 bg-success/10 text-success'}`}>
               <div className="flex items-start gap-2">
                 {result.formatterError
                   ? <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -566,7 +599,7 @@ export function SetupPage() {
             </div>
           ) : null}
           {!result && showRegeneratedTasksBanner && editor.path === CANONICAL_PLAN_PATH && status.taskCount > 0 ? (
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
+            <div role="status" className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs">
               <div className="flex items-center gap-2 text-success">
                 <Check className="h-4 w-4" />
                 <span>{status.taskCount} project tasks are ready for review.</span>

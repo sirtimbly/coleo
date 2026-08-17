@@ -20,6 +20,7 @@ import {
   Inbox,
   Search,
   Settings,
+  SlidersHorizontal,
   Terminal,
   Workflow,
   Vote,
@@ -47,6 +48,7 @@ import {
   ComposeMessagePage,
   CardPanelPage,
   CardCatalogPage,
+  ToolbarsPage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -182,7 +184,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Project Mail',
     icon: Mail,
     component: MailPage,
-    showInNav: false,
+    showInNav: true,
   },
   {
     id: 'proposals',
@@ -209,6 +211,15 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Settings',
     icon: Settings,
     component: SettingsPage,
+    showInNav: true,
+  },
+  {
+    id: 'toolbars',
+    href: '/toolbars',
+    path: 'toolbars',
+    label: 'Toolbars',
+    icon: SlidersHorizontal,
+    component: ToolbarsPage,
     showInNav: true,
   },
   {

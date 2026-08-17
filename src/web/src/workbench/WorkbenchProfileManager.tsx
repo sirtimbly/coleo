@@ -1,8 +1,8 @@
 /**
  * Profile registration, switching, import, and export controls.
  *
- * This is the installation flow for portable UI configuration: it manages only
- * saved projections and layouts, never project-domain data.
+ * This is the installation flow for portable UI configuration: it manages
+ * saved projections, layouts, and toolbar templates, never project-domain data.
  */
 
 import { useEffect, useRef, useState, type ChangeEvent } from "react";

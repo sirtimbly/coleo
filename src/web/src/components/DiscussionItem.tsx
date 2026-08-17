@@ -36,9 +36,9 @@ const AUTHOR_CONFIG = {
   brain: { 
     icon: Brain,
     label: 'Brain', 
-    bgClass: 'bg-secondary/10',
-    textClass: 'text-secondary',
-    iconClass: 'text-secondary',
+    bgClass: 'bg-surface-secondary',
+    textClass: 'text-foreground',
+    iconClass: 'text-muted-foreground',
   },
 } as const;
 
@@ -116,7 +116,7 @@ function renderMarkdownLine(content: string, lineIndex: number): ReactNode {
       return (
         <code
           key={`code-${keyBase}`}
-          className="px-1.5 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono"
+          className="bg-surface-secondary px-1.5 py-0.5 font-mono text-sm text-foreground"
         >
           {part.slice(1, -1)}
         </code>
@@ -173,7 +173,7 @@ export function DiscussionItem({
     <div
       className={cn(
         'relative',
-        effectiveDepth > 0 && 'ml-4 pl-3 border-l-2 border-divider'
+        effectiveDepth > 0 && 'ml-4 border-l-2 border-border pl-3'
       )}
     >
       <article
@@ -181,8 +181,8 @@ export function DiscussionItem({
           'p-3 rounded-lg transition-all border group',
           isUnread
             ? 'bg-accent/5 border-accent/30'
-            : 'bg-content2 border-divider',
-          isHovered && 'bg-content3'
+            : 'border-border bg-surface',
+          isHovered && 'bg-surface-secondary'
         )}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
@@ -202,14 +202,14 @@ export function DiscussionItem({
               <Chip size="sm" variant="soft" className={cn('h-5 text-xs', config.bgClass, config.textClass)}>
                 {config.label}
               </Chip>
-              <span className="text-foreground-400 text-sm">
+              <span className="text-sm text-muted-foreground">
                 {formatRelativeTime(createdAt)}
               </span>
               {comment.edited && (
-                <span className="text-foreground-400 text-xs">(edited)</span>
+                <span className="text-xs text-muted-foreground">(edited)</span>
               )}
               {isUnread && (
-                <Chip size="sm" variant="soft" className="h-5 text-xs bg-accent text-white">
+                <Chip size="sm" variant="soft" className="h-5 bg-accent text-xs text-accent-foreground">
                   new
                 </Chip>
               )}
