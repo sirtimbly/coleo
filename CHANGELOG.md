@@ -1,5 +1,113 @@
 # Changelog
 
+## [0.11.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.10.0...coleo-v0.11.0) (2026-08-17)
+
+
+### Features
+
+* **api:** persist card attention and actions ([d6e779d](https://github.com/sirtimbly/coleo/commit/d6e779d76340383e348686786acc91d3446e3189))
+* **api:** persist cards and unify workbench inbox ([2e448bc](https://github.com/sirtimbly/coleo/commit/2e448bc35e34ebcb7b88be700d6b784ba12dbd4b))
+* **api:** support versioned task card edits ([720d9b1](https://github.com/sirtimbly/coleo/commit/720d9b13570c638d3c8f25bce26c7aafc80bf5f3))
+* **tasks:** add draft workflow and details action ([26a2e40](https://github.com/sirtimbly/coleo/commit/26a2e407a5d6736dd5b4af816aba26f5228cacba))
+* **web:** add adaptive card identities and view modes ([01979a4](https://github.com/sirtimbly/coleo/commit/01979a43cc8611b3c5e20294c9defbc81aecb52f))
+* **web:** add expandable inbox card table ([8c645cc](https://github.com/sirtimbly/coleo/commit/8c645cca2e1016536f292a859aefa5335be9709b))
+* **web:** add manual sheet row ordering ([a79874b](https://github.com/sirtimbly/coleo/commit/a79874bf5645f24f18e0fa69f16cf35a989b855b))
+* **web:** add structured adaptive card templates ([5c8464f](https://github.com/sirtimbly/coleo/commit/5c8464f683a4852a7efb63f0db98dd1c4c119e82))
+* **web:** add tabulator tasks migration spike ([a43c44e](https://github.com/sirtimbly/coleo/commit/a43c44e2c334273a5d800b569c493cb603fe9afb))
+* **web:** add uniform workbench UI ([dff3761](https://github.com/sirtimbly/coleo/commit/dff37611c5e3c5ebe140e7ebe5173702a21dc101))
+* **web:** converge project streams in unified inbox ([f2d62e9](https://github.com/sirtimbly/coleo/commit/f2d62e95b884afdf83ea234a4114621299c89d63))
+* **web:** create tags from multiselect search ([998bf18](https://github.com/sirtimbly/coleo/commit/998bf1865c01f2ec05b2053cfedcda4957e1941d))
+* **web:** enhance workbench views and toolbar customization ([3f5df51](https://github.com/sirtimbly/coleo/commit/3f5df51a829aa9a24a5e4e6539fa8074e54ecaf2))
+* **web:** enhance workbench views and toolbar customization ([a99f01c](https://github.com/sirtimbly/coleo/commit/a99f01cfa63da019022e980143e635494d990ea8))
+* **web:** establish workbench design system ([48b9609](https://github.com/sirtimbly/coleo/commit/48b96090f41903954d9ca06bb46ecc28d1a2a88f))
+* **web:** migrate brain activity card stream ([1cee0dc](https://github.com/sirtimbly/coleo/commit/1cee0dc6782cd771f379d8adcee22ede1b99ac60))
+* **web:** migrate resource sheets to tabulator ([c60e294](https://github.com/sirtimbly/coleo/commit/c60e2941e18168d78ea57cca0b8a03d7902d41e7))
+* **web:** project brain status and operational history ([f92854f](https://github.com/sirtimbly/coleo/commit/f92854f955ad25ffc2654732bf4f064aebbfba0e))
+* **web:** project workbench activity as adaptive cards ([784c4f6](https://github.com/sirtimbly/coleo/commit/784c4f6a6934749816df18b22832da9a6189f8b1))
+* **web:** render adaptive cards in workspace panels ([1664234](https://github.com/sirtimbly/coleo/commit/166423415bd95af593d6b5b3da8e5962823e56b3))
+* **web:** restore and preview trusted card instances ([aa559d0](https://github.com/sirtimbly/coleo/commit/aa559d00fce57106f8ff8985eab16464525f2dc2))
+* **web:** restore sheet tags and row formatting ([f0eb292](https://github.com/sirtimbly/coleo/commit/f0eb2924fd1b5443b66a37ff75e802de69796402))
+* **web:** route brain activity through inbox ([c208b81](https://github.com/sirtimbly/coleo/commit/c208b81d46a5bae58fc42f2154a2c704f5d9ffd9))
+* **web:** route dashboard events through inbox ([3682d00](https://github.com/sirtimbly/coleo/commit/3682d0032aefb9a6d988e2b32ebe1043d3ba3209))
+* **web:** standardize specialized workbench shells ([b180ecf](https://github.com/sirtimbly/coleo/commit/b180ecf45c9f7141ec38c1418a573b9e594984dd))
+* **web:** standardize task and bug detail projections ([35d59bf](https://github.com/sirtimbly/coleo/commit/35d59bf1ad0530fa00f36108f1c6d7fb671b9337))
+* **web:** unify arm fleet and viewer projections ([0ab8132](https://github.com/sirtimbly/coleo/commit/0ab8132505c06f5848f4c658dff09973a876053b))
+* **web:** unify dashboard presentation surfaces ([ed6568f](https://github.com/sirtimbly/coleo/commit/ed6568f0a899b0ed83657ef20ec9bfc02b2fffd9))
+* **web:** unify inbox filters and headers ([867c081](https://github.com/sirtimbly/coleo/commit/867c081ddb45011fb8222e42e616aa647c7a9fe5))
+* **web:** unify task and bug sheet workspaces ([3c036c1](https://github.com/sirtimbly/coleo/commit/3c036c1258947ccaf8f0a64fa93c0c14ca13cd63))
+* **web:** use multiselect cells for resource tags ([506ec5d](https://github.com/sirtimbly/coleo/commit/506ec5da230354d304e1f8fae17d6ae9f7a385e7))
+* **workbench:** define adaptive card contracts ([dab9a31](https://github.com/sirtimbly/coleo/commit/dab9a319a54321cb66406d76438bab8e6d26954a))
+
+
+### Bug Fixes
+
+* invalidate stale brain model access status ([a491e0b](https://github.com/sirtimbly/coleo/commit/a491e0b993e83d622b9a11576cc8f4e368b4ee54))
+* surface brain model access issues ([eb3d367](https://github.com/sirtimbly/coleo/commit/eb3d367d98e653d493ab97dd82759f289fc1af02))
+* **web:** align sheet status colors with burndown ([f08ca28](https://github.com/sirtimbly/coleo/commit/f08ca28c97c88a345e2b2e90130a9ecc5720ad42))
+* **web:** allow inline editing in resource sheets ([0fe8e50](https://github.com/sirtimbly/coleo/commit/0fe8e50756b328a97500faf31be42c89400afb6a))
+* **web:** default mail threads to full card details ([dc4b93a](https://github.com/sirtimbly/coleo/commit/dc4b93a9f6a0676689581c72df6dcd50e48e5ce6))
+* **web:** default sheet subjects to normal weight ([3ead275](https://github.com/sirtimbly/coleo/commit/3ead2754d15e2b7d43b0d9b2c1489b84309d22ab))
+* **web:** flatten inbox card panels ([270108f](https://github.com/sirtimbly/coleo/commit/270108f8bfe4241ae0195ac41644272e2c0de013))
+* **web:** flatten task card panels ([5eed6cf](https://github.com/sirtimbly/coleo/commit/5eed6cf364667d483881c7c7bafb8d10750ffe3d))
+* **web:** guard missing brain model access in dashboard status ([6e44503](https://github.com/sirtimbly/coleo/commit/6e4450304342738d3ce46572773132377a560223))
+* **web:** harden adaptive card rendering ([6b6b483](https://github.com/sirtimbly/coleo/commit/6b6b4837ec3adf4ae4869234869903e1c2566e6e))
+* **web:** hide standalone arm viewer launch ([9e9972a](https://github.com/sirtimbly/coleo/commit/9e9972a46ba77a468cbe86b33f4530a5939c7276))
+* **web:** match inbox expander chevrons ([6786df0](https://github.com/sirtimbly/coleo/commit/6786df02421dded305b7935732f539e53e2ad07e))
+* **web:** preserve sheet undo and redo history ([8f676c0](https://github.com/sirtimbly/coleo/commit/8f676c05477c30159222ef2e13f68f8d3e81358b))
+* **web:** preserve workspace routing and sheet order ([d4b2386](https://github.com/sirtimbly/coleo/commit/d4b2386eda3d6067ebc21c9c3554118a04fb7a01))
+* **web:** simplify task sheet layout and colors ([e8dede8](https://github.com/sirtimbly/coleo/commit/e8dede8452eff6fbe6d48717f515da1662bd8f16))
+* **web:** stabilize handsontable selection and scrolling ([11dab44](https://github.com/sirtimbly/coleo/commit/11dab44d67b1b2c42f56d998d0b57f3e6f2b1a1c))
+* **web:** streamline task and card panels ([bf4a2f1](https://github.com/sirtimbly/coleo/commit/bf4a2f123574280c4aeaa48df1427130249b5adb))
+* **web:** theme spreadsheet cell editors ([f189ac7](https://github.com/sirtimbly/coleo/commit/f189ac794873a380a6902e69b72696b97dd491d0))
+* **web:** use active arm for card identity ([cd6100c](https://github.com/sirtimbly/coleo/commit/cd6100c227618a92c6e7aafdb30010d30c08ef49))
+* **workbench:** finalize staged integration fixes ([80a9cd6](https://github.com/sirtimbly/coleo/commit/80a9cd6f0b95d2b4229a94086c4ce44623c7711e))
+
+
+### Code Refactoring
+
+* simplify implementation and remove obsolete code ([f091b22](https://github.com/sirtimbly/coleo/commit/f091b220b461ad1d66b762a3b9007ad2cb1d5de2))
+* **web:** name golden-layout location selector ids ([86b0e6d](https://github.com/sirtimbly/coleo/commit/86b0e6d50afe8415202d01d0add9bc0ba9153d74))
+
+
+### Continuous Integration
+
+* add integration and playwright e2e jobs to pull request checks ([a131a0a](https://github.com/sirtimbly/coleo/commit/a131a0ad71a56fdeccb50238e8c072ccc49ebd4a))
+* debug integration job opencode spawn failure ([641916a](https://github.com/sirtimbly/coleo/commit/641916ae94ee0ef395c2e56fb9617ffa03815069))
+* remove opencode smoke step from integration job ([fc78146](https://github.com/sirtimbly/coleo/commit/fc78146def3e173007fbb84c1c6f95252811301e))
+* retrigger workflows ([51b6a70](https://github.com/sirtimbly/coleo/commit/51b6a70b5df1b407c6b96afc48de210b1ad01df7))
+* retrigger workflows after github outage ([a911dc7](https://github.com/sirtimbly/coleo/commit/a911dc7711c79b96dc31db7888c729a83203e574))
+* scope integration job to server api smoke scenario ([9480dd8](https://github.com/sirtimbly/coleo/commit/9480dd8d50b401d158aa514def70c04c29ea354c))
+
+
+### Documentation
+
+* **web:** document tabulator migration ([8f0e83c](https://github.com/sirtimbly/coleo/commit/8f0e83c8fe3b4addf4a56a30704e829a858113df))
+* **workbench:** document adaptive card element policy ([d1dbe4d](https://github.com/sirtimbly/coleo/commit/d1dbe4de260be8e041fc7dbf65d82da5c2c67e02))
+* **workbench:** document expandable inbox cards ([7372834](https://github.com/sirtimbly/coleo/commit/7372834d3f3c6cecb92d725b834312ac0c77e45e))
+* **workbench:** document inbox filter controls ([a5b16a5](https://github.com/sirtimbly/coleo/commit/a5b16a56e209f20a17d854bec738c11c60bf5688))
+* **workbench:** document mail thread card defaults ([e1d8be3](https://github.com/sirtimbly/coleo/commit/e1d8be3d260b59549959c66072f789e14011efcd))
+
+
+### Tests
+
+* keep arm metrics fixtures within retention window ([44ffbb8](https://github.com/sirtimbly/coleo/commit/44ffbb85a53ee858922ee089cd0fa07a8a459877))
+* **web:** cover card identities and view modes ([9cd40e1](https://github.com/sirtimbly/coleo/commit/9cd40e10b852f0c5892e599c0af28265ae510586))
+* **web:** cover expandable inbox cards ([a9b5630](https://github.com/sirtimbly/coleo/commit/a9b563067551a44066251d00036ad44870e0657a))
+* **web:** cover flattened task cards ([e92d008](https://github.com/sirtimbly/coleo/commit/e92d0083434d2e129b0bd7dcef9ae4d508905a86))
+* **web:** cover inbox expander icon states ([dae2477](https://github.com/sirtimbly/coleo/commit/dae2477a71ebb90ec1ca17235bd41c2c7656e93b))
+* **web:** cover inbox filter menus ([afc941b](https://github.com/sirtimbly/coleo/commit/afc941be16352c211ca4150410bd7156a7913eee))
+* **web:** cover mail thread card defaults ([6d8645e](https://github.com/sirtimbly/coleo/commit/6d8645ed84c5e8631ddd0f93d1236c9826187dc2))
+* **web:** cover tabulator resource sheet parity ([22ffb43](https://github.com/sirtimbly/coleo/commit/22ffb439803188279ab0cc1f460c9530e58cb6cb))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump @types/node from 24.13.3 to 26.1.2 ([4328bf0](https://github.com/sirtimbly/coleo/commit/4328bf01dbd0b61b7b9190fae1096cd3ba95b13c))
+* **deps:** bump @hono/node-server from 1.19.14 to 2.0.12 ([e5eb92b](https://github.com/sirtimbly/coleo/commit/e5eb92b4cfe07cc04c4c25d0185aa3f9e7a5c1c9))
+* **master:** release coleo 0.10.0 ([d2ed258](https://github.com/sirtimbly/coleo/commit/d2ed258c51f9c652677cd7d22680e05b9941a014))
+* **master:** release coleo 0.10.0 ([d5a3a50](https://github.com/sirtimbly/coleo/commit/d5a3a503ad161f5ce257bdd5bf521ad64040baef))
+* merge credits error handling ([547a82e](https://github.com/sirtimbly/coleo/commit/547a82e44cf48a04bb0c0784273a64b8b9aca3e0))
+
 ## [0.10.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.9.0...coleo-v0.10.0) (2026-08-07)
 
 
