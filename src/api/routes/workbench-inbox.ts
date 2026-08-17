@@ -86,6 +86,15 @@ export function createWorkbenchInboxRoutes() {
 		const sourceLimit = Math.min(limit * 2, 400);
 		const rows: SourceRow[] = [
 			...(db.query(
+				`SELECT 'brain:planning-gate' AS itemKey, 'planning-gate' AS source,
+				        'brain' AS kind, 'Project planning is blocked' AS title,
+				        error AS summary, last_check AS timestamp,
+				        'brain' AS resourceKind, 'planning-gate' AS resourceId,
+				        'danger' AS severity, 1 AS requiresAction
+				 FROM infrastructure_health
+				 WHERE component = 'brain_planning_gate' AND healthy = 0`,
+			).all() as SourceRow[]),
+			...(db.query(
 				`SELECT 'status:' || id AS itemKey, 'status-report' AS source, 'status' AS kind,
 				        arm_id || ': ' || replace(status, '_', ' ') AS title,
 				        summary, created_at AS timestamp, 'task' AS resourceKind,
@@ -102,7 +111,9 @@ export function createWorkbenchInboxRoutes() {
 				        updated_at AS timestamp, 'task' AS resourceKind, id AS resourceId,
 				        CASE WHEN status = 'failed' THEN 'danger' ELSE 'warning' END AS severity,
 				        1 AS requiresAction
-				 FROM tasks WHERE status IN ('blocked', 'failed')
+				 FROM tasks
+				 WHERE status IN ('blocked', 'failed')
+				   AND (status != 'blocked' OR blocked_category IS NULL OR blocked_category != 'planning')
 				 ORDER BY updated_at DESC LIMIT ?`,
 			).all(sourceLimit) as SourceRow[]),
 			...(db.query(

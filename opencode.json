@@ -6,18 +6,18 @@
 			"command": ["npx", "-y", "@heroui/react-mcp@latest"],
 			"enabled": true
 		},
-		"octopai": {
+		"coleo": {
 			"type": "local",
 			"command": [
-				"/Users/timothy.bendt/.bun/bin/bun",
+				"bun",
 				"run",
-				"/Users/timothy.bendt/developer/octopai/src/cli/index.ts",
+				"./src/cli/index.ts",
 				"mcp",
 				"serve"
 			],
 			"environment": {
-				"OCTOPAI_ARM_ID": "opencode-test",
-				"OCTOPAI_DIR": "/Users/timothy.bendt/.octopai"
+				"COLEO_ARM_ID": "opencode-test",
+				"COLEO_DIR": "./.coleo"
 			},
 			"enabled": true
 		}

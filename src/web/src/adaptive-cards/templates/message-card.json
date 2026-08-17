@@ -48,8 +48,7 @@
       "verb": "message.archive",
       "data": {
         "actionId": "archive-message"
-      },
-      "mode": "secondary"
+      }
     }
   ]
 }

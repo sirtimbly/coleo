@@ -410,6 +410,9 @@ function setPlanSyncApi(
 			armId: string,
 			patch: { status?: string; planningBlocked?: boolean },
 		) => Promise<boolean>;
+		reportPlanningGate: () => Promise<boolean>;
+		reportPlanningGateReady: () => Promise<void>;
+		reportBrainModelAccess: () => Promise<void>;
   };
   privateBrain.getBrainConfigBoolean = async () => true;
   privateBrain.getBrainConfigValue = implementations.databaseInstanceId;
@@ -420,4 +423,7 @@ function setPlanSyncApi(
 	privateBrain.listArmsFromApi = implementations.listArms || (async () => []);
 	privateBrain.sendPromptToArm = implementations.sendPromptToArm || (async () => true);
 	privateBrain.patchArmViaApi = implementations.patchArm || (async () => true);
+	privateBrain.reportPlanningGate = async () => true;
+	privateBrain.reportPlanningGateReady = async () => {};
+	privateBrain.reportBrainModelAccess = async () => {};
 }

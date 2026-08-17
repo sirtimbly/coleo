@@ -184,7 +184,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Project Mail',
     icon: Mail,
     component: MailPage,
-    showInNav: false,
+    showInNav: true,
   },
   {
     id: 'proposals',

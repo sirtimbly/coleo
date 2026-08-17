@@ -1,0 +1,45 @@
+.toolbars-page-workspace {
+	container-name: toolbar-playground;
+	container-type: inline-size;
+}
+
+.toolbar-editor-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.toolbar-visual-editor-grid {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.toolbar-visual-lane {
+	scrollbar-width: thin;
+}
+
+.button.toolbar-editor-mode-selected {
+	color: var(--foreground);
+}
+
+.button.toolbar-editor-primary-action {
+	background-color: color-mix(in oklab, var(--accent) 72%, black);
+	color: white;
+}
+
+.button.toolbar-editor-primary-action:hover {
+	background-color: color-mix(in oklab, var(--accent) 64%, black);
+}
+
+@container toolbar-playground (max-width: 36rem) {
+	.toolbar-editor-heading {
+		flex-basis: 100%;
+	}
+}
+
+@container toolbar-playground (min-width: 64rem) {
+	.toolbar-editor-grid {
+		grid-template-columns: minmax(0, 1fr) 20rem;
+	}
+
+	.toolbar-visual-editor-grid {
+		grid-template-columns: 14rem minmax(0, 1fr);
+	}
+}

@@ -1,6 +1,6 @@
 /**
- * Browser protection for threaded Inbox viewing, reply context, and archive
- * actions after the legacy Project Mail screen is removed.
+ * Browser protection for threaded Inbox and Mail viewing, reply context, and
+ * archive actions across their distinct projections.
  */
 
 import { expect, test } from "@playwright/test";
@@ -109,6 +109,42 @@ test("archives every inbox message represented by the open thread", async ({ pag
 	await expect(page).toHaveURL("/messaging");
 });
 
+test("keeps Project Mail on its own customizable collection projection", async ({ page }) => {
+	await installMockApi(page, { inbox: [received], sent: [reply] });
+	await page.goto("/mail?mailbox=inbox");
+
+	await expect(page).toHaveURL(/\/mail\?mailbox=inbox$/);
+	await expect(page.getByRole("heading", { name: "Mail", exact: true })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Filter Mailbox: Inbox" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Filter View: Messages" })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Show mail threads as a data grid" })).toBeVisible();
+	await expect(page.getByRole("button", { name: "Show mail threads as cards" })).toBeVisible();
+
+	const messageRow = page.locator('[data-inbox-item-id="thread:inbox:thread-architecture"]');
+	await expect(messageRow).toBeVisible();
+	await messageRow.getByRole("button", { name: "Expand Workbench architecture card" }).click();
+	await messageRow.getByRole("button", { name: "Open conversation", exact: true }).click();
+	await expect(page).toHaveURL(/\/mail\?mailbox=inbox&thread=thread-architecture$/);
+});
+
+test("archives a conversation from its rendered card", async ({ page }) => {
+	const archivedRequests: string[] = [];
+	page.on("request", (request) => {
+		if (request.method() === "POST" && request.url().includes("/archive")) {
+			archivedRequests.push(request.url());
+		}
+	});
+	await installMockApi(page, { inbox: [received], sent: [reply] });
+	await page.goto("/mail?mailbox=inbox");
+
+	const messageRow = page.locator('[data-inbox-item-id="thread:inbox:thread-architecture"]');
+	await messageRow.getByRole("button", { name: "Expand Workbench architecture card" }).click();
+	await messageRow.getByRole("button", { name: "Archive", exact: true }).click();
+
+	await expect.poll(() => archivedRequests.length).toBe(1);
+	await expect(messageRow).toHaveCount(0);
+});
+
 test("launcher navigation exposes the unified Inbox instead of legacy stream pages", async ({ page }) => {
 	await installMockApi(page, { recentEvents: [blockedTaskEvent] });
 	await page.goto("/");
@@ -120,7 +156,7 @@ test("launcher navigation exposes the unified Inbox instead of legacy stream pag
 	await expect(page).toHaveURL(/\/messaging\?facet=attention$/);
 	await expect(page.getByText("Task blocked: Task task-dashboard", { exact: true })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Inbox", exact: true })).toBeVisible();
-	await expect(page.getByRole("link", { name: "Project Mail", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("link", { name: "Project Mail", exact: true })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Activity", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "History", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("link", { name: "Proposals", exact: true })).toHaveCount(0);

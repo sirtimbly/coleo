@@ -1,6 +1,7 @@
 import {
 	useEffect,
 	useEffectEvent,
+	useLayoutEffect,
 	useRef,
 	useState,
 	type ChangeEvent,
@@ -9,6 +10,7 @@ import {
 import { Button, ButtonGroup, ToggleButton, ToggleButtonGroup } from "@heroui/react";
 import {
 	AlignJustify,
+	Braces,
 	CircleHelp,
 	Download,
 	Eye,
@@ -43,17 +45,16 @@ import {
 	TOOLBAR_WIDGET_IDS,
 } from "@/workbench/toolbar-defaults";
 import { useToolbarTemplates } from "@/workbench/toolbar-template-context";
-
-function formatWidgetLabel(widgetId: string): string {
-	return widgetId
-		.split(".")
-		.at(-1)!
-		.replaceAll("-", " ")
-		.replace(/\b\w/g, (character) => character.toUpperCase());
-}
+import { ToolbarJsonPalette } from "./ToolbarJsonPalette";
+import { ToolbarVisualEditor } from "./ToolbarVisualEditor";
+import {
+	formatToolbarWidgetLabel,
+	insertToolbarWidgetAtCursor,
+} from "./toolbars-page-utils";
+import "./toolbars-page.css";
 
 function previewWidget(widgetId: string): ReactNode {
-	const label = formatWidgetLabel(widgetId);
+	const label = formatToolbarWidgetLabel(widgetId);
 
 	if (widgetId.endsWith(".identity")) {
 		return (
@@ -222,6 +223,12 @@ function serialize(template: WorkbenchToolbarTemplate): string {
 	return JSON.stringify(template, null, 2);
 }
 
+function draftKey(profileId: string | null, screenId: ToolbarScreenId): string {
+	return `${profileId ?? ""}\0${screenId}`;
+}
+
+type ToolbarEditorMode = "visual" | "json";
+
 export function ToolbarsPage() {
 	usePageTitle("Coleo Observatory - Toolbars");
 	const { profileId, templates, setTemplate, resetTemplate } = useToolbarTemplates();
@@ -232,38 +239,84 @@ export function ToolbarsPage() {
 	const [saveError, setSaveError] = useState<string | null>(null);
 	const [applied, setApplied] = useState(false);
 	const [saving, setSaving] = useState(false);
+	const [editorMode, setEditorMode] = useState<ToolbarEditorMode>("visual");
 	const fileInputRef = useRef<HTMLInputElement>(null);
+	const textareaRef = useRef<HTMLTextAreaElement>(null);
+	const cursorOffsetRef = useRef(0);
+	const storedDraftsRef = useRef(new Map<string, string>());
+	const editorIdentityRef = useRef({ profileId, screenId });
+	const pendingSelectionRef = useRef<{
+		source: string;
+		selectionStart: number;
+		selectionEnd: number;
+	} | null>(null);
 	const widgetIds = TOOLBAR_WIDGET_IDS[screenId];
 	const previewWidgets = buildPreviewWidgets(screenId);
 	const savedSource = serialize(templates[screenId]);
 	const dirty = draft !== savedSource;
 	const syncProfileTemplate = useEffectEvent(() => {
 		const template = templates[screenId];
-		setDraft(serialize(template));
-		setPreview(template);
-		setError(null);
+		const source = storedDraftsRef.current.get(draftKey(profileId, screenId)) ?? serialize(template);
+		setDraft(source);
+		try {
+			setPreview(parseToolbarTemplateJson(source, screenId, TOOLBAR_WIDGET_IDS[screenId]));
+			setError(null);
+		} catch (nextError) {
+			setPreview(template);
+			setError(nextError instanceof Error ? nextError.message : "Invalid toolbar configuration");
+			setEditorMode("json");
+		}
 		setSaveError(null);
 		setApplied(false);
+		cursorOffsetRef.current = 0;
+		pendingSelectionRef.current = null;
 	});
+
+	useEffect(() => {
+		editorIdentityRef.current = { profileId, screenId };
+	}, [profileId, screenId]);
 
 	useEffect(() => {
 		syncProfileTemplate();
 	}, [profileId]);
 
+	useLayoutEffect(() => {
+		const pending = pendingSelectionRef.current;
+		const textarea = textareaRef.current;
+		if (!pending || pending.source !== draft || !textarea) return;
+		pendingSelectionRef.current = null;
+		textarea.focus();
+		textarea.setSelectionRange(pending.selectionStart, pending.selectionEnd);
+		cursorOffsetRef.current = pending.selectionEnd;
+	}, [draft]);
+
 	const selectScreen = (event: ChangeEvent<HTMLSelectElement>) => {
 		const nextScreen = TOOLBAR_SCREEN_IDS.find((candidate) => candidate === event.target.value);
 		if (!nextScreen) return;
 		const nextTemplate = templates[nextScreen];
+		const source = storedDraftsRef.current.get(draftKey(profileId, nextScreen)) ?? serialize(nextTemplate);
+		editorIdentityRef.current = { profileId, screenId: nextScreen };
 		setScreenId(nextScreen);
-		setDraft(serialize(nextTemplate));
-		setPreview(nextTemplate);
-		setError(null);
+		setDraft(source);
+		try {
+			setPreview(parseToolbarTemplateJson(source, nextScreen, TOOLBAR_WIDGET_IDS[nextScreen]));
+			setError(null);
+		} catch (nextError) {
+			setPreview(nextTemplate);
+			setError(nextError instanceof Error ? nextError.message : "Invalid toolbar configuration");
+			setEditorMode("json");
+		}
 		setSaveError(null);
 		setApplied(false);
+		cursorOffsetRef.current = 0;
+		pendingSelectionRef.current = null;
 	};
 
 	const updateDraft = (source: string) => {
 		setDraft(source);
+		const key = draftKey(profileId, screenId);
+		if (source === savedSource) storedDraftsRef.current.delete(key);
+		else storedDraftsRef.current.set(key, source);
 		setSaveError(null);
 		setApplied(false);
 		try {
@@ -271,26 +324,47 @@ export function ToolbarsPage() {
 			setError(null);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Invalid toolbar configuration");
+			setEditorMode("json");
 		}
 	};
 
 	const formatDraft = () => {
 		try {
 			const template = parseToolbarTemplateJson(draft, screenId, widgetIds);
-			setDraft(serialize(template));
-			setPreview(template);
-			setError(null);
+			updateDraft(serialize(template));
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Invalid toolbar configuration");
 		}
 	};
 
+	const insertWidget = (widgetId: string) => {
+		try {
+			const result = insertToolbarWidgetAtCursor({
+				source: draft,
+				cursorOffset: cursorOffsetRef.current,
+				screenId,
+				allowedWidgetIds: widgetIds,
+				widgetId,
+			});
+			pendingSelectionRef.current = result;
+			updateDraft(result.source);
+		} catch (nextError) {
+			setError(nextError instanceof Error ? nextError.message : "Could not insert the toolbar widget");
+		}
+	};
+
 	const applyDraft = async () => {
+		const targetProfileId = profileId;
+		const targetScreenId = screenId;
+		const targetDraftKey = draftKey(targetProfileId, targetScreenId);
 		setSaving(true);
 		setSaveError(null);
 		try {
 			const template = parseToolbarTemplateJson(draft, screenId, widgetIds);
 			await setTemplate(screenId, template);
+			storedDraftsRef.current.delete(targetDraftKey);
+			if (editorIdentityRef.current.profileId !== targetProfileId
+				|| editorIdentityRef.current.screenId !== targetScreenId) return;
 			setDraft(serialize(template));
 			setPreview(template);
 			setError(null);
@@ -303,11 +377,17 @@ export function ToolbarsPage() {
 	};
 
 	const resetDraft = async () => {
+		const targetProfileId = profileId;
+		const targetScreenId = screenId;
+		const targetDraftKey = draftKey(targetProfileId, targetScreenId);
 		const template = DEFAULT_TOOLBAR_TEMPLATES[screenId];
 		setSaving(true);
 		setSaveError(null);
 		try {
 			await resetTemplate(screenId);
+			storedDraftsRef.current.delete(targetDraftKey);
+			if (editorIdentityRef.current.profileId !== targetProfileId
+				|| editorIdentityRef.current.screenId !== targetScreenId) return;
 			setDraft(serialize(template));
 			setPreview(template);
 			setError(null);
@@ -337,15 +417,106 @@ export function ToolbarsPage() {
 	const uploadDraft = async (event: ChangeEvent<HTMLInputElement>) => {
 		const file = event.target.files?.[0];
 		if (!file) return;
+		const targetProfileId = profileId;
+		const targetScreenId = screenId;
 		try {
-			updateDraft(await file.text());
+			const source = await file.text();
+			if (editorIdentityRef.current.profileId !== targetProfileId
+				|| editorIdentityRef.current.screenId !== targetScreenId) return;
+			updateDraft(source);
 		} finally {
 			event.target.value = "";
 		}
 	};
 
+	const editorHeader = (
+		<div className="flex min-h-11 flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+			<div className="toolbar-editor-heading min-w-0 flex-1">
+				<h2 className="text-sm font-semibold">{TOOLBAR_SCREEN_LABELS[screenId]} configuration</h2>
+				<p className="text-xs text-muted-foreground">
+					{error ? "Preview shows the last valid configuration." : dirty ? "Valid draft, not applied." : "Applied configuration."}
+				</p>
+			</div>
+			<ButtonGroup size="sm" variant="ghost" aria-label="Toolbar editor mode">
+				<Button
+					variant={editorMode === "visual" ? "secondary" : "ghost"}
+					onPress={() => setEditorMode("visual")}
+					isDisabled={saving || !profileId || error !== null}
+					aria-pressed={editorMode === "visual"}
+					className={`h-7 min-h-7 px-2${editorMode === "visual" ? " toolbar-editor-mode-selected" : ""}`}
+				>
+					<LayoutGrid className="h-3.5 w-3.5" />
+					Visual
+				</Button>
+				<Button
+					variant={editorMode === "json" ? "secondary" : "ghost"}
+					onPress={() => setEditorMode("json")}
+					isDisabled={saving || !profileId}
+					aria-pressed={editorMode === "json"}
+					className={`h-7 min-h-7 px-2${editorMode === "json" ? " toolbar-editor-mode-selected" : ""}`}
+				>
+					<Braces className="h-3.5 w-3.5" />
+					JSON
+				</Button>
+			</ButtonGroup>
+			<Button
+				isIconOnly
+				size="sm"
+				variant="ghost"
+				onPress={downloadDraft}
+				isDisabled={error !== null}
+				aria-label="Download toolbar configuration"
+			>
+				<Download className="h-3.5 w-3.5" />
+			</Button>
+			<Button
+				isIconOnly
+				size="sm"
+				variant="ghost"
+				onPress={() => fileInputRef.current?.click()}
+				isDisabled={saving || !profileId}
+				aria-label="Upload toolbar configuration"
+			>
+				<Upload className="h-3.5 w-3.5" />
+			</Button>
+			<input
+				ref={fileInputRef}
+				type="file"
+				accept="application/json,.json"
+				disabled={saving || !profileId}
+				onChange={(event) => void uploadDraft(event)}
+				className="hidden"
+			/>
+			{editorMode === "json" ? (
+				<Button size="sm" variant="ghost" onPress={formatDraft} isDisabled={saving || !profileId}>Format</Button>
+			) : null}
+			<Button size="sm" variant="ghost" onPress={() => void resetDraft()} isDisabled={saving || !profileId}>
+				<RotateCcw className="h-3.5 w-3.5" />
+				Reset
+			</Button>
+			<Button
+				size="sm"
+				variant="primary"
+				onPress={() => void applyDraft()}
+				isDisabled={error !== null || saving || !profileId}
+				isPending={saving}
+				className="toolbar-editor-primary-action"
+			>
+				Apply
+			</Button>
+		</div>
+	);
+
+	const editorFooter = (
+		<div aria-live="polite" className="flex min-h-9 items-center border-t border-border px-3 py-2 text-xs">
+			{error || saveError ? <span role="alert" className="text-danger">{error ?? saveError}</span> : null}
+			{!error && !saveError && applied ? <span className="text-success">Applied to live pages and saved with the active profile. Its .coleo snapshot refreshes automatically.</span> : null}
+			{!error && !saveError && !applied ? <span className="text-muted-foreground">Visual and JSON changes update the preview immediately.</span> : null}
+		</div>
+	);
+
 	return (
-		<div className="flex h-full min-h-0 flex-col bg-background">
+		<main className="flex h-full min-h-0 flex-col bg-background">
 			<WorkbenchHeader
 				title="Toolbar Playground"
 				description="Edit, preview, and apply the real two-row toolbar layouts."
@@ -356,6 +527,7 @@ export function ToolbarsPage() {
 						<select
 							value={screenId}
 							onChange={selectScreen}
+							disabled={saving || !profileId}
 							className="h-8 border border-border bg-surface px-2 text-xs font-medium text-foreground outline-none focus:border-accent"
 						>
 							{TOOLBAR_SCREEN_IDS.map((id) => (
@@ -366,98 +538,59 @@ export function ToolbarsPage() {
 				)}
 			/>
 
-			<div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-auto p-3">
+			<div className="toolbars-page-workspace flex min-h-0 min-w-0 flex-1 flex-col gap-3 overflow-auto p-3">
+				{editorMode === "visual" ? (
+					<ToolbarVisualEditor
+						key={`${profileId ?? "none"}:${screenId}`}
+						template={preview}
+						widgetIds={widgetIds}
+						disabled={saving || !profileId || error !== null}
+						header={editorHeader}
+						footer={editorFooter}
+						onChange={(template) => updateDraft(serialize(template))}
+					/>
+				) : (
+					<div className="toolbar-editor-grid grid min-w-0 gap-3">
+						<WorkbenchSurface className="flex min-h-[36rem] min-w-0 flex-col">
+							{editorHeader}
+							<textarea
+								ref={textareaRef}
+								value={draft}
+								readOnly={saving || !profileId}
+								onChange={(event) => {
+									cursorOffsetRef.current = event.currentTarget.selectionStart;
+									updateDraft(event.currentTarget.value);
+								}}
+								onSelect={(event) => {
+									cursorOffsetRef.current = event.currentTarget.selectionStart;
+								}}
+								spellCheck={false}
+								aria-label={`${TOOLBAR_SCREEN_LABELS[screenId]} toolbar JSON`}
+								className="min-h-[31rem] min-w-0 w-full flex-1 resize-none bg-surface p-4 font-mono text-xs leading-5 text-foreground outline-none focus:ring-2 focus:ring-inset focus:ring-accent/30"
+							/>
+							{editorFooter}
+						</WorkbenchSurface>
+						<ToolbarJsonPalette
+							widgetIds={widgetIds}
+							disabled={error !== null || saving || !profileId}
+							error={error}
+							onInsert={insertWidget}
+						/>
+					</div>
+				)}
+
 				<WorkbenchSurface className="min-w-0 shrink-0 overflow-hidden">
 					<div className="border-b border-border px-3 py-2">
 						<h2 className="text-sm font-semibold">Live preview</h2>
 						<p className="text-xs text-muted-foreground">
-							Resize the window to test the real toolbar wrapping and overflow behavior.
+							The last valid visual or JSON draft renders below the complete editor. Resize the pane to test overflow behavior.
 						</p>
 					</div>
 					<div className="bg-background py-4">
 						<ToolbarTemplateRows template={preview} widgets={previewWidgets} />
 					</div>
 				</WorkbenchSurface>
-
-				<div className="grid min-w-0 gap-3 xl:grid-cols-2">
-					<WorkbenchSurface className="flex min-h-[32rem] min-w-0 flex-col">
-						<div className="flex min-h-11 items-center gap-2 border-b border-border px-3 py-2">
-							<div className="min-w-0 flex-1">
-								<h2 className="text-sm font-semibold">{TOOLBAR_SCREEN_LABELS[screenId]} configuration</h2>
-								<p className="text-xs text-muted-foreground">
-									{error ? "Preview shows the last valid configuration." : dirty ? "Valid draft, not applied." : "Applied configuration."}
-								</p>
-							</div>
-							<Button
-								isIconOnly
-								size="sm"
-								variant="ghost"
-								onPress={downloadDraft}
-								isDisabled={error !== null}
-								aria-label="Download toolbar configuration"
-							>
-								<Download className="h-3.5 w-3.5" />
-							</Button>
-							<Button
-								isIconOnly
-								size="sm"
-								variant="ghost"
-								onPress={() => fileInputRef.current?.click()}
-								aria-label="Upload toolbar configuration"
-							>
-								<Upload className="h-3.5 w-3.5" />
-							</Button>
-							<input
-								ref={fileInputRef}
-								type="file"
-								accept="application/json,.json"
-								onChange={(event) => void uploadDraft(event)}
-								className="hidden"
-							/>
-							<Button size="sm" variant="ghost" onPress={formatDraft} isDisabled={saving}>Format</Button>
-							<Button size="sm" variant="ghost" onPress={() => void resetDraft()} isDisabled={saving}>
-								<RotateCcw className="h-3.5 w-3.5" />
-								Reset
-							</Button>
-							<Button
-								size="sm"
-								variant="primary"
-								onPress={() => void applyDraft()}
-								isDisabled={error !== null || saving || !profileId}
-								isPending={saving}
-							>
-								Apply
-							</Button>
-						</div>
-						<textarea
-							value={draft}
-							onChange={(event) => updateDraft(event.target.value)}
-							spellCheck={false}
-							aria-label={`${TOOLBAR_SCREEN_LABELS[screenId]} toolbar JSON`}
-							className="min-h-[28rem] min-w-0 w-full flex-1 resize-none bg-surface p-4 font-mono text-xs leading-5 text-foreground outline-none focus:ring-2 focus:ring-inset focus:ring-accent/30"
-						/>
-						<div className="flex min-h-9 items-center border-t border-border px-3 py-2 text-xs">
-							{error || saveError ? <span role="alert" className="text-danger">{error ?? saveError}</span> : null}
-							{!error && !saveError && applied ? <span className="text-success">Applied to live pages and saved with the active profile.</span> : null}
-							{!error && !saveError && !applied ? <span className="text-muted-foreground">Changes preview as soon as the JSON is valid.</span> : null}
-						</div>
-					</WorkbenchSurface>
-
-					<WorkbenchSurface className="min-h-[32rem] min-w-0 overflow-auto p-4">
-						<h2 className="text-sm font-semibold">Available widgets</h2>
-						<p className="mt-1 text-xs leading-5 text-muted-foreground">
-							Use these IDs in widget items. Labels, dividers, spacers, row sizes, order, and hidden flags are controlled directly by the JSON.
-						</p>
-						<div className="mt-3 flex flex-wrap gap-2">
-							{widgetIds.map((widgetId) => (
-								<code key={widgetId} className="border border-border bg-surface-secondary px-2 py-1 text-[0.7rem] text-foreground">
-									{widgetId}
-								</code>
-							))}
-						</div>
-					</WorkbenchSurface>
-				</div>
 			</div>
-		</div>
+		</main>
 	);
 }

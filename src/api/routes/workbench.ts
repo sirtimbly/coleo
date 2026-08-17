@@ -9,7 +9,9 @@
 import { randomUUID } from "crypto";
 import { Hono } from "hono";
 
+import { getColeoDir } from "../../config";
 import { HttpError } from "../middleware";
+import { materializeWorkbenchToolbarTemplates } from "../workbench-toolbar-projection";
 import { broadcast } from "../websocket";
 import { createWorkbenchAttentionRoutes } from "./workbench-attention";
 import { createWorkbenchCardRoutes } from "./workbench-cards";
@@ -21,6 +23,10 @@ interface WorkbenchContext {
 	Variables: {
 		db: Database;
 	};
+}
+
+export interface WorkbenchRouteOptions {
+	coleoDir?: string;
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -184,14 +190,26 @@ function broadcastChange(entity: "profile" | "view" | "layout", action: string, 
 	broadcast("workbench", `workbench.${entity}.${action}`, data);
 }
 
-export function createWorkbenchRoutes() {
+async function materializeProfileToolbars(coleoDir: string, profile: ProfileRow): Promise<void> {
+	try {
+		await materializeWorkbenchToolbarTemplates(coleoDir, profile.id, parseObject(profile.preferences));
+	} catch (error) {
+		console.error(
+			`[workbench] Failed to materialize toolbar configurations for profile ${JSON.stringify(profile.id)}:`,
+			error instanceof Error ? error.message : error,
+		);
+	}
+}
+
+export function createWorkbenchRoutes(options: WorkbenchRouteOptions = {}) {
 	const app = new Hono<WorkbenchContext>();
+	const coleoDir = options.coleoDir ?? getColeoDir();
 
 	app.route("/attention", createWorkbenchAttentionRoutes());
 	app.route("/cards", createWorkbenchCardRoutes());
 	app.route("/inbox", createWorkbenchInboxRoutes());
 
-	app.get("/bootstrap", (c) => {
+	app.get("/bootstrap", async (c) => {
 		const db = c.get("db");
 		const requestedProfileId = c.req.query("profileId");
 		const profile = requestedProfileId
@@ -202,6 +220,7 @@ export function createWorkbenchRoutes() {
 				 FROM workbench_profiles ORDER BY is_default DESC, created_at LIMIT 1`,
 			).get() as ProfileRow | null;
 		if (!profile) throw HttpError.notFound("No workbench profile is configured");
+		await materializeProfileToolbars(coleoDir, profile);
 
 		return c.json({
 			schemaVersion: 1,
@@ -248,7 +267,9 @@ export function createWorkbenchRoutes() {
 			throw HttpError.badRequest(`Could not create workbench profile: ${String(error)}`);
 		}
 
-		const profile = mapProfile(getProfile(db, id));
+		const persistedProfile = getProfile(db, id);
+		await materializeProfileToolbars(coleoDir, persistedProfile);
+		const profile = mapProfile(persistedProfile);
 		broadcastChange("profile", "created", { profileId: id });
 		return c.json({ profile }, 201);
 	});
@@ -256,8 +277,8 @@ export function createWorkbenchRoutes() {
 	app.patch("/profiles/:id", async (c) => {
 		const db = c.get("db");
 		const id = c.req.param("id");
-		const current = getProfile(db, id);
 		const body = await c.req.json<JsonRecord>();
+		const current = getProfile(db, id);
 		const name = body.name === undefined ? current.name : requiredString(body.name, "name");
 		const email = body.email === undefined ? current.email : optionalString(body.email);
 		const preferences = body.preferences === undefined
@@ -277,8 +298,10 @@ export function createWorkbenchRoutes() {
 		});
 		update();
 
+		const persistedProfile = getProfile(db, id);
+		await materializeProfileToolbars(coleoDir, persistedProfile);
 		broadcastChange("profile", "updated", { profileId: id });
-		return c.json({ profile: mapProfile(getProfile(db, id)) });
+		return c.json({ profile: mapProfile(persistedProfile) });
 	});
 
 	app.get("/profiles/:id/export", (c) => {
@@ -383,10 +406,12 @@ export function createWorkbenchRoutes() {
 			}
 		});
 		importBundle();
+		const persistedProfile = getProfile(db, profileId);
+		await materializeProfileToolbars(coleoDir, persistedProfile);
 
 		broadcastChange("profile", "imported", { profileId });
 		return c.json({
-			profile: mapProfile(getProfile(db, profileId)),
+			profile: mapProfile(persistedProfile),
 			views: listViews(db, profileId, false).map(mapView),
 			layouts: listLayouts(db, profileId, false).map(mapLayout),
 		}, 201);

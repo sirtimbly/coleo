@@ -82,7 +82,7 @@ export function AdaptiveCardView({
 				facts: mode === "compact" ? [] : envelope.data.facts,
 				description: mode === "compact" ? null : envelope.data.description,
 				timestampLabel: mode === "compact" ? null : envelope.data.timestampLabel,
-				canArchive: mode === "detail" && envelope.data.canArchive === true,
+				canArchive: envelope.data.canArchive === true,
 				showAttentionActions:
 					mode === "detail" && envelope.data.requiresAction === true,
 				showTechnicalDetails: mode === "detail" && technicalDetailsOpen,

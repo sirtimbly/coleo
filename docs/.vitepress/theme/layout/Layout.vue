@@ -3,6 +3,7 @@ import DefaultTheme from "vitepress/theme";
 import { useRoute, Content } from "vitepress";
 import { computed, watch, watchEffect, nextTick } from "vue";
 import SiteNav from "../components/SiteNav.vue";
+import DocTitleBanner from "../components/DocTitleBanner.vue";
 
 const { Layout: DefaultLayout } = DefaultTheme;
 
@@ -70,6 +71,10 @@ watch(
     <div class="coleo-site-nav">
       <SiteNav />
     </div>
-    <DefaultLayout />
+    <DefaultLayout>
+      <template #doc-before>
+        <DocTitleBanner />
+      </template>
+    </DefaultLayout>
   </div>
 </template>

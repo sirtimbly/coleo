@@ -14,7 +14,7 @@ import {
 	type ReactNode,
 } from "react";
 import { Button } from "@heroui/react";
-import { CheckCheck, Inbox, RefreshCw } from "lucide-react";
+import { CheckCheck, Inbox, Mail, RefreshCw } from "lucide-react";
 
 import {
 	ProjectionFilterMenu,
@@ -80,6 +80,7 @@ export function ProjectionInbox({
 	toolbarContent,
 	display,
 	onDisplayChange,
+	toolbarScreenId = "inbox",
 	loading = false,
 	className,
 }: {
@@ -96,6 +97,7 @@ export function ProjectionInbox({
 	toolbarContent?: ReactNode;
 	display: CollectionDisplayPreferences;
 	onDisplayChange: (updates: Partial<CollectionDisplayPreferences>) => void;
+	toolbarScreenId?: "inbox" | "mail";
 	loading?: boolean;
 	className?: string;
 }) {
@@ -125,17 +127,20 @@ export function ProjectionInbox({
 			}, 0),
 		})), [facets, items]);
 	const unread = filtered.filter((item) => item.unread);
-	const template = useToolbarTemplate("inbox");
+	const isMail = toolbarScreenId === "mail";
+	const template = useToolbarTemplate(toolbarScreenId);
+	const toolbarPrefix = isMail ? "mail" : "inbox";
+	const IdentityIcon = isMail ? Mail : Inbox;
 	const collectionWidgets = useCollectionViewToolbarWidgets({
-		resourceName: "inbox items",
+		resourceName: isMail ? "mail threads" : "inbox items",
 		display,
 		onChange: onDisplayChange,
 	});
 	const toolbarWidgets: ToolbarWidgetRegistry = {
-		"inbox.identity": (
+		[`${toolbarPrefix}.identity`]: (
 			<div className="flex min-w-44 shrink-0 items-center gap-2">
 				<span className="flex h-7 w-7 shrink-0 items-center justify-center border border-border bg-surface-secondary text-muted-foreground">
-					<Inbox className="h-3.5 w-3.5" aria-hidden="true" />
+					<IdentityIcon className="h-3.5 w-3.5" aria-hidden="true" />
 				</span>
 				<div className="min-w-0">
 					<h1 className="truncate text-sm font-semibold tracking-tight text-foreground">{title}</h1>
@@ -145,25 +150,15 @@ export function ProjectionInbox({
 				</div>
 			</div>
 		),
-		"inbox.facet": (
-			<ProjectionFilterMenu
-				label="View"
-				value={activeFacet}
-				options={facetOptions}
-				onChange={onFacetChange}
-			/>
-		),
-		"inbox.context.messages": activeFacet === "messages" ? toolbarContent : null,
-		"inbox.context.brain": activeFacet === "brain" ? toolbarContent : null,
-		"inbox.search": (
+		[`${toolbarPrefix}.search`]: (
 			<ProjectionSearch
 				value={search}
 				onChange={setSearch}
-				placeholder="Search this inbox…"
+				placeholder={isMail ? "Search mail…" : "Search this inbox…"}
 				className="min-w-48 max-w-xs"
 			/>
 		),
-		"inbox.mark-read": onMarkAllRead ? (
+		[`${toolbarPrefix}.mark-read`]: onMarkAllRead ? (
 			<Button
 				size="sm"
 				variant="ghost"
@@ -175,12 +170,26 @@ export function ProjectionInbox({
 				Mark read
 			</Button>
 		) : null,
-		"inbox.refresh": onRefresh ? (
-			<Button isIconOnly size="sm" variant="ghost" onPress={onRefresh} aria-label="Refresh inbox">
+		[`${toolbarPrefix}.refresh`]: onRefresh ? (
+			<Button isIconOnly size="sm" variant="ghost" onPress={onRefresh} aria-label={isMail ? "Refresh mail" : "Refresh inbox"}>
 				<RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
 			</Button>
 		) : null,
 		...collectionWidgets,
+		...(isMail ? {
+			"mail.mailbox-actions": toolbarContent,
+		} : {
+			"inbox.facet": (
+				<ProjectionFilterMenu
+					label="View"
+					value={activeFacet}
+					options={facetOptions}
+					onChange={onFacetChange}
+				/>
+			),
+			"inbox.context.messages": activeFacet === "messages" ? toolbarContent : null,
+			"inbox.context.brain": activeFacet === "brain" ? toolbarContent : null,
+		}),
 	};
 
 	return (
@@ -189,10 +198,12 @@ export function ProjectionInbox({
 			<div className="min-h-0 flex-1">
 				{filtered.length === 0 ? (
 					<WorkbenchEmptyState
-						title={loading ? "Loading inbox" : "Nothing in this view"}
+						title={loading ? (isMail ? "Loading mail" : "Loading inbox") : "Nothing in this view"}
 						description={loading
-							? "Coleo is collecting the latest project state."
-							: "New Brain, Arm, and project activity will stream into this projection."}
+							? (isMail ? "Coleo is collecting the latest project mail." : "Coleo is collecting the latest project state.")
+							: isMail
+								? "New project messages will appear here."
+								: "New Brain, Arm, and project activity will stream into this projection."}
 					/>
 				) : display.mode === "cards" ? (
 					<AdaptiveCardCollection

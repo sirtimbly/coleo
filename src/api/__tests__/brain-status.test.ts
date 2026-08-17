@@ -163,4 +163,32 @@ describe("brain status API", () => {
       issueCode: null,
     });
   });
+
+	it("reports the durable planning gate even when no task carries the blocker", async () => {
+		db.run(
+			`INSERT INTO infrastructure_health
+			  (component, healthy, optional, error, last_check, updated_at)
+			 VALUES (?, 0, 0, ?, ?, ?)`,
+			[
+				"brain_planning_gate",
+				JSON.stringify({
+					detail: "The plan is missing deployment architecture",
+					nextStep: "Add deployment decisions to .project/plan.md.",
+				}),
+				"2026-08-13T12:00:00.000Z",
+				"2026-08-13T12:00:00.000Z",
+			],
+		);
+
+		const response = await app.request("/api/brain/status");
+		const body = await response.json() as {
+			brain: { plan: { status: string; detail: string; nextStep: string | null } };
+		};
+
+		expect(body.brain.plan).toMatchObject({
+			status: "blocked",
+			detail: "The plan is missing deployment architecture",
+			nextStep: "Add deployment decisions to .project/plan.md.",
+		});
+	});
 });

@@ -116,14 +116,6 @@ interface PanelInstance {
 }
 
 function normalizeLegacyRoute(route: RoutePanelState): RoutePanelState {
-	if (route.pathname === "/mail") {
-		return {
-			...route,
-			pathname: "/messaging",
-			search: "?facet=messages&mailbox=inbox",
-			title: undefined,
-		};
-	}
 	if (["/activity", "/proposals", "/status-reports"].includes(route.pathname)) {
 		return {
 			...route,

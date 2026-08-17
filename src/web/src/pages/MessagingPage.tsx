@@ -104,6 +104,10 @@ const MAILBOXES: ReadonlyArray<{ id: MailboxTab; label: string }> = [
 	{ id: "archive", label: "Archived" },
 ];
 
+const MAIL_FACETS: InboxFacet[] = [
+	{ id: "messages", label: "Messages", kinds: ["project"] },
+];
+
 const BRAIN_CATEGORY_OPTIONS: readonly ProjectionFilterOption[] = Object.entries(
 	BRAIN_ACTIVITY_CATEGORY_LABELS,
 ).map(([id, label]) => ({ id, label }));
@@ -299,18 +303,22 @@ function creatorForInboxItem(source: InboxItemData): CardCreator {
 	return BRAIN_CARD_CREATOR;
 }
 
-export function MessagingPage() {
-	usePageTitle("Coleo Observatory - Inbox");
+export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" | "mail" } = {}) {
+	const mailOnly = projection === "mail";
+	const routePath = mailOnly ? "/mail" : "/messaging";
+	usePageTitle(`Coleo Observatory - ${mailOnly ? "Mail" : "Inbox"}`);
 	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
-	const closeWorkspaceRoute = useWorkspaceCloseRoute("/messaging");
+	const closeWorkspaceRoute = useWorkspaceCloseRoute(routePath);
 	const { openNewMessage, openReply } = useMessage();
 	const { connected, authenticated } = useLiveProjections();
 	const initialFacet = searchParams.get("facet");
 	const initialMailbox = searchParams.get("mailbox");
 	const initialBrainCategory = searchParams.get("brainCategory");
 	const [activeFacet, setActiveFacet] = useState(
-		FACETS.some((facet) => facet.id === initialFacet) ? initialFacet! : "attention",
+		mailOnly
+			? "messages"
+			: FACETS.some((facet) => facet.id === initialFacet) ? initialFacet! : "attention",
 	);
 	const [mailbox, setMailbox] = useState<MailboxTab>(
 		initialMailbox === "sent" || initialMailbox === "archive" ? initialMailbox : "inbox",
@@ -333,8 +341,8 @@ export function MessagingPage() {
 	const [loading, setLoading] = useState(true);
 	const [archiving, setArchiving] = useState(false);
 	const { display, updateDisplay } = useCollectionDisplayPreferences({
-		viewId: "inbox-display",
-		name: "Inbox",
+		viewId: mailOnly ? "mail-display" : "inbox-display",
+		name: mailOnly ? "Mail" : "Inbox",
 		resourceKind: "message",
 	});
 	const loadTimerRef = useRef<number | null>(null);
@@ -350,6 +358,17 @@ export function MessagingPage() {
 	const load = useCallback(async () => {
 		setLoading(true);
 		try {
+			if (mailOnly) {
+				const [inboxResponse, sentResponse, archiveResponse] = await Promise.all([
+					api.listInbox({ limit: 100 }),
+					api.listSent({ limit: 100 }),
+					api.listArchive({ limit: 100 }),
+				]);
+				setInbox(inboxResponse.messages);
+				setSent(sentResponse.messages);
+				setArchive(archiveResponse.messages);
+				return;
+			}
 			const [
 				activityResponse,
 				brainActivityResponse,
@@ -390,7 +409,7 @@ export function MessagingPage() {
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [mailOnly]);
 
 	useEffect(() => {
 		void load();
@@ -402,16 +421,16 @@ export function MessagingPage() {
 
 	useEffect(() => {
 		const facet = searchParams.get("facet");
-		setActiveFacet(
-			facet && FACETS.some((candidate) => candidate.id === facet) ? facet : "attention",
-		);
+		setActiveFacet(mailOnly
+			? "messages"
+			: facet && FACETS.some((candidate) => candidate.id === facet) ? facet : "attention");
 		const nextMailbox = searchParams.get("mailbox");
 		setMailbox(
 			nextMailbox === "sent" || nextMailbox === "archive" ? nextMailbox : "inbox",
 		);
 		const nextBrainCategory = searchParams.get("brainCategory");
 		setBrainCategory(isBrainCategory(nextBrainCategory) ? nextBrainCategory : "all");
-	}, [searchParams]);
+	}, [mailOnly, searchParams]);
 
 	const handleFacetChange = useCallback((facet: string) => {
 		setActiveFacet(facet);
@@ -431,13 +450,14 @@ export function MessagingPage() {
 		setMailbox(nextMailbox);
 		setSearchParams((current) => {
 			const next = new URLSearchParams(current);
-			next.set("facet", "messages");
+			if (mailOnly) next.delete("facet");
+			else next.set("facet", "messages");
 			next.set("mailbox", nextMailbox);
 			next.delete("thread");
 			next.delete("item");
 			return next;
 		});
-	}, [setMailbox, setSearchParams]);
+	}, [mailOnly, setMailbox, setSearchParams]);
 
 	const handleBrainCategoryChange = useCallback((category: string) => {
 		if (!isBrainCategory(category)) return;
@@ -470,7 +490,10 @@ export function MessagingPage() {
 	}, [brainActivityCursor, hasOlderBrainActivity, olderBrainActivityLoading]);
 
 	useProjectionSignal((signal) => {
-		if (!["mail", "brain", "arms", "arm-events", "activity", "workbench"].includes(signal.channel)) return;
+		const relevant = mailOnly
+			? signal.channel === "mail"
+			: ["mail", "brain", "arms", "arm-events", "activity", "workbench"].includes(signal.channel);
+		if (!relevant) return;
 		if (loadTimerRef.current !== null) window.clearTimeout(loadTimerRef.current);
 		loadTimerRef.current = window.setTimeout(() => {
 			loadTimerRef.current = null;
@@ -478,7 +501,7 @@ export function MessagingPage() {
 		}, 200);
 	});
 
-	const effectiveMailbox = activeFacet === "messages" ? mailbox : "inbox";
+	const effectiveMailbox = mailOnly || activeFacet === "messages" ? mailbox : "inbox";
 	const threads = useMemo(
 		() => buildMailThreads({
 			inboxMessages: inbox,
@@ -503,18 +526,21 @@ export function MessagingPage() {
 
 	const items = useMemo<InboxItemData[]>(() => {
 		const brainActivityIds = new Set(brainActivity.map((entry) => entry.id));
-		const merged = [
-			...workbenchInbox.map(workbenchInboxToItem),
-			...threads.map((thread) => threadToItem(thread, effectiveMailbox)),
-			...reports.map(reportToItem),
-			...activity
-				.filter((entry) => !brainActivityIds.has(entry.id))
-				.map(activityToItem),
-			...brainActivity.map(brainActivityToItem),
-			...recentEvents
-				.filter(isNotableEvent)
-				.map((event, index) => projectRecentEvent(event, index)),
-		];
+		const mailItems = threads.map((thread) => threadToItem(thread, effectiveMailbox));
+		const merged = mailOnly
+			? mailItems
+			: [
+					...workbenchInbox.map(workbenchInboxToItem),
+					...mailItems,
+					...reports.map(reportToItem),
+					...activity
+						.filter((entry) => !brainActivityIds.has(entry.id))
+						.map(activityToItem),
+					...brainActivity.map(brainActivityToItem),
+					...recentEvents
+						.filter(isNotableEvent)
+						.map((event, index) => projectRecentEvent(event, index)),
+				];
 		const durableTaskIds = new Set(workbenchInbox
 			.filter((record) => record.resource.kind === "task")
 			.map((record) => record.resource.id));
@@ -526,7 +552,7 @@ export function MessagingPage() {
 			(left, right) =>
 				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
 		);
-	}, [activity, brainActivity, effectiveMailbox, recentEvents, reports, threads, workbenchInbox]);
+	}, [activity, brainActivity, effectiveMailbox, mailOnly, recentEvents, reports, threads, workbenchInbox]);
 
 	const attentionByItem = useMemo(
 		() => new Map(attention.map((entry) => [entry.itemKey, entry])),
@@ -556,11 +582,14 @@ export function MessagingPage() {
 	const planningGateBlocked = workbenchInbox.some((record) =>
 		record.itemKey === "brain:planning-gate" && record.requiresAction
 	);
-	const facets = useMemo(() => planningGateBlocked
-		? FACETS.map((facet) => facet.id === "attention"
-			? { ...facet, predicate: (item: InboxProjectionItem) => item.id === "brain:planning-gate" }
-			: facet)
-		: FACETS, [planningGateBlocked]);
+	const facets = useMemo(() => {
+		if (mailOnly) return MAIL_FACETS;
+		return planningGateBlocked
+			? FACETS.map((facet) => facet.id === "attention"
+				? { ...facet, predicate: (item: InboxProjectionItem) => item.id === "brain:planning-gate" }
+				: facet)
+			: FACETS;
+	}, [mailOnly, planningGateBlocked]);
 	const projectionItems = useMemo(
 		() => statefulItems.filter((entry) => {
 			return activeFacet !== "brain" ||
@@ -596,8 +625,10 @@ export function MessagingPage() {
 			void markThreadRead(source.thread);
 			openWorkspaceRoute(
 				{
-					pathname: "/messaging",
-					search: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
+					pathname: routePath,
+					search: mailOnly
+						? `?mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`
+						: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
 					title: source.thread.subject,
 				},
 				"split",
@@ -611,13 +642,29 @@ export function MessagingPage() {
 		});
 		openWorkspaceRoute(
 			{
-				pathname: "/messaging",
+				pathname: routePath,
 				search: `?facet=${activeFacet}&item=${encodeURIComponent(item.id)}`,
 				title: item.title,
 			},
 			"split",
 		);
-	}, [activeFacet, markThreadRead, openWorkspaceRoute, statefulItemsById]);
+	}, [activeFacet, mailOnly, markThreadRead, openWorkspaceRoute, routePath, statefulItemsById]);
+
+	const archiveInboxMessages = useCallback(async (messageIds: string[]) => {
+		if (messageIds.length === 0) return;
+		setArchiving(true);
+		try {
+			await Promise.all(messageIds.map((id) => api.archiveMail(id)));
+			setInbox((current) => current.filter((message) => !messageIds.includes(message.id)));
+		} finally {
+			setArchiving(false);
+		}
+	}, []);
+
+	const archiveThread = useCallback(async (messageIds: string[]) => {
+		await archiveInboxMessages(messageIds);
+		closeWorkspaceRoute();
+	}, [archiveInboxMessages, closeWorkspaceRoute]);
 
 	const renderInboxCard = useCallback((
 		item: InboxProjectionItem,
@@ -626,10 +673,15 @@ export function MessagingPage() {
 		const source = statefulItemsById.get(item.id);
 		if (!source) return null;
 		const latestMessage = source.thread?.messages.at(-1)?.message;
+		const inboxMessageIds = source.thread
+			? getInboxMessageIdsForThread(source.thread, inbox)
+			: [];
 		const threadRoute = source.thread && source.mailbox
 			? {
-					pathname: "/messaging",
-					search: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
+					pathname: routePath,
+					search: mailOnly
+						? `?mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`
+						: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
 					title: source.thread.subject,
 				}
 			: undefined;
@@ -641,6 +693,7 @@ export function MessagingPage() {
 					preview: item.summary,
 					timestamp: item.timestamp,
 					surface: "inbox",
+					canArchive: inboxMessageIds.length > 0,
 					sent: source.mailbox === "sent",
 					targetRoute: threadRoute,
 				})
@@ -659,6 +712,10 @@ export function MessagingPage() {
 		const handleAction = async (request: CardActionRequest) => {
 			if (request.verb === "message.open") {
 				openItem(item);
+				return;
+			}
+			if (request.verb === "message.archive") {
+				await archiveInboxMessages(inboxMessageIds);
 				return;
 			}
 			if (request.verb === "resource.open" && source.targetRoute) {
@@ -686,20 +743,7 @@ export function MessagingPage() {
 				)}
 			/>
 		);
-	}, [load, openItem, openWorkspaceRoute, statefulItemsById]);
-
-	const archiveThread = useCallback(async (messageIds: string[]) => {
-		if (messageIds.length === 0) return;
-		setArchiving(true);
-		try {
-			await Promise.all(messageIds.map((id) => api.archiveMail(id)));
-			setInbox((current) => current.filter((message) => !messageIds.includes(message.id)));
-			await load();
-			closeWorkspaceRoute();
-		} finally {
-			setArchiving(false);
-		}
-	}, [closeWorkspaceRoute, load]);
+	}, [archiveInboxMessages, inbox, load, mailOnly, openItem, openWorkspaceRoute, routePath, statefulItemsById]);
 
 	if (selectedThreadId) {
 		return (
@@ -767,19 +811,22 @@ export function MessagingPage() {
 
 	return (
 		<ProjectionInbox
-			title="Inbox"
-			description="Messages, Brain decisions, Arm events, and operational history"
+			title={mailOnly ? "Mail" : "Inbox"}
+			description={mailOnly
+				? "Project messages across Inbox, Sent, and Archived mailboxes"
+				: "Messages, Brain decisions, Arm events, and operational history"}
 			items={projectionItems.map((entry) => entry.item)}
 			facets={facets}
 			activeFacet={activeFacet}
 			display={display}
 			onDisplayChange={updateDisplay}
+			toolbarScreenId={mailOnly ? "mail" : "inbox"}
 			onFacetChange={handleFacetChange}
 			onOpen={openItem}
 			renderCard={renderInboxCard}
 			onRefresh={() => void load()}
 			toolbarContent={
-				activeFacet === "messages" ? (
+				mailOnly || activeFacet === "messages" ? (
 					<ProjectionControlGroup>
 						<ProjectionFilterMenu
 							label="Mailbox"
