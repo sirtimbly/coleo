@@ -508,6 +508,12 @@ export function TasksPage() {
 		filter.field === "status" && filter.operator === "equals" && filter.value === "draft"
 	);
 	const deferredSearchText = useDeferredValue(searchText);
+	const taskListFilters = useMemo(() => ({
+		...(deferredSearchText.trim() ? { search: deferredSearchText.trim() } : {}),
+		...((taskViewPreferences.filters?.length ?? 0) > 0
+			? { viewFilters: taskViewPreferences.filters }
+			: {}),
+	}), [deferredSearchText, taskViewPreferences.filters]);
 	const taskRefreshTimerRef = useRef<number | null>(null);
 	const pendingBurndownRefreshRef = useRef(false);
 	const detailsTabId: SidebarTab = "details";
@@ -535,6 +541,7 @@ export function TasksPage() {
 		tasks,
 		pagination,
 		counts,
+		searchMatches,
 		isLoading,
 		isError,
 		error,
@@ -546,7 +553,7 @@ export function TasksPage() {
 		removeFromPlan,
 		hasNextPage,
 		fetchNextPage,
-	} = useTasks(draftsOnly ? { status: "draft" } : undefined, !isNewTaskPage);
+	} = useTasks(taskListFilters, !isNewTaskPage);
 	const tasksRef = useRef(tasks);
 	tasksRef.current = tasks;
 
@@ -560,24 +567,9 @@ export function TasksPage() {
 		};
 	}, []);
 
-	const searchedTasks = useMemo(() => {
-		let result = tasks;
-
-		if (deferredSearchText.trim()) {
-			const search = deferredSearchText.toLowerCase();
-			result = result.filter(
-				(task) =>
-					task.subject.toLowerCase().includes(search) ||
-					task.description.toLowerCase().includes(search) ||
-					task.phase?.toLowerCase().includes(search),
-			);
-		}
-
-		return result;
-	}, [deferredSearchText, tasks]);
 	const filteredTasks = useMemo(
-		() => projectResourceCollection(searchedTasks, TASK_COLLECTION_COLUMNS, taskViewPreferences),
-		[searchedTasks, taskViewPreferences],
+		() => projectResourceCollection(tasks, TASK_COLLECTION_COLUMNS, taskViewPreferences),
+		[taskViewPreferences, tasks],
 	);
 	const visibleTaskCount = filteredTasks.length;
 	const toggleDraftsOnly = useCallback(() => {
@@ -1017,8 +1009,9 @@ export function TasksPage() {
 							searchText={searchText}
 							onSearchTextChange={setSearchText}
 							searchPlaceholder="Search tasks…"
-							total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+							total={pagination?.total ?? counts?.total ?? filteredTasks.length}
 							visible={visibleTaskCount}
+							hiddenSearchMatches={searchMatches?.hidden}
 							activeInsight={activeInsight}
 							onInsightChange={setActiveInsight}
 							onRefresh={() => {
@@ -1144,8 +1137,9 @@ export function TasksPage() {
 				searchText={searchText}
 				onSearchTextChange={setSearchText}
 				searchPlaceholder="Search tasks…"
-				total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+				total={pagination?.total ?? counts?.total ?? filteredTasks.length}
 				visible={visibleTaskCount}
+				hiddenSearchMatches={searchMatches?.hidden}
 				activeInsight={activeInsight}
 				onInsightChange={setActiveInsight}
 				onRefresh={() => {

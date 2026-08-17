@@ -12,6 +12,10 @@ import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { prepareTaskFromDiscussion } from "../services/task-preparation";
+import {
+	compileResourceListFilters,
+	parseResourceListFilters,
+} from "./resource-list-filters";
 
 interface ChecklistItem {
 	id: number;
@@ -385,6 +389,8 @@ export function createTasksRoutes() {
 	 *   - domain: filter by domain
 	 *   - assignedTo: filter by assigned arm
 	 *   - phase: filter by phase
+	 *   - search: search subject, description, and phase
+	 *   - viewFilters: JSON-encoded saved view filters
 	 *   - limit: max results (default 100)
 	 *   - offset: pagination offset
 	 */
@@ -397,11 +403,24 @@ export function createTasksRoutes() {
 		const assignedToFilter = c.req.query("assignedTo");
 		const phaseFilter = c.req.query("phase");
 		const sourceTypeFilter = c.req.query("sourceType");
+		const search = c.req.query("search")?.trim();
+		const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
 		const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 500);
 		const offset = parseInt(c.req.query("offset") || "0", 10);
 
-		const conditions: string[] = [];
-		const params: (string | number)[] = [];
+		const searchConditions: string[] = [];
+		const searchParams: (string | number)[] = [];
+		if (search) {
+			const normalizedSearch = search.toLocaleLowerCase();
+			searchConditions.push(`(
+				instr(lower(coalesce(t.subject, '')), ?) > 0 OR
+				instr(lower(coalesce(t.description, '')), ?) > 0 OR
+				instr(lower(coalesce(t.phase, '')), ?) > 0
+			)`);
+			searchParams.push(normalizedSearch, normalizedSearch, normalizedSearch);
+		}
+		const conditions = [...searchConditions];
+		const params = [...searchParams];
 
 		if (statusFilter) {
 			const statuses = statusFilter.split(",").map((s) => s.trim());
@@ -433,6 +452,21 @@ export function createTasksRoutes() {
 			conditions.push("t.source_type = ?");
 			params.push(sourceTypeFilter);
 		}
+
+		const compiledViewFilters = compileResourceListFilters(viewFilters, {
+			subject: "t.subject",
+			status: "t.status",
+			priority: "t.priority",
+			phase: "t.phase",
+			domain: "t.domain",
+			assignedArm: "coalesce(a.name, t.assigned_to)",
+			progress: "t.progress",
+			sourceType: "t.source_type",
+			tags: "json_extract(t.metadata, '$.ui.tags')",
+			updatedAt: "t.updated_at",
+		});
+		conditions.push(...compiledViewFilters.conditions);
+		params.push(...compiledViewFilters.params);
 
 		const whereClause =
 			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -485,9 +519,18 @@ export function createTasksRoutes() {
 		// Get total count
 		const countRow = db
 			.query(`
-      SELECT COUNT(*) as count FROM tasks t ${whereClause}
+      SELECT COUNT(*) as count
+      FROM tasks t
+      LEFT JOIN arms a ON t.assigned_to = a.id
+      ${whereClause}
     `)
 			.get(...params) as { count: number };
+		const searchWhereClause = searchConditions.length > 0
+			? `WHERE ${searchConditions.join(" AND ")}`
+			: "";
+		const searchTotal = search
+			? (db.query(`SELECT COUNT(*) as count FROM tasks t ${searchWhereClause}`).get(...searchParams) as { count: number }).count
+			: countRow.count;
 
 		// Get counts by status
 		const statusCounts = db
@@ -511,6 +554,13 @@ export function createTasksRoutes() {
 				total: countRow.count,
 			},
 			counts,
+			...(search ? {
+				searchMatches: {
+					total: searchTotal,
+					filtered: countRow.count,
+					hidden: Math.max(0, searchTotal - countRow.count),
+				},
+			} : {}),
 		});
 	});
 

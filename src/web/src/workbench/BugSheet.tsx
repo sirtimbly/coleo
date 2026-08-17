@@ -132,6 +132,8 @@ export function BugSheet({
 	onDelete,
 	onCreateBugAt,
 	onRowsMove,
+	onLoadMore,
+	hasNextPage,
 	density,
 	viewPreferences,
 	onViewPreferencesChange,
@@ -144,6 +146,8 @@ export function BugSheet({
 	onDelete?: (bug: Bug) => void;
 	onCreateBugAt?: (index: number, title: string) => void;
 	onRowsMove?: (moves: ResourceSheetRowMove<Bug>[]) => void | Promise<void>;
+	onLoadMore?: () => void;
+	hasNextPage?: boolean;
 	density?: ViewPreferences["density"];
 	viewPreferences?: ViewPreferences;
 	onViewPreferencesChange?: (preferences: ViewPreferences) => void;
@@ -240,6 +244,7 @@ export function BugSheet({
 					for (const bug of removed) onDelete?.(bug);
 				} : undefined}
 				onRowsMove={onRowsMove}
+				onNearEnd={hasNextPage ? onLoadMore : undefined}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedBugId}
 				onRowSelectionChange={(bug) => {

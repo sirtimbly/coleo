@@ -7,6 +7,10 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import {
+  compileResourceListFilters,
+  parseResourceListFilters,
+} from "./resource-list-filters";
 
 export interface Bug {
   id: string;
@@ -322,57 +326,108 @@ export function createBugsRoutes() {
     const priority = c.req.query("priority");
     const assignee = c.req.query("assignee");
     const archived = c.req.query("archived");
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const search = c.req.query("search")?.trim();
+    const tags = c.req.query("tags")?.split(",")
+      .map((tag) => tag.trim().toLocaleLowerCase())
+      .filter(Boolean) ?? [];
+    const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
 
-    let query = `
+    const baseConditions: string[] = [];
+    const baseParams: (string | number)[] = [];
+    if (archived === "true") {
+      baseConditions.push("b.archived = 1");
+    } else if (archived === "false" || archived === undefined) {
+      baseConditions.push("b.archived = 0");
+    }
+    const searchConditions = [...baseConditions];
+    const searchParams = [...baseParams];
+    if (search) {
+      const normalizedSearch = search.toLocaleLowerCase();
+      searchConditions.push(`(
+        instr(lower(coalesce(b.title, '')), ?) > 0 OR
+        instr(lower(coalesce(b.description, '')), ?) > 0
+      )`);
+      searchParams.push(normalizedSearch, normalizedSearch);
+    }
+    const conditions = [...searchConditions];
+    const params = [...searchParams];
+    if (source) {
+      conditions.push("b.source = ?");
+      params.push(source);
+    }
+    if (status) {
+      const statuses = status.split(",").map((value) => value.trim()).filter(Boolean);
+      conditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
+      params.push(...statuses);
+    }
+    if (priority) {
+      conditions.push("b.priority = ?");
+      params.push(priority);
+    }
+    if (assignee) {
+      conditions.push("b.assignee_arm_id = ?");
+      params.push(assignee);
+    }
+    if (tags.length > 0) {
+      conditions.push(`EXISTS (
+        SELECT 1 FROM json_each(coalesce(json_extract(b.metadata, '$.ui.tags'), '[]'))
+        WHERE lower(cast(json_each.value AS text)) IN (${tags.map(() => "?").join(",")})
+      )`);
+      params.push(...tags);
+    }
+    const compiledViewFilters = compileResourceListFilters(viewFilters, {
+      title: "b.title",
+      status: "b.status",
+      priority: "b.priority",
+      source: "b.source",
+      tags: "json_extract(b.metadata, '$.ui.tags')",
+      assignee: "coalesce(a.name, b.assignee_arm_id)",
+      createdAt: "b.created_at",
+      updatedAt: "b.updated_at",
+    });
+    conditions.push(...compiledViewFilters.conditions);
+    params.push(...compiledViewFilters.params);
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const searchWhereClause = searchConditions.length > 0 ? `WHERE ${searchConditions.join(" AND ")}` : "";
+    const query = `
       SELECT
         b.*,
         a.name as assignee_arm_name
       FROM bugs b
       LEFT JOIN arms a ON b.assignee_arm_id = a.id
-      WHERE 1=1
+      ${whereClause}
+      ORDER BY b.sort_order ASC, b.created_at DESC
+      LIMIT ? OFFSET ?
     `;
-
-    const params: (string | number)[] = [];
-
-    if (source) {
-      query += " AND b.source = ?";
-      params.push(source);
-    }
-
-    if (status) {
-      query += " AND b.status = ?";
-      params.push(status);
-    }
-
-    if (priority) {
-      query += " AND b.priority = ?";
-      params.push(priority);
-    }
-
-    if (assignee) {
-      query += " AND b.assignee_arm_id = ?";
-      params.push(assignee);
-    }
-
-    // Filter by archived status (default: show only non-archived)
-    if (archived === "true") {
-      query += " AND b.archived = 1";
-    } else if (archived === "false" || archived === undefined) {
-      query += " AND b.archived = 0";
-    }
-
-    query += " ORDER BY b.sort_order ASC, b.created_at DESC LIMIT ?";
-    params.push(limit);
 
     try {
       const stmt = db.query(query);
-      const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+      const rows = stmt.all(...params, limit, offset);
       const typedRows = rows as (BugRow & { assignee_arm_name?: string })[];
 
       const bugs: Bug[] = typedRows.map(parseBugRow);
-
-      return c.json({ bugs });
+      const filteredTotal = (db.query(`
+        SELECT COUNT(*) as count
+        FROM bugs b
+        LEFT JOIN arms a ON b.assignee_arm_id = a.id
+        ${whereClause}
+      `).get(...params) as { count: number }).count;
+      const searchTotal = search
+        ? (db.query(`SELECT COUNT(*) as count FROM bugs b ${searchWhereClause}`).get(...searchParams) as { count: number }).count
+        : filteredTotal;
+      return c.json({
+        bugs,
+        pagination: { limit, offset, total: filteredTotal },
+        ...(search ? {
+          searchMatches: {
+            total: searchTotal,
+            filtered: filteredTotal,
+            hidden: Math.max(0, searchTotal - filteredTotal),
+          },
+        } : {}),
+      });
     } catch (err) {
       throw HttpError.internal("Failed to query bugs");
     }

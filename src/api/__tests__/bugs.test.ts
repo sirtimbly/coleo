@@ -271,6 +271,35 @@ describe("bugs API", () => {
       expect(body.bugs).toHaveLength(1);
       expect(body.bugs[0]?.title).toBe("Second Bug");
     });
+
+    it("should search the database and report matches hidden by view filters", async () => {
+      const query = new URLSearchParams({
+        search: "description",
+        viewFilters: JSON.stringify([
+          { field: "status", operator: "equals", value: "open" },
+        ]),
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 3, filtered: 1, hidden: 2 });
+    });
+
+    it("should search beyond the first limited row", async () => {
+      const response = await app.request("/api/bugs?search=third&limit=1");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[]; pagination: { total: number } };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-3"]);
+      expect(body.pagination.total).toBe(1);
+    });
   });
 
   describe("GET /api/bugs/stats", () => {

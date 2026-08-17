@@ -512,6 +512,35 @@ describe("tasks API", () => {
       expect(body.tasks[0]?.id).toBe("task-2");
     });
 
+    it("should search the database and report matches hidden by view filters", async () => {
+      const query = new URLSearchParams({
+        search: "description",
+        viewFilters: JSON.stringify([
+          { field: "status", operator: "equals", value: "pending" },
+        ]),
+      });
+      const response = await app.request(`/api/tasks?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        tasks: Task[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.tasks.map((task) => task.id)).toEqual(["task-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 3, filtered: 1, hidden: 2 });
+    });
+
+    it("should search beyond the first limited row", async () => {
+      const response = await app.request("/api/tasks?search=third&limit=1");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { tasks: Task[]; pagination: { total: number } };
+      expect(body.tasks.map((task) => task.id)).toEqual(["task-3"]);
+      expect(body.pagination.total).toBe(1);
+    });
+
     it("should support pagination with limit and offset", async () => {
       const response = await app.request("/api/tasks?limit=1&offset=0");
       expect(response.status).toBe(200);

@@ -19,6 +19,7 @@ import type {
 import type {
   ViewDefinition,
   ArmRun,
+  ProjectionFilter,
   WorkbenchBundle,
   WorkbenchProfile,
   WorkspaceLayoutRecord,
@@ -37,6 +38,12 @@ export type JsonValue = JsonPrimitive | JsonObject | JsonValue[];
 
 export interface JsonObject {
   [key: string]: JsonValue | undefined;
+}
+
+export interface ResourceSearchMatches {
+  total: number;
+  filtered: number;
+  hidden: number;
 }
 
 export function isJsonObject(value: JsonValue | undefined): value is JsonObject {
@@ -848,16 +855,28 @@ class ApiClient {
     status?: string;
     priority?: string;
     assignee?: string;
+    search?: string;
+    tags?: string[];
+    viewFilters?: ProjectionFilter[];
     limit?: number;
-  }) {
+    offset?: number;
+  }, signal?: AbortSignal) {
     const query = new URLSearchParams();
     if (params?.source) query.set('source', params.source);
     if (params?.status) query.set('status', params.status);
     if (params?.priority) query.set('priority', params.priority);
     if (params?.assignee) query.set('assignee', params.assignee);
+    if (params?.search) query.set('search', params.search);
+    if (params?.tags?.length) query.set('tags', params.tags.join(','));
+    if (params?.viewFilters?.length) query.set('viewFilters', JSON.stringify(params.viewFilters));
     if (params?.limit) query.set('limit', params.limit.toString());
+    if (params?.offset) query.set('offset', params.offset.toString());
     const queryStr = query.toString();
-    return this.request<{ bugs: Bug[] }>(`/bugs${queryStr ? `?${queryStr}` : ''}`);
+    return this.request<{
+      bugs: Bug[];
+      pagination: { limit: number; offset: number; total: number };
+      searchMatches?: ResourceSearchMatches;
+    }>(`/bugs${queryStr ? `?${queryStr}` : ''}`, { signal });
   }
 
   async getBug(id: string) {
@@ -972,6 +991,8 @@ class ApiClient {
     assignedTo?: string;
     phase?: string;
     sourceType?: string;
+    search?: string;
+    viewFilters?: ProjectionFilter[];
     limit?: number;
     offset?: number;
   }, signal?: AbortSignal) {
@@ -982,6 +1003,8 @@ class ApiClient {
     if (params?.assignedTo) query.set('assignedTo', params.assignedTo);
     if (params?.phase) query.set('phase', params.phase);
     if (params?.sourceType) query.set('sourceType', params.sourceType);
+    if (params?.search) query.set('search', params.search);
+    if (params?.viewFilters?.length) query.set('viewFilters', JSON.stringify(params.viewFilters));
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());
     const queryStr = query.toString();
@@ -989,6 +1012,7 @@ class ApiClient {
       tasks: Task[];
       pagination: { limit: number; offset: number; total: number };
       counts: { total: number; byStatus: Record<string, number> };
+      searchMatches?: ResourceSearchMatches;
     }>(`/tasks${queryStr ? `?${queryStr}` : ''}`, { signal });
   }
 

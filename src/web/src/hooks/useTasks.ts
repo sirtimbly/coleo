@@ -15,6 +15,8 @@ import { patchTaskInQueryData } from '@/lib/task-query-cache';
 import { useToast } from '@/hooks/useToast';
 import { useMemo } from 'react';
 
+import type { ProjectionFilter } from '@/workbench/types';
+
 export type TaskListResponse = Awaited<ReturnType<typeof api.listTasks>>;
 export type TaskListQueryData = InfiniteData<TaskListResponse>;
 
@@ -26,6 +28,8 @@ interface TaskFilters {
   assignedTo?: string;
   phase?: string;
   sourceType?: string;
+  search?: string;
+  viewFilters?: ProjectionFilter[];
 }
 
 interface UpdateTaskVariables {
@@ -98,6 +102,10 @@ export function useTasks(filters?: TaskFilters, enabled = true) {
     return tasksQuery.data?.pages[0]?.counts;
   }, [tasksQuery.data]);
 
+  const searchMatches = useMemo(() => {
+    return tasksQuery.data?.pages[0]?.searchMatches;
+  }, [tasksQuery.data]);
+
   // Check if there are more pages to load
   const hasNextPage = tasksQuery.hasNextPage;
   const isFetchingNextPage = tasksQuery.isFetchingNextPage;
@@ -138,6 +146,11 @@ export function useTasks(filters?: TaskFilters, enabled = true) {
         queryClient.setQueryData(tasksKeys.list(filters ?? {}), context.previousData);
       }
       showError(`Failed to update task: ${err.message}`, 'Update Failed');
+    },
+    onSettled: () => {
+      if (filters?.search || filters?.viewFilters?.length) {
+        queryClient.invalidateQueries({ queryKey: tasksKeys.list(filters) });
+      }
     },
   });
 
@@ -225,6 +238,7 @@ export function useTasks(filters?: TaskFilters, enabled = true) {
     tasks,
     pagination,
     counts,
+    searchMatches,
     isLoading: tasksQuery.isLoading,
     isError: tasksQuery.isError,
     error: tasksQuery.error,

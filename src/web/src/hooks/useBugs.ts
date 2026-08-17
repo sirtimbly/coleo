@@ -4,10 +4,13 @@
  * Provides queries and mutations for bug tracking with optimistic updates.
  */
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient, type InfiniteData } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { api, type Bug, type BugMetadata } from '@/lib/api';
 import { bugsKeys } from '@/lib/queryKeys';
 import { useToast } from '@/hooks/useToast';
+
+import type { ProjectionFilter } from '@/workbench/types';
 
 // Types
 interface BugFilters {
@@ -15,7 +18,15 @@ interface BugFilters {
   status?: string;
   priority?: string;
   assignee?: string;
+  search?: string;
+  tags?: string[];
+  viewFilters?: ProjectionFilter[];
 }
+
+type BugListResponse = Awaited<ReturnType<typeof api.listBugs>>;
+type BugListQueryData = InfiniteData<BugListResponse>;
+
+const PAGE_SIZE = 100;
 
 interface CreateBugVariables {
   title: string;
@@ -52,13 +63,26 @@ export function useBugs(filters?: BugFilters) {
   const queryClient = useQueryClient();
   const { showError } = useToast();
 
-  const bugsQuery = useQuery({
+  const bugsQuery = useInfiniteQuery({
     queryKey: bugsKeys.list(filters ?? {}),
-    queryFn: async () => {
-      const response = await api.listBugs(filters);
-      return response.bugs;
+    queryFn: ({ pageParam = 0, signal }) => api.listBugs({
+      ...filters,
+      limit: PAGE_SIZE,
+      offset: pageParam,
+    }, signal),
+    getNextPageParam: (lastPage) => {
+      const { offset, limit, total } = lastPage.pagination;
+      const nextOffset = offset + limit;
+      return nextOffset < total ? nextOffset : undefined;
     },
+    initialPageParam: 0,
   });
+  const bugs = useMemo(
+    () => bugsQuery.data?.pages.flatMap((page) => page.bugs) ?? [],
+    [bugsQuery.data],
+  );
+  const pagination = bugsQuery.data?.pages[0]?.pagination;
+  const searchMatches = bugsQuery.data?.pages[0]?.searchMatches;
 
   const statsQuery = useQuery({
     queryKey: bugsKeys.stats(),
@@ -87,15 +111,21 @@ export function useBugs(filters?: BugFilters) {
     },
     onMutate: async ({ id, updates }) => {
       await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
-      const previousBugs = queryClient.getQueryData<Bug[]>(bugsKeys.list(filters ?? {}));
+      const previousBugs = queryClient.getQueryData<BugListQueryData>(bugsKeys.list(filters ?? {}));
       const previousStats = queryClient.getQueryData<{ byStatus: Record<string, number> }>(bugsKeys.stats());
 
       // Optimistically update the bug list
       queryClient.setQueryData(
         bugsKeys.list(filters ?? {}),
-        (old: Bug[] | undefined) => {
+        (old: BugListQueryData | undefined) => {
           if (!old) return old;
-          return old.map((bug) => (bug.id === id ? { ...bug, ...updates } : bug));
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              bugs: page.bugs.map((bug) => (bug.id === id ? { ...bug, ...updates } : bug)),
+            })),
+          };
         }
       );
 
@@ -130,13 +160,19 @@ export function useBugs(filters?: BugFilters) {
     },
     onMutate: async (id) => {
       await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
-      const previousBugs = queryClient.getQueryData<Bug[]>(bugsKeys.list(filters ?? {}));
+      const previousBugs = queryClient.getQueryData<BugListQueryData>(bugsKeys.list(filters ?? {}));
 
       queryClient.setQueryData(
         bugsKeys.list(filters ?? {}),
-        (old: Bug[] | undefined) => {
+        (old: BugListQueryData | undefined) => {
           if (!old) return old;
-          return old.filter((bug) => bug.id !== id);
+          return {
+            ...old,
+            pages: old.pages.map((page) => ({
+              ...page,
+              bugs: page.bugs.filter((bug) => bug.id !== id),
+            })),
+          };
         }
       );
 
@@ -161,27 +197,36 @@ export function useBugs(filters?: BugFilters) {
     onMutate: async ({ toSortOrder, fromSortOrder }) => {
       await queryClient.cancelQueries({ queryKey: bugsKeys.all() });
 
-      const previousData = queryClient.getQueryData(bugsKeys.list(filters ?? {}));
+      const previousData = queryClient.getQueryData<BugListQueryData>(bugsKeys.list(filters ?? {}));
 
       queryClient.setQueryData(
         bugsKeys.list(filters ?? {}),
-        (old: Bug[] | undefined) => {
+        (old: BugListQueryData | undefined) => {
           if (!old) return old;
-          
+          const pages = old.pages.map((page) => ({ ...page, bugs: [...page.bugs] }));
+          const allBugs = pages.flatMap((page) => page.bugs);
           // Sort bugs by sortOrder to get proper order for optimistic update
-          const bugs = [...old].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-          const fromIndex = bugs.findIndex(b => (b.sortOrder ?? 0) === fromSortOrder);
+          const reordered = allBugs.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+          const fromIndex = reordered.findIndex(b => (b.sortOrder ?? 0) === fromSortOrder);
           if (fromIndex === -1) return old;
-          const [movedBug] = bugs.splice(fromIndex, 1);
+          const [movedBug] = reordered.splice(fromIndex, 1);
+          if (!movedBug) return old;
           // Calculate target index based on toSortOrder
-          const toIndex = toSortOrder < 0 ? bugs.length : Math.min(toSortOrder, bugs.length);
-          bugs.splice(toIndex, 0, movedBug);
+          const toIndex = toSortOrder < 0 ? reordered.length : Math.min(toSortOrder, reordered.length);
+          reordered.splice(toIndex, 0, movedBug);
           // Update sortOrder values
-          bugs.forEach((bug, i) => {
+          reordered.forEach((bug, i) => {
             bug.sortOrder = i;
           });
-          
-          return bugs;
+          let cursor = 0;
+          return {
+            ...old,
+            pages: pages.map((page) => {
+              const nextBugs = reordered.slice(cursor, cursor + page.bugs.length);
+              cursor += page.bugs.length;
+              return { ...page, bugs: nextBugs };
+            }),
+          };
         }
       );
 
@@ -199,12 +244,17 @@ export function useBugs(filters?: BugFilters) {
   });
 
   return {
-    bugs: bugsQuery.data ?? [],
+    bugs,
+    pagination,
+    searchMatches,
     stats: statsQuery.data,
     isLoading: bugsQuery.isLoading,
     isError: bugsQuery.isError,
     error: bugsQuery.error,
     refetch: bugsQuery.refetch,
+    hasNextPage: bugsQuery.hasNextPage,
+    isFetchingNextPage: bugsQuery.isFetchingNextPage,
+    fetchNextPage: bugsQuery.fetchNextPage,
 
     createBug: createBugMutation.mutate,
     createBugAsync: createBugMutation.mutateAsync,
