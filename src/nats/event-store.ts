@@ -14,6 +14,7 @@ import type {
   ArmState,
   IEventStore,
 } from './jetstream-types';
+import { getProjectScope } from '../project-scope';
 
 export type {
   EventData,
@@ -104,7 +105,12 @@ export class EventStore implements IEventStore {
 
   async publishEvent(subject: string, data: EventData): Promise<void> {
     if (!this.js) throw new Error('JetStream client not initialized');
-    const payload = JSON.stringify(data);
+    const scope = getProjectScope();
+    const payload = JSON.stringify({
+      ...data,
+      projectDir: scope.projectDir,
+      projectKey: scope.projectKey,
+    });
     await this.js.publish(subject, payload);
   }
 
@@ -116,17 +122,25 @@ export class EventStore implements IEventStore {
 
     const events: EventData[] = [];
     const limit = options.limit ?? 100;
-    const scanLimit = options.since || options.latest ? Math.max(limit, 5000) : limit;
+    const scanLimit = options.since || options.latest || options.beforeSequence !== undefined
+      ? Math.max(limit, 5000)
+      : limit;
 
     try {
       const filterSubject = options.subject ?? 'coleo.events.>';
 
       let latestStartSequence: number | undefined;
-      if (options.latest && !options.since) {
+      if ((options.latest || options.beforeSequence !== undefined) && !options.since) {
         const streamInfo = await this.jsm.streams.info('coleo-events');
+        const lastSequence = options.beforeSequence === undefined
+          ? streamInfo.state.last_seq
+          : Math.min(streamInfo.state.last_seq, options.beforeSequence - 1);
+        if (lastSequence < streamInfo.state.first_seq) {
+          return [];
+        }
         latestStartSequence = Math.max(
           streamInfo.state.first_seq,
-          streamInfo.state.last_seq - scanLimit + 1,
+          lastSequence - scanLimit + 1,
         );
       }
 
@@ -154,6 +168,14 @@ export class EventStore implements IEventStore {
             const data = JSON.parse(msg.string()) as EventData;
             const streamSequence = (msg.info as { streamSequence?: number }).streamSequence;
 
+            if (
+              options.beforeSequence !== undefined &&
+              streamSequence !== undefined &&
+              streamSequence >= options.beforeSequence
+            ) {
+              continue;
+            }
+
             if (options.since) {
               const eventTime = new Date(data.timestamp);
               if (eventTime < options.since) continue;
@@ -179,7 +201,9 @@ export class EventStore implements IEventStore {
       console.error('[EventStore] Failed to query events:', err);
     }
 
-    return options.since || options.latest ? events.slice(-limit) : events;
+    return options.since || options.latest || options.beforeSequence !== undefined
+      ? events.slice(-limit)
+      : events;
   }
 
   async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {

@@ -1,3 +1,9 @@
+/**
+ * Compatibility shell for route-level projections outside Golden Layout.
+ *
+ * It preserves the classic layout while matching the compact workbench header
+ * and toolbar spacing used by newly migrated views.
+ */
 import type { ReactNode } from 'react';
 import { cn } from '@/lib';
 

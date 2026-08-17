@@ -6,6 +6,7 @@ import {
 } from "../retention";
 import { getRetentionDaysForType, STATUS_HISTORY_RETENTION_DAYS } from "../status-history";
 import { qdrantStore } from "../../qdrant";
+import { getProjectCollectionName } from "../../project-scope";
 
 describe("status history retention", () => {
 	afterEach(() => {
@@ -93,6 +94,9 @@ describe("status history retention", () => {
 		expect(result.purgedTypes).toContain("arm_event");
 		expect(result.purgedTypes).not.toContain("task_completion");
 		expect(deleteSpy).toHaveBeenCalledTimes(2);
+		expect(deleteSpy.mock.calls.every(([collection]) => (
+			collection === getProjectCollectionName("status-history")
+		))).toBe(true);
 
 		deleteSpy.mockRestore();
 		initSpy.mockRestore();

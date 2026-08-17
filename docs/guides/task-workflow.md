@@ -6,6 +6,7 @@ Tasks are the brain's durable work queue. A status controls whether work can be 
 
 | Status | Meaning | Normal next states |
 | --- | --- | --- |
+| `draft` | A human-authored note or unshaped task. It is saved but cannot be claimed by an arm. | `pending` when ready, or `cancelled` |
 | `pending` | Runnable, unassigned work in queue order. | `claimed`, `blocked`, `cancelled` |
 | `claimed` | An arm owns the task but has not acknowledged active work yet. | `in_progress`, `pending`, `blocked` |
 | `in_progress` | The assigned arm is actively working. | `completing`, `blocked`, `failed`, `pending` |
@@ -15,7 +16,7 @@ Tasks are the brain's durable work queue. A status controls whether work can be 
 | `failed` | Work ended unsuccessfully. | `pending` to retry, or `cancelled` |
 | `cancelled` | Work is intentionally closed without completion, including obsolete work. | `pending` to reopen |
 
-The brain manages `claimed`, `in_progress`, and `completing`, and normally completes tasks after validation. Human controls can also mark work completed, return it to `pending`, record a blocker, mark a failure, or cancel obsolete work. These transitions release stale task assignments.
+The brain manages `claimed`, `in_progress`, and `completing`, and normally completes tasks after validation. Human controls can also keep early notes in `draft`, promote a draft to `pending`, mark work completed, return it to `pending`, record a blocker, mark a failure, or cancel obsolete work. Moving assigned work to `draft` releases its stale task assignment.
 
 ## Blocking Rules
 
@@ -73,11 +74,17 @@ Comments from arms and the brain remain in the discussion as a chronological exp
 Open a task and use the `...` action menu to:
 
 - Edit all task fields.
+- Move an early note to `draft`, where it remains unavailable to arms.
 - Unblock or reopen the task by moving it to `pending`.
 - Mark it completed or failed.
 - Cancel it; cancellation requires confirmation.
 - Mark it blocked through the edit form, where a reason is required.
 
 For plan-backed tasks, completing checks the linked plan item, cancelling keeps it as a struck-through cancelled item, and reopening restores an unchecked item.
+
+The task toolbar also includes a `Drafts Only` shortcut. It updates the saved
+view's status filter, so the selection follows the user's database-backed view
+configuration and can be restored with the rest of the workspace. Right-click
+a sheet row and choose `Details` to open its dedicated Golden Layout view.
 
 The blocked notice in task details shows the current reason, category, next review time, review count, and whether human input is needed.

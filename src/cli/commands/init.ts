@@ -1,39 +1,22 @@
 import { Command } from "commander";
 import { join } from "path";
-import { mkdir, writeFile, copyFile, symlink, readdir, access } from "fs/promises";
+import { mkdir, writeFile, copyFile, symlink, readdir, access, readFile } from "fs/promises";
 import { homedir } from "os";
-import { randomBytes } from "crypto";
 import type { ColeoConfig } from "../../types";
 import { DEFAULT_CONFIG } from "../../types";
 import { initMaildir } from "../../mail";
 import { TEMPLATES_DIR, getBrainTemplatesDir } from "../context";
 import { getCliEntrypoint } from "../entrypoint";
-import { createInterface } from "readline";
 import { ensureDefaultArmTemplates } from "../../config";
-
-/**
- * Generate a secure random API token
- */
-function generateApiToken(): string {
-  return "co_" + randomBytes(32).toString("hex");
-}
-
-/**
- * Ask the user a yes/no question
- */
-async function askYesNo(question: string): Promise<boolean> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(`${question} (y/n) `, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase().startsWith("y"));
-    });
-  });
-}
+import { resolveProjectDirectory } from "../../project-scope";
+import { promptYN } from "../helpers/prompts";
+import {
+  createColeoMiseEnvironment,
+  generateApiKey,
+  readColeoMiseEnvironment,
+  readEnvValue,
+  updateMiseToml,
+} from "../init-environment";
 
 export function registerInitCommand(program: Command): void {
   program
@@ -77,51 +60,103 @@ export function registerInitCommand(program: Command): void {
       const defaultArmPath = await copyDefaultArmTemplate(coleoDir);
       console.log(`  ✓ Default arm config: ${defaultArmPath}`);
 
-      // Handle API token setup
+      // Handle project network and API key setup
       const envPath = join(coleoDir, ".env");
-      let apiToken = "";
+      const misePath = join(process.cwd(), "mise.toml");
+      const projectDir = resolveProjectDirectory({ COLEO_PROJECT_DIR: process.cwd() }, process.cwd());
+      let apiKey = "";
       let envCreated = false;
+      let miseConfigured = false;
 
-      try {
-        await access(envPath);
-        // .env already exists, skip token generation
-      } catch {
-        // .env doesn't exist, optionally ask user if they want to generate a token
-        console.log("\n🔐 API Security Setup");
-        console.log("Coleo uses an API token for secure communication between components.");
+      const existingEnv = await readFile(envPath, "utf-8").catch(() => "");
+      const existingMise = await readFile(misePath, "utf-8").catch(() => "");
+      const existingMiseEnvironment = readColeoMiseEnvironment(existingMise);
 
-        let shouldGenerate = false;
-        if (options.nonInteractive) {
-          console.log("  ℹ Non-interactive mode: skipping API token generation prompt.");
-        } else {
-          shouldGenerate = await askYesNo("Generate a random API token and save it to .env?");
+      if (!options.nonInteractive) {
+        console.log("\nProject-local networking");
+        console.log("Each Coleo project runs an API server and a local NATS/JetStream server.");
+        console.log("Unique ports prevent another project on this host from being reused accidentally");
+        console.log("and keep each project's API traffic and JetStream event history isolated.");
+
+        const shouldGeneratePorts = await promptYN(
+          "Generate available project-specific API and NATS ports?",
+          true,
+        );
+        if (shouldGeneratePorts) {
+          const environment = await createColeoMiseEnvironment(projectDir, {
+            ...existingMiseEnvironment,
+            COLEO_API_HOST: existingMiseEnvironment.COLEO_API_HOST || process.env.COLEO_API_HOST,
+            COLEO_NATS_HOST: existingMiseEnvironment.COLEO_NATS_HOST || process.env.COLEO_NATS_HOST,
+            COLEO_API_KEY:
+              process.env.COLEO_API_KEY
+              || process.env.COLEO_API_TOKEN
+              || existingMiseEnvironment.COLEO_API_KEY
+              || readEnvValue(existingEnv, "COLEO_API_KEY")
+              || readEnvValue(existingEnv, "COLEO_API_TOKEN"),
+          });
+          apiKey = environment.COLEO_API_KEY;
+
+          console.log(`  API:          http://${environment.COLEO_API_HOST}:${environment.COLEO_API_PORT}`);
+          console.log(`  NATS:         nats://${environment.COLEO_NATS_HOST}:${environment.COLEO_NATS_PORT}`);
+          console.log(`  NATS monitor: http://${environment.COLEO_NATS_HOST}:${environment.COLEO_NATS_HTTP_PORT}`);
+          console.log("  The generated API key will be shared by the server, brain, agents, and CLI.");
+          console.log("  Warning: mise.toml will contain that key in plaintext; do not commit it.");
+
+          if (await promptYN(`Write this configuration to ${misePath}?`, true)) {
+            await writeFile(misePath, updateMiseToml(existingMise, environment), "utf-8");
+            miseConfigured = true;
+            console.log(`  Configuration written to ${misePath}`);
+          }
         }
-        
-        if (shouldGenerate) {
-          apiToken = generateApiToken();
-          const envContent = `# Coleo Environment Configuration
+      } else {
+        console.log("  Non-interactive mode: skipping local port and mise.toml prompts.");
+      }
+
+      if (!miseConfigured) {
+        try {
+          await access(envPath);
+          // .env already exists, skip key generation
+        } catch {
+          // .env doesn't exist, optionally ask user if they want to generate a key
+          console.log("\nAPI security setup");
+          console.log("Coleo uses an API key for secure communication between components.");
+
+          let shouldGenerate = false;
+          if (options.nonInteractive) {
+            console.log("  Non-interactive mode: skipping API key generation prompt.");
+          } else {
+            shouldGenerate = await promptYN("Generate a random API key and save it to .env?", true);
+          }
+
+          if (shouldGenerate) {
+            apiKey ||= generateApiKey();
+            const envContent = `# Coleo Environment Configuration
 # Generated on ${new Date().toISOString()}
 
-# API Authentication Token
-# This token is used to authenticate API requests between components
+# API authentication key used by the server, brain, agents, and CLI
 # Keep it secret and do not commit this file to version control
-COLEO_API_TOKEN=${apiToken}
+COLEO_API_KEY=${apiKey}
 
 # Optional: API Configuration
 # COLEO_API_PORT=8080
-# COLEO_API_HOST=localhost
+# COLEO_API_HOST=127.0.0.1
 
-# Optional: external NATS Configuration (for distributed mode)
-# Leave this unset to let 'coleo serve' auto-start a local nats-server
+# Optional: local NATS configuration
+# COLEO_NATS_HOST=127.0.0.1
+# COLEO_NATS_PORT=4222
+# COLEO_NATS_HTTP_PORT=8222
+
+# Optional: external NATS URL override (for distributed mode)
 # COLEO_NATS_URL=nats://localhost:4222
 `;
-          await writeFile(envPath, envContent, "utf-8");
-          envCreated = true;
-          console.log(`  ✓ API token generated and saved to ${envPath}`);
-        } else {
-          console.log("  ℹ You can manually set COLEO_API_TOKEN later by:");
-          console.log("    - Creating .env in .coleo/ directory");
-          console.log("    - Or running: export COLEO_API_TOKEN=your-token-here");
+            await writeFile(envPath, envContent, "utf-8");
+            envCreated = true;
+            console.log(`  API key generated and saved to ${envPath}`);
+          } else {
+            console.log("  You can manually set COLEO_API_KEY later by:");
+            console.log("    - Creating .env in .coleo/ directory");
+            console.log("    - Or running: export COLEO_API_KEY=your-key-here");
+          }
         }
       }
 
@@ -162,8 +197,9 @@ COLEO_API_TOKEN=${apiToken}
       const scriptInfo = `\n  ✓ CLI wrapper: ${coleoScriptPath}`;
 
       const envInfo = envCreated
-        ? `\n  ✓ API token configured in ${join(coleoDir, ".env")}`
+        ? `\n  ✓ API key configured in ${join(coleoDir, ".env")}`
         : "";
+      const miseInfo = miseConfigured ? `\n  ✓ Project network configuration: ${misePath}` : "";
 
       console.log(`
 ┌─────────────────────────────────────────────────────────────┐
@@ -182,7 +218,7 @@ COLEO_API_TOKEN=${apiToken}
     ├── logs/          # Log files
     ├── .env           # API token and secrets${envInfo}
     └── src/brain/templates/  # Brain prompt templates
-${scriptInfo}${symlinkInfo}
+${scriptInfo}${symlinkInfo}${miseInfo}
 
  Quick Start:
    1. Start the API server:  coleo serve start

@@ -1,6 +1,6 @@
 {
 	"name": "coleo",
-	"version": "0.7.1",
+	"version": "0.10.0",
 	"description": "AI agent orchestrator using the Octopus Model",
 	"type": "module",
 	"private": false,
@@ -37,10 +37,10 @@
 		"dev": "bun run src/cli/index.ts",
 		"brain": "bun run src/cli/index.ts brain run",
 		"server": "bun run src/cli/index.ts server start",
-		"setup": "bun install && bun install --cwd src/web --frozen-lockfile",
+		"setup": "bun install --force --frozen-lockfile",
 		"build": "bun run setup && bun run --cwd src/web build && rm -rf dist && mkdir -p dist && cp -r src/web/dist/ dist/web/ && mkdir -p dist/brain && cp -r src/brain/templates dist/brain/templates && bun build src/cli/index.ts --outdir dist --target bun && chmod +x dist/index.js",
 		"prepublishOnly": "bun run build",
-		"pack:check": "bun run build && npm pack --dry-run",
+		"pack:check": "bun run build && bun pm pack --dry-run",
 		"typecheck": "tsc --noEmit",
 		"shellcheck": "shellcheck bin/*.sh",
 		"check": "bun run shellcheck && bun run typecheck",
@@ -58,6 +58,7 @@
 		"test:integration:spec": "bun test src/integration/__tests__/",
 		"test:integration": "bun run src/regression/runner.ts --quick",
 		"test:e2e": "bun run src/regression/runner.ts",
+		"test:e2e:web": "playwright test",
 		"test:distributed-observability": "bun run src/scripts/distributed-observability-smoke.ts",
 		"index:transcripts": "bun run src/scripts/jetstream-transcript-indexer.ts",
 		"simulate:arm-output": "bun run src/scripts/simulate-arm-output-processor.ts",
@@ -75,6 +76,7 @@
 		"dev:core:stop": "bun run src/cli/index.ts serve stop; bun run src/cli/index.ts brain stop"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.58.2",
 		"@tailwindcss/vite": "^4.1.18",
 		"@types/bun": "latest",
 		"@types/nunjucks": "^3.2.6",
@@ -88,10 +90,10 @@
 		"typescript": "^7.0.0"
 	},
 	"dependencies": {
-		"@hono/node-server": "^1.19.9",
+		"@hono/node-server": "^2.0.12",
 		"@modelcontextprotocol/sdk": "^1.25.2",
 		"@opencode-ai/sdk": "^1.1.36",
-		"@opentui/core": "^0.1.93",
+		"@opentui/core": "0.1.107",
 		"@qdrant/js-client-rest": "^1.16.2",
 		"@tribe-x/imap-server": "^0.0.25",
 		"@types/eventsource": "^1.1.15",
@@ -105,6 +107,14 @@
 		"nunjucks": "3.2.4",
 		"smol-toml": "^1.6.0",
 		"zod": "^4.3.5"
+	},
+	"optionalDependencies": {
+		"@opentui/core-darwin-arm64": "0.1.107",
+		"@opentui/core-darwin-x64": "0.1.107",
+		"@opentui/core-linux-arm64": "0.1.107",
+		"@opentui/core-linux-x64": "0.1.107",
+		"@opentui/core-win32-arm64": "0.1.107",
+		"@opentui/core-win32-x64": "0.1.107"
 	},
 	"trustedDependencies": [
 		"nats-server"

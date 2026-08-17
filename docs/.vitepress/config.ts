@@ -6,6 +6,9 @@ export default defineConfig({
 	description:
 		"Self-hosted control plane for coding agents with web and CLI observability.",
 	titleTemplate: ":title | Coleo",
+	sitemap: {
+		hostname: "https://coleo.dev",
+	},
 	ignoreDeadLinks: true,
 	themeConfig: {
 		// Shown in the default VitePress navbar on documentation pages
@@ -17,6 +20,7 @@ export default defineConfig({
 					items: [
 						{ text: "Getting Started", link: "/guides/getting-started" },
 						{ text: "Task Workflow", link: "/guides/task-workflow" },
+						{ text: "Planning Gate", link: "/guides/planning-gate" },
 						{ text: "CLI", link: "/guides/cli" },
 						{ text: "Docker", link: "/guides/docker" },
 						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },
@@ -43,6 +47,8 @@ export default defineConfig({
 		},
 	},
 	head: [
+		["meta", { name: "theme-color", content: "#071a21" }],
+		["link", { rel: "shortcut icon", href: "/favicon.png" }],
 		[
 			"link",
 			{
@@ -97,7 +103,7 @@ export default defineConfig({
 				content: "https://coleo.dev/social-card.png",
 			},
 		],
-		// Fonts to match marketing2.html
+		// Display, text, and utility faces used across docs and the field-manual homepage.
 		[
 			"link",
 			{
@@ -117,7 +123,7 @@ export default defineConfig({
 			"link",
 			{
 				rel: "stylesheet",
-				href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap",
+				href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&family=Pathway+Extreme:wght@300;400;500;600;700;800&display=swap",
 			},
 		],
 	],

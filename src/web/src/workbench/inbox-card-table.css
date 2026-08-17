@@ -1,0 +1,227 @@
+.coleo-inbox-card-table {
+	--inbox-row-height: 54px;
+	--inbox-header-background: color-mix(in srgb, var(--color-surface-secondary) 76%, var(--color-background));
+	--inbox-header-background-hover: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface-secondary));
+	--inbox-header-border: var(--color-border);
+	--inbox-header-foreground: var(--color-foreground);
+	--inbox-header-muted: var(--color-muted-foreground);
+	border: 0;
+	background: var(--color-background);
+	color: var(--color-foreground);
+	font-family: inherit;
+}
+
+.coleo-inbox-card-table-comfortable {
+	--inbox-row-height: 68px;
+}
+
+.coleo-inbox-card-table.tabulator .tabulator-header {
+	border-color: var(--inbox-header-border);
+	background: var(--inbox-header-background);
+	color: var(--inbox-header-foreground);
+	font-size: 0.7rem;
+	font-weight: 650;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col,
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col-row-handle {
+	border-color: var(--inbox-header-border);
+	background: var(--inbox-header-background);
+	color: var(--inbox-header-foreground);
+}
+
+.coleo-inbox-card-table.tabulator .tabulator-header .tabulator-col.tabulator-sortable[aria-sort] {
+	color: var(--inbox-header-foreground);
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.coleo-inbox-card-table.tabulator
+		.tabulator-header
+		.tabulator-col.tabulator-sortable.tabulator-col-sorter-element:hover {
+		background: var(--inbox-header-background-hover);
+	}
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable:focus-visible {
+	z-index: 2;
+	outline: 2px solid var(--color-accent);
+	outline-offset: -2px;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="none"]
+	.tabulator-arrow {
+	border-bottom-color: var(--inbox-header-muted) !important;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="ascending"]
+	.tabulator-arrow {
+	border-bottom-color: var(--inbox-header-foreground) !important;
+}
+
+.coleo-inbox-card-table.tabulator
+	.tabulator-header
+	.tabulator-col.tabulator-sortable[aria-sort="descending"]
+	.tabulator-arrow {
+	border-top-color: var(--inbox-header-foreground) !important;
+}
+
+.coleo-inbox-card-table .tabulator-tableholder,
+.coleo-inbox-card-table .tabulator-table {
+	background: var(--color-background);
+}
+
+.coleo-inbox-card-table .tabulator-row {
+	min-height: var(--inbox-row-height);
+	border-color: var(--color-border);
+	background: var(--color-background);
+	color: var(--color-foreground);
+}
+
+.coleo-inbox-card-table .tabulator-row:hover {
+	background: var(--color-surface-secondary);
+}
+
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-unread {
+	background: color-mix(in srgb, var(--color-accent) 5%, var(--color-background));
+}
+
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-action {
+	box-shadow: inset 3px 0 0 color-mix(in srgb, var(--color-warning) 70%, transparent);
+}
+
+.coleo-inbox-card-table .tabulator-row.coleo-inbox-row-expanded {
+	flex-wrap: wrap;
+}
+
+.coleo-inbox-card-table .tabulator-cell {
+	min-height: var(--inbox-row-height);
+	border-color: transparent;
+	padding-block: 0.45rem;
+	white-space: normal;
+}
+
+.coleo-inbox-expand {
+	display: inline-grid;
+	width: 1.75rem;
+	height: 1.75rem;
+	place-items: center;
+	border: 1px solid transparent;
+	border-radius: 0.25rem;
+	background: transparent;
+	color: var(--color-muted-foreground);
+	line-height: 1;
+	touch-action: manipulation;
+}
+
+.coleo-inbox-expand-icon {
+	width: 1rem;
+	height: 1rem;
+	transform: rotate(0deg);
+	transform-origin: center;
+}
+
+.coleo-inbox-expand[aria-expanded="true"] .coleo-inbox-expand-icon {
+	transform: rotate(90deg);
+}
+
+.coleo-inbox-expand:hover {
+	border-color: var(--color-border);
+	background: var(--color-surface);
+	color: var(--color-foreground);
+}
+
+.coleo-inbox-expand:focus-visible {
+	outline: 2px solid var(--color-ring);
+	outline-offset: 2px;
+}
+
+.coleo-inbox-state {
+	display: inline-flex;
+	min-width: 0;
+	align-items: center;
+	gap: 0.4rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.coleo-inbox-state-dot {
+	width: 0.45rem;
+	height: 0.45rem;
+	flex: none;
+	border-radius: 999px;
+	background: var(--color-accent);
+}
+
+.coleo-inbox-state-dot.is-danger {
+	background: var(--color-danger);
+}
+
+.coleo-inbox-state-dot.is-warning {
+	background: var(--color-warning);
+}
+
+.coleo-inbox-state-dot.is-success {
+	background: var(--color-success);
+}
+
+.coleo-inbox-subject {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	gap: 0.1rem;
+}
+
+.coleo-inbox-subject-title,
+.coleo-inbox-subject-summary {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.coleo-inbox-subject-title {
+	font-size: 0.82rem;
+	font-weight: 650;
+}
+
+.coleo-inbox-subject-summary {
+	color: var(--color-muted-foreground);
+	font-size: 0.72rem;
+}
+
+.coleo-inbox-card-detail {
+	width: 100%;
+	flex: 0 0 100%;
+	border-top: 1px solid var(--color-border);
+	background: var(--color-surface-secondary);
+	padding: 0.75rem clamp(0.75rem, 3vw, 2rem) 1rem;
+}
+
+.coleo-inbox-card-detail > * {
+	margin-inline: auto;
+	max-width: 64rem;
+}
+
+.coleo-inbox-card-detail [data-card-template] {
+	box-shadow: 0 8px 24px color-mix(in srgb, black 14%, transparent);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	.coleo-inbox-expand {
+		transition:
+			background-color 120ms ease,
+			border-color 120ms ease,
+			color 120ms ease;
+	}
+
+	.coleo-inbox-expand-icon {
+		transition: transform 120ms ease;
+	}
+}

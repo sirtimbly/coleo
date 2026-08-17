@@ -53,6 +53,8 @@ gitea-data/
 
 # Test artifacts
 .test-coleo/
+test-results/
+playwright-report/
 
 # Debug/repro scripts (temporary)
 repro_*.ts
@@ -76,3 +78,4 @@ docs/.vitepress/cache/deps
 # Database backups
 .coleo/*.db.backup-*
 .kilocode/package-lock.json
+.opencode/package-lock.json

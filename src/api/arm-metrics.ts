@@ -1,3 +1,12 @@
+/**
+ * Durable Arm telemetry sampling.
+ *
+ * Metric samples are quantitative time-series records used by dashboards.
+ * They deliberately remain separate from lifecycle/activity events and from
+ * inbox items: a sample may update a chart without representing a user-facing
+ * occurrence that needs attention.
+ */
+
 import type { Database } from "bun:sqlite";
 
 interface ArmMetricValues {

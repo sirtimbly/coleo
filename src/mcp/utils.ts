@@ -12,6 +12,7 @@ import { createApiDatabase } from "./api-db";
 import type { Task, Note, QueueMessage } from "../types";
 import { NatsClient } from "../nats";
 import { eventStore } from "../nats/jetstream";
+import { resolveApiKey, resolveApiUrl, resolveNatsUrl } from "../network-config";
 import {
 	getPendingMessages,
 	markMessageCompleted,
@@ -28,8 +29,8 @@ export const COLEO_DIR = getColeoDir();
 export const ARM_ID =
 	process.env.COLEO_ARM_ID || process.env.COLEO_TENTACLE_ID || "unknown";
 export const PROJECT_ROOT = process.env.COLEO_PROJECT_ROOT || process.cwd();
-export const API_BASE_URL = process.env.COLEO_API_URL || "http://127.0.0.1:8080";
-export const API_KEY = process.env.COLEO_API_KEY || "dev-api-key-12345";
+export const API_BASE_URL = resolveApiUrl();
+export const API_KEY = resolveApiKey() || "dev-api-key-12345";
 
 type StateDb = Parameters<typeof getPendingMessages>[0];
 
@@ -159,7 +160,7 @@ export function getDatabase(_readonly = true): StateDb {
 export async function getNatsClient(): Promise<NatsClient | null> {
 	if (natsClient) return natsClient;
 
-	const natsUrl = process.env.COLEO_NATS_URL || "nats://localhost:4222";
+	const natsUrl = resolveNatsUrl();
 
 	try {
 		natsClient = new NatsClient({
@@ -288,7 +289,7 @@ export function ensureArmRegistered(): void {
 				"general", // domain - can be updated later
 				"manual", // harness - indicates manually started
 				"running", // status
-				100000, // context_budget
+				300000, // context_budget
 				0, // current_context_used
 				now,
 				now,
@@ -432,6 +433,7 @@ export async function getPendingTasks(): Promise<Task[]> {
       AND (
         assigned_to = ?           -- Tasks assigned to this arm
         OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+        OR assigned_to = ''       -- Legacy: legacy empty string means unassigned
       )
       ORDER BY
         CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
@@ -526,6 +528,7 @@ export async function getMyInstructions(): Promise<{
       AND (
         assigned_to = ?           -- Tasks assigned to this arm
         OR assigned_to IS NULL    -- Unassigned tasks (any arm can claim)
+        OR assigned_to = ''       -- Legacy: legacy empty string means unassigned
       )
       ORDER BY
         CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,  -- Prioritize tasks assigned to this arm
@@ -721,13 +724,13 @@ export function getTaskReferenceHint(): string {
 		const database = getDatabase();
 		const rows = database
 			.query(
-				`SELECT id
-				 FROM tasks
-				 WHERE status IN ('pending', 'claimed', 'in_progress')
-				 AND (assigned_to = ? OR assigned_to IS NULL)
-				 ORDER BY
-				   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
-				   updated_at DESC
+					`SELECT id
+					 FROM tasks
+					 WHERE status IN ('pending', 'claimed', 'in_progress')
+					 AND (assigned_to = ? OR assigned_to IS NULL OR assigned_to = '')
+					 ORDER BY
+					   CASE WHEN assigned_to = ? THEN 0 ELSE 1 END,
+					   updated_at DESC
 				 LIMIT 3`,
 			)
 			.all(ARM_ID, ARM_ID) as Array<{ id: string }>;

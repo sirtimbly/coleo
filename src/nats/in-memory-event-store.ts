@@ -1,4 +1,5 @@
 import type { EventData, QueryOptions, StreamMetrics, IEventStore } from './jetstream-types';
+import { getProjectScope } from '../project-scope';
 
 export class InMemoryEventStore implements IEventStore {
   private events: Array<{ subject: string; data: EventData }> = [];
@@ -13,10 +14,13 @@ export class InMemoryEventStore implements IEventStore {
   }
 
   async publishEvent(subject: string, data: EventData): Promise<void> {
+    const scope = getProjectScope();
     this.events.push({
       subject,
       data: {
         ...data,
+        projectDir: scope.projectDir,
+        projectKey: scope.projectKey,
         sequence: data.sequence ?? this.events.length + 1,
       },
     });
@@ -42,13 +46,18 @@ export class InMemoryEventStore implements IEventStore {
     if (options.until) {
       results = results.filter(e => new Date(e.timestamp) <= options.until!);
     }
+    if (options.beforeSequence !== undefined) {
+      results = results.filter(e => (e.sequence ?? 0) < options.beforeSequence!);
+    }
     
     if (options.eventType) {
       results = results.filter(e => e.type === options.eventType);
     }
     
     const limit = options.limit ?? 100;
-    return options.latest ? results.slice(-limit) : results.slice(0, limit);
+    return options.latest || options.beforeSequence !== undefined
+      ? results.slice(-limit)
+      : results.slice(0, limit);
   }
 
   async getArmEvents(armId: string, limit: number = 50, since?: Date): Promise<EventData[]> {

@@ -20,17 +20,18 @@ type TaskPriority = Task['priority'];
 type TaskSourceType = Task['sourceType'];
 
 const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
+  { value: 'draft', label: 'Draft' },
   { value: 'pending', label: 'Pending' },
   { value: 'blocked', label: 'Blocked' },
   { value: 'failed', label: 'Failed' },
   { value: 'cancelled', label: 'Cancelled' },
 ];
 
-const PRIORITY_OPTIONS: { value: TaskPriority; label: string; color: string }[] = [
-  { value: 'critical', label: 'Critical', color: 'text-red-500' },
-  { value: 'high', label: 'High', color: 'text-orange-500' },
-  { value: 'normal', label: 'Normal', color: 'text-blue-500' },
-  { value: 'low', label: 'Low', color: 'text-gray-500' },
+const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'high', label: 'High' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'low', label: 'Low' },
 ];
 
 const SOURCE_TYPE_OPTIONS: { value: TaskSourceType; label: string }[] = [
@@ -49,6 +50,11 @@ const isTaskPriority = (value: string): value is TaskPriority =>
 
 const isTaskSourceType = (value: string): value is TaskSourceType =>
   SOURCE_TYPE_OPTIONS.some((option) => option.value === value);
+
+const FIELD_CLASS = 'w-full border border-border bg-surface px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent focus:ring-1 focus:ring-accent/30';
+const INPUT_CLASS = `${FIELD_CLASS} h-9`;
+const TEXTAREA_CLASS = `${FIELD_CLASS} resize-none py-2`;
+const LABEL_CLASS = 'mb-1.5 block text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground';
 
 export function TaskModal({
   isOpen,
@@ -100,7 +106,7 @@ export function TaskModal({
         setSubject('');
         setDescription('');
         setPriority('normal');
-        setStatus('pending');
+        setStatus(initialStatus ?? 'pending');
         setDomain('');
         setPhase('');
         setSourceType('manual');
@@ -173,6 +179,7 @@ export function TaskModal({
         const result = await api.createTask({
           subject: subject.trim(),
           description: description.trim(),
+          status,
           priority,
           domain: domain.trim() || undefined,
           phase: phase.trim() || undefined,
@@ -203,20 +210,20 @@ export function TaskModal({
   if (!isOpen) return null;
 
   const content = (
-    <div className={`flex w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 ${
+    <div className={`flex w-full max-w-2xl flex-col overflow-hidden border border-border bg-background text-foreground ${
         presentation === 'panel'
-          ? 'min-h-[min(42rem,100%)] shadow-xl'
-          : 'relative mx-4 max-h-[90vh] shadow-2xl'
+          ? 'min-h-[min(42rem,100%)] shadow-md'
+          : 'relative mx-4 max-h-[90vh] shadow-lg'
       }`}>
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700">
-          <h2 className="text-lg font-semibold text-white">
+        <div className="flex items-center justify-between border-b border-border bg-surface px-4 py-3">
+          <h2 className="text-lg font-semibold text-foreground">
             {isEditing ? 'Edit Task' : 'New Task'}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 text-zinc-400 hover:text-white rounded transition-colors"
+            className="inline-flex h-8 w-8 items-center justify-center text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
             aria-label={`Close ${isEditing ? 'edit task' : 'new task'}`}
           >
             <X className="w-5 h-5" />
@@ -225,11 +232,11 @@ export function TaskModal({
         
         {/* Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto">
-          <div className="p-4 space-y-4">
+          <div className="space-y-4 p-4">
             {/* Subject */}
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
-                Subject <span className="text-red-400">*</span>
+              <label className={LABEL_CLASS}>
+                Subject <span className="text-danger">*</span>
               </label>
               <input
                 ref={subjectRef}
@@ -238,14 +245,14 @@ export function TaskModal({
                 onChange={(e) => setSubject(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Brief title for the task"
-                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                className={INPUT_CLASS}
               />
             </div>
             
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-zinc-300 mb-1">
-                Description <span className="text-red-400">*</span>
+              <label className={LABEL_CLASS}>
+                Description <span className="text-danger">*</span>
               </label>
               <textarea
                 value={description}
@@ -253,14 +260,14 @@ export function TaskModal({
                 onKeyDown={handleKeyDown}
                 placeholder="Detailed description of what needs to be done..."
                 rows={4}
-                className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                className={TEXTAREA_CLASS}
               />
             </div>
             
             {/* Priority & Status (side by side) */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                <label className={LABEL_CLASS}>
                   Priority
                 </label>
                 <select
@@ -270,7 +277,7 @@ export function TaskModal({
                       setPriority(e.currentTarget.value);
                     }
                   }}
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                  className={INPUT_CLASS}
                 >
                   {PRIORITY_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>
@@ -282,7 +289,7 @@ export function TaskModal({
               
               {isEditing && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  <label className={LABEL_CLASS}>
                     Status
                   </label>
                   <select
@@ -292,7 +299,7 @@ export function TaskModal({
                         setStatus(e.currentTarget.value);
                       }
                     }}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                    className={INPUT_CLASS}
                   >
                     {STATUS_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>
@@ -305,7 +312,7 @@ export function TaskModal({
               
               {!isEditing && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  <label className={LABEL_CLASS}>
                     Source Type
                   </label>
                   <select
@@ -315,7 +322,7 @@ export function TaskModal({
                         setSourceType(e.currentTarget.value);
                       }
                     }}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                    className={INPUT_CLASS}
                   >
                     {SOURCE_TYPE_OPTIONS.map(opt => (
                       <option key={opt.value} value={opt.value}>
@@ -327,11 +334,26 @@ export function TaskModal({
               )}
             </div>
 
+            {!isEditing ? (
+              <label className="flex min-h-10 items-center gap-3 border border-border bg-surface px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={status === 'draft'}
+                  onChange={(event) => setStatus(event.currentTarget.checked ? 'draft' : 'pending')}
+                  className="h-4 w-4 shrink-0 accent-[var(--accent)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-foreground">Is Draft</span>
+                  <span className="block text-xs text-muted-foreground">Keep this task out of the runnable queue.</span>
+                </span>
+              </label>
+            ) : null}
+
             {isEditing && status === 'blocked' && (
-              <div className="rounded-lg border border-amber-700/60 bg-amber-950/25 p-3 space-y-3">
+              <div className="space-y-3 border border-warning/40 bg-warning/10 p-3">
                 <div>
-                  <label htmlFor="task-blocked-reason" className="block text-sm font-medium text-amber-100 mb-1">
-                    Blocked reason <span className="text-red-400">*</span>
+                  <label htmlFor="task-blocked-reason" className={LABEL_CLASS}>
+                    Blocked reason <span className="text-danger">*</span>
                   </label>
                   <textarea
                     id="task-blocked-reason"
@@ -339,19 +361,19 @@ export function TaskModal({
                     onChange={(e) => setBlockedReason(e.target.value)}
                     placeholder="What specifically prevents this task from continuing?"
                     rows={3}
-                    className="w-full px-3 py-2 bg-zinc-800 border border-amber-700/60 rounded-lg text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    className={TEXTAREA_CLASS}
                   />
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end">
                   <div>
-                    <label htmlFor="task-blocked-category" className="block text-sm font-medium text-zinc-300 mb-1">
+                    <label htmlFor="task-blocked-category" className={LABEL_CLASS}>
                       Blocker category
                     </label>
                     <select
                       id="task-blocked-category"
                       value={blockedCategory}
                       onChange={(e) => setBlockedCategory(e.currentTarget.value as NonNullable<Task['blockedCategory']>)}
-                      className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                      className={INPUT_CLASS}
                     >
                       <option value="dependency">Dependency</option>
                       <option value="bug">Bug</option>
@@ -362,26 +384,26 @@ export function TaskModal({
                       <option value="unknown">Other</option>
                     </select>
                   </div>
-                  <label className="flex min-h-10 items-center gap-2 text-sm text-zinc-300">
+                  <label className="flex min-h-10 items-center gap-2 text-sm text-foreground">
                     <input
                       type="checkbox"
                       checked={blockedNeedsHuman}
                       onChange={(e) => setBlockedNeedsHuman(e.currentTarget.checked)}
-                      className="h-4 w-4 rounded border-zinc-600 bg-zinc-800"
+                      className="h-4 w-4 accent-[var(--accent)]"
                     />
                     Needs a human response
                   </label>
                 </div>
-                <p className="text-xs leading-5 text-amber-200/75">
+                <p className="text-xs leading-5 text-warning">
                   The brain will schedule an arm to recheck this blocker. A human reply in Discussions or by task email requeues the check immediately.
                 </p>
               </div>
             )}
             
             {/* Phase */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                <label className={LABEL_CLASS}>
                   Phase
                 </label>
                 <input
@@ -390,16 +412,16 @@ export function TaskModal({
                   onChange={(e) => setPhase(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder="e.g., mvp, v1, polish"
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                  className={INPUT_CLASS}
                 />
               </div>
             </div>
             
             {/* Source Ref & Due Date (side by side) */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {!isEditing && (
                 <div>
-                  <label className="block text-sm font-medium text-zinc-300 mb-1">
+                  <label className={LABEL_CLASS}>
                     Source Reference
                   </label>
                   <input
@@ -408,50 +430,50 @@ export function TaskModal({
                     onChange={(e) => setSourceRef(e.target.value)}
                     onKeyDown={handleKeyDown}
                     placeholder="e.g., issue #123, email ID"
-                    className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                    className={INPUT_CLASS}
                   />
                 </div>
               )}
               
               <div className={!isEditing ? '' : 'col-span-2'}>
-                <label className="block text-sm font-medium text-zinc-300 mb-1">
+                <label className={LABEL_CLASS}>
                   Due Date
                 </label>
                 <input
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}
-                  className="w-full px-3 py-2 bg-zinc-800 border border-zinc-600 rounded-lg text-white focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-500"
+                  className={INPUT_CLASS}
                 />
               </div>
             </div>
             
             {/* Error message */}
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                <p className="text-sm text-red-400">{error}</p>
+              <div className="border border-danger/30 bg-danger/10 p-3">
+                <p className="text-sm text-danger">{error}</p>
               </div>
             )}
           </div>
           
           {/* Footer */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-zinc-700 bg-zinc-800/50">
-            <span className="text-xs text-zinc-500">
-              Press <kbd className="px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-300">Cmd</kbd>+<kbd className="px-1.5 py-0.5 bg-zinc-700 rounded text-zinc-300">Enter</kbd> to save
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-surface px-4 py-3">
+            <span className="text-xs text-muted-foreground">
+              Press <kbd className="border border-border bg-surface-secondary px-1.5 py-0.5 text-foreground">Cmd</kbd>+<kbd className="border border-border bg-surface-secondary px-1.5 py-0.5 text-foreground">Enter</kbd> to save
             </span>
             
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-zinc-400 hover:text-white rounded-lg font-medium text-sm transition-colors"
+                className="h-9 px-4 text-sm font-medium text-muted-foreground transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSaving || !subject.trim() || !description.trim()}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-600/50 text-white rounded-lg font-medium text-sm transition-colors disabled:cursor-not-allowed"
+                className="flex h-9 items-center gap-2 bg-accent px-4 text-sm font-medium text-accent-foreground transition-colors hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isSaving ? (
                   <>Saving...</>

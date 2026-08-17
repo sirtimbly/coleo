@@ -6,6 +6,8 @@ import { join } from "path";
 import { initMaildir, Maildir } from "../../mail";
 import { ImapServer } from "../../imap/server";
 
+const IMAP_TEST_TIMEOUT_MS = 15_000;
+
 interface ImapResponse {
   line: string;
   taggedLines: string[];
@@ -31,7 +33,7 @@ describe("ImapServer", () => {
     } finally {
       await cleanupImapFixture(fixture);
     }
-  });
+  }, IMAP_TEST_TIMEOUT_MS);
 
   it("rejects invalid credentials", async () => {
     const fixture = await createImapFixture();
@@ -42,7 +44,7 @@ describe("ImapServer", () => {
     } finally {
       await cleanupImapFixture(fixture);
     }
-  });
+  }, IMAP_TEST_TIMEOUT_MS);
 });
 
 interface ImapFixture {

@@ -7,7 +7,7 @@ export interface Arm {
   id: string;
   name: string;
   agent: "opencode" | "claude-code" | string;
-  status: "starting" | "running" | "idle" | "busy" | "stopped" | "error";
+  status: "starting" | "running" | "idle" | "busy" | "paused" | "planning_blocked" | "stopped" | "error";
   pid?: number;
   startedAt: Date;
   lastActivity?: Date;
@@ -33,7 +33,7 @@ export interface Task {
   id: string;
   subject: string;
   description: string;
-  status: "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked" | "cancelled";
+  status: "draft" | "pending" | "claimed" | "in_progress" | "completing" | "completed" | "failed" | "blocked" | "cancelled";
   priority: "critical" | "high" | "normal" | "low";
   sourceType?: "manual" | "plan" | "email" | "discovery" | "proposal" | "system";
   sourceRef?: string | null;
@@ -59,7 +59,7 @@ export interface Task {
   completedAt?: Date;
   blockedAt?: Date;
 	blockedReason?: string;
-	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "unknown";
+	blockedCategory?: "dependency" | "bug" | "file_claim" | "environment" | "human" | "arm" | "planning" | "unknown";
 	blockedRecheckAt?: Date;
 	blockedLastCheckedAt?: Date;
 	blockedReviewCount?: number;
@@ -524,7 +524,7 @@ export const DEFAULT_CONFIG: ColeoConfig = {
     harness: "opencode-api",
     provider: "opencode",
     model: "gpt-5.1-codex-mini",
-    contextBudget: 100000,
+    contextBudget: 300000,
   },
   compression: {
     warningThreshold: 80,

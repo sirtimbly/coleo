@@ -1,17 +1,20 @@
+/**
+ * Task workbench projection and dedicated task detail views.
+ *
+ * The list surface switches between a shared Tabulator sheet and Adaptive Card
+ * collection; richer task views still open as separate workspace panels.
+ */
 import React, { useMemo, useState, useCallback, useDeferredValue, useEffect, useRef } from "react";
 import {
-	Plus,
 	Clock,
 	CheckCircle2,
 	XCircle,
 	AlertTriangle,
 	Pause,
-	RefreshCw,
 	ChevronUp,
 	ChevronDown,
 	Sparkles,
 	X,
-	Search,
 	FileText,
 	MessageSquare,
 	ScrollText,
@@ -20,20 +23,28 @@ import {
 	Pencil,
 	RotateCcw,
 	Ban,
+	ExternalLink,
 } from "lucide-react";
 import { Button, Chip, Card, Dropdown, Label, Separator } from "@heroui/react";
+import { AdaptiveCardView, DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import {
+	BRAIN_CARD_CREATOR,
+	USER_CARD_CREATOR,
+} from "@/adaptive-cards/card-creators";
+import { presentTaskCard } from "@/adaptive-cards/task-presenter";
 import {
 	type Task,
 	type TaskLlmMetadata,
 	type TaskMetadata,
 	type TaskUiMetadata,
+	api,
 	cn,
 	isJsonObject,
 } from "@/lib";
-import { CollapsibleSection, StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
+import { StatusBurndownChart, TaskModal, TaskDiscussionPanel, TaskSummaryPanel, TaskDiffPanel, TaskWorkflowHelp } from "@/components";
 import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
-import { TaskGrid } from "@/components/TaskGrid";
-import type { TaskUpdate } from "@/components/TaskGridRow";
+import type { TaskUpdate } from "@/workbench/resource-updates";
+import type { ResourceSheetRowMove } from "@/workbench/ResourceSheet";
 import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
@@ -46,8 +57,54 @@ import {
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
+import {
+	SheetInsightPanel,
+	SheetWorkspaceToolbar,
+	type SheetInsight,
+} from "@/design-system/SheetWorkspaceToolbar";
+import { normalizeRowColor, RowFormattingToolbar } from "@/design-system/RowFormattingToolbar";
+import { AdaptiveCardCollection } from "@/workbench/AdaptiveCardCollection";
+import { useCollectionDisplayPreferences } from "@/workbench/collection-display";
+import { projectResourceCollection } from "@/workbench/resource-sheet-model";
+import { useViewPreferences } from "@/workbench/use-view-preferences";
+import { ViewConfigurator, type ConfigurableColumn } from "@/workbench/ViewConfigurator";
+import type { CardActionRequest } from "../../../types/adaptive-cards";
 
 type SidebarTab = "details" | "summary" | "diff" | "discussions";
+
+const TASK_VIEW_COLUMNS: ConfigurableColumn[] = [
+	{ id: "subject", header: "Subject", defaultWidth: 360, hideable: false },
+	{ id: "status", header: "Status", defaultWidth: 128 },
+	{ id: "priority", header: "Priority", defaultWidth: 104 },
+	{ id: "phase", header: "Phase", defaultWidth: 130 },
+	{ id: "domain", header: "Domain", defaultWidth: 120 },
+	{ id: "assignedArm", header: "Arm", defaultWidth: 140 },
+	{ id: "progress", header: "Progress", defaultWidth: 92 },
+	{ id: "sourceType", header: "Source", defaultWidth: 104 },
+	{ id: "tags", header: "Tags", defaultWidth: 180 },
+	{ id: "updatedAt", header: "Updated", defaultWidth: 170 },
+];
+
+const TASK_COLLECTION_COLUMNS = [
+	{ id: "subject", read: (task: Task) => task.subject },
+	{ id: "status", read: (task: Task) => task.status },
+	{ id: "priority", read: (task: Task) => task.priority },
+	{ id: "phase", read: (task: Task) => task.phase ?? "" },
+	{ id: "domain", read: (task: Task) => task.domain ?? "" },
+	{ id: "assignedArm", read: (task: Task) => task.assignedArmName ?? task.assignedTo ?? "" },
+	{ id: "progress", read: (task: Task) => task.progress ?? 0 },
+	{ id: "sourceType", read: (task: Task) => task.sourceType },
+	{ id: "tags", read: (task: Task) => task.metadata.ui?.tags ?? [] },
+	{ id: "updatedAt", read: (task: Task) => task.updatedAt },
+];
+
+const TaskSheet = React.lazy(() =>
+	import("@/workbench/TaskSheet").then((module) => ({ default: module.TaskSheet }))
+);
+
+function taskCardCreator(task: Task) {
+	return task.sourceType === "manual" ? USER_CARD_CREATOR : BRAIN_CARD_CREATOR;
+}
 
 // Status configuration
 const STATUS_CONFIG: Record<
@@ -59,6 +116,12 @@ const STATUS_CONFIG: Record<
 		label: string;
 	}
 > = {
+	draft: {
+		color: "text-cyan-500",
+		bgColor: "bg-cyan-500/10",
+		icon: Pencil,
+		label: "Draft",
+	},
 	in_progress: {
 		color: "text-yellow-500",
 		bgColor: "bg-yellow-500/10",
@@ -135,28 +198,52 @@ const PRIORITY_CONFIG: Record<
 	low: { color: "text-gray-500", bgColor: "bg-gray-500/20", label: "Low" },
 };
 
-function TaskTimeline({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
+function TaskActivity({ tasks, onOpenTask }: { tasks: Task[]; onOpenTask: (task: Task) => void }) {
 	const { current, upcoming, completed } = useMemo(() => selectTaskTimeline(tasks), [tasks]);
 
 	return (
-		<CollapsibleSection
-			title="Live timeline"
-			summary={[
-				{ label: "Current", value: current ? STATUS_CONFIG[current.status].label : "None", tone: current ? "accent" : "default" },
-				{ label: "Next", value: upcoming ? "Ready" : "None", tone: upcoming ? "success" : "default" },
-				{ label: "Recent", value: completed.length },
-			]}
-		className="shrink-0 rounded-none border-x-0 border-t-0 bg-surface-secondary/40"
-			bodyClassName="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]"
-		>
-				<TimelineTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
-				<TimelineTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
-				<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
-		</CollapsibleSection>
+		<div className="grid gap-3 bg-surface-secondary/40 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(16rem,1.3fr)]">
+			<ActivityTaskCard label="Current" task={current} timestamp={current?.startedAt ?? current?.claimedAt ?? current?.updatedAt} empty="No task is currently active." tone="accent" onOpenTask={onOpenTask} />
+			<ActivityTaskCard label="Up next" task={upcoming} timestamp={upcoming?.dueDate ?? upcoming?.createdAt} empty="No runnable task is queued." tone="default" onOpenTask={onOpenTask} />
+			<div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-success" /><span className="text-sm font-medium">Recently completed</span></div>{completed.length ? <div className="space-y-1">{completed.map((task) => <button key={task.id} type="button" onClick={() => onOpenTask(task)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-success/10"><span className="h-1.5 w-1.5 shrink-0 rounded-full bg-success" /><span className="min-w-0 flex-1 truncate text-sm">{task.subject}</span><time className="shrink-0 text-xs text-muted-foreground">{formatTimelineTime(task.completedAt)}</time></button>)}</div> : <p className="text-sm text-muted-foreground">No completed tasks in the loaded timeline.</p>}</div>
+		</div>
 	);
 }
 
-function TimelineTaskCard({ label, task, timestamp, empty, tone, onOpenTask }: { label: string; task: Task | undefined; timestamp: string | null | undefined; empty: string; tone: "accent" | "default"; onOpenTask: (task: Task) => void }) {
+function TaskInsightPanel({
+	activeInsight,
+	tasks,
+	burndownRefresh,
+	onOpenTask,
+}: {
+	activeInsight: SheetInsight;
+	tasks: Task[];
+	burndownRefresh: number;
+	onOpenTask: (task: Task) => void;
+}) {
+	if (activeInsight === null) return null;
+
+	return (
+		<SheetInsightPanel
+			resourceKey="task"
+			resourceName="Task"
+			activeInsight={activeInsight}
+		>
+			{activeInsight === "burndown" ? (
+				<StatusBurndownChart
+					entity="task"
+					refreshKey={burndownRefresh}
+					embedded
+					className="rounded-none border-0"
+				/>
+			) : (
+				<TaskActivity tasks={tasks} onOpenTask={onOpenTask} />
+			)}
+		</SheetInsightPanel>
+	);
+}
+
+function ActivityTaskCard({ label, task, timestamp, empty, tone, onOpenTask }: { label: string; task: Task | undefined; timestamp: string | null | undefined; empty: string; tone: "accent" | "default"; onOpenTask: (task: Task) => void }) {
 	return <div className="rounded-lg border border-border bg-background/70 p-3"><div className="mb-2 flex items-center gap-2"><Clock className={`h-4 w-4 ${tone === "accent" ? "text-accent" : "text-muted-foreground"}`} /><span className="text-sm font-medium">{label}</span></div>{task ? <button type="button" onClick={() => onOpenTask(task)} className="block w-full rounded text-left hover:bg-accent/5"><p className="truncate text-sm font-medium">{task.subject}</p><div className="mt-1 flex items-center justify-between gap-2"><Chip size="sm" variant="secondary">{STATUS_CONFIG[task.status].label}</Chip><time className="truncate text-xs text-muted-foreground">{formatTimelineTime(timestamp)}</time></div></button> : <p className="text-sm text-muted-foreground">{empty}</p>}</div>;
 }
 
@@ -246,6 +333,8 @@ function TaskDetailsToolbar({
 	onPriorityChange,
 	task,
 	onEdit,
+	cardEditing,
+	onCardEditToggle,
 	onStatusChange,
 	onClose,
 }: {
@@ -257,6 +346,8 @@ function TaskDetailsToolbar({
 	onPriorityChange: (taskId: string, priority: Task["priority"]) => void;
 	task: Task;
 	onEdit: (status?: Task["status"]) => void;
+	cardEditing: boolean;
+	onCardEditToggle: () => void;
 	onStatusChange: (status: Task["status"]) => void;
 	onClose?: () => void;
 }) {
@@ -305,22 +396,30 @@ function TaskDetailsToolbar({
 				</Button>
 				<Dropdown.Popover placement="bottom end" className="min-w-[220px]">
 					<Dropdown.Menu
-						onAction={(key) => {
-							if (key === "edit" || key === "blocked") {
-								onEdit(key === "blocked" ? "blocked" : undefined);
-								return;
-							}
-							if (typeof key === "string" && key.startsWith("status:")) {
+					onAction={(key) => {
+						if (key === "card-edit") {
+							onCardEditToggle();
+							return;
+						}
+						if (key === "blocked") onEdit("blocked");
+						if (typeof key === "string" && key.startsWith("status:")) {
 								const status = key.slice("status:".length);
 								if (isTaskStatus(status)) onStatusChange(status);
 							}
 						}}
 					>
-						<Dropdown.Item id="edit" textValue="Edit task">
-							<Pencil className="h-4 w-4 text-muted-foreground" />
-							<Label>Edit task</Label>
-						</Dropdown.Item>
+					<Dropdown.Item
+						id="card-edit"
+						textValue={cardEditing ? "Cancel task card editing" : "Edit task card"}
+					>
+						<FileText className="h-4 w-4 text-muted-foreground" />
+						<Label>{cardEditing ? "Cancel card editing" : "Edit task card"}</Label>
+					</Dropdown.Item>
 						<Separator />
+						<Dropdown.Item id="status:draft" textValue="Move to draft">
+							<Pencil className="h-4 w-4 text-cyan-500" />
+							<Label>Move to draft</Label>
+						</Dropdown.Item>
 						<Dropdown.Item id="status:pending" textValue="Move to pending">
 							<RotateCcw className="h-4 w-4 text-muted-foreground" />
 							<Label>{task.status === "blocked" ? "Unblock to pending" : "Move to pending"}</Label>
@@ -359,157 +458,6 @@ function TaskDetailsToolbar({
 	);
 }
 
-function formatAbsoluteDateTime(iso: string): string {
-	return new Date(iso).toLocaleString(undefined, {
-		dateStyle: "medium",
-		timeStyle: "short",
-	});
-}
-
-function formatRelativeAge(iso: string): string {
-	const diffMs = Date.now() - new Date(iso).getTime();
-	const diffSeconds = Math.floor(diffMs / 1000);
-	if (diffSeconds < 60) return "just now";
-	const diffMinutes = Math.floor(diffSeconds / 60);
-	if (diffMinutes < 60) return `${diffMinutes}m ago`;
-	const diffHours = Math.floor(diffMinutes / 60);
-	if (diffHours < 24) return `${diffHours}h ago`;
-	const diffDays = Math.floor(diffHours / 24);
-	if (diffDays < 30) return `${diffDays}d ago`;
-	const diffMonths = Math.floor(diffDays / 30);
-	if (diffMonths < 12) return `${diffMonths}mo ago`;
-	const diffYears = Math.floor(diffMonths / 12);
-	return `${diffYears}y ago`;
-}
-
-function TaskCreatedAt({ createdAt }: { createdAt: string }) {
-	return (
-		<span
-			className="inline-flex items-center gap-1 text-xs text-foreground-500"
-			title={formatAbsoluteDateTime(createdAt)}
-		>
-			<Clock className="h-3 w-3" />
-			Created {formatRelativeAge(createdAt)}
-		</span>
-	);
-}
-
-function BlockedTaskNotice({ task }: { task: Task }) {
-	if (task.status !== "blocked") return null;
-
-	return (
-		<div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5">
-			<div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-				<Pause className="h-3.5 w-3.5" />
-				Current blocker
-			</div>
-			<p className="readable-copy mt-1.5 whitespace-pre-wrap">
-				{task.blockedReason || "No reason was recorded. The next review must add one."}
-			</p>
-			<div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-				<span>Category: {(task.blockedCategory || "unknown").replace("_", " ")}</span>
-				{task.blockedRecheckAt ? (
-					<span>Next review: {formatAbsoluteDateTime(task.blockedRecheckAt)}</span>
-				) : null}
-				{task.blockedReviewCount ? <span>Reviews: {task.blockedReviewCount}</span> : null}
-				{task.blockedNeedsHuman ? <span className="font-medium text-amber-700 dark:text-amber-300">Waiting for human input</span> : null}
-			</div>
-		</div>
-	);
-}
-
-/**
- * Description field that shows an explicit empty state (instead of silently
- * rendering nothing) and lets you add/edit the description inline.
- */
-function TaskDescriptionField({
-	taskId,
-	description,
-	onSave,
-}: {
-	taskId: string;
-	description: string;
-	onSave: (taskId: string, description: string) => void;
-}) {
-	const [isEditing, setIsEditing] = useState(false);
-	const [draft, setDraft] = useState(description);
-
-	useEffect(() => {
-		if (!isEditing) setDraft(description);
-	}, [description, isEditing]);
-
-	const handleSave = () => {
-		const trimmed = draft.trim();
-		setIsEditing(false);
-		if (trimmed !== description) {
-			onSave(taskId, trimmed);
-		}
-	};
-
-	const handleCancel = () => {
-		setDraft(description);
-		setIsEditing(false);
-	};
-
-	if (isEditing) {
-		return (
-			<div className="space-y-2">
-				<textarea
-					autoFocus
-					value={draft}
-					onChange={(event) => setDraft(event.target.value)}
-					onKeyDown={(event) => {
-						if (event.key === "Escape") {
-							event.preventDefault();
-							handleCancel();
-						} else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-							event.preventDefault();
-							handleSave();
-						}
-					}}
-					placeholder="Add a description for this task..."
-					rows={4}
-					className="readable-copy w-full resize-none rounded-md border border-border/70 bg-content2 px-3 py-2 focus:outline-none focus:ring-1 focus:ring-accent"
-				/>
-				<div className="flex items-center gap-2">
-					<Button size="sm" variant="primary" onPress={handleSave}>
-						Save
-					</Button>
-					<Button size="sm" variant="ghost" onPress={handleCancel}>
-						Cancel
-					</Button>
-					<span className="text-xs text-foreground-500">⌘⏎ to save · Esc to cancel</span>
-				</div>
-			</div>
-		);
-	}
-
-	if (!description.trim()) {
-		return (
-			<button
-				type="button"
-				onClick={() => setIsEditing(true)}
-				className="w-full rounded-md border border-dashed border-border/70 px-3 py-3 text-left text-sm text-foreground-500 transition-colors hover:border-accent hover:text-foreground"
-			>
-				No description yet — click to add one
-			</button>
-		);
-	}
-
-	return (
-		<button
-			type="button"
-			onClick={() => setIsEditing(true)}
-			className="w-full rounded-md px-3 py-2 -mx-3 text-left text-sm transition-colors hover:bg-content2"
-			title="Click to edit"
-		>
-			<p className="readable-copy whitespace-pre-wrap">
-				{description}
-			</p>
-		</button>
-	);
-}
-
 export function TasksPage() {
 	const queryClient = useQueryClient();
 	const isWorkspacePanel = useIsWorkspacePanel();
@@ -524,29 +472,48 @@ export function TasksPage() {
 	const [editingTask, setEditingTask] = useState<Task | undefined>(undefined);
 	const [editingStatus, setEditingStatus] = useState<Task["status"] | undefined>(undefined);
 	const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+	const [cardEditTaskId, setCardEditTaskId] = useState<string | null>(null);
 	const [sidebarTab, setSidebarTab] = useState<SidebarTab>("details");
 	const [discussionCount, setDiscussionCount] = useState(0);
+	const [activeInsight, setActiveInsight] = useState<SheetInsight>(null);
 	const [deleteConfirm, setDeleteConfirm] = useState<{
 		show: boolean;
 		task: Task | null;
 	}>({ show: false, task: null });
-	const [newTaskId, setNewTaskId] = useState<string | null>(null);
 	const [burndownRefresh, setBurndownRefresh] = useState(0);
+	const [configuringView, setConfiguringView] = useState(false);
+	const [formattingTask, setFormattingTask] = useState<Task>();
+	const { display, updateDisplay } = useCollectionDisplayPreferences({
+		viewId: "tasks-display",
+		name: "Tasks",
+		resourceKind: "task",
+	});
+	const taskView = useViewPreferences("tasks-sheet", {
+		id: "tasks-sheet",
+		name: "Tasks",
+		kind: "sheet",
+		resourceKind: "task",
+		description: "Task collection filters, sorting, and grid columns",
+		query: { resourceKinds: ["task"] },
+		preferences: { density: "compact", sort: [] },
+		shared: false,
+	});
+	const taskViewPreferences = useMemo(
+		() => taskView.preferences.density === display.density
+			? taskView.preferences
+			: { ...taskView.preferences, density: display.density },
+		[display.density, taskView.preferences],
+	);
+	const draftsOnly = (taskViewPreferences.filters ?? []).some((filter) =>
+		filter.field === "status" && filter.operator === "equals" && filter.value === "draft"
+	);
 	const deferredSearchText = useDeferredValue(searchText);
 	const taskRefreshTimerRef = useRef<number | null>(null);
 	const pendingBurndownRefreshRef = useRef(false);
-	const newTaskHighlightTimerRef = useRef<number | null>(null);
 	const detailsTabId: SidebarTab = "details";
 	const summaryTabId: SidebarTab = "summary";
 	const diffTabId: SidebarTab = "diff";
 	const discussionsTabId: SidebarTab = "discussions";
-	const openNewTaskPanel = useCallback(() => {
-		openWorkspaceRoute(
-			{ pathname: "/tasks", search: "?new=1", title: "New Task" },
-			"action",
-		);
-	}, [openWorkspaceRoute]);
-
 	const taskModal = (
 		<TaskModal
 			isOpen={isModalOpen}
@@ -573,15 +540,13 @@ export function TasksPage() {
 		error,
 		refetch,
 		updateTask,
-		reorderTask,
 		createTaskAsync,
+		reorderTaskAsync,
 		deleteTask,
 		removeFromPlan,
 		hasNextPage,
-		isFetchingNextPage,
-		isFetchNextPageError,
 		fetchNextPage,
-	} = useTasks(undefined, !isNewTaskPage);
+	} = useTasks(draftsOnly ? { status: "draft" } : undefined, !isNewTaskPage);
 	const tasksRef = useRef(tasks);
 	tasksRef.current = tasks;
 
@@ -595,17 +560,7 @@ export function TasksPage() {
 		};
 	}, []);
 
-	const availableTags = useMemo(() => {
-		const tagSet = new Set<string>();
-		tasks.forEach((task) => {
-			getTaskUiMeta(task).tags?.forEach((tag) => {
-				tagSet.add(tag);
-			});
-		});
-		return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
-	}, [tasks, getTaskUiMeta]);
-
-	const filteredTasks = useMemo(() => {
+	const searchedTasks = useMemo(() => {
 		let result = tasks;
 
 		if (deferredSearchText.trim()) {
@@ -620,10 +575,43 @@ export function TasksPage() {
 
 		return result;
 	}, [deferredSearchText, tasks]);
-
+	const filteredTasks = useMemo(
+		() => projectResourceCollection(searchedTasks, TASK_COLLECTION_COLUMNS, taskViewPreferences),
+		[searchedTasks, taskViewPreferences],
+	);
+	const visibleTaskCount = filteredTasks.length;
+	const toggleDraftsOnly = useCallback(() => {
+		const filters = taskView.preferences.filters ?? [];
+		taskView.updatePreferences({
+			...taskView.preferences,
+			filters: draftsOnly
+				? filters.filter((filter) => !(filter.field === "status" && filter.operator === "equals" && filter.value === "draft"))
+				: [...filters.filter((filter) => filter.field !== "status"), { field: "status", operator: "equals", value: "draft" }],
+		});
+	}, [draftsOnly, taskView]);
+	const openNewTaskPanel = useCallback(() => {
+		openWorkspaceRoute(
+			{
+				pathname: "/tasks",
+				search: draftsOnly ? "?new=1&draft=1" : "?new=1",
+				title: "New Task",
+			},
+			"action",
+		);
+	}, [draftsOnly, openWorkspaceRoute]);
+	const draftFilterControl = (
+		<Button
+			size="sm"
+			variant={draftsOnly ? "secondary" : "ghost"}
+			aria-pressed={draftsOnly}
+			onPress={toggleDraftsOnly}
+			className="h-8 shrink-0"
+		>
+			<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+			Drafts Only
+		</Button>
+	);
 	useEffect(() => {
-		if (!isWorkspacePanel) return;
-
 		const taskId = searchParams.get("task");
 		const view = searchParams.get("view");
 		setSidebarTab(view === "discussions" ? "discussions" : "details");
@@ -634,7 +622,7 @@ export function TasksPage() {
 		}
 
 		setSelectedTask(tasks.find((task) => task.id === taskId) || null);
-	}, [isWorkspacePanel, searchParams, tasks]);
+	}, [searchParams, tasks]);
 
 	const handleUpdateTask = useCallback(
 		async (taskId: string, updates: TaskUpdate) => {
@@ -650,6 +638,18 @@ export function TasksPage() {
 		setEditingStatus(status);
 		setIsModalOpen(true);
 	}, [selectedTask]);
+	const handleToggleTaskCardEditor = useCallback(() => {
+		if (!selectedTask) return;
+		setCardEditTaskId((current) => current === selectedTask.id ? null : selectedTask.id);
+	}, [selectedTask]);
+	const handleTaskCardAction = useCallback(async (request: CardActionRequest) => {
+		await api.executeWorkbenchCardAction(request);
+		setCardEditTaskId(null);
+		await queryClient.invalidateQueries({
+			queryKey: tasksKeys.all(),
+			refetchType: "active",
+		});
+	}, [queryClient]);
 
 	const handleStatusChange = useCallback(
 		(status: Task["status"]) => {
@@ -732,49 +732,46 @@ export function TasksPage() {
 				history: [{ role: "user", content: subject, at: now }],
 			};
 			try {
-				const result = await createTaskAsync({
+				const created = await createTaskAsync({
 					subject,
 					description: subject,
+					status: "draft",
 					priority: "normal",
 					metadata: {
 						ui: { tags: [], bold: false, color: "slate", llm: llmMeta },
 					},
 					sortOrder: index,
 				});
-				// Set the new task ID to trigger scroll
-				if (result?.id) {
-					setNewTaskId(result.id);
-					// Clear after 3 seconds
-					if (newTaskHighlightTimerRef.current !== null) {
-						window.clearTimeout(newTaskHighlightTimerRef.current);
-					}
-					newTaskHighlightTimerRef.current = window.setTimeout(() => {
-						newTaskHighlightTimerRef.current = null;
-						setNewTaskId(null);
-					}, 3000);
-				}
+				await reorderTaskAsync({
+					taskId: created.id,
+					fromSortOrder: created.sortOrder ?? tasksRef.current.length,
+					toSortOrder: index,
+					prevTaskId: tasksRef.current[index - 1]?.id ?? null,
+					nextTaskId: tasksRef.current[index]?.id ?? null,
+				});
 			} catch {
 				// Error is handled by the mutation
 			}
 		},
-		[createTaskAsync],
+		[createTaskAsync, reorderTaskAsync],
 	);
 
-	const handleReorder = useCallback(
-		(taskId: string, fromSortOrder: number, toSortOrder: number, prevTaskId?: string | null, nextTaskId?: string | null) => {
-			if (!taskId) return;
-			reorderTask({ taskId, fromSortOrder, toSortOrder, prevTaskId, nextTaskId });
+	const handleRowsMove = useCallback(
+		async (moves: ResourceSheetRowMove<Task>[]) => {
+			for (const move of moves) {
+				await reorderTaskAsync({
+					taskId: move.row.id,
+					fromSortOrder: move.row.sortOrder ?? move.fromIndex,
+					toSortOrder: move.toIndex,
+					prevTaskId: move.previousRow?.id ?? null,
+					nextTaskId: move.nextRow?.id ?? null,
+				});
+			}
 		},
-		[reorderTask],
+		[reorderTaskAsync],
 	);
 
   const handleOpenDetails = useCallback((task: Task) => {
-    if (!isWorkspacePanel) {
-      setSelectedTask(task);
-      setSidebarTab("details");
-      return;
-    }
-
     const nextSearchParams = new URLSearchParams(searchParams);
     nextSearchParams.set("task", task.id);
     nextSearchParams.set("view", "details");
@@ -782,29 +779,107 @@ export function TasksPage() {
       {
         pathname: "/tasks",
         search: `?${nextSearchParams.toString()}`,
+        title: task.subject,
       },
       "split",
     );
-  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
-
-  const handleOpenDiscussions = useCallback((task: Task) => {
-    if (!isWorkspacePanel) {
-      setSelectedTask(task);
-      setSidebarTab("discussions");
-      return;
-    }
-
-    const nextSearchParams = new URLSearchParams(searchParams);
-    nextSearchParams.set("task", task.id);
-    nextSearchParams.set("view", "discussions");
-    openWorkspaceRoute(
-      {
-        pathname: "/tasks",
-        search: `?${nextSearchParams.toString()}`,
-      },
-      "split",
-    );
-  }, [isWorkspacePanel, openWorkspaceRoute, searchParams]);
+  }, [openWorkspaceRoute, searchParams]);
+	const taskCardCollection = (
+		<AdaptiveCardCollection
+			items={filteredTasks}
+			columns={display.cardColumns}
+			presentation={display.cardPresentation}
+			getKey={(task) => task.id}
+			renderCard={(task, presentation) => (
+				<DeferredAdaptiveCardView
+					envelope={presentTaskCard(
+						task,
+						cardEditTaskId === task.id,
+						taskCardCreator(task),
+					)}
+					onAction={handleTaskCardAction}
+					presentationMode={presentation}
+					headerActions={(
+						<Button
+							isIconOnly
+							size="sm"
+							variant={cardEditTaskId === task.id ? "secondary" : "ghost"}
+							aria-label={cardEditTaskId === task.id ? `Cancel editing ${task.subject}` : `Edit ${task.subject}`}
+							aria-pressed={cardEditTaskId === task.id}
+							onPress={() => setCardEditTaskId((current) => current === task.id ? null : task.id)}
+							className="h-7 min-h-7 w-7 min-w-7"
+						>
+							<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+						</Button>
+					)}
+					footerActions={cardEditTaskId === task.id ? undefined : (
+						<>
+							<Button size="sm" variant="ghost" onPress={() => handleOpenDetails(task)}>
+								<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+								View Task
+							</Button>
+							{task.sourceType === "plan" || task.planLineUid ? (
+								<Button
+									size="sm"
+									variant="ghost"
+									onPress={() => openWorkspaceRoute(
+										{ pathname: "/setup", search: "", title: "Plan & Documents" },
+										"split",
+									)}
+								>
+									<FileText className="h-3.5 w-3.5" aria-hidden="true" />
+									View Plan
+								</Button>
+							) : null}
+						</>
+					)}
+				/>
+			)}
+		/>
+	);
+	const selectedTaskCardEditAction = selectedTask ? (
+		<Button
+			isIconOnly
+			size="sm"
+			variant={cardEditTaskId === selectedTask.id ? "secondary" : "ghost"}
+			aria-label={cardEditTaskId === selectedTask.id ? "Cancel task card editing" : "Edit task card"}
+			aria-pressed={cardEditTaskId === selectedTask.id}
+			onPress={handleToggleTaskCardEditor}
+			className="h-7 min-h-7 w-7 min-w-7"
+		>
+			<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+		</Button>
+	) : undefined;
+	const taskSort = taskViewPreferences.sort?.[0];
+	const taskSortLabel = taskSort
+		? `${TASK_VIEW_COLUMNS.find((column) => column.id === taskSort.field)?.header ?? taskSort.field} ${taskSort.direction === "desc" ? "↓" : "↑"}`
+		: undefined;
+	const taskGridControls = formattingTask ? (
+		<RowFormattingToolbar
+			label={formattingTask.subject}
+			value={{
+				bold: formattingTask.metadata.ui?.bold ?? false,
+				color: normalizeRowColor(formattingTask.metadata.ui?.color),
+			}}
+			onChange={(updates) => handleUpdateTask(formattingTask.id, {
+				metadata: {
+					...formattingTask.metadata,
+					ui: { ...formattingTask.metadata.ui, ...updates },
+				},
+			})}
+		/>
+	) : undefined;
+	const taskViewConfigurator = (
+		<ViewConfigurator
+			open={configuringView}
+			columns={TASK_VIEW_COLUMNS}
+			preferences={taskViewPreferences}
+			shared={taskView.view.shared}
+			onChange={taskView.updatePreferences}
+			onSharedChange={(shared) => void taskView.updateShared(shared)}
+			onClose={() => setConfiguringView(false)}
+		/>
+	);
 
 	const handleRemoveTagFromTask = useCallback(
 		(taskId: string, tagToRemove: string) => {
@@ -854,7 +929,6 @@ export function TasksPage() {
 
 	useEffect(() => () => {
 		if (taskRefreshTimerRef.current !== null) window.clearTimeout(taskRefreshTimerRef.current);
-		if (newTaskHighlightTimerRef.current !== null) window.clearTimeout(newTaskHighlightTimerRef.current);
 	}, []);
 
 	// Handle WebSocket messages for real-time updates
@@ -910,9 +984,15 @@ export function TasksPage() {
 			<TaskModal
 				isOpen
 				presentation="panel"
+				initialStatus={searchParams.get("draft") === "1" || (searchParams.get("draft") === null && draftsOnly)
+					? "draft"
+					: "pending"}
 				onClose={closeWorkspaceRoute}
 				onSaved={() => {
-					void refetch();
+					void queryClient.invalidateQueries({
+						queryKey: tasksKeys.all(),
+						refetchType: "active",
+					});
 				}}
 			/>
 		);
@@ -925,85 +1005,70 @@ export function TasksPage() {
 		updateTask({ id: taskId, updates: { priority: newPriority } });
 	};
 
-	if (isWorkspacePanel) {
-		const workspaceListHeader = (
-			<header className="flex items-center gap-2 border-b border-border bg-background px-3 py-2">
-				<div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-					<div className="relative w-48 shrink-0">
-						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-						<input
-							type="text"
-							placeholder="Search tasks..."
-							value={searchText}
-							onChange={(e) => setSearchText(e.target.value)}
-							className="h-9 w-full rounded-md border border-border bg-surface-secondary px-8 text-sm focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-						/>
-					</div>
-					<div className="shrink-0 text-xs text-muted-foreground">
-						{counts?.total ?? 0} total
-					</div>
-				</div>
-				<div className="flex shrink-0 items-center gap-2">
-					<TaskWorkflowHelp />
-					<Button isIconOnly size="sm" variant="ghost" onPress={() => refetch()} aria-label="Refresh">
-						<RefreshCw className="h-4 w-4" />
-					</Button>
-					<Button
-						size="sm"
-						variant="primary"
-						onPress={openNewTaskPanel}
-					>
-						<Plus className="mr-1.5 h-4 w-4" />
-						New
-					</Button>
-				</div>
-			</header>
-		);
-
+	if (isWorkspacePanel || searchParams.has("task")) {
 		if (!selectedTask) {
 			return (
 				<>
 					<div className="flex h-full min-h-0 flex-col bg-background">
-						{workspaceListHeader}
-						<StatusBurndownChart
-							entity="task"
-							refreshKey={burndownRefresh}
-							defaultExpanded={false}
-							className="shrink-0 rounded-none border-x-0 border-t-0"
+						<SheetWorkspaceToolbar
+							screenId="tasks"
+							resourceKey="task"
+							resourceName="Tasks"
+							searchText={searchText}
+							onSearchTextChange={setSearchText}
+							searchPlaceholder="Search tasks…"
+							total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+							visible={visibleTaskCount}
+							activeInsight={activeInsight}
+							onInsightChange={setActiveInsight}
+							onRefresh={() => {
+								void refetch();
+							}}
+							onNew={openNewTaskPanel}
+							display={display}
+							onDisplayChange={updateDisplay}
+							onConfigure={() => setConfiguringView(true)}
+							filterCount={taskViewPreferences.filters?.length ?? 0}
+							sortLabel={taskSortLabel}
+							extensionWidgets={{
+								"tasks.drafts-only": draftFilterControl,
+								"tasks.workflow-help": <TaskWorkflowHelp />,
+								"tasks.row-formatting": display.mode === "grid" ? taskGridControls : null,
+							}}
 						/>
-						<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-						<CollapsibleSection
-							title="Task list"
-							summary={[
-								{ label: "Total", value: pagination?.total ?? filteredTasks.length },
-								{ label: "Visible", value: filteredTasks.length },
-							]}
-							fill
-							unmountOnCollapse
-							className="rounded-none border-x-0 border-y-0"
-							bodyClassName="p-0"
-						>
-							<TaskGrid
-								className="h-full rounded-none border-0"
-								tasks={filteredTasks}
-								totalTasks={pagination?.total}
-								availableTags={availableTags}
-								selectedTaskId={undefined}
-								newTaskId={newTaskId}
-								onOpenDetails={handleOpenDetails}
-								onOpenDiscussions={handleOpenDiscussions}
-								onUpdateTask={handleUpdateTask}
-								onUpdateUi={handleUpdateUi}
-								onDelete={handleDeleteTask}
-								onCreateTaskAt={handleCreateTaskAt}
-								onReorder={handleReorder}
-								hasNextPage={hasNextPage}
-								isFetchingNextPage={isFetchingNextPage}
-								isLoadMoreError={isFetchNextPageError}
-								onLoadMore={fetchNextPage}
-							/>
-						</CollapsibleSection>
+						{isError && error ? (
+							<div className="flex shrink-0 items-center gap-2 border-b border-danger/20 bg-danger/10 px-4 py-2 text-sm text-danger">
+								<AlertTriangle className="h-4 w-4" aria-hidden="true" />
+								<span>{error.message}</span>
+							</div>
+						) : null}
+						<TaskInsightPanel
+							activeInsight={activeInsight}
+							tasks={tasks}
+							burndownRefresh={burndownRefresh}
+							onOpenTask={handleOpenDetails}
+						/>
+						<div className="min-h-0 flex-1 overflow-hidden">
+							{display.mode === "cards" ? taskCardCollection : <React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={undefined}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
+									hasNextPage={hasNextPage}
+										onLoadMore={fetchNextPage}
+										density={display.density}
+										viewPreferences={taskViewPreferences}
+										onViewPreferencesChange={taskView.updatePreferences}
+										onSelectedTaskChange={setFormattingTask}
+									/>
+							</React.Suspense>}
+						</div>
 					</div>
+					{taskViewConfigurator}
 					{taskModal}
 				</>
 			);
@@ -1021,45 +1086,24 @@ export function TasksPage() {
 						onPriorityChange={handlePriorityChange}
 						task={selectedTask}
 						onEdit={handleEditSelectedTask}
+						cardEditing={cardEditTaskId === selectedTask.id}
+						onCardEditToggle={handleToggleTaskCardEditor}
 						onStatusChange={handleStatusChange}
+						onClose={isWorkspacePanel ? undefined : closeWorkspaceRoute}
 					/>
 
 					{sidebarTab === detailsTabId ? (
 						<div className="flex-1 overflow-auto p-3" role="tabpanel">
-							<div className="space-y-3">
-								<div className="flex items-center justify-between">
-									<span className="text-xs text-muted-foreground font-mono">ID: {selectedTask.id}</span>
-									<TaskCreatedAt createdAt={selectedTask.createdAt} />
-								</div>
-								<div>
-									<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">Description</h5>
-									<p className="mb-1.5 text-sm font-medium text-foreground">{selectedTask.subject}</p>
-									<TaskDescriptionField
-										taskId={selectedTask.id}
-										description={selectedTask.description}
-										onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
-									/>
-								</div>
-								<div className="grid grid-cols-2 gap-3 text-sm">
-									<div>
-										<span className="text-foreground-500">Status</span>
-										<div className="mt-1 flex items-center gap-1">
-											{React.createElement(STATUS_CONFIG[selectedTask.status].icon, {
-												className: "h-3 w-3",
-											})}
-											<span className={STATUS_CONFIG[selectedTask.status].color}>
-												{STATUS_CONFIG[selectedTask.status].label}
-											</span>
-										</div>
-									</div>
-									<div>
-										<span className="text-foreground-500">Assigned</span>
-										<div className="mt-1 text-sm">
-											{selectedTask.assignedArmName ?? "Unassigned"}
-										</div>
-									</div>
-								</div>
-								<BlockedTaskNotice task={selectedTask} />
+							<div className="mx-auto max-w-4xl">
+								<AdaptiveCardView
+									envelope={presentTaskCard(
+										selectedTask,
+										cardEditTaskId === selectedTask.id,
+										taskCardCreator(selectedTask),
+									)}
+									onAction={handleTaskCardAction}
+									headerActions={selectedTaskCardEditAction}
+								/>
 							</div>
 						</div>
 					) : null}
@@ -1092,86 +1136,51 @@ export function TasksPage() {
 	}
 
 	return (
-		<div className="flex flex-col h-full">
-			{/* Header with filters and actions */}
-			<div className="border-b px-4 py-3 bg-content2">
-				<div className="flex items-center justify-between mb-3">
-					<div className="flex items-center space-x-2">
-						<h1 className="text-lg font-semibold">Tasks</h1>
-						<span className="text-sm text-foreground-500">
-							Brain-managed task queue
-						</span>
-					</div>
+		<div className="relative flex h-full min-h-0 flex-col">
+			<SheetWorkspaceToolbar
+				screenId="tasks"
+				resourceKey="task"
+				resourceName="Tasks"
+				searchText={searchText}
+				onSearchTextChange={setSearchText}
+				searchPlaceholder="Search tasks…"
+				total={counts?.total ?? pagination?.total ?? filteredTasks.length}
+				visible={visibleTaskCount}
+				activeInsight={activeInsight}
+				onInsightChange={setActiveInsight}
+				onRefresh={() => {
+					void refetch();
+				}}
+				onNew={openNewTaskPanel}
+				display={display}
+				onDisplayChange={updateDisplay}
+				onConfigure={() => setConfiguringView(true)}
+				filterCount={taskViewPreferences.filters?.length ?? 0}
+				sortLabel={taskSortLabel}
+				extensionWidgets={{
+					"tasks.drafts-only": draftFilterControl,
+					"tasks.workflow-help": <TaskWorkflowHelp />,
+					"tasks.row-formatting": display.mode === "grid" ? taskGridControls : null,
+				}}
+			/>
 
-					<div className="flex items-center gap-2">
-						<TaskWorkflowHelp />
-						<Button
-							isIconOnly
-							variant="ghost"
-							onPress={() => refetch()}
-							aria-label="Refresh"
-						>
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-						<Button
-							variant="primary"
-							onPress={openNewTaskPanel}
-						>
-							<Plus className="h-4 w-4 mr-2" />
-							New Task
-						</Button>
-					</div>
-				</div>
-
-				{/* Compact filter bar */}
-				<div className="flex items-center gap-3">
-					<div className="relative">
-						<Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-default-400" />
-						<input
-							type="text"
-							placeholder="Search tasks..."
-							value={searchText}
-							onChange={(e) => setSearchText(e.target.value)}
-							className="pl-8 pr-3 py-1.5 text-sm bg-default-100 border-0 rounded-md focus:outline-none focus:ring-1 focus:ring-accent w-64"
-						/>
-					</div>
-					<div className="h-4 w-px bg-divider" />
-					<div className="flex items-center gap-2 text-sm">
-						<span className="text-foreground-500">Total:</span>
-						<span className="font-medium">{counts?.total ?? 0}</span>
-					</div>
-				</div>
-			</div>
-
-			{isError && error && (
+			{isError && error ? (
 				<div className="p-4 bg-danger/10 text-danger border-b border-danger/20">
 					<div className="flex items-center gap-2">
-						<AlertTriangle className="h-4 w-4" />
+						<AlertTriangle className="h-4 w-4" aria-hidden="true" />
 						<span className="text-sm">{error.message}</span>
 					</div>
 				</div>
-			)}
+			) : null}
 
-			<StatusBurndownChart
-				entity="task"
-				refreshKey={burndownRefresh}
-				defaultExpanded={false}
-				className="shrink-0 rounded-none border-x-0 border-t-0"
+			<TaskInsightPanel
+				activeInsight={activeInsight}
+				tasks={tasks}
+				burndownRefresh={burndownRefresh}
+				onOpenTask={handleOpenDetails}
 			/>
 
-			<TaskTimeline tasks={tasks} onOpenTask={handleOpenDetails} />
-
-			<CollapsibleSection
-				title="Task list"
-				summary={[
-					{ label: "Total", value: pagination?.total ?? filteredTasks.length },
-					{ label: "Visible", value: filteredTasks.length },
-				]}
-				fill
-				unmountOnCollapse
-				className="rounded-none border-x-0 border-y-0"
-				bodyClassName="flex h-full min-h-0 p-0"
-			>
+			<div className="flex min-h-0 flex-1">
 				{/* Task list */}
 				<div className="min-w-0 flex-1 overflow-hidden">
 					{isLoading ? (
@@ -1182,27 +1191,27 @@ export function TasksPage() {
 								</Card>
 							))}
 						</div>
+					) : display.mode === "cards" ? (
+						taskCardCollection
 					) : (
 						<div className="h-full">
-							<TaskGrid
-								className="h-full rounded-none border-0"
-								tasks={filteredTasks}
-								totalTasks={pagination?.total}
-								availableTags={availableTags}
-								selectedTaskId={selectedTask?.id}
-								newTaskId={newTaskId}
-								onOpenDetails={handleOpenDetails}
-								onOpenDiscussions={handleOpenDiscussions}
-								onUpdateTask={handleUpdateTask}
-								onUpdateUi={handleUpdateUi}
-								onDelete={handleDeleteTask}
-								onCreateTaskAt={handleCreateTaskAt}
-								onReorder={handleReorder}
-								hasNextPage={hasNextPage}
-								isFetchingNextPage={isFetchingNextPage}
-								isLoadMoreError={isFetchNextPageError}
-								onLoadMore={fetchNextPage}
-							/>
+							<React.Suspense fallback={<div className="p-5 text-sm text-muted-foreground">Loading spreadsheet…</div>}>
+								<TaskSheet
+									tasks={filteredTasks}
+									selectedTaskId={selectedTask?.id}
+									onOpenDetails={handleOpenDetails}
+									onUpdateTask={handleUpdateTask}
+									onDelete={handleDeleteTask}
+									onCreateTaskAt={handleCreateTaskAt}
+									onRowsMove={handleRowsMove}
+									hasNextPage={hasNextPage}
+									onLoadMore={fetchNextPage}
+									density={display.density}
+									viewPreferences={taskViewPreferences}
+									onViewPreferencesChange={taskView.updatePreferences}
+									onSelectedTaskChange={setFormattingTask}
+								/>
+							</React.Suspense>
 						</div>
 					)}
 				</div>
@@ -1219,6 +1228,8 @@ export function TasksPage() {
 							onPriorityChange={handlePriorityChange}
 							task={selectedTask}
 							onEdit={handleEditSelectedTask}
+							cardEditing={cardEditTaskId === selectedTask.id}
+							onCardEditToggle={handleToggleTaskCardEditor}
 							onStatusChange={handleStatusChange}
 							onClose={() => setSelectedTask(null)}
 						/>
@@ -1227,50 +1238,15 @@ export function TasksPage() {
 							<div className="flex-1 p-0" role="tabpanel">
 								<div className="p-3 overflow-auto h-full">
 									<div className="space-y-3">
-										<div className="flex items-center justify-between">
-											<span className="text-xs text-foreground-500 font-mono">
-												ID: {selectedTask.id}
-											</span>
-											<TaskCreatedAt createdAt={selectedTask.createdAt} />
-										</div>
-										<BlockedTaskNotice task={selectedTask} />
-
-										<div>
-											<h5 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-foreground-500">
-												Description
-											</h5>
-											<p className="mb-1.5 text-sm font-medium text-foreground">
-												{selectedTask.subject}
-											</p>
-											<TaskDescriptionField
-												taskId={selectedTask.id}
-												description={selectedTask.description}
-												onSave={(taskId, description) => handleUpdateTask(taskId, { description })}
-											/>
-										</div>
-
-										<div className="grid grid-cols-2 gap-3 text-sm">
-											<div>
-												<span className="text-foreground-500">Status:</span>
-												<div className="flex items-center gap-1 mt-1">
-													{React.createElement(
-														STATUS_CONFIG[selectedTask.status].icon,
-														{ className: "h-3 w-3" },
-													)}
-													<span
-														className={STATUS_CONFIG[selectedTask.status].color}
-													>
-														{STATUS_CONFIG[selectedTask.status].label}
-													</span>
-												</div>
-											</div>
-											<div>
-												<span className="text-foreground-500">Assigned</span>
-												<div className="mt-1 text-sm">
-													{selectedTask.assignedArmName ?? "Unassigned"}
-												</div>
-											</div>
-										</div>
+										<AdaptiveCardView
+											envelope={presentTaskCard(
+												selectedTask,
+												cardEditTaskId === selectedTask.id,
+												taskCardCreator(selectedTask),
+											)}
+											onAction={handleTaskCardAction}
+											headerActions={selectedTaskCardEditAction}
+										/>
 
 										<div>
 											<h5 className="text-sm font-medium text-foreground-500 mb-1">
@@ -1313,17 +1289,6 @@ export function TasksPage() {
 												)}
 											</div>
 										</div>
-
-										{selectedTask.assignedArmName && (
-											<div>
-												<span className="text-sm text-foreground-500">
-													Assigned to:
-												</span>
-												<p className="text-sm font-medium">
-													{selectedTask.assignedArmName}
-												</p>
-											</div>
-										)}
 
 										{getTaskUiMeta(selectedTask).llm?.originalPrompt && (
 											<div>
@@ -1378,7 +1343,9 @@ export function TasksPage() {
 						) : null}
 					</Card>
 				)}
-			</CollapsibleSection>
+			</div>
+
+			{taskViewConfigurator}
 
 				{taskModal}
 

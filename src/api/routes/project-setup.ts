@@ -8,9 +8,15 @@ import { parsePlanFile } from "../../brain/plan-parser";
 import { regenerateTasksFromPlan } from "../../brain/task-regenerator";
 import { BrainTemplateManager } from "../../brain/template-manager";
 import {
+	getBrainModelAccessIssue,
+	serializeBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "../../brain/model-access";
+import {
 	CANONICAL_PLAN_PATH,
 	DEFAULT_ARM_TEMPLATE,
 	DEFAULT_PLAN_TEMPLATE,
+	collectPlanWorkspaceContext,
 	discoverProjectPlans,
 	formatPlanWithConfiguredModel,
 	hasStructuredPlanTasks,
@@ -20,8 +26,14 @@ import {
 	type PlanFormatter,
 } from "../../project-setup/service";
 import { getColeoDir } from "../../config";
+import { updateInfrastructureHealth } from "../../db/transactions";
 import type { WorkspaceAccess, WorkspaceTextFile } from "../../workspace";
 import { HttpError } from "../middleware";
+import {
+	isWorkbenchToolbarProjectionPath,
+	listWorkbenchToolbarProjectionPaths,
+	readWorkbenchToolbarProjectionFile,
+} from "../workbench-toolbar-projection";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { broadcast } from "../websocket";
 
@@ -124,6 +136,25 @@ function badRequestFrom(error: unknown, fallback: string): HttpError {
 	return HttpError.badRequest(error instanceof Error ? error.message : fallback);
 }
 
+async function recordBrainModelAccess(
+	db: Database,
+	issue: BrainModelAccessIssue | null,
+): Promise<void> {
+	const result = await updateInfrastructureHealth(db, [
+		{
+			component: "brain_model_api",
+			healthy: issue === null,
+			optional: false,
+			error: issue ? serializeBrainModelAccessIssue(issue) : undefined,
+		},
+	]);
+	if (!result.success) return;
+	broadcast("brain", "brain.model_access_changed", {
+		status: issue ? "blocked" : "available",
+		issueCode: issue?.code,
+	});
+}
+
 async function listProjectTreePaths(workspace: WorkspaceAccess): Promise<string[]> {
 	const tracked = await workspace.gitFiles();
 	if (tracked.length > 0) return tracked.sort();
@@ -146,16 +177,22 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const db = c.get("db");
 		await brainTemplates.ensureTemplatesExist();
-		const [candidates, canonical, projectDocuments, templateFiles, projectTree] = await Promise.all([
+		const [candidates, canonical, projectDocuments, templateFiles, workspaceTree, toolbarPaths] = await Promise.all([
 			discoverProjectPlans(workspace),
 			workspace.readText(CANONICAL_PLAN_PATH),
 			listProjectPlanDocuments(workspace),
 			listSetupTemplateFiles(coleoDir),
 			listProjectTreePaths(workspace),
+			listWorkbenchToolbarProjectionPaths(coleoDir),
 		]);
 		const parsed = canonical ? await parsePlanFile(CANONICAL_PLAN_PATH, workspace) : null;
 		const tasks = taskCount(db);
 		const canonicalTaskCount = parsed?.tasks.length ?? 0;
+		const projectTree = Array.from(new Set([
+			...workspaceTree,
+			...templateFiles.map((file) => file.path),
+			...toolbarPaths,
+		])).sort();
 
 		return c.json({
 			required: tasks === 0 && canonicalTaskCount === 0,
@@ -177,6 +214,11 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		const workspace = getWorkspace();
 		const rawPath = c.req.query("path");
 		if (!rawPath) throw HttpError.badRequest("path is required");
+		if (isWorkbenchToolbarProjectionPath(rawPath)) {
+			const file = await readWorkbenchToolbarProjectionFile(coleoDir, rawPath);
+			if (!file) throw HttpError.notFound("Toolbar configuration snapshot not found");
+			return c.json({ file });
+		}
 
 		try {
 			const path = validateEditableDocumentPath(rawPath);
@@ -199,6 +241,9 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 		}>();
 		if (typeof body.path !== "string" || typeof body.content !== "string") {
 			throw HttpError.badRequest("path and content are required");
+		}
+		if (isWorkbenchToolbarProjectionPath(body.path)) {
+			throw HttpError.badRequest("Toolbar configuration snapshots are read-only. Edit them in Toolbar Playground.");
 		}
 		if (body.expectedHash !== undefined && body.expectedHash !== null && typeof body.expectedHash !== "string") {
 			throw HttpError.badRequest("expectedHash must be a string or null");
@@ -257,7 +302,19 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				await workspace.writeText(sourcePath, body.content, { expectedHash: sourceExpectedHash });
 			}
 
-			const formatted = await formatter(body.content, sourcePath);
+			const workspaceContext = await collectPlanWorkspaceContext(workspace);
+			const formatted = await formatter(
+				body.content,
+				sourcePath,
+				undefined,
+				workspaceContext,
+				brainTemplates,
+			);
+			if (formatted.modelIssue) {
+				await recordBrainModelAccess(c.get("db"), formatted.modelIssue);
+			} else if (formatted.mode === "ai") {
+				await recordBrainModelAccess(c.get("db"), null);
+			}
 			if (!hasStructuredPlanTasks(formatted.content)) {
 				throw new Error("The prepared plan did not contain a phase with deliverable checklist items");
 			}
@@ -277,10 +334,13 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 			return c.json({
 				completed: true,
 				mode: formatted.mode,
+				formatterError: formatted.formatterError,
 				canonicalPlan,
 				taskCount: parsed.tasks.length,
 			});
 		} catch (error) {
+			const issue = getBrainModelAccessIssue(error);
+			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to prepare the project plan");
 		}
 	});
@@ -300,10 +360,16 @@ export function createProjectSetupRoutes(options: ProjectSetupRouteOptions = {})
 				workspace: getWorkspace(),
 				explanation: body.explanation,
 				formatter,
+				templates: brainTemplates,
 			});
+			if (result.mode === "ai") {
+				await recordBrainModelAccess(c.get("db"), null);
+			}
 			broadcast("tasks", "tasks.regenerated", result);
 			return c.json(result);
 		} catch (error) {
+			const issue = getBrainModelAccessIssue(error);
+			if (issue) await recordBrainModelAccess(c.get("db"), issue);
 			throw badRequestFrom(error, "Unable to regenerate tasks from the project plan");
 		}
 	});

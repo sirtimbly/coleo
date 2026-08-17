@@ -3,6 +3,7 @@
  * 
  * Hono-based REST API for the Coleo dashboard and external integrations.
  * Arms communicate via MCP, not this API (to prevent them from affecting each other).
+ * The workbench route persists portable UI profiles, views, and layouts.
  */
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -11,7 +12,7 @@ import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
-import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes } from "./routes";
+import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes, createWorkbenchRoutes, createRunsRoutes } from "./routes";
 import { loadApiConfig, shouldLog, type ApiConfig, type LogLevel } from "./config";
 import { createWebSocketHandlers, getClientCount, getAuthenticatedCount, broadcast, broadcastArmEvent, enableHeartbeat } from "./websocket";
 import { HarnessManager, setGlobalHarnessManager } from "../harness";
@@ -23,6 +24,7 @@ import { ensureDefaultArmTemplates, getColeoDir } from "../config";
 import { cleanupOrphanedArms } from "./arm-cleanup";
 import { startBrainMessageBridge } from "./brain-message-bridge";
 import { qdrantStore } from "../qdrant";
+import { resolveApiUrl, resolveNatsUrl } from "../network-config";
 import {
   initializeStatusHistoryCollection,
   processConsumedStatusHistoryEvent,
@@ -35,8 +37,9 @@ import type { ServerContext } from "./server-context";
 export { getArmClient, setArmClient } from "./arm-client-registry";
 const INDEXER_AUTOSTART_ENV = "COLEO_TRANSCRIPT_INDEXER_AUTOSTART";
 
-interface CreateAppOptions {
+export interface CreateAppOptions {
   webDist?: string | null;
+  coleoDir?: string;
 }
 
 export function createProxyAwareWebSocketHandlers(
@@ -287,7 +290,9 @@ export function createApp(db: Database, config: ApiConfig, options: CreateAppOpt
   app.route("/api/status-series", createStatusSeriesRoutes());
   app.route("/api/uploads", createUploadApiRoutes());
   app.route("/api/onboarding", createOnboardingRoutes());
-  app.route("/api/project-setup", createProjectSetupRoutes());
+  app.route("/api/project-setup", createProjectSetupRoutes({ coleoDir: options.coleoDir }));
+  app.route("/api/workbench", createWorkbenchRoutes({ coleoDir: options.coleoDir }));
+  app.route("/api/runs", createRunsRoutes());
 
   // Serve the production SPA on the same origin as the API and WebSocket.
   const webDist = options.webDist === undefined ? findWebDist() : options.webDist;
@@ -331,6 +336,14 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     Object.fromEntries(Object.entries(configOverrides).filter(([_, v]) => v !== undefined)) : 
     {};
   const config = { ...baseConfig, ...overrides } as ApiConfig;
+  process.env.COLEO_API_HOST = config.host;
+  process.env.COLEO_API_PORT = String(config.port);
+  if (configOverrides?.host !== undefined || configOverrides?.port !== undefined || !process.env.COLEO_API_URL) {
+    process.env.COLEO_API_URL = resolveApiUrl({
+      ...process.env,
+      COLEO_API_URL: undefined,
+    });
+  }
   
   const log = (msg: string, level: LogLevel = "normal") => {
     if (shouldLog(config.logLevel, level)) {
@@ -370,7 +383,7 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   let armClient: ArmClient | undefined;
   
   try {
-    const natsUrl = process.env.COLEO_NATS_URL || 'nats://localhost:4222';
+    const natsUrl = resolveNatsUrl();
     log(`Connecting to NATS at ${natsUrl}...`, "verbose");
     
     nats = new NatsManager({ 
@@ -694,17 +707,9 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
   if (nats) {
     console.log(`  NATS:     ${nats.getServerUrl()}`);
   }
-  console.log(`  API Key:  ${config.apiKey.startsWith("dev-") ? "(dev mode)" : config.apiKey.slice(0, 8) + "..."}`);
+  console.log(`  API Key:  ${config.apiKey}`);
   console.log("=".repeat(60));
   console.log("");
-  
-  // Check if API key was auto-generated - only show in verbose mode
-  if (config.apiKey.startsWith("dev-")) {
-    log("=".repeat(60), "verbose");
-    log("  DEV API KEY (set COLEO_API_KEY for production):", "verbose");
-    log(`  ${config.apiKey}`, "verbose");
-    log("=".repeat(60), "verbose");
-  }
 
   // Create WebSocket handlers
   const wsHandlers = createProxyAwareWebSocketHandlers(

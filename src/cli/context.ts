@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "path";
 import { existsSync, realpathSync } from "fs";
 import { fileURLToPath } from "url";
 import { loadEnvFile } from "../config/env";
+import { resolveApiKey, resolveApiUrl } from "../network-config";
 
 // Re-export getColeoDir from config to ensure single source of truth
 export { getColeoDir } from "../config";
@@ -86,10 +87,8 @@ export interface ApiConfig {
 }
 
 export function getApiConfig(): ApiConfig {
-  const apiPort = process.env.COLEO_API_PORT || "8080";
-  const apiHost = process.env.COLEO_API_HOST || "localhost";
-  const apiKey = process.env.COLEO_API_KEY || process.env.COLEO_API_TOKEN;
-  const apiUrl = `http://${apiHost}:${apiPort}`;
+  const apiKey = resolveApiKey();
+  const apiUrl = resolveApiUrl();
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

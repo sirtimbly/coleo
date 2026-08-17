@@ -1,4 +1,4 @@
-export { cn } from './utils';
+export { cn, truncateMiddle, truncateStart } from './utils';
 export {
   api,
   isJsonObject,
@@ -9,6 +9,7 @@ export {
   type Arm,
   type ActivityEntry,
   type TranscriptIndexerHealth,
+  type CommandQueueHealth,
   type ColeoConfig,
   type BrainModel,
   type BrainConfigResponse,

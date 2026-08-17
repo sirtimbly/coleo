@@ -1,7 +1,12 @@
 /**
- * Database initialization and migrations
+ * Database initialization and migrations.
+ *
+ * In addition to project-domain state, this file owns the versioned
+ * workbench-profile schema used to persist portable views and Golden Layout
+ * workspaces. UI persistence lives here so it can be shared across browsers.
  */
 import { Database } from "bun:sqlite";
+import { randomUUID } from "crypto";
 import { mkdir } from "fs/promises";
 import { dirname } from "path";
 
@@ -26,8 +31,82 @@ export async function initDatabase(dbPath: string): Promise<Database> {
 
   // Run migrations
   await runMigrations(db);
+  db.run(
+    "INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)",
+    ["database_instance_id", randomUUID()],
+  );
 
   return db;
+}
+
+/**
+ * Rebuild the Tasks table to extend its immutable SQLite status constraint.
+ *
+ * Schema objects are captured from the live database so indexes and triggers
+ * added by earlier migrations survive the table replacement. Preserving rowid
+ * also keeps the external-content FTS index aligned with each task.
+ */
+function addDraftTaskStatus(db: Database): void {
+  const table = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'")
+    .get() as { sql: string } | null;
+  if (!table) throw new Error("Cannot add Draft status because the tasks table is missing");
+
+  const legacyConstraint =
+    "CHECK (status IN ('pending', 'claimed', 'in_progress', 'completing', 'completed', 'failed', 'blocked', 'cancelled'))";
+  const draftConstraint =
+    "CHECK (status IN ('draft', 'pending', 'claimed', 'in_progress', 'completing', 'completed', 'failed', 'blocked', 'cancelled'))";
+  if (table.sql.includes(draftConstraint)) return;
+  if (!table.sql.includes(legacyConstraint)) {
+    throw new Error("Cannot safely add Draft status because the tasks status constraint is unrecognized");
+  }
+
+  const schemaObjects = db
+    .query(
+      `SELECT type, name, sql
+       FROM sqlite_master
+       WHERE tbl_name = 'tasks'
+         AND type IN ('index', 'trigger')
+         AND sql IS NOT NULL
+       ORDER BY type, name`,
+    )
+    .all() as Array<{ type: "index" | "trigger"; name: string; sql: string }>;
+  const columns = (
+    db.query("PRAGMA table_info(tasks)").all() as Array<{ name: string }>
+  ).map(({ name }) => {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+      throw new Error(`Cannot safely migrate unexpected task column: ${name}`);
+    }
+    return `"${name}"`;
+  });
+  const replacementSql = table.sql
+    .replace(
+      /^CREATE TABLE\s+(?:"tasks"|tasks)\s*/i,
+      "CREATE TABLE tasks_draft_migration ",
+    )
+    .replace(legacyConstraint, draftConstraint);
+  const foreignKeysEnabled = (
+    db.query("PRAGMA foreign_keys").get() as { foreign_keys: number }
+  ).foreign_keys === 1;
+
+  if (foreignKeysEnabled) db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    const migrate = db.transaction(() => {
+      db.exec("DROP TABLE IF EXISTS tasks_draft_migration");
+      db.exec(replacementSql);
+      const columnList = columns.join(", ");
+      db.exec(
+        `INSERT INTO tasks_draft_migration (rowid, ${columnList})
+         SELECT rowid, ${columnList} FROM tasks`,
+      );
+      db.exec("DROP TABLE tasks");
+      db.exec("ALTER TABLE tasks_draft_migration RENAME TO tasks");
+      for (const schemaObject of schemaObjects) db.exec(schemaObject.sql);
+    });
+    migrate();
+  } finally {
+    if (foreignKeysEnabled) db.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 /**
@@ -137,6 +216,11 @@ async function runMigrations(db: Database): Promise<void> {
 		["061_arm_metric_history", MIGRATION_061_ARM_METRIC_HISTORY],
 		["062_arm_message_metrics", MIGRATION_062_ARM_MESSAGE_METRICS],
 		["063_entity_status_history", MIGRATION_063_ENTITY_STATUS_HISTORY],
+		["064_arm_planning_gate", "SELECT 1;", { table: "arms", columns: MIGRATION_064_COLUMNS }],
+		["065_workbench_profiles", MIGRATION_065_WORKBENCH_PROFILES],
+		["066_arm_runs", MIGRATION_066_ARM_RUNS],
+		["067_task_draft_status", MIGRATION_067_TASK_DRAFT_STATUS],
+		["068_workbench_card_instances", MIGRATION_068_WORKBENCH_CARD_INSTANCES],
 	];
 
 
@@ -153,7 +237,8 @@ async function runMigrations(db: Database): Promise<void> {
       addColumnsIfNotExist(columnDefs.table, columnDefs.columns);
     }
 
-    db.exec(sql);
+    if (name === "067_task_draft_status") addDraftTaskStatus(db);
+    else db.exec(sql);
     db.run("INSERT INTO _migrations (name) VALUES (?)", [name]);
   }
 }
@@ -167,7 +252,7 @@ CREATE TABLE IF NOT EXISTS arms (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -304,7 +389,7 @@ CREATE TABLE arms_new (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped', 'starting', 'running')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -344,7 +429,7 @@ CREATE TABLE IF NOT EXISTS arms_new (
   domain TEXT NOT NULL,
   harness TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'idle' CHECK (status IN ('idle', 'busy', 'paused', 'error', 'stopped', 'starting', 'running')),
-  context_budget INTEGER NOT NULL DEFAULT 100000,
+  context_budget INTEGER NOT NULL DEFAULT 300000,
   current_context_used INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -621,7 +706,7 @@ CREATE INDEX IF NOT EXISTS idx_ctx_comp_time ON context_compressions(timestamp D
 
 -- Add context_budget_total and context_budget_used columns to arms
 -- These track the total budget allocated vs actual usage for cost optimization
-ALTER TABLE arms ADD COLUMN context_budget_total INTEGER DEFAULT 128000;
+ALTER TABLE arms ADD COLUMN context_budget_total INTEGER DEFAULT 300000;
 ALTER TABLE arms ADD COLUMN context_budget_used REAL DEFAULT 0;
 
 -- Context budget thresholds config
@@ -1788,7 +1873,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "general",
       harness: "opencode-api",
       status: "idle",
-      context_budget: 100000,
+      context_budget: 300000,
       current_context_used: 45000,
       created_at: now,
       updated_at: now,
@@ -1809,7 +1894,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "frontend",
       harness: "opencode-api",
       status: "idle",
-      context_budget: 150000,
+      context_budget: 300000,
       current_context_used: 62000,
       created_at: now,
       updated_at: now,
@@ -1830,7 +1915,7 @@ export async function seedDatabase(db: Database): Promise<void> {
       domain: "backend",
       harness: "opencode-api",
       status: "busy",
-      context_budget: 200000,
+      context_budget: 300000,
       current_context_used: 125000,
       created_at: now,
       updated_at: now,
@@ -2147,6 +2232,353 @@ AFTER DELETE ON bugs
 BEGIN
   DELETE FROM entity_status_history WHERE entity_type = 'bug' AND entity_id = OLD.id;
 END;
+`;
+
+const MIGRATION_064_COLUMNS = [
+  {
+    name: "planning_blocked",
+    sql: "ALTER TABLE arms ADD COLUMN planning_blocked INTEGER NOT NULL DEFAULT 0;",
+  },
+];
+
+const MIGRATION_065_WORKBENCH_PROFILES = `
+-- Portable user-facing workbench identities. Authentication remains API-key
+-- based for now, while profile IDs make saved UI state account-ready.
+CREATE TABLE IF NOT EXISTS workbench_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  preferences TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workbench_profiles_email
+ON workbench_profiles(email) WHERE email IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workbench_profiles_default
+ON workbench_profiles(is_default) WHERE is_default = 1;
+
+INSERT OR IGNORE INTO workbench_profiles (
+  id, name, is_default, preferences, created_at, updated_at
+) VALUES (
+  'local', 'Local workspace', 1, '{}', datetime('now'), datetime('now')
+);
+
+-- A saved projection and all of its presentation preferences. The query and
+-- preferences remain JSON because each projection type has a different schema.
+CREATE TABLE IF NOT EXISTS workbench_views (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  view_key TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  kind TEXT NOT NULL CHECK (kind IN (
+    'sheet', 'inbox', 'timeline', 'conversation', 'process',
+    'document', 'dashboard', 'inspector'
+  )),
+  resource_kind TEXT,
+  query TEXT NOT NULL DEFAULT '{}',
+  preferences TEXT NOT NULL DEFAULT '{}',
+  shared INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES workbench_profiles(id) ON DELETE CASCADE,
+  UNIQUE(profile_id, view_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_views_profile
+ON workbench_views(profile_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workbench_views_shared
+ON workbench_views(shared, updated_at DESC);
+
+-- Golden Layout configuration is stored separately from saved view definitions
+-- so one view may appear in multiple named workspaces.
+CREATE TABLE IF NOT EXISTS workbench_layouts (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  layout TEXT NOT NULL,
+  is_default INTEGER NOT NULL DEFAULT 0,
+  shared INTEGER NOT NULL DEFAULT 0,
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES workbench_profiles(id) ON DELETE CASCADE,
+  UNIQUE(profile_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_layouts_profile
+ON workbench_layouts(profile_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_workbench_layouts_shared
+ON workbench_layouts(shared, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workbench_layouts_profile_default
+ON workbench_layouts(profile_id) WHERE is_default = 1;
+
+-- Per-profile attention state is deliberately separate from immutable events.
+CREATE TABLE IF NOT EXISTS workbench_attention (
+  profile_id TEXT NOT NULL,
+  item_key TEXT NOT NULL,
+  seen_at TEXT,
+  read_at TEXT,
+  archived_at TEXT,
+  snoozed_until TEXT,
+  resolved_at TEXT,
+  assigned_to TEXT,
+  requires_action INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (profile_id, item_key),
+  FOREIGN KEY (profile_id) REFERENCES workbench_profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_attention_profile_action
+ON workbench_attention(profile_id, requires_action, updated_at DESC);
+`;
+
+const MIGRATION_066_ARM_RUNS = `
+-- Runs are attempts made by Arms, not user-created jobs. A run begins when an
+-- Arm claims work and remains active while that work is running or blocked.
+CREATE TABLE IF NOT EXISTS arm_runs (
+  id TEXT PRIMARY KEY,
+  arm_id TEXT NOT NULL,
+  work_kind TEXT NOT NULL CHECK (work_kind IN ('task', 'bug')),
+  work_id TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'claimed', 'running', 'blocked', 'completed', 'failed', 'cancelled'
+  )),
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}'
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_arm_runs_active_work
+ON arm_runs(work_kind, work_id) WHERE ended_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_arm_runs_arm_time
+ON arm_runs(arm_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_arm_runs_status_time
+ON arm_runs(status, started_at DESC);
+
+-- Backfill one current run for work already claimed when this migration lands.
+INSERT OR IGNORE INTO arm_runs (
+  id, arm_id, work_kind, work_id, status, started_at, ended_at, metadata
+)
+SELECT
+  lower(hex(randomblob(16))),
+  assigned_to,
+  'task',
+  id,
+  CASE
+    WHEN status = 'claimed' THEN 'claimed'
+    WHEN status = 'blocked' THEN 'blocked'
+    ELSE 'running'
+  END,
+  COALESCE(started_at, claimed_at, updated_at),
+  NULL,
+  '{"inferred":true}'
+FROM tasks
+WHERE assigned_to IS NOT NULL
+  AND status IN ('claimed', 'in_progress', 'completing', 'blocked');
+
+INSERT OR IGNORE INTO arm_runs (
+  id, arm_id, work_kind, work_id, status, started_at, ended_at, metadata
+)
+SELECT
+  lower(hex(randomblob(16))),
+  assignee_arm_id,
+  'bug',
+  id,
+  CASE WHEN status = 'investigating' THEN 'claimed' ELSE 'running' END,
+  updated_at,
+  NULL,
+  '{"inferred":true}'
+FROM bugs
+WHERE assignee_arm_id IS NOT NULL
+  AND status IN ('investigating', 'fixing', 'verifying')
+  AND COALESCE(archived, 0) = 0;
+
+CREATE TRIGGER IF NOT EXISTS task_run_after_insert
+AFTER INSERT ON tasks
+WHEN NEW.assigned_to IS NOT NULL
+  AND NEW.status IN ('claimed', 'in_progress', 'completing', 'blocked')
+BEGIN
+  INSERT OR IGNORE INTO arm_runs (
+    id, arm_id, work_kind, work_id, status, started_at, metadata
+  ) VALUES (
+    lower(hex(randomblob(16))),
+    NEW.assigned_to,
+    'task',
+    NEW.id,
+    CASE
+      WHEN NEW.status = 'claimed' THEN 'claimed'
+      WHEN NEW.status = 'blocked' THEN 'blocked'
+      ELSE 'running'
+    END,
+    COALESCE(NEW.started_at, NEW.claimed_at, NEW.updated_at),
+    '{}'
+  );
+END;
+
+CREATE TRIGGER IF NOT EXISTS task_run_after_update
+AFTER UPDATE OF status, assigned_to ON tasks
+BEGIN
+  UPDATE arm_runs
+  SET
+    status = CASE
+      WHEN NEW.assigned_to IS NULL OR arm_id <> NEW.assigned_to THEN 'cancelled'
+      WHEN NEW.status = 'claimed' THEN 'claimed'
+      WHEN NEW.status IN ('in_progress', 'completing') THEN 'running'
+      WHEN NEW.status = 'blocked' THEN 'blocked'
+      WHEN NEW.status = 'completed' THEN 'completed'
+      WHEN NEW.status = 'failed' THEN 'failed'
+      WHEN NEW.status = 'cancelled' THEN 'cancelled'
+      ELSE 'cancelled'
+    END,
+    ended_at = CASE
+      WHEN NEW.assigned_to IS NULL OR arm_id <> NEW.assigned_to
+        OR NEW.status NOT IN ('claimed', 'in_progress', 'completing', 'blocked')
+      THEN NEW.updated_at
+      ELSE ended_at
+    END
+  WHERE work_kind = 'task' AND work_id = NEW.id AND ended_at IS NULL;
+
+  INSERT OR IGNORE INTO arm_runs (
+    id, arm_id, work_kind, work_id, status, started_at, metadata
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    NEW.assigned_to,
+    'task',
+    NEW.id,
+    CASE
+      WHEN NEW.status = 'claimed' THEN 'claimed'
+      WHEN NEW.status = 'blocked' THEN 'blocked'
+      ELSE 'running'
+    END,
+    COALESCE(NEW.started_at, NEW.claimed_at, NEW.updated_at),
+    '{}'
+  WHERE NEW.assigned_to IS NOT NULL
+    AND NEW.status IN ('claimed', 'in_progress', 'completing', 'blocked')
+    AND NOT EXISTS (
+      SELECT 1 FROM arm_runs
+      WHERE work_kind = 'task' AND work_id = NEW.id AND ended_at IS NULL
+    );
+END;
+
+CREATE TRIGGER IF NOT EXISTS bug_run_after_insert
+AFTER INSERT ON bugs
+WHEN NEW.assignee_arm_id IS NOT NULL
+  AND NEW.status IN ('investigating', 'fixing', 'verifying')
+BEGIN
+  INSERT OR IGNORE INTO arm_runs (
+    id, arm_id, work_kind, work_id, status, started_at, metadata
+  ) VALUES (
+    lower(hex(randomblob(16))),
+    NEW.assignee_arm_id,
+    'bug',
+    NEW.id,
+    CASE WHEN NEW.status = 'investigating' THEN 'claimed' ELSE 'running' END,
+    NEW.updated_at,
+    '{}'
+  );
+END;
+
+CREATE TRIGGER IF NOT EXISTS bug_run_after_update
+AFTER UPDATE OF status, assignee_arm_id, archived ON bugs
+BEGIN
+  UPDATE arm_runs
+  SET
+    status = CASE
+      WHEN NEW.assignee_arm_id IS NULL OR arm_id <> NEW.assignee_arm_id
+        OR COALESCE(NEW.archived, 0) = 1 THEN 'cancelled'
+      WHEN NEW.status = 'investigating' THEN 'claimed'
+      WHEN NEW.status IN ('fixing', 'verifying') THEN 'running'
+      WHEN NEW.status IN ('resolved', 'closed') THEN 'completed'
+      ELSE 'cancelled'
+    END,
+    ended_at = CASE
+      WHEN NEW.assignee_arm_id IS NULL OR arm_id <> NEW.assignee_arm_id
+        OR COALESCE(NEW.archived, 0) = 1
+        OR NEW.status NOT IN ('investigating', 'fixing', 'verifying')
+      THEN NEW.updated_at
+      ELSE ended_at
+    END
+  WHERE work_kind = 'bug' AND work_id = NEW.id AND ended_at IS NULL;
+
+  INSERT OR IGNORE INTO arm_runs (
+    id, arm_id, work_kind, work_id, status, started_at, metadata
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    NEW.assignee_arm_id,
+    'bug',
+    NEW.id,
+    CASE WHEN NEW.status = 'investigating' THEN 'claimed' ELSE 'running' END,
+    NEW.updated_at,
+    '{}'
+  WHERE NEW.assignee_arm_id IS NOT NULL
+    AND NEW.status IN ('investigating', 'fixing', 'verifying')
+    AND COALESCE(NEW.archived, 0) = 0
+    AND NOT EXISTS (
+      SELECT 1 FROM arm_runs
+      WHERE work_kind = 'bug' AND work_id = NEW.id AND ended_at IS NULL
+    );
+END;
+`;
+
+// Migration 067 is implemented by addDraftTaskStatus because SQLite requires a
+// table rebuild to change a CHECK constraint while preserving later columns,
+// indexes, triggers, dependent rows, and external-content FTS rowids.
+const MIGRATION_067_TASK_DRAFT_STATUS = "SELECT 1;";
+
+const MIGRATION_068_WORKBENCH_CARD_INSTANCES = `
+CREATE TABLE IF NOT EXISTS workbench_card_instances (
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  envelope TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT,
+  FOREIGN KEY (profile_id) REFERENCES workbench_profiles(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_card_instances_resource
+ON workbench_card_instances(profile_id, resource_kind, resource_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS workbench_card_action_receipts (
+  client_action_id TEXT PRIMARY KEY,
+  envelope_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  verb TEXT NOT NULL,
+  result TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS workbench_card_action_audit (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  client_action_id TEXT NOT NULL,
+  envelope_id TEXT NOT NULL,
+  template_id TEXT NOT NULL,
+  template_version INTEGER NOT NULL,
+  resource_kind TEXT,
+  resource_id TEXT,
+  verb TEXT NOT NULL,
+  input_keys TEXT NOT NULL,
+  outcome TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_workbench_card_action_audit_resource
+ON workbench_card_action_audit(resource_kind, resource_id, created_at DESC);
 `;
 
 export { Database };

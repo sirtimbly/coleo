@@ -109,7 +109,7 @@ export function DiscussionComposer({
         // Process code
         return part.split(/`([^`]+)`/g).map((codePart, codeIdx) => {
           if (codeIdx % 2 === 1) {
-            return <code key={`code-${idx}-${partIdx}-${codeIdx}`} className="px-1 py-0.5 bg-default-100 text-default-700 rounded text-sm font-mono">{codePart}</code>;
+            return <code key={`code-${idx}-${partIdx}-${codeIdx}`} className="bg-surface-secondary px-1 py-0.5 font-mono text-sm text-foreground">{codePart}</code>;
           }
           return codePart;
         });
@@ -127,11 +127,11 @@ export function DiscussionComposer({
   const canSubmit = content.trim().length > 0 && !isSubmitting;
 
   return (
-    <div className={cn('border border-divider rounded-lg bg-content2', className)}>
+    <div className={cn('border border-border bg-surface', className)}>
       {/* Reply indicator */}
       {replyTo && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-divider bg-content3/50">
-          <span className="text-sm text-foreground-400">
+        <div className="flex items-center justify-between border-b border-border bg-surface-secondary/50 px-3 py-2">
+          <span className="text-sm text-muted-foreground">
             Replying to <span className="text-accent font-medium">{replyTo.authorName}</span>
           </span>
           <Button
@@ -149,7 +149,7 @@ export function DiscussionComposer({
 
       {/* Edit indicator */}
       {isEditing && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-divider bg-warning/10">
+        <div className="flex items-center justify-between border-b border-border bg-warning/10 px-3 py-2">
           <span className="text-sm text-warning">
             Editing comment
           </span>
@@ -179,7 +179,7 @@ export function DiscussionComposer({
           onKeyDown={handleKeyDown}
           placeholder={replyTo ? 'Write a reply...' : 'Add a comment...'}
           className={cn(
-            'w-full px-3 py-2 bg-transparent text-foreground placeholder-foreground-400',
+            'w-full bg-transparent px-3 py-2 text-foreground placeholder:text-muted-foreground',
             'resize-none focus:outline-none',
             'min-h-[80px] max-h-[200px]'
           )}
@@ -189,7 +189,7 @@ export function DiscussionComposer({
       )}
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-3 py-2 border-t border-divider">
+      <div className="flex items-center justify-between border-t border-border px-3 py-2">
         <div className="flex items-center gap-2">
           <Button
             isIconOnly
@@ -201,14 +201,14 @@ export function DiscussionComposer({
           >
             {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
           </Button>
-          <span className="text-xs text-foreground-400">
+          <span className="text-xs text-muted-foreground">
             Supports **bold** and `code`
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-xs text-foreground-400">
-            <kbd className="px-1 py-0.5 bg-default-100 rounded text-foreground-500">Cmd</kbd>+<kbd className="px-1 py-0.5 bg-default-100 rounded text-foreground-500">Enter</kbd>
+          <span className="text-xs text-muted-foreground">
+            <kbd className="border border-border bg-surface-secondary px-1 py-0.5 text-foreground">Cmd</kbd>+<kbd className="border border-border bg-surface-secondary px-1 py-0.5 text-foreground">Enter</kbd>
           </span>
           <Button
             size="sm"

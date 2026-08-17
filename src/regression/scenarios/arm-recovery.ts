@@ -1,5 +1,5 @@
 import type { TestScenario, TestContext, TestResult } from "../types";
-import { initTestDatabase, startApiServer, startBrain, spawnArm, waitForArmStatus } from "../harness";
+import { initTestDatabase, setTaskAutoDiscover, startApiServer, startBrain, spawnArm, waitForArmStatus } from "../harness";
 
 export const armRecoveryScenario: TestScenario = {
   name: "arm-recovery",
@@ -9,6 +9,7 @@ export const armRecoveryScenario: TestScenario = {
   
   async setup(ctx: TestContext) {
     await initTestDatabase(ctx);
+    setTaskAutoDiscover(ctx, false);
     await startApiServer(ctx);
     await startBrain(ctx);
   },

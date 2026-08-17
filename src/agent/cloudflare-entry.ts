@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { loadEnvFile } from "../config/env";
+import { resolveNatsUrl } from "../network-config";
 
 export interface CloudflareAgentOptions {
   agentId?: string;
@@ -35,8 +36,7 @@ function positiveInteger(value: string | undefined, fallback: number, flag: stri
 
 export function parseCloudflareAgentOptions(argv: string[]): CloudflareAgentOptions {
   const natsUrl = valueAfter(argv, "--nats-url")
-    || process.env.COLEO_NATS_URL
-    || "nats://127.0.0.1:4222";
+    || resolveNatsUrl();
   return {
     agentId: valueAfter(argv, "--id") || process.env.COLEO_AGENT_ID,
     natsUrl,

@@ -1118,9 +1118,12 @@
 		state.raysCanvas = null;
 		state.sparklesCanvas = null;
 		state.waterLayer = null;
+		state.waterFx = null;
 		state.depthSlider = null;
 		state.depthControl = null;
 		state.depthIcon = null;
+		const waterFx = document.getElementById("waterFxHome");
+		if (waterFx) waterFx.remove();
 	}
 	window.__homeAnim = { initHomeAnimation, stopHomeAnimation };
 })();

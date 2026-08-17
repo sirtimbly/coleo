@@ -9,7 +9,7 @@ function createDb(): Database {
     CREATE TABLE arms (
       id TEXT PRIMARY KEY,
       current_context_used INTEGER NOT NULL DEFAULT 0,
-      context_budget INTEGER NOT NULL DEFAULT 100000,
+      context_budget INTEGER NOT NULL DEFAULT 300000,
       total_tokens INTEGER DEFAULT 0,
       total_cost REAL DEFAULT 0,
       updated_at TEXT NOT NULL
@@ -46,12 +46,14 @@ function createDb(): Database {
 describe("arm message metrics", () => {
   it("updates context and cost idempotently from completed assistant messages", () => {
     const db = createDb();
+    const now = Date.now();
+    const completedAt = new Date(now).toISOString();
     const data = {
       info: {
         id: "message-1",
         role: "assistant",
         sessionID: "session-1",
-        time: { completed: "2026-07-28T10:00:00.000Z" },
+        time: { completed: completedAt },
         cost: 0.25,
         tokens: {
           input: 100,
@@ -62,8 +64,8 @@ describe("arm message metrics", () => {
       },
     };
 
-    recordMessageMetrics(db, "arm-1", "message.updated", data, "2026-07-28T10:00:00.000Z");
-    recordMessageMetrics(db, "arm-1", "message.updated", data, "2026-07-28T10:00:01.000Z");
+    recordMessageMetrics(db, "arm-1", "message.updated", data, completedAt);
+    recordMessageMetrics(db, "arm-1", "message.updated", data, new Date(now + 1_000).toISOString());
 
     const arm = db.query(
       "SELECT current_context_used as contextUsed, total_tokens as totalTokens, total_cost as totalCost FROM arms WHERE id = 'arm-1'",
@@ -76,8 +78,9 @@ describe("arm message metrics", () => {
 
   it("does not snapshot unchanged metrics", () => {
     const db = createDb();
-    recordMetricSnapshot(db, "arm-1", "2026-07-28T10:00:00.000Z");
-    recordMetricSnapshot(db, "arm-1", "2026-07-28T10:00:01.000Z");
+    const now = Date.now();
+    recordMetricSnapshot(db, "arm-1", new Date(now).toISOString());
+    recordMetricSnapshot(db, "arm-1", new Date(now + 1_000).toISOString());
     expect((db.query("SELECT COUNT(*) as count FROM arm_metric_history").get() as { count: number }).count).toBe(1);
     db.close();
   });

@@ -6,6 +6,7 @@
 
 import { join } from "node:path";
 import { getCliEntrypoint } from "../cli/entrypoint";
+import { getProjectRuntimeEnvironment } from "../project-scope";
 import type { SpawnConfig } from "./types";
 
 /**
@@ -36,6 +37,7 @@ export async function buildKimiConfig(
 				env: {
 					COLEO_ARM_ID: armId,
 					COLEO_DIR: coleoDir,
+					...getProjectRuntimeEnvironment({ ...process.env, ...config.env }),
 					PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
 					HOME: process.env.HOME || "",
 				},

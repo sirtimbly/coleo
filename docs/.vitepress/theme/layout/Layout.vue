@@ -3,6 +3,7 @@ import DefaultTheme from "vitepress/theme";
 import { useRoute, Content } from "vitepress";
 import { computed, watch, watchEffect, nextTick } from "vue";
 import SiteNav from "../components/SiteNav.vue";
+import DocTitleBanner from "../components/DocTitleBanner.vue";
 
 const { Layout: DefaultLayout } = DefaultTheme;
 
@@ -21,6 +22,9 @@ const isHome = computed(() => {
 watchEffect(() => {
   if (typeof document === "undefined") return;
   document.body.classList.toggle("coleo-home", isHome.value);
+  if (isHome.value) {
+    document.body.classList.remove("light-mode", "dark-mode");
+  }
 });
 
 const bootAnimations = async () => {
@@ -35,7 +39,9 @@ const bootAnimations = async () => {
       try {
         await import("../anim.js");
       } catch (_) {}
-      (window as any).__homeAnim?.initHomeAnimation?.();
+      if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        (window as any).__homeAnim?.initHomeAnimation?.();
+      }
     } else {
       try {
         await import("../anim-lite.js");
@@ -65,6 +71,10 @@ watch(
     <div class="coleo-site-nav">
       <SiteNav />
     </div>
-    <DefaultLayout />
+    <DefaultLayout>
+      <template #doc-before>
+        <DocTitleBanner />
+      </template>
+    </DefaultLayout>
   </div>
 </template>

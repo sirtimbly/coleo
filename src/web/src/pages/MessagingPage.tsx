@@ -1,730 +1,886 @@
 /**
- * Unified Messaging Page
- * Combines Mail, Status Reports, and Proposals in one interface
+ * Unified workbench Inbox for project mail and operational attention.
+ *
+ * Mail threads retain view, read, reply, archive, and nested-reply behavior.
+ * Brain, Arm, proposal, report, and system history share the same projection
+ * so legacy Activity, History, Proposals, and Project Mail routes can redirect.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { Button, Card } from '@heroui/react';
-import type { LucideIcon } from 'lucide-react';
-import { api, type StatusReport, type MailMessage, type JsonObject, useToast, useMessage } from '@/lib';
-import { usePageTitle } from '@/hooks/usePageTitle';
-import { useWebSocket } from '@/hooks/useWebSocket';
-import { RefreshCw, AlertCircle, Mail, FileText, Vote, MessageSquare, Archive, CheckCircle, Eye, EyeOff, Maximize2, Minimize2, Reply } from 'lucide-react';
 
-type MessageType = 'all' | 'mail' | 'sent' | 'archive' | 'status-reports' | 'proposals';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "@heroui/react";
+import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
-type ProposalData = JsonObject;
+import {
+	AdaptiveCardView,
+	DeferredAdaptiveCardView,
+} from "@/adaptive-cards/AdaptiveCardView";
+import {
+	BRAIN_CARD_CREATOR,
+	createArmCardCreator,
+} from "@/adaptive-cards/card-creators";
+import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
+import { presentInboxItem, presentMessage } from "@/adaptive-cards/presenters";
+import {
+	WorkbenchEmptyState,
+	WorkbenchStatusDot,
+} from "@/design-system/WorkbenchSurface";
+import {
+	ProjectionControlGroup,
+	ProjectionFilterMenu,
+	type ProjectionFilterOption,
+} from "@/design-system/ProjectionControls";
+import { usePageTitle } from "@/hooks/usePageTitle";
+import { api, type ActivityEntry, type MailMessage, type StatusReport, useMessage } from "@/lib";
+import {
+	buildMailThreads,
+	getInboxMessageIdsForThread,
+	type MailboxTab,
+	type MailThread,
+} from "@/pages/mail-page-utils";
+import {
+	BRAIN_ACTIVITY_CATEGORY_LABELS,
+	formatBrainActivity,
+	mergeBrainActivity,
+	type BrainActivityCategory,
+	type BrainActivityTone,
+} from "@/pages/brain-activity";
+import { MailThreadProjection } from "@/workbench/MailThreadProjection";
+import { useCollectionDisplayPreferences } from "@/workbench/collection-display";
+import {
+	ProjectionInbox,
+	type InboxFacet,
+	type InboxProjectionItem,
+} from "@/workbench/ProjectionInbox";
+import { useLiveProjections, useProjectionSignal } from "@/workbench/live-projections";
+import {
+	isNotableEvent,
+	projectRecentEvent,
+	type RecentEvent,
+} from "@/workbench/recent-event-inbox";
+import {
+	useWorkspaceCloseRoute,
+	useWorkspaceOpenRoute,
+	useWorkspaceSearchParams,
+} from "@/workspace/route-context";
 
-const MESSAGE_NAV_ITEMS: Array<{
-  key: MessageType;
-  label: string;
-  icon: LucideIcon;
-}> = [
-  { key: 'all', label: 'All', icon: MessageSquare },
-  { key: 'mail', label: 'Inbox', icon: Mail },
-  { key: 'sent', label: 'Sent', icon: Mail },
-  { key: 'archive', label: 'Archive', icon: Archive },
-  { key: 'status-reports', label: 'Status Reports', icon: FileText },
-  { key: 'proposals', label: 'Proposals', icon: Vote },
+import type {
+	CardActionRequest,
+	CardCreator,
+	WorkbenchAttention,
+	WorkbenchInboxRecord,
+} from "../../../types/adaptive-cards";
+
+interface InboxItemData {
+	item: InboxProjectionItem;
+	thread?: MailThread;
+	mailbox?: MailboxTab;
+	statusReport?: StatusReport;
+	activity?: ActivityEntry;
+	recentEvent?: RecentEvent;
+	brainCategory?: BrainActivityCategory;
+	targetRoute?: { pathname: string; search: string };
+}
+
+const FACETS: InboxFacet[] = [
+	{
+		id: "attention",
+		label: "Needs attention",
+		predicate: (item) => item.requiresAction,
+	},
+	{ id: "messages", label: "Messages", kinds: ["project"] },
+	{ id: "brain", label: "Brain", kinds: ["brain"] },
+	{ id: "arms", label: "Arms", kinds: ["arm", "status"] },
+	{
+		id: "history",
+		label: "History",
+		predicate: (item) => item.kind !== "project",
+	},
+	{ id: "all", label: "All" },
 ];
 
-interface UnifiedMessageBase {
-  id: string;
-  type: 'mail' | 'sent' | 'archive' | 'status-report' | 'proposal';
-  timestamp: string;
-  title: string;
-  summary: string;
-  status?: string;
-  priority?: 'critical' | 'high' | 'normal' | 'low';
-  unread?: boolean;
+const MAILBOXES: ReadonlyArray<{ id: MailboxTab; label: string }> = [
+	{ id: "inbox", label: "Inbox" },
+	{ id: "sent", label: "Sent" },
+	{ id: "archive", label: "Archived" },
+];
+
+const MAIL_FACETS: InboxFacet[] = [
+	{ id: "messages", label: "Messages", kinds: ["project"] },
+];
+
+const BRAIN_CATEGORY_OPTIONS: readonly ProjectionFilterOption[] = Object.entries(
+	BRAIN_ACTIVITY_CATEGORY_LABELS,
+).map(([id, label]) => ({ id, label }));
+
+function isBrainCategory(value: string | null): value is BrainActivityCategory | "all" {
+	return value !== null && value in BRAIN_ACTIVITY_CATEGORY_LABELS;
 }
 
-interface MailUnifiedMessage extends UnifiedMessageBase {
-  type: 'mail' | 'sent' | 'archive';
-  data: MailMessage;
+function activityKind(entry: ActivityEntry): InboxProjectionItem["kind"] {
+	const actor = entry.actor.toLowerCase();
+	const action = entry.action.toLowerCase();
+	if (action.includes("proposal")) return "proposal";
+	if (actor.includes("brain")) return "brain";
+	if (actor.includes("arm") || action.startsWith("arm.")) return "arm";
+	return "system";
 }
 
-interface StatusReportUnifiedMessage extends UnifiedMessageBase {
-  type: 'status-report';
-  data: StatusReport;
+function activitySeverity(entry: ActivityEntry): InboxProjectionItem["severity"] {
+	const action = entry.action.toLowerCase();
+	if (action.includes("error") || action.includes("failed")) return "danger";
+	if (action.includes("blocked") || action.includes("warning")) return "warning";
+	if (action.includes("completed") || action.includes("resolved")) return "success";
+	return "info";
 }
 
-interface ProposalUnifiedMessage extends UnifiedMessageBase {
-  type: 'proposal';
-  data: ProposalData;
+function activityRequiresAction(entry: ActivityEntry): boolean {
+	const action = entry.action.toLowerCase();
+	return action.includes("blocked") ||
+		action.includes("approval") ||
+		action.includes("question") ||
+		action.includes("error") ||
+		action.includes("failed");
 }
 
-type UnifiedMessage =
-  | MailUnifiedMessage
-  | StatusReportUnifiedMessage
-  | ProposalUnifiedMessage;
-
-function isMailUnifiedMessage(message: UnifiedMessage): message is MailUnifiedMessage {
-  return message.type === 'mail' || message.type === 'sent' || message.type === 'archive';
+function threadToItem(thread: MailThread, mailbox: MailboxTab): InboxItemData {
+	const latest = thread.messages.at(-1)?.message;
+	return {
+		item: {
+			id: `thread:${mailbox}:${thread.id}`,
+			kind: "project",
+			title: thread.subject || "(No subject)",
+			summary: latest?.body.slice(0, 180) || `${thread.messages.length} messages`,
+			timestamp: thread.lastMessageDate.toISOString(),
+			source: `${mailbox === "archive" ? "Archived" : mailbox === "sent" ? "Sent" : "Inbox"} · ${latest?.from ?? "Unknown sender"} · ${thread.messages.length} ${thread.messages.length === 1 ? "message" : "messages"}`,
+			resourceId: thread.id,
+			unread: mailbox === "inbox" && thread.unreadCount > 0,
+			requiresAction: mailbox === "inbox" && thread.unreadCount > 0,
+			severity: thread.unreadCount > 0 ? "warning" : "info",
+		},
+		thread,
+		mailbox,
+	};
 }
 
-function isStatusReportUnifiedMessage(
-  message: UnifiedMessage,
-): message is StatusReportUnifiedMessage {
-  return message.type === 'status-report';
+function reportToItem(report: StatusReport): InboxItemData {
+	const needsAttention = report.status === "blocked" ||
+		report.status === "issues_found" ||
+		report.status === "needs_review";
+	return {
+		item: {
+			id: `status:${report.id}`,
+			kind: "status",
+			title: `${report.armId}: ${report.status.replaceAll("_", " ")}`,
+			summary: report.summary,
+			timestamp: report.createdAt,
+			source: `Status report · task ${report.taskId}`,
+			resourceId: report.id,
+			unread: needsAttention,
+			requiresAction: needsAttention,
+			severity: report.status === "blocked"
+				? "danger"
+				: report.status === "on_track"
+					? "success"
+					: needsAttention
+						? "warning"
+						: "info",
+		},
+		statusReport: report,
+	};
 }
 
-export function MessagingPage() {
-  usePageTitle('Coleo Observatory - Messaging');
+function activityToItem(entry: ActivityEntry): InboxItemData {
+	const requiresAction = activityRequiresAction(entry);
+	return {
+		item: {
+			id: `activity:${entry.id}`,
+			kind: activityKind(entry),
+			title: entry.action.replaceAll("_", " ").replaceAll(".", " "),
+			summary: entry.target ? `${entry.actor} · ${entry.target}` : entry.actor,
+			timestamp: entry.timestamp,
+			source: entry.actor,
+			resourceId: entry.target ?? undefined,
+			unread: requiresAction,
+			requiresAction,
+			severity: activitySeverity(entry),
+		},
+		activity: entry,
+	};
+}
 
-  const [activeTab, setActiveTab] = useState<MessageType>('all');
-  const [messages, setMessages] = useState<UnifiedMessage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedMessage, setSelectedMessage] = useState<UnifiedMessage | null>(null);
-  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set());
-  const [panelWidth, setPanelWidth] = useState(400);
-  const [isResizing, setIsResizing] = useState(false);
-  const [viewerExpanded, setViewerExpanded] = useState(false);
-  const [previousMessageCount, setPreviousMessageCount] = useState(0);
-  const previousUnreadCountRef = useRef(0);
-  const resizeRef = useRef<HTMLDivElement>(null);
-  const { showToast } = useToast();
-  const { openReply } = useMessage();
+function brainToneToSeverity(tone: BrainActivityTone): InboxProjectionItem["severity"] {
+	if (tone === "danger") return "danger";
+	if (tone === "warning") return "warning";
+	if (tone === "success") return "success";
+	return "info";
+}
 
-  const loadMessages = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
+function brainActivityToItem(entry: ActivityEntry): InboxItemData {
+	const formatted = formatBrainActivity(entry);
+	const requiresAction = formatted.tone === "danger" ||
+		formatted.tone === "warning" ||
+		activityRequiresAction(entry);
+	const targetRoute = formatted.target && formatted.category === "arms"
+		? {
+				pathname: "/viewer",
+				search: `?arm=${encodeURIComponent(formatted.target)}`,
+			}
+		: formatted.target && (formatted.category === "tasks" || formatted.category === "decisions")
+			? {
+					pathname: "/tasks",
+					search: `?task=${encodeURIComponent(formatted.target)}&view=details`,
+				}
+			: undefined;
+	return {
+		item: {
+			id: `activity:${formatted.id}`,
+			kind: "brain",
+			title: formatted.title,
+			summary: formatted.summary,
+			timestamp: formatted.timestamp,
+			source: `Brain · ${BRAIN_ACTIVITY_CATEGORY_LABELS[formatted.category]}`,
+			resourceId: formatted.target ?? undefined,
+			unread: requiresAction,
+			requiresAction,
+			severity: brainToneToSeverity(formatted.tone),
+		},
+		activity: entry,
+		brainCategory: formatted.category,
+		targetRoute,
+	};
+}
 
-      const [mailResponse, sentResponse, archiveResponse, statusReportsResponse] = await Promise.all([
-        api.listInbox({ limit: 50 }),
-        api.listSent({ limit: 50 }),
-        api.listArchive({ limit: 50 }),
-        api.listStatusReports({ limit: 50 }),
-      ]);
+function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemData {
+	const targetRoute = record.resource.kind === "task"
+		? {
+				pathname: "/tasks",
+				search: `?task=${encodeURIComponent(record.resource.id)}&view=details`,
+			}
+		: record.resource.kind === "bug"
+			? {
+					pathname: "/bugs",
+					search: `?bug=${encodeURIComponent(record.resource.id)}`,
+				}
+			: undefined;
+	const summary = record.source === "planning-gate"
+		? (() => {
+			try {
+				const parsed = JSON.parse(record.summary) as { detail?: unknown; nextStep?: unknown };
+				return [parsed.detail, parsed.nextStep]
+					.filter((value): value is string => typeof value === "string")
+					.join(" Required action: ");
+			} catch {
+				return record.summary;
+			}
+		})()
+		: record.summary;
+	return {
+		item: {
+			id: record.itemKey,
+			kind: record.kind === "brain" ? "brain" : record.kind === "bug" ? "system" : "status",
+			title: record.title,
+			summary,
+			timestamp: record.timestamp,
+			source: record.source.replaceAll("-", " "),
+			resourceId: record.resource.id,
+			unread: !record.attention?.readAt,
+			requiresAction: record.requiresAction,
+			severity: record.severity,
+		},
+		targetRoute,
+	};
+}
 
-      const unifiedMessages: UnifiedMessage[] = [];
+function creatorForInboxItem(source: InboxItemData): CardCreator {
+	if (source.statusReport) return createArmCardCreator(source.statusReport.armId);
+	if (source.recentEvent?.armId) return createArmCardCreator(source.recentEvent.armId);
+	if (source.item.kind === "arm") {
+		return createArmCardCreator(
+			source.activity?.actor ?? source.item.resourceId ?? "unknown-arm",
+			source.activity?.actor ?? source.item.resourceId,
+		);
+	}
+	return BRAIN_CARD_CREATOR;
+}
 
-      mailResponse.messages.forEach((mail: MailMessage) => {
-        unifiedMessages.push({
-          id: `mail-${mail.id}`,
-          type: 'mail',
-          timestamp: mail.date,
-          title: mail.subject,
-          summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
-          unread: !mail.flags.seen,
-          priority: mail.flags.flagged ? 'high' : 'normal',
-          data: mail,
-        });
-      });
+export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" | "mail" } = {}) {
+	const mailOnly = projection === "mail";
+	const routePath = mailOnly ? "/mail" : "/messaging";
+	usePageTitle(`Coleo Observatory - ${mailOnly ? "Mail" : "Inbox"}`);
+	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
+	const openWorkspaceRoute = useWorkspaceOpenRoute();
+	const closeWorkspaceRoute = useWorkspaceCloseRoute(routePath);
+	const { openNewMessage, openReply } = useMessage();
+	const { connected, authenticated } = useLiveProjections();
+	const initialFacet = searchParams.get("facet");
+	const initialMailbox = searchParams.get("mailbox");
+	const initialBrainCategory = searchParams.get("brainCategory");
+	const [activeFacet, setActiveFacet] = useState(
+		mailOnly
+			? "messages"
+			: FACETS.some((facet) => facet.id === initialFacet) ? initialFacet! : "attention",
+	);
+	const [mailbox, setMailbox] = useState<MailboxTab>(
+		initialMailbox === "sent" || initialMailbox === "archive" ? initialMailbox : "inbox",
+	);
+	const [brainCategory, setBrainCategory] = useState<BrainActivityCategory | "all">(
+		isBrainCategory(initialBrainCategory) ? initialBrainCategory : "all",
+	);
+	const [inbox, setInbox] = useState<MailMessage[]>([]);
+	const [sent, setSent] = useState<MailMessage[]>([]);
+	const [archive, setArchive] = useState<MailMessage[]>([]);
+	const [activity, setActivity] = useState<ActivityEntry[]>([]);
+	const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
+	const [brainActivity, setBrainActivity] = useState<ActivityEntry[]>([]);
+	const [brainActivityCursor, setBrainActivityCursor] = useState<number | null>(null);
+	const [hasOlderBrainActivity, setHasOlderBrainActivity] = useState(false);
+	const [olderBrainActivityLoading, setOlderBrainActivityLoading] = useState(false);
+	const [reports, setReports] = useState<StatusReport[]>([]);
+	const [attention, setAttention] = useState<WorkbenchAttention[]>([]);
+	const [workbenchInbox, setWorkbenchInbox] = useState<WorkbenchInboxRecord[]>([]);
+	const [loading, setLoading] = useState(true);
+	const [archiving, setArchiving] = useState(false);
+	const { display, updateDisplay } = useCollectionDisplayPreferences({
+		viewId: mailOnly ? "mail-display" : "inbox-display",
+		name: mailOnly ? "Mail" : "Inbox",
+		resourceKind: "message",
+	});
+	const loadTimerRef = useRef<number | null>(null);
+	const brainActivityInitializedRef = useRef(false);
+	const selectedThreadId = searchParams.get("thread");
+	const selectedItemId = searchParams.get("item");
+	const detailMailboxParam = searchParams.get("mailbox");
+	const detailMailbox: MailboxTab =
+		detailMailboxParam === "sent" || detailMailboxParam === "archive"
+			? detailMailboxParam
+			: "inbox";
 
-      sentResponse.messages.forEach((mail: MailMessage) => {
-        unifiedMessages.push({
-          id: `sent-${mail.id}`,
-          type: 'sent',
-          timestamp: mail.date,
-          title: mail.subject,
-          summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
-          unread: false,
-          priority: mail.flags.flagged ? 'high' : 'normal',
-          data: mail,
-        });
-      });
+	const load = useCallback(async () => {
+		setLoading(true);
+		try {
+			if (mailOnly) {
+				const [inboxResponse, sentResponse, archiveResponse] = await Promise.all([
+					api.listInbox({ limit: 100 }),
+					api.listSent({ limit: 100 }),
+					api.listArchive({ limit: 100 }),
+				]);
+				setInbox(inboxResponse.messages);
+				setSent(sentResponse.messages);
+				setArchive(archiveResponse.messages);
+				return;
+			}
+			const [
+				activityResponse,
+				brainActivityResponse,
+				inboxResponse,
+				sentResponse,
+				archiveResponse,
+				reportsResponse,
+				recentEventsResponse,
+				attentionResponse,
+				workbenchInboxResponse,
+			] =
+				await Promise.all([
+					api.listActivity({ limit: 100 }),
+					api.listActivity({ producer: "brain", limit: 200 }),
+					api.listInbox({ limit: 100 }),
+					api.listSent({ limit: 100 }),
+					api.listArchive({ limit: 100 }),
+					api.listStatusReports({ limit: 100 }),
+					api.getRecentEvents({ limit: 100, sinceMs: 1000 * 60 * 60 * 24 })
+						.catch(() => ({ events: [], total: 0 })),
+					api.listWorkbenchAttention({ includeArchived: true, limit: 1000 }),
+					api.listWorkbenchInbox({ limit: 200 }),
+				]);
+			setActivity(activityResponse.activity);
+			setBrainActivity((current) => mergeBrainActivity(current, brainActivityResponse.activity));
+			if (!brainActivityInitializedRef.current) {
+				setBrainActivityCursor(brainActivityResponse.pagination.nextCursor ?? null);
+				setHasOlderBrainActivity(brainActivityResponse.pagination.hasMore ?? false);
+				brainActivityInitializedRef.current = true;
+			}
+			setInbox(inboxResponse.messages);
+			setSent(sentResponse.messages);
+			setArchive(archiveResponse.messages);
+			setReports(reportsResponse.reports);
+			setRecentEvents(recentEventsResponse.events);
+			setAttention(attentionResponse.attention);
+			setWorkbenchInbox(workbenchInboxResponse.items);
+		} finally {
+			setLoading(false);
+		}
+	}, [mailOnly]);
 
-      archiveResponse.messages.forEach((mail: MailMessage) => {
-        unifiedMessages.push({
-          id: `archive-${mail.id}`,
-          type: 'archive',
-          timestamp: mail.date,
-          title: mail.subject,
-          summary: mail.body.substring(0, 100) + (mail.body.length > 100 ? '...' : ''),
-          unread: false,
-          priority: mail.flags.flagged ? 'high' : 'normal',
-          data: mail,
-        });
-      });
+	useEffect(() => {
+		void load();
+	}, [load]);
 
-      statusReportsResponse.reports.forEach((report: StatusReport) => {
-        unifiedMessages.push({
-          id: `status-${report.id}`,
-          type: 'status-report',
-          timestamp: report.createdAt,
-          title: `Status: ${report.armId}`,
-          summary: report.summary,
-          status: report.status,
-          priority: report.status === 'blocked' ? 'critical' :
-                   report.status === 'issues_found' ? 'high' : 'normal',
-          data: report,
-        });
-      });
+	useEffect(() => () => {
+		if (loadTimerRef.current !== null) window.clearTimeout(loadTimerRef.current);
+	}, []);
 
-      unifiedMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+	useEffect(() => {
+		const facet = searchParams.get("facet");
+		setActiveFacet(mailOnly
+			? "messages"
+			: facet && FACETS.some((candidate) => candidate.id === facet) ? facet : "attention");
+		const nextMailbox = searchParams.get("mailbox");
+		setMailbox(
+			nextMailbox === "sent" || nextMailbox === "archive" ? nextMailbox : "inbox",
+		);
+		const nextBrainCategory = searchParams.get("brainCategory");
+		setBrainCategory(isBrainCategory(nextBrainCategory) ? nextBrainCategory : "all");
+	}, [mailOnly, searchParams]);
 
-      setMessages(unifiedMessages);
+	const handleFacetChange = useCallback((facet: string) => {
+		setActiveFacet(facet);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			next.set("facet", facet);
+			if (facet === "messages") next.set("mailbox", mailbox);
+			if (facet === "brain") next.set("brainCategory", brainCategory);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [brainCategory, mailbox, setActiveFacet, setSearchParams]);
 
-      const newUnreadCount = unifiedMessages.filter((message) => message.unread).length;
-      const previousUnreadCount = previousUnreadCountRef.current;
+	const handleMailboxChange = useCallback((nextMailbox: string) => {
+		if (nextMailbox !== "inbox" && nextMailbox !== "sent" && nextMailbox !== "archive") return;
+		setMailbox(nextMailbox);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			if (mailOnly) next.delete("facet");
+			else next.set("facet", "messages");
+			next.set("mailbox", nextMailbox);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [mailOnly, setMailbox, setSearchParams]);
 
-      if (previousMessageCount > 0 && newUnreadCount > previousUnreadCount) {
-        const newMessages = newUnreadCount - previousUnreadCount;
-        showToast(
-          `You have ${newMessages} new message${newMessages > 1 ? 's' : ''}`,
-          'info',
-          4000
-        );
-      }
+	const handleBrainCategoryChange = useCallback((category: string) => {
+		if (!isBrainCategory(category)) return;
+		setBrainCategory(category);
+		setSearchParams((current) => {
+			const next = new URLSearchParams(current);
+			next.set("facet", "brain");
+			next.set("brainCategory", category);
+			next.delete("thread");
+			next.delete("item");
+			return next;
+		});
+	}, [setBrainCategory, setSearchParams]);
 
-      previousUnreadCountRef.current = newUnreadCount;
-      setPreviousMessageCount(unifiedMessages.length);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load messages');
-    } finally {
-      setLoading(false);
-    }
-  }, [previousMessageCount, showToast]);
+	const loadOlderBrainActivity = useCallback(async () => {
+		if (!brainActivityCursor || olderBrainActivityLoading || !hasOlderBrainActivity) return;
+		setOlderBrainActivityLoading(true);
+		try {
+			const response = await api.listActivity({
+				producer: "brain",
+				limit: 200,
+				beforeSequence: brainActivityCursor,
+			});
+			setBrainActivity((current) => mergeBrainActivity(current, response.activity));
+			setBrainActivityCursor(response.pagination.nextCursor ?? null);
+			setHasOlderBrainActivity(response.pagination.hasMore ?? false);
+		} finally {
+			setOlderBrainActivityLoading(false);
+		}
+	}, [brainActivityCursor, hasOlderBrainActivity, olderBrainActivityLoading]);
 
-  useEffect(() => {
-    loadMessages();
-  }, [loadMessages]);
+	useProjectionSignal((signal) => {
+		const relevant = mailOnly
+			? signal.channel === "mail"
+			: ["mail", "brain", "arms", "arm-events", "activity", "workbench"].includes(signal.channel);
+		if (!relevant) return;
+		if (loadTimerRef.current !== null) window.clearTimeout(loadTimerRef.current);
+		loadTimerRef.current = window.setTimeout(() => {
+			loadTimerRef.current = null;
+			void load();
+		}, 200);
+	});
 
-  // WebSocket listener for real-time mail updates
-  useWebSocket({
-    channels: ['mail'],
-    onMessage: (message) => {
-      if (message.channel === 'mail') {
-        // Refresh messages when new mail events occur
-        if (message.event === 'mail.sent' || message.event === 'mail.received') {
-          loadMessages();
-        }
-      }
-    },
-  });
+	const effectiveMailbox = mailOnly || activeFacet === "messages" ? mailbox : "inbox";
+	const threads = useMemo(
+		() => buildMailThreads({
+			inboxMessages: inbox,
+			sentMessages: sent,
+			archiveMessages: archive,
+			activeTab: effectiveMailbox,
+			collapsedThreads: new Set(),
+		}),
+		[archive, effectiveMailbox, inbox, sent],
+	);
+	const detailThreads = useMemo(
+		() => buildMailThreads({
+			inboxMessages: inbox,
+			sentMessages: sent,
+			archiveMessages: archive,
+			activeTab: detailMailbox,
+			collapsedThreads: new Set(),
+		}),
+		[archive, detailMailbox, inbox, sent],
+	);
+	const selectedThread = detailThreads.find((thread) => thread.id === selectedThreadId) ?? null;
 
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-      const newWidth = e.clientX;
-      if (newWidth > 300 && newWidth < window.innerWidth - 400) {
-        setPanelWidth(newWidth);
-      }
-    };
+	const items = useMemo<InboxItemData[]>(() => {
+		const brainActivityIds = new Set(brainActivity.map((entry) => entry.id));
+		const mailItems = threads.map((thread) => threadToItem(thread, effectiveMailbox));
+		const merged = mailOnly
+			? mailItems
+			: [
+					...workbenchInbox.map(workbenchInboxToItem),
+					...mailItems,
+					...reports.map(reportToItem),
+					...activity
+						.filter((entry) => !brainActivityIds.has(entry.id))
+						.map(activityToItem),
+					...brainActivity.map(brainActivityToItem),
+					...recentEvents
+						.filter(isNotableEvent)
+						.map((event, index) => projectRecentEvent(event, index)),
+				];
+		const durableTaskIds = new Set(workbenchInbox
+			.filter((record) => record.resource.kind === "task")
+			.map((record) => record.resource.id));
+		const focused = merged.filter((entry) => {
+			if (!entry.item.resourceId || !durableTaskIds.has(entry.item.resourceId)) return true;
+			return entry.item.id === `task:${entry.item.resourceId}` || entry.item.id.startsWith("status:");
+		});
+		return [...new Map(focused.map((entry) => [entry.item.id, entry])).values()].sort(
+			(left, right) =>
+				new Date(right.item.timestamp).getTime() - new Date(left.item.timestamp).getTime(),
+		);
+	}, [activity, brainActivity, effectiveMailbox, mailOnly, recentEvents, reports, threads, workbenchInbox]);
 
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
+	const attentionByItem = useMemo(
+		() => new Map(attention.map((entry) => [entry.itemKey, entry])),
+		[attention],
+	);
+	const statefulItems = useMemo(
+		() => items.map((entry) => {
+			const state = attentionByItem.get(entry.item.id);
+			if (!state) return entry;
+			return {
+				...entry,
+				item: {
+					...entry.item,
+					unread: state.readAt ? false : entry.item.unread,
+					requiresAction: state.resolvedAt
+						? false
+						: state.requiresAction || entry.item.requiresAction,
+				},
+			};
+		}),
+		[attentionByItem, items],
+	);
+	const statefulItemsById = useMemo(
+		() => new Map(statefulItems.map((entry) => [entry.item.id, entry])),
+		[statefulItems],
+	);
+	const planningGateBlocked = workbenchInbox.some((record) =>
+		record.itemKey === "brain:planning-gate" && record.requiresAction
+	);
+	const facets = useMemo(() => {
+		if (mailOnly) return MAIL_FACETS;
+		return planningGateBlocked
+			? FACETS.map((facet) => facet.id === "attention"
+				? { ...facet, predicate: (item: InboxProjectionItem) => item.id === "brain:planning-gate" }
+				: facet)
+			: FACETS;
+	}, [mailOnly, planningGateBlocked]);
+	const projectionItems = useMemo(
+		() => statefulItems.filter((entry) => {
+			return activeFacet !== "brain" ||
+				brainCategory === "all" ||
+				entry.item.kind !== "brain" ||
+				entry.brainCategory === brainCategory;
+		}),
+		[activeFacet, brainCategory, statefulItems],
+	);
 
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-    }
+	const selectedItem = useMemo(
+		() => statefulItems.find((entry) => entry.item.id === selectedItemId) ?? null,
+		[selectedItemId, statefulItems],
+	);
 
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [isResizing]);
+	const markThreadRead = useCallback(async (thread: MailThread) => {
+		const messageIds = getInboxMessageIdsForThread(thread, inbox).filter((id) => {
+			const message = inbox.find((candidate) => candidate.id === id);
+			return message && !message.flags.seen;
+		});
+		if (messageIds.length === 0) return;
+		setInbox((current) => current.map((message) =>
+			messageIds.includes(message.id)
+				? { ...message, flags: { ...message.flags, seen: true } }
+				: message
+		));
+		await Promise.all(messageIds.map((id) => api.markMailRead(id)));
+	}, [inbox]);
 
-  const filteredMessages = messages.filter(msg => {
-    if (activeTab === 'all') return true;
-    if (activeTab === 'mail') return msg.type === 'mail';
-    if (activeTab === 'sent') return msg.type === 'sent';
-    if (activeTab === 'archive') return msg.type === 'archive';
-    if (activeTab === 'status-reports') return msg.type === 'status-report';
-    if (activeTab === 'proposals') return msg.type === 'proposal';
-    return true;
-  });
+	const openItem = useCallback((item: InboxProjectionItem) => {
+		const source = statefulItemsById.get(item.id);
+		if (source?.thread && source.mailbox) {
+			void markThreadRead(source.thread);
+			openWorkspaceRoute(
+				{
+					pathname: routePath,
+					search: mailOnly
+						? `?mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`
+						: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
+					title: source.thread.subject,
+				},
+				"split",
+			);
+			return;
+		}
+		void api.updateWorkbenchAttention(item.id, {
+			seenAt: new Date().toISOString(),
+			readAt: new Date().toISOString(),
+			requiresAction: item.requiresAction,
+		});
+		openWorkspaceRoute(
+			{
+				pathname: routePath,
+				search: `?facet=${activeFacet}&item=${encodeURIComponent(item.id)}`,
+				title: item.title,
+			},
+			"split",
+		);
+	}, [activeFacet, mailOnly, markThreadRead, openWorkspaceRoute, routePath, statefulItemsById]);
 
-  const handleMessageClick = useCallback((message: UnifiedMessage) => {
-    setSelectedMessage(message);
-    if (message.unread) {
-      setMessages(prev => prev.map(m =>
-        m.id === message.id ? { ...m, unread: false } : m
-      ));
-    }
-  }, []);
+	const archiveInboxMessages = useCallback(async (messageIds: string[]) => {
+		if (messageIds.length === 0) return;
+		setArchiving(true);
+		try {
+			await Promise.all(messageIds.map((id) => api.archiveMail(id)));
+			setInbox((current) => current.filter((message) => !messageIds.includes(message.id)));
+		} finally {
+			setArchiving(false);
+		}
+	}, []);
 
-  const handleMarkRead = useCallback((messageIds: string[], read: boolean) => {
-    setMessages(prev => prev.map(m =>
-      messageIds.includes(m.id) ? { ...m, unread: !read } : m
-    ));
-  }, []);
+	const archiveThread = useCallback(async (messageIds: string[]) => {
+		await archiveInboxMessages(messageIds);
+		closeWorkspaceRoute();
+	}, [archiveInboxMessages, closeWorkspaceRoute]);
 
-  const handleArchive = useCallback(async (messageIds: string[]) => {
-    try {
-      await Promise.all(messageIds.map(id => {
-        const rawId = id.replace(/^(mail|sent|archive)-/, '');
-        return api.archiveMail(rawId);
-      }));
-      await loadMessages();
-      setSelectedMessageIds(prev => {
-        const newSet = new Set(prev);
-        messageIds.forEach(id => newSet.delete(id));
-        return newSet;
-      });
-      if (selectedMessage && messageIds.includes(selectedMessage.id)) {
-        setSelectedMessage(null);
-      }
-    } catch (error) {
-      console.error('Failed to archive messages:', error);
-    }
-  }, [loadMessages, selectedMessage]);
+	const renderInboxCard = useCallback((
+		item: InboxProjectionItem,
+		presentationMode: import("@/adaptive-cards/card-presentation").CardPresentationMode,
+	) => {
+		const source = statefulItemsById.get(item.id);
+		if (!source) return null;
+		const latestMessage = source.thread?.messages.at(-1)?.message;
+		const inboxMessageIds = source.thread
+			? getInboxMessageIdsForThread(source.thread, inbox)
+			: [];
+		const threadRoute = source.thread && source.mailbox
+			? {
+					pathname: routePath,
+					search: mailOnly
+						? `?mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`
+						: `?facet=messages&mailbox=${source.mailbox}&thread=${encodeURIComponent(source.thread.id)}`,
+					title: source.thread.subject,
+				}
+			: undefined;
+		const envelope = source.thread
+			? presentMessage({
+					id: item.id,
+					from: latestMessage?.from ?? "Unknown sender",
+					subject: item.title,
+					preview: item.summary,
+					timestamp: item.timestamp,
+					surface: "inbox",
+					canArchive: inboxMessageIds.length > 0,
+					sent: source.mailbox === "sent",
+					targetRoute: threadRoute,
+				})
+			: presentInboxItem(item, {
+					surface: "inbox",
+					targetRoute: source.targetRoute,
+					creator: creatorForInboxItem(source),
+					facts: source.statusReport
+						? [
+								{ label: "Arm", value: source.statusReport.armId },
+								{ label: "Task", value: source.statusReport.taskId },
+								{ label: "Status", value: source.statusReport.status.replaceAll("_", " ") },
+							]
+						: [],
+				});
+		const handleAction = async (request: CardActionRequest) => {
+			if (request.verb === "message.open") {
+				openItem(item);
+				return;
+			}
+			if (request.verb === "message.archive") {
+				await archiveInboxMessages(inboxMessageIds);
+				return;
+			}
+			if (request.verb === "resource.open" && source.targetRoute) {
+				openWorkspaceRoute(source.targetRoute, "focus");
+				return;
+			}
+			await api.executeWorkbenchCardAction(request);
+			await load();
+		};
+		return (
+			<DeferredAdaptiveCardView
+					envelope={envelope}
+					onAction={handleAction}
+					presentationMode={presentationMode}
+				headerActions={(
+					<Button
+						isIconOnly
+						size="sm"
+						variant="ghost"
+						onPress={() => openItem(item)}
+						aria-label={`Open ${item.title} in panel`}
+					>
+						<ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+					</Button>
+				)}
+			/>
+		);
+	}, [archiveInboxMessages, inbox, load, mailOnly, openItem, openWorkspaceRoute, routePath, statefulItemsById]);
 
-  const getMessageIcon = (type: UnifiedMessage['type']) => {
-    switch (type) {
-      case 'mail': return <Mail className="h-4 w-4 text-blue-500" />;
-      case 'sent': return <Mail className="h-4 w-4 text-green-500" />;
-      case 'archive': return <Archive className="h-4 w-4 text-gray-500" />;
-      case 'status-report': return <FileText className="h-4 w-4 text-yellow-500" />;
-      case 'proposal': return <Vote className="h-4 w-4 text-purple-500" />;
-      default: return <MessageSquare className="h-4 w-4 text-muted-foreground" />;
-    }
-  };
+	if (selectedThreadId) {
+		return (
+			<MailThreadProjection
+				thread={selectedThread}
+				inboxMessages={inbox}
+				sentMessages={sent}
+				onReply={openReply}
+				onArchive={(messageIds) => void archiveThread(messageIds)}
+				onClose={closeWorkspaceRoute}
+				archiving={archiving}
+			/>
+		);
+	}
 
-  const getMessageColor = (type: UnifiedMessage['type'], priority?: string, status?: string) => {
-    if (priority === 'critical' || status === 'blocked') {
-      return 'border-red-500/20 bg-red-500/5';
-    }
-    if (priority === 'high' || status === 'issues_found') {
-      return 'border-orange-500/20 bg-orange-500/5';
-    }
+	if (selectedItemId) {
+		if (!selectedItem) {
+			return <WorkbenchEmptyState title="Loading inbox item" description="The selected item is being restored." />;
+		}
+		const envelope = presentInboxItem(selectedItem.item, {
+			surface: "detail",
+			targetRoute: selectedItem.targetRoute,
+			creator: creatorForInboxItem(selectedItem),
+			facts: selectedItem.statusReport
+				? [
+						{ label: "Arm", value: selectedItem.statusReport.armId },
+						{ label: "Task", value: selectedItem.statusReport.taskId },
+						{ label: "Status", value: selectedItem.statusReport.status.replaceAll("_", " ") },
+					]
+				: [],
+		});
+		const handleCardAction = async (request: CardActionRequest) => {
+			if (request.verb === "resource.open" && selectedItem.targetRoute) {
+				openWorkspaceRoute(selectedItem.targetRoute, "focus");
+				return;
+			}
+			await api.executeWorkbenchCardAction(request);
+			await load();
+		};
+		return (
+			<div className="h-full min-h-0 overflow-auto bg-background p-5">
+				<AdaptiveCardView
+					envelope={envelope}
+					onAction={handleCardAction}
+					className="mx-auto max-w-4xl"
+					headerActions={(
+						<Button
+							size="sm"
+							variant="ghost"
+							onPress={() => {
+								void createPersistedCardRoute({
+									...envelope,
+									presentation: { ...envelope.presentation, surface: "panel" },
+								}).then((route) => openWorkspaceRoute(route, "tab"));
+							}}
+						>
+							<FileText className="h-3.5 w-3.5" aria-hidden="true" />
+							Open card
+						</Button>
+					)}
+				/>
+			</div>
+		);
+	}
 
-    switch (type) {
-      case 'mail':
-        return 'border-blue-500/20 bg-blue-500/5';
-      case 'status-report':
-        return 'border-green-500/20 bg-green-500/5';
-      case 'proposal':
-        return 'border-purple-500/20 bg-purple-500/5';
-      default:
-        return 'border-border bg-transparent';
-    }
-  };
-
-  const getPriorityBadge = (priority?: string, status?: string) => {
-    if (status === 'blocked') {
-      return <span className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded-full">Blocked</span>;
-    }
-    if (status === 'issues_found') {
-      return <span className="px-2 py-1 text-xs bg-orange-500/20 text-orange-400 rounded-full">Issues</span>;
-    }
-    if (priority === 'critical') {
-      return <span className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded-full">Critical</span>;
-    }
-    if (priority === 'high') {
-      return <span className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 rounded-full">High</span>;
-    }
-    return null;
-  };
-
-  const getTabCount = (type: MessageType) => {
-    const filtered = messages.filter(msg => {
-      if (type === 'all') return true;
-      if (type === 'proposals') return msg.type === 'proposal';
-      return msg.type === type.replace('-reports', '-report');
-    });
-    if (type === 'archive' || type === 'sent') {
-      return filtered.length;
-    }
-    return filtered.filter(m => m.unread).length;
-  };
-
-  const selectedMailMessage =
-    selectedMessage && isMailUnifiedMessage(selectedMessage)
-      ? selectedMessage
-      : null;
-  const selectedStatusReport =
-    selectedMessage && isStatusReportUnifiedMessage(selectedMessage)
-      ? selectedMessage
-      : null;
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-accent" />
-        <span className="ml-2 text-muted-foreground">Loading messages...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-        <div className="flex">
-          <AlertCircle className="h-4 w-4 text-destructive" />
-          <div className="ml-3">
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="h-full min-h-0 flex flex-col bg-background">
-      <div className="flex items-center justify-between p-6 border-b border-border bg-card">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Messaging</h1>
-          <p className="text-muted-foreground">
-            Unified inbox for mail, status reports, and proposals
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button
-            variant="ghost"
-            onPress={() => setViewerExpanded(!viewerExpanded)}
-            aria-label={viewerExpanded ? "Collapse viewer" : "Expand viewer"}
-          >
-            {viewerExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
-          <Button
-            variant="primary"
-            isDisabled={loading}
-            onPress={loadMessages}
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
-        </div>
-      </div>
-
-      <div className="flex-1 flex overflow-hidden">
-        <div
-          className="bg-card border-r border-border flex flex-col"
-          style={{ width: viewerExpanded ? '0px' : `${panelWidth}px`, minWidth: viewerExpanded ? '0px' : '300px' }}
-        >
-          <div className="border-b border-border p-2">
-            <nav className="space-y-1">
-              {MESSAGE_NAV_ITEMS.map(({ key, label, icon: Icon }) => (
-                <Button
-                  key={key}
-                  variant="ghost"
-                  className="w-full justify-start"
-                  onPress={() => setActiveTab(key)}
-                >
-                  <Icon className="h-4 w-4 mr-3" />
-                  <span className="flex-1 text-left">{label}</span>
-                  {(() => {
-                    const count = getTabCount(key);
-                    if (count === 0) return null;
-                    return (
-                      <span className="px-2 py-0.5 text-xs bg-primary text-primary-foreground rounded-full min-w-[20px] text-center">
-                        {count}
-                      </span>
-                    );
-                  })()}
-                </Button>
-              ))}
-            </nav>
-          </div>
-
-          <div className="border-b border-border px-4 py-2 bg-muted/20">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  className="rounded border-border bg-background"
-                  checked={filteredMessages.length > 0 && filteredMessages.every(m => selectedMessageIds.has(m.id))}
-                  onChange={() => {
-                    const allSelected = filteredMessages.every(m => selectedMessageIds.has(m.id));
-                    if (allSelected) {
-                      setSelectedMessageIds(prev => {
-                        const newSet = new Set(prev);
-                        filteredMessages.forEach(m => newSet.delete(m.id));
-                        return newSet;
-                      });
-                    } else {
-                      setSelectedMessageIds(prev => {
-                        const newSet = new Set(prev);
-                        filteredMessages.forEach(m => newSet.add(m.id));
-                        return newSet;
-                      });
-                    }
-                  }}
-                />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => handleMarkRead(filteredMessages.filter(m => m.unread).map(m => m.id), true)}
-                  isDisabled={!filteredMessages.some(m => m.unread)}
-                  className="text-muted-foreground"
-                >
-                  <CheckCircle className="h-3 w-3 mr-1" />
-                  Mark Read
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => handleArchive(Array.from(selectedMessageIds))}
-                  isDisabled={selectedMessageIds.size === 0}
-                  className="text-muted-foreground"
-                >
-                  <Archive className="h-3 w-3 mr-1" />
-                  Archive
-                </Button>
-              </div>
-              <div className="flex items-center space-x-1 text-sm text-muted-foreground">
-                <span>{filteredMessages.length} messages</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {filteredMessages.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-full text-center p-8">
-                <MessageSquare className="h-16 w-16 text-muted mb-4" />
-                <h3 className="text-lg font-medium text-foreground mb-2">
-                  No {activeTab === 'all' ? '' : activeTab.replace('-', ' ')} messages
-                </h3>
-                <p className="text-muted-foreground max-w-sm">
-                  {activeTab === 'all'
-                    ? 'Messages from arms and the brain will appear here.'
-                    : `${activeTab.replace('-', ' ')} will appear here as the system operates.`
-                  }
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {filteredMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    onClick={() => handleMessageClick(message)}
-                    className={`p-4 cursor-pointer hover:bg-muted/20 transition-colors ${
-                      selectedMessage?.id === message.id ? 'bg-secondary border-l-4 border-accent' : ''
-                    } ${getMessageColor(message.type, message.priority, message.status)}`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <div className="flex-shrink-0 mt-1">
-                        <input
-                          type="checkbox"
-                          className="rounded border-border bg-background"
-                          checked={selectedMessageIds.has(message.id)}
-                          onChange={(e) => {
-                            e.stopPropagation();
-                            setSelectedMessageIds(prev => {
-                              const newSet = new Set(prev);
-                              if (newSet.has(message.id)) {
-                                newSet.delete(message.id);
-                              } else {
-                                newSet.add(message.id);
-                              }
-                              return newSet;
-                            });
-                          }}
-                        />
-                      </div>
-                      <div className="flex-shrink-0 mt-1">
-                        {getMessageIcon(message.type)}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center space-x-2 flex-1 min-w-0">
-                            <h4 className={`text-sm font-medium truncate text-foreground ${message.unread ? 'font-semibold' : ''}`}>
-                              {message.title}
-                            </h4>
-                            {getPriorityBadge(message.priority, message.status)}
-                          </div>
-                          <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">
-                            {new Date(message.timestamp).toLocaleDateString()}
-                          </span>
-                          <span className="text-xs text-foreground font-bold ml-1">
-                            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <p className={`text-sm text-muted-foreground line-clamp-2 ${message.unread ? 'font-medium text-foreground' : ''}`}>
-                          {message.summary}
-                        </p>
-                        <div className="flex items-center justify-between mt-2">
-                          <div className="flex items-center space-x-2">
-                            {message.unread && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-accent/20 text-accent">
-                                Unread
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {!viewerExpanded && (
-          <div
-            ref={resizeRef}
-            className="w-1 bg-gray-200 cursor-col-resize hover:bg-gray-300 transition-colors"
-            onMouseDown={() => setIsResizing(true)}
-          />
-        )}
-
-        <div className={`flex-1 bg-background p-6 overflow-auto ${viewerExpanded ? 'block' : 'hidden md:block'}`}>
-          {selectedMessage ? (
-            <Card className="shadow-xl border-border/50">
-              <Card.Header className="border-b border-border/50 bg-white pb-4">
-                <div className="flex items-start justify-between w-full">
-                  <div className="flex items-start space-x-3 flex-1">
-                    <div className="mt-1 p-2 bg-background rounded-lg border border-border/50 shadow-sm">
-                      {getMessageIcon(selectedMessage.type)}
-                    </div>
-                    <div className="flex-1">
-                      <Card.Title className="text-xl font-semibold text-foreground mb-1">
-                        {selectedMessage.title}
-                      </Card.Title>
-                      <Card.Description className="flex items-center space-x-2 text-sm mb-2">
-                        <span>
-                          From:{' '}
-                          {selectedMailMessage
-                            ? selectedMailMessage.data.from
-                            : `System (${selectedStatusReport?.data.armId || 'Brain'})`}
-                        </span>
-                        <span className="text-muted-foreground">•</span>
-                        <span className="text-muted-foreground">{new Date(selectedMessage.timestamp).toLocaleString()}</span>
-                      </Card.Description>
-                      <div className="flex items-center space-x-2">
-                        {getPriorityBadge(selectedMessage.priority, selectedMessage.status)}
-                        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          selectedMessage.unread ? 'bg-accent/20 text-accent' : 'bg-secondary text-secondary-foreground border border-border'
-                        }`}>
-                          {selectedMessage.unread ? 'Unread' : 'Read'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-1">
-                    {selectedMailMessage && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onPress={() => openReply({
-                          messageId: selectedMailMessage.data.id,
-                          from: selectedMailMessage.data.from,
-                          subject: selectedMessage.title,
-                          body: selectedMailMessage.data.body,
-                        })}
-                      >
-                        <Reply className="h-4 w-4 mr-1" />
-                        Reply
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onPress={() => handleMarkRead([selectedMessage.id], selectedMessage.unread ?? false)}
-                    >
-                      {selectedMessage.unread ? <Eye className="h-4 w-4 mr-1" /> : <EyeOff className="h-4 w-4 mr-1" />}
-                      {selectedMessage.unread ? 'Mark Read' : 'Mark Unread'}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onPress={() => handleArchive([selectedMessage.id])}
-                    >
-                      <Archive className="h-4 w-4 mr-1" />
-                      Archive
-                    </Button>
-                  </div>
-                </div>
-              </Card.Header>
-
-              <Card.Content className="pt-6">
-                <div className="prose prose-sm max-w-none">
-                  {selectedMailMessage ? (
-                    <div className="whitespace-pre-wrap font-mono text-sm bg-slate-50 p-5 rounded-xl border border-border/50 text-foreground leading-relaxed">
-                      {selectedMailMessage.data.body}
-                    </div>
-                  ) : selectedStatusReport ? (
-                    <div className="space-y-4">
-                      <Card className="shadow-md border-border/30 bg-white">
-                        <Card.Header>
-                          <Card.Title className="text-base">Status Report Details</Card.Title>
-                        </Card.Header>
-                        <Card.Content className="space-y-3">
-                          <div className="flex items-center justify-between py-2 border-b border-border/30">
-                            <span className="text-muted-foreground text-sm">Arm</span>
-                            <span className="font-medium text-sm">{selectedStatusReport.data.armId}</span>
-                          </div>
-                          <div className="flex items-center justify-between py-2 border-b border-border/30">
-                            <span className="text-muted-foreground text-sm">Status</span>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              selectedStatusReport.data.status === 'on_track' ? 'bg-green-500/20 text-green-400' :
-                              selectedStatusReport.data.status === 'blocked' ? 'bg-red-500/20 text-red-400' :
-                              selectedStatusReport.data.status === 'issues_found' ? 'bg-orange-500/20 text-orange-400' :
-                              'bg-muted text-muted-foreground'
-                            }`}>
-                              {selectedStatusReport.data.status.replace('_', ' ').toUpperCase()}
-                            </span>
-                          </div>
-                          <div className="py-2">
-                            <span className="text-muted-foreground text-sm block mb-1">Summary</span>
-                            <p className="text-sm">{selectedStatusReport.data.summary}</p>
-                          </div>
-                          {selectedStatusReport.data.issues && selectedStatusReport.data.issues.length > 0 && (
-                            <div className="py-2 border-t border-border/30">
-                              <span className="text-muted-foreground text-sm block mb-2">Issues</span>
-                              <ul className="space-y-1">
-                                {selectedStatusReport.data.issues.map((issue: string, i: number) => (
-                                  <li key={i} className="flex items-start space-x-2 text-sm">
-                                    <span className="text-orange-400 mt-1">•</span>
-                                    <span>{issue}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedStatusReport.data.blockers && selectedStatusReport.data.blockers.length > 0 && (
-                            <div className="py-2 border-t border-border/30">
-                              <span className="text-muted-foreground text-sm block mb-2">Blockers</span>
-                              <ul className="space-y-1">
-                                {selectedStatusReport.data.blockers.map((blocker: string, i: number) => (
-                                  <li key={i} className="flex items-start space-x-2 text-sm">
-                                    <span className="text-red-400 mt-1">•</span>
-                                    <span>{blocker}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                          {selectedStatusReport.data.nextSteps && (
-                            <div className="py-2 border-t border-border/30">
-                              <span className="text-muted-foreground text-sm block mb-1">Next Steps</span>
-                              <p className="text-sm">{selectedStatusReport.data.nextSteps}</p>
-                            </div>
-                          )}
-                          {selectedStatusReport.data.filesChanged && selectedStatusReport.data.filesChanged.length > 0 && (
-                            <div className="py-2 border-t border-border/30">
-                              <span className="text-muted-foreground text-sm block mb-2">Files Changed</span>
-                              <div className="flex flex-wrap gap-2">
-                                {selectedStatusReport.data.filesChanged.map((file: string, i: number) => (
-                                  <span key={i} className="font-mono text-xs bg-muted px-2 py-1 rounded border border-border/30">
-                                    {file}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </Card.Content>
-                      </Card>
-                    </div>
-                  ) : (
-                    <div className="text-muted-foreground italic text-center py-8">
-                      Proposal content would be displayed here.
-                    </div>
-                  )}
-                </div>
-              </Card.Content>
-            </Card>
-          ) : (
-            <Card className="h-full flex flex-col items-center justify-center text-center shadow-lg border-border/30">
-              <Card.Content className="py-16">
-                <div className="p-4 bg-muted/30 rounded-full mb-4 inline-block">
-                  <Mail className="h-12 w-12 text-muted-foreground" />
-                </div>
-                <Card.Title className="text-lg mb-2">No message selected</Card.Title>
-                <Card.Description className="max-w-sm">
-                  Select a message from the list to view its contents.
-                </Card.Description>
-              </Card.Content>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
-  );
+	return (
+		<ProjectionInbox
+			title={mailOnly ? "Mail" : "Inbox"}
+			description={mailOnly
+				? "Project messages across Inbox, Sent, and Archived mailboxes"
+				: "Messages, Brain decisions, Arm events, and operational history"}
+			items={projectionItems.map((entry) => entry.item)}
+			facets={facets}
+			activeFacet={activeFacet}
+			display={display}
+			onDisplayChange={updateDisplay}
+			toolbarScreenId={mailOnly ? "mail" : "inbox"}
+			onFacetChange={handleFacetChange}
+			onOpen={openItem}
+			renderCard={renderInboxCard}
+			onRefresh={() => void load()}
+			toolbarContent={
+				mailOnly || activeFacet === "messages" ? (
+					<ProjectionControlGroup>
+						<ProjectionFilterMenu
+							label="Mailbox"
+							value={mailbox}
+							options={MAILBOXES}
+							onChange={handleMailboxChange}
+						/>
+						<Button size="sm" variant="ghost" onPress={openNewMessage}>
+							<MessageSquarePlus className="h-3.5 w-3.5" aria-hidden="true" />
+							New
+						</Button>
+					</ProjectionControlGroup>
+				) : activeFacet === "brain" ? (
+					<ProjectionControlGroup>
+						<WorkbenchStatusDot
+							tone={connected && authenticated ? "success" : "neutral"}
+							label={connected && authenticated ? "Live" : "Reconnecting"}
+						/>
+						<ProjectionFilterMenu
+							label="Category"
+							value={brainCategory}
+							options={BRAIN_CATEGORY_OPTIONS}
+							onChange={handleBrainCategoryChange}
+						/>
+						<Button
+							size="sm"
+							variant="ghost"
+							isDisabled={olderBrainActivityLoading || !hasOlderBrainActivity}
+							onPress={() => void loadOlderBrainActivity()}
+						>
+							{olderBrainActivityLoading ? (
+								<LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+							) : null}
+							{hasOlderBrainActivity ? "Load older" : "Beginning"}
+						</Button>
+					</ProjectionControlGroup>
+				) : null
+			}
+			onMarkAllRead={(visible) => {
+				const visibleIds = new Set(visible.map((item) => item.id));
+				for (const source of statefulItems) {
+					if (source.thread && visibleIds.has(source.item.id)) void markThreadRead(source.thread);
+				}
+				void api.bulkUpdateWorkbenchAttention([...visibleIds], "read").then((response) => {
+					setAttention((current) => {
+						const updates = new Map(response.attention.map((entry) => [entry.itemKey, entry]));
+						return [
+							...current.filter((entry) => !updates.has(entry.itemKey)),
+							...response.attention,
+						];
+					});
+				});
+			}}
+			loading={loading}
+		/>
+	);
 }

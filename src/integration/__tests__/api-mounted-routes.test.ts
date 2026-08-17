@@ -172,6 +172,13 @@ describe("mounted API server routes", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       activity: [],
+      pagination: {
+        limit: 50,
+        offset: 0,
+        total: 0,
+        hasMore: false,
+        nextCursor: null,
+      },
       message: "JetStream not available - start the API server with NATS",
     });
   });

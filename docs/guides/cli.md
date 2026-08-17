@@ -44,6 +44,7 @@ coleo init [options]
 
 Options:
   -d, --dir &lt;path&gt;  Custom directory (default: ./.coleo)
+  --non-interactive       Skip all prompts
 ```
 
 **Examples:**
@@ -64,7 +65,12 @@ coleo init --dir ~/.coleo
 3. Copies the legacy `default.toml` profile to `./.coleo/arms/`
 4. Creates `config.toml`
 5. Initializes maildir directories
-6. Prompts to generate an API token in `.coleo/.env`
+6. Explains how separate API and NATS ports prevent local Coleo projects from sharing runtime state
+7. Offers available project-specific API, NATS client, and NATS monitoring ports
+8. Offers to merge those values and a pregenerated API key into `mise.toml`
+
+The generated `mise.toml` key is plaintext. Do not commit that file when it contains a real API key. If you decline
+the mise option, init can still place only the API key in `.coleo/.env`.
 
 **After initialization:**
 ```bash
@@ -528,12 +534,19 @@ Arm Configurations:
 
 ## Environment Variables
 
-| Variable            | Description             | Default    |
-| ------------------- | ----------------------- | ---------- |
-| `COLEO_DIR`         | Coleo data directory    | `./.coleo` |
-| `COLEO_API_KEY`     | API key for Observatory | (none)     |
-| `ANTHROPIC_API_KEY` | For Claude-based agents | (none)     |
-| `OPENAI_API_KEY`    | For GPT-based agents    | (none)     |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `COLEO_DIR` | Coleo data directory | `./.coleo` |
+| `COLEO_API_HOST` | API bind host and locally derived client host | `0.0.0.0` bind, `127.0.0.1` client |
+| `COLEO_API_PORT` | API server and client port | `8080` |
+| `COLEO_API_URL` | Optional full API client URL override | derived from host/port |
+| `COLEO_API_KEY` | API key shared by server, Brain, agents, and CLI | generated development key |
+| `COLEO_NATS_HOST` | Local NATS bind and client host | `127.0.0.1` |
+| `COLEO_NATS_PORT` | Local NATS client port | `4222` |
+| `COLEO_NATS_HTTP_PORT` | Local NATS monitoring port | `8222` |
+| `COLEO_NATS_URL` | Optional external NATS URL override | derived from host/port |
+| `ANTHROPIC_API_KEY` | For Claude-based agents | (none) |
+| `OPENAI_API_KEY` | For GPT-based agents | (none) |
 
 ## Configuration File
 
@@ -591,7 +604,7 @@ domain = "frontend"  # general, frontend, backend, infrastructure, etc.
 harness = "opencode"  # Agent harness type
 
 [context]
-budget = 100000       # Max context tokens
+budget = 300000       # Max context tokens
 priority_files = [    # Files this arm should focus on
   "src/web/**",
   "*.tsx",

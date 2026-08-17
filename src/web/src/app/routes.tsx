@@ -1,3 +1,9 @@
+/**
+ * Static workbench view contributions.
+ *
+ * Each entry gives the shell a route-backed view type. The registry remains
+ * static while the migration consolidates presentation and persistence.
+ */
 import {
   Activity,
   Bot,
@@ -11,9 +17,12 @@ import {
   ClipboardCheck,
   Mail,
   MessageSquareMore,
+  Inbox,
   Search,
   Settings,
+  SlidersHorizontal,
   Terminal,
+  Workflow,
   Vote,
   type LucideIcon,
 } from 'lucide-react';
@@ -29,6 +38,7 @@ import {
   MailPage,
   MessagingPage,
   ProposalsPage,
+  ProcessesPage,
   SettingsPage,
   StatusReportsPage,
   StatusHistorySearchPage,
@@ -36,6 +46,9 @@ import {
   UnifiedGridPage,
   SetupPage,
   ComposeMessagePage,
+  CardPanelPage,
+  CardCatalogPage,
+  ToolbarsPage,
 } from '@/pages';
 
 export interface AppRouteDefinition {
@@ -64,7 +77,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'setup',
     href: '/setup',
     path: 'setup',
-    label: 'Setup',
+    label: 'Plan & Documents',
     icon: ClipboardCheck,
     component: SetupPage,
     showInNav: true,
@@ -89,13 +102,23 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     getTitle: (searchParams) => searchParams.get('spawn') === '1' ? 'Spawn Arm' : 'Arms',
   },
   {
+    id: 'processes',
+    href: '/processes',
+    path: 'processes',
+    label: 'Processes',
+    icon: Workflow,
+    component: ProcessesPage,
+    showInNav: true,
+  },
+  {
     id: 'viewer',
     href: '/viewer',
     path: 'viewer',
     label: 'Viewer',
     icon: Eye,
     component: ArmViewerPage,
-    showInNav: true,
+    // Viewer requires Arm context and is opened from fleet/search selections.
+    showInNav: false,
     getTitle: (searchParams) => {
       const armId = searchParams.get('arm');
       return armId ? `Viewer: ${armId}` : 'Viewer';
@@ -111,7 +134,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     showInNav: true,
     getTitle: (searchParams) => {
       const taskId = searchParams.get('task');
-      return taskId ? `Task: ${taskId}` : 'Tasks';
+      return taskId ? 'Task details' : 'Tasks';
     },
   },
   {
@@ -121,7 +144,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'History',
     icon: FileText,
     component: StatusReportsPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'history-search',
@@ -158,7 +181,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'mail',
     href: '/mail',
     path: 'mail',
-    label: 'Mail',
+    label: 'Project Mail',
     icon: Mail,
     component: MailPage,
     showInNav: true,
@@ -170,7 +193,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Proposals',
     icon: Vote,
     component: ProposalsPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'activity',
@@ -179,7 +202,7 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Activity',
     icon: Activity,
     component: ActivityPage,
-    showInNav: true,
+    showInNav: false,
   },
   {
     id: 'settings',
@@ -188,6 +211,15 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     label: 'Settings',
     icon: Settings,
     component: SettingsPage,
+    showInNav: true,
+  },
+  {
+    id: 'toolbars',
+    href: '/toolbars',
+    path: 'toolbars',
+    label: 'Toolbars',
+    icon: SlidersHorizontal,
+    component: ToolbarsPage,
     showInNav: true,
   },
   {
@@ -202,9 +234,32 @@ export const APP_ROUTES: AppRouteDefinition[] = [
     id: 'messaging',
     href: '/messaging',
     path: 'messaging',
-    label: 'Messaging',
-    icon: MessageSquareMore,
+    label: 'Inbox',
+    icon: Inbox,
     component: MessagingPage,
+    showInNav: true,
+  },
+  {
+    id: 'card',
+    href: '/card',
+    path: 'card',
+    label: 'Card',
+    icon: FileText,
+    component: CardPanelPage,
+    showInNav: false,
+    getTitle: (searchParams) => {
+      const id = searchParams.get('id');
+      return id ? `Card ${id.slice(0, 8)}` : 'Card';
+    },
+  },
+  {
+    id: 'card-catalog',
+    href: '/card-catalog',
+    path: 'card-catalog',
+    label: 'Card catalog',
+    icon: Grid3x3,
+    component: CardCatalogPage,
+    showInNav: false,
   },
   {
     id: 'grid',

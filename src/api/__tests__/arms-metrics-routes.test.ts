@@ -10,7 +10,7 @@ function createTestDb(): Database {
 		CREATE TABLE arms (
 			id TEXT PRIMARY KEY,
 			current_context_used INTEGER NOT NULL DEFAULT 0,
-			context_budget INTEGER NOT NULL DEFAULT 100000,
+			context_budget INTEGER NOT NULL DEFAULT 300000,
 			total_tokens INTEGER DEFAULT 0,
 			total_cost REAL DEFAULT 0,
 			updated_at TEXT NOT NULL

@@ -1,39 +1,37 @@
-import { Button, Dropdown, Popover } from "@heroui/react";
-import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import { Button, Dropdown, Popover, Switch } from "@heroui/react";
+import {
+	useEffect,
+	useState,
+	useCallback,
+	useRef,
+	type CSSProperties,
+	type ReactNode,
+} from "react";
 import {
 	Eye,
 	Radio,
-	Wrench,
-	CheckCircle2,
-	XCircle,
-	Clock,
 	Loader2,
 	ChevronDown,
 	ChevronRight,
-	FileEdit,
 	Terminal,
 	AlertTriangle,
 	MessageSquare,
-	GitBranch,
 	ListTodo,
 	Zap,
 	Bot,
-	Coins,
 	Trash2,
 	RefreshCw,
 	Maximize2,
 	Minimize2,
 	ShieldQuestion,
-	TrendingUp,
-	TrendingDown,
-	Minus,
 	CircleDashed,
 	Play,
 	Pause,
 	AlertOctagon,
-	Info,
 	MoreHorizontal,
 	Server,
+	HeartPulse,
+	CircleHelp,
 } from "lucide-react";
 import {
 	api,
@@ -50,22 +48,46 @@ import {
 } from "@/lib";
 import { StatusBadge } from "@/components";
 import { useArmEvents, useWebSocket } from "@/hooks";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	useIsWorkspacePanel,
+	useWorkspaceCloseRoute,
 	useWorkspaceOpenRoute,
 	useWorkspaceSearchParams,
-} from '@/workspace/route-context';
+} from "@/workspace/route-context";
 import {
 	getViewerEventActivityId,
 	upsertViewerActivity,
 	type ViewerActivityItem as ActivityItem,
 	type ViewerActivityType as ActivityType,
 } from "./arm-viewer-activity";
+import { DeferredAdaptiveCardView } from "@/adaptive-cards/AdaptiveCardView";
+import { createArmCardCreator } from "@/adaptive-cards/card-creators";
+import { presentInboxItem } from "@/adaptive-cards/presenters";
 import { ArmActivityChart } from "@/components/ArmActivityChart";
 import { ArmContextUsageChart } from "@/components/ArmContextUsageChart";
 import { ArmCostUsageChart } from "@/components/ArmCostUsageChart";
+import {
+	WorkbenchEmptyState,
+	WorkbenchHeader,
+} from "@/design-system/WorkbenchSurface";
+import { ProjectionMenuTrigger } from "@/design-system/ProjectionControls";
+import { ToolbarTemplateRow } from "@/design-system/toolbar-template";
+import { ArmCollectionRow } from "@/workbench/ArmCollectionRow";
+import { ArmCollectionToolbar } from "@/workbench/ArmCollectionToolbar";
+import { ArmAvatar } from "@/workbench/ArmAvatar";
+import {
+	ARM_COLLECTION_SCOPE_LABELS,
+	armMatchesCollectionScope,
+	armMatchesSearch,
+	armNeedsAttention,
+	type ArmCollectionScope,
+} from "@/workbench/arm-collection-model";
+import { useToolbarTemplate } from "@/workbench/toolbar-template-context";
 
-function compactJsonObject(entries: Record<string, JsonValue | undefined>): JsonObject {
+function compactJsonObject(
+	entries: Record<string, JsonValue | undefined>,
+): JsonObject {
 	const result: JsonObject = {};
 	for (const [key, value] of Object.entries(entries)) {
 		if (value !== undefined) {
@@ -86,9 +108,229 @@ interface ArmHistoryState {
 }
 
 type ViewerTab = "events" | "logs";
+type ViewerOverview = "configuration" | "status" | null;
 
 const MAX_HISTORY_ITEMS = 200;
 const STORAGE_PREFIX = "coleo-arm-history-";
+const MESSAGE_LOG_PREFERENCES_STORAGE_KEY =
+	"coleo-arm-viewer-message-log-preferences";
+
+type MessageLogContentType =
+	| "message"
+	| "response"
+	| "thinking"
+	| "tool"
+	| "error";
+type BrainActivityCategory =
+	| "stuck"
+	| "intervention"
+	| "task"
+	| "session"
+	| "health"
+	| "decision"
+	| "configuration";
+
+interface MessageLogPreferences {
+	collapsed: Record<MessageLogContentType, boolean>;
+	brainActivity: Record<BrainActivityCategory, boolean>;
+}
+
+const DEFAULT_MESSAGE_LOG_PREFERENCES: MessageLogPreferences = {
+	collapsed: {
+		message: false,
+		response: true,
+		thinking: true,
+		tool: true,
+		error: true,
+	},
+	brainActivity: {
+		stuck: true,
+		intervention: true,
+		task: true,
+		session: true,
+		health: true,
+		decision: true,
+		configuration: true,
+	},
+};
+
+const MESSAGE_LOG_TYPE_OPTIONS: readonly {
+	type: MessageLogContentType;
+	label: string;
+	description: string;
+}[] = [
+	{
+		type: "message",
+		label: "Messages",
+		description: "User and system messages",
+	},
+	{
+		type: "response",
+		label: "Responses",
+		description: "Model completion text",
+	},
+	{ type: "thinking", label: "Thinking", description: "Model reasoning" },
+	{ type: "tool", label: "Tools", description: "Tool calls and results" },
+	{ type: "error", label: "Errors", description: "Model and tool failures" },
+];
+
+const BRAIN_ACTIVITY_GROUPS: readonly {
+	heading: string;
+	options: readonly {
+		type: BrainActivityCategory;
+		label: string;
+		description: string;
+	}[];
+}[] = [
+	{
+		heading: "Recovery",
+		options: [
+			{
+				type: "stuck",
+				label: "Stuck detection",
+				description: "Diagnosis and confidence",
+			},
+			{
+				type: "intervention",
+				label: "Interventions",
+				description: "Interrupts, compaction, and escalation",
+			},
+		],
+	},
+	{
+		heading: "Work",
+		options: [
+			{
+				type: "task",
+				label: "Task orchestration",
+				description: "Assignment, validation, and completion",
+			},
+			{
+				type: "decision",
+				label: "Brain decisions",
+				description: "Output handling and silent completion",
+			},
+		],
+	},
+	{
+		heading: "Runtime",
+		options: [
+			{
+				type: "session",
+				label: "Session lifecycle",
+				description: "Spawn, recovery, reset, and status sync",
+			},
+			{
+				type: "health",
+				label: "Health signals",
+				description: "Heartbeat and runtime health",
+			},
+			{
+				type: "configuration",
+				label: "Configuration",
+				description: "Model and budget changes",
+			},
+		],
+	},
+];
+
+function loadMessageLogPreferences(): MessageLogPreferences {
+	if (typeof localStorage === "undefined") {
+		return DEFAULT_MESSAGE_LOG_PREFERENCES;
+	}
+
+	try {
+		const stored = localStorage.getItem(MESSAGE_LOG_PREFERENCES_STORAGE_KEY);
+		if (!stored) {
+			return DEFAULT_MESSAGE_LOG_PREFERENCES;
+		}
+
+		const parsed = JSON.parse(stored);
+		if (!isJsonObject(parsed) || !isJsonObject(parsed.collapsed)) {
+			return DEFAULT_MESSAGE_LOG_PREFERENCES;
+		}
+
+		const collapsed = { ...DEFAULT_MESSAGE_LOG_PREFERENCES.collapsed };
+		for (const { type } of MESSAGE_LOG_TYPE_OPTIONS) {
+			const value = parsed.collapsed[type];
+			if (typeof value === "boolean") {
+				collapsed[type] = value;
+			}
+		}
+		const brainActivity = { ...DEFAULT_MESSAGE_LOG_PREFERENCES.brainActivity };
+		if (isJsonObject(parsed.brainActivity)) {
+			for (const group of BRAIN_ACTIVITY_GROUPS) {
+				for (const { type } of group.options) {
+					const value = parsed.brainActivity[type];
+					if (typeof value === "boolean") {
+						brainActivity[type] = value;
+					}
+				}
+			}
+		}
+
+		return { collapsed, brainActivity };
+	} catch {
+		return DEFAULT_MESSAGE_LOG_PREFERENCES;
+	}
+}
+
+function getBrainActivityCategory(
+	activity: ActivityItem,
+): BrainActivityCategory | null {
+	if (!activity.details) {
+		return null;
+	}
+
+	const eventType =
+		typeof activity.details.eventType === "string"
+			? activity.details.eventType
+			: activity.title.toLowerCase().replaceAll(" ", "_");
+	if (eventType.includes("heartbeat")) return "health";
+	if (activity.details.actor !== "brain") return null;
+	if (eventType.includes("stuck_detected")) return "stuck";
+	if (
+		eventType.includes("unstuck") ||
+		eventType.includes("idle_arm_stuck") ||
+		eventType.includes("zombie") ||
+		eventType.includes("stuck_escalated")
+	)
+		return "intervention";
+	if (
+		eventType.includes("task_") ||
+		eventType.includes("validation") ||
+		eventType.includes("verification") ||
+		eventType.includes("blocked_task")
+	)
+		return "task";
+	if (
+		eventType.includes("silent_completion") ||
+		eventType.includes("arm_output_action")
+	)
+		return "decision";
+	if (
+		eventType.includes("heartbeat") ||
+		eventType.includes("health") ||
+		eventType.includes("infrastructure_alert")
+	)
+		return "health";
+	if (
+		eventType.includes("config") ||
+		eventType.includes("budget") ||
+		eventType.includes("model")
+	)
+		return "configuration";
+	if (
+		eventType.includes("arm_detected") ||
+		eventType.includes("arm_initialized") ||
+		eventType.includes("arm_waiting") ||
+		eventType.includes("status_synced") ||
+		eventType.includes("session")
+	)
+		return "session";
+
+	return null;
+}
 
 function getStorageKey(armId: string): string {
 	return `${STORAGE_PREFIX}${armId}`;
@@ -142,70 +384,6 @@ function pruneOldHistories(): void {
 	}
 }
 
-// Color schemes for different activity types
-const activityColors: Record<
-	ActivityType,
-	{ bg: string; border: string; icon: string }
-> = {
-	message: {
-		bg: "bg-blue-500/10",
-		border: "border-l-blue-500",
-		icon: "text-blue-500",
-	},
-	tool: {
-		bg: "bg-purple-500/10",
-		border: "border-l-purple-500",
-		icon: "text-purple-500",
-	},
-	file: {
-		bg: "bg-green-500/10",
-		border: "border-l-green-500",
-		icon: "text-green-500",
-	},
-	session: {
-		bg: "bg-cyan-500/10",
-		border: "border-l-cyan-500",
-		icon: "text-cyan-500",
-	},
-	error: {
-		bg: "bg-red-500/10",
-		border: "border-l-red-500",
-		icon: "text-red-500",
-	},
-	todo: {
-		bg: "bg-yellow-500/10",
-		border: "border-l-yellow-500",
-		icon: "text-yellow-500",
-	},
-	step: {
-		bg: "bg-indigo-500/10",
-		border: "border-l-indigo-500",
-		icon: "text-indigo-500",
-	},
-	terminal: {
-		bg: "bg-orange-500/10",
-		border: "border-l-orange-500",
-		icon: "text-orange-500",
-	},
-	branch: {
-		bg: "bg-pink-500/10",
-		border: "border-l-pink-500",
-		icon: "text-pink-500",
-	},
-};
-
-const activityIcons: Record<ActivityType, typeof Wrench> = {
-	message: MessageSquare,
-	tool: Wrench,
-	file: FileEdit,
-	session: Zap,
-	error: AlertTriangle,
-	todo: ListTodo,
-	step: Bot,
-	terminal: Terminal,
-	branch: GitBranch,
-};
-
 const HANDLED_EVENT_TYPES = new Set([
 	"connected",
 	"arm.heartbeat",
@@ -240,7 +418,9 @@ function formatViewerSessionStatus(status: string): string {
 }
 
 function formatStatusLayerLabel(value: string): string {
-	return value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+	return value
+		.replaceAll("_", " ")
+		.replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function getViewerStatusNarrative({
@@ -256,6 +436,9 @@ function getViewerStatusNarrative({
 }): string {
 	const lifecycle = formatStatusLayerLabel(armStatus);
 	const session = sessionLabel.toLowerCase();
+	if (armStatus === "planning_blocked") {
+		return "Waiting for the Brain to complete the project planning gate; no work will be sent to this arm.";
+	}
 
 	if (analysisState === "silent") {
 		return `${lifecycle} arm, no recent output; session is ${session}.`;
@@ -301,11 +484,13 @@ function formatCompactNumber(value: number): string {
 
 export function ArmViewerPage() {
 	const isWorkspacePanel = useIsWorkspacePanel();
+	const closeViewer = useWorkspaceCloseRoute("/arms");
 	const openWorkspaceRoute = useWorkspaceOpenRoute();
 	const [searchParams, setSearchParams] = useWorkspaceSearchParams();
 	const selectedArmId = searchParams.get("arm");
 
 	const [arms, setArms] = useState<Arm[]>([]);
+	const [armsRefreshing, setArmsRefreshing] = useState(false);
 	const [activities, setActivities] = useState<ActivityItem[]>([]);
 	const [, setTodos] = useState<ArmTodo[]>([]);
 	const [sessionStatus, setSessionStatus] = useState<string>("unknown");
@@ -323,13 +508,22 @@ export function ArmViewerPage() {
 	const [armAnalysis, setArmAnalysis] = useState<ArmAnalysisFull | null>(null);
 	const [analysisLoading, setAnalysisLoading] = useState(false);
 	const [activeTab, setActiveTab] = useState<ViewerTab>("logs");
-	const [summaryExpanded, setSummaryExpanded] = useState(false);
+	const [activeOverview, setActiveOverview] = useState<ViewerOverview>(null);
 	const [messages, setMessages] = useState<ArmMessage[]>([]);
+	const [messageLogPreferences, setMessageLogPreferences] = useState(
+		loadMessageLogPreferences,
+	);
 	const [logsLoading, setLogsLoading] = useState(false);
 	const [logsError, setLogsError] = useState<string | null>(null);
+	const [logsTruncated, setLogsTruncated] = useState(false);
 	const [logsLoadedArmId, setLogsLoadedArmId] = useState<string | null>(null);
 	const [eventsLoading, setEventsLoading] = useState(false);
 	const [markingStuck, setMarkingStuck] = useState(false);
+	usePageTitle(
+		selectedArmId
+			? `Coleo Observatory - ${arms.find((arm) => arm.id === selectedArmId)?.name ?? "Arm Viewer"}`
+			: "Coleo Observatory - Arm Viewer",
+	);
 
 	const feedContainerRef = useRef<HTMLDivElement>(null);
 	const workspaceContainerRef = useRef<HTMLDivElement>(null);
@@ -341,6 +535,49 @@ export function ArmViewerPage() {
 	const [workspaceWidth, setWorkspaceWidth] = useState(0);
 	selectedArmIdRef.current = selectedArmId;
 	activeTabRef.current = activeTab;
+
+	const setMessageLogTypeCollapsed = useCallback(
+		(type: MessageLogContentType, collapsed: boolean) => {
+			setMessageLogPreferences((previous) => {
+				if (previous.collapsed[type] === collapsed) return previous;
+				const next = {
+					...previous,
+					collapsed: { ...previous.collapsed, [type]: collapsed },
+				};
+				try {
+					localStorage.setItem(
+						MESSAGE_LOG_PREFERENCES_STORAGE_KEY,
+						JSON.stringify(next),
+					);
+				} catch {
+					// Keep the in-memory preference when storage is unavailable.
+				}
+				return next;
+			});
+		},
+		[],
+	);
+
+	const setBrainActivityVisible = useCallback(
+		(type: BrainActivityCategory, visible: boolean) => {
+			setMessageLogPreferences((previous) => {
+				const next = {
+					...previous,
+					brainActivity: { ...previous.brainActivity, [type]: visible },
+				};
+				try {
+					localStorage.setItem(
+						MESSAGE_LOG_PREFERENCES_STORAGE_KEY,
+						JSON.stringify(next),
+					);
+				} catch {
+					// Keep the in-memory preference when storage is unavailable.
+				}
+				return next;
+			});
+		},
+		[],
+	);
 
 	const isAtBottom = useCallback((container: HTMLDivElement) => {
 		const bottomOffset =
@@ -391,7 +628,8 @@ export function ArmViewerPage() {
 	);
 
 	// Load arms list
-	const loadArms = async () => {
+	const loadArms = useCallback(async () => {
+		setArmsRefreshing(true);
 		try {
 			const res = await api.listArms();
 			setArms(res.arms.filter((a) => a.status !== "stopped"));
@@ -400,8 +638,19 @@ export function ArmViewerPage() {
 			setError(err instanceof Error ? err.message : "Failed to load arms");
 		} finally {
 			setLoading(false);
+			setArmsRefreshing(false);
 		}
-	};
+	}, []);
+
+	const updateContextBudget = useCallback(
+		async (armId: string, contextBudget: number) => {
+			const response = await api.updateArm(armId, { contextBudget });
+			setArms((previous) =>
+				previous.map((arm) => (arm.id === armId ? response.arm : arm)),
+			);
+		},
+		[],
+	);
 
 	// Load todos for selected arm
 	const loadTodos = async (armId: string) => {
@@ -426,7 +675,8 @@ export function ArmViewerPage() {
 			console.error("Failed to load analysis:", err);
 			if (selectedArmIdRef.current === armId) setArmAnalysis(null);
 		} finally {
-			if (!silent && selectedArmIdRef.current === armId) setAnalysisLoading(false);
+			if (!silent && selectedArmIdRef.current === armId)
+				setAnalysisLoading(false);
 		}
 	}, []);
 
@@ -440,17 +690,20 @@ export function ArmViewerPage() {
 					: response.state;
 			setSessionStatus(normalizedSessionStatus);
 			const normalizedArmStatus: Arm["status"] =
-				normalizedSessionStatus === "busy" || normalizedSessionStatus === "retry"
+				normalizedSessionStatus === "busy" ||
+				normalizedSessionStatus === "retry"
 					? "busy"
 					: normalizedSessionStatus === "idle" ||
-						  normalizedSessionStatus === "starting" ||
-						  normalizedSessionStatus === "error" ||
-						  normalizedSessionStatus === "stopped"
+							normalizedSessionStatus === "starting" ||
+							normalizedSessionStatus === "error" ||
+							normalizedSessionStatus === "stopped"
 						? normalizedSessionStatus
 						: "running";
 			setArms((previous) =>
 				previous.map((arm) =>
-					arm.id === armId && arm.status !== normalizedArmStatus
+					arm.id === armId &&
+					arm.status !== "planning_blocked" &&
+					arm.status !== normalizedArmStatus
 						? { ...arm, status: normalizedArmStatus }
 						: arm,
 				),
@@ -467,16 +720,45 @@ export function ArmViewerPage() {
 		}
 		try {
 			let res = await api.getArmMessages(armId, 200);
-			if (!silent && (res.messages?.length || 0) === 0 && !res.error) {
+			let retriedWithSmallerLimit = false;
+			if (res.error?.includes("Response too large for NATS")) {
+				for (const limit of [50, 10]) {
+					retriedWithSmallerLimit = true;
+					res = await api.getArmMessages(armId, limit);
+					if (!res.error?.includes("Response too large for NATS")) {
+						break;
+					}
+				}
+			}
+			if (
+				!silent &&
+				!retriedWithSmallerLimit &&
+				(res.messages?.length || 0) === 0 &&
+				!res.error
+			) {
 				await new Promise((resolve) => setTimeout(resolve, 500));
 				res = await api.getArmMessages(armId, 200);
 			}
-			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
+			if (
+				requestId !== messageRequestId.current ||
+				selectedArmIdRef.current !== armId
+			)
+				return;
 			const nextMessages = res.messages || [];
-			setMessages((previous) =>
-				silent && nextMessages.length === 0 && previous.length > 0 ? previous : nextMessages,
-			);
-			if (nextMessages.length > 0) {
+			setMessages((previous) => {
+				if (res.truncated && previous.length > 0) {
+					const merged = new Map(
+						previous.map((message) => [message.info.id, message]),
+					);
+					for (const message of nextMessages)
+						merged.set(message.info.id, message);
+					return [...merged.values()];
+				}
+				return silent && nextMessages.length === 0 && previous.length > 0
+					? previous
+					: nextMessages;
+			});
+			if (nextMessages.length > 0 && !res.truncated) {
 				let input = 0;
 				let output = 0;
 				let cost = 0;
@@ -489,14 +771,23 @@ export function ArmViewerPage() {
 				setTotalCost(cost);
 			}
 			setLogsLoadedArmId(armId);
+			setLogsTruncated(res.truncated === true);
 			setLogsError(res.error || null);
 		} catch (err) {
-			if (requestId !== messageRequestId.current || selectedArmIdRef.current !== armId) return;
+			if (
+				requestId !== messageRequestId.current ||
+				selectedArmIdRef.current !== armId
+			)
+				return;
 			setLogsError(
 				err instanceof Error ? err.message : "Failed to load message logs",
 			);
 		} finally {
-			if (!silent && requestId === messageRequestId.current && selectedArmIdRef.current === armId) {
+			if (
+				!silent &&
+				requestId === messageRequestId.current &&
+				selectedArmIdRef.current === armId
+			) {
 				setLogsLoading(false);
 			}
 		}
@@ -518,15 +809,34 @@ export function ArmViewerPage() {
 	const handleArmEvent = useCallback(
 		(event: OpenCodeEvent, options?: { historical?: boolean }) => {
 			const { type, properties: props } = event;
-			const parsedTimestamp = event.timestamp ? new Date(event.timestamp).getTime() : Date.now();
-			const eventTimestamp = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
-			const eventActivityId = (suffix: string) => getViewerEventActivityId(event, suffix);
+			const parsedTimestamp = event.timestamp
+				? new Date(event.timestamp).getTime()
+				: Date.now();
+			const eventTimestamp = Number.isFinite(parsedTimestamp)
+				? parsedTimestamp
+				: Date.now();
+			const eventActivityId = (suffix: string) =>
+				getViewerEventActivityId(event, suffix);
 			const recordActivity = (
 				id: string,
 				updates: Partial<ActivityItem> & { type: ActivityType; title: string },
 			) => upsertActivity(id, { timestamp: eventTimestamp, ...updates });
 
 			// Message events
+			if (
+				type === "arm.heartbeat" ||
+				type === "server-heartbeat" ||
+				type === "server.heartbeat"
+			) {
+				recordActivity(eventActivityId("heartbeat"), {
+					type: "session",
+					title: "Heartbeat",
+					subtitle: type.replaceAll(".", " ").replaceAll("-", " "),
+					status: "info",
+					details: { ...props, eventType: type },
+				});
+			}
+
 			if (type === "message.updated") {
 				const info = props.info as { id: string; role: string } | undefined;
 				if (info) {
@@ -598,22 +908,22 @@ export function ArmViewerPage() {
 						else if (status === "completed") actStatus = "completed";
 						else if (status === "error") actStatus = "error";
 
-							recordActivity(toolId, {
-								type: "tool",
-								title: title,
-								subtitle: part.tool,
-								status: actStatus,
-								details: compactJsonObject({
-									tool: part.tool,
-									input: state?.input,
-									output: state?.output,
-									error: state?.error,
-									duration: state?.time
-										? state.time.end - state.time.start
-										: undefined,
-								}),
-							});
-						}
+						recordActivity(toolId, {
+							type: "tool",
+							title: title,
+							subtitle: part.tool,
+							status: actStatus,
+							details: compactJsonObject({
+								tool: part.tool,
+								input: state?.input,
+								output: state?.output,
+								error: state?.error,
+								duration: state?.time
+									? state.time.end - state.time.start
+									: undefined,
+							}),
+						});
+					}
 
 					// Step finish - contains cost/token info
 					if (part.type === "step-finish") {
@@ -638,17 +948,17 @@ export function ArmViewerPage() {
 							}));
 						}
 
-							recordActivity(eventActivityId("step"), {
-								type: "step",
-								title: "Step completed",
-								subtitle: stepPart.reason || "done",
-								status: "completed",
-								details: compactJsonObject({
-									cost: stepPart.cost,
-									tokens: stepPart.tokens,
-								}),
-							});
-						}
+						recordActivity(eventActivityId("step"), {
+							type: "step",
+							title: "Step completed",
+							subtitle: stepPart.reason || "done",
+							status: "completed",
+							details: compactJsonObject({
+								cost: stepPart.cost,
+								tokens: stepPart.tokens,
+							}),
+						});
+					}
 
 					// File parts
 					if (part.type === "file") {
@@ -735,18 +1045,20 @@ export function ArmViewerPage() {
 					| { name?: string; data?: { message?: string } }
 					| undefined;
 				const message = error?.data?.message || error?.name || "Unknown error";
-					recordActivity(eventActivityId("error"), {
-						type: "error",
-						title: "Error",
-						subtitle: message,
-						status: "error",
-						details: compactJsonObject({ error }),
-					});
-				}
+				recordActivity(eventActivityId("error"), {
+					type: "error",
+					title: "Error",
+					subtitle: message,
+					status: "error",
+					details: compactJsonObject({ error }),
+				});
+			}
 
-				// Todo updates - only update if this is for the currently selected arm
-				if (type === "todo.updated") {
-					const todos = Array.isArray(props.todos) ? (props.todos as unknown as ArmTodo[]) : undefined;
+			// Todo updates - only update if this is for the currently selected arm
+			if (type === "todo.updated") {
+				const todos = Array.isArray(props.todos)
+					? (props.todos as unknown as ArmTodo[])
+					: undefined;
 				if (todos) {
 					// Only update todos if the event is from the currently selected arm
 					// The SSE connection should already be filtered by arm, but this adds extra safety
@@ -787,7 +1099,8 @@ export function ArmViewerPage() {
 
 			// VCS branch
 			if (type === "vcs.branch.updated") {
-				const branch = typeof props.branch === "string" ? props.branch : undefined;
+				const branch =
+					typeof props.branch === "string" ? props.branch : undefined;
 				recordActivity(eventActivityId("branch"), {
 					type: "branch",
 					title: "Branch updated",
@@ -820,7 +1133,7 @@ export function ArmViewerPage() {
 					type: "session",
 					title: formatStatusLayerLabel(type),
 					status: "info",
-					details: props,
+					details: { ...props, eventType: type },
 				});
 			}
 		},
@@ -841,7 +1154,9 @@ export function ArmViewerPage() {
 					: null;
 				if (historyWatermark !== null && Number.isFinite(historyWatermark)) {
 					setActivities((previous) =>
-						previous.filter((activity) => activity.timestamp > historyWatermark),
+						previous.filter(
+							(activity) => activity.timestamp > historyWatermark,
+						),
 					);
 				}
 				for (const event of response.window.events) {
@@ -883,9 +1198,9 @@ export function ArmViewerPage() {
 
 	// Load arms on mount
 	useEffect(() => {
-		loadArms();
+		void loadArms();
 		pruneOldHistories();
-	}, []);
+	}, [loadArms]);
 
 	// Reset or restore state when arm changes
 	useEffect(() => {
@@ -894,6 +1209,7 @@ export function ArmViewerPage() {
 			setLogsLoadedArmId(null);
 			setMessages([]);
 			setLogsError(null);
+			setLogsTruncated(false);
 			setArmAnalysis(null);
 			autoScrollEnabledRef.current = true;
 			// Try to restore from localStorage first
@@ -927,6 +1243,7 @@ export function ArmViewerPage() {
 			setMessages([]);
 			setLogsLoadedArmId(null);
 			setLogsError(null);
+			setLogsTruncated(false);
 		}
 	}, [loadAnalysis, loadEvents, loadMessages, loadSessionState, selectedArmId]);
 
@@ -965,13 +1282,23 @@ export function ArmViewerPage() {
 					sessionStatus,
 					lastUpdated: Date.now(),
 				};
-				localStorage.setItem(getStorageKey(selectedArmId), JSON.stringify(history));
+				localStorage.setItem(
+					getStorageKey(selectedArmId),
+					JSON.stringify(history),
+				);
 			} catch {
 				// Storage is a best-effort bridge until persisted event history loads.
 			}
 		}, 500);
 		return () => clearTimeout(timeout);
-	}, [activities, currentText, selectedArmId, sessionStatus, totalCost, totalTokens]);
+	}, [
+		activities,
+		currentText,
+		selectedArmId,
+		sessionStatus,
+		totalCost,
+		totalTokens,
+	]);
 
 	// Handle panel resizing
 	useEffect(() => {
@@ -1076,13 +1403,37 @@ export function ArmViewerPage() {
 		try {
 			const { arm: updatedArm } = await api.markArmStuck(selectedArm.id);
 			setArms((previous) =>
-				previous.map((current) => (current.id === updatedArm.id ? updatedArm : current)),
+				previous.map((current) =>
+					current.id === updatedArm.id ? updatedArm : current,
+				),
 			);
 			await loadArms();
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to mark arm stuck");
 		} finally {
 			setMarkingStuck(false);
+		}
+	};
+	const handleDirectMessage = () => {
+		if (!selectedArm) return;
+		openWorkspaceRoute(
+			{
+				pathname: "/compose",
+				search: `?arm=${encodeURIComponent(selectedArm.id)}`,
+				title: `Message ${selectedArm.name}`,
+			},
+			"action",
+		);
+	};
+	const handleDeleteArm = async () => {
+		if (!selectedArm) return;
+		if (!confirm(`Delete ${selectedArm.name}? This cannot be undone.`)) return;
+		try {
+			await api.deleteArm(selectedArm.id);
+			setArms((previous) => previous.filter((arm) => arm.id !== selectedArm.id));
+			closeViewer();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Failed to delete arm");
 		}
 	};
 	const selectedWorkItem =
@@ -1107,41 +1458,22 @@ export function ArmViewerPage() {
 	if (isWorkspacePanel) {
 		if (!selectedArmId) {
 			return (
-				<div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-background">
-					<div className="border-b border-border px-5 py-5">
-						<div className="flex items-start justify-between gap-4">
-							<div>
-								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-									Arm Viewer
-								</p>
-								<h1 className="mt-2 text-3xl font-semibold tracking-tight">
-									Select an active arm
-								</h1>
-								<p className="mt-1 text-sm text-muted-foreground">
-									Open a live console to inspect session output, state changes, and recent activity.
-								</p>
-							</div>
-
-							<Button
-								variant="ghost"
-								onPress={loadArms}
-								isIconOnly
-								size="sm"
-								aria-label="Refresh"
-							>
-								<RefreshCw className="h-4 w-4" />
-							</Button>
-						</div>
-					</div>
-
-					<div className="border-b border-border px-5 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-						{arms.length} active arm{arms.length === 1 ? "" : "s"}
-					</div>
+				<div
+					ref={workspaceContainerRef}
+					className="flex h-full min-h-0 flex-col bg-background"
+				>
+					<WorkbenchHeader
+						title="Select an active Arm"
+						description="Open a live console to inspect session output, state changes, and recent activity."
+						icon={<Eye className="h-4 w-4" />}
+					/>
 
 					<ArmSelectorPanel
 						arms={arms}
 						selectedArmId={selectedArmId}
 						onSelectArm={selectArm}
+						onRefresh={() => void loadArms()}
+						refreshing={armsRefreshing}
 						emptyTitle="No active arms"
 						emptyDescription="Spawn an arm to open a viewer session."
 						className="flex-1"
@@ -1158,8 +1490,8 @@ export function ArmViewerPage() {
 					workItemType={workItemType}
 					activeTab={activeTab}
 					onTabChange={setActiveTab}
-					summaryExpanded={summaryExpanded}
-					onSummaryExpandedChange={setSummaryExpanded}
+					activeOverview={activeOverview}
+					onOverviewChange={setActiveOverview}
 					connected={connected}
 					sessionStatus={sessionStatus}
 					error={error}
@@ -1168,9 +1500,14 @@ export function ArmViewerPage() {
 					activities={activities}
 					currentText={currentText}
 					messages={messages}
+					messageLogPreferences={messageLogPreferences}
+					onMessageLogTypeCollapsedChange={setMessageLogTypeCollapsed}
+					onBrainActivityVisibleChange={setBrainActivityVisible}
+					onContextBudgetChange={updateContextBudget}
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1191,6 +1528,8 @@ export function ArmViewerPage() {
 					}}
 					onClearHistory={handleClearHistory}
 					onMarkStuck={handleMarkStuck}
+					onDirectMessage={handleDirectMessage}
+					onDeleteArm={handleDeleteArm}
 					markingStuck={markingStuck}
 					feedContainerRef={feedContainerRef}
 					onFeedScroll={handleFeedScroll}
@@ -1201,21 +1540,18 @@ export function ArmViewerPage() {
 	}
 
 	return (
-		<div className="flex h-full">
+		<div className="flex h-full min-h-0 flex-col md:flex-row">
 			{/* Left Panel - Arm selector */}
 			{viewerExpanded ? null : (
 				<div
-					className="flex shrink-0 flex-col border-r border-border bg-background"
-					style={{ width: panelWidth }}
+					className="flex max-h-[44vh] w-full shrink-0 flex-col border-b border-border bg-background md:max-h-none md:w-[var(--arm-selector-width)] md:border-b-0 md:border-r"
+					style={{ "--arm-selector-width": `${panelWidth}px` } as CSSProperties}
 				>
-					<div className="border-b border-border px-4 py-4">
-						<div className="flex items-center justify-between gap-3">
-							<div>
-								<p className="text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-									Arm Viewer
-								</p>
-								<h2 className="mt-2 text-lg font-semibold tracking-tight">Active Arms</h2>
-							</div>
+					<WorkbenchHeader
+						title="Active Arms"
+						description="Choose a live session"
+						icon={<Eye className="h-4 w-4" />}
+						actions={
 							<Button
 								variant="ghost"
 								onPress={() => setViewerExpanded(true)}
@@ -1225,13 +1561,15 @@ export function ArmViewerPage() {
 							>
 								<Minimize2 className="h-4 w-4" />
 							</Button>
-						</div>
-					</div>
+						}
+					/>
 
 					<ArmSelectorPanel
 						arms={arms}
 						selectedArmId={selectedArmId}
 						onSelectArm={selectArm}
+						onRefresh={() => void loadArms()}
+						refreshing={armsRefreshing}
 						emptyTitle="No active arms"
 						emptyDescription="Spawn an arm to inspect its live console."
 						className="flex-1"
@@ -1242,8 +1580,23 @@ export function ArmViewerPage() {
 			{/* Resizable divider */}
 			{viewerExpanded ? null : (
 				<div
-					className="w-px bg-border hover:bg-accent/30 cursor-col-resize transition-colors"
+					role="separator"
+					tabIndex={0}
+					aria-label="Resize arm selector"
+					aria-orientation="vertical"
+					aria-valuemin={300}
+					aria-valuemax={Math.max(300, window.innerWidth - 400)}
+					aria-valuenow={panelWidth}
+					className="hidden w-1 cursor-col-resize bg-border transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none md:block"
 					onMouseDown={() => setIsResizing(true)}
+					onKeyDown={(event) => {
+						if (event.key === "ArrowLeft")
+							setPanelWidth((current) => Math.max(300, current - 20));
+						if (event.key === "ArrowRight")
+							setPanelWidth((current) =>
+								Math.min(window.innerWidth - 400, current + 20),
+							);
+					}}
 				/>
 			)}
 
@@ -1269,8 +1622,8 @@ export function ArmViewerPage() {
 					workItemType={workItemType}
 					activeTab={activeTab}
 					onTabChange={setActiveTab}
-					summaryExpanded={summaryExpanded}
-					onSummaryExpandedChange={setSummaryExpanded}
+					activeOverview={activeOverview}
+					onOverviewChange={setActiveOverview}
 					connected={connected}
 					sessionStatus={sessionStatus}
 					error={error}
@@ -1279,9 +1632,14 @@ export function ArmViewerPage() {
 					activities={activities}
 					currentText={currentText}
 					messages={messages}
+					messageLogPreferences={messageLogPreferences}
+					onMessageLogTypeCollapsedChange={setMessageLogTypeCollapsed}
+					onBrainActivityVisibleChange={setBrainActivityVisible}
+					onContextBudgetChange={updateContextBudget}
 					logsLoading={logsLoading}
 					logsReady={logsLoadedArmId === selectedArm?.id}
 					logsError={logsError}
+					logsTruncated={logsTruncated}
 					eventsLoading={eventsLoading}
 					analysis={armAnalysis}
 					analysisLoading={analysisLoading}
@@ -1302,6 +1660,8 @@ export function ArmViewerPage() {
 					}}
 					onClearHistory={handleClearHistory}
 					onMarkStuck={handleMarkStuck}
+					onDirectMessage={handleDirectMessage}
+					onDeleteArm={handleDeleteArm}
 					markingStuck={markingStuck}
 					feedContainerRef={feedContainerRef}
 					onFeedScroll={handleFeedScroll}
@@ -1316,6 +1676,8 @@ function ArmSelectorPanel({
 	arms,
 	selectedArmId,
 	onSelectArm,
+	onRefresh,
+	refreshing,
 	emptyTitle,
 	emptyDescription,
 	className,
@@ -1323,72 +1685,80 @@ function ArmSelectorPanel({
 	arms: Arm[];
 	selectedArmId: string | null;
 	onSelectArm: (armId: string) => void;
+	onRefresh: () => void;
+	refreshing: boolean;
 	emptyTitle: string;
 	emptyDescription: string;
 	className?: string;
 }) {
+	const [searchText, setSearchText] = useState("");
+	const [scope, setScope] = useState<ArmCollectionScope>("all");
+	const scopeOptions = (
+		Object.keys(ARM_COLLECTION_SCOPE_LABELS) as ArmCollectionScope[]
+	).map((id) => ({
+		id,
+		label: ARM_COLLECTION_SCOPE_LABELS[id],
+		count: arms.filter((arm) => armMatchesCollectionScope(arm, id)).length,
+	}));
+	const visibleArms = arms.filter(
+		(arm) =>
+			armMatchesCollectionScope(arm, scope) &&
+			armMatchesSearch(arm, searchText),
+	);
+
 	return (
-		<div className={cn("min-h-0 overflow-auto p-3", className)}>
-			{arms.length === 0 ? (
-				<div className="flex h-full min-h-[240px] items-center justify-center rounded-md border border-dashed border-border bg-surface-secondary/35 px-6 text-center">
-					<div>
-						<Eye className="mx-auto mb-4 h-10 w-10 text-muted-foreground/60" />
-						<p className="text-sm font-medium">{emptyTitle}</p>
-						<p className="mt-1 text-sm text-muted-foreground">{emptyDescription}</p>
-					</div>
-				</div>
-			) : (
-				<div className="space-y-2">
-					{arms.map((arm) => {
-						const isSelected = selectedArmId === arm.id;
-						const summary =
-							arm.currentTaskSubject ?? arm.currentBugTitle ?? arm.harness;
-
-						return (
-							<button
-								key={arm.id}
-								type="button"
-								className={cn(
-									"w-full rounded-md border px-3 py-3 text-left transition-colors",
-									isSelected
-										? "border-accent/45 bg-accent/8"
-										: "border-border bg-card hover:bg-surface-secondary/55",
-								)}
-								onClick={() => onSelectArm(arm.id)}
+		<div className={cn("flex min-h-0 flex-col overflow-hidden", className)}>
+			<ArmCollectionToolbar
+				searchText={searchText}
+				onSearchTextChange={setSearchText}
+				scope={scope}
+				onScopeChange={setScope}
+				scopeOptions={scopeOptions}
+				visible={visibleArms.length}
+				total={arms.length}
+				onRefresh={onRefresh}
+				refreshing={refreshing}
+			/>
+			<div className="min-h-0 flex-1 overflow-auto p-3">
+				{arms.length === 0 ? (
+					<WorkbenchEmptyState
+						title={emptyTitle}
+						description={emptyDescription}
+						icon={<Eye className="h-4 w-4" />}
+					/>
+				) : visibleArms.length === 0 ? (
+					<WorkbenchEmptyState
+						title="No matching arms"
+						description="Try another search or fleet view."
+						action={
+							<Button
+								size="sm"
+								variant="ghost"
+								onPress={() => {
+									setSearchText("");
+									setScope("all");
+								}}
 							>
-								<div className="flex items-start justify-between gap-3">
-									<div className="min-w-0">
-										<div className="flex items-center gap-2">
-											<span
-												className={cn(
-													"h-2 w-2 rounded-full",
-													arm.status === "running"
-														? "bg-success"
-														: arm.status === "starting"
-															? "bg-warning"
-															: arm.status === "error"
-																? "bg-danger"
-																: "bg-muted-foreground/60",
-												)}
-											/>
-											<div className="truncate text-sm font-medium">{arm.name}</div>
-										</div>
-										<div className="mt-1 truncate text-xs text-muted-foreground">
-											{summary}
-										</div>
-										<div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-											<span>{arm.harness}</span>
-											{arm.provider ? <span>{arm.provider}</span> : null}
-										</div>
-									</div>
-
-									<StatusBadge status={arm.status} />
-								</div>
-							</button>
-						);
-					})}
-				</div>
-			)}
+								Clear filters
+							</Button>
+						}
+						icon={<Eye className="h-4 w-4" />}
+					/>
+				) : (
+					<div className="overflow-hidden border border-border bg-surface">
+						{visibleArms.map((arm) => (
+							<ArmCollectionRow
+								key={arm.id}
+								arm={arm}
+								selected={selectedArmId === arm.id}
+								onOpen={() => onSelectArm(arm.id)}
+								attention={armNeedsAttention(arm)}
+								showUsage={false}
+							/>
+						))}
+					</div>
+				)}
+			</div>
 		</div>
 	);
 }
@@ -1399,8 +1769,8 @@ function ArmViewerConsole({
 	workItemType,
 	activeTab,
 	onTabChange,
-	summaryExpanded,
-	onSummaryExpandedChange,
+	activeOverview,
+	onOverviewChange,
 	connected,
 	sessionStatus,
 	error,
@@ -1409,9 +1779,14 @@ function ArmViewerConsole({
 	activities,
 	currentText,
 	messages,
+	messageLogPreferences,
+	onMessageLogTypeCollapsedChange,
+	onBrainActivityVisibleChange,
+	onContextBudgetChange,
 	logsLoading,
 	logsReady,
 	logsError,
+	logsTruncated,
 	eventsLoading,
 	analysis,
 	analysisLoading,
@@ -1419,6 +1794,8 @@ function ArmViewerConsole({
 	onRefreshAnalysis,
 	onClearHistory,
 	onMarkStuck,
+	onDirectMessage,
+	onDeleteArm,
 	markingStuck,
 	feedContainerRef,
 	onFeedScroll,
@@ -1429,8 +1806,8 @@ function ArmViewerConsole({
 	workItemType: "bug" | "task" | null;
 	activeTab: ViewerTab;
 	onTabChange: (tab: ViewerTab) => void;
-	summaryExpanded: boolean;
-	onSummaryExpandedChange: (expanded: boolean) => void;
+	activeOverview: ViewerOverview;
+	onOverviewChange: (overview: ViewerOverview) => void;
 	connected: boolean;
 	sessionStatus: string;
 	error: string | null;
@@ -1439,9 +1816,23 @@ function ArmViewerConsole({
 	activities: ActivityItem[];
 	currentText: string;
 	messages: ArmMessage[];
+	messageLogPreferences: MessageLogPreferences;
+	onMessageLogTypeCollapsedChange: (
+		type: MessageLogContentType,
+		collapsed: boolean,
+	) => void;
+	onBrainActivityVisibleChange: (
+		type: BrainActivityCategory,
+		visible: boolean,
+	) => void;
+	onContextBudgetChange: (
+		armId: string,
+		contextBudget: number,
+	) => Promise<void>;
 	logsLoading: boolean;
 	logsReady: boolean;
 	logsError: string | null;
+	logsTruncated: boolean;
 	eventsLoading: boolean;
 	analysis: ArmAnalysisFull | null;
 	analysisLoading: boolean;
@@ -1449,22 +1840,39 @@ function ArmViewerConsole({
 	onRefreshAnalysis: () => void;
 	onClearHistory: () => void;
 	onMarkStuck: () => void;
+	onDirectMessage: () => void;
+	onDeleteArm: () => void;
 	markingStuck: boolean;
 	feedContainerRef: { current: HTMLDivElement | null };
 	onFeedScroll: () => void;
 	onToggleActivity: (id: string) => void;
 }) {
 	const arm = selectedArm ?? null;
+	const toolbarTemplate = useToolbarTemplate("arm-viewer");
 	const sessionLabel = formatViewerSessionStatus(sessionStatus);
 	const hasEventTelemetry = (analysis?.analysis.metrics.eventCount || 0) > 0;
 	const analysisState = hasEventTelemetry
-		? analysis?.analysis.state.replaceAll("_", " ") ?? null
+		? (analysis?.analysis.state.replaceAll("_", " ") ?? null)
 		: null;
 	const totalTokenCount = totalTokens.input + totalTokens.output;
-	const streamCount = activeTab === "logs" ? messages.length : activities.length;
-	const streamValue = activeTab === "logs" && !logsReady
-		? "Loading logs"
-		: `${formatCompactNumber(streamCount)} ${activeTab}`;
+	const focusedBrainActivities = activities.filter((activity) => {
+		const category = getBrainActivityCategory(activity);
+		return category !== null && messageLogPreferences.brainActivity[category];
+	});
+	const focusedActivityItems = [
+		...messages.map((message) => ({
+			kind: "message" as const,
+			message,
+			timestamp: getMessageTimestamp(message.info.time) ?? 0,
+		})),
+		...focusedBrainActivities.map((activity) => ({
+			kind: "brain" as const,
+			activity,
+			timestamp: activity.timestamp,
+		})),
+	].sort((left, right) => left.timestamp - right.timestamp);
+	const streamCount =
+		activeTab === "logs" ? focusedActivityItems.length : activities.length;
 	const activityStateTone =
 		hasEventTelemetry && analysis?.analysis.state === "error"
 			? "danger"
@@ -1475,299 +1883,291 @@ function ArmViewerConsole({
 				: hasEventTelemetry && analysis?.analysis.state === "productive"
 					? "success"
 					: "neutral";
-	const sessionTone =
-		sessionStatus === "busy" ? "warning" : connected ? "success" : "neutral";
-	const compactSummary = true;
 	const statusNarrative = arm
 		? getViewerStatusNarrative({
 				armStatus: arm.status,
-				analysisState: hasEventTelemetry ? analysis?.analysis.state ?? null : null,
+				analysisState: hasEventTelemetry
+					? (analysis?.analysis.state ?? null)
+					: null,
 				sessionLabel,
 				connected,
 			})
 		: null;
+	const toolbarWidgets = {
+		"arm-viewer.identity": (
+			<div className="flex min-w-0 items-center gap-3">
+				<span className="flex h-8 w-8 shrink-0 items-center justify-center border border-border bg-surface-secondary text-muted-foreground">
+					{arm ? (
+						<ArmAvatar armId={arm.id} className="h-full w-full" />
+					) : (
+						<Bot className="h-4 w-4" />
+					)}
+				</span>
+				<div className="min-w-0">
+					<h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
+						<span className="truncate">{arm?.name ?? "Arm Viewer"}</span>
+						{arm ? <StatusBadge status={arm.status} /> : null}
+						{arm ? (
+							<span className="hidden sm:inline-flex">
+								<ViewerToolbarPill
+									label={analysisState ?? (analysisLoading ? "checking" : "no telemetry")}
+									tone={activityStateTone}
+									icon={
+										<PulseStateIcon
+											analysis={hasEventTelemetry ? analysis : null}
+											armStatus={arm.status}
+										/>
+									}
+									compact
+								/>
+							</span>
+						) : null}
+					</h1>
+					<p className="truncate text-xs text-muted-foreground">
+						{arm
+							? `${arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : (arm.model ?? "Arm console")} · ${connected ? "Live" : "Offline"}`
+							: "Select an Arm to inspect its live output, structured events, and health signals."}
+					</p>
+				</div>
+			</div>
+		),
+		"arm-viewer.overview": arm ? (
+			<div
+				role="group"
+				aria-label="Arm overview panels"
+				className="flex shrink-0 items-center p-0.5"
+			>
+				<Button
+					size="sm"
+					variant={activeOverview === "configuration" ? "secondary" : "ghost"}
+					aria-pressed={activeOverview === "configuration"}
+					aria-label="Toggle Arm configuration"
+					aria-controls="arm-viewer-configuration-panel"
+					onPress={() =>
+						onOverviewChange(activeOverview === "configuration" ? null : "configuration")
+					}
+					className="h-7 min-w-0 touch-manipulation px-2"
+				>
+					<Server className="h-3.5 w-3.5" aria-hidden="true" />
+					<span className="hidden md:inline">Configuration</span>
+				</Button>
+				<Button
+					size="sm"
+					variant={activeOverview === "status" ? "secondary" : "ghost"}
+					aria-pressed={activeOverview === "status"}
+					aria-label="Toggle Arm status"
+					aria-controls="arm-viewer-status-panel"
+					onPress={() => onOverviewChange(activeOverview === "status" ? null : "status")}
+					className="h-7 min-w-0 touch-manipulation px-2"
+				>
+					<HeartPulse className="h-3.5 w-3.5" aria-hidden="true" />
+					<span className="hidden md:inline">Status</span>
+				</Button>
+			</div>
+		) : null,
+		"arm-viewer.mark-stuck": arm &&
+		arm.status !== "stopped" &&
+		arm.status !== "planning_blocked" ? (
+			<Button
+				variant="ghost"
+				size="sm"
+				onPress={onMarkStuck}
+				isDisabled={markingStuck}
+				aria-label={arm.recoveryRequestedAt ? "Recovery requested" : "Mark arm stuck"}
+				className="gap-1.5 px-2 text-warning"
+			>
+				<AlertTriangle className="h-4 w-4" />
+				<span className="hidden lg:inline">
+					{markingStuck
+						? "Reporting…"
+						: arm.recoveryRequestedAt
+							? "Recovery requested"
+							: "Mark stuck"}
+				</span>
+			</Button>
+		) : null,
+		"arm-viewer.help": <ArmViewerHelp />,
+		"arm-viewer.refresh": (
+			<Button
+				variant="ghost"
+				onPress={onRefresh}
+				isIconOnly
+				size="sm"
+				aria-label="Refresh viewer"
+			>
+				<RefreshCw className="h-4 w-4" />
+			</Button>
+		),
+		"arm-viewer.actions": arm ? (
+			<Dropdown>
+				<Dropdown.Trigger
+					aria-label="Arm actions"
+					className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+				>
+					<MoreHorizontal className="h-4 w-4" />
+				</Dropdown.Trigger>
+				<Dropdown.Popover placement="bottom end">
+					<Dropdown.Menu
+						onAction={(key) => {
+							if (key === "message") onDirectMessage();
+							if (key === "clear") onClearHistory();
+							if (key === "delete") void onDeleteArm();
+						}}
+					>
+						<Dropdown.Item key="message" id="message" textValue="Direct message">
+							<span className="flex items-center gap-2">
+								<MessageSquare className="h-4 w-4" />
+								Direct message
+							</span>
+						</Dropdown.Item>
+						<Dropdown.Item
+							key="clear"
+							id="clear"
+							textValue="Clear event history"
+							isDisabled={activities.length === 0}
+						>
+							<span className="flex items-center gap-2">
+								<RefreshCw className="h-4 w-4" />
+								Clear event history
+							</span>
+						</Dropdown.Item>
+						<Dropdown.Item key="delete" id="delete" textValue="Delete arm" variant="danger">
+							<span className="flex items-center gap-2 text-danger">
+								<Trash2 className="h-4 w-4" />
+								Delete arm
+							</span>
+						</Dropdown.Item>
+					</Dropdown.Menu>
+				</Dropdown.Popover>
+			</Dropdown>
+		) : null,
+		"arm-viewer.stream-mode": (
+			<div
+				role="group"
+				aria-label="Arm activity stream"
+				className="flex shrink-0 items-center p-0.5"
+			>
+				<Button
+					size="sm"
+					variant={activeTab === "logs" ? "secondary" : "ghost"}
+					aria-pressed={activeTab === "logs"}
+					onPress={() => onTabChange("logs")}
+					className="h-7 min-w-0 touch-manipulation px-2"
+				>
+					<MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+					Focused Activity
+				</Button>
+				<Button
+					size="sm"
+					variant={activeTab === "events" ? "secondary" : "ghost"}
+					aria-pressed={activeTab === "events"}
+					onPress={() => onTabChange("events")}
+					className="h-7 min-w-0 touch-manipulation px-2"
+				>
+					<Zap className="h-3.5 w-3.5" aria-hidden="true" />
+					Firehose
+				</Button>
+			</div>
+		),
+		"arm-viewer.stream-preferences": activeTab === "logs" ? (
+			<CustomizeViewPopover
+				preferences={messageLogPreferences}
+				onCollapsedChange={onMessageLogTypeCollapsedChange}
+				onBrainActivityVisibleChange={onBrainActivityVisibleChange}
+			/>
+		) : null,
+	};
 
 	return (
 		<div className="flex h-full min-h-0 flex-col bg-background">
-			<div className="border-b border-border px-5 py-3">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="min-w-0 flex-1">
-						{arm ? (
-							<div className="flex min-w-0 items-center gap-3">
-								<div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-secondary text-accent">
-									<Bot className="h-4 w-4" />
+			<ToolbarTemplateRow row={toolbarTemplate.rows[0]} widgets={toolbarWidgets} />
+
+			{arm && activeOverview === "configuration" ? (
+				<ArmConfigurationPanel arm={arm} />
+			) : null}
+
+			{arm && activeOverview === "status" ? (
+				<div
+					id="arm-viewer-status-panel"
+					role="region"
+					aria-label="Arm status"
+					className="shrink-0 border-b border-border bg-surface-secondary/20 px-3 py-3"
+				>
+					<div className="grid items-start gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+						<div className="flex min-w-0 items-start gap-3">
+							<span
+								className={cn(
+									"flex h-8 w-8 shrink-0 items-center justify-center border bg-surface",
+									workItemType === "bug"
+										? "border-warning/30 text-warning"
+										: "border-accent/30 text-accent",
+								)}
+							>
+								{workItemType === "bug" ? (
+									<AlertOctagon className="h-4 w-4" />
+								) : (
+									<ListTodo className="h-4 w-4" />
+								)}
+							</span>
+							<div className="min-w-0">
+								<div className="flex items-center gap-2 text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
+									Current focus
+									{workItemType ? (
+										<span className="text-foreground/70">{workItemType}</span>
+									) : null}
 								</div>
-								<div className="min-w-0">
-									<div className="flex min-w-0 flex-wrap items-center gap-2">
-										<h1 className="truncate text-xl font-semibold tracking-tight">
-											{arm.name}
-										</h1>
-										<StatusBadge status={arm.status} />
-									</div>
-									<div className="mt-1 flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-										<span className="truncate">
-											{arm.provider ? `${arm.provider}${arm.model ? ` / ${arm.model}` : ""}` : arm.model ?? "Arm console"}
-										</span>
-										<span className="h-1 w-1 rounded-full bg-muted-foreground/40" />
-										<span className="inline-flex items-center gap-1.5">
-											<span className={cn("h-1.5 w-1.5 rounded-full", connected ? "bg-success" : "bg-danger")} />
-											{connected ? "Live" : "Offline"}
-										</span>
-										{arm.recoveryRequestedAt ? (
-											<span className="inline-flex items-center gap-1 text-warning">
-												<AlertTriangle className="h-3 w-3" />
-												Recovery requested
-											</span>
-										) : null}
-									</div>
-								</div>
-							</div>
-						) : (
-							<div className="mt-3">
-								<h1 className="text-2xl font-semibold tracking-tight">Arm Viewer</h1>
-								<p className="mt-2 text-sm text-muted-foreground">
-									Select an arm to inspect its live output, structured events, and recent health signals.
+								<p className="mt-1 line-clamp-2 text-sm font-medium leading-5 text-foreground">
+									{selectedWorkItem ?? "No active task or bug"}
+								</p>
+								<p className="mt-1 text-xs leading-4 text-muted-foreground">
+									{statusNarrative}
 								</p>
 							</div>
-						)}
-					</div>
-
-					<div className="flex flex-wrap items-center justify-end gap-2">
-						{arm ? (
-							<ArmDetailsPopover
-								arm={arm}
-								connected={connected}
-								totalCost={totalCost}
-								totalTokens={totalTokens}
-							/>
-						) : null}
-						{arm && arm.status !== "stopped" ? (
-							<Button
-								variant="ghost"
-								size="sm"
-								onPress={onMarkStuck}
-								isDisabled={markingStuck}
-								className="gap-1.5 text-warning"
-							>
-								<AlertTriangle className="h-4 w-4" />
-								{markingStuck
-									? "Reporting…"
-									: arm.recoveryRequestedAt
-										? "Recovery requested"
-										: "Mark stuck"}
-							</Button>
-						) : null}
-						<Button
-							variant="ghost"
-							onPress={onRefresh}
-							isIconOnly
-							size="sm"
-							aria-label="Refresh viewer"
-						>
-							<RefreshCw className="h-4 w-4" />
-						</Button>
-					</div>
-				</div>
-			</div>
-
-			{arm ? (
-				<div className="border-b border-border">
-					<div className="flex flex-wrap items-center gap-2 px-5 py-2.5">
-						<button
-							type="button"
-							onClick={() => onSummaryExpandedChange(!summaryExpanded)}
-							className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left transition-colors hover:text-foreground"
-							aria-expanded={summaryExpanded}
-							aria-label={summaryExpanded ? "Collapse status details" : "Expand status details"}
-						>
-							<ViewerToolbarPill
-								label={analysisState ?? arm.status}
-								tone={activityStateTone}
-								icon={<PulseStateIcon analysis={hasEventTelemetry ? analysis : null} armStatus={arm.status} />}
-								compact
-							/>
-							<span className="min-w-0 truncate text-sm text-muted-foreground">
-								{statusNarrative}
-							</span>
-						</button>
-
-						<StatusDetailsPopover
-							armStatus={arm.status}
-							analysis={analysis}
-							sessionLabel={sessionLabel}
-							sessionStatus={sessionStatus}
-							connected={connected}
-							streamLabel={streamValue}
-						/>
-
-						<div className="hidden items-center gap-2 text-xs text-muted-foreground sm:flex">
-							{activeTab === "logs" ? (
-								<MessageSquare className="h-3.5 w-3.5" />
-							) : (
-								<Zap className="h-3.5 w-3.5" />
-							)}
-							<span>{activeTab === "logs" && !logsReady ? "—" : formatCompactNumber(streamCount)}</span>
 						</div>
 
-						<Button
-							variant="ghost"
-							size="sm"
-							isIconOnly
-							onPress={() => onSummaryExpandedChange(!summaryExpanded)}
-							aria-label={summaryExpanded ? "Collapse status details" : "Expand status details"}
-						>
-							<ChevronDown
-								className={cn(
-									"h-4 w-4 text-muted-foreground transition-transform",
-									summaryExpanded ? "rotate-180" : "",
-								)}
+						<dl className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4 lg:min-w-[32rem]">
+							<ViewerSummaryFact
+								label="Session"
+								value={sessionLabel}
+								detail={connected ? "Live" : "Offline"}
 							/>
-						</Button>
+							<ViewerSummaryFact
+								label="Stream"
+								value={
+									activeTab === "logs" && !logsReady
+										? "Loading"
+										: formatCompactNumber(streamCount)
+								}
+								detail={activeTab === "logs" ? "Focused" : "Events"}
+							/>
+							<ViewerSummaryFact
+								label="Tokens"
+								value={
+									totalTokenCount > 0
+										? formatCompactNumber(totalTokenCount)
+										: "—"
+								}
+								detail="Session usage"
+							/>
+							<ViewerSummaryFact
+								label="Cost"
+								value={totalCost > 0 ? `$${totalCost.toFixed(4)}` : "—"}
+								detail="Reported total"
+							/>
+						</dl>
 					</div>
 
-					{summaryExpanded ? (
-						<div className="px-5 pb-3">
-							<div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))]">
-								<ViewerMetricCard
-									label="Current Focus"
-									value={selectedWorkItem ?? "Monitoring"}
-									detail={
-										selectedWorkItem
-											? workItemType === "bug"
-												? "Bug under review"
-												: "Task in progress"
-											: "No active task or bug"
-									}
-									tone={workItemType === "bug" ? "warning" : "accent"}
-									icon={
-										workItemType === "bug" ? (
-											<AlertOctagon className="h-4 w-4" />
-										) : (
-											<ListTodo className="h-4 w-4" />
-										)
-									}
-									isPrimary
-									compact={compactSummary}
-								/>
-								<ViewerMetricCard
-									label="Activity State"
-									value={analysisState ?? (analysisLoading ? "Checking" : "No event data")}
-									detail={
-										hasEventTelemetry && analysis?.analysis.confidence
-											? `${analysis.analysis.confidence} confidence`
-											: "Waiting for structured events"
-									}
-									tone={activityStateTone}
-									icon={<PulseStateIcon analysis={hasEventTelemetry ? analysis : null} armStatus={arm.status} />}
-									compact={compactSummary}
-								/>
-								<ViewerMetricCard
-									label="Session"
-									value={sessionLabel}
-									detail={connected ? "Event stream connected" : "History only"}
-									tone={sessionTone}
-									icon={
-										sessionStatus === "busy" ? (
-											<Loader2 className="h-4 w-4 animate-spin" />
-										) : (
-											<Radio className="h-4 w-4" />
-										)
-									}
-									compact={compactSummary}
-								/>
-								<ViewerMetricCard
-									label="Stream"
-									value={streamValue}
-									detail={activeTab === "logs" ? "Captured messages" : "Structured events"}
-									tone="neutral"
-									icon={
-										activeTab === "logs" ? (
-											<Terminal className="h-4 w-4" />
-										) : (
-											<Zap className="h-4 w-4" />
-										)
-									}
-									compact={compactSummary}
-								/>
-								<ViewerMetricCard
-									label="Usage"
-									value={totalTokenCount > 0 ? `${formatCompactNumber(totalTokenCount)} tokens` : "No usage yet"}
-									detail={totalCost > 0 ? `$${totalCost.toFixed(4)} total` : "Cost not available"}
-									tone="neutral"
-									icon={<Coins className="h-4 w-4" />}
-									compact={compactSummary}
-								/>
-							</div>
-
-						<ArmAnalysisPanel
-							analysis={analysis}
-							loading={analysisLoading}
-							onRefresh={onRefreshAnalysis}
-							compact
-							embedded
-						/>
-					</div>
-				) : null}
-			</div>
-		) : null}
-
-			<div className="border-b border-border px-5 py-2.5">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="inline-flex items-center rounded-md border border-border bg-surface-secondary/70 p-0.5">
-						<ViewerTabButton
-							label="Logs"
-							isActive={activeTab === "logs"}
-							onPress={() => onTabChange("logs")}
-						/>
-						<ViewerTabButton
-							label="Events"
-							isActive={activeTab === "events"}
-							onPress={() => onTabChange("events")}
-						/>
-					</div>
-
-					<div className="flex flex-wrap items-center gap-2">
-						<Dropdown>
-							<Dropdown.Trigger
-								aria-label="Viewer actions"
-								className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
-							>
-								<MoreHorizontal className="h-4 w-4" />
-							</Dropdown.Trigger>
-							<Dropdown.Popover>
-								<Dropdown.Menu
-									onAction={(key) => {
-										if (key === "refresh") {
-											onRefresh();
-										}
-										if (key === "clear") {
-											onClearHistory();
-										}
-									}}
-								>
-									<Dropdown.Item key="refresh" id="refresh" textValue="Refresh">
-										<span className="flex items-center gap-2">
-											<RefreshCw className="h-4 w-4" />
-											Refresh
-										</span>
-									</Dropdown.Item>
-									<Dropdown.Item
-										key="clear"
-										id="clear"
-										textValue="Clear event history"
-										isDisabled={activeTab !== "events" || activities.length === 0}
-									>
-										<span className="flex items-center gap-2">
-											<Trash2 className="h-4 w-4" />
-											Clear event history
-										</span>
-									</Dropdown.Item>
-								</Dropdown.Menu>
-							</Dropdown.Popover>
-						</Dropdown>
-					</div>
+					<ArmAnalysisPanel
+						analysis={analysis}
+						loading={analysisLoading}
+						onRefresh={onRefreshAnalysis}
+						compact
+						embedded
+					/>
 				</div>
-			</div>
+			) : null}
+
+			<ToolbarTemplateRow row={toolbarTemplate.rows[1]} widgets={toolbarWidgets} />
 
 			{error ? (
 				<div className="border-b border-danger/20 bg-danger/10 px-5 py-3">
@@ -1779,39 +2179,43 @@ function ArmViewerConsole({
 			) : null}
 
 			<div className="min-h-0 flex-1 overflow-hidden">
-						{arm ? (
-							activeTab === "events" ? (
-							<div
-								ref={feedContainerRef}
-								onScroll={onFeedScroll}
-								className="h-full overflow-auto bg-surface/70 p-4"
-							>
-								<div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
-									{selectedArm?.id ? (
-										<div className="grid gap-3 xl:grid-cols-3">
-											<ArmActivityChart
-												armId={selectedArm.id}
-												activities={activities}
-													title="Activity & Efficiency"
-													embedded
-													compact
-												/>
-												<ArmContextUsageChart
-													armId={selectedArm.id}
-													title="Context Usage"
-													embedded
-													compact
-												/>
-												<ArmCostUsageChart
-													armId={selectedArm.id}
-													title="Cost Usage"
-													embedded
-													compact
-												/>
-										</div>
-									) : null}
-									{currentText ? (
-											<div className="overflow-hidden rounded-md border border-accent/35 bg-accent/8">
+				{arm ? (
+					activeTab === "events" ? (
+						<div
+							ref={feedContainerRef}
+							onScroll={onFeedScroll}
+							className="h-full overflow-auto bg-surface/70 p-4"
+						>
+							<div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
+								{selectedArm?.id ? (
+									<div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
+										<ArmActivityChart
+											armId={selectedArm.id}
+											activities={activities}
+											title="Activity & Efficiency"
+											embedded
+											compact
+										/>
+										<ArmContextUsageChart
+											armId={selectedArm.id}
+											contextBudget={selectedArm.contextBudget}
+											onContextBudgetChange={(contextBudget) =>
+												onContextBudgetChange(selectedArm.id, contextBudget)
+											}
+											title="Context Usage"
+											embedded
+											compact
+										/>
+										<ArmCostUsageChart
+											armId={selectedArm.id}
+											title="Cost Usage"
+											embedded
+											compact
+										/>
+									</div>
+								) : null}
+								{currentText ? (
+									<div className="overflow-hidden rounded-md border border-accent/35 bg-accent/8">
 										<div className="flex items-center gap-2 border-b border-accent/20 px-4 py-3 text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-accent">
 											<Bot className="h-3.5 w-3.5" />
 											Live Draft
@@ -1831,14 +2235,15 @@ function ArmViewerConsole({
 								) : activities.length === 0 && !currentText ? (
 									<ViewerEmptyState
 										icon={<Zap className="h-8 w-8" />}
-										title="No activity yet"
-										description="Structured events will appear here as the arm works."
+										title="No firehose events yet"
+										description="Raw live events will appear here as the arm works."
 									/>
 								) : (
 									activities.map((activity) => (
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}
+											arm={arm}
 											onToggle={() => onToggleActivity(activity.id)}
 										/>
 									))
@@ -1857,6 +2262,13 @@ function ArmViewerConsole({
 										{logsError}
 									</div>
 								) : null}
+								{logsTruncated ? (
+									<div className="rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
+										Showing the most recent messages that fit the transport
+										limit. Usage totals are not recalculated from this partial
+										response.
+									</div>
+								) : null}
 
 								{(logsLoading || !logsReady) && messages.length === 0 ? (
 									<div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -1865,16 +2277,30 @@ function ArmViewerConsole({
 									</div>
 								) : null}
 
-								{messages.length === 0 && logsReady && !logsLoading ? (
+								{focusedActivityItems.length === 0 &&
+								logsReady &&
+								!logsLoading ? (
 									<ViewerEmptyState
 										icon={<Terminal className="h-8 w-8" />}
-										title="No message logs yet"
-										description="Conversation turns, tool calls, and system notes will accumulate here."
+										title="No focused activity yet"
+										description="Model messages and selected brain decisions will appear here."
 									/>
 								) : (
-									messages.map((message) => (
-										<MessageLogItem key={message.info.id} message={message} />
-									))
+									focusedActivityItems.map((item) =>
+										item.kind === "message" ? (
+											<MessageLogItem
+												key={item.message.info.id}
+												message={item.message}
+												preferences={messageLogPreferences}
+												onCollapsedChange={onMessageLogTypeCollapsedChange}
+											/>
+										) : (
+											<BrainActivityLogItem
+												key={`brain-${item.activity.id}`}
+												activity={item.activity}
+											/>
+										),
+									)
 								)}
 							</div>
 						</div>
@@ -1893,107 +2319,27 @@ function ArmViewerConsole({
 	);
 }
 
-function ViewerMetricCard({
+function ViewerSummaryFact({
 	label,
 	value,
 	detail,
-	icon,
-	tone,
-	isPrimary = false,
-	compact = false,
 }: {
 	label: string;
 	value: string;
 	detail: string;
-	icon: ReactNode;
-	tone: "neutral" | "accent" | "success" | "warning" | "danger";
-	isPrimary?: boolean;
-	compact?: boolean;
 }) {
-	const toneClass = {
-		neutral: "border-border bg-card text-foreground",
-		accent: "border-accent/25 bg-accent/8 text-foreground",
-		success: "border-success/25 bg-success/8 text-foreground",
-		warning: "border-warning/30 bg-warning/10 text-foreground",
-		danger: "border-danger/25 bg-danger/10 text-foreground",
-	}[tone];
-
-	const iconTone = {
-		neutral: "text-muted-foreground",
-		accent: "text-accent",
-		success: "text-success",
-		warning: "text-warning",
-		danger: "text-danger",
-	}[tone];
-
-	const showDetail = !compact || isPrimary;
-
 	return (
-		<div
-			className={cn(
-				"rounded-md border",
-				compact ? "px-2.5 py-2" : "px-4 py-3",
-				toneClass,
-				isPrimary && !compact ? "md:col-span-2 2xl:col-span-1 2xl:min-h-[96px]" : "",
-			)}
-		>
-			<div className={cn("flex items-start", compact ? "gap-2.5" : "gap-3")}>
-				<div className={cn("mt-0.5", iconTone)}>{icon}</div>
-				<div className="min-w-0">
-					<div
-						className={cn(
-							"font-semibold uppercase text-muted-foreground",
-							compact ? "text-[0.62rem] tracking-[0.15em]" : "text-[0.68rem] tracking-[0.18em]",
-						)}
-					>
-						{label}
-					</div>
-					<div
-						className={cn(
-							"break-words font-semibold capitalize leading-tight text-foreground",
-							compact ? "mt-1 text-[0.9rem]" : "mt-2 text-sm",
-						)}
-					>
-						{value}
-					</div>
-					{showDetail ? (
-						<div
-							className={cn(
-								"text-muted-foreground",
-								compact ? "mt-0.5 text-[0.72rem] leading-4" : "mt-1 text-sm",
-							)}
-						>
-							{detail}
-						</div>
-					) : null}
-				</div>
+		<div className="min-w-0 bg-surface px-3 py-2">
+			<dt className="text-[0.58rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+				{label}
+			</dt>
+			<dd className="mt-1 truncate text-sm font-semibold capitalize tabular-nums text-foreground">
+				{value}
+			</dd>
+			<div className="truncate text-[0.65rem] text-muted-foreground">
+				{detail}
 			</div>
 		</div>
-	);
-}
-
-function ViewerTabButton({
-	label,
-	isActive,
-	onPress,
-}: {
-	label: string;
-	isActive: boolean;
-	onPress: () => void;
-}) {
-	return (
-		<button
-			type="button"
-			onClick={onPress}
-			className={cn(
-				"rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
-				isActive
-					? "bg-background text-foreground shadow-sm"
-					: "text-muted-foreground hover:text-foreground",
-			)}
-		>
-			{label}
-		</button>
 	);
 }
 
@@ -2029,151 +2375,81 @@ function ViewerToolbarPill({
 	);
 }
 
-function ArmDetailsPopover({
-	arm,
-	connected,
-	totalCost,
-	totalTokens,
-}: {
-	arm: Arm;
-	connected: boolean;
-	totalCost: number;
-	totalTokens: { input: number; output: number };
-}) {
-	const detailRows = [
-		["Harness", arm.harness],
-		["Provider", arm.provider ?? "Unknown"],
-		["Model", arm.model ?? "Unknown"],
-		["Stream", connected ? "Live" : "Offline"],
-		["Tokens", formatCompactNumber(totalTokens.input + totalTokens.output)],
-		["Cost", totalCost > 0 ? `$${totalCost.toFixed(4)}` : "Not available"],
+function ArmConfigurationPanel({ arm }: { arm: Arm }) {
+	const runtimeHost = arm.host ?? arm.agentId ?? "Not assigned";
+	const configuration = [
+		{ label: "Harness", value: arm.harness, detail: "Runtime adapter" },
+		{ label: "Provider", value: arm.provider ?? "Default", detail: "Model provider" },
+		{ label: "Model", value: arm.model ?? "Default", detail: "Completion model" },
+		{
+			label: "Context",
+			value: arm.contextBudget > 0 ? formatCompactNumber(arm.contextBudget) : "Not set",
+			detail: "Token budget",
+		},
+		{ label: "Host", value: runtimeHost, detail: arm.runtime?.distributed ? "Distributed" : "Local" },
+		{ label: "Workdir", value: arm.workdir ?? "Not set", detail: "Working directory" },
 	];
 
 	return (
+		<div
+			id="arm-viewer-configuration-panel"
+			role="region"
+			aria-label="Arm configuration"
+			className="shrink-0 border-b border-border bg-surface-secondary/20 px-3 py-3"
+		>
+			<div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+				<Server className="h-3.5 w-3.5" aria-hidden="true" />
+				Configuration
+			</div>
+			<dl className="mt-2 grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-3 xl:grid-cols-6">
+				{configuration.map((item) => (
+					<ViewerSummaryFact key={item.label} {...item} />
+				))}
+			</dl>
+		</div>
+	);
+}
+
+function ArmViewerHelp() {
+	return (
 		<Popover>
 			<Popover.Trigger
-				aria-label="Arm details"
-				className="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md px-2.5 text-sm text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
+				aria-label="Explain Arm Viewer"
+				className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
 			>
-				<Server className="h-4 w-4" />
-				<span className="hidden sm:inline">Details</span>
+				<CircleHelp className="h-4 w-4" />
 			</Popover.Trigger>
-			<Popover.Content placement="bottom end" className="w-72">
-				<Popover.Dialog className="outline-none">
-					<div className="px-1 py-1">
-						<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-							Arm Details
+			<Popover.Content placement="bottom end" className="w-[480px] max-w-[calc(100vw-2rem)]">
+				<Popover.Dialog className="max-h-[min(460px,calc(100vh-2rem))] overflow-auto outline-none">
+					<div className="space-y-4 px-1 py-1">
+						<div>
+							<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+								Arm Viewer
+							</div>
+							<p className="mt-1 text-sm leading-5 text-muted-foreground">
+								Inspect one live arm without mixing configuration, health, and stream controls.
+							</p>
 						</div>
-						<div className="mt-3 grid gap-2">
-							{detailRows.map(([label, value]) => (
-								<div key={label} className="flex items-center justify-between gap-4 text-sm">
-									<span className="text-muted-foreground">{label}</span>
-									<span className="truncate text-right font-medium text-foreground">{value}</span>
+						<div className="space-y-2">
+							{[
+								["Configuration", "Shows the harness, model, context budget, host, and working directory."],
+								["Status", "Shows current work, session usage, and recent health analysis."],
+								["Focused Activity", "Combines model messages with the selected Brain activity categories."],
+								["Firehose", "Shows raw structured events and telemetry charts for debugging."],
+							].map(([label, detail]) => (
+								<div key={label} className="border border-border bg-surface-secondary/35 px-3 py-2">
+									<div className="text-xs font-semibold text-foreground">{label}</div>
+									<div className="mt-0.5 text-xs leading-5 text-muted-foreground">{detail}</div>
 								</div>
 							))}
 						</div>
+						<p className="text-xs leading-5 text-muted-foreground">
+							Mark stuck asks the Brain to evaluate the arm for recovery on its next pass.
+						</p>
 					</div>
 				</Popover.Dialog>
 			</Popover.Content>
 		</Popover>
-	);
-}
-
-function StatusDetailsPopover({
-	armStatus,
-	analysis,
-	sessionLabel,
-	sessionStatus,
-	connected,
-	streamLabel,
-}: {
-	armStatus: string;
-	analysis: ArmAnalysisFull | null;
-	sessionLabel: string;
-	sessionStatus: string;
-	connected: boolean;
-	streamLabel: string;
-}) {
-	const healthState = analysis?.analysis.state ?? null;
-	const healthValue = healthState ? formatStatusLayerLabel(healthState) : "No analysis yet";
-	const lifecycleValue = formatStatusLayerLabel(armStatus);
-
-	return (
-		<Popover>
-			<Popover.Trigger
-				aria-label="Explain arm statuses"
-				className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-surface-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-accent"
-			>
-				<Info className="h-4 w-4" />
-			</Popover.Trigger>
-			<Popover.Content placement="bottom end" className="w-[520px] max-w-[calc(100vw-2rem)]">
-				<Popover.Dialog className="max-h-[min(430px,calc(100vh-2rem))] overflow-auto outline-none">
-					<div className="space-y-3 px-1 py-1">
-						<div>
-							<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-								Status Layers
-							</div>
-							<p className="mt-1 text-sm leading-5 text-muted-foreground">
-								These labels answer different questions, so more than one can be true at once.
-							</p>
-						</div>
-
-						<div className="grid gap-2 sm:grid-cols-2">
-							<StatusLayerRow
-								label="Lifecycle"
-								value={lifecycleValue}
-								detail="What the API currently knows about the arm process. Busy means the arm is assigned or active from the orchestrator's point of view."
-							/>
-							<StatusLayerRow
-								label="Health"
-								value={healthValue}
-								detail={
-									analysis
-										? formatAnalysisReason(analysis.analysis.reason)
-										: "The recent event analyzer has not produced a health signal yet."
-								}
-							/>
-							<StatusLayerRow
-								label="Session"
-								value={sessionLabel}
-								detail={`The live harness session state. ${
-									sessionStatus === "busy"
-										? "Working means a response or tool action is in flight."
-										: "Waiting means the stream is open, but no response is currently in flight."
-								}`}
-							/>
-							<StatusLayerRow
-								label="Stream"
-								value={connected ? "Live" : "Offline"}
-								detail={`${streamLabel} loaded. This only describes whether the browser is receiving updates.`}
-							/>
-						</div>
-					</div>
-				</Popover.Dialog>
-			</Popover.Content>
-		</Popover>
-	);
-}
-
-function StatusLayerRow({
-	label,
-	value,
-	detail,
-}: {
-	label: string;
-	value: string;
-	detail: string;
-}) {
-	return (
-		<div className="rounded-md border border-border bg-surface-secondary/35 px-3 py-2">
-			<div className="flex items-center justify-between gap-3">
-				<span className="text-[0.62rem] font-semibold uppercase tracking-[0.15em] text-muted-foreground">
-					{label}
-				</span>
-				<span className="text-sm font-semibold text-foreground">{value}</span>
-			</div>
-			<p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{detail}</p>
-		</div>
 	);
 }
 
@@ -2226,65 +2502,64 @@ function PulseStateIcon({
 
 function ActivityItemComponent({
 	activity,
+	arm,
 	onToggle,
 }: {
 	activity: ActivityItem;
+	arm: Pick<Arm, "id" | "name">;
 	onToggle: () => void;
 }) {
-	const colors = activityColors[activity.type];
-	const Icon = activityIcons[activity.type];
 	const hasDetails =
 		activity.details && Object.keys(activity.details).length > 0;
-
-	const statusIcon = {
-		pending: <Clock className="h-3.5 w-3.5 text-muted-foreground" />,
-		running: <Loader2 className="h-3.5 w-3.5 animate-spin text-warning" />,
-		completed: <CheckCircle2 className="h-3.5 w-3.5 text-success" />,
-		error: <XCircle className="h-3.5 w-3.5 text-danger" />,
-		info: null,
-	}[activity.status];
+	const envelope = presentInboxItem(
+		{
+			id: `arm-activity:${activity.id}`,
+			kind: "arm",
+			title: activity.title,
+			summary: activity.subtitle ?? activity.status,
+			timestamp: new Date(activity.timestamp).toISOString(),
+			source: `Arm activity · ${activity.type.replaceAll("_", " ")}`,
+			resourceId: activity.id,
+			unread: activity.status === "error",
+			requiresAction: activity.status === "error",
+			severity:
+				activity.status === "error"
+					? "danger"
+					: activity.status === "completed"
+						? "success"
+						: activity.status === "running"
+							? "warning"
+							: "info",
+		},
+		{
+			surface: "stream",
+			creator: createArmCardCreator(arm.id, arm.name),
+			facts: [
+				{ label: "Status", value: activity.status },
+				{ label: "Type", value: activity.type.replaceAll("_", " ") },
+			],
+		},
+	);
 
 	return (
 		<div className="overflow-hidden rounded-md border border-border bg-card">
-			<div className={cn("h-1 w-full", colors.bg)} />
-			<Button
-				variant="ghost"
-				onPress={onToggle}
-				isDisabled={!hasDetails}
-				className="h-auto w-full justify-start px-4 py-3"
-			>
-				<div className="flex min-w-0 flex-1 items-start gap-3 text-left">
-					<div className={cn("mt-0.5 rounded-sm border border-border p-2", colors.bg)}>
-						<Icon className={`h-4 w-4 ${colors.icon}`} />
-					</div>
-
-					<div className="min-w-0 flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<span className="truncate text-sm font-semibold">{activity.title}</span>
-							{statusIcon}
-							<span className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-								{activity.status}
-							</span>
-						</div>
-						{activity.subtitle ? (
-							<div className="mt-1 truncate text-sm text-muted-foreground">
-								{activity.subtitle}
-							</div>
-						) : null}
-					</div>
-
-					<div className="flex items-center gap-2 pl-2 text-xs text-muted-foreground">
-						<span>{formatTime(activity.timestamp)}</span>
-						{hasDetails ? (
-							activity.expanded ? (
-								<ChevronDown className="h-3.5 w-3.5" />
-							) : (
-								<ChevronRight className="h-3.5 w-3.5" />
-							)
-						) : null}
-					</div>
-				</div>
-			</Button>
+			<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
+			{hasDetails ? (
+				<Button
+					variant="ghost"
+					onPress={onToggle}
+					className="h-8 w-full justify-between border-t border-border px-4 text-xs"
+				>
+					<span>
+						{activity.expanded ? "Hide raw details" : "Show raw details"}
+					</span>
+					{activity.expanded ? (
+						<ChevronDown className="h-3.5 w-3.5" />
+					) : (
+						<ChevronRight className="h-3.5 w-3.5" />
+					)}
+				</Button>
+			) : null}
 
 			{activity.expanded && hasDetails ? (
 				<div className="border-t border-border px-4 py-3">
@@ -2297,7 +2572,127 @@ function ActivityItemComponent({
 	);
 }
 
-function MessageLogItem({ message }: { message: ArmMessage }) {
+function CustomizeViewPopover({
+	preferences,
+	onCollapsedChange,
+	onBrainActivityVisibleChange,
+}: {
+	preferences: MessageLogPreferences;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+	onBrainActivityVisibleChange: (
+		type: BrainActivityCategory,
+		visible: boolean,
+	) => void;
+}) {
+	const expandedDetailCount = Object.values(preferences.collapsed).filter(
+		(collapsed) => !collapsed,
+	).length;
+	const visibleSignalCount = Object.values(preferences.brainActivity).filter(Boolean).length;
+	const viewSummary = `${expandedDetailCount} expanded / ${visibleSignalCount} signals`;
+
+	return (
+		<Popover>
+			<ProjectionMenuTrigger
+				summary={viewSummary}
+				ariaLabel={`Customize focused activity: ${viewSummary}`}
+				className="ml-auto h-7 min-h-7"
+			/>
+			<Popover.Content
+				placement="bottom end"
+				className="w-96 max-w-[calc(100vw-2rem)]"
+			>
+				<Popover.Dialog className="max-h-[min(560px,calc(100vh-2rem))] overflow-auto outline-none">
+					<div className="px-1 py-1">
+						<div className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Customize focused activity
+						</div>
+						<p className="mt-1 text-sm leading-5 text-muted-foreground">
+							Choose the transcript details and brain activity shown in this
+							view. Preferences are saved locally.
+						</p>
+						<div className="mt-4 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Transcript display
+						</div>
+						<div className="mt-2 grid gap-1">
+							{MESSAGE_LOG_TYPE_OPTIONS.map(({ type, label, description }) => {
+								const collapsed = preferences.collapsed[type];
+								return (
+									<button
+										key={type}
+										type="button"
+										aria-pressed={!collapsed}
+										onClick={() => onCollapsedChange(type, !collapsed)}
+										className="flex items-center justify-between gap-3 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+									>
+										<span>
+											<span className="block text-sm font-medium text-foreground">
+												{label}
+											</span>
+											<span className="block text-xs text-muted-foreground">
+												{description}
+											</span>
+										</span>
+										<span className="shrink-0 text-xs font-medium text-muted-foreground">
+											{collapsed ? "Collapsed" : "Expanded"}
+										</span>
+									</button>
+								);
+							})}
+						</div>
+						<div className="mt-5 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+							Brain activity
+						</div>
+						<div className="mt-2 grid gap-4">
+							{BRAIN_ACTIVITY_GROUPS.map(({ heading, options }) => (
+								<div key={heading}>
+									<div className="mb-1 text-xs font-semibold text-foreground">
+										{heading}
+									</div>
+									<div className="grid gap-1">
+										{options.map(({ type, label, description }) => (
+											<Switch
+												key={type}
+												size="sm"
+												isSelected={preferences.brainActivity[type]}
+												onChange={(visible) =>
+													onBrainActivityVisibleChange(type, visible)
+												}
+											>
+												<Switch.Content className="flex-1 items-start gap-2 rounded-md px-2 py-1 hover:bg-surface-secondary">
+													<Switch.Control>
+														<Switch.Thumb />
+													</Switch.Control>
+													<span>
+														<span className="block text-sm font-medium text-foreground">
+															{label}
+														</span>
+														<span className="block text-xs text-muted-foreground">
+															{description}
+														</span>
+													</span>
+												</Switch.Content>
+											</Switch>
+										))}
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				</Popover.Dialog>
+			</Popover.Content>
+		</Popover>
+	);
+}
+
+function MessageLogItem({
+	message,
+	preferences,
+	onCollapsedChange,
+}: {
+	message: ArmMessage;
+	preferences: MessageLogPreferences;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+}) {
 	const role = message.info.role;
 	const roleLabel =
 		role === "assistant" ? "Assistant" : role === "user" ? "User" : "System";
@@ -2313,8 +2708,19 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
 			<div className="flex items-center justify-between gap-3 px-1">
 				<div className="flex min-w-0 items-center gap-2">
-					<span className={cn("h-1.5 w-1.5 rounded-full", role === "assistant" ? "bg-accent" : role === "user" ? "bg-success" : "bg-warning")} />
-					<div className={`text-[0.62rem] uppercase tracking-[0.15em] font-semibold ${roleColor}`}>
+					<span
+						className={cn(
+							"h-1.5 w-1.5 rounded-full",
+							role === "assistant"
+								? "bg-accent"
+								: role === "user"
+									? "bg-success"
+									: "bg-warning",
+						)}
+					/>
+					<div
+						className={`text-[0.62rem] uppercase tracking-[0.15em] font-semibold ${roleColor}`}
+					>
 						{roleLabel}
 					</div>
 				</div>
@@ -2324,16 +2730,71 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 			</div>
 
 			<div className="mt-2 space-y-2">
+				{formatMessageError(message.info.error) ? (
+					<MessageLogEntry
+						type="error"
+						label="Error"
+						collapsed={preferences.collapsed.error}
+						onCollapsedChange={onCollapsedChange}
+					>
+						<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+							{formatMessageError(message.info.error)}
+						</pre>
+					</MessageLogEntry>
+				) : null}
 				{message.parts.map((part, index) => {
-					if (part.type === "text" && part.text) {
+					const text = part.text || part.content;
+					if (part.type === "text" && text) {
+						const type: MessageLogContentType =
+							role === "assistant" ? "response" : "message";
 						return (
-							<pre
+							<MessageLogEntry
 								key={`${message.info.id}-text-${index}`}
-								className="overflow-auto rounded-md border border-border/60 bg-surface-secondary/30 px-3 py-2.5 font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92"
+								type={type}
+								label={type === "response" ? "Response" : "Message"}
+								collapsed={preferences.collapsed[type]}
+								onCollapsedChange={onCollapsedChange}
 							>
-								{part.text}
-							</pre>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92">
+									{text}
+								</pre>
+							</MessageLogEntry>
 						);
+					}
+
+					if (part.type === "reasoning" && text) {
+						return (
+							<MessageLogEntry
+								key={`${message.info.id}-reasoning-${index}`}
+								type="thinking"
+								label="Thinking"
+								collapsed={preferences.collapsed.thinking}
+								onCollapsedChange={onCollapsedChange}
+							>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-muted-foreground">
+									{text}
+								</pre>
+							</MessageLogEntry>
+						);
+					}
+
+					if (part.type === "error") {
+						const error = formatMessageError(part.error) || text;
+						if (error) {
+							return (
+								<MessageLogEntry
+									key={`${message.info.id}-error-${index}`}
+									type="error"
+									label="Error"
+									collapsed={preferences.collapsed.error}
+									onCollapsedChange={onCollapsedChange}
+								>
+									<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+										{error}
+									</pre>
+								</MessageLogEntry>
+							);
+						}
 					}
 
 					if (
@@ -2346,32 +2807,67 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 						return (
 							<div
 								key={`${message.info.id}-tool-${index}`}
-								className="rounded-md border border-border/60 bg-surface-secondary/25 px-3 py-2"
+								className="space-y-2"
 							>
-								<div className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-									{`Tool: ${tool}${state}`}
-								</div>
-								{details.input !== undefined && details.input !== null && (
-									<div className="mt-2 text-[11px] text-muted-foreground font-mono">
-										{`input: ${summarizeToolValue(details.input)}`}
-									</div>
-								)}
-								{details.output !== undefined && details.output !== null && (
-									<div className="text-[11px] text-muted-foreground font-mono">
-										{`output: ${summarizeToolValue(details.output)}`}
-									</div>
-								)}
-								{details.error !== undefined && details.error !== null && (
-									<div className="text-[11px] text-destructive font-mono">
-										{`error: ${summarizeToolValue(details.error)}`}
-									</div>
-								)}
-								{details.durationMs !== undefined && (
-									<div className="text-[11px] text-muted-foreground font-mono">
-										{`duration: ${details.durationMs}ms`}
-									</div>
-								)}
+								<MessageLogEntry
+									type="tool"
+									label={`Tool: ${tool}${state}`}
+									collapsed={preferences.collapsed.tool}
+									onCollapsedChange={onCollapsedChange}
+								>
+									{details.input !== undefined && details.input !== null && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`input: ${summarizeToolValue(details.input)}`}
+										</div>
+									)}
+									{details.output !== undefined && details.output !== null && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`output: ${summarizeToolValue(details.output)}`}
+										</div>
+									)}
+									{details.durationMs !== undefined && (
+										<div className="text-[11px] text-muted-foreground font-mono">
+											{`duration: ${details.durationMs}ms`}
+										</div>
+									)}
+								</MessageLogEntry>
+								{details.error !== undefined && details.error !== null ? (
+									<MessageLogEntry
+										type="error"
+										label="Tool error"
+										collapsed={preferences.collapsed.error}
+										onCollapsedChange={onCollapsedChange}
+									>
+										<pre className="font-mono text-[12px] leading-6 whitespace-pre-wrap text-destructive">
+											{summarizeToolValue(details.error)}
+										</pre>
+									</MessageLogEntry>
+								) : null}
 							</div>
+						);
+					}
+
+					if (text) {
+						const type: MessageLogContentType =
+							role === "assistant" ? "response" : "message";
+						return (
+							<MessageLogEntry
+								key={`${message.info.id}-${part.type}-${index}`}
+								type={type}
+								label={
+									part.type === "completion"
+										? "Completion"
+										: type === "response"
+											? "Response"
+											: "Message"
+								}
+								collapsed={preferences.collapsed[type]}
+								onCollapsedChange={onCollapsedChange}
+							>
+								<pre className="max-h-96 overflow-auto font-mono text-[12px] leading-6 whitespace-pre-wrap text-foreground/92">
+									{text}
+								</pre>
+							</MessageLogEntry>
 						);
 					}
 
@@ -2382,23 +2878,110 @@ function MessageLogItem({ message }: { message: ArmMessage }) {
 	);
 }
 
-function formatMessageTime(timeValue: JsonValue | undefined): string | null {
+function BrainActivityLogItem({ activity }: { activity: ActivityItem }) {
+	const category = getBrainActivityCategory(activity);
+	const categoryLabel =
+		category === "health" && activity.details?.actor !== "brain"
+			? "Runtime health"
+			: `Brain ${category}`;
+	const envelope = presentInboxItem(
+		{
+			id: `brain-activity:${activity.id}`,
+			kind: "brain",
+			title: activity.title,
+			summary: activity.subtitle ?? categoryLabel,
+			timestamp: new Date(activity.timestamp).toISOString(),
+			source: categoryLabel,
+			resourceId: activity.id,
+			unread: activity.status === "error",
+			requiresAction: activity.status === "error",
+			severity: activity.status === "error" ? "danger" : "info",
+		},
+		{ surface: "stream" },
+	);
+
+	return (
+		<div className="border-b border-border/70 px-2 py-3 last:border-b-0">
+			<div className="rounded-md border border-cyan-500/25 bg-cyan-500/5">
+				<DeferredAdaptiveCardView envelope={envelope} className="border-0" />
+				{activity.details && Object.keys(activity.details).length > 1 ? (
+					<details className="group border-t border-border px-3 py-2">
+						<summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+							Details
+						</summary>
+						<pre className="mt-2 max-h-56 overflow-auto rounded-sm bg-surface-secondary/45 px-3 py-2 text-[12px] leading-6 whitespace-pre-wrap text-muted-foreground">
+							{formatDetails(activity.details)}
+						</pre>
+					</details>
+				) : null}
+			</div>
+		</div>
+	);
+}
+
+function formatMessageError(error: unknown): string | null {
+	if (typeof error === "string" && error.trim()) {
+		return error;
+	}
+	const errorRecord = error as JsonValue;
+	if (!isJsonObject(errorRecord)) {
+		return null;
+	}
+
+	const name = typeof errorRecord.name === "string" ? errorRecord.name : null;
+	const data = isJsonObject(errorRecord.data) ? errorRecord.data : null;
+	const message = typeof data?.message === "string" ? data.message : null;
+	if (name && message) {
+		return `${name}: ${message}`;
+	}
+
+	return name || message;
+}
+
+function MessageLogEntry({
+	type,
+	label,
+	collapsed,
+	onCollapsedChange,
+	children,
+}: {
+	type: MessageLogContentType;
+	label: string;
+	collapsed: boolean;
+	onCollapsedChange: (type: MessageLogContentType, collapsed: boolean) => void;
+	children: ReactNode;
+}) {
+	return (
+		<details
+			className="group rounded-md border border-border/60 bg-surface-secondary/25"
+			open={!collapsed}
+			onToggle={(event) => onCollapsedChange(type, !event.currentTarget.open)}
+		>
+			<summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground marker:content-none">
+				<span>{label}</span>
+				<ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+			</summary>
+			<div className="border-t border-border/60 px-3 py-2.5">{children}</div>
+		</details>
+	);
+}
+
+function getMessageTimestamp(timeValue: JsonValue | undefined): number | null {
 	if (timeValue === undefined || timeValue === null) {
 		return null;
 	}
 
 	let raw: JsonValue = timeValue;
-		if (isJsonObject(timeValue)) {
-			const timeObj = timeValue;
-			raw = (
-				timeObj.completed ??
-				timeObj.created ??
-				timeObj.updated ??
-				timeObj.end ??
-				timeObj.start ??
-				null
-			);
-		}
+	if (isJsonObject(timeValue)) {
+		const timeObj = timeValue;
+		raw =
+			timeObj.completed ??
+			timeObj.created ??
+			timeObj.updated ??
+			timeObj.end ??
+			timeObj.start ??
+			null;
+	}
 
 	let date: Date | null = null;
 	if (typeof raw === "number" && Number.isFinite(raw)) {
@@ -2417,8 +3000,16 @@ function formatMessageTime(timeValue: JsonValue | undefined): string | null {
 	if (!date || Number.isNaN(date.getTime())) {
 		return null;
 	}
+	return date.getTime();
+}
 
-	return date.toLocaleTimeString([], {
+function formatMessageTime(timeValue: JsonValue | undefined): string | null {
+	const timestamp = getMessageTimestamp(timeValue);
+	if (timestamp === null) {
+		return null;
+	}
+
+	return new Date(timestamp).toLocaleTimeString([], {
 		hour: "2-digit",
 		minute: "2-digit",
 		second: "2-digit",
@@ -2510,7 +3101,7 @@ const stateConfig: Record<
 		bg: "bg-green-500/20",
 		border: "border-green-500",
 		text: "text-green-600",
-		icon: Zap,
+		icon: HeartPulse,
 	},
 	idle: {
 		bg: "bg-blue-500/20",
@@ -2566,14 +3157,11 @@ function ArmAnalysisPanel({
 	if (loading) {
 		return (
 			<div
-				className={cn(
-					embedded ? "pt-2.5" : "border-b border-border px-5",
-					compact ? "py-3" : "py-4",
-				)}
+				className={cn(embedded ? "pt-2.5" : "border-b border-border px-5 py-4")}
 			>
-				<div className="flex items-center gap-2 text-sm text-muted-foreground">
+				<div className="flex items-center gap-2 text-xs text-muted-foreground">
 					<Loader2 className="h-4 w-4 animate-spin" />
-					<span>Loading health signals...</span>
+					<span>Checking health signals...</span>
 				</div>
 			</div>
 		);
@@ -2586,22 +3174,14 @@ function ArmAnalysisPanel({
 	if (analysis.analysis.metrics.eventCount === 0) {
 		return (
 			<div
-				className={cn(
-					embedded ? "pt-2.5" : "border-b border-border px-5",
-					compact ? "py-3" : "py-4",
-				)}
+				className={cn(embedded ? "pt-2.5" : "border-b border-border px-5 py-4")}
 			>
-				<div className="flex items-start gap-3 rounded-md border border-border bg-surface-secondary/60 px-3 py-2.5">
-					<Radio className="mt-0.5 h-4 w-4 text-muted-foreground" />
-					<div className="min-w-0 flex-1">
-						<p className="text-sm font-medium">No structured event telemetry yet</p>
-						<p className="mt-1 text-xs leading-5 text-muted-foreground">
-							Message logs remain available; health confidence and trend appear after events arrive.
-						</p>
-					</div>
+				<div className="flex items-center gap-2 border-t border-border pt-2.5 text-xs text-muted-foreground">
+					<Radio className="h-3.5 w-3.5" />
+					<span>No structured event telemetry yet</span>
 					<button
 						onClick={onRefresh}
-						className="text-muted-foreground transition-colors hover:text-foreground"
+						className="ml-auto text-muted-foreground transition-colors hover:text-foreground"
 						aria-label="Refresh analysis"
 					>
 						<RefreshCw className="h-3.5 w-3.5" />
@@ -2614,14 +3194,6 @@ function ArmAnalysisPanel({
 	const state = analysis.analysis.state;
 	const config = stateConfig[state];
 	const StateIcon = config.icon;
-
-	const trendIcon = analysis.trend.improving ? (
-		<TrendingUp className="h-3 w-3 text-green-500" />
-	) : analysis.trend.degrading ? (
-		<TrendingDown className="h-3 w-3 text-red-500" />
-	) : (
-		<Minus className="h-3 w-3 text-muted-foreground" />
-	);
 
 	const trendLabel = analysis.trend.improving
 		? "Improving"
@@ -2639,116 +3211,61 @@ function ArmAnalysisPanel({
 					tone: "danger" as const,
 				}
 			: null,
-	].filter((value): value is { label: string; tone: "warning" | "danger" } => value !== null);
+	].filter(
+		(value): value is { label: string; tone: "warning" | "danger" } =>
+			value !== null,
+	);
 
 	return (
 		<div
-			className={cn(
-				embedded ? "pt-2.5" : "border-b border-border px-5",
-				compact ? "py-3" : "py-4",
-			)}
+			className={cn(embedded ? "pt-2.5" : "border-b border-border px-5 py-4")}
 		>
-			<div
-				className={cn(
-					"grid md:grid-cols-2 2xl:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,1fr))]",
-					compact ? "gap-2" : "gap-3",
-				)}
-			>
-				<div className={cn("rounded-md border", config.bg, compact ? "px-3 py-2.5" : "px-4 py-3")}>
-					<div className="flex items-start justify-between gap-3">
-						<div className={cn("flex items-start", compact ? "gap-2.5" : "gap-3")}>
-							<div
-								className={cn(
-									"rounded-sm border border-current/15",
-									config.text,
-									compact ? "p-1.5" : "p-2",
-								)}
-							>
-								<StateIcon className="h-4 w-4" />
-							</div>
-							<div>
-								<div
-									className={cn(
-										"font-semibold uppercase text-muted-foreground",
-										compact ? "text-[0.62rem] tracking-[0.15em]" : "text-[0.68rem] tracking-[0.18em]",
-									)}
-								>
-									Health Signal
-								</div>
-								<div
-									className={cn(
-										"font-semibold capitalize",
-										config.text,
-										compact ? "mt-1.5 text-[0.92rem]" : "mt-2 text-sm",
-									)}
-								>
-									{state.replace("_", " ")}
-								</div>
-							</div>
-						</div>
-						<button
-							onClick={onRefresh}
-							className="text-muted-foreground transition-colors hover:text-foreground"
-							aria-label="Refresh analysis"
-						>
-							<RefreshCw className="h-3.5 w-3.5" />
-						</button>
-					</div>
-					<p className={cn("text-muted-foreground", compact ? "mt-2 text-[0.76rem] leading-5" : "mt-3 text-sm")}>
-						{formatAnalysisReason(analysis.analysis.reason)}
-					</p>
-					{compactSignals.length > 0 ? (
-						<div className="mt-2 flex flex-wrap gap-2">
-							{compactSignals.map((signal) => (
-								<span
-									key={signal.label}
-									className={cn(
-										"inline-flex items-center rounded-md border px-2 py-1 text-[0.62rem] font-semibold uppercase tracking-[0.14em]",
-										signal.tone === "warning"
-											? "border-warning/25 bg-warning/10 text-warning"
-											: "border-danger/25 bg-danger/10 text-danger",
-									)}
-								>
-									{signal.label}
-								</span>
-							))}
-						</div>
-					) : null}
-				</div>
-
-				<ViewerMetricCard
-					label="Confidence"
-					value={analysis.analysis.confidence}
-					detail="Model confidence in the current state"
-					tone={
-						analysis.analysis.confidence === "high"
-							? "success"
-							: analysis.analysis.confidence === "medium"
-								? "warning"
-								: "neutral"
-					}
-					icon={<ShieldQuestion className="h-4 w-4" />}
-					compact={compact}
-				/>
-				<ViewerMetricCard
-					label="Recent Events"
-					value={`${analysis.analysis.metrics.eventCount}`}
-					detail={`${analysis.analysis.metrics.recentFileEditCount} files edited`}
-					tone="neutral"
-					icon={<Zap className="h-4 w-4" />}
-					compact={compact}
-				/>
-				<ViewerMetricCard
-					label="Trend"
-					value={trendLabel}
-					detail="Direction of activity quality"
-					tone={analysis.trend.improving ? "success" : analysis.trend.degrading ? "danger" : "neutral"}
-					icon={trendIcon}
-					compact={compact}
-				/>
+			<div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-t border-border pt-2.5 text-xs">
+				<span
+					className={cn(
+						"inline-flex items-center gap-1.5 font-semibold capitalize",
+						config.text,
+					)}
+				>
+					<StateIcon className="h-3.5 w-3.5" />
+					{state.replace("_", " ")}
+				</span>
+				<span className="min-w-48 flex-1 text-muted-foreground">
+					{formatAnalysisReason(analysis.analysis.reason)}
+				</span>
+				<span className="whitespace-nowrap text-muted-foreground">
+					{analysis.analysis.confidence} confidence
+				</span>
+				<span className="whitespace-nowrap text-muted-foreground">
+					{analysis.analysis.metrics.eventCount} events
+				</span>
+				<span className="whitespace-nowrap text-muted-foreground">
+					{trendLabel} trend
+				</span>
+				{compactSignals.map((signal) => (
+					<span
+						key={signal.label}
+						className={cn(
+							"inline-flex items-center border px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-[0.12em]",
+							signal.tone === "warning"
+								? "border-warning/25 bg-warning/10 text-warning"
+								: "border-danger/25 bg-danger/10 text-danger",
+						)}
+					>
+						{signal.label}
+					</span>
+				))}
+				<button
+					onClick={onRefresh}
+					className="ml-auto text-muted-foreground transition-colors hover:text-foreground"
+					aria-label="Refresh analysis"
+				>
+					<RefreshCw className="h-3.5 w-3.5" />
+				</button>
 			</div>
 
-			{!compact && (analysis.analysis.pendingPermission || analysis.analysis.loopPattern) ? (
+			{!compact &&
+			(analysis.analysis.pendingPermission || analysis.analysis.loopPattern) ? (
 				<div className="mt-3 grid gap-3 xl:grid-cols-2">
 					{analysis.analysis.pendingPermission ? (
 						<div className="rounded-md border border-warning/25 bg-warning/10 px-4 py-3 text-sm">
@@ -2786,15 +3303,6 @@ function ArmAnalysisPanel({
 			) : null}
 		</div>
 	);
-}
-
-function formatTime(timestamp: number): string {
-	const date = new Date(timestamp);
-	return date.toLocaleTimeString([], {
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	});
 }
 
 function formatDetails(details: JsonObject): string {

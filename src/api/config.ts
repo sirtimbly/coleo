@@ -3,6 +3,7 @@
  */
 
 import { getColeoDir } from "../config";
+import { resolveApiHost, resolveApiKey, resolveApiPort } from "../network-config";
 import { join } from "path";
 
 export type LogLevel = "quiet" | "normal" | "verbose";
@@ -20,10 +21,10 @@ export interface ApiConfig {
  * Load configuration from environment variables
  */
 export function loadApiConfig(): ApiConfig {
-  const apiKey = process.env.COLEO_API_KEY || process.env.COLEO_API_TOKEN;
+  const apiKey = resolveApiKey();
   return {
-    port: parseInt(process.env.COLEO_API_PORT || "8080", 10),
-    host: process.env.COLEO_API_HOST || "0.0.0.0",
+    port: resolveApiPort(),
+    host: resolveApiHost(),
     apiKey: apiKey || generateDevApiKey(),
     corsOrigins: (process.env.COLEO_CORS_ORIGINS || "http://localhost:5173,http://localhost:3000").split(","),
     dbPath: process.env.COLEO_DB_PATH || getDefaultDbPath(),

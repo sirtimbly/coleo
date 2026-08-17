@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { CheckCircle2, Clock, Pause, XCircle, Loader2 } from "lucide-react";
+import { CheckCircle2, Clock, Pause, Pencil, XCircle, Loader2 } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/Card";
 import { ProgressBar } from "./ProgressBar";
 import { cn } from "@/lib";
@@ -21,6 +21,7 @@ interface TaskProgressWidgetProps {
 }
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string; icon: React.ComponentType<{ className?: string }> }> = {
+	draft: { label: "Draft", color: "text-cyan-600", bg: "bg-cyan-500", icon: Pencil },
 	completed: { label: "Completed", color: "text-green-600", bg: "bg-green-500", icon: CheckCircle2 },
 	in_progress: { label: "In Progress", color: "text-yellow-600", bg: "bg-yellow-500", icon: Loader2 },
 	claimed: { label: "Claimed", color: "text-blue-600", bg: "bg-blue-500", icon: Clock },

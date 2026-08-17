@@ -326,7 +326,12 @@ export function ProjectOnboardingGate({ children }: ProjectOnboardingGateProps) 
     try {
       setStatus(await api.getOnboardingStatus());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to check project setup');
+      const message = err instanceof Error ? err.message : 'Failed to check project setup';
+      if (message === 'Invalid API key') {
+        api.clearApiKey();
+        setApiKey('');
+      }
+      setError(message);
     }
   }, []);
 

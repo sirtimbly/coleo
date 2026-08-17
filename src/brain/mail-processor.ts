@@ -1,7 +1,11 @@
 import { resolveBrainModelConfigSource } from "./model-config";
+import {
+	detectBrainModelAccessIssue,
+	type BrainModelAccessIssue,
+} from "./model-access";
 import type { BrainModelConfigSource } from "./model-config";
 
-interface ProcessedIntent {
+export interface ProcessedIntent {
 	type:
 		| "new_task"
 		| "doc_update"
@@ -25,21 +29,29 @@ interface ProcessedIntent {
 	priority?: "critical" | "high" | "normal" | "low";
 	domain?: string;
 	reasoning?: string;
+	modelIssue?: BrainModelAccessIssue;
 }
 
 export class MailProcessor {
 	private logger: (message: string) => void;
 	private systemPrompt: string;
 	private modelConfigSource?: BrainModelConfigSource;
+	private modelAccessReporter?: (
+		issue: BrainModelAccessIssue | null,
+	) => void | Promise<void>;
 
 	constructor(
 		logger: (message: string) => void,
 		systemPrompt: string,
 		modelConfigSource?: BrainModelConfigSource,
+		modelAccessReporter?: (
+			issue: BrainModelAccessIssue | null,
+		) => void | Promise<void>,
 	) {
 		this.logger = logger;
 		this.systemPrompt = systemPrompt;
 		this.modelConfigSource = modelConfigSource;
+		this.modelAccessReporter = modelAccessReporter;
 	}
 
 	async processMessage(
@@ -47,7 +59,8 @@ export class MailProcessor {
 		body: string,
 		systemPrompt: string,
 	): Promise<ProcessedIntent> {
-		const { apiKey, baseUrl, model } = await resolveBrainModelConfigSource(this.modelConfigSource);
+		const { apiKey, baseUrl, model, provider } =
+			await resolveBrainModelConfigSource(this.modelConfigSource);
 		if (!apiKey) {
 			return this.fallbackParse(subject, body);
 		}
@@ -77,12 +90,24 @@ ${body}`;
 
 			if (!response.ok) {
 				const err = await response.text();
+				const modelIssue = detectBrainModelAccessIssue(
+					response.status,
+					err,
+					provider,
+				);
 				this.logger(
 					`[mail-processor] OpenAI API error: ${err.substring(0, 200)}`,
 				);
-				return this.fallbackParse(subject, body);
+				if (modelIssue) {
+					await this.reportModelAccess(modelIssue);
+				}
+				return {
+					...this.fallbackParse(subject, body),
+					...(modelIssue ? { modelIssue } : {}),
+				};
 			}
 
+			await this.reportModelAccess(null);
 			const data = (await response.json()) as {
 				choices: Array<{ message: { content: string } }>;
 			};
@@ -106,6 +131,16 @@ ${body}`;
 		} catch (err) {
 			this.logger(`[mail-processor] LLM processing error: ${err}`);
 			return this.fallbackParse(subject, body);
+		}
+	}
+
+	private async reportModelAccess(
+		issue: BrainModelAccessIssue | null,
+	): Promise<void> {
+		try {
+			await this.modelAccessReporter?.(issue);
+		} catch (err) {
+			this.logger(`[mail-processor] Failed to report model access: ${err}`);
 		}
 	}
 

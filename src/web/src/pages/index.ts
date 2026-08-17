@@ -1,3 +1,6 @@
+/**
+ * Route-level view exports consumed by the static workbench contribution list.
+ */
 export { DashboardPage } from './DashboardPage';
 export { ArmsPage } from './ArmsPage';
 export { ArmViewerPage } from './ArmViewerPage';
@@ -5,6 +8,7 @@ export { BrainPage } from './BrainPage';
 export { GardenPage } from './GardenPage';
 export { MailPage } from './MailPage';
 export { ProposalsPage } from './ProposalsPage';
+export { ProcessesPage } from './ProcessesPage';
 export { ActivityPage } from './ActivityPage';
 export { SettingsPage } from './SettingsPage';
 export { TasksPage } from './TasksPage';
@@ -15,3 +19,6 @@ export { MessagingPage } from './MessagingPage';
 export { UnifiedGridPage } from './UnifiedGridPage';
 export { SetupPage } from './SetupPage';
 export { ComposeMessagePage } from './ComposeMessagePage';
+export { CardPanelPage } from './CardPanelPage';
+export { CardCatalogPage } from './CardCatalogPage';
+export { ToolbarsPage } from './ToolbarsPage';

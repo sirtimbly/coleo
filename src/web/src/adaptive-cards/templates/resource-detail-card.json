@@ -1,0 +1,50 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "${kindLabel}",
+      "size": "Small",
+      "weight": "Bolder",
+      "isSubtle": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "${title}",
+      "size": "Large",
+      "weight": "Bolder",
+      "wrap": true,
+      "spacing": "Small"
+    },
+    {
+      "type": "TextBlock",
+      "text": "${description}",
+      "wrap": true,
+      "$when": "${description != null}"
+    },
+    {
+      "type": "FactSet",
+      "$when": "${count(facts) > 0}",
+      "facts": [
+        {
+          "$data": "${facts}",
+          "title": "${label}",
+          "value": "${value}"
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "$when": "${openVerb != null}",
+      "title": "${openLabel}",
+      "verb": "${openVerb}",
+      "data": {
+        "actionId": "open-resource"
+      }
+    }
+  ]
+}

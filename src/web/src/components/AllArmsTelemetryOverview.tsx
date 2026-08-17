@@ -85,7 +85,15 @@ function DateTimeInput({
   );
 }
 
-export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: boolean }) {
+interface AllArmsTelemetryOverviewProps {
+  embedded?: boolean;
+  contextBudget?: number;
+}
+
+export function AllArmsTelemetryOverview({
+  embedded = false,
+  contextBudget,
+}: AllArmsTelemetryOverviewProps) {
   const [draftRange, setDraftRange] = useState<DraftRange>(() => createRange(ONE_DAY_MS));
   const [appliedRange, setAppliedRange] = useState<AppliedRange>(() => toAppliedRange(draftRange));
   const [telemetry, setTelemetry] = useState<AllArmsTelemetryResponse | null>(null);
@@ -207,7 +215,7 @@ export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: bool
           Loading all-arm telemetry...
         </div>
       ) : telemetry ? (
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(100%,18rem),1fr))]">
           <ArmActivityChart
             armId={null}
             metrics={activityMetrics}
@@ -216,6 +224,7 @@ export function AllArmsTelemetryOverview({ embedded = false }: { embedded?: bool
           />
           <ArmContextUsageChart
             armId={null}
+            contextBudget={contextBudget}
             samples={contextSamples}
             range={chartRange}
             title="Context Usage - All Arms"

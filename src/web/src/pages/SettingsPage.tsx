@@ -1,3 +1,9 @@
+/**
+ * System and workbench configuration.
+ *
+ * Alongside runtime settings, this page hosts portable profile registration,
+ * switching, import, and export for saved views and Golden Layout workspaces.
+ */
 import { useState, useEffect, useId } from 'react';
 import { Button, Select, Label, ListBox } from '@heroui/react';
 import { LayoutPanelTop, Monitor, Moon, PanelsTopLeft, Sun } from 'lucide-react';
@@ -7,6 +13,12 @@ import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/com
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { VERSION } from '@/version';
+import {
+  WorkbenchEmptyState,
+  WorkbenchHeader,
+  WorkbenchSurface,
+} from '@/design-system/WorkbenchSurface';
+import { WorkbenchProfileManager } from '@/workbench/WorkbenchProfileManager';
 
 const themeOptions = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -28,7 +40,7 @@ export function SettingsPage() {
     harness: 'opencode-api',
     provider: '',
     model: '',
-    contextBudget: 100000,
+    contextBudget: 300000,
   });
   const [armDefaultsSaved, setArmDefaultsSaved] = useState(false);
   const [openCodeProviders, setOpenCodeProviders] = useState<OpenCodeProvider[]>([]);
@@ -142,19 +154,23 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="px-6 py-6">
-        <p>Loading...</p>
-      </div>
+      <WorkbenchSurface className="h-full border-0">
+        <WorkbenchEmptyState
+          title="Loading settings"
+          description="Inspecting workspace preferences and system connections."
+        />
+      </WorkbenchSurface>
     );
   }
 
   return (
-    <div className="space-y-6 px-6 py-6">
-      <div className="border-b border-border pb-4">
-        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Configure the workspace and system connections</p>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <WorkbenchHeader
+        title="Settings"
+        description="Configure workbench profiles, appearance, runtime defaults, and system connections."
+      />
 
+      <div className="flex-1 space-y-6 overflow-auto px-4 py-4 lg:px-6">
       <Card>
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
@@ -165,7 +181,8 @@ export function SettingsPage() {
         <CardContent className="space-y-4">
           <div>
             <Select
-              className="w-full max-w-xs"
+              className="w-fit"
+              variant="secondary"
               value={theme}
               onChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
             >
@@ -174,7 +191,7 @@ export function SettingsPage() {
                 <Select.Value />
                 <Select.Indicator />
               </Select.Trigger>
-              <Select.Popover>
+              <Select.Popover className="w-fit">
                 <ListBox>
                   {themeOptions.map((option) => (
                     <ListBox.Item key={option.value} id={option.value} textValue={option.label}>
@@ -239,6 +256,18 @@ export function SettingsPage() {
               </button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Workbench Profiles</CardTitle>
+          <CardDescription>
+            Save view configuration and complete window layouts to a portable profile.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <WorkbenchProfileManager />
         </CardContent>
       </Card>
 
@@ -336,7 +365,7 @@ export function SettingsPage() {
                 value={armDefaults.contextBudget}
                 onChange={(event) => setArmDefaults((current) => ({
                   ...current,
-                  contextBudget: Number.parseInt(event.target.value, 10) || 100000,
+                  contextBudget: Number.parseInt(event.target.value, 10) || 300000,
                 }))}
                 className="w-full rounded-md border border-border bg-surface px-3 py-2 focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -512,6 +541,7 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

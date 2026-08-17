@@ -21,7 +21,7 @@ curl -fsSL https://raw.githubusercontent.com/sirtimbly/coleo/master/bin/install.
 
 # Initialize Coleo in this project (creates ./.coleo/)
 coleo init --dir ./.coleo
-# During init you'll be prompted to generate an API token in ./.coleo/.env
+# Init can generate project-specific ports and write them with an API key to mise.toml
 
 # Terminal 1: start the API server
 # If COLEO_NATS_URL is unset, this will auto-start local NATS for you
@@ -142,6 +142,9 @@ This section is for contributors running Coleo from source. For regular usage, i
 
 ### Setup
 
+Dependencies are managed with Bun from the repository root. The root `bun.lock` covers the CLI/server, docs
+toolchain, and the `src/web` workspace; do not create nested lockfiles.
+
 ```bash
 # Clone and install dependencies
 git clone https://github.com/sirtimbly/coleo.git
@@ -194,13 +197,18 @@ Create a `.env` file in the project root:
 ANTHROPIC_API_KEY=your-key-here
 OPENAI_API_KEY=your-key-here      # Optional
 
-# Optional configuration
-COLEO_API_PORT=8080               # API server port (default: 8080)
-COLEO_API_HOST=0.0.0.0            # API server host (default: 0.0.0.0)
+# Shared local endpoint configuration used by the server, Brain, agents, and CLI
+COLEO_API_HOST=127.0.0.1          # API bind/client host
+COLEO_API_PORT=8080               # API server port
 COLEO_API_KEY=your-key-here       # Optional API key for the Observatory/API
 COLEO_DB_PATH=./.coleo/coleo.db   # Database location
-# Leave unset to let `coleo serve` auto-start local NATS in ./.coleo/
-COLEO_NATS_URL=nats://localhost:4222  # External NATS server URL
+COLEO_NATS_HOST=127.0.0.1         # Local NATS bind/client host
+COLEO_NATS_PORT=4222              # Local NATS client port
+COLEO_NATS_HTTP_PORT=8222         # Local NATS monitoring port
+
+# Optional full URL overrides for remote deployments
+# COLEO_API_URL=https://coleo.example
+# COLEO_NATS_URL=tls://nats.example:4222
 ```
 
 ## Testing

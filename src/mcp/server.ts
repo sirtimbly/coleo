@@ -416,7 +416,7 @@ export function createMcpServer(): McpServer {
 				} | null;
 
 				if (!armBudget) {
-					armBudget = { context_budget_total: 128000, context_budget_used: 0 };
+					armBudget = { context_budget_total: 300000, context_budget_used: 0 };
 				}
 
 				const remaining =
@@ -2697,30 +2697,30 @@ export function createMcpServer(): McpServer {
 					.filter(Boolean)
 					.join("\n\n");
 
-				// Insert task into database with prepared_by_arm_id
-				// TODO refactor this into the API server and the brain
-				db.run(
-					`INSERT INTO tasks (
+					// Insert task into database with prepared_by_arm_id
+					// TODO refactor this into the API server and the brain
+					db.run(
+						`INSERT INTO tasks (
             id, subject, description, status, priority, classification,
             domain, assigned_to, created_at, updated_at,
             prepared_by_arm_id, prepared_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-					[
-						taskId,
-						subject,
-						taskDescription,
-						"pending",
-						priority,
-						"development", // Prepared tasks are typically development tasks
-						"", // domain is empty string instead of null
-						"", // assigned_to is empty string instead of null
-						new Date().toISOString(),
-						new Date().toISOString(),
-						ARM_ID,
-						new Date().toISOString(),
-					],
-				);
+						[
+							taskId,
+							subject,
+							taskDescription,
+							"pending",
+							priority,
+							"development", // Prepared tasks are typically development tasks
+							null, // domain (unscoped)
+							null, // unassigned so any arm can claim
+							new Date().toISOString(),
+							new Date().toISOString(),
+							ARM_ID,
+							new Date().toISOString(),
+						],
+					);
 
 				// Log activity
 				logActivity(ARM_ID, "prepare_task", taskId, {

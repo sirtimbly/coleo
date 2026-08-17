@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { resolveNatsUrl } from "../../network-config";
 import { getApiConfig, getColeoDir, isApiRunning } from "../context";
 
 export function registerAgentCommands(program: Command): void {
@@ -7,19 +8,20 @@ export function registerAgentCommands(program: Command): void {
   agentCmd
     .command("start")
     .description("Start an arm agent daemon on this host")
-    .option("-n, --nats-url <url>", "NATS server URL", "nats://localhost:4222")
+    .option("-n, --nats-url <url>", "NATS server URL (defaults to COLEO_NATS_URL or host/port)")
     .option("-m, --max-arms <n>", "Maximum number of arms to manage", "10")
     .option("-i, --heartbeat-interval <ms>", "Heartbeat interval in milliseconds", "30000")
     .option("-v, --verbose", "Enable debug logging")
     .option("--id <id>", "Custom agent ID (default: auto-generated from hostname)")
     .action(async (options) => {
       const coleoDir = getColeoDir();
+      const natsUrl = options.natsUrl || resolveNatsUrl();
 
       const { ArmAgent } = await import("../../agent");
 
       const agent = new ArmAgent({
         agentId: options.id,
-        natsUrl: options.natsUrl,
+        natsUrl,
         natsToken: process.env.COLEO_NATS_TOKEN,
         coleoDir,
         workspaceRoot: process.env.COLEO_AGENT_WORKDIR || process.cwd(),
@@ -29,7 +31,7 @@ export function registerAgentCommands(program: Command): void {
       });
 
       console.log("Starting arm agent...");
-      console.log(`  NATS URL: ${options.natsUrl}`);
+      console.log(`  NATS URL: ${natsUrl}`);
       console.log(`  Coleo Dir: ${coleoDir}`);
       console.log(`  Max Arms: ${options.maxArms}`);
       console.log("");

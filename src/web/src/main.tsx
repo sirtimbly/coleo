@@ -4,6 +4,7 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { Toast } from '@heroui/react'
 import './index.css'
+import './adaptive-cards/adaptive-cards.css'
 import App from './App.tsx'
 import { queryClient, persister, isLocalhost } from '@/lib/queryClient'
 
@@ -20,7 +21,7 @@ createRoot(document.getElementById('root')!).render(
       }}
     >
       <App />
-      <Toast.Container placement="bottom end" />
+      <Toast.Provider placement="bottom end" />
       {isLocalhost && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
   </StrictMode>,

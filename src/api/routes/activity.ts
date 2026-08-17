@@ -7,8 +7,12 @@
 import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { basename } from "path";
-import { eventStore, type EventData } from "../../nats/jetstream";
+import { randomUUID } from "crypto";
+import { eventMatchesProject, eventStore, type EventData } from "../../nats/jetstream";
 import { getNatsManager } from "../../nats/server";
+import { COMMAND_STREAM_NAME } from "../../nats/command-types";
+import { getProjectDurableName, getProjectScope } from "../../project-scope";
+import { broadcast } from "../websocket";
 
 interface ActivityContext {
   Variables: {
@@ -17,11 +21,96 @@ interface ActivityContext {
 }
 
 export interface ActivityEntry {
+  id: string;
+  sequence: number | null;
   timestamp: string;
   actor: string;
   action: string;
   target: string | null;
   details: Record<string, unknown>;
+}
+
+interface ActivityPage {
+  activity: ActivityEntry[];
+  pagination: {
+    limit: number;
+    offset: number;
+    total: number;
+    hasMore: boolean;
+    nextCursor: number | null;
+  };
+}
+
+function toActivityEntry(event: EventData): ActivityEntry {
+  const actor = typeof event.data.actor === "string"
+    ? event.data.actor
+    : event.armId || "system";
+  const target = typeof event.data.target === "string"
+    ? event.data.target
+    : event.armId || null;
+  const activityId = typeof event.data.activityId === "string"
+    ? event.data.activityId
+    : event.sequence !== undefined
+      ? `event-${event.sequence}`
+      : `${event.type}-${event.timestamp}-${target || actor}`;
+
+  return {
+    id: activityId,
+    sequence: event.sequence ?? null,
+    timestamp: event.timestamp,
+    actor,
+    action: event.type,
+    target,
+    details: event.data,
+  };
+}
+
+async function getProducerActivityPage(
+  producer: string,
+  limit: number,
+  beforeSequence?: number,
+): Promise<ActivityPage> {
+  const scanPageSize = 5000;
+  let cursor = beforeSequence;
+  let matches: EventData[] = [];
+  let reachedStart = false;
+
+  while (matches.length <= limit) {
+    const events = await eventStore.queryEvents({
+      limit: scanPageSize,
+      latest: true,
+      beforeSequence: cursor,
+    });
+    if (events.length === 0) {
+      reachedStart = true;
+      break;
+    }
+
+    const pageMatches = events.filter((event) => event.data.actor === producer);
+    matches = [...pageMatches, ...matches];
+
+    const oldestSequence = events[0]?.sequence;
+    if (oldestSequence === undefined || events.length < scanPageSize) {
+      reachedStart = true;
+      break;
+    }
+    cursor = oldestSequence;
+  }
+
+  const pageEvents = matches.slice(-limit);
+  const activity = pageEvents.map(toActivityEntry);
+  const hasMore = pageEvents.length > 0 && (matches.length > limit || !reachedStart);
+
+  return {
+    activity,
+    pagination: {
+      limit,
+      offset: 0,
+      total: activity.length,
+      hasMore,
+      nextCursor: hasMore ? pageEvents[0]?.sequence ?? null : null,
+    },
+  };
 }
 
 interface ArmMetadata {
@@ -42,6 +131,74 @@ interface TranscriptEntry {
     host: string | null;
     project: string | null;
     workdir: string | null;
+  };
+}
+
+interface QueueHealthResponse {
+  status: "healthy" | "lagging" | "stale" | "unavailable" | "error";
+  stream: string;
+  durable: string;
+  consumerFound: boolean;
+  lagMessages: number | null;
+  ackPending: number | null;
+  streamLastSeq: number | null;
+  streamMessages?: number;
+  consumerStreamSeq: number | null;
+  consumerSeq: number | null;
+  lastActive: string | null;
+  staleThresholdMs: number;
+  updatedAt: string;
+  message?: string;
+  enabled?: boolean;
+}
+
+function buildQueueUnavailableHealth(
+  stream: string,
+  durable: string,
+  staleThresholdMs: number,
+  message: string,
+  overrides?: Partial<QueueHealthResponse>,
+): QueueHealthResponse {
+  return {
+    status: "unavailable",
+    stream,
+    durable,
+    consumerFound: false,
+    lagMessages: null,
+    ackPending: null,
+    streamLastSeq: null,
+    consumerStreamSeq: null,
+    consumerSeq: null,
+    lastActive: null,
+    staleThresholdMs,
+    updatedAt: new Date().toISOString(),
+    message,
+    ...overrides,
+  };
+}
+
+function buildQueueErrorHealth(
+  stream: string,
+  durable: string,
+  staleThresholdMs: number,
+  message: string,
+  overrides?: Partial<QueueHealthResponse>,
+): QueueHealthResponse {
+  return {
+    status: "error",
+    stream,
+    durable,
+    consumerFound: false,
+    lagMessages: null,
+    ackPending: null,
+    streamLastSeq: null,
+    consumerStreamSeq: null,
+    consumerSeq: null,
+    lastActive: null,
+    staleThresholdMs,
+    updatedAt: new Date().toISOString(),
+    message,
+    ...overrides,
   };
 }
 
@@ -345,6 +502,8 @@ export function createActivityRoutes() {
           }));
       }
 
+      const projectKey = getProjectScope().projectKey;
+      scopedEvents = scopedEvents.filter(({ event }) => eventMatchesProject(event, projectKey));
       scopedEvents.sort(sortEventsOldestFirst);
       const sliced = scopedEvents.slice(0, limit);
 
@@ -391,12 +550,13 @@ export function createActivityRoutes() {
 
   /**
    * Transcript indexer health from JetStream durable consumer state.
-   * GET /api/activity/indexer-health?stream=coleo-events&durable=transcript-indexer-v1
+   * GET /api/activity/indexer-health?stream=coleo-events&durable=transcript-indexer-v2
    */
   app.get("/indexer-health", async (c) => {
     const stream = c.req.query("stream")?.trim() || process.env.COLEO_EVENT_STREAM || "coleo-events";
-    const durable =
-      c.req.query("durable")?.trim() || process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v1";
+    const durable = getProjectDurableName(
+      c.req.query("durable")?.trim() || process.env.COLEO_TRANSCRIPT_INDEX_DURABLE || "transcript-indexer-v2",
+    );
     const staleThresholdMs = parseOptionalPositiveInt(
       c.req.query("staleMs"),
       parseOptionalPositiveInt(process.env.COLEO_TRANSCRIPT_INDEXER_STALE_MS, 120000, 86_400_000),
@@ -539,21 +699,150 @@ export function createActivityRoutes() {
   });
 
   /**
+   * Command queue health from JetStream durable consumer state.
+   * GET /api/activity/command-queue-health?stream=coleo-commands&durable=cmd-projector-to-db&staleMs=120000
+   */
+  app.get("/command-queue-health", async (c) => {
+    const stream = c.req.query("stream")?.trim() || COMMAND_STREAM_NAME;
+    const durable = c.req.query("durable")?.trim() || process.env.COLEO_COMMAND_PROJECTOR_DURABLE || "cmd-projector-to-db";
+    const staleThresholdMs = parseOptionalPositiveInt(
+      c.req.query("staleMs"),
+      parseOptionalPositiveInt(process.env.COLEO_COMMAND_QUEUE_STALE_MS, 120000, 86_400_000),
+      86_400_000,
+    );
+    const projectorEnabledRaw = process.env.COLEO_COMMAND_PROJECTOR_ENABLED?.trim().toLowerCase();
+    const projectorEnabled = !projectorEnabledRaw || !["0", "false", "off", "no", "disabled"].includes(projectorEnabledRaw);
+
+    if (!projectorEnabled) {
+      return c.json(
+        buildQueueUnavailableHealth(
+          stream,
+          durable,
+          staleThresholdMs,
+          "Command projector disabled via COLEO_COMMAND_PROJECTOR_ENABLED",
+          {
+            enabled: false,
+          },
+        ),
+      );
+    }
+
+    if (!eventStore.isInitialized()) {
+      return c.json(
+        buildQueueUnavailableHealth(stream, durable, staleThresholdMs, "JetStream not initialized", {
+          enabled: true,
+        }),
+      );
+    }
+
+    const natsManager = getNatsManager();
+    const connection = natsManager?.getConnection();
+    if (!connection) {
+      return c.json(
+        buildQueueUnavailableHealth(stream, durable, staleThresholdMs, "NATS connection unavailable", {
+          enabled: true,
+        }),
+      );
+    }
+
+    try {
+      const jsm = await connection.jetstreamManager();
+
+      const streamInfo = await jsm.streams.info(stream).catch(() => null);
+      if (!streamInfo) {
+        return c.json(
+          buildQueueUnavailableHealth(stream, durable, staleThresholdMs, `Stream not found: ${stream}`, {
+            enabled: true,
+          }),
+        );
+      }
+
+      const consumerInfo = await jsm.consumers.info(stream, durable).catch(() => null);
+      if (!consumerInfo) {
+        return c.json(
+          buildQueueUnavailableHealth(stream, durable, staleThresholdMs, `Consumer not found: ${durable}`, {
+            enabled: true,
+            streamLastSeq: streamInfo.state.last_seq,
+          }),
+        );
+      }
+
+      const lagMessages = typeof consumerInfo.num_pending === "number" ? consumerInfo.num_pending : null;
+      const ackPending = typeof consumerInfo.num_ack_pending === "number" ? consumerInfo.num_ack_pending : null;
+      const consumerStreamSeq =
+        typeof consumerInfo.delivered?.stream_seq === "number" ? consumerInfo.delivered.stream_seq : null;
+      const consumerSeq =
+        typeof consumerInfo.delivered?.consumer_seq === "number" ? consumerInfo.delivered.consumer_seq : null;
+      const lastActive = toIsoTimestamp(consumerInfo.delivered?.last_active || null);
+
+      let status: QueueHealthResponse["status"] = "healthy";
+      if ((lagMessages ?? 0) > 0 || (ackPending ?? 0) > 0) {
+        status = "lagging";
+      }
+      if (lastActive) {
+        const ageMs = Date.now() - new Date(lastActive).getTime();
+        if (ageMs > staleThresholdMs) {
+          status = "stale";
+        }
+      } else if ((lagMessages ?? 0) > 0) {
+        status = "stale";
+      }
+
+      return c.json({
+        status,
+        stream,
+        durable,
+        enabled: true,
+        consumerFound: true,
+        lagMessages,
+        ackPending,
+        streamLastSeq: streamInfo.state.last_seq,
+        streamMessages: streamInfo.state.messages,
+        consumerStreamSeq,
+        consumerSeq,
+        lastActive,
+        staleThresholdMs,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return c.json(buildQueueErrorHealth(stream, durable, staleThresholdMs, message, { enabled: true }));
+    }
+  });
+
+  /**
    * List activity entries from JetStream
    * GET /api/activity?limit=50&actor=arm-123
+   * GET /api/activity?limit=200&producer=brain&beforeSequence=1234
    */
   app.get("/", async (c) => {
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "50", 10), 1), 200);
     const actor = c.req.query("actor");
+    const producer = c.req.query("producer");
+    const beforeSequenceValue = parseInt(c.req.query("beforeSequence") || "", 10);
+    const beforeSequence = Number.isFinite(beforeSequenceValue) && beforeSequenceValue > 0
+      ? beforeSequenceValue
+      : undefined;
 
     if (!eventStore.isInitialized()) {
       return c.json({ 
         activity: [],
+        pagination: {
+          limit,
+          offset: 0,
+          total: 0,
+          hasMore: false,
+          nextCursor: null,
+        },
         message: "JetStream not available - start the API server with NATS",
       });
     }
 
     try {
+      if (producer) {
+        return c.json(await getProducerActivityPage(producer, limit, beforeSequence));
+      }
+
       let events;
       if (actor) {
         // Filter by specific arm
@@ -563,15 +852,18 @@ export function createActivityRoutes() {
         events = await eventStore.getRecentEvents(limit);
       }
 
-      const activity = events.map(event => ({
-        timestamp: event.timestamp,
-        actor: event.armId || (event.data.actor as string) || "brain",
-        action: event.type,
-        target: event.armId || null,
-        details: event.data,
-      }));
+      const activity = events.map(toActivityEntry);
 
-      return c.json({ activity });
+      return c.json({
+        activity,
+        pagination: {
+          limit,
+          offset: 0,
+          total: activity.length,
+          hasMore: false,
+          nextCursor: null,
+        },
+      });
     } catch (err) {
       console.error("Activity query error:", err);
       return c.json({ error: "JetStream error" }, 500);
@@ -655,26 +947,33 @@ export function createActivityRoutes() {
     }
 
     const now = new Date().toISOString();
+    const activityId = randomUUID();
     const subject = body.target 
       ? `coleo.events.arm.${body.target}.${body.action}`
       : `coleo.events.api.${body.action}`;
 
     try {
-      await eventStore.publishEvent(subject, {
+      const event: EventData = {
         type: body.action,
         armId: body.target,
-        data: { actor: body.actor, ...body.details },
+        data: {
+          ...body.details,
+          activityId,
+          actor: body.actor,
+          target: body.target,
+        },
         timestamp: now,
-      });
+      };
+      await eventStore.publishEvent(subject, event);
+
+      const entry = {
+        ...toActivityEntry(event),
+        details: body.details || {},
+      };
+      broadcast("activity", "activity.created", entry);
 
       return c.json({
-        entry: {
-          timestamp: now,
-          actor: body.actor,
-          action: body.action,
-          target: body.target || null,
-          details: body.details || {},
-        },
+        entry,
       }, 201);
     } catch (err) {
       console.error("Failed to publish activity:", err);

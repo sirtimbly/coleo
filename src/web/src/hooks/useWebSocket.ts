@@ -1,166 +1,247 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { api, type JsonValue } from '@/lib';
+/**
+ * Shared browser WebSocket transport.
+ *
+ * Every legacy page and new workbench projection uses this hook, but the module
+ * owns only one physical connection. Subscribers are fan-out listeners with
+ * channel reference counting, which prevents high-pane Golden Layout
+ * workspaces from opening one socket and heartbeat timer per panel.
+ */
 
-type Channel = 'arms' | 'activity' | 'proposals' | 'brain' | 'mail' | 'tasks' | 'bugs' | 'arm-events' | 'all';
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+
+import { api, type JsonValue } from "@/lib";
+
+export type Channel =
+	| "arms"
+	| "activity"
+	| "proposals"
+	| "brain"
+	| "mail"
+	| "tasks"
+	| "bugs"
+	| "arm-events"
+	| "agents"
+	| "workbench"
+	| "all";
 
 export interface WebSocketMessage {
-  type: string;
-  channel?: Channel;
-  event?: string;
-  data?: JsonValue;
-  timestamp?: string;
-  success?: boolean;
-  error?: string;
+	type: string;
+	channel?: Channel;
+	event?: string;
+	data?: JsonValue;
+	timestamp?: string;
+	success?: boolean;
+	error?: string;
 }
 
 interface UseWebSocketOptions {
-  channels: Channel[];
-  onMessage?: (message: WebSocketMessage) => void;
-  autoConnect?: boolean;
+	channels: Channel[];
+	onMessage?: (message: WebSocketMessage) => void;
+	autoConnect?: boolean;
 }
 
-export function useWebSocket({ channels, onMessage, autoConnect = true }: UseWebSocketOptions) {
-  const wsRef = useRef<WebSocket | null>(null);
-  const channelsRef = useRef(channels);
-  const onMessageRef = useRef(onMessage);
-  const [connected, setConnected] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const reconnectAttempts = useRef(0);
-  const shouldReconnectRef = useRef(false);
+interface ConnectionSnapshot {
+	connected: boolean;
+	authenticated: boolean;
+}
 
-  channelsRef.current = channels;
-  onMessageRef.current = onMessage;
+interface Subscriber {
+	channels: Set<Channel>;
+	onMessageRef: { current: UseWebSocketOptions["onMessage"] };
+}
 
-  const connect = useCallback(() => {
-    if (
-      wsRef.current?.readyState === WebSocket.OPEN ||
-      wsRef.current?.readyState === WebSocket.CONNECTING
-    ) {
-      return;
-    }
+const DISCONNECTED_SNAPSHOT: ConnectionSnapshot = {
+	connected: false,
+	authenticated: false,
+};
 
-    shouldReconnectRef.current = true;
-    const apiKey = api.getApiKey();
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+class SharedWebSocketTransport {
+	private socket: WebSocket | null = null;
+	private subscribers = new Set<Subscriber>();
+	private stateListeners = new Set<() => void>();
+	private channelCounts = new Map<Channel, number>();
+	private snapshot: ConnectionSnapshot = DISCONNECTED_SNAPSHOT;
+	private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+	private pingTimer: ReturnType<typeof setInterval> | null = null;
+	private reconnectAttempts = 0;
+	private shouldReconnect = false;
 
-    console.log('[WS] Connecting to', wsUrl);
-    const ws = new WebSocket(wsUrl);
+	getSnapshot = (): ConnectionSnapshot => this.snapshot;
 
-    ws.onopen = () => {
-      console.log('[WS] Connected');
-      setConnected(true);
-      reconnectAttempts.current = 0;
+	subscribeState = (listener: () => void): (() => void) => {
+		this.stateListeners.add(listener);
+		return () => this.stateListeners.delete(listener);
+	};
 
-      // Direct/self-hosted clients authenticate in-band. In Reef, the reverse
-      // proxy authenticates the upgrade and the server sends the same success
-      // message without exposing its private credential to this browser.
-      if (apiKey) {
-        ws.send(JSON.stringify({ type: 'auth', apiKey }));
-      }
-    };
+	addSubscriber(subscriber: Subscriber): () => void {
+		this.subscribers.add(subscriber);
+		for (const channel of subscriber.channels) {
+			const count = this.channelCounts.get(channel) ?? 0;
+			this.channelCounts.set(channel, count + 1);
+			if (count === 0 && this.snapshot.authenticated) {
+				this.send({ type: "subscribe", channel });
+			}
+		}
+		this.connect();
 
-    ws.onmessage = (event) => {
-      try {
-        const msg: WebSocketMessage = JSON.parse(event.data);
+		return () => {
+			this.subscribers.delete(subscriber);
+			for (const channel of subscriber.channels) {
+				const count = this.channelCounts.get(channel) ?? 0;
+				if (count <= 1) {
+					this.channelCounts.delete(channel);
+					if (this.snapshot.authenticated) {
+						this.send({ type: "unsubscribe", channel });
+					}
+				} else {
+					this.channelCounts.set(channel, count - 1);
+				}
+			}
+		};
+	}
 
-        if (msg.type === 'auth') {
-          if (msg.success) {
-            console.log('[WS] Authenticated');
-            setAuthenticated(true);
+	connect = (): void => {
+		if (typeof window === "undefined") return;
+		if (
+			this.socket?.readyState === WebSocket.OPEN ||
+			this.socket?.readyState === WebSocket.CONNECTING
+		) {
+			return;
+		}
 
-            // Subscribe to channels
-            for (const channel of channelsRef.current) {
-              ws.send(JSON.stringify({ type: 'subscribe', channel }));
-            }
-          } else {
-            console.error('[WS] Auth failed:', msg.error);
-            setAuthenticated(false);
-          }
-        } else if (msg.type === 'pong') {
-          // Heartbeat response
-        } else {
-          onMessageRef.current?.(msg);
-        }
-      } catch (err) {
-        console.error('[WS] Failed to parse message:', err);
-      }
-    };
+		this.shouldReconnect = true;
+		const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+		const socket = new WebSocket(`${protocol}//${window.location.host}/ws`);
+		this.socket = socket;
 
-    ws.onclose = () => {
-      console.log('[WS] Disconnected');
-      setConnected(false);
-      setAuthenticated(false);
-      if (wsRef.current === ws) {
-        wsRef.current = null;
-      }
-      if (pingIntervalRef.current) {
-        clearInterval(pingIntervalRef.current);
-        pingIntervalRef.current = null;
-      }
+		socket.onopen = () => {
+			this.reconnectAttempts = 0;
+			this.setSnapshot({ connected: true, authenticated: false });
+			this.send({ type: "auth", apiKey: api.getApiKey() ?? "" });
+		};
 
-      if (!shouldReconnectRef.current) return;
+		socket.onmessage = (event) => {
+			try {
+				const message = JSON.parse(String(event.data)) as WebSocketMessage;
+				if (message.type === "auth") {
+					if (message.success) {
+						this.setSnapshot({ connected: true, authenticated: true });
+						for (const channel of this.channelCounts.keys()) {
+							this.send({ type: "subscribe", channel });
+						}
+					} else {
+						this.setSnapshot({ connected: true, authenticated: false });
+					}
+					return;
+				}
+				if (message.type === "pong") return;
 
-      // Reconnect with exponential backoff
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-      reconnectAttempts.current++;
-      console.log(`[WS] Reconnecting in ${delay}ms...`);
-      reconnectTimeoutRef.current = setTimeout(() => {
-        reconnectTimeoutRef.current = null;
-        connect();
-      }, delay);
-    };
+				for (const subscriber of this.subscribers) {
+					if (
+						message.channel &&
+						(subscriber.channels.has(message.channel) || subscriber.channels.has("all"))
+					) {
+						subscriber.onMessageRef.current?.(message);
+					}
+				}
+			} catch (error) {
+				console.error("[WS] Failed to parse message:", error);
+			}
+		};
 
-    ws.onerror = (err) => {
-      console.error('[WS] Error:', err);
-    };
+		socket.onerror = (error) => {
+			console.error("[WS] Connection error:", error);
+		};
 
-    wsRef.current = ws;
+		socket.onclose = () => {
+			if (this.socket === socket) this.socket = null;
+			this.stopHeartbeat();
+			this.setSnapshot(DISCONNECTED_SNAPSHOT);
+			if (!this.shouldReconnect || this.subscribers.size === 0) return;
+			const delay = Math.min(1_000 * 2 ** this.reconnectAttempts, 30_000);
+			this.reconnectAttempts += 1;
+			this.reconnectTimer = setTimeout(() => {
+				this.reconnectTimer = null;
+				this.connect();
+			}, delay);
+		};
 
-    // Start heartbeat
-    pingIntervalRef.current = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ping' }));
-      }
-    }, 30000);
-  }, []);
+		this.startHeartbeat();
+	};
 
-  const disconnect = useCallback(() => {
-    shouldReconnectRef.current = false;
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    if (pingIntervalRef.current) {
-      clearInterval(pingIntervalRef.current);
-      pingIntervalRef.current = null;
-    }
-    if (wsRef.current) {
-      const ws = wsRef.current;
-      wsRef.current = null;
-      ws.onclose = null;
-      ws.close();
-    }
-    setConnected(false);
-    setAuthenticated(false);
-  }, []);
+	disconnect = (): void => {
+		this.shouldReconnect = false;
+		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+		this.reconnectTimer = null;
+		this.stopHeartbeat();
+		const socket = this.socket;
+		this.socket = null;
+		if (socket) {
+			socket.onclose = null;
+			socket.close();
+		}
+		this.setSnapshot(DISCONNECTED_SNAPSHOT);
+	};
 
-  useEffect(() => {
-    if (autoConnect) {
-      connect();
-    }
+	private send(message: Record<string, unknown>): void {
+		if (this.socket?.readyState === WebSocket.OPEN) {
+			this.socket.send(JSON.stringify(message));
+		}
+	}
 
-    return () => {
-      disconnect();
-    };
-  }, [autoConnect, connect, disconnect]);
+	private startHeartbeat(): void {
+		this.stopHeartbeat();
+		this.pingTimer = setInterval(() => this.send({ type: "ping" }), 30_000);
+	}
 
-  return {
-    connected,
-    authenticated,
-    connect,
-    disconnect,
-  };
+	private stopHeartbeat(): void {
+		if (this.pingTimer) clearInterval(this.pingTimer);
+		this.pingTimer = null;
+	}
+
+	private setSnapshot(next: ConnectionSnapshot): void {
+		if (
+			next.connected === this.snapshot.connected &&
+			next.authenticated === this.snapshot.authenticated
+		) {
+			return;
+		}
+		this.snapshot = next;
+		for (const listener of this.stateListeners) listener();
+	}
+}
+
+const sharedTransport = new SharedWebSocketTransport();
+
+export function useWebSocket({
+	channels,
+	onMessage,
+	autoConnect = true,
+}: UseWebSocketOptions) {
+	const onMessageRef = useRef(onMessage);
+	onMessageRef.current = onMessage;
+	const channelKey = [...channels].sort().join("|");
+	const snapshot = useSyncExternalStore(
+		sharedTransport.subscribeState,
+		sharedTransport.getSnapshot,
+		() => DISCONNECTED_SNAPSHOT,
+	);
+
+	useEffect(() => {
+		if (!autoConnect) return;
+		const subscriber: Subscriber = {
+			channels: new Set(channelKey.split("|").filter(Boolean) as Channel[]),
+			onMessageRef,
+		};
+		return sharedTransport.addSubscriber(subscriber);
+	}, [autoConnect, channelKey]);
+
+	const connect = useCallback(() => sharedTransport.connect(), []);
+	const disconnect = useCallback(() => sharedTransport.disconnect(), []);
+
+	return {
+		...snapshot,
+		connect,
+		disconnect,
+	};
 }

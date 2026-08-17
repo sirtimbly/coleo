@@ -6,6 +6,7 @@
  */
 
 import type { NatsConnection } from 'nats';
+import { resolveNatsUrl } from '../network-config';
 import { connectToNats } from './transport';
 
 export interface NatsManagerOptions {
@@ -26,7 +27,7 @@ export class NatsManager {
   private isConnected = false;
 
   constructor(options: NatsManagerOptions = {}) {
-    this.url = options.url || process.env.OCTOPAI_NATS_URL || 'nats://localhost:4222';
+    this.url = options.url || resolveNatsUrl();
     this.debug = options.debug || false;
     this.retryAttempts = options.retryAttempts ?? 3;
     this.retryDelayMs = options.retryDelayMs ?? 1000;

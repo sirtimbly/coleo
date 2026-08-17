@@ -86,9 +86,10 @@ describe("Brain poll order", () => {
 		).assignInitialTasks = async () => {
 			record("assignInitialTasks");
 		};
-		(brain as unknown as { syncPlanTasks: () => Promise<void> }).syncPlanTasks =
+		(brain as unknown as { syncPlanTasks: () => Promise<boolean> }).syncPlanTasks =
 			async () => {
 				record("syncPlanTasks");
+				return true;
 			};
 		(brain as unknown as { processInbox: () => Promise<void> }).processInbox =
 			async () => {
@@ -134,6 +135,7 @@ describe("Brain poll order", () => {
 
 		expect(calls).toEqual([
 			"checkInfrastructureHealth",
+			"syncPlanTasks",
 			"processHumanMail",
 			"processArmQueue",
 			"processOperationalSignals",
@@ -145,7 +147,6 @@ describe("Brain poll order", () => {
 			"assignTasks",
 			"reviewBlockedTasks",
 			"assignInitialTasks",
-			"syncPlanTasks",
 			"processInbox",
 			"checkDocUpdateTrigger",
 			"reEvaluatePlanProgress",
@@ -153,5 +154,34 @@ describe("Brain poll order", () => {
 			"saveState",
 			"notifyObservatory",
 		]);
+	});
+
+	it("pauses message and work processing while the planning gate is blocked", async () => {
+		const brain = new Brain({ coleoDir: "/tmp", pollIntervalMs: 1000, verbose: false });
+		const calls: string[] = [];
+		const privateBrain = brain as unknown as Record<string, unknown>;
+		privateBrain.checkInfrastructureHealth = async () => ({
+			healthy: true,
+			issues: [],
+			canWorkWithArms: true,
+			components: {
+				apiServer: { healthy: true },
+				database: { healthy: true },
+				maildir: { healthy: true },
+			},
+		});
+		privateBrain.syncPlanTasks = async () => {
+			calls.push("syncPlanTasks");
+			return false;
+		};
+		privateBrain.processHumanMail = async () => calls.push("processHumanMail");
+		privateBrain.processArmQueue = async () => calls.push("processArmQueue");
+		privateBrain.processOperationalSignals = async () => calls.push("processOperationalSignals");
+		privateBrain.saveState = async () => calls.push("saveState");
+		privateBrain.notifyObservatory = async () => calls.push("notifyObservatory");
+
+		await brain.poll();
+
+		expect(calls).toEqual(["syncPlanTasks", "saveState", "notifyObservatory"]);
 	});
 });

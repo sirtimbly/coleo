@@ -1,0 +1,154 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "speak": "${title}. ${description}",
+  "body": [
+    {
+      "type": "RichTextBlock",
+      "spacing": "None",
+      "inlines": [
+        {
+          "type": "TextRun",
+          "text": "${kindLabel}",
+          "size": "Small",
+          "weight": "Bolder",
+          "color": "Accent"
+        },
+        {
+          "type": "TextRun",
+          "text": "  ·  ${stateLabel}",
+          "size": "Small",
+          "weight": "Bolder",
+          "color": "${stateColor}",
+          "$when": "${stateLabel != null}"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "${title}",
+      "size": "Large",
+      "weight": "Bolder",
+      "wrap": true,
+      "spacing": "Small"
+    },
+    {
+      "type": "TextBlock",
+      "text": "${timestampLabel}",
+      "size": "Small",
+      "isSubtle": true,
+      "horizontalAlignment": "Right",
+      "wrap": false,
+      "spacing": "Small",
+      "$when": "${timestampLabel != null}"
+    },
+    {
+      "type": "Container",
+      "style": "${noticeTone}",
+      "bleed": true,
+      "spacing": "Medium",
+      "$when": "${noticeText != null}",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "${noticeText}",
+          "wrap": true,
+          "weight": "Bolder"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "${description}",
+      "wrap": true,
+      "spacing": "Medium",
+      "$when": "${description != null}"
+    },
+    {
+      "type": "Table",
+      "firstRowAsHeaders": false,
+      "showGridLines": false,
+      "spacing": "Medium",
+      "$when": "${count(facts) > 0}",
+      "columns": [
+        {
+          "width": 1
+        },
+        {
+          "width": 2
+        }
+      ],
+      "rows": [
+        {
+          "$data": "${facts}",
+          "type": "TableRow",
+          "cells": [
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "${label}",
+                  "size": "Small",
+                  "weight": "Bolder",
+                  "isSubtle": true,
+                  "wrap": true
+                }
+              ]
+            },
+            {
+              "type": "TableCell",
+              "items": [
+                {
+                  "type": "TextBlock",
+                  "text": "${value}",
+                  "size": "Small",
+                  "wrap": true
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "Container",
+      "id": "resourceTechnicalDetails",
+      "isVisible": "${showTechnicalDetails}",
+      "separator": true,
+      "spacing": "Medium",
+      "$when": "${count(technicalFacts) > 0}",
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "Record details",
+          "size": "Small",
+          "weight": "Bolder",
+          "isSubtle": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {
+              "$data": "${technicalFacts}",
+              "title": "${label}",
+              "value": "${value}"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "$when": "${openVerb != null}",
+      "title": "${openLabel}",
+      "verb": "${openVerb}",
+      "data": {
+        "actionId": "open-resource"
+      }
+    }
+  ]
+}

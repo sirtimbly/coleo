@@ -1,3 +1,9 @@
+/**
+ * Central route factory exports used by the API server.
+ *
+ * Keeping the workbench route beside existing domain routes makes its
+ * persistence boundary explicit: it stores UI configuration, not project data.
+ */
 export { createSystemRoutes } from "./system";
 export { createArmsRoutes, loadArmTemplate, listArmTemplates } from "./arms";
 export { createActivityRoutes } from "./activity";
@@ -23,3 +29,5 @@ export { createStatusSeriesRoutes } from "./status-series";
 export { createUploadApiRoutes, createUploadContentRoutes } from "./uploads";
 export { createOnboardingRoutes } from "./onboarding";
 export { createProjectSetupRoutes } from "./project-setup";
+export { createWorkbenchRoutes } from "./workbench";
+export { createRunsRoutes } from "./runs";

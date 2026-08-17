@@ -20,6 +20,8 @@ import { createOpencodeClient, type OpencodeClient, type Session, type SessionSt
 import { resolveModel } from "./model-resolver";
 import { buildHarnessPromptParts } from "./prompt-parts";
 import { selectSessionForRecovery, shouldPruneSession } from "./session-lifecycle";
+import { getProjectRuntimeEnvironment } from "../project-scope";
+import { resolveApiUrl } from "../network-config";
 
 /**
  * Format an SDK error for display
@@ -230,8 +232,7 @@ export class OpenCodeApiHarness implements AgentHarness {
     
     if (config.provider && config.model) {
       try {
-        const apiUrl = process.env.COLEO_API_URL
-          || (process.env.COLEO_API_PORT ? `http://localhost:${process.env.COLEO_API_PORT}` : "http://localhost:8080");
+        const apiUrl = resolveApiUrl();
         const resolved = await resolveModel(config.provider, config.model, apiUrl);
         if (resolved.fallback) {
           // Keep explicit user choice; API-side provider discovery can be stale.
@@ -304,6 +305,7 @@ export class OpenCodeApiHarness implements AgentHarness {
           environment: {
             COLEO_ARM_ID: armId,
             COLEO_DIR: coleoDir,
+            ...getProjectRuntimeEnvironment({ ...process.env, ...config.env }),
             // Ensure PATH includes bun
             PATH: `${join(process.env.HOME || "", ".bun", "bin")}:${process.env.PATH || ""}`,
             HOME: process.env.HOME || "",

@@ -1,0 +1,54 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "body": [
+    {
+      "type": "TextBlock",
+      "text": "${from}",
+      "weight": "Bolder",
+      "wrap": true
+    },
+    {
+      "type": "TextBlock",
+      "text": "${subject}",
+      "size": "Medium",
+      "weight": "Bolder",
+      "wrap": true,
+      "spacing": "Small"
+    },
+    {
+      "type": "TextBlock",
+      "text": "${preview}",
+      "wrap": true,
+      "maxLines": "${previewMaxLines}"
+    },
+    {
+      "type": "TextBlock",
+      "text": "${timestampLabel}",
+      "size": "Small",
+      "isSubtle": true,
+      "$when": "${timestampLabel != null}"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "$when": "${openVerb != null}",
+      "title": "Open conversation",
+      "verb": "${openVerb}",
+      "data": {
+        "actionId": "open-message"
+      }
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${canArchive}",
+      "title": "Archive",
+      "verb": "message.archive",
+      "data": {
+        "actionId": "archive-message"
+      }
+    }
+  ]
+}

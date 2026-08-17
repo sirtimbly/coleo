@@ -1,0 +1,99 @@
+{
+  "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+  "type": "AdaptiveCard",
+  "version": "1.5",
+  "speak": "${title}. ${summary}",
+  "body": [
+    {
+      "type": "Container",
+      "style": "${tone}",
+      "bleed": true,
+      "items": [
+        {
+          "type": "TextBlock",
+          "text": "${eyebrow}",
+          "size": "Small",
+          "weight": "Bolder",
+          "isSubtle": true,
+          "wrap": true
+        },
+        {
+          "type": "TextBlock",
+          "text": "${title}",
+          "size": "Medium",
+          "weight": "Bolder",
+          "wrap": true,
+          "spacing": "Small"
+        },
+        {
+          "type": "TextBlock",
+          "text": "${summary}",
+          "wrap": true,
+          "maxLines": "${summaryMaxLines}",
+          "spacing": "Small"
+        }
+      ]
+    },
+    {
+      "type": "FactSet",
+      "$when": "${count(facts) > 0}",
+      "facts": [
+        {
+          "$data": "${facts}",
+          "title": "${label}",
+          "value": "${value}"
+        }
+      ]
+    },
+    {
+      "type": "TextBlock",
+      "text": "${timestampLabel}",
+      "size": "Small",
+      "isSubtle": true,
+      "wrap": true,
+      "$when": "${timestampLabel != null}"
+    }
+  ],
+  "actions": [
+    {
+      "type": "Action.Execute",
+      "$when": "${openVerb != null}",
+      "title": "${openLabel}",
+      "verb": "${openVerb}",
+      "data": {
+        "actionId": "open-resource"
+      }
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${showAttentionActions}",
+      "title": "Mark resolved",
+      "verb": "attention.resolve",
+      "data": {
+        "actionId": "resolve-attention"
+      },
+      "mode": "secondary"
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${showAttentionActions}",
+      "title": "Snooze 1 hour",
+      "verb": "attention.snooze",
+      "data": {
+        "actionId": "snooze-attention",
+        "durationMinutes": 60
+      },
+      "mode": "secondary"
+    },
+    {
+      "type": "Action.Execute",
+      "$when": "${showAttentionActions}",
+      "title": "Assign to me",
+      "verb": "attention.assign",
+      "data": {
+        "actionId": "assign-attention"
+      },
+      "mode": "secondary"
+    }
+  ]
+}

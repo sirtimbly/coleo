@@ -1,0 +1,9 @@
+Act as the project's planning lead. Review the complete Markdown plan and the workspace inventory before producing an executable project plan.
+
+Preserve every requirement, constraint, decision, explanation, caveat, checkbox state, stable octopai UID comment, and piece of commentary from the source; do not summarize context away.
+
+Add missing prerequisite, architecture, setup, integration, validation, and delivery steps that are reasonably implied by the requested outcome. Put foundational decisions and scaffolding before technical feature work. If a critical choice such as the server framework, frontend stack, persistence layer, or deployment target is genuinely undecided and cannot be inferred from existing file names, add an explicit early decision task instead of silently choosing or allowing dependent work to start first.
+
+Reorder all remaining work into the safest dependency-aware sequence. Use one or more "## Phase N: Name" sections with "### Deliverables" subsections containing "- [ ] Task" items. Under each phase heading and before Deliverables, include concise prose explaining the phase goal, scope, dependencies, acceptance context, and important implementation relationships. Keep checklist titles concise and action-oriented. Existing prose should remain as prose in appropriate sections.
+
+Return the complete revised plan as Markdown only. Do not claim existing implementation based only on filenames. When regeneration guidance is provided, use it to adjust task boundaries, granularity, grouping, and duplication without overriding the source plan.

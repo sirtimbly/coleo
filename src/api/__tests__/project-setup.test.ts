@@ -6,9 +6,18 @@ import { join } from "node:path";
 import { Hono } from "hono";
 
 import { parsePlanFile } from "../../brain/plan-parser";
+import {
+	BrainModelAccessError,
+	detectBrainModelAccessIssue,
+	parseBrainModelAccessIssue,
+} from "../../brain/model-access";
 import { LocalWorkspaceAccess } from "../../workspace";
 import { formatErrorResponse } from "../middleware/error";
 import { createProjectSetupRoutes } from "../routes/project-setup";
+import {
+	getWorkbenchToolbarProjectionPaths,
+	materializeWorkbenchToolbarTemplates,
+} from "../workbench-toolbar-projection";
 
 function createTestDb(): Database {
 	const db = new Database(":memory:");
@@ -47,6 +56,14 @@ function createTestDb(): Database {
 			current_task_id TEXT,
 			current_task_subject TEXT
 		);
+		CREATE TABLE infrastructure_health (
+			component TEXT PRIMARY KEY,
+			healthy INTEGER NOT NULL,
+			optional INTEGER NOT NULL,
+			error TEXT,
+			last_check TEXT NOT NULL,
+			updated_at TEXT NOT NULL
+		);
 	`);
 	return db;
 }
@@ -56,11 +73,13 @@ describe("project setup routes", () => {
 	let db: Database;
 	let app: Hono<{ Variables: { db: Database } }>;
 	let formatterGuidance: string | undefined;
+	let formatterError: string | undefined;
 
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "coleo-project-setup-api-"));
 		db = createTestDb();
 		formatterGuidance = undefined;
+		formatterError = undefined;
 		app = new Hono<{ Variables: { db: Database } }>();
 		app.use("*", async (c, next) => {
 			c.set("db", db);
@@ -74,12 +93,30 @@ describe("project setup routes", () => {
 				formatterGuidance = guidance;
 				return {
 				mode: "structured",
+				formatterError,
 				content: content.includes("### Deliverables")
 					? content
 					: `${content.trimEnd()}\n\n## Phase 1: Launch\n\n### Deliverables\n\n- [ ] Build the first release\n`,
 				};
 			},
 		}));
+	});
+
+	it("returns formatter diagnostics when prepare uses structured fallback", async () => {
+		formatterError = "Plan formatter returned 500: model capacity exhausted";
+		const response = await app.request("http://localhost/api/project-setup/prepare", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				sourcePath: ".project/plan.md",
+				content: "# Project Plan\n\nShip the first release.\n",
+				expectedHash: null,
+			}),
+		});
+		const body = await response.json() as { formatterError?: string };
+
+		expect(response.status).toBe(200);
+		expect(body.formatterError).toBe("Plan formatter returned 500: model capacity exhausted");
 	});
 
 	afterEach(async () => {
@@ -136,6 +173,35 @@ describe("project setup routes", () => {
 		expect(paths).toContain(".project/plan.md");
 		expect(paths.some((path) => path.startsWith(".git/"))).toBe(false);
 		expect(paths.some((path) => path.startsWith("node_modules/"))).toBe(false);
+	});
+
+	it("lists and opens generated toolbar snapshots as read-only Coleo files", async () => {
+		const coleoDir = join(root, ".coleo");
+		await materializeWorkbenchToolbarTemplates(coleoDir, "local", {});
+		const inboxPath = getWorkbenchToolbarProjectionPaths("local")
+			.find((path) => path.endsWith("/inbox.json"))!;
+
+		const statusResponse = await app.request("http://localhost/api/project-setup");
+		const status = await statusResponse.json() as { projectTree: string[] };
+		expect(status.projectTree).toContain(inboxPath);
+
+		const readResponse = await app.request(
+			`http://localhost/api/project-setup/file?path=${encodeURIComponent(inboxPath)}`,
+		);
+		const readBody = await readResponse.json() as {
+			file: { path: string; content: string; readOnly: boolean };
+		};
+		expect(readResponse.status).toBe(200);
+		expect(readBody.file).toMatchObject({ path: inboxPath, readOnly: true });
+		expect(JSON.parse(readBody.file.content)).toMatchObject({ id: "inbox" });
+
+		const saveResponse = await app.request("http://localhost/api/project-setup/file", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ kind: "document", path: inboxPath, content: "{}\n" }),
+		});
+		expect(saveResponse.status).toBe(400);
+		expect(await saveResponse.text()).toContain("read-only");
 	});
 
 	it("reads and edits markdown, text, TOML, and Jinja files in the checkout", async () => {
@@ -331,6 +397,55 @@ their existing workflow and ship with clear operational documentation.
 		});
 
 		expect(response.status).toBe(400);
+	});
+
+	it("persists an actionable model-access issue when plan evaluation runs out of credits", async () => {
+		const issue = detectBrainModelAccessIssue(
+			429,
+			'{"error":{"message":"You have no credits remaining. Add credits to continue."}}',
+			"openai",
+		);
+		expect(issue).not.toBeNull();
+		if (!issue) return;
+
+		const blockedApp = new Hono<{ Variables: { db: Database } }>();
+		blockedApp.use("*", async (c, next) => {
+			c.set("db", db);
+			await next();
+		});
+		blockedApp.onError((error, c) => formatErrorResponse(c, error));
+		blockedApp.route("/api/project-setup", createProjectSetupRoutes({
+			workspace: new LocalWorkspaceAccess(root),
+			coleoDir: join(root, ".coleo"),
+			formatter: async () => {
+				throw new BrainModelAccessError(issue);
+			},
+		}));
+
+		const response = await blockedApp.request("http://localhost/api/project-setup/prepare", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				sourcePath: ".project/plan.md",
+				content: "# Project Plan\n\nBuild the product.\n",
+				expectedHash: null,
+			}),
+		});
+		const body = await response.json() as { error: string };
+		const row = db.query(`
+			SELECT healthy, error
+			FROM infrastructure_health
+			WHERE component = 'brain_model_api'
+		`).get() as { healthy: number; error: string | null } | null;
+
+		expect(response.status).toBe(400);
+		expect(body.error).toContain("out of API credits");
+		expect(body.error).toContain("platform.openai.com");
+		expect(row?.healthy).toBe(0);
+		expect(parseBrainModelAccessIssue(row?.error)).toMatchObject({
+			code: "insufficient_credits",
+			provider: "openai",
+		});
 	});
 
 	it("preserves completed tasks and regenerates every other task with human guidance", async () => {

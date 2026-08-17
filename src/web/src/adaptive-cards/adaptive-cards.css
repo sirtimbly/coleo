@@ -1,0 +1,70 @@
+.adaptive-card-host .ac-adaptiveCard {
+	box-sizing: border-box;
+	max-width: 100%;
+}
+
+.adaptive-card-host .ac-pushButton {
+	min-height: 2rem;
+	border: 1px solid var(--color-border);
+	border-radius: 0.25rem;
+	background: var(--color-surface);
+	padding: 0.35rem 0.7rem;
+	color: var(--color-foreground);
+	font: inherit;
+	font-size: 0.8rem;
+	font-weight: 600;
+}
+
+.adaptive-card-host .ac-pushButton:hover {
+	background: var(--color-surface-secondary);
+}
+
+.adaptive-card-host .ac-pushButton:focus-visible,
+.adaptive-card-host .ac-input:focus-visible {
+	outline: 2px solid var(--color-ring);
+	outline-offset: 2px;
+}
+
+.adaptive-card-host .ac-input {
+	box-sizing: border-box;
+	width: 100%;
+	border: 1px solid var(--color-border);
+	border-radius: 0.25rem;
+	background: var(--color-background);
+	padding: 0.5rem;
+	color: var(--color-foreground);
+	font: inherit;
+}
+
+.adaptive-card-host table {
+	width: 100%;
+	table-layout: fixed;
+}
+
+.adaptive-card-host td {
+	vertical-align: top;
+	overflow-wrap: anywhere;
+}
+
+.adaptive-card-host input[type="date"] {
+	color-scheme: inherit;
+}
+
+.adaptive-card-host a {
+	color: var(--color-accent);
+}
+
+[data-card-template="workbench.resource-editor@2"] {
+	container-type: inline-size;
+}
+
+@container (max-width: 38rem) {
+	[data-card-template="workbench.resource-editor@2"] .ac-columnSet {
+		flex-direction: column;
+	}
+
+	[data-card-template="workbench.resource-editor@2"] .ac-columnSet > .ac-container {
+		width: 100%;
+		flex: 0 0 auto !important;
+	}
+}

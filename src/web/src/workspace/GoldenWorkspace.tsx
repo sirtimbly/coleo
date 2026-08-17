@@ -1,3 +1,10 @@
+/**
+ * Golden Layout workbench shell.
+ *
+ * The shell is the browser's window manager: it restores database-backed
+ * layouts, hosts route-based view instances, surfaces background attention on
+ * tabs, and exposes navigation and command-palette actions.
+ */
 import {
 	ComponentContainer,
 	ComponentItem,
@@ -33,7 +40,19 @@ import {
 	type CommandPaletteMode,
 	type WorkspaceCommandAction,
 } from "@/components/WorkspaceCommandPalette";
-import { useMessage } from "@/lib";
+import { api, truncateMiddle, truncateStart, useMessage } from "@/lib";
+import { createRandomId } from "@/lib/utils";
+import { useLiveProjections } from "@/workbench/live-projections";
+import {
+	RESTORE_WORKSPACE_LAYOUT_EVENT,
+	SAVE_WORKSPACE_LAYOUT_EVENT,
+	type RestoreWorkspaceLayoutDetail,
+	type SaveWorkspaceLayoutDetail,
+} from "@/workbench/layout-commands";
+import { useWorkbenchProfile } from "@/workbench/profile-context";
+import { WorkbenchStatusBar } from "@/workbench/WorkbenchStatusBar";
+import type { JsonObject } from "@/lib/api";
+import type { WorkbenchChannel } from "@/workbench/types";
 import {
 	WorkspaceRouteProvider,
 	type WorkspaceOpenMode,
@@ -45,6 +64,45 @@ import "./golden-workspace.css";
 
 const WORKSPACE_COMPONENT_TYPE = "route";
 const STORAGE_KEY = "coleo-golden-layout";
+const LAYOUT_SAVE_DELAY_MS = 750;
+
+// Mirrors LocationSelector.TypeId from golden-layout. The package declares it
+// as a const enum, which cannot be imported at runtime under esbuild.
+const LOCATION_SELECTOR_FIRST_ROW = 4;
+const LOCATION_SELECTOR_ROOT = 7;
+
+function profileStorageKey(profileId: string): string {
+	return `${STORAGE_KEY}:${profileId}`;
+}
+
+function routeAttentionChannels(pathname: string): WorkbenchChannel[] {
+	switch (pathname) {
+		case "/tasks":
+		case "/grid":
+			return ["tasks"];
+		case "/bugs":
+			return ["bugs"];
+		case "/brain":
+			return ["brain", "activity"];
+		case "/arms":
+		case "/viewer":
+			return ["arms", "arm-events", "agents"];
+		case "/processes":
+			return ["arms", "arm-events", "agents", "tasks", "bugs"];
+		case "/mail":
+			return ["mail"];
+		case "/messaging":
+			return ["brain", "mail", "arms", "arm-events", "activity"];
+		case "/activity":
+			return ["activity"];
+		case "/proposals":
+			return ["proposals"];
+		case "/settings":
+			return ["workbench"];
+		default:
+			return [];
+	}
+}
 
 interface RoutePanelState extends WorkspaceRouteState {
 	panelId: string;
@@ -57,8 +115,20 @@ interface PanelInstance {
 	route: RoutePanelState;
 }
 
+function normalizeLegacyRoute(route: RoutePanelState): RoutePanelState {
+	if (["/activity", "/proposals", "/status-reports"].includes(route.pathname)) {
+		return {
+			...route,
+			pathname: "/messaging",
+			search: "?facet=history",
+			title: undefined,
+		};
+	}
+	return route;
+}
+
 function createPanelId(): string {
-	return `panel-${crypto.randomUUID()}`;
+	return createRandomId("panel");
 }
 
 function createRoutePanelState(
@@ -67,12 +137,12 @@ function createRoutePanelState(
 	panelId = createPanelId(),
 	title?: string,
 ): RoutePanelState {
-	return {
+	return normalizeLegacyRoute({
 		panelId,
 		pathname,
 		search,
 		title,
-	};
+	});
 }
 
 function createComponentConfig(route: RoutePanelState): ComponentItemConfig {
@@ -183,12 +253,17 @@ function findFirstStack(item: ContentItem | undefined): Stack | null {
 
 export function GoldenWorkspace() {
 	const { isMessageModalOpen, markMessageOpened, openNewMessage } = useMessage();
+	const { profile, layouts, isLoading: profileLoading } = useWorkbenchProfile();
+	const { attention, clearAttention } = useLiveProjections();
 	const layoutHostRef = useRef<HTMLDivElement>(null);
 	const layoutRef = useRef<GoldenLayout | null>(null);
 	const launcherRef = useRef<HTMLDivElement>(null);
 	const paneMenuRef = useRef<HTMLDivElement>(null);
 	const panelInstancesRef = useRef(new Map<string, PanelInstance>());
 	const activePanelIdRef = useRef<string | null>(null);
+	const layoutSaveTimerRef = useRef<number | null>(null);
+	const loadedProfileIdRef = useRef<string | null>(null);
+	const suppressLayoutSaveRef = useRef(false);
 	const [panelInstances, setPanelInstances] = useState<
 		Record<string, PanelInstance>
 	>({});
@@ -197,18 +272,53 @@ export function GoldenWorkspace() {
 	const [paletteMode, setPaletteMode] = useState<CommandPaletteMode | null>(
 		null,
 	);
+	const [projectName, setProjectName] = useState<string | null>(null);
+	const [projectCwd, setProjectCwd] = useState<string | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+		void api.status().then((status) => {
+			if (!cancelled) {
+				setProjectName(status.projectName);
+				setProjectCwd(status.cwd);
+			}
+		}).catch((error) => {
+			console.error("Failed to fetch project identity:", error);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
 
 	const persistWorkspaceLayout = useCallback(() => {
-		if (!layoutRef.current) {
+		if (!layoutRef.current || suppressLayoutSaveRef.current) {
 			return;
 		}
 
 		const savedLayout = layoutRef.current.saveLayout();
 		window.localStorage.setItem(
-			STORAGE_KEY,
+			profileStorageKey(profile?.id ?? "local"),
 			JSON.stringify(LayoutConfig.fromResolved(savedLayout)),
 		);
-	}, []);
+		if (!profile) return;
+		if (layoutSaveTimerRef.current !== null) {
+			window.clearTimeout(layoutSaveTimerRef.current);
+		}
+		const portableLayout = LayoutConfig.fromResolved(savedLayout);
+		layoutSaveTimerRef.current = window.setTimeout(() => {
+			layoutSaveTimerRef.current = null;
+			void api.saveWorkbenchLayout(`current:${profile.id}`, {
+				profileId: profile.id,
+				name: "Current workspace",
+				description: "Automatically saved Golden Layout workspace",
+				layout: portableLayout as unknown as JsonObject,
+				isDefault: true,
+				shared: false,
+			}).catch((error) => {
+				console.error("Failed to save workbench layout:", error);
+			});
+		}, LAYOUT_SAVE_DELAY_MS);
+	}, [profile]);
 
 	const updatePanelRoute = useCallback(
 		(panelId: string, nextRoute: RoutePanelState) => {
@@ -247,14 +357,32 @@ export function GoldenWorkspace() {
 			}
 
 			activePanelIdRef.current = panelInstance.route.panelId;
-			persistWorkspaceLayout();
+			panelInstance.container.setTitle(
+				panelInstance.route.title ??
+					getAppRouteTitle(panelInstance.route.pathname, panelInstance.route.search),
+			);
+			const channels = routeAttentionChannels(panelInstance.route.pathname);
+			if (channels.length > 0) clearAttention(channels);
 
-			if (item.parent instanceof Stack) {
+			if (
+				item.parent instanceof Stack &&
+				item.parent.getActiveComponentItem() !== item
+			) {
 				item.parent.setActiveComponentItem(item, true);
 			}
 		},
-		[persistWorkspaceLayout],
+		[clearAttention],
 	);
+
+	useEffect(() => {
+		for (const panel of panelInstancesRef.current.values()) {
+			const channels = routeAttentionChannels(panel.route.pathname);
+			const needsAttention = panel.route.panelId !== activePanelIdRef.current &&
+				channels.some((channel) => (attention.channels[channel] ?? 0) > 0);
+			const title = panel.route.title ?? getAppRouteTitle(panel.route.pathname, panel.route.search);
+			panel.container.setTitle(needsAttention ? `● ${title}` : title);
+		}
+	}, [attention]);
 
 	const findPanelItem = useCallback(
 		(pathname: string, search: string, panelId?: string) => {
@@ -344,7 +472,7 @@ export function GoldenWorkspace() {
 					WORKSPACE_COMPONENT_TYPE,
 					panelState,
 					getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 7 }],
+					[{ typeId: LOCATION_SELECTOR_ROOT }],
 				);
 			}
 
@@ -387,7 +515,7 @@ export function GoldenWorkspace() {
 					WORKSPACE_COMPONENT_TYPE,
 					panelState,
 					title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 7 }],
+					[{ typeId: LOCATION_SELECTOR_ROOT }],
 				);
 				focusPanelByRoute(panelState);
 				return;
@@ -439,12 +567,12 @@ export function GoldenWorkspace() {
 				rootItem &&
 				(rootItem as unknown as { type: string }).type === "row"
 			) {
-				layout.addComponentAtLocation(
-					WORKSPACE_COMPONENT_TYPE,
-					panelState,
-					title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-					[{ typeId: 2 }], // Add as sibling in a row
-				);
+			layout.addComponentAtLocation(
+				WORKSPACE_COMPONENT_TYPE,
+				panelState,
+				title ?? getAppRouteTitle(panelState.pathname, panelState.search),
+				[{ typeId: LOCATION_SELECTOR_FIRST_ROW }], // Add as a sibling in the first row
+			);
 				focusPanelByRoute(panelState);
 				return;
 			}
@@ -454,7 +582,7 @@ export function GoldenWorkspace() {
 				WORKSPACE_COMPONENT_TYPE,
 				panelState,
 				title ?? getAppRouteTitle(panelState.pathname, panelState.search),
-				[{ typeId: 7 }],
+				[{ typeId: LOCATION_SELECTOR_ROOT }],
 			);
 			focusPanelByRoute(panelState);
 		},
@@ -524,16 +652,16 @@ export function GoldenWorkspace() {
 				return findRightmostStack(rootItem);
 			})();
 
-			if (rightStack) {
-				rightStack.addComponent(WORKSPACE_COMPONENT_TYPE, panelState, panelTitle);
-			} else {
-				layout.addComponentAtLocation(
-					WORKSPACE_COMPONENT_TYPE,
-					panelState,
-					panelTitle,
-					[{ typeId: 7 }],
-				);
-			}
+		if (rightStack) {
+			rightStack.addComponent(WORKSPACE_COMPONENT_TYPE, panelState, panelTitle);
+		} else {
+			layout.addComponentAtLocation(
+				WORKSPACE_COMPONENT_TYPE,
+				panelState,
+				panelTitle,
+				[{ typeId: LOCATION_SELECTOR_ROOT }],
+			);
+		}
 
 			focusPanelByRoute(panelState);
 		},
@@ -627,18 +755,65 @@ export function GoldenWorkspace() {
 	}, [closeMenus, launcherOpen, paneMenuOpen]);
 
 	const resetWorkspace = useCallback(() => {
-		window.localStorage.removeItem(STORAGE_KEY);
+		window.localStorage.removeItem(profileStorageKey(profile?.id ?? "local"));
 		layoutRef.current?.loadLayout(
 			createDefaultLayout(createRoutePanelState("/", "")),
 		);
 		window.requestAnimationFrame(() => {
 			persistWorkspaceLayout();
 		});
-	}, [persistWorkspaceLayout]);
+	}, [persistWorkspaceLayout, profile?.id]);
 
 	const saveWorkspace = useCallback(() => {
 		persistWorkspaceLayout();
 	}, [persistWorkspaceLayout]);
+
+	useEffect(() => {
+		const saveNamedLayout = (event: Event) => {
+			if (!layoutRef.current || !profile) return;
+			const detail = (event as CustomEvent<SaveWorkspaceLayoutDetail>).detail;
+			if (!detail?.name.trim()) return;
+			const existing = layouts.find((layout) =>
+				layout.profileId === profile.id
+				&& layout.name.toLocaleLowerCase() === detail.name.trim().toLocaleLowerCase()
+			);
+			const portableLayout = LayoutConfig.fromResolved(layoutRef.current.saveLayout());
+			void api.saveWorkbenchLayout(existing?.id ?? createRandomId("layout"), {
+				profileId: profile.id,
+				name: detail.name.trim(),
+				description: "Named Golden Layout workspace",
+				layout: portableLayout as unknown as JsonObject,
+				isDefault: existing?.isDefault ?? false,
+				shared: detail.shared,
+			}).catch((error) => {
+				console.error("Failed to save named workspace layout:", error);
+			});
+		};
+
+		const restoreNamedLayout = (event: Event) => {
+			if (!layoutRef.current) return;
+			const detail = (event as CustomEvent<RestoreWorkspaceLayoutDetail>).detail;
+			const record = layouts.find((layout) => layout.id === detail?.layoutId);
+			if (!record) return;
+			suppressLayoutSaveRef.current = true;
+			try {
+				layoutRef.current.loadLayout(record.layout as unknown as LayoutConfig);
+			} catch (error) {
+				console.error("Failed to restore named workspace layout:", error);
+			}
+			window.requestAnimationFrame(() => {
+				suppressLayoutSaveRef.current = false;
+				persistWorkspaceLayout();
+			});
+		};
+
+		window.addEventListener(SAVE_WORKSPACE_LAYOUT_EVENT, saveNamedLayout);
+		window.addEventListener(RESTORE_WORKSPACE_LAYOUT_EVENT, restoreNamedLayout);
+		return () => {
+			window.removeEventListener(SAVE_WORKSPACE_LAYOUT_EVENT, saveNamedLayout);
+			window.removeEventListener(RESTORE_WORKSPACE_LAYOUT_EVENT, restoreNamedLayout);
+		};
+	}, [layouts, persistWorkspaceLayout, profile]);
 
 	const commandActions = useMemo((): WorkspaceCommandAction[] => {
 		return [
@@ -747,13 +922,32 @@ export function GoldenWorkspace() {
 		document.title = "Coleo Observatory - Workspace";
 	}, []);
 
+	// Golden Layout is an imperative singleton. Keep its event callbacks current
+	// through a ref so profile/layout query refreshes do not tear down and rebuild
+	// the complete pane tree after every database-backed auto-save.
+	const layoutRuntimeRef = useRef({
+		profile,
+		layouts,
+		focusPanel,
+		persistWorkspaceLayout,
+	});
+	layoutRuntimeRef.current = {
+		profile,
+		layouts,
+		focusPanel,
+		persistWorkspaceLayout,
+	};
+
 	useEffect(() => {
-		if (!layoutHostRef.current || layoutRef.current) {
+		if (!layoutHostRef.current || layoutRef.current || profileLoading) {
 			return;
 		}
 
+		const initialProfile = layoutRuntimeRef.current.profile;
+		const initialLayouts = layoutRuntimeRef.current.layouts;
 		const layout = new GoldenLayout(layoutHostRef.current);
 		layoutRef.current = layout;
+		loadedProfileIdRef.current = initialProfile?.id ?? "local";
 
 		layout.registerComponentFactoryFunction(
 			WORKSPACE_COMPONENT_TYPE,
@@ -761,11 +955,7 @@ export function GoldenWorkspace() {
 				const restoredRoute = isRoutePanelState(state)
 					? state
 					: createRoutePanelState("/", "");
-				const route =
-					restoredRoute.pathname === "/status-reports" &&
-					restoredRoute.title === "Status History"
-						? { ...restoredRoute, title: undefined }
-						: restoredRoute;
+				const route = normalizeLegacyRoute(restoredRoute);
 				const hostElement = document.createElement("div");
 				hostElement.className = "golden-workspace-panel-host";
 				container.element.appendChild(hostElement);
@@ -802,12 +992,12 @@ export function GoldenWorkspace() {
 
 		layout.on("focus", (event) => {
 			if (event.target instanceof ComponentItem) {
-				focusPanel(event.target);
+				layoutRuntimeRef.current.focusPanel(event.target);
 			}
 		});
 
 		layout.on("stateChanged", () => {
-			persistWorkspaceLayout();
+			layoutRuntimeRef.current.persistWorkspaceLayout();
 		});
 
 		const requestedPathname = window.location.pathname;
@@ -816,11 +1006,23 @@ export function GoldenWorkspace() {
 			&& (requestedPathname !== "/" || requestedSearch)
 			? createRoutePanelState(requestedPathname, requestedSearch)
 			: null;
-		const savedLayout = window.localStorage.getItem(STORAGE_KEY);
+		const serverLayout = initialLayouts.find((item) =>
+			item.profileId === initialProfile?.id && item.isDefault
+		)?.layout;
+		const savedLayout = window.localStorage.getItem(
+			profileStorageKey(initialProfile?.id ?? "local"),
+		) ?? (initialProfile?.id === "local" ? window.localStorage.getItem(STORAGE_KEY) : null);
 		if (requestedRoute) {
 			// A deep link represents an explicit view request. Start a focused
 			// workspace for it instead of allowing a saved layout to obscure it.
 			layout.loadLayout(createDefaultLayout(requestedRoute));
+		} else if (serverLayout) {
+			try {
+				layout.loadLayout(serverLayout as unknown as LayoutConfig);
+			} catch (error) {
+				console.error("Failed to restore database workspace layout:", error);
+				layout.loadLayout(createDefaultLayout(createRoutePanelState("/", "")));
+			}
 		} else if (savedLayout) {
 			try {
 				const parsedLayout = JSON.parse(savedLayout) as LayoutConfig & {
@@ -834,7 +1036,7 @@ export function GoldenWorkspace() {
 				layout.loadLayout(normalizedLayout);
 			} catch (error) {
 				console.error("Failed to restore saved workspace layout:", error);
-				window.localStorage.removeItem(STORAGE_KEY);
+				window.localStorage.removeItem(profileStorageKey(initialProfile?.id ?? "local"));
 				layout.loadLayout(createDefaultLayout(createRoutePanelState("/", "")));
 			}
 		} else {
@@ -854,13 +1056,59 @@ export function GoldenWorkspace() {
 		const currentPanelInstances = panelInstancesRef.current;
 
 		return () => {
+			if (layoutSaveTimerRef.current !== null) {
+				window.clearTimeout(layoutSaveTimerRef.current);
+				layoutSaveTimerRef.current = null;
+			}
 			resizeObserver.disconnect();
 			layout.destroy();
 			layoutRef.current = null;
 			currentPanelInstances.clear();
 			setPanelInstances({});
 		};
-	}, [focusPanel, persistWorkspaceLayout]);
+	}, [profileLoading]);
+
+	useEffect(() => {
+		const layout = layoutRef.current;
+		if (!layout || !profile || profileLoading || loadedProfileIdRef.current === profile.id) {
+			return;
+		}
+
+		if (layoutSaveTimerRef.current !== null) {
+			window.clearTimeout(layoutSaveTimerRef.current);
+			layoutSaveTimerRef.current = null;
+		}
+		const serverLayout = layouts.find((item) =>
+			item.profileId === profile.id && item.isDefault
+		)?.layout;
+		const localLayout = window.localStorage.getItem(profileStorageKey(profile.id));
+		let targetLayout: LayoutConfig = createDefaultLayout(createRoutePanelState("/", ""));
+
+		if (serverLayout) {
+			targetLayout = serverLayout as unknown as LayoutConfig;
+		} else if (localLayout) {
+			try {
+				const parsedLayout = JSON.parse(localLayout) as LayoutConfig & { resolved?: boolean };
+				targetLayout = parsedLayout.resolved
+					? LayoutConfig.fromResolved(parsedLayout as unknown as ResolvedLayoutConfig)
+					: parsedLayout;
+			} catch (error) {
+				console.error("Failed to restore profile workspace layout:", error);
+			}
+		}
+
+		suppressLayoutSaveRef.current = true;
+		loadedProfileIdRef.current = profile.id;
+		try {
+			layout.loadLayout(targetLayout);
+		} catch (error) {
+			console.error("Failed to switch profile workspace layout:", error);
+			layout.loadLayout(createDefaultLayout(createRoutePanelState("/", "")));
+		}
+		window.requestAnimationFrame(() => {
+			suppressLayoutSaveRef.current = false;
+		});
+	}, [layouts, profile, profileLoading]);
 
 	const panelPortals = useMemo(
 		() =>
@@ -916,7 +1164,7 @@ export function GoldenWorkspace() {
 	);
 
 	return (
-		<div className="golden-workspace-shell flex h-screen">
+		<div className="observatory-backdrop golden-workspace-shell flex h-screen">
 			<div className="flex-1 min-w-0 flex flex-col">
 				<header className="golden-workspace-dock px-3 pt-3 pb-2">
 					<div className="golden-workspace-dock-inner">
@@ -1027,6 +1275,17 @@ export function GoldenWorkspace() {
 										</div>
 									</div>
 								) : null}
+							</div>
+
+							<div className="golden-dock-project">
+								<span className="golden-dock-project-app">COLEO</span>
+								<span className="golden-dock-project-name" title={projectCwd ?? undefined}>
+									{projectName
+										? truncateMiddle(projectName, 32)
+										: projectCwd
+											? truncateStart(projectCwd, 32)
+											: "…"}
+								</span>
 							</div>
 						</div>
 
@@ -1152,6 +1411,10 @@ export function GoldenWorkspace() {
 				<div className="flex-1 min-h-0 px-3 pb-3">
 					<div ref={layoutHostRef} className="golden-workspace-layout h-full" />
 				</div>
+				<WorkbenchStatusBar
+					onOpenProcesses={() => focusOrOpenRoute("/processes", "")}
+					onOpenProfiles={() => focusOrOpenRoute("/settings", "")}
+				/>
 			</div>
 
 			<WorkspaceCommandPalette

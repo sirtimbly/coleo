@@ -4,7 +4,7 @@
  * Usage:
  *   bun run backfill:status-history
  *   bun run backfill:status-history -- --dry-run --limit 50
- *   bun run backfill:status-history -- --db /path/to/coleo.db
+ *   COLEO_PROJECT_DIR=/path/to/project COLEO_DIR=/path/to/project/.coleo bun run backfill:status-history
  *
  * Env:
  *   COLEO_DIR / database via getColeoDir
@@ -12,7 +12,7 @@
  *   COLEO_EMBEDDING_PROVIDER / OPENAI_API_KEY
  */
 
-import { join } from "path";
+import { join, resolve } from "path";
 import { Database } from "bun:sqlite";
 import { getColeoDir } from "../cli/context";
 import { indexStatusHistoryEvent, initializeStatusHistoryCollection } from "../vector/indexing-pipeline";
@@ -141,7 +141,13 @@ export function completedTaskToHistoryEvent(row: CompletedTaskRow): StatusHistor
 
 async function main(): Promise<void> {
 	const opts = parseArgs(process.argv.slice(2));
-	const dbPath = opts.dbPath || join(getColeoDir(), "coleo.db");
+	const activeProjectDbPath = join(getColeoDir(), "coleo.db");
+	const dbPath = opts.dbPath || activeProjectDbPath;
+	if (resolve(dbPath) !== resolve(activeProjectDbPath)) {
+		throw new Error(
+			`--db must belong to the active project (${activeProjectDbPath}); set COLEO_PROJECT_DIR and COLEO_DIR for another project`,
+		);
+	}
 
 	console.log(`[backfill] db=${dbPath}`);
 	console.log(`[backfill] dryRun=${opts.dryRun} limit=${opts.limit ?? "all"} batch=${opts.batchSize}`);
