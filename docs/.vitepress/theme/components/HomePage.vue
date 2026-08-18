@@ -95,8 +95,8 @@ function moveShowcase(direction: number): void {
       <section class="landing-hero landing-hero-organic" aria-labelledby="landing-title">
         <div class="landing-hero-copy">
           <p class="landing-kicker">Self-hosted multi-agent control plane</p>
-          <h1 id="landing-title">Execute the entire plan.</h1>
-          <p class="landing-thesis">Organic intelligence with observability.</p>
+          <h1 id="landing-title">Stop baby-sitting your agents.</h1>
+          <p class="landing-thesis">Install Coleo to use organic intelligence with observability.</p>
           <p class="landing-lede">
             Coding agents are the arms of this organism, each posessing it's own intelligence, but limited in it's focus. The brain monitors the situation, assigns work, preserves what they learn, and answers their questions. Coleo creates the distributed infrastructure to make it work, and a human interface to manage the overall project.
           </p>
@@ -110,7 +110,7 @@ function moveShowcase(direction: number): void {
           </div>
         </div>
 
-        <figure class="plan-organism" aria-labelledby="plan-organism-caption">
+        <figure class="plan-organism">
           <div class="plan-halo" aria-hidden="true"></div>
           <svg class="organism-currents" viewBox="0 0 520 640" aria-hidden="true">
             <path d="M260 104 C260 146 260 157 260 190" />
@@ -126,30 +126,29 @@ function moveShowcase(direction: number): void {
           </div>
           <div class="living-plan-sheet">
             <p>Living plan</p>
-            <strong>One durable direction</strong>
+            <strong>Coordination Server</strong>
             <ul>
-              <li><span></span>Intent</li>
-              <li><span></span>Active work</li>
-              <li><span></span>Discoveries</li>
-              <li><span></span>Decisions</li>
+              <li><span></span>Maintain Purpose</li>
+              <li><span></span>Verify Progress</li>
+              <li><span></span>Integrate Discoveries</li>
+              <li><span></span>Route Messages</li>
             </ul>
           </div>
           <ul class="arm-signals" aria-label="Signals shared by agent arms">
-            <li class="arm-signal arm-signal-one"><span>Arm 01</span> Claim</li>
-            <li class="arm-signal arm-signal-two"><span>Arm 02</span> Question</li>
-            <li class="arm-signal arm-signal-three"><span>Arm 03</span> Report</li>
-            <li class="arm-signal arm-signal-four"><span>Arm 04</span> Complete</li>
+            <li class="arm-signal arm-signal-one"><span>Arm 01</span> Claim Task</li>
+            <li class="arm-signal arm-signal-two"><span>Arm 02</span> Review Work</li>
+            <li class="arm-signal arm-signal-three"><span>Arm 03</span> Report Problem</li>
+            <li class="arm-signal arm-signal-four"><span>Arm 04</span> Update Plans</li>
           </ul>
-          <div class="human-altitude"><span>Human altitude</span> Observe · approve · redirect</div>
-          <figcaption id="plan-organism-caption">The plan changes as arms work, while the Brain keeps the whole organism aligned.</figcaption>
+          <div class="human-altitude"><strong>Human:</strong> Write & Review</div>
         </figure>
       </section>
 
       <section id="workflow" class="quick-start workflow-section" aria-labelledby="workflow-title">
         <div class="workflow-intro">
-          <p class="section-label">How Coleo works</p>
-          <h2 id="workflow-title">You write a plan, then many agents rally around it.</h2>
-          <p>The plain-text plan will be regularly synced with a database of tasks for agents to access. Human operators get detailed oversight of the generated plans and can quickly add and modify work in multiple ways. Coleo keeps reevaluating the project as work progresses, so agents receive the best directions for the current moment and state of the project. Conflicts are resolved by the brain.</p>
+          <p class="section-label">No More Babysitting</p>
+          <h2 id="workflow-title">Manage numerous agents with the Coleo infrastructure.</h2>
+          <p>Your plain-text plan will be regularly synced with a database of tasks for agents on multiple hosts to access. Human operators get detailed oversight of the generated plans and can quickly add and modify work in multiple ways. Coleo keeps reevaluating the project as work progresses, so sagents receive the best directions for the current moment and state of the project. Conflicts are resolved by the brain.</p>
           <a class="text-link" href="/guides/task-workflow">See the complete task workflow <span aria-hidden="true">→</span></a>
         </div>
         <svg class="workflow-current" viewBox="0 0 1000 180" preserveAspectRatio="none" aria-hidden="true">

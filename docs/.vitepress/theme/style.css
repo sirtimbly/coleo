@@ -66,11 +66,12 @@ body.light-mode {
 	--vp-c-text-invert: rgba(9, 5, 5, 0.95);
 	--vp-c-text-2: rgba(10, 27, 43, 0.75);
 	--vp-c-text-3: rgba(10, 27, 43, 0.55);
-	--vp-c-link: #0d9488;
-	--vp-c-brand: #0d9488;
-	--vp-c-brand-1: #2ad1bf;
-	--vp-c-brand-2: #14b8a6;
-	--vp-c-brand-3: #0d9488;
+	--vp-c-link: #075e59;
+	--vp-c-brand: #075e59;
+	--vp-c-brand-1: #075e59;
+	--vp-c-brand-2: #064a45;
+	--vp-c-brand-3: #043e3a;
+	--vp-c-brand-soft: rgba(7, 94, 89, 0.14);
 	--vp-code-color: #002724;
 }
 
@@ -299,8 +300,7 @@ body.light-mode .navbar-custom .brand-title {
 /* Desktop: use our custom SiteNav instead of the default VitePress navbar. */
 @media (min-width: 960px) {
 	body:not(.coleo-home) {
-		/* Reserve space for the fixed SiteNav: nav height + 32px. */
-		--vp-layout-top-height: calc(var(--vp-nav-height) + 32px);
+		--vp-layout-top-height: 0px;
 	}
 
 	body:not(.coleo-home) .VPNav,
@@ -308,17 +308,7 @@ body.light-mode .navbar-custom .brand-title {
 		display: none !important;
 	}
 
-	body:not(.coleo-home) .coleo-site-nav {
-		display: block;
-		position: fixed;
-		top: 0;
-		left: 0;
-		right: 0;
-		z-index: var(--vp-z-index-nav, 50);
-	}
-
-	/* VitePress assumes a visible VPNav and compensates using padding-top: var(--vp-nav-height).
-	   Since we hide VPNav on desktop, remove those offsets and rely on --vp-layout-top-height. */
+	/* Desktop uses the persistent sidebar for global navigation. */
 	body:not(.coleo-home) .VPContent {
 		padding-top: 0 !important;
 	}
@@ -334,10 +324,6 @@ body.light-mode .navbar-custom .brand-title {
 
 /* Mobile: use VitePress default navbar + hamburger. */
 @media (max-width: 959px) {
-	body:not(.coleo-home) .coleo-site-nav {
-		display: none;
-	}
-
 	/* Keep the mobile nav screen and its appearance row above animated layers. */
 	body:not(.coleo-home) .VPNav {
 		z-index: 80;
@@ -449,7 +435,7 @@ body.light-mode .navbar-custom .brand-title {
 	}
 
 	body:not(.coleo-home) .VPContent.has-sidebar {
-		margin-top: 80px !important;
+		margin-top: 0 !important;
 		padding-left: 0 !important;
 		padding-right: 0 !important;
 	}
@@ -509,45 +495,277 @@ body.light-mode .navbar-custom .brand-title {
 	}
 }
 
-/* Sidebar readability: larger text and higher contrast */
+/* The docs rail is intentionally opaque so navigation never competes with the water scene. */
+body:not(.coleo-home) {
+	--docs-rail-bg: #071d25;
+	--docs-rail-bg-deep: #061820;
+	--docs-rail-border: rgba(145, 226, 212, 0.2);
+	--docs-rail-rule: rgba(145, 226, 212, 0.13);
+	--docs-rail-label: #72d8c6;
+	--docs-rail-text: #d9eeea;
+	--docs-rail-muted: #a9c7c2;
+	--docs-rail-hover: rgba(114, 216, 198, 0.1);
+	--docs-rail-active-bg: rgba(114, 216, 198, 0.17);
+	--docs-rail-active-border: rgba(145, 226, 212, 0.25);
+	--docs-rail-active-text: #f3fffc;
+	--docs-rail-focus: #8ce8d7;
+}
+
+body:not(.coleo-home).light-mode {
+	--docs-rail-bg: #f3faf8;
+	--docs-rail-bg-deep: #eaf5f2;
+	--docs-rail-border: rgba(13, 91, 84, 0.18);
+	--docs-rail-rule: rgba(13, 91, 84, 0.12);
+	--docs-rail-label: #126e63;
+	--docs-rail-text: #17363b;
+	--docs-rail-muted: #4d6d6e;
+	--docs-rail-hover: rgba(20, 140, 124, 0.08);
+	--docs-rail-active-bg: #d8f0ea;
+	--docs-rail-active-border: rgba(13, 111, 98, 0.2);
+	--docs-rail-active-text: #073f44;
+	--docs-rail-focus: #087f70;
+}
+
 body:not(.coleo-home) .VPSidebar {
-	background-color: color-mix(in srgb, var(--vp-c-bg-alt) 6%, transparent);
+	padding-right: 0 !important;
+	padding-bottom: 0 !important;
+	padding-left: 0 !important;
+	border-right: 1px solid var(--docs-rail-border);
+	background:
+		linear-gradient(180deg, var(--docs-rail-bg) 0%, var(--docs-rail-bg-deep) 100%) !important;
+	box-shadow: 18px 0 50px rgba(2, 17, 22, 0.1);
+	color: var(--docs-rail-text);
+	scrollbar-color: var(--docs-rail-rule) transparent;
+}
+
+body:not(.coleo-home) .VPSidebar .nav {
+	display: flex;
+	flex-direction: column;
+	min-height: 100%;
+	padding: 24px 18px 72px;
+}
+
+.docs-sidebar-brand {
+	display: flex;
+	align-items: center;
+	gap: 11px;
+	margin: 0 6px 26px;
+	padding: 2px 8px 8px;
+	color: var(--docs-rail-text);
+	text-decoration: none;
+}
+
+.docs-sidebar-brand img {
+	width: 48px;
+	height: 48px;
+	object-fit: contain;
+}
+
+.docs-sidebar-brand span {
+	display: grid;
+	gap: 2px;
+	min-width: 0;
+}
+
+.docs-sidebar-brand strong {
+	font-family: var(--font-display);
+	font-size: 1.12rem;
+	font-weight: 680;
+	letter-spacing: -0.02em;
+	line-height: 1.1;
+}
+
+.docs-sidebar-brand small {
+	color: var(--docs-rail-label);
+	font-size: 0.58rem;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.docs-sidebar-brand:hover strong {
+	color: var(--docs-rail-active-text);
+}
+
+.docs-sidebar-brand:focus-visible {
+	border-radius: 10px;
+	outline: 2px solid var(--docs-rail-focus);
+	outline-offset: 2px;
+}
+
+.docs-sidebar-github {
+	display: grid;
+	grid-template-columns: 20px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 10px;
+	margin: auto 6px 0;
+	padding: 12px;
+	border: 1px solid var(--docs-rail-border);
+	border-radius: 12px;
+	background: var(--docs-rail-hover);
+	color: var(--docs-rail-text);
+	text-decoration: none;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.docs-sidebar-github:hover {
+	border-color: var(--docs-rail-active-border);
+	background: var(--docs-rail-active-bg);
+	color: var(--docs-rail-active-text);
+}
+
+.docs-sidebar-github:focus-visible {
+	outline: 2px solid var(--docs-rail-focus);
+	outline-offset: 2px;
+}
+
+.docs-sidebar-github svg {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+
+.docs-sidebar-github > span:not(.docs-sidebar-github__arrow) {
+	display: grid;
+	gap: 1px;
+}
+
+.docs-sidebar-github strong {
+	font-size: 0.78rem;
+	font-weight: 650;
+}
+
+.docs-sidebar-github small {
+	color: var(--docs-rail-muted);
+	font-size: 0.6rem;
+	letter-spacing: 0.03em;
+}
+
+.docs-sidebar-github__arrow {
+	color: var(--docs-rail-label);
+	font-size: 0.8rem;
+}
+
+@media (max-width: 959px) {
+	.docs-sidebar-brand {
+		display: none;
+	}
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0 {
+	margin: 0;
+	padding: 0 0 20px;
+}
+
+body:not(.coleo-home) .VPSidebar .group + .group {
+	border-top: 0;
+	padding-top: 6px;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0:not(.is-link) > .item {
+	align-items: center;
+	gap: 12px;
+	padding: 0 10px 8px;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0:not(.is-link) > .item > .text {
+	flex: none;
+	padding: 0;
+	color: var(--docs-rail-label);
+	font-size: 0.7rem;
+	font-weight: 700;
+	letter-spacing: 0.13em;
+	line-height: 1.2;
+	text-transform: uppercase;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0 > .items {
+	display: grid;
+	gap: 3px;
 }
 
 body:not(.coleo-home) .VPSidebarItem.level-1 {
-	margin-left: 1rem;
+	margin: 0;
 }
 
-/* Active item */
-body:not(.coleo-home) .VPSidebarItem.level-1.is-active > .item .link > .text,
-body:not(.coleo-home)
-	.VPSidebarItem.level-1.is-active
-	> .item
-	.link
-	> .text:hover {
-	color: var(--vp-c-text-3);
-	font-weight: 700;
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link,
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item > .link {
+	min-width: 0;
+	border: 1px solid transparent;
+	border-radius: 10px;
+	padding: 9px 12px;
+	color: var(--docs-rail-text);
+	text-decoration: none;
+	transition:
+		background-color 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
 }
 
-/* Indicator bar */
-body:not(.coleo-home) .VPSidebarItem.is-active .indicator {
-	background: var(--vp-c-text-3);
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link {
+	padding-left: 10px;
 }
 
-body:not(.coleo-home) .VPSidebar .group .title {
-	color: var(--vp-c-text-1);
-	font-weight: 700;
-	font-size: 1rem;
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item > .link:hover,
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link:hover {
+	background: var(--docs-rail-hover);
+	color: var(--docs-rail-active-text);
 }
 
-body:not(.coleo-home) .VPSidebar .items .link .text {
-	color: var(--vp-c-text-invert);
-	font-size: 0.95rem;
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item > .link:hover .text,
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link:hover .text {
+	color: var(--docs-rail-active-text) !important;
 }
 
-body:not(.coleo-home) .VPSidebar .items .link.active .text {
-	color: var(--vp-c-brand);
-	font-weight: 600;
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link.is-active > .item > .link,
+body:not(.coleo-home) .VPSidebarItem.level-1.is-active > .item > .link {
+	border-color: var(--docs-rail-active-border);
+	background: var(--docs-rail-active-bg);
+	color: var(--docs-rail-active-text);
+	box-shadow: 0 8px 24px rgba(2, 17, 22, 0.08);
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item .text,
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item .text,
+body:not(.coleo-home) .VPSidebarItem.level-1.is-active > .item .text {
+	min-width: 0;
+	padding: 0;
+	overflow: hidden;
+	color: inherit;
+	font-size: 0.87rem;
+	font-weight: 520;
+	line-height: 1.45;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link.is-active > .item .text,
+body:not(.coleo-home) .VPSidebarItem.level-1.is-active > .item .text {
+	color: var(--docs-rail-active-text) !important;
+	font-weight: 650;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item .text,
+body:not(.coleo-home) .VPSidebarItem.level-0.is-link.is-active > .item .text {
+	color: inherit;
+	font-weight: 650;
+}
+
+body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .indicator {
+	display: none;
+}
+
+body:not(.coleo-home) .VPSidebarItem .link:focus-visible {
+	outline: 2px solid var(--docs-rail-focus);
+	outline-offset: 2px;
+}
+
+/* Every docs route has a title banner; suppress the source Markdown H1. */
+body:not(.coleo-home) .VPDoc .vp-doc > div > h1:first-child {
+	display: none !important;
 }
 
 .VPDoc.has-sidebar.has-aside .aside-container {
@@ -693,14 +911,26 @@ body:not(.coleo-home).light-mode .VPDoc .content {
 }
 
 /* Doc content theming: code blocks, inline code, tables */
-.vp-doc pre,
-.vp-doc pre code {
-	background: var(--coleo-code-bg, rgb(27, 37, 48)) !important;
+.vp-doc {
+	--vp-code-block-bg: #0a0c10;
+	--vp-code-block-color: #f0f3f6;
+	--vp-code-block-divider-color: #7a828e;
+	--vp-code-lang-color: #bdc4cc;
+	--vp-code-line-highlight-color: rgba(64, 158, 255, 0.18);
+	--vp-code-copy-code-border-color: #7a828e;
+	--vp-code-copy-code-bg: #272b33;
+	--vp-code-copy-code-hover-border-color: #bdc4cc;
+	--vp-code-copy-code-hover-bg: #343941;
 }
 
-body.light-mode .vp-doc pre,
-body.light-mode .vp-doc pre code {
-	--coleo-code-bg: rgba(0, 0, 0, 1);
+.vp-doc pre,
+.vp-doc pre code {
+	background: var(--vp-code-block-bg) !important;
+	color: var(--vp-code-block-color);
+}
+
+.vp-doc .vp-code span {
+	color: var(--shiki-dark, var(--vp-code-block-color)) !important;
 }
 
 .vp-doc :not(pre) > code {
@@ -826,6 +1056,23 @@ body.coleo-home .container,
 
 .depth-control.dark-mode {
 	background: rgba(15, 23, 42, 0.95);
+}
+
+.depth-control button {
+	display: grid;
+	place-items: center;
+	width: 24px;
+	height: 24px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.depth-control button:focus-visible {
+	border-radius: 50%;
+	outline: 2px solid var(--color-accent);
+	outline-offset: 3px;
 }
 
 .depth-control label {
@@ -2360,7 +2607,7 @@ body.coleo-home .marketing-root {
 	min-height: 250px;
 	padding: 38px 34px 32px;
 	border: 1px solid rgba(238, 240, 231, 0.72);
-	border-radius: 34% 28% 31% 25% / 16% 20% 18% 24%;
+	border-radius: 72px;
 	background: linear-gradient(145deg, rgba(239, 242, 232, 0.98), rgba(203, 225, 213, 0.9));
 	box-shadow:
 		0 28px 80px rgba(2, 17, 22, 0.35),
@@ -2373,7 +2620,7 @@ body.coleo-home .marketing-root {
 	position: absolute;
 	inset: 11px;
 	border: 1px solid rgba(7, 26, 33, 0.1);
-	border-radius: inherit;
+	border-radius: 61px;
 	content: "";
 	pointer-events: none;
 }

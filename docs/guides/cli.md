@@ -1,3 +1,13 @@
+---
+title: CLI Reference
+description: Install and operate Coleo from the command line, from initialization through everyday control-plane work.
+banner:
+  src: /coleo-guide-cli.png
+  alt: An orange octopus works at a glowing brass terminal while abstract command pulses travel through cables and wake small underwater garden stations.
+  eyebrow: Command Deck
+  position: center 50%
+---
+
 # CLI Reference
 
 Complete reference for the `coleo` command-line interface.

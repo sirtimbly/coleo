@@ -1,3 +1,13 @@
+---
+title: Task Workflow
+description: Follow durable tasks from early drafts through active work, blockers, recovery, and completion.
+banner:
+  src: /coleo-guide-task-workflow.png
+  alt: Small orange octopuses tend glowing task stones as they progress from a rough seed to a finished blossom, with one waiting safely in a side pool.
+  eyebrow: Work in Motion
+  position: center 51%
+---
+
 # Task Workflow
 
 Tasks are the brain's durable work queue. A status controls whether work can be assigned; it is not only a display label.

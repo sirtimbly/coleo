@@ -3,8 +3,8 @@ title: Philosophy
 description: Why Coleo replaces agent babysitting with durable plans, shared context, coordinated work, and adjustable human oversight.
 outline: [2,3]
 banner:
-  src: /coleo-philosophy-living-plan.png
-  alt: A developer guides a luminous living plan through an octopus brain while its arms coordinate work and return questions from a shared underwater garden.
+  src: /coleo-philosophy-living-plan-v2.png
+  alt: A friendly wide-eyed octopus tends a living brass plan connected by glowing energy pipes while a developer adjusts the level of oversight from a glass observatory.
   eyebrow: Why Coleo Exists
   position: center 48%
 ---

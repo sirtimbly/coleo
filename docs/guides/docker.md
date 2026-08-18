@@ -1,3 +1,13 @@
+---
+title: Docker Guide
+description: Run Coleo as a self-hosted stack on a local machine, private host, or home server.
+banner:
+  src: /coleo-guide-docker.png
+  alt: An orange octopus tends a stack of transparent habitat modules containing the brain, message flow, agent workshop, and vector garden of a self-hosted Coleo system.
+  eyebrow: Self-Hosted Habitat
+  position: center 50%
+---
+
 # Docker Guide
 
 Use Docker when you want Coleo running as a self-hosted service instead of as local foreground processes.

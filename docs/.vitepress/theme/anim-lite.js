@@ -1,4 +1,11 @@
 // Lightweight inner-pages background: water gradient + light rays + depth slider
+import {
+  getInitialSceneBrightness,
+  getStoredSceneBrightness,
+  normalizeSceneBrightness,
+  saveSceneBrightness,
+} from './scene-brightness.js'
+
 (function(){
   const DBG = (...args) => { try { console.log('[innerAnim]', ...args) } catch(_){} }
   let state = {
@@ -84,8 +91,8 @@
     return !!(state.depthCtrl && state.depthSlider)
   }
 
-  function updateDepth(){ if(!state.depthSlider||!state.waterFx||!state.depthCtrl) return
-    const value=parseInt(state.depthSlider.value||'70',10); state.brightness=value/100
+  function updateDepth(persist=false){ if(!state.depthSlider||!state.waterFx||!state.depthCtrl) return
+    const value=persist ? saveSceneBrightness(state.depthSlider.value) : normalizeSceneBrightness(state.depthSlider.value); state.depthSlider.value=String(value); state.brightness=value/100
     if(state.depthIcon) state.depthIcon.textContent='💡'
     const isLight=value>50
     state.depthCtrl.classList.toggle('dark-mode', !isLight)
@@ -106,33 +113,33 @@
       }
       return
     }
-    state.inputHandler=()=>updateDepth()
+    state.inputHandler=()=>updateDepth(true)
     if(state.depthSlider) state.depthSlider.addEventListener('input', state.inputHandler)
     if(state.depthIcon){
       state.depthIcon.style.cursor='pointer'
       state.iconClickHandler=()=>{
         const val=parseInt(state.depthSlider.value||'70',10)
         state.depthSlider.value = val>50 ? '30' : '80'
-        updateDepth()
+        updateDepth(true)
       }
       state.depthIcon.addEventListener('click', state.iconClickHandler)
     }
     if(window.matchMedia){
       state.colorSchemeQuery = window.matchMedia('(prefers-color-scheme: light)')
-      state.colorSchemeHandler = (event)=>{ if(!state.depthSlider) return; state.depthSlider.value = event.matches ? '70' : '30'; updateDepth() }
+      state.colorSchemeHandler = (event)=>{ if(!state.depthSlider || getStoredSceneBrightness() !== null) return; state.depthSlider.value = event.matches ? '70' : '30'; updateDepth() }
       if(state.colorSchemeQuery.addEventListener){
         state.colorSchemeQuery.addEventListener('change', state.colorSchemeHandler)
       } else if(state.colorSchemeQuery.addListener){
         state.colorSchemeQuery.addListener(state.colorSchemeHandler)
       }
     }
-    applySystemPreference()
+    applySavedOrSystemPreference()
     state.depthBound=true
   }
 
-  function applySystemPreference(){
+  function applySavedOrSystemPreference(){
     if(!state.depthSlider) return
-    state.depthSlider.value = getSystemIsLight() ? '70' : '30'
+    state.depthSlider.value = String(getInitialSceneBrightness(getSystemIsLight()))
     updateDepth()
   }
 
