@@ -1,3 +1,13 @@
+---
+title: Harness Contract
+description: Learn how a stable adapter contract lets Coleo coordinate different command-line agent runtimes.
+banner:
+  src: /coleo-architecture-harness-contract.png
+  alt: An orange octopus demonstrates a standard glowing coupling that lets several different agent craft connect through interchangeable brass adapters.
+  eyebrow: Adapter Workshop
+  position: center 49%
+---
+
 # Harness Contract
 
 Coleo is the self-hosted control plane for coding agents: run on your hardware, plug in any CLI agent, and coordinate long-running work with full local visibility.

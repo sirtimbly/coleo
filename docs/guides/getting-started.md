@@ -1,3 +1,13 @@
+---
+title: Getting Started
+description: Choose a local or container runtime, initialize Coleo, and bring its core services online.
+banner:
+  src: /coleo-guide-getting-started.png
+  alt: A friendly orange octopus stands where two glowing paths lead to a terminal observatory and a modular home-server habitat before rejoining the same underwater garden.
+  eyebrow: First Dive
+  position: center 52%
+---
+
 # Getting Started
 
 This guide starts from the first decision you need to make:

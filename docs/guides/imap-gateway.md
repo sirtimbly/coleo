@@ -1,3 +1,13 @@
+---
+title: IMAP Gateway
+description: Connect a private Maildir-backed mailbox to Coleo through the legacy local IMAP gateway.
+banner:
+  src: /coleo-guide-imap-gateway.png
+  alt: A sealed mail capsule travels through a glowing private tunnel between a diver's observatory and an octopus post office with shell-shaped mail cubbies.
+  eyebrow: Private Mail Passage
+  position: center 48%
+---
+
 # IMAP Gateway (Phase 1: Tailscale/Tunnel)
 
 > Legacy/local workflow only: production email flows now require an email gateway integration (Postmark recommended) with a fixed sender and receiver address pair.

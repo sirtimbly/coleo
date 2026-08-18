@@ -1,3 +1,13 @@
+---
+title: Components
+description: Meet the major parts of Coleo and see how the Brain, API, agents, messaging, and shared garden work together.
+banner:
+  src: /coleo-architecture-components.png
+  alt: Five distinct underwater habitats for coordination, gateways, agent work, message flow, and shared data surround a central orange octopus and connect with luminous paths.
+  eyebrow: System Anatomy
+  position: center 48%
+---
+
 # Components
 
 The Coleo system consists of five major components that work together.

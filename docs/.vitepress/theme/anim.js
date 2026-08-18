@@ -1,5 +1,12 @@
 // Plain JS home animation bootstrap to avoid Vue render overhead
 /** biome-ignore-all lint/complexity/useArrowFunction: <explanation> */
+import {
+	getInitialSceneBrightness,
+	getStoredSceneBrightness,
+	normalizeSceneBrightness,
+	saveSceneBrightness,
+} from "./scene-brightness.js";
+
 (function () {
 	const DBG = (...args) => {
 		try {
@@ -357,9 +364,12 @@
 		}
 		state.newDirectionCooldownUntil = nowTs + 300;
 	}
-	function updateDepth() {
+	function updateDepth(persist = false) {
 		if (!state.depthSlider || !state.depthControl || !state.waterFx) return;
-		const value = parseInt(state.depthSlider.value);
+		const value = persist
+			? saveSceneBrightness(state.depthSlider.value)
+			: normalizeSceneBrightness(state.depthSlider.value);
+		state.depthSlider.value = String(value);
 		state.brightness = value / 100;
 		const isLight = value > 50;
 		if (state.depthIcon) state.depthIcon.textContent = "💡";
@@ -377,9 +387,11 @@
 		state.waterFx.style.filter = `brightness(${bgBrightness}) saturate(${bgSaturation})`;
 	}
 
-	function applySystemPreference() {
+	function applySavedOrSystemPreference() {
 		if (!state.depthSlider) return;
-		state.depthSlider.value = getSystemIsLight() ? "70" : "30";
+		state.depthSlider.value = String(
+			getInitialSceneBrightness(getSystemIsLight()),
+		);
 		updateDepth();
 	}
 	function syncLayerHeight() {
@@ -570,7 +582,7 @@
 		window.addEventListener("mouseleave", state.mouseleaveHandler);
 		window.addEventListener("scroll", state.scrollHandler);
 		if (state.depthSlider) {
-			state.depthInputHandler = updateDepth;
+			state.depthInputHandler = () => updateDepth(true);
 			state.depthSlider.addEventListener("input", state.depthInputHandler);
 		}
 		if (state.depthIcon) {
@@ -578,14 +590,14 @@
 			state.iconClickHandler = () => {
 				const val = parseInt(state.depthSlider?.value || "70", 10);
 				state.depthSlider.value = val > 50 ? "30" : "80";
-				updateDepth();
+				updateDepth(true);
 			};
 			state.depthIcon.addEventListener("click", state.iconClickHandler);
 		}
 		if (window.matchMedia) {
 			state.colorSchemeQuery = window.matchMedia("(prefers-color-scheme: light)");
 			state.colorSchemeHandler = (event) => {
-				if (!state.depthSlider) return;
+				if (!state.depthSlider || getStoredSceneBrightness() !== null) return;
 				state.depthSlider.value = event.matches ? "70" : "30";
 				updateDepth();
 			};
@@ -595,7 +607,7 @@
 				state.colorSchemeQuery.addListener(state.colorSchemeHandler);
 			}
 		}
-		applySystemPreference();
+		applySavedOrSystemPreference();
 		state.inited = true;
 		state.loggedAnimateStart = false;
 		DBG("init complete; starting animate loop");

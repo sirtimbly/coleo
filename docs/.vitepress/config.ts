@@ -10,11 +10,18 @@ export default defineConfig({
 		hostname: "https://coleo.dev",
 	},
 	ignoreDeadLinks: true,
+	markdown: {
+		theme: {
+			light: "github-light",
+			dark: "github-dark-high-contrast",
+		},
+	},
 	themeConfig: {
 		// Shown in the default VitePress navbar on documentation pages
 		logo: "/coleo-logo.png",
 		sidebar: {
 			"/": [
+				{ text: "Philosophy", link: "/philosophy" },
 				{
 					text: "Guides",
 					items: [
@@ -26,7 +33,6 @@ export default defineConfig({
 						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },
 					],
 				},
-				{ text: "Philosophy", link: "/philosophy" },
 				{
 					text: "Architecture",
 					items: [

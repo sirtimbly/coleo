@@ -1,3 +1,13 @@
+---
+title: Brain/API Boundary
+description: Understand the clean operational boundary that keeps Brain access typed, authenticated, and independent of transport details.
+banner:
+  src: /coleo-architecture-brain-api-boundary.png
+  alt: A thoughtful octopus brain works inside a quiet observatory while every message capsule from agent submersibles passes through one illuminated hatch in a brass boundary.
+  eyebrow: Clean Boundaries
+  position: center 51%
+---
+
 # Brain/API Boundary and Arm Event Flow
 
 This document defines the operational boundary between the Brain, API server, and ArmAgent.

@@ -2,8 +2,8 @@
 title: Architecture Overview
 description: How Coleo coordinates adaptive AI agents through a shared Brain, Garden, nervous system, and human Observatory.
 banner:
-  src: /coleo-architecture-octopus-garden.png
-  alt: A coral octopus coordinates eight agent arms working across one shared software garden while a developer observes from a control station.
+  src: /coleo-architecture-octopus-garden-v2.png
+  alt: A friendly wide-eyed octopus coordinates agent workshops, a human Observatory, terminal and mail stations, message flow, and durable data through one glowing brass control-plane hub.
   eyebrow: The Octopus Model
   position: center 46%
 ---

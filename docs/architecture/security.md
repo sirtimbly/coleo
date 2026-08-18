@@ -1,3 +1,13 @@
+---
+title: Security Considerations
+description: Explore the safeguards Coleo uses to protect secrets, stop destructive work, and keep the shared garden healthy.
+banner:
+  src: /coleo-architecture-security.png
+  alt: A vigilant orange octopus protects a thriving underwater garden beneath a luminous dome while locking secrets, stopping a dangerous tool, and catching a leaking message.
+  eyebrow: Guarding the Garden
+  position: center 50%
+---
+
 # Security Considerations
 
 ## Destructive Command Detection

@@ -1,3 +1,13 @@
+---
+title: Planning Gate
+description: See how Coleo turns project intent into a safe, ordered queue before agent work begins.
+banner:
+  src: /coleo-guide-planning-gate.png
+  alt: A thoughtful octopus studies a luminous garden plan beside an open brass gate and a carefully ordered path of glowing stepping stones.
+  eyebrow: Before Work Begins
+  position: center 50%
+---
+
 # Planning Gate
 
 The Brain uses the planning gate to turn project intent into a safe, dependency-ordered task queue before any arm receives instructions. The gate prevents a new project from starting with a technical requirement that depends on missing architecture, tooling, or setup decisions.
