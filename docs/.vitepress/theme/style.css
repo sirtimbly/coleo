@@ -531,8 +531,11 @@ body:not(.coleo-home) .VPSidebar {
 	padding-bottom: 0 !important;
 	padding-left: 0 !important;
 	border-right: 1px solid var(--docs-rail-border);
-	background:
-		linear-gradient(180deg, var(--docs-rail-bg) 0%, var(--docs-rail-bg-deep) 100%) !important;
+	background: linear-gradient(
+		180deg,
+		var(--docs-rail-bg) 0%,
+		var(--docs-rail-bg-deep) 100%
+	) !important;
 	box-shadow: 18px 0 50px rgba(2, 17, 22, 0.1);
 	color: var(--docs-rail-text);
 	scrollbar-color: var(--docs-rail-rule) transparent;
@@ -715,7 +718,11 @@ body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link:hover {
 	color: var(--docs-rail-active-text);
 }
 
-body:not(.coleo-home) .VPSidebarItem.level-0.is-link > .item > .link:hover .text,
+body:not(.coleo-home)
+	.VPSidebarItem.level-0.is-link
+	> .item
+	> .link:hover
+	.text,
 body:not(.coleo-home) .VPSidebarItem.level-1 > .item > .link:hover .text {
 	color: var(--docs-rail-active-text) !important;
 }
@@ -2404,7 +2411,11 @@ body.coleo-home .marketing-root {
 }
 
 .landing-shell-simple {
-	background: linear-gradient(180deg, rgba(5, 25, 31, 0.34), rgba(5, 25, 31, 0.62));
+	background: linear-gradient(
+		180deg,
+		rgba(5, 25, 31, 0.34),
+		rgba(5, 25, 31, 0.62)
+	);
 }
 
 .landing-shell-simple::before {
@@ -2487,7 +2498,7 @@ body.coleo-home .marketing-root {
 .landing-hero-organic h1 {
 	max-width: 720px;
 	margin: 0;
-	font-size: clamp(3.7rem, 6.4vw, 6.9rem);
+	font-size: clamp(3.7rem, 6.4vw, 5rem);
 	font-weight: 520;
 	letter-spacing: -0.052em;
 	line-height: 0.98;
@@ -2543,7 +2554,11 @@ body.coleo-home .marketing-root {
 	z-index: -2;
 	border: 1px solid rgba(123, 216, 200, 0.16);
 	border-radius: 48% 52% 44% 56% / 53% 47% 55% 45%;
-	background: radial-gradient(circle at 50% 42%, rgba(123, 216, 200, 0.12), transparent 62%);
+	background: radial-gradient(
+		circle at 50% 42%,
+		rgba(123, 216, 200, 0.12),
+		transparent 62%
+	);
 	box-shadow:
 		0 0 0 22px rgba(123, 216, 200, 0.025),
 		0 0 90px rgba(72, 218, 195, 0.08) inset;
@@ -2608,7 +2623,11 @@ body.coleo-home .marketing-root {
 	padding: 38px 34px 32px;
 	border: 1px solid rgba(238, 240, 231, 0.72);
 	border-radius: 72px;
-	background: linear-gradient(145deg, rgba(239, 242, 232, 0.98), rgba(203, 225, 213, 0.9));
+	background: linear-gradient(
+		145deg,
+		rgba(239, 242, 232, 0.98),
+		rgba(203, 225, 213, 0.9)
+	);
 	box-shadow:
 		0 28px 80px rgba(2, 17, 22, 0.35),
 		0 0 0 10px rgba(238, 240, 231, 0.035);
@@ -2949,8 +2968,11 @@ body.coleo-home .marketing-root {
 	border-radius: 42px 70px 34px 58px;
 	aspect-ratio: 4 / 3;
 	background:
-		radial-gradient(circle at 50% 20%, rgba(123, 216, 200, 0.11), transparent 48%),
-		rgba(3, 17, 23, 0.78);
+		radial-gradient(
+			circle at 50% 20%,
+			rgba(123, 216, 200, 0.11),
+			transparent 48%
+		), rgba(3, 17, 23, 0.78);
 	box-shadow:
 		0 38px 100px rgba(1, 13, 18, 0.3),
 		0 0 0 12px rgba(123, 216, 200, 0.025);
@@ -2992,6 +3014,12 @@ body.coleo-home .marketing-root {
 	object-position: center top;
 }
 
+.showcase-slide img.is-contained {
+	object-fit: contain;
+	object-position: center;
+	background: #040c10;
+}
+
 .showcase-feed-label {
 	position: absolute;
 	top: 34px;
@@ -3020,7 +3048,11 @@ body.coleo-home .marketing-root {
 	padding: 27px 34px;
 	border: 1px solid rgba(238, 240, 231, 0.72);
 	border-radius: 34px 58px 31px 46px;
-	background: linear-gradient(145deg, rgba(239, 242, 232, 0.98), rgba(203, 225, 213, 0.94));
+	background: linear-gradient(
+		145deg,
+		rgba(239, 242, 232, 0.98),
+		rgba(203, 225, 213, 0.94)
+	);
 	box-shadow: 0 22px 64px rgba(1, 13, 18, 0.28);
 	color: var(--landing-ink);
 }
@@ -3083,7 +3115,7 @@ body.coleo-home .marketing-root {
 
 .showcase-controls > div {
 	display: grid;
-	grid-template-columns: repeat(4, minmax(0, 1fr));
+	grid-template-columns: repeat(5, minmax(0, 1fr));
 	gap: 7px;
 }
 
@@ -3135,7 +3167,7 @@ body.coleo-home .marketing-root {
 	max-width: 610px;
 	margin: 0;
 	font-family: var(--font-display);
-	font-size: clamp(2.65rem, 4.3vw, 4.8rem);
+	font-size: clamp(2.65rem, 4.3vw, 4rem);
 	font-weight: 520;
 	letter-spacing: -0.05em;
 	line-height: 1.02;
@@ -3356,7 +3388,7 @@ body.coleo-home .marketing-root {
 	}
 
 	.landing-hero-organic h1 {
-		font-size: clamp(3.2rem, 15vw, 4.7rem);
+		font-size: clamp(3.2rem, 15vw, 4rem);
 	}
 
 	.landing-thesis {
