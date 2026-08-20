@@ -3,7 +3,8 @@
 Coleo's hosted Cloudflare deployment runs the control service and arm execution
 in separate images:
 
-- `Dockerfile.cloudflare-control` runs `coleo serve` and `coleo brain run`.
+- `Dockerfile.cloudflare-control` runs Qdrant, `coleo serve`, the transcript
+  indexer, and `coleo brain run`.
 - `Dockerfile.cloudflare-agent` runs the Arm Host: NATS/JetStream and the
   dedicated Arm Host process plus the MCP server used by spawned arms.
 
@@ -96,6 +97,16 @@ the edge Worker before port `9222`.
 Both images synchronize state to separate R2 prefixes. The control image uses
 `control/`; the Arm Host uses the stable internal `agent/` prefix and uploads
 its JetStream store only during a graceful shutdown.
+
+The control image keeps Qdrant's live storage on the Container's local SSD and
+never copies those actively-mutating files to R2. Qdrant creates a consistent
+full-storage snapshot every five minutes and during graceful shutdown. The
+entrypoint stores the newest snapshot as `control/qdrant/latest.snapshot` in
+the workspace R2 bucket and restores it when a new Container starts with an
+empty disk. The durable JetStream consumer acknowledges events only after the
+Qdrant upsert succeeds, so events that fail during an outage remain available
+for redelivery. The default snapshot interval can be changed with
+`COLEO_QDRANT_SNAPSHOT_INTERVAL_SECONDS`.
 
 ## Local production-topology test
 

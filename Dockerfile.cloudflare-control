@@ -15,17 +15,23 @@ RUN apt-get update && apt-get install -y ca-certificates curl unzip \
     && /tmp/aws/install \
     && rm -rf /var/lib/apt/lists/* /tmp/aws /tmp/awscliv2.zip
 
+FROM qdrant/qdrant:v1.18.0 AS qdrant
+
 FROM oven/bun:1.3-debian
 
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     git \
+    libunwind8 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=awscli /usr/local/aws-cli /usr/local/aws-cli
 RUN ln -s /usr/local/aws-cli/v2/current/bin/aws /usr/local/bin/aws \
     && aws --version
+
+COPY --from=qdrant /qdrant/qdrant /usr/local/bin/qdrant
+RUN qdrant --version
 
 RUN useradd -m -s /bin/bash coleo
 WORKDIR /home/coleo/coleo
@@ -40,6 +46,7 @@ RUN chmod +x /home/coleo/control-entrypoint.sh
 
 USER coleo
 ENV COLEO_DIR=/home/coleo/.coleo \
+    COLEO_QDRANT_URL=http://127.0.0.1:6333 \
     COLEO_REMOTE_ARMS_ONLY=1 \
     COLEO_REMOTE_WORKDIR=/home/coleo/runtime/workspace
 EXPOSE 3000
