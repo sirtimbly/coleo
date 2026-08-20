@@ -1,7 +1,8 @@
 import { defineConfig } from "vitepress";
 import tailwindcss from "@tailwindcss/vite";
+import { withMermaid } from "vitepress-plugin-mermaid";
 
-export default defineConfig({
+export default withMermaid(defineConfig({
 	title: "Coleo",
 	description:
 		"Self-hosted control plane for coding agents with web and CLI observability.",
@@ -15,6 +16,22 @@ export default defineConfig({
 			light: "github-light",
 			dark: "github-dark-high-contrast",
 		},
+	},
+	mermaid: {
+		securityLevel: "strict",
+		theme: "base",
+		themeVariables: {
+			fontFamily: "var(--vp-font-family-base)",
+			primaryColor: "#dff8f3",
+			primaryTextColor: "#082f35",
+			primaryBorderColor: "#0d9488",
+			secondaryColor: "#c7ece7",
+			tertiaryColor: "#f4fbfa",
+			lineColor: "#0f766e",
+		},
+	},
+	mermaidPlugin: {
+		class: "mermaid mermaid-container",
 	},
 	themeConfig: {
 		// Shown in the default VitePress navbar on documentation pages
@@ -37,7 +54,37 @@ export default defineConfig({
 					text: "Architecture",
 					items: [
 						{ text: "Overview", link: "/architecture/overview" },
-						{ text: "Components", link: "/architecture/components" },
+						{
+							text: "Components",
+							link: "/architecture/components",
+							collapsed: false,
+							items: [
+								{
+									text: "Brain",
+									link: "/architecture/components/brain",
+								},
+								{
+									text: "Arms",
+									link: "/architecture/components/arms",
+								},
+								{
+									text: "Observatory",
+									link: "/architecture/components/observatory",
+								},
+								{
+									text: "Mail",
+									link: "/architecture/components/mail",
+								},
+								{
+									text: "Message Flow",
+									link: "/architecture/components/message-flow",
+								},
+								{
+									text: "Qdrant & Indexer",
+									link: "/architecture/components/qdrant-indexer",
+								},
+							],
+						},
 						{
 							text: "Brain/API Boundary",
 							link: "/architecture/brain-api-boundary",
@@ -136,4 +183,4 @@ export default defineConfig({
 	vite: {
 		plugins: [tailwindcss()],
 	},
-});
+}));
