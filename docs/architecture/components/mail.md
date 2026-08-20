@@ -19,10 +19,9 @@ Unlike transient chat output, project mail is stored in the project's Coleo dire
 
 Coleo stores RFC 5322 messages in Maildir folders under `.coleo/mail/`:
 
-- `inbox` for received messages;
+- `inbox` for received messages, with archived messages moved into `inbox/archive/YYYY-MM`;
 - `sent` for outgoing messages;
 - `drafts` for work not yet sent;
-- `archive` for messages removed from the active inbox.
 
 Maildir writes through a temporary file and then renames it into place, so a partially written message does not appear as a complete one. Standard flags record whether a message has been seen, replied to, flagged, drafted, or trashed.
 
@@ -38,7 +37,7 @@ flowchart TD
     Work --> Maildir
 ```
 
-The API lists folders and messages, returns raw message content, updates flags, archives mail, and sends replies. Mail changes are also broadcast on the Workbench's mail channel so open projections can refresh promptly.
+The API lists folders and messages, returns raw message content, marks messages as read with the `seen` flag, archives mail, and sends replies. Other flag updates—including clearing `seen`—are not yet implemented. Mail changes are also broadcast on the Workbench's mail channel so open projections can refresh promptly.
 
 ## The Workbench Experience
 
