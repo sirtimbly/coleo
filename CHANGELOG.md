@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.12.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.11.0...coleo-v0.12.0) (2026-08-20)
+
+
+### Features
+
+* **docs:** add illustrated chapter banners ([a047dd7](https://github.com/sirtimbly/coleo/commit/a047dd71866fd9695d20febac2cbfa958378d213))
+* **hosting:** bundle qdrant with control runtime ([fe56b54](https://github.com/sirtimbly/coleo/commit/fe56b5477e3907324d104f167b9e7a1daee88688))
+
+
+### Bug Fixes
+
+* correct mail docs and widen observatory backdrop ([623ce9c](https://github.com/sirtimbly/coleo/commit/623ce9c4ffe42d1e511a28f8c9afaab115fb69aa))
+
+
+### Code Refactoring
+
+* **docs:** banners and home page ([9fc121f](https://github.com/sirtimbly/coleo/commit/9fc121f8fc60e586a97554edecf9aaaefa3a510e))
+* **docs:** banners and home page ([f549a06](https://github.com/sirtimbly/coleo/commit/f549a064d1e87c5201da2b5ddf1dcfc44a73bbce))
+
+
+### Documentation
+
+* expand component guides and diagrams ([26b6a0e](https://github.com/sirtimbly/coleo/commit/26b6a0ec09adedc0fcfc115c70adbcedd63725f0))
+
 ## [0.11.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.10.0...coleo-v0.11.0) (2026-08-17)
 
 
