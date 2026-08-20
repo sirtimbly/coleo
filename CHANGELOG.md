@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.12.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.11.0...coleo-v0.12.0) (2026-08-20)
+
+
+### Features
+
+* **hosting:** bundle qdrant with control runtime ([fe56b54](https://github.com/sirtimbly/coleo/commit/fe56b5477e3907324d104f167b9e7a1daee88688))
+
+
+### Code Refactoring
+
+* **docs:** banners and home page ([9fc121f](https://github.com/sirtimbly/coleo/commit/9fc121f8fc60e586a97554edecf9aaaefa3a510e))
+* **docs:** banners and home page ([f549a06](https://github.com/sirtimbly/coleo/commit/f549a064d1e87c5201da2b5ddf1dcfc44a73bbce))
+
 ## [0.11.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.10.0...coleo-v0.11.0) (2026-08-17)
 
 
