@@ -1215,4 +1215,78 @@ describe("Brain runtime flows", () => {
     expect(patches[0]).toMatchObject({ status: "pending", assignedTo: null });
     expect(finalized).toBe(false);
   });
+
+  it("uses persisted status_reports as the durable history for completed-task issue detection", async () => {
+    const now = nowIso();
+
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-history-issues", "History issues task", "has issue reports", "in_progress", "normal", "arm-1", now, now],
+    );
+    db.run(
+      "INSERT INTO tasks (id, subject, description, status, priority, assigned_to, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      ["task-history-clean", "History clean task", "no issue reports", "in_progress", "normal", "arm-1", now, now],
+    );
+
+    // Persist a status report with issues for the first task
+    db.run(
+      `INSERT INTO status_reports (
+         id, task_id, arm_id, status, summary, issues, blockers, next_steps, files_changed, tests_status, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "sr-history-issues",
+        "task-history-issues",
+        "arm-1",
+        "completed_with_issues",
+        "Finished but left edge cases uncovered",
+        JSON.stringify(["Missing null check", "No integration test"]),
+        JSON.stringify([]),
+        "Cover edge cases and add integration test",
+        JSON.stringify(["src/history.ts"]),
+        "failing",
+        now,
+      ],
+    );
+
+    await (brain as any).completeTask("task-history-issues", "Done with known issues", ["src/history.ts"]);
+
+    const issueTask = db
+      .query("SELECT status, assigned_to FROM tasks WHERE id = ?")
+      .get("task-history-issues") as { status: string; assigned_to: string | null };
+    expect(issueTask.status).toBe("completed");
+    expect(issueTask.assigned_to).toBeNull();
+
+    const verification = db
+      .query("SELECT id, subject, status FROM tasks WHERE subject LIKE 'Verify & Polish: History issues task' ORDER BY created_at DESC LIMIT 1")
+      .get() as { id: string; subject: string; status: string } | undefined;
+    expect(verification).toBeDefined();
+    expect(verification?.subject).toContain("Verify & Polish");
+    expect(verification?.status).toBe("pending");
+
+    // The status report row must remain intact as durable history
+    const persistedReport = db
+      .query("SELECT id, task_id, status, issues FROM status_reports WHERE id = ?")
+      .get("sr-history-issues") as { id: string; task_id: string; status: string; issues: string } | undefined;
+    expect(persistedReport).toBeDefined();
+    expect(persistedReport?.task_id).toBe("task-history-issues");
+    expect(persistedReport?.status).toBe("completed_with_issues");
+    expect(JSON.parse(persistedReport?.issues || "[]")).toEqual([
+      "Missing null check",
+      "No integration test",
+    ]);
+
+    // A task with no issue reports follows the normal clean-completion path
+    await (brain as any).completeTask("task-history-clean", "Done cleanly", ["src/clean.ts"]);
+
+    const cleanTask = db
+      .query("SELECT status, assigned_to FROM tasks WHERE id = ?")
+      .get("task-history-clean") as { status: string; assigned_to: string | null };
+    expect(cleanTask.status).toBe("completing");
+    expect(cleanTask.assigned_to).toBeNull();
+
+    const cleanVerification = db
+      .query("SELECT id FROM tasks WHERE subject LIKE 'Verify & Polish: History clean task'")
+      .get() as { id: string } | null;
+    expect(cleanVerification).toBeNull();
+  });
 });
