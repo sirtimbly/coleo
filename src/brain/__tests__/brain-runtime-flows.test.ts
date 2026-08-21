@@ -1289,4 +1289,119 @@ describe("Brain runtime flows", () => {
       .get() as { id: string } | null;
     expect(cleanVerification).toBeNull();
   });
+
+  it("parses status report statuses and maps each to the correct tasking influence", async () => {
+    const now = nowIso();
+
+    // Seed tasks for each status-report outcome
+    const reportTasks = [
+      { id: "task-sr-blocked", subject: "SR blocked" },
+      { id: "task-sr-issues", subject: "SR issues" },
+      { id: "task-sr-review", subject: "SR review" },
+      { id: "task-sr-ontrack", subject: "SR on track" },
+    ];
+    for (const task of reportTasks) {
+      db.run(
+        "INSERT INTO tasks (id, subject, description, status, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [task.id, task.subject, "desc", "pending", "normal", now, now],
+      );
+    }
+
+    await (brain as any).handleStatusReport({
+      id: "sr-blocked",
+      taskId: "task-sr-blocked",
+      armId: "arm-1",
+      status: "blocked",
+      summary: "Blocked on external dependency",
+      issues: [],
+      blockers: ["Need API key"],
+      filesChanged: [],
+      testsStatus: "not_run",
+    });
+
+    await (brain as any).handleStatusReport({
+      id: "sr-issues",
+      taskId: "task-sr-issues",
+      armId: "arm-1",
+      status: "issues_found",
+      summary: "Found lint errors",
+      issues: ["Lint errors", "Missing types"],
+      blockers: [],
+      nextSteps: "Fix lint and add types",
+      filesChanged: ["src/a.ts"],
+      testsStatus: "failing",
+    });
+
+    await (brain as any).handleStatusReport({
+      id: "sr-review",
+      taskId: "task-sr-review",
+      armId: "arm-1",
+      status: "needs_review",
+      summary: "Please review the approach",
+      issues: [],
+      blockers: [],
+      filesChanged: ["src/b.ts"],
+      testsStatus: "passing",
+    });
+
+    await (brain as any).handleStatusReport({
+      id: "sr-ontrack",
+      taskId: "task-sr-ontrack",
+      armId: "arm-1",
+      status: "on_track",
+      summary: "Progress is steady",
+      issues: [],
+      blockers: [],
+      filesChanged: [],
+      testsStatus: "not_run",
+    });
+
+    // Blocked report should block the task
+    const blockedTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-sr-blocked") as { status: string };
+    expect(blockedTask.status).toBe("blocked");
+
+    // Issues-found report should not change task status yet, but should notify human
+    const issuesTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-sr-issues") as { status: string };
+    expect(issuesTask.status).toBe("pending");
+
+    // Needs-review report should not change task status yet, but should notify human
+    const reviewTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-sr-review") as { status: string };
+    expect(reviewTask.status).toBe("pending");
+
+    // On-track report should leave task untouched
+    const onTrackTask = db
+      .query("SELECT status FROM tasks WHERE id = ?")
+      .get("task-sr-ontrack") as { status: string };
+    expect(onTrackTask.status).toBe("pending");
+
+    const subjects = sentToHuman.map((message) => message.subject);
+    expect(subjects).toEqual(
+      expect.arrayContaining([
+        "[coleo] Task deferred: SR blocked",
+        "[coleo] Issues found: SR issues",
+        "[coleo] Review needed: SR review",
+      ]),
+    );
+    expect(subjects).not.toContain("[coleo] Progress update: SR on track");
+
+    // All reports should be persisted and associated with the correct tasks
+    const reportRows = db
+      .query("SELECT task_id, status FROM status_reports ORDER BY task_id, status")
+      .all() as Array<{ task_id: string; status: string }>;
+    const reportTuples = reportRows.map((row) => `${row.task_id}:${row.status}`);
+    expect(reportTuples).toEqual(
+      expect.arrayContaining([
+        "task-sr-blocked:blocked",
+        "task-sr-issues:issues_found",
+        "task-sr-review:needs_review",
+        "task-sr-ontrack:on_track",
+      ]),
+    );
+  });
 });
