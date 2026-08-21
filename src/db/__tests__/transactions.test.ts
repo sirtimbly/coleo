@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 
-import { assignTaskToArm } from "../transactions";
+import { assignTaskToArm, autoAssignWatcherArms } from "../transactions";
 
 const NOW = "2026-01-16T00:00:00.000Z";
 
@@ -54,16 +54,18 @@ function insertTask(
     assignedTo?: string | null;
     dependencyBlocked?: boolean;
     orderKey?: string | null;
+    domain?: string | null;
     createdAt?: string;
   } = {},
 ): void {
   db.run(
-    `INSERT INTO tasks (id, subject, status, assigned_to, dependency_blocked, order_key, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO tasks (id, subject, status, domain, assigned_to, dependency_blocked, order_key, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       `Task ${id}`,
       options.status ?? "pending",
+      options.domain ?? null,
       options.assignedTo ?? null,
       options.dependencyBlocked ? 1 : 0,
       options.orderKey ?? null,
@@ -73,10 +75,16 @@ function insertTask(
   );
 }
 
-function insertArm(db: Database, id: string, status = "idle"): void {
-  db.run("INSERT INTO arms (id, name, domain, status) VALUES (?, ?, 'general', ?)", [
+function insertArm(
+  db: Database,
+  id: string,
+  status = "idle",
+  domain = "general",
+): void {
+  db.run("INSERT INTO arms (id, name, domain, status) VALUES (?, ?, ?, ?)", [
     id,
     id,
+    domain,
     status,
   ]);
 }
@@ -216,5 +224,118 @@ describe("assignTaskToArm top-K claim guard", () => {
 
     const result = await assignTaskToArm(db, "task-b", "arm-1", "primary", false);
     expect(result.success).toBe(true);
+  });
+});
+
+describe("autoAssignWatcherArms", () => {
+  let db: Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  it("assigns idle watcher arms up to max_arms_per_task when a primary claims a task", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '3')");
+    insertTask(db, "task-a", { domain: "general" });
+    insertArm(db, "arm-primary", "idle", "general");
+    insertArm(db, "arm-watcher-1", "idle", "general");
+    insertArm(db, "arm-watcher-2", "idle", "general");
+    insertArm(db, "arm-watcher-3", "idle", "general");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    expect(result.success).toBe(true);
+
+    const watchers = db
+      .query(
+        "SELECT arm_id, role, status FROM task_arm_consensus WHERE task_id = ? AND role = 'watcher' ORDER BY arm_id",
+      )
+      .all("task-a") as Array<{ arm_id: string; role: string; status: string }>;
+
+    expect(watchers).toHaveLength(2);
+    expect(watchers.map((w) => w.arm_id)).toEqual(
+      expect.arrayContaining(["arm-watcher-1", "arm-watcher-2"]),
+    );
+    expect(watchers.every((w) => w.status === "watching")).toBe(true);
+  });
+
+  it("does not assign the primary arm or already-assigned arms as watchers", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '3')");
+    insertTask(db, "task-a", { domain: "general" });
+    insertArm(db, "arm-primary", "idle", "general");
+    insertArm(db, "arm-watcher", "idle", "general");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    expect(result.success).toBe(true);
+
+    const watchers = db
+      .query("SELECT arm_id FROM task_arm_consensus WHERE task_id = ? AND role = 'watcher'")
+      .all("task-a") as Array<{ arm_id: string }>;
+
+    expect(watchers.map((w) => w.arm_id)).toEqual(["arm-watcher"]);
+    expect(watchers.some((w) => w.arm_id === "arm-primary")).toBe(false);
+  });
+
+  it("prioritizes watchers whose domain matches the task domain", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '2')");
+    insertTask(db, "task-a", { domain: "security" });
+    insertArm(db, "arm-primary", "idle", "security");
+    insertArm(db, "arm-general", "idle", "general");
+    insertArm(db, "arm-security", "idle", "security");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    expect(result.success).toBe(true);
+
+    const watchers = db
+      .query("SELECT arm_id FROM task_arm_consensus WHERE task_id = ? AND role = 'watcher'")
+      .all("task-a") as Array<{ arm_id: string }>;
+
+    expect(watchers.map((w) => w.arm_id)).toEqual(["arm-security"]);
+  });
+
+  it("reports needsMoreArms when not enough idle arms are available", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '5')");
+    insertTask(db, "task-a", { domain: "general" });
+    insertArm(db, "arm-primary", "idle", "general");
+    insertArm(db, "arm-watcher", "idle", "general");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    expect(result.success).toBe(true);
+    expect(result.data?.needsMoreArms).toBe(true);
+
+    const watchers = db
+      .query("SELECT arm_id FROM task_arm_consensus WHERE task_id = ? AND role = 'watcher'")
+      .all("task-a") as Array<{ arm_id: string }>;
+    expect(watchers).toHaveLength(1);
+  });
+
+  it("does not assign stopped or busy arms as watchers", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '3')");
+    insertTask(db, "task-a", { domain: "general" });
+    insertArm(db, "arm-primary", "idle", "general");
+    insertArm(db, "arm-stopped", "stopped", "general");
+    insertArm(db, "arm-busy", "busy", "general");
+    insertArm(db, "arm-idle", "idle", "general");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    expect(result.success).toBe(true);
+
+    const watchers = db
+      .query("SELECT arm_id FROM task_arm_consensus WHERE task_id = ? AND role = 'watcher'")
+      .all("task-a") as Array<{ arm_id: string }>;
+    expect(watchers.map((w) => w.arm_id)).toEqual(["arm-idle"]);
+  });
+
+  it("autoAssignWatcherArms returns empty when task already has max arms", async () => {
+    db.run("INSERT INTO config (key, value) VALUES ('max_arms_per_task', '2')");
+    insertTask(db, "task-a", { domain: "general" });
+    insertArm(db, "arm-primary", "idle", "general");
+    insertArm(db, "arm-extra", "idle", "general");
+
+    await assignTaskToArm(db, "task-a", "arm-primary", "primary", true);
+    const result = await autoAssignWatcherArms(db, "task-a", "arm-primary", "general");
+
+    expect(result.success).toBe(true);
+    expect(result.data?.watchersAssigned).toEqual([]);
+    expect(result.data?.needsMoreArms).toBe(false);
   });
 });
