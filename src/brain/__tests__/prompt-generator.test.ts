@@ -169,6 +169,254 @@ describe("prompt-generator dependencies", () => {
     db.close();
   });
 
+  it("extracts dependencies with asterisks, multiline entries, and stops at the next section", async () => {
+    const root = await mkdtemp(join(tmpdir(), "coleo-plan-"));
+    const projectDir = join(root, ".project");
+    await mkdir(projectDir, { recursive: true });
+
+    const plan = `## Phase 3: Integration
+- [ ] Wire services
+
+### Dependencies
+* Phase 1: Foundations
+* Phase 2: Core API
+  continued on next line
+### Deliverables
+- [ ] Integration tests
+`;
+    await writeFile(join(projectDir, "plan.md"), plan, "utf-8");
+
+    const result = await __promptTestables.readCurrentPlan(root);
+    expect(result.dependencies).toEqual([
+      "Phase 1: Foundations",
+      "Phase 2: Core API continued on next line",
+    ]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("returns empty dependencies when the section is missing", async () => {
+    const root = await mkdtemp(join(tmpdir(), "coleo-plan-"));
+    const projectDir = join(root, ".project");
+    await mkdir(projectDir, { recursive: true });
+
+    const plan = `## Phase 1: Basics
+- [ ] One thing
+`;
+    await writeFile(join(projectDir, "plan.md"), plan, "utf-8");
+
+    const result = await __promptTestables.readCurrentPlan(root);
+    expect(result.dependencies).toEqual([]);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("treats completed plan dependencies as non-blocking", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, {
+      id: "phase1-db",
+      subject: "Phase 1 Database Schema",
+      status: "completed",
+      phase: "Phase 1",
+    });
+
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
+      taskId: "phase2-api",
+      subject: "Build API endpoints",
+      phaseLabel: "Phase 2",
+      planDependencies: ["Phase 1 Database Schema"],
+    });
+
+    const planDep = result.dependencies.find(
+      (dep) => dep.taskId === "phase1-db" && dep.reason.includes("Plan dependency"),
+    );
+    expect(planDep).toBeDefined();
+    expect(planDep!.blocking).toBe(false);
+    expect(
+      result.planUpdateReasons.some((reason) =>
+        reason.includes("Phase 1 Database Schema"),
+      ),
+    ).toBe(false);
+
+    db.close();
+  });
+
+  it("treats dependencies with reached consensus as non-blocking", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, {
+      id: "phase1-db",
+      subject: "Phase 1 Database Schema",
+      status: "pending",
+      consensus_status: "reached",
+      phase: "Phase 1",
+    });
+
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
+      taskId: "phase2-api",
+      subject: "Build API endpoints",
+      phaseLabel: "Phase 2",
+      planDependencies: ["Phase 1 Database Schema"],
+    });
+
+    expect(result.dependencies).toHaveLength(1);
+    expect(result.dependencies[0]!.blocking).toBe(false);
+
+    db.close();
+  });
+
+  it("matches plan dependencies against task phase as well as subject", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, {
+      id: "phase1-task",
+      subject: "Some unrelated subject",
+      status: "in_progress",
+      phase: "Phase 1",
+    });
+
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
+      taskId: "phase2-api",
+      subject: "Build API endpoints",
+      phaseLabel: "Phase 2",
+      planDependencies: ["Phase 1"],
+    });
+
+    expect(result.dependencies).toHaveLength(1);
+    expect(result.dependencies[0]!.taskId).toBe("phase1-task");
+    expect(result.dependencies[0]!.blocking).toBe(true);
+
+    db.close();
+  });
+
+  it("deduplicates dependencies discovered by both plan and keyword matching", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+    insertTask(db, {
+      id: "phase1-db",
+      subject: "Phase 1 Database Schema",
+      status: "in_progress",
+      phase: "Phase 1",
+    });
+
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
+      taskId: "phase2-api",
+      subject: "Build API endpoints",
+      phaseLabel: "Phase 2",
+      planDependencies: ["Phase 1 Database Schema"],
+    });
+
+    expect(result.dependencies).toHaveLength(1);
+    expect(result.dependencies[0]!.reason).toContain(
+      `Plan dependency "Phase 1 Database Schema"`,
+    );
+    expect(result.dependencies[0]!.reason).toContain("API typically requires database schema");
+
+    db.close();
+  });
+
+  it("returns only plan-update reasons when every plan dependency is unresolved", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    const result = __promptTestables.collectDependenciesForTask(brainDb, {
+      taskId: "phase2-api",
+      subject: "Build API endpoints",
+      phaseLabel: "Phase 2",
+      planDependencies: ["Missing Service A", "Missing Service B"],
+    });
+
+    expect(result.dependencies).toHaveLength(0);
+    expect(
+      result.planUpdateReasons.some((reason) => reason.includes("Missing Service A")),
+    ).toBe(true);
+    expect(
+      result.planUpdateReasons.some((reason) => reason.includes("Missing Service B")),
+    ).toBe(true);
+
+    db.close();
+  });
+
+  it("creates plan-update tasks with the architect domain", () => {
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    __promptTestables.ensurePlanDependencyTask(brainDb, {
+      phaseLabel: "Phase 9",
+      reasons: ["Missing tracked dependency: Unknown Service"],
+      now: NOW,
+    });
+
+    const planUpdateTask = db
+      .query(`SELECT domain FROM tasks WHERE subject = 'Update plan dependencies for Phase 9'`)
+      .get() as { domain: string } | undefined;
+
+    expect(planUpdateTask).toBeDefined();
+    expect(planUpdateTask!.domain).toBe("architect");
+
+    db.close();
+  });
+
+  it("blocks pending work with unfinished plan dependencies and falls back to prerequisite work", async () => {
+    const root = await mkdtemp(join(tmpdir(), "coleo-plan-"));
+    const projectDir = join(root, ".project");
+    await mkdir(projectDir, { recursive: true });
+
+    const plan = `## Phase 1: Foundations
+- [x] Database schema
+
+## Phase 2: API
+- [ ] Build API endpoints
+
+### Dependencies
+- Phase 1 Database Schema
+`;
+    await writeFile(join(projectDir, "plan.md"), plan, "utf-8");
+
+    const db = createTestDb();
+    const brainDb = createSqliteBrainDb(db);
+
+    insertTask(db, {
+      id: "phase2-api",
+      subject: "Build API endpoints",
+      status: "pending",
+      priority: "normal",
+      phase: "Phase 2",
+      order_key: "b",
+    });
+    insertTask(db, {
+      id: "phase1-db",
+      subject: "Phase 1 Database Schema",
+      status: "pending",
+      priority: "normal",
+      phase: "Phase 1",
+      order_key: "a",
+    });
+
+    const result = await generateTaskDetermination({
+      projectRoot: root,
+      coleoDir: root,
+      db: brainDb,
+    });
+
+    expect(result.task?.id).toBe("phase1-db");
+    expect(result.reasoning).toContain("outside dominant phase Phase 2");
+
+    const blocked = db
+      .query("SELECT dependency_blocked FROM tasks WHERE id = ?")
+      .get("phase2-api") as { dependency_blocked: number };
+    expect(blocked.dependency_blocked).toBe(1);
+
+    const depRows = db
+      .query("SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?")
+      .all("phase2-api") as Array<{ depends_on_task_id: string }>;
+    expect(depRows.map((row) => row.depends_on_task_id)).toContain("phase1-db");
+
+    await rm(root, { recursive: true, force: true });
+    db.close();
+  });
+
   it("treats unassigned pending work as next pending task, not active task", async () => {
     const db = createTestDb();
     const brainDb = createSqliteBrainDb(db);

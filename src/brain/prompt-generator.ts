@@ -38,6 +38,7 @@ export interface TaskDeterminationResult {
 		classification: string;
 		priority: string;
 		domain?: string;
+		phase?: string | null;
 	} | null;
 	reasoning: string;
 	planExcerpt: string;
@@ -115,11 +116,30 @@ export async function generateTaskDetermination(
 
 	// Step 3: Return next pending task from database
 	// Don't create tasks from plan here - that's the sync process's job
-	const pendingTask = getNextPendingTask(
+	let pendingTask = getNextPendingTask(
 		db,
 		phaseInfo.label,
 		determinationOptions,
 	);
+
+	// Step 3a: Enforce plan dependency blocking before returning pending work.
+	while (pendingTask?.task?.id) {
+		const depResult = await evaluateTaskDependencies(
+			db,
+			pendingTask.task,
+			ctx,
+		);
+		if (depResult.action === "proceed") {
+			break;
+		}
+		determinationOptions.excludedTaskIds.add(pendingTask.task.id);
+		pendingTask = getNextPendingTask(
+			db,
+			phaseInfo.label,
+			determinationOptions,
+		);
+	}
+
 	const pendingBug = getNextPendingBug(db);
 	if (pendingTask || pendingBug) {
 		const shouldPickBug =
@@ -178,10 +198,27 @@ export async function generateTaskDetermination(
 			"",
 			determinationOptions,
 		);
-		if (crossPhasePendingTask) {
+		let crossPhaseTask = crossPhasePendingTask;
+		while (crossPhaseTask?.task?.id) {
+			const depResult = await evaluateTaskDependencies(
+				db,
+				crossPhaseTask.task,
+				ctx,
+			);
+			if (depResult.action === "proceed") {
+				break;
+			}
+			determinationOptions.excludedTaskIds.add(crossPhaseTask.task.id);
+			crossPhaseTask = getNextPendingTask(
+				db,
+				"",
+				determinationOptions,
+			);
+		}
+		if (crossPhaseTask) {
 			return finalize({
-				...crossPhasePendingTask,
-				reasoning: `${crossPhasePendingTask.reasoning}${pendingBug ? " (bug queue also available)" : ""} (outside dominant phase ${phaseInfo.label})`,
+				...crossPhaseTask,
+				reasoning: `${crossPhaseTask.reasoning}${pendingBug ? " (bug queue also available)" : ""} (outside dominant phase ${phaseInfo.label})`,
 			});
 		}
 	}
@@ -377,9 +414,77 @@ function getNextPendingTask(
 			classification: task.domain || "development",
 			priority: task.priority,
 			domain: task.domain || undefined,
+			phase: task.phase || null,
 		},
 		reasoning: `Returning next pending task from database: ${task.subject}`,
 	};
+}
+
+interface DependencyEvaluationResult {
+	action: "proceed" | "blocked" | "plan_update";
+	reasoning?: string;
+}
+
+async function evaluateTaskDependencies(
+	db: BrainDb,
+	task: NonNullable<TaskDeterminationResult["task"]>,
+	ctx: PromptContext,
+): Promise<DependencyEvaluationResult> {
+	if (!task.id || !task.phase) {
+		return { action: "proceed" };
+	}
+
+	let planContent: string;
+	try {
+		const plan = await readCurrentPlan(ctx.projectRoot, ctx.workspace);
+		planContent = plan.content;
+	} catch {
+		return { action: "proceed" };
+	}
+
+	const planDependencies = extractDependenciesForPhaseLabel(planContent, task.phase);
+	if (planDependencies.length === 0) {
+		return { action: "proceed" };
+	}
+
+	const collected = collectDependenciesForTask(db, {
+		taskId: task.id,
+		subject: task.subject,
+		phaseLabel: task.phase,
+		planDependencies,
+	});
+
+	const blockingDeps = collected.dependencies.filter((dep) => dep.blocking);
+	if (blockingDeps.length > 0) {
+		for (const dep of blockingDeps) {
+			db.upsertTaskDependency({
+				taskId: task.id,
+				dependsOnTaskId: dep.taskId,
+				dependencyType: "finish_to_start",
+				autoDetected: true,
+				reason: dep.reason,
+			});
+		}
+		db.updateTask(task.id, { dependencyBlocked: true });
+		return {
+			action: "blocked",
+			reasoning: `Blocked by ${blockingDeps.length} unfinished prerequisite(s): ${blockingDeps.map((d) => d.taskId).join(", ")}`,
+		};
+	}
+
+	if (collected.planUpdateReasons.length > 0) {
+		ensurePlanDependencyTask(db, {
+			phaseLabel: task.phase,
+			reasons: collected.planUpdateReasons,
+			now: new Date().toISOString(),
+		});
+		return {
+			action: "plan_update",
+			reasoning: `Unresolved plan prerequisites; created plan-update task for ${task.phase}`,
+		};
+	}
+
+	return { action: "proceed" };
 }
 
 function getNextPendingBug(db: BrainDb): {
@@ -1044,6 +1149,41 @@ function extractDependenciesFromPhase(phaseContent: string): string[] {
 	}
 
 	return dependencies;
+}
+
+function extractDependenciesForPhaseLabel(
+	planContent: string,
+	phaseLabel: string,
+): string[] {
+	if (!planContent || !phaseLabel) {
+		return [];
+	}
+
+	const normalizedLabel = phaseLabel.trim().toLowerCase();
+	const lines = planContent.split("\n");
+	let inPhase = false;
+	const phaseContent: string[] = [];
+
+	for (const rawLine of lines) {
+		const line = rawLine;
+		const phaseMatch = line.match(/^## (Phase \d+(?:\.\d+)?):/);
+		if (phaseMatch) {
+			const currentLabel = phaseMatch[1]!.trim().toLowerCase();
+			if (currentLabel === normalizedLabel) {
+				inPhase = true;
+				phaseContent.push(line);
+			} else if (inPhase) {
+				break;
+			}
+			continue;
+		}
+
+		if (inPhase) {
+			phaseContent.push(line);
+		}
+	}
+
+	return extractDependenciesFromPhase(phaseContent.join("\n"));
 }
 
 async function getCompletedTasks(
