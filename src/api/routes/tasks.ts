@@ -1657,15 +1657,25 @@ export function createTasksRoutes() {
 			throw HttpError.badRequest("approval must be 'approved' or 'rejected'");
 		}
 
+		const arm = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as {
+			id: string;
+		} | null;
+		if (!arm) {
+			throw HttpError.badRequest(`Arm not found: ${armId}`);
+		}
+
+		const hasReportField = Object.hasOwn(body, "report");
+		const reportValue = body.report ?? null;
+		if (
+			hasReportField &&
+			reportValue !== null &&
+			typeof reportValue !== "string"
+		) {
+			throw HttpError.badRequest("report must be a string");
+		}
+
 		// Wrap consensus update in transaction for atomicity
 		const result = await withTransaction(db, async (db) => {
-			const arm = db.query("SELECT id FROM arms WHERE id = ?").get(armId) as {
-				id: string;
-			} | null;
-			if (!arm) {
-				throw HttpError.badRequest(`Arm not found: ${armId}`);
-			}
-
 			const now = new Date().toISOString();
 			const existing = db
 				.query(
@@ -1675,16 +1685,7 @@ export function createTasksRoutes() {
 			const role = body.role || existing?.role || "watcher";
 			const approval = body.approval || null;
 			const approvalReason = body.approvalReason?.trim() || null;
-			const hasReportField = Object.hasOwn(body, "report");
-			const reportValue = body.report ?? null;
 			const reportTimestamp = reportValue ? now : null;
-			if (
-				hasReportField &&
-				reportValue !== null &&
-				typeof reportValue !== "string"
-			) {
-				throw HttpError.badRequest("report must be a string");
-			}
 			if (existing) {
 				const params: (string | number | null)[] = hasReportField
 					? [
