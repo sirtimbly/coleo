@@ -9,6 +9,37 @@ Distributed agent orchestration for software development. Coleo is a coordinatio
 
 > *Named after Coleoidea, the subclass of intelligent cephalopods that ditched rigid shells for distributed neural architecture.*
 
+## One Control Plane, Three Ways to Work
+
+Coleo is a fully featured application, not a collection of terminal scripts. Shape living plans, inspect execution, manage the agent fleet, and review project activity in the web Observatory—then use the same durable project state from the CLI or full-screen TUI whenever the terminal is the better tool.
+
+### The Observatory
+
+![Coleo web Observatory showing project planning and the canonical living plan editor](docs/public/screenshots/plan%20editor.png)
+
+The web workspace combines editable project documents, task and bug sheets, operational inboxes, dashboards, conversations, agent controls, and the shared Garden in a configurable multi-panel interface.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/public/screenshots/tasks%20screen.png" alt="Coleo task workspace with burndown analytics and task grid"></td>
+    <td width="50%"><img src="docs/public/screenshots/arm%20garden.png" alt="Coleo Garden and new Arm controls"></td>
+  </tr>
+  <tr>
+    <td><strong>Plan and inspect execution</strong><br>Move between burndown analytics, live activity, cards, grids, filters, and editable work.</td>
+    <td><strong>See and control the fleet</strong><br>Explore the Garden, inspect the Brain and Arms, and choose where new agents run.</td>
+  </tr>
+</table>
+
+### CLI and TUI
+
+![Coleo CLI showing system health, connected Arms, tasks, and live activity](docs/public/screenshots/coleo-cli.jpg)
+
+The CLI is equally at home in an interactive shell or an automation pipeline: initialize projects, operate services, spawn and prompt Arms, synchronize tasks, search activity, and inspect system health.
+
+![Coleo full-screen TUI showing the Arm navigator, selected Arm details, and live activity](docs/public/screenshots/arm%20tui.png)
+
+The TUI turns that same control plane into a keyboard-driven terminal workspace for navigating the Brain, infrastructure, Arms, discoveries, mail, reports, and live activity.
+
 ## Quick Start
 
 Requires the [Bun](https://bun.sh/) runtime (v1.1+).

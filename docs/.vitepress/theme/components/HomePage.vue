@@ -10,6 +10,7 @@ interface ShowcaseView {
   alt: string;
   width: number;
   height: number;
+  contain?: boolean;
 }
 
 const showcaseViews: readonly ShowcaseView[] = [
@@ -44,14 +45,26 @@ const showcaseViews: readonly ShowcaseView[] = [
     height: 2292,
   },
   {
+    label: "CLI",
+    eyebrow: "Composable control",
+    title: "Operate from any shell",
+    description: "Inspect health, manage arms, query tasks, and follow live activity with commands made for local work and automation.",
+    src: "/screenshots/coleo-cli.jpg",
+    alt: "Coleo command-line interface showing system health, connected arms, tasks, and a live activity stream.",
+    width: 1280,
+    height: 720,
+    contain: true,
+  },
+  {
     label: "TUI",
     eyebrow: "Terminal observatory",
     title: "Stay close to every heartbeat",
-    description: "Monitor arms, messages, discoveries, status reports, and live activity without leaving the terminal.",
+    description: "Navigate arms, messages, discoveries, status reports, and live activity in a full-screen terminal workspace.",
     src: "/screenshots/arm%20tui.png",
     alt: "Coleo terminal interface showing four arms, one selected arm's details, and its live activity stream.",
     width: 2442,
     height: 2434,
+    contain: true,
   },
 ] as const;
 
@@ -121,7 +134,7 @@ function moveShowcase(direction: number): void {
             <path d="M260 422 C260 468 260 493 260 536" />
           </svg>
           <div class="plan-brain">
-            <img src="/coleo-logo.png" alt="" width="600" height="600" />
+            <img src="/coleo-pet-v2.png" alt="" width="600" height="600" />
             <span>Brain</span>
           </div>
           <div class="living-plan-sheet">
@@ -146,7 +159,6 @@ function moveShowcase(direction: number): void {
 
       <section id="workflow" class="quick-start workflow-section" aria-labelledby="workflow-title">
         <div class="workflow-intro">
-          <p class="section-label">No More Babysitting</p>
           <h2 id="workflow-title">Manage numerous agents with the Coleo infrastructure.</h2>
           <p>Your plain-text plan will be regularly synced with a database of tasks for agents on multiple hosts to access. Human operators get detailed oversight of the generated plans and can quickly add and modify work in multiple ways. Coleo keeps reevaluating the project as work progresses, so sagents receive the best directions for the current moment and state of the project. Conflicts are resolved by the brain.</p>
           <a class="text-link" href="/guides/task-workflow">See the complete task workflow <span aria-hidden="true">→</span></a>
@@ -177,8 +189,8 @@ function moveShowcase(direction: number): void {
       <section id="observatory" class="product-observatory" aria-labelledby="observatory-title">
         <div class="observatory-intro">
           <p class="section-label">The Observatory</p>
-          <h2 id="observatory-title">Complete visibility into a living system.</h2>
-          <p>Plan in plain text, inspect execution in the web interface, watch agents inhabit the shared Garden, or stay in the terminal.</p>
+          <h2 id="observatory-title">A complete web app. A CLI and TUI when you want them.</h2>
+          <p>Use the full Observatory to plan and inspect execution, automate the same control plane from the CLI, or stay immersed in the live terminal interface.</p>
         </div>
 
         <div
@@ -202,6 +214,7 @@ function moveShowcase(direction: number): void {
               <img
                 :src="view.src"
                 :alt="view.alt"
+                :class="{ 'is-contained': view.contain }"
                 :width="view.width"
                 :height="view.height"
                 :loading="index === 0 ? 'eager' : 'lazy'"
