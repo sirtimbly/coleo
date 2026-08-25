@@ -9,7 +9,17 @@
  */
 
 import { Database } from "bun:sqlite";
+import { randomUUID } from "node:crypto";
 import { eventStore } from "../nats/jetstream";
+import {
+  createTaskLease,
+  getActiveTaskLease,
+  releaseTaskLease,
+  setTaskActiveLease,
+  createTaskPass,
+  getNextPassNumber,
+  updateTaskPass,
+} from "./lifecycle";
 
 /**
  * Result of a transaction operation
@@ -382,6 +392,37 @@ export async function assignTaskToArm(
         task_id, arm_id, role, status, created_at, updated_at
       ) VALUES (?, ?, ?, 'pending', ?, ?)
     `, [taskId, armId, role, now, now]);
+
+    // Create a durable task lease when an arm claims the task. Existing active
+    // leases held by a different arm are revoked first so only one arm can hold
+    // a claim at a time. Re-claims by the same arm are idempotent and keep the
+    // existing lease.
+    if (isClaim) {
+      const existingLease = getActiveTaskLease(db, taskId);
+      if (existingLease && existingLease.armId !== armId) {
+        releaseTaskLease(db, existingLease.id, "superseded by new claim", "revoked");
+      }
+      if (!existingLease || existingLease.armId !== armId) {
+        const leaseId = randomUUID();
+        createTaskLease(db, { id: leaseId, taskId, armId });
+        setTaskActiveLease(db, taskId, leaseId);
+      }
+
+      // Start a new implementation pass for this claim cycle. Re-claims by the
+      // same arm keep the current pass; a new arm starts a fresh pass.
+      const activePass = db
+        .query("SELECT id, status FROM task_passes WHERE task_id = ? AND status = 'active' ORDER BY pass_number DESC LIMIT 1")
+        .get(taskId) as { id: string; status: string } | null;
+      if (!activePass) {
+        const passNumber = getNextPassNumber(db, taskId);
+        createTaskPass(db, {
+          id: randomUUID(),
+          taskId,
+          passNumber,
+          passType: "implement",
+        });
+      }
+    }
 
     // Log the assignment to JetStream
     if (eventStore.isInitialized()) {

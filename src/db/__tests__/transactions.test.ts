@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 
 import { assignTaskToArm, autoAssignWatcherArms } from "../transactions";
+import { getActiveTaskLease, getTaskActiveLeaseId, getActiveTaskPass } from "../lifecycle";
 
 const NOW = "2026-01-16T00:00:00.000Z";
 
@@ -14,6 +15,7 @@ function createTestDb(): Database {
       status TEXT NOT NULL,
       domain TEXT,
       assigned_to TEXT,
+      lease_id TEXT,
       dependency_blocked INTEGER DEFAULT 0,
       order_key TEXT,
       claimed_at TEXT,
@@ -41,6 +43,38 @@ function createTestDb(): Database {
       created_at TEXT,
       updated_at TEXT,
       PRIMARY KEY (task_id, arm_id)
+    );
+
+    CREATE TABLE task_leases (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_id TEXT,
+      arm_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      released_at TEXT,
+      release_reason TEXT,
+      expires_at TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE task_passes (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_number INTEGER NOT NULL,
+      pass_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ended_at TEXT,
+      lease_id TEXT,
+      branch_name TEXT,
+      base_branch TEXT,
+      head_commit TEXT,
+      base_commit TEXT,
+      result_summary TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
   return db;
@@ -337,5 +371,71 @@ describe("autoAssignWatcherArms", () => {
     expect(result.success).toBe(true);
     expect(result.data?.watchersAssigned).toEqual([]);
     expect(result.data?.needsMoreArms).toBe(false);
+  });
+});
+
+describe("assignTaskToArm lifecycle integration", () => {
+  let db: Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  it("creates a task lease and records it on the task row when claiming", async () => {
+    insertTask(db, "task-a");
+    insertArm(db, "arm-1");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    expect(result.success).toBe(true);
+
+    const lease = getActiveTaskLease(db, "task-a");
+    expect(lease).toBeDefined();
+    expect(lease?.armId).toBe("arm-1");
+    expect(lease?.status).toBe("active");
+
+    expect(getTaskActiveLeaseId(db, "task-a")).toBe(lease?.id ?? null);
+  });
+
+  it("keeps the existing lease on idempotent re-claim by the same arm", async () => {
+    insertTask(db, "task-a");
+    insertArm(db, "arm-1");
+
+    const first = await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    expect(first.success).toBe(true);
+    const firstLeaseId = getTaskActiveLeaseId(db, "task-a");
+
+    const second = await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    expect(second.success).toBe(true);
+
+    expect(getTaskActiveLeaseId(db, "task-a")).toBe(firstLeaseId);
+    const lease = getActiveTaskLease(db, "task-a");
+    expect(lease?.armId).toBe("arm-1");
+  });
+
+  it("creates an implementation pass when a task is claimed", async () => {
+    insertTask(db, "task-a");
+    insertArm(db, "arm-1");
+
+    const result = await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    expect(result.success).toBe(true);
+
+    const pass = getActiveTaskPass(db, "task-a");
+    expect(pass).toBeDefined();
+    expect(pass?.passType).toBe("implement");
+    expect(pass?.passNumber).toBe(1);
+    expect(pass?.status).toBe("active");
+  });
+
+  it("does not create duplicate active passes on idempotent re-claim", async () => {
+    insertTask(db, "task-a");
+    insertArm(db, "arm-1");
+
+    await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    const firstPass = getActiveTaskPass(db, "task-a");
+
+    await assignTaskToArm(db, "task-a", "arm-1", "primary", true);
+    const secondPass = getActiveTaskPass(db, "task-a");
+
+    expect(secondPass?.id).toBe(firstPass?.id);
   });
 });

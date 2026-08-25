@@ -26,6 +26,7 @@ import { registerConfigCommands } from "./commands/config";
 import { registerDiscoveriesCommands } from "./commands/discoveries";
 import { registerDebugCommands } from "./commands/debug";
 import { registerWebCommand } from "./commands/web";
+import { registerPlanCommands } from "./commands/plan";
 
 import { registerBranchCommands } from "./commands/branch";
 
@@ -57,5 +58,6 @@ registerDiscoveriesCommands(program);
 registerDebugCommands(program);
 registerWebCommand(program);
 registerBranchCommands(program);
+registerPlanCommands(program);
 
 await program.parseAsync();

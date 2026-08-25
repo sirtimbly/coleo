@@ -140,6 +140,42 @@ export function hasStructuredPlanTasks(content: string): boolean {
 		&& /^-\s+\[[ xX]\]\s+\S+/m.test(content);
 }
 
+function pendingPlanPhaseNumbers(content: string): number[] {
+	const phases: number[] = [];
+	let currentPhase: number | null = null;
+	let inTaskSection = false;
+	for (const line of content.split(/\r?\n/)) {
+		const phase = line.match(/^##\s+Phase\s+(\d+(?:\.\d+)?)(?:\s|:|$)/i)?.[1];
+		if (phase) {
+			currentPhase = Number(phase);
+			inTaskSection = false;
+			continue;
+		}
+		if (/^##\s+/.test(line)) {
+			currentPhase = null;
+			inTaskSection = false;
+			continue;
+		}
+		const section = line.match(/^###\s+(.+)/)?.[1]?.trim();
+		if (section) {
+			inTaskSection = /^(?:Deliverables|Tasks)$/i.test(section);
+			continue;
+		}
+		if (currentPhase !== null && inTaskSection && /^-\s+\[\s\]\s+\S/.test(line)) {
+			phases.push(currentPhase);
+		}
+	}
+	return phases;
+}
+
+/** Prevents plan evaluation from silently reopening work ahead of the source plan's active phase boundary. */
+export function preservesActivePhaseBoundary(source: string, formatted: string): boolean {
+	const sourcePendingPhases = pendingPlanPhaseNumbers(source);
+	if (sourcePendingPhases.length === 0) return true;
+	const earliestActivePhase = Math.min(...sourcePendingPhases);
+	return pendingPlanPhaseNumbers(formatted).every((phase) => phase >= earliestActivePhase);
+}
+
 export function preservesPlanContext(source: string, formatted: string): boolean {
 	const words = (value: string): string[] => value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 	const sourceWords = words(source);
@@ -473,6 +509,9 @@ export async function formatPlanWithConfiguredModel(
 		}
 		if (!hasStructuredPlanTasks(formatted)) {
 			throw new Error("Plan formatter returned an unsupported plan structure");
+		}
+		if (!preservesActivePhaseBoundary(content, formatted)) {
+			throw new Error("Plan formatter introduced unfinished tasks before the source plan's earliest active phase");
 		}
 		if (!preservesPlanContext(content, formatted)) {
 			throw new Error("Plan formatter omitted source context");

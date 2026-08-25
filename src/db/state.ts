@@ -426,6 +426,72 @@ export function cleanupOldMessages(db: Database, olderThanDays: number = 7): num
   return result.changes;
 }
 
+export interface CommandQueueLatencyMetrics {
+  pendingCount: number;
+  processingCount: number;
+  oldestPendingAgeMs: number | null;
+  avgPendingAgeMs: number | null;
+  avgCompletedLatencyMs: number | null;
+}
+
+/**
+ * Compute latency metrics for a projected command stream.
+ *
+ * Pending/processing age measures how long messages have been waiting.
+ * Completed latency measures end-to-end time from creation to terminal update.
+ */
+export function getCommandQueueLatencyMetrics(
+  db: Database,
+  streamName: string,
+  options?: { completedLimit?: number },
+): CommandQueueLatencyMetrics {
+  const completedLimit = options?.completedLimit ?? 100;
+
+  const pendingRow = db.query(
+    `SELECT COUNT(*) AS count,
+            COALESCE(MAX(julianday('now') - julianday(created_at)), 0) AS maxAgeDays,
+            COALESCE(AVG(julianday('now') - julianday(created_at)), 0) AS avgAgeDays
+     FROM messages
+     WHERE stream_name = ? AND status = 'pending'`,
+  ).get(streamName) as { count: number; maxAgeDays: number; avgAgeDays: number };
+
+  const processingRow = db.query(
+    `SELECT COUNT(*) AS count,
+            COALESCE(MAX(julianday('now') - julianday(created_at)), 0) AS maxAgeDays,
+            COALESCE(AVG(julianday('now') - julianday(created_at)), 0) AS avgAgeDays
+     FROM messages
+     WHERE stream_name = ? AND status = 'processing'`,
+  ).get(streamName) as { count: number; maxAgeDays: number; avgAgeDays: number };
+
+  const completedRow = db.query(
+    `SELECT COALESCE(AVG(julianday(processed_at) - julianday(created_at)), 0) AS avgLatencyDays
+     FROM (
+       SELECT processed_at, created_at
+       FROM messages
+       WHERE stream_name = ?
+         AND status = 'completed'
+         AND processed_at IS NOT NULL
+       ORDER BY processed_at DESC
+       LIMIT ?
+     )`,
+  ).get(streamName, completedLimit) as { avgLatencyDays: number };
+
+  const toMs = (days: number) => Math.round(days * 24 * 60 * 60 * 1000);
+  const pendingCount = pendingRow.count ?? 0;
+  const processingCount = processingRow.count ?? 0;
+  const activeCount = pendingCount + processingCount;
+
+  return {
+    pendingCount,
+    processingCount,
+    oldestPendingAgeMs: activeCount > 0 ? toMs(Math.max(pendingRow.maxAgeDays, processingRow.maxAgeDays)) : null,
+    avgPendingAgeMs: activeCount > 0
+      ? toMs((pendingRow.avgAgeDays * pendingCount + processingRow.avgAgeDays * processingCount) / activeCount)
+      : null,
+    avgCompletedLatencyMs: completedRow.avgLatencyDays > 0 ? toMs(completedRow.avgLatencyDays) : null,
+  };
+}
+
 /**
  * Clean up old arm events (retention policy)
  */

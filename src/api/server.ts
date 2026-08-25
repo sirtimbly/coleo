@@ -10,6 +10,7 @@ import { cors } from "hono/cors";
 import { existsSync, statSync } from "fs";
 import { dirname, join, relative, resolve } from "path";
 import { initDatabase, Database, seedDatabase } from "../db";
+import { releaseActiveTaskLease } from "../db/lifecycle";
 import { apiKeyMatches, logger, createAuthMiddleware, REEF_PROXY_API_KEY_HEADER } from "./middleware";
 import { formatErrorResponse } from "./middleware/error";
 import { createSystemRoutes, createArmsRoutes, createActivityRoutes, createMailRoutes, createBrainRoutes, createConfigRoutes, createOpenCodeRoutes, createGardenRoutes, createProposalsRoutes, createTasksRoutes, createTaskDiscussionsRoutes, createTaskSummariesRoutes, createTaskDiffsRoutes, createAgentsRoutes, createDiscoveriesRoutes, createStatusReportsRoutes, createBugsRoutes, createEscalationRoutes, createEventsRoutes, createSearchRoutes, createStatusHistoryRoutes, createStatusSeriesRoutes, createUploadApiRoutes, createUploadContentRoutes, createOnboardingRoutes, createProjectSetupRoutes, createWorkbenchRoutes, createRunsRoutes } from "./routes";
@@ -655,6 +656,9 @@ export async function startServer(configOverrides?: Partial<ApiConfig>): Promise
     ).all(armId) as Array<{ id: string; subject: string }>;
     
     if (tasksResult.length > 0) {
+      for (const task of tasksResult) {
+        releaseActiveTaskLease(db, task.id, "arm died");
+      }
       db.run(
         "UPDATE tasks SET assigned_to = NULL, status = 'pending', updated_at = ? WHERE assigned_to = ? AND status IN ('pending', 'claimed')",
         [now, armId]

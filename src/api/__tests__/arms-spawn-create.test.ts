@@ -441,6 +441,94 @@ describe("arms spawn route auto-creation", () => {
     expect(updated?.session_id).toBe("ses_retry");
   });
 
+  it("reconciles a timed-out spawn that completed on the daemon", async () => {
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO arms (
+        id, name, domain, harness, status, context_budget, current_context_used,
+        created_at, updated_at, provider, model, config
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "slow-spawn-arm",
+        "Slow Spawn Arm",
+        "development",
+        "opencode-api",
+        "starting",
+        100000,
+        0,
+        now,
+        now,
+        "opencode",
+        "gpt-5.1-codex-mini",
+        JSON.stringify({}),
+      ],
+    );
+
+    let markedUnavailable = false;
+    const mockArmClient = {
+      findBestAgent: () => ({
+        agentId: "slow-agent",
+        hostname: "slow-host",
+        capabilities: ["opencode-api"],
+        maxArms: 10,
+      }),
+      getAgent: () => ({ agentId: "slow-agent", hostname: "slow-host" }),
+      spawnArm: async () => ({
+        requestId: "req-timeout",
+        success: false,
+        error: "Command timed out after 60000ms",
+      }),
+      listArmsOnAgent: async () => ({
+        requestId: "req-reconcile",
+        success: true,
+        data: {
+          arms: [{
+            armId: "slow-spawn-arm",
+            agentId: "slow-agent",
+            name: "Slow Spawn Arm",
+            domain: "development",
+            harness: "opencode-api",
+            status: "idle",
+            pid: -1,
+            port: 19303,
+            provider: "opencode",
+            model: "gpt-5.1-codex-mini",
+            sessionId: "ses_slow",
+            startedAt: now,
+            lastActivityAt: now,
+            error: null,
+          }],
+        },
+      }),
+      markAgentUnavailable: () => {
+        markedUnavailable = true;
+      },
+    };
+    getArmClientSpy = spyOn(serverModule, "getArmClient").mockImplementation(
+      () => mockArmClient as never,
+    );
+    serverModule.setArmClient(mockArmClient as never);
+
+    const response = await app.request("http://coleo.test/api/arms/slow-spawn-arm/spawn", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ workdir: tempDir }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      spawned: true,
+      distributed: true,
+      agentId: "slow-agent",
+      host: "slow-host",
+      port: 19303,
+      sessionId: "ses_slow",
+    });
+    expect(markedUnavailable).toBe(false);
+    expect(db.query("SELECT status, agent_id, port, session_id FROM arms WHERE id = ?").get("slow-spawn-arm"))
+      .toEqual({ status: "idle", agent_id: "slow-agent", port: 19303, session_id: "ses_slow" });
+  });
+
   it("routes every harness to the remote agent and uses its configured workdir in hosted mode", async () => {
     const now = new Date().toISOString();
     db.run(

@@ -321,6 +321,11 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				staleThresholdMs: 120000,
 				updatedAt: now,
 				enabled: true,
+				pendingCount: 0,
+				processingCount: 0,
+				oldestPendingAgeMs: null,
+				avgPendingAgeMs: null,
+				avgCompletedLatencyMs: null,
 			});
 		}
 		if (path === "/api/events/analysis") {

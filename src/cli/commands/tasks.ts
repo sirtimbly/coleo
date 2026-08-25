@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { join } from "path";
 import { expandPath, getColeoDir } from "../context";
 import { resolveApiKey, resolveApiUrl } from "../../network-config";
+import { releaseActiveTaskLease } from "../../db/lifecycle";
 import {
   type CsvListFilter,
   editListCsvInEditor,
@@ -339,6 +340,12 @@ export function registerTasksCommands(program: Command): void {
         const { initDatabase } = await import("../../db");
         const db = await initDatabase(dbPath);
         const now = new Date().toISOString();
+        const claimedRows = db
+          .query("SELECT id FROM tasks WHERE status IN ('claimed', 'in_progress')")
+          .all() as Array<{ id: string }>;
+        for (const row of claimedRows) {
+          releaseActiveTaskLease(db, row.id, "unclaim command");
+        }
         const result = db.run(
           "UPDATE tasks SET status = 'pending', assigned_to = NULL, claimed_at = NULL, started_at = NULL, updated_at = ? WHERE status IN ('claimed', 'in_progress')",
           [now],

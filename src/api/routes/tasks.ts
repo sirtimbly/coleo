@@ -8,6 +8,7 @@ import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import { withTransaction } from "../../db/transactions";
+import { releaseActiveTaskLease, getActiveTaskPass, updateTaskPass, recordDependencyEvent } from "../../db/lifecycle";
 import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
@@ -1271,6 +1272,12 @@ export function createTasksRoutes() {
 			) {
 				updates.push("completed_at = ?");
 				values.push(now);
+
+				// Mark the active implementation pass as terminal.
+				const activePass = getActiveTaskPass(db, id);
+				if (activePass) {
+					updateTaskPass(db, activePass.id, { status: body.status });
+				}
 			} else if (["completed", "failed", "cancelled"].includes(existing.status)) {
 				updates.push("completed_at = NULL");
 			}
@@ -1479,6 +1486,7 @@ export function createTasksRoutes() {
 		}
 
 		if (releaseAssignment && existing.assigned_to) {
+			releaseActiveTaskLease(db, id, "task assignment released via API");
 			db.run(
 				`UPDATE arms
 				 SET current_task_id = NULL,

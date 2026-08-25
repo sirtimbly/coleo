@@ -521,6 +521,25 @@ Activity: 42 events (24h)
 
 ---
 
+### plan
+
+Manage the canonical project plan and its generated task queue.
+
+#### plan regenerate
+
+Evaluate `.project/plan.md` with the configured Brain model, replace every non-completed task, and preserve completed
+task history. The command prints a timestamped log for plan loading, workspace context collection, model formatting,
+parsing, safety checks, database replacement, and rollback.
+
+```bash
+coleo plan regenerate --explanation "Replace duplicated tasks with dependency-ordered work units"
+```
+
+The command refuses to modify the queue while an arm is working on a non-completed task. If formatting, parsing, or
+database replacement fails after the plan is written, it restores the original `.project/plan.md`.
+
+---
+
 ## config
 
 Manage Coleo arm configuration files in `./.coleo/arms/` by default.

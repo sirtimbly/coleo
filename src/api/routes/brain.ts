@@ -34,6 +34,8 @@ import {
   validateBrainInboxPayload,
 } from "../../types/brain-inbox";
 import { assignTaskToArm, updateInfrastructureHealth } from "../../db/transactions";
+import { releaseActiveTaskLease } from "../../db/lifecycle";
+import { createTaskDecision, getActiveTaskPass } from "../../db/lifecycle";
 import type { TaskAttachment } from "../../types";
 import { getNatsManager } from "../../nats/server";
 import { publishCommandEnvelope } from "../../nats/command-stream";
@@ -1306,6 +1308,7 @@ export function createBrainRoutes() {
       `).get(row.taskId, body.completedTaskId) as { count: number };
 
       if ((unmetDeps?.count || 0) === 0) {
+        releaseActiveTaskLease(db, row.taskId, "dependency unblocked");
         db.run(
           `UPDATE tasks
            SET dependency_blocked = 0,
@@ -1330,6 +1333,37 @@ export function createBrainRoutes() {
     }
 
     return c.json({ unblocked });
+  });
+
+  app.post("/internal/record-task-decision", async (c) => {
+    const db = c.get("db");
+    const body = await c.req.json<{
+      taskId: string;
+      decisionType: "approve" | "reject" | "request_changes" | "request_human" | "merge" | "skip" | "defer";
+      madeBy: string;
+      madeByType: "arm" | "human" | "brain" | "system";
+      reason?: string;
+      passId?: string;
+      confidence?: number;
+    }>();
+
+    if (!body.taskId || !body.decisionType || !body.madeBy || !body.madeByType) {
+      throw HttpError.badRequest("taskId, decisionType, madeBy, and madeByType are required");
+    }
+
+    const activePass = body.passId ? undefined : getActiveTaskPass(db, body.taskId);
+    createTaskDecision(db, {
+      id: randomUUID(),
+      taskId: body.taskId,
+      passId: body.passId ?? activePass?.id,
+      decisionType: body.decisionType,
+      madeBy: body.madeBy,
+      madeByType: body.madeByType,
+      reason: body.reason,
+      confidence: body.confidence,
+    });
+
+    return c.json({ success: true });
   });
 
   return app;

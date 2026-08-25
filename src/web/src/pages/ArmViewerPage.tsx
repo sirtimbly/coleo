@@ -57,6 +57,7 @@ import {
 } from "@/workspace/route-context";
 import {
 	getViewerEventActivityId,
+	isViewerHeartbeatActivity,
 	upsertViewerActivity,
 	type ViewerActivityItem as ActivityItem,
 	type ViewerActivityType as ActivityType,
@@ -148,7 +149,7 @@ const DEFAULT_MESSAGE_LOG_PREFERENCES: MessageLogPreferences = {
 		intervention: true,
 		task: true,
 		session: true,
-		health: true,
+		health: false,
 		decision: true,
 		configuration: true,
 	},
@@ -286,7 +287,7 @@ function getBrainActivityCategory(
 		typeof activity.details.eventType === "string"
 			? activity.details.eventType
 			: activity.title.toLowerCase().replaceAll(" ", "_");
-	if (eventType.includes("heartbeat")) return "health";
+	if (isViewerHeartbeatActivity(activity)) return "health";
 	if (activity.details.actor !== "brain") return null;
 	if (eventType.includes("stuck_detected")) return "stuck";
 	if (
@@ -1859,6 +1860,9 @@ function ArmViewerConsole({
 		const category = getBrainActivityCategory(activity);
 		return category !== null && messageLogPreferences.brainActivity[category];
 	});
+	const visibleActivities = messageLogPreferences.brainActivity.health
+		? activities
+		: activities.filter((activity) => !isViewerHeartbeatActivity(activity));
 	const focusedActivityItems = [
 		...messages.map((message) => ({
 			kind: "message" as const,
@@ -1872,7 +1876,7 @@ function ArmViewerConsole({
 		})),
 	].sort((left, right) => left.timestamp - right.timestamp);
 	const streamCount =
-		activeTab === "logs" ? focusedActivityItems.length : activities.length;
+		activeTab === "logs" ? focusedActivityItems.length : visibleActivities.length;
 	const activityStateTone =
 		hasEventTelemetry && analysis?.analysis.state === "error"
 			? "danger"
@@ -2191,7 +2195,7 @@ function ArmViewerConsole({
 									<div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(min(100%,16rem),1fr))]">
 										<ArmActivityChart
 											armId={selectedArm.id}
-											activities={activities}
+											activities={visibleActivities}
 											title="Activity & Efficiency"
 											embedded
 											compact
@@ -2227,19 +2231,19 @@ function ArmViewerConsole({
 									</div>
 								) : null}
 
-								{eventsLoading && activities.length === 0 ? (
+								{eventsLoading && visibleActivities.length === 0 ? (
 									<div className="flex items-center gap-2 text-sm text-muted-foreground">
 										<Loader2 className="h-4 w-4 animate-spin" />
 										<span>Loading event history...</span>
 									</div>
-								) : activities.length === 0 && !currentText ? (
+								) : visibleActivities.length === 0 && !currentText ? (
 									<ViewerEmptyState
 										icon={<Zap className="h-8 w-8" />}
 										title="No firehose events yet"
 										description="Raw live events will appear here as the arm works."
 									/>
 								) : (
-									activities.map((activity) => (
+									visibleActivities.map((activity) => (
 										<ActivityItemComponent
 											key={activity.id}
 											activity={activity}

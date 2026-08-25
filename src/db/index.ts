@@ -110,6 +110,53 @@ function addDraftTaskStatus(db: Database): void {
 }
 
 /**
+ * Add lifecycle schema columns idempotently.
+ *
+ * Migration 069 introduces pass_id columns on existing artifact tables and a
+ * lease_id column on tasks. Because those tables are created by earlier
+ * migrations, the ALTER TABLE statements must be skipped when re-applying.
+ */
+function addLifecycleColumnsIfNeeded(db: Database): void {
+  const columnExists = (table: string, column: string): boolean => {
+    const cols = db.query(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    return cols.some((c) => c.name === column);
+  };
+
+  const addColumn = (table: string, column: string, sql: string) => {
+    if (!columnExists(table, column)) {
+      try {
+        db.exec(sql);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!message.includes("duplicate column name")) throw err;
+      }
+    }
+  };
+
+  addColumn(
+    "task_diffs",
+    "pass_id",
+    "ALTER TABLE task_diffs ADD COLUMN pass_id TEXT REFERENCES task_passes(id) ON DELETE SET NULL",
+  );
+  addColumn(
+    "task_summaries",
+    "pass_id",
+    "ALTER TABLE task_summaries ADD COLUMN pass_id TEXT REFERENCES task_passes(id) ON DELETE SET NULL",
+  );
+  addColumn(
+    "task_comments",
+    "pass_id",
+    "ALTER TABLE task_comments ADD COLUMN pass_id TEXT REFERENCES task_passes(id) ON DELETE SET NULL",
+  );
+  addColumn(
+    "task_arm_consensus",
+    "pass_id",
+    "ALTER TABLE task_arm_consensus ADD COLUMN pass_id TEXT REFERENCES task_passes(id) ON DELETE SET NULL",
+  );
+  addColumn("tasks", "lease_id", "ALTER TABLE tasks ADD COLUMN lease_id TEXT");
+}
+
+/**
  * Run all pending migrations
  */
 async function runMigrations(db: Database): Promise<void> {
@@ -221,6 +268,7 @@ async function runMigrations(db: Database): Promise<void> {
 		["066_arm_runs", MIGRATION_066_ARM_RUNS],
 		["067_task_draft_status", MIGRATION_067_TASK_DRAFT_STATUS],
 		["068_workbench_card_instances", MIGRATION_068_WORKBENCH_CARD_INSTANCES],
+		["069_task_lifecycle", MIGRATION_069_TASK_LIFECYCLE],
 	];
 
 
@@ -238,7 +286,10 @@ async function runMigrations(db: Database): Promise<void> {
     }
 
     if (name === "067_task_draft_status") addDraftTaskStatus(db);
-    else db.exec(sql);
+    else if (name === "069_task_lifecycle") {
+      addLifecycleColumnsIfNeeded(db);
+      db.exec(sql);
+    } else db.exec(sql);
     db.run("INSERT INTO _migrations (name) VALUES (?)", [name]);
   }
 }
@@ -2581,4 +2632,123 @@ CREATE INDEX IF NOT EXISTS idx_workbench_card_action_audit_resource
 ON workbench_card_action_audit(resource_kind, resource_id, created_at DESC);
 `;
 
+// Migration 069: Durable task lifecycle schema.
+//
+// Defines the branch-centered pass model that governs implementation, review,
+// polish, human review, and merge. These tables are additive; existing arm_runs
+// and task status triggers remain authoritative until later phases migrate them.
+const MIGRATION_069_TASK_LIFECYCLE = `
+-- Task passes: iterative attempts on a single task.
+-- A pass records one implement/review/polish/human-review/merge cycle.
+CREATE TABLE IF NOT EXISTS task_passes (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  pass_number INTEGER NOT NULL,
+  pass_type TEXT NOT NULL CHECK (pass_type IN ('implement', 'review', 'polish', 'human_review', 'merge')),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'failed', 'cancelled')),
+  started_at TEXT NOT NULL DEFAULT (datetime('now')),
+  ended_at TEXT,
+  lease_id TEXT,
+  branch_name TEXT,
+  base_branch TEXT,
+  head_commit TEXT,
+  base_commit TEXT,
+  result_summary TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  UNIQUE(task_id, pass_number)
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_passes_task ON task_passes(task_id, pass_number DESC);
+CREATE INDEX IF NOT EXISTS idx_task_passes_status ON task_passes(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_passes_branch ON task_passes(branch_name);
+
+-- Task leases: durable claim/lease identity separate from file claims and runs.
+-- A lease binds an arm to a task (and optionally a pass) for a bounded time.
+CREATE TABLE IF NOT EXISTS task_leases (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  pass_id TEXT,
+  arm_id TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'released', 'expired', 'revoked')),
+  claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  released_at TEXT,
+  release_reason TEXT,
+  expires_at TEXT,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (pass_id) REFERENCES task_passes(id) ON DELETE SET NULL,
+  FOREIGN KEY (arm_id) REFERENCES arms(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_leases_task ON task_leases(task_id, status);
+CREATE INDEX IF NOT EXISTS idx_task_leases_arm ON task_leases(arm_id, claimed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_leases_active
+ON task_leases(task_id, arm_id) WHERE status = 'active';
+
+-- Structured decisions recorded during a task lifecycle.
+-- Decisions are made by arms, humans, the brain, or the system.
+CREATE TABLE IF NOT EXISTS task_decisions (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  pass_id TEXT,
+  decision_type TEXT NOT NULL CHECK (decision_type IN (
+    'approve', 'reject', 'request_changes', 'request_human', 'merge', 'skip', 'defer'
+  )),
+  made_by TEXT NOT NULL,
+  made_by_type TEXT NOT NULL CHECK (made_by_type IN ('arm', 'human', 'brain', 'system')),
+  reason TEXT,
+  confidence REAL,
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (pass_id) REFERENCES task_passes(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_decisions_task ON task_decisions(task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_task_decisions_pass ON task_decisions(pass_id, created_at DESC);
+
+-- Task file references: acceptance criteria, decisions, plans, source deps,
+-- context files, and output files associated with a task/pass.
+CREATE TABLE IF NOT EXISTS task_file_references (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  pass_id TEXT,
+  file_path TEXT NOT NULL,
+  reference_type TEXT NOT NULL CHECK (reference_type IN (
+    'acceptance_criteria', 'decision', 'plan', 'source_dependency', 'context', 'output', 'test', 'other'
+  )),
+  metadata TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (pass_id) REFERENCES task_passes(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_files_task ON task_file_references(task_id, reference_type);
+CREATE INDEX IF NOT EXISTS idx_task_files_path ON task_file_references(file_path);
+
+-- Dependency events: audit log for dependency blocking/unblocking.
+CREATE TABLE IF NOT EXISTS dependency_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL,
+  depends_on_task_id TEXT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('blocked', 'unblocked', 'added', 'removed', 'plan_update_created')),
+  reason TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_dependency_events_task ON dependency_events(task_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dependency_events_depends ON dependency_events(depends_on_task_id);
+
+-- Active lease identity on the task row (nullable, no FK to avoid circularity).
+CREATE INDEX IF NOT EXISTS idx_tasks_lease ON tasks(lease_id) WHERE lease_id IS NOT NULL;
+`;
+
 export { Database };
+
+// Durable task lifecycle persistence (migration 069)
+export * from "./lifecycle";

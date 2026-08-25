@@ -186,12 +186,14 @@ export function SettingsPage() {
               value={theme}
               onChange={(value) => setTheme(value as 'light' | 'dark' | 'system')}
             >
-              <Label id={themeLabelId}>Theme</Label>
-              <Select.Trigger>
-                <Select.Value />
+              <Label id={themeLabelId} className="block text-sm font-medium mb-2">
+                Theme
+              </Label>
+              <Select.Trigger className="h-9 min-h-9 rounded-md border border-border bg-surface px-3 py-2 text-sm shadow-none">
+                <Select.Value className="text-sm" />
                 <Select.Indicator />
               </Select.Trigger>
-              <Select.Popover className="w-fit">
+              <Select.Popover className="w-fit rounded-md">
                 <ListBox>
                   {themeOptions.map((option) => (
                     <ListBox.Item key={option.value} id={option.value} textValue={option.label}>

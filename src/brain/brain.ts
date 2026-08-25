@@ -1345,6 +1345,7 @@ export class Brain {
 							taskReplyId,
 							approvalMatch[1]?.toUpperCase() === "APPROVE",
 							messageBody,
+							message.from,
 						);
 						await mailbox.markSeen(message.id);
 						continue;
@@ -1455,6 +1456,7 @@ export class Brain {
 						intent.originalId || "",
 						intent.approved || false,
 						intent.comment || message.body,
+						message.from,
 					);
 					// Send confirmation reply
 					await this.sendToHuman({
@@ -2853,6 +2855,27 @@ export class Brain {
 		return mapApiTask(response.task);
 	}
 
+	private async recordTaskDecisionViaApi(
+		taskId: string,
+		decisionType: "approve" | "reject" | "request_changes" | "request_human" | "merge" | "skip" | "defer",
+		madeBy: string,
+		madeByType: "arm" | "human" | "brain" | "system",
+		reason?: string,
+		confidence?: number,
+	): Promise<void> {
+		await this.apiRequest("/api/brain/internal/record-task-decision", {
+			method: "POST",
+			body: JSON.stringify({
+				taskId,
+				decisionType,
+				madeBy,
+				madeByType,
+				reason,
+				confidence,
+			}),
+		});
+	}
+
 	private async getTaskFromApi(taskId: string): Promise<Task | null> {
 		const response = await this.apiRequest<{
 			task: {
@@ -3260,6 +3283,13 @@ export class Brain {
 
 		const armLabel = this.getArmDisplayName(validatorArmId);
 		if (approved) {
+			await this.recordTaskDecisionViaApi(
+				originalTaskId,
+				"approve",
+				validatorArmId,
+				"arm",
+				notes,
+			);
 			await this.requestHumanTaskApproval(originalTask, notes, originalTask.artifacts || []);
 			this.logActivity("brain", "task_validation_approved", originalTaskId, {
 				validatorArmId,
@@ -3273,6 +3303,13 @@ export class Brain {
 			);
 			this.log(`Task ${originalTask.subject} validated; human approval requested`);
 		} else {
+			await this.recordTaskDecisionViaApi(
+				originalTaskId,
+				"reject",
+				validatorArmId,
+				"arm",
+				notes,
+			);
 			await this.patchTaskViaApi(originalTaskId, {
 				status: "pending",
 				assignedTo: null,
@@ -4673,6 +4710,7 @@ ${originalTask.id}`;
 		originalId: string,
 		approved: boolean,
 		comment: string,
+		humanId?: string,
 	): Promise<void> {
 		this.log(
 			`Approval response for ${originalId}: ${approved ? "approved" : "rejected"}`,
@@ -4687,6 +4725,13 @@ ${originalTask.id}`;
 			this.log(`Ignoring approval response for task ${originalId} without a pending human review`);
 			return;
 		}
+		await this.recordTaskDecisionViaApi(
+			task.id,
+			approved ? "approve" : "reject",
+			humanId || "human",
+			"human",
+			comment,
+		);
 		await this.patchTaskViaApi(task.id, {
 			status: approved ? undefined : "pending",
 			assignedTo: approved ? undefined : null,

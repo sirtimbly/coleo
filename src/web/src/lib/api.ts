@@ -2034,6 +2034,11 @@ export interface TranscriptIndexerHealth extends BaseQueueHealth {
 
 export interface CommandQueueHealth extends BaseQueueHealth {
   enabled: boolean;
+  pendingCount: number | null;
+  processingCount: number | null;
+  oldestPendingAgeMs: number | null;
+  avgPendingAgeMs: number | null;
+  avgCompletedLatencyMs: number | null;
 }
 
 export interface MailMessage {

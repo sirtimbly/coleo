@@ -9,6 +9,7 @@ import {
 	formatPlanWithConfiguredModel,
 	formatPlanWithoutModel,
 	listProjectPlanDocuments,
+	preservesActivePhaseBoundary,
 	preservesPlanContext,
 	renderPlanEvaluationPrompt,
 	validateEditablePlanPath,
@@ -163,6 +164,33 @@ describe("project setup service", () => {
 		const source = "The billing workflow must retain audit history, support regional taxes, and explain migration constraints.";
 		expect(preservesPlanContext(source, `${source}\n\n- [ ] Implement billing`)).toBe(true);
 		expect(preservesPlanContext(source, "- [ ] Implement billing")).toBe(false);
+	});
+
+	it("rejects regenerated plans that reopen work before the earliest active phase", () => {
+		const source = `# Plan
+
+## Phase 2: Historical
+
+### Deliverables
+
+- [x] Verify the foundation
+
+## Phase 4: Active work
+
+### Deliverables
+
+- [ ] Implement task preparation
+`;
+		const reopened = `${source}
+## Phase 0: Reopened verification
+
+### Deliverables
+
+- [ ] Verify old architecture decisions
+`;
+
+		expect(preservesActivePhaseBoundary(source, source)).toBe(true);
+		expect(preservesActivePhaseBoundary(source, reopened)).toBe(false);
 	});
 
 	it("only allows editable plan paths in the configured project directories", () => {

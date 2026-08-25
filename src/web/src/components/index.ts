@@ -24,4 +24,5 @@ export { DenseSection, DenseRow, DenseRowSkeleton, DOT_TONE_CLASS, TEXT_TONE_CLA
 export { TaskProgressWidget } from './TaskProgressWidget';
 export { TaskWorkflowHelp } from './TaskWorkflowHelp';
 export { StatusBurndownChart } from './StatusBurndownChart';
+export { CommandQueueChart } from './CommandQueueChart';
 export { CollapsibleSection, type CollapsibleSectionProps } from './CollapsibleSection';

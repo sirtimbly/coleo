@@ -47,6 +47,12 @@ export function getViewerEventActivityId(event: EventIdentity, suffix: string): 
 	return `event-${event.type}-${event.timestamp ?? "unknown"}-${fingerprint}-${suffix}`;
 }
 
+export function isViewerHeartbeatActivity(activity: ViewerActivityItem): boolean {
+	const eventType = activity.details?.eventType;
+	return activity.title.toLowerCase().includes("heartbeat") ||
+		(typeof eventType === "string" && eventType.toLowerCase().includes("heartbeat"));
+}
+
 export function upsertViewerActivity(
 	activities: ViewerActivityItem[],
 	activity: ViewerActivityItem,

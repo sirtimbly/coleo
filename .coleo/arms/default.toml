@@ -12,7 +12,7 @@ harness = "opencode-api"
 [model]
 # Configure your AI model provider
 provider = "kimi-for-coding"  # Examples: "openai", "anthropic", "kimi", "groq", "xai"
-model = "k2p7"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
+model = "kimi-for-coding"  # Examples: "gpt-5.1-mini", "gpt-4o", "claude-3-opus", "kimi-k2"
 
 # Optional: Custom model configuration
 # [model.config]

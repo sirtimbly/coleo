@@ -79,3 +79,4 @@ docs/.vitepress/cache/deps
 .coleo/*.db.backup-*
 .kilocode/package-lock.json
 .opencode/package-lock.json
+.coleo/nats/jetstream/$G/streams/coleo-events

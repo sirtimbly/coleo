@@ -48,9 +48,42 @@ function createTestDb(): Database {
        blocked_review_arm_id TEXT,
        blocked_review_started_at TEXT,
        due_date TEXT,
-      artifacts TEXT DEFAULT '[]',
-      context TEXT DEFAULT '{}',
-      metadata TEXT DEFAULT '{}'
+       artifacts TEXT DEFAULT '[]',
+       context TEXT DEFAULT '{}',
+       metadata TEXT DEFAULT '{}',
+       lease_id TEXT
+    );
+
+    CREATE TABLE task_leases (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_id TEXT,
+      arm_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      released_at TEXT,
+      release_reason TEXT,
+      expires_at TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE task_passes (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_number INTEGER NOT NULL,
+      pass_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ended_at TEXT,
+      lease_id TEXT,
+      branch_name TEXT,
+      base_branch TEXT,
+      head_commit TEXT,
+      base_commit TEXT,
+      result_summary TEXT,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE arms (
@@ -792,6 +825,29 @@ describe("tasks API", () => {
 			};
 			expect(taskRow.assigned_to).toBeNull();
 			expect(armRow).toEqual({ status: "idle", current_task_id: null });
+		});
+
+		it("marks the active pass as completed when the task is completed", async () => {
+			db.run("UPDATE tasks SET status = 'in_progress', assigned_to = 'arm-1' WHERE id = 'task-123'");
+			db.run(
+				`INSERT INTO task_passes (id, task_id, pass_number, pass_type, status, started_at, created_at, updated_at)
+				 VALUES ('pass-1', 'task-123', 1, 'implement', 'active', ?, ?, ?)`,
+				[new Date().toISOString(), new Date().toISOString(), new Date().toISOString()],
+			);
+
+			const response = await app.request("/api/tasks/task-123", {
+				method: "PATCH",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ status: "completed" }),
+			});
+
+			expect(response.status).toBe(200);
+			const passRow = db.query("SELECT status, ended_at FROM task_passes WHERE id = 'pass-1'").get() as {
+				status: string;
+				ended_at: string | null;
+			};
+			expect(passRow.status).toBe("completed");
+			expect(passRow.ended_at).not.toBeNull();
 		});
 
     it("should update metadata", async () => {

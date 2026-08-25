@@ -9,7 +9,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { AlertTriangle, ChevronRight, Inbox } from 'lucide-react';
 import { api, type AgentProviderStatus, type Arm, type AllArmsAnalysis, type ArmActivityState, type CommandQueueHealth, type TranscriptIndexerHealth } from '@/lib';
-import { CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton } from '@/components';
+import { CollapsibleSection, StatusBadge, DenseSection, DenseRow, DenseRowSkeleton, CommandQueueChart } from '@/components';
 // import { Bot, Activity, Database, MessageSquare } from 'lucide-react';
 import { TaskProgressWidget, type TaskStats } from '@/components/TaskProgressWidget';
 import { StatusBurndownChart } from '@/components/StatusBurndownChart';
@@ -616,6 +616,11 @@ export function DashboardPage() {
           updatedAt: new Date().toISOString(),
           message: "Failed to load command queue health",
           enabled: true,
+          pendingCount: null,
+          processingCount: null,
+          oldestPendingAgeMs: null,
+          avgPendingAgeMs: null,
+          avgCompletedLatencyMs: null,
         });
       } finally {
         setCommandQueueLoading(false);
@@ -867,6 +872,41 @@ export function DashboardPage() {
           isLoading={statusLoading}
           brainLoading={brainLoading}
           onNavigate={navigate}
+        />
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Command Queue"
+        summary={[
+          {
+            label: 'Depth',
+            value: commandQueueLoading
+              ? '...'
+              : commandQueueHealth
+                ? String((commandQueueHealth.lagMessages ?? 0) + (commandQueueHealth.ackPending ?? 0))
+                : '-',
+            tone: commandQueueHealth?.status === 'stale'
+              ? 'danger'
+              : commandQueueHealth?.status === 'lagging'
+                ? 'warning'
+                : 'success',
+          },
+          {
+            label: 'Latency',
+            value: commandQueueLoading
+              ? '...'
+              : commandQueueHealth?.avgCompletedLatencyMs
+                ? `${Math.round(commandQueueHealth.avgCompletedLatencyMs / 1000)}s`
+                : commandQueueHealth?.oldestPendingAgeMs
+                  ? `${Math.round(commandQueueHealth.oldestPendingAgeMs / 1000)}s`
+                  : '-',
+          },
+        ]}
+        className="rounded-none border-x-0 border-t-0"
+      >
+        <CommandQueueChart
+          health={commandQueueHealth}
+          loading={commandQueueLoading}
         />
       </CollapsibleSection>
 

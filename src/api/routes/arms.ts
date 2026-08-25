@@ -36,6 +36,7 @@ interface ArmsContext {
 const AUTO_AGENT_ID = `agent-${hostname()}-autostart`;
 const AUTO_AGENT_WAIT_MS_DEFAULT = 8000;
 const DISTRIBUTED_OBSERVABILITY_COMMAND_TIMEOUT_MS = 8000;
+const DISTRIBUTED_SPAWN_RECONCILE_TIMEOUT_MS = 30000;
 let autoStartAgentPromise: Promise<void> | null = null;
 
 interface ArmClientLookup {
@@ -2126,6 +2127,41 @@ export function createArmsRoutes() {
         }
       };
 
+      const reconcileTimedOutSpawn = async (agentId: string, message: string) => {
+        if (!/\b(?:timed out|timeout)\b/i.test(message)) return null;
+
+        try {
+          // Agent commands are handled serially. A list request sent after the
+          // spawn timeout waits behind the still-running spawn and observes its result.
+          const listed = await armClient.listArmsOnAgent(
+            agentId,
+            DISTRIBUTED_SPAWN_RECONCILE_TIMEOUT_MS,
+          );
+          const arm = listed.success
+            ? listed.data?.arms.find((candidate) => candidate.armId === id)
+            : undefined;
+          if (!arm) return null;
+
+          const agent = armClient.getAgent(agentId);
+          console.log(`[spawn] Reconciled timed-out spawn for ${id} on agent ${agentId}`);
+          return {
+            agentHost: agent?.hostname || row.host || hostname(),
+            response: {
+              requestId: `reconciled-${id}`,
+              success: true,
+              data: {
+                armId: arm.armId,
+                pid: arm.pid ?? -1,
+                port: arm.port,
+                sessionId: arm.sessionId,
+              },
+            } as Awaited<ReturnType<typeof armClient.spawnArm>>,
+          };
+        } catch {
+          return null;
+        }
+      };
+
       const shouldUseAgent = daemonManagedHarness || body.preferAgent || !!body.agentId;
 
       if (shouldUseAgent) {
@@ -2166,6 +2202,15 @@ export function createArmsRoutes() {
             return persistDistributedSpawn(agentId, agentHost, response);
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
+
+            const reconciled = await reconcileTimedOutSpawn(agentId, message);
+            if (reconciled) {
+              return persistDistributedSpawn(
+                agentId,
+                reconciled.agentHost,
+                reconciled.response,
+              );
+            }
 
             const retryableDistributedFailure =
               daemonManagedHarness && !(await isAgentReachable(agentId));

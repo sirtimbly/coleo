@@ -40,6 +40,31 @@ function createTestDb(): Database {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE task_passes (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_number INTEGER NOT NULL,
+      pass_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      ended_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE task_decisions (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      pass_id TEXT,
+      decision_type TEXT NOT NULL,
+      made_by TEXT NOT NULL,
+      made_by_type TEXT NOT NULL,
+      reason TEXT,
+      confidence REAL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE infrastructure_health (
       component TEXT PRIMARY KEY,
       healthy INTEGER NOT NULL,
@@ -190,5 +215,49 @@ describe("brain status API", () => {
 			detail: "The plan is missing deployment architecture",
 			nextStep: "Add deployment decisions to .project/plan.md.",
 		});
+	});
+
+	it("records a task decision and links it to the active pass", async () => {
+		db.run(
+			"INSERT INTO tasks (id, status, updated_at) VALUES (?, ?, ?)",
+			["task-1", "in_progress", new Date().toISOString()],
+		);
+		db.run(
+			`INSERT INTO task_passes (id, task_id, pass_number, pass_type, status, started_at, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			["pass-1", "task-1", 1, "implement", "active", new Date().toISOString(), new Date().toISOString(), new Date().toISOString()],
+		);
+
+		const response = await app.request("/api/brain/internal/record-task-decision", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				taskId: "task-1",
+				decisionType: "approve",
+				madeBy: "arm-1",
+				madeByType: "arm",
+				reason: "Looks good",
+				confidence: 0.95,
+			}),
+		});
+
+		expect(response.status).toBe(200);
+		const body = await response.json() as { success: boolean };
+		expect(body.success).toBe(true);
+
+		const decision = db.query("SELECT * FROM task_decisions WHERE task_id = ?").get("task-1") as {
+			decision_type: string;
+			made_by: string;
+			made_by_type: string;
+			pass_id: string | null;
+			reason: string | null;
+			confidence: number | null;
+		};
+		expect(decision.decision_type).toBe("approve");
+		expect(decision.made_by).toBe("arm-1");
+		expect(decision.made_by_type).toBe("arm");
+		expect(decision.pass_id).toBe("pass-1");
+		expect(decision.reason).toBe("Looks good");
+		expect(decision.confidence).toBe(0.95);
 	});
 });

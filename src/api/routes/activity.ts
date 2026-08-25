@@ -12,6 +12,7 @@ import { eventMatchesProject, eventStore, type EventData } from "../../nats/jets
 import { getNatsManager } from "../../nats/server";
 import { COMMAND_STREAM_NAME } from "../../nats/command-types";
 import { getProjectDurableName, getProjectScope } from "../../project-scope";
+import { getCommandQueueLatencyMetrics } from "../../db/state";
 import { broadcast } from "../websocket";
 
 interface ActivityContext {
@@ -150,6 +151,11 @@ interface QueueHealthResponse {
   updatedAt: string;
   message?: string;
   enabled?: boolean;
+  pendingCount: number | null;
+  processingCount: number | null;
+  oldestPendingAgeMs: number | null;
+  avgPendingAgeMs: number | null;
+  avgCompletedLatencyMs: number | null;
 }
 
 function buildQueueUnavailableHealth(
@@ -173,6 +179,11 @@ function buildQueueUnavailableHealth(
     staleThresholdMs,
     updatedAt: new Date().toISOString(),
     message,
+    pendingCount: null,
+    processingCount: null,
+    oldestPendingAgeMs: null,
+    avgPendingAgeMs: null,
+    avgCompletedLatencyMs: null,
     ...overrides,
   };
 }
@@ -198,8 +209,27 @@ function buildQueueErrorHealth(
     staleThresholdMs,
     updatedAt: new Date().toISOString(),
     message,
+    pendingCount: null,
+    processingCount: null,
+    oldestPendingAgeMs: null,
+    avgPendingAgeMs: null,
+    avgCompletedLatencyMs: null,
     ...overrides,
   };
+}
+
+function readQueueLatencyMetrics(db: Database, stream: string) {
+  try {
+    return getCommandQueueLatencyMetrics(db, stream, { completedLimit: 100 });
+  } catch {
+    return {
+      pendingCount: null as number | null,
+      processingCount: null as number | null,
+      oldestPendingAgeMs: null as number | null,
+      avgPendingAgeMs: null as number | null,
+      avgCompletedLatencyMs: null as number | null,
+    };
+  }
 }
 
 function parseLimit(raw: string | undefined, fallback: number, max: number): number {
@@ -746,6 +776,7 @@ export function createActivityRoutes() {
     }
 
     try {
+      const db = c.var.db;
       const jsm = await connection.jetstreamManager();
 
       const streamInfo = await jsm.streams.info(stream).catch(() => null);
@@ -774,6 +805,7 @@ export function createActivityRoutes() {
       const consumerSeq =
         typeof consumerInfo.delivered?.consumer_seq === "number" ? consumerInfo.delivered.consumer_seq : null;
       const lastActive = toIsoTimestamp(consumerInfo.delivered?.last_active || null);
+      const metrics = readQueueLatencyMetrics(db, stream);
 
       let status: QueueHealthResponse["status"] = "healthy";
       if ((lagMessages ?? 0) > 0 || (ackPending ?? 0) > 0) {
@@ -803,6 +835,7 @@ export function createActivityRoutes() {
         lastActive,
         staleThresholdMs,
         updatedAt: new Date().toISOString(),
+        ...metrics,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

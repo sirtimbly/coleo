@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
 	getViewerEventActivityId,
+	isViewerHeartbeatActivity,
 	upsertViewerActivity,
 	type ViewerActivityItem,
 } from "../src/pages/arm-viewer-activity";
@@ -49,5 +50,21 @@ describe("Arm Viewer activity history", () => {
 		const historical = { ...activity("tool-1", 10), status: "running" as const };
 
 		expect(upsertViewerActivity([live], historical, 200)).toEqual([live]);
+	});
+
+	it("identifies heartbeat activity without hiding other health events", () => {
+		expect(
+			isViewerHeartbeatActivity({
+				...activity("heartbeat", 1),
+				details: { eventType: "arm.heartbeat" },
+			}),
+		).toBe(true);
+		expect(
+			isViewerHeartbeatActivity({
+				...activity("health", 2),
+				title: "Infrastructure alert",
+				details: { eventType: "infrastructure_alert" },
+			}),
+		).toBe(false);
 	});
 });

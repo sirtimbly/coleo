@@ -125,6 +125,12 @@ export interface DashboardActivityEntry {
   details: Record<string, unknown>;
 }
 
+export function isDashboardHeartbeatActivity(entry: DashboardActivityEntry): boolean {
+  const eventType = typeof entry.details.eventType === "string" ? entry.details.eventType : "";
+  return entry.action.toLowerCase().includes("heartbeat")
+    || eventType.toLowerCase().includes("heartbeat");
+}
+
 export interface DashboardDiscovery {
   id: string;
   armId: string;
@@ -355,7 +361,9 @@ export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
 
     arms = armsResponse?.arms || [];
     systemStatus = systemStatusResponse;
-    recentActivity = activityResponse?.activity || [];
+    recentActivity = (activityResponse?.activity || []).filter(
+      (entry) => !isDashboardHeartbeatActivity(entry),
+    );
     discoveries = discoveriesResponse?.discoveries || [];
     statusReports = statusReportsResponse?.reports || [];
     indexerHealth = indexerHealthResponse;
@@ -404,7 +412,9 @@ export async function fetchArmDetail(armId: string): Promise<DashboardArmDetail 
     messages: messagesResponse?.messages || [],
     messagesError: messagesResponse?.error,
     sessionId: messagesResponse?.sessionId,
-    activity: activityResponse?.activity || [],
+    activity: (activityResponse?.activity || []).filter(
+      (entry) => !isDashboardHeartbeatActivity(entry),
+    ),
     activityMessage: activityResponse?.message,
   };
 }
