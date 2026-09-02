@@ -272,6 +272,29 @@ describe("bugs API", () => {
       expect(body.bugs[0]?.title).toBe("Second Bug");
     });
 
+    it("should preserve commas inside tag filter values", async () => {
+      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["release,2026"] } }),
+        "bug-1",
+      ]);
+      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["release"] } }),
+        "bug-2",
+      ]);
+      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["2026"] } }),
+        "bug-3",
+      ]);
+      const query = new URLSearchParams();
+      query.append("tags", "release,2026");
+
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[] };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
+    });
+
     it("should search the database and report matches hidden by view filters", async () => {
       const query = new URLSearchParams({
         search: "description",
