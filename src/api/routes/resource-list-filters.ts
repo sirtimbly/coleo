@@ -22,6 +22,10 @@ export interface ResourceListFilterSql {
 	params: Array<string | number>;
 }
 
+export type ResourceListFilterReaders<T> = Readonly<
+	Record<string, (resource: T) => unknown>
+>;
+
 export function parseResourceListFilters(value: string | undefined): ResourceListFilter[] {
 	if (!value) return [];
 	let parsed: unknown;
@@ -57,6 +61,75 @@ function expectedValues(value: unknown): string[] {
 	return Array.isArray(value)
 		? value.map(comparableValue)
 		: comparableValue(value).split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function hasNonAsciiValue(value: unknown): boolean {
+	return /[^\x00-\x7f]/.test(
+		typeof value === "object" && value !== null
+			? JSON.stringify(value)
+			: String(value ?? ""),
+	);
+}
+
+/**
+ * SQLite's built-in lower() only guarantees ASCII case folding. Keep the
+ * indexed/common SQL path for ASCII input, but route filters containing
+ * non-ASCII text through the equivalent JavaScript matcher.
+ */
+export function needsUnicodeResourceListFallback(
+	search: string | undefined,
+	filters: readonly ResourceListFilter[],
+): boolean {
+	return hasNonAsciiValue(search) || filters.some((filter) =>
+		filter.operator !== "before" &&
+		filter.operator !== "after" &&
+		filter.operator !== "exists" &&
+		hasNonAsciiValue(filter.value)
+	);
+}
+
+export function matchesResourceSearch(
+	search: string,
+	values: readonly unknown[],
+): boolean {
+	const expected = comparableValue(search);
+	return values.some((value) => comparableValue(value).includes(expected));
+}
+
+export function matchesResourceListFilters<T>(
+	resource: T,
+	filters: readonly ResourceListFilter[],
+	readers: ResourceListFilterReaders<T>,
+): boolean {
+	return filters.every((filter) => {
+		const read = readers[filter.field];
+		if (!read) return true;
+		const rawValue = read(resource);
+		const actual = comparableValue(rawValue);
+		const expected = comparableValue(filter.value);
+		const values = expectedValues(filter.value);
+
+		switch (filter.operator) {
+			case "equals":
+				return actual === expected;
+			case "notEquals":
+				return actual !== expected;
+			case "contains":
+				return actual.includes(expected);
+			case "in":
+				return values.includes(actual);
+			case "notIn":
+				return !values.includes(actual);
+			case "before":
+				return new Date(actual).getTime() < new Date(expected).getTime();
+			case "after":
+				return new Date(actual).getTime() > new Date(expected).getTime();
+			case "exists":
+				return rawValue !== null && rawValue !== undefined && actual.length > 0;
+			default:
+				return true;
+		}
+	});
 }
 
 export function compileResourceListFilters(

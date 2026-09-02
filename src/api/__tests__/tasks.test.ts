@@ -548,6 +548,57 @@ describe("tasks API", () => {
       expect(body.searchMatches).toEqual({ total: 3, filtered: 1, hidden: 2 });
     });
 
+    it("should not report endpoint filters as hidden search matches", async () => {
+      db.run("INSERT INTO arms (id, name) VALUES (?, ?)", ["arm-1", "Arm One"]);
+      db.run(`
+        UPDATE tasks
+        SET domain = 'backend', phase = 'delivery', assigned_to = 'arm-1'
+        WHERE id = 'task-1'
+      `);
+      const query = new URLSearchParams({
+        search: "description",
+        status: "pending",
+        priority: "normal",
+        domain: "backend",
+        assignedTo: "arm-1",
+        phase: "delivery",
+        sourceType: "manual",
+      });
+      const response = await app.request(`/api/tasks?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        tasks: Task[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.tasks.map((task) => task.id)).toEqual(["task-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
+    });
+
+    it("should case-fold non-ASCII search and saved view filters", async () => {
+      db.run("UPDATE tasks SET subject = ? WHERE id = ?", ["Plan the ÉCOLE launch", "task-3"]);
+      const query = new URLSearchParams({
+        search: "école",
+        limit: "1",
+        viewFilters: JSON.stringify([
+          { field: "subject", operator: "contains", value: "école" },
+        ]),
+      });
+      const response = await app.request(`/api/tasks?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        tasks: Task[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.tasks.map((task) => task.id)).toEqual(["task-3"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
+    });
+
     it("should search beyond the first limited row", async () => {
       const response = await app.request("/api/tasks?search=third&limit=1");
       expect(response.status).toBe(200);
@@ -861,6 +912,24 @@ describe("tasks API", () => {
       expect(response.status).toBe(400);
       const body = await response.json() as { error: string };
       expect(body.error).toContain("ASCII alphanumeric");
+    });
+
+    it("should preserve legacy tags during unrelated metadata updates", async () => {
+      const metadata = { ui: { tags: ["release-2026"], color: "red" } };
+      db.run("UPDATE tasks SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["release-2026"], color: "slate" } }),
+        "task-123",
+      ]);
+
+      const response = await app.request("/api/tasks/task-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata }),
+      });
+
+      expect(response.status).toBe(200);
+      const body = await response.json() as { task: Task };
+      expect(body.task.metadata).toEqual(metadata);
     });
 
     it("should return 404 for non-existent task", async () => {

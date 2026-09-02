@@ -9,6 +9,9 @@ import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
 import {
   compileResourceListFilters,
+  matchesResourceListFilters,
+  matchesResourceSearch,
+  needsUnicodeResourceListFallback,
   parseResourceListFilters,
 } from "./resource-list-filters";
 import { assertValidResourceMetadataTags } from "./resource-metadata";
@@ -335,15 +338,39 @@ export function createBugsRoutes() {
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
     const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
 
-    const baseConditions: string[] = [];
-    const baseParams: (string | number)[] = [];
+    const scopeConditions: string[] = [];
+    const scopeParams: (string | number)[] = [];
     if (archived === "true") {
-      baseConditions.push("b.archived = 1");
+      scopeConditions.push("b.archived = 1");
     } else if (archived === "false" || archived === undefined) {
-      baseConditions.push("b.archived = 0");
+      scopeConditions.push("b.archived = 0");
     }
-    const baselineConditions = [...baseConditions];
-    const baselineParams = [...baseParams];
+    if (source) {
+      scopeConditions.push("b.source = ?");
+      scopeParams.push(source);
+    }
+    if (status) {
+      const statuses = status.split(",").map((value) => value.trim()).filter(Boolean);
+      scopeConditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
+      scopeParams.push(...statuses);
+    }
+    if (priority) {
+      scopeConditions.push("b.priority = ?");
+      scopeParams.push(priority);
+    }
+    if (assignee) {
+      scopeConditions.push("b.assignee_arm_id = ?");
+      scopeParams.push(assignee);
+    }
+    if (tags.length > 0) {
+      scopeConditions.push(`EXISTS (
+        SELECT 1 FROM json_each(coalesce(json_extract(b.metadata, '$.ui.tags'), '[]'))
+        WHERE lower(cast(json_each.value AS text)) IN (${tags.map(() => "?").join(",")})
+      )`);
+      scopeParams.push(...tags);
+    }
+    const baselineConditions = [...scopeConditions];
+    const baselineParams = [...scopeParams];
     if (search) {
       const normalizedSearch = search.toLocaleLowerCase();
       baselineConditions.push(`(
@@ -351,30 +378,6 @@ export function createBugsRoutes() {
         instr(lower(coalesce(b.description, '')), ?) > 0
       )`);
       baselineParams.push(normalizedSearch, normalizedSearch);
-    }
-    if (source) {
-      baselineConditions.push("b.source = ?");
-      baselineParams.push(source);
-    }
-    if (status) {
-      const statuses = status.split(",").map((value) => value.trim()).filter(Boolean);
-      baselineConditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
-      baselineParams.push(...statuses);
-    }
-    if (priority) {
-      baselineConditions.push("b.priority = ?");
-      baselineParams.push(priority);
-    }
-    if (assignee) {
-      baselineConditions.push("b.assignee_arm_id = ?");
-      baselineParams.push(assignee);
-    }
-    if (tags.length > 0) {
-      baselineConditions.push(`EXISTS (
-        SELECT 1 FROM json_each(coalesce(json_extract(b.metadata, '$.ui.tags'), '[]'))
-        WHERE lower(cast(json_each.value AS text)) IN (${tags.map(() => "?").join(",")})
-      )`);
-      baselineParams.push(...tags);
     }
     const conditions = [...baselineConditions];
     const params = [...baselineParams];
@@ -390,7 +393,12 @@ export function createBugsRoutes() {
     });
     conditions.push(...compiledViewFilters.conditions);
     params.push(...compiledViewFilters.params);
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const useUnicodeFallback = needsUnicodeResourceListFallback(search, viewFilters);
+    const queryConditions = useUnicodeFallback ? scopeConditions : conditions;
+    const queryParams = useUnicodeFallback ? scopeParams : params;
+    const whereClause = queryConditions.length > 0
+      ? `WHERE ${queryConditions.join(" AND ")}`
+      : "";
     const baselineWhereClause = baselineConditions.length > 0
       ? `WHERE ${baselineConditions.join(" AND ")}`
       : "";
@@ -402,29 +410,60 @@ export function createBugsRoutes() {
       LEFT JOIN arms a ON b.assignee_arm_id = a.id
       ${whereClause}
       ORDER BY b.sort_order ASC, b.created_at DESC
-      LIMIT ? OFFSET ?
+      ${useUnicodeFallback ? "" : "LIMIT ? OFFSET ?"}
     `;
 
     try {
       const stmt = db.query(query);
-      const rows = stmt.all(...params, limit, offset);
+      const rows = stmt.all(
+        ...queryParams,
+        ...(useUnicodeFallback ? [] : [limit, offset]),
+      );
       const typedRows = rows as (BugRow & { assignee_arm_name?: string })[];
 
-      const bugs: Bug[] = typedRows.map(parseBugRow);
-      const filteredTotal = (db.query(`
-        SELECT COUNT(*) as count
-        FROM bugs b
-        LEFT JOIN arms a ON b.assignee_arm_id = a.id
-        ${whereClause}
-      `).get(...params) as { count: number }).count;
-      const searchTotal = search
-        ? (db.query(`
+      let bugs: Bug[] = typedRows.map(parseBugRow);
+      let filteredTotal: number;
+      let searchTotal: number;
+      if (useUnicodeFallback) {
+        const searchedBugs = search
+          ? bugs.filter((bug) => matchesResourceSearch(search, [bug.title, bug.description]))
+          : bugs;
+        searchTotal = searchedBugs.length;
+        const filteredBugs = searchedBugs.filter((bug) =>
+          matchesResourceListFilters(bug, viewFilters, {
+            title: (resource) => resource.title,
+            status: (resource) => resource.status,
+            priority: (resource) => resource.priority,
+            source: (resource) => resource.source,
+            tags: (resource) => {
+              const ui = resource.metadata?.ui;
+              return typeof ui === "object" && ui !== null && !Array.isArray(ui)
+                ? (ui as Record<string, unknown>).tags
+                : undefined;
+            },
+            assignee: (resource) => resource.assigneeArmName ?? resource.assigneeArmId,
+            createdAt: (resource) => resource.createdAt,
+            updatedAt: (resource) => resource.updatedAt,
+          })
+        );
+        filteredTotal = filteredBugs.length;
+        bugs = filteredBugs.slice(offset, offset + limit);
+      } else {
+        filteredTotal = (db.query(`
           SELECT COUNT(*) as count
           FROM bugs b
           LEFT JOIN arms a ON b.assignee_arm_id = a.id
-          ${baselineWhereClause}
-        `).get(...baselineParams) as { count: number }).count
-        : filteredTotal;
+          ${whereClause}
+        `).get(...params) as { count: number }).count;
+        searchTotal = search
+          ? (db.query(`
+            SELECT COUNT(*) as count
+            FROM bugs b
+            LEFT JOIN arms a ON b.assignee_arm_id = a.id
+            ${baselineWhereClause}
+          `).get(...baselineParams) as { count: number }).count
+          : filteredTotal;
+      }
       return c.json({
         bugs,
         pagination: { limit, offset, total: filteredTotal },
@@ -620,6 +659,12 @@ export function createBugsRoutes() {
 
     const validStatuses = ["open", "investigating", "fixing", "verifying", "resolved", "closed"];
     const validPriorities = ["low", "medium", "high", "critical"];
+    const existing = db.query("SELECT metadata FROM bugs WHERE id = ?").get(id) as {
+      metadata: string | null;
+    } | null;
+    if (!existing) {
+      throw HttpError.notFound("Bug not found");
+    }
 
     if (body.status && !validStatuses.includes(body.status)) {
       throw HttpError.badRequest("Invalid status");
@@ -628,7 +673,7 @@ export function createBugsRoutes() {
     if (body.priority && !validPriorities.includes(body.priority)) {
       throw HttpError.badRequest("Invalid priority");
     }
-    assertValidResourceMetadataTags(body.metadata);
+    assertValidResourceMetadataTags(body.metadata, existing.metadata);
 
     const updates: string[] = [];
     const params: (string | number | null)[] = [];

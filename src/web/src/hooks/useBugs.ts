@@ -71,6 +71,7 @@ export function useBugs(filters?: BugFilters) {
       offset: pageParam,
     }, signal),
     getNextPageParam: (lastPage) => {
+      if (!lastPage?.pagination) return undefined;
       const { offset, limit, total } = lastPage.pagination;
       const nextOffset = offset + limit;
       return nextOffset < total ? nextOffset : undefined;

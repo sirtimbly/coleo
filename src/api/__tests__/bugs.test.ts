@@ -345,6 +345,28 @@ describe("bugs API", () => {
       expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-3"]);
       expect(body.pagination.total).toBe(1);
     });
+
+    it("should case-fold non-ASCII search and saved view filters", async () => {
+      db.run("UPDATE bugs SET title = ? WHERE id = ?", ["Repair the ÉCOLE workflow", "bug-3"]);
+      const query = new URLSearchParams({
+        search: "école",
+        limit: "1",
+        viewFilters: JSON.stringify([
+          { field: "title", operator: "contains", value: "école" },
+        ]),
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-3"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
+    });
   });
 
   describe("GET /api/bugs/stats", () => {
@@ -517,6 +539,25 @@ describe("bugs API", () => {
       expect(response.status).toBe(400);
       const body = await response.json() as { error: string };
       expect(body.error).toContain("ASCII alphanumeric");
+    });
+
+    it("should preserve legacy tags during unrelated metadata updates", async () => {
+      const metadata = { ui: { tags: ["release-2026"], color: "red" } };
+      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["release-2026"], color: "slate" } }),
+        "bug-123",
+      ]);
+
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata }),
+      });
+
+      expect(response.status).toBe(200);
+      const getResponse = await app.request("/api/bugs/bug-123");
+      const body = await getResponse.json() as { bug: Bug };
+      expect(body.bug.metadata).toEqual(metadata);
     });
 
     it("should return 404 for non-existent bug", async () => {

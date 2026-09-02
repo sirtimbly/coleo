@@ -563,6 +563,11 @@ test("creates and selects a tag from the multiselect search", async ({ page }) =
 	const editor = page.locator(".coleo-tabulator-multiselect-editor");
 	await expect(editor).toBeVisible();
 	const search = editor.getByRole("searchbox", { name: "Search options" });
+	await search.fill("release-2026");
+	await expect(
+		editor.getByRole("button", { name: "Use ASCII letters and numbers only" }),
+	).toBeDisabled();
+
 	await search.fill("performance");
 	const addButton = editor.getByRole("button", {
 		name: 'Add "performance" as a tag',
