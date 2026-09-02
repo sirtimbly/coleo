@@ -341,42 +341,42 @@ export function createBugsRoutes() {
     } else if (archived === "false" || archived === undefined) {
       baseConditions.push("b.archived = 0");
     }
-    const searchConditions = [...baseConditions];
-    const searchParams = [...baseParams];
+    const baselineConditions = [...baseConditions];
+    const baselineParams = [...baseParams];
     if (search) {
       const normalizedSearch = search.toLocaleLowerCase();
-      searchConditions.push(`(
+      baselineConditions.push(`(
         instr(lower(coalesce(b.title, '')), ?) > 0 OR
         instr(lower(coalesce(b.description, '')), ?) > 0
       )`);
-      searchParams.push(normalizedSearch, normalizedSearch);
+      baselineParams.push(normalizedSearch, normalizedSearch);
     }
-    const conditions = [...searchConditions];
-    const params = [...searchParams];
     if (source) {
-      conditions.push("b.source = ?");
-      params.push(source);
+      baselineConditions.push("b.source = ?");
+      baselineParams.push(source);
     }
     if (status) {
       const statuses = status.split(",").map((value) => value.trim()).filter(Boolean);
-      conditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
-      params.push(...statuses);
+      baselineConditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
+      baselineParams.push(...statuses);
     }
     if (priority) {
-      conditions.push("b.priority = ?");
-      params.push(priority);
+      baselineConditions.push("b.priority = ?");
+      baselineParams.push(priority);
     }
     if (assignee) {
-      conditions.push("b.assignee_arm_id = ?");
-      params.push(assignee);
+      baselineConditions.push("b.assignee_arm_id = ?");
+      baselineParams.push(assignee);
     }
     if (tags.length > 0) {
-      conditions.push(`EXISTS (
+      baselineConditions.push(`EXISTS (
         SELECT 1 FROM json_each(coalesce(json_extract(b.metadata, '$.ui.tags'), '[]'))
         WHERE lower(cast(json_each.value AS text)) IN (${tags.map(() => "?").join(",")})
       )`);
-      params.push(...tags);
+      baselineParams.push(...tags);
     }
+    const conditions = [...baselineConditions];
+    const params = [...baselineParams];
     const compiledViewFilters = compileResourceListFilters(viewFilters, {
       title: "b.title",
       status: "b.status",
@@ -390,7 +390,9 @@ export function createBugsRoutes() {
     conditions.push(...compiledViewFilters.conditions);
     params.push(...compiledViewFilters.params);
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-    const searchWhereClause = searchConditions.length > 0 ? `WHERE ${searchConditions.join(" AND ")}` : "";
+    const baselineWhereClause = baselineConditions.length > 0
+      ? `WHERE ${baselineConditions.join(" AND ")}`
+      : "";
     const query = `
       SELECT
         b.*,
@@ -415,7 +417,12 @@ export function createBugsRoutes() {
         ${whereClause}
       `).get(...params) as { count: number }).count;
       const searchTotal = search
-        ? (db.query(`SELECT COUNT(*) as count FROM bugs b ${searchWhereClause}`).get(...searchParams) as { count: number }).count
+        ? (db.query(`
+          SELECT COUNT(*) as count
+          FROM bugs b
+          LEFT JOIN arms a ON b.assignee_arm_id = a.id
+          ${baselineWhereClause}
+        `).get(...baselineParams) as { count: number }).count
         : filteredTotal;
       return c.json({
         bugs,

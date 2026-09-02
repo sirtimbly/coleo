@@ -292,6 +292,34 @@ describe("bugs API", () => {
       expect(body.searchMatches).toEqual({ total: 3, filtered: 1, hidden: 2 });
     });
 
+    it("should not report non-view filters as hidden search matches", async () => {
+      db.run("INSERT INTO arms (id, name) VALUES (?, ?)", ["arm-1", "Arm One"]);
+      db.run("UPDATE bugs SET assignee_arm_id = ?, metadata = ? WHERE id = ?", [
+        "arm-1",
+        JSON.stringify({ ui: { tags: ["backend"] } }),
+        "bug-1",
+      ]);
+      const query = new URLSearchParams({
+        search: "description",
+        tags: "backend",
+        source: "human_reported",
+        status: "open",
+        priority: "high",
+        assignee: "arm-1",
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
+    });
+
     it("should search beyond the first limited row", async () => {
       const response = await app.request("/api/bugs?search=third&limit=1");
       expect(response.status).toBe(200);
