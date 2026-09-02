@@ -11,6 +11,7 @@ import {
   compileResourceListFilters,
   parseResourceListFilters,
 } from "./resource-list-filters";
+import { assertValidResourceMetadataTags } from "./resource-metadata";
 
 export interface Bug {
   id: string;
@@ -327,8 +328,8 @@ export function createBugsRoutes() {
     const assignee = c.req.query("assignee");
     const archived = c.req.query("archived");
     const search = c.req.query("search")?.trim();
-    const tags = c.req.queries("tags")
-      ?.map((tag) => tag.trim().toLocaleLowerCase())
+    const tags = c.req.query("tags")?.split(",")
+      .map((tag) => tag.trim().toLocaleLowerCase())
       .filter(Boolean) ?? [];
     const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
     const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
@@ -536,6 +537,7 @@ export function createBugsRoutes() {
     if (!validPriorities.includes(priority)) {
       throw HttpError.badRequest("Invalid priority");
     }
+    assertValidResourceMetadataTags(body.metadata);
 
     const existingBug = findSimilarActiveBug(db, {
       title: body.title,
@@ -626,6 +628,7 @@ export function createBugsRoutes() {
     if (body.priority && !validPriorities.includes(body.priority)) {
       throw HttpError.badRequest("Invalid priority");
     }
+    assertValidResourceMetadataTags(body.metadata);
 
     const updates: string[] = [];
     const params: (string | number | null)[] = [];

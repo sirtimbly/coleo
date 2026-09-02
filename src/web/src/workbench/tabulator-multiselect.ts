@@ -17,6 +17,7 @@ export interface CreatableMultiSelectConfig {
 	options?: readonly string[];
 	optionLabel?: string;
 	allowCreate?: boolean;
+	validateCreate?: (value: string) => string | undefined;
 }
 
 function stringValues(value: unknown): string[] {
@@ -151,16 +152,21 @@ export function createTabulatorMultiSelectEditor(
 			const existing = normalizedMatch(query);
 			const value = existing ?? query;
 			const isSelected = value ? selected.has(value) : false;
+			const validationError = existing ? undefined : config.validateCreate?.(query);
 			createButton.hidden = config.allowCreate === false;
-			createButton.disabled = query.length === 0 || isSelected;
-			createButton.textContent = isSelected
+			createButton.disabled = query.length === 0 || isSelected || validationError !== undefined;
+			createButton.textContent = validationError
+				? validationError
+				: isSelected
 				? "Selected"
 				: existing
 					? `Select ${label}`
 					: `Add ${label}`;
 			createButton.setAttribute(
 				"aria-label",
-				isSelected
+				validationError
+					? validationError
+					: isSelected
 					? `${label} "${value}" is already selected`
 					: existing
 						? `Select existing ${label} "${value}"`
@@ -173,6 +179,7 @@ export function createTabulatorMultiSelectEditor(
 			const query = search.value.trim();
 			if (!query) return;
 			const existing = normalizedMatch(query);
+			if (!existing && config.validateCreate?.(query)) return;
 			const value = existing ?? query;
 			options.add(value);
 			selected.add(value);

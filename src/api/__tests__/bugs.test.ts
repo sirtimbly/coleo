@@ -190,6 +190,23 @@ describe("bugs API", () => {
       expect(getBody.bug.metadata).toEqual(metadata);
     });
 
+    it("should reject non-alphanumeric metadata tags", async () => {
+      const response = await app.request("/api/bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Invalid Metadata Bug",
+          description: "Bug with an invalid tag",
+          source: "human_reported",
+          metadata: { ui: { tags: ["release,2026"] } },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
+    });
+
     it("should deduplicate similar bug titles using FTS candidates", async () => {
       const first = await app.request("/api/bugs", {
         method: "POST",
@@ -270,29 +287,6 @@ describe("bugs API", () => {
       const body = await response.json() as { bugs: Bug[] };
       expect(body.bugs).toHaveLength(1);
       expect(body.bugs[0]?.title).toBe("Second Bug");
-    });
-
-    it("should preserve commas inside tag filter values", async () => {
-      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
-        JSON.stringify({ ui: { tags: ["release,2026"] } }),
-        "bug-1",
-      ]);
-      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
-        JSON.stringify({ ui: { tags: ["release"] } }),
-        "bug-2",
-      ]);
-      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
-        JSON.stringify({ ui: { tags: ["2026"] } }),
-        "bug-3",
-      ]);
-      const query = new URLSearchParams();
-      query.append("tags", "release,2026");
-
-      const response = await app.request(`/api/bugs?${query}`);
-      expect(response.status).toBe(200);
-
-      const body = await response.json() as { bugs: Bug[] };
-      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
     });
 
     it("should search the database and report matches hidden by view filters", async () => {
@@ -511,6 +505,18 @@ describe("bugs API", () => {
       expect(getResponse.status).toBe(200);
       const getBody = await getResponse.json() as { bug: Bug };
       expect(getBody.bug.metadata).toEqual({ ui: { tags: ["urgent"] } });
+    });
+
+    it("should reject metadata updates with non-alphanumeric tags", async () => {
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: { ui: { tags: ["release-2026"] } } }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
     });
 
     it("should return 404 for non-existent bug", async () => {

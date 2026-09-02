@@ -867,7 +867,7 @@ class ApiClient {
     if (params?.priority) query.set('priority', params.priority);
     if (params?.assignee) query.set('assignee', params.assignee);
     if (params?.search) query.set('search', params.search);
-    params?.tags?.forEach((tag) => query.append('tags', tag));
+    if (params?.tags?.length) query.set('tags', params.tags.join(','));
     if (params?.viewFilters?.length) query.set('viewFilters', JSON.stringify(params.viewFilters));
     if (params?.limit) query.set('limit', params.limit.toString());
     if (params?.offset) query.set('offset', params.offset.toString());

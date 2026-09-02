@@ -16,6 +16,7 @@ import {
 	compileResourceListFilters,
 	parseResourceListFilters,
 } from "./resource-list-filters";
+import { assertValidResourceMetadataTags } from "./resource-metadata";
 
 interface ChecklistItem {
 	id: number;
@@ -1034,6 +1035,7 @@ export function createTasksRoutes() {
 				`blockedCategory must be one of: ${BLOCKED_CATEGORIES.join(", ")}`,
 			);
 		}
+		assertValidResourceMetadataTags(body.metadata);
 
 		const initialStatus = body.status || "pending";
 		const blockedReason = body.blockedReason?.trim() || null;
@@ -1265,6 +1267,7 @@ export function createTasksRoutes() {
 		) {
 			throw HttpError.badRequest("blockedReviewCount must be a non-negative integer");
 		}
+		assertValidResourceMetadataTags(body.metadata);
 
 		const updates: string[] = [];
 		const values: unknown[] = [];

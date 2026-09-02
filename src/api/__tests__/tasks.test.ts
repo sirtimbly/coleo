@@ -372,6 +372,22 @@ describe("tasks API", () => {
       expect(body.task.metadata).toEqual(metadata);
     });
 
+    it("should reject non-alphanumeric metadata tags", async () => {
+      const response = await app.request("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subject: "Invalid Metadata Task",
+          description: "Task with an invalid tag",
+          metadata: { ui: { tags: ["release 2026"] } },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
+    });
+
     it("should set timestamps on creation", async () => {
       const before = new Date().toISOString();
       
@@ -833,6 +849,18 @@ describe("tasks API", () => {
       expect(response.status).toBe(200);
       const body = await response.json() as { task: Task };
       expect(body.task.metadata).toEqual({ ui: { tags: ["bug"] } });
+    });
+
+    it("should reject metadata updates with non-alphanumeric tags", async () => {
+      const response = await app.request("/api/tasks/task-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: { ui: { tags: ["café"] } } }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
     });
 
     it("should return 404 for non-existent task", async () => {

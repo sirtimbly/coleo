@@ -34,6 +34,7 @@ export interface ResourceSheetColumn<T> {
 	type?: "text" | "numeric" | "checkbox" | "date" | "dropdown" | "multiselect";
 	options?: string[];
 	allowCreateOptions?: boolean;
+	createOptionValidator?: (value: string) => string | undefined;
 	optionLabel?: string;
 	statusEntity?: StatusSeriesEntity;
 	readOnly?: boolean;
@@ -143,6 +144,7 @@ function columnEditor<T>(column: ResourceSheetColumn<T>): ColumnDefinition["edit
 				options: column.options,
 				optionLabel: column.optionLabel,
 				allowCreate: column.allowCreateOptions,
+				validateCreate: column.createOptionValidator,
 			});
 		default:
 			return "input";
@@ -188,6 +190,7 @@ export function resourceColumnConfigurationKey<T>(
 		readOnly: column.readOnly,
 		width: columnPreferences?.find((item) => item.id === column.id)?.width ?? column.width,
 		options: column.options,
+		hasCreateOptionValidator: column.createOptionValidator !== undefined,
 		openRowAction: column.openRowAction,
 	})));
 }
