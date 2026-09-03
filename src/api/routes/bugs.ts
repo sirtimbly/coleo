@@ -7,6 +7,14 @@ import { Hono } from "hono";
 import type { Database } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast } from "../websocket";
+import {
+  compileResourceListFilters,
+  matchesResourceListFilters,
+  matchesResourceSearch,
+  needsUnicodeResourceListFallback,
+  parseResourceListFilters,
+} from "./resource-list-filters";
+import { assertValidResourceMetadataTags } from "./resource-metadata";
 
 export interface Bug {
   id: string;
@@ -322,57 +330,151 @@ export function createBugsRoutes() {
     const priority = c.req.query("priority");
     const assignee = c.req.query("assignee");
     const archived = c.req.query("archived");
-    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 100);
+    const search = c.req.query("search")?.trim();
+    const tags = c.req.query("tags")?.split(",")
+      .map((tag) => tag.trim().toLocaleLowerCase())
+      .filter(Boolean) ?? [];
+    const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
+    const limit = Math.min(parseInt(c.req.query("limit") || "50", 10), 500);
+    const offset = Math.max(0, parseInt(c.req.query("offset") || "0", 10));
 
-    let query = `
+    const scopeConditions: string[] = [];
+    const scopeParams: (string | number)[] = [];
+    if (archived === "true") {
+      scopeConditions.push("b.archived = 1");
+    } else if (archived === "false" || archived === undefined) {
+      scopeConditions.push("b.archived = 0");
+    }
+    if (source) {
+      scopeConditions.push("b.source = ?");
+      scopeParams.push(source);
+    }
+    if (status) {
+      const statuses = status.split(",").map((value) => value.trim()).filter(Boolean);
+      scopeConditions.push(`b.status IN (${statuses.map(() => "?").join(",")})`);
+      scopeParams.push(...statuses);
+    }
+    if (priority) {
+      scopeConditions.push("b.priority = ?");
+      scopeParams.push(priority);
+    }
+    if (assignee) {
+      scopeConditions.push("b.assignee_arm_id = ?");
+      scopeParams.push(assignee);
+    }
+    if (tags.length > 0) {
+      scopeConditions.push(`EXISTS (
+        SELECT 1 FROM json_each(coalesce(json_extract(b.metadata, '$.ui.tags'), '[]'))
+        WHERE lower(cast(json_each.value AS text)) IN (${tags.map(() => "?").join(",")})
+      )`);
+      scopeParams.push(...tags);
+    }
+    const baselineConditions = [...scopeConditions];
+    const baselineParams = [...scopeParams];
+    if (search) {
+      const normalizedSearch = search.toLocaleLowerCase();
+      baselineConditions.push(`(
+        instr(lower(coalesce(b.title, '')), ?) > 0 OR
+        instr(lower(coalesce(b.description, '')), ?) > 0
+      )`);
+      baselineParams.push(normalizedSearch, normalizedSearch);
+    }
+    const conditions = [...baselineConditions];
+    const params = [...baselineParams];
+    const compiledViewFilters = compileResourceListFilters(viewFilters, {
+      title: "b.title",
+      status: "b.status",
+      priority: "b.priority",
+      source: "b.source",
+      tags: "json_extract(b.metadata, '$.ui.tags')",
+      assignee: "coalesce(a.name, b.assignee_arm_id)",
+      createdAt: "b.created_at",
+      updatedAt: "b.updated_at",
+    });
+    conditions.push(...compiledViewFilters.conditions);
+    params.push(...compiledViewFilters.params);
+    const useUnicodeFallback = needsUnicodeResourceListFallback(search, viewFilters);
+    const queryConditions = useUnicodeFallback ? scopeConditions : conditions;
+    const queryParams = useUnicodeFallback ? scopeParams : params;
+    const whereClause = queryConditions.length > 0
+      ? `WHERE ${queryConditions.join(" AND ")}`
+      : "";
+    const baselineWhereClause = baselineConditions.length > 0
+      ? `WHERE ${baselineConditions.join(" AND ")}`
+      : "";
+    const query = `
       SELECT
         b.*,
         a.name as assignee_arm_name
       FROM bugs b
       LEFT JOIN arms a ON b.assignee_arm_id = a.id
-      WHERE 1=1
+      ${whereClause}
+      ORDER BY b.sort_order ASC, b.created_at DESC
+      ${useUnicodeFallback ? "" : "LIMIT ? OFFSET ?"}
     `;
-
-    const params: (string | number)[] = [];
-
-    if (source) {
-      query += " AND b.source = ?";
-      params.push(source);
-    }
-
-    if (status) {
-      query += " AND b.status = ?";
-      params.push(status);
-    }
-
-    if (priority) {
-      query += " AND b.priority = ?";
-      params.push(priority);
-    }
-
-    if (assignee) {
-      query += " AND b.assignee_arm_id = ?";
-      params.push(assignee);
-    }
-
-    // Filter by archived status (default: show only non-archived)
-    if (archived === "true") {
-      query += " AND b.archived = 1";
-    } else if (archived === "false" || archived === undefined) {
-      query += " AND b.archived = 0";
-    }
-
-    query += " ORDER BY b.sort_order ASC, b.created_at DESC LIMIT ?";
-    params.push(limit);
 
     try {
       const stmt = db.query(query);
-      const rows = params.length > 0 ? stmt.all(...params) : stmt.all();
+      const rows = stmt.all(
+        ...queryParams,
+        ...(useUnicodeFallback ? [] : [limit, offset]),
+      );
       const typedRows = rows as (BugRow & { assignee_arm_name?: string })[];
 
-      const bugs: Bug[] = typedRows.map(parseBugRow);
-
-      return c.json({ bugs });
+      let bugs: Bug[] = typedRows.map(parseBugRow);
+      let filteredTotal: number;
+      let searchTotal: number;
+      if (useUnicodeFallback) {
+        const searchedBugs = search
+          ? bugs.filter((bug) => matchesResourceSearch(search, [bug.title, bug.description]))
+          : bugs;
+        searchTotal = searchedBugs.length;
+        const filteredBugs = searchedBugs.filter((bug) =>
+          matchesResourceListFilters(bug, viewFilters, {
+            title: (resource) => resource.title,
+            status: (resource) => resource.status,
+            priority: (resource) => resource.priority,
+            source: (resource) => resource.source,
+            tags: (resource) => {
+              const ui = resource.metadata?.ui;
+              return typeof ui === "object" && ui !== null && !Array.isArray(ui)
+                ? (ui as Record<string, unknown>).tags
+                : undefined;
+            },
+            assignee: (resource) => resource.assigneeArmName ?? resource.assigneeArmId,
+            createdAt: (resource) => resource.createdAt,
+            updatedAt: (resource) => resource.updatedAt,
+          })
+        );
+        filteredTotal = filteredBugs.length;
+        bugs = filteredBugs.slice(offset, offset + limit);
+      } else {
+        filteredTotal = (db.query(`
+          SELECT COUNT(*) as count
+          FROM bugs b
+          LEFT JOIN arms a ON b.assignee_arm_id = a.id
+          ${whereClause}
+        `).get(...params) as { count: number }).count;
+        searchTotal = search
+          ? (db.query(`
+            SELECT COUNT(*) as count
+            FROM bugs b
+            LEFT JOIN arms a ON b.assignee_arm_id = a.id
+            ${baselineWhereClause}
+          `).get(...baselineParams) as { count: number }).count
+          : filteredTotal;
+      }
+      return c.json({
+        bugs,
+        pagination: { limit, offset, total: filteredTotal },
+        ...(search ? {
+          searchMatches: {
+            total: searchTotal,
+            filtered: filteredTotal,
+            hidden: Math.max(0, searchTotal - filteredTotal),
+          },
+        } : {}),
+      });
     } catch (err) {
       throw HttpError.internal("Failed to query bugs");
     }
@@ -474,6 +576,7 @@ export function createBugsRoutes() {
     if (!validPriorities.includes(priority)) {
       throw HttpError.badRequest("Invalid priority");
     }
+    assertValidResourceMetadataTags(body.metadata);
 
     const existingBug = findSimilarActiveBug(db, {
       title: body.title,
@@ -556,6 +659,12 @@ export function createBugsRoutes() {
 
     const validStatuses = ["open", "investigating", "fixing", "verifying", "resolved", "closed"];
     const validPriorities = ["low", "medium", "high", "critical"];
+    const existing = db.query("SELECT metadata FROM bugs WHERE id = ?").get(id) as {
+      metadata: string | null;
+    } | null;
+    if (!existing) {
+      throw HttpError.notFound("Bug not found");
+    }
 
     if (body.status && !validStatuses.includes(body.status)) {
       throw HttpError.badRequest("Invalid status");
@@ -564,6 +673,7 @@ export function createBugsRoutes() {
     if (body.priority && !validPriorities.includes(body.priority)) {
       throw HttpError.badRequest("Invalid priority");
     }
+    assertValidResourceMetadataTags(body.metadata, existing.metadata);
 
     const updates: string[] = [];
     const params: (string | number | null)[] = [];

@@ -12,6 +12,14 @@ import { eventStore } from "../../nats/jetstream";
 import { generateKeyBetween } from "../../lib/fractional-indexing";
 import { getServerWorkspaceAccess } from "../workspace-access";
 import { prepareTaskFromDiscussion } from "../services/task-preparation";
+import {
+	compileResourceListFilters,
+	matchesResourceListFilters,
+	matchesResourceSearch,
+	needsUnicodeResourceListFallback,
+	parseResourceListFilters,
+} from "./resource-list-filters";
+import { assertValidResourceMetadataTags } from "./resource-metadata";
 
 interface ChecklistItem {
 	id: number;
@@ -385,6 +393,8 @@ export function createTasksRoutes() {
 	 *   - domain: filter by domain
 	 *   - assignedTo: filter by assigned arm
 	 *   - phase: filter by phase
+	 *   - search: search subject, description, and phase
+	 *   - viewFilters: JSON-encoded saved view filters
 	 *   - limit: max results (default 100)
 	 *   - offset: pagination offset
 	 */
@@ -397,45 +407,80 @@ export function createTasksRoutes() {
 		const assignedToFilter = c.req.query("assignedTo");
 		const phaseFilter = c.req.query("phase");
 		const sourceTypeFilter = c.req.query("sourceType");
+		const search = c.req.query("search")?.trim();
+		const viewFilters = parseResourceListFilters(c.req.query("viewFilters"));
 		const limit = Math.min(parseInt(c.req.query("limit") || "100", 10), 500);
 		const offset = parseInt(c.req.query("offset") || "0", 10);
 
-		const conditions: string[] = [];
-		const params: (string | number)[] = [];
+		const scopeConditions: string[] = [];
+		const scopeParams: (string | number)[] = [];
 
 		if (statusFilter) {
 			const statuses = statusFilter.split(",").map((s) => s.trim());
-			conditions.push(`t.status IN (${statuses.map(() => "?").join(",")})`);
-			params.push(...statuses);
+			scopeConditions.push(`t.status IN (${statuses.map(() => "?").join(",")})`);
+			scopeParams.push(...statuses);
 		}
 
 		if (priorityFilter) {
-			conditions.push("t.priority = ?");
-			params.push(priorityFilter);
+			scopeConditions.push("t.priority = ?");
+			scopeParams.push(priorityFilter);
 		}
 
 		if (domainFilter) {
-			conditions.push("t.domain = ?");
-			params.push(domainFilter);
+			scopeConditions.push("t.domain = ?");
+			scopeParams.push(domainFilter);
 		}
 
 		if (assignedToFilter) {
-			conditions.push("t.assigned_to = ?");
-			params.push(assignedToFilter);
+			scopeConditions.push("t.assigned_to = ?");
+			scopeParams.push(assignedToFilter);
 		}
 
 		if (phaseFilter) {
-			conditions.push("t.phase = ?");
-			params.push(phaseFilter);
+			scopeConditions.push("t.phase = ?");
+			scopeParams.push(phaseFilter);
 		}
 
 		if (sourceTypeFilter) {
-			conditions.push("t.source_type = ?");
-			params.push(sourceTypeFilter);
+			scopeConditions.push("t.source_type = ?");
+			scopeParams.push(sourceTypeFilter);
 		}
 
+		const baselineConditions = [...scopeConditions];
+		const baselineParams = [...scopeParams];
+		if (search) {
+			const normalizedSearch = search.toLocaleLowerCase();
+			baselineConditions.push(`(
+				instr(lower(coalesce(t.subject, '')), ?) > 0 OR
+				instr(lower(coalesce(t.description, '')), ?) > 0 OR
+				instr(lower(coalesce(t.phase, '')), ?) > 0
+			)`);
+			baselineParams.push(normalizedSearch, normalizedSearch, normalizedSearch);
+		}
+		const conditions = [...baselineConditions];
+		const params = [...baselineParams];
+
+		const compiledViewFilters = compileResourceListFilters(viewFilters, {
+			subject: "t.subject",
+			status: "t.status",
+			priority: "t.priority",
+			phase: "t.phase",
+			domain: "t.domain",
+			assignedArm: "coalesce(a.name, t.assigned_to)",
+			progress: "t.progress",
+			sourceType: "t.source_type",
+			tags: "json_extract(t.metadata, '$.ui.tags')",
+			updatedAt: "t.updated_at",
+		});
+		conditions.push(...compiledViewFilters.conditions);
+		params.push(...compiledViewFilters.params);
+
+		const useUnicodeFallback = needsUnicodeResourceListFallback(search, viewFilters);
+		const queryConditions = useUnicodeFallback ? scopeConditions : conditions;
+		const queryParams = useUnicodeFallback ? scopeParams : params;
 		const whereClause =
-			conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+			queryConditions.length > 0 ? `WHERE ${queryConditions.join(" AND ")}` : "";
+		const paginationClause = useUnicodeFallback ? "" : "LIMIT ? OFFSET ?";
 
 		// Get tasks with arm name via join
 		const rows = db
@@ -476,18 +521,57 @@ export function createTasksRoutes() {
           WHEN 'low' THEN 4
         END,
         t.created_at DESC
-      LIMIT ? OFFSET ?
+      ${paginationClause}
     `)
-			.all(...params, limit, offset) as TaskRow[];
+			.all(...queryParams, ...(useUnicodeFallback ? [] : [limit, offset])) as TaskRow[];
 
-		const tasks = rows.map(parseTaskRow);
-
-		// Get total count
-		const countRow = db
-			.query(`
-      SELECT COUNT(*) as count FROM tasks t ${whereClause}
-    `)
-			.get(...params) as { count: number };
+		let tasks = rows.map(parseTaskRow);
+		let filteredTotal: number;
+		let searchTotal: number;
+		if (useUnicodeFallback) {
+			const searchedTasks = search
+				? tasks.filter((task) => matchesResourceSearch(search, [
+					task.subject,
+					task.description,
+					task.phase,
+				]))
+				: tasks;
+			searchTotal = searchedTasks.length;
+			const filteredTasks = searchedTasks.filter((task) =>
+				matchesResourceListFilters(task, viewFilters, {
+					subject: (resource) => resource.subject,
+					status: (resource) => resource.status,
+					priority: (resource) => resource.priority,
+					phase: (resource) => resource.phase,
+					domain: (resource) => resource.domain,
+					assignedArm: (resource) => resource.assignedArmName ?? resource.assignedTo,
+					progress: (resource) => resource.progress,
+					sourceType: (resource) => resource.sourceType,
+					tags: (resource) => {
+						const ui = resource.metadata.ui;
+						return typeof ui === "object" && ui !== null && !Array.isArray(ui)
+							? (ui as Record<string, unknown>).tags
+							: undefined;
+					},
+					updatedAt: (resource) => resource.updatedAt,
+				}),
+			);
+			filteredTotal = filteredTasks.length;
+			tasks = filteredTasks.slice(offset, offset + limit);
+		} else {
+			filteredTotal = (db.query(`
+        SELECT COUNT(*) as count
+        FROM tasks t
+        LEFT JOIN arms a ON t.assigned_to = a.id
+        ${whereClause}
+      `).get(...params) as { count: number }).count;
+			const baselineWhereClause = baselineConditions.length > 0
+				? `WHERE ${baselineConditions.join(" AND ")}`
+				: "";
+			searchTotal = search
+				? (db.query(`SELECT COUNT(*) as count FROM tasks t ${baselineWhereClause}`).get(...baselineParams) as { count: number }).count
+				: filteredTotal;
+		}
 
 		// Get counts by status
 		const statusCounts = db
@@ -497,7 +581,7 @@ export function createTasksRoutes() {
 			.all() as Array<{ status: string; count: number }>;
 
 		const counts = {
-			total: countRow.count,
+			total: filteredTotal,
 			byStatus: Object.fromEntries(
 				statusCounts.map((r) => [r.status, r.count]),
 			),
@@ -508,9 +592,16 @@ export function createTasksRoutes() {
 			pagination: {
 				limit,
 				offset,
-				total: countRow.count,
+				total: filteredTotal,
 			},
 			counts,
+			...(search ? {
+				searchMatches: {
+					total: searchTotal,
+					filtered: filteredTotal,
+					hidden: Math.max(0, searchTotal - filteredTotal),
+				},
+			} : {}),
 		});
 	});
 
@@ -984,6 +1075,7 @@ export function createTasksRoutes() {
 				`blockedCategory must be one of: ${BLOCKED_CATEGORIES.join(", ")}`,
 			);
 		}
+		assertValidResourceMetadataTags(body.metadata);
 
 		const initialStatus = body.status || "pending";
 		const blockedReason = body.blockedReason?.trim() || null;
@@ -1177,7 +1269,7 @@ export function createTasksRoutes() {
 			.query(
 				`SELECT id, subject, status, domain, assigned_to, source_type, source_ref, plan_line_uid,
 				        blocked_reason, blocked_category,
-				        blocked_at, blocked_recheck_at, blocked_review_count
+				        blocked_at, blocked_recheck_at, blocked_review_count, metadata
 				 FROM tasks WHERE id = ?`,
 			)
 			.get(id) as {
@@ -1194,6 +1286,7 @@ export function createTasksRoutes() {
 				blocked_at: string | null;
 				blocked_recheck_at: string | null;
 				blocked_review_count: number | null;
+				metadata: string | null;
 			} | null;
 		if (!existing) {
 			throw HttpError.notFound(`Task not found: ${id}`);
@@ -1215,6 +1308,7 @@ export function createTasksRoutes() {
 		) {
 			throw HttpError.badRequest("blockedReviewCount must be a non-negative integer");
 		}
+		assertValidResourceMetadataTags(body.metadata, existing.metadata);
 
 		const updates: string[] = [];
 		const values: unknown[] = [];

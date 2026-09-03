@@ -6,6 +6,16 @@
  * Tasks and Bugs on one normalization and option-ordering contract.
  */
 
+import { isValidResourceTag } from "../../../types/tag-validation";
+
+export const RESOURCE_TAG_VALIDATION_MESSAGE = "Use ASCII letters and numbers only";
+
+export function resourceTagValidationError(value: string): string | undefined {
+	return isValidResourceTag(value)
+		? undefined
+		: RESOURCE_TAG_VALIDATION_MESSAGE;
+}
+
 export function normalizeTagValues(value: unknown): string[] {
 	const values = Array.isArray(value)
 		? value
@@ -15,7 +25,7 @@ export function normalizeTagValues(value: unknown): string[] {
 		values
 			.filter((tag): tag is string => typeof tag === "string")
 			.map((tag) => tag.trim())
-			.filter(Boolean),
+			.filter(isValidResourceTag),
 	));
 }
 

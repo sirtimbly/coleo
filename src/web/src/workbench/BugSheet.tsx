@@ -29,7 +29,7 @@ import {
 	type ResourceSheetColumn,
 	type ResourceSheetRowMove,
 } from "./ResourceSheet";
-import { normalizeTagValues } from "./tag-values";
+import { normalizeTagValues, resourceTagValidationError } from "./tag-values";
 import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
@@ -98,6 +98,7 @@ export const BUG_COLUMNS: ResourceSheetColumn<Bug>[] = [
 		read: readTags,
 		type: "multiselect",
 		allowCreateOptions: true,
+		createOptionValidator: resourceTagValidationError,
 		optionLabel: "tag",
 		width: 180,
 	},
@@ -132,6 +133,8 @@ export function BugSheet({
 	onDelete,
 	onCreateBugAt,
 	onRowsMove,
+	onLoadMore,
+	hasNextPage,
 	density,
 	viewPreferences,
 	onViewPreferencesChange,
@@ -144,6 +147,8 @@ export function BugSheet({
 	onDelete?: (bug: Bug) => void;
 	onCreateBugAt?: (index: number, title: string) => void;
 	onRowsMove?: (moves: ResourceSheetRowMove<Bug>[]) => void | Promise<void>;
+	onLoadMore?: () => void;
+	hasNextPage?: boolean;
 	density?: ViewPreferences["density"];
 	viewPreferences?: ViewPreferences;
 	onViewPreferencesChange?: (preferences: ViewPreferences) => void;
@@ -240,6 +245,7 @@ export function BugSheet({
 					for (const bug of removed) onDelete?.(bug);
 				} : undefined}
 				onRowsMove={onRowsMove}
+				onNearEnd={hasNextPage ? onLoadMore : undefined}
 				onOpenRow={onOpenDetails}
 				selectedRowId={selectedBugId}
 				onRowSelectionChange={(bug) => {

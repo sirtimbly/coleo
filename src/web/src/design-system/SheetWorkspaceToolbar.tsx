@@ -7,7 +7,7 @@
  */
 
 import type { ReactNode } from "react";
-import { Activity, ChartNoAxesCombined, Plus, RefreshCw } from "lucide-react";
+import { Activity, ChartNoAxesCombined, ListFilter, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@heroui/react";
 
 import { useCollectionViewToolbarWidgets } from "./CollectionViewToolbar";
@@ -47,6 +47,7 @@ export function SheetWorkspaceToolbar({
 	onConfigure,
 	filterCount,
 	sortLabel,
+	hiddenSearchMatches = 0,
 	extensionWidgets,
 }: {
 	screenId: "tasks" | "bugs";
@@ -66,6 +67,7 @@ export function SheetWorkspaceToolbar({
 	onConfigure?: () => void;
 	filterCount?: number;
 	sortLabel?: string;
+	hiddenSearchMatches?: number;
 	extensionWidgets?: ToolbarWidgetRegistry;
 }) {
 	const template = useToolbarTemplate(screenId);
@@ -87,9 +89,22 @@ export function SheetWorkspaceToolbar({
 			/>
 		),
 		"sheet.result-count": (
-			<span className="inline-flex shrink-0 self-center items-center text-xs tabular-nums text-muted-foreground">
-				{visible} of {total}
-			</span>
+			<div className="inline-flex shrink-0 self-center items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+				<span>{visible} of {total}</span>
+				{hiddenSearchMatches > 0 ? (
+					<Button
+						size="sm"
+						variant="ghost"
+						onPress={onConfigure}
+						isDisabled={!onConfigure}
+						className="h-7 min-h-7 px-2 text-warning"
+						aria-label={`${hiddenSearchMatches} search ${hiddenSearchMatches === 1 ? "match is" : "matches are"} hidden by view filters. Change view filters.`}
+					>
+						<ListFilter className="h-3.5 w-3.5" aria-hidden="true" />
+						{hiddenSearchMatches} hidden by view filters
+					</Button>
+				) : null}
+			</div>
 		),
 		"sheet.insights": (
 			<div

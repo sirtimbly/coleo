@@ -29,7 +29,7 @@ import {
 	presentResourceDetail,
 	presentResourceEditor,
 } from '@/adaptive-cards/presenters';
-import { type Bug, type UiMetadata, cn, api } from '@/lib';
+import { type Bug, cn, api } from '@/lib';
 import { BugModal, StatusBurndownChart } from '@/components';
 import type { BugUpdate } from '@/workbench/resource-updates';
 import type { ResourceSheetRowMove } from '@/workbench/ResourceSheet';
@@ -54,6 +54,7 @@ import { AdaptiveCardCollection } from '@/workbench/AdaptiveCardCollection';
 import { useCollectionDisplayPreferences } from '@/workbench/collection-display';
 import { projectResourceCollection } from '@/workbench/resource-sheet-model';
 import { useViewPreferences } from '@/workbench/use-view-preferences';
+import { useKnownTagOptions } from '@/workbench/use-known-tag-options';
 import { ViewConfigurator, type ConfigurableColumn } from '@/workbench/ViewConfigurator';
 import {
 	useIsWorkspacePanel,
@@ -62,7 +63,9 @@ import {
 	useWorkspaceSearchParams,
 } from '@/workspace/route-context';
 
-type BugUiMeta = UiMetadata;
+function readBugTags(bug: Bug): string[] {
+	return bug.metadata?.ui?.tags ?? [];
+}
 
 const BUG_VIEW_COLUMNS: ConfigurableColumn[] = [
 	{ id: 'title', header: 'Subject', defaultWidth: 360, hideable: false },
@@ -500,10 +503,19 @@ export function BugsPage() {
 		[bugView.preferences, display.density],
 	);
 	const deferredSearchText = useDeferredValue(searchText);
+	const bugListFilters = useMemo(() => ({
+		...(deferredSearchText.trim() ? { search: deferredSearchText.trim() } : {}),
+		...(tagFilter.length > 0 ? { tags: tagFilter } : {}),
+		...((bugViewPreferences.filters?.length ?? 0) > 0
+			? { viewFilters: bugViewPreferences.filters }
+			: {}),
+	}), [bugViewPreferences.filters, deferredSearchText, tagFilter]);
 
 	// Use React Query hook for bugs
 	const {
 		bugs,
+		pagination,
+		searchMatches,
 		isLoading,
 		isError,
 		error,
@@ -512,48 +524,15 @@ export function BugsPage() {
 		createBugAsync,
 		deleteBug,
 		reorderBugAsync,
-	} = useBugs();
+		hasNextPage,
+		fetchNextPage,
+	} = useBugs(bugListFilters);
 
-	const getBugUiMeta = useCallback((bug: Bug): BugUiMeta => {
-		const ui = bug.metadata?.ui;
-		return {
-			tags: ui?.tags ?? [],
-			color: ui?.color ?? 'slate',
-			bold: ui?.bold ?? false,
-		};
-	}, []);
-
-	const availableTags = useMemo(() => {
-		const tagSet = new Set<string>();
-		bugs.forEach((bug) => {
-			getBugUiMeta(bug).tags?.forEach((tag) => {
-				tagSet.add(tag);
-			});
-		});
-		return Array.from(tagSet).sort((a, b) => a.localeCompare(b));
-	}, [bugs, getBugUiMeta]);
+	const availableTags = useKnownTagOptions(bugs, readBugTags);
 
 	const filteredBugs = useMemo(() => {
-		let result = bugs;
-
-		if (deferredSearchText.trim()) {
-			const search = deferredSearchText.toLowerCase();
-			result = result.filter(
-				(bug) =>
-					bug.title.toLowerCase().includes(search) ||
-					bug.description.toLowerCase().includes(search)
-			);
-		}
-
-		if (tagFilter.length > 0) {
-			result = result.filter((bug) => {
-				const tags = getBugUiMeta(bug).tags ?? [];
-				return tagFilter.some((tag) => tags.includes(tag));
-			});
-		}
-
-		return projectResourceCollection(result, BUG_COLLECTION_COLUMNS, bugViewPreferences);
-	}, [bugs, tagFilter, deferredSearchText, getBugUiMeta, bugViewPreferences]);
+		return projectResourceCollection(bugs, BUG_COLLECTION_COLUMNS, bugViewPreferences);
+	}, [bugViewPreferences, bugs]);
 
 	const handleUpdateBug = useCallback(
 		async (bugId: string, updates: BugUpdate) => {
@@ -831,8 +810,9 @@ export function BugsPage() {
 				searchText={searchText}
 				onSearchTextChange={setSearchText}
 				searchPlaceholder="Search bugs…"
-				total={bugs.length}
+				total={pagination?.total ?? filteredBugs.length}
 				visible={filteredBugs.length}
+				hiddenSearchMatches={searchMatches?.hidden}
 				activeInsight={activeInsight}
 				onInsightChange={setActiveInsight}
 				onRefresh={() => {
@@ -906,6 +886,8 @@ export function BugsPage() {
 							onDelete={handleDeleteBug}
 							onCreateBugAt={handleCreateBugAt}
 							onRowsMove={handleRowsMove}
+							hasNextPage={hasNextPage}
+							onLoadMore={fetchNextPage}
 							density={display.density}
 							viewPreferences={bugViewPreferences}
 							onViewPreferencesChange={bugView.updatePreferences}

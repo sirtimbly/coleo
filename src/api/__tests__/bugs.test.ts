@@ -190,6 +190,23 @@ describe("bugs API", () => {
       expect(getBody.bug.metadata).toEqual(metadata);
     });
 
+    it("should reject non-alphanumeric metadata tags", async () => {
+      const response = await app.request("/api/bugs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Invalid Metadata Bug",
+          description: "Bug with an invalid tag",
+          source: "human_reported",
+          metadata: { ui: { tags: ["release,2026"] } },
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
+    });
+
     it("should deduplicate similar bug titles using FTS candidates", async () => {
       const first = await app.request("/api/bugs", {
         method: "POST",
@@ -270,6 +287,85 @@ describe("bugs API", () => {
       const body = await response.json() as { bugs: Bug[] };
       expect(body.bugs).toHaveLength(1);
       expect(body.bugs[0]?.title).toBe("Second Bug");
+    });
+
+    it("should search the database and report matches hidden by view filters", async () => {
+      const query = new URLSearchParams({
+        search: "description",
+        viewFilters: JSON.stringify([
+          { field: "status", operator: "equals", value: "open" },
+        ]),
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 3, filtered: 1, hidden: 2 });
+    });
+
+    it("should not report non-view filters as hidden search matches", async () => {
+      db.run("INSERT INTO arms (id, name) VALUES (?, ?)", ["arm-1", "Arm One"]);
+      db.run("UPDATE bugs SET assignee_arm_id = ?, metadata = ? WHERE id = ?", [
+        "arm-1",
+        JSON.stringify({ ui: { tags: ["backend"] } }),
+        "bug-1",
+      ]);
+      const query = new URLSearchParams({
+        search: "description",
+        tags: "backend",
+        source: "human_reported",
+        status: "open",
+        priority: "high",
+        assignee: "arm-1",
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-1"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
+    });
+
+    it("should search beyond the first limited row", async () => {
+      const response = await app.request("/api/bugs?search=third&limit=1");
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as { bugs: Bug[]; pagination: { total: number } };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-3"]);
+      expect(body.pagination.total).toBe(1);
+    });
+
+    it("should case-fold non-ASCII search and saved view filters", async () => {
+      db.run("UPDATE bugs SET title = ? WHERE id = ?", ["Repair the ÉCOLE workflow", "bug-3"]);
+      const query = new URLSearchParams({
+        search: "école",
+        limit: "1",
+        viewFilters: JSON.stringify([
+          { field: "title", operator: "contains", value: "école" },
+        ]),
+      });
+      const response = await app.request(`/api/bugs?${query}`);
+      expect(response.status).toBe(200);
+
+      const body = await response.json() as {
+        bugs: Bug[];
+        pagination: { total: number };
+        searchMatches: { total: number; filtered: number; hidden: number };
+      };
+      expect(body.bugs.map((bug) => bug.id)).toEqual(["bug-3"]);
+      expect(body.pagination.total).toBe(1);
+      expect(body.searchMatches).toEqual({ total: 1, filtered: 1, hidden: 0 });
     });
   });
 
@@ -431,6 +527,37 @@ describe("bugs API", () => {
       expect(getResponse.status).toBe(200);
       const getBody = await getResponse.json() as { bug: Bug };
       expect(getBody.bug.metadata).toEqual({ ui: { tags: ["urgent"] } });
+    });
+
+    it("should reject metadata updates with non-alphanumeric tags", async () => {
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata: { ui: { tags: ["release-2026"] } } }),
+      });
+
+      expect(response.status).toBe(400);
+      const body = await response.json() as { error: string };
+      expect(body.error).toContain("ASCII alphanumeric");
+    });
+
+    it("should preserve legacy tags during unrelated metadata updates", async () => {
+      const metadata = { ui: { tags: ["release-2026"], color: "red" } };
+      db.run("UPDATE bugs SET metadata = ? WHERE id = ?", [
+        JSON.stringify({ ui: { tags: ["release-2026"], color: "slate" } }),
+        "bug-123",
+      ]);
+
+      const response = await app.request("/api/bugs/bug-123", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ metadata }),
+      });
+
+      expect(response.status).toBe(200);
+      const getResponse = await app.request("/api/bugs/bug-123");
+      const body = await getResponse.json() as { bug: Bug };
+      expect(body.bug.metadata).toEqual(metadata);
     });
 
     it("should return 404 for non-existent bug", async () => {

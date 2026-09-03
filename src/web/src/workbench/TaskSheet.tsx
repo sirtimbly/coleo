@@ -27,7 +27,7 @@ import {
 	type ResourceSheetColumn,
 	type ResourceSheetRowMove,
 } from "./ResourceSheet";
-import { normalizeTagValues } from "./tag-values";
+import { normalizeTagValues, resourceTagValidationError } from "./tag-values";
 import { useKnownTagOptions } from "./use-known-tag-options";
 import { ViewConfigurator } from "./ViewConfigurator";
 import { useViewPreferences } from "./use-view-preferences";
@@ -161,6 +161,7 @@ export const TASK_COLUMNS: ResourceSheetColumn<Task>[] = [
 		read: readTags,
 		type: "multiselect",
 		allowCreateOptions: true,
+		createOptionValidator: resourceTagValidationError,
 		optionLabel: "tag",
 		width: 180,
 	},

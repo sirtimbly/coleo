@@ -5,6 +5,8 @@
  * Follows the pattern: [entity, operation, params...]
  */
 
+import type { ProjectionFilter } from '@/workbench/types';
+
 
 
 // Tasks
@@ -17,6 +19,9 @@ export const tasksKeys = {
     domain?: string;
     assignedTo?: string;
     phase?: string;
+    sourceType?: string;
+    search?: string;
+    viewFilters?: ProjectionFilter[];
   }) => [...tasksKeys.lists(), filters] as const,
   details: () => [...tasksKeys.all(), 'detail'] as const,
   detail: (id: string) => [...tasksKeys.details(), id] as const,
@@ -48,6 +53,9 @@ export const bugsKeys = {
     status?: string;
     priority?: string;
     assignee?: string;
+    search?: string;
+    tags?: string[];
+    viewFilters?: ProjectionFilter[];
   }) => [...bugsKeys.lists(), filters] as const,
   details: () => [...bugsKeys.all(), 'detail'] as const,
   detail: (id: string) => [...bugsKeys.details(), id] as const,

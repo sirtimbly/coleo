@@ -485,7 +485,12 @@ export async function installMockApi(page: Page, options: MockApiOptions = {}) {
 				: json(route, { error: "Task not found" }, 404);
 		}
 		if (path === "/api/bugs" && request.method() === "GET") {
-			return json(route, { bugs: bugRecords });
+			const limit = Number(url.searchParams.get("limit") ?? 100);
+			const offset = Number(url.searchParams.get("offset") ?? 0);
+			return json(route, {
+				bugs: bugRecords.slice(offset, offset + limit),
+				pagination: { limit, offset, total: bugRecords.length },
+			});
 		}
 		if (path === "/api/bugs/reorder" && request.method() === "POST") {
 			const input = request.postDataJSON() as { bugId: string; toSortOrder: number };
