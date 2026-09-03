@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.12.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.0...coleo-v0.12.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **api:** preserve commas in bug tag filters ([2f8f8f8](https://github.com/sirtimbly/coleo/commit/2f8f8f85d087bd4406660f14c51e72080bfcc6f4))
+* **api:** scope hidden bug matches to view filters ([e5a08c4](https://github.com/sirtimbly/coleo/commit/e5a08c4b1d3243725a8e9f6d54cc226d4fa423b3))
+* **tags:** require ASCII alphanumeric values ([872d78f](https://github.com/sirtimbly/coleo/commit/872d78ff4bab5befab962c5fb12b1a1b3b2befd1))
+* **web:** complete resource search safeguards ([9adb253](https://github.com/sirtimbly/coleo/commit/9adb2535a0147a700de2ef6125749eb6c9281a3c))
+* **web:** search all task and bug records ([eed483d](https://github.com/sirtimbly/coleo/commit/eed483d2d03e633c63ac4897562c7aa1366f5bf0))
+* **web:** search all task and bug records ([a81e4ca](https://github.com/sirtimbly/coleo/commit/a81e4ca56d9e8e1fb870134d21d88930c86faeb2))
+
+
+### Documentation
+
+* readme and home ([dcd8c52](https://github.com/sirtimbly/coleo/commit/dcd8c52300a3a3bd7aa3dfb3fc10d3658906b947))
+* readme and home ([d178808](https://github.com/sirtimbly/coleo/commit/d178808c0656f1333dfe5b27d9695b37a9443c4e))
+
+
+### Miscellaneous Chores
+
+* **deps-dev:** bump playwright from 1.61.1 to 1.62.1 ([a622024](https://github.com/sirtimbly/coleo/commit/a622024ad8dcf0d9b3f8865e1730c1d1aca7d3a0))
+* **deps-dev:** bump playwright from 1.61.1 to 1.62.1 ([9405014](https://github.com/sirtimbly/coleo/commit/94050149f692f3d49613a80ef1a38dccb4964d1b))
+* **deps:** bump @opencode-ai/sdk from 1.17.17 to 1.18.25 ([7622953](https://github.com/sirtimbly/coleo/commit/7622953da029f1d7e0df13370ebf6be04308cdb7))
+* **deps:** bump @opencode-ai/sdk from 1.17.17 to 1.18.25 ([b5e312b](https://github.com/sirtimbly/coleo/commit/b5e312b7224b197aa132bd6933ea443c0c7425b5))
+
 ## [0.12.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.11.0...coleo-v0.12.0) (2026-08-20)
 
 
