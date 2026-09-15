@@ -65,10 +65,14 @@ class ArmHostWorkspaceAccess implements WorkspaceAccess {
 	}
 }
 
-export function getServerWorkspaceAccess(): WorkspaceAccess {
-	const projectRoot = process.env.COLEO_PROJECT_DIR
+export function getServerWorkspaceRoot(): string {
+	return process.env.COLEO_PROJECT_DIR
 		|| process.env.COLEO_REMOTE_WORKDIR
 		|| process.cwd();
+}
+
+export function getServerWorkspaceAccess(): WorkspaceAccess {
+	const projectRoot = getServerWorkspaceRoot();
 	if (process.env.COLEO_REMOTE_ARMS_ONLY !== "1") {
 		return new LocalWorkspaceAccess(projectRoot);
 	}

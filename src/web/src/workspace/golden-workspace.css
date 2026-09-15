@@ -58,6 +58,10 @@
 }
 
 .golden-dock-project-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 0.78rem;

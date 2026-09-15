@@ -20,6 +20,7 @@ import {
 import {
 	Bot,
 	Command,
+	Folder,
 	MailPlus,
 	MoreHorizontal,
 	Plus,
@@ -1280,11 +1281,14 @@ export function GoldenWorkspace() {
 							<div className="golden-dock-project">
 								<span className="golden-dock-project-app">COLEO</span>
 								<span className="golden-dock-project-name" title={projectCwd ?? undefined}>
-									{projectName
-										? truncateMiddle(projectName, 32)
-										: projectCwd
-											? truncateStart(projectCwd, 32)
-											: "…"}
+									<Folder size={12} fill="currentColor" className="shrink-0" aria-hidden="true" />
+									<span className="truncate">
+										{projectName
+											? truncateMiddle(projectName, 32)
+											: projectCwd
+												? truncateStart(projectCwd, 32)
+												: "…"}
+									</span>
 								</span>
 							</div>
 						</div>
