@@ -1,5 +1,5 @@
 import { spawnSync } from "child_process";
-import { Database } from "bun:sqlite";
+import { openDatabase, type Database } from "../db";
 import { join } from "path";
 import { getColeoDir } from "../config";
 import { compareKeys } from "../lib/fractional-indexing";
@@ -685,7 +685,7 @@ export class ApiDatabase implements McpDb, BrainDb {
 	private getFallbackDb(): Database {
 		if (!this.fallbackDb) {
 			const dbPath = process.env.COLEO_DB_PATH || join(getColeoDir(), "coleo.db");
-			this.fallbackDb = new Database(dbPath);
+			this.fallbackDb = openDatabase(dbPath);
 		}
 		return this.fallbackDb;
 	}

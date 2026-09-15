@@ -1,6 +1,9 @@
 import type { JetStreamClient, JetStreamManager } from 'nats';
 
 export interface EventData {
+  /** Missing on historical events (legacy schema 1). */
+  schemaVersion?: number;
+  publisherVersion?: string;
   type: string;
   armId?: string;
   sessionId?: string;

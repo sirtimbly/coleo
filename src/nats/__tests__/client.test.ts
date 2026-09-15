@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { JSONCodec } from "nats";
 
+import { VERSION, NATS_SCHEMA_VERSION } from "../../version";
 import { NatsClient } from "../client";
 import type { AgentCommand, CommandResponse } from "../types";
 
@@ -54,6 +55,7 @@ class MockSubscription implements AsyncIterableIterator<ReplyMessage> {
 class MockConnection {
   public lastSubscription: MockSubscription | null = null;
   public publishedTopics: string[] = [];
+  public payloads: unknown[] = [];
   public info: { max_payload: number } | undefined;
 
   subscribe(): MockSubscription {
@@ -61,8 +63,9 @@ class MockConnection {
     return this.lastSubscription;
   }
 
-  publish(topic: string): void {
+  publish(topic: string, data: Uint8Array): void {
     this.publishedTopics.push(topic);
+    this.payloads.push(jc.decode(data));
   }
 }
 
@@ -111,6 +114,10 @@ describe("NatsClient.sendCommand", () => {
     setMockConnection(client, connection);
 
     const pending = client.sendCommand<{ ok: boolean }>("agent-test", makeCommand("req-success"), 200);
+    expect(connection.payloads[0]).toEqual({
+      type: "list_arms", requestId: "req-success",
+      schemaVersion: NATS_SCHEMA_VERSION, publisherVersion: VERSION,
+    });
     const response: CommandResponse<{ ok: boolean }> = {
       requestId: "req-success",
       success: true,

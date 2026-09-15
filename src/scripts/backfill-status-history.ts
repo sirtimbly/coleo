@@ -13,7 +13,7 @@
  */
 
 import { join, resolve } from "path";
-import { Database } from "bun:sqlite";
+import { openDatabase, type Database } from "../db";
 import { getColeoDir } from "../cli/context";
 import { indexStatusHistoryEvent, initializeStatusHistoryCollection } from "../vector/indexing-pipeline";
 import type { StatusHistoryEvent } from "../vector/status-history";
@@ -152,7 +152,7 @@ async function main(): Promise<void> {
 	console.log(`[backfill] db=${dbPath}`);
 	console.log(`[backfill] dryRun=${opts.dryRun} limit=${opts.limit ?? "all"} batch=${opts.batchSize}`);
 
-	const db = new Database(dbPath, { readonly: true });
+	const db = openDatabase(dbPath, { readonly: true });
 
 	const table = db
 		.query("SELECT name FROM sqlite_master WHERE type='table' AND name='status_reports'")

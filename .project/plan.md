@@ -46,6 +46,11 @@ To keep humans, the Brain, and arms aligned, standardize three primary communica
 
 ---
 
+## Database and messaging compatibility follow-up
+
+- [ ] **Validate versioned NATS payloads at consumer boundaries.** Define supported schema versions, translate supported historical payloads into the current internal form, and retain unsupported messages with an actionable operator error. Test replay of retained messages across upgrades; version badges alone are observational.
+- [ ] **Make message-to-database processing retry-safe.** Commit database changes and durable message deduplication records atomically before acknowledging JetStream messages. Verify duplicate delivery and crash recovery between commit and acknowledgement. Audit database-to-NATS writes for an outbox requirement so committed state cannot lose its event.
+
 ## Phase 1: Core Infrastructure and API Boundary
 
 This phase provides the execution substrate and integration boundaries required by every later feature. Phase 0 decisions, repository validation, and the API-owned integration model must precede changes here. The existing foundation is described below as complete in the source plan, but its runtime behavior, tests, and boundary claims remain subject to verification.

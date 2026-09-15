@@ -1,3 +1,1 @@
-import packageJson from "../../../package.json" with { type: "json" };
-
-export const VERSION = packageJson.version;
+export { VERSION, NATS_SCHEMA_VERSION, RUNTIME_VERSION } from "../../version";

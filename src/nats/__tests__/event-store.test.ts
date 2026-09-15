@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { VERSION, NATS_SCHEMA_VERSION } from "../../version";
 import { InMemoryEventStore } from "../in-memory-event-store";
 import { getProjectScope } from "../../project-scope";
 
@@ -18,6 +19,7 @@ describe("InMemoryEventStore", () => {
 
 		const events = await store.getArmEvents("arm-1", 2);
 
+		expect(events.every((event) => event.schemaVersion === NATS_SCHEMA_VERSION && event.publisherVersion === VERSION)).toBe(true);
 		expect(events.map((event) => event.sequence)).toEqual([4, 5]);
 		expect(events.map((event) => event.data.index)).toEqual([3, 4]);
 		expect(events.every((event) => event.projectKey === getProjectScope().projectKey)).toBe(true);

@@ -32,8 +32,8 @@ export function registerTasksCommands(program: Command): void {
       const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const { Database } = await import("bun:sqlite");
-        const db = new Database(dbPath, { readwrite: true });
+        const { openDatabase } = await import("../../db");
+        const db = openDatabase(dbPath);
 
         const autoDiscover = db.query("SELECT value FROM config WHERE key = ?").get("task_auto_discover") as {
           value: string;
@@ -233,8 +233,8 @@ export function registerTasksCommands(program: Command): void {
       const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const { Database } = await import("bun:sqlite");
-        const db = new Database(dbPath, { readonly: true });
+        const { openDatabase } = await import("../../db");
+        const db = openDatabase(dbPath, { readonly: true });
 
         let query = "SELECT id, subject, status, priority, phase FROM tasks";
         const params: string[] = [];
@@ -360,8 +360,8 @@ export function registerTasksCommands(program: Command): void {
       const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const { Database } = await import("bun:sqlite");
-        const db = new Database(dbPath, { readwrite: true });
+        const { openDatabase } = await import("../../db");
+        const db = openDatabase(dbPath);
 
         // First, delete all tasks sourced from plan.md (keeps manually created tasks)
         const deleteResult = db.run("DELETE FROM tasks WHERE source_type = 'plan'");
@@ -389,7 +389,7 @@ export function registerTasksCommands(program: Command): void {
           return;
         }
 
-        const db2 = new Database(dbPath, { readwrite: true });
+        const db2 = openDatabase(dbPath);
         let newTasksCount = 0;
 
         for (const filePath of planFiles) {

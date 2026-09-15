@@ -1,4 +1,5 @@
 import { RetentionPolicy, StorageType, DeliverPolicy, AckPolicy, ReplayPolicy } from 'nats';
+import { VERSION, NATS_SCHEMA_VERSION } from '../version';
 import type {
   JetStreamClient,
   JetStreamManager,
@@ -108,6 +109,8 @@ export class EventStore implements IEventStore {
     const scope = getProjectScope();
     const payload = JSON.stringify({
       ...data,
+      schemaVersion: NATS_SCHEMA_VERSION,
+      publisherVersion: VERSION,
       projectDir: scope.projectDir,
       projectKey: scope.projectKey,
     });

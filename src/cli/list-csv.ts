@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "bun:sqlite";
+import { openDatabase as openCompatibleDatabase, type Database } from "../db";
 import { parseEditorCommand } from "./helpers/editor";
 import { generateKeyBetween } from "../lib/fractional-indexing";
 
@@ -753,7 +753,7 @@ function openDatabase(dbPath: string, readonly: boolean): Database {
   if (!existsSync(dbPath)) {
     throw new Error(`Database not found at ${dbPath}`);
   }
-  return new Database(dbPath, readonly ? { readonly: true } : { readwrite: true });
+  return openCompatibleDatabase(dbPath, { readonly });
 }
 
 export async function exportListCsvToPath(

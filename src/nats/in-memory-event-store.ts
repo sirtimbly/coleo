@@ -1,3 +1,4 @@
+import { VERSION, NATS_SCHEMA_VERSION } from "../version";
 import type { EventData, QueryOptions, StreamMetrics, IEventStore } from './jetstream-types';
 import { getProjectScope } from '../project-scope';
 
@@ -19,6 +20,8 @@ export class InMemoryEventStore implements IEventStore {
       subject,
       data: {
         ...data,
+        schemaVersion: NATS_SCHEMA_VERSION,
+        publisherVersion: VERSION,
         projectDir: scope.projectDir,
         projectKey: scope.projectKey,
         sequence: data.sequence ?? this.events.length + 1,

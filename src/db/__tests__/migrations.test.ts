@@ -29,7 +29,7 @@ describe("database migrations", () => {
 		reopened.close();
 		expect(reopenedId.value).toBe(firstId.value);
 
-		await rm(dbPath, { force: true });
+		await Promise.all([dbPath, `${dbPath}-wal`, `${dbPath}-shm`].map((path) => rm(path, { force: true })));
 		const recreated = await initDatabase(dbPath);
 		const recreatedId = recreated.query("SELECT value FROM config WHERE key = 'database_instance_id'").get() as {
 			value: string;

@@ -56,6 +56,11 @@ jobs:
           echo "release_tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Verify component release versions
+        env:
+          COLEO_RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: bun run versions:check
+
       - name: Install runtime dependencies
         run: bun install --frozen-lockfile --production
 

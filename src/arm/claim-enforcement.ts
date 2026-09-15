@@ -7,7 +7,7 @@
  * - disabled: No claim enforcement, parallel writes allowed
  */
 
-import { Database } from "bun:sqlite";
+import { openDatabase, type Database } from "../db";
 import { join } from "path";
 import { getColeoDir } from "../config";
 import { eventStore } from "../nats/jetstream";
@@ -277,7 +277,7 @@ export function escalateClaimModeForFile(
  */
 export function getDatabase(readonly = true): Database {
   const dbPath = join(getColeoDir(), "coleo.db");
-  return new Database(dbPath, { readonly });
+  return openDatabase(dbPath, { readonly });
 }
 
 /**

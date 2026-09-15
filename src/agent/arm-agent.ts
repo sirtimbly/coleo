@@ -10,7 +10,7 @@ import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { chmod, mkdir, readFile, rename, writeFile } from 'fs/promises';
 import { dirname, join } from 'path';
-import { VERSION } from '../version';
+import { VERSION, NATS_SCHEMA_VERSION } from '../version';
 import { 
   NatsClient, 
   type AgentInfo, 
@@ -291,6 +291,7 @@ export class ArmAgent {
       platform: process.platform,
       startedAt: this.startedAt,
       version: VERSION,
+      natsSchemaVersion: NATS_SCHEMA_VERSION,
       capabilities: [...harnessRegistry.list(), 'workspace-rpc', 'repository-onboarding', 'opencode-provider-auth'],
       maxArms: this.maxArms,
     };

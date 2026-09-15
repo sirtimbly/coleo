@@ -19,6 +19,8 @@ import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
 import { RefreshGate } from '@/lib/refresh-gate';
 import { hasOpenedProjectSetup, markProjectSetupOpened } from '@/lib/project-setup-visit';
+import { VersionStatus } from '@/components/VersionStatus';
+import type { FleetVersions } from '../../../shared/version-compatibility';
 import { ArmHostProvidersSection } from '@/components/ArmHostProvidersSection';
 import {
   WorkbenchEmptyState,
@@ -32,6 +34,7 @@ type Navigate = (pathname: string, search?: string) => void;
 interface SystemStatus {
   status: string;
   version: string;
+  versions?: FleetVersions;
   uptime: number;
   arms: {
     total: number;
@@ -814,6 +817,8 @@ export function DashboardPage() {
       </WorkbenchToolbar>
 
       <div className="min-h-0 flex-1 overflow-auto">
+
+      <VersionStatus versions={status?.versions} apiVersion={status?.version} loading={statusLoading} stale={error !== null} />
 
       {showProjectSetup ? (
         <section className="m-3 flex flex-col gap-4 rounded-xl border border-accent/30 bg-accent/10 p-4 sm:flex-row sm:items-center sm:justify-between">
