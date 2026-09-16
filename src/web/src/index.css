@@ -1,6 +1,8 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;700&family=IBM+Plex+Sans:wght@400;500;600&family=Pathway+Extreme:wght@300;400;500;600;700;800&display=swap");
 @import "tailwindcss";
 @import "@heroui/styles";
+@import "./design-system/shapes.css";
+@import "./design-system/controls.css";
 
 /* Tailwind v4 Theme Configuration */
 @theme {
@@ -60,18 +62,12 @@
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
   
-  /* Border Radius */
-  --radius-sm: calc(var(--radius) * 0.5);
-  --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) * 1.5);
-  --radius-xl: calc(var(--radius) * 2);
 }
 
 /* Theme Variables - Light Mode (Default) */
 :root {
   color-scheme: light;
   --font-interface: 'Pathway Extreme', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --radius: 0.6rem;
   /* Base Colors */
   --background: oklch(0.975 0 0);
   --foreground: oklch(0.205 0.008 280);
@@ -147,7 +143,6 @@
 /* Dark Mode */
 .dark {
   color-scheme: dark;
-  --radius: 0.6rem;
   /* Base Colors */
   --background: oklch(0.2 0.01 270);
   --foreground: oklch(0.9 0.006 270);
@@ -312,12 +307,6 @@ body {
   background-image:
     linear-gradient(to bottom, transparent 55%, var(--background) 100%),
     url('/backgrounds/observatory-underwater-dark.svg');
-}
-
-/* Override dropdown/popover radius from 3xl to 2xl */
-.dropdown__popover,
-.popover {
-  border-radius: calc(var(--radius) * 2);
 }
 
 /* Legacy HeroUI styles add dividers even when ButtonGroup.Separator is omitted. */

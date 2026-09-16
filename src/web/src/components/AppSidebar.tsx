@@ -209,6 +209,7 @@ export function AppSidebar({
       <div className="border-t border-sidebar-border px-4 py-4">
         <button
           type="button"
+          data-navigation-control
           onClick={openNewMessage}
           className="flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent px-3 py-3 text-sm font-medium text-sidebar-foreground transition-colors hover:bg-surface-secondary"
         >

@@ -6,6 +6,7 @@
  */
 
 .coleo-tabulator-resource-sheet {
+	--sheet-font-scale: 1;
 	--tabulator-border-color: color-mix(in srgb, var(--border) 82%, transparent);
 	--tabulator-header: color-mix(in srgb, var(--surface-secondary) 76%, var(--background));
 	--tabulator-row-even: color-mix(in srgb, var(--surface-secondary) 28%, var(--background));
@@ -23,7 +24,7 @@
 	background: var(--background);
 	color: var(--foreground);
 	font-family: var(--font-body);
-	font-size: 0.75rem;
+	font-size: calc(0.75rem * var(--sheet-font-scale, 1));
 }
 
 .coleo-tabulator-resource-sheet .tabulator-header {
@@ -46,7 +47,7 @@
 
 .coleo-tabulator-resource-sheet .tabulator-row-header .tabulator-col-content {
 	color: var(--muted-foreground);
-	font-size: 0.62rem;
+	font-size: calc(0.62rem * var(--sheet-font-scale, 1));
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 }
@@ -86,7 +87,7 @@
 	border-color: var(--tabulator-border-color);
 	padding: 6px 9px;
 	font-family: var(--font-sheet);
-	font-size: 0.6875rem;
+	font-size: calc(0.6875rem * var(--sheet-font-scale, 1));
 	font-weight: 400;
 	line-height: 1.35;
 }
@@ -166,7 +167,7 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	color: var(--foreground);
-	font-size: 0.8125rem;
+	font-size: calc(0.8125rem * var(--sheet-font-scale, 1));
 	font-weight: 500;
 	line-height: 1.4;
 }
@@ -176,7 +177,7 @@
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	color: var(--muted-foreground);
-	font-size: 0.75rem;
+	font-size: calc(0.75rem * var(--sheet-font-scale, 1));
 	font-weight: 400;
 	line-height: 1.55;
 }
@@ -238,7 +239,7 @@
 .coleo-tabulator-resource-sheet .tabulator-edit-list {
 	z-index: 1400;
 	border: 1px solid var(--border);
-	border-radius: 0.5rem;
+	border-radius: var(--shape-container);
 	background: var(--surface-secondary);
 	box-shadow: 0 12px 32px rgb(0 0 0 / 32%);
 	color: var(--foreground);
@@ -398,11 +399,11 @@
 	flex: 0 1 auto;
 	overflow: hidden;
 	border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
-	border-radius: 999px;
+	border-radius: var(--shape-container);
 	background: color-mix(in srgb, var(--accent) 10%, var(--surface-secondary));
 	padding: 0.12rem 0.42rem;
 	color: var(--foreground);
-	font-size: 0.66rem;
+	font-size: calc(0.66rem * var(--sheet-font-scale, 1));
 	line-height: 1.2;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -420,7 +421,7 @@
 	gap: 0.45rem;
 	overflow: hidden;
 	border: 1px solid var(--border);
-	border-radius: 0.55rem;
+	border-radius: var(--shape-container);
 	background: var(--surface-secondary);
 	box-shadow: 0 16px 40px rgb(0 0 0 / 38%);
 	padding: 0.55rem;
@@ -430,7 +431,7 @@
 .coleo-tabulator-multiselect-search {
 	height: 2rem;
 	border: 1px solid var(--border);
-	border-radius: 0.35rem;
+	border-radius: var(--shape-field);
 	background: var(--surface);
 	padding: 0 0.55rem;
 	color: var(--foreground);
@@ -453,7 +454,7 @@
 	min-height: 1.9rem;
 	align-items: center;
 	gap: 0.5rem;
-	border-radius: 0.3rem;
+	border-radius: var(--shape-container);
 	padding: 0.25rem 0.4rem;
 	cursor: pointer;
 }
@@ -476,7 +477,7 @@
 .coleo-tabulator-multiselect-footer button {
 	min-height: 1.9rem;
 	border: 1px solid var(--border);
-	border-radius: 0.35rem;
+	border-radius: var(--shape-button);
 	background: var(--surface);
 	padding: 0.3rem 0.55rem;
 	color: var(--foreground);
@@ -504,4 +505,8 @@
 	border-color: var(--accent);
 	background: var(--accent);
 	color: var(--accent-foreground);
+}
+
+.coleo-tabulator-resource-sheet .tabulator-cell.tabulator-editing :is(input, textarea, select) {
+	font-size: inherit;
 }

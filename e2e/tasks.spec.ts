@@ -702,3 +702,47 @@ test("manually orders task and bug rows from the Order gutter", async ({ page })
 		})
 		.toBe(true);
 });
+
+for (const resource of ['tasks', 'bugs']) {
+  test(`saves ${resource} grid font size without scaling surrounding controls`, async ({ page }, testInfo) => {
+    test.setTimeout(60_000);
+    await installMockApi(page, { tasks: [task], bugs: [bug] });
+    await page.route('https://fonts.googleapis.com/**', (route) => route.abort());
+    await page.goto(`/${resource}`, { waitUntil: 'domcontentloaded' });
+    const sheet = page.locator('.coleo-resource-sheet');
+    const cell = sheet.locator('.tabulator-cell[tabulator-field="priority"]').first();
+    await expect(cell).toHaveCSS('font-size', '11px');
+    const configure = page.getByRole('button', { name: new RegExp(`Configure ${resource} view:`) });
+    const toolbarSize = await configure.evaluate((element) => getComputedStyle(element).fontSize);
+    await configure.click();
+    const fontSize = page.getByLabel('Grid font size', { exact: true });
+    await expect(fontSize).toHaveValue('11');
+    const sidebarSize = await fontSize.evaluate((element) => getComputedStyle(element).fontSize);
+    await fontSize.fill('8');
+    await fontSize.press('ArrowDown');
+    await expect(fontSize).toHaveValue('8');
+    await expect.poll(() => cell.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(8, 1);
+    const saved = page.waitForResponse((response) =>
+      response.url().includes('/api/workbench/views') &&
+      ['POST', 'PUT'].includes(response.request().method()) &&
+      response.request().postDataJSON()?.preferences?.gridFontSize === 28
+    );
+    await fontSize.fill('28');
+    await saved;
+    await fontSize.press('ArrowUp');
+    await expect(fontSize).toHaveValue('28');
+    await expect.poll(() => cell.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(28, 1);
+    await expect(configure).toHaveCSS('font-size', toolbarSize);
+    await expect(fontSize).toHaveCSS('font-size', sidebarSize);
+    await page.screenshot({ path: testInfo.outputPath(`${resource}-large-font.png`) });
+    // Verify the server-backed preference rather than the throttled query cache.
+    await page.evaluate(() => localStorage.removeItem('coleo-query-cache'));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(sheet).toHaveAttribute('data-grid-font-size', '28');
+    await expect.poll(() => cell.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBeCloseTo(28, 1);
+    const other = resource === 'tasks' ? 'Bugs' : 'Tasks';
+    await page.getByRole('link', { name: other, exact: true }).click();
+    await expect(sheet).toHaveAttribute('data-grid-font-size', '11');
+    await expect(cell).toHaveCSS('font-size', '11px');
+  });
+}

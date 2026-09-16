@@ -166,7 +166,7 @@ export function StatusBurndownChart({
       bodyClassName={embedded ? "space-y-4 pt-4" : "space-y-4"}
       unmountOnCollapse
     >
-        <div className="grid gap-2 lg:grid-cols-[minmax(12rem,1fr)_minmax(12rem,1fr)_auto_auto] lg:items-end">
+        <div className="telemetry-filters grid gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(12rem,16rem)_minmax(12rem,16rem)_auto_auto] lg:items-end lg:justify-start">
           <DateTimeInput
             id={`${entity}-burndown-start`}
             label="Start"
@@ -182,13 +182,14 @@ export function StatusBurndownChart({
             onChange={(end) => setDraftRange((current) => ({ ...current, end }))}
           />
           <div className="space-y-1">
-            <span className="block text-xs font-medium text-muted-foreground">Resolution</span>
-            <div className="flex rounded-lg border border-border bg-surface-secondary p-0.5">
+            <span className="telemetry-filter-label block text-muted-foreground">Resolution</span>
+            <div role="group" aria-label="Resolution" className="telemetry-resolution flex rounded-lg border border-border bg-surface-secondary/40 p-0.5">
               {(Object.keys(RESOLUTION_LABELS) as StatusSeriesResolution[]).map((value) => (
                 <Button
                   key={value}
                   size="sm"
-                  variant={resolution === value ? 'primary' : 'ghost'}
+                  variant={resolution === value ? 'secondary' : 'ghost'}
+                  aria-pressed={resolution === value}
                   onPress={() => setResolution(value)}
                 >
                   {RESOLUTION_LABELS[value]}
@@ -197,7 +198,8 @@ export function StatusBurndownChart({
             </div>
           </div>
           <Button
-            variant="primary"
+            variant="secondary"
+            size="sm"
             isDisabled={Boolean(rangeError) || loading}
             onPress={() => setAppliedRange(toIsoRange(draftRange))}
           >
@@ -206,8 +208,8 @@ export function StatusBurndownChart({
           </Button>
         </div>
 
-        <p className={rangeError ? 'text-xs text-danger' : 'text-xs text-muted-foreground'}>
-          {rangeError || 'Times use your local timezone. Bars show the status of every item at the end of each interval.'}
+        <p className={rangeError ? 'text-[11px] text-danger' : 'text-[11px] text-muted-foreground'}>
+          {rangeError || 'Local time · Status at the end of each interval.'}
         </p>
 
         <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground">

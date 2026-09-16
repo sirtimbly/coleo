@@ -1,7 +1,8 @@
 import { Button, ToggleButton, ToggleButtonGroup } from '@heroui/react';
-import { CircleHelp, Eye, EyeOff, LoaderCircle, RefreshCw, Save, Sparkles } from 'lucide-react';
+import { CircleHelp, Eye, LoaderCircle, RefreshCw, Save, Sparkles } from 'lucide-react';
 
 import { ToolbarTemplateRows } from '@/design-system/toolbar-template';
+import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
 import { isSetupFileScope, type SetupFileScope } from '@/pages/setup-file-scope';
 import { useToolbarTemplate } from '@/workbench/toolbar-template-context';
 
@@ -101,17 +102,16 @@ export function SetupWorkspaceToolbar({
       </Button>
     ) : null,
     'plan-documents.preview': isMarkdown ? (
-      <Button
+      <ToolbarToggleButton
         size="sm"
-        variant={previewOpen ? 'secondary' : 'ghost'}
-        aria-pressed={previewOpen}
-        aria-label={previewOpen ? 'Hide markdown preview' : 'Show markdown preview'}
+        isSelected={previewOpen}
+        aria-label="Markdown preview"
         onPress={onPreviewChange}
         className="h-7 min-h-7 px-2"
       >
-        {previewOpen ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        <Eye className="h-3.5 w-3.5" aria-hidden="true" />
         Preview
-      </Button>
+      </ToolbarToggleButton>
     ) : null,
     'plan-documents.document-status': (
       <span

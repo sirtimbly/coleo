@@ -151,7 +151,7 @@ test("launcher navigation exposes the unified Inbox instead of legacy stream pag
 
 	await expect(page.getByRole("heading", { name: "Recent activity", exact: true })).toHaveCount(0);
 	await expect(page.getByRole("heading", { name: "Notable events", exact: true })).toHaveCount(0);
-	await page.getByRole("button", { name: "Open Inbox", exact: true }).click();
+	await page.getByRole("button", { name: /^Open Inbox(?: · \d+ open proposals)?$/ }).click();
 
 	await expect(page).toHaveURL(/\/messaging\?facet=attention$/);
 	await expect(page.getByText("Task blocked: Task task-dashboard", { exact: true })).toBeVisible();

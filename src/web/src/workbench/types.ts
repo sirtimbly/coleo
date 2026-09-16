@@ -119,6 +119,7 @@ export interface ColumnPreference {
 }
 
 export interface ViewPreferences {
+	gridFontSize?: number | "small" | "medium" | "large";
 	columns?: ColumnPreference[];
 	filters?: ProjectionFilter[];
 	sort?: ProjectionSort[];

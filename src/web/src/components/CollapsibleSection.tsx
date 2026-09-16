@@ -84,7 +84,7 @@ export function CollapsibleSection({
                   <span
                     key={item.label}
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] leading-none',
+                      'inline-flex shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] leading-none',
                       item.tone === 'accent' && 'border-accent/30 bg-accent/10 text-accent',
                       item.tone === 'success' && 'border-success/30 bg-success/10 text-success',
                       item.tone === 'warning' && 'border-warning/30 bg-warning/10 text-warning',

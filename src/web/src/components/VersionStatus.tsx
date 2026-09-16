@@ -1,4 +1,3 @@
-import { Chip } from '@heroui/react';
 import { RUNTIME_VERSION } from '../version';
 import { compareRuntimeVersions } from '../../../shared/version-compatibility';
 import type { FleetVersions, RuntimeVersion, VersionCompatibility } from '../../../shared/version-compatibility';
@@ -9,7 +8,7 @@ const labels: Record<VersionCompatibility, string> = {
   incompatible: 'Incompatible',
   unknown: 'Compatibility unknown',
 };
-const colors = { synced: 'success', drift: 'warning', incompatible: 'danger', unknown: 'warning' } as const;
+
 
 export function VersionStatus({ versions, apiVersion, loading, stale }: {
   versions?: FleetVersions;
@@ -33,16 +32,21 @@ export function VersionStatus({ versions, apiVersion, loading, stale }: {
   const unknown = components.some((component) => component.comparison === 'unknown');
 
   return (
-    <section aria-label="Component versions" className="border-b border-border px-4 py-3 space-y-2">
-      <h2 className="text-sm font-semibold">Component versions</h2>
-      <div className="flex flex-wrap gap-2">
-        {components.map(({ id, label, runtime, comparison }) => (
-          <Chip key={id} size="sm" variant="soft" color={loading || stale ? 'default' : colors[comparison]}>
-            {label}: {runtime.version ?? 'unknown'} · NATS schema {runtime.natsSchemaVersion ?? 'unknown'}
-            {' · '}{loading ? 'Checking…' : stale ? 'Stale report' : labels[comparison]}
-          </Chip>
-        ))}
-      </div>
+    <section aria-label="Component versions" className="py-2">
+      <details>
+        <summary className={`cursor-pointer text-sm ${incompatible ? 'text-danger' : drift || unknown ? 'text-warning' : ''}`}>
+          {loading ? 'Checking versions…' : stale ? 'Version report stale' : incompatible ? 'Incompatible versions' : drift ? 'Release versions differ' : unknown || !versions?.agentDiscoveryAvailable ? 'Compatibility unverified' : 'Releases in sync'}
+          <span className="ml-2 text-xs text-muted-foreground">Coleo {api.version ?? 'unknown'} · NATS schema {api.natsSchemaVersion ?? 'unknown'}</span>
+        </summary>
+        <dl className="py-2 pl-4 space-y-3">
+          {components.map(({ id, label, runtime, comparison }) => (
+            <div key={id} className="flex flex-wrap justify-between gap-2 text-xs">
+              <dt className="min-w-0 break-all">{label}</dt>
+              <dd className="text-muted-foreground">{runtime.version ?? 'unknown'} · NATS schema {runtime.natsSchemaVersion ?? 'unknown'} · {loading ? 'Checking…' : stale ? 'Stale report' : labels[comparison]}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       {!loading ? (
         <div role="status" aria-live="polite" className="space-y-1 text-xs">
           {stale ? <p className="text-warning">Version refresh failed. These are the last reported versions; check API connectivity.</p> : null}

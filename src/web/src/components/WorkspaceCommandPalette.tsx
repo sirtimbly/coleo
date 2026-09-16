@@ -392,7 +392,7 @@ export function WorkspaceCommandPalette({
 												<kbd className="workspace-palette-kbd">{item.shortcut}</kbd>
 											) : null}
 											{item.status ? (
-												<span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+												<span className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
 													{item.status.replaceAll("_", " ")}
 												</span>
 											) : null}

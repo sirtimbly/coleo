@@ -26,6 +26,8 @@ import {
 } from "@/lib";
 import { AllArmsTelemetryOverview } from "@/components/AllArmsTelemetryOverview";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
+import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useToast } from "@/hooks/useToast";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -984,10 +986,9 @@ export function ArmsPage() {
 			/>
 		),
 		"arms.telemetry": (
-			<Button
+			<ToolbarToggleButton
 				size="sm"
-				variant={telemetryExpanded ? "secondary" : "ghost"}
-				aria-pressed={telemetryExpanded}
+				isSelected={telemetryExpanded}
 				aria-controls="arms-telemetry-panel"
 				aria-label="Toggle fleet telemetry"
 				onPress={() => setTelemetryExpanded((current) => !current)}
@@ -995,7 +996,7 @@ export function ArmsPage() {
 			>
 				<BarChart3 className="h-3.5 w-3.5" />
 				<span className="hidden sm:inline">Telemetry</span>
-			</Button>
+			</ToolbarToggleButton>
 		),
 		"arms.refresh": (
 			<Button
@@ -1009,9 +1010,8 @@ export function ArmsPage() {
 			</Button>
 		),
 		"arms.spawn": (
-			<Button
+			<NavigationButton
 				size="sm"
-				variant="primary"
 				onPress={openSpawnPanel}
 				isDisabled={loading}
 				aria-label="Spawn arm"
@@ -1019,7 +1019,7 @@ export function ArmsPage() {
 			>
 				<Plus className="h-4 w-4" />
 				<span className="hidden sm:inline">Spawn</span>
-			</Button>
+			</NavigationButton>
 		),
 		"arms.display": (
 			<ButtonGroup size="sm" variant="ghost" aria-label="Arm list display">
