@@ -1,0 +1,57 @@
+/* HeroUI copies the selected option's content into its trigger. Keep the menu's
+   selection indicator out of that value so it cannot stretch the field. */
+.select__value .list-box-item__indicator {
+  display: none;
+}
+
+/* Navigation has a distinct silhouette; action buttons retain square corners. */
+:is(button, a, .button)[data-navigation-control] {
+  border: 0 !important;
+  border-radius: var(--shape-navigation) !important;
+  background-color: color-mix(in oklch, var(--foreground) 4%, transparent) !important;
+  color: var(--foreground);
+  box-shadow: none;
+}
+
+[data-navigation-control]:is(:hover, [data-hovered='true']) {
+  background-color: color-mix(in oklch, var(--foreground) 8%, transparent) !important;
+}
+
+[data-navigation-control]:is(:focus-visible, [data-focus-visible='true']) {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Chart filters sit below page actions in the visual hierarchy. */
+.telemetry-filters :is(input, button) {
+  height: 28px;
+  min-height: 28px;
+  min-width: 0;
+  padding-inline: 8px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.telemetry-filters :is(label, .telemetry-filter-label) {
+  font-size: 11px;
+  line-height: 16px;
+  font-weight: 400;
+}
+
+.telemetry-filters button svg {
+  width: 12px;
+  height: 12px;
+}
+
+.telemetry-resolution button {
+  height: 22px;
+  min-height: 22px;
+}
+
+.telemetry-resolution button[aria-pressed='true'] {
+  font-weight: 600;
+  box-shadow: inset 0 -2px currentColor;
+}

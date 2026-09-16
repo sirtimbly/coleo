@@ -30,6 +30,7 @@ export default defineConfig({
 						{ text: "Planning Gate", link: "/guides/planning-gate" },
 						{ text: "CLI", link: "/guides/cli" },
 						{ text: "Docker", link: "/guides/docker" },
+						{ text: "Versions and Upgrades", link: "/guides/versioning" },
 						{ text: "IMAP Gateway", link: "/guides/imap-gateway" },
 					],
 				},

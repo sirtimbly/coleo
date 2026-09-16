@@ -10,7 +10,9 @@ import type { ReactNode } from "react";
 import { Activity, ChartNoAxesCombined, ListFilter, Plus, RefreshCw } from "lucide-react";
 import { Button } from "@heroui/react";
 
+import { NavigationButton } from "./navigation-button";
 import { useCollectionViewToolbarWidgets } from "./CollectionViewToolbar";
+import { SegmentedPanelControl } from "./segmented-panel-control";
 import { ProjectionSearch } from "./ProjectionControls";
 import {
 	ToolbarTemplateRows,
@@ -107,38 +109,27 @@ export function SheetWorkspaceToolbar({
 			</div>
 		),
 		"sheet.insights": (
-			<div
-				role="group"
-				aria-label={`${resourceName} insights`}
-				className="flex shrink-0 items-center p-0.5"
-			>
-				<Button
-					size="sm"
-					variant={activeInsight === "burndown" ? "secondary" : "ghost"}
-					aria-pressed={activeInsight === "burndown"}
-					aria-controls={insightPanelId(resourceKey, "burndown")}
-					onPress={() =>
-						onInsightChange(activeInsight === "burndown" ? null : "burndown")
-					}
-					className="h-7 min-w-0 touch-manipulation px-2"
-				>
-					<ChartNoAxesCombined className="h-3.5 w-3.5" aria-hidden="true" />
-					Burndown
-				</Button>
-				<Button
-					size="sm"
-					variant={activeInsight === "activity" ? "secondary" : "ghost"}
-					aria-pressed={activeInsight === "activity"}
-					aria-controls={insightPanelId(resourceKey, "activity")}
-					onPress={() =>
-						onInsightChange(activeInsight === "activity" ? null : "activity")
-					}
-					className="h-7 min-w-0 touch-manipulation px-2"
-				>
-					<Activity className="h-3.5 w-3.5" aria-hidden="true" />
-					Activity
-				</Button>
-			</div>
+			<SegmentedPanelControl
+				label={`${resourceName} insights`}
+				value={activeInsight}
+				onChange={onInsightChange}
+				options={[
+					{
+						value: "burndown",
+						controls: insightPanelId(resourceKey, "burndown"),
+						content: (
+							<><ChartNoAxesCombined className="h-3.5 w-3.5" aria-hidden="true" />Burndown</>
+						),
+					},
+					{
+						value: "activity",
+						controls: insightPanelId(resourceKey, "activity"),
+						content: (
+							<><Activity className="h-3.5 w-3.5" aria-hidden="true" />Activity</>
+						),
+					},
+				]}
+			/>
 		),
 		"sheet.refresh": (
 			<Button
@@ -152,10 +143,10 @@ export function SheetWorkspaceToolbar({
 			</Button>
 		),
 		"sheet.create": (
-			<Button size="sm" variant="primary" onPress={onNew}>
+			<NavigationButton size="sm" onPress={onNew}>
 				<Plus className="h-4 w-4" aria-hidden="true" />
 				New
-			</Button>
+			</NavigationButton>
 		),
 		...collectionWidgets,
 		...extensionWidgets,

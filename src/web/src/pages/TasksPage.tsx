@@ -46,6 +46,8 @@ import { useWebSocket, type WebSocketMessage } from "@/hooks/useWebSocket";
 import type { TaskUpdate } from "@/workbench/resource-updates";
 import type { ResourceSheetRowMove } from "@/workbench/ResourceSheet";
 import { useTasks, type TaskListQueryData } from "@/hooks/useTasks";
+import { ToolbarToggleButton } from '@/design-system/toolbar-toggle-button';
+import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useQueryClient } from "@tanstack/react-query";
 import { tasksKeys } from "@/lib/queryKeys";
@@ -592,16 +594,15 @@ export function TasksPage() {
 		);
 	}, [draftsOnly, openWorkspaceRoute]);
 	const draftFilterControl = (
-		<Button
+		<ToolbarToggleButton
 			size="sm"
-			variant={draftsOnly ? "secondary" : "ghost"}
-			aria-pressed={draftsOnly}
+			isSelected={draftsOnly}
 			onPress={toggleDraftsOnly}
 			className="h-8 shrink-0"
 		>
 			<Pencil className="h-3.5 w-3.5" aria-hidden="true" />
 			Drafts Only
-		</Button>
+		</ToolbarToggleButton>
 	);
 	useEffect(() => {
 		const taskId = searchParams.get("task");
@@ -811,9 +812,8 @@ export function TasksPage() {
 								View Task
 							</Button>
 							{task.sourceType === "plan" || task.planLineUid ? (
-								<Button
+								<NavigationButton
 									size="sm"
-									variant="ghost"
 									onPress={() => openWorkspaceRoute(
 										{ pathname: "/setup", search: "", title: "Plan & Documents" },
 										"split",
@@ -821,7 +821,7 @@ export function TasksPage() {
 								>
 									<FileText className="h-3.5 w-3.5" aria-hidden="true" />
 									View Plan
-								</Button>
+								</NavigationButton>
 							) : null}
 						</>
 					)}
@@ -863,6 +863,7 @@ export function TasksPage() {
 	) : undefined;
 	const taskViewConfigurator = (
 		<ViewConfigurator
+			showGridFontSize
 			open={configuringView}
 			columns={TASK_VIEW_COLUMNS}
 			preferences={taskViewPreferences}

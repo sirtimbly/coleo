@@ -7,9 +7,11 @@
  * detail navigation. Coleo owns data and history; Tabulator owns rendering.
  */
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type CSSProperties } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TabulatorFull as Tabulator } from "tabulator-tables";
+
+import { resolveGridFontSize } from "./grid-font-size";
 
 import { cn } from "@/lib";
 import type { RowFormattingValue } from "@/design-system/row-formatting";
@@ -241,7 +243,9 @@ export function ResourceSheet<T extends { id: string }>({
 		hozAlign: "center",
 		formatter: expanderFormatter,
 	}), [expanderFormatter]);
-	const rowHeight = preferences.density === "comfortable" ? 44 : 30;
+	const fontSize = resolveGridFontSize(preferences.gridFontSize);
+	const fontHeight = Math.max(0, Math.ceil((fontSize - 11) * 1.8));
+	const rowHeight = (preferences.density === "comfortable" ? 44 : 30) + fontHeight;
 	const canMoveRows = Boolean(onRowsMove) && (preferences.sort ?? []).length === 0;
 	const tabulatorColumns = useMemo<ColumnDefinition[]>(
 		() => [
@@ -734,6 +738,9 @@ export function ResourceSheet<T extends { id: string }>({
 						? [{ field: sorter.field, direction: sorter.dir }]
 						: []
 				));
+				// Tabulator also emits this during initial render and redraw. Do not
+				// save unchanged defaults before the persisted view has loaded.
+				if (JSON.stringify(sort) === JSON.stringify(runtime.preferences.sort ?? [])) return;
 				runtime.onPreferencesChange({ ...runtime.preferences, sort });
 			});
 			instance.on("scrollVertical", (top) => {
@@ -851,6 +858,8 @@ export function ResourceSheet<T extends { id: string }>({
 				className,
 			)}
 			data-density={preferences.density ?? "compact"}
+			data-grid-font-size={fontSize}
+			style={{ "--sheet-font-scale": fontSize / 11 } as CSSProperties}
 			role="region"
 			aria-label="Resource spreadsheet"
 			tabIndex={0}

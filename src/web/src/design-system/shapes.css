@@ -1,0 +1,55 @@
+/* Shared shape contract for HeroUI, native controls, and portaled workbench UI. */
+:root,
+.light,
+.dark,
+[data-theme] {
+  --shape-button: 0px;
+  --shape-detail: 1px;
+  --shape-container: 2px;
+  --shape-field: 2px;
+  --shape-navigation: 999px;
+  --radius: var(--shape-container);
+  --field-radius: var(--shape-field);
+}
+
+/* Existing rounded utilities all resolve to the compact container scale. */
+@theme {
+  --radius-xs: var(--shape-detail);
+  --radius-sm: var(--shape-detail);
+  --radius-md: var(--shape-container);
+  --radius-lg: var(--shape-container);
+  --radius-xl: var(--shape-container);
+  --radius-2xl: var(--shape-container);
+  --radius-3xl: var(--shape-container);
+  --radius-4xl: var(--shape-container);
+}
+
+/* Role rules win over legacy per-page rounded utilities, including ! variants. */
+:is(button, [role='button'], [role='tab'], [role='menuitem'], [role='option'], .button, .tabs__indicator) {
+  border-radius: var(--shape-button) !important;
+}
+
+:is(
+  input:not([type]), input[type='text'], input[type='search'], input[type='email'],
+  input[type='url'], input[type='tel'], input[type='password'], input[type='number'],
+  input[type='date'], input[type='time'], input[type='datetime-local'],
+  .input-group, .search-field__group
+) {
+  border-radius: var(--shape-field) !important;
+}
+
+/* The outer field owns the silhouette; embedded inputs and sheet cells stay flush. */
+:is(.input-group, .search-field__group) input,
+.tabulator-cell.tabulator-editing :is(input, textarea, select) {
+  border-radius: var(--shape-button) !important;
+}
+
+:is(textarea, select, .textarea, .tabs__list, .chip,
+  .card, .modal__dialog, .popover, .dropdown__popover, .select__popover) {
+  border-radius: var(--shape-container);
+}
+
+/* A custom select is a field even when the library renders its trigger as a button. */
+.select__trigger {
+  border-radius: var(--shape-container) !important;
+}

@@ -1,7 +1,7 @@
 .golden-workspace-shell {
-  --golden-shell-radius: 4px;
-  --golden-panel-radius: 2px;
-  --golden-control-radius: 10px;
+  --golden-shell-radius: var(--shape-container);
+  --golden-panel-radius: var(--shape-container);
+  --golden-control-radius: var(--shape-button);
   --golden-control-height: 36px;
   --golden-border: color-mix(in oklch, var(--border) 88%, transparent);
   background-color: var(--background);
@@ -206,7 +206,7 @@
 .golden-pane-menu-dropdown {
   position: absolute;
   z-index: 120;
-  border-radius: 12px;
+  border-radius: var(--shape-container);
   border: 1px solid var(--golden-border);
   background: var(--overlay);
   box-shadow: 0 20px 44px -28px rgba(0, 0, 0, 0.55);
@@ -263,7 +263,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  border-radius: 10px;
+  border-radius: var(--shape-button);
   border: 1px solid transparent;
   background: transparent;
   color: var(--foreground);
@@ -338,7 +338,7 @@
   min-width: 1.5rem;
   height: 1.25rem;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--shape-detail);
   border: 1px solid var(--golden-border);
   background: color-mix(in oklch, var(--surface-secondary) 88%, transparent);
   color: var(--muted);
@@ -377,7 +377,7 @@
   max-height: min(70vh, 560px);
   flex-direction: column;
   overflow: hidden;
-  border-radius: 14px;
+  border-radius: var(--shape-container);
   border: 1px solid var(--golden-border);
   background: color-mix(in oklch, var(--surface) 96%, black 4%);
   box-shadow: 0 28px 80px -36px rgba(0, 0, 0, 0.7);
@@ -433,7 +433,7 @@
   align-items: center;
   gap: 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--shape-button);
   background: transparent;
   color: var(--foreground);
   padding: 8px 10px;
@@ -515,7 +515,7 @@
   min-height: 26px;
   height: 26px !important;
   border: 1px solid color-mix(in oklch, var(--border) 58%, transparent) !important;
-  border-radius: 1px !important;
+  border-radius: var(--shape-detail) !important;
   background: var(--surface-secondary) !important;
   color: color-mix(in oklch, var(--foreground) 62%, transparent) !important;
   padding: 0 28px 0 12px !important;
@@ -581,7 +581,7 @@
   width: 16px;
   height: 16px;
   margin-left: 0;
-  border-radius: 999px;
+  border-radius: var(--shape-button);
   background-color: transparent !important;
   background-image: none !important;
   color: color-mix(in oklch, var(--foreground) 56%, transparent) !important;

@@ -6,9 +6,11 @@
  * passed to the profile-backed view store by the containing projection.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import { Button } from "@heroui/react";
+
+import { resolveGridFontSize } from "./grid-font-size";
 
 import { WorkbenchHeader } from "@/design-system/WorkbenchSurface";
 
@@ -43,6 +45,7 @@ function normalizedColumns(
 
 export function ViewConfigurator({
 	open,
+	showGridFontSize = false,
 	columns,
 	preferences,
 	shared,
@@ -51,6 +54,7 @@ export function ViewConfigurator({
 	onClose,
 }: {
 	open: boolean;
+	showGridFontSize?: boolean;
 	columns: ConfigurableColumn[];
 	preferences: ViewPreferences;
 	shared?: boolean;
@@ -85,7 +89,7 @@ export function ViewConfigurator({
 	const filters = preferences.filters ?? [];
 
 	return (
-		<div className="absolute inset-0 z-[1200] flex items-start justify-end bg-background/55 backdrop-blur-[1px]">
+		<div className="absolute inset-0 z-[1200] flex items-start justify-end bg-black/5">
 			<section className="h-full w-full max-w-sm overflow-auto border-l border-border bg-surface shadow-lg">
 				<WorkbenchHeader
 					title="Configure view"
@@ -98,6 +102,12 @@ export function ViewConfigurator({
 				/>
 
 				<div className="space-y-6 p-4">
+					{showGridFontSize ? (
+						<GridFontSizeInput
+							value={resolveGridFontSize(preferences.gridFontSize)}
+							onChange={(gridFontSize) => onChange({ ...preferences, gridFontSize })}
+						/>
+					) : null}
 					<div>
 						<div className="mb-2 flex items-center justify-between">
 							<h2 className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
@@ -333,5 +343,34 @@ export function ViewConfigurator({
 				</div>
 			</section>
 		</div>
+	);
+}
+
+function GridFontSizeInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+	const [draft, setDraft] = useState(String(value));
+	useEffect(() => setDraft(String(value)), [value]);
+	return (
+		<label className="block space-y-2">
+			<span className="text-xs font-semibold text-muted-foreground">Grid font size (px)</span>
+			<input
+				type="number"
+				min={8}
+				max={28}
+				step={1}
+				aria-label="Grid font size"
+				className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+				value={draft}
+				onChange={(event) => {
+					setDraft(event.target.value);
+					const next = event.target.valueAsNumber;
+					if (Number.isInteger(next) && next >= 8 && next <= 28) onChange(next);
+				}}
+				onBlur={() => {
+					const next = draft.trim() ? resolveGridFontSize(Number(draft)) : value;
+					setDraft(String(next));
+					if (next !== value) onChange(next);
+				}}
+			/>
+		</label>
 	);
 }

@@ -48,6 +48,7 @@ import {
 } from "@/lib";
 import { StatusBadge } from "@/components";
 import { useArmEvents, useWebSocket } from "@/hooks";
+import { SegmentedPanelControl } from "@/design-system/segmented-panel-control";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	useIsWorkspacePanel,
@@ -1904,8 +1905,8 @@ function ArmViewerConsole({
 					)}
 				</span>
 				<div className="min-w-0">
-					<h1 className="flex min-w-0 items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
-						<span className="truncate">{arm?.name ?? "Arm Viewer"}</span>
+					<h1 className="flex min-w-0 items-center gap-2 overflow-hidden text-sm font-semibold tracking-tight text-foreground">
+						<span className="max-w-full shrink-0 truncate">{arm?.name ?? "Arm Viewer"}</span>
 						{arm ? <StatusBadge status={arm.status} /> : null}
 						{arm ? (
 							<span className="hidden sm:inline-flex">
@@ -1932,38 +1933,29 @@ function ArmViewerConsole({
 			</div>
 		),
 		"arm-viewer.overview": arm ? (
-			<div
-				role="group"
-				aria-label="Arm overview panels"
-				className="flex shrink-0 items-center p-0.5"
-			>
-				<Button
-					size="sm"
-					variant={activeOverview === "configuration" ? "secondary" : "ghost"}
-					aria-pressed={activeOverview === "configuration"}
-					aria-label="Toggle Arm configuration"
-					aria-controls="arm-viewer-configuration-panel"
-					onPress={() =>
-						onOverviewChange(activeOverview === "configuration" ? null : "configuration")
-					}
-					className="h-7 min-w-0 touch-manipulation px-2"
-				>
-					<Server className="h-3.5 w-3.5" aria-hidden="true" />
-					<span className="hidden md:inline">Configuration</span>
-				</Button>
-				<Button
-					size="sm"
-					variant={activeOverview === "status" ? "secondary" : "ghost"}
-					aria-pressed={activeOverview === "status"}
-					aria-label="Toggle Arm status"
-					aria-controls="arm-viewer-status-panel"
-					onPress={() => onOverviewChange(activeOverview === "status" ? null : "status")}
-					className="h-7 min-w-0 touch-manipulation px-2"
-				>
-					<HeartPulse className="h-3.5 w-3.5" aria-hidden="true" />
-					<span className="hidden md:inline">Status</span>
-				</Button>
-			</div>
+			<SegmentedPanelControl
+				label="Arm overview panels"
+				value={activeOverview}
+				onChange={onOverviewChange}
+				options={[
+					{
+						value: "configuration",
+						label: "Toggle Arm configuration",
+						controls: "arm-viewer-configuration-panel",
+						content: (
+							<><Server className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden md:inline">Configuration</span></>
+						),
+					},
+					{
+						value: "status",
+						label: "Toggle Arm status",
+						controls: "arm-viewer-status-panel",
+						content: (
+							<><HeartPulse className="h-3.5 w-3.5" aria-hidden="true" /><span className="hidden md:inline">Status</span></>
+						),
+					},
+				]}
+			/>
 		) : null,
 		"arm-viewer.mark-stuck": arm &&
 		arm.status !== "stopped" &&

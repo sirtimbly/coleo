@@ -18,7 +18,7 @@ export function WorkbenchSurface({
 	className?: string;
 }) {
 	return (
-		<section className={cn("min-h-0 overflow-hidden border border-border bg-surface", className)}>
+		<section className={cn("min-h-0 overflow-hidden rounded-md border border-border bg-surface", className)}>
 			{children}
 		</section>
 	);

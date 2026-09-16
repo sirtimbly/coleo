@@ -54,8 +54,6 @@ export function ToolbarTemplateRow({
 			data-toolbar-row={row.id}
 			className={cn(
 				"!flex !w-full min-w-0 shrink-0 flex-nowrap overflow-x-auto rounded-none border-b border-border bg-surface-secondary/35",
-				"[&_button]:!rounded-none [&_input]:!rounded-none [&_select]:!rounded-none",
-				"[&_[role=button]]:!rounded-none [&_[role=combobox]]:!rounded-none [&_[role=switch]]:!rounded-none [&_[role=tab]]:!rounded-none",
 				"[&_[data-projection-menu-trigger]]:!h-8 [&_[data-projection-menu-trigger]]:!min-h-8",
 				"[&_[role=group]]:bg-accent/5 [&_[role=group]]:p-0.5",
 				"[&_[role=group]_.button--secondary]:!bg-accent/20 [&_[role=group]_.button--secondary]:!text-accent",

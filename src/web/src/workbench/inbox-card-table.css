@@ -114,7 +114,7 @@
 	height: 1.75rem;
 	place-items: center;
 	border: 1px solid transparent;
-	border-radius: 0.25rem;
+	border-radius: var(--shape-button);
 	background: transparent;
 	color: var(--color-muted-foreground);
 	line-height: 1;

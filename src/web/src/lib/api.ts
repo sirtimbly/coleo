@@ -1,3 +1,4 @@
+import type { FleetVersions } from "../../../shared/version-compatibility";
 /**
  * API Client for Coleo Observatory.
  *
@@ -310,6 +311,7 @@ class ApiClient {
     return this.request<{
       status: string;
       version: string;
+      versions?: FleetVersions;
       cwd: string;
       projectName: string;
       uptime: number;

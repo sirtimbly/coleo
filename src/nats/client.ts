@@ -6,6 +6,7 @@
  */
 
 import { type NatsConnection, JSONCodec, type Subscription, type Msg, type JetStreamClient } from 'nats';
+import { VERSION, NATS_SCHEMA_VERSION } from '../version';
 import { connectToNats } from './transport';
 import {
   TOPICS,
@@ -463,14 +464,18 @@ export class NatsClient {
 
   private payloadFits(data: unknown, maxPayload: number): boolean {
     try {
-      return jc.encode(data).length <= maxPayload;
+      return jc.encode(isRecord(data)
+        ? { schemaVersion: NATS_SCHEMA_VERSION, publisherVersion: VERSION, ...data }
+        : data).length <= maxPayload;
     } catch {
       return false;
     }
   }
 
   private encodePayload(topic: string, data: unknown): Uint8Array {
-    const payload = jc.encode(data);
+    const payload = jc.encode(isRecord(data)
+      ? { schemaVersion: NATS_SCHEMA_VERSION, publisherVersion: VERSION, ...data }
+      : data);
     const maxPayload = this.getMaxPayloadBytes();
     if (maxPayload !== null && payload.length > maxPayload) {
       throw new PayloadTooLargeError(topic, payload.length, maxPayload);

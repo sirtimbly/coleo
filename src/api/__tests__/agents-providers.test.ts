@@ -18,6 +18,7 @@ describe("agent provider status API", () => {
           agentId: "reef-1",
           hostname: "reef-one",
           version: "0.2.0",
+          natsSchemaVersion: 1,
           capabilities: ["opencode-api", "opencode-provider-auth"],
         },
         {
@@ -66,6 +67,7 @@ describe("agent provider status API", () => {
           agentId: "reef-1",
           hostname: "reef-one",
           version: "0.2.0",
+          natsSchemaVersion: 1,
           configuredProviders: [{ id: "openai", name: "OpenAI", authMethod: "api-key" }],
           availableProviderCount: 2,
           error: null,

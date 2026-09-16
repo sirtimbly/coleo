@@ -19,9 +19,9 @@ export function registerImapCommands(program: Command): void {
 
       if (!password) {
         try {
-          const { Database } = await import("bun:sqlite");
+          const { openDatabase } = await import("../../db");
           const dbPath = join(coleoDir, "coleo.db");
-          const db = new Database(dbPath);
+          const db = openDatabase(dbPath);
           const row = db.query("SELECT value FROM config WHERE key = 'imap_password'").get() as { value: string } | null;
           if (row) {
             password = row.value;
@@ -83,8 +83,8 @@ export function registerImapCommands(program: Command): void {
       const dbPath = join(coleoDir, "coleo.db");
 
       try {
-        const { Database } = await import("bun:sqlite");
-        const db = new Database(dbPath);
+        const { openDatabase } = await import("../../db");
+        const db = openDatabase(dbPath);
 
         if (options.reset) {
           const crypto = await import("crypto");

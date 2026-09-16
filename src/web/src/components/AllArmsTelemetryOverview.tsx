@@ -166,7 +166,7 @@ export function AllArmsTelemetryOverview({
           </div>
         ) : null}
 
-        <div className={embedded ? 'flex w-full flex-col gap-2' : 'flex w-full flex-col gap-2 xl:max-w-3xl'}>
+        <div className={embedded ? 'telemetry-filters flex w-full max-w-3xl flex-col gap-2' : 'telemetry-filters flex w-full flex-col gap-2 xl:max-w-3xl'}>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <DateTimeInput
               label="Start"
@@ -181,7 +181,8 @@ export function AllArmsTelemetryOverview({
               onChange={(end) => setDraftRange((current) => ({ ...current, end }))}
             />
             <Button
-              variant="primary"
+              variant="secondary"
+              size="sm"
               isDisabled={Boolean(rangeError) || loading}
               onPress={() => setAppliedRange(toAppliedRange(draftRange))}
             >
@@ -190,8 +191,8 @@ export function AllArmsTelemetryOverview({
             </Button>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className={rangeError ? 'text-xs text-danger' : 'text-xs text-muted-foreground'}>
-              {rangeError || 'Times use your local timezone. Maximum range: 7 days.'}
+            <span className={rangeError ? 'text-[11px] text-danger' : 'text-[11px] text-muted-foreground'}>
+              {rangeError || 'Local time · Maximum range: 7 days.'}
             </span>
             <div className="flex gap-2">
               <Button size="sm" variant="tertiary" onPress={() => applyPreset(THIRTY_MINUTES_MS)}>

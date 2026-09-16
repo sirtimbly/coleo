@@ -9,7 +9,9 @@ import { getServiceStatus } from "../../daemon";
 import { getNatsManager } from "../../nats/server";
 import { Maildir } from "../../mail";
 import { getColeoDir } from "../../config";
-import { VERSION } from "../../version";
+import { VERSION, RUNTIME_VERSION } from "../../version";
+import { getArmClient } from "../arm-client-registry";
+import type { FleetVersions } from "../../shared/version-compatibility";
 import { getServerWorkspaceRoot } from "../workspace-access";
 
 interface SystemContext {
@@ -332,6 +334,16 @@ export function createSystemRoutes() {
     return c.json({
       status: overallHealth ? "ok" : "degraded",
       version: VERSION,
+      versions: {
+        api: RUNTIME_VERSION,
+        agentDiscoveryAvailable: getArmClient() !== null && infrastructure.nats.healthy,
+        agents: (getArmClient()?.getAgents() ?? []).map((agent) => ({
+          agentId: agent.agentId,
+          hostname: agent.hostname,
+          version: agent.version,
+          natsSchemaVersion: agent.natsSchemaVersion,
+        })),
+      } satisfies FleetVersions,
       cwd,
       projectName: detectProjectName(cwd),
       uptime: Math.floor((Date.now() - startedAt.getTime()) / 1000),

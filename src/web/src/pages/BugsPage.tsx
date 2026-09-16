@@ -36,6 +36,7 @@ import type { ResourceSheetRowMove } from '@/workbench/ResourceSheet';
 import { useBugs } from '@/hooks/useBugs';
 import { useQueryClient } from '@tanstack/react-query';
 import { bugsKeys } from '@/lib/queryKeys';
+import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWebSocket, type WebSocketMessage } from '@/hooks/useWebSocket';
 import {
@@ -646,9 +647,8 @@ export function BugsPage() {
 								View Bug
 							</Button>
 							{bug.sourceTaskId ? (
-								<Button
+								<NavigationButton
 									size="sm"
-									variant="ghost"
 									onPress={() => openWorkspaceRoute(
 										{
 											pathname: '/tasks',
@@ -660,7 +660,7 @@ export function BugsPage() {
 								>
 									<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
 									View Task
-								</Button>
+								</NavigationButton>
 							) : null}
 						</>
 					)}
@@ -897,6 +897,7 @@ export function BugsPage() {
 				)}
 			</div>
 			<ViewConfigurator
+				showGridFontSize
 				open={configuringView}
 				columns={BUG_VIEW_COLUMNS}
 				preferences={bugViewPreferences}

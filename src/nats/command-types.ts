@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { NATS_SCHEMA_VERSION } from "../shared/version-compatibility";
 
 export const COMMAND_STREAM_NAME = "coleo-commands";
 
@@ -14,7 +15,7 @@ export const COMMAND_STREAM_SUBJECTS = [
   `${COMMAND_SUBJECTS.RESULT_PREFIX}.*`,
 ] as const;
 
-export const COMMAND_SCHEMA_VERSION = 1;
+export const COMMAND_SCHEMA_VERSION = NATS_SCHEMA_VERSION;
 
 export interface CommandEnvelope {
   id: string;

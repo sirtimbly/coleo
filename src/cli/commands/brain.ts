@@ -106,8 +106,8 @@ export function registerBrainCommands(program: Command): void {
         let activeArmsCount = 0;
         let pendingTasksCount = 0;
         try {
-          const { Database } = await import("bun:sqlite");
-          const db = new Database(dbPath, { readonly: true });
+          const { openDatabase } = await import("../../db");
+          const db = openDatabase(dbPath, { readonly: true });
           const armsResult = db
             .query("SELECT COUNT(*) as count FROM arms WHERE status NOT IN ('stopped')")
             .get();
@@ -236,10 +236,10 @@ export function registerBrainCommands(program: Command): void {
     .action(async () => {
       const coleoDir = getColeoDir();
       const dbPath = join(coleoDir, "coleo.db");
-      const { Database } = await import("bun:sqlite");
+      const { openDatabase } = await import("../../db");
 
       try {
-        const db = new Database(dbPath);
+        const db = openDatabase(dbPath);
         const brainDb = createSqliteBrainDb(db);
         const { generateTaskDetermination, formatTaskDetermination } = await import("../../brain/prompt-generator");
 
@@ -264,10 +264,10 @@ export function registerBrainCommands(program: Command): void {
     .action(async (taskIdOrSubject) => {
       const coleoDir = getColeoDir();
       const dbPath = join(coleoDir, "coleo.db");
-      const { Database } = await import("bun:sqlite");
+      const { openDatabase } = await import("../../db");
 
       try {
-        const db = new Database(dbPath);
+        const db = openDatabase(dbPath);
         const brainDb = createSqliteBrainDb(db);
         const { generateContextBundle, formatContextBundle } = await import("../../brain/prompt-generator");
 

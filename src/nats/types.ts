@@ -21,6 +21,7 @@ export interface AgentInfo {
   platform: NodeJS.Platform;
   startedAt: string;
   version: string;
+  natsSchemaVersion?: number; // Absent on legacy agents.
   capabilities: string[];  // e.g., ["opencode-api", "opencode"]
   maxArms: number;
 }

@@ -10,9 +10,9 @@ import { api } from '@/lib';
 import type { BrainConfigResponse, BrainModel } from '@/lib';
 import { Button } from '@heroui/react';
 import { DenseRowSkeleton } from '@/components';
+import { NavigationButton } from '@/design-system/navigation-button';
 import { usePageTitle } from '@/hooks/usePageTitle';
 import { useWorkspaceOpenRoute } from '@/workspace/route-context';
-import { CollectionRow } from '@/design-system/CollectionRow';
 import {
   WorkbenchEmptyState,
   WorkbenchHeader,
@@ -34,7 +34,7 @@ interface BrainStatus {
     blockedTaskCount: number;
     blockedArmCount: number;
     taskCount: number;
-		nextStep: string | null;
+    nextStep: string | null;
   };
   modelAccess: {
     status: 'available' | 'blocked' | 'unknown';
@@ -99,6 +99,7 @@ function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAcce
       </div>
       {modelAccess.actionUrl ? (
         <a
+          data-navigation-control
           href={modelAccess.actionUrl}
           target="_blank"
           rel="noreferrer"
@@ -113,28 +114,28 @@ function ModelAccessAlert({ modelAccess }: { modelAccess: BrainStatus['modelAcce
 }
 
 function PlanningGateAlert({ plan, onNavigate }: { plan: BrainStatus['plan']; onNavigate: Navigate }) {
-	if (plan.status !== 'blocked') return null;
-	const blocked = [
-		plan.blockedArmCount ? `${plan.blockedArmCount} Arm${plan.blockedArmCount === 1 ? '' : 's'}` : null,
-		plan.blockedTaskCount ? `${plan.blockedTaskCount} task${plan.blockedTaskCount === 1 ? '' : 's'}` : null,
-	].filter(Boolean).join(' and ');
+  if (plan.status !== 'blocked') return null;
+  const blocked = [
+    plan.blockedArmCount ? `${plan.blockedArmCount} Arm${plan.blockedArmCount === 1 ? '' : 's'}` : null,
+    plan.blockedTaskCount ? `${plan.blockedTaskCount} task${plan.blockedTaskCount === 1 ? '' : 's'}` : null,
+  ].filter(Boolean).join(' and ');
 
-	return (
-		<div role="alert" className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-			<div className="flex min-w-0 gap-3">
-				<AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
-				<div>
-					<p className="font-medium text-warning">The Brain is paused at the planning gate</p>
-					<p className="mt-1 text-sm text-foreground">{plan.detail}</p>
-					{plan.nextStep ? <p className="mt-2 text-sm font-medium text-foreground">Required action: {plan.nextStep}</p> : null}
-					{blocked ? <p className="mt-1 text-xs text-muted-foreground">{blocked} waiting. No new work or notifications will be generated until recovery.</p> : null}
-				</div>
-			</div>
-			<Button variant="secondary" size="sm" onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}>
-				Review plan
-			</Button>
-		</div>
-	);
+  return (
+    <div role="alert" className="flex flex-col gap-3 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+        <div>
+          <p className="font-medium text-warning">Project plan needs attention</p>
+          <p className="mt-1 text-sm text-foreground">{plan.detail}</p>
+          {plan.nextStep ? <p className="mt-2 text-sm font-medium text-foreground">{plan.nextStep}</p> : null}
+          {blocked ? <p className="mt-1 text-xs text-muted-foreground">{blocked} waiting for recovery.</p> : null}
+        </div>
+      </div>
+      <NavigationButton size="sm" onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}>
+        Review plan
+      </NavigationButton>
+    </div>
+  );
 }
 
 function BrainStatusSection({
@@ -152,84 +153,79 @@ function BrainStatusSection({
   onStop: () => void;
   onNavigate: Navigate;
 }) {
-  const planStatus = status?.plan?.status;
-  const planTone = planStatus === 'healthy' ? 'success' : planStatus === 'blocked' ? 'warning' : 'neutral';
-  const planLabel = planStatus === 'blocked' ? 'Blocked' : planStatus === 'healthy' ? 'Healthy' : 'Not ready';
+  const workBlocked = status?.modelAccess?.status === 'blocked' || status?.plan?.status === 'blocked';
+  const metrics = [
+    { label: 'Active Arms', value: status?.activeArmsCount, route: '/arms' },
+    { label: 'Pending tasks', value: status?.pendingTasksCount, route: '/tasks' },
+    { label: 'Completed today', value: status?.completedToday },
+  ];
 
   return (
-    <WorkbenchSurface>
-      <WorkbenchHeader
-        title="Brain status"
-        description="Coordinator lifecycle and current workload"
-        actions={
-        status?.status === 'running' ? (
-          <Button variant="secondary" size="sm" onPress={onStop} isDisabled={actionLoading === 'stop'}>
+    <section aria-labelledby="brain-lifecycle" className="rounded-lg bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <WorkbenchStatusDot tone={workBlocked ? 'warning' : statusTone(status?.status ?? '')} />
+          <h2 id="brain-lifecycle" className="text-sm font-semibold capitalize">
+            {isLoading ? 'Loading…' : workBlocked ? 'Work blocked' : status?.status ?? 'Not reported'}
+          </h2>
+        </div>
+        {status?.status === 'running' ? (
+          <Button variant="secondary" size="sm" onPress={onStop} isDisabled={!!actionLoading}>
             <Square className="h-3.5 w-3.5" />
             {actionLoading === 'stop' ? 'Stopping…' : 'Stop Brain'}
           </Button>
         ) : (
-          <Button variant="primary" size="sm" onPress={onStart} isDisabled={actionLoading === 'start'}>
+          <Button variant="primary" size="sm" onPress={onStart} isDisabled={isLoading || !status || !!actionLoading}>
             <Play className="h-3.5 w-3.5" />
             {actionLoading === 'start' ? 'Starting…' : status?.status === 'paused' ? 'Resume Brain' : 'Start Brain'}
           </Button>
-        )
-      }
-      />
-      {isLoading ? (
-        <div>
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <DenseRowSkeleton key={i} />
-          ))}
-        </div>
-      ) : (
-        <div>
-          <CollectionRow
-            title="Status"
-            description={status?.modelAccess?.status === 'blocked'
-              ? 'Plan evaluation blocked · API credits required'
-				: status?.plan?.status === 'blocked'
-					? 'Paused until the project planning gate recovers'
-              : `Uptime ${formatUptime(status?.uptime)}`}
-			leading={<WorkbenchStatusDot tone={status?.modelAccess?.status === 'blocked' ? 'danger' : status?.plan?.status === 'blocked' ? 'warning' : statusTone(status?.status || 'stopped')} />}
-			trailing={<span className="capitalize">{status?.plan?.status === 'blocked' ? 'blocked' : status?.status || 'unknown'}</span>}
-          />
-          <CollectionRow
-            title="Project plan"
-            description={status?.plan?.detail || 'Plan status is unavailable'}
-            leading={<WorkbenchStatusDot tone={planTone} />}
-            trailing={(
-              <span className={planStatus === 'blocked' ? 'font-medium text-warning' : planStatus === 'healthy' ? 'font-medium text-success' : 'text-muted-foreground'}>
-                {planLabel}
-              </span>
-            )}
-            onOpen={() => onNavigate('/setup', '?path=.project%2Fplan.md')}
-          />
-          <CollectionRow
-            title="Active Arms"
-            description="Arms currently registered with the coordinator"
-            leading={<WorkbenchStatusDot tone={(status?.activeArmsCount ?? 0) > 0 ? 'success' : 'neutral'} />}
-            trailing={<span>{status?.activeArmsCount ?? 0}</span>}
-            onOpen={() => onNavigate('/arms')}
-          />
-          <CollectionRow
-            title="Pending Tasks"
-            description={`${status?.completedToday ?? 0} completed today`}
-            leading={<WorkbenchStatusDot tone={(status?.pendingTasksCount ?? 0) > 0 ? 'warning' : 'neutral'} />}
-            trailing={<span>{status?.pendingTasksCount ?? 0}</span>}
-            onOpen={() => onNavigate('/tasks')}
-          />
-          <CollectionRow
-            title="Poll interval"
-            description="How often the brain checks for new work"
-            trailing={<span>{formatPollInterval(status?.pollIntervalMs || 30000)}</span>}
-          />
-          <CollectionRow
-            title="Last poll"
-            description={status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Never'}
-          />
-        </div>
+        )}
+      </div>
+      {isLoading ? <DenseRowSkeleton /> : (
+        <>
+          <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,8rem),1fr))] gap-x-5 gap-y-4">
+            {metrics.map(({ label, value, route }) => (
+              <div key={label}>
+                <dt className="text-xs text-muted-foreground">
+                  {route ? (
+                    <button type="button" onClick={() => onNavigate(route)} className="rounded hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-4">
+                      {label}
+                    </button>
+                  ) : label}
+                </dt>
+                <dd className="text-2xl font-medium tabular-nums">{value ?? '—'}</dd>
+              </div>
+            ))}
+          </dl>
+          {status?.plan?.status !== 'blocked' ? (
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground break-words">
+                {status?.plan?.detail || (status?.plan?.status === 'healthy' ? 'Project plan ready' : status?.plan?.status === 'pending' ? 'Project plan not ready' : 'Plan status unavailable')}
+              </p>
+              <NavigationButton size="sm" onPress={() => onNavigate('/setup', '?path=.project%2Fplan.md')}>
+                Edit plan
+              </NavigationButton>
+            </div>
+          ) : null}
+          {status?.plan?.status !== 'blocked' && status?.plan?.nextStep ? (
+            <p className="mt-2 text-sm break-words">{status.plan.nextStep}</p>
+          ) : null}
+          <details className="mt-3">
+            <summary className="cursor-pointer py-2 text-sm">Runtime</summary>
+            <dl className="space-y-2 py-2 pl-4 text-xs">
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-muted-foreground">Uptime</dt>
+                <dd className="tabular-nums">{formatUptime(status?.uptime)}</dd>
+              </div>
+              <div className="flex flex-wrap justify-between gap-2">
+                <dt className="text-muted-foreground">Last poll</dt>
+                <dd>{status?.lastPollAt ? new Date(status.lastPollAt).toLocaleString() : 'Not reported'}</dd>
+              </div>
+            </dl>
+          </details>
+        </>
       )}
-    </WorkbenchSurface>
+    </section>
   );
 }
 
@@ -278,14 +274,13 @@ function BrainConfigSection({
   };
 
   return (
-    <WorkbenchSurface>
-      <WorkbenchHeader
-        title="Brain configuration"
-        description="Inference and orchestration limits"
-        actions={<EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} />}
-      />
-      {isEditing ? (
-        <div className="space-y-4 px-4 py-3">
+    <section aria-labelledby="brain-configuration" className="rounded-lg bg-surface-secondary/40 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <h2 id="brain-configuration" className="text-sm font-semibold">Configuration</h2>
+        {config ? <EditToggle isEditing={isEditing} onToggle={() => setIsEditing(true)} /> : null}
+      </div>
+      {!config ? <DenseRowSkeleton /> : isEditing ? (
+        <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="brainProvider" className="text-sm text-muted-foreground block mb-1">Provider</label>
@@ -344,14 +339,23 @@ function BrainConfigSection({
           </div>
         </div>
       ) : (
-        <div>
-          <CollectionRow title="Provider" description="Inference provider used by the brain" trailing={<span>{provider === 'openai' ? 'OpenAI' : provider}</span>} />
-          <CollectionRow title="Model" description="Model used for brain analysis and coordination" trailing={<span>{model}</span>} />
-          <CollectionRow title="Poll interval" description="How often the brain checks for new work" trailing={<span>{pollIntervalMs}ms</span>} />
-          <CollectionRow title="Max Arms" description="Maximum concurrent Arms" trailing={<span>{maxArms}</span>} />
-        </div>
+        <dl className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,10rem),1fr))] gap-x-6 gap-y-4 text-sm">
+          <div>
+            <dt className="text-xs text-muted-foreground">Model</dt>
+            <dd className="mt-1 break-all">{model}</dd>
+            <dd className="mt-0.5 text-xs text-muted-foreground">{provider === 'openai' ? 'OpenAI' : provider}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Poll interval</dt>
+            <dd className="mt-1 tabular-nums">{formatPollInterval(pollIntervalMs)}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">Max Arms</dt>
+            <dd className="mt-1 tabular-nums">{maxArms}</dd>
+          </div>
+        </dl>
       )}
-    </WorkbenchSurface>
+    </section>
   );
 }
 
@@ -407,7 +411,7 @@ export function BrainPage() {
     setActionLoading('start');
     try {
       await api.startBrain();
-      loadData();
+      await loadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to start brain');
     } finally {
@@ -420,7 +424,7 @@ export function BrainPage() {
     setActionLoading('stop');
     try {
       await api.stopBrain();
-      loadData();
+      await loadData();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to stop brain');
     } finally {
@@ -442,20 +446,19 @@ export function BrainPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <WorkbenchHeader
         title="Brain"
-        description="Central coordinator status and configuration"
         actions={
           <>
-            <Button
-              variant="secondary"
+            <NavigationButton
               size="sm"
+              aria-label="Open activity in Inbox"
               onPress={() => navigate('/messaging', '?facet=brain')}
             >
               <Inbox className="h-4 w-4" />
-              Open activity in Inbox
-            </Button>
+              Activity
+            </NavigationButton>
             <Button variant="ghost" size="sm" onPress={handleRefresh} aria-label="Refresh Brain">
               <RefreshCw className="h-4 w-4" />
             </Button>
@@ -463,9 +466,9 @@ export function BrainPage() {
         }
       />
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
+      <div data-testid="brain-content" className="min-h-0 flex-1 space-y-4 overflow-auto p-4">
         {status?.modelAccess ? <ModelAccessAlert modelAccess={status.modelAccess} /> : null}
-		{status ? <PlanningGateAlert plan={status.plan} onNavigate={navigate} /> : null}
+        {status ? <PlanningGateAlert plan={status.plan} onNavigate={navigate} /> : null}
 
         <BrainStatusSection
           status={status}

@@ -25,6 +25,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
       platform: agent.platform,
       startedAt: agent.startedAt,
       version: agent.version,
+      natsSchemaVersion: agent.natsSchemaVersion,
       capabilities: agent.capabilities,
       maxArms: agent.maxArms,
     }));
@@ -46,6 +47,7 @@ export function createAgentsRoutes(): Hono<ServerContext> {
         agentId: agent.agentId,
         hostname: agent.hostname,
         version: agent.version,
+        natsSchemaVersion: agent.natsSchemaVersion,
       };
 
       if (!agent.capabilities.includes("opencode-provider-auth")) {
