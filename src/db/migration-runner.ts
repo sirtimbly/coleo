@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
+import { schemaDefinition, tableStructure, type TableStructure } from './schema-structure';
 
 /** Increment only when old database clients can no longer read/write safely. */
 export const DATABASE_COMPATIBILITY_EPOCH = 1;
@@ -37,6 +38,7 @@ interface SchemaObject {
 interface RequiredSchema {
   objects: SchemaObject[];
   columns: Map<string, Column[]>;
+  structures: Map<string, TableStructure>;
 }
 
 const requiredSchemas = new Map<string, RequiredSchema>();
@@ -99,6 +101,8 @@ function getRequiredSchema(migrations: readonly Migration[]): RequiredSchema {
       WHERE name NOT LIKE 'sqlite_%' AND type IN ('table', 'index', 'trigger', 'view')`).all() as SchemaObject[];
     const schema = {
       objects,
+      structures: new Map(objects.filter((object) => object.type === 'table')
+        .map((object) => [object.name, tableStructure(reference, object.name)])),
       columns: new Map(objects.filter((object) => object.type === 'table')
         .map((object) => [object.name, columnsFor(reference, object.name)])),
     };
@@ -142,7 +146,18 @@ function validateRequiredSchema(db: Database, migrations: readonly Migration[]):
     if (!actual) {
       throw new DatabaseCompatibilityError(`Required ${object.type} ${object.name} is missing`);
     }
+    if (object.type !== 'table' && schemaDefinition(actual.sql) !== schemaDefinition(object.sql)) {
+      throw new DatabaseCompatibilityError(`Required ${object.type} ${object.name} has an incompatible definition`);
+    }
     if (object.type === 'table') {
+      const expected = required.structures.get(object.name)!;
+      const structure = tableStructure(db, object.name);
+      if (expected.foreignKeys.some((key) => !structure.foreignKeys.includes(key))) {
+        throw new DatabaseCompatibilityError(`Required foreign key on ${object.name} is missing or incompatible`);
+      }
+      if (expected.uniqueKeys.some((key) => !structure.uniqueKeys.includes(key))) {
+        throw new DatabaseCompatibilityError(`Required unique key on ${object.name} is missing or incompatible`);
+      }
       const checks = checkConstraints(actual.sql ?? '');
       if (checkConstraints(object.sql ?? '').some((check) => !checks.includes(check))) {
         throw new DatabaseCompatibilityError(`Required CHECK constraint on ${object.name} is missing or incompatible`);
