@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.13.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.1...coleo-v0.13.0) (2026-09-16)
+
+
+### Features
+
+* add database schema and version compatibility migrations ([bb416b1](https://github.com/sirtimbly/coleo/commit/bb416b159825fec643c599345d26e74bd22ad932))
+* add infrastructure versioning and refine workbench design ([d47f908](https://github.com/sirtimbly/coleo/commit/d47f908973db141df0a93583ef2354cb7720ad8e))
+* **web:** unify dashboard hierarchy and shared control styling ([ae18c0b](https://github.com/sirtimbly/coleo/commit/ae18c0bbe8dfa93a95040ca04e98976779c0e21c))
+
+
+### Bug Fixes
+
+* **db:** validate schema definitions before baselining ([6973c34](https://github.com/sirtimbly/coleo/commit/6973c34e1c418a257d6f927e104b4142f65eb5d4))
+* **web:** show workspace directory with solid folder icon ([e6efeff](https://github.com/sirtimbly/coleo/commit/e6efeff11b94a2a1e30070f970d25a1128f80aa5))
+* **web:** show workspace directory with solid folder icon ([f855c5e](https://github.com/sirtimbly/coleo/commit/f855c5eea76d615fda2a23860738e1d0de69a91a))
+
 ## [0.12.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.0...coleo-v0.12.1) (2026-09-03)
 
 
