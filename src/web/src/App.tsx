@@ -9,6 +9,7 @@ import { APP_ROUTES } from '@/app/routes';
 import { AppMessageOverlay } from '@/components/AppMessageOverlay';
 import { InterfaceTypography } from '@/components/InterfaceTypography';
 import { ProjectOnboardingGate } from '@/components/ProjectOnboarding';
+import { WorkspaceConnectionNotice } from '@/components/WorkspaceConnectionNotice';
 import { Layout } from '@/components';
 import { useLayoutMode } from '@/hooks/useLayoutMode';
 import { ToastProvider, MessageProvider, ThemeProvider } from '@/lib';
@@ -41,6 +42,7 @@ function App() {
               <ToolbarTemplateProvider>
                 <BrowserRouter>
                   <ProjectOnboardingGate>
+                    <WorkspaceConnectionNotice />
                     <InterfaceTypography />
                     <AppMessageOverlay />
                     <Routes>

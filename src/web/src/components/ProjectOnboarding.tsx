@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowRight, Check, Clipboard, FolderGit2, GitBranch, KeyRound, LoaderCircle, RefreshCw } from 'lucide-react';
 
 import { api } from '@/lib/api';
+import { isWorkspaceStarting, WORKSPACE_STARTUP_TIMEOUT_MS } from '@/lib/workspace-startup';
+import { WorkspaceStartup } from './WorkspaceStartup';
 
 import type { FormEvent, ReactNode } from 'react';
 import type { OnboardingStatus } from '@/lib/api';
@@ -320,24 +322,42 @@ export function ProjectOnboardingGate({ children }: ProjectOnboardingGateProps) 
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [apiKey, setApiKey] = useState(() => api.getApiKey() || '');
+  const [attempt, setAttempt] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
 
-  const loadStatus = useCallback(async () => {
+  const loadStatus = useCallback(() => {
     setError(null);
-    try {
-      setStatus(await api.getOnboardingStatus());
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to check project setup';
-      if (message === 'Invalid API key') {
-        api.clearApiKey();
-        setApiKey('');
-      }
-      setError(message);
-    }
+    setElapsed(0);
+    setAttempt((value) => value + 1);
   }, []);
 
   useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    const began = Date.now();
+    const clock = setInterval(() => setElapsed(Math.floor((Date.now() - began) / 1000)), 1000);
+    const check = async () => {
+      try {
+        const result = await api.getOnboardingStatus(AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]));
+        if (!cancelled) { setStatus(result); clearInterval(clock); }
+      } catch (err) {
+        if (cancelled) return;
+        if (isWorkspaceStarting(err) && Date.now() - began < WORKSPACE_STARTUP_TIMEOUT_MS) {
+          retry = setTimeout(check, 3000);
+          return;
+        }
+        clearInterval(clock);
+        const message = isWorkspaceStarting(err)
+          ? 'Your workspace is taking longer than expected to start. Try again in a moment. If this continues, check its status in Reef.'
+          : err instanceof Error ? err.message : 'Failed to check project setup';
+        if (message === 'Invalid API key') { api.clearApiKey(); setApiKey(''); }
+        setError(message);
+      }
+    };
+    void check();
+    return () => { cancelled = true; controller.abort(); clearTimeout(retry); clearInterval(clock); };
+  }, [attempt]);
 
   if (error) {
     const needsApiKey = error.includes('X-API-Key') || error.includes('API key');
@@ -380,14 +400,7 @@ export function ProjectOnboardingGate({ children }: ProjectOnboardingGateProps) 
   }
 
   if (!status) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-background text-foreground">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircle className="h-4 w-4 animate-spin" />
-          Checking project setup…
-        </div>
-      </main>
-    );
+    return <WorkspaceStartup elapsed={elapsed} />;
   }
 
   if (!status.ready) {

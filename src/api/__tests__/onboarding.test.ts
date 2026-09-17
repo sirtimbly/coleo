@@ -288,7 +288,9 @@ describe("onboarding routes", () => {
     const response = await app.request("http://localhost/api/onboarding");
 
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ error: "Arm Host connection is not available" });
+    expect(response.headers.get("Retry-After")).toBe("3");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({ error: "Your workspace tools are connecting", code: "WORKSPACE_STARTING", stage: "tools" });
     expect(commands).toEqual([]);
   });
 });
