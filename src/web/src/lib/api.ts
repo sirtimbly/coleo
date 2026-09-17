@@ -1,3 +1,4 @@
+import { ApiRequestError } from './workspace-startup';
 import type { FleetVersions } from "../../../shared/version-compatibility";
 /**
  * API Client for Coleo Observatory.
@@ -215,7 +216,8 @@ class ApiClient {
         error: 'Request failed',
         message: response.statusText,
       }));
-      throw new Error(error.message || error.error);
+      throw new ApiRequestError(error.message || error.error, response.status,
+        (error as ApiError & { code?: string }).code);
     }
 
     return response.json();
@@ -226,8 +228,8 @@ class ApiClient {
     return this.request<{ status: string; timestamp: string }>('/health');
   }
 
-  async getOnboardingStatus() {
-    return this.request<OnboardingStatus>('/onboarding');
+  async getOnboardingStatus(signal?: AbortSignal) {
+    return this.request<OnboardingStatus>('/onboarding', { signal });
   }
 
   async generateOnboardingSshKey() {
