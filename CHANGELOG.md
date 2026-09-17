@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.1...coleo-v0.14.0) (2026-09-17)
+
+
+### Features
+
+* **web:** guide users through workspace startup and reconnects ([5ba37a0](https://github.com/sirtimbly/coleo/commit/5ba37a00ed03b7ce48c21c0cb784d84f641ce669))
+* **web:** guide users through workspace startup and reconnects ([06b29e0](https://github.com/sirtimbly/coleo/commit/06b29e0183d61994352cb35969a9c6ee6a9428a2))
+
+
+### Bug Fixes
+
+* **web:** replace stalled sockets on manual reconnect ([0433731](https://github.com/sirtimbly/coleo/commit/043373112861c9c3d4eb2047fb1bcdc46bb28fe3))
+
 ## [0.13.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.0...coleo-v0.13.1) (2026-09-17)
 
 
