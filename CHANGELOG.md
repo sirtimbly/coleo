@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.14.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.0...coleo-v0.14.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **web:** keep hosted sessions alive while users work ([cf2786d](https://github.com/sirtimbly/coleo/commit/cf2786db8d9f047ec586ecca25339f720adb1fae))
+* **web:** keep hosted sessions alive while users work ([21bb9bf](https://github.com/sirtimbly/coleo/commit/21bb9bf49fab176d425be82e70fb635c8a418900))
+
+
+### Tests
+
+* wait for Tabulator row drag readiness ([8e3a790](https://github.com/sirtimbly/coleo/commit/8e3a79024f96954cdf84cba896177dc5c3de8c9d))
+
 ## [0.14.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.1...coleo-v0.14.0) (2026-09-17)
 
 
