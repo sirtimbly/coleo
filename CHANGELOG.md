@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.13.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.13.0...coleo-v0.13.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **db:** migrate legacy arm context defaults on upgrade ([71f83e2](https://github.com/sirtimbly/coleo/commit/71f83e2ba8638b52d5255daa0924dacd72053bfc))
+* **db:** migrate legacy arm context defaults on upgrade ([3822bf6](https://github.com/sirtimbly/coleo/commit/3822bf6272b3bf384e06b1f52f3b7fc3e3ff8bf6))
+
 ## [0.13.0](https://github.com/sirtimbly/coleo/compare/coleo-v0.12.1...coleo-v0.13.0) (2026-09-16)
 
 
