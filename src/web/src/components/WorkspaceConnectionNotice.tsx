@@ -4,7 +4,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 
 /** Keep the mounted workspace and unsaved inputs intact during a rollout. */
 export function WorkspaceConnectionNotice() {
-  const { connected, authenticated, connect } = useWebSocket({ channels: [] });
+  const { connected, authenticated, reconnect } = useWebSocket({ channels: [] });
   const [elapsed, setElapsed] = useState(0);
   const ready = connected && authenticated;
   useEffect(() => {
@@ -21,7 +21,7 @@ export function WorkspaceConnectionNotice() {
       <p className="mt-1 text-xs leading-5 text-muted-foreground">{elapsed >= 180
         ? 'Check your connection or try reconnecting. Keep this tab open to preserve unsaved edits.'
         : 'It may be restarting or updating. We’ll reconnect automatically; keep this tab open.'}</p>
-      {elapsed >= 180 && <button onClick={connect} className="mt-2 rounded px-2 py-1 font-medium text-accent focus-visible:outline-2">Reconnect</button>}
+      {elapsed >= 180 && <button onClick={reconnect} className="mt-2 rounded px-2 py-1 font-medium text-accent focus-visible:outline-2">Reconnect</button>}
     </div>
   </aside>;
 }

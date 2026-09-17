@@ -9,7 +9,7 @@
 
 import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
 
-import { api, type JsonValue } from "@/lib";
+import { api, type JsonValue } from "../lib/api";
 
 export type Channel =
 	| "arms"
@@ -55,7 +55,7 @@ const DISCONNECTED_SNAPSHOT: ConnectionSnapshot = {
 	authenticated: false,
 };
 
-class SharedWebSocketTransport {
+export class SharedWebSocketTransport {
 	private socket: WebSocket | null = null;
 	private subscribers = new Set<Subscriber>();
 	private stateListeners = new Set<() => void>();
@@ -169,6 +169,12 @@ class SharedWebSocketTransport {
 		this.startHeartbeat();
 	};
 
+	reconnect = (): void => {
+		this.disconnect();
+		this.reconnectAttempts = 0;
+		this.connect();
+	};
+
 	disconnect = (): void => {
 		this.shouldReconnect = false;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
@@ -177,6 +183,9 @@ class SharedWebSocketTransport {
 		const socket = this.socket;
 		this.socket = null;
 		if (socket) {
+			socket.onopen = null;
+			socket.onmessage = null;
+			socket.onerror = null;
 			socket.onclose = null;
 			socket.close();
 		}
@@ -237,11 +246,13 @@ export function useWebSocket({
 	}, [autoConnect, channelKey]);
 
 	const connect = useCallback(() => sharedTransport.connect(), []);
+	const reconnect = useCallback(() => sharedTransport.reconnect(), []);
 	const disconnect = useCallback(() => sharedTransport.disconnect(), []);
 
 	return {
 		...snapshot,
 		connect,
+		reconnect,
 		disconnect,
 	};
 }
