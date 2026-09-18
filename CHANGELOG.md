@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.3](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.2...coleo-v0.14.3) (2026-09-18)
+
+
+### Bug Fixes
+
+* **harness:** bound OpenCode startup and reap failed processes ([ce6cf83](https://github.com/sirtimbly/coleo/commit/ce6cf83a8ac909f0ac32ed18bf41e1eb33412764))
+* **harness:** bound OpenCode startup and reap failed processes ([3d06220](https://github.com/sirtimbly/coleo/commit/3d0622047cdf39b34fafc819254fd81719717057))
+
 ## [0.14.2](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.1...coleo-v0.14.2) (2026-09-18)
 
 
