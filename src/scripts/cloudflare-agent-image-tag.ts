@@ -8,6 +8,7 @@ const ENTRYPOINT = "src/agent/cloudflare-entry.ts";
 const IMAGE_INPUTS = [
   "Dockerfile.cloudflare-agent",
   "docker/cloudflare-agent-entrypoint.sh",
+  "docker/prepare-repository.sh",
   "node_modules/bun-pty/package.json",
   "node_modules/bun-pty/src/index.ts",
   "node_modules/bun-pty/src/interfaces.ts",
