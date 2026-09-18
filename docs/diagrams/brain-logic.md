@@ -42,7 +42,7 @@ flowchart TD
         B5 --> B6{API Harness + Server OK?}
         B6 -->|No| B6a[Skip arm]
         B6 -->|Yes| B7[Add to tracking]
-        B7 --> B8[Record detection time<br/>armDetectionTimes.set(arm.id, now)]
+        B7 --> B8["Record detection time<br/>armDetectionTimes.set(arm.id, now)"]
         B8 --> B9[Initialize state machine as idle]
     end
 
@@ -123,24 +123,29 @@ After checking arm status, the brain reads markdown files to sync tasks:
 ## Arm State Machine
 
 ```mermaid
-flowchart LR
-    subgraph LIFECYCLE["Arm State Machine"]
-        direction LR
-        disconnected["disconnected<br/>(not tracked)"] -->|scan finds process| idle["idle<br/>(ready for work)"]
-        idle -->|brain assigns task| task_assigned["task_assigned<br/>(task assigned, awaiting ack)"]
-        task_assigned -->|arm acknowledges| working["working<br/>(has task, processing)"]
-        working -->|complete_task| idle
-        idle -->|no activity after prompt| stuck["stuck detection"]
-        stuck -->|productive activity detected| working
-        stuck -->|confirmed stuck| intervention["intervention"]
-        intervention -->|recover| idle
-        working -->|process dies| stopped["stopped"]
-        idle -->|process dies| stopped
-        task_assigned -->|process dies| stopped
-        stopped -->|restart| disconnected
-    end
+stateDiagram-v2
+    direction TB
+    state "disconnected<br/>(not tracked)" as disconnected
+    state "idle<br/>(ready for work)" as idle
+    state "task assigned<br/>(awaiting ack)" as task_assigned
+    state "working<br/>(processing a task)" as working
+    state "stuck detection" as stuck
+    state "intervention" as intervention
+    state "stopped" as stopped
 
-    class disconnected,idle,task_assigned,working,stuck,intervention,stopped state
+    [*] --> disconnected
+    disconnected --> idle: process found
+    idle --> task_assigned: assign task
+    task_assigned --> working: acknowledge
+    working --> idle: complete
+    idle --> stuck: no activity
+    stuck --> working: activity found
+    stuck --> intervention: confirmed
+    intervention --> idle: recover
+    working --> stopped: dies
+    idle --> stopped: dies
+    task_assigned --> stopped: dies
+    stopped --> disconnected: restart
 ```
 
 ## State Machine Truth Table
@@ -165,71 +170,30 @@ flowchart LR
 This diagram shows the correct task assignment flow:
 
 ```mermaid
-sequenceDiagram
-    participant Arm
-    participant Brain
-    participant DB[SQLite Database]
-    participant State[State Machine]
-
-    Note over Arm,State: Arm is IDLE and waiting
-
-    Arm->>Brain: heartbeat (status: idle)
-    Brain->>Arm: "You have tasks, call get_full_briefing"
-
-    Note over Arm: Arm calls get_full_briefing
-
-    Arm->>Brain: get_full_briefing()
-    Brain->>Arm: Task context bundle
-
-    Note over Arm: Arm decides to claim task
-    Arm->>Brain: claim_task(task-id)
-
-    Brain->>State: TASK_ASSIGNED event
-    State->>State: idle → task_assigned
-    Brain->>DB: UPDATE tasks SET status='claimed', assigned_to=arm
-    Brain->>DB: UPDATE arms SET status='busy'
-
-    Brain->>Arm: task_assignment message (via queue)
-    Arm->>Brain: acknowledge_task(task-id)
-
-    Brain->>State: TASK_ACKNOWLEDGED event
-    State->>State: task_assigned → working
-    Brain->>DB: UPDATE tasks SET status='in_progress'
-
-    Note over Arm,State: Arm is now WORKING on the task
+flowchart TD
+    Discover["Arm reports idle; Brain announces available work"] --> Briefing["Arm requests a full briefing and receives task context"]
+    Briefing --> Claim["Arm claims the task; state becomes task_assigned"]
+    Claim --> PersistClaim["SQLite records the claim and marks the arm busy"]
+    PersistClaim --> Acknowledge["Brain queues the assignment; the arm acknowledges it"]
+    Acknowledge --> Working["State becomes working; SQLite marks the task in progress"]
+    Working --> Ready["Arm works on the task"]
+```
 
 ## Autonomous Arm Protection Flow
 
 When the brain starts up and finds arms that were working autonomously:
 
 ```mermaid
-sequenceDiagram
-    participant Brain
-    participant DB[SQLite Database]
-    participant Arm
-
-    Note over Brain,DB: Brain starts up - finds arm working autonomously
-
-    Brain->>DB: scanForRunningArms()
-    DB->>Brain: arm "rand" exists, status=busy
-    Brain->>Arm: Check if process alive (kill(pid, 0))
-    Arm-->>Brain: Process alive!
-    Brain->>DB: UPDATE arms SET status='idle'
-    Brain->>DB: armDetectionTimes.set("rand", now)
-
-    Note over Brain: Grace period - no prompting for configured time
-
-    Brain->>DB: getBrainConfigNumber("brain_arm_grace_period_minutes", 5)
-    DB-->>Brain: 5 minutes (default)
-
-    Brain->>DB: checkIdleArmStuckLoops()
-    DB->>Brain: Recent activity for "rand" (last 15min)
-    Brain->>Brain: Check for productive actions:<br/>heartbeat, claim_task, complete_task, etc.
-    Brain->>DB: Query productive activity in last 60 min
-    DB-->>Brain: Found: complete_task at 14:30
-    Brain->>Brain: lastProductiveAt = 14:30<br/>skip stuck detection<br/>arm was working autonomously!
-
-    Note over Brain,Arm: Arm continues working without interruption
+flowchart TD
+    Start["Brain starts<br/>Scan SQLite for busy arms"] --> Probe["Check whether the arm's process is alive"]
+    Probe --> Alive{"Process alive?"}
+    Alive -->|No| Stop["Mark the arm stopped"]
+    Alive -->|Yes| Grace["Mark idle, record detection time,<br/>and honor the configured grace period"]
+    Grace --> Check["Inspect recent activity<br/>and productive actions"]
+    Check --> FoundWork{"Recent work found?"}
+    FoundWork -->|No| Monitor["Resume normal health monitoring"]
+    FoundWork -->|Yes| Protect["Record last productive time<br/>and skip stuck detection"]
+    Protect --> Continue["Arm continues without interruption"]
 ```
 
 ## Configuration

@@ -75,6 +75,30 @@ body.light-mode {
 	--vp-code-color: #002724;
 }
 
+/* Rendered Mermaid diagrams use the same glass surface as documentation content. */
+.vp-doc .mermaid-container {
+	margin: 1.5rem 0;
+	padding: 1.25rem;
+	overflow-x: auto;
+	border: 1px solid rgba(145, 226, 212, 0.2);
+	border-radius: 14px;
+	background: rgba(7, 29, 37, 0.82);
+	box-shadow: 0 12px 30px rgba(2, 17, 22, 0.16);
+}
+
+body.light-mode .vp-doc .mermaid-container {
+	border-color: rgba(7, 94, 89, 0.18);
+	background: rgba(244, 251, 250, 0.9);
+	box-shadow: 0 12px 30px rgba(7, 94, 89, 0.1);
+}
+
+.vp-doc .mermaid-container svg {
+	display: block;
+	max-width: 100%;
+	height: auto;
+	margin: 0 auto;
+}
+
 /* Reset for the marketing homepage container */
 .marketing-root {
 	min-height: 100dvh;

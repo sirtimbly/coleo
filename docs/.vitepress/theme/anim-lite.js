@@ -97,6 +97,7 @@ import {
     const isLight=value>50
     state.depthCtrl.classList.toggle('dark-mode', !isLight)
     // Mirror mode globally so navbar/content can restyle
+    document.documentElement.classList.toggle('dark', !isLight)
     document.body.classList.toggle('light-mode', isLight)
     document.body.classList.toggle('dark-mode', !isLight)
     const bgBrightness=0.6+state.brightness*0.8, bgSaturation=1.0+state.brightness*0.8

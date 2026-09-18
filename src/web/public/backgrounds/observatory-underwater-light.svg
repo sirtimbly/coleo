@@ -1,11 +1,11 @@
-<svg width="1440" height="150" viewBox="0 0 1440 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg width="3840" height="150" viewBox="0 0 3840 150" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="wash" x1="720" y1="0" x2="720" y2="150" gradientUnits="userSpaceOnUse">
+    <linearGradient id="wash" x1="1920" y1="0" x2="1920" y2="150" gradientUnits="userSpaceOnUse">
       <stop stop-color="#DDF4F4" stop-opacity=".82"/>
       <stop offset=".5" stop-color="#F0F9F8" stop-opacity=".42"/>
       <stop offset="1" stop-color="#F9F9FA" stop-opacity="0"/>
     </linearGradient>
-    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(722 7) rotate(90) scale(118 430)" gradientUnits="userSpaceOnUse">
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(1922 7) rotate(90) scale(118 760)" gradientUnits="userSpaceOnUse">
       <stop stop-color="#FFFFFC" stop-opacity=".95"/>
       <stop offset="1" stop-color="#D9F2F2" stop-opacity="0"/>
     </radialGradient>
@@ -39,8 +39,17 @@
       <feColorMatrix type="saturate" values="0"/>
     </filter>
   </defs>
-  <rect width="1440" height="150" fill="url(#wash)"/>
-  <rect width="1440" height="150" fill="url(#glow)"/>
+  <rect width="3840" height="150" fill="url(#wash)"/>
+  <rect width="3840" height="150" fill="url(#glow)"/>
+  <g opacity=".72">
+    <path d="M150 0H278L304 150H176L150 0Z" fill="url(#ray-far)"/>
+    <path d="M582 0H746L772 150H608L582 0Z" fill="url(#ray-mid)"/>
+    <path d="M1010 0H1090L1116 150H1036L1010 0Z" fill="url(#ray-far)"/>
+    <path d="M2740 0H2820L2846 150H2766L2740 0Z" fill="url(#ray-far)"/>
+    <path d="M3092 0H3256L3282 150H3118L3092 0Z" fill="url(#ray-mid)"/>
+    <path d="M3536 0H3664L3690 150H3562L3536 0Z" fill="url(#ray-far)"/>
+  </g>
+  <g transform="translate(1200)">
   <path d="M334 0H514L540 150H360L334 0Z" fill="url(#ray-far)"/>
   <path d="M525 0H671L697 150H551L525 0Z" fill="url(#ray-mid)"/>
   <path d="M650 0H852L878 150H676L650 0Z" fill="url(#ray-near)"/>
@@ -86,5 +95,26 @@
     <ellipse cx="112" cy="64" rx="48" ry="14"/>
     <ellipse cx="1322" cy="50" rx="58" ry="17"/>
   </g>
-  <rect width="1440" height="150" filter="url(#noise)" opacity=".08"/>
+  </g>
+  <g fill="#79C9C6" opacity=".18">
+    <path d="M0 132C164 106 342 116 510 137V150H0V132Z"/>
+    <path d="M3330 136C3494 112 3680 113 3840 130V150H3330V136Z"/>
+  </g>
+  <g opacity=".38" stroke="#7BCBC7" stroke-width="1.2">
+    <path d="M94 150C98 126 96 113 111 94C117 116 114 132 113 150"/>
+    <path d="M348 150C356 126 369 114 381 103C379 124 372 138 372 150"/>
+    <path d="M3460 150C3458 126 3467 112 3484 95C3490 117 3483 134 3485 150"/>
+    <path d="M3734 150C3743 126 3754 116 3768 105C3765 127 3758 140 3758 150"/>
+  </g>
+  <g fill="#5AADB7" opacity=".36">
+    <circle cx="420" cy="34" r="1.4"/>
+    <circle cx="846" cy="56" r="2"/>
+    <circle cx="3002" cy="35" r="1.6"/>
+    <circle cx="3418" cy="62" r="2.1"/>
+  </g>
+  <g stroke="white" stroke-linecap="round" opacity=".58">
+    <path d="M720 34V40M717 37H723"/>
+    <path d="M3140 43V50M3136.5 46.5H3143.5"/>
+  </g>
+  <rect width="3840" height="150" filter="url(#noise)" opacity=".08"/>
 </svg>
