@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.14.4](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.3...coleo-v0.14.4) (2026-09-18)
+
+
+### Bug Fixes
+
+* **brain:** stop managed process before reporting shutdown ([e2ad7f8](https://github.com/sirtimbly/coleo/commit/e2ad7f89854f4c9ea77c67989fcbe2d2adc79efe))
+* improve workbench resilience and plan preparation ([89f1c05](https://github.com/sirtimbly/coleo/commit/89f1c058246bdc74555ba86fd6a699494c12a2d5))
+* **planning:** recover evaluation failures and clarify task preparation ([95f1dfe](https://github.com/sirtimbly/coleo/commit/95f1dfef769d2d9549fed83794f252d2295ce71b))
+* **web:** isolate inbox records and tab rendering failures ([f17f3d3](https://github.com/sirtimbly/coleo/commit/f17f3d3baea09b3a06847ad92e5bed05f4baa352))
+
+
+### Miscellaneous Chores
+
+* merge master and preserve reconnect and session fixes ([f41350e](https://github.com/sirtimbly/coleo/commit/f41350e9e537f2645c4f8b19546a5a3bbd52fd45))
+
 ## [0.14.3](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.2...coleo-v0.14.3) (2026-09-18)
 
 

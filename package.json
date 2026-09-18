@@ -1,6 +1,6 @@
 {
 	"name": "coleo",
-	"version": "0.14.3",
+	"version": "0.14.4",
 	"description": "AI agent orchestrator using the Octopus Model",
 	"type": "module",
 	"private": false,
