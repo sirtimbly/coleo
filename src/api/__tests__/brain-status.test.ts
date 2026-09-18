@@ -55,19 +55,43 @@ function createTestDb(): Database {
 describe("brain status API", () => {
   let db: Database;
   let app: Hono<{ Variables: { db: Database } }>;
+  let startCalls = 0;
+  let startSucceeds = true;
 
   beforeEach(() => {
     db = createTestDb();
+    startCalls = 0;
+    startSucceeds = true;
     app = new Hono<{ Variables: { db: Database } }>();
     app.use("*", async (c, next) => {
       c.set("db", db);
       await next();
     });
-    app.route("/api/brain", createBrainRoutes());
+    app.route("/api/brain", createBrainRoutes({ startBrain: async () => {
+      startCalls += 1;
+      return { type: "brain", running: startSucceeds, pid: 1234, startedAt: "2026-09-18T19:00:00.000Z" };
+    } }));
   });
 
   afterEach(() => {
     db.close();
+  });
+
+  it("starts the process even when stored status already says running without inventing a poll", async () => {
+    const response = await app.request("/api/brain/start", { method: "POST" });
+    expect(response.status).toBe(200);
+    expect(startCalls).toBe(1);
+    expect(await response.json()).toEqual({ started: true, status: "running", pid: 1234 });
+    expect(db.query("SELECT last_poll_at FROM brain_state").get()).toEqual({ last_poll_at: null });
+  });
+
+  it("does not report a successful start when the process fails to launch", async () => {
+    startSucceeds = false;
+    db.run("UPDATE brain_state SET status = 'stopped'");
+    app.onError((error, c) => c.json({ error: error.message }, 503));
+    const response = await app.request("/api/brain/start", { method: "POST" });
+    expect(response.status).toBe(503);
+    expect(db.query("SELECT status, last_poll_at FROM brain_state").get()).toEqual({ status: "stopped", last_poll_at: null });
   });
 
   it("reports blocked, healthy, and pending project plan states", async () => {

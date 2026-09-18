@@ -30,11 +30,14 @@ for (const outcome of ['success', 'fallback', 'error'] as const) {
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Prepare tasks?' })).toBeVisible();
     await expect(dialog.getByRole('progressbar')).toHaveCount(0);
+    await expect(dialog).toContainText('Overwrites .project/plan.md');
+    await expect(dialog).toContainText('it does not add, update, or delete database tasks');
+    await expect(dialog).toContainText('adds or updates tasks in the database');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     expect(requests).toBe(0);
     await page.getByRole('button', { name: 'Prepare tasks', exact: true }).click();
-    await dialog.getByRole('button', { name: 'Confirm', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Confirm overwrite', exact: true }).click();
     await expect.poll(() => requests).toBe(1);
     await expect(dialog.getByRole('heading', { name: 'Preparing tasks' })).toBeVisible();
     await expect(dialog.getByRole('progressbar')).toBeVisible();
@@ -54,9 +57,16 @@ for (const outcome of ['success', 'fallback', 'error'] as const) {
     finish();
     await expect(dialog.getByRole('progressbar')).toHaveCount(0);
     await expect(dialog.getByRole(outcome === 'success' ? 'status' : 'alert')).toBeVisible();
-    if (outcome === 'success') await expect(dialog).toContainText('Task creation is still pending.');
+    if (outcome === 'success') await expect(dialog).toContainText('Task synchronization is still pending.');
     if (outcome === 'fallback') await expect(dialog).toContainText('The plan was saved, but AI evaluation has not succeeded.');
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.route('**/api/project-setup/file?*', (route) => route.fulfill({ json: {
+      file: { ...canonicalPlan, path: '.coleo/src/brain/templates/plan-evaluation-system-prompt.jinja', content: 'Preserve all requirements while organizing the plan.' },
+    } }));
+    await page.getByRole('button', { name: 'Prepare tasks', exact: true }).click();
+    await dialog.getByRole('button', { name: 'plan-evaluation instructions', exact: true }).click();
     await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('textbox')).toHaveValue('Preserve all requirements while organizing the plan.');
+    expect(requests).toBe(1);
   });
 }

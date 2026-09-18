@@ -96,6 +96,7 @@ import {
   MIGRATION_068_WORKBENCH_CARD_INSTANCES,
 } from "./migrations/schema-05";
 import { addDraftTaskStatus } from "./migrations/task-draft-status";
+import { normalizeArmContextDefaults } from "./migrations/arm-context-defaults";
 import type { Migration } from "./migration-runner";
 
 export function getMigrations(): Migration[] {
@@ -168,11 +169,15 @@ export function getMigrations(): Migration[] {
 		["066_arm_runs", MIGRATION_066_ARM_RUNS],
 		["067_task_draft_status", MIGRATION_067_TASK_DRAFT_STATUS],
 		["068_workbench_card_instances", MIGRATION_068_WORKBENCH_CARD_INSTANCES],
+		["069_arm_context_defaults", "SELECT 1;"],
 	];
   return migrations.map(([name, sql, columns]) => ({
     name, sql, columns,
     ...(name === "067_task_draft_status"
       ? { apply: addDraftTaskStatus, implementationVersion: "task-draft-rebuild-v1" }
+      : {}),
+    ...(name === "069_arm_context_defaults"
+      ? { apply: normalizeArmContextDefaults, implementationVersion: "arm-context-defaults-v1" }
       : {}),
   }));
 }

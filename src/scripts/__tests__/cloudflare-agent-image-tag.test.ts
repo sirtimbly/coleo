@@ -12,6 +12,7 @@ describe("Cloudflare Arm Host image tag", () => {
     expect(inputs).toContain("src/agent/cloudflare-entry.ts");
     expect(inputs).toContain("src/mcp/server.ts");
     expect(inputs).toContain("docker/cloudflare-agent-entrypoint.sh");
+    expect(inputs).toContain("docker/prepare-repository.sh");
     expect(inputs).not.toContain("src/api/server.ts");
     expect(inputs).not.toContain("src/brain/index.ts");
     expect(inputs).not.toContain("src/cli/index.ts");

@@ -97,7 +97,18 @@ export function createOnboardingRoutes(options: OnboardingRouteOptions = {}) {
   const app = new Hono();
   const repositoryService = createRepositoryService(options);
 
-  app.get("/", async (c) => c.json(await repositoryService.execute({ type: "status" })));
+  app.get("/", async (c) => {
+    try {
+      return c.json(await repositoryService.execute({ type: "status" }));
+    } catch (error) {
+      if (error instanceof HttpError && ["Arm Host connection is not available", "Arm Host is not connected yet"].includes(error.message)) {
+        c.header("Retry-After", "3");
+        c.header("Cache-Control", "no-store");
+        return c.json({ error: "Your workspace tools are connecting", code: "WORKSPACE_STARTING", stage: "tools" }, 503);
+      }
+      throw error;
+    }
+  });
 
   app.post("/ssh-key", async (c) => {
     try {

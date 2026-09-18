@@ -586,7 +586,7 @@ export function SetupPage() {
                       </p>
                     </>
                   ) : (
-                    <p className="mt-1 text-foreground/80">The Brain will analyze this file and create the tasks during its next poll.</p>
+                    <p className="mt-1 text-foreground/80">On its next poll, the Brain evaluates the saved plan and its linked plan documents, then adds or updates tasks in the database.</p>
                   )}
                   {status.taskCount > 0 ? (
                     <button
@@ -618,7 +618,13 @@ export function SetupPage() {
           ) : null}
         </section>
       </div>
-      {prepareOpen ? <PrepareTasksModal running={preparing} error={error} result={result} onConfirm={() => void prepare()} onClose={() => setPrepareOpen(false)} /> : null}
+      {prepareOpen ? <PrepareTasksModal sourcePath={editor.path} running={preparing} error={error} result={result} onConfirm={() => void prepare()} onOpenInstructions={(template) => {
+        if (selectPath(`.coleo/src/brain/templates/plan-evaluation-${template}-prompt.jinja`)) {
+          setFileScope('coleo');
+          setPreviewOpen(false);
+          setPrepareOpen(false);
+        }
+      }} onClose={() => setPrepareOpen(false)} /> : null}
       <RegenerateTasksModal
         isOpen={regenerateOpen}
         onClose={() => setRegenerateOpen(false)}

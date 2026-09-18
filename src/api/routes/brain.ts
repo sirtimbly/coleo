@@ -11,6 +11,7 @@ import type { Database, SQLQueryBindings } from "bun:sqlite";
 import { HttpError } from "../middleware";
 import { broadcast, broadcastBrainEvent, broadcastMailEvent } from "../websocket";
 import { getColeoDir } from "../../config";
+import { startService, type ServiceStatus } from "../../daemon";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { randomUUID } from "crypto";
@@ -122,8 +123,14 @@ interface CommandPublishRequestBody {
 // Re-export BrainState for backward compatibility
 export type { BrainState } from "../../db/state";
 
-export function createBrainRoutes() {
+interface BrainRouteOptions {
+  startBrain?: () => Promise<ServiceStatus>;
+}
+
+export function createBrainRoutes(options: BrainRouteOptions = {}) {
   const app = new Hono<BrainContext>();
+  const startBrain = options.startBrain ?? (() => startService("brain"));
+  let startingBrain: Promise<ServiceStatus> | null = null;
 
   const parseSqlRequest = async (c: Context<BrainContext>): Promise<SqlRequestBody> => {
     const body = await c.req.json<{ sql?: unknown; params?: unknown }>();
@@ -323,24 +330,26 @@ export function createBrainRoutes() {
     return c.json({ state });
   });
 
-  app.post("/start", (c) => {
+  app.post("/start", async (c) => {
     const db = c.get("db");
-    const now = new Date().toISOString();
-
-    const currentState = getBrainState(db);
-    if (currentState.status === "running") {
-      throw HttpError.badRequest("Brain is already running");
+    // Persisted status is not proof that a coordinator process exists. Share
+    // concurrent start requests and let the service manager check its live PID.
+    const pending = startingBrain ??= startBrain();
+    let service: ServiceStatus;
+    try {
+      service = await pending;
+    } finally {
+      if (startingBrain === pending) startingBrain = null;
     }
+    if (!service.running) throw new HttpError(503, "Brain process did not start. Check the Brain service logs.");
 
     updateBrainState(db, {
       status: "running",
-      startedAt: currentState.startedAt || now,
-      lastPollAt: now,
+      startedAt: service.startedAt || new Date().toISOString(),
     });
-
+    // Only the Brain itself may advance lastPollAt or clear the planning gate.
     broadcastBrainEvent("started", { status: "running" });
-
-    return c.json({ started: true, status: "running" });
+    return c.json({ started: true, status: "running", pid: service.pid });
   });
 
   app.post("/stop", (c) => {
