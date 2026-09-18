@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.2](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.1...coleo-v0.14.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* preserve repository files until replacement is confirmed ([394bf9a](https://github.com/sirtimbly/coleo/commit/394bf9a74efaebc0a53646ffcab7a47baa47ad20))
+* preserve repository files until replacement is confirmed ([cc5bfaf](https://github.com/sirtimbly/coleo/commit/cc5bfaf67f933502e8ab75ba7cb6ac3f66f038fb))
+
 ## [0.14.1](https://github.com/sirtimbly/coleo/compare/coleo-v0.14.0...coleo-v0.14.1) (2026-09-17)
 
 
