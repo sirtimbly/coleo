@@ -7,21 +7,15 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@heroui/react";
-import { ArrowUpRight, FileText, LoaderCircle, MessageSquarePlus } from "lucide-react";
+import { ArrowUpRight, LoaderCircle, MessageSquarePlus } from "lucide-react";
 
 import {
-	AdaptiveCardView,
 	DeferredAdaptiveCardView,
 } from "@/adaptive-cards/AdaptiveCardView";
-import {
-	BRAIN_CARD_CREATOR,
-	createArmCardCreator,
-} from "@/adaptive-cards/card-creators";
-import { createPersistedCardRoute } from "@/adaptive-cards/persisted-card-route";
 import { presentInboxItem, presentMessage } from "@/adaptive-cards/presenters";
 import {
-	WorkbenchEmptyState,
 	WorkbenchStatusDot,
 } from "@/design-system/WorkbenchSurface";
 import {
@@ -39,10 +33,8 @@ import {
 } from "@/pages/mail-page-utils";
 import {
 	BRAIN_ACTIVITY_CATEGORY_LABELS,
-	formatBrainActivity,
 	mergeBrainActivity,
 	type BrainActivityCategory,
-	type BrainActivityTone,
 } from "@/pages/brain-activity";
 import { MailThreadProjection } from "@/workbench/MailThreadProjection";
 import { useCollectionDisplayPreferences } from "@/workbench/collection-display";
@@ -63,23 +55,17 @@ import {
 	useWorkspaceSearchParams,
 } from "@/workspace/route-context";
 
+import { inboxItemQueryKey } from "./load-inbox-item";
+import { InboxItemPage } from "./InboxItemPage";
+import { activityToItem, brainActivityToItem, creatorForInboxItem, reportToItem, threadToItem, workbenchInboxToItem } from "./inbox-item-projection";
+
+import type { InboxItemData } from "./inbox-item-projection";
+
 import type {
 	CardActionRequest,
-	CardCreator,
 	WorkbenchAttention,
 	WorkbenchInboxRecord,
 } from "../../../types/adaptive-cards";
-
-interface InboxItemData {
-	item: InboxProjectionItem;
-	thread?: MailThread;
-	mailbox?: MailboxTab;
-	statusReport?: StatusReport;
-	activity?: ActivityEntry;
-	recentEvent?: RecentEvent;
-	brainCategory?: BrainActivityCategory;
-	targetRoute?: { pathname: string; search: string };
-}
 
 const FACETS: InboxFacet[] = [
 	{
@@ -116,194 +102,17 @@ function isBrainCategory(value: string | null): value is BrainActivityCategory |
 	return value !== null && value in BRAIN_ACTIVITY_CATEGORY_LABELS;
 }
 
-function activityKind(entry: ActivityEntry): InboxProjectionItem["kind"] {
-	const actor = entry.actor.toLowerCase();
-	const action = entry.action.toLowerCase();
-	if (action.includes("proposal")) return "proposal";
-	if (actor.includes("brain")) return "brain";
-	if (actor.includes("arm") || action.startsWith("arm.")) return "arm";
-	return "system";
-}
-
-function activitySeverity(entry: ActivityEntry): InboxProjectionItem["severity"] {
-	const action = entry.action.toLowerCase();
-	if (action.includes("error") || action.includes("failed")) return "danger";
-	if (action.includes("blocked") || action.includes("warning")) return "warning";
-	if (action.includes("completed") || action.includes("resolved")) return "success";
-	return "info";
-}
-
-function activityRequiresAction(entry: ActivityEntry): boolean {
-	const action = entry.action.toLowerCase();
-	return action.includes("blocked") ||
-		action.includes("approval") ||
-		action.includes("question") ||
-		action.includes("error") ||
-		action.includes("failed");
-}
-
-function threadToItem(thread: MailThread, mailbox: MailboxTab): InboxItemData {
-	const latest = thread.messages.at(-1)?.message;
-	return {
-		item: {
-			id: `thread:${mailbox}:${thread.id}`,
-			kind: "project",
-			title: thread.subject || "(No subject)",
-			summary: latest?.body.slice(0, 180) || `${thread.messages.length} messages`,
-			timestamp: thread.lastMessageDate.toISOString(),
-			source: `${mailbox === "archive" ? "Archived" : mailbox === "sent" ? "Sent" : "Inbox"} · ${latest?.from ?? "Unknown sender"} · ${thread.messages.length} ${thread.messages.length === 1 ? "message" : "messages"}`,
-			resourceId: thread.id,
-			unread: mailbox === "inbox" && thread.unreadCount > 0,
-			requiresAction: mailbox === "inbox" && thread.unreadCount > 0,
-			severity: thread.unreadCount > 0 ? "warning" : "info",
-		},
-		thread,
-		mailbox,
-	};
-}
-
-function reportToItem(report: StatusReport): InboxItemData {
-	const needsAttention = report.status === "blocked" ||
-		report.status === "issues_found" ||
-		report.status === "needs_review";
-	return {
-		item: {
-			id: `status:${report.id}`,
-			kind: "status",
-			title: `${report.armId}: ${report.status.replaceAll("_", " ")}`,
-			summary: report.summary,
-			timestamp: report.createdAt,
-			source: `Status report · task ${report.taskId}`,
-			resourceId: report.id,
-			unread: needsAttention,
-			requiresAction: needsAttention,
-			severity: report.status === "blocked"
-				? "danger"
-				: report.status === "on_track"
-					? "success"
-					: needsAttention
-						? "warning"
-						: "info",
-		},
-		statusReport: report,
-	};
-}
-
-function activityToItem(entry: ActivityEntry): InboxItemData {
-	const requiresAction = activityRequiresAction(entry);
-	return {
-		item: {
-			id: `activity:${entry.id}`,
-			kind: activityKind(entry),
-			title: entry.action.replaceAll("_", " ").replaceAll(".", " "),
-			summary: entry.target ? `${entry.actor} · ${entry.target}` : entry.actor,
-			timestamp: entry.timestamp,
-			source: entry.actor,
-			resourceId: entry.target ?? undefined,
-			unread: requiresAction,
-			requiresAction,
-			severity: activitySeverity(entry),
-		},
-		activity: entry,
-	};
-}
-
-function brainToneToSeverity(tone: BrainActivityTone): InboxProjectionItem["severity"] {
-	if (tone === "danger") return "danger";
-	if (tone === "warning") return "warning";
-	if (tone === "success") return "success";
-	return "info";
-}
-
-function brainActivityToItem(entry: ActivityEntry): InboxItemData {
-	const formatted = formatBrainActivity(entry);
-	const requiresAction = formatted.tone === "danger" ||
-		formatted.tone === "warning" ||
-		activityRequiresAction(entry);
-	const targetRoute = formatted.target && formatted.category === "arms"
-		? {
-				pathname: "/viewer",
-				search: `?arm=${encodeURIComponent(formatted.target)}`,
-			}
-		: formatted.target && (formatted.category === "tasks" || formatted.category === "decisions")
-			? {
-					pathname: "/tasks",
-					search: `?task=${encodeURIComponent(formatted.target)}&view=details`,
-				}
-			: undefined;
-	return {
-		item: {
-			id: `activity:${formatted.id}`,
-			kind: "brain",
-			title: formatted.title,
-			summary: formatted.summary,
-			timestamp: formatted.timestamp,
-			source: `Brain · ${BRAIN_ACTIVITY_CATEGORY_LABELS[formatted.category]}`,
-			resourceId: formatted.target ?? undefined,
-			unread: requiresAction,
-			requiresAction,
-			severity: brainToneToSeverity(formatted.tone),
-		},
-		activity: entry,
-		brainCategory: formatted.category,
-		targetRoute,
-	};
-}
-
-function workbenchInboxToItem(record: WorkbenchInboxRecord): InboxItemData {
-	const targetRoute = record.resource.kind === "task"
-		? {
-				pathname: "/tasks",
-				search: `?task=${encodeURIComponent(record.resource.id)}&view=details`,
-			}
-		: record.resource.kind === "bug"
-			? {
-					pathname: "/bugs",
-					search: `?bug=${encodeURIComponent(record.resource.id)}`,
-				}
-			: undefined;
-	const summary = record.source === "planning-gate"
-		? (() => {
-			try {
-				const parsed = JSON.parse(record.summary) as { detail?: unknown; nextStep?: unknown };
-				return [parsed.detail, parsed.nextStep]
-					.filter((value): value is string => typeof value === "string")
-					.join(" Required action: ");
-			} catch {
-				return record.summary;
-			}
-		})()
-		: record.summary;
-	return {
-		item: {
-			id: record.itemKey,
-			kind: record.kind === "brain" ? "brain" : record.kind === "bug" ? "system" : "status",
-			title: record.title,
-			summary,
-			timestamp: record.timestamp,
-			source: record.source.replaceAll("-", " "),
-			resourceId: record.resource.id,
-			unread: !record.attention?.readAt,
-			requiresAction: record.requiresAction,
-			severity: record.severity,
-		},
-		targetRoute,
-	};
-}
-
-function creatorForInboxItem(source: InboxItemData): CardCreator {
-	if (source.statusReport) return createArmCardCreator(source.statusReport.armId);
-	if (source.recentEvent?.armId) return createArmCardCreator(source.recentEvent.armId);
-	if (source.item.kind === "arm") {
-		return createArmCardCreator(
-			source.activity?.actor ?? source.item.resourceId ?? "unknown-arm",
-			source.activity?.actor ?? source.item.resourceId,
-		);
-	}
-	return BRAIN_CARD_CREATOR;
-}
-
 export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" | "mail" } = {}) {
+	const [searchParams] = useWorkspaceSearchParams();
+	const itemId = searchParams.get("item");
+	if (itemId && !searchParams.get("thread")) {
+		return <InboxItemPage key={itemId} itemId={itemId} sequence={searchParams.get("sequence")} />;
+	}
+	return <MessagingCollectionPage projection={projection} />;
+}
+
+function MessagingCollectionPage({ projection }: { projection: "inbox" | "mail" }) {
+	const queryClient = useQueryClient();
 	const mailOnly = projection === "mail";
 	const routePath = mailOnly ? "/mail" : "/messaging";
 	usePageTitle(`Coleo Observatory - ${mailOnly ? "Mail" : "Inbox"}`);
@@ -348,7 +157,6 @@ export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" |
 	const loadTimerRef = useRef<number | null>(null);
 	const brainActivityInitializedRef = useRef(false);
 	const selectedThreadId = searchParams.get("thread");
-	const selectedItemId = searchParams.get("item");
 	const detailMailboxParam = searchParams.get("mailbox");
 	const detailMailbox: MailboxTab =
 		detailMailboxParam === "sent" || detailMailboxParam === "archive"
@@ -600,11 +408,6 @@ export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" |
 		[activeFacet, brainCategory, statefulItems],
 	);
 
-	const selectedItem = useMemo(
-		() => statefulItems.find((entry) => entry.item.id === selectedItemId) ?? null,
-		[selectedItemId, statefulItems],
-	);
-
 	const markThreadRead = useCallback(async (thread: MailThread) => {
 		const messageIds = getInboxMessageIdsForThread(thread, inbox).filter((id) => {
 			const message = inbox.find((candidate) => candidate.id === id);
@@ -635,20 +438,24 @@ export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" |
 			);
 			return;
 		}
+		if (source) queryClient.setQueryData(inboxItemQueryKey(item.id), source);
 		void api.updateWorkbenchAttention(item.id, {
 			seenAt: new Date().toISOString(),
 			readAt: new Date().toISOString(),
 			requiresAction: item.requiresAction,
 		});
+		const params = new URLSearchParams({ item: item.id });
+		const sequence = source?.activity?.sequence ?? source?.recentEvent?.sequence;
+		if (sequence) params.set("sequence", String(sequence));
 		openWorkspaceRoute(
 			{
 				pathname: routePath,
-				search: `?facet=${activeFacet}&item=${encodeURIComponent(item.id)}`,
+				search: `?${params}`,
 				title: item.title,
 			},
 			"split",
 		);
-	}, [activeFacet, mailOnly, markThreadRead, openWorkspaceRoute, routePath, statefulItemsById]);
+	}, [mailOnly, markThreadRead, openWorkspaceRoute, queryClient, routePath, statefulItemsById]);
 
 	const archiveInboxMessages = useCallback(async (messageIds: string[]) => {
 		if (messageIds.length === 0) return;
@@ -759,55 +566,6 @@ export function MessagingPage({ projection = "inbox" }: { projection?: "inbox" |
 		);
 	}
 
-	if (selectedItemId) {
-		if (!selectedItem) {
-			return <WorkbenchEmptyState title="Loading inbox item" description="The selected item is being restored." />;
-		}
-		const envelope = presentInboxItem(selectedItem.item, {
-			surface: "detail",
-			targetRoute: selectedItem.targetRoute,
-			creator: creatorForInboxItem(selectedItem),
-			facts: selectedItem.statusReport
-				? [
-						{ label: "Arm", value: selectedItem.statusReport.armId },
-						{ label: "Task", value: selectedItem.statusReport.taskId },
-						{ label: "Status", value: selectedItem.statusReport.status.replaceAll("_", " ") },
-					]
-				: [],
-		});
-		const handleCardAction = async (request: CardActionRequest) => {
-			if (request.verb === "resource.open" && selectedItem.targetRoute) {
-				openWorkspaceRoute(selectedItem.targetRoute, "focus");
-				return;
-			}
-			await api.executeWorkbenchCardAction(request);
-			await load();
-		};
-		return (
-			<div className="h-full min-h-0 overflow-auto bg-background p-5">
-				<AdaptiveCardView
-					envelope={envelope}
-					onAction={handleCardAction}
-					className="mx-auto max-w-4xl"
-					headerActions={(
-						<Button
-							size="sm"
-							variant="ghost"
-							onPress={() => {
-								void createPersistedCardRoute({
-									...envelope,
-									presentation: { ...envelope.presentation, surface: "panel" },
-								}).then((route) => openWorkspaceRoute(route, "tab"));
-							}}
-						>
-							<FileText className="h-3.5 w-3.5" aria-hidden="true" />
-							Open card
-						</Button>
-					)}
-				/>
-			</div>
-		);
-	}
 
 	return (
 		<ProjectionInbox

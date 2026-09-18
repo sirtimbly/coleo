@@ -108,6 +108,7 @@ describe("claim-enforcement", () => {
 
   it("detects thrashing based on event history", async () => {
     setEventStore({
+      getEvent: async () => null,
       publishEvent: async () => {},
       queryEvents: async () => [
         { type: "file_write", armId: "arm-1", data: { filePath: "src/a.ts" }, timestamp: new Date(Date.now() - 2000).toISOString() },
@@ -141,6 +142,7 @@ describe("claim-enforcement", () => {
     await checkAndEscalateIfThrashing(db, "src/a.ts");
 
     setEventStore({
+      getEvent: async () => null,
       publishEvent: async () => {},
       queryEvents: async () => [],
       getArmEvents: async () => [],

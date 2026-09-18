@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { TabulatorFull as Tabulator } from "tabulator-tables";
+import { BoundaryContent, ScreenErrorBoundary } from "@/components/ScreenErrorBoundary";
 
 import { cn } from "@/lib";
 
@@ -220,7 +221,11 @@ export function InboxCardTable({
 			if (!item) return;
 			const existing = mountedCards.get(element);
 			if (existing?.id === data.id) {
-				existing.root.render(runtimeRef.current.renderCard(item));
+				existing.root.render(
+					<ScreenErrorBoundary name="this card" resetKey={data.id}>
+						<BoundaryContent render={() => runtimeRef.current.renderCard(item)} />
+					</ScreenErrorBoundary>,
+				);
 				updateExpander(row, true);
 				queueMicrotask(() => row.normalizeHeight());
 				return;
@@ -248,7 +253,11 @@ export function InboxCardTable({
 			};
 			mountedCards.set(element, mounted);
 			mounted.resizeObserver.observe(host);
-			root.render(runtimeRef.current.renderCard(item));
+			root.render(
+				<ScreenErrorBoundary name="this card" resetKey={data.id}>
+					<BoundaryContent render={() => runtimeRef.current.renderCard(item)} />
+				</ScreenErrorBoundary>,
+			);
 			updateExpander(row, true);
 			queueMicrotask(() => row.normalizeHeight());
 		};

@@ -175,7 +175,7 @@ function sanitizeEventValue(value: unknown): unknown {
   return value;
 }
 
-function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
+export function sanitizeEventData(data: Record<string, unknown>): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(data)) {
@@ -618,6 +618,7 @@ export function createEventsRoutes() {
         events: events.map((e) => ({
           type: e.type,
           armId: e.armId,
+          sequence: e.sequence,
           timestamp: e.timestamp,
           data: sanitizeEventData(e.data),
         })),

@@ -1567,6 +1567,23 @@ class ApiClient {
     );
   }
 
+  async getWorkbenchInboxRecord(itemKey: string) {
+    return this.request<{ item: WorkbenchInboxRecord }>(`/workbench/inbox/records/${encodeURIComponent(itemKey)}`);
+  }
+
+  async getWorkbenchInboxEvent(itemKey: string, sequence?: string) {
+    const query = sequence ? `?sequence=${encodeURIComponent(sequence)}` : '';
+    return this.request<{ event: RecentEventsResponse['events'][number] }>(
+      `/workbench/inbox/events/${encodeURIComponent(itemKey)}${query}`,
+    );
+  }
+
+  async getWorkbenchItemAttention(itemKey: string) {
+    return this.request<{ attention: WorkbenchAttention | null }>(
+      `/workbench/attention/${encodeURIComponent(itemKey)}`,
+    );
+  }
+
   async listWorkbenchInbox(params: {
     profileId?: string;
     cursor?: string;
@@ -2432,6 +2449,7 @@ export interface ArmCostHistoryResponse {
 
 export interface RecentEventsResponse {
   events: Array<{
+    sequence?: number;
     type: string;
     armId?: string;
     timestamp: string;

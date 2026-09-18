@@ -117,6 +117,19 @@ export class EventStore implements IEventStore {
     await this.js.publish(subject, payload);
   }
 
+  async getEvent(sequence: number): Promise<EventData | null> {
+    if (!this.jsm) throw new Error('Event store is not initialized');
+    try {
+      const message = await this.jsm.streams.getMessage('coleo-events', { seq: sequence });
+      const data = JSON.parse(new TextDecoder().decode(message.data)) as EventData;
+      return { ...data, sequence: message.seq };
+    } catch (error) {
+      // JetStream reports an expired or removed message as 404.
+      if (error && typeof error === 'object' && 'code' in error && String(error.code) === '404') return null;
+      throw error;
+    }
+  }
+
   async queryEvents(options: QueryOptions): Promise<EventData[]> {
     if (!this.js || !this.jsm) {
       console.log('[EventStore] JetStream not initialized, cannot query events');
