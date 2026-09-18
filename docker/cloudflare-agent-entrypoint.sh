@@ -27,7 +27,7 @@ if [[ -n "${COLEO_R2_BUCKET:-}" ]]; then
   export AWS_SECRET_ACCESS_KEY=${COLEO_R2_SECRET_ACCESS_KEY:-}
   export AWS_ENDPOINT_URL=${COLEO_R2_ENDPOINT:-}
   export AWS_DEFAULT_REGION=auto
-  aws s3 sync "s3://${COLEO_R2_BUCKET}/${R2_PREFIX}/" "$COLEO_RUNTIME_DIR/" || true
+  aws s3 sync "s3://${COLEO_R2_BUCKET}/${R2_PREFIX}/" "$COLEO_RUNTIME_DIR/"
 fi
 
 sync_state() {
@@ -43,15 +43,15 @@ sync_state() {
   fi
 }
 
-if [[ -n "${COLEO_GIT_REPO_URL:-}" && ! -d "$COLEO_WORKDIR/.git" ]]; then
-  rm -rf "$COLEO_WORKDIR"
-  clone_args=()
-  if [[ -n "${COLEO_GIT_CLONE_ARGS:-}" ]]; then
-    read -r -a clone_args <<< "$COLEO_GIT_CLONE_ARGS"
-  fi
-  git clone "${clone_args[@]}" "$COLEO_GIT_REPO_URL" "$COLEO_WORKDIR"
-  if [[ -n "${COLEO_GIT_REF:-}" ]]; then
-    git -C "$COLEO_WORKDIR" checkout "$COLEO_GIT_REF"
+if [[ -n "${COLEO_GIT_REPO_URL:-}" ]]; then
+  export COLEO_WORKDIR
+  /usr/local/bin/coleo-prepare-repository
+  # Persist backups before removing stale files from the previous remote checkout.
+  if [[ -n "${COLEO_R2_BUCKET:-}" ]]; then
+    if [[ -d "$COLEO_RUNTIME_DIR/.coleo-repository-backups" ]]; then
+      aws s3 sync "$COLEO_RUNTIME_DIR/.coleo-repository-backups/" "s3://${COLEO_R2_BUCKET}/${R2_PREFIX}/.coleo-repository-backups/"
+    fi
+    aws s3 sync "$COLEO_WORKDIR/" "s3://${COLEO_R2_BUCKET}/${R2_PREFIX}/workspace/" --delete
   fi
 fi
 

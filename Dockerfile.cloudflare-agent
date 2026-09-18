@@ -60,7 +60,8 @@ RUN mkdir -p /home/coleo/runtime \
 	&& chmod +x /usr/local/bin/coleo-agent
 
 COPY --chown=coleo:coleo docker/cloudflare-agent-entrypoint.sh /home/coleo/agent-entrypoint.sh
-RUN chmod +x /home/coleo/agent-entrypoint.sh
+COPY --chown=coleo:coleo docker/prepare-repository.sh /usr/local/bin/coleo-prepare-repository
+RUN chmod +x /home/coleo/agent-entrypoint.sh /usr/local/bin/coleo-prepare-repository
 
 USER coleo
 ENV COLEO_DIR=/home/coleo/runtime/coleo

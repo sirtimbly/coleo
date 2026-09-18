@@ -35,7 +35,9 @@ chown -R coleo:coleo "$COLEO_DIR" "$COLEO_PROJECTS_DIR" "$COLEO_HOME/.local" 2>/
 
 if [ -n "${COLEO_GIT_REPO_URL:-}" ] && [ ! -d "$COLEO_WORKDIR/.git" ]; then
   log "Cloning COLEO_GIT_REPO_URL into $COLEO_WORKDIR"
-  rm -rf "$COLEO_WORKDIR"
+  if [ -e "$COLEO_WORKDIR" ]; then
+    rmdir "$COLEO_WORKDIR" || { log "Repository setup blocked: working directory is not empty. Preserve or move its files before cloning."; exit 1; }
+  fi
   run_as_coleo "git clone ${COLEO_GIT_CLONE_ARGS:-} '$COLEO_GIT_REPO_URL' '$COLEO_WORKDIR'"
   if [ -n "${COLEO_GIT_REF:-}" ]; then
     run_as_coleo "cd '$COLEO_WORKDIR' && git checkout '$COLEO_GIT_REF'"
